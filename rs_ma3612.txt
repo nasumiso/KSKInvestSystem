@@ -1,0 +1,5586 @@
+d,w,m=(215 400 662)
+stock_data/sector/sector_db.pickleにpickleロード
+no_memo: ('stock_data/sector/sector_db.pickle',)
+stock_data/sector/sector_db.pickleにpickleロード
+---------- 銘柄名不明リスト
+no_memo: ('stock_data/stocks.pickle',)
+stock_data/stocks.pickleにpickleロード
+stock_data/stocks.pickleにpickleロード
+update_tables: ['master'] 強制更新: True
+----> 7173のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7173のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>430,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:東京ＴＹフィナンシャルグループ,時価総額:131795百万円
+最低購入代金:430000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7173 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-06 23:04:18
+lowest_purchase_money :  430000
+stock_name :  東京ＴＹフィナンシャルグループ
+market_cap :  131795
+access_date_gyoseki :  2016-12-06 23:00:55
+price :  4150
+access_date_rironkabuka :  2016-12-06 23:01:22
+access_date :  2016-12-10 01:12:25
+sector_detail :  unknown
+shihyo_pt :  20
+code :  7173
+rironkabuka :  11520
+access_date_price :  2016-12-06 23:00:38
+stddev_volatility :  7.95
+sell_pressure_ratio_10 :  0
+sell_pressure_ratio_5 :  38
+sell_pressure_ratio_20 :  62
+score_gyoseki :  20
+----------
+----> 1546のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1546のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>22,050</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)ダウ･ジョーンズ工業株30種,時価総額:0百万円
+最低購入代金:22050
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1546 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-01 23:42:46
+shihyo_pt :  20
+stock_name :  (NEXT FUNDS)ダウ･ジョーンズ工業株30種
+market_cap :  0
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-01 23:41:33
+price :  22050
+access_date_rironkabuka :  2016-12-01 23:41:55
+sector_detail :  unknown
+lowest_purchase_money :  22050
+code :  1546
+rironkabuka :  0
+stddev_volatility :  2.12
+sell_pressure_ratio_10 :  71
+access_date :  2016-12-10 01:12:25
+sell_pressure_ratio_5 :  33
+sell_pressure_ratio_20 :  43
+access_date_price :  2016-12-09 23:10:40
+----------
+基本銘柄更新: 512日ぶり
+----> 1547のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1547のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>28,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:上場インデックスファンド米国株式(S&P500),時価総額:0百万円
+最低購入代金:28000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1547 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-04 23:33:26
+lowest_purchase_money :  28000
+stock_name :  上場インデックスファンド米国株式(S&P500)
+market_cap :  0
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 04:53:04
+price :  2840
+access_date_rironkabuka :  2015-06-04 23:32:45
+sector_detail :  unknown
+shihyo_pt :  20
+code :  1547
+rironkabuka :  0
+stddev_volatility :  1.04
+sell_pressure_ratio_10 :  65
+access_date :  2016-12-10 01:12:25
+sell_pressure_ratio_5 :  60
+sell_pressure_ratio_20 :  39
+access_date_price :  2015-06-04 23:32:12
+----------
+----> 7186のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7186のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>59,990</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:コンコルディア・フィナンシャルグループ,時価総額:780240百万円
+最低購入代金:59990
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7186 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:37:47
+shihyo_pt :  20
+stock_name :  コンコルディア・フィナンシャルグループ
+code :  7186
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-08 23:33:31
+price :  577
+access_date_rironkabuka :  2016-12-08 23:34:06
+access_date :  2016-12-10 01:12:26
+sector_detail :  unknown
+lowest_purchase_money :  59990
+market_cap :  780240
+rironkabuka :  3191
+stddev_volatility :  7.17
+sell_pressure_ratio_5 :  39
+sell_pressure_ratio_20 :  64
+access_date_price :  2016-12-08 23:33:05
+----------
+----> 7189のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7189のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>116,200</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:西日本フィナンシャルホールディングス,時価総額:208692百万円
+最低購入代金:116200
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7189 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-04 02:20:24
+shihyo_pt :  20
+stock_name :  西日本フィナンシャルホールディングス
+code :  7189
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-24 23:10:53
+price :  1090
+access_date_rironkabuka :  2016-11-24 23:11:22
+access_date :  2016-12-10 01:12:26
+sector_detail :  unknown
+lowest_purchase_money :  116200
+market_cap :  208692
+rironkabuka :  0
+stddev_volatility :  7.2
+sell_pressure_ratio_5 :  106
+sell_pressure_ratio_20 :  98
+access_date_price :  2016-11-24 23:10:41
+----------
+----> 6172のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6172のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>361,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:メタップス,時価総額:46619百万円
+最低購入代金:361500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6172 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:18:12
+shihyo_pt :  20
+stock_name :  メタップス
+code :  6172
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-09 23:11:35
+price :  3615
+access_date_rironkabuka :  2016-12-09 23:12:05
+sector_detail :  unknown
+lowest_purchase_money :  361500
+market_cap :  46619
+rironkabuka :  -262
+stddev_volatility :  17.14
+access_date :  2016-12-10 01:12:26
+sell_pressure_ratio_5 :  55
+sell_pressure_ratio_20 :  63
+access_date_price :  2016-12-09 23:10:48
+----------
+基本銘柄更新: 512日ぶり
+----> 1629のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1629のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>27,690</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)商社･卸売上場投信,時価総額:0百万円
+最低購入代金:27690
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1629 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  (NEXT FUNDS)商社･卸売上場投信
+code :  1629
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:32
+price :  24290
+access_date_rironkabuka :  2016-03-27 11:24:13
+sector_detail :  unknown
+lowest_purchase_money :  27690
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  2.42
+access_date :  2016-12-10 01:12:26
+sell_pressure_ratio_5 :  400
+sell_pressure_ratio_20 :  85
+access_date_price :  2016-03-27 15:38:16
+----------
+基本銘柄更新: 42日ぶり
+----> 5703のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5703のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>26,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:日本軽金属ホールディングス,時価総額:143913百万円
+最低購入代金:26400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5703 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-29 00:24:48
+lowest_purchase_money :  26400
+stock_name :  日本軽金属ホールディングス
+code :  5703
+score_gyoseki :  47
+access_date_gyoseki :  2016-10-29 00:23:04
+access_date_price :  2016-10-29 00:22:50
+access_date_rironkabuka :  2016-10-29 00:23:32
+access_date :  2016-12-10 01:12:26
+sell_pressure_ratio_20 :  73
+shihyo_pt :  20
+market_cap :  143913
+rironkabuka :  0
+stddev_volatility :  3.86
+sell_pressure_ratio_10 :  62
+sell_pressure_ratio_5 :  69
+price :  238
+sector_detail :  unknown
+----------
+----> 1618のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1618のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>11,950</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)エネルギー資源上場投信,時価総額:0百万円
+最低購入代金:11950
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1618 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  (NEXT FUNDS)エネルギー資源上場投信
+market_cap :  0
+sector_detail :  unknown
+lowest_purchase_money :  11950
+code :  1618
+access_date :  2016-12-10 01:12:27
+----------
+基本銘柄更新: 544日ぶり
+----> 1635のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1635のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>12,930</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信･TOPIX-17エネルギー資源,時価総額:0百万円
+最低購入代金:12930
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1635 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ダイワ 上場投信･TOPIX-17エネルギー資源
+code :  1635
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:32
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:14
+sector_detail :  unknown
+lowest_purchase_money :  12930
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  3.46
+access_date :  2016-12-10 01:12:27
+sell_pressure_ratio_5 :  53
+sell_pressure_ratio_20 :  110
+access_date_price :  2016-03-27 15:38:17
+----------
+基本銘柄更新: 544日ぶり
+----> 1640のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1640のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>22,490</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信･TOPIX-17鉄鋼･非鉄,時価総額:0百万円
+最低購入代金:22490
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1640 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ダイワ 上場投信･TOPIX-17鉄鋼･非鉄
+code :  1640
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:33
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:14
+sector_detail :  unknown
+lowest_purchase_money :  22490
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  4.86
+access_date :  2016-12-10 01:12:27
+sell_pressure_ratio_5 :  39
+sell_pressure_ratio_20 :  40
+access_date_price :  2016-03-27 15:38:18
+----------
+基本銘柄更新: 544日ぶり
+----> 1623のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1623のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>21,700</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)鉄鋼･非鉄上場投信,時価総額:0百万円
+最低購入代金:21700
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1623 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  (NEXT FUNDS)鉄鋼･非鉄上場投信
+code :  1623
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:28
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:12
+sector_detail :  unknown
+lowest_purchase_money :  21700
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  4.38
+access_date :  2016-12-10 01:12:27
+sell_pressure_ratio_5 :  105
+sell_pressure_ratio_20 :  46
+access_date_price :  2016-03-27 15:38:15
+----------
+----> 7315のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7315のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>49,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＩＪＴテクノロジーホールディングス,時価総額:24331百万円
+最低購入代金:49500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7315 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-08 02:13:33
+shihyo_pt :  20
+stock_name :  ＩＪＴテクノロジーホールディングス
+code :  7315
+score_gyoseki :  54
+access_date_gyoseki :  2016-12-09 23:11:37
+price :  495
+access_date_rironkabuka :  2016-12-09 23:12:12
+sector_detail :  unknown
+lowest_purchase_money :  49500
+market_cap :  24331
+rironkabuka :  387
+stddev_volatility :  5.22
+access_date :  2016-12-10 01:12:27
+sell_pressure_ratio_5 :  39
+sell_pressure_ratio_20 :  61
+access_date_price :  2016-12-09 23:10:50
+----------
+----> 1479のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1479のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>17,980</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信-MSCI日本株人材設備投資指数,時価総額:0百万円
+最低購入代金:17980
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1479 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-18 23:01:30
+lowest_purchase_money :  17980
+stock_name :  ダイワ 上場投信-MSCI日本株人材設備投資指数
+code :  1479
+access_date_gyoseki :  2016-11-18 23:00:42
+price :  17400
+access_date_rironkabuka :  2016-11-18 23:00:56
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  0
+rironkabuka :  0
+access_date_price :  2016-11-24 23:10:34
+stddev_volatility :  1.66
+access_date :  2016-12-10 01:12:28
+sell_pressure_ratio_5 :  31
+sell_pressure_ratio_20 :  30
+score_gyoseki :  20
+----------
+----> 1480のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1480のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>14,070</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)野村企業価値分配指数上場投信,時価総額:0百万円
+最低購入代金:14070
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1480 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 23:17:43
+lowest_purchase_money :  14070
+stock_name :  (NEXT FUNDS)野村企業価値分配指数上場投信
+code :  1480
+access_date_gyoseki :  2016-11-16 23:16:47
+price :  13510
+access_date_rironkabuka :  2016-11-16 23:17:02
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  0
+rironkabuka :  0
+access_date_price :  2016-11-21 23:20:43
+stddev_volatility :  1.86
+access_date :  2016-12-10 01:12:28
+sell_pressure_ratio_5 :  24
+sell_pressure_ratio_20 :  37
+score_gyoseki :  20
+----------
+----> 5857のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5857のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>209,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アサヒホールディングス,時価総額:75917百万円
+最低購入代金:209400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5857 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 00:40:02
+lowest_purchase_money :  209400
+stock_name :  アサヒホールディングス
+code :  5857
+score_gyoseki :  4
+access_date_gyoseki :  2016-11-16 00:38:41
+price :  1970
+access_date_rironkabuka :  2016-11-16 00:39:01
+access_date :  2016-12-10 01:12:28
+sector_detail :  unknown
+shihyo_pt :  55
+market_cap :  75917
+rironkabuka :  1847
+access_date_price :  2016-11-16 00:38:28
+stddev_volatility :  4.15
+sell_pressure_ratio_10 :  63
+sell_pressure_ratio_5 :  85
+sell_pressure_ratio_20 :  77
+----------
+----> 1663のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1663のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>181,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:Ｋ＆Ｏエナジーグループ,時価総額:55060百万円
+最低購入代金:181500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1663 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:11:27
+shihyo_pt :  20
+stock_name :  Ｋ＆Ｏエナジーグループ
+code :  1663
+score_gyoseki :  12
+access_date_gyoseki :  2016-12-09 23:11:10
+price :  1815
+access_date_rironkabuka :  2016-12-09 23:11:50
+sector_detail :  unknown
+lowest_purchase_money :  181500
+market_cap :  55060
+rironkabuka :  126
+stddev_volatility :  4.15
+access_date :  2016-12-10 01:12:28
+sell_pressure_ratio_5 :  52
+sell_pressure_ratio_20 :  59
+access_date_price :  2016-12-09 23:10:40
+----------
+----> 5413のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5413のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>152,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:日新製鋼,時価総額:167622百万円
+最低購入代金:152600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5413 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:14:15
+lowest_purchase_money :  152600
+stock_name :  日新製鋼
+code :  5413
+score_gyoseki :  3
+access_date_gyoseki :  2016-12-09 23:11:33
+price :  1526
+access_date_rironkabuka :  2016-12-09 23:12:00
+access_date :  2016-12-10 01:12:28
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  167622
+rironkabuka :  388
+access_date_price :  2016-12-09 23:10:46
+stddev_volatility :  3.9
+sell_pressure_ratio_10 :  54
+sell_pressure_ratio_5 :  50
+sell_pressure_ratio_20 :  72
+----------
+----> 1324のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1324のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>12,300</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)ロシア株式指数上場投信,時価総額:0百万円
+最低購入代金:12300
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1324 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 23:17:38
+lowest_purchase_money :  12300
+stock_name :  (NEXT FUNDS)ロシア株式指数上場投信
+code :  1324
+access_date_gyoseki :  2016-11-16 23:16:47
+price :  123
+access_date_rironkabuka :  2016-11-16 23:17:02
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  0
+rironkabuka :  0
+access_date_price :  2016-12-09 23:10:39
+stddev_volatility :  3.57
+access_date :  2016-12-10 01:12:29
+sell_pressure_ratio_5 :  61
+sell_pressure_ratio_20 :  46
+score_gyoseki :  20
+----------
+----> 6464のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6464のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>178,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ツバキ・ナカシマ,時価総額:71313百万円
+最低購入代金:178600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6464 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:09:42
+lowest_purchase_money :  178600
+stock_name :  ツバキ・ナカシマ
+code :  6464
+access_date_gyoseki :  2016-12-09 23:11:36
+price :  1786
+access_date_rironkabuka :  2016-12-09 23:12:09
+access_date :  2016-12-10 01:12:29
+sector_detail :  unknown
+shihyo_pt :  30
+market_cap :  71313
+rironkabuka :  1034
+access_date_price :  2016-12-09 23:10:49
+stddev_volatility :  4.08
+sell_pressure_ratio_5 :  50
+sell_pressure_ratio_20 :  72
+score_gyoseki :  20
+----------
+----> 8524のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 8524のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>49,900</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:北洋銀行,時価総額:199131百万円
+最低購入代金:49900
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  8524 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:39:35
+shihyo_pt :  30
+stock_name :  北洋銀行
+code :  8524
+score_gyoseki :  33
+access_date_gyoseki :  2016-12-08 23:33:32
+access_date_price :  2016-12-08 23:33:08
+access_date_rironkabuka :  2016-12-08 23:34:10
+access_date :  2016-12-10 01:12:29
+sell_pressure_ratio_20 :  66
+lowest_purchase_money :  49900
+market_cap :  199131
+rironkabuka :  243
+stddev_volatility :  5.1
+sell_pressure_ratio_10 :  84
+sell_pressure_ratio_5 :  44
+price :  494
+sector_detail :  unknown
+----------
+----> 3445のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3445のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>411,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＲＳ　Ｔｅｃｈｎｏｌｏｇｉｅｓ,時価総額:22369百万円
+最低購入代金:411000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3445 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:34:44
+shihyo_pt :  20
+stock_name :  ＲＳ　Ｔｅｃｈｎｏｌｏｇｉｅｓ
+code :  3445
+score_gyoseki :  62
+access_date_gyoseki :  2016-12-08 23:33:26
+price :  4250
+access_date_rironkabuka :  2016-12-08 23:33:51
+sector_detail :  unknown
+lowest_purchase_money :  411000
+market_cap :  22369
+rironkabuka :  4039
+access_date_price :  2016-12-08 23:32:56
+stddev_volatility :  7.29
+sell_pressure_ratio_10 :  0
+access_date :  2016-12-10 01:12:29
+sell_pressure_ratio_5 :  55
+sell_pressure_ratio_20 :  53
+----------
+基本銘柄更新: 30日ぶり
+----> 9099のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9099のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>132,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:Ｃ＆Ｆロジホールディングス,時価総額:34040百万円
+最低購入代金:132500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  9099 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-09 23:17:59
+lowest_purchase_money :  132500
+stock_name :  Ｃ＆Ｆロジホールディングス
+code :  9099
+access_date_gyoseki :  2016-11-09 23:16:32
+price :  1260
+access_date_rironkabuka :  2016-11-09 23:16:55
+access_date :  2016-12-10 01:12:29
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  34040
+rironkabuka :  2391
+access_date_price :  2016-12-07 23:00:43
+stddev_volatility :  4.64
+sell_pressure_ratio_5 :  67
+sell_pressure_ratio_20 :  57
+score_gyoseki :  20
+----------
+----> 8600のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 8600のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>63,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:トモニホールディングス,時価総額:104459百万円
+最低購入代金:63800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  8600 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-11 23:03:18
+shihyo_pt :  40
+stock_name :  トモニホールディングス
+market_cap :  104459
+score_gyoseki :  45
+access_date_gyoseki :  2016-11-11 23:00:43
+access_date_price :  2016-11-11 23:00:29
+access_date_rironkabuka :  2016-11-11 23:01:08
+access_date :  2016-12-10 01:12:30
+sell_pressure_ratio_20 :  81
+lowest_purchase_money :  63800
+code :  8600
+rironkabuka :  1814
+stddev_volatility :  6.29
+sell_pressure_ratio_10 :  77
+sell_pressure_ratio_5 :  87
+price :  553
+sector_detail :  unknown
+----------
+----> 3154のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3154のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>162,300</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:メディアスホールディングス,時価総額:10524百万円
+最低購入代金:162300
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3154 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  メディアスホールディングス
+market_cap :  10524
+sector_detail :  unknown
+lowest_purchase_money :  162300
+code :  3154
+access_date :  2016-12-10 01:12:30
+----------
+----> 6172のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6172のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>361,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:メタップス,時価総額:46619百万円
+最低購入代金:361500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6172 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:18:12
+shihyo_pt :  20
+stock_name :  メタップス
+code :  6172
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-09 23:11:35
+price :  3615
+access_date_rironkabuka :  2016-12-09 23:12:05
+sector_detail :  unknown
+lowest_purchase_money :  361500
+market_cap :  46619
+rironkabuka :  -262
+stddev_volatility :  17.14
+access_date :  2016-12-10 01:12:30
+sell_pressure_ratio_5 :  55
+sell_pressure_ratio_20 :  63
+access_date_price :  2016-12-09 23:10:48
+----------
+基本銘柄更新: 38日ぶり
+----> 6186のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6186のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>137,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:一蔵,時価総額:7537百万円
+最低購入代金:137600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6186 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-02 00:12:49
+lowest_purchase_money :  137600
+stock_name :  一蔵
+code :  6186
+access_date_gyoseki :  2016-11-02 00:11:14
+price :  1355
+access_date_rironkabuka :  2016-11-02 00:11:35
+access_date :  2016-12-10 01:12:30
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  7537
+rironkabuka :  1904
+access_date_price :  2016-11-16 23:16:34
+stddev_volatility :  8.8
+sell_pressure_ratio_5 :  52
+sell_pressure_ratio_20 :  55
+score_gyoseki :  20
+----------
+----> 6167のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6167のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>68,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:冨士ダイス,時価総額:13760百万円
+最低購入代金:68800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6167 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-22 23:27:07
+lowest_purchase_money :  68800
+stock_name :  冨士ダイス
+code :  6167
+access_date_gyoseki :  2016-11-22 23:25:58
+price :  652
+access_date_rironkabuka :  2016-11-22 23:26:15
+access_date :  2016-12-10 01:12:31
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  13760
+rironkabuka :  511
+access_date_price :  2016-11-23 23:00:29
+stddev_volatility :  4.16
+sell_pressure_ratio_5 :  57
+sell_pressure_ratio_20 :  76
+score_gyoseki :  50
+----------
+----> 6464のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6464のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>178,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ツバキ・ナカシマ,時価総額:71313百万円
+最低購入代金:178600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6464 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:09:42
+lowest_purchase_money :  178600
+stock_name :  ツバキ・ナカシマ
+code :  6464
+access_date_gyoseki :  2016-12-09 23:11:36
+price :  1786
+access_date_rironkabuka :  2016-12-09 23:12:09
+access_date :  2016-12-10 01:12:31
+sector_detail :  unknown
+shihyo_pt :  30
+market_cap :  71313
+rironkabuka :  1034
+access_date_price :  2016-12-09 23:10:49
+stddev_volatility :  4.08
+sell_pressure_ratio_5 :  50
+sell_pressure_ratio_20 :  72
+score_gyoseki :  20
+----------
+----> 8524のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 8524のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>49,900</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:北洋銀行,時価総額:199131百万円
+最低購入代金:49900
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  8524 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:39:35
+shihyo_pt :  30
+stock_name :  北洋銀行
+code :  8524
+score_gyoseki :  33
+access_date_gyoseki :  2016-12-08 23:33:32
+access_date_price :  2016-12-08 23:33:08
+access_date_rironkabuka :  2016-12-08 23:34:10
+access_date :  2016-12-10 01:12:31
+sell_pressure_ratio_20 :  66
+lowest_purchase_money :  49900
+market_cap :  199131
+rironkabuka :  243
+stddev_volatility :  5.1
+sell_pressure_ratio_10 :  84
+sell_pressure_ratio_5 :  44
+price :  494
+sector_detail :  unknown
+----------
+----> 6537のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6537のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>482,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＷＡＳＨハウス,時価総額:15642百万円
+最低購入代金:482000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6537 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-22 23:27:39
+lowest_purchase_money :  482000
+stock_name :  ＷＡＳＨハウス
+code :  6537
+access_date_gyoseki :  2016-11-22 23:25:59
+price :  3940
+access_date_rironkabuka :  2016-11-22 23:26:19
+access_date :  2016-12-10 01:12:31
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  15642
+rironkabuka :  0
+access_date_price :  2016-11-23 23:00:30
+stddev_volatility :  0
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+score_gyoseki :  20
+----------
+----> 8600のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 8600のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>63,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:トモニホールディングス,時価総額:104459百万円
+最低購入代金:63800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  8600 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-11 23:03:18
+shihyo_pt :  40
+stock_name :  トモニホールディングス
+market_cap :  104459
+score_gyoseki :  45
+access_date_gyoseki :  2016-11-11 23:00:43
+access_date_price :  2016-11-11 23:00:29
+access_date_rironkabuka :  2016-11-11 23:01:08
+access_date :  2016-12-10 01:12:31
+sell_pressure_ratio_20 :  81
+lowest_purchase_money :  63800
+code :  8600
+rironkabuka :  1814
+stddev_volatility :  6.29
+sell_pressure_ratio_10 :  77
+sell_pressure_ratio_5 :  87
+price :  553
+sector_detail :  unknown
+----------
+----> 8630のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 8630のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>417,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＳＯＭＰＯホールディングス,時価総額:1734096百万円
+最低購入代金:417500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  8630 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:40:03
+lowest_purchase_money :  417500
+stock_name :  ＳＯＭＰＯホールディングス
+code :  8630
+score_gyoseki :  50
+access_date_gyoseki :  2016-12-08 23:33:33
+price :  4184
+access_date_rironkabuka :  2016-12-08 23:34:11
+access_date :  2016-12-10 01:12:32
+sector_detail :  unknown
+shihyo_pt :  65
+market_cap :  1734096
+rironkabuka :  3543
+access_date_price :  2016-12-08 23:33:08
+stddev_volatility :  4.8
+sell_pressure_ratio_10 :  81
+sell_pressure_ratio_5 :  44
+sell_pressure_ratio_20 :  56
+----------
+----> 6616のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6616のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>180,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:トレックス・セミコンダクター,時価総額:17122百万円
+最低購入代金:180400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6616 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-07 23:03:34
+shihyo_pt :  70
+stock_name :  トレックス・セミコンダクター
+market_cap :  17122
+access_date_gyoseki :  2016-12-07 23:01:00
+access_date_price :  2016-12-07 23:00:38
+access_date_rironkabuka :  2016-12-07 23:01:29
+sell_pressure_ratio_20 :  40
+lowest_purchase_money :  180400
+code :  6616
+rironkabuka :  8339
+stddev_volatility :  8.33
+sell_pressure_ratio_10 :  73
+access_date :  2016-12-10 01:12:32
+sell_pressure_ratio_5 :  25
+price :  1873
+score_gyoseki :  31
+sector_detail :  unknown
+----------
+----> 6630のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6630のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>421,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ヤーマン,時価総額:24565百万円
+最低購入代金:421000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6630 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-05 23:28:20
+shihyo_pt :  65
+stock_name :  ヤーマン
+code :  6630
+access_date_gyoseki :  2016-11-17 23:00:45
+price :  4235
+access_date_rironkabuka :  2016-11-17 23:01:10
+sector_detail :  unknown
+lowest_purchase_money :  421000
+market_cap :  24565
+rironkabuka :  3997
+access_date_price :  2016-12-05 23:26:40
+stddev_volatility :  12.31
+sell_pressure_ratio_10 :  44
+access_date :  2016-12-10 01:12:32
+sell_pressure_ratio_5 :  87
+sell_pressure_ratio_20 :  71
+score_gyoseki :  78
+----------
+----> 9099のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9099のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>132,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:Ｃ＆Ｆロジホールディングス,時価総額:34040百万円
+最低購入代金:132500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  9099 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-09 23:17:59
+lowest_purchase_money :  132500
+stock_name :  Ｃ＆Ｆロジホールディングス
+code :  9099
+access_date_gyoseki :  2016-11-09 23:16:32
+price :  1260
+access_date_rironkabuka :  2016-11-09 23:16:55
+access_date :  2016-12-10 01:12:32
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  34040
+rironkabuka :  2391
+access_date_price :  2016-12-07 23:00:43
+stddev_volatility :  4.64
+sell_pressure_ratio_5 :  67
+sell_pressure_ratio_20 :  57
+score_gyoseki :  20
+----------
+----> 4596のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 4596のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>89,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:窪田製薬ホールディングス,時価総額:33980百万円
+最低購入代金:89800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  4596 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-06 23:02:38
+lowest_purchase_money :  89800
+stock_name :  窪田製薬ホールディングス
+code :  4596
+access_date_gyoseki :  2016-12-06 23:00:53
+price :  1039
+access_date_rironkabuka :  2016-12-06 23:01:13
+access_date :  2016-12-10 01:12:32
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  33980
+rironkabuka :  0
+access_date_price :  2016-12-06 23:00:35
+stddev_volatility :  0
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+score_gyoseki :  20
+----------
+----> 7173のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7173のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>430,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:東京ＴＹフィナンシャルグループ,時価総額:131795百万円
+最低購入代金:430000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7173 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-06 23:04:18
+lowest_purchase_money :  430000
+stock_name :  東京ＴＹフィナンシャルグループ
+market_cap :  131795
+access_date_gyoseki :  2016-12-06 23:00:55
+price :  4150
+access_date_rironkabuka :  2016-12-06 23:01:22
+access_date :  2016-12-10 01:12:33
+sector_detail :  unknown
+shihyo_pt :  20
+code :  7173
+rironkabuka :  11520
+access_date_price :  2016-12-06 23:00:38
+stddev_volatility :  7.95
+sell_pressure_ratio_10 :  0
+sell_pressure_ratio_5 :  38
+sell_pressure_ratio_20 :  62
+score_gyoseki :  20
+----------
+----> 7186のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7186のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>59,990</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:コンコルディア・フィナンシャルグループ,時価総額:780240百万円
+最低購入代金:59990
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7186 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:37:47
+shihyo_pt :  20
+stock_name :  コンコルディア・フィナンシャルグループ
+code :  7186
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-08 23:33:31
+price :  577
+access_date_rironkabuka :  2016-12-08 23:34:06
+access_date :  2016-12-10 01:12:33
+sector_detail :  unknown
+lowest_purchase_money :  59990
+market_cap :  780240
+rironkabuka :  3191
+stddev_volatility :  7.17
+sell_pressure_ratio_5 :  39
+sell_pressure_ratio_20 :  64
+access_date_price :  2016-12-08 23:33:05
+----------
+----> 7189のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7189のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>116,200</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:西日本フィナンシャルホールディングス,時価総額:208692百万円
+最低購入代金:116200
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7189 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-04 02:20:24
+shihyo_pt :  20
+stock_name :  西日本フィナンシャルホールディングス
+code :  7189
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-24 23:10:53
+price :  1090
+access_date_rironkabuka :  2016-11-24 23:11:22
+access_date :  2016-12-10 01:12:33
+sector_detail :  unknown
+lowest_purchase_money :  116200
+market_cap :  208692
+rironkabuka :  0
+stddev_volatility :  7.2
+sell_pressure_ratio_5 :  106
+sell_pressure_ratio_20 :  98
+access_date_price :  2016-11-24 23:10:41
+----------
+----> 7191のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7191のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>70,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:イントラスト,時価総額:6879百万円
+最低購入代金:70600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7191 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-07 23:04:36
+shihyo_pt :  20
+stock_name :  イントラスト
+code :  7191
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-07 23:01:01
+price :  753
+access_date_rironkabuka :  2016-12-07 23:01:32
+sector_detail :  unknown
+lowest_purchase_money :  70600
+market_cap :  6879
+rironkabuka :  0
+stddev_volatility :  0
+access_date :  2016-12-10 01:12:33
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+access_date_price :  2016-12-07 23:00:40
+----------
+----> 9282のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9282のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>---</strong><span class="date yjSt">（---）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+!!! 最低購入代金が取得出来ないため（REIT?）0にします
+銘柄名:いちごグリーンインフラ投資法人,時価総額:4883百万円
+最低購入代金:0
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  9282 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-01 23:46:57
+lowest_purchase_money :  0
+stock_name :  いちごグリーンインフラ投資法人
+code :  9282
+access_date_gyoseki :  2016-12-01 23:41:41
+access_date_price :  2016-12-05 23:26:41
+access_date_rironkabuka :  2016-12-01 23:42:29
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  4883
+rironkabuka :  0
+stddev_volatility :  0
+price :  0
+access_date :  2016-12-10 01:12:33
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+score_gyoseki :  20
+----------
+----> 3150のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3150のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>130,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:グリムス,時価総額:5046百万円
+最低購入代金:130000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3150 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-25 23:01:42
+shihyo_pt :  100
+stock_name :  グリムス
+code :  3150
+score_gyoseki :  81
+access_date_gyoseki :  2016-11-25 23:00:40
+price :  1239
+access_date_rironkabuka :  2016-11-25 23:00:56
+sector_detail :  unknown
+lowest_purchase_money :  130000
+market_cap :  5046
+rironkabuka :  1240
+stddev_volatility :  10.79
+access_date :  2016-12-10 01:12:34
+sell_pressure_ratio_5 :  47
+sell_pressure_ratio_20 :  75
+access_date_price :  2016-11-25 23:00:26
+----------
+----> 3154のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3154のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>162,300</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:メディアスホールディングス,時価総額:10524百万円
+最低購入代金:162300
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3154 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  メディアスホールディングス
+market_cap :  10524
+sector_detail :  unknown
+lowest_purchase_money :  162300
+code :  3154
+access_date :  2016-12-10 01:12:34
+----------
+----> 7315のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7315のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>49,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＩＪＴテクノロジーホールディングス,時価総額:24331百万円
+最低購入代金:49500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7315 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-08 02:13:33
+shihyo_pt :  20
+stock_name :  ＩＪＴテクノロジーホールディングス
+code :  7315
+score_gyoseki :  54
+access_date_gyoseki :  2016-12-09 23:11:37
+price :  495
+access_date_rironkabuka :  2016-12-09 23:12:12
+sector_detail :  unknown
+lowest_purchase_money :  49500
+market_cap :  24331
+rironkabuka :  387
+stddev_volatility :  5.22
+access_date :  2016-12-10 01:12:34
+sell_pressure_ratio_5 :  39
+sell_pressure_ratio_20 :  61
+access_date_price :  2016-12-09 23:10:50
+----------
+----> 5289のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5289のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>32,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ゼニス羽田ホールディングス,時価総額:14825百万円
+最低購入代金:32100
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5289 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-05 23:28:06
+shihyo_pt :  100
+stock_name :  ゼニス羽田ホールディングス
+market_cap :  14825
+score_gyoseki :  18
+access_date_gyoseki :  2016-12-05 23:26:49
+access_date_price :  2016-12-05 23:26:39
+access_date_rironkabuka :  2016-12-05 23:27:20
+access_date :  2016-12-10 01:12:34
+sell_pressure_ratio_20 :  68
+lowest_purchase_money :  32100
+code :  5289
+rironkabuka :  316
+stddev_volatility :  10.49
+sell_pressure_ratio_10 :  76
+sell_pressure_ratio_5 :  64
+price :  324
+sector_detail :  unknown
+----------
+基本銘柄更新: 498日ぶり
+----> 3275のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3275のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>182,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ハウスコム,時価総額:7108百万円
+最低購入代金:182500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3275 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-07-30 22:29:24
+lowest_purchase_money :  182500
+stock_name :  ハウスコム
+code :  3275
+access_date_gyoseki :  2016-03-27 05:53:14
+price :  1490
+access_date_rironkabuka :  2016-03-27 11:46:09
+access_date :  2016-12-10 01:12:34
+sector_detail :  unknown
+shihyo_pt :  80
+market_cap :  7108
+rironkabuka :  2037
+access_date_price :  2016-03-27 15:40:51
+stddev_volatility :  6.06
+sell_pressure_ratio_5 :  107
+sell_pressure_ratio_20 :  82
+score_gyoseki :  54
+----------
+----> 5413のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5413のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>152,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:日新製鋼,時価総額:167622百万円
+最低購入代金:152600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5413 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:14:15
+lowest_purchase_money :  152600
+stock_name :  日新製鋼
+code :  5413
+score_gyoseki :  3
+access_date_gyoseki :  2016-12-09 23:11:33
+price :  1526
+access_date_rironkabuka :  2016-12-09 23:12:00
+access_date :  2016-12-10 01:12:35
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  167622
+rironkabuka :  388
+access_date_price :  2016-12-09 23:10:46
+stddev_volatility :  3.9
+sell_pressure_ratio_10 :  54
+sell_pressure_ratio_5 :  50
+sell_pressure_ratio_20 :  72
+----------
+----> 1324のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1324のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>12,300</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)ロシア株式指数上場投信,時価総額:0百万円
+最低購入代金:12300
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1324 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 23:17:38
+lowest_purchase_money :  12300
+stock_name :  (NEXT FUNDS)ロシア株式指数上場投信
+code :  1324
+access_date_gyoseki :  2016-11-16 23:16:47
+price :  123
+access_date_rironkabuka :  2016-11-16 23:17:02
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  0
+rironkabuka :  0
+access_date_price :  2016-12-09 23:10:39
+stddev_volatility :  3.57
+access_date :  2016-12-10 01:12:35
+sell_pressure_ratio_5 :  61
+sell_pressure_ratio_20 :  46
+score_gyoseki :  20
+----------
+基本銘柄更新: 39日ぶり
+----> 3443のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3443のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>713,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:川田テクノロジーズ,時価総額:41219百万円
+最低購入代金:713000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3443 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-31 23:06:26
+shihyo_pt :  50
+stock_name :  川田テクノロジーズ
+code :  3443
+score_gyoseki :  53
+access_date_gyoseki :  2016-10-31 23:04:55
+price :  4945
+access_date_rironkabuka :  2016-10-31 23:05:23
+sector_detail :  unknown
+lowest_purchase_money :  713000
+market_cap :  41219
+rironkabuka :  6980
+stddev_volatility :  4.15
+access_date :  2016-12-10 01:12:35
+sell_pressure_ratio_5 :  42
+sell_pressure_ratio_20 :  59
+access_date_price :  2016-10-31 23:04:30
+----------
+----> 3445のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3445のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>411,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＲＳ　Ｔｅｃｈｎｏｌｏｇｉｅｓ,時価総額:22369百万円
+最低購入代金:411000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3445 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:34:44
+shihyo_pt :  20
+stock_name :  ＲＳ　Ｔｅｃｈｎｏｌｏｇｉｅｓ
+code :  3445
+score_gyoseki :  62
+access_date_gyoseki :  2016-12-08 23:33:26
+price :  4250
+access_date_rironkabuka :  2016-12-08 23:33:51
+sector_detail :  unknown
+lowest_purchase_money :  411000
+market_cap :  22369
+rironkabuka :  4039
+access_date_price :  2016-12-08 23:32:56
+stddev_volatility :  7.29
+sell_pressure_ratio_10 :  0
+access_date :  2016-12-10 01:12:35
+sell_pressure_ratio_5 :  55
+sell_pressure_ratio_20 :  53
+----------
+----> 3465のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3465のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>328,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ケイアイスター不動産,時価総額:23377百万円
+最低購入代金:328500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3465 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-02 00:12:22
+lowest_purchase_money :  328500
+stock_name :  ケイアイスター不動産
+code :  3465
+access_date_gyoseki :  2016-12-05 23:26:48
+price :  3540
+access_date_rironkabuka :  2016-12-05 23:27:15
+access_date :  2016-12-10 01:12:36
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  23377
+rironkabuka :  6452
+access_date_price :  2016-12-05 23:26:37
+stddev_volatility :  9.75
+sell_pressure_ratio_5 :  35
+sell_pressure_ratio_20 :  71
+score_gyoseki :  20
+----------
+----> 3475のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3475のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>208,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:グッドコムアセット,時価総額:2973百万円
+最低購入代金:208600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3475 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:34:51
+lowest_purchase_money :  208600
+stock_name :  グッドコムアセット
+code :  3475
+access_date_gyoseki :  2016-12-08 23:33:26
+price :  2270
+access_date_rironkabuka :  2016-12-08 23:33:51
+access_date :  2016-12-10 01:12:36
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  2973
+rironkabuka :  0
+access_date_price :  2016-12-08 23:32:56
+stddev_volatility :  0
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+score_gyoseki :  20
+----------
+基本銘柄更新: 181日ぶり
+----> 1481のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1481のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>1,345</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:上場インデックスファンド日本経済貢献株,時価総額:0百万円
+最低購入代金:1345
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1481 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  上場インデックスファンド日本経済貢献株
+code :  1481
+sector_detail :  unknown
+lowest_purchase_money :  1345
+market_cap :  0
+access_date :  2016-12-10 01:12:36
+----------
+----> 1479のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1479のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>17,980</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信-MSCI日本株人材設備投資指数,時価総額:0百万円
+最低購入代金:17980
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1479 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-18 23:01:30
+lowest_purchase_money :  17980
+stock_name :  ダイワ 上場投信-MSCI日本株人材設備投資指数
+code :  1479
+access_date_gyoseki :  2016-11-18 23:00:42
+price :  17400
+access_date_rironkabuka :  2016-11-18 23:00:56
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  0
+rironkabuka :  0
+access_date_price :  2016-11-24 23:10:34
+stddev_volatility :  1.66
+access_date :  2016-12-10 01:12:36
+sell_pressure_ratio_5 :  31
+sell_pressure_ratio_20 :  30
+score_gyoseki :  20
+----------
+----> 1480のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1480のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>14,070</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)野村企業価値分配指数上場投信,時価総額:0百万円
+最低購入代金:14070
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1480 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 23:17:43
+lowest_purchase_money :  14070
+stock_name :  (NEXT FUNDS)野村企業価値分配指数上場投信
+code :  1480
+access_date_gyoseki :  2016-11-16 23:16:47
+price :  13510
+access_date_rironkabuka :  2016-11-16 23:17:02
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  0
+rironkabuka :  0
+access_date_price :  2016-11-21 23:20:43
+stddev_volatility :  1.86
+access_date :  2016-12-10 01:12:37
+sell_pressure_ratio_5 :  24
+sell_pressure_ratio_20 :  37
+score_gyoseki :  20
+----------
+----> 1546のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1546のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>22,050</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)ダウ･ジョーンズ工業株30種,時価総額:0百万円
+最低購入代金:22050
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1546 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-01 23:42:46
+shihyo_pt :  20
+stock_name :  (NEXT FUNDS)ダウ･ジョーンズ工業株30種
+market_cap :  0
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-01 23:41:33
+price :  22050
+access_date_rironkabuka :  2016-12-01 23:41:55
+sector_detail :  unknown
+lowest_purchase_money :  22050
+code :  1546
+rironkabuka :  0
+stddev_volatility :  2.12
+sell_pressure_ratio_10 :  71
+access_date :  2016-12-10 01:12:37
+sell_pressure_ratio_5 :  33
+sell_pressure_ratio_20 :  43
+access_date_price :  2016-12-09 23:10:40
+----------
+----> 1547のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1547のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>28,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:上場インデックスファンド米国株式(S&P500),時価総額:0百万円
+最低購入代金:28000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1547 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-04 23:33:26
+lowest_purchase_money :  28000
+stock_name :  上場インデックスファンド米国株式(S&P500)
+market_cap :  0
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 04:53:04
+price :  2840
+access_date_rironkabuka :  2015-06-04 23:32:45
+sector_detail :  unknown
+shihyo_pt :  20
+code :  1547
+rironkabuka :  0
+stddev_volatility :  1.04
+sell_pressure_ratio_10 :  65
+access_date :  2016-12-10 01:12:37
+sell_pressure_ratio_5 :  60
+sell_pressure_ratio_20 :  39
+access_date_price :  2015-06-04 23:32:12
+----------
+----> 3634のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3634のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>107,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ソケッツ,時価総額:2633百万円
+最低購入代金:107100
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3634 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-28 23:01:37
+lowest_purchase_money :  107100
+stock_name :  ソケッツ
+code :  3634
+access_date_gyoseki :  2016-11-28 23:00:36
+price :  920
+access_date_rironkabuka :  2016-11-28 23:00:51
+access_date :  2016-12-10 01:12:37
+sector_detail :  unknown
+shihyo_pt :  50
+market_cap :  2633
+rironkabuka :  -8
+access_date_price :  2016-11-28 23:00:25
+stddev_volatility :  10.4
+sell_pressure_ratio_5 :  6
+sell_pressure_ratio_20 :  33
+score_gyoseki :  60
+----------
+----> 5703のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5703のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>26,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:日本軽金属ホールディングス,時価総額:143913百万円
+最低購入代金:26400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5703 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-29 00:24:48
+lowest_purchase_money :  26400
+stock_name :  日本軽金属ホールディングス
+code :  5703
+score_gyoseki :  47
+access_date_gyoseki :  2016-10-29 00:23:04
+access_date_price :  2016-10-29 00:22:50
+access_date_rironkabuka :  2016-10-29 00:23:32
+access_date :  2016-12-10 01:12:37
+sell_pressure_ratio_20 :  73
+shihyo_pt :  20
+market_cap :  143913
+rironkabuka :  0
+stddev_volatility :  3.86
+sell_pressure_ratio_10 :  62
+sell_pressure_ratio_5 :  69
+price :  238
+sector_detail :  unknown
+----------
+----> 1618のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1618のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>11,950</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)エネルギー資源上場投信,時価総額:0百万円
+最低購入代金:11950
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1618 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  (NEXT FUNDS)エネルギー資源上場投信
+market_cap :  0
+sector_detail :  unknown
+lowest_purchase_money :  11950
+code :  1618
+access_date :  2016-12-10 01:12:38
+----------
+----> 1623のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1623のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>21,700</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)鉄鋼･非鉄上場投信,時価総額:0百万円
+最低購入代金:21700
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1623 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  (NEXT FUNDS)鉄鋼･非鉄上場投信
+code :  1623
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:28
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:12
+sector_detail :  unknown
+lowest_purchase_money :  21700
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  4.38
+access_date :  2016-12-10 01:12:38
+sell_pressure_ratio_5 :  105
+sell_pressure_ratio_20 :  46
+access_date_price :  2016-03-27 15:38:15
+----------
+----> 3673のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3673のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>144,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ブロードリーフ,時価総額:35390百万円
+最低購入代金:144600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3673 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-07 23:02:17
+shihyo_pt :  60
+stock_name :  ブロードリーフ
+code :  3673
+access_date_gyoseki :  2016-12-07 23:00:58
+price :  1460
+access_date_rironkabuka :  2016-12-07 23:01:17
+sector_detail :  unknown
+lowest_purchase_money :  144600
+market_cap :  35390
+rironkabuka :  800
+access_date_price :  2016-12-07 23:00:34
+stddev_volatility :  6.53
+sell_pressure_ratio_10 :  52
+access_date :  2016-12-10 01:12:38
+sell_pressure_ratio_5 :  49
+sell_pressure_ratio_20 :  41
+score_gyoseki :  15
+----------
+----> 1629のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1629のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>27,690</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)商社･卸売上場投信,時価総額:0百万円
+最低購入代金:27690
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1629 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  (NEXT FUNDS)商社･卸売上場投信
+code :  1629
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:32
+price :  24290
+access_date_rironkabuka :  2016-03-27 11:24:13
+sector_detail :  unknown
+lowest_purchase_money :  27690
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  2.42
+access_date :  2016-12-10 01:12:38
+sell_pressure_ratio_5 :  400
+sell_pressure_ratio_20 :  85
+access_date_price :  2016-03-27 15:38:16
+----------
+----> 1635のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1635のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>12,930</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信･TOPIX-17エネルギー資源,時価総額:0百万円
+最低購入代金:12930
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1635 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ダイワ 上場投信･TOPIX-17エネルギー資源
+code :  1635
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:32
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:14
+sector_detail :  unknown
+lowest_purchase_money :  12930
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  3.46
+access_date :  2016-12-10 01:12:38
+sell_pressure_ratio_5 :  53
+sell_pressure_ratio_20 :  110
+access_date_price :  2016-03-27 15:38:17
+----------
+----> 1640のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1640のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>22,490</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信･TOPIX-17鉄鋼･非鉄,時価総額:0百万円
+最低購入代金:22490
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1640 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ダイワ 上場投信･TOPIX-17鉄鋼･非鉄
+code :  1640
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:33
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:14
+sector_detail :  unknown
+lowest_purchase_money :  22490
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  4.86
+access_date :  2016-12-10 01:12:39
+sell_pressure_ratio_5 :  39
+sell_pressure_ratio_20 :  40
+access_date_price :  2016-03-27 15:38:18
+----------
+基本銘柄更新: 544日ぶり
+----> 1641のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1641のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>32,750</strong><span class="date yjSt">（12/08）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信･TOPIX-17機械,時価総額:0百万円
+最低購入代金:32750
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1641 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ダイワ 上場投信･TOPIX-17機械
+code :  1641
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:33
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:14
+sector_detail :  unknown
+lowest_purchase_money :  32750
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  3.63
+access_date :  2016-12-10 01:12:39
+sell_pressure_ratio_5 :  26
+sell_pressure_ratio_20 :  80
+access_date_price :  2016-03-27 15:38:18
+----------
+----> 3687のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3687のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>346,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:フィックスターズ,時価総額:23257百万円
+最低購入代金:346500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3687 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-21 23:04:02
+lowest_purchase_money :  346500
+stock_name :  フィックスターズ
+market_cap :  23257
+access_date_gyoseki :  2016-11-24 23:10:50
+access_date_price :  2016-11-24 23:10:35
+access_date_rironkabuka :  2016-11-24 23:11:09
+sell_pressure_ratio_20 :  97
+shihyo_pt :  70
+code :  3687
+rironkabuka :  1514
+stddev_volatility :  13.71
+sell_pressure_ratio_10 :  84
+access_date :  2016-12-10 01:12:39
+sell_pressure_ratio_5 :  60
+price :  3410
+score_gyoseki :  79
+sector_detail :  unknown
+----------
+----> 1663のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1663のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>181,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:Ｋ＆Ｏエナジーグループ,時価総額:55060百万円
+最低購入代金:181500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1663 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:11:27
+shihyo_pt :  20
+stock_name :  Ｋ＆Ｏエナジーグループ
+code :  1663
+score_gyoseki :  12
+access_date_gyoseki :  2016-12-09 23:11:10
+price :  1815
+access_date_rironkabuka :  2016-12-09 23:11:50
+sector_detail :  unknown
+lowest_purchase_money :  181500
+market_cap :  55060
+rironkabuka :  126
+stddev_volatility :  4.15
+access_date :  2016-12-10 01:12:39
+sell_pressure_ratio_5 :  52
+sell_pressure_ratio_20 :  59
+access_date_price :  2016-12-09 23:10:40
+----------
+----> 7811のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7811のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>288,700</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:中本パックス,時価総額:11798百万円
+最低購入代金:288700
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7811 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-21 23:04:44
+shihyo_pt :  20
+stock_name :  中本パックス
+code :  7811
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-21 23:21:04
+price :  2787
+access_date_rironkabuka :  2016-11-22 00:14:56
+sector_detail :  unknown
+lowest_purchase_money :  288700
+market_cap :  11798
+rironkabuka :  2293
+stddev_volatility :  6.05
+access_date :  2016-12-10 01:12:40
+sell_pressure_ratio_5 :  17
+sell_pressure_ratio_20 :  57
+access_date_price :  2016-11-21 23:20:50
+----------
+----> 5857のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5857のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>209,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アサヒホールディングス,時価総額:75917百万円
+最低購入代金:209400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5857 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 00:40:02
+lowest_purchase_money :  209400
+stock_name :  アサヒホールディングス
+code :  5857
+score_gyoseki :  4
+access_date_gyoseki :  2016-11-16 00:38:41
+price :  1970
+access_date_rironkabuka :  2016-11-16 00:39:01
+access_date :  2016-12-10 01:12:40
+sector_detail :  unknown
+shihyo_pt :  55
+market_cap :  75917
+rironkabuka :  1847
+access_date_price :  2016-11-16 00:38:28
+stddev_volatility :  4.15
+sell_pressure_ratio_10 :  63
+sell_pressure_ratio_5 :  85
+sell_pressure_ratio_20 :  77
+----------
+----> 6078のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6078のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>258,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:バリューＨＲ,時価総額:7258百万円
+最低購入代金:258800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6078 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-06 23:03:22
+shihyo_pt :  70
+stock_name :  バリューＨＲ
+market_cap :  7258
+access_date_gyoseki :  2016-12-06 23:00:54
+access_date_price :  2016-12-06 23:00:36
+access_date_rironkabuka :  2016-12-06 23:01:18
+sell_pressure_ratio_20 :  52
+lowest_purchase_money :  258800
+code :  6078
+rironkabuka :  1340
+stddev_volatility :  5.09
+sell_pressure_ratio_10 :  55
+access_date :  2016-12-10 01:12:40
+sell_pressure_ratio_5 :  45
+price :  2618
+score_gyoseki :  37
+sector_detail :  unknown
+----------
+----> 6134のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6134のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>137,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:富士機械製造,時価総額:134116百万円
+最低購入代金:137100
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6134 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-21 23:04:15
+lowest_purchase_money :  137100
+stock_name :  富士機械製造
+market_cap :  134116
+score_gyoseki :  9
+access_date_gyoseki :  2016-12-05 23:26:50
+access_date_price :  2016-12-05 23:26:39
+access_date_rironkabuka :  2016-12-05 23:27:23
+access_date :  2016-12-10 01:12:40
+sell_pressure_ratio_20 :  89
+shihyo_pt :  45
+code :  6134
+rironkabuka :  667
+stddev_volatility :  4.72
+sell_pressure_ratio_10 :  100
+sell_pressure_ratio_5 :  52
+price :  1344
+sector_detail :  unknown
+----------
+----> 6172のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6172のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>361,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:メタップス,時価総額:46619百万円
+最低購入代金:361500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6172 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:18:12
+shihyo_pt :  20
+stock_name :  メタップス
+code :  6172
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-09 23:11:35
+price :  3615
+access_date_rironkabuka :  2016-12-09 23:12:05
+sector_detail :  unknown
+lowest_purchase_money :  361500
+market_cap :  46619
+rironkabuka :  -262
+stddev_volatility :  17.14
+access_date :  2016-12-10 01:12:40
+sell_pressure_ratio_5 :  55
+sell_pressure_ratio_20 :  63
+access_date_price :  2016-12-09 23:10:48
+----------
+----> 6186のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6186のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>137,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:一蔵,時価総額:7537百万円
+最低購入代金:137600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6186 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-02 00:12:49
+lowest_purchase_money :  137600
+stock_name :  一蔵
+code :  6186
+access_date_gyoseki :  2016-11-02 00:11:14
+price :  1355
+access_date_rironkabuka :  2016-11-02 00:11:35
+access_date :  2016-12-10 01:12:41
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  7537
+rironkabuka :  1904
+access_date_price :  2016-11-16 23:16:34
+stddev_volatility :  8.8
+sell_pressure_ratio_5 :  52
+sell_pressure_ratio_20 :  55
+score_gyoseki :  20
+----------
+基本銘柄更新: 53日ぶり
+----> 6196のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6196のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>617,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ストライク,時価総額:55106百万円
+最低購入代金:617000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6196 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-17 23:03:04
+lowest_purchase_money :  617000
+stock_name :  ストライク
+code :  6196
+access_date_gyoseki :  2016-10-17 23:00:51
+price :  18000
+access_date_rironkabuka :  2016-10-17 23:01:15
+access_date :  2016-12-10 01:12:41
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  55106
+rironkabuka :  4622
+access_date_price :  2016-11-11 23:00:27
+stddev_volatility :  19.24
+sell_pressure_ratio_5 :  53
+sell_pressure_ratio_20 :  62
+score_gyoseki :  20
+----------
+----> 6200のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6200のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>116,700</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:インソース,時価総額:9591百万円
+最低購入代金:116700
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6200 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-22 23:27:12
+shihyo_pt :  20
+stock_name :  インソース
+code :  6200
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-22 23:25:58
+price :  1160
+access_date_rironkabuka :  2016-11-22 23:26:17
+sector_detail :  unknown
+lowest_purchase_money :  116700
+market_cap :  9591
+rironkabuka :  752
+stddev_volatility :  10.53
+access_date :  2016-12-10 01:12:41
+sell_pressure_ratio_5 :  47
+sell_pressure_ratio_20 :  56
+access_date_price :  2016-11-23 23:00:29
+----------
+基本銘柄更新: 50日ぶり
+----> 2130のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 2130のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>96,900</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:メンバーズ,時価総額:5987百万円
+最低購入代金:96900
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  2130 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-20 23:01:16
+shihyo_pt :  90
+stock_name :  メンバーズ
+code :  2130
+score_gyoseki :  56
+access_date_gyoseki :  2016-10-20 23:00:37
+price :  784
+access_date_rironkabuka :  2016-10-20 23:00:51
+sector_detail :  unknown
+lowest_purchase_money :  96900
+market_cap :  5987
+rironkabuka :  0
+stddev_volatility :  8.59
+access_date :  2016-12-10 01:12:41
+sell_pressure_ratio_5 :  79
+sell_pressure_ratio_20 :  76
+access_date_price :  2016-11-04 23:46:30
+----------
+基本銘柄更新: 42日ぶり
+----> 6238のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6238のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>330,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:フリュー,時価総額:31173百万円
+最低購入代金:330500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6238 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-29 00:25:06
+shihyo_pt :  20
+stock_name :  フリュー
+code :  6238
+score_gyoseki :  20
+access_date_gyoseki :  2016-10-29 00:23:05
+price :  3335
+access_date_rironkabuka :  2016-10-29 00:23:32
+sector_detail :  unknown
+lowest_purchase_money :  330500
+market_cap :  31173
+rironkabuka :  0
+stddev_volatility :  3.89
+access_date :  2016-12-10 01:12:41
+sell_pressure_ratio_5 :  66
+sell_pressure_ratio_20 :  67
+access_date_price :  2016-10-29 00:22:51
+----------
+----> 6240のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6240のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>100,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ヤマシンフィルタ,時価総額:12538百万円
+最低購入代金:100800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6240 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-13 23:01:37
+lowest_purchase_money :  100800
+stock_name :  ヤマシンフィルタ
+market_cap :  12538
+access_date_gyoseki :  2016-11-30 23:00:55
+access_date_price :  2016-11-30 23:00:35
+access_date_rironkabuka :  2016-11-30 23:01:18
+sell_pressure_ratio_20 :  57
+shihyo_pt :  20
+code :  6240
+rironkabuka :  405
+stddev_volatility :  14.73
+sell_pressure_ratio_10 :  0
+access_date :  2016-12-10 01:12:42
+sell_pressure_ratio_5 :  35
+price :  1000
+score_gyoseki :  53
+sector_detail :  unknown
+----------
+基本銘柄更新: 512日ぶり
+----> 6073のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6073のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>165,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アサンテ,時価総額:20463百万円
+最低購入代金:165800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6073 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-07-16 01:40:22
+shihyo_pt :  70
+stock_name :  アサンテ
+market_cap :  20463
+access_date_gyoseki :  2016-03-27 06:02:38
+access_date_price :  2016-03-27 15:44:17
+access_date_rironkabuka :  2016-03-27 14:48:53
+sell_pressure_ratio_20 :  99
+lowest_purchase_money :  165800
+code :  6073
+rironkabuka :  2185
+stddev_volatility :  3.41
+sell_pressure_ratio_10 :  69
+access_date :  2016-12-10 01:12:42
+sell_pressure_ratio_5 :  47
+price :  1634
+score_gyoseki :  37
+sector_detail :  unknown
+----------
+----> 6167のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6167のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>68,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:冨士ダイス,時価総額:13760百万円
+最低購入代金:68800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6167 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-22 23:27:07
+lowest_purchase_money :  68800
+stock_name :  冨士ダイス
+code :  6167
+access_date_gyoseki :  2016-11-22 23:25:58
+price :  652
+access_date_rironkabuka :  2016-11-22 23:26:15
+access_date :  2016-12-10 01:12:42
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  13760
+rironkabuka :  511
+access_date_price :  2016-11-23 23:00:29
+stddev_volatility :  4.16
+sell_pressure_ratio_5 :  57
+sell_pressure_ratio_20 :  76
+score_gyoseki :  50
+----------
+基本銘柄更新: 704日ぶり
+----> 4245のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 4245のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>114,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイキアクシス,時価総額:7123百万円
+最低購入代金:114800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  4245 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ダイキアクシス
+market_cap :  7123
+access_date_gyoseki :  2016-03-27 06:00:33
+access_date_price :  2016-03-27 15:42:20
+access_date_rironkabuka :  2016-03-27 12:25:15
+sell_pressure_ratio_20 :  75
+lowest_purchase_money :  114800
+code :  4245
+rironkabuka :  1459
+stddev_volatility :  4.01
+sell_pressure_ratio_10 :  57
+access_date :  2016-12-10 01:12:42
+sell_pressure_ratio_5 :  99
+price :  892
+score_gyoseki :  46
+sector_detail :  unknown
+----------
+----> 4275のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 4275のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>55,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:カーリットホールディングス,時価総額:13228百万円
+最低購入代金:55000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  4275 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-03 00:24:33
+lowest_purchase_money :  55000
+stock_name :  カーリットホールディングス
+code :  4275
+access_date_gyoseki :  2016-12-03 00:23:25
+price :  535
+access_date_rironkabuka :  2016-12-03 00:23:44
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  13228
+rironkabuka :  433
+access_date_price :  2016-12-03 00:23:07
+stddev_volatility :  4.35
+access_date :  2016-12-10 01:12:43
+sell_pressure_ratio_5 :  97
+sell_pressure_ratio_20 :  101
+score_gyoseki :  10
+----------
+----> 6464のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6464のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>178,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ツバキ・ナカシマ,時価総額:71313百万円
+最低購入代金:178600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6464 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:09:42
+lowest_purchase_money :  178600
+stock_name :  ツバキ・ナカシマ
+code :  6464
+access_date_gyoseki :  2016-12-09 23:11:36
+price :  1786
+access_date_rironkabuka :  2016-12-09 23:12:09
+access_date :  2016-12-10 01:12:43
+sector_detail :  unknown
+shihyo_pt :  30
+market_cap :  71313
+rironkabuka :  1034
+access_date_price :  2016-12-09 23:10:49
+stddev_volatility :  4.08
+sell_pressure_ratio_5 :  50
+sell_pressure_ratio_20 :  72
+score_gyoseki :  20
+----------
+----> 8524のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 8524のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>49,900</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:北洋銀行,時価総額:199131百万円
+最低購入代金:49900
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  8524 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:39:35
+shihyo_pt :  30
+stock_name :  北洋銀行
+code :  8524
+score_gyoseki :  33
+access_date_gyoseki :  2016-12-08 23:33:32
+access_date_price :  2016-12-08 23:33:08
+access_date_rironkabuka :  2016-12-08 23:34:10
+access_date :  2016-12-10 01:12:43
+sell_pressure_ratio_20 :  66
+lowest_purchase_money :  49900
+market_cap :  199131
+rironkabuka :  243
+stddev_volatility :  5.1
+sell_pressure_ratio_10 :  84
+sell_pressure_ratio_5 :  44
+price :  494
+sector_detail :  unknown
+----------
+----> 6534のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6534のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>89,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:Ｄ．Ａ．コンソーシアムホールディングス,時価総額:64047百万円
+最低購入代金:89600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6534 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-04 02:20:21
+shihyo_pt :  20
+stock_name :  Ｄ．Ａ．コンソーシアムホールディングス
+code :  6534
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-10 21:58:04
+price :  790
+access_date_rironkabuka :  2016-11-10 21:58:22
+sector_detail :  unknown
+lowest_purchase_money :  89600
+market_cap :  64047
+rironkabuka :  0
+stddev_volatility :  7.25
+access_date :  2016-12-10 01:12:43
+sell_pressure_ratio_5 :  53
+sell_pressure_ratio_20 :  68
+access_date_price :  2016-11-10 21:57:39
+----------
+----> 6537のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6537のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>482,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＷＡＳＨハウス,時価総額:15642百万円
+最低購入代金:482000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6537 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-22 23:27:39
+lowest_purchase_money :  482000
+stock_name :  ＷＡＳＨハウス
+code :  6537
+access_date_gyoseki :  2016-11-22 23:25:59
+price :  3940
+access_date_rironkabuka :  2016-11-22 23:26:19
+access_date :  2016-12-10 01:12:43
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  15642
+rironkabuka :  0
+access_date_price :  2016-11-23 23:00:30
+stddev_volatility :  0
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+score_gyoseki :  20
+----------
+----> 8596のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 8596のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>63,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:九州リースサービス,時価総額:16350百万円
+最低購入代金:63000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  8596 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  九州リースサービス
+market_cap :  16350
+sector_detail :  unknown
+lowest_purchase_money :  63000
+code :  8596
+access_date :  2016-12-10 01:12:44
+----------
+----> 8600のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 8600のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>63,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:トモニホールディングス,時価総額:104459百万円
+最低購入代金:63800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  8600 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-11 23:03:18
+shihyo_pt :  40
+stock_name :  トモニホールディングス
+market_cap :  104459
+score_gyoseki :  45
+access_date_gyoseki :  2016-11-11 23:00:43
+access_date_price :  2016-11-11 23:00:29
+access_date_rironkabuka :  2016-11-11 23:01:08
+access_date :  2016-12-10 01:12:44
+sell_pressure_ratio_20 :  81
+lowest_purchase_money :  63800
+code :  8600
+rironkabuka :  1814
+stddev_volatility :  6.29
+sell_pressure_ratio_10 :  77
+sell_pressure_ratio_5 :  87
+price :  553
+sector_detail :  unknown
+----------
+----> 8630のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 8630のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>417,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＳＯＭＰＯホールディングス,時価総額:1734096百万円
+最低購入代金:417500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  8630 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:40:03
+lowest_purchase_money :  417500
+stock_name :  ＳＯＭＰＯホールディングス
+code :  8630
+score_gyoseki :  50
+access_date_gyoseki :  2016-12-08 23:33:33
+price :  4184
+access_date_rironkabuka :  2016-12-08 23:34:11
+access_date :  2016-12-10 01:12:44
+sector_detail :  unknown
+shihyo_pt :  65
+market_cap :  1734096
+rironkabuka :  3543
+access_date_price :  2016-12-08 23:33:08
+stddev_volatility :  4.8
+sell_pressure_ratio_10 :  81
+sell_pressure_ratio_5 :  44
+sell_pressure_ratio_20 :  56
+----------
+----> 6615のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6615のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>278,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ユー・エム・シー・エレクトロニクス,時価総額:23280百万円
+最低購入代金:278600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6615 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 00:40:22
+shihyo_pt :  20
+stock_name :  ユー・エム・シー・エレクトロニクス
+code :  6615
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-16 00:38:42
+price :  2723
+access_date_rironkabuka :  2016-11-16 00:39:05
+sector_detail :  unknown
+lowest_purchase_money :  278600
+market_cap :  23280
+rironkabuka :  3527
+stddev_volatility :  4.8
+access_date :  2016-12-10 01:12:44
+sell_pressure_ratio_5 :  30
+sell_pressure_ratio_20 :  40
+access_date_price :  2016-11-16 00:38:30
+----------
+----> 6616のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6616のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>180,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:トレックス・セミコンダクター,時価総額:17122百万円
+最低購入代金:180400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6616 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-07 23:03:34
+shihyo_pt :  70
+stock_name :  トレックス・セミコンダクター
+market_cap :  17122
+access_date_gyoseki :  2016-12-07 23:01:00
+access_date_price :  2016-12-07 23:00:38
+access_date_rironkabuka :  2016-12-07 23:01:29
+sell_pressure_ratio_20 :  40
+lowest_purchase_money :  180400
+code :  6616
+rironkabuka :  8339
+stddev_volatility :  8.33
+sell_pressure_ratio_10 :  73
+access_date :  2016-12-10 01:12:45
+sell_pressure_ratio_5 :  25
+price :  1873
+score_gyoseki :  31
+sector_detail :  unknown
+----------
+----> 6630のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6630のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>421,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ヤーマン,時価総額:24565百万円
+最低購入代金:421000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6630 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-05 23:28:20
+shihyo_pt :  65
+stock_name :  ヤーマン
+code :  6630
+access_date_gyoseki :  2016-11-17 23:00:45
+price :  4235
+access_date_rironkabuka :  2016-11-17 23:01:10
+sector_detail :  unknown
+lowest_purchase_money :  421000
+market_cap :  24565
+rironkabuka :  3997
+access_date_price :  2016-12-05 23:26:40
+stddev_volatility :  12.31
+sell_pressure_ratio_10 :  44
+access_date :  2016-12-10 01:12:45
+sell_pressure_ratio_5 :  87
+sell_pressure_ratio_20 :  71
+score_gyoseki :  78
+----------
+基本銘柄更新: 39日ぶり
+----> 8283のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 8283のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>246,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＰＡＬＴＡＣ,時価総額:156342百万円
+最低購入代金:246000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  8283 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-31 23:09:33
+shihyo_pt :  45
+stock_name :  ＰＡＬＴＡＣ
+code :  8283
+access_date_gyoseki :  2016-10-31 23:04:59
+price :  2578
+access_date_rironkabuka :  2016-10-31 23:05:42
+sector_detail :  unknown
+lowest_purchase_money :  246000
+market_cap :  156342
+rironkabuka :  2861
+access_date_price :  2016-10-31 23:04:39
+stddev_volatility :  3.73
+sell_pressure_ratio_10 :  78
+access_date :  2016-12-10 01:12:45
+sell_pressure_ratio_5 :  38
+sell_pressure_ratio_20 :  72
+score_gyoseki :  82
+----------
+基本銘柄更新: 30日ぶり
+----> 7183のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7183のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>68,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:あんしん保証,時価総額:12096百万円
+最低購入代金:68100
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7183 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-09-29 23:39:51
+shihyo_pt :  20
+stock_name :  あんしん保証
+code :  7183
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-09 23:16:32
+price :  2622
+access_date_rironkabuka :  2016-11-09 23:16:53
+sector_detail :  unknown
+lowest_purchase_money :  68100
+market_cap :  12096
+rironkabuka :  1330
+stddev_volatility :  12.41
+access_date :  2016-12-10 01:12:45
+sell_pressure_ratio_5 :  50
+sell_pressure_ratio_20 :  72
+access_date_price :  2016-11-09 23:16:18
+----------
+基本銘柄更新: 53日ぶり
+----> 7190のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7190のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>295,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:マーキュリアインベストメント,時価総額:13506百万円
+最低購入代金:295400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7190 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-17 23:03:06
+lowest_purchase_money :  295400
+stock_name :  マーキュリアインベストメント
+code :  7190
+access_date_gyoseki :  2016-10-17 23:00:51
+price :  1395
+access_date_rironkabuka :  2016-10-17 23:01:15
+access_date :  2016-12-10 01:12:46
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  13506
+rironkabuka :  0
+access_date_price :  2016-10-17 23:00:38
+stddev_volatility :  0
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+score_gyoseki :  20
+----------
+基本銘柄更新: 38日ぶり
+----> 3167のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3167のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>75,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＴＯＫＡＩホールディングス,時価総額:105598百万円
+最低購入代金:75600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3167 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-02 00:12:12
+shihyo_pt :  30
+stock_name :  ＴＯＫＡＩホールディングス
+market_cap :  105598
+score_gyoseki :  50
+access_date_gyoseki :  2016-11-02 00:11:12
+access_date_price :  2016-11-02 00:10:57
+access_date_rironkabuka :  2016-11-02 00:11:29
+access_date :  2016-12-10 01:12:46
+sell_pressure_ratio_20 :  70
+lowest_purchase_money :  75600
+code :  3167
+rironkabuka :  669
+stddev_volatility :  2.58
+sell_pressure_ratio_10 :  70
+sell_pressure_ratio_5 :  59
+price :  709
+sector_detail :  unknown
+----------
+----> 9099のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9099のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>132,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:Ｃ＆Ｆロジホールディングス,時価総額:34040百万円
+最低購入代金:132500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  9099 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-09 23:17:59
+lowest_purchase_money :  132500
+stock_name :  Ｃ＆Ｆロジホールディングス
+code :  9099
+access_date_gyoseki :  2016-11-09 23:16:32
+price :  1260
+access_date_rironkabuka :  2016-11-09 23:16:55
+access_date :  2016-12-10 01:12:46
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  34040
+rironkabuka :  2391
+access_date_price :  2016-12-07 23:00:43
+stddev_volatility :  4.64
+sell_pressure_ratio_5 :  67
+sell_pressure_ratio_20 :  57
+score_gyoseki :  20
+----------
+----> 4596のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 4596のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>89,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:窪田製薬ホールディングス,時価総額:33980百万円
+最低購入代金:89800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  4596 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-06 23:02:38
+lowest_purchase_money :  89800
+stock_name :  窪田製薬ホールディングス
+code :  4596
+access_date_gyoseki :  2016-12-06 23:00:53
+price :  1039
+access_date_rironkabuka :  2016-12-06 23:01:13
+access_date :  2016-12-10 01:12:46
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  33980
+rironkabuka :  0
+access_date_price :  2016-12-06 23:00:35
+stddev_volatility :  0
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+score_gyoseki :  20
+----------
+----> 7162のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7162のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>53,300</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アストマックス,時価総額:7014百万円
+最低購入代金:53300
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7162 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-29 23:02:47
+shihyo_pt :  20
+stock_name :  アストマックス
+code :  7162
+access_date_gyoseki :  2016-11-29 23:00:39
+access_date_price :  2016-11-29 23:00:27
+access_date_rironkabuka :  2016-11-29 23:01:00
+sell_pressure_ratio_20 :  52
+lowest_purchase_money :  53300
+market_cap :  7014
+rironkabuka :  164
+stddev_volatility :  18.95
+sell_pressure_ratio_10 :  36
+access_date :  2016-12-10 01:12:46
+sell_pressure_ratio_5 :  64
+price :  640
+score_gyoseki :  44
+sector_detail :  unknown
+----------
+----> 7173のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7173のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>430,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:東京ＴＹフィナンシャルグループ,時価総額:131795百万円
+最低購入代金:430000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7173 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-06 23:04:18
+lowest_purchase_money :  430000
+stock_name :  東京ＴＹフィナンシャルグループ
+market_cap :  131795
+access_date_gyoseki :  2016-12-06 23:00:55
+price :  4150
+access_date_rironkabuka :  2016-12-06 23:01:22
+access_date :  2016-12-10 01:12:47
+sector_detail :  unknown
+shihyo_pt :  20
+code :  7173
+rironkabuka :  11520
+access_date_price :  2016-12-06 23:00:38
+stddev_volatility :  7.95
+sell_pressure_ratio_10 :  0
+sell_pressure_ratio_5 :  38
+sell_pressure_ratio_20 :  62
+score_gyoseki :  20
+----------
+基本銘柄更新: 44日ぶり
+----> 7185のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7185のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>185,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ヒロセ通商,時価総額:10927百万円
+最低購入代金:185400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7185 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-08-12 23:19:25
+lowest_purchase_money :  185400
+stock_name :  ヒロセ通商
+code :  7185
+access_date_gyoseki :  2016-10-27 00:35:33
+price :  1478
+access_date_rironkabuka :  2016-10-27 00:36:07
+access_date :  2016-12-10 01:12:47
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  10927
+rironkabuka :  0
+access_date_price :  2016-10-27 00:35:17
+stddev_volatility :  7.81
+sell_pressure_ratio_5 :  33
+sell_pressure_ratio_20 :  60
+score_gyoseki :  20
+----------
+----> 7186のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7186のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>59,990</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:コンコルディア・フィナンシャルグループ,時価総額:780240百万円
+最低購入代金:59990
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7186 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:37:47
+shihyo_pt :  20
+stock_name :  コンコルディア・フィナンシャルグループ
+code :  7186
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-08 23:33:31
+price :  577
+access_date_rironkabuka :  2016-12-08 23:34:06
+access_date :  2016-12-10 01:12:47
+sector_detail :  unknown
+lowest_purchase_money :  59990
+market_cap :  780240
+rironkabuka :  3191
+stddev_volatility :  7.17
+sell_pressure_ratio_5 :  39
+sell_pressure_ratio_20 :  64
+access_date_price :  2016-12-08 23:33:05
+----------
+----> 7189のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7189のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>116,200</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:西日本フィナンシャルホールディングス,時価総額:208692百万円
+最低購入代金:116200
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7189 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-04 02:20:24
+shihyo_pt :  20
+stock_name :  西日本フィナンシャルホールディングス
+code :  7189
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-24 23:10:53
+price :  1090
+access_date_rironkabuka :  2016-11-24 23:11:22
+access_date :  2016-12-10 01:12:47
+sector_detail :  unknown
+lowest_purchase_money :  116200
+market_cap :  208692
+rironkabuka :  0
+stddev_volatility :  7.2
+sell_pressure_ratio_5 :  106
+sell_pressure_ratio_20 :  98
+access_date_price :  2016-11-24 23:10:41
+----------
+----> 7191のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7191のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>70,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:イントラスト,時価総額:6879百万円
+最低購入代金:70600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7191 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-07 23:04:36
+shihyo_pt :  20
+stock_name :  イントラスト
+code :  7191
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-07 23:01:01
+price :  753
+access_date_rironkabuka :  2016-12-07 23:01:32
+sector_detail :  unknown
+lowest_purchase_money :  70600
+market_cap :  6879
+rironkabuka :  0
+stddev_volatility :  0
+access_date :  2016-12-10 01:12:47
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+access_date_price :  2016-12-07 23:00:40
+----------
+----> 9282のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9282のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>---</strong><span class="date yjSt">（---）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+!!! 最低購入代金が取得出来ないため（REIT?）0にします
+銘柄名:いちごグリーンインフラ投資法人,時価総額:4883百万円
+最低購入代金:0
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  9282 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-01 23:46:57
+lowest_purchase_money :  0
+stock_name :  いちごグリーンインフラ投資法人
+code :  9282
+access_date_gyoseki :  2016-12-01 23:41:41
+access_date_price :  2016-12-05 23:26:41
+access_date_rironkabuka :  2016-12-01 23:42:29
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  4883
+rironkabuka :  0
+stddev_volatility :  0
+price :  0
+access_date :  2016-12-10 01:12:48
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+score_gyoseki :  20
+----------
+----> 3150のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3150のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>130,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:グリムス,時価総額:5046百万円
+最低購入代金:130000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3150 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-25 23:01:42
+shihyo_pt :  100
+stock_name :  グリムス
+code :  3150
+score_gyoseki :  81
+access_date_gyoseki :  2016-11-25 23:00:40
+price :  1239
+access_date_rironkabuka :  2016-11-25 23:00:56
+sector_detail :  unknown
+lowest_purchase_money :  130000
+market_cap :  5046
+rironkabuka :  1240
+stddev_volatility :  10.79
+access_date :  2016-12-10 01:12:48
+sell_pressure_ratio_5 :  47
+sell_pressure_ratio_20 :  75
+access_date_price :  2016-11-25 23:00:26
+----------
+----> 3154のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3154のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>162,300</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:メディアスホールディングス,時価総額:10524百万円
+最低購入代金:162300
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3154 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  メディアスホールディングス
+market_cap :  10524
+sector_detail :  unknown
+lowest_purchase_money :  162300
+code :  3154
+access_date :  2016-12-10 01:12:48
+----------
+----> 3161のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3161のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>54,200</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アゼアス,時価総額:3298百万円
+最低購入代金:54200
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3161 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-29 23:01:34
+shihyo_pt :  45
+stock_name :  アゼアス
+market_cap :  3298
+score_gyoseki :  45
+access_date_gyoseki :  2016-11-29 23:00:36
+access_date_price :  2016-11-29 23:00:23
+access_date_rironkabuka :  2016-11-29 23:00:51
+access_date :  2016-12-10 01:12:48
+sell_pressure_ratio_20 :  60
+lowest_purchase_money :  54200
+code :  3161
+rironkabuka :  18
+stddev_volatility :  9.0
+sell_pressure_ratio_10 :  44
+sell_pressure_ratio_5 :  60
+price :  639
+sector_detail :  unknown
+----------
+基本銘柄更新: 675日ぶり
+----> 3166のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3166のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>117,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＯＣＨＩホールディングス,時価総額:16034百万円
+最低購入代金:117800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3166 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ＯＣＨＩホールディングス
+code :  3166
+access_date_gyoseki :  2016-03-27 05:52:59
+access_date_price :  2016-03-27 15:40:40
+access_date_rironkabuka :  2016-03-27 11:45:15
+sell_pressure_ratio_20 :  83
+lowest_purchase_money :  117800
+market_cap :  16034
+rironkabuka :  1047
+stddev_volatility :  4.15
+sell_pressure_ratio_10 :  37
+access_date :  2016-12-10 01:12:48
+sell_pressure_ratio_5 :  115
+price :  1090
+score_gyoseki :  0
+sector_detail :  unknown
+----------
+基本銘柄更新: 31日ぶり
+----> 3189のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3189のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>46,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＡＮＡＰ,時価総額:1960百万円
+最低購入代金:46000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3189 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-08 23:42:19
+lowest_purchase_money :  46000
+stock_name :  ＡＮＡＰ
+code :  3189
+access_date_gyoseki :  2016-11-08 23:40:58
+price :  413
+access_date_rironkabuka :  2016-11-08 23:41:18
+access_date :  2016-12-10 01:12:49
+sector_detail :  unknown
+shihyo_pt :  40
+market_cap :  1960
+rironkabuka :  56
+access_date_price :  2016-11-08 23:40:43
+stddev_volatility :  6.3
+sell_pressure_ratio_5 :  4
+sell_pressure_ratio_20 :  19
+score_gyoseki :  60
+----------
+----> 3191のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3191のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>300,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ジョイフル本田,時価総額:155097百万円
+最低購入代金:300500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3191 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-09-28 23:01:27
+lowest_purchase_money :  300500
+stock_name :  ジョイフル本田
+code :  3191
+access_date_gyoseki :  2016-11-21 23:21:00
+price :  2939
+access_date_rironkabuka :  2016-11-22 00:14:39
+access_date :  2016-12-10 01:12:49
+sector_detail :  unknown
+shihyo_pt :  40
+market_cap :  155097
+rironkabuka :  1051
+access_date_price :  2016-11-21 23:20:45
+stddev_volatility :  4.62
+sell_pressure_ratio_5 :  57
+sell_pressure_ratio_20 :  95
+score_gyoseki :  0
+----------
+----> 7315のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7315のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>49,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＩＪＴテクノロジーホールディングス,時価総額:24331百万円
+最低購入代金:49500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7315 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-08 02:13:33
+shihyo_pt :  20
+stock_name :  ＩＪＴテクノロジーホールディングス
+code :  7315
+score_gyoseki :  54
+access_date_gyoseki :  2016-12-09 23:11:37
+price :  495
+access_date_rironkabuka :  2016-12-09 23:12:12
+sector_detail :  unknown
+lowest_purchase_money :  49500
+market_cap :  24331
+rironkabuka :  387
+stddev_volatility :  5.22
+access_date :  2016-12-10 01:12:49
+sell_pressure_ratio_5 :  39
+sell_pressure_ratio_20 :  61
+access_date_price :  2016-12-09 23:10:50
+----------
+----> 5289のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5289のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>32,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ゼニス羽田ホールディングス,時価総額:14825百万円
+最低購入代金:32100
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5289 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-05 23:28:06
+shihyo_pt :  100
+stock_name :  ゼニス羽田ホールディングス
+market_cap :  14825
+score_gyoseki :  18
+access_date_gyoseki :  2016-12-05 23:26:49
+access_date_price :  2016-12-05 23:26:39
+access_date_rironkabuka :  2016-12-05 23:27:20
+access_date :  2016-12-10 01:12:49
+sell_pressure_ratio_20 :  68
+lowest_purchase_money :  32100
+code :  5289
+rironkabuka :  316
+stddev_volatility :  10.49
+sell_pressure_ratio_10 :  76
+sell_pressure_ratio_5 :  64
+price :  324
+sector_detail :  unknown
+----------
+基本銘柄更新: 44日ぶり
+----> 9416のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9416のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>257,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ビジョン,時価総額:20906百万円
+最低購入代金:257500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  9416 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-26 01:26:03
+lowest_purchase_money :  257500
+stock_name :  ビジョン
+code :  9416
+access_date_gyoseki :  2016-10-26 01:23:51
+price :  2538
+access_date_rironkabuka :  2016-10-26 01:24:14
+access_date :  2016-12-10 01:12:49
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  20906
+rironkabuka :  0
+access_date_price :  2016-11-10 21:57:42
+stddev_volatility :  11.56
+sell_pressure_ratio_5 :  65
+sell_pressure_ratio_20 :  64
+score_gyoseki :  20
+----------
+----> 3275のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3275のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>182,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ハウスコム,時価総額:7108百万円
+最低購入代金:182500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3275 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-07-30 22:29:24
+lowest_purchase_money :  182500
+stock_name :  ハウスコム
+code :  3275
+access_date_gyoseki :  2016-03-27 05:53:14
+price :  1490
+access_date_rironkabuka :  2016-03-27 11:46:09
+access_date :  2016-12-10 01:12:50
+sector_detail :  unknown
+shihyo_pt :  80
+market_cap :  7108
+rironkabuka :  2037
+access_date_price :  2016-03-27 15:40:51
+stddev_volatility :  6.06
+sell_pressure_ratio_5 :  107
+sell_pressure_ratio_20 :  82
+score_gyoseki :  54
+----------
+----> 3293のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3293のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>164,700</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アズマハウス,時価総額:6640百万円
+最低購入代金:164700
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3293 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  アズマハウス
+market_cap :  6640
+sector_detail :  unknown
+lowest_purchase_money :  164700
+code :  3293
+access_date :  2016-12-10 01:12:50
+----------
+----> 5413のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5413のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>152,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:日新製鋼,時価総額:167622百万円
+最低購入代金:152600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5413 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:14:15
+lowest_purchase_money :  152600
+stock_name :  日新製鋼
+code :  5413
+score_gyoseki :  3
+access_date_gyoseki :  2016-12-09 23:11:33
+price :  1526
+access_date_rironkabuka :  2016-12-09 23:12:00
+access_date :  2016-12-10 01:12:50
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  167622
+rironkabuka :  388
+access_date_price :  2016-12-09 23:10:46
+stddev_volatility :  3.9
+sell_pressure_ratio_10 :  54
+sell_pressure_ratio_5 :  50
+sell_pressure_ratio_20 :  72
+----------
+----> 1324のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1324のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>12,300</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)ロシア株式指数上場投信,時価総額:0百万円
+最低購入代金:12300
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1324 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 23:17:38
+lowest_purchase_money :  12300
+stock_name :  (NEXT FUNDS)ロシア株式指数上場投信
+code :  1324
+access_date_gyoseki :  2016-11-16 23:16:47
+price :  123
+access_date_rironkabuka :  2016-11-16 23:17:02
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  0
+rironkabuka :  0
+access_date_price :  2016-12-09 23:10:39
+stddev_volatility :  3.57
+access_date :  2016-12-10 01:12:50
+sell_pressure_ratio_5 :  61
+sell_pressure_ratio_20 :  46
+score_gyoseki :  20
+----------
+----> 6047のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6047のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>120,200</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:Ｇｕｎｏｓｙ,時価総額:26891百万円
+最低購入代金:120200
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6047 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 23:18:23
+lowest_purchase_money :  120200
+stock_name :  Ｇｕｎｏｓｙ
+code :  6047
+access_date_gyoseki :  2016-11-16 23:16:49
+price :  1541
+access_date_rironkabuka :  2016-11-16 23:17:14
+access_date :  2016-12-10 01:12:50
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  26891
+rironkabuka :  1152
+access_date_price :  2016-11-16 23:16:33
+stddev_volatility :  15.0
+sell_pressure_ratio_5 :  53
+sell_pressure_ratio_20 :  75
+score_gyoseki :  80
+----------
+----> 3443のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3443のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>713,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:川田テクノロジーズ,時価総額:41219百万円
+最低購入代金:713000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3443 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-31 23:06:26
+shihyo_pt :  50
+stock_name :  川田テクノロジーズ
+code :  3443
+score_gyoseki :  53
+access_date_gyoseki :  2016-10-31 23:04:55
+price :  4945
+access_date_rironkabuka :  2016-10-31 23:05:23
+sector_detail :  unknown
+lowest_purchase_money :  713000
+market_cap :  41219
+rironkabuka :  6980
+stddev_volatility :  4.15
+access_date :  2016-12-10 01:12:51
+sell_pressure_ratio_5 :  42
+sell_pressure_ratio_20 :  59
+access_date_price :  2016-10-31 23:04:30
+----------
+----> 3445のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3445のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>411,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＲＳ　Ｔｅｃｈｎｏｌｏｇｉｅｓ,時価総額:22369百万円
+最低購入代金:411000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3445 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:34:44
+shihyo_pt :  20
+stock_name :  ＲＳ　Ｔｅｃｈｎｏｌｏｇｉｅｓ
+code :  3445
+score_gyoseki :  62
+access_date_gyoseki :  2016-12-08 23:33:26
+price :  4250
+access_date_rironkabuka :  2016-12-08 23:33:51
+sector_detail :  unknown
+lowest_purchase_money :  411000
+market_cap :  22369
+rironkabuka :  4039
+access_date_price :  2016-12-08 23:32:56
+stddev_volatility :  7.29
+sell_pressure_ratio_10 :  0
+access_date :  2016-12-10 01:12:51
+sell_pressure_ratio_5 :  55
+sell_pressure_ratio_20 :  53
+----------
+----> 3454のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3454のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>177,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ファーストブラザーズ,時価総額:12791百万円
+最低購入代金:177100
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3454 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-22 01:09:10
+shihyo_pt :  20
+stock_name :  ファーストブラザーズ
+code :  3454
+score_gyoseki :  78
+access_date_gyoseki :  2016-11-21 23:21:00
+price :  2068
+access_date_rironkabuka :  2016-11-22 00:14:42
+sector_detail :  unknown
+lowest_purchase_money :  177100
+market_cap :  12791
+rironkabuka :  8055
+access_date_price :  2016-11-21 23:20:45
+stddev_volatility :  8.9
+sell_pressure_ratio_10 :  63
+access_date :  2016-12-10 01:12:51
+sell_pressure_ratio_5 :  69
+sell_pressure_ratio_20 :  67
+----------
+----> 3465のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3465のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>328,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ケイアイスター不動産,時価総額:23377百万円
+最低購入代金:328500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3465 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-02 00:12:22
+lowest_purchase_money :  328500
+stock_name :  ケイアイスター不動産
+code :  3465
+access_date_gyoseki :  2016-12-05 23:26:48
+price :  3540
+access_date_rironkabuka :  2016-12-05 23:27:15
+access_date :  2016-12-10 01:12:51
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  23377
+rironkabuka :  6452
+access_date_price :  2016-12-05 23:26:37
+stddev_volatility :  9.75
+sell_pressure_ratio_5 :  35
+sell_pressure_ratio_20 :  71
+score_gyoseki :  20
+----------
+----> 1418のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1418のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>32,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:インターライフホールディングス,時価総額:6483百万円
+最低購入代金:32400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1418 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-24 23:11:43
+lowest_purchase_money :  32400
+stock_name :  インターライフホールディングス
+code :  1418
+access_date_gyoseki :  2016-11-24 23:10:49
+price :  320
+access_date_rironkabuka :  2016-11-24 23:11:02
+access_date :  2016-12-10 01:12:51
+sector_detail :  unknown
+shihyo_pt :  25
+market_cap :  6483
+rironkabuka :  41
+access_date_price :  2016-11-24 23:10:34
+stddev_volatility :  11.64
+sell_pressure_ratio_5 :  36
+sell_pressure_ratio_20 :  52
+score_gyoseki :  8
+----------
+----> 1419のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1419のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>54,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:タマホーム,時価総額:16380百万円
+最低購入代金:54500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1419 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  タマホーム
+market_cap :  16380
+sector_detail :  unknown
+lowest_purchase_money :  54500
+code :  1419
+access_date :  2016-12-10 01:12:52
+----------
+----> 1420のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1420のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>67,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:サンヨーホームズ,時価総額:8455百万円
+最低購入代金:67000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1420 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-24 23:11:47
+lowest_purchase_money :  67000
+stock_name :  サンヨーホームズ
+code :  1420
+access_date_gyoseki :  2016-11-24 23:10:50
+price :  680
+access_date_rironkabuka :  2016-11-24 23:11:06
+access_date :  2016-12-10 01:12:52
+sector_detail :  unknown
+shihyo_pt :  25
+market_cap :  8455
+rironkabuka :  1712
+access_date_price :  2016-11-24 23:10:34
+stddev_volatility :  4.1
+sell_pressure_ratio_5 :  28
+sell_pressure_ratio_20 :  46
+score_gyoseki :  50
+----------
+----> 3475のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3475のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>208,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:グッドコムアセット,時価総額:2973百万円
+最低購入代金:208600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3475 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-08 23:34:51
+lowest_purchase_money :  208600
+stock_name :  グッドコムアセット
+code :  3475
+access_date_gyoseki :  2016-12-08 23:33:26
+price :  2270
+access_date_rironkabuka :  2016-12-08 23:33:51
+access_date :  2016-12-10 01:12:52
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  2973
+rironkabuka :  0
+access_date_price :  2016-12-08 23:32:56
+stddev_volatility :  0
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+score_gyoseki :  20
+----------
+----> 6044のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6044のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>81,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:三機サービス,時価総額:4527百万円
+最低購入代金:81000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6044 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-13 02:25:54
+shihyo_pt :  20
+stock_name :  三機サービス
+code :  6044
+score_gyoseki :  70
+access_date_gyoseki :  2016-11-16 00:38:41
+price :  880
+access_date_rironkabuka :  2016-11-16 00:39:02
+sector_detail :  unknown
+lowest_purchase_money :  81000
+market_cap :  4527
+rironkabuka :  1105
+stddev_volatility :  6.25
+access_date :  2016-12-10 01:12:52
+sell_pressure_ratio_5 :  48
+sell_pressure_ratio_20 :  97
+access_date_price :  2016-11-16 00:38:29
+----------
+----> 1481のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1481のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>1,345</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:上場インデックスファンド日本経済貢献株,時価総額:0百万円
+最低購入代金:1345
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1481 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  上場インデックスファンド日本経済貢献株
+code :  1481
+sector_detail :  unknown
+lowest_purchase_money :  1345
+market_cap :  0
+access_date :  2016-12-10 01:12:53
+----------
+----> 1479のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1479のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>17,980</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信-MSCI日本株人材設備投資指数,時価総額:0百万円
+最低購入代金:17980
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1479 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-18 23:01:30
+lowest_purchase_money :  17980
+stock_name :  ダイワ 上場投信-MSCI日本株人材設備投資指数
+code :  1479
+access_date_gyoseki :  2016-11-18 23:00:42
+price :  17400
+access_date_rironkabuka :  2016-11-18 23:00:56
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  0
+rironkabuka :  0
+access_date_price :  2016-11-24 23:10:34
+stddev_volatility :  1.66
+access_date :  2016-12-10 01:12:53
+sell_pressure_ratio_5 :  31
+sell_pressure_ratio_20 :  30
+score_gyoseki :  20
+----------
+----> 1480のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1480のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>14,070</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)野村企業価値分配指数上場投信,時価総額:0百万円
+最低購入代金:14070
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1480 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 23:17:43
+lowest_purchase_money :  14070
+stock_name :  (NEXT FUNDS)野村企業価値分配指数上場投信
+code :  1480
+access_date_gyoseki :  2016-11-16 23:16:47
+price :  13510
+access_date_rironkabuka :  2016-11-16 23:17:02
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  0
+rironkabuka :  0
+access_date_price :  2016-11-21 23:20:43
+stddev_volatility :  1.86
+access_date :  2016-12-10 01:12:53
+sell_pressure_ratio_5 :  24
+sell_pressure_ratio_20 :  37
+score_gyoseki :  20
+----------
+基本銘柄更新: 181日ぶり
+----> 1483のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1483のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>1,359</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:iシェアーズ JPX/S&P 設備･人材投資ETF,時価総額:0百万円
+最低購入代金:1359
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1483 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  iシェアーズ JPX/S&P 設備･人材投資ETF
+code :  1483
+sector_detail :  unknown
+lowest_purchase_money :  1359
+market_cap :  0
+access_date :  2016-12-10 01:12:53
+----------
+----> 1485のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1485のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>21,770</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:MAXIS JAPAN 設備･人材積極投資企業200上場投信,時価総額:0百万円
+最低購入代金:21770
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1485 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  MAXIS JAPAN 設備･人材積極投資企業200上場投信
+market_cap :  0
+sector_detail :  unknown
+lowest_purchase_money :  21770
+code :  1485
+access_date :  2016-12-10 01:12:53
+----------
+----> 1486のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1486のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>20,930</strong><span class="date yjSt">（11/30）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:上場インデックスファンド米国債券(H無),時価総額:0百万円
+最低購入代金:20930
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1486 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  上場インデックスファンド米国債券(H無)
+market_cap :  0
+sector_detail :  unknown
+lowest_purchase_money :  20930
+code :  1486
+access_date :  2016-12-10 01:12:54
+----------
+----> 1488のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1488のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>18,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ上場投信-東証REIT指数,時価総額:0百万円
+最低購入代金:18000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1488 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ダイワ上場投信-東証REIT指数
+market_cap :  0
+sector_detail :  unknown
+lowest_purchase_money :  18000
+code :  1488
+access_date :  2016-12-10 01:12:54
+----------
+----> 3538のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3538のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>167,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ウイルプラスホールディングス,時価総額:3991百万円
+最低購入代金:167500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3538 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-24 23:11:58
+lowest_purchase_money :  167500
+stock_name :  ウイルプラスホールディングス
+code :  3538
+access_date_gyoseki :  2016-11-24 23:10:50
+price :  1816
+access_date_rironkabuka :  2016-11-24 23:11:08
+access_date :  2016-12-10 01:12:54
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  3991
+rironkabuka :  2918
+access_date_price :  2016-11-24 23:10:35
+stddev_volatility :  6.36
+sell_pressure_ratio_5 :  38
+sell_pressure_ratio_20 :  51
+score_gyoseki :  20
+----------
+基本銘柄更新: 59日ぶり
+----> 3546のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3546のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>67,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイユー・リックホールディングス,時価総額:10227百万円
+最低購入代金:67400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3546 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-12 00:16:20
+shihyo_pt :  20
+stock_name :  ダイユー・リックホールディングス
+code :  3546
+score_gyoseki :  20
+access_date_gyoseki :  2016-10-12 00:15:31
+price :  624
+access_date_rironkabuka :  2016-10-12 00:15:47
+sector_detail :  unknown
+lowest_purchase_money :  67400
+market_cap :  10227
+rironkabuka :  665
+stddev_volatility :  2.99
+access_date :  2016-12-10 01:12:54
+sell_pressure_ratio_5 :  45
+sell_pressure_ratio_20 :  70
+access_date_price :  2016-10-12 00:15:17
+----------
+----> 3549のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3549のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>462,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:クスリのアオキホールディングス,時価総額:145242百万円
+最低購入代金:462000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3549 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-22 01:09:16
+shihyo_pt :  20
+stock_name :  クスリのアオキホールディングス
+code :  3549
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-21 23:21:00
+price :  4985
+access_date_rironkabuka :  2016-11-22 00:14:42
+sector_detail :  unknown
+lowest_purchase_money :  462000
+market_cap :  145242
+rironkabuka :  0
+stddev_volatility :  0
+access_date :  2016-12-10 01:12:54
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+access_date_price :  2016-11-21 23:20:46
+----------
+----> 3550のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3550のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>364,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:スタジオアタオ,時価総額:7466百万円
+最低購入代金:364000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3550 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-29 23:01:44
+shihyo_pt :  20
+stock_name :  スタジオアタオ
+code :  3550
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-29 23:00:36
+price :  3570
+access_date_rironkabuka :  2016-11-29 23:00:52
+sector_detail :  unknown
+lowest_purchase_money :  364000
+market_cap :  7466
+rironkabuka :  0
+stddev_volatility :  0
+access_date :  2016-12-10 01:12:55
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+access_date_price :  2016-11-29 23:00:24
+----------
+基本銘柄更新: 615日ぶり
+----> 1543のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1543のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>25,580</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:純パラジウム上場信託(現物国内保管型),時価総額:0百万円
+最低購入代金:25580
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1543 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  純パラジウム上場信託(現物国内保管型)
+code :  1543
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:19
+price :  19330
+access_date_rironkabuka :  2016-03-27 11:24:07
+sector_detail :  unknown
+lowest_purchase_money :  25580
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  3.88
+access_date :  2016-12-10 01:12:55
+sell_pressure_ratio_5 :  69
+sell_pressure_ratio_20 :  45
+access_date_price :  2016-03-27 15:38:07
+----------
+----> 1546のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1546のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>22,050</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)ダウ･ジョーンズ工業株30種,時価総額:0百万円
+最低購入代金:22050
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1546 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-01 23:42:46
+shihyo_pt :  20
+stock_name :  (NEXT FUNDS)ダウ･ジョーンズ工業株30種
+market_cap :  0
+score_gyoseki :  20
+access_date_gyoseki :  2016-12-01 23:41:33
+price :  22050
+access_date_rironkabuka :  2016-12-01 23:41:55
+sector_detail :  unknown
+lowest_purchase_money :  22050
+code :  1546
+rironkabuka :  0
+stddev_volatility :  2.12
+sell_pressure_ratio_10 :  71
+access_date :  2016-12-10 01:12:55
+sell_pressure_ratio_5 :  33
+sell_pressure_ratio_20 :  43
+access_date_price :  2016-12-09 23:10:40
+----------
+----> 1547のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1547のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>28,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:上場インデックスファンド米国株式(S&P500),時価総額:0百万円
+最低購入代金:28000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1547 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-04 23:33:26
+lowest_purchase_money :  28000
+stock_name :  上場インデックスファンド米国株式(S&P500)
+market_cap :  0
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 04:53:04
+price :  2840
+access_date_rironkabuka :  2015-06-04 23:32:45
+sector_detail :  unknown
+shihyo_pt :  20
+code :  1547
+rironkabuka :  0
+stddev_volatility :  1.04
+sell_pressure_ratio_10 :  65
+access_date :  2016-12-10 01:12:55
+sell_pressure_ratio_5 :  60
+sell_pressure_ratio_20 :  39
+access_date_price :  2015-06-04 23:32:12
+----------
+----> 3634のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3634のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>107,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ソケッツ,時価総額:2633百万円
+最低購入代金:107100
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3634 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-28 23:01:37
+lowest_purchase_money :  107100
+stock_name :  ソケッツ
+code :  3634
+access_date_gyoseki :  2016-11-28 23:00:36
+price :  920
+access_date_rironkabuka :  2016-11-28 23:00:51
+access_date :  2016-12-10 01:12:56
+sector_detail :  unknown
+shihyo_pt :  50
+market_cap :  2633
+rironkabuka :  -8
+access_date_price :  2016-11-28 23:00:25
+stddev_volatility :  10.4
+sell_pressure_ratio_5 :  6
+sell_pressure_ratio_20 :  33
+score_gyoseki :  60
+----------
+基本銘柄更新: 59日ぶり
+----> 3641のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3641のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>377,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:パピレス,時価総額:19492百万円
+最低購入代金:377500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3641 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-12 00:16:25
+shihyo_pt :  100
+stock_name :  パピレス
+code :  3641
+score_gyoseki :  72
+access_date_gyoseki :  2016-10-12 00:15:32
+price :  3295
+access_date_rironkabuka :  2016-10-12 00:15:48
+sector_detail :  unknown
+lowest_purchase_money :  377500
+market_cap :  19492
+rironkabuka :  3540
+stddev_volatility :  9.87
+access_date :  2016-12-10 01:12:56
+sell_pressure_ratio_5 :  84
+sell_pressure_ratio_20 :  66
+access_date_price :  2016-11-02 00:10:58
+----------
+----> 5703のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5703のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>26,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:日本軽金属ホールディングス,時価総額:143913百万円
+最低購入代金:26400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5703 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-29 00:24:48
+lowest_purchase_money :  26400
+stock_name :  日本軽金属ホールディングス
+code :  5703
+score_gyoseki :  47
+access_date_gyoseki :  2016-10-29 00:23:04
+access_date_price :  2016-10-29 00:22:50
+access_date_rironkabuka :  2016-10-29 00:23:32
+access_date :  2016-12-10 01:12:56
+sell_pressure_ratio_20 :  73
+shihyo_pt :  20
+market_cap :  143913
+rironkabuka :  0
+stddev_volatility :  3.86
+sell_pressure_ratio_10 :  62
+sell_pressure_ratio_5 :  69
+price :  238
+sector_detail :  unknown
+----------
+----> 5704のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5704のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>125,900</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＪＭＣ,時価総額:3085百万円
+最低購入代金:125900
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5704 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-29 23:02:44
+shihyo_pt :  20
+stock_name :  ＪＭＣ
+code :  5704
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-29 23:00:38
+price :  1599
+access_date_rironkabuka :  2016-11-29 23:00:58
+sector_detail :  unknown
+lowest_purchase_money :  125900
+market_cap :  3085
+rironkabuka :  0
+stddev_volatility :  0
+access_date :  2016-12-10 01:12:56
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+access_date_price :  2016-11-29 23:00:26
+----------
+基本銘柄更新: 39日ぶり
+----> 3662のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3662のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>237,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:エイチーム,時価総額:46258百万円
+最低購入代金:237800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3662 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-31 23:06:43
+lowest_purchase_money :  237800
+stock_name :  エイチーム
+market_cap :  46258
+score_gyoseki :  77
+access_date_gyoseki :  2016-10-31 23:04:56
+access_date_price :  2016-11-17 23:00:30
+access_date_rironkabuka :  2016-10-31 23:05:25
+access_date :  2016-12-10 01:12:56
+sell_pressure_ratio_20 :  82
+shihyo_pt :  35
+code :  3662
+rironkabuka :  2100
+stddev_volatility :  5.62
+sell_pressure_ratio_10 :  88
+sell_pressure_ratio_5 :  65
+price :  2429
+sector_detail :  unknown
+----------
+基本銘柄更新: 30日ぶり
+----> 3663のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3663のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>184,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アートスパークホールディングス,時価総額:12499百万円
+最低購入代金:184400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3663 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-09 23:17:27
+shihyo_pt :  20
+stock_name :  アートスパークホールディングス
+code :  3663
+access_date_gyoseki :  2016-11-09 23:16:31
+price :  2860
+access_date_rironkabuka :  2016-11-09 23:16:48
+sector_detail :  unknown
+lowest_purchase_money :  184400
+market_cap :  12499
+rironkabuka :  442
+access_date_price :  2016-11-09 23:16:16
+stddev_volatility :  13.34
+sell_pressure_ratio_10 :  46
+access_date :  2016-12-10 01:12:57
+sell_pressure_ratio_5 :  77
+sell_pressure_ratio_20 :  63
+score_gyoseki :  72
+----------
+----> 1618のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1618のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>11,950</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)エネルギー資源上場投信,時価総額:0百万円
+最低購入代金:11950
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1618 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  (NEXT FUNDS)エネルギー資源上場投信
+market_cap :  0
+sector_detail :  unknown
+lowest_purchase_money :  11950
+code :  1618
+access_date :  2016-12-10 01:12:57
+----------
+----> 1623のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1623のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>21,700</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)鉄鋼･非鉄上場投信,時価総額:0百万円
+最低購入代金:21700
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1623 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  (NEXT FUNDS)鉄鋼･非鉄上場投信
+code :  1623
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:28
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:12
+sector_detail :  unknown
+lowest_purchase_money :  21700
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  4.38
+access_date :  2016-12-10 01:12:57
+sell_pressure_ratio_5 :  105
+sell_pressure_ratio_20 :  46
+access_date_price :  2016-03-27 15:38:15
+----------
+基本銘柄更新: 544日ぶり
+----> 1624のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1624のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>30,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)機械上場投信,時価総額:0百万円
+最低購入代金:30400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1624 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  (NEXT FUNDS)機械上場投信
+code :  1624
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:28
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:12
+sector_detail :  unknown
+lowest_purchase_money :  30400
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  4.2
+access_date :  2016-12-10 01:12:57
+sell_pressure_ratio_5 :  104
+sell_pressure_ratio_20 :  140
+access_date_price :  2016-03-27 15:38:15
+----------
+----> 3673のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3673のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>144,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ブロードリーフ,時価総額:35390百万円
+最低購入代金:144600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3673 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-07 23:02:17
+shihyo_pt :  60
+stock_name :  ブロードリーフ
+code :  3673
+access_date_gyoseki :  2016-12-07 23:00:58
+price :  1460
+access_date_rironkabuka :  2016-12-07 23:01:17
+sector_detail :  unknown
+lowest_purchase_money :  144600
+market_cap :  35390
+rironkabuka :  800
+access_date_price :  2016-12-07 23:00:34
+stddev_volatility :  6.53
+sell_pressure_ratio_10 :  52
+access_date :  2016-12-10 01:12:57
+sell_pressure_ratio_5 :  49
+sell_pressure_ratio_20 :  41
+score_gyoseki :  15
+----------
+----> 1629のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1629のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>27,690</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:(NEXT FUNDS)商社･卸売上場投信,時価総額:0百万円
+最低購入代金:27690
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1629 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  (NEXT FUNDS)商社･卸売上場投信
+code :  1629
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:32
+price :  24290
+access_date_rironkabuka :  2016-03-27 11:24:13
+sector_detail :  unknown
+lowest_purchase_money :  27690
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  2.42
+access_date :  2016-12-10 01:12:58
+sell_pressure_ratio_5 :  400
+sell_pressure_ratio_20 :  85
+access_date_price :  2016-03-27 15:38:16
+----------
+----> 1635のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1635のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>12,930</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信･TOPIX-17エネルギー資源,時価総額:0百万円
+最低購入代金:12930
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1635 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ダイワ 上場投信･TOPIX-17エネルギー資源
+code :  1635
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:32
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:14
+sector_detail :  unknown
+lowest_purchase_money :  12930
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  3.46
+access_date :  2016-12-10 01:12:58
+sell_pressure_ratio_5 :  53
+sell_pressure_ratio_20 :  110
+access_date_price :  2016-03-27 15:38:17
+----------
+----> 1640のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1640のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>22,490</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信･TOPIX-17鉄鋼･非鉄,時価総額:0百万円
+最低購入代金:22490
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1640 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ダイワ 上場投信･TOPIX-17鉄鋼･非鉄
+code :  1640
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:33
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:14
+sector_detail :  unknown
+lowest_purchase_money :  22490
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  4.86
+access_date :  2016-12-10 01:12:58
+sell_pressure_ratio_5 :  39
+sell_pressure_ratio_20 :  40
+access_date_price :  2016-03-27 15:38:18
+----------
+----> 1641のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1641のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>32,750</strong><span class="date yjSt">（12/08）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイワ 上場投信･TOPIX-17機械,時価総額:0百万円
+最低購入代金:32750
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1641 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ダイワ 上場投信･TOPIX-17機械
+code :  1641
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:33
+price :  0
+access_date_rironkabuka :  2016-03-27 11:24:14
+sector_detail :  unknown
+lowest_purchase_money :  32750
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  3.63
+access_date :  2016-12-10 01:12:58
+sell_pressure_ratio_5 :  26
+sell_pressure_ratio_20 :  80
+access_date_price :  2016-03-27 15:38:18
+----------
+----> 3687のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3687のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>346,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:フィックスターズ,時価総額:23257百万円
+最低購入代金:346500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3687 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-21 23:04:02
+lowest_purchase_money :  346500
+stock_name :  フィックスターズ
+market_cap :  23257
+access_date_gyoseki :  2016-11-24 23:10:50
+access_date_price :  2016-11-24 23:10:35
+access_date_rironkabuka :  2016-11-24 23:11:09
+sell_pressure_ratio_20 :  97
+shihyo_pt :  70
+code :  3687
+rironkabuka :  1514
+stddev_volatility :  13.71
+sell_pressure_ratio_10 :  84
+access_date :  2016-12-10 01:12:58
+sell_pressure_ratio_5 :  60
+price :  3410
+score_gyoseki :  79
+sector_detail :  unknown
+----------
+基本銘柄更新: 30日ぶり
+----> 3689のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3689のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>1,054,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:イグニス,時価総額:65724百万円
+最低購入代金:1054000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3689 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-09 23:17:32
+shihyo_pt :  20
+stock_name :  イグニス
+code :  3689
+score_gyoseki :  70
+access_date_gyoseki :  2016-11-09 23:16:31
+price :  4375
+access_date_rironkabuka :  2016-11-09 23:16:49
+sector_detail :  unknown
+lowest_purchase_money :  1054000
+market_cap :  65724
+rironkabuka :  4806
+stddev_volatility :  13.87
+access_date :  2016-12-10 01:12:59
+sell_pressure_ratio_5 :  61
+sell_pressure_ratio_20 :  66
+access_date_price :  2016-11-09 23:16:17
+----------
+----> 1663のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1663のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>181,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:Ｋ＆Ｏエナジーグループ,時価総額:55060百万円
+最低購入代金:181500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1663 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-10 00:11:27
+shihyo_pt :  20
+stock_name :  Ｋ＆Ｏエナジーグループ
+code :  1663
+score_gyoseki :  12
+access_date_gyoseki :  2016-12-09 23:11:10
+price :  1815
+access_date_rironkabuka :  2016-12-09 23:11:50
+sector_detail :  unknown
+lowest_purchase_money :  181500
+market_cap :  55060
+rironkabuka :  126
+stddev_volatility :  4.15
+access_date :  2016-12-10 01:12:59
+sell_pressure_ratio_5 :  52
+sell_pressure_ratio_20 :  59
+access_date_price :  2016-12-09 23:10:40
+----------
+----> 7811のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7811のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>288,700</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:中本パックス,時価総額:11798百万円
+最低購入代金:288700
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7811 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-21 23:04:44
+shihyo_pt :  20
+stock_name :  中本パックス
+code :  7811
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-21 23:21:04
+price :  2787
+access_date_rironkabuka :  2016-11-22 00:14:56
+sector_detail :  unknown
+lowest_purchase_money :  288700
+market_cap :  11798
+rironkabuka :  2293
+stddev_volatility :  6.05
+access_date :  2016-12-10 01:12:59
+sell_pressure_ratio_5 :  17
+sell_pressure_ratio_20 :  57
+access_date_price :  2016-11-21 23:20:50
+----------
+----> 7818のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7818のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>163,200</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:トランザクション,時価総額:23120百万円
+最低購入代金:163200
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  7818 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-09-28 23:02:50
+shihyo_pt :  60
+stock_name :  トランザクション
+code :  7818
+score_gyoseki :  94
+access_date_gyoseki :  2016-11-17 23:00:46
+price :  2142
+access_date_rironkabuka :  2016-11-17 23:01:13
+sector_detail :  unknown
+lowest_purchase_money :  163200
+market_cap :  23120
+rironkabuka :  966
+stddev_volatility :  13.53
+access_date :  2016-12-10 01:12:59
+sell_pressure_ratio_5 :  49
+sell_pressure_ratio_20 :  76
+access_date_price :  2016-11-17 23:00:34
+----------
+基本銘柄更新: 544日ぶり
+----> 1679のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1679のマスター情報を解析 
+!!! 時価総額が取得できませんでした（ETFと思われる）
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>208,900</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:Simple-X NYダウ･ジョーンズ上場投信,時価総額:0百万円
+最低購入代金:208900
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  1679 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  Simple-X NYダウ･ジョーンズ上場投信
+code :  1679
+score_gyoseki :  20
+access_date_gyoseki :  2016-03-27 05:46:38
+price :  18700
+access_date_rironkabuka :  2016-03-27 11:24:18
+sector_detail :  unknown
+lowest_purchase_money :  208900
+market_cap :  0
+rironkabuka :  0
+stddev_volatility :  2.0
+access_date :  2016-12-10 01:12:59
+sell_pressure_ratio_5 :  50
+sell_pressure_ratio_20 :  65
+access_date_price :  2016-03-27 15:38:21
+----------
+----> 6090のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6090のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>149,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ヒューマン・メタボローム・テクノロジーズ,時価総額:8619百万円
+最低購入代金:149100
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6090 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-25 23:02:57
+shihyo_pt :  100
+stock_name :  ヒューマン・メタボローム・テクノロジーズ
+code :  6090
+score_gyoseki :  0
+access_date_gyoseki :  2016-11-25 23:00:43
+price :  1457
+access_date_rironkabuka :  2016-11-25 23:01:06
+sector_detail :  unknown
+lowest_purchase_money :  149100
+market_cap :  8619
+rironkabuka :  -808
+stddev_volatility :  10.41
+access_date :  2016-12-10 01:13:00
+sell_pressure_ratio_5 :  32
+sell_pressure_ratio_20 :  49
+access_date_price :  2016-11-25 23:00:28
+----------
+----> 5857のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5857のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>209,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アサヒホールディングス,時価総額:75917百万円
+最低購入代金:209400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  5857 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-16 00:40:02
+lowest_purchase_money :  209400
+stock_name :  アサヒホールディングス
+code :  5857
+score_gyoseki :  4
+access_date_gyoseki :  2016-11-16 00:38:41
+price :  1970
+access_date_rironkabuka :  2016-11-16 00:39:01
+access_date :  2016-12-10 01:13:00
+sector_detail :  unknown
+shihyo_pt :  55
+market_cap :  75917
+rironkabuka :  1847
+access_date_price :  2016-11-16 00:38:28
+stddev_volatility :  4.15
+sell_pressure_ratio_10 :  63
+sell_pressure_ratio_5 :  85
+sell_pressure_ratio_20 :  77
+----------
+----> 3908のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3908のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>260,700</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:コラボス,時価総額:3681百万円
+最低購入代金:260700
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3908 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-25 23:01:48
+shihyo_pt :  20
+stock_name :  コラボス
+code :  3908
+score_gyoseki :  81
+access_date_gyoseki :  2016-11-25 23:00:40
+price :  6000
+access_date_rironkabuka :  2016-11-25 23:00:57
+sector_detail :  unknown
+lowest_purchase_money :  260700
+market_cap :  3681
+rironkabuka :  4465
+access_date_price :  2016-11-25 23:00:26
+stddev_volatility :  10.63
+sell_pressure_ratio_10 :  0
+access_date :  2016-12-10 01:13:00
+sell_pressure_ratio_5 :  108
+sell_pressure_ratio_20 :  102
+----------
+----> 3267のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3267のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>281,200</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:フィル・カンパニー,時価総額:6577百万円
+最低購入代金:281200
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3267 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-22 01:09:00
+shihyo_pt :  20
+stock_name :  フィル・カンパニー
+code :  3267
+score_gyoseki :  20
+access_date_gyoseki :  2016-11-21 23:21:00
+price :  4020
+access_date_rironkabuka :  2016-11-22 00:14:39
+sector_detail :  unknown
+lowest_purchase_money :  281200
+market_cap :  6577
+rironkabuka :  0
+stddev_volatility :  0
+access_date :  2016-12-10 01:13:00
+sell_pressure_ratio_5 :  0
+sell_pressure_ratio_20 :  0
+access_date_price :  2016-11-21 23:20:45
+----------
+----> 3967のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3967のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>720,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:エルテス,時価総額:16932百万円
+最低購入代金:720000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3967 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-30 23:02:00
+lowest_purchase_money :  720000
+stock_name :  エルテス
+code :  3967
+access_date_gyoseki :  2016-11-30 23:00:53
+price :  7830
+access_date_rironkabuka :  2016-11-30 23:01:11
+access_date :  2016-12-10 01:13:01
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  16932
+rironkabuka :  0
+access_date_price :  2016-12-01 23:41:13
+stddev_volatility :  48.53
+sell_pressure_ratio_5 :  84
+sell_pressure_ratio_20 :  84
+score_gyoseki :  20
+----------
+----> 6058のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6058のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>102,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ベクトル,時価総額:46218百万円
+最低購入代金:102100
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6058 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-17 23:02:58
+shihyo_pt :  60
+stock_name :  ベクトル
+market_cap :  46218
+access_date_gyoseki :  2016-11-21 23:21:02
+access_date_price :  2016-11-21 23:20:47
+access_date_rironkabuka :  2016-11-22 00:14:51
+sell_pressure_ratio_20 :  71
+lowest_purchase_money :  102100
+code :  6058
+rironkabuka :  781
+stddev_volatility :  8.84
+sell_pressure_ratio_10 :  78
+access_date :  2016-12-10 01:13:01
+sell_pressure_ratio_5 :  40
+price :  1258
+score_gyoseki :  77
+sector_detail :  unknown
+----------
+----> 6062のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6062のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>488,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:チャーム・ケア・コーポレーション,時価総額:7972百万円
+最低購入代金:488500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6062 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-18 23:02:04
+lowest_purchase_money :  488500
+stock_name :  チャーム・ケア・コーポレーション
+code :  6062
+access_date_gyoseki :  2016-11-18 23:00:44
+access_date_price :  2016-11-18 23:00:28
+access_date_rironkabuka :  2016-11-18 23:01:03
+sell_pressure_ratio_20 :  55
+shihyo_pt :  25
+market_cap :  7972
+rironkabuka :  8052
+stddev_volatility :  11.11
+sell_pressure_ratio_10 :  65
+access_date :  2016-12-10 01:13:01
+sell_pressure_ratio_5 :  23
+price :  5300
+score_gyoseki :  94
+sector_detail :  unknown
+----------
+基本銘柄更新: 38日ぶり
+----> 6064のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6064のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>75,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アクトコール,時価総額:5791百万円
+最低購入代金:75400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6064 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-02 00:12:47
+shihyo_pt :  65
+stock_name :  アクトコール
+code :  6064
+access_date_gyoseki :  2016-11-02 00:11:14
+access_date_price :  2016-11-02 00:10:58
+access_date_rironkabuka :  2016-11-02 00:11:34
+sell_pressure_ratio_20 :  63
+lowest_purchase_money :  75400
+market_cap :  5791
+rironkabuka :  1054
+stddev_volatility :  6.15
+sell_pressure_ratio_10 :  20
+access_date :  2016-12-10 01:13:01
+sell_pressure_ratio_5 :  41
+price :  1591
+score_gyoseki :  66
+sector_detail :  unknown
+----------
+基本銘柄更新: 71日ぶり
+----> 6071のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6071のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>62,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＩＢＪ,時価総額:23381百万円
+最低購入代金:62600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6071 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-09-29 23:39:43
+shihyo_pt :  95
+stock_name :  ＩＢＪ
+code :  6071
+access_date_gyoseki :  2016-09-29 23:38:14
+price :  650
+access_date_rironkabuka :  2016-09-29 23:38:36
+sector_detail :  unknown
+lowest_purchase_money :  62600
+market_cap :  23381
+rironkabuka :  612
+access_date_price :  2016-09-29 23:37:56
+stddev_volatility :  5.53
+sell_pressure_ratio_10 :  106
+access_date :  2016-12-10 01:13:02
+sell_pressure_ratio_5 :  46
+sell_pressure_ratio_20 :  66
+score_gyoseki :  100
+----------
+----> 6078のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6078のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>258,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:バリューＨＲ,時価総額:7258百万円
+最低購入代金:258800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6078 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-12-06 23:03:22
+shihyo_pt :  70
+stock_name :  バリューＨＲ
+market_cap :  7258
+access_date_gyoseki :  2016-12-06 23:00:54
+access_date_price :  2016-12-06 23:00:36
+access_date_rironkabuka :  2016-12-06 23:01:18
+sell_pressure_ratio_20 :  52
+lowest_purchase_money :  258800
+code :  6078
+rironkabuka :  1340
+stddev_volatility :  5.09
+sell_pressure_ratio_10 :  55
+access_date :  2016-12-10 01:13:02
+sell_pressure_ratio_5 :  45
+price :  2618
+score_gyoseki :  37
+sector_detail :  unknown
+----------
+基本銘柄更新: 39日ぶり
+----> 6080のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6080のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>271,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:Ｍ＆Ａキャピタルパートナーズ,時価総額:38335百万円
+最低購入代金:271800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6080 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-31 23:07:14
+shihyo_pt :  70
+stock_name :  Ｍ＆Ａキャピタルパートナーズ
+code :  6080
+access_date_gyoseki :  2016-10-31 23:04:57
+price :  2579
+access_date_rironkabuka :  2016-10-31 23:05:29
+sector_detail :  unknown
+lowest_purchase_money :  271800
+market_cap :  38335
+rironkabuka :  2166
+access_date_price :  2016-10-31 23:04:35
+stddev_volatility :  7.51
+sell_pressure_ratio_10 :  66
+access_date :  2016-12-10 01:13:02
+sell_pressure_ratio_5 :  73
+sell_pressure_ratio_20 :  74
+score_gyoseki :  66
+----------
+----> 6087のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6087のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>324,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アビスト,時価総額:12915百万円
+最低購入代金:324500
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6087 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-20 23:01:40
+lowest_purchase_money :  324500
+stock_name :  アビスト
+code :  6087
+score_gyoseki :  100
+access_date_gyoseki :  2016-11-21 23:21:03
+price :  2880
+access_date_rironkabuka :  2016-11-22 00:14:52
+access_date :  2016-12-10 01:13:02
+sector_detail :  unknown
+shihyo_pt :  100
+market_cap :  12915
+rironkabuka :  4015
+access_date_price :  2016-11-21 23:20:47
+stddev_volatility :  6.18
+sell_pressure_ratio_10 :  66
+sell_pressure_ratio_5 :  50
+sell_pressure_ratio_20 :  86
+----------
+----> 6093のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6093のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>131,400</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:エスクロー・エージェント・ジャパン,時価総額:10813百万円
+最低購入代金:131400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6093 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-18 23:02:08
+lowest_purchase_money :  131400
+stock_name :  エスクロー・エージェント・ジャパン
+market_cap :  10813
+access_date_gyoseki :  2016-11-18 23:00:44
+access_date_price :  2016-11-18 23:00:28
+access_date_rironkabuka :  2016-11-18 23:01:04
+sell_pressure_ratio_20 :  72
+shihyo_pt :  95
+code :  6093
+rironkabuka :  3212
+stddev_volatility :  7.14
+sell_pressure_ratio_10 :  51
+access_date :  2016-12-10 01:13:03
+sell_pressure_ratio_5 :  35
+price :  2786
+score_gyoseki :  83
+sector_detail :  unknown
+----------
+----> 6098のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6098のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>430,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:リクルートホールディングス,時価総額:2430876百万円
+最低購入代金:430000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6098 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-11-17 23:02:20
+shihyo_pt :  20
+stock_name :  リクルートホールディングス
+market_cap :  2430876
+access_date_gyoseki :  2016-11-17 23:00:44
+access_date_price :  2016-12-01 23:41:16
+access_date_rironkabuka :  2016-11-17 23:01:05
+sell_pressure_ratio_20 :  81
+lowest_purchase_money :  430000
+code :  6098
+rironkabuka :  2896
+stddev_volatility :  4.01
+sell_pressure_ratio_10 :  45
+access_date :  2016-12-10 01:13:03
+sell_pressure_ratio_5 :  53
+price :  4495
+score_gyoseki :  19
+sector_detail :  unknown
+----------
+----> 6134のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6134のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>137,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:富士機械製造,時価総額:134116百万円
+最低購入代金:137100
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6134 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2016-10-21 23:04:15
+lowest_purchase_money :  137100
+stock_name :  富士機械製造
+market_cap :  134116
+score_gyoseki :  9
+access_date_gyoseki :  2016-12-05 23:26:50
+access_date_price :  2016-12-05 23:26:39
+access_date_rironkabuka :  2016-12-05 23:27:23
+access_date :  2016-12-10 01:13:03
+sell_pressure_ratio_20 :  89
+shihyo_pt :  45
+code :  6134
+rironkabuka :  667
+stddev_volatility :  4.72
+sell_pressure_ratio_10 :  100
+sell_pressure_ratio_5 :  52
+price :  1344
+sector_detail :  unknown
+----------
+stock_data/stocks.pickleにpickleセーブ
+---------- 銘柄名不明リスト終了
+7214の詳細セクター更新
+7228の詳細セクター更新
+4102の詳細セクター更新
+3953の詳細セクター更新
+9852の詳細セクター更新
+1987の詳細セクター更新
+1981の詳細セクター更新
+6210の詳細セクター更新
+6373の詳細セクター更新
+4025の詳細セクター更新
+5658の詳細セクター更新
+9914の詳細セクター更新
+2169の詳細セクター更新
+3734の詳細セクター更新
+2406の詳細セクター更新
+2344の詳細セクター更新
+9701の詳細セクター更新
+7898の詳細セクター更新
+7399の詳細セクター更新
+5189の詳細セクター更新
+9311の詳細セクター更新
+9322の詳細セクター更新
+stock_data/stocks.pickleにpickleロード
+update_tables: ['master'] 強制更新: True
+----> 7214のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7214のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>113,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＧＭＢ,時価総額:5916百万円
+最低購入代金:113500
+<<<<< 解析完了 
+詳細セクター: 自動車部品（独立系）
+DB更新しました:  7214 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ＧＭＢ
+market_cap :  5916
+sector_detail :  自動車部品（独立系）
+lowest_purchase_money :  113500
+code :  7214
+access_date :  2016-12-10 01:13:12
+----------
+----> 7228のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7228のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>91,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:デイトナ,時価総額:3284百万円
+最低購入代金:91100
+<<<<< 解析完了 
+詳細セクター: 自動車部品（独立系）
+DB更新しました:  7228 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  デイトナ
+market_cap :  3284
+sector_detail :  自動車部品（独立系）
+lowest_purchase_money :  91100
+code :  7228
+access_date :  2016-12-10 01:13:12
+----------
+----> 4102のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 4102のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>143,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:丸尾カルシウム,時価総額:3349百万円
+最低購入代金:143000
+<<<<< 解析完了 
+詳細セクター: 各種化成品
+DB更新しました:  4102 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  丸尾カルシウム
+market_cap :  3349
+sector_detail :  各種化成品
+lowest_purchase_money :  143000
+code :  4102
+access_date :  2016-12-10 01:13:12
+----------
+----> 3953のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3953のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>59,200</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:大村紙業,時価総額:2891百万円
+最低購入代金:59200
+<<<<< 解析完了 
+詳細セクター: 包装
+DB更新しました:  3953 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  大村紙業
+market_cap :  2891
+sector_detail :  包装
+lowest_purchase_money :  59200
+code :  3953
+access_date :  2016-12-10 01:13:13
+----------
+----> 9852のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9852のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>546,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＣＢグループマネジメント,時価総額:6721百万円
+最低購入代金:546000
+<<<<< 解析完了 
+詳細セクター: 化粧品・日用品
+DB更新しました:  9852 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ＣＢグループマネジメント
+market_cap :  6721
+sector_detail :  化粧品・日用品
+lowest_purchase_money :  546000
+code :  9852
+access_date :  2016-12-10 01:13:13
+----------
+----> 1987のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1987のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>289,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ソルコム,時価総額:8543百万円
+最低購入代金:289000
+<<<<< 解析完了 
+詳細セクター: 電気通信・設備等工事
+DB更新しました:  1987 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ソルコム
+market_cap :  8543
+sector_detail :  電気通信・設備等工事
+lowest_purchase_money :  289000
+code :  1987
+access_date :  2016-12-10 01:13:13
+----------
+----> 1981のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 1981のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>59,900</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:協和日成,時価総額:7068百万円
+最低購入代金:59900
+<<<<< 解析完了 
+詳細セクター: 電気通信・設備等工事
+DB更新しました:  1981 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  協和日成
+market_cap :  7068
+sector_detail :  電気通信・設備等工事
+lowest_purchase_money :  59900
+code :  1981
+access_date :  2016-12-10 01:13:13
+----------
+----> 6210のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6210のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>47,800</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:東洋機械金属,時価総額:9896百万円
+最低購入代金:47800
+<<<<< 解析完了 
+詳細セクター: 産業機械・FA
+DB更新しました:  6210 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  東洋機械金属
+market_cap :  9896
+sector_detail :  産業機械・FA
+lowest_purchase_money :  47800
+code :  6210
+access_date :  2016-12-10 01:13:14
+----------
+----> 6373のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6373のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>255,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:大同工業,時価総額:12029百万円
+最低購入代金:255000
+<<<<< 解析完了 
+詳細セクター: 産業機械・FA
+DB更新しました:  6373 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  大同工業
+market_cap :  12029
+sector_detail :  産業機械・FA
+lowest_purchase_money :  255000
+code :  6373
+access_date :  2016-12-10 01:13:14
+----------
+----> 4025のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 4025のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>814,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:多木化学,時価総額:19249百万円
+最低購入代金:814000
+<<<<< 解析完了 
+詳細セクター: 農業・酪農周辺事業
+DB更新しました:  4025 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  多木化学
+market_cap :  19249
+sector_detail :  農業・酪農周辺事業
+lowest_purchase_money :  814000
+code :  4025
+access_date :  2016-12-10 01:13:14
+----------
+----> 5658のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5658のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>30,300</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:日亜鋼業,時価総額:15682百万円
+最低購入代金:30300
+<<<<< 解析完了 
+詳細セクター: 鉄鋼
+DB更新しました:  5658 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  日亜鋼業
+market_cap :  15682
+sector_detail :  鉄鋼
+lowest_purchase_money :  30300
+code :  5658
+access_date :  2016-12-10 01:13:14
+----------
+----> 9914のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9914のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>310,000</strong><span class="date yjSt">（12/01）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:植松商会,時価総額:1451百万円
+最低購入代金:310000
+<<<<< 解析完了 
+詳細セクター: 機械卸・専門商社
+DB更新しました:  9914 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  植松商会
+market_cap :  1451
+sector_detail :  機械卸・専門商社
+lowest_purchase_money :  310000
+code :  9914
+access_date :  2016-12-10 01:13:14
+----------
+----> 2169のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 2169のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>100,700</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＣＤＳ,時価総額:6973百万円
+最低購入代金:100700
+<<<<< 解析完了 
+詳細セクター: 人材紹介・派遣サービス
+DB更新しました:  2169 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ＣＤＳ
+market_cap :  6973
+sector_detail :  人材紹介・派遣サービス
+lowest_purchase_money :  100700
+code :  2169
+access_date :  2016-12-10 01:13:15
+----------
+----> 3734のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3734のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>35,700</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:インテア・ホールディングス,時価総額:3797百万円
+最低購入代金:35700
+<<<<< 解析完了 
+詳細セクター: 映画・映像
+DB更新しました:  3734 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  インテア・ホールディングス
+market_cap :  3797
+sector_detail :  映画・映像
+lowest_purchase_money :  35700
+code :  3734
+access_date :  2016-12-10 01:13:15
+----------
+----> 2406のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 2406のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>70,100</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アルテ　サロン　ホールディングス,時価総額:3736百万円
+最低購入代金:70100
+<<<<< 解析完了 
+詳細セクター: 各種商業サービス
+DB更新しました:  2406 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  アルテ　サロン　ホールディングス
+market_cap :  3736
+sector_detail :  各種商業サービス
+lowest_purchase_money :  70100
+code :  2406
+access_date :  2016-12-10 01:13:15
+----------
+----> 2344のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 2344のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>82,500</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:平安レイサービス,時価総額:12100百万円
+最低購入代金:82500
+<<<<< 解析完了 
+詳細セクター: 各種商業サービス
+DB更新しました:  2344 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  平安レイサービス
+market_cap :  12100
+sector_detail :  各種商業サービス
+lowest_purchase_money :  82500
+code :  2344
+access_date :  2016-12-10 01:13:15
+----------
+----> 9701のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9701のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>320,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:東京會舘,時価総額:11085百万円
+最低購入代金:320000
+<<<<< 解析完了 
+詳細セクター: 各種商業サービス
+DB更新しました:  9701 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  東京會舘
+market_cap :  11085
+sector_detail :  各種商業サービス
+lowest_purchase_money :  320000
+code :  9701
+access_date :  2016-12-10 01:13:15
+----------
+----> 7898のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7898のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>276,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ウッドワン,時価総額:13582百万円
+最低購入代金:276000
+<<<<< 解析完了 
+詳細セクター: 住宅電設・資材・関連サービス
+DB更新しました:  7898 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ウッドワン
+market_cap :  13582
+sector_detail :  住宅電設・資材・関連サービス
+lowest_purchase_money :  276000
+code :  7898
+access_date :  2016-12-10 01:13:16
+----------
+----> 7399のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7399のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>457,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ナンシン,時価総額:3523百万円
+最低購入代金:457000
+<<<<< 解析完了 
+詳細セクター: 特殊車両・自転車
+DB更新しました:  7399 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  ナンシン
+market_cap :  3523
+sector_detail :  特殊車両・自転車
+lowest_purchase_money :  457000
+code :  7399
+access_date :  2016-12-10 01:13:16
+----------
+----> 5189のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 5189のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>378,000</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:櫻護謨,時価総額:3825百万円
+最低購入代金:378000
+<<<<< 解析完了 
+詳細セクター: ゴム・タイヤ
+DB更新しました:  5189 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  櫻護謨
+market_cap :  3825
+sector_detail :  ゴム・タイヤ
+lowest_purchase_money :  378000
+code :  5189
+access_date :  2016-12-10 01:13:16
+----------
+----> 9311のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9311のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>412,000</strong><span class="date yjSt">（12/08）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アサガミ,時価総額:5842百万円
+最低購入代金:412000
+<<<<< 解析完了 
+詳細セクター: 運輸・物流・倉庫
+DB更新しました:  9311 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  アサガミ
+market_cap :  5842
+sector_detail :  運輸・物流・倉庫
+lowest_purchase_money :  412000
+code :  9311
+access_date :  2016-12-10 01:13:16
+----------
+----> 9322のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9322のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>100,600</strong><span class="date yjSt">（12/09）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:川西倉庫,時価総額:8308百万円
+最低購入代金:100600
+<<<<< 解析完了 
+詳細セクター: 運輸・物流・倉庫
+DB更新しました:  9322 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+stock_name :  川西倉庫
+market_cap :  8308
+sector_detail :  運輸・物流・倉庫
+lowest_purchase_money :  100600
+code :  9322
+access_date :  2016-12-10 01:13:16
+----------
+stock_data/stocks.pickleにpickleセーブ
+==============================
+----- セクター解析結果
+==============================
+各種化成品 12 20 33 /112
+   4097高圧ガス工業 4119日本ピグメント 4182三菱ガス化学 4187大阪有機化学工業 4203住友ベークライト 4231タイガースポリマー 4242タカギセイコー 4272日本化薬 4366ダイトーケミックス 4410ハリマ化成グループ 4620藤倉化成 4968荒川化学工業 4973日本高純度化学 5015ビーピー・カストロール 5301東海カーボン 3405クラレ 7970信越ポリマー 4027テイカ 4046大阪ソーダ 4094日本化学産業
+鉄鋼 9 17 17 /46
+   5464モリ工業 7305新家工業 7414小野建 5401新日鐵住金 5423東京製鐵 5444大和工業 5451淀川製鋼所 5480日本冶金工業 5481山陽特殊製鋼 5541大平洋金属 5563新日本電工 5602栗本鐵工所 9810日鉄住金物産 5658n/a 5695パウダーテック 8065佐藤商事 8078阪和興業
+産業機械・FA 7 14 23 /99
+   6145日特エンジニアリング 6210n/a 6277ホソカワミクロン 6301コマツ 6305日立建機 6373n/a 6383ダイフク 6409キトー 6481ＴＨＫ 6482ユーシン精機 6490日本ピラー工業 6506安川電機 6590芝浦メカトロニクス 6622ダイヘン
+工作機械 8 13 17 /44
+   6157日進工具 6161エスティック 6217津田駒工業 6250やまびこ 6262ペガサスミシン製造 6358酒井重工業 6390加藤製作所 6581日立工機 6101ツガミ 6104東芝機械 6113アマダホールディングス 6138ダイジェット工業 6143ソディック
+自動車部品（メーカー系） 5 10 15 /56
+   7220武蔵精密工業 6470大豊工業 7235東京ラヂエーター製造 7241フタバ産業 7242ＫＹＢ 7292村上開明堂 5970ジーテクト 5986モリテック　スチール 5989エイチワン 5992中央発條
+地方銀行 8 9 10 /69
+   8358スルガ銀行 8362福井銀行 8364清水銀行 8367南都銀行 8388阿波銀行 8395佐賀銀行 8541愛媛銀行 8562福島銀行 8350みちのく銀行
+非鉄金属・アルミ・電線 4 11 14 /35
+   5807東京特殊電線 3036アルコニックス 5702大紀アルミニウム工業所 5706三井金属 5707東邦亜鉛 5713住友金属鉱山 5729日本精鉱 5805昭和電線ホールディングス 5816オーナンバ 5819カナレ電気 5820三ッ星
+電子機器・部品 3 9 16 /69
+   6757ＯＳＧコーポレーション 6779日本電波工業 6834精工技研 6929日本セラミック 6996ニチコン 6724セイコーエプソン 7836アビックス 7873アーク 5975東プレ
+石油・ガス・エネルギー関連 5 9 11 /26
+   8835太平洋興発 5017富士石油 3315日本コークス工業 9818大丸エナウィン 8131ミツウロコグループホールディングス 4088エア・ウォーター 8148上原成商事 4091大陽日酸 4093東邦アセチレン
+総合化学・化学専門商社 6 8 10 /32
+   4183三井化学 3407旭化成 9845パーカーコーポレーション 8090昭光通商 4004昭和電工 4007日本化成 4042東ソー 4063信越化学工業
+マンション分譲・仲介 6 8 10 /30
+   8869明和地所 8877日本エスリード 8881日神不動産 8892日本エスコン 8898センチュリー２１・ジャパン 8935ＦＪネクスト 3246コーセーアールイー 3528プロスペクト
+電気通信・設備等工事 5 7 10 /41
+   1987n/a 1721コムシスホールディングス 1736オーテック 1951協和エクシオ 1952新日本空調 1980ダイダン 1981n/a
+運輸・物流・倉庫 4 6 10 /66
+   9065山九 9086日立物流 9304澁澤倉庫 9311n/a 9319中央倉庫 9365トレーディア
+電子材料・基板・電池 3 8 9 /38
+   4217日立化成 6768タムラ製作所 6941山一電機 6958日本ＣＭＫ 6787メイコー 5384フジミインコーポレーテッド 3441山王 7928旭化学工業
+産業用電子機器 4 6 7 /44
+   6405鈴茂器工 6507シンフォニアテクノロジー 6638ミマキエンジニアリング 6743大同信号 6962大真空 6966三井ハイテック
+半導体および製造装置 3 6 11 /35
+   2146ＵＴグループ 6274新川 6504富士電機 6707サンケン電気 6723ルネサスエレクトロニクス 3436ＳＵＭＣＯ
+塗料・インキ・磁気媒体 3 7 8 /24
+   4116大日精化工業 4616川上塗料 4619日本特殊塗料 4629大伸化学 4631ＤＩＣ 4633サカタインクス 4634東洋インキＳＣホールディングス
+スーパーマーケット・ホームセンター 3 5 10 /67
+   8203ＭｒＭａｘ 7475アルビス 7516コーナン商事 9903カンセキ 8184島忠
+金属製品 5 6 6 /35
+   6498キッツ 5902ホッカンホールディングス 5942日本フイルコン 5955ヤマシナ 5957日東精工 8015豊田通商
+自動車部品（独立系） 4 6 7 /43
+   7271安永 7214n/a 7228n/a 7236ティラド 7264ムロコーポレーション 7278エクセディ
+総合商社 4 5 5 /7
+   2768双日 8001伊藤忠商事 8031三井物産 8053住友商事 8058三菱商事
+プラント設備工事・周辺事業 3 5 7 /23
+   6269三井海洋開発 6332月島機械 1737三井金属エンジニアリング 1828田辺工業 1963日揮
+事務・精密機器 3 5 6 /27
+   6448ブラザー工業 6454マックス 9435光通信 7726黒田精工 7885タカノ
+アミューズメント機械・施設 2 4 9 /28
+   6357三精テクノロジーズ 6412平和 6419マースエンジニアリング 6430ダイコク電機
+建設・土木 1 5 11 /66
+   1788三東工業社 1812鹿島 1813不動テトラ 1820西松建設 1852淺沼組
+ゴム・タイヤ 2 3 6 /17
+   5184ニチリン 5189n/a 5192三ツ星ベルト
+その他専門店 3 4 5 /35
+   4337ぴあ 2730エディオン 9831ヤマダ電機 8175ベスト電器
+特殊車両・自転車 3 3 4 /15
+   7105ニチユ三菱フォークリフト 7226極東開発工業 7399n/a
+その他不動産 2 4 5 /21
+   8922日本アセットマーケティング 8929青山財産ネットワークス 3242アーバネットコーポレーション 3254プレサンスコーポレーション
+電子・情報機器　卸・商社 3 3 6 /31
+   7510たけびし 7609ダイトエレクトロン 8155三益半導体工業
+各種商業サービス 2 5 6 /28
+   4331テイクアンドギヴ・ニーズ 2344n/a 2453ジャパンベストレスキューシステム 7578ニチリョク 9701n/a
+繊維 2 4 8 /39
+   3529アツギ 3106クラボウ 3401帝人 3524日東製網
+機械卸・専門商社 0 5 8 /32
+   7476アズワン 9932杉本商事 9934因幡電機産業 8059第一実業 8061西華産業
+酒類・清涼飲料・タバコ 3 3 7 /16
+   2503キリンホールディングス 2533オエノンホールディングス 2597ユニカフェ
+パソコンおよび周辺機器 2 4 5 /12
+   6670ＭＣＪ 6676メルコホールディングス 6737ＥＩＺＯ 6789ローランド　ディー．ジー．
+総合電機・家電 2 5 5 /13
+   6502東芝 6503三菱電機 6702富士通 6753シャープ 6897ツインバード工業
+包装 1 4 7 /21
+   3945スーパーバッグ 3946トーモク 3951朝日印刷 3953n/a
+システム開発 1 4 7 /60
+   3771システムリサーチ 2349エヌアイデイ 4762エックスネット 4832ＪＦＥシステムズ
+建設周辺事業 2 3 8 /33
+   2498ＡＣＫグループ 1723日本電技 1954日本工営
+分譲住宅 1 2 5 /26
+   4204積水化学工業 1840土屋ホールディングス
+証券 1 3 3 /20
+   8617光世証券 8625高木証券 8706極東証券
+ガラス・陶器・セラミックス 2 3 4 /22
+   3110日東紡 5201旭硝子 5210日本山村硝子
+教育・教材 2 3 4 /23
+   4718早稲田アカデミー 4735京進 9769学究社
+住宅電設・資材・関連サービス 2 2 6 /40
+   7898n/a 7955クリナップ
+ITソリューション 1 2 8 /55
+   9709ＮＣＳ＆Ａ 7595アルゴグラフィックス
+印刷・写真 1 3 4 /30
+   7863平賀 7914共同印刷 7920三浦印刷
+外食・中食関連 1 2 7 /56
+   7625グローバルダイニング 5941中西製作所
+建設資材専門商社 2 3 3 /19
+   7637白銅 9896ＪＫホールディングス 8077小林産業
+食品原材料・調味料 2 3 3 /31
+   2108日本甜菜製糖 2612かどや製油 2812焼津水産化学工業
+建築関連資材・製品 0 4 8 /48
+   1518三井松島産業 7822永大産業 5929三和ホールディングス 5950日本パワーファスニング
+海運 1 4 4 /18
+   9104商船三井 9130共栄タンカー 9171栗林商船 9362兵機海運
+百貨店・総合スーパー 2 2 2 /20
+   2653イオン九州 7512イオン北海道
+検査・分析・計測機器 1 2 7 /42
+   6644大崎電気工業 7705ジーエルサイエンス
+通信機器 2 3 4 /18
+   6588東芝テック 6704岩崎通信機 6800ヨコオ
+紙・パルプ・林材品 1 1 2 /15
+   8032日本紙パルプ商事
+不動産 1 1 1 /18
+   8803平和不動産
+パン・菓子・製粉 0 2 4 /25
+   2226フレンテ 2892日本食品化工
+電力・ガス 1 1 2 /22
+   9511沖縄電力
+ソフトウェア開発 0 1 4 /40
+   4288アズジェント
+家庭・オフィス用品 1 1 1 /21
+   7976三菱鉛筆
+保険 1 1 1 /6
+   8766東京海上ホールディングス
+映画・映像 1 1 3 /12
+   3734n/a
+医療・介護周辺サービス 0 2 3 /18
+   2393日本ケアサプライ 9707ユニマット　リタイアメント・コミュニティ
+その他金融サービス 1 1 1 /24
+   8793ＮＥＣキャピタルソリューション
+自動車販売・自動車用品販売 1 1 2 /26
+   8117中央自動車工業
+衣料 1 2 4 /54
+   8013ナイガイ 8016オンワードホールディングス
+環境関連 1 1 1 /10
+   9793ダイセキ
+農業・酪農周辺事業 1 1 2 /12
+   4025n/a
+ファーストフード・ファミレス・喫茶店 0 2 2 /17
+   9887松屋フーズ 9899ジョリーパスタ
+石油元売 1 1 1 /5
+   5019出光興産
+化粧品・日用品 0 2 5 /27
+   9852n/a 7874レック
+放送・ケーブルＴＶ 1 2 2 /10
+   4308Ｊストリーム 4676フジ・メディア・ホールディングス
+事業投資 1 2 2 /9
+   8473ＳＢＩホールディングス 8518日本アジア投資
+スポーツ用品・ウエア 1 2 4 /16
+   7990グローブライド 5142アキレス
+総合重機・造船 1 1 1 /8
+   6302住友重機械工業
+農産物・水産物・畜産物 1 1 2 /25
+   2282日本ハム
+ゲームソフト 1 1 1 /14
+   3851日本一ソフトウェア
+道路・橋梁 1 2 2 /18
+   9632スバル興業 5923高田機工
+音楽・芸能 1 1 2 /6
+   7860エイベックス・グループ・ホールディングス
+レジャー・観光・スポーツ 0 2 3 /30
+   4801セントラルスポーツ 9674花月園観光
+自動車 1 1 1 /11
+   7202いすゞ自動車
+システムインテグレーター 0 1 5 /31
+   9742アイネス
+食品 0 0 1 /16
+  
+出版 0 1 1 /12
+   2388ウェッジホールディングス
+広告代理店・インターネット広告 0 0 1 /29
+  
+時計・眼鏡・貴金属 0 0 1 /21
+  
+不動産管理サービス 0 1 3 /23
+   2353日本駐車場開発
+医薬・医療品 0 0 1 /60
+  
+電子部品卸・商社 0 1 2 /24
+   9995ルネサスイーストン
+携帯電話 0 1 1 /7
+   9446エスケーアイ
+書店・CD・娯楽関連専門店 0 1 2 /15
+   9826ＪＥＵＧＩＡ
+人材紹介・派遣サービス 0 0 1 /20
+  
+バイオ・臨床試験 0 0 1 /18
+  
+通信販売・オンライン販売 0 0 1 /13
+  
+コンクリート・セメント 0 0 3 /19
+  
+情報処理関連 0 0 1 /6
+  
+紳士服・和服・靴・かばん 0 0 1 /17
+  
+玩具・育児用品 0 0 1 /7
+  
+アウトソーシング・業務支援 0 1 2 /23
+   2429ワールドホールディングス
+インターネット関連 0 0 1 /38
+  
+コンビニ・ドラッグストア 0 0 2 /27
+  
+信販・消費者金融 0 1 1 /8
+   8584ジャックス
+航空および周辺サービス 0 0 1 /7
+  
+調査・経営コンサルタント 0 0 2 /16
+  
+電話・通信 0 1 1 /7
+   9984ソフトバンクグループ
+レンタル 0 1 2 /12
+   9639三協フロンテア
+鉄道・バス・タクシー 0 1 3 /27
+   9012秩父鉄道
+求人情報・フリーペーパー 0 0 1 /9
+  
+食品、水産　卸・商社 0 0 2 /33
+  
+医療機器・精密機器・カメラ 0 0 1 /24
+  
+[Finished in 62.9s]

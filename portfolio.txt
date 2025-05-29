@@ -1,0 +1,4937 @@
+[2304, 6150, 8202, 6669, 3091, 6164, 7722, 8242, 3639, 4674, 3653, 2124, 3662, 6157, 3664, 3668, 3769, 7256, 6747, 7779, 2148, 3173, 3686, 3687, 3688, 7273, 2154, 3179, 2163, 5237, 6264, 6778, 4734, 2175, 7820, 9358, 4751, 4241, 7829, 4246, 7844, 2729, 6826, 3756, 6832, 7859, 6324, 7865, 2751, 2752, 6432, 4299, 3276, 8909, 6864, 6866, 3800, 3299, 6894, 7408, 2292, 2301, 7936, 3333, 3347, 8473, 7968, 7991, 3387, 3388, 3901, 6463, 2379, 1381, 9065, 2928, 8050, 2931, 8570, 2427, 2432, 9090, 4848, 7591, 6058, 6071, 4539, 2492, 6078, 3660, 6092, 6094, 3034, 6619, 3036, 3038, 6624, 6634, 7148, 6638, 3069, 9717, 3242]
+stock_data/stocks.pickleにpickleロード
+update_tables: ['master', 'gyoseki', 'rironkabuka', 'shihyo'] 強制更新: False
+2304ＣＳＳホールディングスはDBに存在します
+業績更新: 35日ぶり
+----> 6150のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6150のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>370,000</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:タケダ機械,時価総額:3774百万円
+最低購入代金:370000
+<<<<< 解析完了 
+no_memo: ('stock_data/sector/sector_db.pickle',)
+stock_data/sector/sector_db.pickleにpickleロード
+詳細セクター: 産業機械・FA
+業績更新: 35日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=6150&mode=k.html
+>>>>> 6150の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2012.05', 2623, 25, -9, 30, 3.1, 0.0]
+ldict: ['2013.05', 2928, 89, 66, 54, 5.6, 0.0]
+ldict: ['2014.05', 3700, 356, 338, 310, 31.9, 0.0]
+ldict: ['2015.05', 4694, 567, 559, 446, 45.8, 3.0]
+ldict: ['予2016.05', 4800, 614, 611, 360, 37.0, 5.0]
+ldict: ['前期比', '+2.3', '+8.3', '+9.3', '<span class="down">-19.3', '<span class="down">-19.2', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.06-08', 721, 13, 10, 6, 0.7, 1.8]
+ldict: ['13.09-11', 1051, 130, 122, 102, 10.5, 12.4]
+ldict: ['13.12-02', 698, 31, 29, 30, 3.1, 4.4]
+ldict: ['14.03-05', 1230, 182, 177, 172, 17.7, 14.8]
+ldict: ['14.06-08', 983, 81, 79, 64, 6.6, 8.2]
+ldict: ['14.09-11', 1240, 191, 183, 164, 16.9, 15.4]
+ldict: ['14.12-02', 1254, 189, 191, 151, 15.5, 15.1]
+ldict: ['15.03-05', 1217, 106, 106, 67, 6.9, 8.7]
+ldict: ['前年同期比', '<span class="down">-1.1', '<span class="down">-41.8', '<span class="down">-40.1', '<span class="down">-61.0', '<span class="down">-61.0', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 18.0, 46.9, 50.0, 60.8]
+[0.0, 79.7, 509.7, 558.6, 403.3]
+[0.0, -1.1, -41.8, -40.1, -61.0]
+---
+[0, 1, 1, 1, 1]
+[0, 1, 1, 1, 1]
+[0, 0, 0, 0, 0]
+経常利益成長率: [50.0, 412.1, 65.4, 9.3]
+score_past_profit: 15 <- 過去平均利益成長: 175.8 red: 0
+score_future_profit: 15 <- 将来利益成長: 37.3
+score_latest_profit: 0 <- 最直近四半期利益成長: -40.1
+score_sales_rate: 16 <- 3四半期売上成長: 32.2
+score_quarter_profit_rate: 20
+gyoseki_score: 66
+===== 業績スコアの計算完了
+date: 2015-08-21 00:34:07
+理論株価更新: 35日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=6150&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_6150.html
+連12. 5 ['2,623', '25', '-9', '30', '3.1', '0']
+連13. 5 ['2,928', '89', '66', '54', '5.6', '0']
+連14. 5 ['3,700', '356', '338', '310', '31.9', '0']
+連15. 5予 ['4,800', '650', '650', '550', '56.5', '0']
+売上: 3700 4800 5300
+連16. 5予 ['5,300', '850', '850', '650', '66.7', '0\xe3\x80\x9c3']
+成長率： 1.197
+理論株価=1496
+6150	1.20	3700	4800	5300	206	56.5	0		1496					27.4
+===== 理論株価の計算完了
+date: 2015-08-21 00:34:08
+DB更新しました:  6150 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-07-16 01:46:44
+lowest_purchase_money :  370000
+stock_name :  タケダ機械
+code :  6150
+score_gyoseki :  66
+access_date_gyoseki :  2015-08-21 00:34:07
+price :  357
+access_date_rironkabuka :  2015-08-21 00:34:08
+access_date :  2015-08-21 00:34:06
+sector_detail :  産業機械・FA
+shihyo_pt :  80
+market_cap :  3774
+rironkabuka :  1496
+access_date_price :  2015-08-10 22:57:39
+stddev_volatility :  9.47
+sell_pressure_ratio_10 :  79
+sell_pressure_ratio_5 :  94
+sell_pressure_ratio_20 :  243
+----------
+8202ラオックスはDBに存在します
+6669シーシーエスはDBに存在します
+3091ブロンコビリーはDBに存在します
+指標更新: 93日ぶり
+----- 指標の取得計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho1&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=6164&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_base_6164.html
+有利子負債自己資本比率: 0
+時価総額: 41
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=6164&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_6164.html
+株主比率: [0.3, 16.0, 5.6, 79.5]
+dryscrapeでhtmlを取得します.. investing/quotes/detail?symbol=6164.T
+.. html取得しました
+ROE: [4.9, 38.4, 38.2, 3.3, 16.8, 8.5]
+売上高営業利益率: [2.6, 11.7, 12.2, 5.1, 12.7, 9.5]
+EV/EBITDA: [10.5, 4.8, 4.4, 6.6, 4.2, 4.5]
+PCFR: [34.8, -51.5, 38.0, -11.9, 12.1, 13.0]
+PER: [28.9, 6.4, 4.9, 27.9, 8.9, 17.5]
+PSR: [0.4, 0.6, 0.7, 0.5, 0.7, 1.4]
+PEG: [0.2, 0.2, -6.2, -1.3, 0.3, 1.3]
+時価総額: 44
+時価総額pt: 30/30 Debtpt: 0/-30
+ROE値: 16.8 pt:10/10
+ROE成長率: -1.13 pt:0/10
+ROE平均比: 97.65 pt:10/10
+売上高営業利益率値: 12.7 pt:10/10
+OPM成長率: 1.36 pt:5/10
+OPM平均比: 33.68 pt:5/10
+EV/EBITDA値: 4.2 pt:10/10
+EV/EBITDA成長率: -1.08 pt:10/10
+EV/EBITDA平均比: -6.67 pt:5/10
+指標PT: 95
+----- 指標の取得計算完了
+date_shihyo: 2015-08-21 00:35:45
+DB更新しました:  6164 ['access_date_shihyo', 'shihyo_pt', 'code', 'shihyo']
+----------
+access_date_shihyo :  2015-08-21 00:35:45
+shihyo_pt :  95
+stock_name :  太陽工機
+code :  6164
+access_date_gyoseki :  2015-08-09 19:20:47
+price :  1710
+access_date_rironkabuka :  2015-08-09 19:20:48
+sector_detail :  工作機械
+lowest_purchase_money :  141000
+market_cap :  4199
+rironkabuka :  1388
+access_date_price :  2015-08-10 22:57:40
+stddev_volatility :  5.32
+sell_pressure_ratio_10 :  95
+access_date :  2015-08-09 19:20:47
+sell_pressure_ratio_5 :  17
+sell_pressure_ratio_20 :  37
+score_gyoseki :  97
+----------
+7722国際計測器はDBに存在します
+8242エイチ・ツー・オー　リテイリングはDBに存在します
+業績更新: 35日ぶり
+----> 3639のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3639のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>168,800</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ボルテージ,時価総額:8702百万円
+最低購入代金:168800
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3639 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-06 11:26:22
+lowest_purchase_money :  168800
+stock_name :  ボルテージ
+code :  3639
+access_date_gyoseki :  2015-07-26 15:09:16
+price :  1730
+access_date_rironkabuka :  2015-07-26 15:09:17
+access_date :  2015-08-21 00:35:46
+sector_detail :  unknown
+shihyo_pt :  55
+market_cap :  8702
+rironkabuka :  405
+access_date_price :  2015-08-10 22:57:41
+stddev_volatility :  11.34
+sell_pressure_ratio_5 :  118
+sell_pressure_ratio_20 :  95
+score_gyoseki :  45
+----------
+4674クレスコはDBに存在します
+業績更新: 35日ぶり
+----> 3653のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3653のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>530,000</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:モルフォ,時価総額:26337百万円
+最低購入代金:530000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3653 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-30 00:53:50
+shihyo_pt :  40
+stock_name :  モルフォ
+code :  3653
+score_gyoseki :  97
+access_date_gyoseki :  2015-08-09 19:20:51
+access_date_price :  2015-08-10 22:57:41
+access_date_rironkabuka :  2015-08-09 19:20:53
+access_date :  2015-08-21 00:35:47
+sell_pressure_ratio_20 :  81
+lowest_purchase_money :  530000
+market_cap :  26337
+rironkabuka :  2858
+stddev_volatility :  10.55
+sell_pressure_ratio_10 :  58
+sell_pressure_ratio_5 :  39
+price :  5680
+sector_detail :  unknown
+----------
+2124ＪＡＣ　ＲｅｃｒｕｉｔｍｅｎｔはDBに存在します
+3662エイチームはDBに存在します
+6157日進工具はDBに存在します
+業績更新: 35日ぶり
+----> 3664のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3664のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>73,200</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:モブキャスト,時価総額:10659百万円
+最低購入代金:73200
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3664 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-12 01:33:39
+shihyo_pt :  45
+stock_name :  モブキャスト
+market_cap :  10659
+access_date_gyoseki :  2015-08-09 19:20:56
+access_date_price :  2015-08-10 22:57:45
+access_date_rironkabuka :  2015-08-09 19:20:57
+sell_pressure_ratio_20 :  117
+lowest_purchase_money :  73200
+code :  3664
+rironkabuka :  80
+stddev_volatility :  8.04
+sell_pressure_ratio_10 :  147
+access_date :  2015-08-21 00:35:47
+sell_pressure_ratio_5 :  98
+price :  793
+score_gyoseki :  37
+sector_detail :  unknown
+----------
+3668コロプラはDBに存在します
+3769ＧＭＯペイメントゲートウェイはDBに存在します
+7256河西工業はDBに存在します
+6747ＫＩホールディングスはDBに存在します
+7779ＣＹＢＥＲＤＹＮＥはDBに存在します
+業績更新: 35日ぶり
+----> 2148のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 2148のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>261,500</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アイティメディア,時価総額:17199百万円
+最低購入代金:261500
+<<<<< 解析完了 
+詳細セクター: インターネット関連
+DB更新しました:  2148 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-08-09 19:21:13
+lowest_purchase_money :  261500
+stock_name :  アイティメディア
+code :  2148
+score_gyoseki :  91
+access_date_gyoseki :  2015-08-09 19:21:03
+access_date_price :  2015-08-10 22:57:46
+access_date_rironkabuka :  2015-08-09 19:21:04
+access_date :  2015-08-21 00:35:48
+sell_pressure_ratio_20 :  62
+shihyo_pt :  70
+market_cap :  17199
+rironkabuka :  1704
+stddev_volatility :  16.25
+sell_pressure_ratio_10 :  145
+sell_pressure_ratio_5 :  112
+price :  2711
+sector_detail :  インターネット関連
+----------
+業績更新: 35日ぶり
+----> 3173のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3173のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>160,900</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:大阪工機,時価総額:5526百万円
+最低購入代金:160900
+<<<<< 解析完了 
+詳細セクター: unknown
+業績更新: 35日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=3173&mode=k.html
+>>>>> 3173の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2012.03', 14900, 510, 474, 224, 87.8, 20.0]
+ldict: ['2013.03', 15057, 423, 440, 273, 79.5, 21.0]
+ldict: ['2014.03', 17887, 543, 571, 291, 84.8, 22.0]
+ldict: ['2015.03', 20192, 695, 738, 400, 116.5, 23.0]
+ldict: ['予2016.03', 22690, 912, 910, 517, 150.5, 24.0]
+ldict: ['前期比', '+12.4', '+31.2', '+23.3', '+29.2', '+29.2', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.07-09', 4333, 122, 125, 17, 5.0, 2.8]
+ldict: ['13.10-12', 4668, 139, 156, 76, 22.2, 3.0]
+ldict: ['14.01-03', 5017, 199, 199, 141, 41.1, 4.0]
+ldict: ['14.04-06', 4670, 150, 157, 98, 28.8, 3.2]
+ldict: ['14.07-09', 4817, 193, 197, 121, 35.4, 4.0]
+ldict: ['14.10-12', 5174, 145, 169, 83, 24.2, 2.8]
+ldict: ['15.01-03', 5531, 207, 215, 98, 28.6, 3.7]
+ldict: ['15.04-06', 5201, 190, 185, 102, 29.9, 3.7]
+ldict: ['前年同期比', '+11.4', '+26.7', '+17.8', '+4.1', '+3.8', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 10.8, 4.3, 8.3, 9.2]
+[0.0, 10.2, 4.0, 8.0, -30.5]
+[0.0, 11.4, 26.7, 17.8, 4.1]
+---
+[0, 1, 0, 0, 0]
+[0, 1, 0, 0, 0]
+[0, 1, 1, 0, 0]
+経常利益成長率: [-7.2, 29.8, 29.2, 23.3]
+score_past_profit: 12 <- 過去平均利益成長: 17.3 red: 1
+score_future_profit: 15 <- 将来利益成長: 26.3
+score_latest_profit: 0 <- 最直近四半期利益成長: 17.8
+score_sales_rate: 25 <- 3四半期売上成長: 10.8
+score_quarter_profit_rate: 3
+gyoseki_score: 55
+===== 業績スコアの計算完了
+date: 2015-08-21 00:35:48
+理論株価更新: 35日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=3173&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_3173.html
+連11. 3* ['13,573', '360', '340', '153', '61.5', '9']
+連12. 3 ['14,900', '510', '474', '224', '87.8', '20']
+連13. 3 ['15,057', '423', '440', '273', '79.5', '21']
+連14. 3 ['17,887', '543', '571', '291', '84.8', '22']
+連15. 3 ['20,192', '695', '738', '400', '116.5', '23']
+連16. 3予 ['22,500', '900', '900', '510', '148.5', '24']
+売上: 20192 22500 25500
+連17. 3予 ['25,500', '1,200', '1,200', '700', '203.8', '25']
+成長率： 1.124
+理論株価=2742
+3173	1.12	20192	22500	25500	1236	148.5	0		2742					12.0
+===== 理論株価の計算完了
+date: 2015-08-21 00:35:49
+DB更新しました:  3173 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-06-12 01:33:51
+lowest_purchase_money :  160900
+stock_name :  大阪工機
+market_cap :  5526
+access_date_gyoseki :  2015-08-21 00:35:48
+access_date_price :  2015-08-10 22:57:46
+access_date_rironkabuka :  2015-08-21 00:35:49
+sell_pressure_ratio_20 :  139
+shihyo_pt :  75
+code :  3173
+rironkabuka :  2742
+stddev_volatility :  3.7
+sell_pressure_ratio_10 :  90
+access_date :  2015-08-21 00:35:48
+sell_pressure_ratio_5 :  315
+price :  1566
+score_gyoseki :  55
+sector_detail :  unknown
+----------
+3686ディー・エル・イーはDBに存在します
+3687フィックスターズはDBに存在します
+3688ＶＯＹＡＧＥ　ＧＲＯＵＰはDBに存在します
+7273イクヨはDBに存在します
+2154トラスト・テックはDBに存在します
+業績更新: 35日ぶり
+----> 3179のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3179のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>172,300</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:シュッピン,時価総額:20625百万円
+最低購入代金:172300
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3179 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-30 00:56:32
+lowest_purchase_money :  172300
+stock_name :  シュッピン
+market_cap :  20625
+score_gyoseki :  93
+access_date_gyoseki :  2015-08-09 19:21:22
+access_date_price :  2015-08-10 22:57:47
+access_date_rironkabuka :  2015-08-09 19:21:23
+access_date :  2015-08-21 00:35:50
+sell_pressure_ratio_20 :  83
+shihyo_pt :  75
+code :  3179
+rironkabuka :  1552
+stddev_volatility :  7.49
+sell_pressure_ratio_10 :  69
+sell_pressure_ratio_5 :  106
+price :  1886
+sector_detail :  unknown
+----------
+2163アルトナーはDBに存在します
+5237ノザワはDBに存在します
+6264マルマエはDBに存在します
+6778アルチザネットワークスはDBに存在します
+4734ビーイングはDBに存在します
+2175エス・エム・エスはDBに存在します
+7820ニホンフラッシュはDBに存在します
+9358宇徳はDBに存在します
+4751サイバーエージェントはDBに存在します
+指標更新: 98日ぶり
+----- 指標の取得計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho1&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=4241&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_base_4241.html
+有利子負債自己資本比率: 134
+時価総額: 43
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=4241&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_4241.html
+株主比率: [1.2, 15.7, 7.5, 70.3]
+dryscrapeでhtmlを取得します.. investing/quotes/detail?symbol=4241.T
+.. html取得しました
+ROE: [-10.3, -54.2, 23.1, 13.1, 9.9, 5.5]
+売上高営業利益率: [-1.2, -1.4, 8.5, 10.3, 8.7, 6.5]
+EV/EBITDA: [13.4, 13.1, 5.6, 6.1, 10.1, 6.2]
+PCFR: [3.5, -2.1, 3.3, -40.2, 184.6, 8.1]
+PER: [-7.0, -1.2, 5.6, 13.3, 26.6, 15.8]
+PSR: [0.4, 0.3, 0.5, 0.8, 1.4, 0.8]
+PEG: [0.8, 0.1, 28.2, '-', -4.8, 3.3]
+時価総額: 45
+時価総額pt: 30/30 Debtpt: -15/-30
+ROE値: 9.9 pt:5/10
+ROE成長率: 10.77 pt:10/10
+ROE平均比: 80.0 pt:10/10
+売上高営業利益率値: 8.7 pt:10/10
+OPM成長率: 3.15 pt:10/10
+OPM平均比: 33.85 pt:5/10
+EV/EBITDA値: 10.1 pt:0/10
+EV/EBITDA成長率: -1.36 pt:10/10
+EV/EBITDA平均比: 62.9 pt:0/10
+指標PT: 85
+----- 指標の取得計算完了
+date_shihyo: 2015-08-21 00:37:02
+DB更新しました:  4241 ['access_date_shihyo', 'shihyo_pt', 'code', 'shihyo']
+----------
+access_date_shihyo :  2015-08-21 00:37:02
+lowest_purchase_money :  111100
+stock_name :  アテクト
+code :  4241
+score_gyoseki :  50
+access_date_gyoseki :  2015-08-09 19:21:36
+price :  1150
+access_date_rironkabuka :  2015-08-09 19:21:38
+access_date :  2015-08-09 19:21:36
+sector_detail :  各種化成品
+shihyo_pt :  85
+market_cap :  4674
+rironkabuka :  894
+access_date_price :  2015-08-10 22:57:49
+stddev_volatility :  9.22
+sell_pressure_ratio_10 :  50
+sell_pressure_ratio_5 :  94
+sell_pressure_ratio_20 :  80
+----------
+7829サマンサタバサジャパンリミテッドはDBに存在します
+業績更新: 35日ぶり
+----> 4246のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 4246のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>569,000</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ダイキョーニシカワ,時価総額:102955百万円
+最低購入代金:569000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  4246 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-30 00:59:29
+shihyo_pt :  75
+stock_name :  ダイキョーニシカワ
+code :  4246
+access_date_gyoseki :  2015-08-05 01:20:02
+access_date_price :  2015-08-10 22:57:50
+access_date_rironkabuka :  2015-08-05 01:20:45
+sell_pressure_ratio_20 :  60
+lowest_purchase_money :  569000
+market_cap :  102955
+rironkabuka :  5243
+stddev_volatility :  7.91
+sell_pressure_ratio_10 :  69
+access_date :  2015-08-21 00:37:04
+sell_pressure_ratio_5 :  51
+price :  6330
+score_gyoseki :  20
+sector_detail :  unknown
+----------
+7844マーベラスはDBに存在します
+業績更新: 35日ぶり
+----> 2729のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 2729のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>251,100</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＪＡＬＵＸ,時価総額:32078百万円
+最低購入代金:251100
+<<<<< 解析完了 
+詳細セクター: 通信販売・オンライン販売
+業績更新: 35日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=2729&mode=k.html
+>>>>> 2729の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2012.03', 89082, 1621, 1656, 693, 54.5, 15.0]
+ldict: ['2013.03', 85937, 1391, 1247, 779, 61.7, 15.0]
+ldict: ['2014.03', 99837, 1706, 1766, 967, 76.6, 20.0]
+ldict: ['2015.03', 112717, 2426, 2684, 1148, 90.9, 25.0]
+ldict: ['予2016.03', 120000, 3000, 3000, 1400, 110.8, 30.0]
+ldict: ['前期比', '+6.5', '+23.7', '+11.8', '+22.0', '+21.9', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.07-09', 26240, 536, 588, 461, 36.5, 2.0]
+ldict: ['13.10-12', 27003, 521, 559, 240, 19.0, 1.9]
+ldict: ['14.01-03', 24746, 382, 396, 157, 12.4, 1.5]
+ldict: ['14.04-06', 23383, 194, 245, 106, 8.4, 0.8]
+ldict: ['14.07-09', 27569, 781, 833, 432, 34.2, 2.8]
+ldict: ['14.10-12', 30188, 773, 891, 383, 30.3, 2.6]
+ldict: ['15.01-03', 31577, 678, 715, 227, 18.0, 2.1]
+ldict: ['15.04-06', 34029, 616, 652, 300, 23.8, 1.8]
+ldict: ['前年同期比', '+45.5', '3.2倍', '2.7倍', '2.8倍', '2.8倍', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 11.8, 48.4, 59.4, 59.6]
+[0.0, 27.6, 77.5, 80.6, 44.6]
+[0.0, 45.5, 217.5, 166.1, 183.0]
+---
+[0, 1, 1, 1, 1]
+[0, 1, 1, 1, 1]
+[0, 1, 1, 1, 1]
+経常利益成長率: [-24.7, 41.6, 52.0, 11.8]
+score_past_profit: 12 <- 過去平均利益成長: 23.0 red: 1
+score_future_profit: 15 <- 将来利益成長: 31.9
+score_latest_profit: 15 <- 最直近四半期利益成長: 166.1
+score_sales_rate: 25 <- 3四半期売上成長: 28.3
+score_quarter_profit_rate: 30
+gyoseki_score: 97
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:04
+理論株価更新: 35日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=2729&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_2729.html
+連11. 3 ['95,541', '1,546', '1,603', '492', '38.8', '5']
+連12. 3 ['89,082', '1,621', '1,656', '693', '54.5', '15\xe8\xa8\x98']
+連13. 3 ['85,937', '1,391', '1,247', '779', '61.7', '15']
+連14. 3 ['99,837', '1,706', '1,766', '967', '76.6', '20']
+連15. 3 ['112,717', '2,426', '2,684', '1,148', '90.9', '25']
+連16. 3予 ['120,000', '3,000', '3,000', '1,400', '110.8', '30']
+売上: 112717 120000 128000
+連17. 3予 ['128,000', '3,500', '3,500', '1,600', '126.6', '35']
+成長率： 1.066
+理論株価=1477
+2729	1.07	112717	120000	128000	1311	110.8	0		1477					8.4
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:07
+DB更新しました:  2729 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-07-30 22:23:48
+lowest_purchase_money :  251100
+stock_name :  ＪＡＬＵＸ
+market_cap :  32078
+access_date_gyoseki :  2015-08-21 00:37:04
+access_date_price :  2015-08-10 22:57:50
+access_date_rironkabuka :  2015-08-21 00:37:07
+sell_pressure_ratio_20 :  60
+shihyo_pt :  45
+code :  2729
+rironkabuka :  1477
+stddev_volatility :  5.16
+sell_pressure_ratio_10 :  68
+access_date :  2015-08-21 00:37:04
+sell_pressure_ratio_5 :  163
+price :  2699
+score_gyoseki :  97
+sector_detail :  通信販売・オンライン販売
+----------
+6826本多通信工業はDBに存在します
+3756豆蔵ホールディングスはDBに存在します
+6832アオイ電子はDBに存在します
+7859アルメディオはDBに存在します
+6324ハーモニック・ドライブ・システムズはDBに存在します
+業績更新: 35日ぶり
+----> 7865のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 7865のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>197,000</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ピープル,時価総額:8742百万円
+最低購入代金:197000
+<<<<< 解析完了 
+詳細セクター: 玩具・育児用品
+業績更新: 35日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=7865&mode=k.html
+>>>>> 7865の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2012.01', 2840, 293, 293, 171, 39.2, 39.0]
+ldict: ['2013.01', 2851, 155, 160, 93, 21.2, 20.0]
+ldict: ['2014.01', 3260, 125, 198, 122, 27.8, 27.0]
+ldict: ['2015.01', 3526, 316, 330, 202, 46.1, 46.0]
+  !!! 売上高未発表
+  !!!営業利益、経常利益未発表 予2016.01
+  !!! 最終益未発表
+  !!! 一株益未発表
+  !!! 一株配当未発表
+ldict: ['予2016.01', '－', '－', '－', '－', 0, 0]
+ldict: ['前期比', '－', '－', '－', '－', '－', '&nbsp;']
+1修正: 予2016.01 － <- 3526
+2修正: 予2016.01 － <- 316
+3修正: 予2016.01 － <- 330
+4修正: 予2016.01 － <- 202
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.05-07', 709, -39, -20, -13, -2.6, -5.5]
+ldict: ['13.08-10', 878, 78, 62, 39, 8.9, 8.9]
+ldict: ['13.11-01', 1005, 117, 139, 86, 19.6, 11.6]
+ldict: ['14.02-04', 734, 62, 59, 37, 8.4, 8.4]
+ldict: ['14.05-07', 759, 3, 0, -1, -0.2, 0.4]
+ldict: ['14.08-10', 855, 76, 88, 54, 12.3, 8.9]
+ldict: ['14.11-01', 1178, 175, 183, 112, 25.6, 14.9]
+ldict: ['15.02-04', 928, 113, 113, 72, 16.4, 12.2]
+ldict: ['前年同期比', '+26.4', '+82.3', '+91.5', '+94.6', '+95.2', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, -2.6, -2.6, 41.9, 38.5]
+[0.0, 17.2, 49.6, 31.7, 30.2]
+[0.0, 26.4, 82.3, 91.5, 94.6]
+---
+[0, 0, 0, 1, 1]
+[0, 1, 1, 1, 1]
+[0, 1, 1, 1, 1]
+経常利益成長率: [-45.4, 23.8, 66.7, 0.0]
+score_past_profit: 12 <- 過去平均利益成長: 15.0 red: 1
+score_future_profit: 15 <- 将来利益成長: 33.3
+score_latest_profit: 15 <- 最直近四半期利益成長: 91.5
+score_sales_rate: 16 <- 3四半期売上成長: 13.7
+score_quarter_profit_rate: 26
+gyoseki_score: 84
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:08
+理論株価更新: 35日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=7865&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_7865.html
+単10. 1 ['2,936', '335', '374', '234', '53.9', '45']
+単11. 1 ['2,916', '380', '393', '240', '55.2', '50']
+単12. 1 ['2,840', '292', '293', '171', '39.2', '39']
+単13. 1 ['2,851', '155', '160', '92', '21.2', '20']
+単14. 1 ['3,260', '124', '198', '121', '27.8', '27']
+単15. 1 ['3,526', '316', '329', '201', '46.1', '46']
+単16. 1予 ['4,000', '470', '470', '310', '70.9', '70\xe3\x80\x9c71']
+売上: 3526 4000 4350
+単17. 1予 ['4,350', '570', '570', '380', '86.9', '86\xe3\x80\x9c87']
+成長率： 1.111
+理論株価=1249
+7865	1.11	3526	4000	4350	460	70.9	0		1249					15.4
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:09
+DB更新しました:  7865 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-07-10 01:14:43
+shihyo_pt :  75
+stock_name :  ピープル
+code :  7865
+access_date_gyoseki :  2015-08-21 00:37:08
+access_date_price :  2015-08-10 22:57:52
+access_date_rironkabuka :  2015-08-21 00:37:09
+sell_pressure_ratio_20 :  86
+lowest_purchase_money :  197000
+market_cap :  8742
+rironkabuka :  1249
+stddev_volatility :  5.15
+sell_pressure_ratio_10 :  45
+access_date :  2015-08-21 00:37:07
+sell_pressure_ratio_5 :  250
+price :  1950
+score_gyoseki :  84
+sector_detail :  玩具・育児用品
+----------
+2751テンポスバスターズはDBに存在します
+2752フジオフードシステムはDBに存在します
+6432竹内製作所はDBに存在します
+業績更新: 35日ぶり
+----> 4299のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 4299のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>122,200</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ハイマックス,時価総額:7584百万円
+最低購入代金:122200
+<<<<< 解析完了 
+詳細セクター: システムインテグレーター
+業績更新: 35日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=4299&mode=k.html
+>>>>> 4299の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2012.03', 8856, 677, 681, 208, 42.8, 25.0]
+ldict: ['2013.03', 9072, 627, 624, 345, 71.0, 25.0]
+ldict: ['2014.03', 9328, 706, 715, 410, 84.2, 25.0]
+ldict: ['2015.03', 10180, 777, 782, 659, 135.3, 30.0]
+ldict: ['予2016.03', 10700, 800, 805, 515, 105.7, 32.0]
+ldict: ['前期比', '+5.1', '+3.0', '+2.9', '<span class="down">-21.9', '<span class="down">-21.9', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.07-09', 2251, 191, 195, 114, 23.5, 8.5]
+ldict: ['13.10-12', 2292, 188, 190, 112, 23.0, 8.2]
+ldict: ['14.01-03', 2699, 241, 243, 133, 27.3, 8.9]
+ldict: ['14.04-06', 2418, 118, 121, 75, 15.3, 4.9]
+ldict: ['14.07-09', 2584, 218, 220, 135, 27.8, 8.4]
+ldict: ['14.10-12', 2507, 281, 283, 372, 76.3, 11.2]
+ldict: ['15.01-03', 2671, 160, 158, 77, 15.8, 6.0]
+ldict: ['15.04-06', 2656, 206, 210, 134, 27.5, 7.8]
+ldict: ['前年同期比', '+9.8', '+74.6', '+73.6', '+78.7', '+79.7', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 9.4, 49.5, 48.9, 232.1]
+[0.0, -1.0, -33.6, -35.0, -42.1]
+[0.0, 9.8, 74.6, 73.6, 78.7]
+---
+[0, 0, 1, 1, 1]
+[0, 0, 0, 0, 0]
+[0, 0, 1, 1, 1]
+経常利益成長率: [-8.4, 14.6, 9.4, 2.9]
+score_past_profit: 4 <- 過去平均利益成長: 5.2 red: 1
+score_future_profit: 0 <- 将来利益成長: 6.2
+score_latest_profit: 15 <- 最直近四半期利益成長: 73.6
+score_sales_rate: 0 <- 3四半期売上成長: 6.1
+score_quarter_profit_rate: 20
+gyoseki_score: 39
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:09
+理論株価更新: 35日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=4299&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_4299.html
+連11. 3 ['7,841', '570', '590', '305', '55.4', '25']
+連12. 3 ['8,856', '677', '681', '208', '42.8', '25']
+連13. 3 ['9,072', '627', '624', '345', '71.0', '25']
+連14. 3 ['9,328', '706', '715', '410', '84.2', '25']
+連15. 3 ['10,180', '777', '782', '659', '135.3', '30\xe8\xa8\x98']
+連16. 3予 ['10,700', '800', '800', '510', '104.7', '32']
+売上: 10180 10700 11500
+連17. 3予 ['11,500', '880', '880', '560', '114.9', '32\xe3\x80\x9c35']
+成長率： 1.063
+理論株価=1382
+4299	1.06	10180	10700	11500	1194	104.7	0		1382					8.8
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:11
+DB更新しました:  4299 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-06-02 00:22:51
+lowest_purchase_money :  122200
+stock_name :  ハイマックス
+code :  4299
+score_gyoseki :  39
+access_date_gyoseki :  2015-08-21 00:37:09
+price :  1235
+access_date_rironkabuka :  2015-08-21 00:37:11
+access_date :  2015-08-21 00:37:09
+sector_detail :  システムインテグレーター
+shihyo_pt :  80
+market_cap :  7584
+rironkabuka :  1382
+access_date_price :  2015-08-10 22:57:53
+stddev_volatility :  2.73
+sell_pressure_ratio_10 :  119
+sell_pressure_ratio_5 :  71
+sell_pressure_ratio_20 :  56
+----------
+業績更新: 35日ぶり
+----> 3276のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3276のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>182,600</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:日本管理センター,時価総額:34181百万円
+最低購入代金:182600
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3276 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-30 01:02:33
+lowest_purchase_money :  182600
+stock_name :  日本管理センター
+market_cap :  34181
+score_gyoseki :  52
+access_date_gyoseki :  2015-08-09 19:21:54
+access_date_price :  2015-08-10 22:57:53
+access_date_rironkabuka :  2015-08-09 19:21:55
+access_date :  2015-08-21 00:37:11
+sell_pressure_ratio_20 :  85
+shihyo_pt :  55
+code :  3276
+rironkabuka :  1049
+stddev_volatility :  7.74
+sell_pressure_ratio_10 :  64
+sell_pressure_ratio_5 :  70
+price :  2266
+sector_detail :  unknown
+----------
+8909シノケングループはDBに存在します
+業績更新: 35日ぶり
+----> 6864のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6864のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>101,000</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:エヌエフ回路設計ブロック,時価総額:6393百万円
+最低購入代金:101000
+<<<<< 解析完了 
+詳細セクター: 検査・分析・計測機器
+業績更新: 35日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=6864&mode=k.html
+>>>>> 6864の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2012.03', 6715, 889, 873, 462, 79.3, 15.0]
+ldict: ['2013.03', 6605, 836, 835, 503, 86.4, 15.0]
+ldict: ['2014.03', 7350, 962, 933, 888, 152.6, 17.0]
+ldict: ['2015.03', 8309, 1085, 1060, 634, 108.3, 20.0]
+ldict: ['予2016.03', 8750, 1200, 1180, 710, 113.1, 20.0]
+ldict: ['前期比', '+5.3', '+10.6', '+11.3', '+12.0', '+4.4', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.07-09', 1503, 177, 167, 111, 19.1, 11.8]
+ldict: ['13.10-12', 1615, 152, 145, 396, 68.0, 9.4]
+ldict: ['14.01-03', 2735, 386, 376, 206, 35.4, 14.1]
+ldict: ['14.04-06', 1487, 112, 121, 75, 12.9, 7.5]
+ldict: ['14.07-09', 2353, 362, 355, 229, 39.3, 15.4]
+ldict: ['14.10-12', 1694, 163, 159, 92, 15.8, 9.6]
+ldict: ['15.01-03', 2775, 448, 425, 238, 40.7, 16.1]
+ldict: ['15.04-06', 1544, 118, 131, 99, 15.9, 7.6]
+ldict: ['前年同期比', '+3.8', '+5.4', '+8.3', '+32.0', '+23.3', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 4.9, 7.2, 9.7, -76.8]
+[0.0, 1.5, 16.1, 13.0, 15.5]
+[0.0, 3.8, 5.4, 8.3, 32.0]
+---
+[0, 0, 0, 0, 0]
+[0, 0, 0, 0, 0]
+[0, 0, 0, 0, 1]
+経常利益成長率: [-4.4, 11.7, 13.6, 11.3]
+score_past_profit: 4 <- 過去平均利益成長: 7.0 red: 1
+score_future_profit: 7 <- 将来利益成長: 12.5
+score_latest_profit: 0 <- 最直近四半期利益成長: 8.3
+score_sales_rate: 0 <- 3四半期売上成長: 3.4
+score_quarter_profit_rate: 3
+gyoseki_score: 14
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:11
+理論株価更新: 35日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=6864&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_6864.html
+連11. 3 ['6,807', '872', '820', '501', '86.0', '15']
+連12. 3 ['6,715', '889', '873', '462', '79.3', '15']
+連13. 3 ['6,605', '836', '835', '503', '86.4', '15']
+連14. 3 ['7,350', '962', '933', '888', '152.6', '17']
+連15. 3 ['8,309', '1,085', '1,060', '634', '108.3', '20']
+連16. 3予 ['8,750', '1,200', '1,180', '710', '113.1', '20']
+売上: 8309 8750 9200
+連17. 3予 ['9,200', '1,350', '1,350', '800', '127.4', '20\xe3\x80\x9c25']
+成長率： 1.052
+理論株価=1440
+6864	1.05	8309	8750	9200	1092	113.1	0		1440					10.4
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:14
+DB更新しました:  6864 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-07-26 14:51:06
+shihyo_pt :  100
+stock_name :  エヌエフ回路設計ブロック
+market_cap :  6393
+access_date_gyoseki :  2015-08-21 00:37:11
+access_date_price :  2015-08-10 22:57:53
+access_date_rironkabuka :  2015-08-21 00:37:14
+sell_pressure_ratio_20 :  102
+lowest_purchase_money :  101000
+code :  6864
+rironkabuka :  1440
+stddev_volatility :  5.34
+sell_pressure_ratio_10 :  26
+access_date :  2015-08-21 00:37:11
+sell_pressure_ratio_5 :  133
+price :  1028
+score_gyoseki :  14
+sector_detail :  検査・分析・計測機器
+----------
+業績更新: 35日ぶり
+----> 6866のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6866のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>262,800</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＨＩＯＫＩ,時価総額:36856百万円
+最低購入代金:262800
+<<<<< 解析完了 
+詳細セクター: 検査・分析・計測機器
+業績更新: 35日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=6866&mode=k.html
+>>>>> 6866の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2011.12', 15966, 1948, 1942, 1358, 99.7, 40.0]
+ldict: ['2012.12', 15069, 1127, 1186, 711, 52.2, 25.0]
+ldict: ['2013.12', 14332, 768, 826, 499, 36.7, 20.0]
+ldict: ['2014.12', 17086, 1970, 2007, 1348, 99.0, 30.0]
+ldict: ['予2015.12', 19300, 2920, 2950, 1910, 140.2, 45.0]
+ldict: ['前期比', '+13.0', '+48.2', '+47.0', '+41.7', '+41.6', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.07-09', 3410, 108, 143, 98, 7.2, 3.2]
+ldict: ['13.10-12', 3776, 266, 277, 141, 10.4, 7.0]
+ldict: ['14.01-03', 4028, 534, 520, 358, 26.3, 13.3]
+ldict: ['14.04-06', 4205, 479, 506, 315, 23.1, 11.4]
+ldict: ['14.07-09', 4233, 473, 493, 351, 25.8, 11.2]
+ldict: ['14.10-12', 4620, 484, 488, 324, 23.8, 10.5]
+ldict: ['15.01-03', 4904, 861, 862, 615, 45.2, 17.6]
+ldict: ['15.04-06', 4874, 451, 489, 369, 27.1, 9.3]
+ldict: ['前年同期比', '+15.9', '<span class="down">-5.8', '<span class="down">-3.4', '+17.1', '+17.3', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 22.4, 82.0, 76.2, 129.8]
+[0.0, 21.7, 61.2, 65.8, 71.8]
+[0.0, 15.9, -5.8, -3.4, 17.1]
+---
+[0, 1, 1, 1, 1]
+[0, 1, 1, 1, 1]
+[0, 1, 0, 0, 0]
+経常利益成長率: [-38.9, -30.4, 143.0, 47.0]
+score_past_profit: 9 <- 過去平均利益成長: 24.6 red: 2
+score_future_profit: 15 <- 将来利益成長: 95.0
+score_latest_profit: 0 <- 最直近四半期利益成長: -3.4
+score_sales_rate: 25 <- 3四半期売上成長: 20.0
+score_quarter_profit_rate: 20
+gyoseki_score: 69
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:14
+理論株価更新: 35日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=6866&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_6866.html
+連12.12 ['15,069', '1,127', '1,186', '711', '52.2', '25']
+連13.12 ['14,332', '768', '826', '499', '36.7', '20']
+連14.12 ['17,086', '1,970', '2,007', '1,348', '99.0', '30']
+連15.12予 ['18,000', '2,350', '2,350', '1,500', '110.1', '35']
+売上: 17086 18000 19500
+連16.12予 ['19,500', '2,850', '2,850', '1,850', '135.8', '35\xe3\x80\x9c40']
+成長率： 1.068
+理論株価=1470
+6866	1.07	17086	18000	19500	1422	110.1	0		1470					7.7
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:15
+DB更新しました:  6866 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-06-12 01:34:37
+lowest_purchase_money :  262800
+stock_name :  ＨＩＯＫＩ
+code :  6866
+score_gyoseki :  69
+access_date_gyoseki :  2015-08-21 00:37:14
+price :  2778
+access_date_rironkabuka :  2015-08-21 00:37:15
+access_date :  2015-08-21 00:37:14
+sector_detail :  検査・分析・計測機器
+shihyo_pt :  45
+market_cap :  36856
+rironkabuka :  1470
+access_date_price :  2015-08-10 22:57:53
+stddev_volatility :  4.69
+sell_pressure_ratio_10 :  61
+sell_pressure_ratio_5 :  96
+sell_pressure_ratio_20 :  80
+----------
+業績更新: 37日ぶり
+----> 3800のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3800のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>181,600</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ユニリタ,時価総額:15436百万円
+最低購入代金:181600
+<<<<< 解析完了 
+詳細セクター: ソフトウェア開発
+業績更新: 37日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=3800&mode=k.html
+>>>>> 3800の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2012.03', 3840, 869, 892, 471, 119.3, 56.0]
+ldict: ['2013.03', 3931, 1074, 1096, 709, 181.2, 61.0]
+ldict: ['2014.03', 4203, 1181, 1241, 799, 204.8, 60.0]
+ldict: ['2015.03', 7120, 1465, 1575, 1020, 133.2, 57.5]
+ldict: ['予2016.03', 7600, 1500, 1580, 1280, 153.1, 45.0]
+ldict: ['前期比', '+6.7', '+2.4', '+0.3', '+25.5', '+14.9', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.07-09', 866, 146, 144, 79, 20.2, 16.9]
+ldict: ['13.10-12', 812, 94, 111, 68, 17.4, 11.6]
+ldict: ['14.01-03', 1112, 275, 287, 227, 58.2, 24.7]
+ldict: ['14.04-06', 1614, 164, 249, 187, 49.0, 10.2]
+ldict: ['14.07-09', 1875, 447, 449, 328, 85.5, 23.8]
+ldict: ['14.10-12', 1637, 315, 324, 209, 54.5, 19.2]
+ldict: ['15.01-03', 1994, 539, 553, 296, 38.7, 27.0]
+ldict: ['15.04-06', 1621, 199, 291, 253, 30.3, 12.3]
+ldict: ['前年同期比', '+0.4', '+21.3', '+16.9', '+35.3', '<span class="down">-38.2', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 101.6, 235.1, 191.9, 207.4]
+[0.0, 79.3, 96.0, 92.7, 30.4]
+[0.0, 0.4, 21.3, 16.9, 35.3]
+---
+[0, 1, 1, 1, 1]
+[0, 1, 1, 1, 1]
+[0, 0, 1, 0, 1]
+経常利益成長率: [22.9, 13.2, 26.9, 0.3]
+score_past_profit: 15 <- 過去平均利益成長: 21.0 red: 0
+score_future_profit: 7 <- 将来利益成長: 13.6
+score_latest_profit: 0 <- 最直近四半期利益成長: 16.9
+score_sales_rate: 16 <- 3四半期売上成長: 60.5
+score_quarter_profit_rate: 26
+gyoseki_score: 64
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:16
+理論株価更新: 37日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=3800&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_3800.html
+連11. 3* ['3,537', '706', '727', '412', '50.9', '28']
+連12. 3* ['3,840', '869', '892', '471', '59.7', '28']
+連13. 3* ['3,931', '1,074', '1,096', '709', '90.6', '30.5\xe8\xa8\x98']
+連14. 3* ['4,203', '1,181', '1,241', '799', '102.4', '30']
+連15. 3* ['7,120', '1,465', '1,575', '1,020', '133.2', '40\xe8\xa8\x98']
+連16. 3予 ['7,600', '1,500', '1,580', '1,280', '160.0', '45\xe8\xa8\x98']
+売上: 7120 7600 8500
+連17. 3予 ['8,500', '1,780', '1,860', '1,360', '170.0', '45']
+成長率： 1.093
+理論株価=2578
+3800	1.09	7120	7600	8500	1080	160.0	0		2578					15.5
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:17
+DB更新しました:  3800 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-07-14 00:58:02
+lowest_purchase_money :  181600
+stock_name :  ユニリタ
+code :  3800
+score_gyoseki :  64
+access_date_gyoseki :  2015-08-21 00:37:16
+price :  1837
+access_date_rironkabuka :  2015-08-21 00:37:17
+access_date :  2015-08-21 00:37:16
+sector_detail :  ソフトウェア開発
+shihyo_pt :  80
+market_cap :  15436
+rironkabuka :  2578
+access_date_price :  2015-08-10 22:57:54
+stddev_volatility :  5.05
+sell_pressure_ratio_10 :  79
+sell_pressure_ratio_5 :  192
+sell_pressure_ratio_20 :  142
+----------
+3299ムゲンエステートはDBに存在します
+6894パルステック工業はDBに存在します
+7408ジャムコはDBに存在します
+2292Ｓ　ＦＯＯＤＳはDBに存在します
+2301学情はDBに存在します
+7936アシックスはDBに存在します
+3333あさひはDBに存在します
+業績更新: 35日ぶり
+----> 3347のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3347のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>29,600</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:トラスト,時価総額:8332百万円
+最低購入代金:29600
+<<<<< 解析完了 
+詳細セクター: 自動車販売・自動車用品販売
+業績更新: 35日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=3347&mode=k.html
+>>>>> 3347の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2012.03', 11250, 904, 845, 271, 1049.3, 200.0]
+ldict: ['2013.03', 13326, 1130, 1125, 419, 1620.0, 240.0]
+ldict: ['2014.03', 15667, 1488, 1442, 564, 21.8, 121.4]
+ldict: ['2015.03', 17993, 1594, 1530, 622, 24.1, 2.8]
+ldict: ['予2016.03', 18889, 1734, 1660, 703, 27.2, 3.0]
+ldict: ['前期比', '+5.0', '+8.8', '+8.5', '+13.0', '+12.9', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.07-09', 3973, 413, 387, 158, 612.0, 10.4]
+ldict: ['13.10-12', 4017, 319, 305, 114, 4.4, 7.9]
+ldict: ['14.01-03', 4005, 432, 439, 157, 6.1, 10.8]
+ldict: ['14.04-06', 4156, 250, 234, 94, 3.6, 6.0]
+ldict: ['14.07-09', 4239, 374, 357, 142, 5.5, 8.8]
+ldict: ['14.10-12', 4672, 456, 446, 184, 7.1, 9.8]
+ldict: ['15.01-03', 4926, 514, 493, 202, 7.8, 10.4]
+ldict: ['15.04-06', 4555, 328, 315, 138, 5.4, 7.2]
+ldict: ['前年同期比', '+9.6', '+31.2', '+34.6', '+46.8', '+50.0', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 16.3, 42.9, 46.2, 61.4]
+[0.0, 23.0, 19.0, 12.3, 28.7]
+[0.0, 9.6, 31.2, 34.6, 46.8]
+---
+[0, 1, 1, 1, 1]
+[0, 1, 0, 0, 1]
+[0, 0, 1, 1, 1]
+経常利益成長率: [33.1, 28.2, 6.1, 8.5]
+score_past_profit: 15 <- 過去平均利益成長: 22.5 red: 0
+score_future_profit: 0 <- 将来利益成長: 7.3
+score_latest_profit: 15 <- 最直近四半期利益成長: 34.6
+score_sales_rate: 16 <- 3四半期売上成長: 16.3
+score_quarter_profit_rate: 23
+gyoseki_score: 69
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:18
+理論株価更新: 35日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=3347&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_3347.html
+連11. 3* ['7,762', '827', '773', '258', '10.0', '2']
+連12. 3* ['11,250', '904', '845', '271', '10.5', '2']
+連13. 3* ['13,326', '1,130', '1,125', '419', '16.2', '2.4']
+連14. 3* ['15,667', '1,488', '1,442', '564', '21.8', '2.6']
+連15. 3 ['17,993', '1,594', '1,530', '622', '24.1', '2.8\xe8\xa8\x98']
+連16. 3予 ['18,900', '1,750', '1,650', '700', '27.1', '3']
+売上: 17993 18900 20000
+連17. 3予 ['20,000', '1,900', '1,800', '780', '30.1', '3\xe3\x80\x9c3.5']
+成長率： 1.054
+理論株価=358
+3347	1.05	17993	18900	20000	196	27.1	0		358					13.8
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:19
+DB更新しました:  3347 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-08-09 19:23:28
+lowest_purchase_money :  29600
+stock_name :  トラスト
+code :  3347
+access_date_gyoseki :  2015-08-21 00:37:18
+price :  322
+access_date_rironkabuka :  2015-08-21 00:37:19
+access_date :  2015-08-21 00:37:17
+sector_detail :  自動車販売・自動車用品販売
+shihyo_pt :  95
+market_cap :  8332
+rironkabuka :  358
+access_date_price :  2015-08-10 22:57:56
+stddev_volatility :  11.51
+sell_pressure_ratio_5 :  128
+sell_pressure_ratio_20 :  76
+score_gyoseki :  69
+----------
+8473ＳＢＩホールディングスはDBに存在します
+7968ＴＡＳＡＫＩはDBに存在します
+7991マミヤ・オーピーはDBに存在します
+3387クリエイト・レストランツ・ホールディングスはDBに存在します
+3388明治電機工業はDBに存在します
+3901マークラインズはDBに存在します
+6463ＴＰＲはDBに存在します
+業績更新: 37日ぶり
+----> 2379のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 2379のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>1,351,000</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ディップ,時価総額:167524百万円
+最低購入代金:1351000
+<<<<< 解析完了 
+詳細セクター: 人材紹介・派遣サービス
+業績更新: 37日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=2379&mode=k.html
+>>>>> 2379の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2012.02', 11432, 803, 763, 378, 3317.4, 800.0]
+ldict: ['2013.02', 9142, 248, 233, 61, 5.5, 8.0]
+ldict: ['2014.02', 13050, 1714, 1702, 940, 85.1, 23.0]
+ldict: ['2015.02', 19530, 4806, 4817, 2856, 258.0, 78.0]
+ldict: ['予2016.02', 25174, 6004, 6001, 3367, 304.1, 40.0]
+ldict: ['前期比', '+28.9', '+24.9', '+24.6', '+17.9', '+17.9', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.06-08', 2824, 232, 226, 107, 9.7, 8.2]
+ldict: ['13.09-11', 3518, 796, 798, 441, 39.9, 22.6]
+ldict: ['13.12-02', 3611, 577, 578, 357, 32.3, 16.0]
+ldict: ['14.03-05', 4519, 895, 894, 478, 43.2, 19.8]
+ldict: ['14.06-08', 4530, 877, 879, 475, 42.9, 19.4]
+ldict: ['14.09-11', 5311, 1399, 1407, 835, 75.4, 26.3]
+ldict: ['14.12-02', 5170, 1635, 1637, 1068, 96.5, 31.6]
+ldict: ['15.03-05', 6300, 1802, 1801, 1025, 92.6, 28.6]
+ldict: ['前年同期比', '+39.4', '2.0倍', '2.0倍', '2.1倍', '2.1倍', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 51.0, 75.8, 76.3, 89.3]
+[0.0, 43.2, 183.4, 183.2, 199.2]
+[0.0, 39.4, 101.3, 101.5, 114.4]
+---
+[0, 1, 1, 1, 1]
+[0, 1, 1, 1, 1]
+[0, 1, 1, 1, 1]
+経常利益成長率: [-69.5, 630.5, 183.0, 24.6]
+score_past_profit: 12 <- 過去平均利益成長: 248.0 red: 1
+score_future_profit: 15 <- 将来利益成長: 103.8
+score_latest_profit: 15 <- 最直近四半期利益成長: 101.5
+score_sales_rate: 25 <- 3四半期売上成長: 44.5
+score_quarter_profit_rate: 30
+gyoseki_score: 97
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:20
+理論株価更新: 37日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=2379&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_2379.html
+単11. 2* ['9,524', '210', '167', '15', '1.3', '8']
+単12. 2* ['11,432', '803', '763', '378', '33.2', '8']
+単13. 2 ['9,142', '248', '233', '61', '5.6', '8']
+単14. 2 ['13,050', '1,714', '1,702', '940', '85.1', '23\xe8\xa8\x98']
+単15. 2 ['19,530', '4,806', '4,817', '2,856', '258.0', '78']
+単16. 2予 ['25,300', '5,700', '5,700', '3,200', '289.0', '84\xe3\x80\x9c86']
+売上: 19530 25300 27000
+単17. 2予 ['27,000', '6,100', '6,100', '3,350', '302.5', '84\xe3\x80\x9c90']
+成長率： 1.176
+理論株価=7058
+2379	1.18	19530	25300	27000	597	289.0	0		7058					48.4
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:22
+DB更新しました:  2379 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-06-13 02:26:53
+lowest_purchase_money :  1351000
+stock_name :  ディップ
+market_cap :  167524
+score_gyoseki :  97
+access_date_gyoseki :  2015-08-21 00:37:20
+access_date_price :  2015-08-10 22:57:57
+access_date_rironkabuka :  2015-08-21 00:37:22
+access_date :  2015-08-21 00:37:20
+sell_pressure_ratio_20 :  72
+shihyo_pt :  70
+code :  2379
+rironkabuka :  7058
+stddev_volatility :  7.36
+sell_pressure_ratio_10 :  112
+sell_pressure_ratio_5 :  143
+price :  14460
+sector_detail :  人材紹介・派遣サービス
+----------
+1381アクシーズはDBに存在します
+9065山九はDBに存在します
+----> 2928のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 2928のマスター情報を解析 
+!!! 銘柄情報のない銘柄のようです
+詳細セクター: unknown
+DB更新しました:  2928 ['access_date', 'code', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-30 01:11:04
+code :  2928
+access_date_gyoseki :  2015-08-09 19:25:40
+access_date_price :  2015-08-10 22:57:58
+access_date_rironkabuka :  2015-08-09 19:25:41
+sell_pressure_ratio_20 :  0
+access_date :  2015-08-21 00:37:22
+sector_detail :  unknown
+shihyo_pt :  20
+rironkabuka :  804
+stddev_volatility :  0
+sell_pressure_ratio_10 :  0
+sell_pressure_ratio_5 :  0
+price :  0
+score_gyoseki :  71
+----------
+8050セイコーホールディングスはDBに存在します
+2931ユーグレナはDBに存在します
+8570イオンフィナンシャルサービスはDBに存在します
+2427アウトソーシングはDBに存在します
+2432ディー・エヌ・エーはDBに存在します
+業績更新: 35日ぶり
+----> 9090のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9090のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>548,000</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:丸和運輸機関,時価総額:43849百万円
+最低購入代金:548000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  9090 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-30 01:14:51
+lowest_purchase_money :  548000
+stock_name :  丸和運輸機関
+code :  9090
+score_gyoseki :  20
+access_date_gyoseki :  2015-08-09 19:25:46
+access_date_price :  2015-08-10 22:57:59
+access_date_rironkabuka :  2015-08-09 19:25:48
+access_date :  2015-08-21 00:37:22
+sell_pressure_ratio_20 :  52
+shihyo_pt :  70
+market_cap :  43849
+rironkabuka :  3349
+stddev_volatility :  9.35
+sell_pressure_ratio_10 :  125
+sell_pressure_ratio_5 :  54
+price :  4995
+sector_detail :  unknown
+----------
+4848フルキャストホールディングスはDBに存在します
+7591エクセルはDBに存在します
+業績更新: 35日ぶり
+----> 6058のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6058のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>187,400</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ベクトル,時価総額:27803百万円
+最低購入代金:187400
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6058 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-30 01:18:22
+shihyo_pt :  60
+stock_name :  ベクトル
+market_cap :  27803
+access_date_gyoseki :  2015-08-09 19:25:50
+access_date_price :  2015-08-10 22:58:01
+access_date_rironkabuka :  2015-08-09 19:25:51
+sell_pressure_ratio_20 :  75
+lowest_purchase_money :  187400
+code :  6058
+rironkabuka :  1982
+stddev_volatility :  9.25
+sell_pressure_ratio_10 :  78
+access_date :  2015-08-21 00:37:22
+sell_pressure_ratio_5 :  54
+price :  2167
+score_gyoseki :  100
+sector_detail :  unknown
+----------
+業績更新: 35日ぶり
+----> 6071のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6071のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>168,000</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ＩＢＪ,時価総額:20916百万円
+最低購入代金:168000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6071 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-07-06 23:58:41
+shihyo_pt :  100
+stock_name :  ＩＢＪ
+code :  6071
+access_date_gyoseki :  2015-08-09 19:25:52
+price :  1473
+access_date_rironkabuka :  2015-08-09 19:25:53
+sector_detail :  unknown
+lowest_purchase_money :  168000
+market_cap :  20916
+rironkabuka :  1006
+access_date_price :  2015-08-10 22:58:02
+stddev_volatility :  5.72
+sell_pressure_ratio_10 :  106
+access_date :  2015-08-21 00:37:23
+sell_pressure_ratio_5 :  137
+sell_pressure_ratio_20 :  80
+score_gyoseki :  100
+----------
+業績更新: 33日ぶり
+----> 4539のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 4539のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>684,000</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:日本ケミファ,時価総額:29148百万円
+最低購入代金:684000
+<<<<< 解析完了 
+詳細セクター: 医薬・医療品
+業績更新: 33日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=4539&mode=k.html
+>>>>> 4539の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2012.03', 28513, 2923, 2776, 1439, 34.6, 5.0]
+ldict: ['2013.03', 31944, 3873, 3714, 2125, 51.8, 10.0]
+ldict: ['2014.03', 31893, 3327, 3206, 1887, 46.2, 10.0]
+ldict: ['2015.03', 35118, 3285, 3217, 1899, 47.5, 10.0]
+ldict: ['予2016.03', 36600, 2800, 2700, 1700, 43.4, 10.0]
+ldict: ['前期比', '+4.2', '<span class="down">-14.8', '<span class="down">-16.1', '<span class="down">-10.5', '<span class="down">-8.6', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.07-09', 7750, 799, 759, 472, 11.5, 10.3]
+ldict: ['13.10-12', 8852, 1215, 1180, 704, 17.2, 13.7]
+ldict: ['14.01-03', 7596, 453, 424, 149, 3.6, 6.0]
+ldict: ['14.04-06', 8810, 1016, 1013, 627, 15.7, 11.5]
+ldict: ['14.07-09', 8662, 703, 667, 418, 10.4, 8.1]
+ldict: ['14.10-12', 9653, 1161, 1143, 746, 18.6, 12.0]
+ldict: ['15.01-03', 7993, 405, 394, 108, 2.7, 5.1]
+ldict: ['15.04-06', 8629, 588, 596, 415, 10.4, 6.8]
+ldict: ['前年同期比', '<span class="down">-2.1', '<span class="down">-42.1', '<span class="down">-41.2', '<span class="down">-33.8', '<span class="down">-33.8', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 9.0, -4.4, -3.1, 6.0]
+[0.0, 5.2, -10.6, -7.1, -27.5]
+[0.0, -2.1, -42.1, -41.2, -33.8]
+---
+[0, 0, 0, 0, 0]
+[0, 0, 0, 0, 0]
+[0, 0, 0, 0, 0]
+経常利益成長率: [33.8, -13.7, 0.3, -16.1]
+score_past_profit: 4 <- 過去平均利益成長: 6.8 red: 1
+score_future_profit: 0 <- 将来利益成長: -7.9
+score_latest_profit: 0 <- 最直近四半期利益成長: -41.2
+score_sales_rate: 0 <- 3四半期売上成長: 4.1
+score_quarter_profit_rate: 0
+gyoseki_score: 4
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:23
+理論株価更新: 33日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=4539&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_4539.html
+連11. 3 ['27,361', '1,999', '1,818', '573', '14.0', '3']
+連12. 3 ['28,513', '2,923', '2,776', '1,439', '34.6', '5']
+連13. 3 ['31,944', '3,873', '3,714', '2,125', '51.8', '10']
+連14. 3 ['31,893', '3,327', '3,206', '1,887', '46.2', '10']
+連15. 3 ['35,118', '3,285', '3,217', '1,899', '47.5', '10']
+連16. 3予 ['36,600', '2,800', '2,700', '1,700', '42.4', '10']
+売上: 35118 36600 38000
+連17. 3予 ['38,000', '3,300', '3,200', '2,000', '49.9', '10']
+成長率： 1.04
+理論株価=509
+4539	1.04	35118	36600	38000	390	42.4	0		509					10.9
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:25
+DB更新しました:  4539 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-06-16 01:47:21
+shihyo_pt :  70
+stock_name :  日本ケミファ
+market_cap :  29148
+access_date_gyoseki :  2015-08-21 00:37:23
+access_date_price :  2015-08-10 22:58:02
+access_date_rironkabuka :  2015-08-21 00:37:25
+sell_pressure_ratio_20 :  82
+lowest_purchase_money :  684000
+code :  4539
+rironkabuka :  509
+stddev_volatility :  7.73
+sell_pressure_ratio_10 :  81
+access_date :  2015-08-21 00:37:23
+sell_pressure_ratio_5 :  133
+price :  702
+score_gyoseki :  4
+sector_detail :  医薬・医療品
+----------
+業績更新: 35日ぶり
+----> 2492のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 2492のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>144,100</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:インフォマート,時価総額:87544百万円
+最低購入代金:144100
+<<<<< 解析完了 
+詳細セクター: インターネット関連
+業績更新: 35日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=2492&mode=k.html
+>>>>> 2492の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2011.12', 3324, 649, 645, 360, 10234.0, 7255.0]
+ldict: ['2012.12', 3784, 815, 815, 496, 13882.0, 5850.0]
+ldict: ['2013.12', 4339, 1094, 1107, 631, 43.5, 31.69]
+ldict: ['2014.12', 4979, 1945, 1962, 1177, 39.7, 19.38]
+ldict: ['予2015.12', 5948, 2283, 2279, 1404, 23.3, 11.76]
+ldict: ['前期比', '+19.5', '+17.4', '+16.2', '+19.3', '<span class="down">-41.3', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.07-09', 1110, 300, 297, 177, 12.3, 27.0]
+ldict: ['13.10-12', 1163, 263, 271, 133, 9.2, 22.6]
+ldict: ['14.01-03', 1157, 423, 419, 243, 8.2, 36.6]
+ldict: ['14.04-06', 1207, 418, 415, 260, 8.8, 34.6]
+ldict: ['14.07-09', 1266, 546, 556, 344, 11.7, 43.1]
+ldict: ['14.10-12', 1349, 558, 572, 330, 11.1, 41.4]
+ldict: ['15.01-03', 1310, 511, 511, 307, 5.1, 39.0]
+ldict: ['15.04-06', 1404, 477, 480, 305, 5.1, 34.0]
+ldict: ['前年同期比', '+16.3', '+14.1', '+15.7', '+17.3', '<span class="down">-42.0', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 16.0, 112.2, 111.1, 148.1]
+[0.0, 13.2, 20.8, 22.0, 26.3]
+[0.0, 16.3, 14.1, 15.7, 17.3]
+---
+[0, 1, 1, 1, 1]
+[0, 1, 1, 1, 1]
+[0, 1, 0, 0, 0]
+経常利益成長率: [26.4, 35.8, 77.2, 16.2]
+score_past_profit: 15 <- 過去平均利益成長: 46.5 red: 0
+score_future_profit: 15 <- 将来利益成長: 46.7
+score_latest_profit: 0 <- 最直近四半期利益成長: 15.7
+score_sales_rate: 25 <- 3四半期売上成長: 15.2
+score_quarter_profit_rate: 20
+gyoseki_score: 75
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:25
+理論株価更新: 35日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=2492&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_2492.html
+連12.12* ['3,784', '815', '815', '496', '8.7', '3.66']
+連13.12* ['4,339', '1,094', '1,107', '631', '10.9', '5.28']
+連14.12* ['4,979', '1,945', '1,962', '1,177', '19.9', '9.69']
+連15.12予 ['5,950', '2,280', '2,280', '1,400', '23.2', '11.76']
+売上: 4979 5950 6500
+連16.12予 ['6,500', '2,500', '2,500', '1,530', '25.3', '11.76\xe3\x80\x9c12']
+成長率： 1.143
+理論株価=487
+2492	1.14	4979	5950	6500	67	23.2	0		487					34.6
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:28
+DB更新しました:  2492 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-07-10 01:14:52
+lowest_purchase_money :  144100
+stock_name :  インフォマート
+code :  2492
+score_gyoseki :  75
+access_date_gyoseki :  2015-08-21 00:37:25
+price :  1514
+access_date_rironkabuka :  2015-08-21 00:37:28
+access_date :  2015-08-21 00:37:25
+sector_detail :  インターネット関連
+shihyo_pt :  65
+market_cap :  87544
+rironkabuka :  487
+access_date_price :  2015-08-10 22:58:02
+stddev_volatility :  8.78
+sell_pressure_ratio_10 :  54
+sell_pressure_ratio_5 :  99
+sell_pressure_ratio_20 :  89
+----------
+業績更新: 35日ぶり
+----> 6078のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 6078のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>165,000</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:バリューＨＲ,時価総額:4497百万円
+最低購入代金:165000
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  6078 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-08-10 22:55:59
+shihyo_pt :  70
+stock_name :  バリューＨＲ
+market_cap :  4497
+access_date_gyoseki :  2015-08-09 19:25:54
+access_date_price :  2015-08-10 22:58:03
+access_date_rironkabuka :  2015-08-09 19:25:55
+sell_pressure_ratio_20 :  67
+lowest_purchase_money :  165000
+code :  6078
+rironkabuka :  1507
+stddev_volatility :  3.78
+sell_pressure_ratio_10 :  55
+access_date :  2015-08-21 00:37:28
+sell_pressure_ratio_5 :  173
+price :  1689
+score_gyoseki :  33
+sector_detail :  unknown
+----------
+業績更新: 35日ぶり
+----> 3660のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 3660のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>198,200</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:アイスタイル,時価総額:29780百万円
+最低購入代金:198200
+<<<<< 解析完了 
+詳細セクター: unknown
+DB更新しました:  3660 ['lowest_purchase_money', 'stock_name', 'market_cap', 'code', 'access_date', 'sector_detail']
+----------
+access_date_shihyo :  2015-06-12 01:35:15
+lowest_purchase_money :  198200
+stock_name :  アイスタイル
+code :  3660
+score_gyoseki :  75
+access_date_gyoseki :  2015-08-05 01:20:01
+price :  1793
+access_date_rironkabuka :  2015-08-05 01:20:40
+access_date :  2015-08-21 00:37:28
+sector_detail :  unknown
+shihyo_pt :  50
+market_cap :  29780
+rironkabuka :  490
+access_date_price :  2015-08-10 22:58:03
+stddev_volatility :  16.75
+sell_pressure_ratio_10 :  86
+sell_pressure_ratio_5 :  82
+sell_pressure_ratio_20 :  74
+----------
+6092エンバイオ・ホールディングスはDBに存在します
+6094フリークアウトはDBに存在します
+3034クオールはDBに存在します
+6619ダブル・スコープはDBに存在します
+3036アルコニックスはDBに存在します
+3038神戸物産はDBに存在します
+6624田淵電機はDBに存在します
+6634ネクスグループはDBに存在します
+7148ＦＰＧはDBに存在します
+6638ミマキエンジニアリングはDBに存在します
+3069アスラポート・ダイニングはDBに存在します
+業績更新: 35日ぶり
+----> 9717のYahooから銘柄情報を取得します・・
+<---- 取得完了
+>>>>> 9717のマスター情報を解析 
+<dl class="tseDtl"><dd class="ymuiEditLink mar0"><strong>112,700</strong><span class="date yjSt">（08/20）</span><span class="icoRealTime" title="リアルタイム">&nbsp;</span></dd>
+銘柄名:ジャステック,時価総額:20609百万円
+最低購入代金:112700
+<<<<< 解析完了 
+詳細セクター: ITソリューション
+業績更新: 35日ぶり
+html_encoding: UTF-8 encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/kabutan/kabutanjp_stock_finance?code=9717&mode=k.html
+>>>>> 9717の業績を解析 
+3 ---------------
+[今期業績の解析]
+ldict: ['2011.11', 8472, 150, 413, 77, 4.5, 30.0]
+ldict: ['2012.11', 9613, 428, 628, 128, 7.5, 30.0]
+ldict: ['2013.11', 10874, 647, 1052, 554, 32.2, 30.0]
+ldict: ['2014.11', 12356, 1155, 1385, 785, 45.4, 30.0]
+ldict: ['予2015.11', 14130, 1559, 1851, 2530, 145.2, 30.0]
+ldict: ['前期比', '+14.4', '+35.0', '+33.6', '3.2倍', '3.2倍', '&nbsp;']
+7 ---------------
+[3ヶ月業績の解析]
+ldict: ['13.06-08', 2767, 187, 261, 142, 8.2, 6.8]
+ldict: ['13.09-11', 2687, 194, 223, 92, 5.3, 7.2]
+ldict: ['13.12-02', 2827, 214, 301, 181, 10.5, 7.6]
+ldict: ['14.03-05', 3375, 316, 347, 197, 11.4, 9.4]
+ldict: ['14.06-08', 3053, 298, 363, 196, 11.3, 9.8]
+ldict: ['14.09-11', 3101, 327, 374, 211, 12.2, 10.5]
+ldict: ['14.12-02', 3013, 330, 415, 199, 11.4, 11.0]
+ldict: ['15.03-05', 3875, 433, 461, 1872, 107.6, 11.2]
+ldict: ['前年同期比', '+14.8', '+37.0', '+32.9', '9.5倍', '9.4倍', '&nbsp;']
+<<<<< 解析完了 
+===== 業績スコアの計算
+table_len: 9 6
+四半期業績
+[0.0, 15.4, 68.6, 67.7, 129.3]
+[0.0, 6.6, 54.2, 37.9, 9.9]
+[0.0, 14.8, 37.0, 32.9, 850.3]
+---
+[0, 1, 1, 1, 1]
+[0, 0, 1, 1, 0]
+[0, 1, 1, 1, 1]
+経常利益成長率: [52.1, 67.5, 31.7, 33.6]
+score_past_profit: 15 <- 過去平均利益成長: 50.4 red: 0
+score_future_profit: 15 <- 将来利益成長: 32.7
+score_latest_profit: 15 <- 最直近四半期利益成長: 32.9
+score_sales_rate: 16 <- 3四半期売上成長: 12.3
+score_quarter_profit_rate: 26
+gyoseki_score: 87
+===== 業績スコアの計算完了
+date: 2015-08-21 00:37:29
+理論株価更新: 35日ぶり
+----- 理論株価の計算
+html(post)をファイルキャッシュから取得します post_https:__wwwmonexcojp_Login_00002JDT_login_ipan_web_exec.html
+new_hash: 27f18ff367bf360819a7c2d2e5e696d444f992f7
+https://svc.qri.jp/services/Query?SRC=monex_shikiho/shikiho2&hash=27f18ff367bf360819a7c2d2e5e696d444f992f7&QCODE=9717&id=Vcmr54GLQfmp
+html_encoding: SHIFT_JIS encoding: utf-8
+htmlをファイルキャッシュに書き込みます: stock_data/shihyo/monex_shihyo_gyoseki_9717.html
+連12.11 ['9,613', '428', '628', '128', '7.5', '30']
+連13.11 ['10,874', '647', '1,052', '554', '32.2', '30']
+連14.11 ['12,356', '1,155', '1,385', '785', '45.4', '30']
+連15.11予 ['14,100', '1,560', '1,850', '2,530', '145.2', '30']
+売上: 12356 14100 16000
+連16.11予 ['16,000', '1,800', '2,100', '1,400', '80.4', '30']
+成長率： 1.138
+理論株価=2947
+9717	1.14	12356	14100	16000	673	145.2	0		2947					21.6
+===== 理論株価の計算完了
+date: 2015-08-21 00:37:30
+DB更新しました:  9717 ['stock_name', 'market_cap', 'access_date_gyoseki', 'access_date_rironkabuka', 'sector_detail', 'lowest_purchase_money', 'code', 'score_gyoseki', 'gyoseki_quarter', 'rironkabuka', 'access_date', 'gyoseki_current']
+----------
+access_date_shihyo :  2015-08-11 00:37:08
+shihyo_pt :  75
+stock_name :  ジャステック
+market_cap :  20609
+score_gyoseki :  87
+access_date_gyoseki :  2015-08-21 00:37:29
+access_date_price :  2015-08-10 22:58:06
+access_date_rironkabuka :  2015-08-21 00:37:30
+access_date :  2015-08-21 00:37:28
+sell_pressure_ratio_20 :  75
+lowest_purchase_money :  112700
+code :  9717
+rironkabuka :  2947
+stddev_volatility :  4.43
+sell_pressure_ratio_10 :  64
+sell_pressure_ratio_5 :  40
+price :  1205
+sector_detail :  ITソリューション
+----------
+3242アーバネットコーポレーションはDBに存在します
+stock_data/stocks.pickleにpickleセーブ
+stock_data/stocks.pickleにpickleロード
+update_tables: ['price'] 強制更新: False
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2304のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2304の価格データを解析 
+19日 買い:168550 売り:230436
+5日 買い:20684 売り:39613
+レシオ(20,10): [136, 191] ボラティリティ(20): 6.79
+<<<<< 解析完了 
+DB更新しました:  2304 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-05-30 02:00:59
+lowest_purchase_money :  57200
+stock_name :  ＣＳＳホールディングス
+code :  2304
+score_gyoseki :  75
+access_date_gyoseki :  2015-08-09 19:20:42
+price :  528
+access_date_rironkabuka :  2015-08-09 19:20:44
+access_date :  2015-08-09 19:20:41
+sector_detail :  各種商業サービス
+shihyo_pt :  50
+market_cap :  3023
+rironkabuka :  903
+access_date_price :  2015-08-21 00:37:38
+stddev_volatility :  6.79
+sell_pressure_ratio_10 :  107
+sell_pressure_ratio_5 :  191
+sell_pressure_ratio_20 :  136
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6150のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6150の価格データを解析 
+19日 買い:391881 売り:390105
+5日 買い:102371 売り:81626
+レシオ(20,10): [99, 79] ボラティリティ(20): 4.96
+<<<<< 解析完了 
+DB更新しました:  6150 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-07-16 01:46:44
+shihyo_pt :  80
+stock_name :  タケダ機械
+code :  6150
+access_date_gyoseki :  2015-08-21 00:34:07
+price :  370
+access_date_rironkabuka :  2015-08-21 00:34:08
+sector_detail :  産業機械・FA
+lowest_purchase_money :  370000
+market_cap :  3774
+rironkabuka :  1496
+access_date_price :  2015-08-21 00:37:39
+stddev_volatility :  4.96
+sell_pressure_ratio_10 :  79
+access_date :  2015-08-21 00:34:06
+sell_pressure_ratio_5 :  79
+sell_pressure_ratio_20 :  99
+score_gyoseki :  66
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 8202のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 8202の価格データを解析 
+19日 買い:379153256 売り:437841730
+5日 買い:164351095 売り:153912901
+レシオ(20,10): [115, 93] ボラティリティ(20): 9.28
+<<<<< 解析完了 
+DB更新しました:  8202 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-23 23:54:13
+shihyo_pt :  40
+stock_name :  ラオックス
+market_cap :  368454
+access_date_gyoseki :  2015-07-25 19:19:21
+access_date_price :  2015-08-21 00:37:39
+access_date_rironkabuka :  2015-07-25 19:19:57
+sell_pressure_ratio_20 :  115
+lowest_purchase_money :  555000
+code :  8202
+rironkabuka :  216
+stddev_volatility :  9.28
+sell_pressure_ratio_10 :  61
+access_date :  2015-07-25 19:18:50
+sell_pressure_ratio_5 :  93
+price :  498
+score_gyoseki :  94
+sector_detail :  その他専門店
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6669のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6669の価格データを解析 
+19日 買い:113330 売り:89153
+5日 買い:15910 売り:16185
+レシオ(20,10): [78, 101] ボラティリティ(20): 3.87
+<<<<< 解析完了 
+DB更新しました:  6669 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-09 04:02:02
+lowest_purchase_money :  172600
+stock_name :  シーシーエス
+code :  6669
+access_date_gyoseki :  2015-08-09 19:20:44
+price :  1717
+access_date_rironkabuka :  2015-08-09 19:20:45
+access_date :  2015-08-09 19:20:44
+sector_detail :  産業用電子機器
+shihyo_pt :  100
+market_cap :  7142
+rironkabuka :  3079
+access_date_price :  2015-08-21 00:37:40
+stddev_volatility :  3.87
+sell_pressure_ratio_5 :  101
+sell_pressure_ratio_20 :  78
+score_gyoseki :  100
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3091のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3091の価格データを解析 
+19日 買い:547817 売り:768568
+5日 買い:87213 売り:119084
+レシオ(20,10): [140, 136] ボラティリティ(20): 3.57
+<<<<< 解析完了 
+DB更新しました:  3091 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:52:47
+lowest_purchase_money :  250900
+stock_name :  ブロンコビリー
+code :  3091
+score_gyoseki :  68
+access_date_gyoseki :  2015-08-09 19:20:46
+price :  2485
+access_date_rironkabuka :  2015-08-09 19:20:47
+access_date :  2015-08-09 19:20:46
+sector_detail :  外食・中食関連
+shihyo_pt :  65
+market_cap :  37813
+rironkabuka :  5333
+access_date_price :  2015-08-21 00:37:40
+stddev_volatility :  3.57
+sell_pressure_ratio_10 :  47
+sell_pressure_ratio_5 :  136
+sell_pressure_ratio_20 :  140
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6164のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6164の価格データを解析 
+19日 買い:194745 売り:97740
+5日 買い:25346 売り:29849
+レシオ(20,10): [50, 117] ボラティリティ(20): 7.43
+<<<<< 解析完了 
+DB更新しました:  6164 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-21 00:35:45
+lowest_purchase_money :  141000
+stock_name :  太陽工機
+code :  6164
+score_gyoseki :  97
+access_date_gyoseki :  2015-08-09 19:20:47
+price :  1835
+access_date_rironkabuka :  2015-08-09 19:20:48
+access_date :  2015-08-09 19:20:47
+sector_detail :  工作機械
+shihyo_pt :  95
+market_cap :  4199
+rironkabuka :  1388
+access_date_price :  2015-08-21 00:37:40
+stddev_volatility :  7.43
+sell_pressure_ratio_10 :  95
+sell_pressure_ratio_5 :  117
+sell_pressure_ratio_20 :  50
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7722のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7722の価格データを解析 
+19日 買い:212312 売り:200578
+5日 買い:36189 売り:47306
+レシオ(20,10): [94, 130] ボラティリティ(20): 2.65
+<<<<< 解析完了 
+DB更新しました:  7722 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:52:58
+shihyo_pt :  80
+stock_name :  国際計測器
+market_cap :  25574
+access_date_gyoseki :  2015-08-09 19:20:49
+access_date_price :  2015-08-21 00:37:40
+access_date_rironkabuka :  2015-08-09 19:20:50
+sell_pressure_ratio_20 :  94
+lowest_purchase_money :  180100
+code :  7722
+rironkabuka :  1260
+stddev_volatility :  2.65
+sell_pressure_ratio_10 :  94
+access_date :  2015-08-09 19:20:48
+sell_pressure_ratio_5 :  130
+price :  1800
+score_gyoseki :  48
+sector_detail :  検査・分析・計測機器
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 8242のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 8242の価格データを解析 
+19日 買い:4898934 売り:6333948
+5日 買い:643998 売り:851198
+レシオ(20,10): [129, 132] ボラティリティ(20): 5.8
+<<<<< 解析完了 
+DB更新しました:  8242 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-19 01:53:11
+shihyo_pt :  35
+stock_name :  エイチ・ツー・オー　リテイリング
+market_cap :  332535
+score_gyoseki :  63
+access_date_gyoseki :  2015-07-25 19:19:21
+access_date_price :  2015-08-21 00:37:41
+access_date_rironkabuka :  2015-07-25 19:19:58
+access_date :  2015-08-09 19:20:50
+sell_pressure_ratio_20 :  129
+lowest_purchase_money :  265600
+code :  8242
+rironkabuka :  1167
+stddev_volatility :  5.8
+sell_pressure_ratio_10 :  91
+sell_pressure_ratio_5 :  132
+price :  2508
+sector_detail :  百貨店・総合スーパー
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3639のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3639の価格データを解析 
+19日 買い:2010861 売り:2962221
+5日 買い:626114 売り:637581
+レシオ(20,10): [147, 101] ボラティリティ(20): 10.26
+<<<<< 解析完了 
+DB更新しました:  3639 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-06 11:26:22
+shihyo_pt :  55
+stock_name :  ボルテージ
+code :  3639
+score_gyoseki :  45
+access_date_gyoseki :  2015-07-26 15:09:16
+price :  1688
+access_date_rironkabuka :  2015-07-26 15:09:17
+sector_detail :  unknown
+lowest_purchase_money :  168800
+market_cap :  8702
+rironkabuka :  405
+stddev_volatility :  10.26
+access_date :  2015-08-21 00:35:46
+sell_pressure_ratio_5 :  101
+sell_pressure_ratio_20 :  147
+access_date_price :  2015-08-21 00:37:41
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 4674のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 4674の価格データを解析 
+19日 買い:153059 売り:218024
+5日 買い:39137 売り:50058
+レシオ(20,10): [142, 127] ボラティリティ(20): 5.48
+<<<<< 解析完了 
+DB更新しました:  4674 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:53:16
+shihyo_pt :  70
+stock_name :  クレスコ
+market_cap :  24768
+score_gyoseki :  56
+access_date_gyoseki :  2015-08-09 19:20:50
+access_date_price :  2015-08-21 00:37:41
+access_date_rironkabuka :  2015-08-09 19:20:51
+access_date :  2015-08-09 19:20:50
+sell_pressure_ratio_20 :  142
+lowest_purchase_money :  206400
+code :  4674
+rironkabuka :  2113
+stddev_volatility :  5.48
+sell_pressure_ratio_10 :  120
+sell_pressure_ratio_5 :  127
+price :  1836
+sector_detail :  ITソリューション
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3653のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3653の価格データを解析 
+19日 買い:1330843 売り:1499641
+5日 買い:283552 売り:266043
+レシオ(20,10): [112, 93] ボラティリティ(20): 8.21
+<<<<< 解析完了 
+DB更新しました:  3653 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:53:50
+lowest_purchase_money :  530000
+stock_name :  モルフォ
+code :  3653
+access_date_gyoseki :  2015-08-09 19:20:51
+access_date_price :  2015-08-21 00:37:41
+access_date_rironkabuka :  2015-08-09 19:20:53
+sell_pressure_ratio_20 :  112
+shihyo_pt :  40
+market_cap :  26337
+rironkabuka :  2858
+stddev_volatility :  8.21
+sell_pressure_ratio_10 :  58
+access_date :  2015-08-21 00:35:47
+sell_pressure_ratio_5 :  93
+price :  5300
+score_gyoseki :  97
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2124のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2124の価格データを解析 
+19日 買い:935163 売り:881019
+5日 買い:447376 売り:288019
+レシオ(20,10): [94, 64] ボラティリティ(20): 6.68
+<<<<< 解析完了 
+DB更新しました:  2124 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:54:17
+shihyo_pt :  75
+stock_name :  ＪＡＣ　Ｒｅｃｒｕｉｔｍｅｎｔ
+market_cap :  35759
+access_date_gyoseki :  2015-08-09 19:20:53
+access_date_price :  2015-08-21 00:37:42
+access_date_rironkabuka :  2015-08-09 19:20:54
+sell_pressure_ratio_20 :  94
+lowest_purchase_money :  86600
+code :  2124
+rironkabuka :  925
+stddev_volatility :  6.68
+sell_pressure_ratio_10 :  69
+access_date :  2015-08-09 19:20:53
+sell_pressure_ratio_5 :  64
+price :  951
+score_gyoseki :  80
+sector_detail :  人材紹介・派遣サービス
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3662のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3662の価格データを解析 
+19日 買い:1104047 売り:1362937
+5日 買い:333033 売り:356463
+レシオ(20,10): [123, 107] ボラティリティ(20): 5.5
+<<<<< 解析完了 
+DB更新しました:  3662 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:54:26
+shihyo_pt :  55
+stock_name :  エイチーム
+market_cap :  45196
+access_date_gyoseki :  2015-08-09 19:20:54
+access_date_price :  2015-08-21 00:37:42
+access_date_rironkabuka :  2015-08-09 19:20:55
+sell_pressure_ratio_20 :  123
+lowest_purchase_money :  232900
+code :  3662
+rironkabuka :  2216
+stddev_volatility :  5.5
+sell_pressure_ratio_10 :  88
+access_date :  2015-08-09 19:20:54
+sell_pressure_ratio_5 :  107
+price :  2214
+score_gyoseki :  85
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6157のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6157の価格データを解析 
+19日 買い:46096 売り:57586
+5日 買い:11952 売り:23443
+レシオ(20,10): [124, 196] ボラティリティ(20): 6.22
+<<<<< 解析完了 
+DB更新しました:  6157 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-10 22:50:39
+lowest_purchase_money :  261900
+stock_name :  日進工具
+code :  6157
+access_date_gyoseki :  2015-07-26 14:50:21
+access_date_price :  2015-08-21 00:37:42
+access_date_rironkabuka :  2015-07-26 14:50:24
+sell_pressure_ratio_20 :  124
+shihyo_pt :  80
+market_cap :  16374
+rironkabuka :  2950
+stddev_volatility :  6.22
+sell_pressure_ratio_10 :  96
+access_date :  2015-08-09 19:20:55
+sell_pressure_ratio_5 :  196
+price :  2417
+score_gyoseki :  97
+sector_detail :  工作機械
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3664のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3664の価格データを解析 
+19日 買い:2843071 売り:4105612
+5日 買い:345213 売り:567782
+レシオ(20,10): [144, 164] ボラティリティ(20): 6.68
+<<<<< 解析完了 
+DB更新しました:  3664 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-12 01:33:39
+lowest_purchase_money :  73200
+stock_name :  モブキャスト
+market_cap :  10659
+score_gyoseki :  37
+access_date_gyoseki :  2015-08-09 19:20:56
+access_date_price :  2015-08-21 00:37:43
+access_date_rironkabuka :  2015-08-09 19:20:57
+access_date :  2015-08-21 00:35:47
+sell_pressure_ratio_20 :  144
+shihyo_pt :  45
+code :  3664
+rironkabuka :  80
+stddev_volatility :  6.68
+sell_pressure_ratio_10 :  147
+sell_pressure_ratio_5 :  164
+price :  732
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3668のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3668の価格データを解析 
+19日 買い:8935555 売り:14738329
+5日 買い:1560580 売り:3024816
+レシオ(20,10): [164, 193] ボラティリティ(20): 5.47
+<<<<< 解析完了 
+DB更新しました:  3668 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:54:37
+shihyo_pt :  45
+stock_name :  コロプラ
+market_cap :  295620
+access_date_gyoseki :  2015-08-09 19:20:57
+access_date_price :  2015-08-21 00:37:43
+access_date_rironkabuka :  2015-08-09 19:20:58
+sell_pressure_ratio_20 :  164
+lowest_purchase_money :  236800
+code :  3668
+rironkabuka :  4198
+stddev_volatility :  5.47
+sell_pressure_ratio_10 :  98
+access_date :  2015-08-09 19:20:57
+sell_pressure_ratio_5 :  193
+price :  2209
+score_gyoseki :  78
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3769のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3769の価格データを解析 
+19日 買い:1338729 売り:1886753
+5日 買い:331205 売り:355190
+レシオ(20,10): [140, 107] ボラティリティ(20): 6.86
+<<<<< 解析完了 
+DB更新しました:  3769 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-12 01:33:43
+shihyo_pt :  55
+stock_name :  ＧＭＯペイメントゲートウェイ
+code :  3769
+access_date_gyoseki :  2015-08-09 19:20:59
+price :  3845
+access_date_rironkabuka :  2015-08-09 19:21:00
+sector_detail :  情報処理関連
+lowest_purchase_money :  383500
+market_cap :  142428
+rironkabuka :  1403
+access_date_price :  2015-08-21 00:37:43
+stddev_volatility :  6.86
+sell_pressure_ratio_10 :  68
+access_date :  2015-08-09 19:20:58
+sell_pressure_ratio_5 :  107
+sell_pressure_ratio_20 :  140
+score_gyoseki :  78
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7256のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7256の価格データを解析 
+19日 買い:1843310 売り:2001774
+5日 買い:320458 売り:357037
+レシオ(20,10): [108, 111] ボラティリティ(20): 8.16
+<<<<< 解析完了 
+DB更新しました:  7256 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:54:55
+shihyo_pt :  50
+stock_name :  河西工業
+market_cap :  60927
+access_date_gyoseki :  2015-08-05 01:20:05
+access_date_price :  2015-08-21 00:37:43
+access_date_rironkabuka :  2015-08-05 01:21:07
+sell_pressure_ratio_20 :  108
+lowest_purchase_money :  154200
+code :  7256
+rironkabuka :  2099
+stddev_volatility :  8.16
+sell_pressure_ratio_10 :  69
+access_date :  2015-08-05 01:19:16
+sell_pressure_ratio_5 :  111
+price :  1413
+score_gyoseki :  60
+sector_detail :  自動車部品（メーカー系）
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6747のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6747の価格データを解析 
+19日 買い:584345 売り:573643
+5日 買い:83133 売り:160865
+レシオ(20,10): [98, 193] ボラティリティ(20): 6.2
+<<<<< 解析完了 
+DB更新しました:  6747 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:55:06
+shihyo_pt :  100
+stock_name :  ＫＩホールディングス
+market_cap :  20752
+access_date_gyoseki :  2015-08-09 19:21:00
+access_date_price :  2015-08-21 00:37:44
+access_date_rironkabuka :  2015-08-09 19:21:01
+sell_pressure_ratio_20 :  98
+lowest_purchase_money :  499000
+code :  6747
+rironkabuka :  -112
+stddev_volatility :  6.2
+sell_pressure_ratio_10 :  63
+access_date :  2015-08-09 19:21:00
+sell_pressure_ratio_5 :  193
+price :  468
+score_gyoseki :  33
+sector_detail :  産業用電子機器
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7779のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7779の価格データを解析 
+株式分割2倍 2015年7月28日 3130-> 1565
+株式分割2倍 2015年7月27日 3160-> 1580
+株式分割2倍 2015年7月24日 3165-> 1582
+19日 買い:3958303 売り:4263181
+5日 買い:1598951 売り:1110345
+レシオ(20,10): [107, 69] ボラティリティ(20): 4.35
+<<<<< 解析完了 
+DB更新しました:  7779 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-10 22:51:25
+lowest_purchase_money :  146000
+stock_name :  ＣＹＢＥＲＤＹＮＥ
+market_cap :  183341
+score_gyoseki :  20
+access_date_gyoseki :  2015-08-09 19:21:01
+access_date_price :  2015-08-21 00:37:44
+access_date_rironkabuka :  2015-08-09 19:21:03
+access_date :  2015-08-09 19:21:01
+sell_pressure_ratio_20 :  107
+shihyo_pt :  70
+code :  7779
+rironkabuka :  -40
+stddev_volatility :  4.35
+sell_pressure_ratio_10 :  87
+sell_pressure_ratio_5 :  69
+price :  1523
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2148のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2148の価格データを解析 
+19日 買い:901791 売り:630990
+5日 買い:108001 売り:78094
+レシオ(20,10): [69, 72] ボラティリティ(20): 16.52
+<<<<< 解析完了 
+DB更新しました:  2148 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-09 19:21:13
+shihyo_pt :  70
+stock_name :  アイティメディア
+code :  2148
+access_date_gyoseki :  2015-08-09 19:21:03
+access_date_price :  2015-08-21 00:37:44
+access_date_rironkabuka :  2015-08-09 19:21:04
+sell_pressure_ratio_20 :  69
+lowest_purchase_money :  261500
+market_cap :  17199
+rironkabuka :  1704
+stddev_volatility :  16.52
+sell_pressure_ratio_10 :  145
+access_date :  2015-08-21 00:35:48
+sell_pressure_ratio_5 :  72
+price :  2615
+score_gyoseki :  91
+sector_detail :  インターネット関連
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3173のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3173の価格データを解析 
+19日 買い:48423 売り:66060
+5日 買い:9370 売り:16925
+レシオ(20,10): [136, 180] ボラティリティ(20): 3.5
+<<<<< 解析完了 
+DB更新しました:  3173 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-12 01:33:51
+shihyo_pt :  75
+stock_name :  大阪工機
+market_cap :  5526
+score_gyoseki :  55
+access_date_gyoseki :  2015-08-21 00:35:48
+access_date_price :  2015-08-21 00:37:44
+access_date_rironkabuka :  2015-08-21 00:35:49
+access_date :  2015-08-21 00:35:48
+sell_pressure_ratio_20 :  136
+lowest_purchase_money :  160900
+code :  3173
+rironkabuka :  2742
+stddev_volatility :  3.5
+sell_pressure_ratio_10 :  90
+sell_pressure_ratio_5 :  180
+price :  1609
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3686のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3686の価格データを解析 
+19日 買い:529782 売り:1151405
+5日 買い:252158 売り:778938
+レシオ(20,10): [217, 308] ボラティリティ(20): 6.29
+<<<<< 解析完了 
+DB更新しました:  3686 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:55:22
+shihyo_pt :  75
+stock_name :  ディー・エル・イー
+market_cap :  15666
+score_gyoseki :  20
+access_date_gyoseki :  2015-08-09 19:21:14
+price :  735
+access_date_rironkabuka :  2015-08-09 19:21:15
+access_date :  2015-08-09 19:21:14
+sector_detail :  unknown
+lowest_purchase_money :  94800
+code :  3686
+rironkabuka :  758
+access_date_price :  2015-08-21 00:37:45
+stddev_volatility :  6.29
+sell_pressure_ratio_10 :  61
+sell_pressure_ratio_5 :  308
+sell_pressure_ratio_20 :  217
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3687のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3687の価格データを解析 
+19日 買い:238330 売り:375255
+5日 買い:57526 売り:76270
+レシオ(20,10): [157, 132] ボラティリティ(20): 5.15
+<<<<< 解析完了 
+DB更新しました:  3687 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:55:32
+shihyo_pt :  85
+stock_name :  フィックスターズ
+market_cap :  18962
+score_gyoseki :  100
+access_date_gyoseki :  2015-08-09 19:21:15
+access_date_price :  2015-08-21 00:37:45
+access_date_rironkabuka :  2015-08-09 19:21:16
+access_date :  2015-08-09 19:21:15
+sell_pressure_ratio_20 :  157
+lowest_purchase_money :  288500
+code :  3687
+rironkabuka :  1803
+stddev_volatility :  5.15
+sell_pressure_ratio_10 :  84
+sell_pressure_ratio_5 :  132
+price :  2561
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3688のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3688の価格データを解析 
+19日 買い:1712000 売り:2296183
+5日 買い:463245 売り:504950
+レシオ(20,10): [134, 109] ボラティリティ(20): 5.75
+<<<<< 解析完了 
+DB更新しました:  3688 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-10 22:53:18
+shihyo_pt :  90
+stock_name :  ＶＯＹＡＧＥ　ＧＲＯＵＰ
+market_cap :  23229
+score_gyoseki :  20
+access_date_gyoseki :  2015-08-09 19:21:17
+price :  2056
+access_date_rironkabuka :  2015-08-09 19:21:18
+access_date :  2015-08-09 19:21:16
+sector_detail :  unknown
+lowest_purchase_money :  205900
+code :  3688
+rironkabuka :  3418
+access_date_price :  2015-08-21 00:37:45
+stddev_volatility :  5.75
+sell_pressure_ratio_10 :  50
+sell_pressure_ratio_5 :  109
+sell_pressure_ratio_20 :  134
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7273のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7273の価格データを解析 
+19日 買い:444905 売り:695089
+5日 買い:35225 売り:62775
+レシオ(20,10): [156, 178] ボラティリティ(20): 5.77
+<<<<< 解析完了 
+DB更新しました:  7273 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:56:06
+shihyo_pt :  100
+stock_name :  イクヨ
+code :  7273
+access_date_gyoseki :  2015-08-09 19:21:18
+price :  200
+access_date_rironkabuka :  2015-08-09 19:21:19
+sector_detail :  自動車部品（独立系）
+lowest_purchase_money :  221000
+market_cap :  3400
+rironkabuka :  381
+access_date_price :  2015-08-21 00:37:45
+stddev_volatility :  5.77
+sell_pressure_ratio_10 :  89
+access_date :  2015-08-09 19:21:18
+sell_pressure_ratio_5 :  178
+sell_pressure_ratio_20 :  156
+score_gyoseki :  41
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2154のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2154の価格データを解析 
+19日 買い:274981 売り:328203
+5日 買い:98872 売り:63025
+レシオ(20,10): [119, 63] ボラティリティ(20): 6.36
+<<<<< 解析完了 
+DB更新しました:  2154 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:56:20
+shihyo_pt :  60
+stock_name :  トラスト・テック
+market_cap :  24232
+access_date_gyoseki :  2015-08-09 19:21:20
+access_date_price :  2015-08-21 00:37:46
+access_date_rironkabuka :  2015-08-09 19:21:21
+sell_pressure_ratio_20 :  119
+lowest_purchase_money :  251000
+code :  2154
+rironkabuka :  3779
+stddev_volatility :  6.36
+sell_pressure_ratio_10 :  84
+access_date :  2015-08-09 19:21:20
+sell_pressure_ratio_5 :  63
+price :  2400
+score_gyoseki :  86
+sector_detail :  人材紹介・派遣サービス
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3179のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3179の価格データを解析 
+19日 買い:564890 売り:693892
+5日 買い:113191 売り:132704
+レシオ(20,10): [122, 117] ボラティリティ(20): 8.11
+<<<<< 解析完了 
+DB更新しました:  3179 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:56:32
+shihyo_pt :  75
+stock_name :  シュッピン
+market_cap :  20625
+access_date_gyoseki :  2015-08-09 19:21:22
+access_date_price :  2015-08-21 00:37:46
+access_date_rironkabuka :  2015-08-09 19:21:23
+sell_pressure_ratio_20 :  122
+lowest_purchase_money :  172300
+code :  3179
+rironkabuka :  1552
+stddev_volatility :  8.11
+sell_pressure_ratio_10 :  69
+access_date :  2015-08-21 00:35:50
+sell_pressure_ratio_5 :  117
+price :  1723
+score_gyoseki :  93
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2163のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2163の価格データを解析 
+19日 買い:57663 売り:50121
+5日 買い:31197 売り:17998
+レシオ(20,10): [86, 57] ボラティリティ(20): 4.82
+<<<<< 解析完了 
+DB更新しました:  2163 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:56:44
+shihyo_pt :  90
+stock_name :  アルトナー
+code :  2163
+access_date_gyoseki :  2015-08-09 19:21:23
+access_date_price :  2015-08-21 00:37:46
+access_date_rironkabuka :  2015-08-09 19:21:24
+sell_pressure_ratio_20 :  86
+lowest_purchase_money :  138100
+market_cap :  3669
+rironkabuka :  1290
+stddev_volatility :  4.82
+sell_pressure_ratio_10 :  126
+access_date :  2015-08-09 19:21:23
+sell_pressure_ratio_5 :  57
+price :  1419
+score_gyoseki :  87
+sector_detail :  人材紹介・派遣サービス
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 5237のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 5237の価格データを解析 
+19日 買い:191401 売り:234589
+5日 買い:28125 売り:42875
+レシオ(20,10): [122, 152] ボラティリティ(20): 3.33
+<<<<< 解析完了 
+DB更新しました:  5237 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:57:04
+shihyo_pt :  100
+stock_name :  ノザワ
+code :  5237
+access_date_gyoseki :  2015-08-09 19:21:24
+price :  558
+access_date_rironkabuka :  2015-08-09 19:21:25
+sector_detail :  コンクリート・セメント
+lowest_purchase_money :  573000
+market_cap :  13838
+rironkabuka :  899
+access_date_price :  2015-08-21 00:37:46
+stddev_volatility :  3.33
+sell_pressure_ratio_10 :  92
+access_date :  2015-08-09 19:21:24
+sell_pressure_ratio_5 :  152
+sell_pressure_ratio_20 :  122
+score_gyoseki :  50
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6264のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6264の価格データを解析 
+19日 買い:94178 売り:114105
+5日 買い:22263 売り:11434
+レシオ(20,10): [121, 51] ボラティリティ(20): 6.8
+<<<<< 解析完了 
+DB更新しました:  6264 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-10 06:55:13
+shihyo_pt :  100
+stock_name :  マルマエ
+market_cap :  4298
+access_date_gyoseki :  2015-08-10 22:53:20
+access_date_price :  2015-08-21 00:37:46
+access_date_rironkabuka :  2015-08-10 22:53:21
+sell_pressure_ratio_20 :  121
+lowest_purchase_money :  230400
+code :  6264
+rironkabuka :  3707
+stddev_volatility :  6.8
+sell_pressure_ratio_10 :  102
+access_date :  2015-08-10 22:53:19
+sell_pressure_ratio_5 :  51
+price :  2247
+score_gyoseki :  100
+sector_detail :  電子機器・部品
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6778のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6778の価格データを解析 
+19日 買い:223669 売り:277616
+5日 買い:74333 売り:40463
+レシオ(20,10): [124, 54] ボラティリティ(20): 3.32
+<<<<< 解析完了 
+DB更新しました:  6778 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:57:46
+shihyo_pt :  100
+stock_name :  アルチザネットワークス
+market_cap :  7238
+access_date_gyoseki :  2015-08-09 19:21:26
+access_date_price :  2015-08-21 00:37:47
+access_date_rironkabuka :  2015-08-09 19:21:27
+sell_pressure_ratio_20 :  124
+lowest_purchase_money :  75700
+code :  6778
+rironkabuka :  544
+stddev_volatility :  3.32
+sell_pressure_ratio_10 :  29
+access_date :  2015-08-09 19:21:26
+sell_pressure_ratio_5 :  54
+price :  773
+score_gyoseki :  33
+sector_detail :  検査・分析・計測機器
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 4734のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 4734の価格データを解析 
+19日 買い:61274 売り:59114
+5日 買い:9532 売り:14567
+レシオ(20,10): [96, 152] ボラティリティ(20): 4.07
+<<<<< 解析完了 
+DB更新しました:  4734 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:58:03
+shihyo_pt :  100
+stock_name :  ビーイング
+code :  4734
+access_date_gyoseki :  2015-08-09 19:21:28
+price :  640
+access_date_rironkabuka :  2015-08-09 19:21:29
+sector_detail :  システム開発
+lowest_purchase_money :  65000
+market_cap :  5367
+rironkabuka :  866
+access_date_price :  2015-08-21 00:37:47
+stddev_volatility :  4.07
+sell_pressure_ratio_10 :  70
+access_date :  2015-08-09 19:21:27
+sell_pressure_ratio_5 :  152
+sell_pressure_ratio_20 :  96
+score_gyoseki :  18
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2175のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2175の価格データを解析 
+19日 買い:2307382 売り:1697899
+5日 買い:678011 売り:343384
+レシオ(20,10): [73, 50] ボラティリティ(20): 6.55
+<<<<< 解析完了 
+DB更新しました:  2175 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-12 01:33:56
+lowest_purchase_money :  175700
+stock_name :  エス・エム・エス
+market_cap :  73596
+access_date_gyoseki :  2015-08-09 19:21:29
+access_date_price :  2015-08-21 00:37:47
+access_date_rironkabuka :  2015-08-09 19:21:30
+sell_pressure_ratio_20 :  73
+shihyo_pt :  40
+code :  2175
+rironkabuka :  1735
+stddev_volatility :  6.55
+sell_pressure_ratio_10 :  89
+access_date :  2015-08-09 19:21:29
+sell_pressure_ratio_5 :  50
+price :  1912
+score_gyoseki :  83
+sector_detail :  人材紹介・派遣サービス
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7820のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7820の価格データを解析 
+19日 買い:1230713 売り:1364872
+5日 買い:281174 売り:165223
+レシオ(20,10): [110, 58] ボラティリティ(20): 6.35
+<<<<< 解析完了 
+DB更新しました:  7820 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:58:21
+lowest_purchase_money :  134200
+stock_name :  ニホンフラッシュ
+code :  7820
+score_gyoseki :  56
+access_date_gyoseki :  2015-08-09 19:21:31
+price :  1452
+access_date_rironkabuka :  2015-08-09 19:21:32
+access_date :  2015-08-09 19:21:31
+sector_detail :  住宅電設・資材・関連サービス
+shihyo_pt :  90
+market_cap :  16815
+rironkabuka :  3549
+access_date_price :  2015-08-21 00:37:47
+stddev_volatility :  6.35
+sell_pressure_ratio_10 :  111
+sell_pressure_ratio_5 :  58
+sell_pressure_ratio_20 :  110
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 9358のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 9358の価格データを解析 
+19日 買い:621048 売り:409540
+5日 買い:46659 売り:94538
+レシオ(20,10): [65, 202] ボラティリティ(20): 4.46
+<<<<< 解析完了 
+DB更新しました:  9358 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:58:38
+shihyo_pt :  90
+stock_name :  宇徳
+market_cap :  23896
+access_date_gyoseki :  2015-08-09 19:21:33
+access_date_price :  2015-08-21 00:37:48
+access_date_rironkabuka :  2015-08-09 19:21:35
+sell_pressure_ratio_20 :  65
+lowest_purchase_money :  55000
+code :  9358
+rironkabuka :  680
+stddev_volatility :  4.46
+sell_pressure_ratio_10 :  100
+access_date :  2015-08-09 19:21:33
+sell_pressure_ratio_5 :  202
+price :  555
+score_gyoseki :  63
+sector_detail :  運輸・物流・倉庫
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 4751のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 4751の価格データを解析 
+19日 買い:5733428 売り:6433460
+5日 買い:1124571 売り:1074026
+レシオ(20,10): [112, 95] ボラティリティ(20): 4.55
+<<<<< 解析完了 
+DB更新しました:  4751 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:58:51
+shihyo_pt :  65
+stock_name :  サイバーエージェント
+market_cap :  350834
+score_gyoseki :  97
+access_date_gyoseki :  2015-08-09 19:21:35
+access_date_price :  2015-08-21 00:37:48
+access_date_rironkabuka :  2015-08-09 19:21:36
+access_date :  2015-08-09 19:21:35
+sell_pressure_ratio_20 :  112
+lowest_purchase_money :  555000
+code :  4751
+rironkabuka :  5072
+stddev_volatility :  4.55
+sell_pressure_ratio_10 :  98
+sell_pressure_ratio_5 :  95
+price :  5270
+sector_detail :  広告代理店・インターネット広告
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 4241のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 4241の価格データを解析 
+19日 買い:125604 売り:111978
+5日 買い:14128 売り:12767
+レシオ(20,10): [89, 90] ボラティリティ(20): 10.67
+<<<<< 解析完了 
+DB更新しました:  4241 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-21 00:37:02
+shihyo_pt :  85
+stock_name :  アテクト
+code :  4241
+access_date_gyoseki :  2015-08-09 19:21:36
+price :  1078
+access_date_rironkabuka :  2015-08-09 19:21:38
+sector_detail :  各種化成品
+lowest_purchase_money :  111100
+market_cap :  4674
+rironkabuka :  894
+access_date_price :  2015-08-21 00:37:48
+stddev_volatility :  10.67
+sell_pressure_ratio_10 :  50
+access_date :  2015-08-09 19:21:36
+sell_pressure_ratio_5 :  90
+sell_pressure_ratio_20 :  89
+score_gyoseki :  50
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7829のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7829の価格データを解析 
+19日 買い:404044 売り:506839
+5日 買い:56886 売り:117510
+レシオ(20,10): [125, 206] ボラティリティ(20): 4.42
+<<<<< 解析完了 
+DB更新しました:  7829 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:59:12
+shihyo_pt :  60
+stock_name :  サマンサタバサジャパンリミテッド
+market_cap :  37484
+score_gyoseki :  68
+access_date_gyoseki :  2015-08-09 19:21:38
+access_date_price :  2015-08-21 00:37:48
+access_date_rironkabuka :  2015-08-09 19:21:39
+access_date :  2015-08-09 19:21:38
+sell_pressure_ratio_20 :  125
+lowest_purchase_money :  106200
+code :  7829
+rironkabuka :  1100
+stddev_volatility :  4.42
+sell_pressure_ratio_10 :  32
+sell_pressure_ratio_5 :  206
+price :  1012
+sector_detail :  衣料
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 4246のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 4246の価格データを解析 
+19日 買い:584782 売り:490301
+5日 買い:86744 売り:150551
+レシオ(20,10): [83, 173] ボラティリティ(20): 9.16
+<<<<< 解析完了 
+DB更新しました:  4246 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:59:29
+lowest_purchase_money :  569000
+stock_name :  ダイキョーニシカワ
+code :  4246
+score_gyoseki :  20
+access_date_gyoseki :  2015-08-05 01:20:02
+access_date_price :  2015-08-21 00:37:49
+access_date_rironkabuka :  2015-08-05 01:20:45
+access_date :  2015-08-21 00:37:04
+sell_pressure_ratio_20 :  83
+shihyo_pt :  75
+market_cap :  102955
+rironkabuka :  5243
+stddev_volatility :  9.16
+sell_pressure_ratio_10 :  69
+sell_pressure_ratio_5 :  173
+price :  5690
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7844のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7844の価格データを解析 
+19日 買い:6738150 売り:12911934
+5日 買い:2719344 売り:6430451
+レシオ(20,10): [191, 236] ボラティリティ(20): 6.18
+<<<<< 解析完了 
+DB更新しました:  7844 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:59:43
+shihyo_pt :  50
+stock_name :  マーベラス
+market_cap :  73744
+access_date_gyoseki :  2015-08-09 19:21:40
+access_date_price :  2015-08-21 00:37:49
+access_date_rironkabuka :  2015-08-09 19:21:41
+sell_pressure_ratio_20 :  191
+lowest_purchase_money :  137600
+code :  7844
+rironkabuka :  2538
+stddev_volatility :  6.18
+sell_pressure_ratio_10 :  89
+access_date :  2015-08-09 19:21:40
+sell_pressure_ratio_5 :  236
+price :  1155
+score_gyoseki :  96
+sector_detail :  音楽・芸能
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2729のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2729の価格データを解析 
+19日 買い:439192 売り:347890
+5日 買い:47786 売り:53410
+レシオ(20,10): [79, 111] ボラティリティ(20): 5.65
+<<<<< 解析完了 
+DB更新しました:  2729 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-07-30 22:23:48
+shihyo_pt :  45
+stock_name :  ＪＡＬＵＸ
+market_cap :  32078
+score_gyoseki :  97
+access_date_gyoseki :  2015-08-21 00:37:04
+access_date_price :  2015-08-21 00:37:49
+access_date_rironkabuka :  2015-08-21 00:37:07
+access_date :  2015-08-21 00:37:04
+sell_pressure_ratio_20 :  79
+lowest_purchase_money :  251100
+code :  2729
+rironkabuka :  1477
+stddev_volatility :  5.65
+sell_pressure_ratio_10 :  68
+sell_pressure_ratio_5 :  111
+price :  2511
+sector_detail :  通信販売・オンライン販売
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6826のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6826の価格データを解析 
+19日 買い:382866 売り:468017
+5日 買い:47429 売り:76266
+レシオ(20,10): [122, 160] ボラティリティ(20): 5.96
+<<<<< 解析完了 
+DB更新しました:  6826 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:00:07
+shihyo_pt :  75
+stock_name :  本多通信工業
+market_cap :  14454
+score_gyoseki :  96
+access_date_gyoseki :  2015-08-09 19:21:41
+access_date_price :  2015-08-21 00:37:49
+access_date_rironkabuka :  2015-08-09 19:21:42
+access_date :  2015-08-09 19:21:41
+sell_pressure_ratio_20 :  122
+lowest_purchase_money :  115600
+code :  6826
+rironkabuka :  1687
+stddev_volatility :  5.96
+sell_pressure_ratio_10 :  45
+sell_pressure_ratio_5 :  160
+price :  1146
+sector_detail :  電子機器・部品
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3756のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3756の価格データを解析 
+19日 買い:1198671 売り:2145619
+5日 買い:193601 売り:215595
+レシオ(20,10): [178, 111] ボラティリティ(20): 4.01
+<<<<< 解析完了 
+DB更新しました:  3756 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 00:52:42
+shihyo_pt :  70
+stock_name :  豆蔵ホールディングス
+market_cap :  10821
+access_date_gyoseki :  2015-08-09 19:21:43
+access_date_price :  2015-08-21 00:37:50
+access_date_rironkabuka :  2015-08-09 19:21:44
+sell_pressure_ratio_20 :  178
+lowest_purchase_money :  56600
+code :  3756
+rironkabuka :  1491
+stddev_volatility :  4.01
+sell_pressure_ratio_10 :  100
+access_date :  2015-08-09 19:21:43
+sell_pressure_ratio_5 :  111
+price :  547
+score_gyoseki :  50
+sector_detail :  ソフトウェア開発
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6832のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6832の価格データを解析 
+19日 買い:110549 売り:137640
+5日 買い:16823 売り:16475
+レシオ(20,10): [124, 97] ボラティリティ(20): 4.68
+<<<<< 解析完了 
+DB更新しました:  6832 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:00:28
+shihyo_pt :  70
+stock_name :  アオイ電子
+market_cap :  49560
+access_date_gyoseki :  2015-08-09 19:21:47
+access_date_price :  2015-08-21 00:37:50
+access_date_rironkabuka :  2015-08-09 19:21:48
+sell_pressure_ratio_20 :  124
+lowest_purchase_money :  413000
+code :  6832
+rironkabuka :  8594
+stddev_volatility :  4.68
+sell_pressure_ratio_10 :  126
+access_date :  2015-08-09 19:21:47
+sell_pressure_ratio_5 :  97
+price :  4020
+score_gyoseki :  54
+sector_detail :  電子材料・基板・電池
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7859のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7859の価格データを解析 
+19日 買い:1657493 売り:2219695
+5日 買い:272458 売り:279239
+レシオ(20,10): [133, 102] ボラティリティ(20): 7.43
+<<<<< 解析完了 
+DB更新しました:  7859 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-10 22:54:11
+shihyo_pt :  50
+stock_name :  アルメディオ
+code :  7859
+access_date_gyoseki :  2015-08-09 19:21:49
+price :  197
+access_date_rironkabuka :  2015-08-09 19:21:50
+sector_detail :  各種商業サービス
+lowest_purchase_money :  19900
+market_cap :  1829
+rironkabuka :  147
+access_date_price :  2015-08-21 00:37:51
+stddev_volatility :  7.43
+sell_pressure_ratio_10 :  79
+access_date :  2015-08-09 19:21:48
+sell_pressure_ratio_5 :  102
+sell_pressure_ratio_20 :  133
+score_gyoseki :  97
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6324のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6324の価格データを解析 
+19日 買い:2792714 売り:3270472
+5日 買い:604348 売り:759947
+レシオ(20,10): [117, 125] ボラティリティ(20): 6.75
+<<<<< 解析完了 
+DB更新しました:  6324 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:01:10
+shihyo_pt :  55
+stock_name :  ハーモニック・ドライブ・システムズ
+market_cap :  175476
+access_date_gyoseki :  2015-08-09 19:21:50
+access_date_price :  2015-08-21 00:37:51
+access_date_rironkabuka :  2015-08-09 19:21:51
+sell_pressure_ratio_20 :  117
+lowest_purchase_money :  185200
+code :  6324
+rironkabuka :  1075
+stddev_volatility :  6.75
+sell_pressure_ratio_10 :  96
+access_date :  2015-08-09 19:21:50
+sell_pressure_ratio_5 :  125
+price :  1765
+score_gyoseki :  97
+sector_detail :  産業用電子機器
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7865のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7865の価格データを解析 
+19日 買い:173426 売り:182357
+5日 買い:83693 売り:42203
+レシオ(20,10): [105, 50] ボラティリティ(20): 5.31
+<<<<< 解析完了 
+DB更新しました:  7865 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-07-10 01:14:43
+lowest_purchase_money :  197000
+stock_name :  ピープル
+code :  7865
+score_gyoseki :  84
+access_date_gyoseki :  2015-08-21 00:37:08
+access_date_price :  2015-08-21 00:37:52
+access_date_rironkabuka :  2015-08-21 00:37:09
+access_date :  2015-08-21 00:37:07
+sell_pressure_ratio_20 :  105
+shihyo_pt :  75
+market_cap :  8742
+rironkabuka :  1249
+stddev_volatility :  5.31
+sell_pressure_ratio_10 :  45
+sell_pressure_ratio_5 :  50
+price :  1970
+sector_detail :  玩具・育児用品
+----------
+必要:2015-08-20 最新:2015-08-17
+価格更新: 3日ぶり
+----> 2751のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2751の価格データを解析 
+19日 買い:517265 売り:447520
+5日 買い:175010 売り:165986
+レシオ(20,10): [86, 94] ボラティリティ(20): 7.34
+<<<<< 解析完了 
+DB更新しました:  2751 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:01:30
+shihyo_pt :  55
+stock_name :  テンポスバスターズ
+code :  2751
+score_gyoseki :  63
+access_date_gyoseki :  2015-08-09 19:21:51
+access_date_price :  2015-08-21 00:37:52
+access_date_rironkabuka :  2015-08-09 19:21:53
+access_date :  2015-08-09 19:21:51
+sell_pressure_ratio_20 :  86
+lowest_purchase_money :  226400
+market_cap :  32409
+rironkabuka :  2077
+stddev_volatility :  7.34
+sell_pressure_ratio_10 :  125
+sell_pressure_ratio_5 :  94
+price :  2302
+sector_detail :  機械卸・専門商社
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2752のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2752の価格データを解析 
+19日 買い:45389 売り:52399
+5日 買い:17114 売り:23581
+レシオ(20,10): [115, 137] ボラティリティ(20): 1.34
+<<<<< 解析完了 
+DB更新しました:  2752 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:02:03
+shihyo_pt :  70
+stock_name :  フジオフードシステム
+market_cap :  27778
+score_gyoseki :  41
+access_date_gyoseki :  2015-08-09 19:21:53
+access_date_price :  2015-08-21 00:37:53
+access_date_rironkabuka :  2015-08-09 19:21:54
+access_date :  2015-08-09 19:21:53
+sell_pressure_ratio_20 :  115
+lowest_purchase_money :  283500
+code :  2752
+rironkabuka :  2637
+stddev_volatility :  1.34
+sell_pressure_ratio_10 :  65
+sell_pressure_ratio_5 :  137
+price :  2740
+sector_detail :  外食・中食関連
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6432のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6432の価格データを解析 
+19日 買い:1273183 売り:1524403
+5日 買い:234119 売り:464776
+レシオ(20,10): [119, 198] ボラティリティ(20): 4.8
+<<<<< 解析完了 
+DB更新しました:  6432 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-25 02:27:23
+shihyo_pt :  80
+stock_name :  竹内製作所
+code :  6432
+access_date_gyoseki :  2015-07-26 14:50:25
+access_date_price :  2015-08-21 00:37:53
+access_date_rironkabuka :  2015-07-26 14:50:26
+sell_pressure_ratio_20 :  119
+lowest_purchase_money :  763000
+market_cap :  124621
+rironkabuka :  7318
+stddev_volatility :  4.8
+sell_pressure_ratio_10 :  54
+access_date :  2015-07-26 14:50:25
+sell_pressure_ratio_5 :  198
+price :  6960
+score_gyoseki :  100
+sector_detail :  工作機械
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 4299のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 4299の価格データを解析 
+19日 買い:75325 売り:51462
+5日 買い:23144 売り:16752
+レシオ(20,10): [68, 72] ボラティリティ(20): 2.81
+<<<<< 解析完了 
+DB更新しました:  4299 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-02 00:22:51
+shihyo_pt :  80
+stock_name :  ハイマックス
+code :  4299
+access_date_gyoseki :  2015-08-21 00:37:09
+price :  1222
+access_date_rironkabuka :  2015-08-21 00:37:11
+sector_detail :  システムインテグレーター
+lowest_purchase_money :  122200
+market_cap :  7584
+rironkabuka :  1382
+access_date_price :  2015-08-21 00:37:53
+stddev_volatility :  2.81
+sell_pressure_ratio_10 :  119
+access_date :  2015-08-21 00:37:09
+sell_pressure_ratio_5 :  72
+sell_pressure_ratio_20 :  68
+score_gyoseki :  39
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3276のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3276の価格データを解析 
+19日 買い:1192736 売り:1729146
+5日 買い:376458 売り:675338
+レシオ(20,10): [144, 179] ボラティリティ(20): 7.68
+<<<<< 解析完了 
+DB更新しました:  3276 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:02:33
+shihyo_pt :  55
+stock_name :  日本管理センター
+market_cap :  34181
+access_date_gyoseki :  2015-08-09 19:21:54
+access_date_price :  2015-08-21 00:37:54
+access_date_rironkabuka :  2015-08-09 19:21:55
+sell_pressure_ratio_20 :  144
+lowest_purchase_money :  182600
+code :  3276
+rironkabuka :  1049
+stddev_volatility :  7.68
+sell_pressure_ratio_10 :  64
+access_date :  2015-08-21 00:37:11
+sell_pressure_ratio_5 :  179
+price :  1826
+score_gyoseki :  52
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 8909のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 8909の価格データを解析 
+19日 買い:1244014 売り:1277770
+5日 買い:475372 売り:293524
+レシオ(20,10): [102, 61] ボラティリティ(20): 5.93
+<<<<< 解析完了 
+DB更新しました:  8909 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:03:10
+shihyo_pt :  45
+stock_name :  シノケングループ
+market_cap :  33677
+access_date_gyoseki :  2015-08-09 19:21:56
+access_date_price :  2015-08-21 00:37:54
+access_date_rironkabuka :  2015-08-09 19:21:57
+sell_pressure_ratio_20 :  102
+lowest_purchase_money :  189000
+code :  8909
+rironkabuka :  5336
+stddev_volatility :  5.93
+sell_pressure_ratio_10 :  61
+access_date :  2015-08-09 19:21:56
+sell_pressure_ratio_5 :  61
+price :  1790
+score_gyoseki :  96
+sector_detail :  その他不動産
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6864のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6864の価格データを解析 
+19日 買い:87078 売り:129209
+5日 買い:11583 売り:13213
+レシオ(20,10): [148, 114] ボラティリティ(20): 6.0
+<<<<< 解析完了 
+DB更新しました:  6864 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-07-26 14:51:06
+lowest_purchase_money :  101000
+stock_name :  エヌエフ回路設計ブロック
+market_cap :  6393
+score_gyoseki :  14
+access_date_gyoseki :  2015-08-21 00:37:11
+access_date_price :  2015-08-21 00:37:54
+access_date_rironkabuka :  2015-08-21 00:37:14
+access_date :  2015-08-21 00:37:11
+sell_pressure_ratio_20 :  148
+shihyo_pt :  100
+code :  6864
+rironkabuka :  1440
+stddev_volatility :  6.0
+sell_pressure_ratio_10 :  26
+sell_pressure_ratio_5 :  114
+price :  1010
+sector_detail :  検査・分析・計測機器
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6866のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6866の価格データを解析 
+19日 買い:199622 売り:241962
+5日 買い:26033 売り:38262
+レシオ(20,10): [121, 146] ボラティリティ(20): 4.0
+<<<<< 解析完了 
+DB更新しました:  6866 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-12 01:34:37
+shihyo_pt :  45
+stock_name :  ＨＩＯＫＩ
+code :  6866
+access_date_gyoseki :  2015-08-21 00:37:14
+price :  2628
+access_date_rironkabuka :  2015-08-21 00:37:15
+sector_detail :  検査・分析・計測機器
+lowest_purchase_money :  262800
+market_cap :  36856
+rironkabuka :  1470
+access_date_price :  2015-08-21 00:37:55
+stddev_volatility :  4.0
+sell_pressure_ratio_10 :  61
+access_date :  2015-08-21 00:37:14
+sell_pressure_ratio_5 :  146
+sell_pressure_ratio_20 :  121
+score_gyoseki :  69
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3800のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3800の価格データを解析 
+19日 買い:48588 売り:76196
+5日 買い:7581 売り:10615
+レシオ(20,10): [156, 140] ボラティリティ(20): 4.78
+<<<<< 解析完了 
+DB更新しました:  3800 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-07-14 00:58:02
+shihyo_pt :  80
+stock_name :  ユニリタ
+code :  3800
+access_date_gyoseki :  2015-08-21 00:37:16
+price :  1816
+access_date_rironkabuka :  2015-08-21 00:37:17
+sector_detail :  ソフトウェア開発
+lowest_purchase_money :  181600
+market_cap :  15436
+rironkabuka :  2578
+access_date_price :  2015-08-21 00:37:55
+stddev_volatility :  4.78
+sell_pressure_ratio_10 :  79
+access_date :  2015-08-21 00:37:16
+sell_pressure_ratio_5 :  140
+sell_pressure_ratio_20 :  156
+score_gyoseki :  64
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3299のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3299の価格データを解析 
+19日 買い:740825 売り:480856
+5日 買い:152980 売り:114615
+レシオ(20,10): [64, 74] ボラティリティ(20): 7.44
+<<<<< 解析完了 
+DB更新しました:  3299 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:03:58
+lowest_purchase_money :  279300
+stock_name :  ムゲンエステート
+code :  3299
+score_gyoseki :  20
+access_date_gyoseki :  2015-08-09 19:21:58
+price :  2801
+access_date_rironkabuka :  2015-08-09 19:21:59
+access_date :  2015-08-09 19:21:58
+sector_detail :  unknown
+shihyo_pt :  75
+market_cap :  30636
+rironkabuka :  6582
+access_date_price :  2015-08-21 00:37:55
+stddev_volatility :  7.44
+sell_pressure_ratio_10 :  55
+sell_pressure_ratio_5 :  74
+sell_pressure_ratio_20 :  64
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6894のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6894の価格データを解析 
+19日 買い:185229 売り:315767
+5日 買い:30500 売り:31500
+レシオ(20,10): [170, 103] ボラティリティ(20): 4.2
+<<<<< 解析完了 
+DB更新しました:  6894 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-10 22:55:00
+shihyo_pt :  100
+stock_name :  パルステック工業
+code :  6894
+access_date_gyoseki :  2015-08-09 19:21:59
+price :  153
+access_date_rironkabuka :  2015-08-09 19:22:00
+sector_detail :  電子機器・部品
+lowest_purchase_money :  165000
+market_cap :  2299
+rironkabuka :  12
+access_date_price :  2015-08-21 00:37:56
+stddev_volatility :  4.2
+sell_pressure_ratio_10 :  102
+access_date :  2015-08-09 19:21:59
+sell_pressure_ratio_5 :  103
+sell_pressure_ratio_20 :  170
+score_gyoseki :  33
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7408のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7408の価格データを解析 
+19日 買い:2181709 売り:1293374
+5日 買い:347001 売り:280994
+レシオ(20,10): [59, 80] ボラティリティ(20): 7.64
+<<<<< 解析完了 
+DB更新しました:  7408 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:04:39
+shihyo_pt :  50
+stock_name :  ジャムコ
+market_cap :  119276
+score_gyoseki :  81
+access_date_gyoseki :  2015-08-06 23:42:21
+access_date_price :  2015-08-21 00:37:56
+access_date_rironkabuka :  2015-08-06 23:42:59
+access_date :  2015-08-06 23:41:42
+sell_pressure_ratio_20 :  59
+lowest_purchase_money :  444000
+code :  7408
+rironkabuka :  3619
+stddev_volatility :  7.64
+sell_pressure_ratio_10 :  63
+sell_pressure_ratio_5 :  80
+price :  4855
+sector_detail :  特殊車両・自転車
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2292のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2292の価格データを解析 
+19日 買い:1180401 売り:853182
+5日 買い:183732 売り:265064
+レシオ(20,10): [72, 144] ボラティリティ(20): 3.93
+<<<<< 解析完了 
+DB更新しました:  2292 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:05:07
+shihyo_pt :  50
+stock_name :  Ｓ　ＦＯＯＤＳ
+market_cap :  84251
+score_gyoseki :  71
+access_date_gyoseki :  2015-08-05 01:19:59
+access_date_price :  2015-08-21 00:37:56
+access_date_rironkabuka :  2015-08-05 01:20:21
+access_date :  2015-08-05 01:19:10
+sell_pressure_ratio_20 :  72
+lowest_purchase_money :  261100
+code :  2292
+rironkabuka :  2420
+stddev_volatility :  3.93
+sell_pressure_ratio_10 :  86
+sell_pressure_ratio_5 :  144
+price :  2601
+sector_detail :  農産物・水産物・畜産物
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2301のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2301の価格データを解析 
+19日 買い:502573 売り:590310
+5日 買い:133818 売り:129778
+レシオ(20,10): [117, 96] ボラティリティ(20): 4.79
+<<<<< 解析完了 
+DB更新しました:  2301 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-13 02:26:45
+shihyo_pt :  70
+stock_name :  学情
+market_cap :  19045
+access_date_gyoseki :  2015-08-09 19:22:01
+access_date_price :  2015-08-21 00:37:57
+access_date_rironkabuka :  2015-08-09 19:22:02
+sell_pressure_ratio_20 :  117
+lowest_purchase_money :  122400
+code :  2301
+rironkabuka :  978
+stddev_volatility :  4.79
+sell_pressure_ratio_10 :  71
+access_date :  2015-08-09 19:22:01
+sell_pressure_ratio_5 :  96
+price :  1201
+score_gyoseki :  56
+sector_detail :  求人情報・フリーペーパー
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7936のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7936の価格データを解析 
+19日 買い:9266287 売り:8138297
+5日 買い:1839866 売り:2053931
+レシオ(20,10): [87, 111] ボラティリティ(20): 6.95
+<<<<< 解析完了 
+DB更新しました:  7936 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:05:27
+shihyo_pt :  50
+stock_name :  アシックス
+market_cap :  698871
+score_gyoseki :  40
+access_date_gyoseki :  2015-08-09 19:22:02
+access_date_price :  2015-08-21 00:37:57
+access_date_rironkabuka :  2015-08-09 19:22:05
+access_date :  2015-08-09 19:22:02
+sell_pressure_ratio_20 :  87
+lowest_purchase_money :  349500
+code :  7936
+rironkabuka :  1931
+stddev_volatility :  6.95
+sell_pressure_ratio_10 :  118
+sell_pressure_ratio_5 :  111
+price :  3760
+sector_detail :  スポーツ用品・ウエア
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3333のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3333の価格データを解析 
+19日 買い:1219240 売り:1916343
+5日 買い:262636 売り:521359
+レシオ(20,10): [157, 198] ボラティリティ(20): 5.41
+<<<<< 解析完了 
+DB更新しました:  3333 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:06:03
+shihyo_pt :  30
+stock_name :  あさひ
+market_cap :  34979
+score_gyoseki :  0
+access_date_gyoseki :  2015-08-09 19:22:06
+access_date_price :  2015-08-21 00:37:57
+access_date_rironkabuka :  2015-08-09 19:22:07
+access_date :  2015-08-09 19:22:06
+sell_pressure_ratio_20 :  157
+lowest_purchase_money :  133300
+code :  3333
+rironkabuka :  919
+stddev_volatility :  5.41
+sell_pressure_ratio_10 :  193
+sell_pressure_ratio_5 :  198
+price :  1258
+sector_detail :  その他専門店
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3347のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3347の価格データを解析 
+19日 買い:1288778 売り:1573414
+5日 買い:67403 売り:214395
+レシオ(20,10): [122, 318] ボラティリティ(20): 7.13
+<<<<< 解析完了 
+DB更新しました:  3347 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-09 19:23:28
+shihyo_pt :  95
+stock_name :  トラスト
+code :  3347
+score_gyoseki :  69
+access_date_gyoseki :  2015-08-21 00:37:18
+price :  296
+access_date_rironkabuka :  2015-08-21 00:37:19
+sector_detail :  自動車販売・自動車用品販売
+lowest_purchase_money :  29600
+market_cap :  8332
+rironkabuka :  358
+stddev_volatility :  7.13
+access_date :  2015-08-21 00:37:17
+sell_pressure_ratio_5 :  318
+sell_pressure_ratio_20 :  122
+access_date_price :  2015-08-21 00:37:58
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 8473のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 8473の価格データを解析 
+19日 買い:18586704 売り:20473278
+5日 買い:3449176 売り:5508220
+レシオ(20,10): [110, 159] ボラティリティ(20): 4.35
+<<<<< 解析完了 
+DB更新しました:  8473 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-07-16 01:44:26
+lowest_purchase_money :  176000
+stock_name :  ＳＢＩホールディングス
+code :  8473
+score_gyoseki :  100
+access_date_gyoseki :  2015-08-09 19:23:29
+price :  1640
+access_date_rironkabuka :  2015-08-09 19:23:30
+access_date :  2015-08-09 19:23:29
+sector_detail :  事業投資
+shihyo_pt :  75
+market_cap :  395229
+rironkabuka :  2149
+access_date_price :  2015-08-21 00:37:58
+stddev_volatility :  4.35
+sell_pressure_ratio_10 :  55
+sell_pressure_ratio_5 :  159
+sell_pressure_ratio_20 :  110
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7968のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7968の価格データを解析 
+19日 買い:2840943 売り:4261842
+5日 買い:409439 売り:654256
+レシオ(20,10): [150, 159] ボラティリティ(20): 8.28
+<<<<< 解析完了 
+DB更新しました:  7968 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:06:50
+lowest_purchase_money :  200700
+stock_name :  ＴＡＳＡＫＩ
+code :  7968
+access_date_gyoseki :  2015-08-09 19:23:31
+access_date_price :  2015-08-21 00:37:58
+access_date_rironkabuka :  2015-08-09 19:23:32
+sell_pressure_ratio_20 :  150
+shihyo_pt :  100
+market_cap :  35686
+rironkabuka :  2457
+stddev_volatility :  8.28
+sell_pressure_ratio_10 :  62
+access_date :  2015-08-09 19:23:30
+sell_pressure_ratio_5 :  159
+price :  1865
+score_gyoseki :  69
+sector_detail :  時計・眼鏡・貴金属
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7991のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7991の価格データを解析 
+19日 買い:1453091 売り:1944904
+5日 買い:403351 売り:423647
+レシオ(20,10): [133, 105] ボラティリティ(20): 3.73
+<<<<< 解析完了 
+DB更新しました:  7991 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:07:41
+shihyo_pt :  35
+stock_name :  マミヤ・オーピー
+market_cap :  16827
+score_gyoseki :  18
+access_date_gyoseki :  2015-08-09 19:23:32
+access_date_price :  2015-08-21 00:37:58
+access_date_rironkabuka :  2015-08-09 19:23:33
+access_date :  2015-08-09 19:23:32
+sell_pressure_ratio_20 :  133
+lowest_purchase_money :  180000
+code :  7991
+rironkabuka :  57
+stddev_volatility :  3.73
+sell_pressure_ratio_10 :  97
+sell_pressure_ratio_5 :  105
+price :  180
+sector_detail :  電子機器・部品
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3387のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3387の価格データを解析 
+19日 買い:1614188 売り:1869796
+5日 買い:343544 売り:374652
+レシオ(20,10): [115, 109] ボラティリティ(20): 4.94
+<<<<< 解析完了 
+DB更新しました:  3387 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-07-26 14:52:11
+shihyo_pt :  50
+stock_name :  クリエイト・レストランツ・ホールディングス
+market_cap :  94312
+score_gyoseki :  65
+access_date_gyoseki :  2015-08-09 19:23:33
+access_date_price :  2015-08-21 00:37:59
+access_date_rironkabuka :  2015-08-09 19:23:34
+access_date :  2015-08-09 19:23:33
+sell_pressure_ratio_20 :  115
+lowest_purchase_money :  298700
+code :  3387
+rironkabuka :  3903
+stddev_volatility :  4.94
+sell_pressure_ratio_10 :  33
+sell_pressure_ratio_5 :  109
+price :  2885
+sector_detail :  外食・中食関連
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3388のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3388の価格データを解析 
+19日 買い:372983 売り:672302
+5日 買い:74902 売り:124295
+レシオ(20,10): [180, 165] ボラティリティ(20): 4.52
+<<<<< 解析完了 
+DB更新しました:  3388 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:08:16
+shihyo_pt :  65
+stock_name :  明治電機工業
+market_cap :  16918
+access_date_gyoseki :  2015-07-30 22:18:11
+access_date_price :  2015-08-21 00:37:59
+access_date_rironkabuka :  2015-07-30 22:18:38
+sell_pressure_ratio_20 :  180
+lowest_purchase_money :  140200
+code :  3388
+rironkabuka :  1484
+stddev_volatility :  4.52
+sell_pressure_ratio_10 :  112
+access_date :  2015-07-30 22:17:32
+sell_pressure_ratio_5 :  165
+price :  1148
+score_gyoseki :  84
+sector_detail :  検査・分析・計測機器
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3901のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3901の価格データを解析 
+19日 買い:209127 売り:347356
+5日 買い:52399 売り:40596
+レシオ(20,10): [166, 77] ボラティリティ(20): 6.67
+<<<<< 解析完了 
+DB更新しました:  3901 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:08:49
+lowest_purchase_money :  289100
+stock_name :  マークラインズ
+code :  3901
+access_date_gyoseki :  2015-08-09 19:23:35
+price :  2772
+access_date_rironkabuka :  2015-08-09 19:23:36
+access_date :  2015-08-09 19:23:35
+sector_detail :  unknown
+shihyo_pt :  20
+market_cap :  9074
+rironkabuka :  2369
+access_date_price :  2015-08-21 00:37:59
+stddev_volatility :  6.67
+sell_pressure_ratio_10 :  86
+sell_pressure_ratio_5 :  77
+sell_pressure_ratio_20 :  166
+score_gyoseki :  20
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6463のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6463の価格データを解析 
+19日 買い:831028 売り:1168755
+5日 買い:259506 売り:311090
+レシオ(20,10): [140, 119] ボラティリティ(20): 5.35
+<<<<< 解析完了 
+DB更新しました:  6463 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:09:47
+shihyo_pt :  50
+stock_name :  ＴＰＲ
+code :  6463
+score_gyoseki :  66
+access_date_gyoseki :  2015-08-09 19:23:36
+access_date_price :  2015-08-21 00:37:59
+access_date_rironkabuka :  2015-08-09 19:23:37
+access_date :  2015-08-09 19:23:36
+sell_pressure_ratio_20 :  140
+lowest_purchase_money :  360000
+market_cap :  129417
+rironkabuka :  4992
+stddev_volatility :  5.35
+sell_pressure_ratio_10 :  73
+sell_pressure_ratio_5 :  119
+price :  3150
+sector_detail :  自動車部品（メーカー系）
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2379のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2379の価格データを解析 
+19日 買い:1470541 売り:1619141
+5日 買い:383172 売り:419623
+レシオ(20,10): [110, 109] ボラティリティ(20): 8.7
+<<<<< 解析完了 
+DB更新しました:  2379 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-13 02:26:53
+shihyo_pt :  70
+stock_name :  ディップ
+market_cap :  167524
+access_date_gyoseki :  2015-08-21 00:37:20
+access_date_price :  2015-08-21 00:38:00
+access_date_rironkabuka :  2015-08-21 00:37:22
+sell_pressure_ratio_20 :  110
+lowest_purchase_money :  1351000
+code :  2379
+rironkabuka :  7058
+stddev_volatility :  8.7
+sell_pressure_ratio_10 :  112
+access_date :  2015-08-21 00:37:20
+sell_pressure_ratio_5 :  109
+price :  13510
+score_gyoseki :  97
+sector_detail :  人材紹介・派遣サービス
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 1381のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 1381の価格データを解析 
+19日 買い:74494 売り:106890
+5日 買い:17175 売り:9421
+レシオ(20,10): [143, 54] ボラティリティ(20): 8.42
+<<<<< 解析完了 
+DB更新しました:  1381 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-09 19:25:39
+shihyo_pt :  90
+stock_name :  アクシーズ
+code :  1381
+access_date_gyoseki :  2015-07-26 14:52:11
+access_date_price :  2015-08-21 00:38:00
+access_date_rironkabuka :  2015-07-26 14:52:13
+sell_pressure_ratio_20 :  143
+lowest_purchase_money :  254500
+market_cap :  14297
+rironkabuka :  2320
+stddev_volatility :  8.42
+sell_pressure_ratio_10 :  58
+access_date :  2015-07-26 14:52:11
+sell_pressure_ratio_5 :  54
+price :  2305
+score_gyoseki :  94
+sector_detail :  農産物・水産物・畜産物
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 9065のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 9065の価格データを解析 
+19日 買い:9879349 売り:11347639
+5日 買い:2530631 売り:4346366
+レシオ(20,10): [114, 171] ボラティリティ(20): 5.57
+<<<<< 解析完了 
+DB更新しました:  9065 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:10:12
+shihyo_pt :  45
+stock_name :  山九
+market_cap :  226950
+access_date_gyoseki :  2015-08-05 22:53:44
+access_date_price :  2015-08-21 00:38:00
+access_date_rironkabuka :  2015-08-05 22:54:41
+sell_pressure_ratio_20 :  114
+lowest_purchase_money :  696000
+code :  9065
+rironkabuka :  448
+stddev_volatility :  5.57
+sell_pressure_ratio_10 :  72
+access_date :  2015-08-05 22:52:39
+sell_pressure_ratio_5 :  171
+price :  645
+score_gyoseki :  38
+sector_detail :  運輸・物流・倉庫
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2928のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2928の価格データを解析 
+価格情報がありません
+!!! 日付が足りないため0日で計算します
+19日 買い:0 売り:0
+!!! 日付が足りないため0日で計算します
+5日 買い:0 売り:0
+!!! 日付が足りないため0日で計算します
+レシオ(20,10): [0, 0] ボラティリティ(20): 0
+<<<<< 解析完了 
+DB更新しました:  2928 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:11:04
+score_gyoseki :  71
+code :  2928
+access_date_gyoseki :  2015-08-09 19:25:40
+access_date_price :  2015-08-21 00:38:00
+access_date_rironkabuka :  2015-08-09 19:25:41
+sector_detail :  unknown
+shihyo_pt :  20
+rironkabuka :  804
+sell_pressure_ratio_10 :  0
+stddev_volatility :  0
+access_date :  2015-08-21 00:37:22
+sell_pressure_ratio_5 :  0
+price :  0
+sell_pressure_ratio_20 :  0
+----------
+必要:2015-08-20 最新:2015-08-20
+8050セイコーホールディングスはDBに存在します
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2931のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2931の価格データを解析 
+19日 買い:4226133 売り:6755951
+5日 買い:1775901 売り:3791594
+レシオ(20,10): [159, 213] ボラティリティ(20): 3.97
+<<<<< 解析完了 
+DB更新しました:  2931 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:12:31
+shihyo_pt :  20
+stock_name :  ユーグレナ
+code :  2931
+access_date_gyoseki :  2015-08-09 19:25:44
+price :  1631
+access_date_rironkabuka :  2015-08-09 19:25:45
+sector_detail :  unknown
+lowest_purchase_money :  172900
+market_cap :  140868
+rironkabuka :  80
+access_date_price :  2015-08-21 00:38:01
+stddev_volatility :  3.97
+sell_pressure_ratio_10 :  62
+access_date :  2015-08-09 19:25:43
+sell_pressure_ratio_5 :  213
+sell_pressure_ratio_20 :  159
+score_gyoseki :  75
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 8570のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 8570の価格データを解析 
+19日 買い:6105383 売り:7939204
+5日 買い:1585289 売り:1969808
+レシオ(20,10): [130, 124] ボラティリティ(20): 5.75
+<<<<< 解析完了 
+DB更新しました:  8570 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-12 01:35:01
+shihyo_pt :  45
+stock_name :  イオンフィナンシャルサービス
+code :  8570
+access_date_gyoseki :  2015-07-26 14:52:13
+price :  3015
+access_date_rironkabuka :  2015-07-26 14:52:14
+sector_detail :  信販・消費者金融
+lowest_purchase_money :  359500
+market_cap :  749555
+rironkabuka :  2959
+access_date_price :  2015-08-21 00:38:01
+stddev_volatility :  5.75
+sell_pressure_ratio_10 :  72
+access_date :  2015-07-26 14:52:13
+sell_pressure_ratio_5 :  124
+sell_pressure_ratio_20 :  130
+score_gyoseki :  71
+----------
+必要:2015-08-20 最新:2015-08-15
+価格更新: 5日ぶり
+----> 2427のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2427の価格データを解析 
+19日 買い:2986290 売り:2635892
+5日 買い:1077371 売り:574424
+レシオ(20,10): [88, 53] ボラティリティ(20): 9.34
+<<<<< 解析完了 
+DB更新しました:  2427 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-19 01:46:56
+shihyo_pt :  20
+stock_name :  アウトソーシング
+market_cap :  39989
+access_date_gyoseki :  2015-07-26 14:52:14
+access_date_price :  2015-08-21 00:38:01
+access_date_rironkabuka :  2015-07-26 14:52:15
+sell_pressure_ratio_20 :  88
+lowest_purchase_money :  229900
+code :  2427
+rironkabuka :  2778
+stddev_volatility :  9.34
+sell_pressure_ratio_10 :  153
+access_date :  2015-08-09 19:25:45
+sell_pressure_ratio_5 :  53
+price :  2705
+score_gyoseki :  65
+sector_detail :  アウトソーシング・業務支援
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2432のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2432の価格データを解析 
+19日 買い:16947538 売り:18175043
+5日 買い:2874480 売り:3788715
+レシオ(20,10): [107, 131] ボラティリティ(20): 4.92
+<<<<< 解析完了 
+DB更新しました:  2432 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:13:32
+shihyo_pt :  50
+stock_name :  ディー・エヌ・エー
+market_cap :  359380
+score_gyoseki :  0
+access_date_gyoseki :  2015-08-09 19:25:45
+access_date_price :  2015-08-21 00:38:01
+access_date_rironkabuka :  2015-08-09 19:25:46
+access_date :  2015-08-09 19:25:45
+sell_pressure_ratio_20 :  107
+lowest_purchase_money :  238300
+code :  2432
+rironkabuka :  1933
+stddev_volatility :  4.92
+sell_pressure_ratio_10 :  52
+sell_pressure_ratio_5 :  131
+price :  2315
+sector_detail :  インターネット関連
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 9090のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 9090の価格データを解析 
+19日 買い:760136 売り:482650
+5日 買い:148391 売り:120206
+レシオ(20,10): [63, 81] ボラティリティ(20): 11.31
+<<<<< 解析完了 
+DB更新しました:  9090 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:14:51
+shihyo_pt :  70
+stock_name :  丸和運輸機関
+code :  9090
+access_date_gyoseki :  2015-08-09 19:25:46
+access_date_price :  2015-08-21 00:38:01
+access_date_rironkabuka :  2015-08-09 19:25:48
+sell_pressure_ratio_20 :  63
+lowest_purchase_money :  548000
+market_cap :  43849
+rironkabuka :  3349
+stddev_volatility :  11.31
+sell_pressure_ratio_10 :  125
+access_date :  2015-08-21 00:37:22
+sell_pressure_ratio_5 :  81
+price :  5480
+score_gyoseki :  20
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 4848のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 4848の価格データを解析 
+19日 買い:4314564 売り:6155117
+5日 買い:916353 売り:1351442
+レシオ(20,10): [142, 147] ボラティリティ(20): 8.38
+<<<<< 解析完了 
+DB更新しました:  4848 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:16:21
+shihyo_pt :  50
+stock_name :  フルキャストホールディングス
+code :  4848
+access_date_gyoseki :  2015-08-09 19:25:48
+access_date_price :  2015-08-21 00:38:02
+access_date_rironkabuka :  2015-08-09 19:25:49
+sell_pressure_ratio_20 :  142
+lowest_purchase_money :  102700
+market_cap :  39526
+rironkabuka :  687
+stddev_volatility :  8.38
+sell_pressure_ratio_10 :  55
+access_date :  2015-08-09 19:25:48
+sell_pressure_ratio_5 :  147
+price :  887
+score_gyoseki :  90
+sector_detail :  人材紹介・派遣サービス
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7591のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7591の価格データを解析 
+19日 買い:1044142 売り:1309143
+5日 買い:86296 売り:315499
+レシオ(20,10): [125, 365] ボラティリティ(20): 6.57
+<<<<< 解析完了 
+DB更新しました:  7591 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:17:44
+shihyo_pt :  10
+stock_name :  エクセル
+market_cap :  17047
+access_date_gyoseki :  2015-08-09 19:25:49
+access_date_price :  2015-08-21 00:38:02
+access_date_rironkabuka :  2015-08-09 19:25:50
+sell_pressure_ratio_20 :  125
+lowest_purchase_money :  187600
+code :  7591
+rironkabuka :  2965
+stddev_volatility :  6.57
+sell_pressure_ratio_10 :  70
+access_date :  2015-08-09 19:25:49
+sell_pressure_ratio_5 :  365
+price :  1720
+score_gyoseki :  62
+sector_detail :  電子部品卸・商社
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6058のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6058の価格データを解析 
+19日 買い:1422310 売り:1383673
+5日 買い:333816 売り:528379
+レシオ(20,10): [97, 158] ボラティリティ(20): 10.77
+<<<<< 解析完了 
+DB更新しました:  6058 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:18:22
+lowest_purchase_money :  187400
+stock_name :  ベクトル
+market_cap :  27803
+score_gyoseki :  100
+access_date_gyoseki :  2015-08-09 19:25:50
+access_date_price :  2015-08-21 00:38:02
+access_date_rironkabuka :  2015-08-09 19:25:51
+access_date :  2015-08-21 00:37:22
+sell_pressure_ratio_20 :  97
+shihyo_pt :  60
+code :  6058
+rironkabuka :  1982
+stddev_volatility :  10.77
+sell_pressure_ratio_10 :  78
+sell_pressure_ratio_5 :  158
+price :  1874
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6071のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6071の価格データを解析 
+19日 買い:934687 売り:682598
+5日 買い:543938 売り:329858
+レシオ(20,10): [73, 60] ボラティリティ(20): 7.27
+<<<<< 解析完了 
+DB更新しました:  6071 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-07-06 23:58:41
+lowest_purchase_money :  168000
+stock_name :  ＩＢＪ
+code :  6071
+score_gyoseki :  100
+access_date_gyoseki :  2015-08-09 19:25:52
+price :  1680
+access_date_rironkabuka :  2015-08-09 19:25:53
+access_date :  2015-08-21 00:37:23
+sector_detail :  unknown
+shihyo_pt :  100
+market_cap :  20916
+rironkabuka :  1006
+access_date_price :  2015-08-21 00:38:03
+stddev_volatility :  7.27
+sell_pressure_ratio_10 :  106
+sell_pressure_ratio_5 :  60
+sell_pressure_ratio_20 :  73
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 4539のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 4539の価格データを解析 
+19日 買い:1167533 売り:1475450
+5日 買い:313493 売り:277503
+レシオ(20,10): [126, 88] ボラティリティ(20): 8.01
+<<<<< 解析完了 
+DB更新しました:  4539 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-16 01:47:21
+lowest_purchase_money :  684000
+stock_name :  日本ケミファ
+market_cap :  29148
+score_gyoseki :  4
+access_date_gyoseki :  2015-08-21 00:37:23
+access_date_price :  2015-08-21 00:38:04
+access_date_rironkabuka :  2015-08-21 00:37:25
+access_date :  2015-08-21 00:37:23
+sell_pressure_ratio_20 :  126
+shihyo_pt :  70
+code :  4539
+rironkabuka :  509
+stddev_volatility :  8.01
+sell_pressure_ratio_10 :  81
+sell_pressure_ratio_5 :  88
+price :  684
+sector_detail :  医薬・医療品
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 2492のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 2492の価格データを解析 
+19日 買い:1040206 売り:1100376
+5日 買い:147992 売り:142004
+レシオ(20,10): [105, 95] ボラティリティ(20): 8.45
+<<<<< 解析完了 
+DB更新しました:  2492 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-07-10 01:14:52
+shihyo_pt :  65
+stock_name :  インフォマート
+code :  2492
+access_date_gyoseki :  2015-08-21 00:37:25
+price :  1441
+access_date_rironkabuka :  2015-08-21 00:37:28
+sector_detail :  インターネット関連
+lowest_purchase_money :  144100
+market_cap :  87544
+rironkabuka :  487
+access_date_price :  2015-08-21 00:38:05
+stddev_volatility :  8.45
+sell_pressure_ratio_10 :  54
+access_date :  2015-08-21 00:37:25
+sell_pressure_ratio_5 :  95
+sell_pressure_ratio_20 :  105
+score_gyoseki :  75
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6078のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6078の価格データを解析 
+19日 買い:73725 売り:86158
+5日 買い:23908 売り:33287
+レシオ(20,10): [116, 139] ボラティリティ(20): 4.71
+<<<<< 解析完了 
+DB更新しました:  6078 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-10 22:55:59
+lowest_purchase_money :  165000
+stock_name :  バリューＨＲ
+market_cap :  4497
+score_gyoseki :  33
+access_date_gyoseki :  2015-08-09 19:25:54
+access_date_price :  2015-08-21 00:38:06
+access_date_rironkabuka :  2015-08-09 19:25:55
+access_date :  2015-08-21 00:37:28
+sell_pressure_ratio_20 :  116
+shihyo_pt :  70
+code :  6078
+rironkabuka :  1507
+stddev_volatility :  4.71
+sell_pressure_ratio_10 :  55
+sell_pressure_ratio_5 :  139
+price :  1650
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3660のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3660の価格データを解析 
+19日 買い:5260677 売り:3956504
+5日 買い:1244928 売り:789967
+レシオ(20,10): [75, 63] ボラティリティ(20): 19.83
+<<<<< 解析完了 
+DB更新しました:  3660 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-12 01:35:15
+shihyo_pt :  50
+stock_name :  アイスタイル
+code :  3660
+access_date_gyoseki :  2015-08-05 01:20:01
+price :  1982
+access_date_rironkabuka :  2015-08-05 01:20:40
+sector_detail :  unknown
+lowest_purchase_money :  198200
+market_cap :  29780
+rironkabuka :  490
+access_date_price :  2015-08-21 00:38:06
+stddev_volatility :  19.83
+sell_pressure_ratio_10 :  86
+access_date :  2015-08-21 00:37:28
+sell_pressure_ratio_5 :  63
+sell_pressure_ratio_20 :  75
+score_gyoseki :  75
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6092のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6092の価格データを解析 
+19日 買い:13434408 売り:10898775
+5日 買い:3945768 売り:2261228
+レシオ(20,10): [81, 57] ボラティリティ(20): 18.32
+<<<<< 解析完了 
+DB更新しました:  6092 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-10 22:56:38
+lowest_purchase_money :  105000
+stock_name :  エンバイオ・ホールディングス
+market_cap :  4362
+access_date_gyoseki :  2015-08-09 19:25:55
+access_date_price :  2015-08-21 00:38:06
+access_date_rironkabuka :  2015-08-09 19:25:56
+sell_pressure_ratio_20 :  81
+shihyo_pt :  30
+code :  6092
+rironkabuka :  1221
+stddev_volatility :  18.32
+sell_pressure_ratio_10 :  80
+access_date :  2015-08-09 19:25:55
+sell_pressure_ratio_5 :  57
+price :  1080
+score_gyoseki :  20
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6094のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6094の価格データを解析 
+19日 買い:124440 売り:277144
+5日 買い:26415 売り:29381
+レシオ(20,10): [222, 111] ボラティリティ(20): 5.34
+<<<<< 解析完了 
+DB更新しました:  6094 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-10 22:57:32
+lowest_purchase_money :  180400
+stock_name :  フリークアウト
+market_cap :  11352
+score_gyoseki :  20
+access_date_gyoseki :  2015-08-09 19:25:57
+access_date_price :  2015-08-21 00:38:07
+access_date_rironkabuka :  2015-08-09 19:25:57
+access_date :  2015-08-09 19:25:56
+sell_pressure_ratio_20 :  222
+shihyo_pt :  20
+code :  6094
+rironkabuka :  480
+stddev_volatility :  5.34
+sell_pressure_ratio_10 :  73
+sell_pressure_ratio_5 :  111
+price :  1735
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3034のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3034の価格データを解析 
+19日 買い:2579876 売り:2489206
+5日 買い:496482 売り:759814
+レシオ(20,10): [96, 153] ボラティリティ(20): 9.51
+<<<<< 解析完了 
+DB更新しました:  3034 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-02 23:33:16
+shihyo_pt :  25
+stock_name :  クオール
+market_cap :  72014
+access_date_gyoseki :  2015-08-09 19:25:57
+access_date_price :  2015-08-21 00:38:07
+access_date_rironkabuka :  2015-08-09 19:25:58
+sell_pressure_ratio_20 :  96
+lowest_purchase_money :  200900
+code :  3034
+rironkabuka :  1128
+stddev_volatility :  9.51
+sell_pressure_ratio_10 :  54
+access_date :  2015-08-09 19:25:57
+sell_pressure_ratio_5 :  153
+price :  1837
+score_gyoseki :  85
+sector_detail :  コンビニ・ドラッグストア
+----------
+必要:2015-08-20 最新:2015-08-20
+6619ダブル・スコープはDBに存在します
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3036のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3036の価格データを解析 
+19日 買い:366734 売り:458749
+5日 買い:61901 売り:141795
+レシオ(20,10): [125, 229] ボラティリティ(20): 4.24
+<<<<< 解析完了 
+DB更新しました:  3036 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:21:09
+shihyo_pt :  35
+stock_name :  アルコニックス
+market_cap :  24494
+score_gyoseki :  43
+access_date_gyoseki :  2015-08-09 19:26:00
+access_date_price :  2015-08-21 00:38:07
+access_date_rironkabuka :  2015-08-09 19:26:01
+access_date :  2015-08-09 19:26:00
+sell_pressure_ratio_20 :  125
+lowest_purchase_money :  190700
+code :  3036
+rironkabuka :  5344
+stddev_volatility :  4.24
+sell_pressure_ratio_10 :  63
+sell_pressure_ratio_5 :  229
+price :  1797
+sector_detail :  非鉄金属・アルミ・電線
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3038のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3038の価格データを解析 
+19日 買い:1910100 売り:2010282
+5日 買い:639509 売り:471086
+レシオ(20,10): [105, 73] ボラティリティ(20): 9.26
+<<<<< 解析完了 
+DB更新しました:  3038 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-09 19:28:03
+shihyo_pt :  10
+stock_name :  神戸物産
+market_cap :  192375
+score_gyoseki :  68
+access_date_gyoseki :  2015-08-09 19:26:02
+access_date_price :  2015-08-21 00:38:07
+access_date_rironkabuka :  2015-08-09 19:26:02
+access_date :  2015-08-09 19:26:01
+sell_pressure_ratio_20 :  105
+lowest_purchase_money :  1125000
+code :  3038
+rironkabuka :  2632
+stddev_volatility :  9.26
+sell_pressure_ratio_10 :  53
+sell_pressure_ratio_5 :  73
+price :  12780
+sector_detail :  スーパーマーケット・ホームセンター
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6624のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6624の価格データを解析 
+19日 買い:3513826 売り:5105057
+5日 買い:458619 売り:800476
+レシオ(20,10): [145, 174] ボラティリティ(20): 7.06
+<<<<< 解析完了 
+DB更新しました:  6624 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:22:43
+shihyo_pt :  90
+stock_name :  田淵電機
+market_cap :  39976
+score_gyoseki :  66
+access_date_gyoseki :  2015-08-09 19:28:06
+access_date_price :  2015-08-21 00:38:08
+access_date_rironkabuka :  2015-08-09 19:28:07
+access_date :  2015-08-09 19:28:04
+sell_pressure_ratio_20 :  145
+lowest_purchase_money :  98700
+code :  6624
+rironkabuka :  1959
+stddev_volatility :  7.06
+sell_pressure_ratio_10 :  107
+sell_pressure_ratio_5 :  174
+price :  919
+sector_detail :  電子材料・基板・電池
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6634のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6634の価格データを解析 
+19日 買い:586481 売り:784005
+5日 買い:292088 売り:300508
+レシオ(20,10): [133, 102] ボラティリティ(20): 6.81
+<<<<< 解析完了 
+DB更新しました:  6634 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-09 19:29:52
+lowest_purchase_money :  73800
+stock_name :  ネクスグループ
+code :  6634
+score_gyoseki :  36
+access_date_gyoseki :  2015-08-09 19:28:07
+price :  695
+access_date_rironkabuka :  2015-08-09 19:28:08
+access_date :  2015-08-09 19:28:07
+sector_detail :  通信機器
+shihyo_pt :  60
+market_cap :  11092
+rironkabuka :  1691
+access_date_price :  2015-08-21 00:38:08
+stddev_volatility :  6.81
+sell_pressure_ratio_10 :  120
+sell_pressure_ratio_5 :  102
+sell_pressure_ratio_20 :  133
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 7148のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 7148の価格データを解析 
+19日 買い:14213957 売り:13559730
+5日 買い:3443930 売り:2426366
+レシオ(20,10): [95, 70] ボラティリティ(20): 5.21
+<<<<< 解析完了 
+DB更新しました:  7148 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:23:22
+shihyo_pt :  30
+stock_name :  ＦＰＧ
+market_cap :  92726
+score_gyoseki :  100
+access_date_gyoseki :  2015-08-09 19:29:55
+access_date_price :  2015-08-21 00:38:08
+access_date_rironkabuka :  2015-08-09 19:29:56
+access_date :  2015-08-09 19:29:54
+sell_pressure_ratio_20 :  95
+lowest_purchase_money :  98500
+code :  7148
+rironkabuka :  1782
+stddev_volatility :  5.21
+sell_pressure_ratio_10 :  59
+sell_pressure_ratio_5 :  70
+price :  985
+sector_detail :  unknown
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 6638のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 6638の価格データを解析 
+19日 買い:873013 売り:1160675
+5日 買い:162954 売り:240744
+レシオ(20,10): [132, 147] ボラティリティ(20): 6.45
+<<<<< 解析完了 
+DB更新しました:  6638 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:24:38
+shihyo_pt :  70
+stock_name :  ミマキエンジニアリング
+market_cap :  28099
+score_gyoseki :  53
+access_date_gyoseki :  2015-08-09 19:29:56
+access_date_price :  2015-08-21 00:38:08
+access_date_rironkabuka :  2015-08-09 19:29:57
+access_date :  2015-08-09 19:29:56
+sell_pressure_ratio_20 :  132
+lowest_purchase_money :  87700
+code :  6638
+rironkabuka :  1148
+stddev_volatility :  6.45
+sell_pressure_ratio_10 :  82
+sell_pressure_ratio_5 :  147
+price :  756
+sector_detail :  産業用電子機器
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3069のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3069の価格データを解析 
+19日 買い:588562 売り:955924
+5日 買い:204860 売り:481537
+レシオ(20,10): [162, 235] ボラティリティ(20): 5.46
+<<<<< 解析完了 
+DB更新しました:  3069 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-05-30 02:01:13
+lowest_purchase_money :  68400
+stock_name :  アスラポート・ダイニング
+code :  3069
+score_gyoseki :  54
+access_date_gyoseki :  2015-08-09 19:29:58
+price :  595
+access_date_rironkabuka :  2015-08-09 19:29:59
+access_date :  2015-08-09 19:29:57
+sector_detail :  外食・中食関連
+shihyo_pt :  45
+market_cap :  14489
+rironkabuka :  652
+access_date_price :  2015-08-21 00:38:09
+stddev_volatility :  5.46
+sell_pressure_ratio_10 :  47
+sell_pressure_ratio_5 :  235
+sell_pressure_ratio_20 :  162
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 9717のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 9717の価格データを解析 
+19日 買い:494992 売り:461494
+5日 買い:88447 売り:101749
+レシオ(20,10): [93, 115] ボラティリティ(20): 4.18
+<<<<< 解析完了 
+DB更新しました:  9717 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-08-11 00:37:08
+lowest_purchase_money :  112700
+stock_name :  ジャステック
+market_cap :  20609
+access_date_gyoseki :  2015-08-21 00:37:29
+access_date_price :  2015-08-21 00:38:09
+access_date_rironkabuka :  2015-08-21 00:37:30
+sell_pressure_ratio_20 :  93
+shihyo_pt :  75
+code :  9717
+rironkabuka :  2947
+stddev_volatility :  4.18
+sell_pressure_ratio_10 :  64
+access_date :  2015-08-21 00:37:28
+sell_pressure_ratio_5 :  115
+price :  1127
+score_gyoseki :  87
+sector_detail :  ITソリューション
+----------
+必要:2015-08-20 最新:2015-08-10
+価格更新: 10日ぶり
+----> 3242のYahooから価格情報を取得します・・
+<---- 取得完了
+>>>>> 3242の価格データを解析 
+19日 買い:1637946 売り:1259439
+5日 買い:361916 売り:249480
+レシオ(20,10): [76, 68] ボラティリティ(20): 3.28
+<<<<< 解析完了 
+DB更新しました:  3242 ['price', 'code', 'stddev_volatility', 'access_date_price', 'sell_pressure_ratio_5', 'sell_pressure_ratio_20']
+----------
+access_date_shihyo :  2015-06-30 01:25:19
+lowest_purchase_money :  33000
+stock_name :  アーバネットコーポレーション
+code :  3242
+score_gyoseki :  48
+access_date_gyoseki :  2015-08-09 19:29:59
+price :  335
+access_date_rironkabuka :  2015-08-09 19:30:00
+access_date :  2015-08-09 19:29:59
+sector_detail :  その他不動産
+shihyo_pt :  95
+market_cap :  8236
+rironkabuka :  679
+access_date_price :  2015-08-21 00:38:09
+stddev_volatility :  3.28
+sell_pressure_ratio_10 :  71
+sell_pressure_ratio_5 :  68
+sell_pressure_ratio_20 :  76
+----------
+stock_data/stocks.pickleにpickleセーブ
+stock_data/stocks.pickleにpickleロード
+------------------------------
+名前不明
+★ 2928 名前不明 |SPR:  0-  0|ボラ: 0.0|業績: 71|指標: 20|8/21株価:0/804(  0%)
+★ 8050 セイコーホー |SPR: 47- 44|ボラ: 5.7|業績: 61|指標: 45|8/21株価:803/791( -2%)
+▲ 6164 太陽工機 |SPR: 50-117|ボラ: 7.4|業績: 97|指標: 95|8/21株価:1835/1388(-25%)
+★ 7408 ジャムコ |SPR: 59- 80|ボラ: 7.6|業績: 81|指標: 50|8/21株価:4855/3619(-26%)
+★ 9090 丸和運輸機関 |SPR: 63- 81|ボラ:11.3|業績: 20|指標: 70|8/21株価:5480/3349(-39%)
+★ 3299 ムゲンエステ |SPR: 64- 74|ボラ: 7.4|業績: 20|指標: 75|8/21株価:2801/6582(134%)
+▲ 9358 宇徳     |SPR: 65-202|ボラ: 4.5|業績: 63|指標: 90|8/21株価:555/680( 22%)
+★ 4299 ハイマックス |SPR: 68- 72|ボラ: 2.8|業績: 39|指標: 80|8/21株価:1222/1382( 13%)
+☆ 2148 アイティメデ |SPR: 69- 72|ボラ:16.5|業績: 91|指標: 70|8/21株価:2615/1704(-35%)
+▲ 2292 Ｓ　ＦＯＯＤ |SPR: 72-144|ボラ: 3.9|業績: 71|指標: 50|8/21株価:2601/2420( -7%)
+☆ 2175 エス・エム・ |SPR: 73- 50|ボラ: 6.5|業績: 83|指標: 40|8/21株価:1912/1735(-10%)
+☆ 6071 ＩＢＪ  |SPR: 73- 60|ボラ: 7.3|業績:100|指標:100|8/21株価:1680/1006(-41%)
+☆ 6619 ダブル・スコ |SPR: 73- 51|ボラ: 9.7|業績: 94|指標: 50|8/21株価:1823/1264(-31%)
+☆ 3660 アイスタイル |SPR: 75- 63|ボラ:19.8|業績: 75|指標: 50|8/21株価:1982/490(-76%)
+☆ 3242 アーバネット |SPR: 76- 68|ボラ: 3.3|業績: 48|指標: 95|8/21株価:335/679(102%)
+☆ 6669 シーシーエス |SPR: 78-101|ボラ: 3.9|業績:100|指標:100|8/21株価:1717/3079( 79%)
+△ 2729 ＪＡＬＵＸ |SPR: 79-111|ボラ: 5.7|業績: 97|指標: 45|8/21株価:2511/1477(-42%)
+☆ 6092 エンバイオ・ |SPR: 81- 57|ボラ:18.3|業績: 20|指標: 30|8/21株価:1080/1221( 13%)
+▲ 4246 ダイキョーニ |SPR: 83-173|ボラ: 9.2|業績: 20|指標: 75|8/21株価:5690/5243( -8%)
+◆ 2163 アルトナー |SPR: 86- 57|ボラ: 4.8|業績: 87|指標: 90|8/21株価:1419/1290(-10%)
+  2751 テンポスバス |SPR: 86- 94|ボラ: 7.3|業績: 63|指標: 55|8/21株価:2302/2077(-10%)
+△ 7936 アシックス |SPR: 87-111|ボラ: 7.0|業績: 40|指標: 50|8/21株価:3760/1931(-49%)
+◆ 2427 アウトソーシ |SPR: 88- 53|ボラ: 9.3|業績: 65|指標: 20|8/21株価:2705/2778(  2%)
+  4241 アテクト |SPR: 89- 90|ボラ:10.7|業績: 50|指標: 85|8/21株価:1078/894(-18%)
+△ 9717 ジャステック |SPR: 93-115|ボラ: 4.2|業績: 87|指標: 75|8/21株価:1127/2947(161%)
+◆ 2124 ＪＡＣ　Ｒｅ |SPR: 94- 64|ボラ: 6.7|業績: 80|指標: 75|8/21株価:951/925( -3%)
+▲ 7722 国際計測器 |SPR: 94-130|ボラ: 2.6|業績: 48|指標: 80|8/21株価:1800/1260(-30%)
+◇ 7148 ＦＰＧ  |SPR: 95- 70|ボラ: 5.2|業績:100|指標: 30|8/21株価:985/1782( 80%)
+▲ 3034 クオール |SPR: 96-153|ボラ: 9.5|業績: 85|指標: 25|8/21株価:1837/1128(-39%)
+▲ 4734 ビーイング |SPR: 96-152|ボラ: 4.1|業績: 18|指標:100|8/21株価:640/866( 35%)
+▲ 6058 ベクトル |SPR: 97-158|ボラ:10.8|業績:100|指標: 60|8/21株価:1874/1982(  5%)
+▲ 6747 ＫＩホールデ |SPR: 98-193|ボラ: 6.2|業績: 33|指標:100|8/21株価:468/-112(-124%)
+◇ 6150 タケダ機械 |SPR: 99- 79|ボラ: 5.0|業績: 66|指標: 80|8/21株価:370/1496(304%)
+◆ 8909 シノケングル |SPR:102- 61|ボラ: 5.9|業績: 96|指標: 45|8/21株価:1790/5336(198%)
+  2492 インフォマー |SPR:105- 95|ボラ: 8.4|業績: 75|指標: 65|8/21株価:1441/487(-67%)
+◇ 3038 神戸物産 |SPR:105- 73|ボラ: 9.3|業績: 68|指標: 10|8/21株価:12780/2632(-80%)
+◆ 7865 ピープル |SPR:105- 50|ボラ: 5.3|業績: 84|指標: 75|8/21株価:1970/1249(-37%)
+▲ 2432 ディー・エヌ |SPR:107-131|ボラ: 4.9|業績:  0|指標: 50|8/21株価:2315/1933(-17%)
+◇ 7779 ＣＹＢＥＲＤ |SPR:107- 69|ボラ: 4.3|業績: 20|指標: 70|8/21株価:1523/-40(-103%)
+◯ 7256 河西工業 |SPR:108-111|ボラ: 8.2|業績: 60|指標: 50|8/21株価:1413/2099( 48%)
+◯ 2379 ディップ |SPR:110-109|ボラ: 8.7|業績: 97|指標: 70|8/21株価:13510/7058(-48%)
+◯ 7820 ニホンフラッ |SPR:110- 58|ボラ: 6.3|業績: 56|指標: 90|8/21株価:1452/3549(144%)
+◯ 8473 ＳＢＩホール |SPR:110-159|ボラ: 4.3|業績:100|指標: 75|8/21株価:1640/2149( 31%)
+◯ 3653 モルフォ |SPR:112- 93|ボラ: 8.2|業績: 97|指標: 40|8/21株価:5300/2858(-47%)
+◯ 4751 サイバーエー |SPR:112- 95|ボラ: 4.5|業績: 97|指標: 65|8/21株価:5270/5072( -4%)
+◯ 9065 山九     |SPR:114-171|ボラ: 5.6|業績: 38|指標: 45|8/21株価:645/448(-31%)
+◯ 2752 フジオフード |SPR:115-137|ボラ: 1.3|業績: 41|指標: 70|8/21株価:2740/2637( -4%)
+◯ 3387 クリエイト・ |SPR:115-109|ボラ: 4.9|業績: 65|指標: 50|8/21株価:2885/3903( 35%)
+◯ 8202 ラオックス |SPR:115- 93|ボラ: 9.3|業績: 94|指標: 40|8/21株価:498/216(-57%)
+● 6078 バリューＨＲ |SPR:116-139|ボラ: 4.7|業績: 33|指標: 70|8/21株価:1650/1507( -9%)
+● 2301 学情     |SPR:117- 96|ボラ: 4.8|業績: 56|指標: 70|8/21株価:1201/978(-19%)
+● 6324 ハーモニック |SPR:117-125|ボラ: 6.8|業績: 97|指標: 55|8/21株価:1765/1075(-40%)
+● 2154 トラスト・テ |SPR:119- 63|ボラ: 6.4|業績: 86|指標: 60|8/21株価:2400/3779( 57%)
+● 6432 竹内製作所 |SPR:119-198|ボラ: 4.8|業績:100|指標: 80|8/21株価:6960/7318(  5%)
+● 6264 マルマエ |SPR:121- 51|ボラ: 6.8|業績:100|指標:100|8/21株価:2247/3707( 64%)
+● 6866 ＨＩＯＫＩ |SPR:121-146|ボラ: 4.0|業績: 69|指標: 45|8/21株価:2628/1470(-45%)
+● 3179 シュッピン |SPR:122-117|ボラ: 8.1|業績: 93|指標: 75|8/21株価:1723/1552(-10%)
+● 3347 トラスト |SPR:122-318|ボラ: 7.1|業績: 69|指標: 95|8/21株価:296/358( 20%)
+● 5237 ノザワ  |SPR:122-152|ボラ: 3.3|業績: 50|指標:100|8/21株価:558/899( 61%)
+● 6826 本多通信工業 |SPR:122-160|ボラ: 6.0|業績: 96|指標: 75|8/21株価:1146/1687( 47%)
+● 3662 エイチーム |SPR:123-107|ボラ: 5.5|業績: 85|指標: 55|8/21株価:2214/2216(  0%)
+● 6157 日進工具 |SPR:124-196|ボラ: 6.2|業績: 97|指標: 80|8/21株価:2417/2950( 22%)
+● 6778 アルチザネッ |SPR:124- 54|ボラ: 3.3|業績: 33|指標:100|8/21株価:773/544(-30%)
+● 6832 アオイ電子 |SPR:124- 97|ボラ: 4.7|業績: 54|指標: 70|8/21株価:4020/8594(113%)
+● 3036 アルコニック |SPR:125-229|ボラ: 4.2|業績: 43|指標: 35|8/21株価:1797/5344(197%)
+● 7591 エクセル |SPR:125-365|ボラ: 6.6|業績: 62|指標: 10|8/21株価:1720/2965( 72%)
+● 7829 サマンサタバ |SPR:125-206|ボラ: 4.4|業績: 68|指標: 60|8/21株価:1012/1100(  8%)
+● 4539 日本ケミファ |SPR:126- 88|ボラ: 8.0|業績:  4|指標: 70|8/21株価:684/509(-26%)
+● 8242 エイチ・ツー |SPR:129-132|ボラ: 5.8|業績: 63|指標: 35|8/21株価:2508/1167(-54%)
+● 8570 イオンフィナ |SPR:130-124|ボラ: 5.8|業績: 71|指標: 45|8/21株価:3015/2959( -2%)
+● 6638 ミマキエンジ |SPR:132-147|ボラ: 6.5|業績: 53|指標: 70|8/21株価:756/1148( 51%)
+● 6634 ネクスグルー |SPR:133-102|ボラ: 6.8|業績: 36|指標: 60|8/21株価:695/1691(143%)
+● 7859 アルメディオ |SPR:133-102|ボラ: 7.4|業績: 97|指標: 50|8/21株価:197/147(-26%)
+● 7991 マミヤ・オー |SPR:133-105|ボラ: 3.7|業績: 18|指標: 35|8/21株価:180/57(-69%)
+● 3688 ＶＯＹＡＧＥ |SPR:134-109|ボラ: 5.8|業績: 20|指標: 90|8/21株価:2056/3418( 66%)
+● 2304 ＣＳＳホール |SPR:136-191|ボラ: 6.8|業績: 75|指標: 50|8/21株価:528/903( 71%)
+● 3173 大阪工機 |SPR:136-180|ボラ: 3.5|業績: 55|指標: 75|8/21株価:1609/2742( 70%)
+● 3091 ブロンコビリ |SPR:140-136|ボラ: 3.6|業績: 68|指標: 65|8/21株価:2485/5333(114%)
+● 3769 ＧＭＯペイメ |SPR:140-107|ボラ: 6.9|業績: 78|指標: 55|8/21株価:3845/1403(-64%)
+● 6463 ＴＰＲ  |SPR:140-119|ボラ: 5.3|業績: 66|指標: 50|8/21株価:3150/4992( 58%)
+● 4674 クレスコ |SPR:142-127|ボラ: 5.5|業績: 56|指標: 70|8/21株価:1836/2113( 15%)
+● 4848 フルキャスト |SPR:142-147|ボラ: 8.4|業績: 90|指標: 50|8/21株価:887/687(-23%)
+● 1381 アクシーズ |SPR:143- 54|ボラ: 8.4|業績: 94|指標: 90|8/21株価:2305/2320(  0%)
+● 3276 日本管理セン |SPR:144-179|ボラ: 7.7|業績: 52|指標: 55|8/21株価:1826/1049(-43%)
+● 3664 モブキャスト |SPR:144-164|ボラ: 6.7|業績: 37|指標: 45|8/21株価:732/80(-90%)
+● 6624 田淵電機 |SPR:145-174|ボラ: 7.1|業績: 66|指標: 90|8/21株価:919/1959(113%)
+● 3639 ボルテージ |SPR:147-101|ボラ:10.3|業績: 45|指標: 55|8/21株価:1688/405(-77%)
+● 6864 エヌエフ回路 |SPR:148-114|ボラ: 6.0|業績: 14|指標:100|8/21株価:1010/1440( 42%)
+● 7968 ＴＡＳＡＫＩ |SPR:150-159|ボラ: 8.3|業績: 69|指標:100|8/21株価:1865/2457( 31%)
+● 3800 ユニリタ |SPR:156-140|ボラ: 4.8|業績: 64|指標: 80|8/21株価:1816/2578( 41%)
+● 7273 イクヨ  |SPR:156-178|ボラ: 5.8|業績: 41|指標:100|8/21株価:200/381( 90%)
+● 3333 あさひ  |SPR:157-198|ボラ: 5.4|業績:  0|指標: 30|8/21株価:1258/919(-27%)
+● 3687 フィックスタ |SPR:157-132|ボラ: 5.2|業績:100|指標: 85|8/21株価:2561/1803(-30%)
+● 2931 ユーグレナ |SPR:159-213|ボラ: 4.0|業績: 75|指標: 20|8/21株価:1631/80(-96%)
+● 3069 アスラポート |SPR:162-235|ボラ: 5.5|業績: 54|指標: 45|8/21株価:595/652(  9%)
+● 3668 コロプラ |SPR:164-193|ボラ: 5.5|業績: 78|指標: 45|8/21株価:2209/4198( 90%)
+● 3901 マークライン |SPR:166- 77|ボラ: 6.7|業績: 20|指標: 20|8/21株価:2772/2369(-15%)
+● 6894 パルステック |SPR:170-103|ボラ: 4.2|業績: 33|指標:100|8/21株価:153/12(-93%)
+● 3756 豆蔵ホールデ |SPR:178-111|ボラ: 4.0|業績: 50|指標: 70|8/21株価:547/1491(172%)
+● 3388 明治電機工業 |SPR:180-165|ボラ: 4.5|業績: 84|指標: 65|8/21株価:1148/1484( 29%)
+● 7844 マーベラス |SPR:191-236|ボラ: 6.2|業績: 96|指標: 50|8/21株価:1155/2538(119%)
+● 3686 ディー・エル |SPR:217-308|ボラ: 6.3|業績: 20|指標: 75|8/21株価:735/758(  3%)
+● 6094 フリークアウ |SPR:222-111|ボラ: 5.3|業績: 20|指標: 20|8/21株価:1735/480(-73%)
+------------------------------
+[Finished in 251.5s]

@@ -1,0 +1,21 @@
+# KISが参照するデータフォルダ
+sisu_data/
+shintakane_result_data/
+market_data/
+shintakane_data/
+disclosure/
+code_rank_data/
+stock_data/
+todays_kessan_data/
+googledrive/
+cache_data/
+
+# Pythonキャッシュや仮想環境なども除外
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+
+# MacOSのDS_Storeファイル
+.DS_Store
