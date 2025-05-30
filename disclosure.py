@@ -1,6 +1,5 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-import os, os.path
 import pickle
 from datetime import datetime, timedelta
 import re
@@ -8,10 +7,10 @@ import re
 import portfolio
 from ks_util import *
 
-DISCLOSURE_DIR = "disclosure"
+DISCLOSURE_DIR = os.path.join(DATA_DIR, "disclosure")
 DISCLOSURE_DB = "disclosure/disclosure_db.pickle"
 DISCLOSURE_URL = "https://kabutan.jp/stock/news?code=%s"
-DISCLOSURE_CSV = "disclosure/disclosure_db.csv"
+DISCLOSURE_CSV = os.path.join(DATA_DIR, "disclosure/disclosure_db.csv")
 
 UPD_INTERVAL = 0
 UPD_CACHE = 1  # html取得できていればキャッシュから

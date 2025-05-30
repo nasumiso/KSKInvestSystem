@@ -354,7 +354,7 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
 #==================================================
 # database
 #==================================================
-STOCKS_PICKLE = "stock_data/stocks.pickle"
+STOCKS_PICKLE = os.path.join(DATA_DIR, "stock_data", "stocks.pickle")
 #PRICES_PICKLE = "stock_data/prices.pickle"
 #TABLES = {"master":STOCKS_PICKLE, "price":PRICES_PICKLE}
 def update_db(stocks, stock_data):
@@ -777,7 +777,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
 
 	#---- 銘柄ランキング用CSVファイル作成
 	print "---- CSV項目作成"
-	rank_csv = "code_rank_data/code_rank.csv"
+	rank_csv = os.path.join(DATA_DIR, "code_rank_data/code_rank.csv")
 	
 	if os.path.exists(rank_csv):
 		latest_csv_dt = get_file_datetime(rank_csv)
@@ -879,7 +879,7 @@ def delete_db_column(stocks, column):
 			del stock[column]
 		#print_dict(stock)	
 
-STOCK_PICKLE_PATH = "stock_data/stock_%s.pickle" # 04d
+STOCK_PICKLE_PATH = os.path.join(DATA_DIR, "stock_data", "stock_%s.pickle")
 def load_cacehd_stock_db(code_s, force=False):
 	""" 基本テスト用
 	個別コードのpickleを別途保存したものをロードする

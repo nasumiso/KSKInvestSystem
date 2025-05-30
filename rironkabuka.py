@@ -64,7 +64,7 @@ def is_cache_latest(url, interval_day):
 		return False
 
 
-KABUTAN_CACHE_DIR = "stock_data/kabutan/"
+KABUTAN_CACHE_DIR = os.path.join(DATA_DIR, "stock_data", "kabutan")
 KABUTAN_URL_CODE = "http://kabutan.jp/stock/finance?code=%s&mode=k"
 KABUTAN_BASE_URL_CODE = "https://kabutan.jp/stock/?code=%s"
 def get_kabutan_html(code_s, upd=UPD_INTERVAL):

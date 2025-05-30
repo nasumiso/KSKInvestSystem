@@ -109,7 +109,7 @@ def memoized_report_evaluation():
 		if alreadys[0]:
 			return eval_dict
 		else:
-			report_fname = "googledrive/銘柄調査 - 銘柄調査.csv"
+			report_fname = os.path.join(DATA_DIR, "googledrive/銘柄調査 - 銘柄調査.csv")
 			csv_r = csv.reader(open(report_fname, 'rb'))
 			for row in csv_r:
 				code = row[0]

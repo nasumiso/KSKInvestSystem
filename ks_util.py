@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-import os
+import os, os.path
 import shutil
 from datetime import datetime, timedelta
 import pickle
@@ -8,6 +8,12 @@ from contextlib import contextmanager
 import sqlite3
 
 import requests
+
+# プロジェクトルートとデータパスの定義
+SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))  # ks_util.py の場所
+#ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+ROOT_DIR = SCRIPT_DIR
+DATA_DIR = os.path.join(ROOT_DIR, "data")
 
 #==================================================
 # ユーティリティ

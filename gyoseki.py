@@ -1,11 +1,12 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import re
-from tabnanny import check
+import os
+#from tabnanny import check
 
 from ks_util import *
 
-CACHE_DIR = "stock_data/kabutan/"
+CACHE_DIR = os.path.join(DATA_DIR, "stock_data/kabutan/")
 URL_CODE = "http://kabutan.jp/stock/finance?code=%s&mode=k"
 
 def parse_kabutan_account2(html):

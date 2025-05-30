@@ -72,15 +72,16 @@ def get_shintakane_day_txtname(today):
 	"""
 	datetime から日付新高値テキストファイル名を取得
 	"""
-	txt_template = "shintakane_data/shintakane_%02d%02d%02d"
-	today_txt = txt_template%(today.year-2000, today.month, today.day)
+	txt_template = os.path.join(DATA_DIR, "shintakane_data", "shintakane_%02d%02d%02d")
+	today_txt = txt_template % (today.year-2000, today.month, today.day)
 	return today_txt
+
 def get_dekidakaup_day_txtname(today):
 	"""
 	datetime から日付テキストファイル名を取得
 	"""
-	txt_template = "shintakane_data/dekidakaup_%02d%02d%02d"
-	today_txt = txt_template%(today.year-2000, today.month, today.day)
+	txt_template = os.path.join(DATA_DIR, "shintakane_data", "dekidakaup_%02d%02d%02d")
+	today_txt = txt_template % (today.year-2000, today.month, today.day)
 	return today_txt
 
 def get_latest_dekidakaup_fname():
@@ -444,8 +445,8 @@ def todays_shintakane(upd=UPD_INTERVAL):
 	[puts_detail(d) for d in today_list_show]
 	# 結果表示
 	#[puts(d["code"]) for d in today_list_show]
-	print	
 
+	print	
 	if TO_CSV:
 		rows.append(["【本日既出銘柄】"])
 	else:
@@ -462,14 +463,14 @@ def todays_shintakane(upd=UPD_INTERVAL):
 	# 銘柄ランキング用CSVファイル
 	if TO_CSV:
 		#today_data, latest_csv_dt = get_latest_shintakane_fname()
-		shintakane_result_csv = "shintakane_result_data/shintakane_result_%02d%02d%02d.csv"%\
+		shintakane_result_csv = os.path.join(DATA_DIR,"shintakane_result_data/shintakane_result_%02d%02d%02d.csv")%\
 		(latest_csv_dt.year%2000, latest_csv_dt.month, latest_csv_dt.day)
 		
 		with open(shintakane_result_csv, "wb") as f:
 			shintakane_result_csv_w = csv.writer(f)
 			shintakane_result_csv_w.writerows(rows)
 
-		shutil.copy2(shintakane_result_csv, "shintakane_result_data/shintakane_result.csv")
+		shutil.copy2(shintakane_result_csv, os.path.join(DATA_DIR,"shintakane_result_data/shintakane_result.csv"))
 
 	# マーケット情報を表示
 	# TODO: yahooUSのhtml形式が変わったようなので対応するまで封印
@@ -660,7 +661,7 @@ def get_todays_dekidakaup():
 	print "----> 株探から出来高急増情報を取得します・・"
 	URL_KABUTAN_DEKIDAKA = "https://kabutan.jp/tansaku/"
 	QUERY = "?mode=2_0311&market=0&capitalization=-1&stc=v3&stm=1&page=%d"
-	cache_dir = "cache_data"
+	cache_dir = os.path.join(DATA_DIR, "cache_data")
 	path_dekidaka = os.path.join(cache_dir, get_http_cachname(URL_KABUTAN_DEKIDAKA+QUERY%1))
 	htmls = []
 	try:
@@ -700,7 +701,7 @@ def get_todays_dekidakaup():
 		rows += convert_kabutan_dekidakaup_html(html)
 
 	# 新高値情報リストを.csvファイルに保存
-	csv_fname = "shintakane_data/dekidakaup_"+date+".csv"
+	csv_fname = os.path.join(DATA_DIR, "shintakane_data/dekidakaup_"+date+".csv")
 	csv_w = csv.writer(open(csv_fname, "wb"))
 	csv_w.writerows(rows)
 	print "今日の出来高急増を%sに保存しました"%csv_fname
@@ -729,7 +730,7 @@ def get_todays_shintakane():
 	#QUERY = "?mode=3_3&market=0&capitalization=-1&stc=&stm=0&page=%d"	
 	QUERY = "record_w52_high_price?market=0&capitalization=-1&stc=&stm=0&page=%d"
 	# 最新キャッシュ取得日を取得
-	cache_dir = "cache_data"
+	cache_dir = os.path.join(DATA_DIR, "cache_data")
 	try:
 		latest_html = file_read(os.path.join(cache_dir, get_http_cachname(URL_KABUTAN_SHINTAKANE+QUERY%1)))
 		latest_date_m = re.search(r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>', latest_html, re.S) # re.S:改行を含む
@@ -765,7 +766,7 @@ def get_todays_shintakane():
 		rows += convert_kabutan_shintakane_html(html)
 
 	# 新高値情報リストを.csvファイルに保存
-	csv_fname = "shintakane_data/shintakane_"+date+".csv"
+	csv_fname = os.path.join(DATA_DIR, "shintakane_data/shintakane_"+date+".csv")
 	csv_w = csv.writer(open(csv_fname, "wb"))
 	csv_w.writerows(rows)
 	print "今日の新高値を%sに保存しました"%csv_fname
@@ -836,8 +837,7 @@ def parse_kessan_html(html):
 # 決算関係
 #------------------------------
 def get_todays_kessan_list(positive=False):
-	cache_dir = "todays_kessan_data" 
-	cache_csv_path = os.path.join(cache_dir, "todays_kessan.csv")
+	cache_csv_path = os.path.join(DATA_DIR, "todays_kessan_data", "todays_kessan.csv")
 	csv_r = csv.reader(open(cache_csv_path, 'rb'))
 	code_s_lst = []
 	for row in csv_r:
@@ -851,7 +851,7 @@ def update_todays_kessan():
 	"""
 	modify_lst = []
 	announce_lst = []
-	cache_dir = "todays_kessan_data" 
+	cache_dir = os.path.join(DATA_DIR,"todays_kessan_data")
 	cache_csv_path = os.path.join(cache_dir, "todays_kessan.csv")
 	print "-"*30
 	print "決算発表/修正に対するDB更新"
@@ -960,7 +960,7 @@ def main():
 	if "analyze" in args:
 		todays_shintakane(UPD_INTERVAL) # UPD_FORCE/UPD_INTERVAL/UPD_CACHE/UPD_REEVAL
 		# GoogleDriveにアップロード
-		shintakane_result_csv = "shintakane_result_data/shintakane_result.csv"
+		shintakane_result_csv = os.path.join(DATA_DIR,"shintakane_result_data/shintakane_result.csv")
 		import googledrive
 		googledrive.upload_csv(shintakane_result_csv, "shintakane_result")
 	# 現在の銘柄DBをもとに決算DBの更新

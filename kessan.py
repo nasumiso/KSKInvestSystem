@@ -92,7 +92,7 @@ def get_kessan_quarter(stock):
     else:
         return 0
 
-PF_KESSAN_PATH = "todays_kessan_data/pf_kessan.pickle"
+PF_KESSAN_PATH = os.path.join(DATA_DIR, "todays_kessan_data", "pf_kessan.pickle")
 def save_pf_kessan_db(stocks):
     """決算DBに銘柄の決算情報を保存する
     """

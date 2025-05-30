@@ -361,7 +361,7 @@ def calc_shihyo_pt(code_s, upd=UPD_INTERVAL, stock={}):
 	print "----------"
 	return shiyo_pt, shiyo
 
-CACHE_DIR_KABUTAN = "stock_data/kabutan/" 
+CACHE_DIR_KABUTAN = os.path.join(DATA_DIR, "stock_data", "kabutan")
 URL_CODE_KABUTAN = "http://kabutan.jp/stock/finance?code=%s&mode=k"
 
 def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
@@ -375,7 +375,7 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
 	shihyo_pt, shihyo_data = calc_shihyo_pt(code_s, upd, stock)
 	print "-"*5, "指標の取得計算完了"
 	# 指標データの取得元ファイルの日付を格納
-	cache_path = CACHE_DIR_KABUTAN+get_http_cachname(URL_CODE_KABUTAN%(str(code_s)))
+	cache_path = os.path.join(CACHE_DIR_KABUTAN, get_http_cachname(URL_CODE_KABUTAN % str(code_s)))
 	tables["access_date_shihyo"] = get_file_datetime(cache_path)
 	print "date_shihyo:", tables["access_date_shihyo"]
 	tables["shihyo_pt"] = shihyo_pt

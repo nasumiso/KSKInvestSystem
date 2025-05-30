@@ -3,13 +3,14 @@
 from ks_util import *
 
 from datetime import datetime, date, timedelta
+import os, os.path
 import re
 import requests
 
 #URL_PRICE_D_KABUTAN = 'https://kabutan.jp/stock/kabuka?code=%04d&ashi=day&page=%d'
 URL_PRICE_D_KABUTAN = 'https://kabutan.jp/stock/kabuka?code=%s&ashi=day&page=%d'
 #PRICE_D_FNAME_KABUTAN = "stock_data/kabutan/price/kabutan_price_d_%04d_%d.html"
-PRICE_D_FNAME_KABUTAN = "stock_data/kabutan/price/kabutan_price_d_%s_%d.html"
+PRICE_D_FNAME_KABUTAN = os.path.join(DATA_DIR, "stock_data/kabutan/price/kabutan_price_d_%s_%d.html")
 
 INTERVAL_DAY_D = 1
 INTERVAL_DAY_W = 7
@@ -67,7 +68,7 @@ def is_file_timestamp(fname, interval_day):
 URL_PRICE_KABUTAN = 'https://kabutan.jp/stock/kabuka?code=%s&ashi=wek&page=%d'
 URL_CREDIT_KABUTAN = 'https://kabutan.jp/stock/kabuka?code=%s&ashi=shin&page=%d'
 #PRICE_FNAME_KABUTAN = "stock_data/kabutan/price/kabutan_price_%04d_%d.html"
-PRICE_FNAME_KABUTAN = "stock_data/kabutan/price/kabutan_price_%s_%d.html"
+PRICE_FNAME_KABUTAN = os.path.join(DATA_DIR, "stock_data/kabutan/price/kabutan_price_%s_%d.html")
 def get_weekly_html(code_s, cache=True):
 	"""株探から週次データを取得
 	type: (str, bool) -> str
@@ -104,7 +105,7 @@ def get_weekly_html(code_s, cache=True):
 
 URL_PRICE_YAHOO = 'http://stocks.finance.yahoo.co.jp/stocks/history/?code=%s.T'
 #PRICE_FNAME = "stock_data/yahoo/price/yahoo_price_%d.txt"
-PRICE_FNAME = "stock_data/yahoo/price/yahoo_price_%s.txt"
+PRICE_FNAME = os.path.join(DATA_DIR, "stock_data/yahoo/price/yahoo_price_%s.txt")
 def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
 	"""yahooファイナンスから価格データhtmlを取得する
 	type: (str, bool) -> str

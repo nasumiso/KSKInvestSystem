@@ -16,7 +16,7 @@ from ks_util import *
 
 
 URL_THEME_RANK_KABUTAN = "https://kabutan.jp/info/accessranking/3_2"
-MARKET_DB_PATH = "market_data/market_db.pickle"
+MARKET_DB_PATH = os.path.join(DATA_DIR, "market_data/market_db.pickle")
 
 def parse_theme_html(html):
 	#print ux_cmd_head(html, 10)
@@ -70,15 +70,19 @@ def get_theme_rank_list():
 	Returns:
 		現在のランクデータ、数日前のランクデータ、日付、数日前の日付
 	"""
-	cach_path = "market_data/theme_rank.html"
+	cach_path = os.path.join(DATA_DIR, "market_data", "theme_rank.html")
 
 	delta, cach_date = get_timedelta_today(cach_path)
 	use_cache = delta.days < THEME_RANK_INTERVAL
 	#print "cache: ", cach_path, cach_date
 	#print "use_cache: ", use_cache, delta.days	
 	#prev_path = backup_file(cach_path, INTERVAL_BACKUP)
-	html = http_get_html(URL_THEME_RANK_KABUTAN, \
-		cache_dir="market_data", cache_fname="theme_rank.html", use_cache=use_cache)
+	html = http_get_html(
+		URL_THEME_RANK_KABUTAN,
+		cache_dir=os.path.join(DATA_DIR, "market_data"),
+		cache_fname="theme_rank.html",
+		use_cache=use_cache
+	)
 	theme_rank_list = parse_theme_html(html)
 	# 今日のデータと直前のデータを比較して
 	# 勢いを考慮した真のランキングデータを作成する
@@ -250,7 +254,7 @@ def create_market_csv(market_db=None, shintakane_theme_csv=""):
 	if not market_db:
 		market_db = load_pickle(MARKET_DB_PATH)
 	#print market_db.keys()
-	csv_path = 'code_rank_data/market_data.csv'
+	csv_path = os.path.join(DATA_DIR, "code_rank_data", "market_data.csv")
 
 	theme_rank_list, prev_theme_rank_list, _, prev_day = get_theme_rank_list()
 	rows = []

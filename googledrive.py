@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-import os.path
+from ks_util import *
 
 from apiclient.discovery import build
 from apiclient.http import MediaFileUpload
@@ -12,9 +12,9 @@ import httplib2
 # よりGoogleDriveAPIでCSVをアップロード
 #---- 設定ファイル
 #CLIENT_SECRET_FILE = 'client_secret_152733296438-p7d1thkqdnmh2ip0r9695cdoisigdvjd.apps.googleusercontent.com.json'
-CLIENT_SECRET_FILE = 'googledrive/client_secret_152733296438-n9openvtegg2r6ej4mfdn8t4guf77ejs.apps.googleusercontent.com.json'
+CLIENT_SECRET_FILE = os.path.join(DATA_DIR ,'googledrive/client_secret_152733296438-n9openvtegg2r6ej4mfdn8t4guf77ejs.apps.googleusercontent.com.json')
 #CLIENT_SECRET_FILE = 'My Project-d080eb2b84c1.json'
-CREDENTIAL_FILE = 'googledrive/drive_credential.json'
+CREDENTIAL_FILE = os.path.join(DATA_DIR ,'googledrive/drive_credential.json')
 APPLICATION_NAME = 'CSVUploader'
 
 SCOPES = 'https://www.googleapis.com/auth/drive' # Quickstarts と スコープを変える
@@ -87,7 +87,7 @@ def upload_csv(csv_name, up_file_name):
 
 def main():
 	#upload_csv('code_rank_data/code_rank.csv', "code_rank")
-	upload_csv('code_rank_data/market_data.csv', "market_data")
+	upload_csv(os.path.join(DATA_DIR, 'code_rank_data/market_data.csv'), "market_data")
 
 if __name__ == '__main__':
 	main()
