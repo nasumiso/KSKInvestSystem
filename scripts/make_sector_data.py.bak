@@ -6,7 +6,7 @@
 
 import re
 # 試しに使ってみたがこんなもん使ってられねー。
-from html.parser import HTMLParser
+from HTMLParser import HTMLParser
 
 from ks_util import *
 
@@ -16,9 +16,9 @@ PATH_STOCKS_PICKLE = "stock_data/stocks.pickle"
 
 def print_list(lst):
 	def puts(str):
-		print(str, end=' ')
+		print str,
 	[puts(l) for l in lst]
-	print()
+	print
 
 class SectorHtmlParser(HTMLParser):
 	table_counter = 0
@@ -33,7 +33,7 @@ class SectorHtmlParser(HTMLParser):
 		if tag == "table":
 			self.tr_counter = 0
 			if self.table_counter == 1:
-				print("start_table:", tag, attrs, self.getpos())			
+				print "start_table:", tag, attrs, self.getpos()			
 		elif tag == "tr":
 			self.td_counter = 0
 			if self.table_counter == 1: #1個目のtableタグらしい
@@ -53,10 +53,10 @@ class SectorHtmlParser(HTMLParser):
 		if tag == "table":
 			self.table_counter += 1
 			if self.table_counter == 1:
-				print("end:", tag, self.getpos(), self.table_counter)			
+				print "end:", tag, self.getpos(), self.table_counter			
 		elif tag == "tr":
 			if self.table_counter == 1:
-				print("--- row_data[%d]:"%self.tr_counter)
+				print "--- row_data[%d]:"%self.tr_counter
 				print_list(self.row_data[:-1])
 				self.table_data.append(self.row_data)
 			self.tr_counter += 1
@@ -88,7 +88,7 @@ def parse_html(html):
 	sector_table_org = parser.table_data
 	sector_table = {}
 	for row in sector_table_org[1:]:
-		print("-"*5, row[0], row[2], "を解析..")
+		print "-"*5, row[0], row[2], "を解析.."
 		sector_count = int(row[2])
 		html = http_get_html(row[8], cache_dir="stock_data/sector")
 		code_s_list = []
@@ -101,9 +101,9 @@ def parse_html(html):
 				sector_count -= 1
 		#print code_list, len(code_list)
 		if sector_count != len(code_s_list):
-			print("!!! 取得していない? %d個"%(sector_count-len(code_s_list)))
+			print "!!! 取得していない? %d個"%(sector_count-len(code_s_list))
 		sector_table[row[0]] = code_s_list
-		print(sector_table[row[0]])
+		print sector_table[row[0]]
 	
 	return sector_table
 
@@ -126,7 +126,7 @@ def get_sector_detail(code_s):
 	int -> str
 	"""
 	sector_tables = memoized_load_pickle(PATH_SECTOR_DB)
-	for sector_name, code_list in list(sector_tables.items()):
+	for sector_name, code_list in sector_tables.items():
 		if code_s in code_list:
 			return sector_name
 	return "unknown"
@@ -143,19 +143,19 @@ def test_make_secotr_data():
 	# ロード
 	stocks_db = load_pickle(PATH_STOCKS_PICKLE)
 	# 表示
-	for sector_name, code_list in list(sector_table.items()):
+	for sector_name, code_list in sector_table.items():
 		unknown_code_list = []
-		print("-"*5, sector_name, "%d銘柄"%len(code_list))
+		print "-"*5, sector_name, "%d銘柄"%len(code_list)
 		for code_s in code_list:
-			if code_s in stocks_db:
+			if stocks_db.has_key(code_s):
 				code_name = stocks_db[code_s].get("stock_name", "")
 			else:
 				code_name = ""
 			if code_name:
-				print("  %s %s"%(code_s, code_name))
+				print "  %s %s"%(code_s, code_name)
 			else:
 				unknown_code_list.append(code_s)
-		print("  銘柄名不明:", unknown_code_list)
+		print "  銘柄名不明:", unknown_code_list
 	
 def update_sector_stockdb():
 	"""
@@ -165,16 +165,16 @@ def update_sector_stockdb():
 	# 更新
 	import make_stock_db
 	stocks = make_stock_db.load_stock_db()
-	for code_s in stocks.keys():
+	for code_s in stocks.iterkeys():
 		stock = stocks[code_s]
-		if "sector_detail" in stock:
-			print("Unknown:", code_s, stock["sector_detail"])
+		if stock.has_key("sector_detail"):
+			print "Unknown:", code_s, stock["sector_detail"]
 			continue # unkownとして更新する場合はコメントアウト
 		# 詳細セクター名更新
-		for sector_name, code_s_list in list(sector_tables.items()):
+		for sector_name, code_s_list in sector_tables.items():
 			if code_s in code_s_list:
 				stocks[code_s]["sector_detail"] = sector_name
-				print("詳細セクター更新: %s%s <- %s"%(code_s, stock["stock_name"], sector_name))
+				print "詳細セクター更新: %s%s <- %s"%(code_s, stock["stock_name"], sector_name)
 				break
 	make_stock_db.save_stock_db(stocks)
 

@@ -8,7 +8,6 @@ from contextlib import contextmanager
 import sqlite3
 
 import requests
-from functools import reduce
 
 # プロジェクトルートとデータパスの定義
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))  # ks_util.py の場所
@@ -30,12 +29,12 @@ def print_dict(dict, ex_key=[]):
 	"""
 	dictのキー要素を表示
 	"""
-	print("----------")
-	for k in list(dict.keys()):
+	print "----------"
+	for k in dict.keys():
 		if k in ex_key:
 			continue
-		print(k, ": ", dict[k])
-	print("----------")
+		print k, ": ", dict[k]
+	print "----------"
 
 def memoize(func):
 	cache = {}
@@ -43,7 +42,7 @@ def memoize(func):
 		try:
 			return cache[args]
 		except KeyError:
-			print("no_memo:", args)
+			print "no_memo:", args
 			value = func(*args)
 			cache[args] = value
 			return value
@@ -58,26 +57,26 @@ def backup_file(fname, day=0):
 	fnameの日付が今日からday日間経過したものを作成
 	"""
 	if not os.path.exists(fname):
-		print("backup対象ファイルがありません:", fname)
+		print "backup対象ファイルがありません:", fname
 		return
 	stat = os.stat(fname)
 	date = datetime.fromtimestamp(stat.st_mtime)
 	today = datetime.today()
 	delta = today-date
-	print("%sは%s日前"%(fname, delta.days))
+	print "%sは%s日前"%(fname, delta.days)
 	backup_fname = "%s_%02d%02d%02d%s"%(os.path.splitext(fname)[0], \
 		date.year-2000, date.month, date.day, os.path.splitext(fname)[1])
 	#backup_fname = "stocks_pickle_back/"+backup_fname
 	#print backup_fname
 	if not os.path.exists(backup_fname):
 		if delta.days >= day:
-			print("バックアップ:%s(%d) => %s"%(fname, os.path.getsize(fname), \
-			backup_fname))
+			print "バックアップ:%s(%d) => %s"%(fname, os.path.getsize(fname), \
+			backup_fname)
 			shutil.copy2(fname, backup_fname)
 		else:
 			pass
 	else:
-		print(backup_fname+"にバックアップ済み")
+		print backup_fname+"にバックアップ済み"
 	return backup_fname
 
 def file_write(fname, content):
@@ -138,7 +137,7 @@ def step_func(val, xs, ys, min_val=None):
 		val_y = ys[0]
 	else:
 		val_y = min_val
-	for x,y in reversed(list(zip(xs, ys))):
+	for x,y in reversed(zip(xs, ys)):
 		if val > x:
 			val_y = y
 			break
@@ -162,44 +161,44 @@ def http_get_html(url, use_cache=True, cache_dir="", cache_fname="", cookies={},
 	if cache_dir:
 		cache_name = os.path.join(cache_dir, cache_name)
 	if use_cache and os.path.exists(cache_name):
-		print("  htmlをファイルキャッシュから取得します", cache_name)
+		print "  htmlをファイルキャッシュから取得します", cache_name
 		html = file_read(cache_name)
 		return html
-	print("  htmlを通信で取得します..")
+	print "  htmlを通信で取得します.."
 	headers = {"User-Agent": USER_AGENT_CHROME}
 	#headers["Connection"] = "Keep-Alive"
 	try:
 		r = requests.get(url, headers=headers, cookies=cookies)
 	except requests.exceptions.ConnectionError as e:
-		print("!!! 接続失敗")
-		print(e)
+		print "!!! 接続失敗"
+		print e
 		return ""
 	if r.encoding != 'utf-8':
-		print("html_encoding:", r.encoding, "encoding:", encoding)
+		print "html_encoding:", r.encoding, "encoding:", encoding
 	# htmlをutf8で取得
 	html = r.text.encode(encoding)
 	# メタ指定での文字コードをutf8に
 	#html = html.replace("charset=shift_jis", "charset=utf-8")
 
-	print("  取得したhtmlをファイルキャッシュに書き込みます:", cache_name)
+	print "  取得したhtmlをファイルキャッシュに書き込みます:", cache_name
 	file_write(cache_name, html)
 	return html
 
 def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
 	cache_name = "post_"+get_http_cachname(url)
 	if use_cache and os.path.exists(cache_name):
-		print("html(post)をファイルキャッシュから取得します", cache_name)
+		print "html(post)をファイルキャッシュから取得します", cache_name
 		html = file_read(cache_name)
 		return html, ""
 
 	headers = {"User-Agent": USER_AGENT_CHROME}
 	r = requests.post(url, headers=headers, data=data, cookies=cookies)
 	if r.encoding != 'utf-8':
-		print("encoding:", r.encoding, "encoding:", encoding)
+		print "encoding:", r.encoding, "encoding:", encoding
 	html = r.text.encode(encoding)
 	#html = html.replace("charset=UTF-8", "charset=euc-jp")
 	
-	print("htmlをファイルキャッシュに書き込みます:", cache_name)
+	print "htmlをファイルキャッシュに書き込みます:", cache_name
 	file_write(cache_name, html)
 	return html, r.cookies
 
@@ -207,30 +206,30 @@ def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
 # pickleデータベースユーティリティ	
 #==================================================
 def save_pickle(fname, content):
-	print("%sにpickleセーブ"%fname)
+	print "%sにpickleセーブ"%fname
 	with open(fname, 'wb') as f:
 		pickle.dump(content, f)
 
 def load_pickle(fname):
-	print("%sからpickleロード"%fname)
+	print "%sからpickleロード"%fname
 	try:
 		f = file(fname, 'rb')
 		dat = pickle.load(f)
 		f.close()
-	except IOError as e:
-		print(e)
+	except IOError, e:
+		print e
 		return {}
 	return dat
 memoized_load_pickle = memoize(load_pickle)
 
 def load_file(fname, tb='r'):
-	print("%sのfileロード"%fname)
+	print "%sのfileロード"%fname
 	try:
 		f = file(fname, tb)
 		dat = f.read()
 		f.close()
-	except IOError as e:
-		print(e)
+	except IOError, e:
+		print e
 		return ""
 	return dat
 memoized_load_file = memoize(load_file)
@@ -240,20 +239,20 @@ memoized_load_file = memoize(load_file)
 #==================================================
 @contextmanager
 def open_db(dbname):
-	print("---> open_db:",dbname)
+	print "---> open_db:",dbname
 	con = sqlite3.connect(dbname)
 	yield con
-	print("<--- close_db:",dbname)
+	print "<--- close_db:",dbname
 	con.close()
 
 def exec_sql(cur, sql, param=()):
 	try:
-		print("exec_sql:", sql, param)
+		print "exec_sql:", sql, param
 		cur.execute(sql, param)
-	except sqlite3.Error as e:
-		print("--- !!! SQL Error ---")
-		print(e.message)
-		print("---------------------")
+	except sqlite3.Error, e:
+		print "--- !!! SQL Error ---"
+		print e.message
+		print "---------------------"
 
 
 def exists_table(cur, table_name):
@@ -274,17 +273,17 @@ def list_db():
 		sql = """select * from sqlite_master where type='table' and name='stocks'"""
 		exec_sql( cur, sql )
 		for row in cur:
-			print(row)
+			print row
 
 		sql = """select * from stocks"""
 		exec_sql( cur, sql )
 		for row in cur:
 			for r in row:
-				if isinstance(r, str):
-					print(r.encode('utf-8'), end=' ') 
+				if isinstance(r, unicode):
+					print r.encode('utf-8'), 
 				else:
-					print(r, end=' ')
-			print() 
+					print r,
+			print 
 
 def update_db(stock_data):
 	with open_db("stock_data/stock.db") as con:
@@ -294,7 +293,7 @@ def update_db(stock_data):
 			create_table(cur, "stocks")
 		# 更新
 		sql = """insert into stocks values(?,?,?,?)"""
-		exec_sql( cur, sql, (stock_data["コード"],  str(stock_data["銘柄名"], 'utf-8'),\
+		exec_sql( cur, sql, (stock_data["コード"],  unicode(stock_data["銘柄名"], 'utf-8'),\
 			stock_data["時価総額"], stock_data["最低購入代金"] ))
 		# TODO: insert or update 複数コードの更新
 
@@ -313,12 +312,12 @@ def set_db_code(rec, code):
 
 def get_db_code(rec):
 	# type: dict -> dict
-	if "code_s" not in rec:
-		if "code" in rec:
+	if not rec.has_key("code_s"):
+		if rec.has_key("code"):
 			code = rec["code"]
-			print("!!!strコードがないためintから取得:", code) # いつかなくなるはず
+			print "!!!strコードがないためintから取得:", code # いつかなくなるはず
 			return format(code, "04d")
 		else:
-			print("!!!コード取得できない", rec)
+			print "!!!コード取得できない", rec
 			return ""
 	return rec["code_s"]

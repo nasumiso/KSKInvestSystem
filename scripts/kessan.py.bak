@@ -81,7 +81,7 @@ def get_kessan_quarter(stock):
     import gyoseki
     kessanbi = stock.get("kessanbi")        
     res = gyoseki.calc_progress_rate(stock)
-    if "quarter" in res:
+    if res.has_key("quarter"):
         # 過去の決算は当Q,現在の決算は次Qを表示する
         dt = datetime.strptime(kessanbi, "%Y/%m/%d").date()
         today = get_price_day(datetime.today())
@@ -100,7 +100,7 @@ def save_pf_kessan_db(stocks):
     code_list_s, possess_list_s = portfolio.parse_my_portforio()
     #pf_kessan_dict = {k: {"kessanbi": v["kessanbi"], "stock_name": v["stock_name"], "code": v["code"], "kessan_quarter": get_kessan_quarter(v) } for k, v in stocks.items() if int(k) in code_list and v.get("kessanbi", "")}
     pf_kessan_dict = {k: {"kessanbi": v["kessanbi"], "stock_name": v["stock_name"], "code_s": get_db_code(v), "kessan_quarter": get_kessan_quarter(v) } \
-    for k, v in list(stocks.items()) if k in code_list_s+possess_list_s and v.get("kessanbi", "")}
+    for k, v in stocks.items() if k in code_list_s+possess_list_s and v.get("kessanbi", "")}
     # 決算日でソート
     #pf_kessan_dict = sorted(pf_kessan_dict.items(), key=lambda x: x[1])
     #print pf_kessan_dict
@@ -124,16 +124,16 @@ def make_kessan_csv():
     today = get_price_day(datetime.today()) #.date()
     # まず日付ごと
     day_kessan_dict = {}
-    for k, v in list(pf_kessan_dict.items()):
+    for k, v in pf_kessan_dict.items():
         kessanbi = v["kessanbi"]
-        if kessanbi not in day_kessan_dict:
+        if not day_kessan_dict.has_key(kessanbi):
             day_kessan_dict[kessanbi] = [v]
         else:
             day_kessan_dict[kessanbi].append(v)
     before_list = []
     current_list = []
     future_list = []
-    for k, v in list(day_kessan_dict.items()):
+    for k, v in day_kessan_dict.items():
         if not k: # ''はスルー
             continue
         dt = datetime.strptime(k, "%Y/%m/%d").date()

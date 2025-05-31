@@ -39,7 +39,7 @@ def get_drive_service():
 	return drive_service
 
 def upload_csv_new(csv_name, up_foler_name):
-	print("%sをGoogleDriveに新規アップロードします"%csv_name)
+	print "%sをGoogleDriveに新規アップロードします"%csv_name
 	drive_service = get_drive_service()
 
 	folder_id = FOLDER_DICT[up_foler_name]
@@ -57,20 +57,20 @@ def upload_csv_new(csv_name, up_foler_name):
 		media_body=media,
 		fields='id').execute()
 
-	print('Upload Complete File ID: %s %s' %(fname, file.get('id')))
+	print 'Upload Complete File ID: %s %s' %(fname, file.get('id'))
 
 def upload_csv(csv_name, up_file_name):
-	print("%sをGoogleDriveに更新アップロードします"%csv_name)
+	print "%sをGoogleDriveに更新アップロードします"%csv_name
 	drive_service = get_drive_service()
 
 	file_id = FILE_DICT[up_file_name]
 	try:
 		file_metadata = drive_service.files().get(fileId=file_id).execute()
 	except httplib2.ResponseNotReady as e:
-		print("!!! GoogleDrive接続エラー", e)
+		print "!!! GoogleDrive接続エラー", e
 		return
 	del file_metadata['id']
-	print("meta:", file_metadata)
+	print "meta:", file_metadata
 
 	media = MediaFileUpload(csv_name,
         mimetype='text/csv',
@@ -83,7 +83,7 @@ def upload_csv(csv_name, up_file_name):
 		#fields='id'
 		).execute()
 
-	print('Upload Complete File ID: %s' % file.get('id'))
+	print 'Upload Complete File ID: %s' % file.get('id')
 
 def main():
 	#upload_csv('code_rank_data/code_rank.csv', "code_rank")

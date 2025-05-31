@@ -32,7 +32,7 @@ def get_timedelta_today(fname):
 	"""
 	#TODO: utilに移動
 	if not os.path.exists(fname):
-		print("%sはありません"%fname)
+		print "%sはありません"%fname
 		return None
 	stat = os.stat(fname)
 	fdate = datetime.fromtimestamp(stat.st_mtime)
@@ -59,9 +59,9 @@ def get_prev_fname(fname, cur_day=datetime.today()):
 		if os.path.exists(fname):
 			break
 	if count >= CountMax:
-		print("!!!直前のファイルが見つかりません", fname)
+		print "!!!直前のファイルが見つかりません", fname
 		return "", cur_day
-	print("直前のファイル:", fname)
+	print "直前のファイル:", fname
 	return fname, cur_day
 
 def get_theme_rank_list():
@@ -101,7 +101,7 @@ INTERVAL_BACKUP = 3 # バックアップ日数
 def make_theme_data(): #market_db=None
 	"""テーマランクデータを作成
 	"""
-	print("テーマランクデータを作成します")
+	print "テーマランクデータを作成します"
 	theme_rank_list, prev_theme_rank_list, cach_date, _ = get_theme_rank_list()
 
 	# print "今:", ".".join(theme_rank_list)
@@ -109,22 +109,22 @@ def make_theme_data(): #market_db=None
 	theme_rank_dict = {v:i+1 for (i,v) in enumerate(theme_rank_list)}
 	prev_theme_rank_dict = {v:i+1 for (i,v) in enumerate(prev_theme_rank_list)}
 	theme_rank2 = {}
-	for theme, rank in list(theme_rank_dict.items()):
+	for theme, rank in theme_rank_dict.items():
 		#print theme, ":", rank
 		moment = 0
-		if theme in prev_theme_rank_dict:
+		if prev_theme_rank_dict.has_key(theme):
 			prev_rank = prev_theme_rank_dict[theme]
 		else:
 			prev_rank = 31
 		moment = -(rank - prev_rank)
-		print("  %s %d->%d"%(theme, prev_rank, rank))
+		print "  %s %d->%d"%(theme, prev_rank, rank)
 		rank_pt = 31-rank + moment
 		theme_rank2[theme] = rank_pt
 		#print "%s=%d"%(theme,rank_pt)
 	# Valueでソートしてその順番でリストに
-	theme_rank2_sorted = sorted(list(theme_rank2.items()), key=lambda x:x[1], reverse=True)
+	theme_rank2_sorted = sorted(theme_rank2.items(), key=lambda x:x[1], reverse=True)
 	theme_rank2_list = [theme for theme,pt in theme_rank2_sorted]
-	print("モメンタム順位:", ",".join(theme_rank2_list))
+	print "モメンタム順位:", ",".join(theme_rank2_list)
 	# マーケットDBに保存
 	# if not market_db:
 	# 	market_db = load_pickle(MARKET_DB_PATH)
@@ -163,7 +163,7 @@ def get_major_theme(themes):
 		return ""
 	themes = themes.split(",") #　リスト化
 	themes_dict = {theme:theme_rank_dict.get(theme,31) for theme in themes}
-	themes_sorted = sorted(list(themes_dict.items()), key=lambda x:x[1])
+	themes_sorted = sorted(themes_dict.items(), key=lambda x:x[1])
 	#print "sorted:", themes_dict_sorted
 	major_themes_rank = [theme for theme,rank in themes_sorted]
 	#print ",".join(major_themes_rank)
@@ -185,7 +185,7 @@ def make_db_common(code_s):
 	pr=priced_dict.get("price",0)
 	pricew_dict = price.get_weekly_price_data(code_s, [pr, pr, pr]) # 仮処理ではある
 	#print pricew_dict
-	print("RS_RAW=", pricew_dict.get("rs_raw", 0))
+	print "RS_RAW=", pricew_dict.get("rs_raw", 0)
 	db.update(pricew_dict)
 
 	return db
@@ -245,7 +245,7 @@ def update_market_db():
 	market_db.update(nasdaq_db)
 
 	save_pickle(MARKET_DB_PATH, market_db)
-	print("MarketDB保存:", list(market_db.keys()))
+	print "MarketDB保存:", market_db.keys()
 	return market_db
 
 def create_market_csv(market_db=None, shintakane_theme_csv=""):
@@ -291,7 +291,7 @@ def create_market_csv(market_db=None, shintakane_theme_csv=""):
 					])
 			return rows
 		except KeyError as e:
-			print("!!! 市場のDBデータ取得できず",db_name, market_name)
+			print "!!! 市場のDBデータ取得できず",db_name, market_name
 			return []
 
 	rows.append([])
@@ -324,7 +324,7 @@ def create_market_csv(market_db=None, shintakane_theme_csv=""):
 def update_shintakane_theme(stocks, code_list):
 	themes_count = {}
 	for code_s in code_list:
-		if code_s not in stocks:
+		if not stocks.has_key(code_s):
 			continue
 		stock = stocks[code_s]
 		themes = stock.get("themes",[]) # "テーマ1,テーマ2,..."の形
@@ -333,16 +333,16 @@ def update_shintakane_theme(stocks, code_list):
 			#print "theme:", theme
 			if not theme:
 				continue
-			if theme not in themes_count:
+			if not themes_count.has_key(theme):
 				themes_count[theme] = 0
 			themes_count[theme] += 1
-	themes_count_sorted = (sorted(list(themes_count.items()), key=lambda x: x[1], reverse=True))
+	themes_count_sorted = (sorted(themes_count.items(), key=lambda x: x[1], reverse=True))
 	for theme, count in themes_count_sorted[:30]:
-		print(theme, count)
+		print theme, count
 	return themes_count_sorted
 
 def update_shintakane_theme_csv(stocks, today_list, past_list):
-	print("新高値テーマの取得")
+	print "新高値テーマの取得"
 	today_counts = update_shintakane_theme(stocks, today_list)
 	past_counts = update_shintakane_theme(stocks, past_list)
 	csv = []
