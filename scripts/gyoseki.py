@@ -291,10 +291,12 @@ def calc_progress_rate(stock):
 	if not check_table(code_s, table_current, table_quarter):
 		print("決算データ不足で進捗率取得できず", code_s)
 		return ret
+	# 見通しの期を取得
 	predict_data = []
 	for term in table_current:
 		for t in term:
-			if str(t).find("予") >= 0:
+			term_s = str(t)
+			if term_s.find("予") >= 0:
 				predict_data = term
 				break
 	#print predict_data
@@ -339,8 +341,8 @@ def calc_progress_rate(stock):
 			month = int(tmp2[1])
 			term_date = datetime(2000+year, month, 1)
 			month_diff_total = (predict_term_date.year-term_date.year)*12+(predict_term_date.month-term_date.month)
-			year_diff = month_diff_total/12
-			month_diff = (month_diff_total%12)/3
+			year_diff = month_diff_total//12
+			month_diff = (month_diff_total%12)//3
 			quarter = -month_diff+4
 			#if ind == len(table_quarter)-2:
 				#print term_date.strftime("%Y年%m月"), "%d年前第%d四半期"%(year_diff, quarter)

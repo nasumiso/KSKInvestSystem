@@ -106,28 +106,28 @@ def parse_jikasogaku_kabutan(html):
 	"""
 	株探htmlから時価総額(億円)を取得する
 	"""
-  	jikasogaku_m = re.search(r'<td colspan="2" class="v_zika2">(.*)<span>億円</span></td>', html)
-  	if not jikasogaku_m:
-	  	print("!!! 時価総額の値が取得できません(フォーマット変更？)")
-	  	return 0
-  	else:
-	  	if jikasogaku_m.group(1).find("兆") >= 0:
-	  		# 11<span>兆</span>5899
-	  		# 兆対応
-	  		jikasogaku_m = re.search(r'(.*)<span>兆</span>(.*)', jikasogaku_m.group(1))
-	  		return float(jikasogaku_m.group(1))*10000+float(jikasogaku_m.group(2).replace(",",""))
-	  	else:
-		  	return float(jikasogaku_m.group(1).replace(",",""))
+	jikasogaku_m = re.search(r'<td colspan="2" class="v_zika2">(.*)<span>億円</span></td>', html)
+	if not jikasogaku_m:
+		print("!!! 時価総額の値が取得できません(フォーマット変更？)")
+		return 0
+	else:
+		if jikasogaku_m.group(1).find("兆") >= 0:
+			# 11<span>兆</span>5899
+			# 兆対応
+			jikasogaku_m = re.search(r'(.*)<span>兆</span>(.*)', jikasogaku_m.group(1))
+			return float(jikasogaku_m.group(1))*10000+float(jikasogaku_m.group(2).replace(",",""))
+		else:
+			return float(jikasogaku_m.group(1).replace(",",""))
 
 def get_from_kabutan_base(html, shiyo_data):
 	# 時価総額
 	jikasogaku = parse_jikasogaku_kabutan(html)
 	if jikasogaku == 0:
-  		shiyo_data["jikasogaku"] = 0
-  		return shiyo_data # その後PER,PSR計算できないので
-  	else:
+		shiyo_data["jikasogaku"] = 0
+		return shiyo_data # その後PER,PSR計算できないので
+	else:
 		shiyo_data["jikasogaku"] = jikasogaku #億円
-  		print("時価総額(億円):", shiyo_data["jikasogaku"])
+		print("時価総額(億円):", shiyo_data["jikasogaku"])
 
 	#---- PER
 	stockinfo_m = re.search(r'<div id="stockinfo_i3">(.*?)</div>', html, re.DOTALL)

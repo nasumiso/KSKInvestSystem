@@ -972,7 +972,39 @@ def test():
 	# print "after:", len(stocks), "個"
 	# save_stock_db(stocks)
 
+def fix_str(obj):
+    if isinstance(obj, dict):
+        return {fix_str(k): fix_str(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [fix_str(i) for i in obj]
+    elif isinstance(obj, tuple):
+        return tuple(fix_str(i) for i in obj)
+    elif isinstance(obj, set):
+        return set(fix_str(i) for i in obj)
+    elif isinstance(obj, frozenset):
+        return frozenset(fix_str(i) for i in obj)
+    elif isinstance(obj, str):
+        try:
+            # Python 3 では、Python 2 の str は latin1 として読み込まれている
+            return obj.encode('latin1').decode('utf-8')
+        except Exception:
+            return obj
+    else:
+        return obj
 
+def convert_pickle_latin1_to_utf8(old_path, new_path):
+    with open(old_path, 'rb') as f:
+        raw = pickle.load(f, encoding='latin1')
+    fixed = fix_str(raw)
+    with open(new_path, 'wb') as f:
+        pickle.dump(fixed, f) # protocol=4
+    print("UTF-8変換完了:", new_path)
+
+def convert_python2():
+	STOCKS_PICKLE_PY2 = os.path.join(DATA_DIR, "stock_data", "stocks_py2.pickle")
+	convert_pickle_latin1_to_utf8(
+		STOCKS_PICKLE_PY2, STOCKS_PICKLE)
+	
 #==================================================
 # main
 #==================================================
@@ -991,6 +1023,7 @@ def main():
 	#command = "reflesh"
 	#command = "test"
 	#command = "convert_code"
+	#command = "convert_python2"
 	if command == "update":
 		code_list = "4417"
 		#code_list = "2979 3226 4384 4434 4443 4448 4449 4475 4477 4478 4479 4480 4483 4485 4488 4490 4493 4599 6835 7071"
@@ -1052,6 +1085,8 @@ def main():
 		convert_code_db()
 	elif command == "test":
 		test()
+	elif command == "convert_python2":
+		convert_python2()
 
 # TODO: エラーを記述するようにせんと・・
 if __name__ == '__main__':

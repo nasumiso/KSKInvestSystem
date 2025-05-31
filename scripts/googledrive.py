@@ -1,9 +1,23 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+"""
+このスクリプトは、Google Drive API を使用して CSV ファイルを Google スプレッドシートとして Google Drive にアップロードするユーティリティ関数を提供します。
+
+モジュールと関数:
+- get_drive_service(): OAuth2 認証を行い、Google Drive サービスオブジェクトを返します。
+- upload_csv_new(csv_name, up_foler_name): 指定したフォルダに新規で CSV ファイルを Google スプレッドシートとしてアップロードします。
+- upload_csv(csv_name, up_file_name): 既存の Google スプレッドシートを新しい CSV ファイルで更新します。
+- main(): upload_csv 関数を使った "market_data" ファイルの更新例です。
+
+使い方:
+スクリプトを直接実行することで、CSV ファイルを Google Drive に Google スプレッドシートとしてアップロードまたは更新できます。
+"""
 from ks_util import *
 
+# 外部ライブラリ GoogleDriveAPI
 from apiclient.discovery import build
 from apiclient.http import MediaFileUpload
+# 外部ライブラリ 認証用API google-authへ移行すべきらしい
 import oauth2client
 from oauth2client import file, tools	# 追加
 import httplib2

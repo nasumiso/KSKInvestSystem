@@ -82,7 +82,7 @@ def get_weekly_html(code_s, cache=True):
 			# TODO: 最新情報がなければ取りに行く
 			cach, cach_date = is_file_timestamp(price_fname, INTERVAL_DAY_W)
 			if cach:
-				html = file(price_fname, 'r').read()
+				html = open(price_fname, 'r').read()
 				htmls.append(html)
 				continue
 			else:
@@ -140,8 +140,8 @@ def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
 		return ""
 	
 	print("<---- 取得完了")
-	text = r.text.encode('utf-8')
-	file(price_fname, 'w').write(text)
+	text = r.text  # python3では.encode('utf-8')不要
+	open(price_fname, 'w').write(text)
 	return text
 
 def calc_avg_volume_d(price_list):

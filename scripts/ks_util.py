@@ -7,7 +7,7 @@ import pickle
 from contextlib import contextmanager
 import sqlite3
 
-import requests
+import requests  # 外部ライブラリ
 from functools import reduce
 
 # プロジェクトルートとデータパスの定義
@@ -81,12 +81,12 @@ def backup_file(fname, day=0):
 	return backup_fname
 
 def file_write(fname, content):
-	f = open(fname, 'w')
+	f = open(fname, 'w') # python3では'b'をつけバイナリのまま保存?
 	f.write(content)
 	f.close()
 
 def file_read(fname):
-	f = open(fname, 'r')
+	f = open(fname, 'r') # python3では'b'をつけバイナリのまま読み込み?
 	content = f.read()
 	f.close()
 	return content
@@ -177,7 +177,8 @@ def http_get_html(url, use_cache=True, cache_dir="", cache_fname="", cookies={},
 	if r.encoding != 'utf-8':
 		print("html_encoding:", r.encoding, "encoding:", encoding)
 	# htmlをutf8で取得
-	html = r.text.encode(encoding)
+	#html = r.text.encode(encoding)
+	html = r.text # python3ではエンコード済みのテキストが取得される
 	# メタ指定での文字コードをutf8に
 	#html = html.replace("charset=shift_jis", "charset=utf-8")
 
@@ -214,8 +215,8 @@ def save_pickle(fname, content):
 def load_pickle(fname):
 	print("%sからpickleロード"%fname)
 	try:
-		f = file(fname, 'rb')
-		dat = pickle.load(f)
+		f = open(fname, 'rb')
+		dat = pickle.load(f) 
 		f.close()
 	except IOError as e:
 		print(e)
@@ -226,7 +227,7 @@ memoized_load_pickle = memoize(load_pickle)
 def load_file(fname, tb='r'):
 	print("%sのfileロード"%fname)
 	try:
-		f = file(fname, tb)
+		f = open(fname, tb)
 		dat = f.read()
 		f.close()
 	except IOError as e:

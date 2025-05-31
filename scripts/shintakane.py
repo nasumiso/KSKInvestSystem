@@ -1,7 +1,8 @@
 ﻿#!/usr/bin/python
 # -*- coding: utf-8 -*-
 import sys
-import os,os.path
+import os
+import os.path
 import re
 from datetime import datetime, date, timedelta
 import csv
@@ -16,30 +17,33 @@ import kessan
 import shintakane_global
 from ks_util import *
 
+
 def search_fromcsv(fname):
 	"""新高値csvを読み込んで各銘柄情報をディクショナリのリストにして返す
+
 	Returns: ファイルから得られる銘柄データ(dict)のリスト
 	"""
 	if not os.path.exists(fname):
 		return []
 
-	list = []
-	csv_r = csv.reader(open(fname, 'rb'))
+	result_list = []
+	csv_r = csv.reader(open(fname, 'r', encoding='utf-8'))  # python3ではrbではなくrで開く
 	for row in csv_r:
-		dict = {}
-		dict["rank"] = row[0] # 順位
-		#dict["code"] = row[1].split()[0]
-		dict["code_s"] = row[1].split()[0]
-		dict["name"] = row[1].split()[1] if len(row[1].split()) > 1 else "名前不明"
-		dict["place"] = row[2] # 市場
-		dict["sector"] = row[3] # セクター
-		dict["kabuka"] = int(float(row[4].replace(",",""))) # 株価
-		dict["zenjitsuhi"] = int(float(row[5].replace(",","")))
-		dict["zenjitsuhi_per"] = row[6]
-		dict["dekidaga"] = float(row[7].replace(",",""))
-		dict["origin"] = "shintakane"
-		list.append(dict)
-	return list
+		row_dict = {}
+		row_dict["rank"] = row[0]  # 順位
+		# dict["code"] = row[1].split()[0]
+		row_dict["code_s"] = row[1].split()[0]
+		row_dict["name"] = row[1].split()[1] if len(row[1].split()) > 1 else "名前不明"
+		row_dict["place"] = row[2]  # 市場
+		row_dict["sector"] = row[3]  # セクター
+		row_dict["kabuka"] = int(float(row[4].replace(",", "")))  # 株価
+		row_dict["zenjitsuhi"] = int(float(row[5].replace(",", "")))
+		row_dict["zenjitsuhi_per"] = row[6]
+		row_dict["dekidaga"] = float(row[7].replace(",", ""))
+		row_dict["origin"] = "shintakane"
+		result_list.append(row_dict)
+	return result_list
+
 
 def search_fromcsv_dekidakaup(fname):
 	"""
@@ -48,72 +52,81 @@ def search_fromcsv_dekidakaup(fname):
 	if not os.path.exists(fname):
 		return []
 
-	list = []
-	csv_r = csv.reader(open(fname, 'rb'))
+	result_list = []
+	csv_r = csv.reader(open(fname, 'r', encoding="utf-8"))  # python3ではrbではなくrで開く
 	for row in csv_r:
-		dict = {}
-		dict["rank"] = row[0]
-		#dict["code"] = row[1].split()[0]
-		dict["code_s"] = row[1].split()[0]
-		dict["name"] = row[1].split()[1] if len(row[1].split()) > 1 else "名前不明"
-		dict["place"] = row[2]
-		dict["sector"] = row[3]
-		dict["kabuka"] = int(float(row[4].replace(",","")))
-		dict["zenjitsuhi"] = int(float(row[5].replace(",","")))
-		dict["zenjitsuhi_per"] = row[6]
-		dict["dekidaga"] = float(row[7].replace(",",""))
-		dict["average_dekidaga"] = float(row[8].replace(",","")) #平均出来高
-		dict["dekidaka_upratio"] = row[9] # 出来高増加率
-		dict["origin"] = "dekidakaup"
-		list.append(dict)
-	return list
+		row_dict = {}
+		row_dict["rank"] = row[0]
+		# dict["code"] = row[1].split()[0]
+		row_dict["code_s"] = row[1].split()[0]
+		row_dict["name"] = row[1].split()[1] if len(row[1].split()) > 1 else "名前不明"
+		row_dict["place"] = row[2]
+		row_dict["sector"] = row[3]
+		row_dict["kabuka"] = int(float(row[4].replace(",", "")))
+		row_dict["zenjitsuhi"] = int(float(row[5].replace(",", "")))
+		row_dict["zenjitsuhi_per"] = row[6]
+		row_dict["dekidaga"] = float(row[7].replace(",", ""))
+		row_dict["average_dekidaga"] = float(row[8].replace(",", ""))  # 平均出来高
+		row_dict["dekidaka_upratio"] = row[9]  # 出来高増加率
+		row_dict["origin"] = "dekidakaup"
+		result_list.append(row_dict)
+	return result_list
+
 
 def get_shintakane_day_txtname(today):
 	"""
 	datetime から日付新高値テキストファイル名を取得
 	"""
-	txt_template = os.path.join(DATA_DIR, "shintakane_data", "shintakane_%02d%02d%02d")
-	today_txt = txt_template % (today.year-2000, today.month, today.day)
+	txt_template = os.path.join(
+		DATA_DIR, "shintakane_data", "shintakane_%02d%02d%02d"
+	)
+	today_txt = txt_template % (today.year - 2000, today.month, today.day)
 	return today_txt
+
 
 def get_dekidakaup_day_txtname(today):
 	"""
 	datetime から日付テキストファイル名を取得
 	"""
-	txt_template = os.path.join(DATA_DIR, "shintakane_data", "dekidakaup_%02d%02d%02d")
-	today_txt = txt_template % (today.year-2000, today.month, today.day)
+	txt_template = os.path.join(
+		DATA_DIR, "shintakane_data", "dekidakaup_%02d%02d%02d"
+	)
+	today_txt = txt_template % (today.year - 2000, today.month, today.day)
 	return today_txt
+
 
 def get_latest_dekidakaup_fname():
 	# 今日の日付
 	today = datetime.today()
-	today_csv = get_dekidakaup_day_txtname(today)+".csv"
+	today_csv = get_dekidakaup_day_txtname(today) + ".csv"
 	# 探す
 	count = 0
 	CountMax = 60
 	while not os.path.exists(today_csv) and count < CountMax:
-		print("注：今日の情報がありません",today_csv,count)
+		print("注：今日の情報がありません", today_csv, count)
 		today = today - timedelta(1)
-		today_csv = get_dekidakaup_day_txtname(today)+".csv"
+		today_csv = get_dekidakaup_day_txtname(today) + ".csv"
 		count += 1
 	if count >= CountMax:
 		print("!!!今日の出来高急増ファイルが見つかりません。")
 		return "", today
 	return today_csv, today
+
+
 def get_latest_shintakane_fname():
 	"""
 	最新日付の新高値ファイル名を返す
 	"""
 	# 今日の日付
 	today = datetime.today()
-	today_csv = get_shintakane_day_txtname(today)+".csv"
+	today_csv = get_shintakane_day_txtname(today) + ".csv"
 	# 探す
 	count = 0
 	CountMax = 60
 	while not os.path.exists(today_csv) and count < CountMax:
-		print("注：今日の情報がありません",today_csv,count)
+		print("注：今日の情報がありません", today_csv, count)
 		today = today - timedelta(1)
-		today_csv = get_shintakane_day_txtname(today)+".csv"
+		today_csv = get_shintakane_day_txtname(today) + ".csv"
 		count += 1
 	if count >= CountMax:
 		print("!!!今日の新高値ファイルが見つかりません。")
@@ -552,17 +565,17 @@ def convert_dekidakaup_html(html):
 		row.append(zenjitsuhi)
 		row.append(zenjitsuhi_per)
 		#print zenjitsuhi, zenjitsuhi_per
-	 	volume = m.group(6)#.replace('"','')
-	 	#print volume
-	 	row.append(volume) # 出来高
-	 	average_volume = m.group(7)
-	 	row.append(average_volume) # 平均出来高
-	 	#print average_volume
-	 	volume_upratio = m.group(8) # 出来高増加率
-	 	row.append(volume_upratio)
-	 	#print volume_upratio
-	 	rows.append(row)
-	 	#print row
+		volume = m.group(6)#.replace('"','')
+		#print volume
+		row.append(volume) # 出来高
+		average_volume = m.group(7)
+		row.append(average_volume) # 平均出来高
+		#print average_volume
+		volume_upratio = m.group(8) # 出来高増加率
+		row.append(volume_upratio)
+		#print volume_upratio
+		rows.append(row)
+		#print row
 	return rows
 
 def convert_kabutan_shintakane_html(html):
@@ -675,11 +688,11 @@ def get_todays_dekidakaup():
 		print("株探 出来高急増キャシュ：", cach_dt, useCache)
 	except (IOError, OSError) as e:
 		print("!!! 出来高急増ファイルがない", e)
-	 	useCache = False
+		useCache = False
 	html = http_get_html(URL_KABUTAN_DEKIDAKA+QUERY%1, use_cache=useCache, cache_dir=cache_dir)
 	htmls.append(html)
 	# 更新日付
-	date_m = re.search(r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>', latest_html, re.S)
+	date_m = re.search(r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>', html, re.S)
 	date = date_m.group(1)+date_m.group(2)+date_m.group(3)
 	date = date[2:]
 	# date = re.search(r'<p class="updtime"><small>(.*)</small>', html).group(1)
@@ -702,7 +715,7 @@ def get_todays_dekidakaup():
 
 	# 新高値情報リストを.csvファイルに保存
 	csv_fname = os.path.join(DATA_DIR, "shintakane_data/dekidakaup_"+date+".csv")
-	csv_w = csv.writer(open(csv_fname, "wb"))
+	csv_w = csv.writer(open(csv_fname, "w"), encoding="utf-8")  # python3ではwbではなく、テキストモードで読み書き
 	csv_w.writerows(rows)
 	print("今日の出来高急増を%sに保存しました"%csv_fname)
 	print("<---- 取得完了")
@@ -767,7 +780,7 @@ def get_todays_shintakane():
 
 	# 新高値情報リストを.csvファイルに保存
 	csv_fname = os.path.join(DATA_DIR, "shintakane_data/shintakane_"+date+".csv")
-	csv_w = csv.writer(open(csv_fname, "wb"))
+	csv_w = csv.writer(open(csv_fname, "w", encoding="utf-8"))  # python3ではwbではなく、テキストモードで読み書き
 	csv_w.writerows(rows)
 	print("今日の新高値を%sに保存しました"%csv_fname)
 
@@ -814,7 +827,7 @@ def parse_kessan_html(html):
 		#re_expr = r'<td class="news_time"><time datetime="(.*?)T.*?">.*?</time></td>.*?<td class="%s.*?" data-code="(.*?)"></td>.*?<td><a href="(.*?)">(.*?)</a></td>'
 		# 24.3 フォーマット変更対応
 		re_expr = r'<td class="news_time"><time datetime="(.*?)T.*?">.*?</time></td>.*?<td><div class=".*?%s.*?" data-code="(.*?)">.*?</div></td>.*?<td><a href="(.*?)">(.*?)</a></td>'%word
-		for m in re.finditer(re_expr, html, re.S):
+		for m in re.finditer(re_expr, html, re.S):  # .decode('utf-8'): python3ではhtmlはbytes型なのでdecodeする?
 			date = m.group(1).replace("-","/")
 			#datetime.strptime(date, "%Y/%m/%d")
 			code_s = m.group(2)
@@ -838,7 +851,7 @@ def parse_kessan_html(html):
 #------------------------------
 def get_todays_kessan_list(positive=False):
 	cache_csv_path = os.path.join(DATA_DIR, "todays_kessan_data", "todays_kessan.csv")
-	csv_r = csv.reader(open(cache_csv_path, 'rb'))
+	csv_r = csv.reader(open(cache_csv_path, 'r', encoding="utf-8"))  # python3ではrbではなくrで開く
 	code_s_lst = []
 	for row in csv_r:
 		if kessan.is_positive_kessan(row[3]):
@@ -893,10 +906,11 @@ def update_todays_kessan():
 		if p > 0 and kessan_ge_day > current_day:
 			break
 	# CSVキャッシュに保存
-	csv_w = csv.writer(open(cache_csv_path, "wb"))
-	kessan_lst = modify_lst+announce_lst
-	csv_w.writerows(kessan_lst)
-	print(cache_csv_path, "に保存しました")
+	with open(cache_csv_path, "w", encoding="utf-8") as f: # python3ではwbではなく、テキストモードで読み書き
+		csv_w = csv.writer(f)  
+		kessan_lst = modify_lst+announce_lst
+		csv_w.writerows(kessan_lst)
+		print(cache_csv_path, "に保存しました")
 
 	#---- DBに反映
 	stocks = stock_db.load_stock_db()
