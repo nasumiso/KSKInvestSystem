@@ -28,20 +28,20 @@ def get_daily_html_kabutan(code_s ,cache=True):
 		# TODO: 最新情報がなければ取りに行く
 		cach, cach_date = is_file_timestamp(price_fname, INTERVAL_DAY_D)
 		if cach:
-			html = file(price_fname, 'r').read()
+			html = open(price_fname, 'r').read()
 			#htmls.append(html)
 			#continue
 			return html
 		else:
-	 		print("キャッシュの期限切れ(%s)"%cach_date.date())
+ 			print("キャッシュの期限切れ(%s)"%cach_date.date())
 	# 株探から取得		
 	try:
 		url = URL_PRICE_D_KABUTAN%(code_s, ind+1)
 		print("%sから株探から通信で取得.."%url)
 		r = requests.get(url)
-		html = r.text.encode('utf-8')
+		html = r.text # .encode('utf-8') :python3では不要
 		#htmls.append(html)
-		file(price_fname, 'w').write(html)
+		open(price_fname, 'w').write(html)
 	except requests.exceptions.ConnectionError as e:
 		print("!!! %sにつながりません"%url)
 		print(e)
@@ -92,9 +92,9 @@ def get_weekly_html(code_s, cache=True):
 			url = URL_PRICE_KABUTAN%(code_s, ind+1)
 			print("%sから株探から通信で取得.."%url)
 			r = requests.get(url)
-			html = r.text.encode('utf-8')
+			html = r.text # .encode('utf-8') :python3では不要
 			htmls.append(html)
-			file(price_fname, 'w').write(html)
+			open(price_fname, 'w').write(html)
 		except requests.exceptions.ConnectionError as e:
 			print("!!! %sにつながりません"%url)
 			print(e)
@@ -127,7 +127,7 @@ def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
 				if cache:
 					use_cach = True
 		if use_cach:
-			return file(price_fname, 'r').read()
+			return open(price_fname, 'r').read()
 
 	# Yahooから取得
 	print("----> %sの価格情報をYahooから取得します・・"%code_s)
@@ -479,16 +479,21 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
 		market_db = make_market_db.get_market_db()
 		if "rs_raw" in market_db["topix"]:
 			topix_rs_raw = market_db["topix"]["rs_raw"]
-			rs_rel = rs_raw/topix_rs_raw
-			#print "rs_rel:", rs_rel, topix_rs_raw
-			from scipy.stats import norm
-			scale = 0.3 # code_rank実測のrs_raw標準偏差
-			# 平均1.0、標準偏差0.3の上側確率
-			rs_rank = int(100*(1-norm.sf(x=rs_rel, loc=1.0, scale=scale)))
-			print("rs_rank:", rs_rank)
+			if topix_rs_raw == 0:
+				print("!!! TOPIXのRSが0のためモメンタムポイント計算できません")
+				rs_rank = 0
+			else:
+				# TOPIXのRSと比較してモメンタムポイントを計算
+				rs_rel = rs_raw/topix_rs_raw
+				#print "rs_rel:", rs_rel, topix_rs_raw
+				from scipy.stats import norm
+				scale = 0.3 # code_rank実測のrs_raw標準偏差
+				# 平均1.0、標準偏差0.3の上側確率
+				rs_rank = int(100*(1-norm.sf(x=rs_rel, loc=1.0, scale=scale)))
+				print("rs_rank:", rs_rank)
 		else:
 			rs_rank = 0
-			print("!!! モメンタムポイント計算できず")
+			print("!!! TOPIXのモメンタムポイント存在せず、計算できず")
 		return rs_rank
 	rs_rank = calc_momentum_pt()
 	if rs_rank > 0: # 0はエラーのため更新しない

@@ -972,30 +972,38 @@ def test():
 	# print "after:", len(stocks), "個"
 	# save_stock_db(stocks)
 
-def fix_str(obj):
-    if isinstance(obj, dict):
-        return {fix_str(k): fix_str(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [fix_str(i) for i in obj]
-    elif isinstance(obj, tuple):
-        return tuple(fix_str(i) for i in obj)
-    elif isinstance(obj, set):
-        return set(fix_str(i) for i in obj)
-    elif isinstance(obj, frozenset):
-        return frozenset(fix_str(i) for i in obj)
-    elif isinstance(obj, str):
-        try:
-            # Python 3 では、Python 2 の str は latin1 として読み込まれている
-            return obj.encode('latin1').decode('utf-8')
-        except Exception:
-            return obj
-    else:
-        return obj
+#==================================================
+# pickleの文字コード変換
+#================================================== 
+def _fix_str(obj):
+	if isinstance(obj, dict):
+		return {_fix_str(k): _fix_str(v) for k, v in obj.items()}
+	elif isinstance(obj, list):
+		return [_fix_str(i) for i in obj]
+	elif isinstance(obj, tuple):
+		return tuple(_fix_str(i) for i in obj)
+	elif isinstance(obj, set):
+		return set(_fix_str(i) for i in obj)
+	elif isinstance(obj, frozenset):
+		return frozenset(_fix_str(i) for i in obj)
+	elif isinstance(obj, str):
+		try:
+			# Python 3 では、Python 2 の str は latin1 として読み込まれている
+			return obj.encode('latin1').decode('utf-8')
+		except Exception:
+			return obj
+	else:
+		return obj
 
 def convert_pickle_latin1_to_utf8(old_path, new_path):
+    """ 古いpickleファイルを読み込み、latin1からutf-8に変換して保存する
+    Args:
+    old_path (str): 変換元のpickleファイルパス
+    new_path (str): 変換後のpickleファイルパス
+    """
     with open(old_path, 'rb') as f:
         raw = pickle.load(f, encoding='latin1')
-    fixed = fix_str(raw)
+    fixed = _fix_str(raw)
     with open(new_path, 'wb') as f:
         pickle.dump(fixed, f) # protocol=4
     print("UTF-8変換完了:", new_path)

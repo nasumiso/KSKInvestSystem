@@ -110,7 +110,7 @@ def memoized_report_evaluation():
 			return eval_dict
 		else:
 			report_fname = os.path.join(DATA_DIR, "googledrive/銘柄調査 - 銘柄調査.csv")
-			csv_r = csv.reader(open(report_fname, 'rb'))
+			csv_r = csv.reader(open(report_fname, 'r', encoding='utf-8'))
 			for row in csv_r:
 				code = row[0]
 				stock_name = row[1]

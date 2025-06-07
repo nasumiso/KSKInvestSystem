@@ -231,7 +231,7 @@ def make_sisu_db():
 	# return
 	db_dict = {}
 	if os.path.exists("sisu_data/sisu_db.pickle"):
-		db_dict = pickle.load(file("sisu_data/sisu_db.pickle", 'r'))
+		db_dict = pickle.load(open("sisu_data/sisu_db.pickle", 'rb'))
 
 	parser_list = [parse_topix, parse_tosho_reit, parse_spdr_sp500, parse_vanguard_reit,
 	parse_ishares_msci_emerging, parse_ssga_worldbond, parse_spdr_goldshares]
@@ -239,7 +239,7 @@ def make_sisu_db():
 		print("DB作成:", asset)
 		db_dict[asset] = parser_list[i]()
 
-	pickle.dump(db_dict, file("sisu_data/sisu_db.pickle", 'w'))
+	pickle.dump(db_dict, open("sisu_data/sisu_db.pickle", 'wb'))
 
 def parse_html_yahoo_jp(html, title=""):
 	rows = []
@@ -377,7 +377,7 @@ def make_rs_db():
 	"""
 	market_db = {}	
 	if os.path.exists(MARKET_DB_NAME):
-		market_db = pickle.load(file(MARKET_DB_NAME, 'r'))
+		market_db = pickle.load(open(MARKET_DB_NAME, 'rb'))
 
 	# for i, url in enumerate(ASSET_URLS):
 	# 	#if i != 0:
@@ -455,7 +455,7 @@ def make_rs_db():
 		print(table[0:3], "...")
 		print(table[-3:])
 	# DB保存
-	pickle.dump(market_db, file(MARKET_DB_NAME, 'w'))
+	pickle.dump(market_db, open(MARKET_DB_NAME, 'wb'))
 
 def main():
 	#make_sisu_db()

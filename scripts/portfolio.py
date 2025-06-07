@@ -103,12 +103,12 @@ def get_latest_portfolio():
 	if not os.path.exists(COOKIE_NAME):
 		cookies = login_yahoo()
 	else:
-		cookies = pickle.load(file(COOKIE_NAME))
+		cookies = pickle.load(open(COOKIE_NAME, 'rb'))
 	print(cookies, len(cookies))
 	#--- yahooのサイトへアクセス
 	if len(cookies) > 0:
 		print("cookieを%sに保存"%COOKIE_NAME)
-		pickle.dump(cookies, file(COOKIE_NAME, 'w'))
+		pickle.dump(cookies, open(COOKIE_NAME, 'wb'))
 		
 		print("%sへ接続..."%URL_YAHOO_FINANCE_PORTFOLIO)
 		r = http_get_yahoo(URL_YAHOO_FINANCE_PORTFOLIO, cookies)

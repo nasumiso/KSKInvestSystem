@@ -131,7 +131,8 @@ def parse_kabutan_account2(html):
 			ldict_list = [ldict["kessanki"], ldict["uriagedaka"], ldict["eigyoeki"], \
 						ldict["keijoeki"], ldict["profit"], ldict["profit_per1"], \
 						ldict.get("diviednd_per1", ldict.get("uriage_eigyo_ratio",""))]
-			print("|", str(ldict_list).decode('string_escape'))
+			# print("|", str(ldict_list).decode('string_escape')) # python2でエスケープ文字を実際に反映させて表示
+			print("|", ldict_list) # python3対応
 			table.append(ldict_list)
 		# for文終了
 		
@@ -170,7 +171,8 @@ def parse_kabutan_account2(html):
 					ldict["diviednd_per1"] if tble_name == "gyoseki_current" else ldict["uriage_eigyo_ratio"]]
 					#ldict.get("diviednd_per1", ldict.get("uriage_eigyo_ratio","")
 
-		print("前期比行:", str(ldict_list).decode('string_escape'))
+		#print("前期比行:", str(ldict_list).decode('string_escape'))
+		print("前期比行:", ldict_list) # python3対応
 		table.append(ldict_list)
 		# 決算期、売上高、営業益、経常益、純利益、一株純利益、分割調整後一株利益or売上営業利益
 		return table
@@ -271,7 +273,7 @@ def check_table(code_s, table_current, table_quarter):
 	return True, table_quarter
 
 def calc_progress_rate(stock):
-	"""DBに保持する決算データから進捗率を計算する
+	""" DBに保持する決算データから進捗率を計算する
 	Args:
 		stock(dict): 通期・四半期業績データ
 	Retruns:

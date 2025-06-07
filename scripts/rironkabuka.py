@@ -485,7 +485,7 @@ def get_rironkabuka_kairi_fromprice(theory_price, theory_price_up, theory_price_
 	kairi = 100*(theory_price-price)/price 
 	kairi_up = 100*(theory_price_up-price)/price 
 	kairi_down = 100*(theory_price_down-price)/price 
-	if therory_price_preceding > 0:
+	if therory_price_preceding is not None and therory_price_preceding > 0:
 		kairi_preceding = 100*(therory_price_preceding-price)/price 
 	else:
 		kairi_preceding = None

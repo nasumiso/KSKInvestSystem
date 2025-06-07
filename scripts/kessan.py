@@ -146,10 +146,13 @@ def make_kessan_csv():
     def date_sort(a,b):
         a_date = datetime.strptime(a[0], "%Y/%m/%d")
         b_date = datetime.strptime(b[0], "%Y/%m/%d")
-        return cmp(a_date, b_date)
-    before_list.sort(cmp=date_sort, reverse=True)
-    current_list.sort(cmp=date_sort)
-    future_list.sort(cmp=date_sort)
+        # return cmp(a_date, b_date)
+        return (a_date > b_date) - (a_date < b_date) # python3対応
+    #before_list.sort(cmp=date_sort, reverse=True)
+    import functools  # python3対応
+    before_list.sort(key=functools.cmp_to_key(date_sort), reverse=True) 
+    current_list.sort(key=functools.cmp_to_key(date_sort))
+    future_list.sort(key=functools.cmp_to_key(date_sort))
     csv_data = []    
     def write_to_csv(target_list):
         # 1行目に決算日

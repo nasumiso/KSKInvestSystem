@@ -143,8 +143,10 @@ def expoert_to_csv(disc_db):
         pt_b = int(b["date"])
         if b["type"] in prior_type:
             pt_b += 100000000
-        return cmp(pt_a, pt_b)
-    disc_db = sorted(disc_db, cmp=disc_cmp, reverse=True)
+        return (pt_a > pt_b) - (pt_a < pt_b)  # cmpの代替
+
+    import functools  # python3対応
+    disc_db = sorted(disc_db, key=functools.cmp_to_key(disc_cmp), reverse=True)
 
     rows = []
     #rows.append(["■適宜開示"])
@@ -172,7 +174,7 @@ def expoert_to_csv(disc_db):
         rows.insert(insert_ind, [""])
 
     import csv
-    with open(DISCLOSURE_CSV, "wb") as f:
+    with open(DISCLOSURE_CSV, "w", encoding="utf-8") as f: # python3対応(wbから)
         csv_w = csv.writer(f)
         csv_w.writerows(rows)
     

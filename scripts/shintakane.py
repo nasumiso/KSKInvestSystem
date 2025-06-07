@@ -479,7 +479,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
 		shintakane_result_csv = os.path.join(DATA_DIR,"shintakane_result_data/shintakane_result_%02d%02d%02d.csv")%\
 		(latest_csv_dt.year%2000, latest_csv_dt.month, latest_csv_dt.day)
 		
-		with open(shintakane_result_csv, "wb") as f:
+		with open(shintakane_result_csv, "w", encoding="utf-8") as f: # python3では"w"で開く
 			shintakane_result_csv_w = csv.writer(f)
 			shintakane_result_csv_w.writerows(rows)
 
@@ -715,7 +715,7 @@ def get_todays_dekidakaup():
 
 	# 新高値情報リストを.csvファイルに保存
 	csv_fname = os.path.join(DATA_DIR, "shintakane_data/dekidakaup_"+date+".csv")
-	csv_w = csv.writer(open(csv_fname, "w"), encoding="utf-8")  # python3ではwbではなく、テキストモードで読み書き
+	csv_w = csv.writer(open(csv_fname, "w", encoding="utf-8"))  # python3ではwbではなく、テキストモードで読み書き
 	csv_w.writerows(rows)
 	print("今日の出来高急増を%sに保存しました"%csv_fname)
 	print("<---- 取得完了")

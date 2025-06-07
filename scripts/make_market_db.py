@@ -183,7 +183,7 @@ def make_db_common(code_s):
 	#print "mothers:", priced_dict
 	db.update(priced_dict)
 	pr=priced_dict.get("price",0)
-	pricew_dict = price.get_weekly_price_data(code_s, [pr, pr, pr]) # 仮処理ではある
+	pricew_dict = price.get_weekly_price_data(code_s, UPD_INTERVAL, [pr, pr, pr]) # 仮処理ではある
 	#print pricew_dict
 	print("RS_RAW=", pricew_dict.get("rs_raw", 0))
 	db.update(pricew_dict)
@@ -314,7 +314,7 @@ def create_market_csv(market_db=None, shintakane_theme_csv=""):
 	disc_csv = disclosure.update_disclosure_all()
 	rows.extend(disc_csv)
 
-	with open(csv_path, "wb") as f:
+	with open(csv_path, "w", encoding="utf-8") as f: # python3対応(wbから変更)
 		csv_w = csv.writer(f)
 		csv_w.writerows(rows)
 
@@ -354,6 +354,12 @@ def update_shintakane_theme_csv(stocks, today_list, past_list):
 	csv.append(today)
 	return csv
 
+def convert_python2():
+	import make_stock_db
+	STOCKS_PICKLE_PY2 = os.path.join(DATA_DIR, "market_data", "market_db_py2.pickle")
+	make_stock_db.convert_pickle_latin1_to_utf8(
+		STOCKS_PICKLE_PY2, MARKET_DB_PATH)
+
 def main():
 	# for k, v in market_db.items():
 	# 	print k, v
@@ -374,5 +380,9 @@ def main():
 	# codes2 = ["5842","1723","3558","9211","1770","6551","3816","7670","2397","9216","3649","2924"]
 	# update_shintakane_theme_csv(stocks, codes, codes2)
 
+def test():
+	convert_python2()
+
 if __name__ == '__main__':
 	main()
+	#test()
