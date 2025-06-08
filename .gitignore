@@ -17,6 +17,7 @@ __pycache__/
 *.pyo
 *.pyd
 *.pkl
+*.venv/
 
 # MacOSのDS_Storeファイル
 .DS_Store
