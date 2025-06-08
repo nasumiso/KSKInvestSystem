@@ -590,3 +590,13 @@ my_frontier  +9.8  -5.2  -9.7  -2.3  -5.7  SELL  8
    gl_bond  -2.6  -4.6  -4.6  -3.7  -4.3  SELL  4
       gold  +1.4 +10.1 +15.0 +28.0 +17.7   BUY  1
 my_frontier  -2.0  -3.7  -7.4  -7.9  -6.4  SELL  5
+25/5
+     Asset　 1m    3m    6m    12m  avg  signal 順位
+  jp_stock  +3.3  +4.7  +5.0  -0.2  +3.1   BUY  2
+   jp_reit  -1.9  +2.1  +4.0  -0.4  +1.9   BUY  3
+  gl_stock  +2.7  -2.6  -4.4  +2.6  -1.4  SELL  6
+   gl_reit  -1.8  -6.7 -12.5  -2.2  -7.2  SELL  8
+  em_stock  +1.5  +1.6  -0.2  -3.7  -0.8  SELL  5
+   gl_bond  -0.7  -1.5  -1.6  -4.1  -2.4  SELL  7
+      gold  +0.6 +10.7 +19.0 +28.3 +19.3   BUY  1
+my_frontier  -0.9  +9.8  -3.4  -5.5  +0.3  SELL  4
