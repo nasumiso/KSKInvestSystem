@@ -355,6 +355,9 @@ def update_shintakane_theme_csv(stocks, today_list, past_list):
 	return csv
 
 def convert_python2():
+	""" Python2のpickleをPython3のpickleに変換
+	一時的実行用
+	"""
 	import make_stock_db
 	STOCKS_PICKLE_PY2 = os.path.join(DATA_DIR, "market_data", "market_db_py2.pickle")
 	make_stock_db.convert_pickle_latin1_to_utf8(

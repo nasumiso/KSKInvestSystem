@@ -270,7 +270,7 @@ def parse_price_d_html_kabutan(html):
 	#print ux_cmd_head(html, 10)
 	#---- 日次データの作成
 	daily_price_list = []
-	for m in re.finditer(r'<th scope="row"><time datetime=".*?">(.*?)</time></th>\r\n<td>(.*?)</td>\r\n<td>(.*?)</td>\r\n<td>(.*?)</td>\r\n<td>(.*?)</td>\r\n<td><span class=".*?">(.*?)</span></td>\r\n<td><span class=".*?">(.*?)</span></td>\r\n<td>(.*?)</td>', \
+	for m in re.finditer(r'<th scope="row"><time datetime=".*?">(.*?)</time></th>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td><span class=".*?">(.*?)</span></td>[\r\n]+<td><span class=".*?">(.*?)</span></td>[\r\n]+<td>(.*?)</td>', \
 		html, re.DOTALL):
 		daily_price_list.append(m.groups())
 	#print "日次データ:", len(daily_price_list), daily_price_list
@@ -382,7 +382,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
 		weekly_price_list = [] # 週次価格データ
 		for ind, html in enumerate(htmls):
 			j = 0
-			for m in re.finditer(r'<th scope="row"><time datetime=".*?">(.*?)</time></th>\r\n<td>(.*?)</td>\r\n<td>(.*?)</td>\r\n<td>(.*?)</td>\r\n<td>(.*?)</td>\r\n<td>(.*?)</td>\r\n<td>(.*?)</td>\r\n<td>(.*?)</td>', \
+			for m in re.finditer(r'<th scope="row"><time datetime=".*?">(.*?)</time></th>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>', \
 				html, re.DOTALL):
 				if ind >= 1 and j == 0:
 					# 変則的だが、2ページ以降の最初の要素は現在株価なので省く
@@ -431,18 +431,12 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
 		if not weekly_price_list:
 			print("!!!! 週次データのない銘柄のようです")
 			return 0,0
-		if not cur_prices:
+		if not cur_prices or (cur_prices[0] == 0 and cur_prices[1] == 0 and cur_prices[2] == 0):
+			# 現在価格がない場合は最新の週次データから取得
 			p_cur = float(weekly_price_list[0][4].replace(",","")) #4:終値
 		else:
 			p_cur = cur_prices[0]
-		# if not cur_prices:
-		# 	try:
-		# 		p_cur_high = float(weekly_price_list[0][2].replace(",","")) #2:高値
-		# 	except ValueError:
-		# 		print "!!! 高値のない銘柄"
-		# 		p_cur_high = p_cur
-		# else:
-		# 	p_cur_high = cur_prices[1]
+		
 		past_prices = []
 		print("現在終値 %s"%p_cur)
 		for w in [13,26,39,52]:

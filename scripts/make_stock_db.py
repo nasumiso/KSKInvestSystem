@@ -717,13 +717,13 @@ def list_all_db(upload_csv=True, update_portforio=True):
 	#delete_stocks = []
 	for k, v in stocks.items():
 		try:
-			gyoseki_pt = v['score_gyoseki']
+			gyoseki_pt = int(v['score_gyoseki'])
 			shihyo_pt = v['shihyo_pt']
 			#mom_pt = int((v.get('rs_raw', 0)-1)*100)
 			mom_pt = v.get('momentum_pt', 0)
 			funda_pt = v.get('funda_pt', 0)
-			pt = (40*gyoseki_pt+20*shihyo_pt+25*mom_pt+15*funda_pt)/100
-			stocks_active.append((k, pt, gyoseki_pt, shihyo_pt, mom_pt, funda_pt))
+			total_pt = int((40*gyoseki_pt+20*shihyo_pt+25*mom_pt+15*funda_pt)/100)
+			stocks_active.append((k, total_pt, gyoseki_pt, shihyo_pt, mom_pt, funda_pt))
 		except KeyError as e:
 			print("必要キー%sなし"%e, k, v.get('stock_name', ''))
 			#delete_stocks.append(k)
@@ -783,8 +783,8 @@ def list_all_db(upload_csv=True, update_portforio=True):
 		latest_csv_dt = get_file_datetime(rank_csv)
 		tdy = datetime.today()
 		if (tdy-latest_csv_dt).days >= 7:
-			backup_csv = "code_rank_data/code_rank_%02d%02d%02d.csv"%\
-			(latest_csv_dt.year%2000, latest_csv_dt.month, latest_csv_dt.day)
+			backup_csv = os.path.join(DATA_DIR, "code_rank_data/code_rank_%02d%02d%02d.csv"%\
+			(latest_csv_dt.year%2000, latest_csv_dt.month, latest_csv_dt.day))
 			print("バックアップ:", backup_csv)
 			shutil.copy(rank_csv, backup_csv)
 	# CSV用項目作成
@@ -855,8 +855,9 @@ def list_all_db(upload_csv=True, update_portforio=True):
 			vola, sell_press, growth_exp, progress_expr, indicator_expr, rironkabuka_expr, gyoseki_quarity_expr, credit_expr,\
 			main_theme, overview])
 	# CSV書き込み
-	rank_csv_w = csv.writer(open(rank_csv, "wb"))
-	rank_csv_w.writerows(rows)
+	with open(rank_csv, "w", encoding="utf-8") as f:  # python3対応
+		rank_csv_w = csv.writer(f)
+		rank_csv_w.writerows(rows)
 
 	# GoogleDriveにアップロード
 	if upload_csv:
