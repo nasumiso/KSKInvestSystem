@@ -7,14 +7,14 @@ def profile(func):
 	start = time.time()
 	func()
 	end = time.time()
-	print("time: ", end-start)
+	print "time: ", end-start
 
 def with_profile(func):
 	def _func():
 		start = time.time()
 		func()
 		end = time.time()
-		print("time: ", end-start)
+		print "time: ", end-start
 	return _func;
 
 def with_chdir(dir, func):
@@ -26,7 +26,7 @@ def with_chdir(dir, func):
 	return _func
 
 def exe():
-	print(os.getcwd())
+	print os.getcwd()
 	#print exe
 
 def main1():

@@ -1,23 +1,9 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-"""
-このスクリプトは、Google Drive API を使用して CSV ファイルを Google スプレッドシートとして Google Drive にアップロードするユーティリティ関数を提供します。
-
-モジュールと関数:
-- get_drive_service(): OAuth2 認証を行い、Google Drive サービスオブジェクトを返します。
-- upload_csv_new(csv_name, up_foler_name): 指定したフォルダに新規で CSV ファイルを Google スプレッドシートとしてアップロードします。
-- upload_csv(csv_name, up_file_name): 既存の Google スプレッドシートを新しい CSV ファイルで更新します。
-- main(): upload_csv 関数を使った "market_data" ファイルの更新例です。
-
-使い方:
-スクリプトを直接実行することで、CSV ファイルを Google Drive に Google スプレッドシートとしてアップロードまたは更新できます。
-"""
 from ks_util import *
 
-# 外部ライブラリ GoogleDriveAPI
 from apiclient.discovery import build
 from apiclient.http import MediaFileUpload
-# 外部ライブラリ 認証用API google-authへ移行すべきらしい
 import oauth2client
 from oauth2client import file, tools	# 追加
 import httplib2
@@ -53,7 +39,7 @@ def get_drive_service():
 	return drive_service
 
 def upload_csv_new(csv_name, up_foler_name):
-	print("%sをGoogleDriveに新規アップロードします"%csv_name)
+	print "%sをGoogleDriveに新規アップロードします"%csv_name
 	drive_service = get_drive_service()
 
 	folder_id = FOLDER_DICT[up_foler_name]
@@ -71,20 +57,20 @@ def upload_csv_new(csv_name, up_foler_name):
 		media_body=media,
 		fields='id').execute()
 
-	print('Upload Complete File ID: %s %s' %(fname, file.get('id')))
+	print 'Upload Complete File ID: %s %s' %(fname, file.get('id'))
 
 def upload_csv(csv_name, up_file_name):
-	print("%sをGoogleDriveに更新アップロードします"%csv_name)
+	print "%sをGoogleDriveに更新アップロードします"%csv_name
 	drive_service = get_drive_service()
 
 	file_id = FILE_DICT[up_file_name]
 	try:
 		file_metadata = drive_service.files().get(fileId=file_id).execute()
 	except httplib2.ResponseNotReady as e:
-		print("!!! GoogleDrive接続エラー", e)
+		print "!!! GoogleDrive接続エラー", e
 		return
 	del file_metadata['id']
-	print("meta:", file_metadata)
+	print "meta:", file_metadata
 
 	media = MediaFileUpload(csv_name,
         mimetype='text/csv',
@@ -97,7 +83,7 @@ def upload_csv(csv_name, up_file_name):
 		#fields='id'
 		).execute()
 
-	print('Upload Complete File ID: %s' % file.get('id'))
+	print 'Upload Complete File ID: %s' % file.get('id')
 
 def main():
 	#upload_csv('code_rank_data/code_rank.csv', "code_rank")

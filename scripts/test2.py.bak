@@ -24,7 +24,7 @@ def simple_decorator(decorator):
 @simple_decorator
 def my_simple_logging_decorator(func):
 	def you_will_never_see_this_name(*args, **kwargs):
-		print('calling {}'.format(func.__name__))
+		print 'calling {}'.format(func.__name__)
 		return func(*args, **kwargs)
 	return you_will_never_see_this_name
 
@@ -36,29 +36,29 @@ def double(x):
 def test_simple_decorator():
 	assert double.__name__ == 'double', double.__name__
 	assert double.__doc__ == 'Doubles a number.', double.__doc__
-	print(double(155))
+	print double(155)
 # ---------------------------------------------------------
 def my_simple_decorator2(func):
 	def _decorator(*args, **kwargs):
-		print("call start")
+		print "call start"
 		ret = func(*args, **kwargs)
-		print("call end")
+		print "call end"
 		return ret
 	return _decorator
 def my_simple_decorator(func):
 	def _decorator(x):
-		print("call start")
+		print "call start"
 		ret = func(x)
-		print("call end")
+		print "call end"
 		return ret
-	print(_decorator)
+	print _decorator
 	return _decorator
 
 def my_double(x):
-	print(2*x)
+	print 2*x
 	return 2*x
 def my_mul(x, y):
-	print("my_mul: ", my_mul.__name__, my_mul.__doc__, my_mul.__dict__) 
+	print "my_mul: ", my_mul.__name__, my_mul.__doc__, my_mul.__dict__ 
 	return x*y
 
 def test_my_simple_decorator():
@@ -123,7 +123,7 @@ class curried(object):
 		#print "curry_call - arg:", a, "self_arg:", self.args
 		args = self.args + a
 		#print "  args:", args, self.func.func_code.co_argcount
-		if len(args) < self.func.__code__.co_argcount:
+		if len(args) < self.func.func_code.co_argcount:
 			#print "call curryied"
 			return curried(self.func, *args)
 		else:
@@ -135,7 +135,7 @@ def add(a, b):
 
 def test_curried():
 	add1 = add(1)
-	print(add1(2))
+	print add1(2)
 # ---------------------------------------------------------
 WHAT_TO_DEBUG = set(['io', 'core']) 
 class debug:
@@ -148,9 +148,9 @@ class debug:
 	def __call__(self, f):
 		if(self.aspects & WHAT_TO_DEBUG):
 			def newf(*args, **kwds):
-				print(f.__name__, args, kwds, file=sys.stderr)
+				print >> sys.stderr, f.func_name, args, kwds
 				f_result = f(*args, **kwds)
-				print(f.__name__, "returned", f_result, file=sys.stderr)
+				print >> sys.stderr, f.func_name, "returned", f_result
 				return f_result
 			newf.__doc__ = f.__doc__
 			return newf
@@ -158,7 +158,7 @@ class debug:
 			return f
 @debug(['io'])
 def prn(x):
-	print(x)
+	print x
 @debug(['core'])
 def mult(x, y):
 	return x*y
@@ -195,8 +195,8 @@ def deprecated(func):
 		warnings.warn_explicit(
 			"Call to deprecated function {}.".format(func.__name__),
 			category=DeprecationWarning,
-			filename=func.__code__.co_filename,
-			lineno=func.__code__.co_firstlineno + 1
+			filename=func.func_code.co_filename,
+			lineno=func.func_code.co_firstlineno + 1
 			)
 		return func(*args, **kwargs)
 	return new_func
@@ -222,17 +222,17 @@ def dump_args(func):
 	"""
 	関数の引数をダンプするデコレータ
 	"""
-	argnames = func.__code__.co_varnames[:func.__code__.co_argcount]
-	fname = func.__name__
+	argnames = func.func_code.co_varnames[:func.func_code.co_argcount]
+	fname = func.func_name
 	def echo_func(*args, **kwargs):
-		print(fname, ":", ', '.join(
-			'%s=%r' % entry for entry in list(zip(argnames,args)) + list(kwargs.items())))
+		print fname, ":", ', '.join(
+			'%s=%r' % entry for entry in zip(argnames,args) + kwargs.items())
 		return func(*args, **kwargs)
 	return echo_func
 
 @dump_args
 def f1(a,b,c):
-	print(a+b+c)
+	print a+b+c
 def test_dumpargs():
 	f1(3,4,5)
 # ---------------------------------------------------------
