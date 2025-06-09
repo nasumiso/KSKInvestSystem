@@ -1,6 +1,16 @@
 {
-    "python.pythonPath": "/usr/bin/python3",
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
     "python.linting.pylintEnabled": false,
     "python.linting.flake8Enabled": true,
-    "python.linting.enabled": true
+    "python.linting.enabled": true,
+
+    // Tabをスペース4つに設定
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "[python]": {
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true
+    },
+    // pythonのルートをscriptsに設定
+    "python.analysis.extraPaths": ["./scripts"]
 }
