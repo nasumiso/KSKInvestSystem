@@ -1,9 +1,6 @@
-#!/usr/bin/python	
-# -*- coding: utf-8 -*-
-import sys
-import os.path
+#!/usr/bin/env python3	
+
 import re
-import pickle
 import requests
 
 from ks_util import *
@@ -32,7 +29,7 @@ def get_gyoseki_data(code, cache=True):
 	fname = "stock_data/kabutan_gyoseki_%d.txt"%code
 	if cache and os.path.exists(fname):
 		text = ""
-		with file (detail_fname, 'r') as f:
+		with open(fname, 'r') as f:
 			text = f.read()
 		return text
 
@@ -41,7 +38,7 @@ def get_gyoseki_data(code, cache=True):
 	r = requests.get(URL)
 	print("<---- 取得完了")
 	text = r.text.encode('utf-8')
-	with file(fname, 'w') as f:
+	with open(fname, 'w') as f:
 		f.write(text)
 	return text
 

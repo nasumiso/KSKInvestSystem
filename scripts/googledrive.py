@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
+
 """
 このスクリプトは、Google Drive API を使用して CSV ファイルを Google スプレッドシートとして Google Drive にアップロードするユーティリティ関数を提供します。
 

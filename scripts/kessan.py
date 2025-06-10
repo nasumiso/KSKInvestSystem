@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 from ks_util import *
 
 def is_positive_kessan(summary):	

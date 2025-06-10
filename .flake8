@@ -1,3 +1,4 @@
 [flake8]
 # 'from module import *' used; unable to detect undefined names
-ignore = F403 
+ignore = F403
+ignore = F405

@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
+
 import requests
 import time
 import re
@@ -147,7 +147,7 @@ def parse_portfolio_txt():
 		stock["price"] = int(float(m.group(5).replace(",", "")))
 		stock["volume"] = int(float(m.group(8).replace(",", ""))) # 出来高
 		#print stock
-		stocks[code] = stock
+		stocks[code_s] = stock
 	return stocks
 
 def parse_my_portforio():

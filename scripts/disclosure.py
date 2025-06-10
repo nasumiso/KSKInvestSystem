@@ -1,7 +1,6 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
-import pickle
-from datetime import datetime, timedelta
+#!/usr/bin/env python3
+
+from datetime import datetime
 import re
 
 import portfolio
