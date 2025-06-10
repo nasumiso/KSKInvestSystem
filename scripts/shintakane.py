@@ -137,9 +137,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # 設定パラメータ
     BACK_DAY = 14 #10 すでに調査したとみなす日数
     #DEKIDAGA_VALUE = 1000*50 # 株価*出来高
-    DEKIDAGA_VALUE = 10000
-    LOWEST_PURCHASE_MONEY_VALUE = 80*10000 # 最低購入代金
-    MARKET_CAP = 1000000 # 時価総額 百万円
+    DEKIDAGA_VALUE = 10000  # 株価*出来高
+    #LOWEST_PURCHASE_MONEY_VALUE = 80*10000 # 最低購入代金
+    #MARKET_CAP = 1000000 # 時価総額 百万円
 
     today = datetime.today()
     today_data, latest_csv_dt = get_latest_shintakane_fname()
