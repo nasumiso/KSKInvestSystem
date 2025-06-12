@@ -57,8 +57,8 @@ def parse_disclosure_html(html):
     record_list = []
     # 自己完結のためコードを取得
     # <title>ユークス【4334】｜ニュース｜株探（かぶたん）</title>
-    #TODO: 英数字コードに対応
-    #m = re.search(r'<title>(.*)【(\d\d\d\d)】.*</title>', html)
+    # TODO: 英数字コードに対応
+    # m = re.search(r'<title>(.*)【(\d\d\d\d)】.*</title>', html)
     m = re.search(r'<title>(.*)【(\d[0-9a-zA-Z]\d[0-9A-Z])】.*</title>', html)
     code_s = ""
     stock_name = ""
@@ -74,10 +74,10 @@ def parse_disclosure_html(html):
             heading = m.group(2)
             date = url.split("/")[-3][0:8]  # 20220603
             head_type = "kaiji"
-            #print head_type, url, heading
+            # print head_type, url, heading
             record = {}
             record["type"] = head_type
-            #record["code"] = code
+            # record["code"] = code
             set_db_code(record, code_s)
             record["stock_name"] = stock_name
             record["date"] = date
@@ -92,12 +92,12 @@ def parse_disclosure_html(html):
                 url = m.group(2)
                 heading = m.group(3)
                 head_type = HEAD_TYPE_DIC.get(tag, "zairyo")
-                #print tag, head_type, url, heading
+                # print tag, head_type, url, heading
                 m3 = re.search(r'b=[n|k](\d*)', url)
                 date = m3.group(1)[:8]  # 20220603
                 record = {}
                 record["type"] = head_type
-                #record["code"] = code
+                # record["code"] = code
                 set_db_code(record, code_s)
                 record["stock_name"] = stock_name
                 record["date"] = date
@@ -132,6 +132,8 @@ def update_disclosure(code_s, disc_db=[], upd=UPD_INTERVAL):
 #         dict<int, disc_record>: ディスクロージャー全データ
 #     """
 #     return load_pickle(DISCLOSURE_DB)
+
+
 def expoert_to_csv(disc_db):
     # まず日付順にソート
     def disc_cmp(a, b):
@@ -148,7 +150,7 @@ def expoert_to_csv(disc_db):
     disc_db = sorted(disc_db, key=functools.cmp_to_key(disc_cmp), reverse=True)
 
     rows = []
-    #rows.append(["■適宜開示"])
+    # rows.append(["■適宜開示"])
     rows.append(["日付", "銘柄コード", "銘柄名", "種類", "本文"])
     def make_link(heading, url):
         #=HYPERLINK("https://kabutan.jp/stock/chart?code=6070","6070")
@@ -181,24 +183,24 @@ def expoert_to_csv(disc_db):
 
 
 def update_disclosure_all(upd=UPD_INTERVAL):
-    #disc_db = load_pickle(DISCLOSURE_DB)
-    #if not disc_db:
+    # disc_db = load_pickle(DISCLOSURE_DB)
+    # if not disc_db:
     #    disc_db = []
     disc_db = []
     code_list_s, possess_list_s = portfolio.parse_my_portforio()
     for code_s in code_list_s+possess_list_s:
         update_disclosure(code_s, disc_db, upd)
     # 更新した内容で保存
-    #save_pickle(DISCLOSURE_DB, disc_db)
+    # save_pickle(DISCLOSURE_DB, disc_db)
     return expoert_to_csv(disc_db)
 
 def main():
     # TODO: 特集(神戸物産)、5%(スノーピーク)、修正(アドベンチャー)、決算(メディアドゥ)は
     # 開示のところにしたい
-    upd = UPD_INTERVAL #UPD_INTERVAL,UPD_CACHE
+    upd = UPD_INTERVAL # UPD_INTERVAL,UPD_CACHE
     update_disclosure_all(upd)
-    #3678,7816,3038
-    #update_disclosure(3038, upd=upd)
+    # 3678,7816,3038
+    # update_disclosure(3038, upd=upd)
 
 
 if __name__ == '__main__':

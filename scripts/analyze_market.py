@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-#================================================
+# ================================================
 # 市場の新高値銘柄を分析
-#================================================
+# ================================================
 
-#import xml.etree.ElementTree as xml # <-htmlはwellformedじゃないので解析不可
-#from lxml import etree # lxmlは後で勉強する
+# import xml.etree.ElementTree as xml # <-htmlはwellformedじゃないので解析不可
+# from lxml import etree # lxmlは後で勉強する
 from datetime import datetime
 from datetime import timedelta
 from datetime import date
@@ -37,7 +37,7 @@ def is_latest_info(url):
 		print("最新html:", cache_dt.isoformat()[:13], "必要", now_dt.isoformat()[:13], "diff:",(now_dt-cache_dt))
 		if (date(now_dt.year, now_dt.month, now_dt.day)-
 			date(cache_dt.year, cache_dt.month, cache_dt.day)).days > 0:
-		#if now_dt.day > cache_dt.day:
+		# if now_dt.day > cache_dt.day:
 			latest = True
 	else:
 		print(cach_path+"はない")
@@ -45,9 +45,9 @@ def is_latest_info(url):
 
 def get_n225_data():
 	use_cache = not is_latest_info(URL_N225)
-	#print "use_cache", use_cache
-	html = http_get_html(URL_N225, cache_dir="market_data", use_cache=use_cache) #latest=True
-	#print ux_cmd_head(html)
+	# print "use_cache", use_cache
+	html = http_get_html(URL_N225, cache_dir="market_data", use_cache=use_cache) # latest=True
+	# print ux_cmd_head(html)
 	is_all_price = True
 	price_list = make_sisu_data.parse_html_yahoo_us(html, is_all_price=is_all_price)
 	# 本日の値
@@ -56,7 +56,7 @@ def get_n225_data():
 		price = float(m.group(1).replace(",",""))
 		if price != price_list[0][1]:
 			price_list.insert(0, ["today", price])
-	#print price_list[:3]
+	# print price_list[:3]
 	for i, price in enumerate(price_list):
 		try:
 			if price_list[i-1][1]/price[1] >= 90 or price_list[i+1][1]/price[1] >= 90:
@@ -72,7 +72,7 @@ def get_n225_data():
 
 def get_dow_data():
 	use_cache = not is_latest_info(URL_DOW)
-	html = http_get_html(URL_DOW, cache_dir="market_data", use_cache=use_cache) #latest=True
+	html = http_get_html(URL_DOW, cache_dir="market_data", use_cache=use_cache) # latest=True
 	is_all_price = True
 	price_list = make_sisu_data.parse_html_yahoo_us(html, is_all_price=is_all_price)
 	m = re.search(r'<span class="time_rtq_ticker"><span id=".*?">(.*?)</span></span>', html)
@@ -81,7 +81,7 @@ def get_dow_data():
 		print("price:", price, price_list[0][1])
 		if price != price_list[0][1]:
 			price_list.insert(0, ["today", price])
-	#print price_list[:3]
+	# print price_list[:3]
 	return price_list
 
 def analyze_market():
@@ -89,7 +89,7 @@ def analyze_market():
 	日経平均とダウの10日移動平均を出力
 	"""
 	n225_data = get_n225_data()
-	#price10 = [e[1] for e in n225_data[:10]]
+	# price10 = [e[1] for e in n225_data[:10]]
 	price10 = [e[4] for e in n225_data[:10]]
 	n225_ma10 = int(average(price10))
 	n225_current = int(n225_data[0][4])
@@ -102,7 +102,7 @@ def analyze_market():
 	dow_current = int(dow_data[0][4])
 	dow_mark = "◯" if dow_current>=dow_ma10 else "×"
 	dow_sp_ratio = make_stock_db.calc_sell_pressure_ratio(dow_data)
-	#print dow_sp_ratio
+	# print dow_sp_ratio
 
 	# 表示
 	print("%s日経平均:(10ma %+.1f%%) "%(n225_mark, (float)(n225_current-n225_ma10)*100/n225_ma10), end=' ')
@@ -117,14 +117,14 @@ def read_csv_table(csv_name):
 	rows = []
 	for row in csvr:
 		rows.append(row)
-		#print row
+		# print row
 	return rows
 
 def analyze_shintakane():
 	"""
 	新高値リストのセクター分析
 	"""
-	#pass
+	# pass
 	# 新高値リストソースの作成
 	current_day = datetime.today()
 	counter = 0
@@ -135,8 +135,8 @@ def analyze_shintakane():
 		if os.path.exists(fname):
 			table = read_csv_table(fname)
 			newhigh_list.append([day_fmt, table])
-			#print fname, counter, len(table)
-			#break
+			# print fname, counter, len(table)
+			# break
 			counter += 1
 
 		current_day -= timedelta(1) # 前日
@@ -157,7 +157,7 @@ def analyze_shintakane():
 	day1_code_list = get_code_list(1)
 	week1_code_list = get_code_list(5)
 	month1_code_list = get_code_list(20)
-	#print month1_code_list
+	# print month1_code_list
 	print("d,w,m=(%d %d %d)"%(len(day1_code_list), len(week1_code_list), len(month1_code_list)))
 	# 集計
 	sector_tables = make_sector_data.load_pickle(make_sector_data.PATH_SECTOR_DB)
@@ -181,7 +181,7 @@ def analyze_shintakane():
 		row = sector_newhigh_list[sector][2]
 		row[0] += 1
 		row[1].append(code)
-	#print sector_newhigh_list["unknown"]
+	# print sector_newhigh_list["unknown"]
 	def print_list(lst):
 		for l in lst:
 			print(l, end=' ')
@@ -193,10 +193,10 @@ def analyze_shintakane():
 	for code in unknown_sector_list:
 		if "stock_name" not in make_stock_db.get_stock_db(code):
 			unknown_stockname_list.append(code)
-			#print "%d %s"%(code, make_stock_db.get_stock_db(code)["stock_name"])
+			# print "%d %s"%(code, make_stock_db.get_stock_db(code)["stock_name"])
 	if unknown_stockname_list:
 		stocks = make_stock_db.update_db_rows(unknown_sector_list, tables=["master"], latest=True)
-	#print unknown_stockname_list
+	# print unknown_stockname_list
 	print("-"*10, "銘柄名不明リスト終了")
 	
 	# unknownを除く
@@ -208,7 +208,7 @@ def analyze_shintakane():
 		return avg*100/len(sector_tables[key])
 
 	# セクター名わからんのは更新取得する
-	#sector_newhight_list: k=セクター名 v=[[1d銘柄数、1d銘柄コード], 1w, 1m]
+	# sector_newhight_list: k=セクター名 v=[[1d銘柄数、1d銘柄コード], 1w, 1m]
 	unknown_sector_list = []
 	for key, val in list(sector_newhigh_list.items()):
 		newhigh_lst_m = val[2][1]
@@ -216,9 +216,9 @@ def analyze_shintakane():
 			if "sector_detail" not in make_stock_db.get_stock_db(code):
 				print("%dの詳細セクター更新"%code)
 				unknown_sector_list.append(code)
-	#print unknown_sector_list
+	# print unknown_sector_list
 	stocks = make_stock_db.update_db_rows(unknown_sector_list, tables=["master"], latest=True) 
-	#raise
+	# raise
 	print("="*30)
 	print("-"*5, "セクター解析結果")
 	print("="*30)
@@ -232,7 +232,7 @@ def analyze_shintakane():
 		print_list(code_name)
 
 def main():
-	#args = ["market"]
+	# args = ["market"]
 	args = ["shintakane"]
 	if "market" in args:
 		analyze_market()

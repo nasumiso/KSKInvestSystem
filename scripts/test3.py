@@ -27,7 +27,7 @@ def with_chdir(dir, func):
 
 def exe():
 	print(os.getcwd())
-	#print exe
+	# print exe
 
 def main1():
 	# デコレータ

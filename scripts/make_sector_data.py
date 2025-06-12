@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-#================================================
+# ================================================
 # セクターDBを作成します。
-#================================================
+# ================================================
 
 import re
 # 試しに使ってみたがこんなもん使ってられねー。
@@ -36,18 +36,18 @@ class SectorHtmlParser(HTMLParser):
 				print("start_table:", tag, attrs, self.getpos())			
 		elif tag == "tr":
 			self.td_counter = 0
-			if self.table_counter == 1: #1個目のtableタグらしい
+			if self.table_counter == 1: # 1個目のtableタグらしい
 				self.row_data = []
-				#print "start_tr[%d]:"%self.tr_counter, tag, attrs
+				# print "start_tr[%d]:"%self.tr_counter, tag, attrs
 		elif tag == "td":
-			if self.table_counter == 1: #1個目のtableタグらしい
-				#print "startend_td[%d]:"%self.tr_counter, tag, attrs
+			if self.table_counter == 1: # 1個目のtableタグらしい
+				# print "startend_td[%d]:"%self.tr_counter, tag, attrs
 				pass
 		elif tag == "a":
 			if self.table_counter == 1:
 				if self.td_counter == 8:
 					self.td_atag_attrs = dict(attrs)
-					#print self.td_atag_attrs
+					# print self.td_atag_attrs
 
 	def handle_endtag(self, tag):
 		if tag == "table":
@@ -68,11 +68,11 @@ class SectorHtmlParser(HTMLParser):
 	def handle_data(self, data):
 		if self.table_counter == 1:
 			if data.strip():
-				#print "  tr[%d][%d] data:"%(self.tr_counter,self.td_counter), data
+				# print "  tr[%d][%d] data:"%(self.tr_counter,self.td_counter), data
 				if self.td_counter == 8: # URLリンクのところ
 					data = self.td_atag_attrs.get("href", "")
-					#print data
-					#print self.td_atag_attrs
+					# print data
+					# print self.td_atag_attrs
 				if self.td_counter == len(self.row_data):
 					self.row_data.append(data)
 				else:
@@ -94,12 +94,12 @@ def parse_html(html):
 		code_s_list = []
 		for m in re.finditer(r'(\d{4}).(?:T|NG|FU|SP) ', html):
 			if m.group(0).endswith("T "):
-				#code_list.append(int(m.group(1)))
+				# code_list.append(int(m.group(1)))
 				code_s_list.append(m.group(1))
 			else:
-				#print "非東証銘柄:", m.group(0)
+				# print "非東証銘柄:", m.group(0)
 				sector_count -= 1
-		#print code_list, len(code_list)
+		# print code_list, len(code_list)
 		if sector_count != len(code_s_list):
 			print("!!! 取得していない? %d個"%(sector_count-len(code_s_list)))
 		sector_table[row[0]] = code_s_list
@@ -111,7 +111,7 @@ def make_sector_data():
 	"""
 	詳細セクター情報を一から作成する
 	"""
-	#TODO: もうアクセスできないようだ
+	# TODO: もうアクセスできないようだ
 	html = http_get_html(URL_REUTER_SECTOR_TABLE, cache_dir="stock_data/sector")
 	sector_table = parse_html(html)
 	# 保存
@@ -157,6 +157,8 @@ def test_make_secotr_data():
 				unknown_code_list.append(code_s)
 		print("  銘柄名不明:", unknown_code_list)
 	
+
+
 def update_sector_stockdb():
 	"""
 	stock_db内の銘柄に対して詳細セクター更新
@@ -179,8 +181,8 @@ def update_sector_stockdb():
 	make_stock_db.save_stock_db(stocks)
 
 def main():
-	#test_make_secotr_data()
-	#print get_sector_detail(7270)
+	# test_make_secotr_data()
+	# print get_sector_detail(7270)
 	update_sector_stockdb()
 	pass
 

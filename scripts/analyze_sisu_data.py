@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-#================================================
+# ================================================
 # RS投資用指数データを作成
-#================================================
+# ================================================
 import pickle
 import operator
 
@@ -10,9 +10,11 @@ from make_sisu_data import *
 
 db_dict = pickle.load(open(os.path.join(DATA_DIR,"sisu_data/sisu_db.pickle"), 'r'))
 
-#==================================================
+# ==================================================
 # calc func
-#==================================================
+# ==================================================
+
+
 def rank_simple(vector):
     return sorted(list(range(len(vector))), key=vector.__getitem__)
 
@@ -34,9 +36,11 @@ def rankdata(a):
             dupcount = 0
     return newarray
 
-#==================================================
+# ==================================================
 # simulation func
-#==================================================
+# ==================================================
+
+
 def buy_and_hold():
     rebaranlce = False
     tax = False
@@ -99,13 +103,13 @@ def rs_3612ma():
     for asset in ASSET_CLASSES:
         print(asset+"の計算")
         prices = db_dict[asset]
-        #if not asset == JP_REIT:
+        # if not asset == JP_REIT:
         #	continue
         for i, price in enumerate(prices):
             start_i = i-53 if i-53 >= 0 else 0
             price_term = prices[start_i:i+1]
             priceonly_term = [p[1] for p in price_term]
-            #print price_term, price_term2
+            # print price_term, price_term2
             avg = int(average(priceonly_term))
             price.append(avg) #[2] に52週平均
 
@@ -118,11 +122,11 @@ def rs_3612ma():
             ret_avg = round((return3+return6+return12)/3, 3)
             start_i = i-53/12 if i-53/12 >=0 else 0
             return1 = float(price[1])/prices[start_i][1]
-            #print return3, return6, return12, return1
+            # print return3, return6, return12, return1
             price.append(ret_avg)	#[3]に3-6-12リターン平均
             price.append(return1)	#[4]に1ヶ月リターン
-            #print "[%d] %d %d"%(i, price[1], avg)
-        #break
+            # print "[%d] %d %d"%(i, price[1], avg)
+        # break
     # 本処理
     isAccum = False
     asset_rate = [20, 5, 20, 10, 10, 25, 10, 0]
@@ -165,15 +169,15 @@ def rs_3612ma():
         # アセットレートを更新
         for j, rank in enumerate(asset_return_rank):
             if rank <= 2 and asset_signal[j] == "BUY":
-            #if asset_signal[j] == "BUY":
-            #if rank <= 2:
-            #if rank >= 6:
+            # if asset_signal[j] == "BUY":
+            # if rank <= 2:
+            # if rank >= 6:
                 asset_rate[j] = 100
             elif asset_signal[j] == "SELL":
                 asset_rate[j] = 0
         print("rate:", asset_rate)
         val = 100/asset_rate[:-1].count(100) if asset_rate[:-1].count(100)>0 else 0
-        #if val == 100: val = 50
+        # if val == 100: val = 50
         if val > 0:
             for j, rate in enumerate(asset_rate):
                 asset_rate[j] = val if rate == 100 else 0
@@ -182,7 +186,7 @@ def rs_3612ma():
         if not sum(asset_rate) == 100:
             asset_rate[7] = 100-sum(asset_rate)
             print("おかしいかも？ cash=", asset_rate[7])
-            #break
+            # break
         # 結果
         buy = []
         sell = []
@@ -205,7 +209,7 @@ def rs_3612ma():
         if i%52==0: # 年単位
             input_money_current = input_money-input_money_prev
             input_money_prev = input_money
-            #input_money_current = input_money
+            # input_money_current = input_money
             profit = total_return_all[index]-total_return_all[max(index-52/4, 0)] - input_money_current
             try:
                 total_return_current = total_return_all[index] - input_money_current
@@ -226,21 +230,21 @@ def rs_3612ma():
             asset_total = [total_return*r/100 for r in asset_rate] # レートに基づき再配分
         print("asset_total_after:", [round(a, 1) for a in asset_total])
         if isAccum:
-            #print "asset_total_before_accum:", [round(a, 1) for a in asset_total]
+            # print "asset_total_before_accum:", [round(a, 1) for a in asset_total]
             # 積立分を追加
             asset_total = [a+1.0*float(r)/100 for a, r in zip(asset_total, asset_rate)]
-            #asset_total = [a+1.0*float(r)/100 for a, r in zip(asset_total, asset_rate_initial)]
+            # asset_total = [a+1.0*float(r)/100 for a, r in zip(asset_total, asset_rate_initial)]
             input_money += sum(asset_total)-total_return
             print("  accum:+%.1f(%d)"%(sum(asset_total)-total_return, input_money))
             print("asset_total_accum:", [round(a, 1) for a in asset_total])
             total_return = sum(asset_total)
         print("total_return:", round(total_return,1), round(sum(asset_total),1))
 
-        #asset_rate_all.append(asset_rate)
+        # asset_rate_all.append(asset_rate)
         total_return_all.append(total_return)
 
         index+=1
-        #if(index>=100):
+        # if(index>=100):
         #	break
     print("buy_count:", buy_count)
     print("sell_count:", sell_count)
@@ -260,9 +264,9 @@ def rs_macd():
     # 前計算
     log = False
     for asset in ASSET_CLASSES:
-        #if asset != JP_STOCK:
+        # if asset != JP_STOCK:
         #	continue
-        #print "="*15, asset
+        # print "="*15, asset
         price_db = db_dict[asset]
         price_only = [r[1] for r in price_db] # 価格のみテーブル
         ema12 = [0]*len(price_db)
@@ -272,7 +276,7 @@ def rs_macd():
         buy_sell = [0]*len(price_db)
         buy_signal = sel_signal = 0
         for i, row in enumerate(price_db):
-            #print "-"*15, "[%d]"%i, row[0]
+            # print "-"*15, "[%d]"%i, row[0]
             n = 12
             if i<n:
                 ema12[i] = average(price_only[0:i+1])
@@ -292,7 +296,7 @@ def rs_macd():
             # for j in range(max(i-n+1,1),i+1):
             # 	first += (2.0/(n+1))*(price_only[j]-first)
             # ema26[i] = first
-            #print ema12[i], ema26[i]
+            # print ema12[i], ema26[i]
 
             n = 9
             macd_val[i] = ema12[i]-ema26[i]
@@ -300,12 +304,12 @@ def rs_macd():
                 macd_sig9[i] = average(macd_val[0:i+1])
             else:
                 macd_sig9[i] = macd_sig9[i-1]+(2.0/(n+1))*(macd_val[i]-macd_sig9[i-1])
-            #macd_sig9[i] = average(macd_val[0:i+1])
+            # macd_sig9[i] = average(macd_val[0:i+1])
 
             macd_hist = macd_val[i]-macd_sig9[i]
             buy_signal = macd_sig9[max(i-1,0)]>macd_val[max(i-1,0)] and macd_val[i]>macd_sig9[i]
             sel_signal = macd_sig9[max(i-1,0)]<macd_val[max(i-1,0)] and macd_val[i]<macd_sig9[i]
-            #1: BUYSIG 2:BUY 3:SELSIG 4:SEL
+            # 1: BUYSIG 2:BUY 3:SELSIG 4:SEL
             if buy_signal:
                 buy_sell[i] = 1
             elif sel_signal:
@@ -316,17 +320,17 @@ def rs_macd():
                 elif buy_sell[max(i-1,0)] == 3 or buy_sell[max(i-1,0)] == 4:
                     buy_sell[i] = 4
 
-            #print "price:", row[1]
-            #print "ema12:%d ema26:%d macd:%d signal:%d hist:%d"%\
+            # print "price:", row[1]
+            # print "ema12:%d ema26:%d macd:%d signal:%d hist:%d"%\
             #(ema12[i], ema26[i], macd_val[i], macd_sig9[i], macd_hist)
-            #print "BUYSELL: %d buy:%d sel:%d"%(buy_sell[i], buy_signal, sel_signal)
+            # print "BUYSELL: %d buy:%d sel:%d"%(buy_sell[i], buy_signal, sel_signal)
             return1 = float(row[1])/price_only[max(i-53/12,0)]
             #データ追加
             row.append(buy_sell[i]) #[2]シグナルコード
             row.append(macd_hist) #[3]MACDヒストグラム
             row.append(return1) #[4]1ヶ月リターン
-        #break
-        #raise
+        # break
+        # raise
     # 本処理
     asset_rate = [20, 5, 20, 10, 10, 25, 10, 0]
     asset_total = asset_rate[:]
@@ -368,9 +372,9 @@ def rs_macd():
         print("rank:", asset_hist_rank)
         # 売買ルールにもとづきアセットレートを更新
         for j, rank in enumerate(asset_hist_rank):
-            #if (asset_signal[j] == "BUYSIG" or asset_signal[j] == "BUY") and rank<=2:
+            # if (asset_signal[j] == "BUYSIG" or asset_signal[j] == "BUY") and rank<=2:
             if asset_signal[j] == "BUYSIG" or asset_signal[j] == "BUY":
-            #if asset_signal[j] == "BUYSIG" or (asset_signal[j] == "BUY" and rank<=2):
+            # if asset_signal[j] == "BUYSIG" or (asset_signal[j] == "BUY" and rank<=2):
                 asset_rate[j] = 100
             elif asset_signal[j] == "SELLSIG" or asset_signal[j] == "SELL":
                 asset_rate[j] = 0
@@ -396,13 +400,13 @@ def rs_macd():
         for i, (cur, prev, asset) in enumerate(zip(asset_rate, asser_rate_prev, ASSET_CLASSES)):
             if cur > prev:
                 buy.append(asset+"("+str(cur-prev)+")")
-                #buy_count[i]+=1
+                # buy_count[i]+=1
             elif cur < prev:
                 sell.append(asset+"("+str(prev-cur)+")")
-                #sell_count[i]+=1
+                # sell_count[i]+=1
             if cur > 0:
                 have.append(asset+"("+str(cur)+")")
-                #have_count[i]+=1
+                # have_count[i]+=1
         if buy: print("買い：", buy)
         if sell: print("売り：", sell)
         if have: print("保有：", have)
@@ -419,8 +423,8 @@ def rs_macd():
         print("total_return:", round(total_return,1), round(sum(asset_total),1))
         if abs(total_return - sum(asset_total)>=1):
             raise
-        #break
-    #RSなし：224 RSあり：191 ダメだこりゃ
+        # break
+    # RSなし：224 RSあり：191 ダメだこりゃ
     print("RS_MACD：%d "%int(total_return))
 
 def latest_3612ma():
@@ -440,7 +444,7 @@ def latest_3612ma():
     GL_BOND: "tbl_2511", #"tbl_64316081" TODO:とれてない
     GOLD: "tbl_1540",
     MY_FRONTIER: "tbl_1678",
-    #MY_FRONTIER: "tbl_myfrontier", #TODO: 絶対作れてないわ
+    # MY_FRONTIER: "tbl_myfrontier", # TODO: 絶対作れてないわ
     }
 
     return1 = [0]*len(ASSET_CLASSES)
@@ -454,7 +458,7 @@ def latest_3612ma():
         table_key = ASSET_TO_FUND[asset]
         print(table_key)
         prices = market_db[table_key]
-        #prices = prices[:-1]
+        # prices = prices[:-1]
         current = float(prices[-1][CLM_PRICE])
         prev1 = prices[-1-52*1/12][CLM_PRICE]
         prev3 = prices[-1-52*3/12][CLM_PRICE]
@@ -495,14 +499,14 @@ def latest_3612ma():
         return12[i], return_avg[i], "BUY" if signal[i] else "SELL", return_rank[i]))
 
 def main():
-    #buy_and_hold()
-    #rs_3612ma()
-    #rs_macd()
+    # buy_and_hold()
+    # rs_3612ma()
+    # rs_macd()
     # 最新RSデータ更新
     # 実際資金移動する時は積立分を忘れずに（1月5万？）
-    #TODO: ビットコイン入れてみようかなあ・・
-    #TODO: 税金込みでつみたてでバイアンドホールドとどう差がでるか？
-    #TODO: 押し目を上昇トレンドの10ma接近で表示 あと一定機関10maより上
+    # TODO: ビットコイン入れてみようかなあ・・
+    # TODO: 税金込みでつみたてでバイアンドホールドとどう差がでるか？
+    # TODO: 押し目を上昇トレンドの10ma接近で表示 あと一定機関10maより上
     cmd = "update_latest"
     if cmd == "update_latest":
         make_rs_db()

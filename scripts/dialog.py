@@ -7,7 +7,7 @@ class Dialog:
 
 	def show(self):
 		while True:
-			input = input("ボタンを押してください") #sublimeではだめ
+			input = input("ボタンを押してください") # sublimeではだめ
 			if input == 'ok':
 				if self.okPressed:
 					self.okPressed()
@@ -19,6 +19,8 @@ class Dialog:
 
 def myOkPressed():
 	print("OKが押されました")
+
+
 def myCancelPressed():
 	print("キャンセルが押されました")
 

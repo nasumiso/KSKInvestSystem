@@ -77,11 +77,11 @@ def parse_yahoo_jp(text):
 	# 日付	始値	高値	安値	終値
 	# 2014年8月18日	1,272.14	1,296.02	1,268.37	1,286.07
 	for m in re.finditer(r'(\d{4}年.*日)\t(.*)\t(.*)\t(.*)', text):
-		#print m.group(1), "-", m.group(4)
+		# print m.group(1), "-", m.group(4)
 		m2 = re.search(r'(\d*)年(\d*)月(\d*)日', m.group(1))
 		day = m2.group(1).zfill(4)+"/"+m2.group(2).zfill(2)+"/"+m2.group(3).zfill(2)
 		price = int(float(m.group(4).replace(",","")))
-		#print day, price
+		# print day, price
 		price_list.append([day, price])
 	return price_list
 
@@ -96,17 +96,17 @@ def parse_yahoo_us(text):
 	yahoous版のコピペtxtから株価リストを取得する
 	str => list<str, str>
 	"""
-	#Date	Open	High	Low	Close	Avg Vol	Adj Close*
-	#Aug 18, 2014	196.80	199.76	196.69	199.50	68,648,200	199.50
+	# Date	Open	High	Low	Close	Avg Vol	Adj Close*
+	# Aug 18, 2014	196.80	199.76	196.69	199.50	68,648,200	199.50
 	yen_rate = 100
 	price_list = []
 	for m in re.finditer(r'(\w{3} .*?)\t(.*)\t(.*)\t(.*)\t(.*)\t(.*)\t(.*)', text):
-		#print m.group(1), "-", m.group(7)
+		# print m.group(1), "-", m.group(7)
 		m2 = re.search(r'(\w*) (\d*), (\d*)', m.group(1))
 		mon = MON_DICT[m2.group(1)]
 		day = m2.group(3).zfill(4)+"/"+str(mon).zfill(2)+"/"+m2.group(2).zfill(2)
 		price = int(float(m.group(7).replace(",",""))*yen_rate)
-		#print day, price
+		# print day, price
 		price_list.append([day, price])
 	return price_list #[日付、価格] のリスト
 
@@ -114,7 +114,7 @@ def make_price_list(price_list):
 	print("価格リストを作成します", len(price_list))
 	price_list2 = []
 	itr = iter(reversed(price_list))
-	#for price in reversed(price_list):
+	# for price in reversed(price_list):
 	#	d = date(int(price[0][0:4]), int(price[0][5:7]), int(price[0][8:10]))
 	#	print d, d.isocalendar()
 
@@ -125,13 +125,13 @@ def make_price_list(price_list):
 
 	for y in range(start_y, 2015):
 		first_w = start_w if y==start_y else 1
-		#flg = False
+		# flg = False
 		index = 0
 		for w in range(first_w, 53):
 			while index<53*5:
 				if not flg:
 					try:
-						#print "next"
+						# print "next"
 						price = next(itr)
 					except StopIteration:
 						if w <= 34:
@@ -145,7 +145,7 @@ def make_price_list(price_list):
 							break
 						else:
 							break
-				#print price
+				# print price
 				d = date(int(price[0][0:4]), int(price[0][5:7]), int(price[0][8:10]))
 				y2 = d.isocalendar()[0]
 				w2 = d.isocalendar()[1]
@@ -159,7 +159,7 @@ def make_price_list(price_list):
 					# 週番号から日付を取得
 					dt = datetime.strptime("%04d%02d1"%(y,w), '%Y%W%w')
 					date_m = "%04d/%02d/%02d"%(dt.year, dt.month, dt.day)
-					#print price_m
+					# print price_m
 					price_ = price[:] # コピー
 					price_[0] = date_m
 					price_list2.append(price_)
@@ -249,28 +249,28 @@ def parse_html_yahoo_jp(html, title=""):
 	# else:
 	# 	expression = r'<td>((\d{4})年(\d+)月(\d+)日)</td><td>(.*?)</td><td>(.*?)</td><td>(.*?)</td><td>(.*?)</td>'
 	# for m in re.finditer(expression, html):
-	# 	#print m.group(1), m.group(8)
+	# 	# print m.group(1), m.group(8)
 	# 	day = "%04d-%02d-%02d"%(int(m.group(2)), int(m.group(3)), int(m.group(4)))
 	# 	if isMutual:
 	# 		price = int(float(m.group(5).replace(",", "")))
 	# 	else:
 	# 		price = int(float(m.group(8).replace(",", "")))
-	# 	#print day, price
+	# 	# print day, price
 	# 	rows.append([day, price])
 
 	# 新しい日付から価格データを追加
 	expression = r'<th scope="row" class=".*?">(.*?)</th>.*?<span class=".*?"><span class=".*?"><span class=".*?">(.*?)</span>.*?<span class=".*?"><span class=".*?"><span class=".*?">(.*?)</span>.*?<span class=".*?"><span class=".*?"><span class=".*?">(.*?)</span>.*?<span class=".*?"><span class=".*?"><span class=".*?">(.*?)</span>.*?'
-	#expression = r'<th scope="row" class=".*?">(.*?)</th>(.*?)<span class="(.*?)">(\d+\.?\d*)</span>'
+	# expression = r'<th scope="row" class=".*?">(.*?)</th>(.*?)<span class="(.*?)">(\d+\.?\d*)</span>'
 	for m in re.finditer(expression, html):
-		#print "found:", m.groups()
+		# print "found:", m.groups()
 		day_exp = r'(\d{4})年(\d+)月(\d+)日'
 		m2 = re.search(day_exp, m.group(1))
 		day = "%04d-%02d-%02d"%(int(m2.group(1)), int(m2.group(2)), int(m2.group(3)))
 		price = int(float(m.group(5).replace(",","")))
-		#print day, price
+		# print day, price
 		rows.append([day, price])
 	print("直近価格:",rows[:3])
-	#raise
+	# raise
 	return rows
 
 def parse_html_yahoo_us(html, is_all_price=False):
@@ -281,7 +281,7 @@ def parse_html_yahoo_us(html, is_all_price=False):
 	# TODO: HTMLの形式が変わったようだもう使えない
 	rows = []
 	for m2 in re.finditer(r'<tr><td class="yfnc_tabledata1".+?</tr>', html):
-		#print m2
+		# print m2
 		m = re.search(r'<td.*?>((\w{3}) (\d{1,2}), (\d{4}))</td><td.*?>(.+?)</td><td.*?>(.+?)</td><td.*?>(.+?)</td><td.*?>(.+?)</td><td.*?>(.+?)</td>', \
 			m2.group(0))
 		if m:
@@ -326,7 +326,7 @@ def date_from_isoformat(isoformat):
 
 def update_market_tbl(market_db, tbl_name, rows):
 	current_rows = market_db.get(tbl_name, [])
-	#rows_new = current_rows[:]
+	# rows_new = current_rows[:]
 	for row in iter(reversed(rows)): # 古い順に追加
 		update = False
 		for j, crow in enumerate(current_rows):
@@ -358,9 +358,9 @@ def modify_distribute(code_name, rows):
 		for row in rows:
 			for k, v in list(distribute.items()):
 				if date_from_isoformat(row[CLM_DATE]) > date_from_isoformat(k):
-					#print "  ", row[0], row[1], "->",  
+					# print "  ", row[0], row[1], "->",  
 					row[1] = row[1]+v
-					#print row[1]
+					# print row[1]
 	return rows
 
 def calc_stdev(lst):
@@ -380,7 +380,7 @@ def make_rs_db():
 		market_db = pickle.load(open(MARKET_DB_NAME, 'rb'))
 
 	# for i, url in enumerate(ASSET_URLS):
-	# 	#if i != 0:
+	# 	# if i != 0:
 	# 	# 	continue
 	# 	print "-"*15
 	# 	# 一年前の日付でリクエスト
@@ -417,7 +417,7 @@ def make_rs_db():
 				print("!!!取得したいDBのコードが不明です", code_name)
 				continue
 			
-			tbl_name = "tbl_"+code_name #tbl_プレフィックス
+			tbl_name = "tbl_"+code_name # tbl_プレフィックス
 			print("tbl:", tbl_name)
 			rows = modify_distribute(code_name, rows)
 			rows_new = update_market_tbl(market_db, tbl_name, rows)
@@ -426,12 +426,12 @@ def make_rs_db():
 	# print "マイフロンティア指数の作成"
 	# tbl1 = market_db["tbl_45311065"]
 	# tbl2 = market_db["tbl_7231109"]
-	# #tbl3 = market_db["tbl_1583"]
+	# # tbl3 = market_db["tbl_1583"]
 	# rows = []
 	# tbl1_price = [t[1] for t in tbl1]
 	# stdev = calc_stdev(tbl1_price)
 	# tbl1_price = [int(100*t/stdev) for t in tbl1_price]
-	# #print tbl1_price
+	# # print tbl1_price
 	# tbl2_price = [t[1] for t in tbl2]
 	# stdev = calc_stdev(tbl2_price)
 	# tbl2_price = [int(100*t/stdev) for t in tbl2_price]
@@ -441,7 +441,7 @@ def make_rs_db():
 	# 		print " 日付が同じでない", row1[CLM_DATE]
 	# 	row[CLM_DATE] = row1[CLM_DATE]
 	# 	row[CLM_PRICE] = (p1+p2)/2
-	# 	#print row
+	# 	# print row
 	# 	rows.append(row)
 	# market_db["tbl_myfrontier"] = rows
 
@@ -458,7 +458,7 @@ def make_rs_db():
 	pickle.dump(market_db, open(MARKET_DB_NAME, 'wb'))
 
 def main():
-	#make_sisu_db()
+	# make_sisu_db()
 	make_rs_db()
 
 if __name__ == '__main__':

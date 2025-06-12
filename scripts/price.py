@@ -24,15 +24,15 @@ def get_daily_html_kabutan(code_s ,cache=True):
     print("----> %sの日次価格情報を取得します・・"%code_s, cache)
     ind = 0
     price_fname = PRICE_D_FNAME_KABUTAN%(code_s,ind+1)
-    #print price_fname
+    # print price_fname
     # キャッシュファイルから取得
     if cache and os.path.exists(price_fname):
         # TODO: 最新情報がなければ取りに行く
         cach, cach_date = is_file_timestamp(price_fname, INTERVAL_DAY_D)
         if cach:
             html = open(price_fname, 'r').read()
-            #htmls.append(html)
-            #continue
+            # htmls.append(html)
+            # continue
             return html
         else:
              print("キャッシュの期限切れ(%s)"%cach_date.date())
@@ -42,18 +42,18 @@ def get_daily_html_kabutan(code_s ,cache=True):
         print("%sから株探から通信で取得.."%url)
         r = requests.get(url)
         html = r.text # .encode('utf-8') :python3では不要
-        #htmls.append(html)
+        # htmls.append(html)
         open(price_fname, 'w').write(html)
     except requests.exceptions.ConnectionError as e:
         print("!!! %sにつながりません"%url)
         print(e)
-        #break
+        # break
 
     print("<---- 取得完了")
     return html
 
 def get_price_interval_day(day1, day2):
-    #TODO: 17時の時点でYahooの価格は更新されてない？
+    # TODO: 17時の時点でYahooの価格は更新されてない？
     day1 = get_price_day(day1)
     day2 = get_price_day(day2)
     return (day1 - day2).days
@@ -69,8 +69,10 @@ def is_file_timestamp(fname, interval_day):
 
 URL_PRICE_KABUTAN = 'https://kabutan.jp/stock/kabuka?code=%s&ashi=wek&page=%d'
 URL_CREDIT_KABUTAN = 'https://kabutan.jp/stock/kabuka?code=%s&ashi=shin&page=%d'
-#PRICE_FNAME_KABUTAN = "stock_data/kabutan/price/kabutan_price_%04d_%d.html"
+# PRICE_FNAME_KABUTAN = "stock_data/kabutan/price/kabutan_price_%04d_%d.html"
 PRICE_FNAME_KABUTAN = os.path.join(DATA_DIR, "stock_data/kabutan/price/kabutan_price_%s_%d.html")
+
+
 def get_weekly_html(code_s, cache=True):
     """株探から週次データを取得
     type: (str, bool) -> str
@@ -106,8 +108,10 @@ def get_weekly_html(code_s, cache=True):
     return htmls
 
 URL_PRICE_YAHOO = 'http://stocks.finance.yahoo.co.jp/stocks/history/?code=%s.T'
-#PRICE_FNAME = "stock_data/yahoo/price/yahoo_price_%d.txt"
+# PRICE_FNAME = "stock_data/yahoo/price/yahoo_price_%d.txt"
 PRICE_FNAME = os.path.join(DATA_DIR, "stock_data/yahoo/price/yahoo_price_%s.txt")
+
+
 def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
     """yahooファイナンスから価格データhtmlを取得する
     type: (str, bool) -> str
@@ -161,6 +165,8 @@ def calc_avg_volume_d(price_list):
     return res
 
 # 計算に必要な価格データを収集
+
+
 def get_ratio_list(price_list):
     ratio_list = []
     buygather_list = [] # 買い集め用
@@ -172,7 +178,7 @@ def get_ratio_list(price_list):
     for i, price in enumerate(price_list):
         if i+1 >= len(price_list):
             break
-        #print price
+        # print price
         prev = price_list[i+1] # 前日
         yousen = price[4]-prev[4] > 0
         val0 = price[1]-prev[4] # 前日終値→始値
@@ -180,16 +186,16 @@ def get_ratio_list(price_list):
         val2 = price[2]-price[3] if yousen else price[3]-price[2] # 高値or安値→安値or高値
         val3 = price[4]-price[2] if yousen else price[4]-price[3] # 安値or高値→終値
         vals = [val0, val1, val2, val3]
-        #print yousen, vals
+        # print yousen, vals
         buy_count = sum([v for v in vals if v > 0]) #買い値幅
         sel_count = abs(sum([v for v in vals if v <= 0])) #売り値幅
-        #print "buy-sel:", buy_count, sel_count
+        # print "buy-sel:", buy_count, sel_count
         # 5:出来高
         buy_stock = price[5]*buy_count/(buy_count+sel_count) if (buy_count+sel_count) != 0 else price[5]/2
         sel_stock = price[5]*sel_count/(buy_count+sel_count) if (buy_count+sel_count) != 0 else price[5]/2
         ratio = round((float)(sel_count)/buy_count,1) if buy_count != 0 else 0
         volatility = sum([abs(v) for v in vals]) # ローソク足ボラティリティ	
-        #print buy_count, sel_count, ratio, price[5], buy_stock, sel_stock
+        # print buy_count, sel_count, ratio, price[5], buy_stock, sel_stock
         rec = [buy_stock, sel_stock, ratio, volatility]
         ratio_list.append(rec)
         # 平均以上の出来高なら買い集めリストに追加
@@ -206,8 +212,8 @@ def calc_ratio(ratio_list, day_count):
     buy_sum = sel_sum = 0
     for i in range(day_count):
         try:
-            buy_sum += ratio_list[i][0] #0: buy_count
-            sel_sum += ratio_list[i][1] #1: sel_count
+            buy_sum += ratio_list[i][0] # 0: buy_count
+            sel_sum += ratio_list[i][1] # 1: sel_count
         except IndexError as e:
             print("!!! 日付が足りないため%d日で計算します"%i)
             break
@@ -228,16 +234,16 @@ def calc_sell_pressure_ratio(price_list):
     Returns:
         list< int(4) >: 20sp_ratio, 5sp_ratio, 20buygather, 20r_vol, 5r_vol(ローソク足ボラティリティ)
     """
-    #---- 売り圧力レシオの計算
+    # ---- 売り圧力レシオの計算
     ratio_list, buygather_list = get_ratio_list(price_list)
-    #print "ratio_list:", ratio_list
+    # print "ratio_list:", ratio_list
     # メモ：売り圧力レシオが116で売り
     DAY_L = 19
     DAY_S = 5
     ratios = [calc_ratio(ratio_list, DAY_L), calc_ratio(ratio_list, DAY_S)]
     ratios.append(calc_ratio(buygather_list, len(buygather_list)))
 
-    #---- ローソク足ボラティリティの計算
+    # ---- ローソク足ボラティリティの計算
     def calc_vola(day_count):
         """
         (int)->(float)
@@ -246,14 +252,14 @@ def calc_sell_pressure_ratio(price_list):
         end_avg = 0
         for i in range(day_count):
             try:
-                vol_avg += ratio_list[i][3] #1日ボラティリティ
+                vol_avg += ratio_list[i][3] # 1日ボラティリティ
                 end_avg += price_list[i][4] #終値
             except IndexError as e:
                 print("!!! 日付が足りないため%d日で計算します"%i)
                 break
         vol_avg /= float(day_count)
         end_avg /= float(day_count)
-        #print vol_avg, end_avg
+        # print vol_avg, end_avg
         volatility = round(100.0*vol_avg/end_avg, 2) if end_avg > 0 else 0		
         return volatility, end_avg
 
@@ -261,7 +267,7 @@ def calc_sell_pressure_ratio(price_list):
     volatility_s, ma_s = calc_vola(DAY_S)
     print("SRRレシオ(20,5):", ratios, \
     "ボラティリティ(20,5):", volatility_l, volatility_s)
-    #print "ボラ(H,L)=(%d, %s)"%(int(ma_l*(1+volatility_l/100)), int(ma_l*(1-volatility_l/100)) )
+    # print "ボラ(H,L)=(%d, %s)"%(int(ma_l*(1+volatility_l/100)), int(ma_l*(1-volatility_l/100)) )
     ratios.append(volatility_l)
     ratios.append(volatility_s)
     return ratios
@@ -269,15 +275,15 @@ def calc_sell_pressure_ratio(price_list):
 def parse_price_d_html_kabutan(html):
     """日次の株探価格htmlデータを解析する
     """
-    #print ux_cmd_head(html, 10)
-    #---- 日次データの作成
+    # print ux_cmd_head(html, 10)
+    # ---- 日次データの作成
     daily_price_list = []
     for m in re.finditer(r'<th scope="row"><time datetime=".*?">(.*?)</time></th>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td><span class=".*?">(.*?)</span></td>[\r\n]+<td><span class=".*?">(.*?)</span></td>[\r\n]+<td>(.*?)</td>', \
         html, re.DOTALL):
         daily_price_list.append(m.groups())
-    #print "日次データ:", len(daily_price_list), daily_price_list
+    # print "日次データ:", len(daily_price_list), daily_price_list
     
-    #---- ディストリビューション
+    # ---- ディストリビューション
     distribution_day = [] # 日付のリスト
     followthrough_day = []
     # 前日より安く、出来高が増える日
@@ -313,26 +319,26 @@ def parse_price_d_html_kabutan(html):
             dpl = float(d[3].replace(",","")) #高値
             dr = float(d[6].replace(",","")) #前日比パーセント
         except ValueError:
-            #TODO: ここに来ているみたい
+            # TODO: ここに来ているみたい
             print("%sはデータ取得できず"%d[0])
             continue
-        #print d[0], "の解析"
+        # print d[0], "の解析"
         pr_pos = (dp-dpl)/(dph-dpl)
-        #print "値幅位置:", pr_pos
+        # print "値幅位置:", pr_pos
         if dp < pdp: # 前日より安く出来高が増える
             if dv > pdv:
                 if dr >= -0.1 and pr_pos >= 0.5:
                     print("前日より0.1%以下で上半分で引ける場合はカウントしない", d[0])
                 else:
                     distribution_day.append(d[0])
-                    #print "ディストリビューション:", d[0]
+                    # print "ディストリビューション:", d[0]
         else:
             if dv > pdv:
                 print("dr",dr, "pr_pos",pr_pos)
                 if dr <= 0.1 and pr_pos <= 0.25:
                     print("前日よりわずかに高くても下で引けていけばカウント", d[0])
                     distribution_day.append(d[0])
-                    #print "ディストリビューション:", d[0]	
+                    # print "ディストリビューション:", d[0]	
         # フォロースルー: 反転から4~7日目で(ここは判定していない)
         # 平均以上の出来高で1.7%以上の上昇
         # 本当はその時から過去20日の出来高にしないといけないが取得できない・・
@@ -344,21 +350,21 @@ def parse_price_d_html_kabutan(html):
     print("ディストリビューション:", distribution_day)
     print("フォロースルー:", followthrough_day)
 
-    #---- シグナル
+    # ---- シグナル
     signal = "neutral"
-    #TODO: とりあえず簡易
+    # TODO: とりあえず簡易
     if len(distribution_day) >= 5:
         signal = "sell"
     
     dic["direction_signal"] = signal+","+current_day
     print("シグナル:", dic["direction_signal"])
 
-    #---- 売り圧力レシオ
+    # ---- 売り圧力レシオ
     def to_numeric(str):
         if str == "－":
             return 0
         return int(float(str.replace(",","")))
-    #TODO:
+    # TODO:
     # 日付、始値、高値、安値、終値、前週比、前週比％、売買高
     # ->日付、始値、高値、安値、終値、出来高
     price_list_spr = [[l[0],\
@@ -378,7 +384,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
     RSを求める
     """
     price_dict = {}
-    #---- 週次データを集計
+    # ---- 週次データを集計
     def calc_weekly_price_list():
         # index: [0]日付、[1]始値、[2]高値、[3]安値、[4]終値、前週比、前週比％、[7]売買高
         weekly_price_list = [] # 週次価格データ
@@ -391,7 +397,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
                     j += 1
                     continue
                 weekly_price_list.append(m.groups())
-                #print m.groups()
+                # print m.groups()
                 j += 1
         return weekly_price_list
     weekly_price_list = calc_weekly_price_list()
@@ -403,7 +409,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
         print("!!! 価格データがかけている")
         prices = highs = lows = []
         return price_dict
-    #---- 10WMA(=50日MA)との乖離率(売りシグナルに使用)
+    # ---- 10WMA(=50日MA)との乖離率(売りシグナルに使用)
     try:
         wma10 = sum(prices[:10])/10
         kairi = (prices[0]-wma10)*100/wma10
@@ -413,12 +419,12 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
         price_dict["price_kairi_wma10"] = 0
     print("10WMA乖離率:", price_dict["price_kairi_wma10"])
 
-    #---- 売り圧力レシオ(買い集め指数)
+    # ---- 売り圧力レシオ(買い集め指数)
     try:
         price_list_w = [[p[0], int(float(p[1].replace(",",""))), int(float(p[2].replace(",",""))),int(float(p[3].replace(",",""))),int(float(p[4].replace(",",""))),int(float(p[7].replace(",","")))] for p in weekly_price_list]
         ratio_list, buygather_list = get_ratio_list(price_list_w[:20])
         sell20 = calc_ratio(ratio_list, 20)
-        #sell5 = calc_ratio(ratio_list, 5)
+        # sell5 = calc_ratio(ratio_list, 5)
         buy_gather = calc_ratio(buygather_list, len(buygather_list))
         price_dict["sell_pressure_ratio_w"] = [sell20, 0, buy_gather]
         print("週次売り圧力レシオ:", price_dict["sell_pressure_ratio_w"])
@@ -426,7 +432,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
         print("!!! 週次売り圧力レシオ計算できず")
         price_dict["sell_pressure_ratio_w"] = [0, 0, 0]
 
-    #---- RSを求める
+    # ---- RSを求める
     def calc_rs():	
         # 週次データからRSを計算
         price_len = len(weekly_price_list)
@@ -435,7 +441,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
             return 0,0
         if not cur_prices or (cur_prices[0] == 0 and cur_prices[1] == 0 and cur_prices[2] == 0):
             # 現在価格がない場合は最新の週次データから取得
-            p_cur = float(weekly_price_list[0][4].replace(",","")) #4:終値
+            p_cur = float(weekly_price_list[0][4].replace(",","")) # 4:終値
         else:
             p_cur = cur_prices[0]
         
@@ -444,7 +450,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
         for w in [13,26,39,52]:
             if w < price_len:
                 past_prices.append(float(weekly_price_list[w][4].replace(",","")))
-                #print "%sの終値 %s"%(weekly_price_list[w][0], weekly_price_list[w][4])
+                # print "%sの終値 %s"%(weekly_price_list[w][0], weekly_price_list[w][4])
         weights = [0.4, 0.2, 0.2, 0.2]
         weights = weights[:len(past_prices)]
         total = sum(weights)
@@ -469,7 +475,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
     rs_raw, p_cur = calc_rs()
     price_dict["rs_raw"] = rs_raw
 
-    #---- TOPIXとの比較でモメンタムポイントを計算
+    # ---- TOPIXとの比較でモメンタムポイントを計算
     def calc_momentum_pt():
         import make_market_db
         market_db = make_market_db.get_market_db()
@@ -481,7 +487,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
             else:
                 # TOPIXのRSと比較してモメンタムポイントを計算
                 rs_rel = rs_raw/topix_rs_raw
-                #print "rs_rel:", rs_rel, topix_rs_raw
+                # print "rs_rel:", rs_rel, topix_rs_raw
                 from scipy.stats import norm
                 scale = 0.3 # code_rank実測のrs_raw標準偏差
                 # 平均1.0、標準偏差0.3の上側確率
@@ -494,7 +500,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
     rs_rank = calc_momentum_pt()
     if rs_rank > 0: # 0はエラーのため更新しない
         price_dict["momentum_pt"] = rs_rank
-    #---- トレンドテンプレート
+    # ---- トレンドテンプレート
     def calc_trend_template():
         # ・株価が30週MAと40週MAを上回る
         # ・30週MAは40週MAを上回る
@@ -514,7 +520,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
             low52 = min(lows[0:52])
             high52 = max(highs[0:52])
 
-            #print "---", p_cur, ma10, ma30, ma40, ma40_b, low52, high52, rs_rank, "---"
+            # print "---", p_cur, ma10, ma30, ma40, ma40_b, low52, high52, rs_rank, "---"
             misses = []
             if not p_cur >= ma10:
                 misses.append("pr>ma10")
@@ -539,7 +545,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
 
     def calc_pullback_20():
         try:
-            #---- 20MA押し
+            # ---- 20MA押し
             # 終値でなく、安値で見たほうが良い
             # 1,1(~3?)週前までの安値が20MA=4WMA乖離が一定以内で、
             # 2, 終値が4WMAを上回っている（1と4WMAのGC）
@@ -558,18 +564,18 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
                 kairi = 100*prices[ind]/ma4-100
                 kairi_list.append(kairi)
                 kairi_low.append(100*lows[ind]/ma4-100)
-                #print "pr, ma4,kairi =", prices[ind], ma4, kairi
+                # print "pr, ma4,kairi =", prices[ind], ma4, kairi
             KAIRI_CUR = (-1,3)
             # 現在価格乖離が一定以内(4MAの上かどうかも兼ねている)
             if kairi_list[0] >= KAIRI_CUR[0] and kairi_list[0] <= KAIRI_CUR[1]:
                 # 直近安値の乖離率
-                #min_low = min(lows[0:WEEK])
+                # min_low = min(lows[0:WEEK])
                 # min_low_ind = lows[0:WEEK].index(min_low)
                 # min_kairi_low = kairi_low[min_low_ind]
                 min_kairi_low = min(kairi_low[0:WEEK])
                 if min_kairi_low <= 1: # 直近安値が20MAに接近
                     min_low_ind = kairi_low[0:WEEK].index(min_kairi_low)
-                    #kairi_sum = sum(kairi_list[kairi_low_min_ind:WEEK])
+                    # kairi_sum = sum(kairi_list[kairi_low_min_ind:WEEK])
                     kairi_list_plus = [l for l in kairi_list[min_low_ind+1:WEEK] if l>=0]
                     kairi_sum = sum(kairi_list_plus)
                     # 上方にいたかどうか
@@ -590,7 +596,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
             return ""
     price_dict["pullback_20"] = calc_pullback_20()
 
-    #---- 新高値
+    # ---- 新高値
     def calc_new_highs():
         # index: 日付、始値、高値、安値、終値、前週比、前週比％、売買高
         # weekly_price_list = [] # 週次価格データ
@@ -601,7 +607,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
             p_high_list = [float(p[2].replace(",","")) for p in p_list_wk]
             p_high = max(p_high_list)
             p_high_ind = p_high_list.index(p_high)
-            #print "価格", p_cur, len(weekly_price_list)
+            # print "価格", p_cur, len(weekly_price_list)
             print("2週前以前新高値:%d %d週前(%s)"%(p_high, p_high_ind, p_list_wk[p_high_ind][0]))
             if p_cur >= p_high*0.95: # 2週前以前高値から5パー以内
                 if p_high_ind >= 52-2: # 一年以上前
@@ -611,7 +617,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
             # 最高値
             p_high = [float(p[2].replace(",","")) for p in weekly_price_list[1:]]
             p_max = max(p_high)
-            #print "最高値", p_max
+            # print "最高値", p_max
             if p_cur >= p_max:
                 new_highs.append("最")
             print("新高値:", "".join(new_highs))
@@ -624,6 +630,8 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
     return price_dict
 
 # 株式分割調整	
+
+
 def adjust_divide_price(price_list):
     for price in price_list:
         ratio = float(price[4])/price[6]
@@ -643,12 +651,12 @@ def parse_price_text_yahoo_old(text):
         print("!!! デイリー価格情報がありません(フォーマット変更?)")
         return 0, []
 
-    #---- 価格データの解析
+    # ---- 価格データの解析
     m = re.search(r'<table.*"boardFin yjSt marB6">(.*)</table>', text, re.DOTALL)
-    #print m.group(1)
+    # print m.group(1)
     rows = []
     for m in re.finditer(r'<td>(.*)</td>', text):
-        #print m.group(1)
+        # print m.group(1)
         rows.append(m.group(1))
     price_list = []
     r = iter(rows)
@@ -656,11 +664,11 @@ def parse_price_text_yahoo_old(text):
         try:
             # 日付、始値、高値、安値、終値、出来高、調整後終値
             row = [next(r), next(r), next(r), next(r), next(r), next(r), next(r)]
-            #print row
+            # print row
             row = [_r.replace(',','') for _r in row]
             for i, _r in enumerate(row[1:]):
                 row[1+i] = int(float(_r))
-            #print "---", row, "---"
+            # print "---", row, "---"
             price_list.append(row)
         except StopIteration as e:
             break
@@ -670,7 +678,7 @@ def parse_price_text_yahoo_old(text):
 def parse_price_text_yahoo_new(text):
     price_current = 0
     try:
-        #m = re.search(r'<span class="_3rXWJKZF">(.*?)</span>', text)
+        # m = re.search(r'<span class="_3rXWJKZF">(.*?)</span>', text)
         # 24.9フォーマット変わった
         m = re.search(r'<span class="StyledNumber__value__3rXW">(.*?)</span>', text)
         #最初の1つ目のspan classが現在価格情報
@@ -678,35 +686,35 @@ def parse_price_text_yahoo_new(text):
         print("現在株価:", price_current)
     except:
         print("現在株価なし")
-        #print "!!! デイリー価格情報がありません(フォーマット変更?)"
-        #return 0, []
+        # print "!!! デイリー価格情報がありません(フォーマット変更?)"
+        # return 0, []
 
     price_list = []
     m = re.search(r'<tbody>(.*?)</tbody>', text)
     if not m:
         print("!!! デイリー価格情報リストがありません(フォーマット変更?)")
         return 0, []
-    #print m.group(1)
+    # print m.group(1)
     tbody = m.group(1)
     try:
         days = []
         # 日付を先に集める
         for m in re.finditer(r'<th scope="row".*?>(.*?)</th>', tbody):
-            #print "日付:",m.group(1)
+            # print "日付:",m.group(1)
             days.append(m.group(1))
         # 24.9フォーマット変わった
-        #for ind, m in enumerate(re.finditer(r'<tr class="_2ZqX1qip">(.*?)</tr>', tbody)):
+        # for ind, m in enumerate(re.finditer(r'<tr class="_2ZqX1qip">(.*?)</tr>', tbody)):
         for ind, m in enumerate(re.finditer(r'<tr class="HistoryTable__row__2ZqX">(.*?)</tr>', tbody)):
             trlist = m.group(1)
             row = []
             # 始値、高値、安値、終値、出来高、調整後終値
             row.append(days[ind])
-            #for m2 in re.finditer(r'<span class="_3rXWJKZF">(.*?)</span>', trlist):
+            # for m2 in re.finditer(r'<span class="_3rXWJKZF">(.*?)</span>', trlist):
             for m2 in re.finditer(r'<span class="StyledNumber__value__3rXW">(.*?)</span>', trlist):
-                #print m2.group(1)
+                # print m2.group(1)
                 row.append(m2.group(1))
             row = [row[0]]+[int(float(_r.replace(',',''))) for _r in row[1:]]
-            #print "日次データ: ", row
+            # print "日次データ: ", row
             price_list.append(row)
     except Exception as e:
         print("!!! Yahoo価格リスト解析エラー（フォーマット変更？）", e)
@@ -728,7 +736,7 @@ def parse_price_text_yahoo(text):
         print("Yahoo価格: 古いフォーマット")
         return parse_price_text_yahoo_old(text)
     # 新しいっぽいフォーマット	
-    #print "len_price: ", len(price_list)
+    # print "len_price: ", len(price_list)
     print("Yahoo価格: 新しいフォーマット")	
     return parse_price_text_yahoo_new(text)
 
@@ -748,9 +756,9 @@ def parse_price_text(text):
         return {},[] # 何も更新しない
 
     price["price"] = price_current
-    #---- ここからprice_listを使って各種価格に伴う指標の計算
-    #---- 売り圧力レシオとローソク足ボラティリティ
-    #for p in price_list:
+    # ---- ここからprice_listを使って各種価格に伴う指標の計算
+    # ---- 売り圧力レシオとローソク足ボラティリティ
+    # for p in price_list:
     #	print p
     # 売り圧力レシオの計算
     sell_pressure_ratio = calc_sell_pressure_ratio(price_list)
@@ -763,7 +771,7 @@ def parse_price_text(text):
     res_dict = calc_avg_volume_d(price_list)
     price["avg_volume_d"] = [res_dict["avg_volume_d20"], res_dict["avg_volume_d5"]]
 
-    #---- ポケットピポット
+    # ---- ポケットピポット
     # 過去10日間で出来高の最も多い陽線の日
     # 出来高収縮では50ma、ブレイク後の上昇トレンドは10maを使うのが本来
     # TODO: 本当は50maを参照したいが、50日分のデータが必要..
@@ -785,24 +793,24 @@ def parse_price_text(text):
             break
         ma10 = sum(prices)/len(prices)
         down_vol = max(volumes) if len(volumes)>0 else 0 # 下落日の出来高
-        #down_vol = sum(volumes) # 下落日の出来高
+        # down_vol = sum(volumes) # 下落日の出来高
         if price_list[ind][6] > price_list[ind+1][6]: # 上昇日
             vol = price_list[ind][5]
         else:
             continue
         ref_price = min(price_list[ind][3], price_list[ind+1][6]) # 安値と前日終値
         kairi = round(100*float(ref_price-ma10)/ma10,1) # 安値からのma10との乖離
-        #print "down_vol=", down_vol, "vol=", vol, "ma10=", ma10, "kairi=", kairi
+        # print "down_vol=", down_vol, "vol=", vol, "ma10=", ma10, "kairi=", kairi
         if vol > down_vol and kairi <= 4:
             m = re.search(r"(\d*?)年(\d*?)月(\d*?)日", price_list[ind][0])
             day = m.group(2)+"/"+m.group(3)
             print("ポケットピポット:%s(%+d)"%(day, kairi))
             pockets.append("%s,%d"%(day,kairi))
-        #break
+        # break
     price["pocket_pivot"] = pockets
-    #raise
+    # raise
     
-    #---- ブレイクアウト
+    # ---- ブレイクアウト
     breaks = []
     for ind in range(10):
         # 過去20日平均出来高
@@ -840,9 +848,9 @@ def parse_price_text(text):
             continue
         kairi = round(100*float(ref_price-ma10)/ma10, 1)
         vol = price_list[ind][5]
-        #print "AVG:", ind, avg_vol, avg_count, vol, kairi
+        # print "AVG:", ind, avg_vol, avg_count, vol, kairi
         if vol >= 1.5*avg_vol and kairi <= 5:
-            #TODO: ボラティリティ的なブレイクアウトを見たほうが良いが、
+            # TODO: ボラティリティ的なブレイクアウトを見たほうが良いが、
             #ややめんどうなのでまずはma乖離で ローソク足ボラティリティを使えば良い
             if price_list[ind][6] > price_list[ind+1][6]:
                 m = re.search(r"(\d*?)年(\d*?)月(\d*?)日", price_list[ind][0])
@@ -851,8 +859,8 @@ def parse_price_text(text):
                 print("ブレイク:%s,%d"%(day,per))
                 breaks.append("%s,%d"%(day,per))
     price["breakout"] = breaks
-    #print breaks
-    #---- 過去価格
+    # print breaks
+    # ---- 過去価格
     past_prices = []
     LOG_DAY = 10
     for ind in range(LOG_DAY):
@@ -860,10 +868,10 @@ def parse_price_text(text):
             continue
         m = re.search(r"(\d*?)年(\d*?)月(\d*?)日", price_list[ind][0])
         dt = datetime.strptime(m.group(1)+"/"+m.group(2)+"/"+m.group(3), "%Y/%m/%d").date()
-        pr = price_list[ind][6] #int 終値
+        pr = price_list[ind][6] # int 終値
         past_prices.append((dt,pr))
-        #day = m.group(2)+"/"+m.group(3)
-    #print "過去価格", past_prices
+        # day = m.group(2)+"/"+m.group(3)
+    # print "過去価格", past_prices
     price["price_log"] = past_prices
     # TODO: 週次でやっている20MA押しをやりたい
 
@@ -877,7 +885,7 @@ def get_price_log(price_list, dt):
     """
     if dt:
         for pr in price_list:
-            #print pr[0], "<->", dt
+            # print pr[0], "<->", dt
             if pr[0] <= dt: #過去の日を許容する
                 return pr[1]
     return 0
@@ -893,7 +901,7 @@ def get_price_data_yahoo(code_s, upd=UPD_INTERVAL):
     price_text = get_daily_data_yahoo(code_s, upd)
     if not price_text:
         return {}, []
-    #print ux_cmd_head(price_text, 3)
+    # print ux_cmd_head(price_text, 3)
     print(">>>>> %sの価格データを解析 "%code_s)
     parsed_data, cur_prices = parse_price_text(price_text)
     stat = os.stat(PRICE_FNAME%code_s)
@@ -901,7 +909,7 @@ def get_price_data_yahoo(code_s, upd=UPD_INTERVAL):
     price = parsed_data.get("price",0)
     print("<<<<< 解析完了 ", price, date)
     # 情報を追加して返す
-    #parsed_data["code"] = code_s
+    # parsed_data["code"] = code_s
     set_db_code(parsed_data, code_s)
     if price > 0:
         parsed_data["access_date_price"] = date
@@ -917,7 +925,7 @@ def get_weekly_price_data(code_s, upd=UPD_INTERVAL, prices=[]):
     if not price_htmls:
         print("!!! 株探から週次価格を取得できません")
         return {}
-    #print ux_cmd_head(price_htmls[0], 3)
+    # print ux_cmd_head(price_htmls[0], 3)
     print(">>>>> %sの週次価格データを解析 "%code_s)
     parsed_data_w = parse_pricew_htmls_kabutan(price_htmls, prices)
     # stat = os.stat(PRICE_FNAME%code)
@@ -977,15 +985,15 @@ def get_spr_expr(sprs, sprs_w):
 def main():
     """価格データを取得、解析する
     """
-    #TODO: <meta http-equiv="Pragma" content="no-cache">
+    # TODO: <meta http-equiv="Pragma" content="no-cache">
     # となっているとき、取れていない
-    #TODO: ローソク足ボラティリティの計算が疑問　終値の平均で割るところ
-    #TODO: 1/5/20出来高変化率もほしい
+    # TODO: ローソク足ボラティリティの計算が疑問　終値の平均で割るところ
+    # TODO: 1/5/20出来高変化率もほしい
     code_list = ["6580"]
     for code_s in code_list:
         print("-"*30)
         print("%sの価格を更新します"%code_s)
-        price_dict = get_price_data(code_s, UPD_INTERVAL) #UPD_INTERVAL/UPD_REEVAL/UPD_FORCE
+        price_dict = get_price_data(code_s, UPD_INTERVAL) # UPD_INTERVAL/UPD_REEVAL/UPD_FORCE
         print(price_dict)
         # td = datetime.today().date()
         # print get_price_log(price_dict["price_log"], td)

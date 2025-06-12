@@ -15,19 +15,20 @@ import master
 import make_market_db
 import kessan
 
+
 def has_stock_data(stocks, code_s, latest=False):
     """
     DBに基本銘柄情報があるか？
     latest: 最新であることが必要かどうか
     """
-    INTERVAL_DAY = 7 #10
-    #code = int(code)
+    INTERVAL_DAY = 7 # 10
+    # code = int(code)
     if code_s in stocks:
         if "stock_name" in stocks[code_s]:
             if latest: # 最新だ
                 timedelta = datetime.today()-stocks[code_s]["access_date"]
                 if timedelta.days < INTERVAL_DAY:
-                    #print "基本情報あり: %d日前"%timedelta.days
+                    # print "基本情報あり: %d日前"%timedelta.days
                     return True
                 else: # 最新でない
                     print("基本銘柄更新: %d日ぶり"%timedelta.days)
@@ -36,6 +37,7 @@ def has_stock_data(stocks, code_s, latest=False):
                 return True
     return False
 
+
 def get_stock_data(stocks, code_s, upd=UPD_INTERVAL):
     """
     基本銘柄情報をDBから取得
@@ -43,14 +45,15 @@ def get_stock_data(stocks, code_s, upd=UPD_INTERVAL):
     dict,int,bool => dict
     """
     # yahooをやめて株探基本情報から取得
-    #code = int(code)
-    #print "get_stock_data", code, latest
+    # code = int(code)
+    # print "get_stock_data", code, latest
     # DBにある場合はそれを返す
     if code_s in stocks and upd < UPD_INTERVAL:
         if "stock_name" in stocks[code_s]:
             return stocks[code_s]
 
     return master.get_stock_master_data(code_s, upd)
+
 
 def is_latest_price(stocks, code_s):
     """
@@ -66,16 +69,17 @@ def is_latest_price(stocks, code_s):
         need_day -= timedelta(1)
     elif need_day.weekday() == 6:
         need_day -= timedelta(2)
-    #print " 価格データ 必要:%s DB最新:%s"%(need_day, price_day)
+    # print " 価格データ 必要:%s DB最新:%s"%(need_day, price_day)
     if need_day <= price_day:
         return True, (need_day-price_day).days
     return False, (need_day-price_day).days
+
 
 def has_price_data(stocks, code_s, latest=False):
     """
     DBに価格情報があるか？
     """
-    #code = int(code)
+    # code = int(code)
     if code_s in stocks:
         if "sell_pressure_ratio" in stocks[code_s]:
             if latest:
@@ -89,12 +93,13 @@ def has_price_data(stocks, code_s, latest=False):
                 return True
     return False
 
+
 def get_price_data(stocks, code_s, upd=UPD_INTERVAL):
     """銘柄価格情報を取得
     """
-    #code = int(code)
+    # code = int(code)
     # DBにありなおかつ最新である場合はそれを返す
-    if code_s in stocks: #and not latest: #デバッグ用強制
+    if code_s in stocks: # and not latest: #デバッグ用強制
         if "access_date_price" in stocks[code_s] and upd < UPD_INTERVAL:
             print("DBに最新価格情報があるためそれを取得します")
             return stocks[code_s]
@@ -112,6 +117,7 @@ def get_price_data(stocks, code_s, upd=UPD_INTERVAL):
 
     return price_dict
 
+
 def update_stock_log(rank_log, rank):
     """ ランクログを更新
     Returns: 20個(日分)のランクログ(新しい日付が先)
@@ -128,8 +134,9 @@ def update_stock_log(rank_log, rank):
     if not found:
         rank_log.insert(0, (date, rank))
     rank_log = sorted(rank_log, key=lambda x:x[0], reverse=True)
-    #print "ランクログ更新:", ind, date, rank
+    # print "ランクログ更新:", ind, date, rank
     return rank_log[0:20]
+
 
 def update_stock_rank(stock, rank):
     """ 銘柄ランクログを更新
@@ -139,6 +146,7 @@ def update_stock_rank(stock, rank):
     rank_dict["stock_rank_log"] = update_stock_log(stock_rank_log, rank)
     stock.update(rank_dict) # 更新
 
+
 def update_rs_rank(stocks, code_s):
     """ RSとRSログを更新
     """
@@ -146,10 +154,11 @@ def update_rs_rank(stocks, code_s):
         return []
     stock = stocks[code_s]
     rs_rank_log = stock.get("rs_rank_log", [])
-    #print "rs_rank_log:", rs_rank_log
+    # print "rs_rank_log:", rs_rank_log
     rs_rank = stock.get("momentum_pt")
 
     return update_stock_log(rs_rank_log, rs_rank)
+
 
 def get_rank_log_expr(stock):
     """ RSログを表示用に整形
@@ -159,7 +168,7 @@ def get_rank_log_expr(stock):
         return ""
     latest_date = rs_rank_log[0][0]
     # 0はエラー値なので除外
-    #TODO: 日付でフィルターするべきかも
+    # TODO: 日付でフィルターするべきかも
     rs_rank_ma5 = [l[1] for l in rs_rank_log[0:5] if l[0] >= latest_date-timedelta(days=7)]
     rs_rank_ma5 = [l for l in rs_rank_ma5 if l is not None and l > 0]
     if not rs_rank_ma5:
@@ -173,6 +182,7 @@ def get_rank_log_expr(stock):
     return "%02d%02d"%(rs_rank_ma5,rs_rank_ma20)
     
 
+
 def get_rank_log(stock, log_name, diff_day=0):
     """ diff_day日前のrank_logを返す
     -> (day, rs)
@@ -181,7 +191,7 @@ def get_rank_log(stock, log_name, diff_day=0):
     if not rank_log:
         return ()
     day_first = rank_log[0][0]
-    #print "day_first:", day_first
+    # print "day_first:", day_first
     for day, rs in rank_log:
         if (day_first-day).days >= diff_day:
             return day,rs
@@ -191,7 +201,7 @@ def get_rank_log(stock, log_name, diff_day=0):
 # 	"""
 # 	関連銘柄内ランクを更新
 # 	"""
-# 	#---- relates_rsを計算
+# 	# ---- relates_rsを計算
 # 	if stocks[code].has_key("relates"):
 # 		relates = stocks[code]["relates"]
 # 		rs_raws = []
@@ -209,12 +219,13 @@ def get_rank_log(stock, log_name, diff_day=0):
 # 						print "!!! 関連銘柄%sは銘柄DBにありません"%relate
 # 				except ValueError:
 # 					print "!!! 不正な関連銘柄です", relate
-# 			#print relates, rs_raws
+# 			# print relates, rs_raws
 # 			rs_raws.sort(reverse=True)
 # 			relates_rank = rs_raws.index(rs_raw)+1
 # 			print "関連銘柄内ランク:", relates_rank
 # 			return relates_rank
 # 	return 0
+
 
 def need_kessan_upd(stocks, code_s, dt_access):
     """アクセス時間の決算日超過のチェック
@@ -227,15 +238,15 @@ def need_kessan_upd(stocks, code_s, dt_access):
         kessanbi = stocks[code_s].get("kessanbi","")
         if kessanbi:
             dt_kessanbi = datetime.strptime(stocks[code_s]["kessanbi"], "%Y/%m/%d").date()
-            #print "決算発表日付:", kessanbi, dt_kessanbi
+            # print "決算発表日付:", kessanbi, dt_kessanbi
             if tdy >= dt_kessanbi and dt_access2 < dt_kessanbi:
                 print("決算日を過ぎているため更新", code_s, dt_kessanbi, dt_access2)
-                #upd = UPD_FORCE
+                # upd = UPD_FORCE
                 kessan_upd = True
         kessan_mod_date = stocks[code_s].get("kessan_mod_date","")
         if kessan_mod_date:
             dt_kessan_mod = datetime.strptime(stocks[code_s]["kessan_mod_date"], "%Y/%m/%d").date()
-            #print "決算修正日付:", kessan_mod_date, "アクセス:", dt_kessan_mod, dt_access2
+            # print "決算修正日付:", kessan_mod_date, "アクセス:", dt_kessan_mod, dt_access2
             if tdy >= dt_kessan_mod and dt_access2 < dt_kessan_mod:
                 print("決算修正があったため更新", code_s, dt_kessan_mod, dt_access2)
                 kessan_upd = True
@@ -243,6 +254,7 @@ def need_kessan_upd(stocks, code_s, dt_access):
         print("決算データがない", code_s)
         pass
     return kessan_upd
+
 
 def has_active_dbdata(stocks, code_s, access_key, interval_day, latest):
     if code_s in stocks:
@@ -258,11 +270,12 @@ def has_active_dbdata(stocks, code_s, access_key, interval_day, latest):
                     print("%s更新: %d日ぶり"%(access_key, timedelta.days))
                     return False
                 else:
-                    #print "業績あり: %d日前"%timedelta.days
+                    # print "業績あり: %d日前"%timedelta.days
                     return True
             else:
                 return True
     return False
+
 
 def has_gyoseki_data(stocks, code_s, latest=False):
     """DBに業績情報があるか
@@ -272,18 +285,20 @@ def has_gyoseki_data(stocks, code_s, latest=False):
     INTERVAL_DAY = 15
     return has_active_dbdata(stocks, code_s, "access_date_gyoseki",INTERVAL_DAY, latest)
 
+
 def get_gyoseki_data(stocks, code_s, upd=UPD_INTERVAL):
     """
     業績データを取得するインターフェース
     -> dict
     """
-    #code = int(code)
+    # code = int(code)
     if code_s in stocks:
         if "access_date_gyoseki" in stocks[code_s] and upd < UPD_INTERVAL:
             print("DBから業績情報を取得します")
             return stocks[code_s]
     gyoseki_data = gyoseki.get_gyoseki_data(code_s, upd)
     return gyoseki_data
+
 
 def has_rironkabuka_data(stocks, code_s, latest=False):
     """
@@ -293,12 +308,13 @@ def has_rironkabuka_data(stocks, code_s, latest=False):
     INTERVAL_DAY = 15
     return has_active_dbdata(stocks, code_s, "access_date_rironkabuka",INTERVAL_DAY, latest)
 
+
 def get_rironkabuka_data(stocks, code_s, upd=UPD_INTERVAL):
     """
     Returns:
         dict<key, value>: 更新するDBデータ
     """
-    #code = int(code)
+    # code = int(code)
     if code_s in stocks:
         if "access_date_rironkabuka" in stocks[code_s] and upd < UPD_INTERVAL:
             print("DBから理論株価情報を取得します")
@@ -306,6 +322,7 @@ def get_rironkabuka_data(stocks, code_s, upd=UPD_INTERVAL):
     stock = stocks[code_s] if code_s in stocks else None
     data = rironkabuka.get_rironkabuka_data(code_s, upd, stock)
     return data
+
 
 def has_shihyo_data(stocks, code_s, latest=False):
     INTERVAL_DAY = 5 # この設定は微妙
@@ -320,11 +337,12 @@ def has_shihyo_data(stocks, code_s, latest=False):
                     print("指標更新: %d日ぶり"%timedelta.days)
                     return False
                 else:
-                    #print "指標あり: %d日前"%timedelta.days
+                    # print "指標あり: %d日前"%timedelta.days
                     return True
             else:
                 return True
     return False
+
 
 def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
     """指標データの更新・取得
@@ -340,10 +358,12 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
     data = shihyou.get_shihyo_data(stocks, code_s, upd)
     return data
 
-#==================================================
+# ==================================================
 # database
-#==================================================
+# ==================================================
 STOCKS_PICKLE = os.path.join(DATA_DIR, "stock_data", "stocks.pickle")
+
+
 def update_db(stocks, stock_data):
     """
     stocksのDBデータをstock_dataのcodeキーで更新する
@@ -375,6 +395,7 @@ def update_db(stocks, stock_data):
         "price_log", "rs_rank_log", "stock_rank_log"])
     stocks[code_s] = stock
 
+
 def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
     """	code_listで指定された銘柄のDB更新し、DB全体を返す
     Params:
@@ -384,7 +405,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
     Return:
         更新されたDB
     """
-    #TODO: ETF系は更新はぶく？事前にはstocksデータないからここでしかわからん
+    # TODO: ETF系は更新はぶく？事前にはstocksデータないからここでしかわからん
     # ロード
     table_pickle = STOCKS_PICKLE
     stocks = {}
@@ -398,7 +419,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
     latest = upd >= UPD_INTERVAL
     force = upd >= UPD_REEVAL
     print("update_tables:", tables, " 更新:", upd)
-    #code_exists = []
+    # code_exists = []
     for c in code_s_list:
         stock_data = {}
         if not tables or "master" in tables:
@@ -425,7 +446,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
         # else:
         # 	try:
         # 		code_exists.append(str(c)+stocks[int(c)]["stock_name"])
-        # 		#print "%d%sはDBに存在します"%(c, stocks[c]["stock_name"])
+        # 		# print "%d%sはDBに存在します"%(c, stocks[c]["stock_name"])
         # 	except KeyError:
         # 		print "%dは更新情報を取得できませんでした"%c
 
@@ -436,6 +457,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
     # セーブ
     save_pickle(table_pickle, stocks)
     return stocks
+
 
 def get_stock_db(code):
     """
@@ -461,9 +483,10 @@ def print_to_file(fname):
     output.close()
     sys.stdout = sys.__stdout__
 
+
 def list_db(code_list=[]):
     stocks = load_pickle(STOCKS_PICKLE)
-    #print code_list
+    # print code_list
     code_s_list = [str(c) for c in code_list]
     with print_to() as out:
         for k, v in stocks.items():
@@ -473,9 +496,11 @@ def list_db(code_list=[]):
                     ex_key=["shihyo", "gyoseki_current", "gyoseki_quarter"])
     print(out.getvalue())
 
-#==================================================
+# ==================================================
 # 項目カスタマイズ表示
-#==================================================
+# ==================================================
+
+
 def get_trend_template_expr(stock):
     """
     銘柄DBデータから、トレンドテンプレートを返す
@@ -525,7 +550,7 @@ def make_signal(stock):
         try:
             dt = datetime.strptime(str(today.year)+"/"+spl[0], "%Y/%m/%d")
             delta_day = (today-dt).days
-        #mark = "★"  if delta_day < 3 else ""
+        # mark = "★"  if delta_day < 3 else ""
             if delta_day <= 7 and delta_day >= 0:
                 tags.append("ポ")
         except ValueError:
@@ -540,7 +565,7 @@ def make_signal(stock):
         try:
             dt = datetime.strptime(str(today.year)+"/"+brkspl[0], "%Y/%m/%d")
             delta_day = (today-dt).days
-            #mark = "★"  if delta_day < 3 else ""
+            # mark = "★"  if delta_day < 3 else ""
             if delta_day <= 7 and delta_day >= 0:
                 tags.append("ブ")
         except ValueError:
@@ -561,7 +586,7 @@ def make_signal(stock):
     # 売りシグナル
     # 50DMAを下回っていて、売り圧力レシオが45以下で、RSが70以上
     # つまり今まで上がっていたものが弱くなっている
-    #rs_rank = stock.get("momentum_pt", 0)
+    # rs_rank = stock.get("momentum_pt", 0)
     rs_raw = stock.get("rs_raw", 0)
     sell_ratio = stock.get("sell_pressure_ratio", [])
     if rs_raw >= 1.2:
@@ -579,13 +604,15 @@ def make_signal(stock):
                 tags.append("警")
 
 
-    #print signal, tags
+    # print signal, tags
     return signal, tags
 
 def get_code_exp(code_s):
     code_s = str(code_s)
     KABUTAN_URL = "https://kabutan.jp/stock/chart?code=%s"
     return '=HYPERLINK("%s","%s")'%(KABUTAN_URL%code_s, code_s)
+
+
 def get_stock_name_exp(stock):
     """
     銘柄名の表示用表現を返す
@@ -649,7 +676,7 @@ def get_signal_tags_prevrank_expr(stock_data):
     tags = [] # タグ
     signal, tags = make_signal(stock_data) # シグナル
 
-    #---- 過去順位と株価上昇率
+    # ---- 過去順位と株価上昇率
     try:
         rank0 = get_rank_log(stock_data, "stock_rank_log", 0)
         rank1 = get_rank_log(stock_data, "stock_rank_log", 1)
@@ -684,9 +711,11 @@ def get_signal_tags_prevrank_expr(stock_data):
     tags = "/".join(tags)
     return signal, tags, prev_rank
 
-#==================================================
+# ==================================================
 # DB一覧表示
-#==================================================
+# ==================================================
+
+
 def list_all_db(upload_csv=True, update_portforio=True):
     """DB内銘柄のランキングリスト
     Args:
@@ -698,21 +727,21 @@ def list_all_db(upload_csv=True, update_portforio=True):
     stocks = load_pickle(STOCKS_PICKLE)
     stocks_active = []
     print("DB内銘柄数", len(stocks))
-    #delete_stocks = []
+    # delete_stocks = []
     for k, v in stocks.items():
         try:
             gyoseki_pt = int(v['score_gyoseki'])
             shihyo_pt = v['shihyo_pt']
-            #mom_pt = int((v.get('rs_raw', 0)-1)*100)
+            # mom_pt = int((v.get('rs_raw', 0)-1)*100)
             mom_pt = v.get('momentum_pt', 0)
             funda_pt = v.get('funda_pt', 0)
             total_pt = int((40*gyoseki_pt+20*shihyo_pt+25*mom_pt+15*funda_pt)/100)
             stocks_active.append((k, total_pt, gyoseki_pt, shihyo_pt, mom_pt, funda_pt))
         except KeyError as e:
             print("必要キー%sなし"%e, k, v.get('stock_name', ''))
-            #delete_stocks.append(k)
+            # delete_stocks.append(k)
             continue
-    #return
+    # return
 
     # 自分のポートフォリオロード
     import portfolio
@@ -721,13 +750,13 @@ def list_all_db(upload_csv=True, update_portforio=True):
     
     # 総合PTでソート
     stocks_active = sorted(stocks_active, key=lambda stock: stock[1], reverse=True)
-    #---- 100位以内とポートフォリオのDB情報を更新
+    # ---- 100位以内とポートフォリオのDB情報を更新
     if update_portforio:
         # テーマ銘柄を更新に入れる
         theme_count = 0
         theme_codes_s = []
         theme_rank_list = market_db["theme_rank"]
-        #theme_rank_list, _, _, _ = make_market_db.get_theme_rank_list()
+        # theme_rank_list, _, _, _ = make_market_db.get_theme_rank_list()
         for j, theme in enumerate(theme_rank_list):
             current = len(theme_codes_s)
             for i, s in enumerate(stocks_active):
@@ -745,13 +774,13 @@ def list_all_db(upload_csv=True, update_portforio=True):
         # 俺ポートフォリオ追加
         update_codes_s += (pf_stocks + possess_list)
         update_codes_s = list(set(update_codes_s)) # 重複解消
-        #update_codes_s = update_codes_s[:2] # デバッグ用に数を減らす
+        # update_codes_s = update_codes_s[:2] # デバッグ用に数を減らす
         # マスター,価格,業績,指標,理論株価を更新
-        stocks = update_db_rows(update_codes_s, upd=UPD_INTERVAL, tables=["master", "price", "shihyo", "gyoseki", "rironkabuka"]) #UPD_INTERVAL/UPD_REEVAL
+        stocks = update_db_rows(update_codes_s, upd=UPD_INTERVAL, tables=["master", "price", "shihyo", "gyoseki", "rironkabuka"]) # UPD_INTERVAL/UPD_REEVAL
         # 個別でやるとき(テスト用強制)
-        #stocks = update_db_rows(update_codes_s, upd=UPD_FORCE, tables=["rironkabuka"])
+        # stocks = update_db_rows(update_codes_s, upd=UPD_FORCE, tables=["rironkabuka"])
 
-    #---- 各銘柄のランクデータを更新
+    # ---- 各銘柄のランクデータを更新
     print("---- 各銘柄のランクデータ更新")
     for i, elem in enumerate(stocks_active):
         stock = stocks[elem[0]]
@@ -759,7 +788,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
         update_stock_rank(stock, rank)
     save_stock_db(stocks) # 更新した順位のDB保存
 
-    #---- 銘柄ランキング用CSVファイル作成
+    # ---- 銘柄ランキング用CSVファイル作成
     print("---- CSV項目作成")
     rank_csv = os.path.join(DATA_DIR, "code_rank_data/code_rank.csv")
     
@@ -797,25 +826,25 @@ def list_all_db(upload_csv=True, update_portforio=True):
         # ボラティリティ、売り圧力レシオ・買い集め指数
         vola, sell_press = get_vola_and_sell_press_expr(stock_data)
         # 順位
-        #buffet_url = "https://www.buffett-code.com/company/%s/library"%(stock[0])
+        # buffet_url = "https://www.buffett-code.com/company/%s/library"%(stock[0])
         yahoo_url = "https://finance.yahoo.co.jp/quote/%s.T"%(stock[0])
         rank = i+1
         rank = '=HYPERLINK("%s","%d")'%(yahoo_url, rank)		
-        #---- ポートフォリオ
+        # ---- ポートフォリオ
         ports = []
         if stock[0] in pf_stocks:
             ports.append("監")
         if stock[0] in possess_list:
             ports.append("保")
         ports = "".join(ports)
-        #---- タグ、シグナル
+        # ---- タグ、シグナル
         signal, tags, prev_rank = get_signal_tags_prevrank_expr(stock_data)
 
-        #---- 指標用の項目
+        # ---- 指標用の項目
         indicator_expr = shihyou.get_shihyo_expr(stock_data)
         credit_expr = shihyou.get_credit_expr(stock_data)
 
-        #---- 業績用項目
+        # ---- 業績用項目
         progress_expr, growth_exp = gyoseki.get_gyoseki_expr(stock_data)
         
         # 理論株価
@@ -823,11 +852,11 @@ def list_all_db(upload_csv=True, update_portforio=True):
         # 過去業績
         gyoseki_quarity_expr = gyoseki.get_gyoseki_quarity_expr(stock_data)
 
-        #---- その他項目
+        # ---- その他項目
         code = get_code_exp(stock[0])
         stock_name = get_stock_name_exp(stock_data)
         sector = stock_data.get("sector","")
-        #relates_rank = stock_data.get("relates_rank", 0) # 関連銘柄内順位:封印
+        # relates_rank = stock_data.get("relates_rank", 0) # 関連銘柄内順位:封印
         rs_log = get_rank_log_expr(stock_data) # RSの表示
         momentum = "%d.%s"%(stock[4],rs_log)
         # 行要素作成
@@ -848,6 +877,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
         import googledrive
         googledrive.upload_csv(rank_csv, "code_rank")
 
+
 def load_stock_db():
     """stockDBのロード
     時間がかかる
@@ -855,16 +885,20 @@ def load_stock_db():
     stocks = load_pickle(STOCKS_PICKLE)
     return stocks 
 
+
 def save_stock_db(stocks):
     save_pickle(STOCKS_PICKLE, stocks)
+
 
 def delete_db_column(stocks, column):
     for k, stock in stocks.items():
         if column in stock:
             del stock[column]
-        #print_dict(stock)	
+        # print_dict(stock)	
 
 STOCK_PICKLE_PATH = os.path.join(DATA_DIR, "stock_data", "stock_%s.pickle")
+
+
 def load_cacehd_stock_db(code_s, force=False):
     """ 基本テスト用
     個別コードのpickleを別途保存したものをロードする
@@ -879,10 +913,11 @@ def load_cacehd_stock_db(code_s, force=False):
     stock = load_pickle(stock_path)
     return stock
 
+
 def edit_db():
     backup_db()
     stocks = load_stock_db()
-    #delete_db_column(stocks, "access_data")
+    # delete_db_column(stocks, "access_data")
     delete_db_column(stocks, "sell_pressure_ratio_20")
     delete_db_column(stocks, "sell_pressure_ratio_10")
     delete_db_column(stocks, "sell_pressure_ratio_5")
@@ -895,8 +930,10 @@ def edit_db():
     delete_db_column(stocks, "debt_ratio")
     save_stock_db(stocks)
 
+
 def backup_db():
     backup_file(STOCKS_PICKLE, 0)
+
 
 def reflesh_db():
     """stock_dbを適切な状態に更新する
@@ -910,8 +947,9 @@ def reflesh_db():
             del stocks[code]
     print("削除後DB内銘柄数:", len(stocks))
 
-    #code_list = portfolio.parse_my_portforio()
+    # code_list = portfolio.parse_my_portforio()
     save_pickle(STOCKS_PICKLE, stocks)
+
 
 def convert_code_db():
     """既存のintキーのstockDBを英数字コードキーにコンバート
@@ -923,6 +961,7 @@ def convert_code_db():
         stocks[code_s] = stock
     save_stock_db(stocks)
 
+
 def test():
     # code = 6560
     # stock_db = load_stock_db()
@@ -932,7 +971,7 @@ def test():
     # rank0 = get_rank_log(stock_data, "stock_rank_log", 0)
     # rank1 = get_rank_log(stock_data, "stock_rank_log", 1)
     # rank5 = get_rank_log(stock_data, "stock_rank_log", 5)
-    # #print "Rank:", stock[0], rank0, rank1, rank5
+    # # print "Rank:", stock[0], rank0, rank1, rank5
     # price_log = stock_data.get("price_log",[])
     # print price_log
     # pr0 = price.get_price_log(price_log, rank0[0])
@@ -952,14 +991,16 @@ def test():
     # 		print "%dを削除"%code
     # 		del stocks[code]
     # 	else:
-    # 		#print code
+    # 		# print code
     # 		pass
     # print "after:", len(stocks), "個"
     # save_stock_db(stocks)
 
-#==================================================
+# ==================================================
 # pickleの文字コード変換
-#================================================== 
+# ================================================== 
+
+
 def _fix_str(obj):
     if isinstance(obj, dict):
         return {_fix_str(k): _fix_str(v) for k, v in obj.items()}
@@ -980,6 +1021,7 @@ def _fix_str(obj):
     else:
         return obj
 
+
 def convert_pickle_latin1_to_utf8(old_path, new_path):
     """ 古いpickleファイルを読み込み、latin1からutf-8に変換して保存する
     Args:
@@ -993,49 +1035,52 @@ def convert_pickle_latin1_to_utf8(old_path, new_path):
         pickle.dump(fixed, f) # protocol=4
     print("UTF-8変換完了:", new_path)
 
+
 def convert_python2():
     STOCKS_PICKLE_PY2 = os.path.join(DATA_DIR, "stock_data", "stocks_py2.pickle")
     convert_pickle_latin1_to_utf8(
         STOCKS_PICKLE_PY2, STOCKS_PICKLE)
     
-#==================================================
+# ==================================================
 # main
-#==================================================
+# ==================================================
+
+
 def main():
     """
     株価DBを更新するメインスクリプト
     """
-    #TODO: REEVALで必ず通信する？
-    #TODO: リストで本日の価格を表示
-    #command = "edit"
-    #command = "backup"
+    # TODO: REEVALで必ず通信する？
+    # TODO: リストで本日の価格を表示
+    # command = "edit"
+    # command = "backup"
     command = "list_all_db" # デフォ
-    #command = "update"
-    #command = "update_all_db"
-    #command = "list"
-    #command = "reflesh"
-    #command = "test"
-    #command = "convert_code"
-    #command = "convert_python2"
+    # command = "update"
+    # command = "update_all_db"
+    # command = "list"
+    # command = "reflesh"
+    # command = "test"
+    # command = "convert_code"
+    # command = "convert_python2"
     if command == "update":
         code_list = "4417"
-        #code_list = "2979 3226 4384 4434 4443 4448 4449 4475 4477 4478 4479 4480 4483 4485 4488 4490 4493 4599 6835 7071"
+        # code_list = "2979 3226 4384 4434 4443 4448 4449 4475 4477 4478 4479 4480 4483 4485 4488 4490 4493 4599 6835 7071"
         code_list = code_list.split()
         # f = open("update_code_list.txt")
         # lines = f.readlines()
         # code_list = [l.strip() for l in lines]
         # f.close()		
         tables = None 
-        #tables = ["master"]
-        #tables = ["price"]
-        #tables = ["shihyo"]
-        #tables = ["gyoseki"]
-        #tables = ["rironkabuka"]
-        update_db_rows(code_list, upd=UPD_FORCE, tables=tables) #UPD_FORCE/UPD_REEVAL/UPD_INTERVAL
+        # tables = ["master"]
+        # tables = ["price"]
+        # tables = ["shihyo"]
+        # tables = ["gyoseki"]
+        # tables = ["rironkabuka"]
+        update_db_rows(code_list, upd=UPD_FORCE, tables=tables) # UPD_FORCE/UPD_REEVAL/UPD_INTERVAL
     elif command == "list":
         # DB内銘柄情報表示
         code_list = "4483"
-        #code_list = "3242 3686 6058 6432 7435"
+        # code_list = "3242 3686 6058 6432 7435"
         code_list = code_list.split()
         list_db(code_list)
     elif command == "list_all_db":
@@ -1055,7 +1100,7 @@ def main():
             code_list.sort()
             code_list = [c for c in code_list if c>=min and c<= max]
             return code_list
-        #code_list = get_code_list_from_db(1500, 10000)
+        # code_list = get_code_list_from_db(1500, 10000)
         code_list = get_code_list_from_db(1000, 10000)
         current = 0 # 途中からやるときはここを書き換え
         while current < len(code_list):
@@ -1063,10 +1108,10 @@ def main():
             current_code_list = code_list[current:current+num]
             print("%d~%d/%dを更新します"%(current_code_list[0], current_code_list[-1], len(code_list)))
             # 何を更新する？
-            #tables = ["gyoseki", "shihyo", "master"]
+            # tables = ["gyoseki", "shihyo", "master"]
             tables = ["price"]
-            #tables = ["master"]
-            update_db_rows(current_code_list, upd=UPD_REEVAL, tables=tables) #UPD_REEVAL/UPD_FORCE
+            # tables = ["master"]
+            update_db_rows(current_code_list, upd=UPD_REEVAL, tables=tables) # UPD_REEVAL/UPD_FORCE
             print("%d/%dまで更新しました"%(current+num, len(code_list)), current_code_list[-3:])
             current += num
             break #とりあえずテスト
@@ -1083,10 +1128,10 @@ def main():
 
 # TODO: エラーを記述するようにせんと・・
 if __name__ == '__main__':
-    #TODO: 古い日付のタグは無効にしたい　全銘柄DB更新せず表示するときの判断でいいかも
-    #TODO: 監視タグも
-    #TODO: セクターのRSランキングを作成し、参照したい オニールのIBD
-    #https://kabutan.jp/warning/?mode=9_1&market=0&capitalization=-1&stc=zenhiritsu&stm=1&col=zenhiritsu	
+    # TODO: 古い日付のタグは無効にしたい　全銘柄DB更新せず表示するときの判断でいいかも
+    # TODO: 監視タグも
+    # TODO: セクターのRSランキングを作成し、参照したい オニールのIBD
+    # https://kabutan.jp/warning/?mode=9_1&market=0&capitalization=-1&stc=zenhiritsu&stm=1&col=zenhiritsu	
     #やりたいが保留
     # カレントディレクトリをこの.pyの場所に
     path = os.path.abspath(os.path.dirname(__file__))

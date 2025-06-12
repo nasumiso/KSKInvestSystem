@@ -7,21 +7,25 @@ import math
 import functools
 import warnings
 # ---------------------------------------------------------
+
+
 def simple_decorator(decorator):
 	def new_decorator(f):
-		#print "decorator:", f.__name__, f.__doc__, f.__dict__
+		# print "decorator:", f.__name__, f.__doc__, f.__dict__
 		g = decorator(f)
 		g.__name__ = f.__name__
 		g.__doc__ = f.__doc__
 		g.__dict__.update(f.__dict__)
 		return g
-	#print "simple_decorator: ", decorator.__name__, decorator.__doc__, decorator.__dict__
+	# print "simple_decorator: ", decorator.__name__, decorator.__doc__, decorator.__dict__
 	new_decorator.__name__ = decorator.__name__
 	new_decorator.__doc__ = decorator.__doc__
 	new_decorator.__dict__.update(decorator.__dict__)
 	return new_decorator
 
 @simple_decorator
+
+
 def my_simple_logging_decorator(func):
 	def you_will_never_see_this_name(*args, **kwargs):
 		print('calling {}'.format(func.__name__))
@@ -29,6 +33,8 @@ def my_simple_logging_decorator(func):
 	return you_will_never_see_this_name
 
 @my_simple_logging_decorator
+
+
 def double(x):
 	'Doubles a number.'
 	return 2*x
@@ -38,6 +44,8 @@ def test_simple_decorator():
 	assert double.__doc__ == 'Doubles a number.', double.__doc__
 	print(double(155))
 # ---------------------------------------------------------
+
+
 def my_simple_decorator2(func):
 	def _decorator(*args, **kwargs):
 		print("call start")
@@ -45,6 +53,8 @@ def my_simple_decorator2(func):
 		print("call end")
 		return ret
 	return _decorator
+
+
 def my_simple_decorator(func):
 	def _decorator(x):
 		print("call start")
@@ -57,16 +67,20 @@ def my_simple_decorator(func):
 def my_double(x):
 	print(2*x)
 	return 2*x
+
+
 def my_mul(x, y):
 	print("my_mul: ", my_mul.__name__, my_mul.__doc__, my_mul.__dict__) 
 	return x*y
 
 def test_my_simple_decorator():
-	#my_simple_decorator(my_double)(10)
+	# my_simple_decorator(my_double)(10)
 	my_simple_decorator2(my_mul)(4, 9)
 
 
 # ---------------------------------------------------------
+
+
 def mamoize(obj):
 	cache = obj.cache = {}
 	@functools.wraps
@@ -78,6 +92,8 @@ def mamoize(obj):
 	return memoizer
 
 # ---------------------------------------------------------
+
+
 def retry(tries, delay=3, backoff=2):
 	"""
 	関数を最大delay回試行しtrueなら終了するデコレータ。
@@ -115,21 +131,23 @@ class curried(object):
 	カリー化 functool	s.partial
 	"""
 	def __init__(self, func, *a):
-		#print "curry_init: ", func.__name__, a
+		# print "curry_init: ", func.__name__, a
 		self.func = func
 		self.args = a
 
 	def __call__(self, *a):
-		#print "curry_call - arg:", a, "self_arg:", self.args
+		# print "curry_call - arg:", a, "self_arg:", self.args
 		args = self.args + a
-		#print "  args:", args, self.func.func_code.co_argcount
+		# print "  args:", args, self.func.func_code.co_argcount
 		if len(args) < self.func.__code__.co_argcount:
-			#print "call curryied"
+			# print "call curryied"
 			return curried(self.func, *args)
 		else:
-			#print "call func"
+			# print "call func"
 			return self.func(*args)
 @curried
+
+
 def add(a, b):
 	return a+b
 
@@ -157,9 +175,13 @@ class debug:
 		else:
 			return f
 @debug(['io'])
+
+
 def prn(x):
 	print(x)
 @debug(['core'])
+
+
 def mult(x, y):
 	return x*y
 
@@ -185,13 +207,15 @@ class countcalls(object):
 	def counts():
 		return dict([(f, countcalls.count(f)) for f in countcalls.__instances])
 # ---------------------------------------------------------
+
+
 def deprecated(func):
 	"""
 	関数が呼ばれると警告を発するデコレータ
 	"""
 	@functools.wraps(func)
 	def new_func(*args, **kwargs):
-		#print "hoge"
+		# print "hoge"
 		warnings.warn_explicit(
 			"Call to deprecated function {}.".format(func.__name__),
 			category=DeprecationWarning,
@@ -202,11 +226,17 @@ def deprecated(func):
 	return new_func
 
 @deprecated
+
+
 def my_func():
 	pass
+
+
 def test_deprecated():
 	my_func()
 # ---------------------------------------------------------
+
+
 def unchanged(func):
     "This decorator doesn't add any behavior"
     return func
@@ -218,6 +248,8 @@ def disabled(func):
 	return empty_func
 enabled = unchanged
 # ---------------------------------------------------------
+
+
 def dump_args(func):
 	"""
 	関数の引数をダンプするデコレータ
@@ -231,18 +263,24 @@ def dump_args(func):
 	return echo_func
 
 @dump_args
+
+
 def f1(a,b,c):
 	print(a+b+c)
+
+
 def test_dumpargs():
 	f1(3,4,5)
 # ---------------------------------------------------------
 # ---------------------------------------------------------
+
+
 def main():
-	#test_simple_decorator()
-	#test_my_simple_decorator()
-	#test_curried()
-	#test_debug()
-	#test_deprecated()
+	# test_simple_decorator()
+	# test_my_simple_decorator()
+	# test_curried()
+	# test_debug()
+	# test_deprecated()
 	test_dumpargs()
 if __name__ == '__main__':
 	main()

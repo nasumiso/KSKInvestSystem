@@ -35,11 +35,11 @@ def parse_detail_html_kabutan(html):
     print("最低購入代金:", lowest_purchase_money)
     detail["lowest_purchase_money"] = lowest_purchase_money
     # 銘柄名
-    #m = re.search(r'<h1 id="kobetsu">(.*?)\(\d\d\d\d\).*?</h1>', html)
+    # m = re.search(r'<h1 id="kobetsu">(.*?)\(\d\d\d\d\).*?</h1>', html)
     m = re.search(r'<h1 id="kobetsu">(.*?)\(\d[0-9a-zA-Z]\d[0-9A-Z]\).*?</h1>', html)
     stock_name = "銘柄名不明"
     if m:
-        #省略名がある場合:<abbr title="ＮＥＸＴ　ＦＵＮＤＳ野村株主還元７０">株主還元７０</abbr>
+        # $1略名がある場合:<abbr title="ＮＥＸＴ　ＦＵＮＤＳ野村株主還元７０">株主還元７０</abbr>
         m2 = re.search(r'<abbr title=.*?>(.*?)</abbr>', m.group(1))
         if m2:
             stock_name = m2.group(1).strip()
@@ -84,7 +84,7 @@ def parse_detail_html_kabutan(html):
     kessan = ""
     m = re.search(r'<div id="kessan_happyoubi">(.*?)</div>', html, re.DOTALL)
     if m:
-        #print "m:", m.group(1)
+        # print "m:", m.group(1)
         m2 = re.search(r'<time datetime=".*?">(.*?)</time>', m.group(1), re.DOTALL)
         if m2:
             kessan = m2.group(1)
@@ -125,6 +125,8 @@ def memoized_report_evaluation():
     return create_report_evaluation
 
 get_report_evalutation = memoized_report_evaluation()
+
+
 def calc_fundamental(code_s, themes):
     print("テーマポイントの計算")#, themes
     market_db = make_market_db.get_market_db()
@@ -134,7 +136,7 @@ def calc_fundamental(code_s, themes):
     total_pt = 0
     for theme in themes.split(","):
         theme_pt = theme_rank_pt.get(theme, 0)
-        #if theme_pt > 0:
+        # if theme_pt > 0:
         #	print theme, theme_pt
         total_pt += theme_pt
     print("テーマポイント:", total_pt)
@@ -142,7 +144,7 @@ def calc_fundamental(code_s, themes):
     
     # オレレポート分のファンダポイントを加算
     eval_dict = get_report_evalutation()
-    #print "eval_dict:", eval_dict
+    # print "eval_dict:", eval_dict
     evaluation = eval_dict.get(code_s, "")
     eval_pt_dict = {"S":40, "A":30, "B":20, "C":5, "D":0, "E":-10}
     eval_pt = eval_pt_dict.get(evaluation, 0)
@@ -158,13 +160,13 @@ def get_stock_master_data(code_s, upd):
         strはfunda_pt/code/access_date/sector_detail
     """
     # DBにない場合はWebから取得
-    #cache = "use_cache" in cmd_args
-    #detail_text = get_detail_data_yahoo(code, cache)
+    # cache = "use_cache" in cmd_args
+    # detail_text = get_detail_data_yahoo(code, cache)
     detail_text = get_detail_data_kabutan(code_s, upd)
-    #print ux_cmd_head(detail_text, 10)
+    # print ux_cmd_head(detail_text, 10)
     print(">>>>> %sのマスター情報を解析 "%code_s)
     parsed_data = parse_detail_html_kabutan(detail_text)
-    #print parsed_data
+    # print parsed_data
     if parsed_data:
         # print "銘柄名:%s,時価総額:%d百万円\n最低購入代金:%d"%\
         # (parsed_data["stock_name"], parsed_data["market_cap"], parsed_data["lowest_purchase_money"])
@@ -175,12 +177,12 @@ def get_stock_master_data(code_s, upd):
     funda_pt = calc_fundamental(code_s, parsed_data["themes"])
     parsed_data["funda_pt"] = funda_pt
 
-    #---- 情報を追加してdictを返す
-    #parsed_data["code"] = code
+    # ---- 情報を追加してdictを返す
+    # parsed_data["code"] = code
     set_db_code(parsed_data, code_s)
     # アクセス日
     master_fname = rironkabuka.get_kabutan_cachename(code_s)
-    #print master_fname
+    # print master_fname
     if os.path.exists(master_fname):
         stat = os.stat(master_fname)
         parsed_data["access_date"] = datetime.fromtimestamp(stat.st_mtime)
@@ -191,12 +193,12 @@ def get_stock_master_data(code_s, upd):
     return parsed_data
 
 def main():
-    #TODO: !!! 時価総額の値が取得できません でとる
-    code_list = ["176A"] #7776
+    # TODO: !!! 時価総額の値が取得できません でとる
+    code_list = ["176A"] # 7776
     for code in code_list:
         print("-"*30)
         print("%sの基本情報を更新します"%code)
-        price_dict = get_stock_master_data(code, UPD_REEVAL) #UPD_INTERVAL UPD_FORCE
+        price_dict = get_stock_master_data(code, UPD_REEVAL) # UPD_INTERVAL UPD_FORCE
         print(price_dict)
 
 if __name__ == '__main__':
