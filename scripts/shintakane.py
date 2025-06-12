@@ -53,13 +53,17 @@ def search_fromcsv_dekidakaup(fname):
         return []
 
     result_list = []
-    csv_r = csv.reader(open(fname, 'r', encoding="utf-8"))  # python3ではrbではなくrで開く
+    csv_r = csv.reader(
+        open(fname, 'r', encoding="utf-8")
+    )  # python3ではrbではなくrで開く
     for row in csv_r:
         row_dict = {}
         row_dict["rank"] = row[0]
         # dict["code"] = row[1].split()[0]
         row_dict["code_s"] = row[1].split()[0]
-        row_dict["name"] = row[1].split()[1] if len(row[1].split()) > 1 else "名前不明"
+        row_dict["name"] = (
+            row[1].split()[1] if len(row[1].split()) > 1 else "名前不明"
+        )
         row_dict["place"] = row[2]
         row_dict["sector"] = row[3]
         row_dict["kabuka"] = int(float(row[4].replace(",", "")))
@@ -133,10 +137,11 @@ def get_latest_shintakane_fname():
         return "", today
     return today_csv, today
 
+
 def todays_shintakane(upd=UPD_INTERVAL):
     """本日の新高値銘柄データを解析して結果を表示する
     """
-    print("="*30)
+    print("=" * 30)
     print("新高値銘柄の解析を開始します・・")
     # 設定パラメータ
     BACK_DAY = 14  # 10 すでに調査したとみなす日数
@@ -192,16 +197,21 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 else:
                     day_list_d = []
                 # day_listとday_list_dを合成
-                print("新高値銘柄%d個と出来高急増銘柄%d個を合成(%s)"%(len(day_list), len(day_list_d), day.date()))
+                print(
+                    "新高値銘柄%d個と出来高急増銘柄%d個を合成(%s)" %
+                    (len(day_list), len(day_list_d), day.date())
+                )
                 compose_list(day_list, day_list_d)
                 # print "---> 計%d個"%len(day_list)
             if len(day_list) == 0:
                 continue
-            print("----- %s(%d)を分析"%(day_csv, len(day_list)))
+            print(
+                "----- %s(%d)を分析" % (day_csv, len(day_list))
+            )
 
             # 各種フィルタ判定した上でリスト作成
             day_list_filtered = day_list
-            print("候補銘柄%d個"%len(day_list_filtered))
+            print("候補銘柄%d個" % len(day_list_filtered))
             # まだalready_listにないものは追加
             already_code = [c["code_s"] for c in already_list]
             for d in day_list_filtered:
@@ -238,13 +248,16 @@ def todays_shintakane(upd=UPD_INTERVAL):
     kessan_lst_code = get_todays_kessan_list()
     print("決算更新追加:", len(kessan_lst_code), "個")
     print(kessan_lst_code)
-    updatelist_all_code = already_list_code + today_list_code + kessan_lst_code # 更新を行う必要のあるすべての銘柄
+    # 更新を行う必要のあるすべての銘柄
+    updatelist_all_code = already_list_code + today_list_code + kessan_lst_code
     updatelist_all_code = list(set(updatelist_all_code))
 
     # ---- マスターデータ更新
     # 最低購入代金取得のためdbを更新
     print("---> masterデータ更新(最低購入代金、銘柄概要取得のため)")
-    stocks = stock_db.update_db_rows(updatelist_all_code, tables=["master"], upd=upd)
+    stocks = stock_db.update_db_rows(
+        updatelist_all_code, tables=["master"], upd=upd
+    )
     print("<---- masterデータ更新完了")
 
     def filter_today_list(lst):
@@ -255,8 +268,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
         def filter_dekidakaup(l):
             if "dekidaka_upratio" not in l:
                 return True
-            return float(l["dekidaka_upratio"].replace(",", ""))>=300
-        lst = [l for l in lst if filter_dekidakaup(l)] # 出来高上昇率300%以上
+            return float(l["dekidaka_upratio"].replace(",", "")) >= 300
+        lst = [l for l in lst if filter_dekidakaup(l)]  # 出来高上昇率300%以上
+
         def filter_themes(l):
             stock = stocks.get(l["code_s"])
             if not stock:
@@ -264,20 +278,25 @@ def todays_shintakane(upd=UPD_INTERVAL):
             themes = stock.get("themes", "")
             return themes != ""
         # print "候補数2:", len(lst)
-        lst = [l for l in lst if filter_themes(l)]	
+        lst = [l for l in lst if filter_themes(l)]
         # print "候補数3:", len(lst)
         return lst
-    # 調査不要なものを除く(stocksが必要なのでここで)	
+    # 調査不要なものを除く(stocksが必要なのでここで)
     today_list = filter_today_list(today_list)
     already_list = filter_today_list(already_list)
     already_list_code = [a["code_s"] for a in already_list]
     today_list_code = [a["code_s"] for a in today_list]
     # 未調査フィルタ
     today_only_list = [c for c in today_list if not c["code_s"] in already_list_code]
-    today_already_list = [t for t in today_list if not t in today_only_list] # today_list-today_only_list
-    already_only_list = [t for t in already_list if not t["code_s"] in today_list_code] # already_list-today_list
+    today_already_list = [t for t in today_list if not t in today_only_list]
+    already_only_list = [t for t in already_list if not t["code_s"] in today_list_code]
 
-    print("本日銘柄%d [未調査 %d 調査済み%d] | 過去銘柄%d"%( len(today_list), len(today_only_list), len(today_already_list), len(already_only_list) ))
+    print(
+        "本日銘柄%d [未調査 %d 調査済み%d] | 過去銘柄%d" % (
+            len(today_list), len(today_only_list),
+            len(today_already_list), len(already_only_list)
+        )
+    )
 
     # today_list_candiate = today_list
     # 出来高フィルタ
@@ -411,11 +430,11 @@ def todays_shintakane(upd=UPD_INTERVAL):
         score_gyoseki = stock.get("score_gyoseki", 0)
         shihyo_pt = stock.get("shihyo_pt", 0)
         relates_rank = stock.get("relates_rank", 0)
-        mom_pt = stock.get("momentum_pt", 0)+0.1*relates_rank
-        # momentum = stock[4]+0.1*relates_rank
+        mom_pt = stock.get("momentum_pt", 0) + 0.1 * relates_rank
+        # momentum = stock[4] + 0.1 * relates_rank
         funda_pt = stock.get("funda_pt", 0)
         overview = stock.get("overview", "")
-        purchase_money = int(stock.get("lowest_purchase_money", 0))/10000
+        purchase_money = int(stock.get("lowest_purchase_money", 0)) / 10000
         origin = ""
         if d["origin"].find("shintakane") >= 0:
             origin += "新"
@@ -423,67 +442,75 @@ def todays_shintakane(upd=UPD_INTERVAL):
             origin += "出"
         major_theme = make_market_db.get_major_theme(stock.get("themes", ""))
         if TO_CSV:
-            row = [code, stock_name, origin, market, sector, sector_detail, \
-            kabuka, d["zenjitsuhi_per"], d["dekidaga"], purchase_money, market_cap, \
-            vola, sell_press, signal, tags, kessanbi, \
-            score_gyoseki, shihyo_pt, mom_pt, funda_pt, major_theme, overview]
+            row = [
+                code, stock_name, origin, market, sector, sector_detail,
+                kabuka, d["zenjitsuhi_per"], d["dekidaga"], purchase_money,
+                market_cap, vola, sell_press, signal, tags, kessanbi,
+                score_gyoseki, shihyo_pt, mom_pt, funda_pt, major_theme, overview
+            ]
             rows.append(row)
         else:
             try:
-                print("%s %s [%s] %s %s(%s) %d(%s) %d | %d万 %d億"%\
-                (code, stock_name, origin, market, sector, sector_detail, 
-                    kabuka, d["zenjitsuhi_per"], d["dekidaga"], 
-                    purchase_money, market_cap))
-                print("    %.2f %d | %d %d %d"%\
-                    (vola, sell_press, \
-                    score_gyoseki, shihyo_pt, mom_pt))
-                print("    %s"%overview)
+                print(
+                    "%s %s [%s] %s %s(%s) %d(%s) %d | %d万 %d億" % (
+                        code, stock_name, origin, market, sector, sector_detail,
+                        kabuka, d["zenjitsuhi_per"], d["dekidaga"],
+                        purchase_money, market_cap
+                    )
+                )
+                print(
+                    "    %.2f %d | %d %d %d" % (
+                        vola, sell_press,
+                        score_gyoseki, shihyo_pt, mom_pt
+                    )
+                )
+                print("    %s" % overview)
             except TypeError as e:
                 print("表示エラー", e)
-    print() 
+    print()
     def score_func(t):
         code_s = t["code_s"]
         stock = stocks[code_s]
         score_gyoseki = stock.get("score_gyoseki", 0)
         score_shihyo = stock.get("shihyo_pt", 0)
         score_mom = stock.get("momentum_pt", 0)
-        return score_gyoseki*0.5+score_shihyo*0.2+score_mom*0.3
+        return score_gyoseki * 0.5 + score_shihyo * 0.2 + score_mom * 0.3
 
     if TO_CSV:
         rows.append(["【本日銘柄】"])
     else:
         print("【本日銘柄】")
     # 今日のものを出力
-    today_list_show = sorted(today_only_list, key=score_func, reverse=True) # 業績でソート
+    today_list_show = sorted(today_only_list, key=score_func, reverse=True)
     [puts_detail(d) for d in today_list_show]
-    # 結果表示
-    #[puts(d["code"]) for d in today_list_show]
 
-    print()	
+    print()
     if TO_CSV:
         rows.append(["【本日既出銘柄】"])
     else:
         print("【本日既出銘柄】")
-    # 調査済みのものを出力
     today_already_list_sort = sorted(today_already_list, key=score_func, reverse=True)
     [puts_detail(d) for d in today_already_list_sort]
-    # 過去銘柄を出力
     rows.append(["【過去銘柄】"])
     already_only_list_sort = sorted(already_only_list, key=score_func, reverse=True)
     [puts_detail(d) for d in already_only_list_sort]
 
     # CSV書き込み
-    # 銘柄ランキング用CSVファイル
     if TO_CSV:
-        # today_data, latest_csv_dt = get_latest_shintakane_fname()
-        shintakane_result_csv = os.path.join(DATA_DIR, "shintakane_result_data/shintakane_result_%02d%02d%02d.csv")%\
-        (latest_csv_dt.year%2000, latest_csv_dt.month, latest_csv_dt.day)
-        
-        with open(shintakane_result_csv, "w", encoding="utf-8") as f: # python3では"w"で開く
+        shintakane_result_csv = os.path.join(
+            DATA_DIR,
+            "shintakane_result_data/shintakane_result_%02d%02d%02d.csv" % (
+                latest_csv_dt.year % 2000, latest_csv_dt.month, latest_csv_dt.day
+            )
+        )
+        with open(shintakane_result_csv, "w", encoding="utf-8") as f:
             shintakane_result_csv_w = csv.writer(f)
             shintakane_result_csv_w.writerows(rows)
 
-        shutil.copy2(shintakane_result_csv, os.path.join(DATA_DIR, "shintakane_result_data/shintakane_result.csv"))
+        shutil.copy2(
+            shintakane_result_csv,
+            os.path.join(DATA_DIR, "shintakane_result_data/shintakane_result.csv")
+        )
 
     # マーケット情報を表示
     # TODO: yahooUSのhtml形式が変わったようなので対応するまで封印
@@ -494,11 +521,15 @@ def todays_shintakane(upd=UPD_INTERVAL):
 
 def convert_kabutan_dekidakaup_html(html):
     rows = []
-    body = re.search(r'<table class="stock_table st_market">(.*?)</table>', html, re.S).group(0)
+    body = re.search(
+        r'<table class="stock_table st_market">(.*?)</table>',
+        html,
+        re.S
+    ).group(0)
     # print body
     rank = 1
     for m in re.finditer(r'<td class="tac">(.*?)</td>.*?<th scope="row" class="tal">(.*?)</th>.*?<td class="tac">(.*?)</td>.*?<td>(.*?)</td>.*?<td>(.*?)</td>.*?<td>(.*?)</td>.*?<td>(.*?)</td>.*?<td>(.*?)</td>', body, re.S):
-        #.*?<td class="w61">(.*?)</td.*?<td class="w50">(.*?)</td>
+        # .*?<td class="w61">(.*?)</td.*?<td class="w50">(.*?)</td>
         # TODO: 英数字コード対応
         # code = re.search(r'\d\d\d\d', m.group(1)).group(0)
         code = re.search(r'\d[0-9a-zA-Z]\d[0-9A-Z]', m.group(1)).group(0)
@@ -507,7 +538,9 @@ def convert_kabutan_dekidakaup_html(html):
         kabuka = m.group(4)
         dekidaka = m.group(7)
         try:
-            zenjitsuhi = re.search(r'<span class="up">(.*)</span>', m.group(6)).group(1)
+            zenjitsuhi = re.search(
+                r'<span class="up">(.*)</span>', m.group(6)
+            ).group(1)
             dekidaka_up = re.search(r'<span class="up">(.*)</span>', m.group(8)).group(1)
         except AttributeError:
             zenjitsuhi = 0
@@ -516,47 +549,49 @@ def convert_kabutan_dekidakaup_html(html):
         
         row = []
         row.append(str(rank))
-        row.append(code+" "+stock_name)
+        row.append(code + " " + stock_name)
         row.append(market_name)
         row.append("セクター")
         row.append(kabuka)
         row.append(zenjitsuhi)
-        row.append("0") # 前日比
-        row.append(dekidaka) #"出来高"
-        row.append("0") # 平均出来高
-        row.append(dekidaka_up) # 出来高前日比
+        row.append("0")  # 前日比
+        row.append(dekidaka) # "出来高"
+        row.append("0")  # 平均出来高
+        row.append(dekidaka_up)  # 出来高前日比
         rank += 1
         rows.append(row)
     return rows
+
 
 def convert_dekidakaup_html(html):
     # 0:No、1:銘柄名、2:市場、3:業種、4:価格、5:前日比、6:前日比％、
     # 7:出来高、8:平均出来高、9:出来高倍率
     # print ux_cmd_head(html)
     rows = []
-    for m in re.finditer(r'<td class="">(.*)</td>\r\n'\
-        r'<td class="tLeft "><a href=".*?" target="_chart">(.*)</a></td>\r\n'\
-        r'<td class="tLeft ">(.*)</td>\r\n'\
-        r'<td class="tRight " >(.*)</td>\r\n'\
-        r'<td class="tRight " >(.*)</td>\r\n'\
-        r'<td class="tRight " >(.*)</td>\r\n'\
-        r'\r\n\r\n\r\n\r\n'\
-        r'<td class="tRight ">(.*)</td>\r\n'\
-        r'\r\n\r\n'\
-        r'<td class="tRight rkgSelected01">(.*)</td>\r\n'\
-        , html):
+    for m in re.finditer(
+            r'<td class="">(.*)</td>\r\n'
+            r'<td class="tLeft "><a href=".*?" target="_chart">(.*)</a></td>\r\n'
+            r'<td class="tLeft ">(.*)</td>\r\n'
+            r'<td class="tRight " >(.*)</td>\r\n'
+            r'<td class="tRight " >(.*)</td>\r\n'
+            r'<td class="tRight " >(.*)</td>\r\n'
+            r'\r\n\r\n\r\n\r\n'
+            r'<td class="tRight ">(.*)</td>\r\n'
+            r'\r\n\r\n'
+            r'<td class="tRight rkgSelected01">(.*)</td>\r\n'
+            , html):
         # print "-"*15
         # print m.groups()
         row = []
-        row.append(m.group(1)) # No
+        row.append(m.group(1))  # No
         # stock_name = re.search(r'>(.*)<', m.group(2)).group(1)
         stock_name = m.group(2)
-        row.append(stock_name) # コード、銘柄名
+        row.append(stock_name)  # コード、銘柄名
         # print stock_name
         market = m.group(3).split("<br />")[0]
         sector = m.group(3).split("<br />")[1]
-        row.append(market) # 市場
-        row.append(sector) # セクター
+        row.append(market)  # 市場
+        row.append(sector)  # セクター
         # print market, sector
         price = re.search(r'((\d|,)+)<', m.group(4)).group(1)
         row.append(price) # 価格
@@ -567,25 +602,30 @@ def convert_dekidakaup_html(html):
         row.append(zenjitsuhi)
         row.append(zenjitsuhi_per)
         # print zenjitsuhi, zenjitsuhi_per
-        volume = m.group(6)#.replace('"', '')
+        volume = m.group(6)  #.replace('"', '')
         # print volume
-        row.append(volume) # 出来高
+        row.append(volume)  # 出来高
         average_volume = m.group(7)
-        row.append(average_volume) # 平均出来高
+        row.append(average_volume)  # 平均出来高
         # print average_volume
-        volume_upratio = m.group(8) # 出来高増加率
+        volume_upratio = m.group(8)  # 出来高増加率
         row.append(volume_upratio)
         # print volume_upratio
         rows.append(row)
         # print row
     return rows
 
+
 def convert_kabutan_shintakane_html(html):
     """
     株探の新高値htmlを解析してリストとして取得
     """
     rows = []
-    body = re.search(r'<table class="stock_table st_market">(.*?)</table>', html, re.S).group(0)
+    body = re.search(
+        r'<table class="stock_table st_market">(.*?)</table>',
+        html,
+        re.S
+    ).group(0)
     # print body
     rank = 1
     for m in re.finditer(r'<td class="tac">(.*?)</td>.*?<th scope="row" class="tal">(.*?)</th>.*?<td class="tac">(.*?)</td>.*?<td>(.*?)</td>.*?<td>(.*?)</td>.*?<td class="w61">(.*?)</td.*?<td class="w50">(.*?)</td>', body, re.S):
@@ -597,7 +637,7 @@ def convert_kabutan_shintakane_html(html):
         kabuka = m.group(4)
         try:
             zenjitsuhi = re.search(r'<span class="up">(.*)</span>', m.group(6)).group(1)
-            zenjitsuhi_per = re.search(r'<span class="up">(.*)</span>', m.group(7)).group(1)+"%"
+            zenjitsuhi_per = re.search(r'<span class="up">(.*)</span>', m.group(7)).group(1) + "%"
         except AttributeError:
             zenjitsuhi = 0
             zenjitsuhi_per = 0
@@ -621,13 +661,14 @@ def convert_shintakane_html(html):
     """
     # print ux_cmd_head(html)
     rows = []
-    for m in re.finditer(r'<td class="">(.*)</td>\r\n'\
-        r'<td class="tLeft rkgSelected01">(.*)</td>\r\n'\
-        r'<td class="tLeft ">(.*)</td>\r\n'\
-        r'<td class="tRight " >(.*)</td>\r\n'\
-        r'<td class="tRight " >(.*)</td>\r\n'\
-        r'<td class="tRight " >(.*)</td>\r\n'\
-        , html):
+    for m in re.finditer(
+            r'<td class="">(.*)</td>\r\n'
+            r'<td class="tLeft rkgSelected01">(.*)</td>\r\n'
+            r'<td class="tLeft ">(.*)</td>\r\n'
+            r'<td class="tRight " >(.*)</td>\r\n'
+            r'<td class="tRight " >(.*)</td>\r\n'
+            r'<td class="tRight " >(.*)</td>\r\n',
+            html):
         # print "-"*15
         # print m.groups()
         row = []
@@ -653,11 +694,12 @@ def convert_shintakane_html(html):
         # print row
     return rows
 
+
 def get_todays_dekidakaup():
     """本日の出来高増銘柄を株探からスクレイピングして
     csv2保存
     """
-    print("="*30)
+    print("=" * 30)
     print("出来高急増銘柄を更新します・・")
     latest_csv, _ = get_latest_dekidakaup_fname()
     # Force = True
@@ -945,10 +987,12 @@ def update_todays_kessan():
     # ついでにmake_market_dbで表示される監視銘柄の決算日付更新
     update_pf_kessan_db(stocks)
 
+
 def update_pf_kessan_db(stocks):
-    print("-"*10, "監視銘柄決算データ更新", "-"*10)
+    print("-" * 10, "監視銘柄決算データ更新", "-" * 10)
     import kessan
     kessan.save_pf_kessan_db(stocks)
+
 
 def main():
     """
@@ -963,7 +1007,7 @@ def main():
     # TODO: 新高値更新タイミングをタグで
     # TODO: 業績発表日、反映のらぐのため一日余裕もたせる
     # TODO: 今Qが通期予想伸びより良いも考慮（進捗率的なもの進捗率を見たほうが正確ではある）
-    args += " "+" ".join(sys.argv[1:])
+    args += " " + " ".join(sys.argv[1:])
     print("args:", args)
     if "launchd" in args:
         if not wait_connect(): # 接続確立待ち
@@ -971,12 +1015,12 @@ def main():
         args = "update analyze"
     # 新高値銘柄一覧の最新情報を取得する
     if "update" in args:
-        update_todays_kessan() # テストコメントアウト
+        update_todays_kessan()  # テストコメントアウト
         get_todays_shintakane()
         get_todays_dekidakaup()
     # 新高値銘柄の各種解析
     if "analyze" in args:
-        todays_shintakane(UPD_INTERVAL) # UPD_FORCE/UPD_INTERVAL/UPD_CACHE/UPD_REEVAL
+        todays_shintakane(UPD_INTERVAL)  # UPD_FORCE/UPD_INTERVAL/UPD_CACHE/UPD_REEVAL
         # GoogleDriveにアップロード
         shintakane_result_csv = os.path.join(DATA_DIR, "shintakane_result_data/shintakane_result.csv")
         import googledrive
