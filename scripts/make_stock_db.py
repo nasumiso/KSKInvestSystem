@@ -818,8 +818,8 @@ def list_all_db(upload_csv=True, update_portforio=True):
             for i, s in enumerate(stocks_active):
                 stock = stocks.get(s[0], {})
                 themes = stock.get("themes", "")
-                if theme in themes and not theme in theme_codes_s:
-                    if i / 100 + j < 20: # 一定以上の重要度
+                if theme in themes and theme not in theme_codes_s:
+                    if i / 100 + j < 20:  # 一定以上の重要度
                         theme_codes_s.append(s[0])
             print("テーマ:%sの銘柄%d個"%(theme, len(theme_codes_s)-current))
             if len(theme_codes_s) > 100:
@@ -1055,10 +1055,27 @@ def reflesh_db():
     print("DB内銘柄数:", len(stocks))
     # 上場廃止銘柄の削除
     delete_delist_stocks(stocks)
+    # ETF系の削除
+    etf_codes = load_etf_codes()
+    for code_s in etf_codes:
+        if code_s in stocks:
+            print("ETF銘柄削除:", code_s, stocks[code_s].get("stock_name", "不明"))
+            del stocks[code_s]
+        #else:
+        #    print("!!! ETF銘柄がDBに存在しません:", code_s)
+        
     print("削除後DB内銘柄数:", len(stocks))
 
     # 削除後のデータ保存
     save_pickle(STOCKS_PICKLE, stocks)
+
+
+def load_etf_codes():
+    etf_fpath = os.path.join(DATA_DIR, "ETF_code.txt")
+    with open(etf_fpath, "r") as f:
+        etf_codes = f.read().splitlines()
+    etf_codes = [c.strip() for c in etf_codes if c.strip()]
+    return etf_codes
 
 
 def convert_code_db():
@@ -1106,11 +1123,10 @@ def test():
     # print "after:", len(stocks), "個"
     # save_stock_db(stocks)
 
+
 # ==================================================
 # pickleの文字コード変換
 # ================================================== 
-
-
 def _fix_str(obj):
     if isinstance(obj, dict):
         return {_fix_str(k): _fix_str(v) for k, v in obj.items()}

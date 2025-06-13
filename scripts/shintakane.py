@@ -231,7 +231,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # 過去すでにみた銘柄リスト(コード)
     already_list = create_already_list()
     already_list_code = [a["code_s"] for a in already_list]
-    
+
     # 今日のを分析
     print("本日:", today_data, "を分析")
 
@@ -287,8 +287,20 @@ def todays_shintakane(upd=UPD_INTERVAL):
             return themes != ""
         # print "候補数2:", len(lst)
         lst = [item for item in lst if filter_themes(item)]
-        # print "候補数3:", len(lst)
+
+        def filter_etf_closure():
+            """ETFコードリストをクロージャでキャッシュ"""
+            etf_codes = stock_db.load_etf_codes()
+            def filter_etf(item):  # noqa: E306
+                code_s = item["code_s"]
+                return code_s not in etf_codes
+            return filter_etf
+        filter_etf = filter_etf_closure()
+        # print("候補数3:", len(lst))
+        lst = [item for item in lst if filter_etf(item)]
+        # print("候補数4:", len(lst))
         return lst
+
     # 調査不要なものを除く(stocksが必要なのでここで)
     today_list = filter_today_list(today_list)
     already_list = filter_today_list(already_list)
