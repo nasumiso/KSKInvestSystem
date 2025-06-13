@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
+
 """
 このスクリプトは、Google Drive API を使用して CSV ファイルを Google スプレッドシートとして Google Drive にアップロードするユーティリティ関数を提供します。
 
@@ -24,10 +24,10 @@ import httplib2
 
 # https://dev.classmethod.jp/articles/upload-csv-file-to-google-spreadsheet/
 # よりGoogleDriveAPIでCSVをアップロード
-#---- 設定ファイル
-#CLIENT_SECRET_FILE = 'client_secret_152733296438-p7d1thkqdnmh2ip0r9695cdoisigdvjd.apps.googleusercontent.com.json'
+# ---- 設定ファイル
+# CLIENT_SECRET_FILE = 'client_secret_152733296438-p7d1thkqdnmh2ip0r9695cdoisigdvjd.apps.googleusercontent.com.json'
 CLIENT_SECRET_FILE = os.path.join(DATA_DIR ,'googledrive/client_secret_152733296438-n9openvtegg2r6ej4mfdn8t4guf77ejs.apps.googleusercontent.com.json')
-#CLIENT_SECRET_FILE = 'My Project-d080eb2b84c1.json'
+# CLIENT_SECRET_FILE = 'My Project-d080eb2b84c1.json'
 CREDENTIAL_FILE = os.path.join(DATA_DIR ,'googledrive/drive_credential.json')
 APPLICATION_NAME = 'CSVUploader'
 
@@ -42,6 +42,8 @@ FILE_DICT = {
 	"code_rank": "1zto-8-fZ5hTZfXY6k2C49HZHbyA3OE8BgkReAViLSNU",
 	"market_data": "1AFzVywuX_iEiPH7XL84USK9i_E0HgBNTqSVy558i3G0",
 }
+
+
 def get_drive_service():
 	store = oauth2client.file.Storage(CREDENTIAL_FILE)
 	creds = store.get()
@@ -94,13 +96,13 @@ def upload_csv(csv_name, up_file_name):
 		fileId=file_id,
 		body=file_metadata,
 		media_body=media,
-		#fields='id'
+		# fields='id'
 		).execute()
 
 	print('Upload Complete File ID: %s' % file.get('id'))
 
 def main():
-	#upload_csv('code_rank_data/code_rank.csv', "code_rank")
+	# upload_csv('code_rank_data/code_rank.csv', "code_rank")
 	upload_csv(os.path.join(DATA_DIR, 'code_rank_data/market_data.csv'), "market_data")
 
 if __name__ == '__main__':

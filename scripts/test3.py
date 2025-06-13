@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
+
 import os
 import time
 
@@ -27,7 +27,7 @@ def with_chdir(dir, func):
 
 def exe():
 	print(os.getcwd())
-	#print exe
+	# print exe
 
 def main1():
 	# デコレータ

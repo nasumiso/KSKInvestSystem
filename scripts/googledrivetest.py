@@ -7,11 +7,11 @@ import oauth2client
 from oauth2client import file, tools	# 追加
 import httplib2
 
-#4/0wGiFKpmGzvDx1swYFXflXLcM8xBiFX6ZiTnH6Vvc5KguwQ4BSKalcA
+# 4/0wGiFKpmGzvDx1swYFXflXLcM8xBiFX6ZiTnH6Vvc5KguwQ4BSKalcA
 
-#CLIENT_SECRET_FILE = 'client_secret_152733296438-p7d1thkqdnmh2ip0r9695cdoisigdvjd.apps.googleusercontent.com.json'
+# CLIENT_SECRET_FILE = 'client_secret_152733296438-p7d1thkqdnmh2ip0r9695cdoisigdvjd.apps.googleusercontent.com.json'
 CLIENT_SECRET_FILE = 'client_secret_152733296438-n9openvtegg2r6ej4mfdn8t4guf77ejs.apps.googleusercontent.com.json'
-#CLIENT_SECRET_FILE = 'My Project-d080eb2b84c1.json'
+# CLIENT_SECRET_FILE = 'My Project-d080eb2b84c1.json'
 CREDENTIAL_FILE = 'drive_credential.json'
 APPLICATION_NAME = 'CSVUploader'
 

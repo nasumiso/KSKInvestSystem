@@ -1,9 +1,6 @@
-#!/usr/bin/python	
-# -*- coding: utf-8 -*-
-import sys
-import os.path
+#!/usr/bin/env python3	
+
 import re
-import pickle
 import requests
 
 from ks_util import *
@@ -20,19 +17,19 @@ from ks_util import *
 # 	growth = calc_growth(uriage_zenki, uriage_raiki)
 # 	print "成長率：",round(growth,3)
 
-# 	A2 = 5 #利益反映年数
-# 	B2 = 6.6 #割引率
-# 	C2 = 0.6 #長期金利
-# 	D2 = 6 #リスクプレミアム
+# 	A2 = 5 # $1益反映年数
+# 	B2 = 6.6 # $1引率
+# 	C2 = 0.6 # $1期金利
+# 	D2 = 6 # $1スクプレミアム
 # 	val = bps+(eps*(growth**A2)/(1+B2/100)**A2-((B2+1)/100)*bps)/(B2/100)
 # 	return int(val)
 
 def get_gyoseki_data(code, cache=True):
-	#TODO: このあたり関数化？
+	# TODO: このあたり関数化？
 	fname = "stock_data/kabutan_gyoseki_%d.txt"%code
 	if cache and os.path.exists(fname):
 		text = ""
-		with file (detail_fname, 'r') as f:
+		with open(fname, 'r') as f:
 			text = f.read()
 		return text
 
@@ -41,7 +38,7 @@ def get_gyoseki_data(code, cache=True):
 	r = requests.get(URL)
 	print("<---- 取得完了")
 	text = r.text.encode('utf-8')
-	with file(fname, 'w') as f:
+	with open(fname, 'w') as f:
 		f.write(text)
 	return text
 
@@ -67,6 +64,8 @@ def is_cache_latest(url, interval_day):
 KABUTAN_CACHE_DIR = os.path.join(DATA_DIR, "stock_data", "kabutan")
 KABUTAN_URL_CODE = "http://kabutan.jp/stock/finance?code=%s&mode=k"
 KABUTAN_BASE_URL_CODE = "https://kabutan.jp/stock/?code=%s"
+
+
 def get_kabutan_html(code_s, upd=UPD_INTERVAL):
 	"""株探から決算情報htmlをDL取得する
 	type: (str,bool)->str
@@ -134,9 +133,9 @@ def get_kabutan_cachename(code_s):
 # 	"""
 # 	株探htmlから解析情報を返す
 # 	"""
-# 	#------------------------------
+# 	# ------------------------------
 # 	# eps,売上
-# 	#------------------------------
+# 	# ------------------------------
 # 	year_tbl_m = re.search(r'<div class="title1">通期</div>.*?<table>(.*?)</table>', html, re.S)
 # 	if not year_tbl_m:
 # 		print "!!! 通期テーブルが取得できない（フォーマット変更？）"
@@ -144,12 +143,12 @@ def get_kabutan_cachename(code_s):
 # 	year_tbl_html = year_tbl_m.group(1)
 # 	table = []
 # 	for year_row_m in re.finditer(r'<tr >(.*?)</tr>', year_tbl_html, re.S):
-# 		#print "Hoge", year_row_m.group(1)
+# 		# print "Hoge", year_row_m.group(1)
 # 		values = []
 # 		for val_m in re.finditer(r'<td.*?>(.*?)</td>', year_row_m.group(1)):
 # 			val = val_m.group(1)
 # 			values.append(val)
-# 		#print values
+# 		# print values
 # 		table.append(values)
 # 	# eps 4列目
 # 	if table[-1][4] == "－":
@@ -167,24 +166,24 @@ def get_kabutan_cachename(code_s):
 # 	konki_uriage = table[-2][0]
 # 	zenki_uriage = table[-3][0]
 # 	print "売上:", zenki_uriage, konki_uriage, raiki_uriage
-# 	#TODO: bps
-# 	#------------------------------
+# 	# TODO: bps
+# 	# ------------------------------
 # 	# bps
-# 	#------------------------------
+# 	# ------------------------------
 # 	year_tbl_m = re.search(r'<div class="cap1"><h3>財務 【実績】</h3></div>.*?<table>(.*?)</table>', html, re.S)
 # 	if not year_tbl_m:
 # 		print "!!! 財務テーブルが取得できない（フォーマット変更？）"
 # 		return {}
 # 	year_tbl_html = year_tbl_m.group(1)
-# 	#print year_tbl_html
+# 	# print year_tbl_html
 # 	table = []
 # 	for year_row_m in re.finditer(r'<tr >(.*?)</tr>', year_tbl_html, re.S):
-# 		#print "Hoge", year_row_m.group(1)
+# 		# print "Hoge", year_row_m.group(1)
 # 		values = []
 # 		for val_m in re.finditer(r'<td>(.*?)</td>', year_row_m.group(1)):
 # 			val = val_m.group(1)
 # 			values.append(val)
-# 		#print values
+# 		# print values
 # 		table.append(values)
 # 	# bps
 # 	if table[-1][0] == "－":
@@ -207,9 +206,9 @@ def get_kabutan_cachename(code_s):
 def get_from_kabutan3(html):
 	"""株探htmlから理論株価計算のための解析情報を返す
 	"""
-	#------------------------------
+	# ------------------------------
 	# eps
-	#------------------------------
+	# ------------------------------
 	# 予想経常利益/発行済株式数
 	year_tbl_m = re.search(r'<div class="title1">通期</div>.*?<table>(.*?)</table>', html, re.S)
 	if not year_tbl_m:
@@ -283,9 +282,9 @@ def get_from_kabutan3(html):
 		mod_eps = 0
 	print("修正EPS:", mod_eps)
 
-	#------------------------------
+	# ------------------------------
 	# bps
-	#------------------------------
+	# ------------------------------
 	year_tbl_m = re.search(r'<div class="cap1"><h3>財務 【実績】</h3></div>.*?<table>(.*?)</table>', html, re.S)
 	if not year_tbl_m:
 		print("!!! 財務テーブルが取得できない（フォーマット変更？）")
@@ -308,7 +307,7 @@ def get_from_kabutan3(html):
 		return {}
 
 	# 今季bps
-	#bps = get_table_value(table, -1, 0, "bps")
+	# bps = get_table_value(table, -1, 0, "bps")
 	bps = table[-1][0]
 	if bps == "－":
 		# 自己資本
@@ -326,7 +325,7 @@ def get_from_kabutan3(html):
 		bps = float(bps.replace(",",""))
 	print("BPS:", bps)
 
-	#---- 価格
+	# ---- 価格
 	#<span class="kabuka">2,478円</span>
 	m = re.search(r'<span class="kabuka">(.*?)円</span>', html)
 	try:
@@ -417,15 +416,15 @@ def analyze_from_kabutan(code_s, upd=UPD_INTERVAL, stock=None):
 		tuple<int>: [理論株価、上限株価、下限株価、先行理論株価, 価格, 今期理論株価かどうか]
 		"""
 	# https://kabutan.jp/stock/finance?code=3825&mode=k
-	#code = int(code)
+	# code = int(code)
 	html = get_kabutan_html(code_s, upd)
-	#dic = get_from_kabutan2(html)
+	# dic = get_from_kabutan2(html)
 	# htmlから理論株価に必要なデータ解析
 	# BPS:財務の一株純資産(前期末) EPS:一株利益(今季)
 	dic = get_from_kabutan3(html)
 	calced = False
 	if dic:
-		#---- 理論株価計算
+		# ---- 理論株価計算
 		# 先行指標用の数値を取得
 		preceding_eps = None
 		if stock:
@@ -445,6 +444,8 @@ def analyze_from_kabutan(code_s, upd=UPD_INTERVAL, stock=None):
 		theory_price = (0,0,0,0,0, False)
 	return theory_price
 	
+
+
 def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
 	"""指定codeの理論株価関連データを分析計算してdictに格納して返す
 	Args:
@@ -468,7 +469,7 @@ def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
 	cach_path = os.path.join(KABUTAN_CACHE_DIR, cach_path)
 	tables["access_date_rironkabuka"] = get_file_datetime(cach_path)
 	print("date:", tables["access_date_rironkabuka"])
-	#tables["code"] = code
+	# tables["code"] = code
 	set_db_code(tables, code_s)
 	tables["isKonki"] = res[5]
 	return tables
@@ -527,12 +528,12 @@ def calc_theory_pt(code_s, stock=None):
 				theory_proceding_pt = -10
 		# 実際のポイント計算
 		theory_pt = step_func(theroy, [0, 20, 40, 60, 100], [20, 40, 60, 80, 100], 0)*THEORY_MAX/100
-		#theory_proceding_pt = step_func(theory_proceding, [0, 20, 40, 60, 100], [20, 40, 60, 80, 100], 0)*THEORY_PROCEDING_MAX/100
+		# theory_proceding_pt = step_func(theory_proceding, [0, 20, 40, 60, 100], [20, 40, 60, 80, 100], 0)*THEORY_PROCEDING_MAX/100
 		theory_up_pt = step_func(theory_up, [30, 60, 100, 150, 300], [20, 40, 60, 80, 100], 0)*THEORY_UP_MAX/100
 		theory_down_pt = step_func(theory_down, [-60, -30, 0, 30], [25, 50, 75, 100], 0)*THEORY_DOWN_MAX/100
 	else:
 		print("!!! 価格がないため理論PT計算できず")
-	#thoery_total_pt = int(0.5*theory_pt + 0.35*theory_up_pt + 0.15*theory_down_pt)
+	# thoery_total_pt = int(0.5*theory_pt + 0.35*theory_up_pt + 0.15*theory_down_pt)
 	print("理論価格pt: %d/%d"%(theory_pt, THEORY_MAX))
 	print("理論価格先行pt: %d"%(theory_proceding_pt))
 	print("理論価格上限pt: %d/%d"%(theory_up_pt, THEORY_UP_MAX))
@@ -562,17 +563,17 @@ def get_rironkabuka_expr2(record, price):
 	return _get_rironkabuka_expr(*kairi_list)
 
 def main():
-	#TODO: 理論株価PTや進捗率はDB保持にしたほうがよいかも
-	#3920, 4493, 4595, 2389, 7270, 5032, 6096, 4169,6195,7808,2410,9107,9264
+	# TODO: 理論株価PTや進捗率はDB保持にしたほうがよいかも
+	# 3920, 4493, 4595, 2389, 7270, 5032, 6096, 4169,6195,7808,2410,9107,9264
 	code_list = ["9343"]
 	for code_s in code_list:
 		import make_stock_db as db
 		stock = db.load_cacehd_stock_db(code_s)
-		upd = UPD_INTERVAL #UPD_FORCE
+		upd = UPD_INTERVAL # UPD_FORCE
 		record = get_rironkabuka_data(code_s, upd, stock)
-		#calc_theory_pt(code, stock)
+		# calc_theory_pt(code, stock)
 
-		#print get_rironkabuka_expr(stock)
+		# print get_rironkabuka_expr(stock)
 		print(get_rironkabuka_expr2(record, stock.get("price")))
 
 if __name__ == '__main__':

@@ -1,22 +1,24 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
+
 import re
 import pdb
 
-#from scipy import stats
-#import numpy as np
+# from scipy import stats
+# import numpy as np
 
 from ks_util import *
 
 import rironkabuka
 import shintakane_global
 
-#==================================================
+# ==================================================
 # 株探から指標データを取得
-#================================================== 
+# ================================================== 
+
+
 def get_from_kabutan(html):
 	# 財務テーブルを取得
-	#re.S:"."に改行を含める ?:non greedy(最小マッチング)
+	# re.S:"."に改行を含める ?:non greedy(最小マッチング)
 	print("---> 財務テーブル取得")
 	zaimu_table_html = re.search(r"財務 【実績】.*?<table>(.*?)</table>", html, re.S)
 	if not zaimu_table_html:
@@ -34,7 +36,7 @@ def get_from_kabutan(html):
 		return ms_td
 	ms_td = get_table_html(zaimu_table_html)
 	latest_zaimu_html = ms_td[-1]
-	#print latest_zaimu_html
+	# print latest_zaimu_html
 	print("<--- 財務テーブル取得完了")
 
 	# 取得した財務htmlから
@@ -43,8 +45,8 @@ def get_from_kabutan(html):
 		ReStr_Td = r"<td.*?>(.*?)</td>"
 		msitr = re.finditer(ReStr_Td, html, re.DOTALL)
 		items = [m.group(1) for m in msitr]
-		#print "items:", items
-		#return (items[1], items[5]) #5: 有利子負債倍率の列番号(期の項目はないため)
+		# print "items:", items
+		# return (items[1], items[5]) # 5: 有利子負債倍率の列番号(期の項目はないため)
 		return items
 	items = get_table_row(latest_zaimu_html)
 	jiko_ratio = items[1]
@@ -71,7 +73,7 @@ def get_from_kabutan(html):
 	shiyo_data["debt_ratio"] = float(debut)
 	shiyo_data["capital_ratio"] = float(jiko_ratio)
 
-	#---- ROE, 売上営業利益率取得
+	# ---- ROE, 売上営業利益率取得
 	profit_html_m = re.search(r'<table>.*?<th scope="col" class="fb_02">　ＲＯＥ</th>.*?<tbody>(.*?)</tbody>.*?</table>', html, re.S)
 	if not profit_html_m:
 		print("!!! 収益性htmlのフォーマットが変わっている？")
@@ -129,19 +131,19 @@ def get_from_kabutan_base(html, shiyo_data):
 		shiyo_data["jikasogaku"] = jikasogaku #億円
 		print("時価総額(億円):", shiyo_data["jikasogaku"])
 
-	#---- PER
+	# ---- PER
 	stockinfo_m = re.search(r'<div id="stockinfo_i3">(.*?)</div>', html, re.DOTALL)
 	per = 0.0
 	need_per = False
 	if stockinfo_m:
 		# <td>48.8<span>倍</span></td>
-		#per_m = re.search(r'<td>(.*)<span>倍</span></td>', stockinfo_m.group(1))
+		# per_m = re.search(r'<td>(.*)<span>倍</span></td>', stockinfo_m.group(1))
 		per_ms = re.finditer(r'<td>(.*)<span.*?倍</span></td>', stockinfo_m.group(1))
 		# だいぶ変則的だが、PERが5桁の場合「倍」が省略されるためその場合はとばす
 		# iteratorはリセットや長さがわからないため再度finditer
 		per_ms_len = sum(1 for _ in per_ms)
 		per_ms = re.finditer(r'<td>(.*)<span.*?倍</span></td>', stockinfo_m.group(1))
-		#print "per_ms:", per_ms, per_ms_len
+		# print "per_ms:", per_ms, per_ms_len
 		if per_ms and per_ms_len >= 3:
 			try:
 				per_m =  next(per_ms)
@@ -185,14 +187,14 @@ def get_from_kabutan_base(html, shiyo_data):
 			if margin_itr:
 				try:
 					margin_m2 = next(margin_itr)
-					#tmp = margin_m2.group(1) # 売り残
+					# tmp = margin_m2.group(1) # 売り残
 					td = margin_m2.group(1)
 					shiyo_data["credit_sell"] = int(float(td.replace(",","")))*1000 # 買い残
 					margin_m2 = next(margin_itr)
 					td = margin_m2.group(1)
 					shiyo_data["credit_buy"] = int(float(td.replace(",","")))*1000 # 買い残
 					margin_m2 = next(margin_itr)
-					#tmp = margin_m2.group(1) # 信用倍率
+					# tmp = margin_m2.group(1) # 信用倍率
 				except StopIteration:
 					pass
 			
@@ -210,19 +212,19 @@ def get_from_kabutan_base(html, shiyo_data):
 	if per == 0.0 and not need_per:
 		print("!!! PER取得できず(フォーマット変更？)")
 		
-	#---- PSR
+	# ---- PSR
 	psr = 0.0
 	gyoseki_m = re.search(r'<div class="gyouseki_block">\r\n<div class="title">(.*?)</table>\r\n</div>', html, re.DOTALL)
 	uriage_lst = []
 	profit = 0
 	if gyoseki_m:
-		#print gyoseki_m.group(0)
+		# print gyoseki_m.group(0)
 		latest_term = ""
 		for row_m in re.finditer(r'<tr>\r\n    <th scope=\'row\'><span class="kubun1">(.*?)</span>(.*?)</th>(.*?)</tr>', \
 			gyoseki_m.group(1),re.DOTALL):
-			#print row_m.group(1), row_m.group(2)
+			# print row_m.group(1), row_m.group(2)
 			# 一列目が売上高なので最初に見つかった<td></td>
-			#print row_m.group(1), row_m.group(2)
+			# print row_m.group(1), row_m.group(2)
 			uriage_m = re.search(r'<td>(.*?)</td>\r\n    <td>(.*?)</td>\r\n    <td>(.*?)</td>', row_m.group(3))
 			cur_term = row_m.group(2).replace("&nbsp;", "")
 			try:
@@ -234,7 +236,7 @@ def get_from_kabutan_base(html, shiyo_data):
 			
 			try:
 				profit = float(uriage_m.group(3)) #最終益
-				#latest_term = cur_term
+				# latest_term = cur_term
 			except ValueError:
 				print("  最終益取得できず:", uriage_m.group(3), cur_term)
 			try:
@@ -242,7 +244,7 @@ def get_from_kabutan_base(html, shiyo_data):
 			except ValueError:
 				keijo = 0
 				print("   経常益取得できず", uriage_m.group(2), cur_term)
-			#print uriage
+			# print uriage
 		if uriage_lst:
 			uriage = uriage_lst[-1] #直近
 			if uriage > 0:
@@ -276,7 +278,7 @@ def get_from_kabutan_base(html, shiyo_data):
 	return shiyo_data
 
 def analyze_from_kabutan(code_s, upd=UPD_INTERVAL):
-	#code = int(code)
+	# code = int(code)
 	# 自己資本比率
 	import rironkabuka
 	html = rironkabuka.get_kabutan_html(code_s, upd)
@@ -284,7 +286,7 @@ def analyze_from_kabutan(code_s, upd=UPD_INTERVAL):
 	# 時価総額
 	html = rironkabuka.get_kabutan_base_html(code_s, upd)
 	shiyo_data = get_from_kabutan_base(html, shiyo_data)
-	#print shiyo_data
+	# print shiyo_data
 	return shiyo_data
 
 def calc_shihyo_pt(code_s, upd=UPD_INTERVAL, stock={}):
@@ -293,11 +295,11 @@ def calc_shihyo_pt(code_s, upd=UPD_INTERVAL, stock={}):
 	# 理論株価をどう絡めるか？
 	# PER, PBRは理論株価に含まれる PSRは外して良い
 	# ROEも含まれる 営業利益率は含むべき
-	#code = int(code)
+	# code = int(code)
 	# 自己資本比率、時価総額、株主比率
 	shiyo = analyze_from_kabutan(code_s, upd)
 	# TODO: 0のときの5年計算してしまうため
-	#print shiyo_data
+	# print shiyo_data
 	JIKASOGAKU_MAX = 30
 	DEBT_RATIO_MAX = 30 # 減点用
 	# PER_MAX = 25
@@ -350,10 +352,10 @@ def calc_shihyo_pt(code_s, upd=UPD_INTERVAL, stock={}):
 	# print "PER pt: %d/%d"%(per_pt, PER_MAX)
 	# print "PBR pt: %d/%d"%(pbr_pt, PBR_MAX)
 	# print "PSR pt: %d/%d"%(psr_pt, PSR_MAX)
-	#TODO: ROEと売上営業利益率は株探から取得可能(クォリティファクター)
-	#TODO: 配当利回りも？
+	# TODO: ROEと売上営業利益率は株探から取得可能(クォリティファクター)
+	# TODO: 配当利回りも？
 
-	#shiyo_pt = jikasogaku_pt + debt_ratio_pt+ per_pt+psr_pt
+	# shiyo_pt = jikasogaku_pt + debt_ratio_pt+ per_pt+psr_pt
 	shiyo_pt = jikasogaku_pt + debt_ratio_pt+ thoery_total_pt
 	shiyo_pt = int(cramp(shiyo_pt, 0, 100))
 	print("----------")
@@ -405,7 +407,7 @@ def get_credit_expr(stock_data):
 		# 価格更新時に更新される平均出来高
 		avg_volume_dat = stock_data.get("avg_volume_d",[]) 
 		if avg_volume_dat and avg_volume_dat[0]>0:
-			avg_volume = avg_volume_dat[0] #0: 20日のもの
+			avg_volume = avg_volume_dat[0] # 0: 20日のもの
 			volume_creditbuy = float(credit_buy)/avg_volume
 			if volume_creditbuy < 1:
 				volume_creditbuy_expr = "%.2f"%volume_creditbuy
@@ -437,7 +439,7 @@ def get_shihyo_expr(stock_data):
 	ind_margin = "%s%%"%get_indicator_exp("profit_margin")
 	ind_debt = "%s"%get_indicator_exp("debt_ratio", 2)
 	ind_capital = "%s%%"%get_indicator_exp("capital_ratio")
-	#ind_credit = "%s"%get_indicator_exp("credit_ratio", 2)
+	# ind_credit = "%s"%get_indicator_exp("credit_ratio", 2)
 	ind_dividend_yield = "%s"%get_indicator_exp("dividend_yield", 1)
 	indicator = "%s億 PER%s PBR%s PSR%s 配当%s ROE%s 利益率%s 負債%s 自己%s"%(\
 		ind_marketcap, ind_per, ind_pbr, ind_psr, ind_dividend_yield,\
@@ -449,23 +451,23 @@ def main():
 	"""
 	指標:PERやPSRなど経営上の指標　を取得、分析する
 	"""
-	#code_list = [1768,1959,1820,1793,1352,2152,1801,1812,1332,1764,11827,1782,1899,1905,1301,1810,1824,2109,1946,2162,1720,1788,1934,1870,1376,1911,1515,1885,1939,1941]
-	#code_list = [3038,2301,6095,8001,8031,8035,3668]
-	code_list = ["9509"] #5034,4436,7808, 2780,6083
-	#import make_stock_db
-	#stocks = make_stock_db.load_stock_db()
+	# code_list = [1768,1959,1820,1793,1352,2152,1801,1812,1332,1764,11827,1782,1899,1905,1301,1810,1824,2109,1946,2162,1720,1788,1934,1870,1376,1911,1515,1885,1939,1941]
+	# code_list = [3038,2301,6095,8001,8031,8035,3668]
+	code_list = ["9509"] # 5034,4436,7808, 2780,6083
+	# import make_stock_db
+	# stocks = make_stock_db.load_stock_db()
 	for code_s in code_list:
 		print("-"*30)
 		print("%sの指標を計算します"%code_s)
 		import make_stock_db as db
 		stock = db.load_cacehd_stock_db(code_s)
-		shiyo_pt, shihyo = calc_shihyo_pt(code_s, UPD_REEVAL, stock) #UPD_FORCE
+		shiyo_pt, shihyo = calc_shihyo_pt(code_s, UPD_REEVAL, stock) # UPD_FORCE
 		print(shihyo)
-		#print get_shihyo_expr(stock)
-		#print get_credit_expr(stock)
+		# print get_shihyo_expr(stock)
+		# print get_credit_expr(stock)
 
 if __name__ == '__main__':
-	#TODO: 9272ブティックス 取得できてない？
+	# TODO: 9272ブティックス 取得できてない？
 	#!!! 不正な関連銘柄です
 	#もでてる
 	main()

@@ -1,6 +1,7 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
-import os, os.path
+#!/usr/bin/env python3
+
+import os
+import os.path
 import shutil
 from datetime import datetime, timedelta
 import pickle
@@ -15,16 +16,18 @@ SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))  # ks_util.py の場所
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 DATA_DIR = os.path.join(ROOT_DIR, "data")
 
-#==================================================
+# ==================================================
 # ユーティリティ
-#==================================================
-UPD_CACHE = 0 # 現在DB上のデータ: ファイルキャッシュがあれば使う
-UPD_INTERVAL = 1 # 適度に最新なデータ: 間隔が開けば更新、開いてなければファイルキャッシュを使う
-UPD_REEVAL = 2 # INTERVALと同じだがDBキャッシュは使わず再評価はしてほしい
-UPD_FORCE = 3 # 本当に最新なデータ: 間隔に関わらず更新、開いてなくてもファイルキャッシュを使わない
+# ==================================================
+UPD_CACHE = 0  # 現在DB上のデータ: フsァイルキャッシュがあれば使う
+UPD_INTERVAL = 1  # 適度に最新なデータ: 間隔が開けば更新、開いてなければファイルキャッシュを使う
+UPD_REEVAL = 2  # INTERVALと同じだがDBキャッシュは使わず再評価はしてほしい
+UPD_FORCE = 3  # 本当に最新なデータ: 間隔に関わらず更新、開いてなくてもファイルキャッシュを使わない
+
 
 def ux_cmd_head(str, line=10):
 	return "\n".join(str.splitlines()[:line])
+
 
 def print_dict(dict, ex_key=[]):
 	"""
@@ -37,8 +40,10 @@ def print_dict(dict, ex_key=[]):
 		print(k, ": ", dict[k])
 	print("----------")
 
+
 def memoize(func):
 	cache = {}
+
 	def mamoized_function(*args):
 		try:
 			return cache[args]
@@ -49,9 +54,11 @@ def memoize(func):
 			return value
 	return mamoized_function
 
-#==================================================
+# ==================================================
 # ファイルユーティリティ
-#==================================================
+# ==================================================
+
+
 def backup_file(fname, day=0):
 	"""
 	fnameのバックアップファイルを作成する
@@ -63,12 +70,12 @@ def backup_file(fname, day=0):
 	stat = os.stat(fname)
 	date = datetime.fromtimestamp(stat.st_mtime)
 	today = datetime.today()
-	delta = today-date
+	delta = today - date
 	print("%sは%s日前"%(fname, delta.days))
-	backup_fname = "%s_%02d%02d%02d%s"%(os.path.splitext(fname)[0], \
+	backup_fname = "%s_%02d%02d%02d%s" % (os.path.splitext(fname)[0], \
 		date.year-2000, date.month, date.day, os.path.splitext(fname)[1])
-	#backup_fname = "stocks_pickle_back/"+backup_fname
-	#print backup_fname
+	# backup_fname = "stocks_pickle_back/"+backup_fname
+	# print backup_fname
 	if not os.path.exists(backup_fname):
 		if delta.days >= day:
 			print("バックアップ:%s(%d) => %s"%(fname, os.path.getsize(fname), \
@@ -101,6 +108,8 @@ def get_file_datetime(fname):
 	return datetime.fromtimestamp(stat.st_mtime)
 
 PRICE_HOUR = 18 # これ以前は前日、これ以降は当日
+
+
 def get_price_day(dt):
 	"""
 	営業日ベースの日付を返す
@@ -112,9 +121,11 @@ def get_price_day(dt):
 		need_dt = (dt-timedelta(1))
 	return need_dt.date()
 
-#==================================================
+# ==================================================
 # 計算ユーティリティ
-#==================================================
+# ==================================================
+
+
 def sumproduct(*lists):
     return sum(reduce(operator.mul, data) for data in zip(*lists))
 
@@ -143,10 +154,12 @@ def step_func(val, xs, ys, min_val=None):
 			val_y = y
 			break
 	return val_y		
-#==================================================
+# ==================================================
 # httpユーティリティ	
-#==================================================
+# ==================================================
 USER_AGENT_CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.125 Safari/537.36"
+
+
 def get_http_cachname(url):
 	"""
 	urlからデフォルトのキャッシュファイルの場所を返す
@@ -167,7 +180,7 @@ def http_get_html(url, use_cache=True, cache_dir="", cache_fname="", cookies={},
 		return html
 	print("  htmlを通信で取得します..")
 	headers = {"User-Agent": USER_AGENT_CHROME}
-	#headers["Connection"] = "Keep-Alive"
+	# headers["Connection"] = "Keep-Alive"
 	try:
 		r = requests.get(url, headers=headers, cookies=cookies)
 	except requests.exceptions.ConnectionError as e:
@@ -177,10 +190,10 @@ def http_get_html(url, use_cache=True, cache_dir="", cache_fname="", cookies={},
 	if r.encoding != 'utf-8':
 		print("html_encoding:", r.encoding, "encoding:", encoding)
 	# htmlをutf8で取得
-	#html = r.text.encode(encoding)
+	# html = r.text.encode(encoding)
 	html = r.text # python3ではエンコード済みのテキストが取得される
 	# メタ指定での文字コードをutf8に
-	#html = html.replace("charset=shift_jis", "charset=utf-8")
+	# html = html.replace("charset=shift_jis", "charset=utf-8")
 
 	print("  取得したhtmlをファイルキャッシュに書き込みます:", cache_name)
 	file_write(cache_name, html)
@@ -198,15 +211,17 @@ def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
 	if r.encoding != 'utf-8':
 		print("encoding:", r.encoding, "encoding:", encoding)
 	html = r.text.encode(encoding)
-	#html = html.replace("charset=UTF-8", "charset=euc-jp")
+	# html = html.replace("charset=UTF-8", "charset=euc-jp")
 	
 	print("htmlをファイルキャッシュに書き込みます:", cache_name)
 	file_write(cache_name, html)
 	return html, r.cookies
 
-#==================================================
+# ==================================================
 # pickleデータベースユーティリティ	
-#==================================================
+# ==================================================
+
+
 def save_pickle(fname, content):
 	print("%sにpickleセーブ"%fname)
 	with open(fname, 'wb') as f:
@@ -236,10 +251,12 @@ def load_file(fname, tb='r'):
 	return dat
 memoized_load_file = memoize(load_file)
 
-#==================================================
+# ==================================================
 # SQLデータベースユーティリティ	
-#==================================================
+# ==================================================
 @contextmanager
+
+
 def open_db(dbname):
 	print("---> open_db:",dbname)
 	con = sqlite3.connect(dbname)
@@ -269,6 +286,8 @@ def create_table(cur, table_name):
 
 
 	
+
+
 def list_db():
 	with open_db("stock_data/stock.db") as con:
 		cur = con.cursor()
