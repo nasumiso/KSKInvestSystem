@@ -20,9 +20,9 @@ DATA_DIR = os.path.join(ROOT_DIR, "data")
 # ユーティリティ
 # ==================================================
 UPD_CACHE = 0  # 現在DB上のデータ: フsァイルキャッシュがあれば使う
-UPD_INTERVAL = 1 # 適度に最新なデータ: 間隔が開けば更新、開いてなければファイルキャッシュを使う
-UPD_REEVAL = 2 # INTERVALと同じだがDBキャッシュは使わず再評価はしてほしい
-UPD_FORCE = 3 # 本当に最新なデータ: 間隔に関わらず更新、開いてなくてもファイルキャッシュを使わない
+UPD_INTERVAL = 1  # 適度に最新なデータ: 間隔が開けば更新、開いてなければファイルキャッシュを使う
+UPD_REEVAL = 2  # INTERVALと同じだがDBキャッシュは使わず再評価はしてほしい
+UPD_FORCE = 3  # 本当に最新なデータ: 間隔に関わらず更新、開いてなくてもファイルキャッシュを使わない
 
 def ux_cmd_head(str, line=10):
 	return "\n".join(str.splitlines()[:line])

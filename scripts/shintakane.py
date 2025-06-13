@@ -169,7 +169,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 for d in day_list_s:
                     if d["code_s"] == item["code_s"]:
                         # print d["code"], "を合成:", d["origin"], item["origin"]
-                        d["origin"] = d["origin"]+item["origin"]
+                        d["origin"] = d["origin"] + item["origin"]
                         break
             else:
                 # 新高値にない銘柄は追加
@@ -183,11 +183,11 @@ def todays_shintakane(upd=UPD_INTERVAL):
         # stocks = stock_db.load_stock_db()	# 全銘柄情報をロード
         # print stocks.keys()
         BACK_DAY_DEKIDAKA = 5
-        for i in range(BACK_DAY, 0, -1): # 昨日から
+        for i in range(BACK_DAY, 0, -1):  # 昨日から
             day = latest_csv_dt - timedelta(i)
-            day_csv = get_shintakane_day_txtname(day)+".csv"
+            day_csv = get_shintakane_day_txtname(day) + ".csv"
             # 出来高急増リストも追加
-            day_csv_d = get_dekidakaup_day_txtname(day)+".csv"
+            day_csv_d = get_dekidakaup_day_txtname(day) + ".csv"
             day_list = []
             if os.path.exists(day_csv):
                 day_list = search_fromcsv(day_csv)
@@ -230,8 +230,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
     
     # 今日のを分析
     print("本日:", today_data, "を分析")
+
     def create_today_list():
-        today_list = [] # 本日更新銘柄データ(dict)のリスト
+        today_list = []  # 本日更新銘柄データ(dict)のリスト
         if today_data.endswith(".csv"):
             today_list = search_fromcsv(today_data)
             # 出来高急増も追加
@@ -287,9 +288,15 @@ def todays_shintakane(upd=UPD_INTERVAL):
     already_list_code = [a["code_s"] for a in already_list]
     today_list_code = [a["code_s"] for a in today_list]
     # 未調査フィルタ
-    today_only_list = [c for c in today_list if not c["code_s"] in already_list_code]
-    today_already_list = [t for t in today_list if not t in today_only_list]
-    already_only_list = [t for t in already_list if not t["code_s"] in today_list_code]
+    today_only_list = [
+        c for c in today_list
+        if not c["code_s"] in already_list_code
+    ]
+    today_already_list = [t for t in today_list if t not in today_only_list]
+    already_only_list = [
+        t for t in already_list
+        if not t["code_s"] in today_list_code
+    ]
 
     print(
         "本日銘柄%d [未調査 %d 調査済み%d] | 過去銘柄%d" % (
@@ -815,7 +822,7 @@ def get_todays_shintakane():
         page_count = 1
     for p in range(page_count):
         if p < 1: continue # 1ページ目は取得済み
-        html = http_get_html(URL_KABUTAN_SHINTAKANE+QUERY%(p+1), use_cache=useCache, cache_dir=cache_dir)
+        html = http_get_html(URL_KABUTAN_SHINTAKANE+QUERY % (p+1), use_cache=useCache, cache_dir=cache_dir)
         htmls.append(html)
     # 新高値htmlからデータを保持
     rows = []
