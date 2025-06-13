@@ -40,15 +40,13 @@ def has_stock_data(stocks, code_s, latest=False):
     return False
 
 
-def get_stock_data(stocks, code_s, upd=UPD_INTERVAL):
-    """
-    基本銘柄情報をDBから取得
+def get_stock_master_data(stocks, code_s, upd=UPD_INTERVAL):
+    """ 基本銘柄情報をDBから取得
     DBにない場合は新規取得する
     dict,int,bool => dict
+    Returns:
+        dict<key, value>: 銘柄情報
     """
-    # yahooをやめて株探基本情報から取得
-    # code = int(code)
-    # print "get_stock_data", code, latest
     # DBにある場合はそれを返す
     if code_s in stocks and upd < UPD_INTERVAL:
         if "stock_name" in stocks[code_s]:
@@ -58,8 +56,7 @@ def get_stock_data(stocks, code_s, upd=UPD_INTERVAL):
 
 
 def is_latest_price(stocks, code_s):
-    """
-    DB価格データ取得の日付現在日付から、
+    """ DB価格データ取得の日付現在日付から、
     最新価格データかどうかを返す
     """
     # 当日なら
@@ -455,7 +452,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
         stock_data = {}
         if not tables or "master" in tables:
             if not has_stock_data(stocks, c, latest) or force:
-                stock_data.update(get_stock_data(stocks, c, upd))
+                stock_data.update(get_stock_master_data(stocks, c, upd))
         if not tables or "price" in tables:
             if not has_price_data(stocks, c, latest) or force:
                 stock_data.update(get_price_data(stocks, c, upd))
@@ -1014,19 +1011,53 @@ def backup_db():
     backup_file(STOCKS_PICKLE, 0)
 
 
+def delete_delist_stocks(stocks):
+    """上場廃止銘柄を削除する）"""
+    for code_s, stock in list(stocks.items()):
+        if stock.get("price", 0) == 0:
+            print(code_s, stock.get("stock_name", "不明"), "は上場廃止")
+            del stocks[code_s]
+
+    delisted_codes = []
+    continue_codes = []
+    # acces_date_priceが半年以上前の銘柄を、上場廃止チェックする
+    for code_s, stock in list(stocks.items()):
+        dt_price = stock.get("access_date_price", None)
+        if dt_price < datetime.today() - timedelta(days=180):  # 最新価格が半年経過しているか？
+            print(code_s, stock.get("stock_name", "不明"), "は上場廃止の可能性あり")
+            # print_dict(stock, ex_key=["gyoseki_quarter", "gyoseki_current", "price_log", "rs_rank_log", "stock_rank_log"])
+            parsed_data = get_stock_master_data(stocks, code_s, UPD_INTERVAL)
+            if master.is_delist(parsed_data):
+                print(code_s, stock.get("stock_name", "不明"), "は上場廃止")
+                # del stocks[code_s]
+                delisted_codes.append(code_s)
+            else:
+                print(code_s, stock.get("stock_name", "不明"), "は上場継続中")
+                continue_codes.append(code_s)
+    
+    # print("上場廃止銘柄:", delisted_codes)
+    # print("上場継続銘柄:", continue_codes)
+    # 上場廃止銘柄を削除
+    for code_s in delisted_codes:
+        if code_s in stocks:
+            print("削除:", code_s, stocks[code_s].get("stock_name", "不明"))
+            del stocks[code_s]
+        else:
+            print("!!! 上場廃止銘柄がDBに存在しません:", code_s)
+    print("上場廃止銘柄の削除完了")
+
+
 def reflesh_db():
-    """stock_dbを適切な状態に更新する
+    """ stock_dbを適切な状態に更新する
     現状は上場廃止銘柄の削除
     """
     stocks = load_pickle(STOCKS_PICKLE)
     print("DB内銘柄数:", len(stocks))
-    for code, stock in list(stocks.items()):
-        if stock.get("price", 0) == 0:
-            print(code, stock.get("stock_name", "不明"), "は上場廃止")
-            del stocks[code]
+    # 上場廃止銘柄の削除
+    delete_delist_stocks(stocks)
     print("削除後DB内銘柄数:", len(stocks))
 
-    # code_list = portfolio.parse_my_portforio()
+    # 削除後のデータ保存
     save_pickle(STOCKS_PICKLE, stocks)
 
 
@@ -1121,21 +1152,22 @@ def convert_python2():
     )
     convert_pickle_latin1_to_utf8(
         STOCKS_PICKLE_PY2, STOCKS_PICKLE)
-    
+
+
 # ==================================================
 # main
 # ==================================================
-
-
 def main():
+    """ 株価DBを更新するメインスクリプト
     """
-    株価DBを更新するメインスクリプト
-    """
-    # TODO: REEVALで必ず通信する？
-    # TODO: リストで本日の価格を表示
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", type=str, nargs="?", default="list_all_db", help="実行するコマンド")
+    args = parser.parse_args()
+    command = args.command
     # command = "edit"
     # command = "backup"
-    command = "list_all_db"  # デフォ
+    # command = "list_all_db"  # デフォ
     # command = "update"
     # command = "update_all_db"
     # command = "list"
@@ -1144,7 +1176,7 @@ def main():
     # command = "convert_code"
     # command = "convert_python2"
     if command == "update":
-        code_list = "4417"
+        code_list = "8196"
         # code_list = "2979 3226 4384 4434 4443 4448 4449 4475 4477 4478 4479 4480 4483 4485 4488 4490 4493 4599 6835 7071"
         code_list = code_list.split()
         # f = open("update_code_list.txt")
@@ -1189,7 +1221,7 @@ def main():
             current_code_list = code_list[current:current + num]
             print("%d~%d/%dを更新します"%(current_code_list[0], current_code_list[-1], len(code_list)))
             # 何を更新する？
-            # tables = ["gyoseki", "shihyo", "master"]
+            # tables = ["gyoseki", "shihyo, "master"]
             tables = ["price"]
             # tables = ["master"]
             update_db_rows(current_code_list, upd=UPD_REEVAL, tables=tables)  # UPD_REEVAL/UPD_FORCE

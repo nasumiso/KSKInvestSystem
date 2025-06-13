@@ -97,8 +97,7 @@ def get_kabutan_html(code_s, upd=UPD_INTERVAL):
 	return html
 
 def get_kabutan_base_html(code_s, upd=UPD_INTERVAL):
-	"""
-	株探から基本情報htmlを取得
+	""" 株探から基本情報htmlを取得
 	"""
 	if not os.path.exists(KABUTAN_CACHE_DIR):
 		os.mkdir(KABUTAN_CACHE_DIR)

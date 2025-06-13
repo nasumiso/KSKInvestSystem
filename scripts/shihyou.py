@@ -110,7 +110,7 @@ def parse_jikasogaku_kabutan(html):
 	"""
 	jikasogaku_m = re.search(r'<td colspan="2" class="v_zika2">(.*)<span>億円</span></td>', html)
 	if not jikasogaku_m:
-		print("!!! 時価総額の値が取得できません(フォーマット変更？)")
+		print("!!! 時価総額の値が取得できません(フォーマット変更？または上場廃止)")
 		return 0
 	else:
 		if jikasogaku_m.group(1).find("兆") >= 0:

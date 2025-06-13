@@ -113,13 +113,13 @@ PRICE_FNAME = os.path.join(DATA_DIR, "stock_data/yahoo/price/yahoo_price_%s.txt"
 
 
 def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
-    """yahooファイナンスから価格データhtmlを取得する
+    """ yahooファイナンスから価格データhtmlを取得する
     type: (str, bool) -> str
     Returns:
         str: htmlテキスト
     """
-    price_fname = PRICE_FNAME%code_s
     # キャッシュファイルから取得
+    price_fname = PRICE_FNAME % code_s
     if os.path.exists(price_fname):
         use_cach = False
         if upd < UPD_INTERVAL:
@@ -129,14 +129,15 @@ def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
                 use_cach = False
             else:
                 # キャッシュの日付が期限内かチェック
-                cache, _ = is_file_timestamp(PRICE_FNAME%code_s, INTERVAL_DAY_D)
+                cache, _ = is_file_timestamp(
+                    PRICE_FNAME % code_s, INTERVAL_DAY_D
+                )
                 if cache:
                     use_cach = True
         if use_cach:
             return open(price_fname, 'r').read()
-
     # Yahooから取得
-    print("----> %sの価格情報をYahooから取得します・・"%code_s)
+    print("----> %sの価格情報をYahooから取得します・・" % code_s)
     try:
         url = URL_PRICE_YAHOO%code_s
         r = requests.get(url)
@@ -144,7 +145,7 @@ def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
         print("!!! %sにつながりません"%url)
         print(e)
         return ""
-    
+    # 価格htmlをファイルに書き込み
     print("<---- 取得完了")
     text = r.text  # python3では.encode('utf-8')不要
     open(price_fname, 'w').write(text)
@@ -647,7 +648,7 @@ def parse_price_text_yahoo_old(text):
     m = re.search(r'<td class="stoksPrice">(.*?)</td>', text)
     try:
         price_current = int(float(m.group(1).replace(",","")))
-    except:
+    except Exception:
         print("!!! デイリー価格情報がありません(フォーマット変更?)")
         return 0, []
 
@@ -675,26 +676,29 @@ def parse_price_text_yahoo_old(text):
     adjust_divide_price(price_list)
     return price_current, price_list
 
+
 def parse_price_text_yahoo_new(text):
+    # 現在価格の取得
     price_current = 0
     try:
         # m = re.search(r'<span class="_3rXWJKZF">(.*?)</span>', text)
         # 24.9フォーマット変わった
         m = re.search(r'<span class="StyledNumber__value__3rXW">(.*?)</span>', text)
-        #最初の1つ目のspan classが現在価格情報
-        price_current = int(float(m.group(1).replace(",","")))
+        # 最初の1つ目のspan classが現在価格情報
+        price_current = int(float(m.group(1).replace(",", "")))
         print("現在株価:", price_current)
-    except:
-        print("現在株価なし")
+    except Exception:
+        print("現在株価なし")  # 上場廃止時もこれ
         # print "!!! デイリー価格情報がありません(フォーマット変更?)"
         # return 0, []
 
+    # 時系列価格データの取得
     price_list = []
     m = re.search(r'<tbody>(.*?)</tbody>', text)
     if not m:
         print("!!! デイリー価格情報リストがありません(フォーマット変更?)")
-        return 0, []
-    # print m.group(1)
+        return 0, []  # 上場廃止時もこれ
+
     tbody = m.group(1)
     try:
         days = []
@@ -728,6 +732,7 @@ def parse_price_text_yahoo_new(text):
     adjust_divide_price(price_list)
     return price_current, price_list
 
+
 def parse_price_text_yahoo(text):
     # ETFなどに使われてる古いっぽいフォーマット
     # 現在価格
@@ -735,14 +740,13 @@ def parse_price_text_yahoo(text):
     if m:
         print("Yahoo価格: 古いフォーマット")
         return parse_price_text_yahoo_old(text)
-    # 新しいっぽいフォーマット	
-    # print "len_price: ", len(price_list)
+    # 新しいっぽいフォーマット
     print("Yahoo価格: 新しいフォーマット")	
     return parse_price_text_yahoo_new(text)
 
 
 def parse_price_text(text):
-    """yahoo価格情報htmlから
+    """ yahoo価格情報htmlから
     売り圧力レシオ、ローソク足ボラティリティの解析
     ポケットピポット、ブレイクアウト
     Args:
@@ -752,14 +756,15 @@ def parse_price_text(text):
     """
     price = {}
     price_current, price_list = parse_price_text_yahoo(text)
+    # 価格が得られないければ何も更新しない
     if not price_list:
-        return {},[] # 何も更新しない
-
+        return {}, []
+    # 現在価格を更新
     price["price"] = price_current
     # ---- ここからprice_listを使って各種価格に伴う指標の計算
     # ---- 売り圧力レシオとローソク足ボラティリティ
     # for p in price_list:
-    #	print p
+    # 	print p
     # 売り圧力レシオの計算
     sell_pressure_ratio = calc_sell_pressure_ratio(price_list)
     
@@ -897,20 +902,19 @@ def get_price_data_yahoo(code_s, upd=UPD_INTERVAL):
         dict<int, T>: 解析した価格情報
         list<int>: 現在価格
     """
-    cache = (upd <= UPD_REEVAL)
+    # cache = (upd <= UPD_REEVAL)
     price_text = get_daily_data_yahoo(code_s, upd)
     if not price_text:
         return {}, []
-    # print ux_cmd_head(price_text, 3)
-    print(">>>>> %sの価格データを解析 "%code_s)
+    print(">>>>> %sの価格データを解析 " % code_s)
     parsed_data, cur_prices = parse_price_text(price_text)
-    stat = os.stat(PRICE_FNAME%code_s)
+    stat = os.stat(PRICE_FNAME % code_s)
     date = datetime.fromtimestamp(stat.st_mtime)
-    price = parsed_data.get("price",0)
+    price = parsed_data.get("price", 0)
     print("<<<<< 解析完了 ", price, date)
     # 情報を追加して返す
-    # parsed_data["code"] = code_s
     set_db_code(parsed_data, code_s)
+    # 実際に価格が得られた場合は更新日をセット
     if price > 0:
         parsed_data["access_date_price"] = date
     return parsed_data, cur_prices

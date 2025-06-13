@@ -962,24 +962,11 @@ def wait_connect():
         diff = (datetime.datetime.now() - first_time).seconds
     return False
 
-def parse_kessan_html(html):
-    # <tr>
-    # <td class="news_time"><time datetime="2020-09-18T19:00:00+09:00">09/18&nbsp;19:00</time></td>
-    # <td class="ctg3_ks oncodetip_code-data1" data-code="7047"></td>
-    # <td class="oncodetip_code-data1" data-code="7047"><img src="/images/cmn/gaiyou_icon_15px.jpg"  /></td>
-    # <td><a href="/news/?b=k202009180030">ポート、非開示だった今期経常は赤字転落へ</a></td>
-    # </tr>
-    #↓24.3 以降サンプル
-    # <tr>
-    # <td class="news_time"><time datetime="2024-03-05T15:30:00+09:00">03/05&nbsp;15:30</time></td>
-    # <td><div class="newslist_ctg newsctg3_kk_b oncodetip_code-data1" data-code="7605">決算</div></td>
-    # <td class="oncodetip_code-data1" data-code="7605"><img src="/images/cmn/gaiyou_icon_15px.jpg"  /></td>
-    # <td><a href="/news/?&b=k202403050010">フジコーポ、11-1月期(1Q)経常は5％減益で着地</a></td>
 
-    # </tr>
+def parse_kessan_html(html):
+
     def re_search_kessan(word):
         kessan_list = []
-        # re_expr = r'<td class="news_time"><time datetime="(.*?)T.*?">.*?</time></td>.*?<td class="%s.*?" data-code="(.*?)"></td>.*?<td><a href="(.*?)">(.*?)</a></td>'
         # 24.3 フォーマット変更対応
         re_expr = r'<td class="news_time"><time datetime="(.*?)T.*?">.*?</time></td>.*?<td><div class=".*?%s.*?" data-code="(.*?)">.*?</div></td>.*?<td><a href="(.*?)">(.*?)</a></td>'%word
         for m in re.finditer(
@@ -1022,8 +1009,7 @@ def get_todays_kessan_list(positive=False):
 
 
 def update_todays_kessan():
-    """
-    決算速報URLを解析して銘柄コード更新リストにする
+    """　決算速報URLを解析して銘柄コード更新リストにする
     """
     modify_lst = []
     announce_lst = []
