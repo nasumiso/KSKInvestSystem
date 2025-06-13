@@ -164,14 +164,14 @@ def parse_my_portforio():
     Returns:
         (list<str>,list<str>): ウォッチリストの銘柄コードリスト、保有リスト
     """
-    stocks = {}
+    # stocks = {}
     content = file_read(os.path.join(DATA_DIR, "my_watch_list.txt"))
     code_s_list = []
     possess_list = []
     # 英数字コード対応
     # for m in re.finditer(r'\d\d\d\d', content):
     for m in re.finditer(r'H?(\d[0-9a-zA-Z]\d[0-9A-Z])', content):		
-        if m.group(0).find("H")>=0:
+        if m.group(0).find("H") >= 0:
             if not m.group(1) in possess_list:
                 possess_list.append(m.group(1))
         else:
