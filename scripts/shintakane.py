@@ -199,7 +199,11 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 # day_listとday_list_dを合成
                 print(
                     "新高値銘柄%d個と出来高急増銘柄%d個を合成(%s)" %
-                    (len(day_list), len(day_list_d), day.date())
+                    (
+                        len(day_list),
+                        len(day_list_d),
+                        day.date()
+                    )
                 )
                 compose_list(day_list, day_list_d)
                 # print "---> 計%d個"%len(day_list)
@@ -237,10 +241,13 @@ def todays_shintakane(upd=UPD_INTERVAL):
             today_list = search_fromcsv(today_data)
             # 出来高急増も追加
             today_list_d = search_fromcsv_dekidakaup(today_data_d)
-            print("新高値銘柄%d個と出来高急増銘柄%d個を合成"%(len(today_list), len(today_list_d)))
+            print(
+                "新高値銘柄%d個と出来高急増銘柄%d個を合成"
+                % (len(today_list), len(today_list_d))
+            )
             compose_list(today_list, today_list_d)		
             # today_listには本日銘柄: 本日の新高値と出来高銘柄リスト
-            print("本日銘柄%s個"%len(today_list))
+            print("本日銘柄%s個" % len(today_list))
         return today_list
     today_list = create_today_list()
     today_list_code = [t['code_s'] for t in today_list]
@@ -266,20 +273,20 @@ def todays_shintakane(upd=UPD_INTERVAL):
         調査不要なものを省く
         """
         # print "候補数:", len(lst)
-        def filter_dekidakaup(l):
-            if "dekidaka_upratio" not in l:
+        def filter_dekidakaup(item):
+            if "dekidaka_upratio" not in item:
                 return True
-            return float(l["dekidaka_upratio"].replace(",", "")) >= 300
-        lst = [l for l in lst if filter_dekidakaup(l)]  # 出来高上昇率300%以上
+            return float(item["dekidaka_upratio"].replace(",", "")) >= 300
+        lst = [item for item in lst if filter_dekidakaup(item)]  # 出来高上昇率300%以上
 
-        def filter_themes(l):
-            stock = stocks.get(l["code_s"])
+        def filter_themes(item):
+            stock = stocks.get(item["code_s"])
             if not stock:
                 return False
             themes = stock.get("themes", "")
             return themes != ""
         # print "候補数2:", len(lst)
-        lst = [l for l in lst if filter_themes(l)]
+        lst = [item for item in lst if filter_themes(item)]
         # print "候補数3:", len(lst)
         return lst
     # 調査不要なものを除く(stocksが必要なのでここで)
@@ -339,33 +346,41 @@ def todays_shintakane(upd=UPD_INTERVAL):
         # ---- 価格データ更新
         print("")
         print("----> 価格データ更新")
-        stocks = stock_db.update_db_rows(today_list_all, tables=["price"], upd=upd)
+        stocks = stock_db.update_db_rows(
+            today_list_all, tables=["price"], upd=upd
+        )
         print("<---- 価格データ更新完了")
 
         # ------------------------------
         # 業績の更新
         # ------------------------------
         # 業績取得のためdbを更新
-        print("="*20)
+        print("=" * 20)
         print("業績を更新します", upd)
-        print("="*20)
+        print("=" * 20)
         # lates:Trueで業績や指標を更新
         # print "業績更新:", today_list_all
-        stocks = stock_db.update_db_rows(today_list_all, tables=["gyoseki"], upd=upd)
+        stocks = stock_db.update_db_rows(
+            today_list_all, tables=["gyoseki"], upd=upd
+        )
 
         # ---- 指標の更新
-        print("="*20)
+        print("=" * 20)
         print("指標を更新します")
-        print("="*20)
+        print("=" * 20)
         # dryscrapeでのreuter情報は封印していることに注意
         # print "%　指標更新:", code_list
-        stocks = stock_db.update_db_rows(today_list_all, tables=["shihyo"], upd=upd)
+        stocks = stock_db.update_db_rows(
+            today_list_all, tables=["shihyo"], upd=upd
+        )
 
         # ---- 理論株価の更新
-        print("="*20)
+        print("=" * 20)
         print("理論株価を更新します")
-        print("="*20)
-        stocks = stock_db.update_db_rows(today_list_all, tables=["rironkabuka"], upd=upd)
+        print("=" * 20)
+        stocks = stock_db.update_db_rows(
+            today_list_all, tables=["rironkabuka"], upd=upd
+        )
 
         return stocks
     # 価格更新: これコメントアウトすれば速くなる
@@ -391,17 +406,22 @@ def todays_shintakane(upd=UPD_INTERVAL):
         make_market_db.update_market_db()
         past_code = [t["code_s"] for t in already_only_list]
         today_code = [t["code_s"] for t in today_list]
-        shintakane_theme_csv = make_market_db.update_shintakane_theme_csv(stocks, today_code, past_code)
+        shintakane_theme_csv = make_market_db.update_shintakane_theme_csv(
+            stocks, today_code, past_code
+        )
         make_market_db.create_market_csv(None, shintakane_theme_csv)
     update_market()
 
     # ---- ここから結果表示
     # コードのみリストと　コード、表、出来高詳細、最低購入代金	
-    def puts(x): print(x, end=' ')
-    COLUMNS = ["コード", "銘柄名", "種類", "市場", "セクター", "詳細セクター", \
-    "株価", "前日比(%)", "出来高", "最低購入代金", "時価総額", \
-    "ローソク足ボラティリティ(20, 5)", "売り圧力レシオ(20, 5)", "シグナル", "タグ", "決算", \
-    "業績スコア", "指標", "RS", "ファンダ", "テーマ", "概要"]
+    def puts(x):
+        print(x, end=' ')
+    COLUMNS = [
+        "コード", "銘柄名", "種類", "市場", "セクター", "詳細セクター",
+        "株価", "前日比(%)", "出来高", "最低購入代金", "時価総額",
+        "ローソク足ボラティリティ(20, 5)", "売り圧力レシオ(20, 5)", "シグナル", "タグ", "決算",
+        "業績スコア", "指標", "RS", "ファンダ", "テーマ", "概要"
+    ]
     TO_CSV = True
     rows = []
     if TO_CSV:
@@ -422,15 +442,17 @@ def todays_shintakane(upd=UPD_INTERVAL):
         sector_detail = stock["sector_detail"]
         market_cap = int(stock["market_cap"])
         try:
-            vola = ",".join([str(round(v, 0)) for v in stock.get("stddev_volatility", [])])
-        except TypeError as e:
+            vola = ",".join(
+                [str(round(v, 0)) for v in stock.get("stddev_volatility", [])]
+            )
+        except TypeError:
             print("!!! volaが取得できない")
             vola = 0
         sprs = stock.get("sell_pressure_ratio", [])
         sprs_w = stock.get("sell_pressure_ratio_w", [])
         import price
         sell_press = price.get_spr_expr(sprs, sprs_w)
-        pocket_pivot = stock.get("pocket_pivot", "")
+        # pocket_pivot = stock.get("pocket_pivot", "")
         signal, tags = stock_db.make_signal(stock)
         tags = "/".join(tags)
         kessanbi = kessan.get_kessanbi_expr(stock)
@@ -453,7 +475,8 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 code, stock_name, origin, market, sector, sector_detail,
                 kabuka, d["zenjitsuhi_per"], d["dekidaga"], purchase_money,
                 market_cap, vola, sell_press, signal, tags, kessanbi,
-                score_gyoseki, shihyo_pt, mom_pt, funda_pt, major_theme, overview
+                score_gyoseki, shihyo_pt, mom_pt, funda_pt,
+                major_theme, overview
             ]
             rows.append(row)
         else:
@@ -496,10 +519,14 @@ def todays_shintakane(upd=UPD_INTERVAL):
         rows.append(["【本日既出銘柄】"])
     else:
         print("【本日既出銘柄】")
-    today_already_list_sort = sorted(today_already_list, key=score_func, reverse=True)
+    today_already_list_sort = sorted(
+        today_already_list, key=score_func, reverse=True
+    )
     [puts_detail(d) for d in today_already_list_sort]
     rows.append(["【過去銘柄】"])
-    already_only_list_sort = sorted(already_only_list, key=score_func, reverse=True)
+    already_only_list_sort = sorted(
+        already_only_list, key=score_func, reverse=True
+    )
     [puts_detail(d) for d in already_only_list_sort]
 
     # CSV書き込み
@@ -507,7 +534,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
         shintakane_result_csv = os.path.join(
             DATA_DIR,
             "shintakane_result_data/shintakane_result_%02d%02d%02d.csv" % (
-                latest_csv_dt.year % 2000, latest_csv_dt.month, latest_csv_dt.day
+                latest_csv_dt.year % 2000,
+                latest_csv_dt.month,
+                latest_csv_dt.day
             )
         )
         with open(shintakane_result_csv, "w", encoding="utf-8") as f:
@@ -516,7 +545,10 @@ def todays_shintakane(upd=UPD_INTERVAL):
 
         shutil.copy2(
             shintakane_result_csv,
-            os.path.join(DATA_DIR, "shintakane_result_data/shintakane_result.csv")
+            os.path.join(
+                DATA_DIR,
+                "shintakane_result_data/shintakane_result.csv"
+            )
         )
 
     # マーケット情報を表示
@@ -562,7 +594,7 @@ def convert_kabutan_dekidakaup_html(html):
         row.append(kabuka)
         row.append(zenjitsuhi)
         row.append("0")  # 前日比
-        row.append(dekidaka) # "出来高"
+        row.append(dekidaka)  # "出来高"
         row.append("0")  # 平均出来高
         row.append(dekidaka_up)  # 出来高前日比
         rank += 1
@@ -609,7 +641,7 @@ def convert_dekidakaup_html(html):
         row.append(zenjitsuhi)
         row.append(zenjitsuhi_per)
         # print zenjitsuhi, zenjitsuhi_per
-        volume = m.group(6)  #.replace('"', '')
+        volume = m.group(6)  # .replace('"', '')
         # print volume
         row.append(volume)  # 出来高
         average_volume = m.group(7)
@@ -643,24 +675,30 @@ def convert_kabutan_shintakane_html(html):
         market_name = m.group(3)
         kabuka = m.group(4)
         try:
-            zenjitsuhi = re.search(r'<span class="up">(.*)</span>', m.group(6)).group(1)
-            zenjitsuhi_per = re.search(r'<span class="up">(.*)</span>', m.group(7)).group(1) + "%"
+            zenjitsuhi = re.search(
+                r'<span class="up">(.*)</span>', m.group(6)
+            ).group(1)
+            zenjitsuhi_per = (
+                re.search(r'<span class="up">(.*)</span>', m.group(7)).group(1)
+                + "%"
+            )
         except AttributeError:
             zenjitsuhi = 0
             zenjitsuhi_per = 0
         # print code, stock_name, market_name, kabuka, zenjitsuhi, zenjitsuhi_per
         row = []
         row.append(str(rank))
-        row.append(code+" "+stock_name)
+        row.append(code + " " + stock_name)
         row.append(market_name)
         row.append("セクター")
         row.append(kabuka)
         row.append(zenjitsuhi)
         row.append(zenjitsuhi_per)
-        row.append("0") #"出来高"
+        row.append("0")  # "出来高"
         rank += 1
         rows.append(row)
     return rows
+
 
 def convert_shintakane_html(html):
     """
@@ -694,7 +732,7 @@ def convert_shintakane_html(html):
         zenjitsuhi_per = m2.group(3).replace("</span>", "")
         row.append(zenjitsuhi)
         row.append(zenjitsuhi_per)
-        volume = m.group(6)#.replace('"', '')
+        volume = m.group(6)  # .replace('"', '')
         # print zenjitsuhi, zenjitsuhi_per, volume
         row.append(volume)
         rows.append(row)
@@ -718,46 +756,72 @@ def get_todays_dekidakaup():
         # 	tdy = tdy-timedelta(days=1)
         goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, PRICE_HOUR)
         if latest_csv_dt > goodissue_dt:
-            print("本日分のcsvは取得済みです", latest_csv, latest_csv_dt, \
-            "goodissue", goodissue_dt)
+            print("本日分のcsvは取得済みです", latest_csv, latest_csv_dt,
+                  "goodissue", goodissue_dt)
             return
 
     print("----> 株探から出来高急増情報を取得します・・")
     URL_KABUTAN_DEKIDAKA = "https://kabutan.jp/tansaku/"
     QUERY = "?mode=2_0311&market=0&capitalization=-1&stc=v3&stm=1&page=%d"
     cache_dir = os.path.join(DATA_DIR, "cache_data")
-    path_dekidaka = os.path.join(cache_dir, get_http_cachname(URL_KABUTAN_DEKIDAKA+QUERY%1))
+    path_dekidaka = os.path.join(
+        cache_dir,
+        get_http_cachname(URL_KABUTAN_DEKIDAKA + QUERY % 1)
+    )
     htmls = []
     try:
         cach_dt = get_file_datetime(path_dekidaka)
         latest_html = file_read(path_dekidaka)
         # 更新日付を取得
-        latest_date_m = re.search(r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>', latest_html, re.S) # re.S:改行を含む
-        cach_dt = datetime(int(latest_date_m.group(1)), int(latest_date_m.group(2)), int(latest_date_m.group(3)))
-        useCache = cach_dt.date() >= datetime.today().date()
+        latest_date_m = re.search(
+            r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>',
+            latest_html, re.S
+        )  # re.S:改行を含む
+        cach_dt = datetime(
+            int(latest_date_m.group(1)),
+            int(latest_date_m.group(2)),
+            int(latest_date_m.group(3))
+        )
+        useCache = (
+            cach_dt.date() >= datetime.today().date()
+        )
         # TODO: ↑土日も取得してしまう
-        print("株探 出来高急増キャシュ：", cach_dt, useCache)
+        print(
+            "株探 出来高急増キャシュ：", cach_dt, useCache
+        )
     except (IOError, OSError) as e:
         print("!!! 出来高急増ファイルがない", e)
         useCache = False
-    html = http_get_html(URL_KABUTAN_DEKIDAKA+QUERY%1, use_cache=useCache, cache_dir=cache_dir)
+    html = http_get_html(
+        URL_KABUTAN_DEKIDAKA + QUERY % 1,
+        use_cache=useCache,
+        cache_dir=cache_dir
+    )
     htmls.append(html)
     # 更新日付
     date_m = re.search(r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>', html, re.S)
-    date = date_m.group(1)+date_m.group(2)+date_m.group(3)
+    date = date_m.group(1) + date_m.group(2) + date_m.group(3)
     date = date[2:]
     # date = re.search(r'<p class="updtime"><small>(.*)</small>', html).group(1)
     # date = date.split()[0][2:].replace("/", "") # 2014/08/15 18:27 更新
     print("株探 出来高急増更新日：", date)
     # ページ分のhtmlを取得
     # ページ数を取得
-    page_div = re.search(r'<div class="pagination">(.*?)</div>', html, re.S).group(0)
+    page_div = re.search(
+        r'<div class="pagination">(.*?)</div>',
+        html, re.S
+    ).group(0)
     pages = [int(m.group(1)) for m in re.finditer(r'page=(\d)', page_div)]
     page_count = max(pages)
     print("ページ数：", page_count)
     for p in range(page_count):
-        if p < 1: continue # 1ページ目は取得済み
-        html = http_get_html(URL_KABUTAN_DEKIDAKA+QUERY%(p+1), use_cache=useCache, cache_dir=cache_dir)
+        if p < 1:
+            continue  # 1ページ目は取得済み
+        html = http_get_html(
+            URL_KABUTAN_DEKIDAKA + QUERY % (p + 1),
+            use_cache=useCache,
+            cache_dir=cache_dir
+        )
         htmls.append(html)
 
     rows = []
@@ -765,11 +829,14 @@ def get_todays_dekidakaup():
         rows += convert_kabutan_dekidakaup_html(html)
 
     # 新高値情報リストを.csvファイルに保存
-    csv_fname = os.path.join(DATA_DIR, "shintakane_data/dekidakaup_"+date+".csv")
-    csv_w = csv.writer(open(csv_fname, "w", encoding="utf-8"))  # python3ではwbではなく、テキストモードで読み書き
+    csv_fname = os.path.join(DATA_DIR, "shintakane_data/dekidakaup_" + date + ".csv")
+    csv_w = csv.writer(
+        open(csv_fname, "w", encoding="utf-8")
+    )  # python3ではwbではなく、テキストモードで読み書き
     csv_w.writerows(rows)
-    print("今日の出来高急増を%sに保存しました"%csv_fname)
+    print("今日の出来高急増を%sに保存しました" % csv_fname)
     print("<---- 取得完了")
+
 
 def get_todays_shintakane():
     """	本日の新高値情報を株探から取得し、
@@ -782,47 +849,76 @@ def get_todays_shintakane():
         latest_csv_dt = get_file_datetime(latest_csv)
         tdy = datetime.today()
         if tdy.hour < 17:
-            tdy = tdy-timedelta(days=1)
+            tdy = tdy - timedelta(days=1)
         goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, 17)
         if latest_csv_dt > goodissue_dt:
-            print("本日分のcsvは取得済みです", latest_csv, latest_csv_dt, \
-            "goodissue", goodissue_dt)
+            print("本日分のcsvは取得済みです", latest_csv, latest_csv_dt,
+                  "goodissue", goodissue_dt)
             return
 
     print("----> 株探から新高値情報を取得します・・")
     URL_KABUTAN_SHINTAKANE = "https://kabutan.jp/warning/"
     # QUERY = "?mode=3_3&market=0&capitalization=-1&stc=&stm=0&page=%d"	
-    QUERY = "record_w52_high_price?market=0&capitalization=-1&stc=&stm=0&page=%d"
+    QUERY = (
+        "record_w52_high_price?market=0&capitalization=-1"
+        "&stc=&stm=0&page=%d"
+    )
     # 最新キャッシュ取得日を取得
     cache_dir = os.path.join(DATA_DIR, "cache_data")
     try:
-        latest_html = file_read(os.path.join(cache_dir, get_http_cachname(URL_KABUTAN_SHINTAKANE+QUERY%1)))
-        latest_date_m = re.search(r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>', latest_html, re.S) # re.S:改行を含む
-        cach_dt = datetime(int(latest_date_m.group(1)), int(latest_date_m.group(2)), int(latest_date_m.group(3)))
+        latest_html = file_read(
+            os.path.join(
+                cache_dir,
+                get_http_cachname(URL_KABUTAN_SHINTAKANE + QUERY % 1)
+            )
+        )
+        latest_date_m = re.search(r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>', latest_html, re.S)  # re.S:改行を含む
+        cach_dt = datetime(
+            int(latest_date_m.group(1)),
+            int(latest_date_m.group(2)),
+            int(latest_date_m.group(3))
+        )
         useCache = cach_dt.date() >= datetime.today().date()
         print("株探新高値 キャシュ：", cach_dt, useCache)
-    except IOError as e:
+    except IOError:
         useCache = False
     # 最初のページ
     htmls = []
-    html = http_get_html(URL_KABUTAN_SHINTAKANE+QUERY%1, use_cache=useCache, cache_dir=cache_dir)
+    html = http_get_html(
+        URL_KABUTAN_SHINTAKANE + QUERY % 1,
+        use_cache=useCache,
+        cache_dir=cache_dir
+    )
     htmls.append(html)
     # 更新日付
-    date_m = re.search(r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>', html, re.S) # re.S:改行を含む
-    date = date_m.group(1)[-2:]+date_m.group(2)+date_m.group(3)
+    date_m = re.search(
+        r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>',
+        html,
+        re.S
+    )  # re.S:改行を含む
+    date = date_m.group(1)[-2:] + date_m.group(2) + date_m.group(3)
     print("株探新高値更新日：", date)
     # ページ分のhtmlを取得
     # ページ数を取得
     try:
-        page_div = re.search(r'<div class="pagination">(.*?)</div>', html, re.S).group(0)
+        page_div = re.search(
+            r'<div class="pagination">(.*?)</div>',
+            html,
+            re.S
+        ).group(0)
         pages = [int(m.group(1)) for m in re.finditer(r'page=(\d)', page_div)]
         page_count = max(pages)
-    except AttributeError as e:
+    except AttributeError:
         print("ページ情報がhtmlにないため1とする")
         page_count = 1
     for p in range(page_count):
-        if p < 1: continue # 1ページ目は取得済み
-        html = http_get_html(URL_KABUTAN_SHINTAKANE+QUERY % (p+1), use_cache=useCache, cache_dir=cache_dir)
+        if p < 1:
+            continue  # 1ページ目は取得済み
+        html = http_get_html(
+            URL_KABUTAN_SHINTAKANE + QUERY % (p + 1),
+            use_cache=useCache,
+            cache_dir=cache_dir
+        )
         htmls.append(html)
     # 新高値htmlからデータを保持
     rows = []
@@ -830,25 +926,33 @@ def get_todays_shintakane():
         rows += convert_kabutan_shintakane_html(html)
 
     # 新高値情報リストを.csvファイルに保存
-    csv_fname = os.path.join(DATA_DIR, "shintakane_data/shintakane_"+date+".csv")
-    csv_w = csv.writer(open(csv_fname, "w", encoding="utf-8"))  # python3ではwbではなく、テキストモードで読み書き
+    csv_fname = os.path.join(
+        DATA_DIR,
+        "shintakane_data",
+        "shintakane_" + date + ".csv"
+    )
+    csv_w = csv.writer(
+        open(csv_fname, "w", encoding="utf-8")
+    )  # python3ではwbではなく、テキストモードで読み書き
     csv_w.writerows(rows)
-    print("今日の新高値を%sに保存しました"%csv_fname)
+    print("今日の新高値を%sに保存しました" % csv_fname)
 
     print("<---- 取得完了")
+
 
 def wait_connect():
     """
     laucnhdのための接続
     """
-    import datetime, time
+    import datetime
+    import time
     first_time = datetime.datetime.now()
     diff = (datetime.datetime.now() - first_time).seconds
     while diff <= 30:
         try:
             url = "https://www.google.co.jp/"
             import requests
-            r = requests.get(url)
+            requests.get(url)
             print("接続確立")
             return True
         except requests.exceptions.ConnectionError as e:
@@ -878,7 +982,9 @@ def parse_kessan_html(html):
         # re_expr = r'<td class="news_time"><time datetime="(.*?)T.*?">.*?</time></td>.*?<td class="%s.*?" data-code="(.*?)"></td>.*?<td><a href="(.*?)">(.*?)</a></td>'
         # 24.3 フォーマット変更対応
         re_expr = r'<td class="news_time"><time datetime="(.*?)T.*?">.*?</time></td>.*?<td><div class=".*?%s.*?" data-code="(.*?)">.*?</div></td>.*?<td><a href="(.*?)">(.*?)</a></td>'%word
-        for m in re.finditer(re_expr, html, re.S):  # .decode('utf-8'): python3ではhtmlはbytes型なのでdecodeする?
+        for m in re.finditer(
+            re_expr, html, re.S
+        ):  # .decode('utf-8'): python3ではhtmlはbytes型なのでdecodeする?
             date = m.group(1).replace("-", "/")
             # datetime.strptime(date, "%Y/%m/%d")
             code_s = m.group(2)
@@ -891,25 +997,29 @@ def parse_kessan_html(html):
             print("!!!決算ページフォーマット変更?")
         return kessan_list
     mod_lst = re_search_kessan("ctg3_ks")
-    print("決算修正:", [l[:2] for l in mod_lst])
+    print("決算修正:", [item[:2] for item in mod_lst])
 
     announce_lst = re_search_kessan("ctg3_kk")
     print("決算発表:", [l[:2] for l in announce_lst])
     return mod_lst, announce_lst
 
+
 # ------------------------------
 # 決算関係
 # ------------------------------
-
-
 def get_todays_kessan_list(positive=False):
-    cache_csv_path = os.path.join(DATA_DIR, "todays_kessan_data", "todays_kessan.csv")
-    csv_r = csv.reader(open(cache_csv_path, 'r', encoding="utf-8"))  # python3ではrbではなくrで開く
+    cache_csv_path = os.path.join(
+        DATA_DIR, "todays_kessan_data", "todays_kessan.csv"
+    )
+    csv_r = csv.reader(
+        open(cache_csv_path, 'r', encoding="utf-8")
+    )  # python3ではrbではなくrで開く
     code_s_lst = []
     for row in csv_r:
         if kessan.is_positive_kessan(row[3]):
             code_s_lst.append(row[0])
     return code_s_lst
+
 
 def update_todays_kessan():
     """
@@ -919,30 +1029,35 @@ def update_todays_kessan():
     announce_lst = []
     cache_dir = os.path.join(DATA_DIR, "todays_kessan_data")
     cache_csv_path = os.path.join(cache_dir, "todays_kessan.csv")
-    print("-"*30)
+    print("-" * 30)
     print("決算発表/修正に対するDB更新")
-    print("-"*30)
+    print("-" * 30)
     # とりあえず、本日分までページを読むことにする
-    page_max = 33 # 最大確認ページ数
-    before_day = 2 # 本日からさかのぼって確認する日数
+    page_max = 33  # 最大確認ページ数
+    before_day = 2  # 本日からさかのぼって確認する日数
     for p in range(page_max):
-        page = p+1
-        TODAYS_KESSAN_URL = "https://kabutan.jp/news/?page=%d"%page
-        cache_fname = "todays_kessan_page_%d.html"%page
+        page = p + 1
+        TODAYS_KESSAN_URL = "https://kabutan.jp/news/?page=%d" % page
+        cache_fname = "todays_kessan_page_%d.html" % page
         cache_path = os.path.join(cache_dir, cache_fname)
         # 1ページの日付でキャッシュを使うか判定
         # if page == 1:
         use_cache = False
         if os.path.exists(cache_path):
             cache_date = get_price_day(get_file_datetime(cache_path))
-            
+
             tdy_date = get_price_day(datetime.today())
             if os.path.exists(cache_path) and tdy_date <= cache_date:
                 use_cache = True
-            print("%dページ決算発表キャッシュ日付:%s キャッシュ:%s"%(page, cache_date, use_cache))
+            print(
+                "%dページ決算発表キャッシュ日付:%s キャッシュ:%s"
+                % (page, cache_date, use_cache)
+            )
 
-        kessan_html = http_get_html(TODAYS_KESSAN_URL, use_cache=use_cache, \
-            cache_dir=cache_dir, cache_fname=cache_fname)
+        kessan_html = http_get_html(
+            TODAYS_KESSAN_URL, use_cache=use_cache,
+            cache_dir=cache_dir, cache_fname=cache_fname
+        )
         # print ux_cmd_head(kessan_html)
         # 決算htmlの日付を取得
         mod, announce = parse_kessan_html(kessan_html)
@@ -950,18 +1065,27 @@ def update_todays_kessan():
         modify_lst += mod
         announce_lst += announce
         if len(modify_lst) > 0:
-            current_day = datetime.strptime(modify_lst[-1][1], "%Y/%m/%d").date()
+            current_day = datetime.strptime(
+                modify_lst[-1][1], "%Y/%m/%d"
+            ).date()
         else:
-            current_day = datetime.strptime(announce_lst[-1][1], "%Y/%m/%d").date()
+            current_day = datetime.strptime(
+                announce_lst[-1][1], "%Y/%m/%d"
+            ).date()
         today = datetime.today().date()
-        kessan_ge_day = today-timedelta(before_day)
-        print("ページ:%d 今読んでいる決算日付:%s ここまで取得日:%s"%(page, current_day, kessan_ge_day))		
+        kessan_ge_day = today - timedelta(before_day)
+        print(
+            "ページ:%d 今読んでいる決算日付:%s ここまで取得日:%s"
+            % (page, current_day, kessan_ge_day)
+        )
         if p > 0 and kessan_ge_day > current_day:
             break
     # CSVキャッシュに保存
-    with open(cache_csv_path, "w", encoding="utf-8") as f: # python3ではwbではなく、テキストモードで読み書き
-        csv_w = csv.writer(f)  
-        kessan_lst = modify_lst+announce_lst
+    with open(
+        cache_csv_path, "w", encoding="utf-8"
+    ) as f:  # python3ではwbではなく、テキストモードで読み書き
+        csv_w = csv.writer(f) 
+        kessan_lst = modify_lst + announce_lst
         csv_w.writerows(kessan_lst)
         print(cache_csv_path, "に保存しました")
 
@@ -973,8 +1097,14 @@ def update_todays_kessan():
         mod_date = item[1]
         try:
             stocks[code_s]["kessan_mod_date"] = mod_date
-            stocks[code_s]["kessan_announce"] = "修正,"+item[2]+","+item[3]
-            print("決算修正:", code_s, stocks[code_s]["stock_name"], mod_date, item[3])
+            stocks[code_s]["kessan_announce"] = "修正," + item[2] + "," + item[3]
+            print(
+                "決算修正:",
+                code_s,
+                stocks[code_s]["stock_name"],
+                mod_date,
+                item[3]
+            )
         except KeyError:
             print(code_s, "はDBにありません")
     for item in announce_lst:
@@ -989,7 +1119,13 @@ def update_todays_kessan():
         except KeyError:
             print(code_s, "はDBにありません")
             continue
-        print("決算発表:", code_s, stocks[code_s].get("stock_name","銘柄名不明"), announce_date, item[3])
+        print(
+            "決算発表:",
+            code_s,
+            stocks[code_s].get("stock_name", "銘柄名不明"),
+            announce_date,
+            item[3]
+        )
     stock_db.save_stock_db(stocks)
     # ついでにmake_market_dbで表示される監視銘柄の決算日付更新
     update_pf_kessan_db(stocks)
@@ -1029,7 +1165,10 @@ def main():
     if "analyze" in args:
         todays_shintakane(UPD_INTERVAL)  # UPD_FORCE/UPD_INTERVAL/UPD_CACHE/UPD_REEVAL
         # GoogleDriveにアップロード
-        shintakane_result_csv = os.path.join(DATA_DIR, "shintakane_result_data/shintakane_result.csv")
+        shintakane_result_csv = os.path.join(
+            DATA_DIR, 
+            "shintakane_result_data/shintakane_result.csv"
+        )
         import googledrive
         googledrive.upload_csv(shintakane_result_csv, "shintakane_result")
     # 現在の銘柄DBをもとに決算DBの更新
