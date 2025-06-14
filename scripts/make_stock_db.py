@@ -950,7 +950,13 @@ def list_all_db(upload_csv=True, update_portforio=True):
     # GoogleDriveにアップロード
     if upload_csv:
         import googledrive
-        googledrive.upload_csv(rank_csv, "code_rank")
+        # googledrive.upload_csv(rank_csv, "code_rank")
+        import threading
+        threading.Thread(
+            target=googledrive.upload_csv,
+            args=(rank_csv, "code_rank"),
+            daemon=False
+        ).start()
 
 
 def load_stock_db():
@@ -1150,6 +1156,7 @@ def _fix_str(obj):
 
 def convert_pickle_latin1_to_utf8(old_path, new_path):
     """ 古いpickleファイルを読み込み、latin1からutf-8に変換して保存する
+    (2025.6 Python3移行時に実行、もう使わないかと)
     Args:
     old_path (str): 変換元のpickleファイルパス
     new_path (str): 変換後のpickleファイルパス

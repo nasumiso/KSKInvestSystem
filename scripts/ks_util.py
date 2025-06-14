@@ -271,7 +271,8 @@ def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
 def save_pickle(fname, content):
     print("%sにpickleセーブ"%fname)
     with open(fname, 'wb') as f:
-        pickle.dump(content, f)
+        # 高速化のためプロトコル指定
+        pickle.dump(content, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def load_pickle(fname):
