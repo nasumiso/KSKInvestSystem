@@ -78,18 +78,18 @@ def backup_file(fname, day=0):
     delta = today - date
     print("%sは%s日前"%(fname, delta.days))
     backup_fname = "%s_%02d%02d%02d%s" % (os.path.splitext(fname)[0], \
-        date.year-2000, date.month, date.day, os.path.splitext(fname)[1])
+        date.year - 2000, date.month, date.day, os.path.splitext(fname)[1])
     # backup_fname = "stocks_pickle_back/"+backup_fname
     # print backup_fname
     if not os.path.exists(backup_fname):
         if delta.days >= day:
-            print("バックアップ:%s(%d) => %s"%(fname, os.path.getsize(fname), \
+            print("バックアップ:%s(%d) => %s" % (fname, os.path.getsize(fname), \
             backup_fname))
             shutil.copy2(fname, backup_fname)
         else:
             pass
     else:
-        print(backup_fname+"にバックアップ済み")
+        print(backup_fname + "にバックアップ済み")
     return backup_fname
 
 
@@ -116,6 +116,40 @@ def get_file_datetime(fname):
     return datetime.fromtimestamp(stat.st_mtime)
 
 
+@contextmanager
+def suppress_stdout():
+    """
+    標準出力を抑制するコンテキストマネージャ
+    """
+    original_stdout = sys.stdout
+    sys.stdout = open(os.devnull, 'w')
+    try:
+        yield
+    finally:
+        sys.stdout = original_stdout
+
+
+@contextmanager
+def chdir(path):
+    """
+    コンテキストマネージャで指定したパスに一時的に移動し、処理終了後または例外発生時に元の作業ディレクトリに戻ります。
+    Args:
+        :param path: 移動先のパス
+    """
+    original_dir = os.getcwd()
+    try:
+        print(f"実行パス設定: {original_dir} -> {path}")
+        os.chdir(path)
+        yield
+    except Exception as e:
+        print(f"Error changing directory to {path}: {e}")
+        raise
+    finally:
+        if os.getcwd() != original_dir:
+            print(f"元のパスに戻します: {original_dir}")
+            os.chdir(original_dir)
+
+
 PRICE_HOUR = 18 #  これ以前は前日、これ以降は当日
 
 
@@ -127,16 +161,16 @@ def get_price_day(dt):
     """
     need_dt = dt
     if dt.hour < PRICE_HOUR:
-        need_dt = (dt-timedelta(1))
+        need_dt = (dt - timedelta(1))
     return need_dt.date()
+
 
 # ==================================================
 # 計算ユーティリティ
 # ==================================================
-
-
 def sumproduct(*lists):
     return sum(reduce(operator.mul, data) for data in zip(*lists))
+
 
 def average(lst):
     """平均を求める
@@ -162,9 +196,11 @@ def step_func(val, xs, ys, min_val=None):
         if val > x:
             val_y = y
             break
-    return val_y		
+    return val_y
+
+
 # ==================================================
-# httpユーティリティ	
+# httpユーティリティ
 # ==================================================
 USER_AGENT_CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.125 Safari/537.36"
 
@@ -174,6 +210,7 @@ def get_http_cachname(url):
     urlからデフォルトのキャッシュファイルの場所を返す
     """
     return url.replace("http://", "").replace(".", "").replace("/", "_")+".html"
+
 
 def http_get_html(url, use_cache=True, cache_dir="", cache_fname="", cookies={}, encoding='utf-8'):
     """
@@ -208,6 +245,7 @@ def http_get_html(url, use_cache=True, cache_dir="", cache_fname="", cookies={},
     file_write(cache_name, html)
     return html
 
+
 def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
     cache_name = "post_"+get_http_cachname(url)
     if use_cache and os.path.exists(cache_name):
@@ -226,15 +264,16 @@ def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
     file_write(cache_name, html)
     return html, r.cookies
 
+
 # ==================================================
 # pickleデータベースユーティリティ	
 # ==================================================
-
-
 def save_pickle(fname, content):
     print("%sにpickleセーブ"%fname)
     with open(fname, 'wb') as f:
-        pickle.dump(content, f)
+        # 高速化のためプロトコル指定
+        pickle.dump(content, f, protocol=pickle.HIGHEST_PROTOCOL)
+
 
 def load_pickle(fname):
     print("%sからpickleロード"%fname)
@@ -248,6 +287,7 @@ def load_pickle(fname):
     return dat
 memoized_load_pickle = memoize(load_pickle)
 
+
 def load_file(fname, tb='r'):
     print("%sのfileロード"%fname)
     try:
@@ -258,14 +298,15 @@ def load_file(fname, tb='r'):
         print(e)
         return ""
     return dat
+
+
 memoized_load_file = memoize(load_file)
+
 
 # ==================================================
 # SQLデータベースユーティリティ	
 # ==================================================
 @contextmanager
-
-
 def open_db(dbname):
     print("---> open_db:",dbname)
     con = sqlite3.connect(dbname)
@@ -292,9 +333,6 @@ def exists_table(cur, table_name):
 def create_table(cur, table_name):
     sql = """create table stocks(code integer primary key, name text, jikasogaku integer, konyukagaku integer)"""
     exec_sql(cur, sql)
-
-
-    
 
 
 def list_db():
