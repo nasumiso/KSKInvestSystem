@@ -1,5 +1,6 @@
 ﻿#!/usr/bin/env python3
 
+import argparse
 import sys
 import os
 import re
@@ -841,7 +842,9 @@ def get_todays_dekidakaup():
         rows += convert_kabutan_dekidakaup_html(html)
 
     # 新高値情報リストを.csvファイルに保存
-    csv_fname = os.path.join(DATA_DIR, "shintakane_data/dekidakaup_" + date + ".csv")
+    csv_fname = os.path.join(
+        DATA_DIR, "shintakane_data/dekidakaup_" + date + ".csv"
+    )
     csv_w = csv.writer(
         open(csv_fname, "w", encoding="utf-8")
     )  # python3ではwbではなく、テキストモードで読み書き
@@ -1073,11 +1076,12 @@ def update_todays_kessan():
         today = datetime.today().date()
         kessan_ge_day = today - timedelta(before_day)
         print(
-            "ページ:%d 今読んでいる決算日付:%s ここまで取得日:%s"
+            "決算ページ:%d 今読んでいる決算日付:%s ここまで取得日:%s"
             % (page, current_day, kessan_ge_day)
         )
         if p > 0 and kessan_ge_day > current_day:
             break
+    
     # CSVキャッシュに保存
     with open(
         cache_csv_path, "w", encoding="utf-8"
@@ -1183,8 +1187,17 @@ def main():
 # TODO: 週足で過去イチの出来高銘柄は、already_listから選んでタグ付けしたい
 if __name__ == '__main__':
     # カレントディレクトリをこの.pyの場所に
-    path = os.path.abspath(os.path.dirname(__file__))
-    os.chdir(path)
-    cwd = os.getcwd()
-    main()
-    os.chdir(cwd)
+    with chdir(os.path.abspath(os.path.dirname(__file__))):
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "--quiet", action="store_true",
+            help="標準出力(print)を抑制する"
+        )
+        args = parser.parse_args()
+        if args.quiet:
+            print("標準出力を抑制します")
+            with suppress_stdout():
+                main()
+            print("抑制終了")
+        else:
+            main()

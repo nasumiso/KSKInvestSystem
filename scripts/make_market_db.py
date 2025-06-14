@@ -4,6 +4,7 @@
 # セクターDBを作成します。
 # =================================================
 
+import argparse
 import re
 from datetime import datetime, timedelta
 import csv
