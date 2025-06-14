@@ -290,7 +290,14 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
         csv_w = csv.writer(f)
         csv_w.writerows(rows)
 
-    googledrive.upload_csv(csv_path, "market_data")
+    # GoogleDriveに非同期アップロード
+    import threading
+    threading.Thread(
+        target=googledrive.upload_csv,
+        args=(csv_path, "market_data"),
+        daemon=False
+    ).start()
+    # googledrive.upload_csv(csv_path, "market_data")
 
 
 def update_shintakane_theme(stocks, code_list):

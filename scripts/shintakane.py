@@ -423,7 +423,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
             stocks, today_code, past_code
         )
         make_market_db.create_market_csv(None, shintakane_theme_csv)
-    update_market()
+    update_market()  # マーケットDB更新、アップロード
 
     # ---- ここから結果表示
     # コードのみリストと　コード、表、出来高詳細、最低購入代金	
@@ -979,30 +979,36 @@ def wait_connect():
 
 
 def parse_kessan_html(html):
-
-    def re_search_kessan(word):
+    """決算ページのhtmlを解析して、決算修正と決算発表の
+    リストを返す
+    決算修正と決算発表のhtmlは同じフォーマットなので、
+    wordを変えることで両方取得できる"""
+    def re_search_kessan(word, body_html):
         kessan_list = []
         # 24.3 フォーマット変更対応
-        re_expr = r'<td class="news_time"><time datetime="(.*?)T.*?">.*?</time></td>.*?<td><div class=".*?%s.*?" data-code="(.*?)">.*?</div></td>.*?<td><a href="(.*?)">(.*?)</a></td>'%word
+        re_expr = r'<td class="news_time"><time datetime="(.*?)T.*?">.*?</time></td>.*?<td><div class=".*?%s.*?" data-code="(.*?)">.*?</div></td>.*?<td><a href="(.*?)">(.*?)</a></td>' % word
         for m in re.finditer(
-            re_expr, html, re.S
+            re_expr, body_html, re.S
         ):  # .decode('utf-8'): python3ではhtmlはbytes型なのでdecodeする?
             date = m.group(1).replace("-", "/")
             # datetime.strptime(date, "%Y/%m/%d")
             code_s = m.group(2)
             link = m.group(3)
             summary = m.group(4)
-            # print "日付:", date , "コード:", code_s
             kessan_list.append((code_s, date, link, summary))
-            # print link, summary
         if not kessan_list:
             print("!!!決算ページフォーマット変更?")
         return kessan_list
-    mod_lst = re_search_kessan("ctg3_ks")
+
+    # htmlから、決算情報が含まれば箇所を取得(正規表現にコストかかるため高速化)
+    body_html = re.search(
+        r'<table class="s_news_list mgbt0">(.*?)</table>', html, re.S
+    ).group(1)
+    mod_lst = re_search_kessan("ctg3_ks", body_html)
     print("決算修正:", [item[:2] for item in mod_lst])
 
-    announce_lst = re_search_kessan("ctg3_kk")
-    print("決算発表:", [l[:2] for l in announce_lst])
+    announce_lst = re_search_kessan("ctg3_kk", body_html)
+    print("決算発表:", [item[:2] for item in announce_lst])
     return mod_lst, announce_lst
 
 
@@ -1171,8 +1177,14 @@ def main():
             DATA_DIR, 
             "shintakane_result_data/shintakane_result.csv"
         )
+        import threading
         import googledrive
-        googledrive.upload_csv(shintakane_result_csv, "shintakane_result")
+        threading.Thread(
+            target=googledrive.upload_csv,
+            args=(shintakane_result_csv, "shintakane_result"),
+            daemon=False
+        ).start()
+        # googledrive.upload_csv(shintakane_result_csv, "shintakane_result")
     # 現在の銘柄DBをもとに決算DBの更新
     if "udpate_kessan_db" in args:
         stocks = stock_db.load_stock_db()

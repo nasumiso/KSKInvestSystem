@@ -138,6 +138,7 @@ def chdir(path):
     """
     original_dir = os.getcwd()
     try:
+        print(f"実行パス設定: {original_dir} -> {path}")
         os.chdir(path)
         yield
     except Exception as e:
@@ -145,6 +146,7 @@ def chdir(path):
         raise
     finally:
         if os.getcwd() != original_dir:
+            print(f"元のパスに戻します: {original_dir}")
             os.chdir(original_dir)
 
 
