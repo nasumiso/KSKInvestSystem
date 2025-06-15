@@ -316,7 +316,6 @@ def get_gyoseki_data(stocks, code_s, upd=UPD_INTERVAL):
     業績データを取得するインターフェース
     -> dict
     """
-    # code = int(code)
     if code_s in stocks:
         if "access_date_gyoseki" in stocks[code_s] and upd < UPD_INTERVAL:
             print("DBから業績情報を取得します")
@@ -433,7 +432,6 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
     Return:
         更新されたDB
     """
-    # TODO: ETF系は更新はぶく？事前にはstocksデータないからここでしかわからん
     # ロード
     table_pickle = STOCKS_PICKLE
     stocks = {}

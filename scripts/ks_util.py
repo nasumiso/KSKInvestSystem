@@ -78,14 +78,18 @@ def backup_file(fname, day=0):
     today = datetime.today()
     delta = today - date
     print("%sは%s日前"%(fname, delta.days))
-    backup_fname = "%s_%02d%02d%02d%s" % (os.path.splitext(fname)[0], \
-        date.year - 2000, date.month, date.day, os.path.splitext(fname)[1])
+    backup_fname = "%s_%02d%02d%02d%s" % (
+        os.path.splitext(fname)[0],
+        date.year - 2000, date.month, date.day, os.path.splitext(fname)[1]
+    )
     # backup_fname = "stocks_pickle_back/"+backup_fname
     # print backup_fname
     if not os.path.exists(backup_fname):
         if delta.days >= day:
-            print("バックアップ:%s(%d) => %s" % (fname, os.path.getsize(fname), \
-            backup_fname))
+            print(
+                "バックアップ:%s(%d) => %s"
+                % (fname, os.path.getsize(fname), backup_fname)
+            )
             shutil.copy2(fname, backup_fname)
         else:
             pass
@@ -115,40 +119,6 @@ def get_file_datetime(fname):
 
     stat = os.stat(fname)
     return datetime.fromtimestamp(stat.st_mtime)
-
-
-@contextmanager
-def suppress_stdout():
-    """
-    標準出力を抑制するコンテキストマネージャ
-    """
-    original_stdout = sys.stdout
-    sys.stdout = open(os.devnull, 'w')
-    try:
-        yield
-    finally:
-        sys.stdout = original_stdout
-
-
-@contextmanager
-def chdir(path):
-    """
-    コンテキストマネージャで指定したパスに一時的に移動し、処理終了後または例外発生時に元の作業ディレクトリに戻ります。
-    Args:
-        :param path: 移動先のパス
-    """
-    original_dir = os.getcwd()
-    try:
-        print(f"実行パス設定: {original_dir} -> {path}")
-        os.chdir(path)
-        yield
-    except Exception as e:
-        print(f"Error changing directory to {path}: {e}")
-        raise
-    finally:
-        if os.getcwd() != original_dir:
-            print(f"元のパスに戻します: {original_dir}")
-            os.chdir(original_dir)
 
 
 @contextmanager
@@ -270,7 +240,6 @@ def get_http_cachname(url):
     )
 
 
-
 def http_get_html(
     url,
     use_cache=True,
@@ -282,8 +251,19 @@ def http_get_html(
     """
     指定urlをリクエストしエンコード済みテキストを返します。
     TODO: use_cacheを有効期限期日指定したほうがスッキリするはず
+    Args:
+        url (str): 取得するURL
+        use_cache (bool): キャッシュファイルを使用するかどうか
+        cache_dir (str): キャッシュディレクトリのパス
+        cache_fname (str): キャッシュファイル名（指定がなければURLから生成）
+        cookies (dict): リクエストに使用するクッキー
+        encoding (str): 取得するHTMLのエンコーディング
+    Returns:
+        str: 取得したHTMLのテキスト
     """
+    # 指定されていなければurlからキャッシュファイル名を取得
     cache_name = get_http_cachname(url) if not cache_fname else cache_fname
+    # 指定されていればキャッシュディレクトリからパス取得
     if cache_dir:
         cache_name = os.path.join(cache_dir, cache_name)
     if use_cache and os.path.exists(cache_name):
@@ -291,15 +271,18 @@ def http_get_html(
         html = file_read(cache_name)
         return html
 
+    # ---- キャッシュがない場合は通信で取得
     print("  htmlを通信で取得します..")
     headers = {"User-Agent": USER_AGENT_CHROME}
     # headers["Connection"] = "Keep-Alive"
     try:
         session = _current_session.get()
         req_get = session.get if session else requests.get
+        if not session:
+            print("単独セッションを使用")
         r = req_get(url, headers=headers, cookies=cookies)
     except requests.exceptions.ConnectionError as e:
-        print("!!! 接続失敗")
+        eprint("!!! 接続失敗")
         print(e)
         return ""
     if r.encoding != 'utf-8':
@@ -348,7 +331,7 @@ def load_pickle(fname):
     print("%sからpickleロード" % fname)
     try:
         f = open(fname, 'rb')
-        dat = pickle.load(f) 
+        dat = pickle.load(f)
         f.close()
     except IOError as e:
         print(e)
@@ -375,8 +358,7 @@ def set_db_code(rec, code):
     rec["code_s"] = str(code)
 
 
-def get_db_code(rec):
-    # type: dict -> dict
+def get_db_code(rec: dict) -> str:
     if "code_s" not in rec:
         if "code" in rec:
             code = rec["code"]

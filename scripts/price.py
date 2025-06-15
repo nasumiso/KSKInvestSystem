@@ -17,40 +17,42 @@ PRICE_D_FNAME_KABUTAN = os.path.join(
 INTERVAL_DAY_D = 1
 INTERVAL_DAY_W = 7
 
-def get_daily_html_kabutan(code_s ,cache=True):
+
+def get_daily_html_kabutan(code_s, cache=True):
     """日次時系列価格データhtmlを取得する
     """
     html = ""
-    print("----> %sの日次価格情報を取得します・・"%code_s, cache)
+    print("----> %sの日次価格情報を株探から取得します・・" % code_s, cache)
     ind = 0
-    price_fname = PRICE_D_FNAME_KABUTAN%(code_s,ind+1)
+    price_fname = PRICE_D_FNAME_KABUTAN % (code_s, ind + 1)
     # print price_fname
     # キャッシュファイルから取得
     if cache and os.path.exists(price_fname):
-        # TODO: 最新情報がなければ取りに行く
+        # 最新情報がなければ取りに行く
         cach, cach_date = is_file_timestamp(price_fname, INTERVAL_DAY_D)
         if cach:
-            html = open(price_fname, 'r').read()
-            # htmls.append(html)
-            # continue
-            return html
+            # html = open(price_fname, 'r').read()
+            # return html
+            pass
         else:
-             print("キャッシュの期限切れ(%s)"%cach_date.date())
-    # 株探から取得		
-    try:
-        url = URL_PRICE_D_KABUTAN%(code_s, ind+1)
-        print("%sから株探から通信で取得.."%url)
-        r = requests.get(url)
-        html = r.text # .encode('utf-8') :python3では不要
-        # htmls.append(html)
-        open(price_fname, 'w').write(html)
-    except requests.exceptions.ConnectionError as e:
-        print("!!! %sにつながりません"%url)
-        print(e)
-        # break
+            print("キャッシュの期限切れ(%s)" % cach_date.date())
+            cache = False
+    # 株探から取得
+    # try:
+    #     url = URL_PRICE_D_KABUTAN % (code_s, ind+1)
+    #     print("%sから株探から通信で取得.." % url)
+    #     r = requests.get(url)
+    #     html = r.text  # .encode('utf-8') :python3では不要
+    #     open(price_fname, 'w').write(html)
+    # except requests.exceptions.ConnectionError as e:
+    #     print("!!! %sにつながりません"%url)
+    #     print(e)
+    url = URL_PRICE_D_KABUTAN % (code_s, ind + 1)
+    html = http_get_html(url, use_cache=cache, cache_fname=price_fname)
 
     print("<---- 取得完了")
     return html
+
 
 def get_price_interval_day(day1, day2):
     # TODO: 17時の時点でYahooの価格は更新されてない？
@@ -58,7 +60,9 @@ def get_price_interval_day(day1, day2):
     day2 = get_price_day(day2)
     return (day1 - day2).days
 
+
 def is_file_timestamp(fname, interval_day):
+    """キャッシュファイルの更新日時をチェック"""
     stat = os.stat(fname)
     cach_date = datetime.fromtimestamp(stat.st_mtime)
     print("cach_date:", cach_date, fname)
@@ -76,34 +80,44 @@ PRICE_FNAME_KABUTAN = os.path.join(DATA_DIR, "stock_data/kabutan/price/kabutan_p
 def get_weekly_html(code_s, cache=True):
     """株探から週次データを取得
     type: (str, bool) -> str
+    Args:
+        code_s(str): 銘柄コード
+        cache(bool): キャッシュを使用するかどうか
+    Returns:
+        list<str>: htmlテキストのリスト
     """
     htmls = []
-    print("----> %sの週次価格情報を取得します・・"%code_s, cache)
+    print("----> %sの週次価格情報を株探から取得します・・" % code_s, cache)
     for ind in range(2):
-        price_fname = PRICE_FNAME_KABUTAN%(code_s,ind+1)
+        price_fname = PRICE_FNAME_KABUTAN % (code_s, ind + 1)
         # キャッシュファイルから取得
         if cache and os.path.exists(price_fname):
             # TODO: 最新情報がなければ取りに行く
             cach, cach_date = is_file_timestamp(price_fname, INTERVAL_DAY_W)
             if cach:
-                html = open(price_fname, 'r').read()
-                htmls.append(html)
-                continue
+                # html = open(price_fname, 'r').read()
+                # htmls.append(html)
+                # continue
+                pass
             else:
-                print("キャッシュの期限切れ(%s)"%cach_date.date())
-        # 株探から取得		
-        try:
-            url = URL_PRICE_KABUTAN%(code_s, ind+1)
-            print("%sから株探から通信で取得.."%url)
-            r = requests.get(url)
-            html = r.text # .encode('utf-8') :python3では不要
-            htmls.append(html)
-            open(price_fname, 'w').write(html)
-        except requests.exceptions.ConnectionError as e:
-            print("!!! %sにつながりません"%url)
-            print(e)
-            break
-    
+                print("キャッシュの期限切れ(%s)" % cach_date.date())
+                cache = False
+        # 株探から取得
+        # try:
+        #     url = URL_PRICE_KABUTAN % (code_s, ind + 1)
+        #     print("%sから株探から通信で取得.." % url)
+        #     r = requests.get(url)
+        #     html = r.text  # .encode('utf-8') :python3では不要
+        #     htmls.append(html)
+        #     open(price_fname, 'w').write(html)
+        # except requests.exceptions.ConnectionError as e:
+        #     print("!!! %sにつながりません"%url)
+        #     print(e)
+        #     break
+        url = URL_PRICE_KABUTAN % (code_s, ind + 1)
+        html = http_get_html(url, use_cache=cache, cache_fname=price_fname)
+        htmls.append(html)
+
     print("<---- 取得完了")
     return htmls
 
@@ -134,22 +148,25 @@ def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
                 )
                 if cache:
                     use_cach = True
-        if use_cach:
-            return open(price_fname, 'r').read()
+        # if use_cach:
+        #     return open(price_fname, 'r').read()
     # Yahooから取得
-    print("----> %sの価格情報をYahooから取得します・・" % code_s)
-    try:
-        url = URL_PRICE_YAHOO%code_s
-        r = requests.get(url)
-    except requests.exceptions.ConnectionError as e:
-        print("!!! %sにつながりません"%url)
-        print(e)
-        return ""
-    # 価格htmlをファイルに書き込み
-    print("<---- 取得完了")
-    text = r.text  # python3では.encode('utf-8')不要
-    open(price_fname, 'w').write(text)
+    print("----> %sの日次価格情報をYahooから取得します・・" % code_s)
+    # try:
+    #     url = URL_PRICE_YAHOO % code_s
+    #     r = requests.get(url)
+    # except requests.exceptions.ConnectionError as e:
+    #     print("!!! %sにつながりません"%url)
+    #     print(e)
+    #     return ""
+    # # 価格htmlをファイルに書き込み
+    # print("<---- 取得完了")
+    # text = r.text  # python3では.encode('utf-8')不要
+    # open(price_fname, 'w').write(text)
+    url = URL_PRICE_YAHOO % code_s
+    text = http_get_html(url, use_cache=use_cach, cache_fname=price_fname)
     return text
+
 
 def calc_avg_volume_d(price_list):
     """平均出来高の計算
@@ -895,6 +912,7 @@ def get_price_log(price_list, dt):
                 return pr[1]
     return 0
 
+
 def get_price_data_yahoo(code_s, upd=UPD_INTERVAL):
     """yahooから日次価格データをパースしてdictで返す
     type: (str, bool) -> dict
@@ -919,6 +937,7 @@ def get_price_data_yahoo(code_s, upd=UPD_INTERVAL):
         parsed_data["access_date_price"] = date
     return parsed_data, cur_prices
 
+
 def get_weekly_price_data(code_s, upd=UPD_INTERVAL, prices=[]):
     """
     週次データからRSを返す
@@ -930,12 +949,13 @@ def get_weekly_price_data(code_s, upd=UPD_INTERVAL, prices=[]):
         print("!!! 株探から週次価格を取得できません")
         return {}
     # print ux_cmd_head(price_htmls[0], 3)
-    print(">>>>> %sの週次価格データを解析 "%code_s)
+    print(">>>>> %sの週次価格データを解析 " % code_s)
     parsed_data_w = parse_pricew_htmls_kabutan(price_htmls, prices)
     # stat = os.stat(PRICE_FNAME%code)
     # date = datetime.fromtimestamp(stat.st_mtime)
     print("<<<<< 解析完了 ")
     return parsed_data_w
+
 
 def get_daily_price_kabutan(code_s, upd=UPD_INTERVAL):
     """	日次の価格データを取得する
