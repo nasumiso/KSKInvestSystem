@@ -447,40 +447,31 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
     latest = upd >= UPD_INTERVAL
     force = upd >= UPD_REEVAL
     print("update_tables:", tables, " 更新:", upd)
-    # code_exists = []
-    for c in code_s_list:
-        stock_data = {}
-        if not tables or "master" in tables:
-            if not has_stock_data(stocks, c, latest) or force:
-                stock_data.update(get_stock_master_data(stocks, c, upd))
-        if not tables or "price" in tables:
-            if not has_price_data(stocks, c, latest) or force:
-                stock_data.update(get_price_data(stocks, c, upd))
-        if not tables or "gyoseki" in tables:
-            if not has_gyoseki_data(stocks, c, latest) or force:
-                upd = UPD_FORCE  # アクセス間隔以外でもみてるので、一反強制　TODO:やり方考える
-                stock_data.update(get_gyoseki_data(stocks, c, upd))
-        if not tables or "rironkabuka" in tables:
-            if not has_rironkabuka_data(stocks, c, latest) or force:
-                upd = UPD_FORCE  # 業績と同じく一反強制
-                stock_data.update(get_rironkabuka_data(stocks, c, upd))
-        if not tables or "shihyo" in tables:
-            if not has_shihyo_data(stocks, c, latest) or force:
-                upd = UPD_FORCE  # 業績と同じく一反強制
-                stock_data.update(get_shihyo_data(stocks, c, upd))
 
-        if stock_data:
-            update_db(stocks, stock_data)
-        # else:
-        # 	try:
-        # 		code_exists.append(str(c)+stocks[int(c)]["stock_name"])
-        # 		# print "%d%sはDBに存在します"%(c, stocks[c]["stock_name"])
-        # 	except KeyError:
-        # 		print "%dは更新情報を取得できませんでした"%c
+    with use_requests_session():
+        for c in code_s_list:
+            stock_data = {}
+            if not tables or "master" in tables:
+                if not has_stock_data(stocks, c, latest) or force:
+                    stock_data.update(get_stock_master_data(stocks, c, upd))
+            if not tables or "price" in tables:
+                if not has_price_data(stocks, c, latest) or force:
+                    stock_data.update(get_price_data(stocks, c, upd))
+            if not tables or "gyoseki" in tables:
+                if not has_gyoseki_data(stocks, c, latest) or force:
+                    upd = UPD_FORCE  # アクセス間隔以外でもみてるので、一反強制　TODO:やり方考える
+                    stock_data.update(get_gyoseki_data(stocks, c, upd))
+            if not tables or "rironkabuka" in tables:
+                if not has_rironkabuka_data(stocks, c, latest) or force:
+                    upd = UPD_FORCE  # 業績と同じく一反強制
+                    stock_data.update(get_rironkabuka_data(stocks, c, upd))
+            if not tables or "shihyo" in tables:
+                if not has_shihyo_data(stocks, c, latest) or force:
+                    upd = UPD_FORCE  # 業績と同じく一反強制
+                    stock_data.update(get_shihyo_data(stocks, c, upd))
 
-    # print "-"*30
-    # print "DBに有効期限内データが存在:", " ".join(code_exists) 
-    # print "-"*30
+            if stock_data:
+                update_db(stocks, stock_data)
 
     # セーブ
     save_pickle(table_pickle, stocks)
@@ -1229,10 +1220,10 @@ def main():
     elif command == "backup":
         backup_db()
     elif command == "update_all_db":
-        #　対象コードを取得
+        # 対象コードを取得
         def get_code_list_from_db(min=1000, max=10000):
             stocks = load_pickle(STOCKS_PICKLE)
-            code_list = list(stocks.keys())#[400:]
+            code_list = list(stocks.keys())  # [400:]
             code_list.sort()
             code_list = [c for c in code_list if c>=min and c<= max]
             return code_list
@@ -1242,7 +1233,7 @@ def main():
         while current < len(code_list):
             num = 500
             current_code_list = code_list[current:current + num]
-            print("%d~%d/%dを更新します"%(current_code_list[0], current_code_list[-1], len(code_list)))
+            print("%d~%d/%dを更新します" % (current_code_list[0], current_code_list[-1], len(code_list)))
             # 何を更新する？
             # tables = ["gyoseki", "shihyo, "master"]
             tables = ["price"]
@@ -1254,8 +1245,7 @@ def main():
             )
             current += num
             break   # とりあえずテスト
-    elif command == "reflesh":
-        # 価格が取得できないのは上場廃止銘柄
+    elif command == "reflesh":  # DBをリフレッシュ(上場廃止銘柄を削除)
         backup_db()
         reflesh_db()
     elif command == "convert_code":
