@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
+import operator
 import os
 import os.path
 import sys
 import shutil
 from datetime import datetime, timedelta
 import pickle
+import contextvars
 from contextlib import contextmanager
-import sqlite3
 
 import requests  # 外部ライブラリ
 from functools import reduce
@@ -77,14 +78,18 @@ def backup_file(fname, day=0):
     today = datetime.today()
     delta = today - date
     print("%sは%s日前"%(fname, delta.days))
-    backup_fname = "%s_%02d%02d%02d%s" % (os.path.splitext(fname)[0], \
-        date.year - 2000, date.month, date.day, os.path.splitext(fname)[1])
+    backup_fname = "%s_%02d%02d%02d%s" % (
+        os.path.splitext(fname)[0],
+        date.year - 2000, date.month, date.day, os.path.splitext(fname)[1]
+    )
     # backup_fname = "stocks_pickle_back/"+backup_fname
     # print backup_fname
     if not os.path.exists(backup_fname):
         if delta.days >= day:
-            print("バックアップ:%s(%d) => %s" % (fname, os.path.getsize(fname), \
-            backup_fname))
+            print(
+                "バックアップ:%s(%d) => %s"
+                % (fname, os.path.getsize(fname), backup_fname)
+            )
             shutil.copy2(fname, backup_fname)
         else:
             pass
@@ -150,7 +155,7 @@ def chdir(path):
             os.chdir(original_dir)
 
 
-PRICE_HOUR = 18 #  これ以前は前日、これ以降は当日
+PRICE_HOUR = 18  # これ以前は前日、これ以降は当日
 
 
 def get_price_day(dt):
@@ -181,8 +186,10 @@ def average(lst):
     """
     return reduce(lambda x, y: x + y, lst) / float(len(lst))
 
+
 def cramp(x, low, high):
     return max(low, min(x, high))
+
 
 def step_func(val, xs, ys, min_val=None):
     """
@@ -192,7 +199,7 @@ def step_func(val, xs, ys, min_val=None):
         val_y = ys[0]
     else:
         val_y = min_val
-    for x,y in reversed(list(zip(xs, ys))):
+    for x, y in reversed(list(zip(xs, ys))):
         if val > x:
             val_y = y
             break
@@ -202,42 +209,87 @@ def step_func(val, xs, ys, min_val=None):
 # ==================================================
 # httpユーティリティ
 # ==================================================
-USER_AGENT_CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.125 Safari/537.36"
+USER_AGENT_CHROME = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_4) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/36.0.1985.125 Safari/537.36"
+)
+# スレッドローカルなセッションコンテキスト変数
+_current_session = contextvars.ContextVar(
+    "current_requests_session", default=None
+)
+
+
+@contextmanager
+def use_requests_session():
+    session = requests.Session()
+    token = _current_session.set(session)  # 現在のセッションを設定
+    try:
+        yield session  # 必要なら明示的に使えるようにもする
+    finally:
+        session.close()
+        _current_session.reset(token)  # セッション終了＋ContextVarを元に戻す
 
 
 def get_http_cachname(url):
     """
     urlからデフォルトのキャッシュファイルの場所を返す
     """
-    return url.replace("http://", "").replace(".", "").replace("/", "_")+".html"
+    return (
+        url.replace("http://", "").replace(".", "").replace("/", "_") + ".html"
+    )
 
 
-def http_get_html(url, use_cache=True, cache_dir="", cache_fname="", cookies={}, encoding='utf-8'):
+def http_get_html(
+    url,
+    use_cache=True,
+    cache_dir="",
+    cache_fname="",
+    cookies={},
+    encoding='utf-8'
+):
     """
     指定urlをリクエストしエンコード済みテキストを返します。
     TODO: use_cacheを有効期限期日指定したほうがスッキリするはず
+    Args:
+        url (str): 取得するURL
+        use_cache (bool): キャッシュファイルを使用するかどうか
+        cache_dir (str): キャッシュディレクトリのパス
+        cache_fname (str): キャッシュファイル名（指定がなければURLから生成）
+        cookies (dict): リクエストに使用するクッキー
+        encoding (str): 取得するHTMLのエンコーディング
+    Returns:
+        str: 取得したHTMLのテキスト
     """
+    # 指定されていなければurlからキャッシュファイル名を取得
     cache_name = get_http_cachname(url) if not cache_fname else cache_fname
+    # 指定されていればキャッシュディレクトリからパス取得
     if cache_dir:
         cache_name = os.path.join(cache_dir, cache_name)
     if use_cache and os.path.exists(cache_name):
         print("  htmlをファイルキャッシュから取得します", cache_name)
         html = file_read(cache_name)
         return html
+
+    # ---- キャッシュがない場合は通信で取得
     print("  htmlを通信で取得します..")
     headers = {"User-Agent": USER_AGENT_CHROME}
     # headers["Connection"] = "Keep-Alive"
     try:
-        r = requests.get(url, headers=headers, cookies=cookies)
+        session = _current_session.get()
+        req_get = session.get if session else requests.get
+        if not session:
+            print("単独セッションを使用")
+        r = req_get(url, headers=headers, cookies=cookies)
     except requests.exceptions.ConnectionError as e:
-        print("!!! 接続失敗")
+        eprint("!!! 接続失敗")
         print(e)
         return ""
     if r.encoding != 'utf-8':
         print("html_encoding:", r.encoding, "encoding:", encoding)
     # htmlをutf8で取得
     # html = r.text.encode(encoding)
-    html = r.text # python3ではエンコード済みのテキストが取得される
+    html = r.text  # python3ではエンコード済みのテキストが取得される
     # メタ指定での文字コードをutf8に
     # html = html.replace("charset=shift_jis", "charset=utf-8")
 
@@ -247,7 +299,7 @@ def http_get_html(url, use_cache=True, cache_dir="", cache_fname="", cookies={},
 
 
 def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
-    cache_name = "post_"+get_http_cachname(url)
+    cache_name = "post_" + get_http_cachname(url)
     if use_cache and os.path.exists(cache_name):
         print("html(post)をファイルキャッシュから取得します", cache_name)
         html = file_read(cache_name)
@@ -259,37 +311,37 @@ def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
         print("encoding:", r.encoding, "encoding:", encoding)
     html = r.text.encode(encoding)
     # html = html.replace("charset=UTF-8", "charset=euc-jp")
-    
+
     print("htmlをファイルキャッシュに書き込みます:", cache_name)
     file_write(cache_name, html)
     return html, r.cookies
 
 
 # ==================================================
-# pickleデータベースユーティリティ	
+# pickleデータベースユーティリティ
 # ==================================================
 def save_pickle(fname, content):
-    print("%sにpickleセーブ"%fname)
+    print("%sにpickleセーブ" % fname)
     with open(fname, 'wb') as f:
         # 高速化のためプロトコル指定
         pickle.dump(content, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def load_pickle(fname):
-    print("%sからpickleロード"%fname)
+    print("%sからpickleロード" % fname)
     try:
         f = open(fname, 'rb')
-        dat = pickle.load(f) 
+        dat = pickle.load(f)
         f.close()
     except IOError as e:
         print(e)
         return {}
     return dat
-memoized_load_pickle = memoize(load_pickle)
+memoized_load_pickle = memoize(load_pickle)  # noqa: E305
 
 
 def load_file(fname, tb='r'):
-    print("%sのfileロード"%fname)
+    print("%sのfileロード" % fname)
     try:
         f = open(fname, tb)
         dat = f.read()
@@ -298,92 +350,19 @@ def load_file(fname, tb='r'):
         print(e)
         return ""
     return dat
+memoized_load_file = memoize(load_file)  # noqa: E305
 
-
-memoized_load_file = memoize(load_file)
-
-
-# ==================================================
-# SQLデータベースユーティリティ	
-# ==================================================
-@contextmanager
-def open_db(dbname):
-    print("---> open_db:",dbname)
-    con = sqlite3.connect(dbname)
-    yield con
-    print("<--- close_db:",dbname)
-    con.close()
-
-def exec_sql(cur, sql, param=()):
-    try:
-        print("exec_sql:", sql, param)
-        cur.execute(sql, param)
-    except sqlite3.Error as e:
-        print("--- !!! SQL Error ---")
-        print(e.message)
-        print("---------------------")
-
-
-def exists_table(cur, table_name):
-    sql = """select count(*) from sqlite_master where type='table' and name='%s'"""%table_name
-    exec_sql(cur, sql)
-    count = cur.fetchone()[0]
-    return count > 0
-
-def create_table(cur, table_name):
-    sql = """create table stocks(code integer primary key, name text, jikasogaku integer, konyukagaku integer)"""
-    exec_sql(cur, sql)
-
-
-def list_db():
-    with open_db("stock_data/stock.db") as con:
-        cur = con.cursor()
-        sql = """select * from sqlite_master where type='table' and name='stocks'"""
-        exec_sql( cur, sql )
-        for row in cur:
-            print(row)
-
-        sql = """select * from stocks"""
-        exec_sql( cur, sql )
-        for row in cur:
-            for r in row:
-                if isinstance(r, str):
-                    print(r.encode('utf-8'), end=' ') 
-                else:
-                    print(r, end=' ')
-            print() 
-
-def update_db(stock_data):
-    with open_db("stock_data/stock.db") as con:
-        # テーブル
-        cur = con.cursor()
-        if not exists_table(cur, "stocks"):
-            create_table(cur, "stocks")
-        # 更新
-        sql = """insert into stocks values(?,?,?,?)"""
-        exec_sql( cur, sql, (stock_data["コード"],  str(stock_data["銘柄名"], 'utf-8'),\
-            stock_data["時価総額"], stock_data["最低購入代金"] ))
-        # TODO: insert or update 複数コードの更新
-
-        con.commit()
-
-def edit_db():
-    with open_db("stock_data/stock.db") as con:
-        sql = """alter table stocks add name text after code"""
-        exec_sql( con.cursor(), sql )
-        con.commit()
-    list_db()
 
 def set_db_code(rec, code):
     # type: (dict, str) -> None
     rec["code_s"] = str(code)
 
-def get_db_code(rec):
-    # type: dict -> dict
+
+def get_db_code(rec: dict) -> str:
     if "code_s" not in rec:
         if "code" in rec:
             code = rec["code"]
-            print("!!!strコードがないためintから取得:", code) # いつかなくなるはず
+            print("!!!strコードがないためintから取得:", code)  # いつかなくなるはず
             return format(code, "04d")
         else:
             print("!!!コード取得できない", rec)

@@ -188,16 +188,18 @@ def update_disclosure_all(upd=UPD_INTERVAL):
     #    disc_db = []
     disc_db = []
     code_list_s, possess_list_s = portfolio.parse_my_portforio()
-    for code_s in code_list_s+possess_list_s:
-        update_disclosure(code_s, disc_db, upd)
+    with use_requests_session():  # 中でhttp_get_htmlを使うためセッションを指定
+        for code_s in code_list_s + possess_list_s:
+            update_disclosure(code_s, disc_db, upd)
     # 更新した内容で保存
     # save_pickle(DISCLOSURE_DB, disc_db)
     return expoert_to_csv(disc_db)
 
+
 def main():
     # TODO: 特集(神戸物産)、5%(スノーピーク)、修正(アドベンチャー)、決算(メディアドゥ)は
     # 開示のところにしたい
-    upd = UPD_INTERVAL # UPD_INTERVAL,UPD_CACHE
+    upd = UPD_INTERVAL  # UPD_INTERVAL,UPD_CACHE
     update_disclosure_all(upd)
     # 3678,7816,3038
     # update_disclosure(3038, upd=upd)
