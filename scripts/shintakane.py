@@ -406,8 +406,6 @@ def todays_shintakane(upd=UPD_INTERVAL):
         kabuka = d["kabuka"] 
         code = stock_db.get_code_exp(d["code_s"])
         stock = stocks[d["code_s"]]
-        # print_dict(stock)
-        # stock_name = stock["stock_name"] # d["name"]	
         stock_name = stock_db.get_stock_name_exp(stock)
         sector = stock.get("sector", "セクター名不明") # d["sector"]
         market = stock.get("market", "市場不明")

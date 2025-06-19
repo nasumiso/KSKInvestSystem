@@ -42,7 +42,7 @@ def has_stock_data(stocks, code_s, latest=False):
 
 def get_stock_master_data(stocks, code_s, upd=UPD_INTERVAL):
     """ 基本銘柄情報をDBから取得
-    DBにない場合は新規取得する
+    DBにない場合は通信またはキャッシュから取得
     dict,int,bool => dict
     Returns:
         dict<key, value>: 銘柄情報
@@ -94,7 +94,7 @@ def has_price_data(stocks, code_s, latest=False):
 
 
 def get_price_data(stocks, code_s, upd=UPD_INTERVAL):
-    """銘柄価格情報を取得
+    """ 銘柄価格情報を通信またはキャッシュから取得
     """
     # code = int(code)
     # DBにありなおかつ最新である場合はそれを返す
@@ -313,7 +313,7 @@ def has_gyoseki_data(stocks, code_s, latest=False):
 
 def get_gyoseki_data(stocks, code_s, upd=UPD_INTERVAL):
     """
-    業績データを取得するインターフェース
+    業績データを通信またはキャッシュから取得する
     -> dict
     """
     if code_s in stocks:
@@ -337,6 +337,7 @@ def has_rironkabuka_data(stocks, code_s, latest=False):
 
 def get_rironkabuka_data(stocks, code_s, upd=UPD_INTERVAL):
     """
+    理論株価データを通信またはキャッシュから取得
     Returns:
         dict<key, value>: 更新するDBデータ
     """
@@ -371,7 +372,7 @@ def has_shihyo_data(stocks, code_s, latest=False):
 
 
 def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
-    """指標データの更新・取得
+    """ 指標データを通信またはキャッシュから取得
     Returns:
         dict<key, value>: 更新するDBデータ内容
     """
@@ -408,7 +409,7 @@ def update_db(stocks, stock_data):
             stock_data["code_s"] = str(code)
             print("intコードをstrに変換:", code)
     code_s = stock_data["code_s"]
-    # レコードにカラムをキーから抜き出しを追加
+    # レコードにカラムをキーから抜き出し、stock_data要素を追加
     try:
         stock = stocks[code_s]
     except KeyError:
@@ -810,7 +811,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
                 if theme in themes and theme not in theme_codes_s:
                     if i / 100 + j < 20:  # 一定以上の重要度
                         theme_codes_s.append(s[0])
-            print("テーマ:%sの銘柄%d個"%(theme, len(theme_codes_s)-current))
+            print("テーマ:%sの銘柄%d個" % (theme, len(theme_codes_s) - current))
             if len(theme_codes_s) > 100:
                 break
         update_codes_s = theme_codes_s
@@ -888,10 +889,9 @@ def list_all_db(upload_csv=True, update_portforio=True):
         # ボラティリティ、売り圧力レシオ・買い集め指数
         vola, sell_press = get_vola_and_sell_press_expr(stock_data)
         # 順位
-        # buffet_url = "https://www.buffett-code.com/company/%s/library" % (stock[0])
-        yahoo_url = "https://finance.yahoo.co.jp/quote/%s.T"%(stock[0])
-        rank = i+1
-        rank = '=HYPERLINK("%s", "%d")'%(yahoo_url, rank)		
+        yahoo_url = "https://finance.yahoo.co.jp/quote/%s.T" % (stock[0])
+        rank = i + 1
+        rank = '=HYPERLINK("%s", "%d")' % (yahoo_url, rank)
         # ---- ポートフォリオ
         ports = []
         if stock[0] in pf_stocks:
@@ -964,7 +964,7 @@ def delete_db_column(stocks, column):
     for k, stock in stocks.items():
         if column in stock:
             del stock[column]
-        # print_dict(stock)	
+        # print_dict(stock)
 
 
 STOCK_PICKLE_PATH = os.path.join(DATA_DIR, "stock_data", "stock_%s.pickle")
@@ -1018,7 +1018,10 @@ def delete_delist_stocks(stocks):
     # acces_date_priceが半年以上前の銘柄を、上場廃止チェックする
     for code_s, stock in list(stocks.items()):
         dt_price = stock.get("access_date_price", None)
-        if dt_price < datetime.today() - timedelta(days=180):  # 最新価格が半年経過しているか？
+        # 最新価格が半年経過しているか？
+        if dt_price < (
+            datetime.today() - timedelta(days=180)
+        ):
             print(code_s, stock.get("stock_name", "不明"), "は上場廃止の可能性あり")
             # print_dict(stock, ex_key=["gyoseki_quarter", "gyoseki_current", "price_log", "rs_rank_log", "stock_rank_log"])
             parsed_data = get_stock_master_data(stocks, code_s, UPD_INTERVAL)
@@ -1108,15 +1111,6 @@ def test():
     # DBリフレッシュ用
     # stocks = load_stock_db()
     # print "before:", len(stocks), "個"
-    # for code, stock in stocks.items():
-    # 	if type(code) == int:
-    # 		print "%dを削除"%code
-    # 		del stocks[code]
-    # 	else:
-    # 		# print code
-    # 		pass
-    # print "after:", len(stocks), "個"
-    # save_stock_db(stocks)
 
 
 # ==================================================
@@ -1201,7 +1195,7 @@ def main():
         # tables = ["shihyo"]
         # tables = ["gyoseki"]
         # tables = ["rironkabuka"]
-        update_db_rows(code_list, upd=UPD_FORCE, tables=tables) # UPD_FORCE/UPD_REEVAL/UPD_INTERVAL
+        update_db_rows(code_list, upd=UPD_FORCE, tables=tables)  # UPD_FORCE/UPD_REEVAL/UPD_INTERVAL
     elif command == "list":
         # DB内銘柄情報表示
         code_list = "4483"
