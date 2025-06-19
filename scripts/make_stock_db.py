@@ -424,7 +424,7 @@ def update_db(stocks, stock_data):
     stocks[code_s] = stock
 
 
-def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
+def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
     """	code_listで指定された銘柄のDB更新し、DB全体を返す
     Params:
         code_list: list<int>
@@ -447,34 +447,45 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
     force = upd >= UPD_REEVAL
     print("update_tables:", tables, " 更新:", upd)
 
-    with use_requests_session():
-        for c in code_s_list:
-            stock_data = {}
-            if not tables or "master" in tables:
-                if not has_stock_data(stocks, c, latest) or force:
-                    stock_data.update(get_stock_master_data(stocks, c, upd))
-            if not tables or "price" in tables:
-                if not has_price_data(stocks, c, latest) or force:
-                    stock_data.update(get_price_data(stocks, c, upd))
-            if not tables or "gyoseki" in tables:
-                if not has_gyoseki_data(stocks, c, latest) or force:
-                    upd = UPD_FORCE  # アクセス間隔以外でもみてるので、一反強制　TODO:やり方考える
-                    stock_data.update(get_gyoseki_data(stocks, c, upd))
-            if not tables or "rironkabuka" in tables:
-                if not has_rironkabuka_data(stocks, c, latest) or force:
-                    upd = UPD_FORCE  # 業績と同じく一反強制
-                    stock_data.update(get_rironkabuka_data(stocks, c, upd))
-            if not tables or "shihyo" in tables:
-                if not has_shihyo_data(stocks, c, latest) or force:
-                    upd = UPD_FORCE  # 業績と同じく一反強制
-                    stock_data.update(get_shihyo_data(stocks, c, upd))
-
-            if stock_data:
-                update_db(stocks, stock_data)
+    if sync:
+        update_db_rows_sync(code_s_list, upd, tables, stocks, latest, force)
+    else:
+        update_db_rows_async(code_s_list, upd, tables, stocks, latest, force)
 
     # pickleセーブ
     save_pickle(table_pickle, stocks)
     return stocks
+
+
+def update_db_rows_sync(code_s_list, upd, tables, stocks, latest, force):
+
+    def update_db_code(c):
+        stock_data = {}
+        if not tables or "master" in tables:
+            if not has_stock_data(stocks, c, latest) or force:
+                stock_data.update(get_stock_master_data(stocks, c, upd))
+        if not tables or "price" in tables:
+            if not has_price_data(stocks, c, latest) or force:
+                stock_data.update(get_price_data(stocks, c, upd))
+        if not tables or "gyoseki" in tables:
+            if not has_gyoseki_data(stocks, c, latest) or force:
+                # アクセス間隔以外でもみてるので、一反強制　TODO:やり方考える
+                stock_data.update(get_gyoseki_data(stocks, c, UPD_FORCE))
+        if not tables or "rironkabuka" in tables:
+            if not has_rironkabuka_data(stocks, c, latest) or force:
+                # 業績と同じく一反強制
+                stock_data.update(get_rironkabuka_data(stocks, c, UPD_FORCE))
+        if not tables or "shihyo" in tables:
+            if not has_shihyo_data(stocks, c, latest) or force:
+                # 業績と同じく一反強制
+                stock_data.update(get_shihyo_data(stocks, c, UPD_FORCE))
+        return stock_data
+
+    with use_requests_session():
+        for c in code_s_list:
+            stock_data = update_db_code(c)
+            if stock_data:
+                update_db(stocks, stock_data)
 
 
 def get_stock_db(code):
