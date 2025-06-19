@@ -161,7 +161,7 @@ PRICE_HOUR = 18  # これ以前は前日、これ以降は当日
 def get_price_day(dt):
     """
     営業日ベースの日付を返す
-    16時以前の価格は前日を使う
+    18時以前の価格は前日を使う
     daettime -> datetime
     """
     need_dt = dt

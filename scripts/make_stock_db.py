@@ -432,7 +432,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
     Return:
         更新されたDB
     """
-    # ロード
+    # pickleロード
     table_pickle = STOCKS_PICKLE
     stocks = {}
     if os.path.exists(table_pickle):
@@ -471,7 +471,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None):
             if stock_data:
                 update_db(stocks, stock_data)
 
-    # セーブ
+    # pickleセーブ
     save_pickle(table_pickle, stocks)
     return stocks
 
