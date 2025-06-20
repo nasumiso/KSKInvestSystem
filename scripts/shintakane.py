@@ -265,7 +265,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # 最低購入代金取得のためdbを更新
     print("---> masterデータ更新(最低購入代金、銘柄概要取得のため)")
     stocks = stock_db.update_db_rows(
-        updatelist_all_code, tables=["master"], upd=upd
+        updatelist_all_code, tables=["master"], upd=upd, sync=False
     )
     print("<---- masterデータ更新完了")
 
@@ -334,7 +334,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         print("")
         print("----> 価格データ更新")
         stocks = stock_db.update_db_rows(
-            today_list_all, tables=["price"], upd=upd
+            today_list_all, tables=["price"], upd=upd, sync=False
         )
         print("<---- 価格データ更新完了")
 
@@ -348,7 +348,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         # lates:Trueで業績や指標を更新
         # print "業績更新:", today_list_all
         stocks = stock_db.update_db_rows(
-            today_list_all, tables=["gyoseki"], upd=upd
+            today_list_all, tables=["gyoseki"], upd=upd, sync=False
         )
 
         # ---- 指標の更新
@@ -358,7 +358,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         # dryscrapeでのreuter情報は封印していることに注意
         # print "%　指標更新:", code_list
         stocks = stock_db.update_db_rows(
-            today_list_all, tables=["shihyo"], upd=upd
+            today_list_all, tables=["shihyo"], upd=upd, sync=False
         )
 
         # ---- 理論株価の更新
@@ -366,7 +366,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         print("理論株価を更新します")
         print("=" * 20)
         stocks = stock_db.update_db_rows(
-            today_list_all, tables=["rironkabuka"], upd=upd
+            today_list_all, tables=["rironkabuka"], upd=upd, sync=False
         )
 
         return stocks

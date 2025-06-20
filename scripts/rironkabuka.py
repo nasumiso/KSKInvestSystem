@@ -80,22 +80,15 @@ def get_kabutan_html(code_s, upd=UPD_INTERVAL):
         use_cache = False
     else:
         INTERVAL_DAY = 5  # この設定は微妙
-        use_cache = is_cache_latest(KABUTAN_URL_CODE%(str(code_s)), INTERVAL_DAY)
-    html = http_get_html(KABUTAN_URL_CODE%(str(code_s)), 
-        cache_dir=KABUTAN_CACHE_DIR, use_cache=use_cache)
-    for c in range(3):
-        if "Service Temporarily Unavailable" in html:
-            if c >= 2:
-                print("!!! やっぱりだめみたいなので中止")
-                return {}
-            print("取得エラーのため再度取得", c)
-            import time
-            time.sleep(c+1)
-            html = http_get_html(KABUTAN_URL_CODE%(str(code_s)), 
-                use_cache=False, cache_dir=KABUTAN_CACHE_DIR)
-        else:
-            break
+        use_cache = is_cache_latest(
+            KABUTAN_URL_CODE % (str(code_s)), INTERVAL_DAY
+        )
+    url = KABUTAN_URL_CODE % (str(code_s))
+    html = http_get_html_with_retry(
+        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache, retry=5
+    )
     return html
+
 
 def get_kabutan_base_html(code_s, upd=UPD_INTERVAL):
     """ 株探から基本情報htmlを通信またはキャッシュから取得
@@ -108,25 +101,17 @@ def get_kabutan_base_html(code_s, upd=UPD_INTERVAL):
     elif upd == UPD_FORCE:
         use_cache = False
     else:
-        use_cache = is_cache_latest(KABUTAN_BASE_URL_CODE%(str(code_s)), upd)
+        use_cache = is_cache_latest(KABUTAN_BASE_URL_CODE % (str(code_s)), upd)
 
-    html = http_get_html(KABUTAN_BASE_URL_CODE%(str(code_s)), 
-        cache_dir=KABUTAN_CACHE_DIR, use_cache=use_cache)
-    for c in range(3):
-        if "Service Temporarily Unavailable" in html:
-            if c >= 2:
-                print("!!! やっぱりだめみたいなので中止")
-                return {}
-            print("取得エラーのため再度取得", c)
-            import time
-            time.sleep(c+1)
-            html = http_get_html(KABUTAN_BASE_URL_CODE%(str(code_s)), use_cache=False, cache_dir=KABUTAN_CACHE_DIR)
-        else:
-            break
+    url = KABUTAN_BASE_URL_CODE % (str(code_s))
+    html = http_get_html_with_retry(
+        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache, retry=5
+    )
     return html
 
+
 def get_kabutan_cachename(code_s):
-    cache_fname = get_http_cachname(KABUTAN_BASE_URL_CODE%(str(code_s)))
+    cache_fname = get_http_cachname(KABUTAN_BASE_URL_CODE % (str(code_s)))
     return os.path.join(KABUTAN_CACHE_DIR, cache_fname)
 
 # def get_from_kabutan2(html):

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import pickle
 import contextvars
 from contextlib import contextmanager
+import threading
 
 import requests  # 外部ライブラリ
 from functools import reduce
@@ -214,21 +215,42 @@ USER_AGENT_CHROME = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/36.0.1985.125 Safari/537.36"
 )
-# スレッドローカルなセッションコンテキスト変数
+# スレッドローカル(スレッド間で共有されない)なセッションコンテキスト変数
+# つまり、マルチスレッドでは使い回せない
 _current_session = contextvars.ContextVar(
     "current_requests_session", default=None
 )
+# グローバルなセッション変数
+# 本来はhttp_get_htmlの引数にセッションを渡せるようにすべき
+_global_session = None
 
 
 @contextmanager
 def use_requests_session():
+    """スレッドごとにSessionをセットするコンテキストマネージャ"""
     session = requests.Session()
     token = _current_session.set(session)  # 現在のセッションを設定
+    print(f"[{threading.current_thread().name}] コンテキストセッションを開始: {token}")
     try:
         yield session  # 必要なら明示的に使えるようにもする
     finally:
         session.close()
         _current_session.reset(token)  # セッション終了＋ContextVarを元に戻す
+        print(f"[{threading.current_thread().name}] コンテキストセッションを終了: {token}")
+
+
+@contextmanager
+def use_requests_global_session():
+    global _global_session
+    session = requests.Session()
+    _global_session = session
+    print(f"[{threading.current_thread().name}] グローバルセッションを開始")
+    try:
+        yield session  # 必要ならwith文内で明示的にも使える
+    finally:
+        session.close()
+        _global_session = None
+        print(f"[{threading.current_thread().name}] グローバルセッションを終了")
 
 
 def get_http_cachname(url):
@@ -272,14 +294,25 @@ def http_get_html(
         return html
 
     # ---- キャッシュがない場合は通信で取得
-    print("  htmlを通信で取得します..")
+    print("  htmlを通信で取得します..", end=" ")
     headers = {"User-Agent": USER_AGENT_CHROME}
     # headers["Connection"] = "Keep-Alive"
     try:
-        session = _current_session.get()
-        req_get = session.get if session else requests.get
-        if not session:
-            print("単独セッションを使用")
+        # 1. グローバルセッションが有効ならそれを使う
+        session = _global_session
+        if session is not None:
+            req_get = session.get
+            print("グローバルセッションを使用")
+        else:
+            # 2. ContextVarセッションが有効ならそれを使う
+            session = _current_session.get()
+            if session is not None:
+                req_get = session.get
+                print("ContextVarセッションを使用")
+            else:
+                # 3. どちらもなければrequests.getを直接使う
+                req_get = requests.get
+                print("単独セッションを使用")
         r = req_get(url, headers=headers, cookies=cookies)
     except requests.exceptions.ConnectionError as e:
         eprint("!!! 接続失敗")
@@ -295,6 +328,22 @@ def http_get_html(
 
     print("  取得したhtmlをファイルキャッシュに書き込みます:", cache_name)
     file_write(cache_name, html)
+    return html
+
+
+def http_get_html_with_retry(url, use_cach, cache_dir, retry=3):
+    html = http_get_html(url, use_cache=use_cach, cache_dir=cache_dir)
+    for c in range(retry):
+        if "Service Temporarily Unavailable" in html:
+            if c >= retry - 1:
+                eprint("!!! やっぱりだめみたいなので中止", url)
+                return {}
+            print(f"取得エラーのため再度取得({c+1}回目)", url)
+            import time
+            time.sleep(c + 1)
+            html = http_get_html(url, use_cache=False, cache_dir=cache_dir)
+        else:
+            break
     return html
 
 

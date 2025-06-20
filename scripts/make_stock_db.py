@@ -457,33 +457,51 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
     return stocks
 
 
+def _update_db_code(c_s, upd, tables, stocks, latest, force):
+    stock_data = {}
+    if not tables or "master" in tables:
+        if not has_stock_data(stocks, c_s, latest) or force:
+            stock_data.update(get_stock_master_data(stocks, c_s, upd))
+    if not tables or "price" in tables:
+        if not has_price_data(stocks, c_s, latest) or force:
+            stock_data.update(get_price_data(stocks, c_s, upd))
+    if not tables or "gyoseki" in tables:
+        if not has_gyoseki_data(stocks, c_s, latest) or force:
+            # アクセス間隔以外でもみてるので、一反強制　TODO:やり方考える
+            stock_data.update(get_gyoseki_data(stocks, c_s, UPD_FORCE))
+    if not tables or "rironkabuka" in tables:
+        if not has_rironkabuka_data(stocks, c_s, latest) or force:
+            # 業績と同じく一反強制
+            stock_data.update(get_rironkabuka_data(stocks, c_s, UPD_FORCE))
+    if not tables or "shihyo" in tables:
+        if not has_shihyo_data(stocks, c_s, latest) or force:
+            # 業績と同じく一反強制
+            stock_data.update(get_shihyo_data(stocks, c_s, UPD_FORCE))
+    return stock_data
+
+
+def update_db_rows_async(code_s_list, upd, tables, stocks, latest, force):
+    with use_requests_global_session():
+        from concurrent.futures import ThreadPoolExecutor
+        # 並列通信実行
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # listで囲むことで結果待ち
+            results = list(executor.map(
+                lambda c_s: _update_db_code(
+                    c_s, upd, tables, stocks, latest, force
+                ),
+                code_s_list
+            ))
+            # 結果をDBに反映
+            for stock_data in results:
+                if stock_data:
+                    update_db(stocks, stock_data)
+
+
 def update_db_rows_sync(code_s_list, upd, tables, stocks, latest, force):
-
-    def update_db_code(c):
-        stock_data = {}
-        if not tables or "master" in tables:
-            if not has_stock_data(stocks, c, latest) or force:
-                stock_data.update(get_stock_master_data(stocks, c, upd))
-        if not tables or "price" in tables:
-            if not has_price_data(stocks, c, latest) or force:
-                stock_data.update(get_price_data(stocks, c, upd))
-        if not tables or "gyoseki" in tables:
-            if not has_gyoseki_data(stocks, c, latest) or force:
-                # アクセス間隔以外でもみてるので、一反強制　TODO:やり方考える
-                stock_data.update(get_gyoseki_data(stocks, c, UPD_FORCE))
-        if not tables or "rironkabuka" in tables:
-            if not has_rironkabuka_data(stocks, c, latest) or force:
-                # 業績と同じく一反強制
-                stock_data.update(get_rironkabuka_data(stocks, c, UPD_FORCE))
-        if not tables or "shihyo" in tables:
-            if not has_shihyo_data(stocks, c, latest) or force:
-                # 業績と同じく一反強制
-                stock_data.update(get_shihyo_data(stocks, c, UPD_FORCE))
-        return stock_data
-
     with use_requests_session():
         for c in code_s_list:
-            stock_data = update_db_code(c)
+            stock_data = _update_db_code(c, upd, tables, stocks, latest, force)
             if stock_data:
                 update_db(stocks, stock_data)
 
@@ -838,7 +856,8 @@ def list_all_db(upload_csv=True, update_portforio=True):
         stocks = update_db_rows(
             update_codes_s,
             upd=UPD_INTERVAL,
-            tables=["master", "price", "shihyo", "gyoseki", "rironkabuka"]
+            tables=["master", "price", "shihyo", "gyoseki", "rironkabuka"],
+            sync=False
         )  # UPD_INTERVAL/UPD_REEVAL
         # 個別でやるとき(テスト用強制)
         # stocks = update_db_rows(update_codes_s, upd=UPD_FORCE, tables=["rironkabuka"])

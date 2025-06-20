@@ -663,7 +663,6 @@ def calc_gyoseki_score(tables):
     return gyoseki_score
     
 
-
 def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
     """codeの業績情報をkabutan(又はキャッシュ)から
     パース、計算して取得する
@@ -678,30 +677,22 @@ def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
     else:
         INTERVAL_DAY = 15
         import rironkabuka
-        use_cache = rironkabuka.is_cache_latest(URL_CODE%(str(code_s)), INTERVAL_DAY)
+        use_cache = rironkabuka.is_cache_latest(
+            URL_CODE % (str(code_s)), INTERVAL_DAY
+        )
 
-    html = http_get_html(URL_CODE%(str(code_s)), cache_dir=CACHE_DIR, use_cache=use_cache)
-    for c in range(3):
-        if "Service Temporarily Unavailable" in html:
-            if c >= 2:
-                print("!!! やっぱりだめみたいなので中止")
-                return {}
-            print("取得エラーのため再度取得", c)
-            import time
-            time.sleep(c+1)
-            html = http_get_html(URL_CODE%(str(code_s)), use_cache=False, cache_dir=CACHE_DIR)
-        else:
-            break
+    url = URL_CODE % (str(code_s))
+    html = http_get_html_with_retry(url, use_cache, CACHE_DIR, retry=5)
 
-    print(">>>>> %sの業績を解析 "%code_s)
+    print(">>>>> %sの業績を解析 " % code_s)
     tables = parse_kabutan_account2(html)
     print("<<<<< 解析完了 ")
 
     # 業績得点の追加
-    print("="*5, "業績スコアの計算")
+    print("=" * 5, "業績スコアの計算")
     tables["score_gyoseki"] = calc_gyoseki_score(tables)
-    print("="*5, "業績スコアの計算完了")	
-    path = CACHE_DIR+get_http_cachname(URL_CODE%(str(code_s)))
+    print("=" * 5, "業績スコアの計算完了")	
+    path = CACHE_DIR + get_http_cachname(URL_CODE % (str(code_s)))
     tables["access_date_gyoseki"] = get_file_datetime(path)
     print("date:", tables["access_date_gyoseki"])
     # tables["code"] = code
