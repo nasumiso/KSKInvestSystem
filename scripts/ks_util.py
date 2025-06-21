@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 import pickle
 import contextvars
 from contextlib import contextmanager
+import threading
+import time
 
 import requests  # 外部ライブラリ
 from functools import reduce
@@ -82,8 +84,6 @@ def backup_file(fname, day=0):
         os.path.splitext(fname)[0],
         date.year - 2000, date.month, date.day, os.path.splitext(fname)[1]
     )
-    # backup_fname = "stocks_pickle_back/"+backup_fname
-    # print backup_fname
     if not os.path.exists(backup_fname):
         if delta.days >= day:
             print(
@@ -161,7 +161,7 @@ PRICE_HOUR = 18  # これ以前は前日、これ以降は当日
 def get_price_day(dt):
     """
     営業日ベースの日付を返す
-    16時以前の価格は前日を使う
+    18時以前の価格は前日を使う
     daettime -> datetime
     """
     need_dt = dt
@@ -214,21 +214,45 @@ USER_AGENT_CHROME = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/36.0.1985.125 Safari/537.36"
 )
-# スレッドローカルなセッションコンテキスト変数
+# スレッドローカル(スレッド間で共有されない)なセッションコンテキスト変数
+# つまり、マルチスレッドでは使い回せない
 _current_session = contextvars.ContextVar(
     "current_requests_session", default=None
 )
+# グローバルなセッション変数
+# 本来はhttp_get_htmlの引数にセッションを渡せるようにすべき
+_global_session = None
+
+MAX_REQUESTS = 5  # 同時実行数の制限
+sema = threading.Semaphore(MAX_REQUESTS)
 
 
 @contextmanager
 def use_requests_session():
+    """スレッドごとにSessionをセットするコンテキストマネージャ"""
     session = requests.Session()
     token = _current_session.set(session)  # 現在のセッションを設定
+    print(f"[{threading.current_thread().name}] コンテキストセッションを開始: {token}")
     try:
         yield session  # 必要なら明示的に使えるようにもする
     finally:
         session.close()
         _current_session.reset(token)  # セッション終了＋ContextVarを元に戻す
+        print(f"[{threading.current_thread().name}] コンテキストセッションを終了: {token}")
+
+
+@contextmanager
+def use_requests_global_session():
+    global _global_session
+    session = requests.Session()
+    _global_session = session
+    print(f"[{threading.current_thread().name}] グローバルセッションを開始")
+    try:
+        yield session  # 必要ならwith文内で明示的にも使える
+    finally:
+        session.close()
+        _global_session = None
+        print(f"[{threading.current_thread().name}] グローバルセッションを終了")
 
 
 def get_http_cachname(url):
@@ -242,11 +266,9 @@ def get_http_cachname(url):
 
 def http_get_html(
     url,
-    use_cache=True,
-    cache_dir="",
-    cache_fname="",
-    cookies={},
-    encoding='utf-8'
+    use_cache=True, cache_dir="", cache_fname="",
+    cookies={}, encoding='utf-8',
+    with_status=False
 ):
     """
     指定urlをリクエストしエンコード済みテキストを返します。
@@ -258,8 +280,9 @@ def http_get_html(
         cache_fname (str): キャッシュファイル名（指定がなければURLから生成）
         cookies (dict): リクエストに使用するクッキー
         encoding (str): 取得するHTMLのエンコーディング
+        with_status (bool): ステータスコードを返すかどうか
     Returns:
-        str: 取得したHTMLのテキスト
+        str or tuple: 取得したHTMLのテキスト（with_statusがTrueの場合はタプルでステータスコードも返す）  
     """
     # 指定されていなければurlからキャッシュファイル名を取得
     cache_name = get_http_cachname(url) if not cache_fname else cache_fname
@@ -269,32 +292,77 @@ def http_get_html(
     if use_cache and os.path.exists(cache_name):
         print("  htmlをファイルキャッシュから取得します", cache_name)
         html = file_read(cache_name)
+        if with_status:
+            return html, 200  # ステータスコードも成功として返す
         return html
 
     # ---- キャッシュがない場合は通信で取得
-    print("  htmlを通信で取得します..")
+    print("  htmlを通信で取得します..", end=" ")
     headers = {"User-Agent": USER_AGENT_CHROME}
     # headers["Connection"] = "Keep-Alive"
-    try:
-        session = _current_session.get()
-        req_get = session.get if session else requests.get
-        if not session:
-            print("単独セッションを使用")
-        r = req_get(url, headers=headers, cookies=cookies)
-    except requests.exceptions.ConnectionError as e:
-        eprint("!!! 接続失敗")
-        print(e)
-        return ""
-    if r.encoding != 'utf-8':
-        print("html_encoding:", r.encoding, "encoding:", encoding)
-    # htmlをutf8で取得
-    # html = r.text.encode(encoding)
-    html = r.text  # python3ではエンコード済みのテキストが取得される
-    # メタ指定での文字コードをutf8に
-    # html = html.replace("charset=shift_jis", "charset=utf-8")
+    with sema:  # セマフォを使って同時実行数を制限
+        try:
+            # 1. グローバルセッションが有効ならそれを使う
+            session = _global_session
+            if session is not None:
+                req_get = session.get
+                print("グローバルセッションを使用")
+            else:
+                # 2. ContextVarセッションが有効ならそれを使う
+                session = _current_session.get()
+                if session is not None:
+                    req_get = session.get
+                    print("ContextVarセッションを使用")
+                else:
+                    # 3. どちらもなければrequests.getを直接使う
+                    req_get = requests.get
+                    print("単独セッションを使用")
+            res = req_get(url, headers=headers, cookies=cookies, timeout=5)
+        except requests.exceptions.ConnectionError as e:
+            eprint("!!! 接続失敗")
+            print(e)
+            if with_status:
+                return "", res.status_code if 'res' in locals() else 500
+            else:
+                return ""
+        if res.encoding != 'utf-8':
+            print("html_encoding:", res.encoding, "encoding:", encoding)
+        # htmlをutf8で取得
+        # html = r.text.encode(encoding)
+        html = res.text  # python3ではエンコード済みのテキストが取得される
+        # メタ指定での文字コードをutf8に
+        # html = html.replace("charset=shift_jis", "charset=utf-8")
 
-    print("  取得したhtmlをファイルキャッシュに書き込みます:", cache_name)
-    file_write(cache_name, html)
+        print("  取得したhtmlをファイルキャッシュに書き込みます:", cache_name)
+        file_write(cache_name, html)
+        if with_status:
+            # ステータスコードも返す
+            return html, res.status_code
+        else:
+            # ステータスコードなしでHTMLのみ返す
+            return html
+
+
+def http_get_html_with_retry(url, use_cach, cache_dir, retry=3):
+    """リトライ付きのHTML取得関数"""
+    html, status_code = http_get_html(
+        url, use_cache=use_cach, cache_dir=cache_dir, with_status=True
+    )
+    # 取得に失敗した場合はリトライ
+    for c in range(retry):
+        # if "Service Temporarily Unavailable" in html:
+        if not (200 <= status_code < 300):  # HTTPステータスコードが200番台は成功
+            if c >= retry - 1:
+                eprint("!!! やっぱりだめみたいなので中止", url)
+                return {}
+            print(f"取得エラーのため再度取得({c+1}回目)", url)
+            time.sleep(c + 1)
+            # リトライ実行(キャッシュは無効化)
+            html, status_code = http_get_html(
+                url, use_cache=False, cache_dir=cache_dir, with_status=True
+            )
+        else:  # 成功した場合はリトライループを抜け返す
+            break
     return html
 
 

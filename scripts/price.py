@@ -134,8 +134,8 @@ def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
     """
     # キャッシュファイルから取得
     price_fname = PRICE_FNAME % code_s
+    use_cach = False
     if os.path.exists(price_fname):
-        use_cach = False
         if upd < UPD_INTERVAL:
             use_cach = True
         else:

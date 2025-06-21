@@ -79,26 +79,19 @@ def get_kabutan_html(code_s, upd=UPD_INTERVAL):
     elif upd == UPD_FORCE:
         use_cache = False
     else:
-        INTERVAL_DAY = 5 # この設定は微妙
-        use_cache = is_cache_latest(KABUTAN_URL_CODE%(str(code_s)), INTERVAL_DAY)
-    html = http_get_html(KABUTAN_URL_CODE%(str(code_s)), 
-        cache_dir=KABUTAN_CACHE_DIR, use_cache=use_cache)
-    for c in range(3):
-        if "Service Temporarily Unavailable" in html:
-            if c >= 2:
-                print("!!! やっぱりだめみたいなので中止")
-                return {}
-            print("取得エラーのため再度取得", c)
-            import time
-            time.sleep(c+1)
-            html = http_get_html(KABUTAN_URL_CODE%(str(code_s)), 
-                use_cache=False, cache_dir=KABUTAN_CACHE_DIR)
-        else:
-            break
+        INTERVAL_DAY = 5  # この設定は微妙
+        use_cache = is_cache_latest(
+            KABUTAN_URL_CODE % (str(code_s)), INTERVAL_DAY
+        )
+    url = KABUTAN_URL_CODE % (str(code_s))
+    html = http_get_html_with_retry(
+        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache
+    )
     return html
 
+
 def get_kabutan_base_html(code_s, upd=UPD_INTERVAL):
-    """ 株探から基本情報htmlを取得
+    """ 株探から基本情報htmlを通信またはキャッシュから取得
     """
     if not os.path.exists(KABUTAN_CACHE_DIR):
         os.mkdir(KABUTAN_CACHE_DIR)
@@ -108,25 +101,17 @@ def get_kabutan_base_html(code_s, upd=UPD_INTERVAL):
     elif upd == UPD_FORCE:
         use_cache = False
     else:
-        use_cache = is_cache_latest(KABUTAN_BASE_URL_CODE%(str(code_s)), upd)
+        use_cache = is_cache_latest(KABUTAN_BASE_URL_CODE % (str(code_s)), upd)
 
-    html = http_get_html(KABUTAN_BASE_URL_CODE%(str(code_s)), 
-        cache_dir=KABUTAN_CACHE_DIR, use_cache=use_cache)
-    for c in range(3):
-        if "Service Temporarily Unavailable" in html:
-            if c >= 2:
-                print("!!! やっぱりだめみたいなので中止")
-                return {}
-            print("取得エラーのため再度取得", c)
-            import time
-            time.sleep(c+1)
-            html = http_get_html(KABUTAN_BASE_URL_CODE%(str(code_s)), use_cache=False, cache_dir=KABUTAN_CACHE_DIR)
-        else:
-            break
+    url = KABUTAN_BASE_URL_CODE % (str(code_s))
+    html = http_get_html_with_retry(
+        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache
+    )
     return html
 
+
 def get_kabutan_cachename(code_s):
-    cache_fname = get_http_cachname(KABUTAN_BASE_URL_CODE%(str(code_s)))
+    cache_fname = get_http_cachname(KABUTAN_BASE_URL_CODE % (str(code_s)))
     return os.path.join(KABUTAN_CACHE_DIR, cache_fname)
 
 # def get_from_kabutan2(html):
@@ -455,17 +440,18 @@ def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
         dict<str(key), any>(理論株価データ):
         key = rironkabuka, rironkabuka_up, rironkabuka_down, rironkabuka_preceding, access_date_rironkabuka ,code
     """
-    print("-"*5, "理論株価の計算 upd:", upd)
+    print("-" * 5, "理論株価の計算 upd:", upd)
     tables = {}
     # 決算htmlを解析して理論株価に必要なデータを取得
     res = analyze_from_kabutan(code_s, upd, stock)
+
     tables["rironkabuka"] = res[0]
     tables["rironkabuka_up"] = res[1]
     tables["rironkabuka_down"] = res[2]
     tables["rironkabuka_preceding"] = res[3]
-    print("="*5, "理論株価の計算完了", tables["rironkabuka"])
+    print("=" * 5, "理論株価の計算完了", tables["rironkabuka"])
     # 理論株価作成時間の格納
-    cach_path = get_http_cachname(KABUTAN_URL_CODE%(str(code_s)))
+    cach_path = get_http_cachname(KABUTAN_URL_CODE % (str(code_s)))
     cach_path = os.path.join(KABUTAN_CACHE_DIR, cach_path)
     tables["access_date_rironkabuka"] = get_file_datetime(cach_path)
     print("date:", tables["access_date_rironkabuka"])

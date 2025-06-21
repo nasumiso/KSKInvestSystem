@@ -265,7 +265,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # 最低購入代金取得のためdbを更新
     print("---> masterデータ更新(最低購入代金、銘柄概要取得のため)")
     stocks = stock_db.update_db_rows(
-        updatelist_all_code, tables=["master"], upd=upd
+        updatelist_all_code, tables=["master"], upd=upd, sync=False
     )
     print("<---- masterデータ更新完了")
 
@@ -326,32 +326,6 @@ def todays_shintakane(upd=UPD_INTERVAL):
     )
 
     # today_list_candiate = today_list
-    # 出来高フィルタ
-    # today_list_dekidaga = [d for d in today_list_candiate if dekidaga_filter(d)]
-    # today_list_dekidaga = today_list_candiate
-    # 今日のDB更新リスト（フィルタ済み）
-    # code_list = [t['code_s'] for t in today_list_dekidaga]
-
-    # 購入価格によるフィルタ：一定以下の購入価格
-    # def purchase_filter(val):
-    # 	code_s = val["code_s"]
-    # 	stock = stocks[code_s]
-    # 	return stock.get('lowest_purchase_money', 0) <= LOWEST_PURCHASE_MONEY_VALUE
-    # 時価総額によるフィルタ：一定以下の時価総額
-    # def marketcap_filter(val):
-    # 	code_s = val["code_s"]
-    # 	stock = stocks[code_s]
-    # 	return stock.get('market_cap', 0)<= MARKET_CAP
-    
-    # 最低購入代金フィルタ
-    # today_list_purchase = [t for t in today_list_dekidaga if purchase_filter(t)]
-    # today_list_purchase = today_list_dekidaga
-    # return
-    # 時価総額フィルタ
-    # today_list_marketcap = [t for t in today_list_purchase if marketcap_filter(t)]
-    # today_list_marketcap = today_list_purchase
-    # today_list_result = today_list_marketcap
-
     def update_price_gyoseki_shihyo(today_list_all):
         """今日と過去も考慮した銘柄today_list_allに対して
         DB更新(価格、業績、指標、理論株価)
@@ -360,7 +334,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         print("")
         print("----> 価格データ更新")
         stocks = stock_db.update_db_rows(
-            today_list_all, tables=["price"], upd=upd
+            today_list_all, tables=["price"], upd=upd, sync=False
         )
         print("<---- 価格データ更新完了")
 
@@ -374,7 +348,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         # lates:Trueで業績や指標を更新
         # print "業績更新:", today_list_all
         stocks = stock_db.update_db_rows(
-            today_list_all, tables=["gyoseki"], upd=upd
+            today_list_all, tables=["gyoseki"], upd=upd, sync=False
         )
 
         # ---- 指標の更新
@@ -384,7 +358,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         # dryscrapeでのreuter情報は封印していることに注意
         # print "%　指標更新:", code_list
         stocks = stock_db.update_db_rows(
-            today_list_all, tables=["shihyo"], upd=upd
+            today_list_all, tables=["shihyo"], upd=upd, sync=False
         )
 
         # ---- 理論株価の更新
@@ -392,27 +366,12 @@ def todays_shintakane(upd=UPD_INTERVAL):
         print("理論株価を更新します")
         print("=" * 20)
         stocks = stock_db.update_db_rows(
-            today_list_all, tables=["rironkabuka"], upd=upd
+            today_list_all, tables=["rironkabuka"], upd=upd, sync=False
         )
 
         return stocks
     # 価格更新: これコメントアウトすれば速くなる
     stocks = update_price_gyoseki_shihyo(updatelist_all_code)
-
-    # print "候補銘柄%d -> 未調査 %d -> \
-    #出来高フィルタ %d -> 最低購入代金フィルタ %d -> 時価総額フィルタ %d"%\
-    #(len(today_list), len(today_list_candiate), \
-    #	len(today_list_dekidaga), len(today_list_purchase), len(today_list_marketcap))
-    # return
-    
-    # today_list_already = [t for t in already_list if not t in today_list_result]
-    # print "今日銘柄%d -> 調査済み%d"%(len(today_list_result), len(today_list_already))
-
-    # today_list_exclude_dekidaga = [t for t in today_list_candiate if not t in today_list_dekidaga]
-    # today_list_exclude_purchase = [t for t in
-    # today_list_dekidaga if not t in today_list_purchase]
-    # today_list_exclude_marketcap = [t for t in today_list_exclude_dekidaga if not t in today_list_marketcap]
-    # print "len:", len(today_list_already), len(today_list_exclude_dekidaga)
 
     # ---- マーケットの更新
     def update_market():
@@ -441,14 +400,12 @@ def todays_shintakane(upd=UPD_INTERVAL):
         rows.append(COLUMNS)
     else:
         [puts(c) for c in COLUMNS]
-    
+
     def puts_detail(d):
         # 銘柄の情報表示
         kabuka = d["kabuka"] 
         code = stock_db.get_code_exp(d["code_s"])
         stock = stocks[d["code_s"]]
-        # print_dict(stock)
-        # stock_name = stock["stock_name"] # d["name"]	
         stock_name = stock_db.get_stock_name_exp(stock)
         sector = stock.get("sector", "セクター名不明") # d["sector"]
         market = stock.get("market", "市場不明")
@@ -511,6 +468,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
             except TypeError as e:
                 print("表示エラー", e)
     print()
+
     def score_func(t):
         code_s = t["code_s"]
         stock = stocks[code_s]
@@ -815,8 +773,6 @@ def get_todays_dekidakaup():
     date_m = re.search(r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>', html, re.S)
     date = date_m.group(1) + date_m.group(2) + date_m.group(3)
     date = date[2:]
-    # date = re.search(r'<p class="updtime"><small>(.*)</small>', html).group(1)
-    # date = date.split()[0][2:].replace("/", "") # 2014/08/15 18:27 更新
     print("株探 出来高急増更新日：", date)
     # ページ分のhtmlを取得
     # ページ数を取得
@@ -827,15 +783,16 @@ def get_todays_dekidakaup():
     pages = [int(m.group(1)) for m in re.finditer(r'page=(\d)', page_div)]
     page_count = max(pages)
     print("ページ数：", page_count)
-    for p in range(page_count):
-        if p < 1:
-            continue  # 1ページ目は取得済み
-        html = http_get_html(
-            URL_KABUTAN_DEKIDAKA + QUERY % (p + 1),
-            use_cache=useCache,
-            cache_dir=cache_dir
-        )
-        htmls.append(html)
+    with use_requests_session():
+        for p in range(page_count):
+            if p < 1:
+                continue  # 1ページ目は取得済み
+            html = http_get_html(
+                URL_KABUTAN_DEKIDAKA + QUERY % (p + 1),
+                use_cache=useCache,
+                cache_dir=cache_dir
+            )
+            htmls.append(html)
 
     rows = []
     for html in htmls:
@@ -1042,51 +999,52 @@ def update_todays_kessan():
     # とりあえず、本日分までページを読むことにする
     page_max = 33  # 最大確認ページ数
     before_day = 2  # 本日からさかのぼって確認する日数
-    for p in range(page_max):
-        page = p + 1
-        TODAYS_KESSAN_URL = "https://kabutan.jp/news/?page=%d" % page
-        cache_fname = "todays_kessan_page_%d.html" % page
-        cache_path = os.path.join(cache_dir, cache_fname)
-        # 1ページの日付でキャッシュを使うか判定
-        # if page == 1:
-        use_cache = False
-        if os.path.exists(cache_path):
-            cache_date = get_price_day(get_file_datetime(cache_path))
+    with use_requests_session():
+        for p in range(page_max):
+            page = p + 1
+            TODAYS_KESSAN_URL = "https://kabutan.jp/news/?page=%d" % page
+            cache_fname = "todays_kessan_page_%d.html" % page
+            cache_path = os.path.join(cache_dir, cache_fname)
+            # 1ページの日付でキャッシュを使うか判定
+            # if page == 1:
+            use_cache = False
+            if os.path.exists(cache_path):
+                cache_date = get_price_day(get_file_datetime(cache_path))
 
-            tdy_date = get_price_day(datetime.today())
-            if os.path.exists(cache_path) and tdy_date <= cache_date:
-                use_cache = True
-            print(
-                "%dページ決算発表キャッシュ日付:%s キャッシュ:%s"
-                % (page, cache_date, use_cache)
+                tdy_date = get_price_day(datetime.today())
+                if os.path.exists(cache_path) and tdy_date <= cache_date:
+                    use_cache = True
+                print(
+                    "%dページ決算発表キャッシュ日付:%s キャッシュ:%s"
+                    % (page, cache_date, use_cache)
+                )
+
+            kessan_html = http_get_html(
+                TODAYS_KESSAN_URL, use_cache=use_cache,
+                cache_dir=cache_dir, cache_fname=cache_fname
             )
-
-        kessan_html = http_get_html(
-            TODAYS_KESSAN_URL, use_cache=use_cache,
-            cache_dir=cache_dir, cache_fname=cache_fname
-        )
-        # print ux_cmd_head(kessan_html)
-        # 決算htmlの日付を取得
-        mod, announce = parse_kessan_html(kessan_html)
-        # print mod, announce
-        modify_lst += mod
-        announce_lst += announce
-        if len(modify_lst) > 0:
-            current_day = datetime.strptime(
-                modify_lst[-1][1], "%Y/%m/%d"
-            ).date()
-        else:
-            current_day = datetime.strptime(
-                announce_lst[-1][1], "%Y/%m/%d"
-            ).date()
-        today = datetime.today().date()
-        kessan_ge_day = today - timedelta(before_day)
-        print(
-            "決算ページ:%d 今読んでいる決算日付:%s ここまで取得日:%s"
-            % (page, current_day, kessan_ge_day)
-        )
-        if p > 0 and kessan_ge_day > current_day:
-            break
+            # print ux_cmd_head(kessan_html)
+            # 決算htmlの日付を取得
+            mod, announce = parse_kessan_html(kessan_html)
+            # print mod, announce
+            modify_lst += mod
+            announce_lst += announce
+            if len(modify_lst) > 0:
+                current_day = datetime.strptime(
+                    modify_lst[-1][1], "%Y/%m/%d"
+                ).date()
+            else:
+                current_day = datetime.strptime(
+                    announce_lst[-1][1], "%Y/%m/%d"
+                ).date()
+            today = datetime.today().date()
+            kessan_ge_day = today - timedelta(before_day)
+            print(
+                "決算ページ:%d 今読んでいる決算日付:%s ここまで取得日:%s"
+                % (page, current_day, kessan_ge_day)
+            )
+            if p > 0 and kessan_ge_day > current_day:
+                break
     
     # CSVキャッシュに保存
     with open(
