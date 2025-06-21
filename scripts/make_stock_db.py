@@ -483,8 +483,9 @@ def _update_db_code(c_s, upd, tables, stocks, latest, force):
 def update_db_rows_async(code_s_list, upd, tables, stocks, latest, force):
     with use_requests_global_session():
         from concurrent.futures import ThreadPoolExecutor
+        MAX_WORKERS = 10
         # 並列通信実行
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             # listで囲むことで結果待ち
             results = list(executor.map(
                 lambda c_s: _update_db_code(

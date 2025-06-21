@@ -85,7 +85,7 @@ def get_kabutan_html(code_s, upd=UPD_INTERVAL):
         )
     url = KABUTAN_URL_CODE % (str(code_s))
     html = http_get_html_with_retry(
-        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache, retry=5
+        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache
     )
     return html
 
@@ -105,7 +105,7 @@ def get_kabutan_base_html(code_s, upd=UPD_INTERVAL):
 
     url = KABUTAN_BASE_URL_CODE % (str(code_s))
     html = http_get_html_with_retry(
-        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache, retry=5
+        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache
     )
     return html
 
