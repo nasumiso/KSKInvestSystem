@@ -3,6 +3,7 @@
 import operator
 import os
 import os.path
+from pathlib import Path
 import sys
 import shutil
 from datetime import datetime, timedelta
@@ -290,7 +291,9 @@ def http_get_html(
     if cache_dir:
         cache_name = os.path.join(cache_dir, cache_name)
     if use_cache and os.path.exists(cache_name):
-        print("  htmlをファイルキャッシュから取得します", cache_name)
+        print("  htmlをファイルキャッシュから取得します",
+              Path(cache_name).relative_to(DATA_DIR)
+              )
         html = file_read(cache_name)
         if with_status:
             return html, 200  # ステータスコードも成功として返す
@@ -333,7 +336,10 @@ def http_get_html(
         # メタ指定での文字コードをutf8に
         # html = html.replace("charset=shift_jis", "charset=utf-8")
 
-        print("  取得したhtmlをファイルキャッシュに書き込みます:", cache_name)
+        print(
+            "  取得したhtmlをファイルキャッシュに書き込みます:",
+            Path(cache_name).relative_to(DATA_DIR)
+        )
         file_write(cache_name, html)
         if with_status:
             # ステータスコードも返す
@@ -349,14 +355,14 @@ def http_get_html_with_retry(url, use_cach, cache_dir, retry=3):
         url, use_cache=use_cach, cache_dir=cache_dir, with_status=True
     )
     # 取得に失敗した場合はリトライ
-    for c in range(retry):
+    for count in range(retry + 1):
         # if "Service Temporarily Unavailable" in html:
         if not (200 <= status_code < 300):  # HTTPステータスコードが200番台は成功
-            if c >= retry - 1:
+            if count >= retry - 1:
                 eprint("!!! やっぱりだめみたいなので中止", url)
                 return {}
-            print(f"取得エラーのため再度取得({c+1}回目)", url)
-            time.sleep(c + 1)
+            print(f"取得エラーのため再度取得({count+1}回目)", url)
+            time.sleep(count + 1)
             # リトライ実行(キャッシュは無効化)
             html, status_code = http_get_html(
                 url, use_cache=False, cache_dir=cache_dir, with_status=True
