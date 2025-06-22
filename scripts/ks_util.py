@@ -358,7 +358,7 @@ def http_get_html_with_retry(url, use_cach, cache_dir, retry=3):
     for count in range(retry + 1):
         # if "Service Temporarily Unavailable" in html:
         if not (200 <= status_code < 300):  # HTTPステータスコードが200番台は成功
-            if count >= retry - 1:
+            if count >= retry:
                 eprint("!!! やっぱりだめみたいなので中止", url)
                 return {}
             print(f"取得エラーのため再度取得({count+1}回目)", url)
