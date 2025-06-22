@@ -1,4 +1,7 @@
-
+# flake8: noqa
+"""
+関数プログラミングのテストコード
+"""
 import sys
 import os
 import time
