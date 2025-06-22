@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import re
-import pdb
 
 # from scipy import stats
 # import numpy as np
@@ -9,7 +8,6 @@ import pdb
 from ks_util import *
 
 import rironkabuka
-import shintakane_global
 
 # ==================================================
 # 株探から指標データを取得

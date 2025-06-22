@@ -976,7 +976,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
         threading.Thread(
             target=googledrive.upload_csv,
             args=(rank_csv, "code_rank"),
-            daemon=False
+            daemon=False  # 完了を待つ
         ).start()
 
 
@@ -1211,13 +1211,7 @@ def main():
     """
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "command",
-        type=str,
-        nargs="?",
-        default="list_all_db",
-        help="実行するコマンド"
-    )
+    parser.add_argument("command", type=str, nargs="?", default="list_all_db", help="実行するコマンド")
     args = parser.parse_args()
     command = args.command
     # command = "edit"

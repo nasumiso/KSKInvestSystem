@@ -4,7 +4,6 @@
 # セクターDBを作成します。
 # =================================================
 
-import argparse
 import re
 from datetime import datetime, timedelta
 import csv
@@ -53,14 +52,16 @@ def get_prev_fname(fname, cur_day=datetime.today()):
     name, ext = os.path.splitext(fname)
     while count < CountMax:
         cur_day = cur_day - timedelta(1)
-        fname = name + "_%02d%02d%02d" % (cur_day.year - 2000, cur_day.month, cur_day.day) + ext
+        fname = (
+            name + "_%02d%02d%02d" % (cur_day.year - 2000, cur_day.month, cur_day.day) + ext
+        )
         count += 1
         if os.path.exists(fname):
             break
     if count >= CountMax:
         print("!!!直前のファイルが見つかりません", fname)
         return "", cur_day
-    print("直前のファイル:", fname)
+    print("直前のファイル:", Path(fname).relative_to(DATA_DIR))
     return fname, cur_day
 
 
@@ -101,7 +102,9 @@ def make_theme_data():  # market_db=None
     theme_rank_list, prev_theme_rank_list, cach_date, _ = get_theme_rank_list()
 
     theme_rank_dict = {v: i + 1 for (i, v) in enumerate(theme_rank_list)}
-    prev_theme_rank_dict = {v: i + 1 for (i, v) in enumerate(prev_theme_rank_list)}
+    prev_theme_rank_dict = {
+        v: i + 1 for (i, v) in enumerate(prev_theme_rank_list)
+    }
     theme_rank2 = {}
     for theme, rank in list(theme_rank_dict.items()):
         moment = 0
@@ -148,7 +151,9 @@ def make_db_common(code_s):
     priced_dict = price.get_daily_price_kabutan(code_s)
     db.update(priced_dict)
     pr = priced_dict.get("price", 0)
-    pricew_dict = price.get_weekly_price_data(code_s, UPD_INTERVAL, [pr, pr, pr])
+    pricew_dict = price.get_weekly_price_data(
+        code_s, UPD_INTERVAL, [pr, pr, pr]
+    )
     print("RS_RAW=", pricew_dict.get("rs_raw", 0))
     db.update(pricew_dict)
     return db
@@ -264,7 +269,7 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
                 "%.1f,%.1f" % (db["rv_20"], db["rv_5"])
             ])
             return rows
-        except KeyError as e:
+        except KeyError:
             print("!!! 市場のDBデータ取得できず", db_name, market_name)
             return []
 
