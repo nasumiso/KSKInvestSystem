@@ -137,7 +137,10 @@ def memoized_report_evaluation():
         if alreadys[0]:
             return eval_dict
         else:
-            report_fname = os.path.join(DATA_DIR, "googledrive/銘柄調査 - 銘柄調査.csv")
+            # ↓一旦封印のため注意
+            report_fname = os.path.join(
+                DATA_DIR, "googledrive/銘柄調査 - 銘柄調査.csv"
+            )
             csv_r = csv.reader(open(report_fname, 'r', encoding='utf-8'))
             for row in csv_r:
                 code = row[0]
@@ -170,16 +173,17 @@ def calc_fundamental(code_s, themes):
         # 	print theme, theme_pt
         total_pt += theme_pt
     print("テーマポイント:", total_pt)
-    total_pt = min(total_pt, 80)
+    total_pt = min(total_pt, 100)  # オレレポート封印のため80から100に
 
     # オレレポート分のファンダポイントを加算
-    eval_dict = get_report_evalutation()
-    evaluation = eval_dict.get(code_s, "")
-    eval_pt_dict = {"S": 40, "A": 30, "B": 20, "C": 5, "D": 0, "E": -10}
-    eval_pt = eval_pt_dict.get(evaluation, 0)
-    print("オレ評価:%s(%d)" % (evaluation, eval_pt))
-    total_pt += eval_pt
-    total_pt = min(total_pt, 100)
+    # 一旦封印
+    # eval_dict = get_report_evalutation()
+    # evaluation = eval_dict.get(code_s, "")
+    # eval_pt_dict = {"S": 40, "A": 30, "B": 20, "C": 5, "D": 0, "E": -10}
+    # eval_pt = eval_pt_dict.get(evaluation, 0)
+    # print("オレ評価:%s(%d)" % (evaluation, eval_pt))
+    # total_pt += eval_pt
+    # total_pt = min(total_pt, 100)
     return total_pt
 
 

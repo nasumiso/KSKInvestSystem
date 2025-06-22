@@ -920,9 +920,10 @@ def list_all_db(upload_csv=True, update_portforio=True):
         # ボラティリティ、売り圧力レシオ・買い集め指数
         vola, sell_press = get_vola_and_sell_press_expr(stock_data)
         # 順位
-        yahoo_url = "https://finance.yahoo.co.jp/quote/%s.T" % (stock[0])
-        rank = i + 1
-        rank = '=HYPERLINK("%s", "%d")' % (yahoo_url, rank)
+        # buffet_url = "https://www.buffett-code.com/company/%s/library" % (stock[0])
+        yahoo_url = "https://finance.yahoo.co.jp/quote/%s.T"%(stock[0])
+        rank = i+1
+        rank = '=HYPERLINK("%s", "%d")'%(yahoo_url, rank)		
         # ---- ポートフォリオ
         ports = []
         if stock[0] in pf_stocks:
@@ -1049,21 +1050,26 @@ def delete_delist_stocks(stocks):
     # acces_date_priceが半年以上前の銘柄を、上場廃止チェックする
     for code_s, stock in list(stocks.items()):
         dt_price = stock.get("access_date_price", None)
-        # 最新価格が半年経過しているか？
-        if dt_price < (
-            datetime.today() - timedelta(days=180)
-        ):
+        if dt_price < datetime.today() - timedelta(days=180):  # 最新価格が半年経過しているか？
             print(code_s, stock.get("stock_name", "不明"), "は上場廃止の可能性あり")
             # print_dict(stock, ex_key=["gyoseki_quarter", "gyoseki_current", "price_log", "rs_rank_log", "stock_rank_log"])
             parsed_data = get_stock_master_data(stocks, code_s, UPD_INTERVAL)
             if master.is_delist(parsed_data):
-                print(code_s, stock.get("stock_name", "不明"), "は上場廃止")
+                print(
+                    code_s,
+                    stock.get("stock_name", "不明"),
+                    "は上場廃止"
+                )
                 # del stocks[code_s]
                 delisted_codes.append(code_s)
             else:
-                print(code_s, stock.get("stock_name", "不明"), "は上場継続中")
+                print(
+                    code_s,
+                    stock.get("stock_name", "不明"),
+                    "は上場継続中"
+                )
                 continue_codes.append(code_s)
-    
+
     # print("上場廃止銘柄:", delisted_codes)
     # print("上場継続銘柄:", continue_codes)
     # 上場廃止銘柄を削除
@@ -1090,9 +1096,9 @@ def reflesh_db():
         if code_s in stocks:
             print("ETF銘柄削除:", code_s, stocks[code_s].get("stock_name", "不明"))
             del stocks[code_s]
-        #else:
+        # else:
         #    print("!!! ETF銘柄がDBに存在しません:", code_s)
-        
+
     print("削除後DB内銘柄数:", len(stocks))
 
     # 削除後のデータ保存
@@ -1103,8 +1109,14 @@ def load_etf_codes():
     etf_fpath = os.path.join(DATA_DIR, "ETF_code.txt")
     with open(etf_fpath, "r") as f:
         etf_codes = f.read().splitlines()
-    etf_codes = [c.strip() for c in etf_codes if c.strip()]
-    return etf_codes
+    # タブ区切りのETFコードを抽出
+    # 例: "1554 上場インデックスファンド米国株"
+    new_etf_codes = []
+    for line in etf_codes:
+        code = line.strip().split("\t")[0]  # タブ区切りのコード部分を取得
+        if code:
+            new_etf_codes.append(code)
+    return new_etf_codes
 
 
 def convert_code_db():
@@ -1199,10 +1211,7 @@ def main():
     """
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "command", type=str, nargs="?",
-        default="list_all_db", help="実行するコマンド"
-    )
+    parser.add_argument("command", type=str, nargs="?", default="list_all_db", help="実行するコマンド")
     args = parser.parse_args()
     command = args.command
     # command = "edit"
@@ -1251,7 +1260,7 @@ def main():
             stocks = load_pickle(STOCKS_PICKLE)
             code_list = list(stocks.keys())  # [400:]
             code_list.sort()
-            code_list = [c for c in code_list if c>=min and c<= max]
+            code_list = [c for c in code_list if c >= min and c <=  max]
             return code_list
         # code_list = get_code_list_from_db(1500, 10000)
         code_list = get_code_list_from_db(1000, 10000)
@@ -1259,7 +1268,10 @@ def main():
         while current < len(code_list):
             num = 500
             current_code_list = code_list[current:current + num]
-            print("%d~%d/%dを更新します" % (current_code_list[0], current_code_list[-1], len(code_list)))
+            print(
+                "%d~%d/%dを更新します"
+                % (current_code_list[0], current_code_list[-1], len(code_list))
+            )
             # 何を更新する？
             # tables = ["gyoseki", "shihyo, "master"]
             tables = ["price"]
