@@ -9,6 +9,7 @@ stock_data/
 todays_kessan_data/
 googledrive/
 cache_data/
+log/
 
 # Pythonキャッシュや仮想環境なども除外
 __pycache__/
