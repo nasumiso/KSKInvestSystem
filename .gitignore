@@ -9,6 +9,7 @@ stock_data/
 todays_kessan_data/
 cache_data/
 log/
+googledrive/drive_credential.json
 
 # Pythonキャッシュや仮想環境なども除外
 __pycache__/
@@ -20,3 +21,4 @@ __pycache__/
 
 # MacOSのDS_Storeファイル
 .DS_Store
+
