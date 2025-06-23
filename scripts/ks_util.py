@@ -223,7 +223,9 @@ USER_AGENT_CHROME = (
 )
 # スレッドローカル(スレッド間で共有されない)なセッションコンテキスト変数
 # つまり、マルチスレッドでは使い回せない
-_current_session = contextvars.ContextVar("current_requests_session", default=None)
+_current_session = contextvars.ContextVar(
+    "current_requests_session", default=None
+)
 # グローバルなセッション変数
 # 本来はhttp_get_htmlの引数にセッションを渡せるようにすべき
 _global_session = None
@@ -266,7 +268,11 @@ def get_http_cachname(url):
     """
     urlからデフォルトのキャッシュファイルの場所を返す
     """
-    return url.replace("http://", "").replace(".", "").replace("/", "_") + ".html"
+    return (
+        url.replace("http://", "")
+        .replace(".", "")
+        .replace("/", "_") + ".html"
+    )
 
 
 def http_get_html(
