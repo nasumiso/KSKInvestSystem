@@ -421,6 +421,7 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
     print("-" * 5, "指標の取得計算 upd=", upd)
     tables = {}
     stock = stocks[code_s] if code_s in stocks else {}
+    # わかりにくいがここで通信している
     shihyo_pt, shihyo_data = calc_shihyo_pt(code_s, upd, stock)
     print("-" * 5, "指標の取得計算完了")
     # 指標データの取得元ファイルの日付を格納
