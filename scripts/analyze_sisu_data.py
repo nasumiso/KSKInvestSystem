@@ -8,7 +8,8 @@ import operator
 
 from make_sisu_data import *
 
-db_dict = pickle.load(open(os.path.join(DATA_DIR, "sisu_data/sisu_db.pickle"), "r"))
+# Python2の古いDBで現在使用していないため一旦封印
+# db_dict = pickle.load(open(os.path.join(DATA_DIR, "sisu_data/sisu_db.pickle"), "r"))
 
 # ==================================================
 # calc func
@@ -43,74 +44,74 @@ def rankdata(a):
 # ==================================================
 
 
-def buy_and_hold():
-    rebaranlce = False
-    tax = False
-    if not rebaranlce:
-        gain_jp_stock = float(db_dict["jp_stock"][-1][1]) / db_dict["jp_stock"][0][1]
-        gain_jp_reit = float(db_dict["jp_reit"][-1][1]) / db_dict["jp_reit"][0][1]
-        gain_gl_stock = float(db_dict["gl_stock"][-1][1]) / db_dict["gl_stock"][0][1]
-        gain_gl_reit = float(db_dict["gl_reit"][-1][1]) / db_dict["gl_reit"][0][1]
-        gain_em_stock = float(db_dict["em_stock"][-1][1]) / db_dict["em_stock"][0][1]
-        gain_gl_bond = float(db_dict["gl_bond"][-1][1]) / db_dict["gl_bond"][0][1]
-        gain_gold = (float)(db_dict["gold"][-1][1]) / db_dict["gold"][0][1]
-
-        print(
-            gain_jp_stock,
-            gain_jp_reit,
-            gain_gl_stock,
-            gain_gl_reit,
-            gain_em_stock,
-            gain_gl_bond,
-            gain_gold,
-        )
-        asset_rate = [20, 5, 20, 10, 10, 25, 10]
-        gain_list = [
-            gain_jp_stock,
-            gain_jp_reit,
-            gain_gl_stock,
-            gain_gl_reit,
-            gain_em_stock,
-            gain_gl_bond,
-            gain_gold,
-        ]
-        gain = sumproduct(asset_rate, gain_list)
-        if tax:
-            gain -= (gain - 100) * 0.2
-        # 195 税金あり：176
-        print("バイアンドホールド：%d " % int(gain))
-        return
-    # リバンランスあり
-    asset_rate = [20, 5, 20, 10, 10, 25, 10, 0]
-    asset_total = asset_rate[:]
-    total_return = sum(asset_rate)
-
-    for i, _row in enumerate(db_dict[JP_STOCK]):
-        if not i % 4 == 0:
-            continue
-        print("-" * 15, _row[0])
-        # 1ヶ月リターンを取得
-        asset_ret1 = [0] * 8
-        asset_ret1[7] = 1.0
-        for j, asset in enumerate(ASSET_CLASSES):
-            row = db_dict[asset][i]
-            cur_price = row[1]
-            if i - 53 / 12 >= 0:
-                start_i = i - 53 / 12
-            else:
-                start_i = 0
-            p1_price = db_dict[asset][start_i][1]
-            asset_ret1[j] = (float)(cur_price) / p1_price
-        print("asset_ret1:", [round(a, 3) for a in asset_ret1])
-
-        asset_total = [t * r for t, r in zip(asset_total, asset_ret1)]
-        print("asset_total_before:", [round(a, 1) for a in asset_total])
-        total_return = sum(asset_total)
-        asset_total = [total_return * r / 100 for t, r in zip(asset_total, asset_rate)]
-        print("asset_total_after:", [round(a, 1) for a in asset_total])
-        print("total_return:", round(total_return, 1), round(sum(asset_total), 1))
-    # 208
-    print("バイアンドホールド(リバランス)	: ", int(total_return))
+# def buy_and_hold():
+#     rebaranlce = False
+#     tax = False
+#     if not rebaranlce:
+#         gain_jp_stock = float(db_dict["jp_stock"][-1][1]) / db_dict["jp_stock"][0][1]
+#         gain_jp_reit = float(db_dict["jp_reit"][-1][1]) / db_dict["jp_reit"][0][1]
+#         gain_gl_stock = float(db_dict["gl_stock"][-1][1]) / db_dict["gl_stock"][0][1]
+#         gain_gl_reit = float(db_dict["gl_reit"][-1][1]) / db_dict["gl_reit"][0][1]
+#         gain_em_stock = float(db_dict["em_stock"][-1][1]) / db_dict["em_stock"][0][1]
+#         gain_gl_bond = float(db_dict["gl_bond"][-1][1]) / db_dict["gl_bond"][0][1]
+#         gain_gold = (float)(db_dict["gold"][-1][1]) / db_dict["gold"][0][1]
+#
+#         print(
+#             gain_jp_stock,
+#             gain_jp_reit,
+#             gain_gl_stock,
+#             gain_gl_reit,
+#             gain_em_stock,
+#             gain_gl_bond,
+#             gain_gold,
+#         )
+#         asset_rate = [20, 5, 20, 10, 10, 25, 10]
+#         gain_list = [
+#             gain_jp_stock,
+#             gain_jp_reit,
+#             gain_gl_stock,
+#             gain_gl_reit,
+#             gain_em_stock,
+#             gain_gl_bond,
+#             gain_gold,
+#         ]
+#         gain = sumproduct(asset_rate, gain_list)
+#         if tax:
+#             gain -= (gain - 100) * 0.2
+#         # 195 税金あり：176
+#         print("バイアンドホールド：%d " % int(gain))
+#         return
+#     # リバンランスあり
+#     asset_rate = [20, 5, 20, 10, 10, 25, 10, 0]
+#     asset_total = asset_rate[:]
+#     total_return = sum(asset_rate)
+#
+#     for i, _row in enumerate(db_dict[JP_STOCK]):
+#         if not i % 4 == 0:
+#             continue
+#         print("-" * 15, _row[0])
+#         # 1ヶ月リターンを取得
+#         asset_ret1 = [0] * 8
+#         asset_ret1[7] = 1.0
+#         for j, asset in enumerate(ASSET_CLASSES):
+#             row = db_dict[asset][i]
+#             cur_price = row[1]
+#             if i - 53 / 12 >= 0:
+#                 start_i = i - 53 / 12
+#             else:
+#                 start_i = 0
+#             p1_price = db_dict[asset][start_i][1]
+#             asset_ret1[j] = (float)(cur_price) / p1_price
+#         print("asset_ret1:", [round(a, 3) for a in asset_ret1])
+#
+#         asset_total = [t * r for t, r in zip(asset_total, asset_ret1)]
+#         print("asset_total_before:", [round(a, 1) for a in asset_total])
+#         total_return = sum(asset_total)
+#         asset_total = [total_return * r / 100 for t, r in zip(asset_total, asset_rate)]
+#         print("asset_total_after:", [round(a, 1) for a in asset_total])
+#         print("total_return:", round(total_return, 1), round(sum(asset_total), 1))
+#     # 208
+#     print("バイアンドホールド(リバランス)	: ", int(total_return))
 
 
 def rs_3612ma():
@@ -295,200 +296,200 @@ def rs_3612ma():
     )
 
 
-def rs_macd():
-    def list_get(list, index, default=None):
-        try:
-            v = list[index]
-        except IndexError as e:
-            v = default
-        return v
+# def rs_macd():
+#     def list_get(list, index, default=None):
+#         try:
+#             v = list[index]
+#         except IndexError as e:
+#             v = default
+#         return v
 
-    # 前計算
-    log = False
-    for asset in ASSET_CLASSES:
-        # if asset != JP_STOCK:
-        # 	continue
-        # print "="*15, asset
-        price_db = db_dict[asset]
-        price_only = [r[1] for r in price_db]  # 価格のみテーブル
-        ema12 = [0] * len(price_db)
-        ema26 = [0] * len(price_db)
-        macd_val = [0] * len(price_db)
-        macd_sig9 = [0] * len(price_db)
-        buy_sell = [0] * len(price_db)
-        buy_signal = sel_signal = 0
-        for i, row in enumerate(price_db):
-            # print "-"*15, "[%d]"%i, row[0]
-            n = 12
-            if i < n:
-                ema12[i] = average(price_only[0 : i + 1])
-            else:
-                ema12[i] = ema12[i - 1] + (2.0 / (n + 1)) * (
-                    price_only[i] - ema12[i - 1]
-                )
-            # first = average(price_only[max(i-2*n+1,0):max(i-n+1,1)])
-            # for j in range(max(i-n+1,1),i+1):
-            # 	first += (2.0/(n+1))*(price_only[j]-first)
-            # ema12[i] = first
+#     # 前計算
+#     log = False
+#     for asset in ASSET_CLASSES:
+#         # if asset != JP_STOCK:
+#         # 	continue
+#         # print "="*15, asset
+#         price_db = db_dict[asset]
+#         price_only = [r[1] for r in price_db]  # 価格のみテーブル
+#         ema12 = [0] * len(price_db)
+#         ema26 = [0] * len(price_db)
+#         macd_val = [0] * len(price_db)
+#         macd_sig9 = [0] * len(price_db)
+#         buy_sell = [0] * len(price_db)
+#         buy_signal = sel_signal = 0
+#         for i, row in enumerate(price_db):
+#             # print "-"*15, "[%d]"%i, row[0]
+#             n = 12
+#             if i < n:
+#                 ema12[i] = average(price_only[0 : i + 1])
+#             else:
+#                 ema12[i] = ema12[i - 1] + (2.0 / (n + 1)) * (
+#                     price_only[i] - ema12[i - 1]
+#                 )
+#             # first = average(price_only[max(i-2*n+1,0):max(i-n+1,1)])
+#             # for j in range(max(i-n+1,1),i+1):
+#             # 	first += (2.0/(n+1))*(price_only[j]-first)
+#             # ema12[i] = first
 
-            n = 26
-            if i < n:
-                ema26[i] = average(price_only[0 : i + 1])
-            else:
-                ema26[i] = ema26[i - 1] + (2.0 / (n + 1)) * (
-                    price_only[i] - ema26[i - 1]
-                )
-            # first = average(price_only[max(i-2*n+1,0):max(i-n+1,1)])
-            # for j in range(max(i-n+1,1),i+1):
-            # 	first += (2.0/(n+1))*(price_only[j]-first)
-            # ema26[i] = first
-            # print ema12[i], ema26[i]
+#             n = 26
+#             if i < n:
+#                 ema26[i] = average(price_only[0 : i + 1])
+#             else:
+#                 ema26[i] = ema26[i - 1] + (2.0 / (n + 1)) * (
+#                     price_only[i] - ema26[i - 1]
+#                 )
+#             # first = average(price_only[max(i-2*n+1,0):max(i-n+1,1)])
+#             # for j in range(max(i-n+1,1),i+1):
+#             # 	first += (2.0/(n+1))*(price_only[j]-first)
+#             # ema26[i] = first
+#             # print ema12[i], ema26[i]
 
-            n = 9
-            macd_val[i] = ema12[i] - ema26[i]
-            if i < n:
-                macd_sig9[i] = average(macd_val[0 : i + 1])
-            else:
-                macd_sig9[i] = macd_sig9[i - 1] + (2.0 / (n + 1)) * (
-                    macd_val[i] - macd_sig9[i - 1]
-                )
-            # macd_sig9[i] = average(macd_val[0:i+1])
+#             n = 9
+#             macd_val[i] = ema12[i] - ema26[i]
+#             if i < n:
+#                 macd_sig9[i] = average(macd_val[0 : i + 1])
+#             else:
+#                 macd_sig9[i] = macd_sig9[i - 1] + (2.0 / (n + 1)) * (
+#                     macd_val[i] - macd_sig9[i - 1]
+#                 )
+#             # macd_sig9[i] = average(macd_val[0:i+1])
 
-            macd_hist = macd_val[i] - macd_sig9[i]
-            buy_signal = (
-                macd_sig9[max(i - 1, 0)] > macd_val[max(i - 1, 0)]
-                and macd_val[i] > macd_sig9[i]
-            )
-            sel_signal = (
-                macd_sig9[max(i - 1, 0)] < macd_val[max(i - 1, 0)]
-                and macd_val[i] < macd_sig9[i]
-            )
-            # 1: BUYSIG 2:BUY 3:SELSIG 4:SEL
-            if buy_signal:
-                buy_sell[i] = 1
-            elif sel_signal:
-                buy_sell[i] = 3
-            else:
-                if buy_sell[max(i - 1, 0)] == 1 or buy_sell[max(i - 1, 0)] == 2:
-                    buy_sell[i] = 2
-                elif buy_sell[max(i - 1, 0)] == 3 or buy_sell[max(i - 1, 0)] == 4:
-                    buy_sell[i] = 4
+#             macd_hist = macd_val[i] - macd_sig9[i]
+#             buy_signal = (
+#                 macd_sig9[max(i - 1, 0)] > macd_val[max(i - 1, 0)]
+#                 and macd_val[i] > macd_sig9[i]
+#             )
+#             sel_signal = (
+#                 macd_sig9[max(i - 1, 0)] < macd_val[max(i - 1, 0)]
+#                 and macd_val[i] < macd_sig9[i]
+#             )
+#             # 1: BUYSIG 2:BUY 3:SELSIG 4:SEL
+#             if buy_signal:
+#                 buy_sell[i] = 1
+#             elif sel_signal:
+#                 buy_sell[i] = 3
+#             else:
+#                 if buy_sell[max(i - 1, 0)] == 1 or buy_sell[max(i - 1, 0)] == 2:
+#                     buy_sell[i] = 2
+#                 elif buy_sell[max(i - 1, 0)] == 3 or buy_sell[max(i - 1, 0)] == 4:
+#                     buy_sell[i] = 4
 
-            # print "price:", row[1]
-            # print "ema12:%d ema26:%d macd:%d signal:%d hist:%d"%\
-            # (ema12[i], ema26[i], macd_val[i], macd_sig9[i], macd_hist)
-            # print "BUYSELL: %d buy:%d sel:%d"%(buy_sell[i], buy_signal, sel_signal)
-            return1 = float(row[1]) / price_only[max(i - 53 / 12, 0)]
-            # データ追加
-            row.append(buy_sell[i])  # [2]シグナルコード
-            row.append(macd_hist)  # [3]MACDヒストグラム
-            row.append(return1)  # [4]1ヶ月リターン
-        # break
-        # raise
-    # 本処理
-    asset_rate = [20, 5, 20, 10, 10, 25, 10, 0]
-    asset_total = asset_rate[:]
-    total_return = sum(asset_rate)
-    asset_signal = ["NR"] * 7
-    asset_return_1 = [0] * 8
-    asset_return_1[7] = 1.0
-    asset_hist = [0] * 7
-    for i, _row in enumerate(db_dict[JP_STOCK]):
-        if not i % 4 == 0:
-            continue
-        asser_rate_prev = asset_rate[:]
-        for j, asset in enumerate(ASSET_CLASSES):
-            row = db_dict[asset][i]
-            month_signals = [
-                row[2],
-                db_dict[asset][max(i - 1, 0)][2],
-                db_dict[asset][max(i - 2, 0)][2],
-                db_dict[asset][max(i - 3, 0)][2],
-            ]
-            if row[2] == 2:
-                if 1 in month_signals:
-                    asset_signal[j] = "BUYSIG"
-                else:
-                    asset_signal[j] = "BUY"
-            elif row[2] == 4:
-                if 3 in month_signals:
-                    asset_signal[j] = "SELLSIG"
-                else:
-                    asset_signal[j] = "SELL"
-            elif row[2] == 1:
-                asset_signal[j] = "BUYSIG"
-            elif row[2] == 3:
-                asset_signal[j] = "SELLSIG"
-            asset_return_1[j] = row[4]
+#             # print "price:", row[1]
+#             # print "ema12:%d ema26:%d macd:%d signal:%d hist:%d"%\
+#             # (ema12[i], ema26[i], macd_val[i], macd_sig9[i], macd_hist)
+#             # print "BUYSELL: %d buy:%d sel:%d"%(buy_sell[i], buy_signal, sel_signal)
+#             return1 = float(row[1]) / price_only[max(i - 53 / 12, 0)]
+#             # データ追加
+#             row.append(buy_sell[i])  # [2]シグナルコード
+#             row.append(macd_hist)  # [3]MACDヒストグラム
+#             row.append(return1)  # [4]1ヶ月リターン
+#         # break
+#         # raise
+#     # 本処理
+#     asset_rate = [20, 5, 20, 10, 10, 25, 10, 0]
+#     asset_total = asset_rate[:]
+#     total_return = sum(asset_rate)
+#     asset_signal = ["NR"] * 7
+#     asset_return_1 = [0] * 8
+#     asset_return_1[7] = 1.0
+#     asset_hist = [0] * 7
+#     for i, _row in enumerate(db_dict[JP_STOCK]):
+#         if not i % 4 == 0:
+#             continue
+#         asser_rate_prev = asset_rate[:]
+#         for j, asset in enumerate(ASSET_CLASSES):
+#             row = db_dict[asset][i]
+#             month_signals = [
+#                 row[2],
+#                 db_dict[asset][max(i - 1, 0)][2],
+#                 db_dict[asset][max(i - 2, 0)][2],
+#                 db_dict[asset][max(i - 3, 0)][2],
+#             ]
+#             if row[2] == 2:
+#                 if 1 in month_signals:
+#                     asset_signal[j] = "BUYSIG"
+#                 else:
+#                     asset_signal[j] = "BUY"
+#             elif row[2] == 4:
+#                 if 3 in month_signals:
+#                     asset_signal[j] = "SELLSIG"
+#                 else:
+#                     asset_signal[j] = "SELL"
+#             elif row[2] == 1:
+#                 asset_signal[j] = "BUYSIG"
+#             elif row[2] == 3:
+#                 asset_signal[j] = "SELLSIG"
+#             asset_return_1[j] = row[4]
 
-            asset_hist[j] = row[3]
-        print("-" * 15, _row[0])
-        print("signal:", asset_signal)
-        print("hist:", [round(a, 3) for a in asset_hist])
-        asset_hist_rank = rankdata(asset_hist)
-        asset_hist_rank = [8 - r for r in asset_hist_rank]
-        print("rank:", asset_hist_rank)
-        # 売買ルールにもとづきアセットレートを更新
-        for j, rank in enumerate(asset_hist_rank):
-            # if (asset_signal[j] == "BUYSIG" or asset_signal[j] == "BUY") and rank<=2:
-            if asset_signal[j] == "BUYSIG" or asset_signal[j] == "BUY":
-                # if asset_signal[j] == "BUYSIG" or (asset_signal[j] == "BUY" and rank<=2):
-                asset_rate[j] = 100
-            elif asset_signal[j] == "SELLSIG" or asset_signal[j] == "SELL":
-                asset_rate[j] = 0
-            # elif asset_signal[j] == "NR":
-            # 	pass
-            # else:
-            # 	asset_rate[j] = 0 #ここ疑問?
-        print("rate:", asset_rate)
-        count = asset_rate[:-1].count(100)
-        val = 100 / count if count > 0 else 0
-        if val > 0:
-            for j, rate in enumerate(asset_rate):
-                asset_rate[j] = val if rate == 100 else 0
-            asset_rate[7] = 0  # キャッシュは0に
-        print("rate_mod:", asset_rate)
-        if not sum(asset_rate) == 100:
-            asset_rate[7] += 100 - sum(asset_rate)
-            print("おかしいかも？ cash=", asset_rate[7])
-        # 売買結果
-        buy = []
-        sell = []
-        have = []
-        for i, (cur, prev, asset) in enumerate(
-            zip(asset_rate, asser_rate_prev, ASSET_CLASSES)
-        ):
-            if cur > prev:
-                buy.append(asset + "(" + str(cur - prev) + ")")
-                # buy_count[i]+=1
-            elif cur < prev:
-                sell.append(asset + "(" + str(prev - cur) + ")")
-                # sell_count[i]+=1
-            if cur > 0:
-                have.append(asset + "(" + str(cur) + ")")
-                # have_count[i]+=1
-        if buy:
-            print("買い：", buy)
-        if sell:
-            print("売り：", sell)
-        if have:
-            print("保有：", have)
+#             asset_hist[j] = row[3]
+#         print("-" * 15, _row[0])
+#         print("signal:", asset_signal)
+#         print("hist:", [round(a, 3) for a in asset_hist])
+#         asset_hist_rank = rankdata(asset_hist)
+#         asset_hist_rank = [8 - r for r in asset_hist_rank]
+#         print("rank:", asset_hist_rank)
+#         # 売買ルールにもとづきアセットレートを更新
+#         for j, rank in enumerate(asset_hist_rank):
+#             # if (asset_signal[j] == "BUYSIG" or asset_signal[j] == "BUY") and rank<=2:
+#             if asset_signal[j] == "BUYSIG" or asset_signal[j] == "BUY":
+#                 # if asset_signal[j] == "BUYSIG" or (asset_signal[j] == "BUY" and rank<=2):
+#                 asset_rate[j] = 100
+#             elif asset_signal[j] == "SELLSIG" or asset_signal[j] == "SELL":
+#                 asset_rate[j] = 0
+#             # elif asset_signal[j] == "NR":
+#             # 	pass
+#             # else:
+#             # 	asset_rate[j] = 0 #ここ疑問?
+#         print("rate:", asset_rate)
+#         count = asset_rate[:-1].count(100)
+#         val = 100 / count if count > 0 else 0
+#         if val > 0:
+#             for j, rate in enumerate(asset_rate):
+#                 asset_rate[j] = val if rate == 100 else 0
+#             asset_rate[7] = 0  # キャッシュは0に
+#         print("rate_mod:", asset_rate)
+#         if not sum(asset_rate) == 100:
+#             asset_rate[7] += 100 - sum(asset_rate)
+#             print("おかしいかも？ cash=", asset_rate[7])
+#         # 売買結果
+#         buy = []
+#         sell = []
+#         have = []
+#         for i, (cur, prev, asset) in enumerate(
+#             zip(asset_rate, asser_rate_prev, ASSET_CLASSES)
+#         ):
+#             if cur > prev:
+#                 buy.append(asset + "(" + str(cur - prev) + ")")
+#                 # buy_count[i]+=1
+#             elif cur < prev:
+#                 sell.append(asset + "(" + str(prev - cur) + ")")
+#                 # sell_count[i]+=1
+#             if cur > 0:
+#                 have.append(asset + "(" + str(cur) + ")")
+#                 # have_count[i]+=1
+#         if buy:
+#             print("買い：", buy)
+#         if sell:
+#             print("売り：", sell)
+#         if have:
+#             print("保有：", have)
 
-        # リターン計算
-        print("return1:", [round(a, 3) for a in asset_return_1])
-        print("asset_total_before:", [round(a, 1) for a in asset_total])
-        asset_total = [t * r1 for t, r1 in zip(asset_total, asset_return_1)]
-        total_return = sum(asset_total)
-        print("   ", asset_rate)
-        asset_total = [total_return * r / 100 for r in asset_rate]
-        print("asset_total_after:", [round(a, 1) for a in asset_total])
-        # TODO: なんかここが違うことがある
-        print("total_return:", round(total_return, 1), round(sum(asset_total), 1))
-        if abs(total_return - sum(asset_total) >= 1):
-            raise
-        # break
-    # RSなし：224 RSあり：191 ダメだこりゃ
-    print("RS_MACD：%d " % int(total_return))
+#         # リターン計算
+#         print("return1:", [round(a, 3) for a in asset_return_1])
+#         print("asset_total_before:", [round(a, 1) for a in asset_total])
+#         asset_total = [t * r1 for t, r1 in zip(asset_total, asset_return_1)]
+#         total_return = sum(asset_total)
+#         print("   ", asset_rate)
+#         asset_total = [total_return * r / 100 for r in asset_rate]
+#         print("asset_total_after:", [round(a, 1) for a in asset_total])
+#         # TODO: なんかここが違うことがある
+#         print("total_return:", round(total_return, 1), round(sum(asset_total), 1))
+#         if abs(total_return - sum(asset_total) >= 1):
+#             raise
+#         # break
+#     # RSなし：224 RSあり：191 ダメだこりゃ
+#     print("RS_MACD：%d " % int(total_return))
 
 
 def latest_3612ma():
@@ -496,8 +497,8 @@ def latest_3612ma():
     最新のRS投資状態を更新する
     """
     market_db = {}
-    if os.path.exists(MARKET_DB_NAME):
-        market_db = pickle.load(open(MARKET_DB_NAME, "r"))
+    if os.path.exists(RS_DB_NAME):
+        market_db = pickle.load(open(RS_DB_NAME, "rb"))
     # ASSET_CLASSES = [JP_STOCK, JP_REIT, GL_STOCK, GL_REIT, EM_STOCK, GL_BOND, GOLD]
     ASSET_TO_FUND = {
         JP_STOCK: "tbl_1306",
@@ -524,11 +525,11 @@ def latest_3612ma():
         prices = market_db[table_key]
         # prices = prices[:-1]
         current = float(prices[-1][CLM_PRICE])
-        prev1 = prices[-1 - 52 * 1 / 12][CLM_PRICE]
-        prev3 = prices[-1 - 52 * 3 / 12][CLM_PRICE]
-        prev6 = prices[-1 - 52 * 6 / 12][CLM_PRICE]
+        prev1 = prices[int(-1 - 52 * 1 // 12)][CLM_PRICE]
+        prev3 = prices[int(-1 - 52 * 3 // 12)][CLM_PRICE]
+        prev6 = prices[int(-1 - 52 * 6 // 12)][CLM_PRICE]
         try:
-            prev12 = prices[-1 - 52 * 12 / 12][CLM_PRICE]
+            prev12 = prices[int(-1 - 52 * 12 // 12)][CLM_PRICE]
         except IndexError:
             prev12 = prices[0][CLM_PRICE]
         print(current, prev1, prev3, prev6, prev12)
@@ -541,7 +542,7 @@ def latest_3612ma():
         avg12 = 0
         count = 0
         for j in range(12):
-            month_ind = -1 - 52 * j / 12
+            month_ind = int(-1 - 52 * j // 12)
             try:
                 avg12 += prices[month_ind][CLM_PRICE]
                 count += 1
