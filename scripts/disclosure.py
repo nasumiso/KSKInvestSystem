@@ -57,9 +57,7 @@ def parse_disclosure_html(html):
     record_list = []
     # 自己完結のためコードを取得
     # <title>ユークス【4334】｜ニュース｜株探（かぶたん）</title>
-    # TODO: 英数字コードに対応
-    # m = re.search(r'<title>(.*)【(\d\d\d\d)】.*</title>', html)
-    m = re.search(r'<title>(.*)【(\d[0-9a-zA-Z]\d[0-9A-Z])】.*</title>', html)
+    m = re.search(r"<title>(.*)【(\d[0-9a-zA-Z]\d[0-9A-Z])】.*</title>", html)
     code_s = ""
     stock_name = ""
     if m:

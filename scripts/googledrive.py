@@ -46,6 +46,9 @@ FILE_DICT = {
 
 def get_drive_service():
     store = oauth2client.file.Storage(CREDENTIAL_FILE)
+    if not store:
+        print("!!! GoogleDrive認証ファイルがありません。", CREDENTIAL_FILE)
+        return None
     creds = store.get()
     if not creds or creds.invalid:
         flow = oauth2client.client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)

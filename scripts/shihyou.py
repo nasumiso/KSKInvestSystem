@@ -365,29 +365,32 @@ CACHE_DIR_KABUTAN = os.path.join(DATA_DIR, "stock_data", "kabutan")
 URL_CODE_KABUTAN = "http://kabutan.jp/stock/finance?code=%s&mode=k"
 
 def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
-	"""
-	指標の更新・取得
-	type: (dict<stock_db>, str, bool) -> dict<stock>
-	"""
-	print("-"*5, "指標の取得計算 upd=", upd)
-	tables = {}
-	stock = stocks[code_s] if code_s in stocks else {}
-	shihyo_pt, shihyo_data = calc_shihyo_pt(code_s, upd, stock)
-	print("-"*5, "指標の取得計算完了")
-	# 指標データの取得元ファイルの日付を格納
-	cache_path = os.path.join(CACHE_DIR_KABUTAN, get_http_cachname(URL_CODE_KABUTAN % str(code_s)))
-	tables["access_date_shihyo"] = get_file_datetime(cache_path)
-	print("date_shihyo:", tables["access_date_shihyo"])
-	tables["shihyo_pt"] = shihyo_pt
-	# 指標データ登録
-	tables["shihyo"] = shihyo_data
-	# tables["PER"] = shihyo_data["PER"]
-	# tables["PBR"] = shihyo_data["PBR"]
-	# tables["PSR"] = shihyo_data["PSR"]
-	# tables["ROE"] = shihyo_data["ROE"]
-	# tables["profit_margin"] = shihyo_data["profit_margin"]
-	# tables["debt_ratio"] = shihyo_data["debt_ratio"]
-	# tables["capital_ratio"] = shihyo_data["capital_ratio"]
+    """
+    指標の更新・取得
+    type: (dict<stock_db>, str, bool) -> dict<stock>
+    """
+    print("-" * 5, "指標の取得計算 upd=", upd)
+    tables = {}
+    stock = stocks[code_s] if code_s in stocks else {}
+    # わかりにくいがここで通信している
+    shihyo_pt, shihyo_data = calc_shihyo_pt(code_s, upd, stock)
+    print("-" * 5, "指標の取得計算完了")
+    # 指標データの取得元ファイルの日付を格納
+    cache_path = os.path.join(
+        CACHE_DIR_KABUTAN, get_http_cachname(URL_CODE_KABUTAN % str(code_s))
+    )
+    tables["access_date_shihyo"] = get_file_datetime(cache_path)
+    print("date_shihyo:", tables["access_date_shihyo"])
+    tables["shihyo_pt"] = shihyo_pt
+    # 指標データ登録
+    tables["shihyo"] = shihyo_data
+    # tables["PER"] = shihyo_data["PER"]
+    # tables["PBR"] = shihyo_data["PBR"]
+    # tables["PSR"] = shihyo_data["PSR"]
+    # tables["ROE"] = shihyo_data["ROE"]
+    # tables["profit_margin"] = shihyo_data["profit_margin"]
+    # tables["debt_ratio"] = shihyo_data["debt_ratio"]
+    # tables["capital_ratio"] = shihyo_data["capital_ratio"]
 
 	tables["code_s"] = code_s
 

@@ -682,7 +682,7 @@ def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
         )
 
     url = URL_CODE % (str(code_s))
-    html = http_get_html_with_retry(url, use_cache, CACHE_DIR)
+    html = http_get_html_with_retry(url, use_cache, CACHE_DIR, retry=4)
 
     print(">>>>> %sの業績を解析 " % code_s)
     tables = parse_kabutan_account2(html)

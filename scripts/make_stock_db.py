@@ -445,7 +445,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
         tables = []
     latest = upd >= UPD_INTERVAL
     force = upd >= UPD_REEVAL
-    print("update_tables:", tables, " 更新:", upd)
+    print("update_tables:", tables, " 更新:", upd, "同期" if sync else "非同期")
 
     if sync:
         update_db_rows_sync(code_s_list, upd, tables, stocks, latest, force)
@@ -458,6 +458,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
 
 
 def _update_db_code(c_s, upd, tables, stocks, latest, force):
+    """同期非同期共通のDB更新関数"""
     stock_data = {}
     if not tables or "master" in tables:
         if not has_stock_data(stocks, c_s, latest) or force:
@@ -481,18 +482,23 @@ def _update_db_code(c_s, upd, tables, stocks, latest, force):
 
 
 def update_db_rows_async(code_s_list, upd, tables, stocks, latest, force):
+    """非同期版update_db_rows"""
     with use_requests_global_session():
         from concurrent.futures import ThreadPoolExecutor
-        MAX_WORKERS = 10
+
+        MAX_WORKERS = 5  # スレッドワーカー数
         # 並列通信実行
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             # listで囲むことで結果待ち
-            results = list(executor.map(
-                lambda c_s: _update_db_code(
-                    c_s, upd, tables, stocks, latest, force
-                ),
-                code_s_list
-            ))
+            results = list(
+                # TODO: 通信ブロックされるようなら、負荷対策でtime.sleep(random.uniform(0.1, 0.4))
+                executor.map(
+                    lambda c_s: _update_db_code(
+                        c_s, upd, tables, stocks, latest, force
+                    ),
+                    code_s_list,
+                )
+            )
             # 結果をDBに反映
             for stock_data in results:
                 if stock_data:
@@ -852,6 +858,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
         # 俺ポートフォリオ追加
         update_codes_s += (pf_stocks + possess_list)
         update_codes_s = list(set(update_codes_s))  # 重複解消
+        # TODO: ETFや投資法人を除外する
         # update_codes_s = update_codes_s[:2] # デバッグ用に数を減らす
         # マスター,価格,業績,指標,理論株価を更新
         stocks = update_db_rows(

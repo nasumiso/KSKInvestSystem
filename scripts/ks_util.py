@@ -208,7 +208,7 @@ def step_func(val, xs, ys, min_val=None):
 
 
 # ==================================================
-# httpユーティリティ
+# httpユーティリティ TODO: 別ファイルにしたい
 # ==================================================
 USER_AGENT_CHROME = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_4) "
@@ -217,14 +217,12 @@ USER_AGENT_CHROME = (
 )
 # スレッドローカル(スレッド間で共有されない)なセッションコンテキスト変数
 # つまり、マルチスレッドでは使い回せない
-_current_session = contextvars.ContextVar(
-    "current_requests_session", default=None
-)
+_current_session = contextvars.ContextVar("current_requests_session", default=None)
 # グローバルなセッション変数
 # 本来はhttp_get_htmlの引数にセッションを渡せるようにすべき
 _global_session = None
 
-MAX_REQUESTS = 5  # 同時実行数の制限
+MAX_REQUESTS = 3  # セマフォによる同時実行数の制限
 sema = threading.Semaphore(MAX_REQUESTS)
 
 
@@ -260,9 +258,7 @@ def get_http_cachname(url):
     """
     urlからデフォルトのキャッシュファイルの場所を返す
     """
-    return (
-        url.replace("http://", "").replace(".", "").replace("/", "_") + ".html"
-    )
+    return url.replace("http://", "").replace(".", "").replace("/", "_") + ".html"
 
 
 def http_get_html(
@@ -321,7 +317,10 @@ def http_get_html(
                     req_get = requests.get
                     print("単独セッションを使用")
             res = req_get(url, headers=headers, cookies=cookies, timeout=5)
-        except requests.exceptions.ConnectionError as e:
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ConnectTimeout,
+        ) as e:
             eprint("!!! 接続失敗")
             print(e)
             if with_status:
@@ -349,10 +348,14 @@ def http_get_html(
             return html
 
 
-def http_get_html_with_retry(url, use_cach, cache_dir, retry=3):
+def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=3):
     """リトライ付きのHTML取得関数"""
     html, status_code = http_get_html(
-        url, use_cache=use_cach, cache_dir=cache_dir, with_status=True
+        url,
+        use_cache=use_cach,
+        cache_dir=cache_dir,
+        cache_fname=cache_fname,
+        with_status=True,
     )
     # 取得に失敗した場合はリトライ
     for count in range(retry + 1):
@@ -361,13 +364,15 @@ def http_get_html_with_retry(url, use_cach, cache_dir, retry=3):
             if count >= retry - 1:
                 eprint("!!! やっぱりだめみたいなので中止", url)
                 return {}
-            print(f"取得エラーのため再度取得({count+1}回目)", url)
+            print(f"取得エラー({status_code})のため再度取得({count+1}回目)", url)
             time.sleep(count + 1)
             # リトライ実行(キャッシュは無効化)
             html, status_code = http_get_html(
                 url, use_cache=False, cache_dir=cache_dir, with_status=True
             )
         else:  # 成功した場合はリトライループを抜け返す
+            # TODO: ここで待ちを入れる？
+            # time.sleep(random.uniform(0.1, 0.4))
             break
     return html
 
