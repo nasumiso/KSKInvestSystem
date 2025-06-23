@@ -27,20 +27,11 @@ from ks_util import *
 
 def get_gyoseki_data(code, cache=True):
     fname = "stock_data/kabutan_gyoseki_%d.txt" % code
-    # if cache and os.path.exists(fname):
-    #     text = ""
-    #     with open(fname, 'r') as f:
-    #         text = f.read()
-    #     return text
 
     URL = "http://kabutan.jp/stock/finance?code=%d&mode=k" % code
     print("----> %dのkabutanから業績情報を取得します・・" % code)
-    # r = requests.get(URL)
-    # print("<---- 取得完了")
-    # text = r.text.encode('utf-8')
-    # with open(fname, 'w') as f:
-    #     f.write(text)
-    text = http_get_html(URL, use_cache=cache, cache_fname=fname)
+    # text = http_get_html(URL, use_cache=cache, cache_fname=fname)
+    text = http_get_html_with_retry(URL, use_cach=cache, cache_fname=fname)
     return text
 
 
@@ -83,7 +74,7 @@ def get_kabutan_html(code_s, upd=UPD_INTERVAL):
         use_cache = is_cache_latest(KABUTAN_URL_CODE % (str(code_s)), INTERVAL_DAY)
     url = KABUTAN_URL_CODE % (str(code_s))
     html = http_get_html_with_retry(
-        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache
+        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache, retry=4
     )
     return html
 
@@ -102,7 +93,7 @@ def get_kabutan_base_html(code_s, upd=UPD_INTERVAL):
 
     url = KABUTAN_BASE_URL_CODE % (str(code_s))
     html = http_get_html_with_retry(
-        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache
+        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache, retry=4
     )
     return html
 

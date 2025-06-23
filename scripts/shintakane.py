@@ -245,6 +245,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # 更新を行う必要のあるすべての銘柄
     updatelist_all_code = already_list_code + today_list_code + kessan_lst_code
     updatelist_all_code = list(set(updatelist_all_code))
+    # TODO: ETFや投資法人を除外する
 
     # ---- マスターデータ更新
     # 最低購入代金取得のためdbを更新
