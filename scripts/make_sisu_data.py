@@ -76,7 +76,7 @@ DISTRIBUTE_DATA = {
     "7231109": {"2013-06-07": 2000, "2014-06-09": 1100},
 }
 
-MARKET_DB_NAME = "sisu_data/rs_db.pickle"
+RS_DB_NAME = os.path.join(DATA_DIR, "sisu_data", "rs_db.pickle")
 
 
 def parse_yahoo_jp(text):
@@ -432,8 +432,8 @@ def make_rs_db():
     RS投資用DBを作成
     """
     market_db = {}
-    if os.path.exists(MARKET_DB_NAME):
-        market_db = pickle.load(open(MARKET_DB_NAME, "rb"))
+    if os.path.exists(RS_DB_NAME):
+        market_db = pickle.load(open(RS_DB_NAME, "rb"))
 
     # for i, url in enumerate(ASSET_URLS):
     # 	# if i != 0:
@@ -462,7 +462,9 @@ def make_rs_db():
             url_p = url + "&page=%d" % (p + 1)
 
             print("Request.. %s" % url_p)
-            html = http_get_html(url_p, cache_dir="sisu_data", use_cache=True)
+            html = http_get_html(
+                url_p, cache_dir=os.path.join(DATA_DIR, "sisu_data"), use_cache=True
+            )
             rows = parse_html(html)
             print("parse完了:", url_p)
 
@@ -513,7 +515,17 @@ def make_rs_db():
         print(table[0:3], "...")
         print(table[-3:])
     # DB保存
-    pickle.dump(market_db, open(MARKET_DB_NAME, "wb"))
+    pickle.dump(market_db, open(RS_DB_NAME, "wb"))
+
+
+def convert_python2_to3():
+    """Python2のpickleをPython3のpickleに変換
+    一時的実行用
+    """
+    import make_stock_db
+
+    RS_DB_NAME_2 = os.path.join(DATA_DIR, "sisu_data", "rs_db_py2.pickle")
+    make_stock_db.convert_pickle_latin1_to_utf8(RS_DB_NAME_2, RS_DB_NAME)
 
 
 def main():
@@ -521,5 +533,13 @@ def main():
     make_rs_db()
 
 
+def test():
+    """
+    テスト用
+    """
+    convert_python2_to3()
+
+
 if __name__ == "__main__":
     main()
+    # test()

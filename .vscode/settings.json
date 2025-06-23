@@ -3,7 +3,6 @@
     "python.linting.pylintEnabled": false,
     "python.linting.flake8Enabled": true,
     "python.linting.enabled": true,
-
     // Tabをスペース4つに設定
     "editor.tabSize": 4,
     "editor.insertSpaces": true,
@@ -12,5 +11,8 @@
         "editor.insertSpaces": true
     },
     // pythonのルートをscriptsに設定
-    "python.analysis.extraPaths": ["./scripts"]
+    "python.analysis.extraPaths": [
+        "./scripts"
+    ],
+    "editor.formatOnSave": true
 }
