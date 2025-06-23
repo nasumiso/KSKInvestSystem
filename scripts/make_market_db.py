@@ -24,7 +24,9 @@ def parse_theme_html(html):
     # print ux_cmd_head(html, 10)
     # <td class="acrank_url"><a href="/themes/?theme=デジタルトランスフォーメーション">デジタルトランスフォーメーション</a></td> # noqa: E501
     themes = []
-    for m in re.finditer(r'<td class="acrank_url"><a href=".*?">(.*?)</a></td>', html):  # noqa: E501
+    for m in re.finditer(
+        r'<td class="acrank_url"><a href=".*?">(.*?)</a></td>', html
+    ):  # noqa: E501
         themes.append(m.group(1))
     return themes
 
@@ -53,8 +55,9 @@ def get_prev_fname(fname, cur_day=datetime.today()):
     while count < CountMax:
         cur_day = cur_day - timedelta(1)
         fname = (
-            name + "_%02d%02d%02d"
-            % (cur_day.year - 2000, cur_day.month, cur_day.day) + ext
+            name
+            + "_%02d%02d%02d" % (cur_day.year - 2000, cur_day.month, cur_day.day)
+            + ext
         )
         count += 1
         if os.path.exists(fname):
@@ -102,9 +105,7 @@ def make_theme_data():  # market_db=None
     theme_rank_list, prev_theme_rank_list, cach_date, _ = get_theme_rank_list()
 
     theme_rank_dict = {v: i + 1 for (i, v) in enumerate(theme_rank_list)}
-    prev_theme_rank_dict = {
-        v: i + 1 for (i, v) in enumerate(prev_theme_rank_list)
-    }
+    prev_theme_rank_dict = {v: i + 1 for (i, v) in enumerate(prev_theme_rank_list)}
     theme_rank2 = {}
     for theme, rank in list(theme_rank_dict.items()):
         moment = 0
@@ -153,9 +154,7 @@ def make_db_common(code_s):
     priced_dict = price.get_daily_price_kabutan(code_s)
     db.update(priced_dict)
     pr = priced_dict.get("price", 0)
-    pricew_dict = price.get_weekly_price_data(
-        code_s, UPD_INTERVAL, [pr, pr, pr]
-    )
+    pricew_dict = price.get_weekly_price_data(code_s, UPD_INTERVAL, [pr, pr, pr])
     print("RS_RAW=", pricew_dict.get("rs_raw", 0))
     db.update(pricew_dict)
     return db
@@ -257,18 +256,10 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
         try:
             db = market_db[db_name]
             trend_expr = make_stock_db.get_trend_template_expr(db)
-            distribution_days = ",".join(
-                [s[3:] for s in db["distribution_days"]]
-            )
-            followthrough_days = ",".join(
-                [s[3:] for s in db["followthrough_days"]]
-            )
+            distribution_days = ",".join([s[3:] for s in db["distribution_days"]])
+            followthrough_days = ",".join([s[3:] for s in db["followthrough_days"]])
             diff = db["spr_buygagher"] - db["spr_20"]
-            eval = step_func(
-                diff,
-                [-10, -5, 0, 5, 10],
-                ["E", "D", "C", "B", "A"]
-            )
+            eval = step_func(diff, [-10, -5, 0, 5, 10], ["E", "D", "C", "B", "A"])
             rows = []
             rows.append(
                 [
@@ -326,8 +317,7 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
     import threading
 
     threading.Thread(
-        target=googledrive.upload_csv, args=(csv_path, "market_data"),
-        daemon=False
+        target=googledrive.upload_csv, args=(csv_path, "market_data"), daemon=False
     ).start()
     # googledrive.upload_csv(csv_path, "market_data")
 
@@ -373,12 +363,8 @@ def convert_python2():
     """
     import make_stock_db
 
-    STOCKS_PICKLE_PY2 = os.path.join(
-        DATA_DIR, "market_data", "market_db_py2.pickle"
-    )
-    make_stock_db.convert_pickle_latin1_to_utf8(
-        STOCKS_PICKLE_PY2, MARKET_DB_PATH
-    )
+    STOCKS_PICKLE_PY2 = os.path.join(DATA_DIR, "market_data", "market_db_py2.pickle")
+    make_stock_db.convert_pickle_latin1_to_utf8(STOCKS_PICKLE_PY2, MARKET_DB_PATH)
 
 
 def main():
