@@ -13,7 +13,7 @@ from datetime import datetime
 
 
 def parse_master_html_kabutan(html):
-    """ 株探基本情報htmlを解析し銘柄情報抽出
+    """株探基本情報htmlを解析し銘柄情報抽出
     str -> dict
     Returns:
         dict: 銘柄情報
@@ -33,6 +33,7 @@ def parse_master_html_kabutan(html):
     detail = {}
     # 時価総額
     import shihyou
+
     jikasogaku = shihyou.parse_jikasogaku_kabutan(html)
     detail["market_cap"] = jikasogaku
     print("時価総額:", jikasogaku)
@@ -54,7 +55,7 @@ def parse_master_html_kabutan(html):
     stock_name = "銘柄名不明"
     if m:
         # $1略名がある場合:<abbr title="ＮＥＸＴ　ＦＵＮＤＳ野村株主還元７０">株主還元７０</abbr>
-        m2 = re.search(r'<abbr title=.*?>(.*?)</abbr>', m.group(1))
+        m2 = re.search(r"<abbr title=.*?>(.*?)</abbr>", m.group(1))
         if m2:
             stock_name = m2.group(1).strip()
         else:
@@ -69,10 +70,7 @@ def parse_master_html_kabutan(html):
         detail["market"] = market
     print("市場:", market)
     # 業種
-    m = re.search(
-        r'<a href="/themes/\?industry=\d{1,2}&market=\d">(.*?)</a>',
-        html
-    )
+    m = re.search(r'<a href="/themes/\?industry=\d{1,2}&market=\d">(.*?)</a>', html)
     sector_name = "セクター名不明"
     if m:
         sector_name = m.group(1).strip()
@@ -93,7 +91,9 @@ def parse_master_html_kabutan(html):
     detail["themes"] = ",".join(themes)
     # 比較される銘柄
     relates = []
-    for m in re.finditer(r'<dd><a href="javascript:set_stock_url\(2,\'(\d\d\d\d)\'', html):
+    for m in re.finditer(
+        r'<dd><a href="javascript:set_stock_url\(2,\'(\d\d\d\d)\'', html
+    ):
         relates.append(m.group(1))
     print("比較銘柄:", relates)
     detail["relates"] = ",".join(relates)
@@ -102,20 +102,14 @@ def parse_master_html_kabutan(html):
     m = re.search(r'<div id="kessan_happyoubi">(.*?)</div>', html, re.DOTALL)
     if m:
         # print "m:", m.group(1)
-        m2 = re.search(
-            r'<time datetime=".*?">(.*?)</time>',
-            m.group(1),
-            re.DOTALL
-        )
+        m2 = re.search(r'<time datetime=".*?">(.*?)</time>', m.group(1), re.DOTALL)
         if m2:
             kessan = m2.group(1)
     print("決算日:", kessan)
     detail["kessanbi"] = kessan
     # 会社サイト
     m = re.search(
-        r'<th scope=\'row\'>会社サイト</th>.*?<a href="(.*?)".*?</a>',
-        html,
-        re.DOTALL
+        r'<th scope=\'row\'>会社サイト</th>.*?<a href="(.*?)".*?</a>', html, re.DOTALL
     )
     if m:
         corpo = m.group(1)
@@ -138,10 +132,8 @@ def memoized_report_evaluation():
             return eval_dict
         else:
             # ↓一旦封印のため注意
-            report_fname = os.path.join(
-                DATA_DIR, "googledrive/銘柄調査 - 銘柄調査.csv"
-            )
-            csv_r = csv.reader(open(report_fname, 'r', encoding='utf-8'))
+            report_fname = os.path.join(DATA_DIR, "googledrive/銘柄調査 - 銘柄調査.csv")
+            csv_r = csv.reader(open(report_fname, "r", encoding="utf-8"))
             for row in csv_r:
                 code = row[0]
                 # stock_name = row[1]
@@ -153,6 +145,7 @@ def memoized_report_evaluation():
                         pass
             alreadys[0] = True
             return eval_dict
+
     return create_report_evaluation
 
 
@@ -162,10 +155,7 @@ get_report_evalutation = memoized_report_evaluation()
 def calc_fundamental(code_s, themes):
     print("テーマポイントの計算")  # , themes
     market_db = make_market_db.get_market_db()
-    theme_rank_pt = {
-        v: 30 - i
-        for (i, v) in enumerate(market_db["theme_rank"])
-    }
+    theme_rank_pt = {v: 30 - i for (i, v) in enumerate(market_db["theme_rank"])}
     total_pt = 0
     for theme in themes.split(","):
         theme_pt = theme_rank_pt.get(theme, 0)
@@ -190,15 +180,15 @@ def calc_fundamental(code_s, themes):
 def is_delist(parse_data):
     """上場廃止かどうかをチェックする"""
     return (
-        parse_data.get("market_cap", 0) == 0 and
-        parse_data.get("lowest_purchase_money", 0) == 0
+        parse_data.get("market_cap", 0) == 0
+        and parse_data.get("lowest_purchase_money", 0) == 0
     )
 
 
 def get_stock_master_data(code_s, upd):
-    """ 銘柄基本情報を株探から取得
+    """銘柄基本情報を株探から取得
     Returns:
-        dict<str, Any>: 
+        dict<str, Any>:
         strはfunda_pt/code/access_date/sector_detail
     """
     # DBにない場合はWebから取得
@@ -223,7 +213,7 @@ def get_stock_master_data(code_s, upd):
         stat = os.stat(master_fname)
         parsed_data["access_date"] = datetime.fromtimestamp(stat.st_mtime)
 
-    # セクターを取得	
+    # セクターを取得
     parsed_data["sector_detail"] = make_sector_data.get_sector_detail(code_s)
     print("詳細セクター:", parsed_data["sector_detail"])
     return parsed_data
@@ -235,8 +225,11 @@ def main():
     for code in code_list:
         print("-" * 30)
         print("%sの基本情報を更新します" % code)
-        price_dict = get_stock_master_data(code, UPD_REEVAL)  # noqa: E501 UPD_INTERVAL UPD_FORCE
+        price_dict = get_stock_master_data(
+            code, UPD_REEVAL
+        )  # noqa: E501 UPD_INTERVAL UPD_FORCE
         print(price_dict)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

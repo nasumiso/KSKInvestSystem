@@ -25,7 +25,9 @@ DATA_DIR = os.path.join(ROOT_DIR, "data")
 # ユーティリティ
 # ==================================================
 UPD_CACHE = 0  # 現在DB上のデータ: フsァイルキャッシュがあれば使う
-UPD_INTERVAL = 1  # 適度に最新なデータ: 間隔が開けば更新、開いてなければファイルキャッシュを使う
+UPD_INTERVAL = (
+    1  # 適度に最新なデータ: 間隔が開けば更新、開いてなければファイルキャッシュを使う
+)
 UPD_REEVAL = 2  # INTERVALと同じだがDBキャッシュは使わず再評価はしてほしい
 UPD_FORCE = 3  # 本当に最新なデータ: 間隔に関わらず更新、開いてなくてもファイルキャッシュを使わない
 
@@ -57,11 +59,12 @@ def memoize(func):
             value = func(*args)
             cache[args] = value
             return value
+
     return mamoized_function
 
 
 def eprint(*args, **kwargs):
-    """ 標準エラー出力にメッセージを出力する """
+    """標準エラー出力にメッセージを出力する"""
     print("ERROR:", *args, file=sys.stderr, **kwargs)
 
 
@@ -80,10 +83,13 @@ def backup_file(fname, day=0):
     date = datetime.fromtimestamp(stat.st_mtime)
     today = datetime.today()
     delta = today - date
-    print("%sは%s日前"%(fname, delta.days))
+    print("%sは%s日前" % (fname, delta.days))
     backup_fname = "%s_%02d%02d%02d%s" % (
         os.path.splitext(fname)[0],
-        date.year - 2000, date.month, date.day, os.path.splitext(fname)[1]
+        date.year - 2000,
+        date.month,
+        date.day,
+        os.path.splitext(fname)[1],
     )
     if not os.path.exists(backup_fname):
         if delta.days >= day:
@@ -100,13 +106,13 @@ def backup_file(fname, day=0):
 
 
 def file_write(fname, content):
-    f = open(fname, 'w')  # python3では'b'をつけバイナリのまま保存?
+    f = open(fname, "w")  # python3では'b'をつけバイナリのまま保存?
     f.write(content)
     f.close()
 
 
 def file_read(fname):
-    f = open(fname, 'r')  # python3では'b'をつけバイナリのまま読み込み?
+    f = open(fname, "r")  # python3では'b'をつけバイナリのまま読み込み?
     content = f.read()
     f.close()
     return content
@@ -128,7 +134,7 @@ def suppress_stdout():
     標準出力を抑制するコンテキストマネージャ
     """
     original_stdout = sys.stdout
-    sys.stdout = open(os.devnull, 'w')
+    sys.stdout = open(os.devnull, "w")
     try:
         yield
     finally:
@@ -167,7 +173,7 @@ def get_price_day(dt):
     """
     need_dt = dt
     if dt.hour < PRICE_HOUR:
-        need_dt = (dt - timedelta(1))
+        need_dt = dt - timedelta(1)
     return need_dt.date()
 
 
@@ -195,7 +201,7 @@ def cramp(x, low, high):
 def step_func(val, xs, ys, min_val=None):
     """
     # step_func(shiyo["PER"], [0, 30, 60], [PER_MAX, PER_MAX/2, 0])
-    """	
+    """
     if min_val is None:
         val_y = ys[0]
     else:
@@ -217,9 +223,7 @@ USER_AGENT_CHROME = (
 )
 # スレッドローカル(スレッド間で共有されない)なセッションコンテキスト変数
 # つまり、マルチスレッドでは使い回せない
-_current_session = contextvars.ContextVar(
-    "current_requests_session", default=None
-)
+_current_session = contextvars.ContextVar("current_requests_session", default=None)
 # グローバルなセッション変数
 # 本来はhttp_get_htmlの引数にセッションを渡せるようにすべき
 _global_session = None
@@ -239,7 +243,9 @@ def use_requests_session():
     finally:
         session.close()
         _current_session.reset(token)  # セッション終了＋ContextVarを元に戻す
-        print(f"[{threading.current_thread().name}] コンテキストセッションを終了: {token}")
+        print(
+            f"[{threading.current_thread().name}] コンテキストセッションを終了: {token}"
+        )
 
 
 @contextmanager
@@ -260,16 +266,17 @@ def get_http_cachname(url):
     """
     urlからデフォルトのキャッシュファイルの場所を返す
     """
-    return (
-        url.replace("http://", "").replace(".", "").replace("/", "_") + ".html"
-    )
+    return url.replace("http://", "").replace(".", "").replace("/", "_") + ".html"
 
 
 def http_get_html(
     url,
-    use_cache=True, cache_dir="", cache_fname="",
-    cookies={}, encoding='utf-8',
-    with_status=False
+    use_cache=True,
+    cache_dir="",
+    cache_fname="",
+    cookies={},
+    encoding="utf-8",
+    with_status=False,
 ):
     """
     指定urlをリクエストしエンコード済みテキストを返します。
@@ -283,7 +290,7 @@ def http_get_html(
         encoding (str): 取得するHTMLのエンコーディング
         with_status (bool): ステータスコードを返すかどうか
     Returns:
-        str or tuple: 取得したHTMLのテキスト（with_statusがTrueの場合はタプルでステータスコードも返す）  
+        str or tuple: 取得したHTMLのテキスト（with_statusがTrueの場合はタプルでステータスコードも返す）
     """
     # 指定されていなければurlからキャッシュファイル名を取得
     cache_name = get_http_cachname(url) if not cache_fname else cache_fname
@@ -291,9 +298,10 @@ def http_get_html(
     if cache_dir:
         cache_name = os.path.join(cache_dir, cache_name)
     if use_cache and os.path.exists(cache_name):
-        print("  htmlをファイルキャッシュから取得します",
-              Path(cache_name).relative_to(DATA_DIR)
-              )
+        print(
+            "  htmlをファイルキャッシュから取得します",
+            Path(cache_name).relative_to(DATA_DIR),
+        )
         html = file_read(cache_name)
         if with_status:
             return html, 200  # ステータスコードも成功として返す
@@ -325,10 +333,10 @@ def http_get_html(
             eprint("!!! 接続失敗")
             print(e)
             if with_status:
-                return "", res.status_code if 'res' in locals() else 500
+                return "", res.status_code if "res" in locals() else 500
             else:
                 return ""
-        if res.encoding != 'utf-8':
+        if res.encoding != "utf-8":
             print("html_encoding:", res.encoding, "encoding:", encoding)
         # htmlをutf8で取得
         # html = r.text.encode(encoding)
@@ -338,7 +346,7 @@ def http_get_html(
 
         print(
             "  取得したhtmlをファイルキャッシュに書き込みます:",
-            Path(cache_name).relative_to(DATA_DIR)
+            Path(cache_name).relative_to(DATA_DIR),
         )
         file_write(cache_name, html)
         if with_status:
@@ -372,7 +380,7 @@ def http_get_html_with_retry(url, use_cach, cache_dir, retry=3):
     return html
 
 
-def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
+def http_post_html(url, use_cache=True, data={}, cookies={}, encoding="utf-8"):
     cache_name = "post_" + get_http_cachname(url)
     if use_cache and os.path.exists(cache_name):
         print("html(post)をファイルキャッシュから取得します", cache_name)
@@ -381,7 +389,7 @@ def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
 
     headers = {"User-Agent": USER_AGENT_CHROME}
     r = requests.post(url, headers=headers, data=data, cookies=cookies)
-    if r.encoding != 'utf-8':
+    if r.encoding != "utf-8":
         print("encoding:", r.encoding, "encoding:", encoding)
     html = r.text.encode(encoding)
     # html = html.replace("charset=UTF-8", "charset=euc-jp")
@@ -396,7 +404,7 @@ def http_post_html(url, use_cache=True, data={}, cookies={}, encoding='utf-8'):
 # ==================================================
 def save_pickle(fname, content):
     print("%sにpickleセーブ" % fname)
-    with open(fname, 'wb') as f:
+    with open(fname, "wb") as f:
         # 高速化のためプロトコル指定
         pickle.dump(content, f, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -404,17 +412,19 @@ def save_pickle(fname, content):
 def load_pickle(fname):
     print("%sからpickleロード" % fname)
     try:
-        f = open(fname, 'rb')
+        f = open(fname, "rb")
         dat = pickle.load(f)
         f.close()
     except IOError as e:
         print(e)
         return {}
     return dat
+
+
 memoized_load_pickle = memoize(load_pickle)  # noqa: E305
 
 
-def load_file(fname, tb='r'):
+def load_file(fname, tb="r"):
     print("%sのfileロード" % fname)
     try:
         f = open(fname, tb)
@@ -424,6 +434,8 @@ def load_file(fname, tb='r'):
         print(e)
         return ""
     return dat
+
+
 memoized_load_file = memoize(load_file)  # noqa: E305
 
 
