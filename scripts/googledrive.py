@@ -51,9 +51,7 @@ def get_drive_service():
     store = oauth2client.file.Storage(CREDENTIAL_FILE)
     creds = store.get()
     if not creds or creds.invalid:
-        flow = oauth2client.client.flow_from_clientsecrets(
-            CLIENT_SECRET_FILE, SCOPES
-        )
+        flow = oauth2client.client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)
         flow.user_agent = APPLICATION_NAME
         creds = oauth2client.tools.run_flow(flow, store)
     drive_service = build(
@@ -114,9 +112,7 @@ def upload_csv(csv_name, up_file_name):
 
 def main():
     # upload_csv('code_rank_data/code_rank.csv', "code_rank")
-    upload_csv(os.path.join(
-        DATA_DIR, "code_rank_data/market_data.csv"), "market_data"
-    )
+    upload_csv(os.path.join(DATA_DIR, "code_rank_data/market_data.csv"), "market_data")
 
 
 if __name__ == "__main__":

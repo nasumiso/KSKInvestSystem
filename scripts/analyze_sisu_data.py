@@ -47,12 +47,12 @@ def buy_and_hold():
     rebaranlce = False
     tax = False
     if not rebaranlce:
-        gain_jp_stock = (float)(db_dict["jp_stock"][-1][1]) / db_dict["jp_stock"][0][1]
-        gain_jp_reit = (float)(db_dict["jp_reit"][-1][1]) / db_dict["jp_reit"][0][1]
-        gain_gl_stock = (float)(db_dict["gl_stock"][-1][1]) / db_dict["gl_stock"][0][1]
-        gain_gl_reit = (float)(db_dict["gl_reit"][-1][1]) / db_dict["gl_reit"][0][1]
-        gain_em_stock = (float)(db_dict["em_stock"][-1][1]) / db_dict["em_stock"][0][1]
-        gain_gl_bond = (float)(db_dict["gl_bond"][-1][1]) / db_dict["gl_bond"][0][1]
+        gain_jp_stock = float(db_dict["jp_stock"][-1][1]) / db_dict["jp_stock"][0][1]
+        gain_jp_reit = float(db_dict["jp_reit"][-1][1]) / db_dict["jp_reit"][0][1]
+        gain_gl_stock = float(db_dict["gl_stock"][-1][1]) / db_dict["gl_stock"][0][1]
+        gain_gl_reit = float(db_dict["gl_reit"][-1][1]) / db_dict["gl_reit"][0][1]
+        gain_em_stock = float(db_dict["em_stock"][-1][1]) / db_dict["em_stock"][0][1]
+        gain_gl_bond = float(db_dict["gl_bond"][-1][1]) / db_dict["gl_bond"][0][1]
         gain_gold = (float)(db_dict["gold"][-1][1]) / db_dict["gold"][0][1]
 
         print(
@@ -145,7 +145,7 @@ def rs_3612ma():
     # 本処理
     isAccum = False
     asset_rate = [20, 5, 20, 10, 10, 25, 10, 0]
-    asset_rate_initial = asset_rate[:]
+    # asset_rate_initial = asset_rate[:]
     asset_total = asset_rate[:]
     if isAccum:
         asset_total = [0] * 7
@@ -157,7 +157,7 @@ def rs_3612ma():
     buy_count = [0] * 7
     sell_count = [0] * 7
     have_count = [0] * 7
-    asset_rate_all = [asset_rate]
+    # asset_rate_all = [asset_rate]
     total_return_all = [total_return]
     for i, _row in enumerate(db_dict[JP_STOCK]):
         if not i % 4 == 0:  # 月単位
@@ -191,7 +191,8 @@ def rs_3612ma():
             elif asset_signal[j] == "SELL":
                 asset_rate[j] = 0
         print("rate:", asset_rate)
-        val = 100 / asset_rate[:-1].count(100) if asset_rate[:-1].count(100) > 0 else 0
+        count_100 = asset_rate[:-1].count(100)
+        val = 100 / count_100 if count_100 > 0 else 0
         # if val == 100: val = 50
         if val > 0:
             for j, rate in enumerate(asset_rate):
