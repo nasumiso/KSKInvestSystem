@@ -15,22 +15,26 @@ UPD_INTERVAL = 0
 UPD_CACHE = 1  # html取得できていればキャッシュから
 UPD_FORCE = 2  # html取得から強制
 
-HEAD_TYPE_DIC = {"ctg5": "special", # 特集
-"ctg3_kk": "modify", # 修正下方
-"ctg3_ks": "modify", # 修正上方
-"ctg12": "5per", # 5%
-"ctg9": "kessan"}  # 決算
+HEAD_TYPE_DIC = {
+    "ctg5": "special",  # 特集
+    "ctg3_kk": "modify",  # 修正下方
+    "ctg3_ks": "modify",  # 修正上方
+    "ctg12": "5per",  # 5%
+    "ctg9": "kessan",
+}  # 決算
 
-HEAD_TYPE_EXPR = {"kaiji": "開示",
-"zairyo": "材料",
-"modify": "修正",
-"5per": "5パー",
-"kessan": "決算",
-"special": "特集"}
+HEAD_TYPE_EXPR = {
+    "kaiji": "開示",
+    "zairyo": "材料",
+    "modify": "修正",
+    "5per": "5パー",
+    "kessan": "決算",
+    "special": "特集",
+}
+
 
 def need_update_disclosure(code_s):
-    """キャッシュとその日時から更新必要を判断
-    """
+    """キャッシュとその日時から更新必要を判断"""
     code_url = DISCLOSURE_URL % (code_s)
     html_path = os.path.join(DISCLOSURE_DIR, get_http_cachname(code_url))
     if not os.path.exists(html_path):
@@ -67,7 +71,9 @@ def parse_disclosure_html(html):
         print("!!!コードを取得できません（株探フォーマット変更？）")
         return {}
     try:
-        for m in re.finditer(r'<td class="td_kaiji"><a href="(.*)" target=".*">(.*)<img', html):
+        for m in re.finditer(
+            r'<td class="td_kaiji"><a href="(.*)" target=".*">(.*)<img', html
+        ):
             url = m.group(1)
             heading = m.group(2)
             date = url.split("/")[-3][0:8]  # 20220603
@@ -84,14 +90,16 @@ def parse_disclosure_html(html):
             record_list.append(record)
         # それ以外
         # ctg9:決算 ctg2:材料
-        for m in re.finditer(r'<td class="(.*?)"></td>\s+?<td><a href="(.*?)">(.*?)</a></td>', html):  #|re.DOTALL: .が複数行にマッチする re.MULTILINE: ^$が行頭行末
-            if not "nmode=0" in m.group(2): # これは月へのリンクのため除く
+        for m in re.finditer(
+            r'<td class="(.*?)"></td>\s+?<td><a href="(.*?)">(.*?)</a></td>', html
+        ):  # |re.DOTALL: .が複数行にマッチする re.MULTILINE: ^$が行頭行末
+            if not "nmode=0" in m.group(2):  # これは月へのリンクのため除く
                 tag = m.group(1)
                 url = m.group(2)
                 heading = m.group(3)
                 head_type = HEAD_TYPE_DIC.get(tag, "zairyo")
                 # print tag, head_type, url, heading
-                m3 = re.search(r'b=[n|k](\d*)', url)
+                m3 = re.search(r"b=[n|k](\d*)", url)
                 date = m3.group(1)[:8]  # 20220603
                 record = {}
                 record["type"] = head_type
@@ -99,12 +107,12 @@ def parse_disclosure_html(html):
                 set_db_code(record, code_s)
                 record["stock_name"] = stock_name
                 record["date"] = date
-                record["url"] = "https://kabutan.jp/"+url
+                record["url"] = "https://kabutan.jp/" + url
                 record["heading"] = heading
                 record_list.append(record)
     except AttributeError:
         print("!!! 適宜開示htmlパース失敗: 株探フォーマット変更？")
-    print("%sの適宜開示データ%d個追加"%(code_s, len(record_list)))
+    print("%sの適宜開示データ%d個追加" % (code_s, len(record_list)))
     return record_list
 
 
@@ -123,6 +131,7 @@ def update_disclosure(code_s, disc_db=[], upd=UPD_INTERVAL):
     # 更新
     disc_db += up_recs
 
+
 # def load_disclosure_db():
 #     """全ディスクロージャーDBのロード
 #     Args:
@@ -136,7 +145,7 @@ def expoert_to_csv(disc_db):
     # まず日付順にソート
     def disc_cmp(a, b):
         pt_a = int(a["date"])
-        prior_type = ["kaiji","modify","special","5per","kessan"]
+        prior_type = ["kaiji", "modify", "special", "5per", "kessan"]
         if a["type"] in prior_type:
             pt_a += 100000000
         pt_b = int(b["date"])
@@ -145,24 +154,36 @@ def expoert_to_csv(disc_db):
         return (pt_a > pt_b) - (pt_a < pt_b)  # cmpの代替
 
     import functools  # python3対応
+
     disc_db = sorted(disc_db, key=functools.cmp_to_key(disc_cmp), reverse=True)
 
     rows = []
     # rows.append(["■適宜開示"])
     rows.append(["日付", "銘柄コード", "銘柄名", "種類", "本文"])
+
     def make_link(heading, url):
-        #=HYPERLINK("https://kabutan.jp/stock/chart?code=6070","6070")
+        # =HYPERLINK("https://kabutan.jp/stock/chart?code=6070","6070")
         return '=HYPERLINK("%s","%s")' % (url, heading)
+
     def type_expr(type):
         return HEAD_TYPE_EXPR.get(type, "")
+
     def code_expr(code):
         code_s = str(code)
         KABUTAN_URL = "https://kabutan.jp/stock/chart?code=%s"
         return '=HYPERLINK("%s","%s")' % (KABUTAN_URL % code_s, code_s)
+
     for rec in disc_db:
         link = make_link(rec["heading"], rec["url"])
-        rows.append([rec["date"], code_expr(get_db_code(rec)), rec["stock_name"], \
-            type_expr(rec["type"]), link])
+        rows.append(
+            [
+                rec["date"],
+                code_expr(get_db_code(rec)),
+                rec["stock_name"],
+                type_expr(rec["type"]),
+                link,
+            ]
+        )
     # 材料の切れ目に空行を入れジャンプしやすくする
     insert_ind = -1
     for ind, row in enumerate(rows):
@@ -173,10 +194,11 @@ def expoert_to_csv(disc_db):
         rows.insert(insert_ind, [""])
 
     import csv
-    with open(DISCLOSURE_CSV, "w", encoding="utf-8") as f: # python3対応(wbから)
+
+    with open(DISCLOSURE_CSV, "w", encoding="utf-8") as f:  # python3対応(wbから)
         csv_w = csv.writer(f)
         csv_w.writerows(rows)
-    
+
     return rows
 
 
@@ -203,5 +225,5 @@ def main():
     # update_disclosure(3038, upd=upd)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

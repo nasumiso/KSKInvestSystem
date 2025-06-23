@@ -9,6 +9,7 @@ from ks_util import *
 CACHE_DIR = os.path.join(DATA_DIR, "stock_data/kabutan/")
 URL_CODE = "http://kabutan.jp/stock/finance?code=%s&mode=k"
 
+
 def parse_kabutan_account2(html):
     """
     株探の業績ページhtmlから理論株価を計算
@@ -17,7 +18,9 @@ def parse_kabutan_account2(html):
     tables = {}
     # 通期データ
     print("[今季業績の解析]")
-    year_tbl_m = re.search(r'<div class="title1">通期</div>.*?<table>(.*?)</table>', html, re.S)
+    year_tbl_m = re.search(
+        r'<div class="title1">通期</div>.*?<table>(.*?)</table>', html, re.S
+    )
     if not year_tbl_m:
         print("!!! 通期テーブルが取得できない（フォーマット変更？）")
         return tables
@@ -32,9 +35,9 @@ def parse_kabutan_account2(html):
         # 決算期	売上高	営業益	経常益	最終益	修正1株益	１株配 発表日
         # テーブルの期ごとの行要素を抽出
         if tble_name == "gyoseki_current":
-            table_re = r'<tr >(.*?)</tr>'
-        elif tble_name == "gyoseki_quarter":	# 何故かタグが違うので対応
-            table_re = r'<tr  >(.*?)</tr>'
+            table_re = r"<tr >(.*?)</tr>"
+        elif tble_name == "gyoseki_quarter":  # 何故かタグが違うので対応
+            table_re = r"<tr  >(.*?)</tr>"
         for row_year_m in re.finditer(table_re, tbl_html, re.S):
             # テーブルの行項目を処理
             ldict = {}
@@ -49,16 +52,16 @@ def parse_kabutan_account2(html):
                 kessanki_re = r'<th scope="row">(.*)(\d\d\.\d\d\-\d\d).*</th>'
             term_m = re.search(kessanki_re, row_year_html)
             if not term_m:
-                print("!!! 決算期を取得できない(フォーマット？)")		
+                print("!!! 決算期を取得できない(フォーマット？)")
             if term_m.group(1).find("予") >= 0:
-                ldict["kessanki"] = "予"+term_m.group(2)
+                ldict["kessanki"] = "予" + term_m.group(2)
             else:
                 ldict["kessanki"] = term_m.group(2)
             # print "----決算期:", ldict["kessanki"]
             # 売上高以降はtd項目で
             # 列項目をリストに
             values = []
-            for val_m in re.finditer(r'<td.*?>(.*?)</td>', row_year_html):
+            for val_m in re.finditer(r"<td.*?>(.*?)</td>", row_year_html):
                 val = val_m.group(1)
                 values.append(val)
             # 売上高
@@ -68,9 +71,12 @@ def parse_kabutan_account2(html):
                 ldict["uriagedaka"] = "－"
             else:
                 try:
-                    ldict["uriagedaka"] = int(val_uriagedaka.replace(",",""))
+                    ldict["uriagedaka"] = int(val_uriagedaka.replace(",", ""))
                 except ValueError:
-                    print("  !!! 売上高値が不正のため中断", val_uriagedaka.replace(",",""))
+                    print(
+                        "  !!! 売上高値が不正のため中断",
+                        val_uriagedaka.replace(",", ""),
+                    )
                     break
             # print "売上高:", ldict["uriagedaka"]
             # 営業益、経常益
@@ -82,15 +88,15 @@ def parse_kabutan_account2(html):
                 ldict["eigyoeki"] = "－"
             elif val_eigyo == "－":
                 print("  !!! 営業利益未発表のため経常利益で代用")
-                ldict["keijoeki"] = int(float(val_keijo.replace(",","")))
+                ldict["keijoeki"] = int(float(val_keijo.replace(",", "")))
                 ldict["eigyoeki"] = ldict["keijoeki"]
             elif val_keijo == "－":
                 print("  !!! 経常利益未発表のため営業利益で代用")
-                ldict["eigyoeki"] = int(float(val_eigyo.replace(",","")))
+                ldict["eigyoeki"] = int(float(val_eigyo.replace(",", "")))
                 ldict["keijoeki"] = ldict["eigyoeki"]
             else:
-                ldict["eigyoeki"] = int(float(val_eigyo.replace(",","")))
-                ldict["keijoeki"] = int(float(val_keijo.replace(",","")))
+                ldict["eigyoeki"] = int(float(val_eigyo.replace(",", "")))
+                ldict["keijoeki"] = int(float(val_keijo.replace(",", "")))
             # print "営業益、経常益:", ldict["eigyoeki"], ldict["keijoeki"]
             # 最終益
             val_profit = values[3]
@@ -98,15 +104,15 @@ def parse_kabutan_account2(html):
                 # print "  !!! 最終益未発表"
                 ldict["profit"] = "－"
             else:
-                ldict["profit"] = int(float(val_profit.replace(",","")))
+                ldict["profit"] = int(float(val_profit.replace(",", "")))
             # print "最終益:", ldict["profit"]
             # 一株益
-            val_profit_per1	= values[4]
+            val_profit_per1 = values[4]
             if val_profit_per1 == "－":
                 # print "  !!! 一株益未発表"
                 ldict["profit_per1"] = 0
             else:
-                ldict["profit_per1"] = float(val_profit_per1.replace(",",""))
+                ldict["profit_per1"] = float(val_profit_per1.replace(",", ""))
             # print "一株益:", ldict["profit_per1"]
 
             if tble_name == "gyoseki_current":
@@ -114,65 +120,85 @@ def parse_kabutan_account2(html):
                     # print "  !!! 一株配当未発表"
                     ldict["diviednd_per1"] = 0
                 else:
-                    ldict["diviednd_per1"] = float(values[5].replace(",",""))
+                    ldict["diviednd_per1"] = float(values[5].replace(",", ""))
                 # print "一株配当:", ldict["diviednd_per1"]
-            elif tble_name == "gyoseki_quarter": # 3ヶ月業績テーブル
+            elif tble_name == "gyoseki_quarter":  # 3ヶ月業績テーブル
                 if values[5] == "－":
                     # print "  !!! 売上高営業利益率未発表"
-                    ldict["uriage_eigyo_ratio"] = 0							
+                    ldict["uriage_eigyo_ratio"] = 0
                 else:
-                    ldict["uriage_eigyo_ratio"] = float(values[5].replace(",",""))
+                    ldict["uriage_eigyo_ratio"] = float(values[5].replace(",", ""))
                 # print "売上高営業利益率:", ldict["uriage_eigyo_ratio"]
             # 日付
-            ldict["date"] = (values[6])
+            ldict["date"] = values[6]
 
             # 欲しい列要素は、
             # 決算期/売上高/営業益/経常益/最終益/一株益/一株配当or売上営業利益率
-            ldict_list = [ldict["kessanki"], ldict["uriagedaka"], ldict["eigyoeki"], \
-                        ldict["keijoeki"], ldict["profit"], ldict["profit_per1"], \
-                        ldict.get("diviednd_per1", ldict.get("uriage_eigyo_ratio",""))]
+            ldict_list = [
+                ldict["kessanki"],
+                ldict["uriagedaka"],
+                ldict["eigyoeki"],
+                ldict["keijoeki"],
+                ldict["profit"],
+                ldict["profit_per1"],
+                ldict.get("diviednd_per1", ldict.get("uriage_eigyo_ratio", "")),
+            ]
             # print("|", str(ldict_list).decode('string_escape')) # python2でエスケープ文字を実際に反映させて表示
-            print("|", ldict_list) # python3対応
+            print("|", ldict_list)  # python3対応
             table.append(ldict_list)
         # for文終了
-        
+
         # ---- 前期比/前年同期比の行
         ldict = {}
         if tble_name == "gyoseki_current":
-            ratio_m = re.search(r'<tr>\n<th scope="row">前期比</th>(.*?)</tr>', tbl_html, re.S)
+            ratio_m = re.search(
+                r'<tr>\n<th scope="row">前期比</th>(.*?)</tr>', tbl_html, re.S
+            )
             ratio_html = ratio_m.group(1)
-        elif tble_name == "gyoseki_quarter":			
-            ratio_m = re.search(r'<tr>\r\n<th scope="row">前年同期比</th>(.*?)</tr>', tbl_html, re.S)
+        elif tble_name == "gyoseki_quarter":
+            ratio_m = re.search(
+                r'<tr>\r\n<th scope="row">前年同期比</th>(.*?)</tr>', tbl_html, re.S
+            )
             ratio_html = ratio_m.group(1)
         # print ratio_html
         ratio_rows = []
-        for ratio_row in re.finditer(r'<td>(.*?)</td>', ratio_html):
-            val_m = re.search(r'[\d\+\-\.－]+', ratio_row.group(1))
+        for ratio_row in re.finditer(r"<td>(.*?)</td>", ratio_html):
+            val_m = re.search(r"[\d\+\-\.－]+", ratio_row.group(1))
             val = val_m.group(0) if val_m else ""
             ratio_rows.append(val)
         ldict["kessanki"] = "前期比" if tble_name == "gyoseki_current" else "前年同期比"
-        ldict["uriagedaka"] = (ratio_rows[0])
-        ldict["eigyoeki"] = (ratio_rows[1])
-        ldict["keijoeki"] = (ratio_rows[2])
-        ldict["profit"] = (ratio_rows[3])
-        ldict["profit_per1"] = (ratio_rows[4])
+        ldict["uriagedaka"] = ratio_rows[0]
+        ldict["eigyoeki"] = ratio_rows[1]
+        ldict["keijoeki"] = ratio_rows[2]
+        ldict["profit"] = ratio_rows[3]
+        ldict["profit_per1"] = ratio_rows[4]
         if tble_name == "gyoseki_current":
             ldict["diviednd_per1"] = ratio_rows[5]
         elif tble_name == "gyoseki_quarter":
             ldict["uriage_eigyo_ratio"] = ratio_rows[5]
         ldict["date"] = ratio_rows[6]
-        for k,v in list(ldict.items()):
-            if v=="赤拡":
+        for k, v in list(ldict.items()):
+            if v == "赤拡":
                 print("赤拡は-20%")
                 ldict[k] = -20
         # print str(ratio_rows).decode('string_escape')
-        ldict_list = [ldict["kessanki"], ldict["uriagedaka"], ldict["eigyoeki"], \
-                    ldict["keijoeki"], ldict["profit"], ldict["profit_per1"], \
-                    ldict["diviednd_per1"] if tble_name == "gyoseki_current" else ldict["uriage_eigyo_ratio"]]
-                    # ldict.get("diviednd_per1", ldict.get("uriage_eigyo_ratio","")
+        ldict_list = [
+            ldict["kessanki"],
+            ldict["uriagedaka"],
+            ldict["eigyoeki"],
+            ldict["keijoeki"],
+            ldict["profit"],
+            ldict["profit_per1"],
+            (
+                ldict["diviednd_per1"]
+                if tble_name == "gyoseki_current"
+                else ldict["uriage_eigyo_ratio"]
+            ),
+        ]
+        # ldict.get("diviednd_per1", ldict.get("uriage_eigyo_ratio","")
 
         # print("前期比行:", str(ldict_list).decode('string_escape'))
-        print("前期比行:", ldict_list) # python3対応
+        print("前期比行:", ldict_list)  # python3対応
         table.append(ldict_list)
         # 決算期、売上高、営業益、経常益、純利益、一株純利益、分割調整後一株利益or売上営業利益
         return table
@@ -192,7 +218,11 @@ def parse_kabutan_account2(html):
     tables["gyoseki_current"] = table_year
 
     # 四半期データ
-    quarter_tbl_m = re.search(r'<div class="title1">3ヵ月決算【実績】</div>.*?<table>(.*?)</table>', html, re.S)
+    quarter_tbl_m = re.search(
+        r'<div class="title1">3ヵ月決算【実績】</div>.*?<table>(.*?)</table>',
+        html,
+        re.S,
+    )
     if not quarter_tbl_m:
         print("!!! 四半期テーブルが取得できない（フォーマット変更？）")
         return tables
@@ -201,6 +231,7 @@ def parse_kabutan_account2(html):
     tables["gyoseki_quarter"] = table_quarter
     return tables
 
+
 # TODO: utilに移動
 
 
@@ -208,43 +239,48 @@ def calc_growth_rate2(cur, next):
     """
     赤字を考慮した成長率計算
     return: +1.2:20%成長 0.9:-10%成長
-    """	
+    """
     # print "cur, nex", cur, next
     if cur > 0 and next > 0:
-        return float(next)/cur
+        return float(next) / cur
     else:
         # 伸びた数字を分子とし、平均値を分母とする
-        tmp = (abs(next)+abs(cur))
+        tmp = abs(next) + abs(cur)
         if tmp == 0:
             return 1.0
         else:
-            return float((next-cur)/(tmp*0.5))
+            return float((next - cur) / (tmp * 0.5))
+
 
 def average_compound(growth):
     """
-    幾何平均 
+    幾何平均
     In: 0.2(20%), -0.1(-10%)など0を基準とした割合を渡す
     Out: 1.2(20%) 0.9(-10%)
     """
-    def calc(x,y):
-        return max((1+x), 0)* max((1+y), 0)
+
+    def calc(x, y):
+        return max((1 + x), 0) * max((1 + y), 0)
         # return max(x, 0)* max(y, 0)
-    return reduce(calc, growth)**(1.0/len(growth))
+
+    return reduce(calc, growth) ** (1.0 / len(growth))
+
 
 def average_compound2(growth):
-    avg = sum(growth)/len(growth)
+    avg = sum(growth) / len(growth)
     return avg
 
 
 def calc_cagr(values):
-    if (len(values)-1) <= 0:
+    if (len(values) - 1) <= 0:
         return 0
     first = values[0]
     if first <= 0:
         return 0
     latest = float(values[-1])
-    cagr = (latest/first)**(1.0/(len(values)-1)) - 1
+    cagr = (latest / first) ** (1.0 / (len(values) - 1)) - 1
     return cagr
+
 
 def check_table(code_s, table_current, table_quarter):
     """業績データの不足をチェック"""
@@ -254,17 +290,20 @@ def check_table(code_s, table_current, table_quarter):
     # 期数:3 四半期数:2を最低限とする
     # if len(table_quarter) < 3 and len(table_current) < 2:
     if len(table_current) < 1 and len(table_quarter) < 1:
-         print("!!! 業績を解析できていません(期数不足) cur=%d qua=%d"%\
-         (len(table_current), len(table_quarter)))
-         return False
+        print(
+            "!!! 業績を解析できていません(期数不足) cur=%d qua=%d"
+            % (len(table_current), len(table_quarter))
+        )
+        return False
     if (not table_quarter) or len(table_quarter[0]) < 4:
         term_count = 0 if (not table_quarter) else len(table_quarter[0])
-        print("!!! 業績を解析できていません(四半期項目数不足) %d<8"%\
-        (term_count))
+        print("!!! 業績を解析できていません(四半期項目数不足) %d<8" % (term_count))
         return False
     if len(table_current[0]) < 4:
-        print("!!! 業績を解析できていません(年期項目数不足) %d<5"%\
-        (len(table_current[0])))
+        print(
+            "!!! 業績を解析できていません(年期項目数不足) %d<5"
+            % (len(table_current[0]))
+        )
         return False
     # 8四半期分のデータを補充
     if len(table_quarter) >= 1:
@@ -276,8 +315,9 @@ def check_table(code_s, table_current, table_quarter):
             # print [table_quarter[0][0]
     return True, table_quarter
 
+
 def calc_progress_rate(stock):
-    """ DBに保持する決算データから進捗率を計算する
+    """DBに保持する決算データから進捗率を計算する
     Args:
         stock(dict): 通期・四半期業績データ
     Retruns:
@@ -292,7 +332,7 @@ def calc_progress_rate(stock):
     # table_quarter = tables.get("gyoseki_quarter", [])
     # table_current = tables.get("gyoseki_current", [])
     ret = {}
-    # code = stock.get("code", 0) 
+    # code = stock.get("code", 0)
     code_s = stock.get("code_s", "")
     if not check_table(code_s, table_current, table_quarter):
         print("決算データ不足で進捗率取得できず", code_s)
@@ -323,15 +363,18 @@ def calc_progress_rate(stock):
 
     # print "会社予想期:", predict_term, predict_sales, predict_profit
     from datetime import datetime, date, timedelta
+
     tmp = predict_term.split(".")
     if exists_predict:
         predict_term_date = datetime(int(tmp[0]), int(tmp[1]), 1)
     else:
-        predict_term_date = datetime(int(tmp[0])+1, int(tmp[1]), 1)
+        predict_term_date = datetime(int(tmp[0]) + 1, int(tmp[1]), 1)
 
     # ---- 四半期決算データを2次元配列に配置 第x四半期 y年前
     def create_quarter_data(predict_term_date):
-        quarter_data = [[[]]*4 for i in range(3)] # x:第x四半期 y:y年前の四半期決算データ
+        quarter_data = [
+            [[]] * 4 for i in range(3)
+        ]  # x:第x四半期 y:y年前の四半期決算データ
         for ind, data in enumerate(table_quarter):
             term = data[0]
             tmp = term.split(".")
@@ -345,30 +388,35 @@ def calc_progress_rate(stock):
             if int(tmp2[0]) > int(tmp2[1]):
                 year += 1
             month = int(tmp2[1])
-            term_date = datetime(2000+year, month, 1)
-            month_diff_total = (predict_term_date.year-term_date.year)*12+(predict_term_date.month-term_date.month)
-            year_diff = month_diff_total//12
-            month_diff = (month_diff_total%12)//3
-            quarter = -month_diff+4
+            term_date = datetime(2000 + year, month, 1)
+            month_diff_total = (predict_term_date.year - term_date.year) * 12 + (
+                predict_term_date.month - term_date.month
+            )
+            year_diff = month_diff_total // 12
+            month_diff = (month_diff_total % 12) // 3
+            quarter = -month_diff + 4
             # if ind == len(table_quarter)-2:
-                # print term_date.strftime("%Y年%m月"), "%d年前第%d四半期"%(year_diff, quarter)
+            # print term_date.strftime("%Y年%m月"), "%d年前第%d四半期"%(year_diff, quarter)
             try:
-                quarter_data[year_diff][quarter-1] = data
+                quarter_data[year_diff][quarter - 1] = data
             except IndexError:
                 print("!!!進捗率取得で不明なエラー(フォーマット不正？)", code_s)
         return quarter_data
-    
+
     quarter_data = create_quarter_data(predict_term_date)
 
     # 最新データの四半期がいつかを取得
-    latest_quarter = sum(len(v)>0 for v in quarter_data[0])
+    latest_quarter = sum(len(v) > 0 for v in quarter_data[0])
     # 1Qまたは予想データなければここでQだけ返して終了
     if latest_quarter == 0 or not exists_predict:
         # print "第1四半期を発表されていないため進捗率なし"
         ret["quarter"] = latest_quarter
         if not exists_predict:
-            print("会社予想がないため進捗率取得できず(第%d四半期)"%(latest_quarter), code_s)
-        return ret	
+            print(
+                "会社予想がないため進捗率取得できず(第%d四半期)" % (latest_quarter),
+                code_s,
+            )
+        return ret
 
     # ---- 進捗中の売上と利益を計算
     prog_sales = 0
@@ -394,19 +442,19 @@ def calc_progress_rate(stock):
     except TypeError:
         print("!!!前期進捗率で不明なエラー(フォーマット不正？)")
     try:
-        if not prog_sales_pre_total == 0:	
+        if not prog_sales_pre_total == 0:
             for q in range(latest_quarter):
                 qdata = quarter_data[1][q]
                 prog_sales_pre += qdata[1]
                 prog_profit_pre += qdata[2]
     except IndexError:
         print("!!!進捗に必要な四半期データの不足エラー")
-    
+
     # ---- 進捗率計算
-    sales_per = 100*prog_sales/predict_sales if predict_sales > 0 else 0
+    sales_per = 100 * prog_sales / predict_sales if predict_sales > 0 else 0
     try:
         if predict_profit > 0:
-            profit_per = 100*prog_profit/predict_profit
+            profit_per = 100 * prog_profit / predict_profit
         else:
             profit_per = 0
     except TypeError:
@@ -415,16 +463,20 @@ def calc_progress_rate(stock):
         print("営業利益予想発表なしのため0")
     sales_per_pre = profit_per_pre = 0
     if prog_sales_pre_total > 0:
-        sales_per_pre = 100*prog_sales_pre/prog_sales_pre_total
-    if prog_profit_pre_total > 0: # 赤字なら計算しない
-        profit_per_pre = 100*prog_profit_pre/prog_profit_pre_total
-    print("進捗率: 第%d四半期 売上%d%%(前年%d%%) 利益%d%%(前年%d%%)"%(latest_quarter, sales_per, sales_per_pre, profit_per, profit_per_pre))
+        sales_per_pre = 100 * prog_sales_pre / prog_sales_pre_total
+    if prog_profit_pre_total > 0:  # 赤字なら計算しない
+        profit_per_pre = 100 * prog_profit_pre / prog_profit_pre_total
+    print(
+        "進捗率: 第%d四半期 売上%d%%(前年%d%%) 利益%d%%(前年%d%%)"
+        % (latest_quarter, sales_per, sales_per_pre, profit_per, profit_per_pre)
+    )
     ret["quarter"] = latest_quarter
     ret["sales"] = sales_per
     ret["profit"] = profit_per
     ret["sales_pre"] = sales_per_pre
     ret["profit_pre"] = profit_per_pre
     return ret
+
 
 def calc_gyoseki_score(tables):
     """業績スコアの計算
@@ -436,34 +488,40 @@ def calc_gyoseki_score(tables):
     table_current = tables.get("gyoseki_current", [])
     # ---- 期数不備のチェック
     # code = tables.get("code",0)
-    code_s = "" # code不要だった
-    if not check_table(code_s,table_current, table_quarter):
+    code_s = ""  # code不要だった
+    if not check_table(code_s, table_current, table_quarter):
         return 20
 
     # ---- 四半期用の事前計算
     print("----")
     # 0:決算期	1:売上高	2:営業益	3:経常益	4:最終益 を3四半期期分
-    quarter_growth = [[0 for j in range(5)] for i in range(3)] # 四半期毎の成長率
-    quarter_score = [[0 for j in range(5)] for i in range(3)] # 計算用
+    quarter_growth = [[0 for j in range(5)] for i in range(3)]  # 四半期毎の成長率
+    quarter_score = [[0 for j in range(5)] for i in range(3)]  # 計算用
     # print table_quarter
     # print quarter_growth
     try:
-        for i in (r+1 for r in range(3)):
-            for col in (c+1 for c in range(4)):
+        for i in (r + 1 for r in range(3)):
+            for col in (c + 1 for c in range(4)):
                 try:
                     # print "col", col, table_quarter[i+4][col], table_quarter[i][col]
                     if table_quarter[i][col] >= 0:
-                        prev_quarter = table_quarter[i][col] if table_quarter[i][col]>0 else 1 # 0割は無理やり1にする
+                        prev_quarter = (
+                            table_quarter[i][col] if table_quarter[i][col] > 0 else 1
+                        )  # 0割は無理やり1にする
                         if prev_quarter == "－":
-                            quarter_growth[i-1][col] = 100
+                            quarter_growth[i - 1][col] = 100
                             print("  業績の値がないため成長率100に", prev_quarter)
                         else:
-                            quarter_growth[i-1][col] = (float(table_quarter[i+4][col])/prev_quarter - 1)*100
+                            quarter_growth[i - 1][col] = (
+                                float(table_quarter[i + 4][col]) / prev_quarter - 1
+                            ) * 100
                     else:
                         # 林さんの赤字のとき用計算
-                        val1 = float(table_quarter[i+4][col]-table_quarter[i][col])
-                        val2 = (abs(table_quarter[i][col])+abs(table_quarter[i+4][col]))/2.0
-                        quarter_growth[i-1][col] = (val1/val2)*100
+                        val1 = float(table_quarter[i + 4][col] - table_quarter[i][col])
+                        val2 = (
+                            abs(table_quarter[i][col]) + abs(table_quarter[i + 4][col])
+                        ) / 2.0
+                        quarter_growth[i - 1][col] = (val1 / val2) * 100
                 except IndexError:
                     print("!!! 四半期成長率計算できず")
                     break
@@ -474,57 +532,66 @@ def calc_gyoseki_score(tables):
     # 得点化: 売上10%以上 利益20%以上
     # (オニール:直近四半期売上25%以上)
     for i, row in enumerate(quarter_growth):
-        print([round(r,1) for r in row]) # 四半期成長率
+        print([round(r, 1) for r in row])  # 四半期成長率
         # 売上は10%以上なら1, 利益は20%以上なら1
-        for col in (c+1 for c in range(4)):
-            if col == 1:	# 売上
+        for col in (c + 1 for c in range(4)):
+            if col == 1:  # 売上
                 quarter_score[i][col] = 1 if quarter_growth[i][col] >= 10 else 0
-            else:	# 利益
+            else:  # 利益
                 quarter_score[i][col] = 1 if quarter_growth[i][col] >= 20 else 0
     print("-- (得点化) -->")
-    for i,row in enumerate(quarter_score):
-        print(row) 
+    for i, row in enumerate(quarter_score):
+        print(row)
 
     # ---- スコアの計算
     # TODO: 全体的に無駄に複雑、シンプルに
     # 1,過去5年通期売上利益、2,直近通期利益、3,直近四半期利益、4,3四半期売上、5,3四半期利益
     # 利益は3:経常利益でなく2:営業利益を使うように変更
-    SCORES = [20,10,15,30,25]
+    SCORES = [20, 10, 15, 30, 25]
     # ---- 1,過去利益持続成長
     term_data = table_current[-6:-1]
-    term_data = [t for t in term_data if t[2] != '－']
-    term_sales_data = [t[1] for t in term_data if t[1] != '－']
+    term_data = [t for t in term_data if t[2] != "－"]
+    term_sales_data = [t[1] for t in term_data if t[1] != "－"]
     term_set = list(zip(term_data[:-1], term_data[1:]))
     # 営利の各期成長率(0.2->20%)
-    term_growth = [calc_growth_rate2(t[0][2], t[1][2])-1 for t in term_set]
-    
+    term_growth = [calc_growth_rate2(t[0][2], t[1][2]) - 1 for t in term_set]
+
     if not term_growth:
         print("!!! 通期利益データがないため補充")
         term_growth = [0.0]
     # if not term_sales_growth:
-    #	term_sales_growth = [1.0]
+    # 	term_sales_growth = [1.0]
     # print "各期利益成長率:", [round(p,2) for p in term_growth]
-    average_past_profit_rate = average_compound2(term_growth)*100
-    average_past_sales_rate = calc_cagr(term_sales_data)*100
-    # print "営利平均成長率(%):", average_past_profit_rate	
+    average_past_profit_rate = average_compound2(term_growth) * 100
+    average_past_sales_rate = calc_cagr(term_sales_data) * 100
+    # print "営利平均成長率(%):", average_past_profit_rate
     # print "売上CAGR(%):", average_past_profit_rate
-    term_count = len(term_data)	
-    print("%d年平均利益成長率: %d%%"%(term_count, average_past_profit_rate))
-    print("%d年平均売上CAGR: %d%%"%(len(term_sales_data), average_past_sales_rate))
+    term_count = len(term_data)
+    print("%d年平均利益成長率: %d%%" % (term_count, average_past_profit_rate))
+    print("%d年平均売上CAGR: %d%%" % (len(term_sales_data), average_past_sales_rate))
     # 平均7%以上>4%以上　赤字年は減点
-    score_past_profit = step_func(average_past_profit_rate, [0, 4, 7], [0, SCORES[0]/2, SCORES[0]])/2
-    score_past_sales = step_func(average_past_sales_rate, [0, 5, 10], [0, SCORES[0]/2, SCORES[0]])/2
+    score_past_profit = (
+        step_func(average_past_profit_rate, [0, 4, 7], [0, SCORES[0] / 2, SCORES[0]])
+        / 2
+    )
+    score_past_sales = (
+        step_func(average_past_sales_rate, [0, 5, 10], [0, SCORES[0] / 2, SCORES[0]])
+        / 2
+    )
+
     def count_if(condition, seq):
         return sum(1 for item in seq if condition(item))
+
     # マイナス成長を減点
     # print "期毎経常利益成長率:", [round(p,1) for p in past_profit_rate]
     # red_count = count_if(lambda x:x<0, past_profit_rate)
     red_count = len([v for v in term_growth if v < 0])
-    score_past_profit -= 3*red_count
-    if score_past_profit<0: score_past_profit=0
+    score_past_profit -= 3 * red_count
+    if score_past_profit < 0:
+        score_past_profit = 0
     # 予測データでなければ減点
     isLatestTerm = True
-    if len(table_current) >=2:
+    if len(table_current) >= 2:
         latest_term = table_current[-2][0]
         year, month = latest_term.split(".")
         # import datetime
@@ -534,37 +601,42 @@ def calc_gyoseki_score(tables):
         isLatestTerm = latest_term.find("予") >= 0
         latest_term_profit = table_current[-2][2]
         latest_term_sales = table_current[-2][1]
-        if not isLatestTerm or latest_term_profit == '－': # 予想を出していない
+        if not isLatestTerm or latest_term_profit == "－":  # 予想を出していない
             print("来季利益データでないので減点", latest_term, latest_term_profit)
             score_past_profit *= 0.7
         if not isLatestTerm or latest_term_sales == "－":
             print("来季売上データでないので減点", latest_term, latest_term_sales)
             score_past_sales *= 0.7
-    
-    score_past_profitsales = (score_past_profit+score_past_sales)
-    print("score_past_profitsales:%d/%d"%(score_past_profitsales, SCORES[0]), "<- 過去平均各期利益-売上成長:%d%% %d%%"%(average_past_profit_rate, average_past_sales_rate),\
-     "(%d年)"%term_count, "マイナス%d回"%red_count)
-    
+
+    score_past_profitsales = score_past_profit + score_past_sales
+    print(
+        "score_past_profitsales:%d/%d" % (score_past_profitsales, SCORES[0]),
+        "<- 過去平均各期利益-売上成長:%d%% %d%%"
+        % (average_past_profit_rate, average_past_sales_rate),
+        "(%d年)" % term_count,
+        "マイナス%d回" % red_count,
+    )
+
     # TODO: 単純に1年ずつ評価していったほうがいいかも　売上も見たい
     # ---- 2,直近期利益成長
     # TODO: 3年を見たほうが良いかも
     # TODO: オニールは利益3年25％
     # 20%以上>10%以上
     # future_profit_rate = (past_profit_rate[-2]+past_profit_rate[-1])/2
-    future_profit_rate = term_growth[-1]*100
+    future_profit_rate = term_growth[-1] * 100
     score_future_profit = 0
-    if future_profit_rate>=20:
+    if future_profit_rate >= 20:
         score_future_profit = SCORES[1]
-    elif future_profit_rate>=10:
-        score_future_profit = SCORES[1]/2
+    elif future_profit_rate >= 10:
+        score_future_profit = SCORES[1] / 2
     if not isLatestTerm:
         score_future_profit *= 0.7
     # Saas40%ルール適用での補正
     if score_future_profit <= 0:
         # print "Saas40%ルールのチェック"
-        term_data2 = table_current[-6:-1] # 改めて生データ取得
+        term_data2 = table_current[-6:-1]  # 改めて生データ取得
         term_set2 = list(zip(term_data2[:-1], term_data2[1:]))
-        term_sales_growth = [calc_growth_rate2(t[0][1], t[1][1])-1 for t in term_set2]
+        term_sales_growth = [calc_growth_rate2(t[0][1], t[1][1]) - 1 for t in term_set2]
         try:
             sales0 = term_data2[-1][1]
             past = False
@@ -575,23 +647,31 @@ def calc_gyoseki_score(tables):
             if profit0 == "－":
                 profit0 = term_data[-2][2]
                 past = True
-        
-            profit_rate = float(profit0)/float(sales0) if sales0 != 0 else 0
+
+            profit_rate = float(profit0) / float(sales0) if sales0 != 0 else 0
             sales_rate = term_sales_growth[-1]
-            ratio = step_func(profit_rate+sales_rate, [0, 0.3, 0.4, 0.5], [0, 0.6, 0.8, 0.9])
+            ratio = step_func(
+                profit_rate + sales_rate, [0, 0.3, 0.4, 0.5], [0, 0.6, 0.8, 0.9]
+            )
             if ratio > 0 and term_sales_growth[-1] > term_sales_growth[-2]:
                 ratio += 0.1
-            pt = (SCORES[1])*ratio
+            pt = (SCORES[1]) * ratio
             if past:
                 pt *= 0.8
             if pt > 0:
-                print("  直近期40%ルール補正:", pt, "売上成長: %.2f 利益率:%.2f"%(sales_rate, profit_rate))
+                print(
+                    "  直近期40%ルール補正:",
+                    pt,
+                    "売上成長: %.2f 利益率:%.2f" % (sales_rate, profit_rate),
+                )
             score_future_profit += pt
         except (ValueError, IndexError) as e:
             print("  直近期40%ルール計算できず")
-    
-    print("score_future_profit: %d/%d"%(score_future_profit, SCORES[1]), \
-    "<- 直近期利益成長:%d%%"%(future_profit_rate))
+
+    print(
+        "score_future_profit: %d/%d" % (score_future_profit, SCORES[1]),
+        "<- 直近期利益成長:%d%%" % (future_profit_rate),
+    )
 
     # TODO: 売上も考えたい
     # ---- 3, 直近四半期利益成長
@@ -601,7 +681,7 @@ def calc_gyoseki_score(tables):
     if latest_profit_rate >= 40:
         score_latest_profit = SCORES[2]
     elif latest_profit_rate >= 20:
-        score_latest_profit = SCORES[2]/2
+        score_latest_profit = SCORES[2] / 2
     # Saas40%ルール適用での補正
     if score_latest_profit <= 0:
         # print "Saas40%ルールのチェック"
@@ -616,52 +696,89 @@ def calc_gyoseki_score(tables):
             profit0 = table_quarter[-3][2]
             past = True
         try:
-            profit_rate = float(profit0)/float(sales0) if sales0 != 0 else 0
-            sales_rate = quarter_growth[-1][1]/100.0
-            ratio = step_func(profit_rate+sales_rate, [0, 0.3, 0.4, 0.5], [0, 0.6, 0.8, 0.9])
+            profit_rate = float(profit0) / float(sales0) if sales0 != 0 else 0
+            sales_rate = quarter_growth[-1][1] / 100.0
+            ratio = step_func(
+                profit_rate + sales_rate, [0, 0.3, 0.4, 0.5], [0, 0.6, 0.8, 0.9]
+            )
             # 売上加速チェック
             if ratio > 0 and quarter_growth[-1][1] > quarter_growth[-2][1]:
                 ratio += 0.1
-            pt = (SCORES[2])*ratio
+            pt = (SCORES[2]) * ratio
             if past:
                 pt *= 0.8
             if pt > 0:
-                print("  直近四半期40%ルール補正:", pt, "売上成長: %.2f 利益率:%.2f"%(sales_rate, profit_rate))
+                print(
+                    "  直近四半期40%ルール補正:",
+                    pt,
+                    "売上成長: %.2f 利益率:%.2f" % (sales_rate, profit_rate),
+                )
             score_latest_profit += pt
         except ValueError as e:
             print("  直近四半期40%ルール計算できず")
-    print("score_latest_profit: %d/%d"%(score_latest_profit, SCORES[2]), \
-    "<- 最直近四半期利益成長:%d%%"%round(latest_profit_rate,1))
+    print(
+        "score_latest_profit: %d/%d" % (score_latest_profit, SCORES[2]),
+        "<- 最直近四半期利益成長:%d%%" % round(latest_profit_rate, 1),
+    )
 
     # ---- 4, 直近2,3四半期売上成長
-    sales_rate = (quarter_growth[-1][1]+quarter_growth[-2][1]+quarter_growth[-3][1])/3
-    quarter_score_avg = 100*(quarter_score[-1][1]+quarter_score[-2][1]+quarter_score[-3][1])/3	
-    score_sales_rate = ((SCORES[3]*2/3)*quarter_score_avg)/100
+    sales_rate = (
+        quarter_growth[-1][1] + quarter_growth[-2][1] + quarter_growth[-3][1]
+    ) / 3
+    quarter_score_avg = (
+        100 * (quarter_score[-1][1] + quarter_score[-2][1] + quarter_score[-3][1]) / 3
+    )
+    score_sales_rate = ((SCORES[3] * 2 / 3) * quarter_score_avg) / 100
     if quarter_growth[-1][1] > quarter_growth[-2][1]:
-        print("　四半期売上加速%.1f%%->%.1f%%"%(quarter_growth[-2][1], quarter_growth[-1][1]))
-        score_sales_rate += SCORES[3]/3
-    print("score_sales_rate:%d/%d"%(score_sales_rate, SCORES[3]), \
-    "<- 3四半期売上成長:%d%%"%round(sales_rate,1))
-    
+        print(
+            "　四半期売上加速%.1f%%->%.1f%%"
+            % (quarter_growth[-2][1], quarter_growth[-1][1])
+        )
+        score_sales_rate += SCORES[3] / 3
+    print(
+        "score_sales_rate:%d/%d" % (score_sales_rate, SCORES[3]),
+        "<- 3四半期売上成長:%d%%" % round(sales_rate, 1),
+    )
+
     # ---- 5, 各四半期利益成長
-    score_quarter_profit_rate_avg = 100*((quarter_score[-1][2]+quarter_score[-2][2]+quarter_score[-3][2])\
-    +(quarter_score[-1][3]+quarter_score[-2][3]+quarter_score[-3][3])\
-    +(quarter_score[-1][4]+quarter_score[-2][4]+quarter_score[-3][4]))/9
-    score_quarter_profit_rate = ((SCORES[4]*2/3)*score_quarter_profit_rate_avg)/100
+    score_quarter_profit_rate_avg = (
+        100
+        * (
+            (quarter_score[-1][2] + quarter_score[-2][2] + quarter_score[-3][2])
+            + (quarter_score[-1][3] + quarter_score[-2][3] + quarter_score[-3][3])
+            + (quarter_score[-1][4] + quarter_score[-2][4] + quarter_score[-3][4])
+        )
+        / 9
+    )
+    score_quarter_profit_rate = (
+        (SCORES[4] * 2 / 3) * score_quarter_profit_rate_avg
+    ) / 100
     if quarter_growth[-1][2] > quarter_growth[-2][2]:
-        print("　四半期経常益加速%.1f%%->%.1f%%"%(quarter_growth[-2][2], quarter_growth[-1][2]))
-        score_quarter_profit_rate += SCORES[4]/3	
-    profit_rate = (quarter_growth[-1][2]+quarter_growth[-2][2]+quarter_growth[-3][2])/3
-    print("score_quarter_profit_rate: %d/%d"%(score_quarter_profit_rate, SCORES[4]), \
-    "<- 3四半期利益成長:%d%%"%round(profit_rate,1))
+        print(
+            "　四半期経常益加速%.1f%%->%.1f%%"
+            % (quarter_growth[-2][2], quarter_growth[-1][2])
+        )
+        score_quarter_profit_rate += SCORES[4] / 3
+    profit_rate = (
+        quarter_growth[-1][2] + quarter_growth[-2][2] + quarter_growth[-3][2]
+    ) / 3
+    print(
+        "score_quarter_profit_rate: %d/%d" % (score_quarter_profit_rate, SCORES[4]),
+        "<- 3四半期利益成長:%d%%" % round(profit_rate, 1),
+    )
     # 総括して計算
-    gyoseki_score = score_past_profitsales+score_future_profit+score_latest_profit\
-    +score_sales_rate+score_quarter_profit_rate
+    gyoseki_score = (
+        score_past_profitsales
+        + score_future_profit
+        + score_latest_profit
+        + score_sales_rate
+        + score_quarter_profit_rate
+    )
     print("----------")
     print("業績スコア:", gyoseki_score)
     print("----------")
     return gyoseki_score
-    
+
 
 def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
     """codeの業績情報をkabutan(又はキャッシュ)から
@@ -677,9 +794,8 @@ def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
     else:
         INTERVAL_DAY = 15
         import rironkabuka
-        use_cache = rironkabuka.is_cache_latest(
-            URL_CODE % (str(code_s)), INTERVAL_DAY
-        )
+
+        use_cache = rironkabuka.is_cache_latest(URL_CODE % (str(code_s)), INTERVAL_DAY)
 
     url = URL_CODE % (str(code_s))
     html = http_get_html_with_retry(url, use_cache, CACHE_DIR, retry=4)
@@ -691,7 +807,7 @@ def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
     # 業績得点の追加
     print("=" * 5, "業績スコアの計算")
     tables["score_gyoseki"] = calc_gyoseki_score(tables)
-    print("=" * 5, "業績スコアの計算完了")	
+    print("=" * 5, "業績スコアの計算完了")
     path = CACHE_DIR + get_http_cachname(URL_CODE % (str(code_s)))
     tables["access_date_gyoseki"] = get_file_datetime(path)
     print("date:", tables["access_date_gyoseki"])
@@ -699,22 +815,24 @@ def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
     set_db_code(tables, code_s)
     return tables
 
+
 def calc_growth_rate(cur, nxt):
-    """	成長率を返す
+    """成長率を返す
     -100~+100％数値で返す
     """
     if cur > 0:
         try:
-            return int(round(100*float(nxt)/cur -100, 0))
+            return int(round(100 * float(nxt) / cur - 100, 0))
         except ValueError:
             return 0
-    else:		
+    else:
         if nxt == 0 and cur == 0:
-            return 0 # 計算できない
+            return 0  # 計算できない
         else:
             # この計算式は林さんより
-            val = float((nxt-cur)/((abs(nxt)+abs(cur))*0.5))
-            return int(100*val - 100)
+            val = float((nxt - cur) / ((abs(nxt) + abs(cur)) * 0.5))
+            return int(100 * val - 100)
+
 
 def get_latest_ind(tbl, ind):
     # 決算期、売上高、営業益、経常益、純利益、一株純利益、分割調整後一株利益or売上営業利益
@@ -730,20 +848,21 @@ def get_latest_ind(tbl, ind):
         # 		print r,
         return None
 
+
 def calc_mean(lst):
-    mean = sum(lst)/len(lst)
+    mean = sum(lst) / len(lst)
     return mean
 
 
 def calc_stddev(lst):
-    mean = sum(lst)/len(lst)
+    mean = sum(lst) / len(lst)
     variance = sum((x - mean) ** 2 for x in lst) / len(lst)
     stddev = int(variance**0.5)
     return stddev
 
+
 def calc_annual_growth(stock):
-    """年次成長率を返す
-    """
+    """年次成長率を返す"""
     tbl = stock.get("gyoseki_current", "")
     if not tbl:
         return ()
@@ -752,14 +871,15 @@ def calc_annual_growth(stock):
     y_ind2 = get_latest_ind(tbl, 2)
     if not y_ind or not y_ind2:
         return ()
-    
+
     try:
-        rate_uriage = calc_growth_rate(tbl[y_ind-1][1], tbl[y_ind][1]) # 1: 売上
-        rate_eiri = calc_growth_rate(tbl[y_ind2-1][2], tbl[y_ind2][2]) # 2:営利
+        rate_uriage = calc_growth_rate(tbl[y_ind - 1][1], tbl[y_ind][1])  # 1: 売上
+        rate_eiri = calc_growth_rate(tbl[y_ind2 - 1][2], tbl[y_ind2][2])  # 2:営利
     except IndexError:
         # print "通期データがありません", len(tbl), stock.get("stock_name","")
         return ()
-    return tbl[y_ind][0], rate_uriage, rate_eiri # 年度、売上%、営利%
+    return tbl[y_ind][0], rate_uriage, rate_eiri  # 年度、売上%、営利%
+
 
 def calc_quarter_growth(stock):
     tbl = stock.get("gyoseki_quarter", "")
@@ -771,23 +891,23 @@ def calc_quarter_growth(stock):
     if not y_ind or not y_ind2:
         return ()
     try:
-        rate_uriage = calc_growth_rate(tbl[y_ind-4][1], tbl[y_ind][1]) # 1: 売上
-        rate_eiri = calc_growth_rate(tbl[y_ind2-4][2], tbl[y_ind2][2]) # 2:営利
+        rate_uriage = calc_growth_rate(tbl[y_ind - 4][1], tbl[y_ind][1])  # 1: 売上
+        rate_eiri = calc_growth_rate(tbl[y_ind2 - 4][2], tbl[y_ind2][2])  # 2:営利
     except (IndexError, ValueError):
         # print "四半期データがありません", len(tbl), stock.get("stock_name","")
         return ()
-    return tbl[y_ind][0], rate_uriage, rate_eiri # 年度、売上%、営利%
+    return tbl[y_ind][0], rate_uriage, rate_eiri  # 年度、売上%、営利%
+
 
 def calc_annual_quarity_expr(stock):
-    """年度ごとの増収増益分を5年分返す
-    """
+    """年度ごとの増収増益分を5年分返す"""
     # print "業績クォリティ算出", stock["code"]
     tbl = stock.get("gyoseki_current", "")
     if not tbl:
         return ()
-    
-    results = [] # 0:平均 1:分散
-    ref_indexes = [1,2] # 売上、利益参照インデックス	
+
+    results = []  # 0:平均 1:分散
+    ref_indexes = [1, 2]  # 売上、利益参照インデックス
     for ref_ind in ref_indexes:
         annual_rate_list = []
         y_ind = get_latest_ind(tbl, ref_ind)
@@ -796,29 +916,29 @@ def calc_annual_quarity_expr(stock):
             break
         while True:
             try:
-                rate = calc_growth_rate(tbl[y_ind-1][ref_ind], tbl[y_ind][ref_ind])
+                rate = calc_growth_rate(tbl[y_ind - 1][ref_ind], tbl[y_ind][ref_ind])
                 annual_rate_list.append(rate)
-                y_ind-=1
+                y_ind -= 1
             except IndexError:
                 break
-        res = [0,0]
+        res = [0, 0]
         if len(annual_rate_list) > 0:
             res[0] = calc_mean(annual_rate_list)
             res[1] = calc_stddev(annual_rate_list)
             results.append(res)
         else:
-            print("!!! %sは過去業績取得できず"%stock.get("code_s",""))
+            print("!!! %sは過去業績取得できず" % stock.get("code_s", ""))
     return results
 
+
 def calc_quarter_quaraity_expr(stock):
-    """四半期ごとの増収・増益率を4四半期分(=2年分)返す
-    """
+    """四半期ごとの増収・増益率を4四半期分(=2年分)返す"""
     tbl = stock.get("gyoseki_quarter", "")
     if not tbl:
-        return (),""
-    
-    results = [] # 0:平均 1:分散
-    ref_indexes = [1,2] # 売上、利益参照インデックス
+        return (), ""
+
+    results = []  # 0:平均 1:分散
+    ref_indexes = [1, 2]  # 売上、利益参照インデックス
     rates = []
     for ref_ind in ref_indexes:
         quarter_rate_list = []
@@ -828,12 +948,12 @@ def calc_quarter_quaraity_expr(stock):
             break
         while True:
             try:
-                rate = calc_growth_rate(tbl[y_ind-4][ref_ind], tbl[y_ind][ref_ind])
+                rate = calc_growth_rate(tbl[y_ind - 4][ref_ind], tbl[y_ind][ref_ind])
                 quarter_rate_list.append(rate)
-                y_ind-=1
+                y_ind -= 1
             except IndexError:
                 break
-        res = [0,0]
+        res = [0, 0]
         res[0] = calc_mean(quarter_rate_list)
         res[1] = calc_stddev(quarter_rate_list)
         results.append(res)
@@ -843,7 +963,7 @@ def calc_quarter_quaraity_expr(stock):
     try:
         sales_ratios = rates[0]
         # 営利増加率-売上営利率
-        prof_ratios = [rates[1][q]-rates[0][q] for q in range(len(rates[0]))]
+        prof_ratios = [rates[1][q] - rates[0][q] for q in range(len(rates[0]))]
         if sales_ratios[0] > sales_ratios[1] and sales_ratios[1] > sales_ratios[2]:
             if prof_ratios[0] > prof_ratios[1] and prof_ratios[0] > prof_ratios[-1]:
                 code33 = "C3"
@@ -852,6 +972,7 @@ def calc_quarter_quaraity_expr(stock):
         pass
     return results, code33
 
+
 def get_gyoseki_expr(stock_data):
     """業績表現を返す
     Returns: 業績表現 [A]20%,10%[Q]-10%,-20%[P]1Q28%(18%),44%(10%)
@@ -859,30 +980,46 @@ def get_gyoseki_expr(stock_data):
     annual = calc_annual_growth(stock_data)
     quarter = calc_quarter_growth(stock_data)
     progress = calc_progress_rate(stock_data)
-    annual = "[A]%d%%,%d%%"%(annual[1], annual[2]) if annual else "" # annual[0]で年度表示
-    quarter = "[Q]%d%%,%d%%"%(quarter[1], quarter[2]) if quarter else ""
-    current_quarter = progress.get("quarter",0)
+    annual = (
+        "[A]%d%%,%d%%" % (annual[1], annual[2]) if annual else ""
+    )  # annual[0]で年度表示
+    quarter = "[Q]%d%%,%d%%" % (quarter[1], quarter[2]) if quarter else ""
+    current_quarter = progress.get("quarter", 0)
     if current_quarter <= 0:
-        progress_expr = '[P]%dQ'%(current_quarter)
+        progress_expr = "[P]%dQ" % (current_quarter)
     else:
-        progress_expr = '[P]%dQ%d%%(%d%%),%d%%(%d%%)'%(progress.get("quarter",0), \
-            progress.get("sales",0), progress.get("sales_pre",0),\
-                progress.get("profit",0),progress.get("profit_pre",0))
+        progress_expr = "[P]%dQ%d%%(%d%%),%d%%(%d%%)" % (
+            progress.get("quarter", 0),
+            progress.get("sales", 0),
+            progress.get("sales_pre", 0),
+            progress.get("profit", 0),
+            progress.get("profit_pre", 0),
+        )
     # 進捗率, 売上・利益成長率
-    return progress_expr, annual+quarter
+    return progress_expr, annual + quarter
+
 
 def get_gyoseki_quarity_expr(stock):
-    """業績クォリティ(過去業績)表現を返す
-    """
+    """業績クォリティ(過去業績)表現を返す"""
     res_annual = calc_annual_quarity_expr(stock)
     res_quarter, code33 = calc_quarter_quaraity_expr(stock)
     expr = ""
-    if len(res_annual)>0 and len(res_quarter)>0:
-        #[A]5±8%[Q]-5±12%
-        expr = "[A]%d±%d%%,%d±%d%%[Q]%d±%d%%,%d±%d%%"%(res_annual[0][0],res_annual[0][1], res_annual[1][0],res_annual[1][1], res_quarter[0][0], res_quarter[0][1],res_quarter[1][0], res_quarter[1][1])
+    if len(res_annual) > 0 and len(res_quarter) > 0:
+        # [A]5±8%[Q]-5±12%
+        expr = "[A]%d±%d%%,%d±%d%%[Q]%d±%d%%,%d±%d%%" % (
+            res_annual[0][0],
+            res_annual[0][1],
+            res_annual[1][0],
+            res_annual[1][1],
+            res_quarter[0][0],
+            res_quarter[0][1],
+            res_quarter[1][0],
+            res_quarter[1][1],
+        )
         if code33:
-            expr += "<%s>"%code33
+            expr += "<%s>" % code33
     return expr
+
 
 def main():
     # TODO: 複利成長率をちゃんとだしたい
@@ -902,9 +1039,11 @@ def main():
         # calc_progress_rate(gyoseki_data)
 
         import make_stock_db as db
+
         stock = db.load_cacehd_stock_db(code_s)
         # print get_gyoseki_expr(stock)
         print(get_gyoseki_quarity_expr(stock))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-
+# flake8: noqa
+"""
 # ================================================
-# 市場の新高値銘柄を分析
+# 市場の新高値銘柄を分析(封印中)
 # ================================================
+"""
 
 # import xml.etree.ElementTree as xml # <-htmlはwellformedじゃないので解析不可
 # from lxml import etree # lxmlは後で勉強する

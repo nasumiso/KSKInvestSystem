@@ -1,8 +1,7 @@
-
 from ks_util import *
 
 
-def is_positive_kessan(summary):	
+def is_positive_kessan(summary):
     positive_words = ["上方修正", "増益", "増配", "黒字浮上"]
     for word in positive_words:
         if summary.find(word) >= 0:
@@ -79,10 +78,10 @@ def get_kessanbi_expr(stock):
 
 
 def get_kessan_quarter(stock):
-    """直近決算の四半期Q(1~4)を取得する
-    """
+    """直近決算の四半期Q(1~4)を取得する"""
     import gyoseki
-    kessanbi = stock.get("kessanbi")        
+
+    kessanbi = stock.get("kessanbi")
     res = gyoseki.calc_progress_rate(stock)
     if "quarter" in res:
         # 過去の決算は当Q,現在の決算は次Qを表示する
@@ -96,28 +95,23 @@ def get_kessan_quarter(stock):
         return 0
 
 
-PF_KESSAN_PATH = os.path.join(
-    DATA_DIR, "todays_kessan_data", "pf_kessan.pickle"
-)
+PF_KESSAN_PATH = os.path.join(DATA_DIR, "todays_kessan_data", "pf_kessan.pickle")
 
 
 def save_pf_kessan_db(stocks):
-    """決算DBに銘柄の決算情報を保存する
-    """
+    """決算DBに銘柄の決算情報を保存する"""
     import portfolio
+
     code_list_s, possess_list_s = portfolio.parse_my_portforio()
     pf_kessan_dict = {
         k: {
             "kessanbi": v["kessanbi"],
             "stock_name": v["stock_name"],
             "code_s": get_db_code(v),
-            "kessan_quarter": get_kessan_quarter(v)
+            "kessan_quarter": get_kessan_quarter(v),
         }
         for k, v in list(stocks.items())
-        if (
-            k in code_list_s + possess_list_s
-            and v.get("kessanbi", "")
-        )
+        if (k in code_list_s + possess_list_s and v.get("kessanbi", ""))
     }
     # 決算日でソート
     # pf_kessan_dict = sorted(pf_kessan_dict.items(), key=lambda x: x[1])
@@ -127,9 +121,11 @@ def save_pf_kessan_db(stocks):
 
 def load_pf_kessan_db():
     import os.path
+
     if not os.path.exists(PF_KESSAN_PATH):
         # 銘柄DBをロードし、そこから決算情報を抜き出して決算DBに保存
         import make_stock_db as db
+
         stocks = db.load_stock_db()
         save_pf_kessan_db(stocks)
     pf_kessan_dict = load_pickle(PF_KESSAN_PATH)
@@ -137,8 +133,7 @@ def load_pf_kessan_db():
 
 
 def make_kessan_csv():
-    """make_market_dbで呼ばれる、決算一覧用CSVの作成
-    """
+    """make_market_dbで呼ばれる、決算一覧用CSVの作成"""
     pf_kessan_dict = load_pf_kessan_db()
     # 今日〜7日,7日以降、今日以前に振り分ける
     today = get_price_day(datetime.today())  # .date()
@@ -169,8 +164,10 @@ def make_kessan_csv():
         b_date = datetime.strptime(b[0], "%Y/%m/%d")
         # return cmp(a_date, b_date)
         return (a_date > b_date) - (a_date < b_date)  # python3対応
+
     # before_list.sort(cmp=date_sort, reverse=True)
     import functools  # python3対応
+
     before_list.sort(key=functools.cmp_to_key(date_sort), reverse=True)
     current_list.sort(key=functools.cmp_to_key(date_sort))
     future_list.sort(key=functools.cmp_to_key(date_sort))
@@ -183,30 +180,35 @@ def make_kessan_csv():
         # 2行目に銘柄コードと名前
         kessan_code_list = []
         for date, codes in target_list:
-            expr = ",".join([
-                "%s%s[%dQ]" % (
-                    get_db_code(stock_item), 
-                    stock_item["stock_name"], 
-                    stock_item.get("kessan_quarter", 0)
-                )
-                for stock_item in codes
-            ])
+            expr = ",".join(
+                [
+                    "%s%s[%dQ]"
+                    % (
+                        get_db_code(stock_item),
+                        stock_item["stock_name"],
+                        stock_item.get("kessan_quarter", 0),
+                    )
+                    for stock_item in codes
+                ]
+            )
             kessan_code_list.append(expr)
         csv_data.append(kessan_code_list)
-    
+
     def write_to_csv_current(target_list):
         for date, codes in target_list:
             csv_rec = []
             csv_rec.append(date[5:])
             for stock in codes:
                 csv_rec.append(
-                    "%s%s[%dQ]" % (
+                    "%s%s[%dQ]"
+                    % (
                         get_db_code(stock),
                         stock["stock_name"],
-                        stock.get("kessan_quarter", 0)
+                        stock.get("kessan_quarter", 0),
                     )
                 )
             csv_data.append(csv_rec)
+
     write_to_csv(before_list)
     write_to_csv_current(current_list)
     write_to_csv(future_list)
@@ -221,5 +223,5 @@ def main():
     # save_pf_kessan_db(stocks)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

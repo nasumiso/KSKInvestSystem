@@ -22,9 +22,9 @@ MARKET_DB_PATH = os.path.join(DATA_DIR, "market_data/market_db.pickle")
 
 def parse_theme_html(html):
     # print ux_cmd_head(html, 10)
-    # <td class="acrank_url"><a href="/themes/?theme=デジタルトランスフォーメーション">デジタルトランスフォーメーション</a></td>
+    # <td class="acrank_url"><a href="/themes/?theme=デジタルトランスフォーメーション">デジタルトランスフォーメーション</a></td> # noqa: E501
     themes = []
-    for m in re.finditer(r'<td class="acrank_url"><a href=".*?">(.*?)</a></td>', html):
+    for m in re.finditer(r'<td class="acrank_url"><a href=".*?">(.*?)</a></td>', html):  # noqa: E501
         themes.append(m.group(1))
     return themes
 
@@ -53,7 +53,8 @@ def get_prev_fname(fname, cur_day=datetime.today()):
     while count < CountMax:
         cur_day = cur_day - timedelta(1)
         fname = (
-            name + "_%02d%02d%02d" % (cur_day.year - 2000, cur_day.month, cur_day.day) + ext
+            name + "_%02d%02d%02d"
+            % (cur_day.year - 2000, cur_day.month, cur_day.day) + ext
         )
         count += 1
         if os.path.exists(fname):
@@ -79,7 +80,7 @@ def get_theme_rank_list():
         URL_THEME_RANK_KABUTAN,
         cache_dir=os.path.join(DATA_DIR, "market_data"),
         cache_fname="theme_rank.html",
-        use_cache=use_cache
+        use_cache=use_cache,
     )
     theme_rank_list = parse_theme_html(html)
     prev_cache, prev_day = get_prev_fname(cach_path, cach_date - timedelta(2))
@@ -96,8 +97,7 @@ INTERVAL_BACKUP = 3  # バックアップ日数
 
 
 def make_theme_data():  # market_db=None
-    """テーマランクデータを作成
-    """
+    """テーマランクデータを作成"""
     print("テーマランクデータを作成します")
     theme_rank_list, prev_theme_rank_list, cach_date, _ = get_theme_rank_list()
 
@@ -116,7 +116,9 @@ def make_theme_data():  # market_db=None
         print("  %s %d->%d" % (theme, prev_rank, rank))
         rank_pt = 31 - rank + moment
         theme_rank2[theme] = rank_pt
-    theme_rank2_sorted = sorted(list(theme_rank2.items()), key=lambda x: x[1], reverse=True)
+    theme_rank2_sorted = sorted(
+        list(theme_rank2.items()), key=lambda x: x[1], reverse=True
+    )
     theme_rank2_list = [theme for theme, pt in theme_rank2_sorted]
     print("モメンタム順位:", ",".join(theme_rank2_list))
     market_db = {}
@@ -205,8 +207,7 @@ def get_market_db():
 
 
 def update_market_db():
-    """マーケットDBを読み込んで最新に更新
-    """
+    """マーケットDBを読み込んで最新に更新"""
     market_db = load_pickle(MARKET_DB_PATH)
 
     theme_db = make_theme_data()
@@ -228,8 +229,7 @@ def update_market_db():
 
 
 def create_market_csv(market_db=None, shintakane_theme_csv=None):
-    """市場DBから表示用CSVデータにする
-    """
+    """市場DBから表示用CSVデータにする"""
     if shintakane_theme_csv is None:
         shintakane_theme_csv = []
     if not market_db:
@@ -257,17 +257,31 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
         try:
             db = market_db[db_name]
             trend_expr = make_stock_db.get_trend_template_expr(db)
-            distribution_days = ",".join([s[3:] for s in db["distribution_days"]])
-            followthrough_days = ",".join([s[3:] for s in db["followthrough_days"]])
+            distribution_days = ",".join(
+                [s[3:] for s in db["distribution_days"]]
+            )
+            followthrough_days = ",".join(
+                [s[3:] for s in db["followthrough_days"]]
+            )
             diff = db["spr_buygagher"] - db["spr_20"]
-            eval = step_func(diff, [-10, -5, 0, 5, 10], ["E", "D", "C", "B", "A"])
+            eval = step_func(
+                diff,
+                [-10, -5, 0, 5, 10],
+                ["E", "D", "C", "B", "A"]
+            )
             rows = []
-            rows.append([
-                market_name, db["rs_raw"], trend_expr,
-                distribution_days, followthrough_days, db["direction_signal"],
-                "%d,%d,%s" % (db["spr_20"], db["spr_5"], eval),
-                "%.1f,%.1f" % (db["rv_20"], db["rv_5"])
-            ])
+            rows.append(
+                [
+                    market_name,
+                    db["rs_raw"],
+                    trend_expr,
+                    distribution_days,
+                    followthrough_days,
+                    db["direction_signal"],
+                    "%d,%d,%s" % (db["spr_20"], db["spr_5"], eval),
+                    "%.1f,%.1f" % (db["rv_20"], db["rv_5"]),
+                ]
+            )
             return rows
         except KeyError:
             print("!!! 市場のDBデータ取得できず", db_name, market_name)
@@ -275,7 +289,18 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
 
     rows.append([])
     rows.append(["■市場"])
-    rows.append(["市場名", "RS", "トレンド", "ディストリビューション", "フォロースルー", "シグナル", "売り圧力レシオ(20,5)", "ローソク足ボラティリティ(20,5)"])
+    rows.append(
+        [
+            "市場名",
+            "RS",
+            "トレンド",
+            "ディストリビューション",
+            "フォロースルー",
+            "シグナル",
+            "売り圧力レシオ(20,5)",
+            "ローソク足ボラティリティ(20,5)",
+        ]
+    )
     rows.extend(get_db_row("topix", "TOPIX"))
     rows.extend(get_db_row("mothers", "マザーズ指数"))
     rows.extend(get_db_row("nikkei225", "日経225"))
@@ -283,11 +308,13 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
     rows.append([])
     rows.append(["■決算日"])
     import kessan
+
     kessan_csv = kessan.make_kessan_csv()
     rows.extend(kessan_csv)
     rows.append([])
     rows.append(["■適宜開示"])
     import disclosure
+
     disc_csv = disclosure.update_disclosure_all()
     rows.extend(disc_csv)
 
@@ -297,9 +324,9 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
 
     # GoogleDriveに非同期アップロード
     import threading
+
     threading.Thread(
-        target=googledrive.upload_csv,
-        args=(csv_path, "market_data"),
+        target=googledrive.upload_csv, args=(csv_path, "market_data"),
         daemon=False
     ).start()
     # googledrive.upload_csv(csv_path, "market_data")
@@ -318,7 +345,9 @@ def update_shintakane_theme(stocks, code_list):
             if theme not in themes_count:
                 themes_count[theme] = 0
             themes_count[theme] += 1
-    themes_count_sorted = sorted(list(themes_count.items()), key=lambda x: x[1], reverse=True)
+    themes_count_sorted = sorted(
+        list(themes_count.items()), key=lambda x: x[1], reverse=True
+    )
     for theme, count in themes_count_sorted[:30]:
         print(theme, count)
     return themes_count_sorted
@@ -339,17 +368,21 @@ def update_shintakane_theme_csv(stocks, today_list, past_list):
 
 
 def convert_python2():
-    """ Python2のpickleをPython3のpickleに変換
+    """Python2のpickleをPython3のpickleに変換
     一時的実行用
     """
     import make_stock_db
-    STOCKS_PICKLE_PY2 = os.path.join(DATA_DIR, "market_data", "market_db_py2.pickle")
+
+    STOCKS_PICKLE_PY2 = os.path.join(
+        DATA_DIR, "market_data", "market_db_py2.pickle"
+    )
     make_stock_db.convert_pickle_latin1_to_utf8(
-        STOCKS_PICKLE_PY2, MARKET_DB_PATH)
+        STOCKS_PICKLE_PY2, MARKET_DB_PATH
+    )
 
 
 def main():
-    market_db = update_market_db()
+    market_db = update_market_db()  # noqa: F841
     create_market_csv()
 
 
@@ -357,6 +390,6 @@ def test():
     convert_python2()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
     # test()
