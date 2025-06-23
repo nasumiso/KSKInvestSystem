@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# flake8: noqa E501
 
 import requests
 import time
@@ -10,7 +11,7 @@ from ks_util import *
 URL_YAHOO_TOP = "http://www.yahoo.co.jp/"
 URL_YAHOO_LOGIN = (
     "https://login.yahoo.co.jp/config/login?.src=www&.done=http://www.yahoo.co.jp"
-)
+) 
 URL_YAHOO_LOGIN_POST = "https://login.yahoo.co.jp/config/login?"
 URL_YAHOO_FINANCE_PORTFOLIO = (
     "http://info.finance.yahoo.co.jp/portfolio/display/?portfolio_id=pf_1"
@@ -19,8 +20,7 @@ URL_YAHOO_FINANCE_PORTFOLIO2 = (
     "http://info.finance.yahoo.co.jp/portfolio/display/?portfolio_id=pf_2"
 )
 
-# USER_AGENT_CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.125 Safari/537.36"
-USER_AGENT_CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.101 Safari/537.36"
+USER_AGENT_CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.101 Safari/537.36"  # noqa: E501
 ACCOUNT = ("srqys795@yahoo.co.jp", "zidane22")
 
 

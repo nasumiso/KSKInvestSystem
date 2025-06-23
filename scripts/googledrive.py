@@ -11,25 +11,24 @@
 
 使い方:
 スクリプトを直接実行することで、CSV ファイルを Google Drive に Google スプレッドシートとしてアップロードまたは更新できます。
-"""
+"""  # noqa: E501
 from ks_util import *
 
 # 外部ライブラリ GoogleDriveAPI
-from apiclient.discovery import build
-from apiclient.http import MediaFileUpload
+from apiclient.discovery import build  # type: ignore Pylanceが認識しない
+from apiclient.http import MediaFileUpload  # type: ignore
 
 # 外部ライブラリ 認証用API google-authへ移行すべきらしい
 import oauth2client
-from oauth2client import file, tools  # 追加
+from oauth2client import file, tools  # noqa: F401 使ってるんだが・・
 import httplib2
 
 # https://dev.classmethod.jp/articles/upload-csv-file-to-google-spreadsheet/
 # よりGoogleDriveAPIでCSVをアップロード
 # ---- 設定ファイル
-# CLIENT_SECRET_FILE = 'client_secret_152733296438-p7d1thkqdnmh2ip0r9695cdoisigdvjd.apps.googleusercontent.com.json'
 CLIENT_SECRET_FILE = os.path.join(
     DATA_DIR,
-    "googledrive/client_secret_152733296438-n9openvtegg2r6ej4mfdn8t4guf77ejs.apps.googleusercontent.com.json",
+    "googledrive/client_secret_152733296438-n9openvtegg2r6ej4mfdn8t4guf77ejs.apps.googleusercontent.com.json",  # noqa: E501
 )
 # CLIENT_SECRET_FILE = 'My Project-d080eb2b84c1.json'
 CREDENTIAL_FILE = os.path.join(DATA_DIR, "googledrive/drive_credential.json")
@@ -52,7 +51,9 @@ def get_drive_service():
     store = oauth2client.file.Storage(CREDENTIAL_FILE)
     creds = store.get()
     if not creds or creds.invalid:
-        flow = oauth2client.client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)
+        flow = oauth2client.client.flow_from_clientsecrets(
+            CLIENT_SECRET_FILE, SCOPES
+        )
         flow.user_agent = APPLICATION_NAME
         creds = oauth2client.tools.run_flow(flow, store)
     drive_service = build(
@@ -113,7 +114,9 @@ def upload_csv(csv_name, up_file_name):
 
 def main():
     # upload_csv('code_rank_data/code_rank.csv', "code_rank")
-    upload_csv(os.path.join(DATA_DIR, "code_rank_data/market_data.csv"), "market_data")
+    upload_csv(os.path.join(
+        DATA_DIR, "code_rank_data/market_data.csv"), "market_data"
+    )
 
 
 if __name__ == "__main__":
