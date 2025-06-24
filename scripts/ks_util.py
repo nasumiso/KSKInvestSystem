@@ -373,13 +373,21 @@ def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=
             if count >= retry:
                 eprint("!!! やっぱりだめみたいなので中止", url)
                 return {}
-            print(f"取得エラー({status_code})のため再度取得({count+1}回目)", url)
+            print(f"取得エラー({status_code})のためリトライ({count+1}回目)", url)
             time.sleep(count + 1)
             # リトライ実行(キャッシュは無効化)
             html, status_code = http_get_html(
-                url, use_cache=False, cache_dir=cache_dir, with_status=True
+                url,
+                use_cache=False,
+                cache_dir=cache_dir,
+                cache_fname=cache_fname,
+                with_status=True,
             )
         else:  # 成功した場合はリトライループを抜け返す
+            # TODO: 通信ブロック度合いによってはここで待機
+            # time.sleep(random.uniform(0.1, 0.4))
+            if count > 0:
+                print(f"リトライ取得成功({count+1}回目): {url}")
             break
     return html
 
