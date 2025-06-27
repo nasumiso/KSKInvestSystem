@@ -1,4 +1,11 @@
 #!/bin/bash
+echo "[$(date)] cron started" >> /tmp/cron_debug.log
+
+# スクリプトのあるディレクトリに移動（どこから実行してもOK）
+cd "$(dirname "$0")" || {
+  echo "ルート ディレクトリに移動できません: $SCRIPT_DIR"
+  exit 1
+}
 
 # logs フォルダの存在確認・なければ作成
 if [ ! -d "logs" ]; then
@@ -9,11 +16,7 @@ if [ ! -d "logs" ]; then
   }
 fi
 
-# スクリプトのあるディレクトリに移動（どこから実行してもOK）
-cd "$(dirname "$0")/scripts" || {
-  echo "scripts ディレクトリに移動できません: $SCRIPT_DIR/scripts"
-  exit 1
-}
+cd scripts
 
 # 仮想環境を有効化
 echo "仮想環境を有効化します"

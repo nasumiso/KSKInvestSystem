@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+ <!-- これを~/Library/LaunchAgents/ に配置 
+ launchctl start com.k_sohara.shintakane.cronで実行 
+ 編集したら、startをunload/loadして反映 -->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.k_sohara.shintakane.cron</string>
+    <!-- 実行スクリプトの絶対パス -->
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Users/k_sohara/Library/CloudStorage/Dropbox/document/shintakane/shintakane_cron.sh</string>
+    </array>
+
+    <!-- スリープ解除後にも実行する -->
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key><integer>19</integer>
+      <key>Minute</key><integer>00</integer>
+    </dict>
+
+    <!-- 平日（Monday=1, ..., Sunday=7） -->
+    <key>Weekday</key>
+    <integer>1</integer>
+    <key>Weekday</key>
+    <integer>2</integer>
+    <key>Weekday</key>
+    <integer>3</integer>
+    <key>Weekday</key>
+    <integer>4</integer>
+    <key>Weekday</key>
+    <integer>5</integer>
+
+    <!-- ログ出力 -->
+    <key>StandardOutPath</key>
+    <string>/tmp/shintakane_launchd_stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/shintakane_launchd_stderr.log</string>
+
+    <!-- スリープから復帰後に実行 -->
+    <key>StartOnMount</key>
+    <true/>
+
+    <!-- 環境変数の継承 -->
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+  </dict>
+</plist>
