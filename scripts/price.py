@@ -401,6 +401,9 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
         # index: [0]日付、[1]始値、[2]高値、[3]安値、[4]終値、前週比、前週比％、[7]売買高
         weekly_price_list = []  # 週次価格データ
         for ind, html in enumerate(htmls):
+            if not html:
+                print("!!! 週次データが取得できていない")
+                continue
             j = 0
             for m in re.finditer(
                 r'<th scope="row"><time datetime=".*?">(.*?)</time></th>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>',
@@ -1051,7 +1054,7 @@ def main():
     # となっているとき、取れていない
     # TODO: ローソク足ボラティリティの計算が疑問　終値の平均で割るところ
     # TODO: 1/5/20出来高変化率もほしい
-    code_list = ["6580"]
+    code_list = ["7386"]
     for code_s in code_list:
         print("-" * 30)
         print("%sの価格を更新します" % code_s)
