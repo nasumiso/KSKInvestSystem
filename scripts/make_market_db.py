@@ -37,7 +37,7 @@ def get_timedelta_today(fname):
     """
     # TODO: utilに移動
     if not os.path.exists(fname):
-        print("%sはありません" % fname)
+        log_print("%sはありません" % fname)
         return None
     stat = os.stat(fname)
     fdate = datetime.fromtimestamp(stat.st_mtime)
@@ -63,9 +63,9 @@ def get_prev_fname(fname, cur_day=datetime.today()):
         if os.path.exists(fname):
             break
     if count >= CountMax:
-        print("!!!直前のファイルが見つかりません", fname)
+        log_warning("直前のファイルが見つかりません", fname)
         return "", cur_day
-    print("直前のファイル:", Path(fname).relative_to(DATA_DIR))
+    log_print("直前のファイル:", Path(fname).relative_to(DATA_DIR))
     return fname, cur_day
 
 
@@ -101,7 +101,7 @@ INTERVAL_BACKUP = 3  # バックアップ日数
 
 def make_theme_data():  # market_db=None
     """テーマランクデータを作成"""
-    print("テーマランクデータを作成します")
+    log_print("テーマランクデータを作成します")
     theme_rank_list, prev_theme_rank_list, cach_date, _ = get_theme_rank_list()
 
     theme_rank_dict = {v: i + 1 for (i, v) in enumerate(theme_rank_list)}
@@ -114,14 +114,14 @@ def make_theme_data():  # market_db=None
         else:
             prev_rank = 31
         moment = -(rank - prev_rank)
-        print("  %s %d->%d" % (theme, prev_rank, rank))
+        log_print("  %s %d->%d" % (theme, prev_rank, rank))
         rank_pt = 31 - rank + moment
         theme_rank2[theme] = rank_pt
     theme_rank2_sorted = sorted(
         list(theme_rank2.items()), key=lambda x: x[1], reverse=True
     )
     theme_rank2_list = [theme for theme, pt in theme_rank2_sorted]
-    print("モメンタム順位:", ",".join(theme_rank2_list))
+    log_print("モメンタム順位:", ",".join(theme_rank2_list))
     market_db = {}
     market_db["theme_rank"] = theme_rank2_list
     market_db["access_date_theme_rank"] = cach_date
@@ -155,7 +155,7 @@ def make_db_common(code_s):
     db.update(priced_dict)
     pr = priced_dict.get("price", 0)
     pricew_dict = price.get_weekly_price_data(code_s, UPD_INTERVAL, [pr, pr, pr])
-    print("RS_RAW=", pricew_dict.get("rs_raw", 0))
+    log_print("RS_RAW=", pricew_dict.get("rs_raw", 0))
     db.update(pricew_dict)
     return db
 
@@ -223,7 +223,7 @@ def update_market_db():
     market_db.update(nasdaq_db)
 
     save_pickle(MARKET_DB_PATH, market_db)
-    print("MarketDB保存:", list(market_db.keys()))
+    log_print("MarketDB保存:", list(market_db.keys()))
     return market_db
 
 
@@ -275,7 +275,7 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
             )
             return rows
         except KeyError:
-            print("!!! 市場のDBデータ取得できず", db_name, market_name)
+            log_warning("市場のDBデータ取得できず", db_name, market_name)
             return []
 
     rows.append([])
@@ -339,12 +339,12 @@ def update_shintakane_theme(stocks, code_list):
         list(themes_count.items()), key=lambda x: x[1], reverse=True
     )
     for theme, count in themes_count_sorted[:30]:
-        print(theme, count)
+        log_print(theme, count)
     return themes_count_sorted
 
 
 def update_shintakane_theme_csv(stocks, today_list, past_list):
-    print("新高値テーマの取得")
+    log_print("新高値テーマの取得")
     today_counts = update_shintakane_theme(stocks, today_list)
     past_counts = update_shintakane_theme(stocks, past_list)
     csv = []
@@ -368,6 +368,9 @@ def convert_python2():
 
 
 def main():
+    # ロガーの初期化
+    logger = setup_logger('make_stock_db')
+    
     market_db = update_market_db()  # noqa: F841
     create_market_csv()
 

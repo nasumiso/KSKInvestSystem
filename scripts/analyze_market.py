@@ -37,7 +37,7 @@ def is_latest_info(url):
         now_dt = datetime.today()
         if now_dt.hour < 16:
             now_dt -= timedelta(1)
-        print(
+        log_print(
             "最新html:",
             cache_dt.isoformat()[:13],
             "必要",
@@ -52,7 +52,7 @@ def is_latest_info(url):
             # if now_dt.day > cache_dt.day:
             latest = True
     else:
-        print(cach_path + "はない")
+        log_print(cach_path + "はない")
     return latest
 
 
@@ -80,12 +80,12 @@ def get_n225_data():
                 price_list[i - 1][1] / price[1] >= 90
                 or price_list[i + 1][1] / price[1] >= 90
             ):
-                print(price, "は間違いデータ?")
+                log_print(price, "は間違いデータ?")
                 price_list[i][1] *= 100
                 price_list[i][2] *= 100
                 price_list[i][3] *= 100
                 price_list[i][4] *= 100
-                print("->", price_list[i])
+                log_print("->", price_list[i])
         except IndexError:
             pass
     return price_list
@@ -103,7 +103,7 @@ def get_dow_data():
     )
     if m and not is_all_price:
         price = float(m.group(1).replace(",", ""))
-        print("price:", price, price_list[0][1])
+        log_print("price:", price, price_list[0][1])
         if price != price_list[0][1]:
             price_list.insert(0, ["today", price])
     # print price_list[:3]
@@ -131,12 +131,12 @@ def analyze_market():
     # print dow_sp_ratio
 
     # 表示
-    print(
+    log_print(
         "%s日経平均:(10ma %+.1f%%) "
         % (n225_mark, (float)(n225_current - n225_ma10) * 100 / n225_ma10),
         end=" ",
     )
-    print(
+    log_print(
         "%d(%+.1f%%) %d "
         % (
             n225_current,
@@ -145,13 +145,13 @@ def analyze_market():
         ),
         end=" ",
     )
-    print("SP_RATIO(20,10)=(%.1f %.1f) R_VOL=%.2f" % tuple(n225_sp_ratio))
-    print(
+    log_print("SP_RATIO(20,10)=(%.1f %.1f) R_VOL=%.2f" % tuple(n225_sp_ratio))
+    log_print(
         "%sダウ　　:(10ma %+.1f%%) "
         % (dow_mark, (float)(dow_current - dow_ma10) * 100 / dow_ma10),
         end=" ",
     )
-    print(
+    log_print(
         "%d(%+.1f%%) %d "
         % (
             dow_current,
@@ -160,7 +160,7 @@ def analyze_market():
         ),
         end=" ",
     )
-    print("SP_RATIO(20,10)=(%.1f %.1f) R_VOL=%.2f" % tuple(dow_sp_ratio))
+    log_print("SP_RATIO(20,10)=(%.1f %.1f) R_VOL=%.2f" % tuple(dow_sp_ratio))
 
 
 def read_csv_table(csv_name):
@@ -204,7 +204,7 @@ def analyze_shintakane():
                 table = newhigh_list[i][1]
                 code_list.extend([int(row[1].split()[0]) for row in table])
             except IndexError as e:
-                print("新高値リスト不足:", i, len(newhigh_list))
+                log_print("新高値リスト不足:", i, len(newhigh_list))
         code_list = list(set(code_list))
         return code_list
 
@@ -212,7 +212,7 @@ def analyze_shintakane():
     week1_code_list = get_code_list(5)
     month1_code_list = get_code_list(20)
     # print month1_code_list
-    print(
+    log_print(
         "d,w,m=(%d %d %d)"
         % (len(day1_code_list), len(week1_code_list), len(month1_code_list))
     )
@@ -242,11 +242,11 @@ def analyze_shintakane():
     # print sector_newhigh_list["unknown"]
     def print_list(lst):
         for l in lst:
-            print(l, end=" ")
-        print()
+            log_print(l, end=" ")
+        log_print()
 
     # 銘柄名わからんのは更新取得する
-    print("-" * 10, "銘柄名不明リスト")
+    log_print("-" * 10, "銘柄名不明リスト")
     unknown_sector_list = sector_newhigh_list["unknown"][2][1]
     unknown_stockname_list = []
     for code in unknown_sector_list:
@@ -258,7 +258,7 @@ def analyze_shintakane():
             unknown_sector_list, tables=["master"], latest=True
         )
     # print unknown_stockname_list
-    print("-" * 10, "銘柄名不明リスト終了")
+    log_print("-" * 10, "銘柄名不明リスト終了")
 
     # unknownを除く
     sector_newhigh_list = {
@@ -279,19 +279,19 @@ def analyze_shintakane():
         newhigh_lst_m = val[2][1]
         for code in newhigh_lst_m:
             if "sector_detail" not in make_stock_db.get_stock_db(code):
-                print("%dの詳細セクター更新" % code)
+                log_print("%dの詳細セクター更新" % code)
                 unknown_sector_list.append(code)
     # print unknown_sector_list
     stocks = make_stock_db.update_db_rows(
         unknown_sector_list, tables=["master"], latest=True
     )
     # raise
-    print("=" * 30)
-    print("-" * 5, "セクター解析結果")
-    print("=" * 30)
+    log_print("=" * 30)
+    log_print("-" * 5, "セクター解析結果")
+    log_print("=" * 30)
     # 新高値セクター解析結果を表示
     for key, val in reversed(sorted(list(sector_newhigh_list.items()), key=comp_val)):
-        print(
+        log_print(
             key,
             val[0][0],
             val[1][0],
@@ -302,11 +302,14 @@ def analyze_shintakane():
             str(v) + make_stock_db.get_stock_db(v).get("stock_name", "n/a")
             for v in val[1][1]
         ]
-        print("  ", end=" ")
+        log_print("  ", end=" ")
         print_list(code_name)
 
 
 def main():
+    # ロガーの初期化
+    logger = setup_logger('shintakane')
+
     # args = ["market"]
     args = ["shintakane"]
     if "market" in args:

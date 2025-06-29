@@ -216,6 +216,9 @@ def make_kessan_csv():
 
 
 def main():
+    # ロガーの初期化
+    logger = setup_logger('make_stock_db')
+
     make_kessan_csv()
     # 決算DB作成テスト
     # import make_stock_db

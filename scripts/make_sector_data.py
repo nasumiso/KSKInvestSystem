@@ -19,10 +19,10 @@ PATH_STOCKS_PICKLE = "stock_data/stocks.pickle"
 
 def print_list(lst):
     def puts(str):
-        print(str, end=" ")
+        log_print(str, end=" ")
 
     [puts(l) for l in lst]
-    print()
+    log_print()
 
 
 class SectorHtmlParser(HTMLParser):
@@ -39,7 +39,7 @@ class SectorHtmlParser(HTMLParser):
         if tag == "table":
             self.tr_counter = 0
             if self.table_counter == 1:
-                print("start_table:", tag, attrs, self.getpos())
+                log_print("start_table:", tag, attrs, self.getpos())
         elif tag == "tr":
             self.td_counter = 0
             if self.table_counter == 1:  # 1個目のtableタグらしい
@@ -59,10 +59,10 @@ class SectorHtmlParser(HTMLParser):
         if tag == "table":
             self.table_counter += 1
             if self.table_counter == 1:
-                print("end:", tag, self.getpos(), self.table_counter)
+                log_print("end:", tag, self.getpos(), self.table_counter)
         elif tag == "tr":
             if self.table_counter == 1:
-                print("--- row_data[%d]:" % self.tr_counter)
+                log_print("--- row_data[%d]:" % self.tr_counter)
                 print_list(self.row_data[:-1])
                 self.table_data.append(self.row_data)
             self.tr_counter += 1
@@ -94,7 +94,7 @@ def parse_html(html):
     sector_table_org = parser.table_data
     sector_table = {}
     for row in sector_table_org[1:]:
-        print("-" * 5, row[0], row[2], "を解析..")
+        log_print("-" * 5, row[0], row[2], "を解析..")
         sector_count = int(row[2])
         html = http_get_html(row[8], cache_dir="stock_data/sector")
         code_s_list = []
@@ -107,9 +107,9 @@ def parse_html(html):
                 sector_count -= 1
         # print code_list, len(code_list)
         if sector_count != len(code_s_list):
-            print("!!! 取得していない? %d個" % (sector_count - len(code_s_list)))
+            log_warning(" 取得していない? %d個" % (sector_count - len(code_s_list)))
         sector_table[row[0]] = code_s_list
-        print(sector_table[row[0]])
+        log_print(sector_table[row[0]])
 
     return sector_table
 
@@ -155,17 +155,17 @@ def test_make_secotr_data():
     # 表示
     for sector_name, code_list in list(sector_table.items()):
         unknown_code_list = []
-        print("-" * 5, sector_name, "%d銘柄" % len(code_list))
+        log_print("-" * 5, sector_name, "%d銘柄" % len(code_list))
         for code_s in code_list:
             if code_s in stocks_db:
                 code_name = stocks_db[code_s].get("stock_name", "")
             else:
                 code_name = ""
             if code_name:
-                print("  %s %s" % (code_s, code_name))
+                log_print("  %s %s" % (code_s, code_name))
             else:
                 unknown_code_list.append(code_s)
-        print("  銘柄名不明:", unknown_code_list)
+        log_print("  銘柄名不明:", unknown_code_list)
 
 
 def update_sector_stockdb():
@@ -180,13 +180,13 @@ def update_sector_stockdb():
     for code_s in stocks.keys():
         stock = stocks[code_s]
         if "sector_detail" in stock:
-            print("Unknown:", code_s, stock["sector_detail"])
+            log_print("Unknown:", code_s, stock["sector_detail"])
             continue  # unkownとして更新する場合はコメントアウト
         # 詳細セクター名更新
         for sector_name, code_s_list in list(sector_tables.items()):
             if code_s in code_s_list:
                 stocks[code_s]["sector_detail"] = sector_name
-                print(
+                log_print(
                     "詳細セクター更新: %s%s <- %s"
                     % (code_s, stock["stock_name"], sector_name)
                 )
@@ -195,6 +195,9 @@ def update_sector_stockdb():
 
 
 def main():
+    # ロガーの初期化
+    logger = setup_logger('make_stock_db')
+
     # test_make_secotr_data()
     # print get_sector_detail(7270)
     update_sector_stockdb()

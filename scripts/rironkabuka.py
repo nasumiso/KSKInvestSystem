@@ -29,7 +29,7 @@ def get_gyoseki_data(code, cache=True):
     fname = "stock_data/kabutan_gyoseki_%d.txt" % code
 
     URL = "http://kabutan.jp/stock/finance?code=%d&mode=k" % code
-    print("----> %dのkabutanから業績情報を取得します・・" % code)
+    log_print("----> %dのkabutanから業績情報を取得します・・" % code)
     # text = http_get_html(URL, use_cache=cache, cache_fname=fname)
     text = http_get_html_with_retry(URL, use_cach=cache, cache_fname=fname)
     return text
@@ -42,11 +42,11 @@ def is_cache_latest(url, interval_day):
     cach_path = get_http_cachname(url)
     cach_path = os.path.join(KABUTAN_CACHE_DIR, cach_path)
     if not os.path.exists(cach_path):
-        print("キャッシュがない:", cach_path)
+        log_print("キャッシュがない:", cach_path)
         return False
     cach_date = get_file_datetime(cach_path)
     timedelta = datetime.today() - cach_date
-    print("  キャッシュ:", cach_date)
+    log_print("  キャッシュ:", cach_date)
     if timedelta.days < interval_day:
         return True
     else:
@@ -188,7 +188,7 @@ def get_from_kabutan3(html):
         r'<div class="title1">通期</div>.*?<table>(.*?)</table>', html, re.S
     )
     if not year_tbl_m:
-        print("!!! 通期テーブルが取得できない（フォーマット変更？）")
+        log_warning(" 通期テーブルが取得できない（フォーマット変更？）")
         return {}
     year_tbl_html = year_tbl_m.group(1)
     # 各期の数字をテーブルに
@@ -207,16 +207,16 @@ def get_from_kabutan3(html):
                 val = tbl[column - 1][row]
                 ind = column - 1
                 if val == "－":
-                    print("今季来季とも取得できないため0")
+                    log_print("今季来季とも取得できないため0")
                     val = "0"
                     ind = -1
                 else:
-                    print("来季の%s値が取得できないため今季" % name)
+                    log_print("来季の%s値が取得できないため今季" % name)
             else:
                 val = tbl[column][row]
                 ind = column
         except IndexError:
-            print("テーブルの値が取得できないため0")
+            log_print("テーブルの値が取得できないため0")
             val = "0"
         return val, ind
 
@@ -226,19 +226,19 @@ def get_from_kabutan3(html):
     keijo = float(keijo.replace(",", ""))
     if ind < -1:
         isKonki = True
-    print("経常利益:", keijo)
+    log_print("経常利益:", keijo)
     # 最終利益
     profit, ind = get_table_value(table, -1, 3, "最終利益")
     profit = float(profit.replace(",", ""))
     if ind < -1:
         isKonki = True
-    print("最終利益:", profit)
+    log_print("最終利益:", profit)
     # EPS
     eps, eps_column = get_table_value(table, -1, 4, "一株益")
     eps = float(eps.replace(",", ""))
     if ind < -1:
         isKonki = True
-    print("EPS:", eps)
+    log_print("EPS:", eps)
     # 発行株式数を取得
     issued_stock = 0
     if eps != 0:
@@ -252,13 +252,13 @@ def get_from_kabutan3(html):
             profit, _ = get_table_value(table, -2, 3, "最終利益")
             profit = float(profit.replace(",", ""))
             issued_stock = profit / eps
-    print("発行済株式数:", issued_stock)  # 単位: 百万株
+    log_print("発行済株式数:", issued_stock)  # 単位: 百万株
     # 修正EPS(経常利益から計算)
     if issued_stock > 0:
         mod_eps = 0.7 * keijo / issued_stock  # 単位: 円
     else:
         mod_eps = 0
-    print("修正EPS:", mod_eps)
+    log_print("修正EPS:", mod_eps)
 
     # ------------------------------
     # bps
@@ -269,7 +269,7 @@ def get_from_kabutan3(html):
         re.S,
     )
     if not year_tbl_m:
-        print("!!! 財務テーブルが取得できない（フォーマット変更？）")
+        log_warning(" 財務テーブルが取得できない（フォーマット変更？）")
         return {}
     year_tbl_html = year_tbl_m.group(1)
     table = []
@@ -281,11 +281,11 @@ def get_from_kabutan3(html):
         table.append(values)
     # 自己資本比率
     equity_ratio, _ = get_table_value(table, -1, 1, "equity_ratio")
-    print("自己資本比率:", equity_ratio)
+    log_print("自己資本比率:", equity_ratio)
     try:
         equity_ratio = float(equity_ratio.replace(",", ""))
     except ValueError as e:
-        print("!!! 自己資本比率が取得できない", equity_ratio)
+        log_warning(" 自己資本比率が取得できない", equity_ratio)
         return {}
 
     # 今季bps
@@ -296,16 +296,16 @@ def get_from_kabutan3(html):
         self_asset = table[-1][3]
         if self_asset != "－":
             if issued_stock > 0:
-                print("自己資本:", self_asset)
+                log_print("自己資本:", self_asset)
                 self_asset = float(self_asset.replace(",", ""))
                 bps = self_asset / issued_stock
-                print("BPSが未発表のため自己資本から計算")
+                log_print("BPSが未発表のため自己資本から計算")
         else:
             bps = table[-2][0]
             bps = float(bps.replace(",", ""))
     else:
         bps = float(bps.replace(",", ""))
-    print("BPS:", bps)
+    log_print("BPS:", bps)
 
     # ---- 価格
     # <span class="kabuka">2,478円</span>
@@ -314,7 +314,7 @@ def get_from_kabutan3(html):
         val = m.group(1)
         price = int(float(val.replace(",", "")))
     except (ValueError, AttributeError):
-        print("　株価取得できず", val)
+        log_print("　株価取得できず", val)
         price = 0
 
     dic = {}
@@ -368,7 +368,7 @@ def calc_theory_price(bps, eps, equity_ratio, price=0, preceding_eps=None):
             [0.01, 0.1, 0.33, 0.5, 0.66, 0.8, 1.0],
         )  # 比率
         if risk_correction < 1:
-            print("リスク補正:", risk_correction)
+            log_print("リスク補正:", risk_correction)
     theory_price = (asset_value + enterprise_value) * risk_correction
     theory_price_preceding = None
     if preceding_enterprise_value is not None:
@@ -440,13 +440,13 @@ def analyze_from_kabutan(code_s, upd=UPD_INTERVAL, stock=None):
                 dic["price"],
                 preceding_eps,
             )
-            print("理論株価:", theory_price)
+            log_print("理論株価:", theory_price)
             theory_price = theory_price + (dic["price"], dic["isKonki"])
             calced = True
         except TypeError:
             pass
     if not calced:
-        print("!!! 理論株価計算できず")
+        log_warning(" 理論株価計算できず")
         theory_price = (0, 0, 0, 0, 0, False)
     return theory_price
 
@@ -460,7 +460,7 @@ def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
         dict<str(key), any>(理論株価データ):
         key = rironkabuka, rironkabuka_up, rironkabuka_down, rironkabuka_preceding, access_date_rironkabuka ,code
     """
-    print("-" * 5, "理論株価の計算 upd:", upd)
+    log_print("-" * 5, "理論株価の計算 upd:", upd)
     tables = {}
     # 決算htmlを解析して理論株価に必要なデータを取得
     res = analyze_from_kabutan(code_s, upd, stock)
@@ -469,12 +469,12 @@ def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
     tables["rironkabuka_up"] = res[1]
     tables["rironkabuka_down"] = res[2]
     tables["rironkabuka_preceding"] = res[3]
-    print("=" * 5, "理論株価の計算完了", tables["rironkabuka"])
+    log_print("=" * 5, "理論株価の計算完了", tables["rironkabuka"])
     # 理論株価作成時間の格納
     cach_path = get_http_cachname(KABUTAN_URL_CODE % (str(code_s)))
     cach_path = os.path.join(KABUTAN_CACHE_DIR, cach_path)
     tables["access_date_rironkabuka"] = get_file_datetime(cach_path)
-    print("date:", tables["access_date_rironkabuka"])
+    log_print("date:", tables["access_date_rironkabuka"])
     # tables["code"] = code
     set_db_code(tables, code_s)
     tables["isKonki"] = res[5]
@@ -523,7 +523,7 @@ def calc_theory_pt(code_s, stock=None):
     theroy, theory_up, theory_down, theory_proceding = get_rironkabuka_kairi_fromprice(
         *theory_price[0:5]
     )  # theory_priceの最後の要素は不要
-    print(
+    log_print(
         "理論価格乖離: (%d %s %d %d)"
         % (
             theroy,
@@ -565,12 +565,12 @@ def calc_theory_pt(code_s, stock=None):
             / 100
         )
     else:
-        print("!!! 価格がないため理論PT計算できず")
+        log_warning(" 価格がないため理論PT計算できず")
     # thoery_total_pt = int(0.5*theory_pt + 0.35*theory_up_pt + 0.15*theory_down_pt)
-    print("理論価格pt: %d/%d" % (theory_pt, THEORY_MAX))
-    print("理論価格先行pt: %d" % (theory_proceding_pt))
-    print("理論価格上限pt: %d/%d" % (theory_up_pt, THEORY_UP_MAX))
-    print("理論価格下限pt: %d/%d" % (theory_down_pt, THEORY_DOWN_MAX))
+    log_print("理論価格pt: %d/%d" % (theory_pt, THEORY_MAX))
+    log_print("理論価格先行pt: %d" % (theory_proceding_pt))
+    log_print("理論価格上限pt: %d/%d" % (theory_up_pt, THEORY_UP_MAX))
+    log_print("理論価格下限pt: %d/%d" % (theory_down_pt, THEORY_DOWN_MAX))
     return theory_pt + theory_proceding_pt + theory_up_pt + theory_down_pt
 
 
@@ -610,6 +610,9 @@ def get_rironkabuka_expr2(record, price):
 
 
 def main():
+    # ロガーの初期化
+    logger = setup_logger('make_stock_db')
+
     # TODO: 理論株価PTや進捗率はDB保持にしたほうがよいかも
     # 3920, 4493, 4595, 2389, 7270, 5032, 6096, 4169,6195,7808,2410,9107,9264
     code_list = ["9343"]
@@ -622,7 +625,7 @@ def main():
         # calc_theory_pt(code, stock)
 
         # print get_rironkabuka_expr(stock)
-        print(get_rironkabuka_expr2(record, stock.get("price")))
+        log_print(get_rironkabuka_expr2(record, stock.get("price")))
 
 
 if __name__ == "__main__":

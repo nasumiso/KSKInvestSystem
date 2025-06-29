@@ -15,21 +15,182 @@ import time
 
 import requests  # 外部ライブラリ
 from functools import reduce
+import logging
+import logging.handlers
 
 # プロジェクトルートとデータパスの定義
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))  # ks_util.py の場所
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 DATA_DIR = os.path.join(ROOT_DIR, "data")
+LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 
 # ==================================================
 # ユーティリティ
 # ==================================================
-UPD_CACHE = 0  # 現在DB上のデータ: フsァイルキャッシュがあれば使う
+UPD_CACHE = 0  # 現在DB上のデータ: ファイルキャッシュがあれば使う
 UPD_INTERVAL = (
     1  # 適度に最新なデータ: 間隔が開けば更新、開いてなければファイルキャッシュを使う
 )
 UPD_REEVAL = 2  # INTERVALと同じだがDBキャッシュは使わず再評価はしてほしい
 UPD_FORCE = 3  # 本当に最新なデータ: 間隔に関わらず更新、開いてなくてもファイルキャッシュを使わない
+
+
+# ==================================================
+# ログ管理システム
+# ==================================================
+_logger = None
+
+
+def setup_logger(script_name=None):
+    """
+    アプリケーション用のロガーを設定する
+
+    Args:
+        script_name: スクリプト名（ログファイル名の一部に使用）
+
+    Returns:
+        logger: 設定されたloggerオブジェクト
+    """
+    global _logger
+
+    if _logger is not None:
+        return _logger
+
+    # logsディレクトリの作成
+    os.makedirs(LOGS_DIR, exist_ok=True)
+
+    # ロガーの作成
+    logger_name = script_name or "ks_invest_system"
+    _logger = logging.getLogger(logger_name)
+    _logger.setLevel(logging.DEBUG)
+
+    # すでにハンドラーが設定されている場合はスキップ
+    if _logger.handlers:
+        return _logger
+
+    # フォーマッターの作成
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s",  # - %(name)s
+        datefmt="%m/%d %H:%M:%S",  # %Y-%m-%d
+    )
+
+    # 日付ベースのファイル名でローテーティングファイルハンドラーを作成
+    today = datetime.now().strftime("%Y%m%d")
+    log_filename = os.path.join(LOGS_DIR, f"{logger_name}_{today}.log")
+
+    # 7日分のログを保持するローテーティングハンドラー
+    # 追記になることに注意
+    file_handler = logging.handlers.TimedRotatingFileHandler(
+        log_filename.replace(f"_{today}", ""),
+        when="D",
+        interval=1,
+        backupCount=7,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+
+    # コンソールハンドラー（INFO以上のみ）
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+
+    # ハンドラーをロガーに追加
+    _logger.addHandler(file_handler)
+    _logger.addHandler(console_handler)
+
+    return _logger
+
+
+def get_logger():
+    """
+    設定済みのロガーを取得する。未設定の場合は自動で設定する。
+    """
+    if _logger is None:
+        return setup_logger()
+    return _logger
+
+
+def log_print(*args, **kwargs):
+    """
+    print文の代替関数。常にINFOレベルでログ出力する。
+
+    Args:
+        *args: print関数と同じ引数
+        **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
+    """
+    logger = get_logger()
+
+    # 引数を文字列に変換してメッセージを構築
+    message_parts = []
+    for arg in args:
+        message_parts.append(str(arg))
+
+    message = kwargs.get("sep", " ").join(message_parts)
+    logger.info(message)
+
+
+def log_warning(*args, **kwargs):
+    """
+    WARNING レベルでログ出力する関数。
+
+    Args:
+        *args: print関数と同じ引数
+        **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
+    """
+    logger = get_logger()
+
+    # 引数を文字列に変換してメッセージを構築
+    message_parts = []
+    for arg in args:
+        message_parts.append(str(arg))
+
+    message = kwargs.get("sep", " ").join(message_parts)
+    logger.warning(message)
+
+
+def log_error(*args, **kwargs):
+    """
+    ERROR レベルでログ出力する関数。
+
+    Args:
+        *args: print関数と同じ引数
+        **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
+    """
+    logger = get_logger()
+
+    # 引数を文字列に変換してメッセージを構築
+    message_parts = []
+    for arg in args:
+        message_parts.append(str(arg))
+
+    message = kwargs.get("sep", " ").join(message_parts)
+    logger.error(message)
+
+
+def log_debug(*args, **kwargs):
+    """
+    DEBUG レベルでログ出力する関数。
+
+    Args:
+        *args: print関数と同じ引数
+        **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
+    """
+    logger = get_logger()
+
+    # 引数を文字列に変換してメッセージを構築
+    message_parts = []
+    for arg in args:
+        message_parts.append(str(arg))
+
+    message = kwargs.get("sep", " ").join(message_parts)
+    logger.debug(message)
+
+
+# 下位互換性のためのエイリアス
+def smart_print(*args, **kwargs):
+    """log_printのエイリアス（下位互換性のため）"""
+    log_print(*args, **kwargs)
 
 
 def ux_cmd_head(str, line=10):
@@ -40,12 +201,12 @@ def print_dict(dict, ex_key=[]):
     """
     dictのキー要素を表示
     """
-    print("----------")
+    log_print("----------")
     for k in list(dict.keys()):
         if k in ex_key:
             continue
-        print(k, ": ", dict[k])
-    print("----------")
+        log_print(k, ": ", dict[k])
+    log_print("----------")
 
 
 def memoize(func):
@@ -55,7 +216,7 @@ def memoize(func):
         try:
             return cache[args]
         except KeyError:
-            print("no_memo:", args)
+            log_print("no_memo:", args)
             value = func(*args)
             cache[args] = value
             return value
@@ -65,7 +226,7 @@ def memoize(func):
 
 def eprint(*args, **kwargs):
     """標準エラー出力にメッセージを出力する"""
-    print("ERROR:", *args, file=sys.stderr, **kwargs)
+    log_warning("ERROR:", *args)
 
 
 # ==================================================
@@ -77,13 +238,13 @@ def backup_file(fname, day=0):
     fnameの日付が今日からday日間経過したものを作成
     """
     if not os.path.exists(fname):
-        print("backup対象ファイルがありません:", fname)
+        log_print("backup対象ファイルがありません:", fname)
         return
     stat = os.stat(fname)
     date = datetime.fromtimestamp(stat.st_mtime)
     today = datetime.today()
     delta = today - date
-    print("%sは%s日前" % (fname, delta.days))
+    log_print("%sは%s日前" % (fname, delta.days))
     backup_fname = "%s_%02d%02d%02d%s" % (
         os.path.splitext(fname)[0],
         date.year - 2000,
@@ -93,7 +254,7 @@ def backup_file(fname, day=0):
     )
     if not os.path.exists(backup_fname):
         if delta.days >= day:
-            print(
+            log_print(
                 "バックアップ:%s(%d) => %s"
                 % (fname, os.path.getsize(fname), backup_fname)
             )
@@ -101,7 +262,7 @@ def backup_file(fname, day=0):
         else:
             pass
     else:
-        print(backup_fname + "にバックアップ済み")
+        log_print(backup_fname + "にバックアップ済み")
     return backup_fname
 
 
@@ -150,15 +311,15 @@ def chdir(path):
     """
     original_dir = os.getcwd()
     try:
-        print(f"実行パス設定: {original_dir} -> {path}")
+        log_print(f"実行パス設定: {original_dir} -> {path}")
         os.chdir(path)
         yield
     except Exception as e:
-        print(f"Error changing directory to {path}: {e}")
+        log_print(f"Error changing directory to {path}: {e}")
         raise
     finally:
         if os.getcwd() != original_dir:
-            print(f"元のパスに戻します: {original_dir}")
+            log_print(f"元のパスに戻します: {original_dir}")
             os.chdir(original_dir)
 
 
@@ -237,13 +398,15 @@ def use_requests_session():
     """スレッドごとにSessionをセットするコンテキストマネージャ"""
     session = requests.Session()
     token = _current_session.set(session)  # 現在のセッションを設定
-    print(f"[{threading.current_thread().name}] コンテキストセッションを開始: {token}")
+    log_print(
+        f"[{threading.current_thread().name}] コンテキストセッションを開始: {token}"
+    )
     try:
         yield session  # 必要なら明示的に使えるようにもする
     finally:
         session.close()
         _current_session.reset(token)  # セッション終了＋ContextVarを元に戻す
-        print(
+        log_print(
             f"[{threading.current_thread().name}] コンテキストセッションを終了: {token}"
         )
 
@@ -253,13 +416,13 @@ def use_requests_global_session():
     global _global_session
     session = requests.Session()
     _global_session = session
-    print(f"[{threading.current_thread().name}] グローバルセッションを開始")
+    log_print(f"[{threading.current_thread().name}] グローバルセッションを開始")
     try:
         yield session  # 必要ならwith文内で明示的にも使える
     finally:
         session.close()
         _global_session = None
-        print(f"[{threading.current_thread().name}] グローバルセッションを終了")
+        log_print(f"[{threading.current_thread().name}] グローバルセッションを終了")
 
 
 def get_http_cachname(url):
@@ -298,7 +461,7 @@ def http_get_html(
     if cache_dir:
         cache_name = os.path.join(cache_dir, cache_name)
     if use_cache and os.path.exists(cache_name):
-        print(
+        log_print(
             "  htmlをファイルキャッシュから取得します",
             Path(cache_name).relative_to(DATA_DIR),
         )
@@ -308,7 +471,7 @@ def http_get_html(
         return html
 
     # ---- キャッシュがない場合は通信で取得
-    print("  htmlを通信で取得します..", end=" ")
+    log_print("  htmlを通信で取得します..")
     headers = {"User-Agent": USER_AGENT_CHROME}
     # headers["Connection"] = "Keep-Alive"
     with sema:  # セマフォを使って同時実行数を制限
@@ -317,34 +480,34 @@ def http_get_html(
             session = _global_session
             if session is not None:
                 req_get = session.get
-                print("グローバルセッションを使用")
+                log_print("グローバルセッションを使用")
             else:
                 # 2. ContextVarセッションが有効ならそれを使う
                 session = _current_session.get()
                 if session is not None:
                     req_get = session.get
-                    print("ContextVarセッションを使用")
+                    log_print("ContextVarセッションを使用")
                 else:
                     # 3. どちらもなければrequests.getを直接使う
                     req_get = requests.get
-                    print("単独セッションを使用")
+                    log_print("単独セッションを使用")
             res = req_get(url, headers=headers, cookies=cookies, timeout=5)
         except requests.exceptions.ConnectionError as e:
-            eprint("!!! 接続失敗")
-            print(e)
+            log_warning("接続失敗")
+            log_print(e)
             if with_status:
                 return "", res.status_code if "res" in locals() else 500
             else:
                 return ""
         if res.encoding != "utf-8":
-            print("html_encoding:", res.encoding, "encoding:", encoding)
+            log_print("html_encoding:", res.encoding, "encoding:", encoding)
         # htmlをutf8で取得
         # html = r.text.encode(encoding)
         html = res.text  # python3ではエンコード済みのテキストが取得される
         # メタ指定での文字コードをutf8に
         # html = html.replace("charset=shift_jis", "charset=utf-8")
 
-        print(
+        log_print(
             "  取得したhtmlをファイルキャッシュに書き込みます:",
             Path(cache_name).relative_to(DATA_DIR),
         )
@@ -371,9 +534,9 @@ def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=
         # if "Service Temporarily Unavailable" in html:
         if not (200 <= status_code < 300):  # HTTPステータスコードが200番台は成功
             if count >= retry:
-                eprint("!!! やっぱりだめみたいなので中止", url)
+                log_warning("やっぱりだめみたいなので中止", url)
                 return {}
-            print(f"取得エラー({status_code})のためリトライ({count+1}回目)", url)
+            log_print(f"取得エラー({status_code})のためリトライ({count+1}回目)", url)
             time.sleep(count + 1)
             # リトライ実行(キャッシュは無効化)
             html, status_code = http_get_html(
@@ -387,7 +550,7 @@ def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=
             # TODO: 通信ブロック度合いによってはここで待機
             # time.sleep(random.uniform(0.1, 0.4))
             if count > 0:
-                print(f"リトライ取得成功({count+1}回目): {url}")
+                log_print(f"リトライ取得成功({count+1}回目): {url}")
             break
     return html
 
@@ -395,18 +558,18 @@ def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=
 def http_post_html(url, use_cache=True, data={}, cookies={}, encoding="utf-8"):
     cache_name = "post_" + get_http_cachname(url)
     if use_cache and os.path.exists(cache_name):
-        print("html(post)をファイルキャッシュから取得します", cache_name)
+        log_print("html(post)をファイルキャッシュから取得します", cache_name)
         html = file_read(cache_name)
         return html, ""
 
     headers = {"User-Agent": USER_AGENT_CHROME}
     r = requests.post(url, headers=headers, data=data, cookies=cookies)
     if r.encoding != "utf-8":
-        print("encoding:", r.encoding, "encoding:", encoding)
+        log_print("encoding:", r.encoding, "encoding:", encoding)
     html = r.text.encode(encoding)
     # html = html.replace("charset=UTF-8", "charset=euc-jp")
 
-    print("htmlをファイルキャッシュに書き込みます:", cache_name)
+    log_print("htmlをファイルキャッシュに書き込みます:", cache_name)
     file_write(cache_name, html)
     return html, r.cookies
 
@@ -415,20 +578,20 @@ def http_post_html(url, use_cache=True, data={}, cookies={}, encoding="utf-8"):
 # pickleデータベースユーティリティ
 # ==================================================
 def save_pickle(fname, content):
-    print("%sにpickleセーブ" % fname)
+    log_print("%sにpickleセーブ" % fname)
     with open(fname, "wb") as f:
         # 高速化のためプロトコル指定
         pickle.dump(content, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def load_pickle(fname):
-    print("%sからpickleロード" % fname)
+    log_print("%sからpickleロード" % fname)
     try:
         f = open(fname, "rb")
         dat = pickle.load(f)
         f.close()
     except IOError as e:
-        print(e)
+        log_print(e)
         return {}
     return dat
 
@@ -437,13 +600,13 @@ memoized_load_pickle = memoize(load_pickle)  # noqa: E305
 
 
 def load_file(fname, tb="r"):
-    print("%sのfileロード" % fname)
+    log_print("%sのfileロード" % fname)
     try:
         f = open(fname, tb)
         dat = f.read()
         f.close()
     except IOError as e:
-        print(e)
+        log_print(e)
         return ""
     return dat
 
@@ -460,9 +623,9 @@ def get_db_code(rec: dict) -> str:
     if "code_s" not in rec:
         if "code" in rec:
             code = rec["code"]
-            print("!!!strコードがないためintから取得:", code)  # いつかなくなるはず
+            log_warning("strコードがないためintから取得:", code)  # いつかなくなるはず
             return format(code, "04d")
         else:
-            print("!!!コード取得できない", rec)
+            log_warning("コード取得できない", rec)
             return ""
     return rec["code_s"]

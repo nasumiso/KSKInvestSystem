@@ -32,7 +32,7 @@ def simple_decorator(decorator):
 @simple_decorator
 def my_simple_logging_decorator(func):
     def you_will_never_see_this_name(*args, **kwargs):
-        print("calling {}".format(func.__name__))
+        log_print("calling {}".format(func.__name__))
         return func(*args, **kwargs)
 
     return you_will_never_see_this_name
@@ -47,7 +47,7 @@ def double(x):
 def test_simple_decorator():
     assert double.__name__ == "double", double.__name__
     assert double.__doc__ == "Doubles a number.", double.__doc__
-    print(double(155))
+    log_print(double(155))
 
 
 # ---------------------------------------------------------
@@ -55,9 +55,9 @@ def test_simple_decorator():
 
 def my_simple_decorator2(func):
     def _decorator(*args, **kwargs):
-        print("call start")
+        log_print("call start")
         ret = func(*args, **kwargs)
-        print("call end")
+        log_print("call end")
         return ret
 
     return _decorator
@@ -65,22 +65,22 @@ def my_simple_decorator2(func):
 
 def my_simple_decorator(func):
     def _decorator(x):
-        print("call start")
+        log_print("call start")
         ret = func(x)
-        print("call end")
+        log_print("call end")
         return ret
 
-    print(_decorator)
+    log_print(_decorator)
     return _decorator
 
 
 def my_double(x):
-    print(2 * x)
+    log_print(2 * x)
     return 2 * x
 
 
 def my_mul(x, y):
-    print("my_mul: ", my_mul.__name__, my_mul.__doc__, my_mul.__dict__)
+    log_print("my_mul: ", my_mul.__name__, my_mul.__doc__, my_mul.__dict__)
     return x * y
 
 
@@ -172,7 +172,7 @@ def add(a, b):
 
 def test_curried():
     add1 = add(1)
-    print(add1(2))
+    log_print(add1(2))
 
 
 # ---------------------------------------------------------
@@ -191,9 +191,9 @@ class debug:
         if self.aspects & WHAT_TO_DEBUG:
 
             def newf(*args, **kwds):
-                print(f.__name__, args, kwds, file=sys.stderr)
+                log_print(f.__name__, args, kwds, file=sys.stderr)
                 f_result = f(*args, **kwds)
-                print(f.__name__, "returned", f_result, file=sys.stderr)
+                log_print(f.__name__, "returned", f_result, file=sys.stderr)
                 return f_result
 
             newf.__doc__ = f.__doc__
@@ -204,7 +204,7 @@ class debug:
 
 @debug(["io"])
 def prn(x):
-    print(x)
+    log_print(x)
 
 
 @debug(["core"])
@@ -300,7 +300,7 @@ def dump_args(func):
     fname = func.__name__
 
     def echo_func(*args, **kwargs):
-        print(
+        log_print(
             fname,
             ":",
             ", ".join(
@@ -315,7 +315,7 @@ def dump_args(func):
 
 @dump_args
 def f1(a, b, c):
-    print(a + b + c)
+    log_print(a + b + c)
 
 
 def test_dumpargs():
@@ -327,6 +327,9 @@ def test_dumpargs():
 
 
 def main():
+    # ロガーの初期化
+    logger = setup_logger('shintakane')
+
     # test_simple_decorator()
     # test_my_simple_decorator()
     # test_curried()

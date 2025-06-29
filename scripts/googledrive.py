@@ -50,7 +50,7 @@ FILE_DICT = {
 def get_drive_service():
     store = oauth2client.file.Storage(CREDENTIAL_FILE)
     if not store:
-        print("!!! GoogleDrive認証ファイルがありません。", CREDENTIAL_FILE)
+        log_warning(" GoogleDrive認証ファイルがありません。", CREDENTIAL_FILE)
         return None
     creds = store.get()
     if not creds or creds.invalid:
@@ -64,7 +64,7 @@ def get_drive_service():
 
 
 def upload_csv_new(csv_name, up_foler_name):
-    print("%sをGoogleDriveに新規アップロードします" % csv_name)
+    log_print("%sをGoogleDriveに新規アップロードします" % csv_name)
     drive_service = get_drive_service()
 
     folder_id = FOLDER_DICT[up_foler_name]
@@ -82,21 +82,21 @@ def upload_csv_new(csv_name, up_foler_name):
         .execute()
     )
 
-    print("Upload Complete File ID: %s %s" % (fname, uploaded_file.get("id")))
+    log_print("Upload Complete File ID: %s %s" % (fname, uploaded_file.get("id")))
 
 
 def upload_csv(csv_name, up_file_name):
-    print("%sをGoogleDriveに更新アップロードします" % csv_name)
+    log_print("%sをGoogleDriveに更新アップロードします" % csv_name)
     drive_service = get_drive_service()
 
     file_id = FILE_DICT[up_file_name]
     try:
         file_metadata = drive_service.files().get(fileId=file_id).execute()
     except httplib2.ResponseNotReady as e:
-        print("!!! GoogleDrive接続エラー", e)
+        log_warning(" GoogleDrive接続エラー", e)
         return
     del file_metadata["id"]
-    print("meta:", file_metadata)
+    log_print("meta:", file_metadata)
 
     media = MediaFileUpload(csv_name, mimetype="text/csv", resumable=True)
     updated_file = (
@@ -110,10 +110,13 @@ def upload_csv(csv_name, up_file_name):
         .execute()
     )
 
-    print("Upload Complete File ID: %s" % updated_file.get("id"))
+    log_print("Upload Complete File ID: %s" % updated_file.get("id"))
 
 
 def main():
+    # ロガーの初期化
+    logger = setup_logger('shintakane')
+
     # upload_csv('code_rank_data/code_rank.csv', "code_rank")
     upload_csv(os.path.join(DATA_DIR, "code_rank_data/market_data.csv"), "market_data")
 
