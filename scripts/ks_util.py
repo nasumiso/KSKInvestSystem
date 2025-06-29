@@ -75,13 +75,13 @@ def setup_logger(script_name=None):
     )
 
     # 日付ベースのファイル名でローテーティングファイルハンドラーを作成
-    today = datetime.now().strftime("%Y%m%d")
-    log_filename = os.path.join(LOGS_DIR, f"{logger_name}_{today}.log")
+    # today = datetime.now().strftime("%Y%m%d")
+    log_filename = os.path.join(LOGS_DIR, f"{logger_name}.log")
 
     # 7日分のログを保持するローテーティングハンドラー
     # 追記になることに注意
     file_handler = logging.handlers.TimedRotatingFileHandler(
-        log_filename.replace(f"_{today}", ""),
+        log_filename,
         when="D",
         interval=1,
         backupCount=7,
@@ -90,14 +90,15 @@ def setup_logger(script_name=None):
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 
-    # コンソールハンドラー（INFO以上のみ）
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
-
     # ハンドラーをロガーに追加
     _logger.addHandler(file_handler)
-    _logger.addHandler(console_handler)
+
+    # コンソールハンドラー（ターミナルからの実行のみ）
+    if sys.stdout.isatty():
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        # console_handler.setFormatter(formatter)  # コンソールはデフォルトフォーマッターで
+        _logger.addHandler(console_handler)
 
     return _logger
 
@@ -311,7 +312,7 @@ def chdir(path):
     """
     original_dir = os.getcwd()
     try:
-        log_print(f"実行パス設定: {original_dir} -> {path}")
+        log_print(f"(chdir)実行パス設定: {original_dir} -> {path}")
         os.chdir(path)
         yield
     except Exception as e:
@@ -319,7 +320,7 @@ def chdir(path):
         raise
     finally:
         if os.getcwd() != original_dir:
-            log_print(f"元のパスに戻します: {original_dir}")
+            log_print(f"(chdir)元のパスに戻します: {original_dir}")
             os.chdir(original_dir)
 
 

@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timedelta
 import csv
 import shutil
+import traceback
 
 import make_stock_db as stock_db
 import make_market_db
@@ -1126,25 +1127,22 @@ def update_pf_kessan_db(stocks):
 
 
 def main():
-    """
-    # /Users/k_sohara/Library/LaunchAgents/launchd_shintakane.plist
-    # launchctl load ~/Library/LaunchAgents/launchd_shintakane.plist
-    # でdemon実行してます
-    """
-
-    args = "update analyze"
+    """メイン関数"""
+    # raise NotImplementedError("main関数は実装されていません")
+    # args = "update analyze"
     # args = "update"
     # args = "analyze"
     # args = "udpate_kessan_db"
     # TODO: 新高値更新タイミングをタグで
     # TODO: 業績発表日、反映のらぐのため一日余裕もたせる
     # TODO: 今Qが通期予想伸びより良いも考慮（進捗率的なもの進捗率を見たほうが正確ではある）
+    args = "update analyze"
     args += " " + " ".join(sys.argv[1:])
     log_print("args:", args)
-    if "launchd" in args:
-        if not wait_connect():  # 接続確立待ち
-            raise "!!! ネット接続できませんでした"
-        args = "update analyze"
+    # if "launchd" in args:
+    #     if not wait_connect():  # 接続確立待ち
+    #         raise "!!! ネット接続できませんでした"
+    #     args = "update analyze"
     # 新高値銘柄一覧の最新情報を取得する
     if "update" in args:
         update_todays_kessan()  # テストコメントアウト
@@ -1176,7 +1174,6 @@ def main():
 # 直近決算も更新候補にする
 # https://kabutan.jp/warning/?mode=4_2&market=0&capitalization=-1&stc=&stm=0&page=1
 # https://kabutan.jp/warning/?mode=4_3
-# https://kabutan.jp/warning/?mode=5_1
 # TODO: 週足で過去イチの出来高銘柄は、already_listから選んでタグ付けしたい
 if __name__ == "__main__":
     # ロガーの初期化
@@ -1189,10 +1186,21 @@ if __name__ == "__main__":
             "--quiet", action="store_true", help="標準出力(print)を抑制する"
         )
         args = parser.parse_args()
-        if args.quiet:
-            log_print("標準出力を抑制します")
-            with suppress_stdout():
+        log_print("=" * 30)
+        log_print("shintakane.pyを実行します", args)
+        log_print("=" * 30)
+        try:
+            if args.quiet:
+                log_print("標準出力を抑制します")
+                with suppress_stdout():
+                    main()
+                log_print("抑制終了")
+            else:
                 main()
-            log_print("抑制終了")
-        else:
-            main()
+        except Exception as e:
+            log_print("エラー発生", e)
+            logger.exception(
+                "Unhandled exception occurred:\n%s", traceback.format_exc()
+            )
+            # raise e
+            exit(1)

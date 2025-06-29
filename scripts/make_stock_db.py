@@ -7,6 +7,7 @@ import pickle
 import csv
 from contextlib import contextmanager
 import io
+import traceback
 
 from ks_util import *
 import gyoseki
@@ -1218,6 +1219,7 @@ def convert_python2():
 # ==================================================
 def main():
     """株価DBを更新するメインスクリプト"""
+    # raise NotImplementedError("main関数は実装されていません")
 
     import argparse
 
@@ -1226,6 +1228,10 @@ def main():
         "command", type=str, nargs="?", default="list_all_db", help="実行するコマンド"
     )
     args = parser.parse_args()
+    log_print("=" * 30)
+    log_print("make_stock_db.pyを実行します", args)
+    log_print("=" * 30)
+
     command = args.command
     # command = "edit"
     # command = "backup"
@@ -1318,13 +1324,16 @@ if __name__ == "__main__":
     # TODO: 監視タグも
     # TODO: セクターのRSランキングを作成し、参照したい オニールのIBD
     # https://kabutan.jp/warning/?mode=9_1&market=0&capitalization=-1&stc=zenhiritsu&stm=1&col=zenhiritsu
-    # やりたいが保留
-    # カレントディレクトリをこの.pyの場所に
     # ロガーの初期化
     logger = setup_logger("make_stock_db")
-
-    path = os.path.abspath(os.path.dirname(__file__))
-    os.chdir(path)
-    cwd = os.getcwd()
-    main()
-    os.chdir(cwd)
+    # カレントディレクトリをこの.pyの場所に
+    with chdir(os.path.abspath(os.path.dirname(__file__))):
+        try:
+            main()
+        except Exception as e:
+            log_print("エラー発生", e)
+            logger.exception(
+                "Unhandled exception occurred:\n%s", traceback.format_exc()
+            )
+            # raise e
+            exit(1)  # エラー終了
