@@ -68,7 +68,7 @@ def parse_disclosure_html(html):
         code_s = m.group(2)
         stock_name = m.group(1)
     if not code_s:
-        print("!!!コードを取得できません（株探フォーマット変更？）")
+        log_warning("コードを取得できません（株探フォーマット変更？）")
         return {}
     try:
         for m in re.finditer(
@@ -111,8 +111,8 @@ def parse_disclosure_html(html):
                 record["heading"] = heading
                 record_list.append(record)
     except AttributeError:
-        print("!!! 適宜開示htmlパース失敗: 株探フォーマット変更？")
-    print("%sの適宜開示データ%d個追加" % (code_s, len(record_list)))
+        log_warning(" 適宜開示htmlパース失敗: 株探フォーマット変更？")
+    log_print("%sの適宜開示データ%d個追加" % (code_s, len(record_list)))
     return record_list
 
 
@@ -217,6 +217,9 @@ def update_disclosure_all(upd=UPD_INTERVAL):
 
 
 def main():
+    # ロガーの初期化
+    logger = setup_logger('shintakane')
+
     # TODO: 特集(神戸物産)、5%(スノーピーク)、修正(アドベンチャー)、決算(メディアドゥ)は
     # 開示のところにしたい
     upd = UPD_INTERVAL  # UPD_INTERVAL,UPD_CACHE

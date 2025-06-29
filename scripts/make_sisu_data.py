@@ -139,7 +139,7 @@ def parse_yahoo_us(text):
 
 
 def make_price_list(price_list):
-    print("価格リストを作成します", len(price_list))
+    log_print("価格リストを作成します", len(price_list))
     price_list2 = []
     itr = iter(reversed(price_list))
     # for price in reversed(price_list):
@@ -163,10 +163,10 @@ def make_price_list(price_list):
                         price = next(itr)
                     except StopIteration:
                         if w <= 34:
-                            print("データ終了補充", price)
+                            log_print("データ終了補充", price)
                             dt = datetime.strptime("%04d%02d1" % (y, w), "%Y%W%w")
                             date_m = "%04d/%02d/%02d" % (dt.year, dt.month, dt.day)
-                            print(date_m)
+                            log_print(date_m)
                             price_ = price[:]  # コピー
                             price_[0] = date_m
                             price_list2.append(price_)
@@ -177,13 +177,13 @@ def make_price_list(price_list):
                 d = date(int(price[0][0:4]), int(price[0][5:7]), int(price[0][8:10]))
                 y2 = d.isocalendar()[0]
                 w2 = d.isocalendar()[1]
-                print(y, w, "-", y2, w2)
+                log_print(y, w, "-", y2, w2)
                 if y == y2 and w == w2:
                     price_list2.append(price)
                     flg = False
                     break
                 if y * 100 + w < y2 * 100 + w2:  # データがないので追加
-                    print("データを補充：", price)
+                    log_print("データを補充：", price)
                     # 週番号から日付を取得
                     dt = datetime.strptime("%04d%02d1" % (y, w), "%Y%W%w")
                     date_m = "%04d/%02d/%02d" % (dt.year, dt.month, dt.day)
@@ -199,11 +199,11 @@ def make_price_list(price_list):
 
 
 def print_price_list(price_list2):
-    print("-" * 30)
+    log_print("-" * 30)
     for p in price_list2:
-        print(p)
-    print(str(len(price_list2)) + "個のデータ")
-    print("-" * 30)
+        log_print(p)
+    log_print(str(len(price_list2)) + "個のデータ")
+    log_print("-" * 30)
 
 
 def parse_topix():
@@ -280,7 +280,7 @@ def make_sisu_db():
         parse_spdr_goldshares,
     ]
     for i, asset in enumerate(ASSET_CLASSES[:7]):
-        print("DB作成:", asset)
+        log_print("DB作成:", asset)
         db_dict[asset] = parser_list[i]()
 
     pickle.dump(db_dict, open("sisu_data/sisu_db.pickle", "wb"))
@@ -314,7 +314,7 @@ def parse_html_yahoo_jp(html, title=""):
         price = int(float(m.group(5).replace(",", "")))
         # print day, price
         rows.append([day, price])
-    print("直近価格:", rows[:3])
+    log_print("直近価格:", rows[:3])
     # raise
     return rows
 
@@ -346,10 +346,10 @@ def parse_html_yahoo_us(html, is_all_price=False):
                 rows.append([day] + prices)
             else:
                 price = float(m.group(8).replace(",", ""))
-                print(day, price)
+                log_print(day, price)
                 rows.append([day, price])
         else:
-            print("  DivideEnd ")  # , day
+            log_print("  DivideEnd ")  # , day
 
     return rows
 
@@ -357,7 +357,7 @@ def parse_html_yahoo_us(html, is_all_price=False):
 def parse_html(html):
     m = re.search(r"<title>(.*?)</title>", html)
     title = m.group(1)
-    print("title:", title)
+    log_print("title:", title)
     if "Yahoo!ファイナンス" in title:
         return parse_html_yahoo_jp(html, title)
     elif "Yahoo! Finance" in title:
@@ -384,7 +384,7 @@ def update_market_tbl(market_db, tbl_name, rows):
         for j, crow in enumerate(current_rows):
             if row[CLM_DATE] == crow[CLM_DATE]:
                 if not row[CLM_PRICE] == crow[CLM_PRICE]:
-                    print("更新: ", row)
+                    log_print("更新: ", row)
                 crow[CLM_PRICE] = row[CLM_PRICE]
                 update = True
                 break
@@ -396,17 +396,17 @@ def update_market_tbl(market_db, tbl_name, rows):
                 if row_date < crow_date:
                     insert = True
                     current_rows.insert(j, row)
-                    print("データ挿入[%d]：" % j, row)
+                    log_print("データ挿入[%d]：" % j, row)
                     break
             if not insert:
                 current_rows.append(row)
-                print("データ追加：", row)
+                log_print("データ追加：", row)
     return current_rows
 
 
 def modify_distribute(code_name, rows):
     if code_name in DISTRIBUTE_DATA:
-        print("modify_distribute:", code_name)
+        log_print("modify_distribute:", code_name)
         distribute = DISTRIBUTE_DATA[code_name]
         for row in rows:
             for k, v in list(distribute.items()):
@@ -449,7 +449,7 @@ def make_rs_db():
     # 		url = url%(today.month-1, today.day, today.year-1, \
     # 			today.month-1, today.day, today.year)
     for i, url in enumerate(ASSET_URL2):
-        print("-" * 15)
+        log_print("-" * 15)
         # 一年前の日付でリクエスト
         today = date.today()
         url = url % (
@@ -461,12 +461,12 @@ def make_rs_db():
             url_p = url
             url_p = url + "&page=%d" % (p + 1)
 
-            print("Request.. %s" % url_p)
+            log_print("Request.. %s" % url_p)
             html = http_get_html(
                 url_p, cache_dir=os.path.join(DATA_DIR, "sisu_data"), use_cache=True
             )
             rows = parse_html(html)
-            print("parse完了:", url_p)
+            log_print("parse完了:", url_p)
 
             # テーブル名はtbl_コード名
             # "https://finance.yahoo.co.jp/quote/1306.T/history?from=%s&to=%s&timeFrame=w"
@@ -474,11 +474,11 @@ def make_rs_db():
             if m:
                 code_name = m.group(0)
             else:
-                print("!!!取得したいDBのコードが不明です", code_name)
+                log_warning("取得したいDBのコードが不明です", code_name)
                 continue
 
             tbl_name = "tbl_" + code_name  # tbl_プレフィックス
-            print("tbl:", tbl_name)
+            log_print("tbl:", tbl_name)
             rows = modify_distribute(code_name, rows)
             rows_new = update_market_tbl(market_db, tbl_name, rows)
             market_db[tbl_name] = rows_new
@@ -506,14 +506,14 @@ def make_rs_db():
     # market_db["tbl_myfrontier"] = rows
 
     # 表示
-    print("=" * 20)
-    print("テーブル一覧")
+    log_print("=" * 20)
+    log_print("テーブル一覧")
     for key in list(market_db.keys()):
         table = market_db[key]
-        print("-" * 3, end=" ")
-        print(key, len(table), "個の列")
-        print(table[0:3], "...")
-        print(table[-3:])
+        log_print("-" * 3, end=" ")
+        log_print(key, len(table), "個の列")
+        log_print(table[0:3], "...")
+        log_print(table[-3:])
     # DB保存
     pickle.dump(market_db, open(RS_DB_NAME, "wb"))
 
@@ -529,6 +529,9 @@ def convert_python2_to3():
 
 
 def main():
+    # ロガーの初期化
+    logger = setup_logger('make_stock_db')
+
     # make_sisu_db()
     make_rs_db()
 

@@ -55,11 +55,11 @@ def build_params_for_login(html):
     # アルバトロスの更新
     m = re.search(r'getElements.*albatross.*value = "(.*)"', html)
     if m:
-        print("albatross:", params[".albatross"], "->", end=" ")
+        log_print("albatross:", params[".albatross"], "->", end=" ")
         params[".albatross"] = m.group(1)
-        print(params[".albatross"])
+        log_print(params[".albatross"])
     else:
-        print("!!! .albatrossが見つかりません")
+        log_warning(" .albatrossが見つかりません")
     # ユーザ、パスワードの追加
     params["login"] = ACCOUNT[0]
     params["passwd"] = ACCOUNT[1]
@@ -72,30 +72,30 @@ def login_yahoo():
     yahooへログインしクッキーを取得
     """
     # --- yahooトップページからB Cookieを取得
-    print("%sへ接続..." % URL_YAHOO_TOP)
+    log_print("%sへ接続..." % URL_YAHOO_TOP)
     r = http_get_yahoo(URL_YAHOO_TOP)
-    print("cookies yahoo_top:", r.cookies)
-    print("B_cookie:", r.cookies["B"])
+    log_print("cookies yahoo_top:", r.cookies)
+    log_print("B_cookie:", r.cookies["B"])
     time.sleep(float(656 / 1000))
 
     # --- yahoo ログイン画面を表示
-    print("%sへ接続..." % URL_YAHOO_LOGIN)
+    log_print("%sへ接続..." % URL_YAHOO_LOGIN)
     cookies = dict(B=r.cookies["B"])
     r2 = http_get_yahoo(URL_YAHOO_LOGIN, cookies)
-    print("cookies yahoo_login:", r2.cookies)
+    log_print("cookies yahoo_login:", r2.cookies)
     html = r2.text.encode("utf-8")
     # file_write("tmp.html", html)
 
     time.sleep(float(724 / 1000))
 
     # --- yahooへログイン
-    print("%sへ接続..." % URL_YAHOO_LOGIN_POST)
+    log_print("%sへ接続..." % URL_YAHOO_LOGIN_POST)
     data = build_params_for_login(html)  # ログインhtmlからpostパラメータ取得
     cookies = dict(B=r.cookies["B"])
     # print "data:", data #, "cookies", cookies
     r3 = http_post_yahoo(URL_YAHOO_LOGIN_POST, data, cookies)
     if "文字認証" in r3.text.encode("utf-8"):
-        print("!!! 文字認証が求められています")
+        log_warning(" 文字認証が求められています")
     # html_loggedin = r3.text.encode('utf-8')
     # file_write("tmp2.html", html_loggedin)
     # print "cookies yahoo_login_post", r3.cookies, "len:", len(r3.cookies)
@@ -115,13 +115,13 @@ def get_latest_portfolio():
         cookies = login_yahoo()
     else:
         cookies = pickle.load(open(COOKIE_NAME, "rb"))
-    print(cookies, len(cookies))
+    log_print(cookies, len(cookies))
     # --- yahooのサイトへアクセス
     if len(cookies) > 0:
-        print("cookieを%sに保存" % COOKIE_NAME)
+        log_print("cookieを%sに保存" % COOKIE_NAME)
         pickle.dump(cookies, open(COOKIE_NAME, "wb"))
 
-        print("%sへ接続..." % URL_YAHOO_FINANCE_PORTFOLIO)
+        log_print("%sへ接続..." % URL_YAHOO_FINANCE_PORTFOLIO)
         r = http_get_yahoo(URL_YAHOO_FINANCE_PORTFOLIO, cookies)
         html_yahoo = r.text.encode("utf-8")
         file_write("yahoo_portfolio.html", html_yahoo)
@@ -132,7 +132,7 @@ def get_latest_portfolio():
 def test_build_params():
     html = file_read("tmp.html")
     data = build_params_for_login(html)
-    print(data)
+    log_print(data)
 
 
 # ==================================================
@@ -211,7 +211,7 @@ def update_my_portfolio():
         evaluation = row[4]
         if evaluation == "S" or evaluation == "A" or evaluation == "B":
             if not code_s in stocks2_list:
-                print("追加:%s %s" % (code_s, stock_name))
+                log_print("追加:%s %s" % (code_s, stock_name))
                 stocks2.append([code_s, stock_name])
     stocks2.sort(key=lambda s: int(s[0]))
     stocks2_new = ["%s%s\n" % (s[0], s[1]) for s in stocks2]
@@ -220,6 +220,9 @@ def update_my_portfolio():
 
 
 def main():
+    # ロガーの初期化
+    logger = setup_logger('shintakane')
+
     args = "update"
     # args = "update get"
     args = "get"

@@ -112,7 +112,7 @@ def get_logger():
 
 def log_print(*args, **kwargs):
     """
-    print文の代替関数。メッセージ内容に基づいて適切なログレベルを自動判定する。
+    print文の代替関数。常にINFOレベルでログ出力する。
     
     Args:
         *args: print関数と同じ引数
@@ -126,17 +126,69 @@ def log_print(*args, **kwargs):
         message_parts.append(str(arg))
     
     message = kwargs.get('sep', ' ').join(message_parts)
+    logger.info(message)
+
+
+def log_warning(*args, **kwargs):
+    """
+    WARNING レベルでログ出力する関数。
     
-    # メッセージ内容でログレベルを判定
-    if '!!!' in message:
-        logger.warning(message)
-    else:
-        logger.info(message)
+    Args:
+        *args: print関数と同じ引数
+        **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
+    """
+    logger = get_logger()
+    
+    # 引数を文字列に変換してメッセージを構築
+    message_parts = []
+    for arg in args:
+        message_parts.append(str(arg))
+    
+    message = kwargs.get('sep', ' ').join(message_parts)
+    logger.warning(message)
+
+
+def log_error(*args, **kwargs):
+    """
+    ERROR レベルでログ出力する関数。
+    
+    Args:
+        *args: print関数と同じ引数
+        **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
+    """
+    logger = get_logger()
+    
+    # 引数を文字列に変換してメッセージを構築
+    message_parts = []
+    for arg in args:
+        message_parts.append(str(arg))
+    
+    message = kwargs.get('sep', ' ').join(message_parts)
+    logger.error(message)
+
+
+def log_debug(*args, **kwargs):
+    """
+    DEBUG レベルでログ出力する関数。
+    
+    Args:
+        *args: print関数と同じ引数
+        **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
+    """
+    logger = get_logger()
+    
+    # 引数を文字列に変換してメッセージを構築
+    message_parts = []
+    for arg in args:
+        message_parts.append(str(arg))
+    
+    message = kwargs.get('sep', ' ').join(message_parts)
+    logger.debug(message)
 
 
 # 下位互換性のためのエイリアス
 def smart_print(*args, **kwargs):
-    """log_printのエイリアス"""
+    """log_printのエイリアス（下位互換性のため）"""
     log_print(*args, **kwargs)
 
 

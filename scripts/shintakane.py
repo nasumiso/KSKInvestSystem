@@ -100,12 +100,12 @@ def get_latest_dekidakaup_fname():
     count = 0
     CountMax = 60
     while not os.path.exists(today_csv) and count < CountMax:
-        print("注：今日の情報がありません", today_csv, count)
+        log_print("注：今日の情報がありません", today_csv, count)
         today = today - timedelta(1)
         today_csv = get_dekidakaup_day_txtname(today) + ".csv"
         count += 1
     if count >= CountMax:
-        log_print("!!!今日の出来高急増ファイルが見つかりません。")
+        log_warning("今日の出来高急増ファイルが見つかりません。")
         return "", today
     return today_csv, today
 
@@ -121,12 +121,12 @@ def get_latest_shintakane_fname():
     count = 0
     CountMax = 60
     while not os.path.exists(today_csv) and count < CountMax:
-        print("注：今日の情報がありません", today_csv, count)
+        log_print("注：今日の情報がありません", today_csv, count)
         today = today - timedelta(1)
         today_csv = get_shintakane_day_txtname(today) + ".csv"
         count += 1
     if count >= CountMax:
-        log_print("!!!今日の新高値ファイルが見つかりません。")
+        log_warning("今日の新高値ファイルが見つかりません。")
         return "", today
     return today_csv, today
 
@@ -188,7 +188,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 else:
                     day_list_d = []
                 # day_listとday_list_dを合成
-                print(
+                log_print(
                     "新高値銘柄%d個と出来高急増銘柄%d個を合成(%s)"
                     % (len(day_list), len(day_list_d), day.date())
                 )
@@ -196,11 +196,11 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 # print "---> 計%d個"%len(day_list)
             if len(day_list) == 0:
                 continue
-            print("----- %s(%d)を分析" % (day_csv, len(day_list)))
+            log_print("----- %s(%d)を分析" % (day_csv, len(day_list)))
 
             # 各種フィルタ判定した上でリスト作成
             day_list_filtered = day_list
-            print("候補銘柄%d個" % len(day_list_filtered))
+            log_print("候補銘柄%d個" % len(day_list_filtered))
             # まだalready_listにないものは追加
             already_code = [c["code_s"] for c in already_list]
             for d in day_list_filtered:
@@ -218,7 +218,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     already_list_code = [a["code_s"] for a in already_list]
 
     # 今日のを分析
-    print("本日:", today_data, "を分析")
+    log_print("本日:", today_data, "を分析")
 
     def create_today_list():
         today_list = []  # 本日更新銘柄データ(dict)のリスト
@@ -226,13 +226,13 @@ def todays_shintakane(upd=UPD_INTERVAL):
             today_list = search_fromcsv(today_data)
             # 出来高急増も追加
             today_list_d = search_fromcsv_dekidakaup(today_data_d)
-            print(
+            log_print(
                 "新高値銘柄%d個と出来高急増銘柄%d個を合成"
                 % (len(today_list), len(today_list_d))
             )
             compose_list(today_list, today_list_d)
             # today_listには本日銘柄: 本日の新高値と出来高銘柄リスト
-            print("本日銘柄%s個" % len(today_list))
+            log_print("本日銘柄%s個" % len(today_list))
         return today_list
 
     today_list = create_today_list()
@@ -240,8 +240,8 @@ def todays_shintakane(upd=UPD_INTERVAL):
 
     # 決算発表/修正の銘柄を追加
     kessan_lst_code = get_todays_kessan_list()
-    print("決算更新追加:", len(kessan_lst_code), "個")
-    print(kessan_lst_code)
+    log_print("決算更新追加:", len(kessan_lst_code), "個")
+    log_print(kessan_lst_code)
     # 更新を行う必要のあるすべての銘柄
     updatelist_all_code = already_list_code + today_list_code + kessan_lst_code
     updatelist_all_code = list(set(updatelist_all_code))
@@ -249,11 +249,11 @@ def todays_shintakane(upd=UPD_INTERVAL):
 
     # ---- マスターデータ更新
     # 最低購入代金取得のためdbを更新
-    print("---> masterデータ更新(最低購入代金、銘柄概要取得のため)")
+    log_print("---> masterデータ更新(最低購入代金、銘柄概要取得のため)")
     stocks = stock_db.update_db_rows(
         updatelist_all_code, tables=["master"], upd=upd, sync=False
     )
-    print("<---- masterデータ更新完了")
+    log_print("<---- masterデータ更新完了")
 
     def filter_today_list(lst):
         """候補に対してを出来高上昇率、ETFなどで
@@ -289,9 +289,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
             return filter_etf
 
         filter_etf = filter_etf_closure()
-        # print("候補数3:", len(lst))
+        # log_print("候補数3:", len(lst))
         lst = [item for item in lst if filter_etf(item)]
-        # print("候補数4:", len(lst))
+        # log_print("候補数4:", len(lst))
         return lst
 
     # 調査不要なものを除く(stocksが必要なのでここで)
@@ -304,7 +304,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     today_already_list = [t for t in today_list if t not in today_only_list]
     already_only_list = [t for t in already_list if not t["code_s"] in today_list_code]
 
-    print(
+    log_print(
         "本日銘柄%d [未調査 %d 調査済み%d] | 過去銘柄%d"
         % (
             len(today_list),
@@ -320,20 +320,20 @@ def todays_shintakane(upd=UPD_INTERVAL):
         DB更新(価格、業績、指標、理論株価)
         """
         # ---- 価格データ更新
-        print("")
-        print("----> 価格データ更新")
+        log_print("")
+        log_print("----> 価格データ更新")
         stocks = stock_db.update_db_rows(
             today_list_all, tables=["price"], upd=upd, sync=False
         )
-        print("<---- 価格データ更新完了")
+        log_print("<---- 価格データ更新完了")
 
         # ------------------------------
         # 業績の更新
         # ------------------------------
         # 業績取得のためdbを更新
-        print("=" * 20)
-        print("業績を更新します", upd)
-        print("=" * 20)
+        log_print("=" * 20)
+        log_print("業績を更新します", upd)
+        log_print("=" * 20)
         # lates:Trueで業績や指標を更新
         # print "業績更新:", today_list_all
         stocks = stock_db.update_db_rows(
@@ -341,9 +341,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
         )
 
         # ---- 指標の更新
-        print("=" * 20)
-        print("指標を更新します")
-        print("=" * 20)
+        log_print("=" * 20)
+        log_print("指標を更新します")
+        log_print("=" * 20)
         # dryscrapeでのreuter情報は封印していることに注意
         # print "%　指標更新:", code_list
         stocks = stock_db.update_db_rows(
@@ -351,9 +351,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
         )
 
         # ---- 理論株価の更新
-        print("=" * 20)
-        print("理論株価を更新します")
-        print("=" * 20)
+        log_print("=" * 20)
+        log_print("理論株価を更新します")
+        log_print("=" * 20)
         stocks = stock_db.update_db_rows(
             today_list_all, tables=["rironkabuka"], upd=upd, sync=False
         )
@@ -378,7 +378,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # ---- ここから結果表示
     # コードのみリストと　コード、表、出来高詳細、最低購入代金
     def puts(x):
-        print(x, end=" ")
+        log_print(x, end=" ")
 
     COLUMNS = [
         "コード",
@@ -426,7 +426,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 [str(round(v, 0)) for v in stock.get("stddev_volatility", [])]
             )
         except TypeError:
-            print("!!! volaが取得できない")
+            log_warning("volaが取得できない")
             vola = 0
         sprs = stock.get("sell_pressure_ratio", [])
         sprs_w = stock.get("sell_pressure_ratio_w", [])
@@ -479,7 +479,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
             rows.append(row)
         else:
             try:
-                print(
+                log_print(
                     "%s %s [%s] %s %s(%s) %d(%s) %d | %d万 %d億"
                     % (
                         code,
@@ -495,15 +495,15 @@ def todays_shintakane(upd=UPD_INTERVAL):
                         market_cap,
                     )
                 )
-                print(
+                log_print(
                     "    %.2f %d | %d %d %d"
                     % (vola, sell_press, score_gyoseki, shihyo_pt, mom_pt)
                 )
-                print("    %s" % overview)
+                log_print("    %s" % overview)
             except TypeError as e:
-                print("表示エラー", e)
+                log_print("表示エラー", e)
 
-    print()
+    log_print()
 
     def score_func(t):
         code_s = t["code_s"]
@@ -516,16 +516,16 @@ def todays_shintakane(upd=UPD_INTERVAL):
     if TO_CSV:
         rows.append(["【本日銘柄】"])
     else:
-        print("【本日銘柄】")
+        log_print("【本日銘柄】")
     # 今日のものを出力
     today_list_show = sorted(today_only_list, key=score_func, reverse=True)
     [puts_detail(d) for d in today_list_show]
 
-    print()
+    log_print()
     if TO_CSV:
         rows.append(["【本日既出銘柄】"])
     else:
-        print("【本日既出銘柄】")
+        log_print("【本日既出銘柄】")
     today_already_list_sort = sorted(today_already_list, key=score_func, reverse=True)
     [puts_detail(d) for d in today_already_list_sort]
     rows.append(["【過去銘柄】"])
@@ -744,8 +744,8 @@ def get_todays_dekidakaup():
     """本日の出来高増銘柄を株探からスクレイピングして
     csv2保存
     """
-    print("=" * 30)
-    print("出来高急増銘柄を更新します・・")
+    log_print("=" * 30)
+    log_print("出来高急増銘柄を更新します・・")
     latest_csv, _ = get_latest_dekidakaup_fname()
     # Force = True
     if latest_csv:
@@ -756,7 +756,7 @@ def get_todays_dekidakaup():
         # 	tdy = tdy-timedelta(days=1)
         goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, PRICE_HOUR)
         if latest_csv_dt > goodissue_dt:
-            print(
+            log_print(
                 "本日分のcsvは取得済みです",
                 latest_csv,
                 latest_csv_dt,
@@ -765,7 +765,7 @@ def get_todays_dekidakaup():
             )
             return
 
-    print("----> 株探から出来高急増情報を取得します・・")
+    log_print("----> 株探から出来高急増情報を取得します・・")
     URL_KABUTAN_DEKIDAKA = "https://kabutan.jp/tansaku/"
     QUERY = "?mode=2_0311&market=0&capitalization=-1&stc=v3&stm=1&page=%d"
     cache_dir = os.path.join(DATA_DIR, "cache_data")
@@ -789,9 +789,9 @@ def get_todays_dekidakaup():
         )
         useCache = cach_dt.date() >= datetime.today().date()
         # TODO: ↑土日も取得してしまう
-        print("株探 出来高急増キャシュ：", cach_dt, useCache)
+        log_print("株探 出来高急増キャシュ：", cach_dt, useCache)
     except (IOError, OSError) as e:
-        print("!!! 出来高急増ファイルがない", e)
+        log_warning("出来高急増ファイルがない", e)
         useCache = False
     html = http_get_html(
         URL_KABUTAN_DEKIDAKA + QUERY % 1, use_cache=useCache, cache_dir=cache_dir
@@ -805,13 +805,13 @@ def get_todays_dekidakaup():
     )
     date = date_m.group(1) + date_m.group(2) + date_m.group(3)
     date = date[2:]
-    print("株探 出来高急増更新日：", date)
+    log_print("株探 出来高急増更新日：", date)
     # ページ分のhtmlを取得
     # ページ数を取得
     page_div = re.search(r'<div class="pagination">(.*?)</div>', html, re.S).group(0)
     pages = [int(m.group(1)) for m in re.finditer(r"page=(\d)", page_div)]
     page_count = max(pages)
-    print("ページ数：", page_count)
+    log_print("ページ数：", page_count)
     with use_requests_session():
         for p in range(page_count):
             if p < 1:
@@ -833,16 +833,16 @@ def get_todays_dekidakaup():
         open(csv_fname, "w", encoding="utf-8")
     )  # python3ではwbではなく、テキストモードで読み書き
     csv_w.writerows(rows)
-    print("今日の出来高急増を%sに保存しました" % csv_fname)
-    print("<---- 取得完了")
+    log_print("今日の出来高急増を%sに保存しました" % csv_fname)
+    log_print("<---- 取得完了")
 
 
 def get_todays_shintakane():
     """本日の新高値情報を株探から取得し、
     csvファイルに保存する
     """
-    print("=" * 30)
-    print("新高値銘柄を更新します・・")
+    log_print("=" * 30)
+    log_print("新高値銘柄を更新します・・")
     latest_csv, _ = get_latest_shintakane_fname()
     if latest_csv:
         latest_csv_dt = get_file_datetime(latest_csv)
@@ -851,7 +851,7 @@ def get_todays_shintakane():
             tdy = tdy - timedelta(days=1)
         goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, 17)
         if latest_csv_dt > goodissue_dt:
-            print(
+            log_print(
                 "本日分のcsvは取得済みです",
                 latest_csv,
                 latest_csv_dt,
@@ -860,7 +860,7 @@ def get_todays_shintakane():
             )
             return
 
-    print("----> 株探から新高値情報を取得します・・")
+    log_print("----> 株探から新高値情報を取得します・・")
     URL_KABUTAN_SHINTAKANE = "https://kabutan.jp/warning/"
     # QUERY = "?mode=3_3&market=0&capitalization=-1&stc=&stm=0&page=%d"
     QUERY = "record_w52_high_price?market=0&capitalization=-1" "&stc=&stm=0&page=%d"
@@ -883,7 +883,7 @@ def get_todays_shintakane():
             int(latest_date_m.group(3)),
         )
         useCache = cach_dt.date() >= datetime.today().date()
-        print("株探新高値 キャシュ：", cach_dt, useCache)
+        log_print("株探新高値 キャシュ：", cach_dt, useCache)
     except IOError:
         useCache = False
     # 最初のページ
@@ -899,7 +899,7 @@ def get_todays_shintakane():
         re.S,
     )  # re.S:改行を含む
     date = date_m.group(1)[-2:] + date_m.group(2) + date_m.group(3)
-    print("株探新高値更新日：", date)
+    log_print("株探新高値更新日：", date)
     # ページ分のhtmlを取得
     # ページ数を取得
     try:
@@ -909,7 +909,7 @@ def get_todays_shintakane():
         pages = [int(m.group(1)) for m in re.finditer(r"page=(\d)", page_div)]
         page_count = max(pages)
     except AttributeError:
-        print("ページ情報がhtmlにないため1とする")
+        log_print("ページ情報がhtmlにないため1とする")
         page_count = 1
     for p in range(page_count):
         if p < 1:
@@ -931,9 +931,9 @@ def get_todays_shintakane():
         open(csv_fname, "w", encoding="utf-8")
     )  # python3ではwbではなく、テキストモードで読み書き
     csv_w.writerows(rows)
-    print("今日の新高値を%sに保存しました" % csv_fname)
+    log_print("今日の新高値を%sに保存しました" % csv_fname)
 
-    print("<---- 取得完了")
+    log_print("<---- 取得完了")
 
 
 def wait_connect():
@@ -951,11 +951,11 @@ def wait_connect():
             import requests
 
             requests.get(url)
-            print("接続確立")
+            log_print("接続確立")
             return True
         except requests.exceptions.ConnectionError as e:
-            print("!!! 接続失敗", diff, "秒")
-            print(e)
+            log_warning("接続失敗", diff, "秒")
+            log_print(e)
             time.sleep(5)
         diff = (datetime.datetime.now() - first_time).seconds
     return False
@@ -984,7 +984,7 @@ def parse_kessan_html(html):
             summary = m.group(4)
             kessan_list.append((code_s, date, link, summary))
         if not kessan_list:
-            print("!!!決算ページフォーマット変更?")
+            log_warning("決算ページフォーマット変更?")
         return kessan_list
 
     # htmlから、決算情報が含まれば箇所を取得(正規表現にコストかかるため高速化)
@@ -992,10 +992,10 @@ def parse_kessan_html(html):
         r'<table class="s_news_list mgbt0">(.*?)</table>', html, re.S
     ).group(1)
     mod_lst = re_search_kessan("ctg3_ks", body_html)
-    print("決算修正:", [item[:2] for item in mod_lst])
+    log_print("決算修正:", [item[:2] for item in mod_lst])
 
     announce_lst = re_search_kessan("ctg3_kk", body_html)
-    print("決算発表:", [item[:2] for item in announce_lst])
+    log_print("決算発表:", [item[:2] for item in announce_lst])
     return mod_lst, announce_lst
 
 
@@ -1041,7 +1041,7 @@ def update_todays_kessan():
                 tdy_date = get_price_day(datetime.today())
                 if os.path.exists(cache_path) and tdy_date <= cache_date:
                     use_cache = True
-                print(
+                log_print(
                     "%dページ決算発表キャッシュ日付:%s キャッシュ:%s"
                     % (page, cache_date, use_cache)
                 )
@@ -1064,7 +1064,7 @@ def update_todays_kessan():
                 current_day = datetime.strptime(announce_lst[-1][1], "%Y/%m/%d").date()
             today = datetime.today().date()
             kessan_ge_day = today - timedelta(before_day)
-            print(
+            log_print(
                 "決算ページ:%d 今読んでいる決算日付:%s ここまで取得日:%s"
                 % (page, current_day, kessan_ge_day)
             )
@@ -1078,7 +1078,7 @@ def update_todays_kessan():
         csv_w = csv.writer(f)
         kessan_lst = modify_lst + announce_lst
         csv_w.writerows(kessan_lst)
-        print(cache_csv_path, "に保存しました")
+        log_print(cache_csv_path, "に保存しました")
 
     # ---- DBに反映
     stocks = stock_db.load_stock_db()
@@ -1089,9 +1089,9 @@ def update_todays_kessan():
         try:
             stocks[code_s]["kessan_mod_date"] = mod_date
             stocks[code_s]["kessan_announce"] = "修正," + item[2] + "," + item[3]
-            print("決算修正:", code_s, stocks[code_s]["stock_name"], mod_date, item[3])
+            log_print("決算修正:", code_s, stocks[code_s]["stock_name"], mod_date, item[3])
         except KeyError:
-            print(code_s, "はDBにありません")
+            log_print(code_s, "はDBにありません")
     for item in announce_lst:
         code_s = item[0]
         announce_date = item[1]
@@ -1099,12 +1099,12 @@ def update_todays_kessan():
             kessanbi = stocks[code_s].get("kessanbi")
             if kessanbi and kessanbi != announce_date:
                 stocks[code_s]["kessanbi"] = announce_date
-                print("決算発表日更新", code_s, announce_date)
+                log_print("決算発表日更新", code_s, announce_date)
             stocks[code_s]["kessan_announce"] = "発表," + item[2] + "," + item[3]
         except KeyError:
-            print(code_s, "はDBにありません")
+            log_print(code_s, "はDBにありません")
             continue
-        print(
+        log_print(
             "決算発表:",
             code_s,
             stocks[code_s].get("stock_name", "銘柄名不明"),
@@ -1187,9 +1187,9 @@ if __name__ == "__main__":
         )
         args = parser.parse_args()
         if args.quiet:
-            print("標準出力を抑制します")
+            log_print("標準出力を抑制します")
             with suppress_stdout():
                 main()
-            print("抑制終了")
+            log_print("抑制終了")
         else:
             main()
