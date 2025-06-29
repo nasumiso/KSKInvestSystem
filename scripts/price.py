@@ -402,7 +402,7 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
         weekly_price_list = []  # 週次価格データ
         for ind, html in enumerate(htmls):
             if not html:
-                print("!!! 週次データが取得できていない")
+                print("!!! 週次データが取得できていない", ind + 1, "ページ目")
                 continue
             j = 0
             for m in re.finditer(

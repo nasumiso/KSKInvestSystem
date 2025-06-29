@@ -18,6 +18,9 @@ def get_from_kabutan(html):
     # 財務テーブルを取得
     # re.S:"."に改行を含める ?:non greedy(最小マッチング)
     print("---> 財務テーブル取得")
+    if not html:
+        print("!!! kabutanHTML解析エラー htmlが空")
+        return {}
     zaimu_table_html = re.search(r"財務 【実績】.*?<table>(.*?)</table>", html, re.S)
     if not zaimu_table_html:
         print(
