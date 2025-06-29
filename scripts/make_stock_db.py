@@ -1218,9 +1218,7 @@ def convert_python2():
 # ==================================================
 def main():
     """株価DBを更新するメインスクリプト"""
-    # ロガーの初期化
-    logger = setup_logger('make_stock_db')
-    
+
     import argparse
 
     parser = argparse.ArgumentParser()
@@ -1322,6 +1320,9 @@ if __name__ == "__main__":
     # https://kabutan.jp/warning/?mode=9_1&market=0&capitalization=-1&stc=zenhiritsu&stm=1&col=zenhiritsu
     # やりたいが保留
     # カレントディレクトリをこの.pyの場所に
+    # ロガーの初期化
+    logger = setup_logger("make_stock_db")
+
     path = os.path.abspath(os.path.dirname(__file__))
     os.chdir(path)
     cwd = os.getcwd()

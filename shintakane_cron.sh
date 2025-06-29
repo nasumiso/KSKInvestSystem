@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "[$(date)] cron started" >> /tmp/cron_debug.log
+# echo "[$(date)] cron started" >> /tmp/cron_debug.log
 
 # スクリプトのあるディレクトリに移動（どこから実行してもOK）
 cd "$(dirname "$0")" || {

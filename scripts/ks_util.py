@@ -44,60 +44,61 @@ _logger = None
 def setup_logger(script_name=None):
     """
     アプリケーション用のロガーを設定する
-    
+
     Args:
         script_name: スクリプト名（ログファイル名の一部に使用）
-    
+
     Returns:
         logger: 設定されたloggerオブジェクト
     """
     global _logger
-    
+
     if _logger is not None:
         return _logger
-    
+
     # logsディレクトリの作成
     os.makedirs(LOGS_DIR, exist_ok=True)
-    
+
     # ロガーの作成
-    logger_name = script_name or 'ks_invest_system'
+    logger_name = script_name or "ks_invest_system"
     _logger = logging.getLogger(logger_name)
     _logger.setLevel(logging.DEBUG)
-    
+
     # すでにハンドラーが設定されている場合はスキップ
     if _logger.handlers:
         return _logger
-    
+
     # フォーマッターの作成
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        "%(asctime)s - %(levelname)s - %(message)s",  # - %(name)s
+        datefmt="%m/%d %H:%M:%S",  # %Y-%m-%d
     )
-    
+
     # 日付ベースのファイル名でローテーティングファイルハンドラーを作成
-    today = datetime.now().strftime('%Y%m%d')
+    today = datetime.now().strftime("%Y%m%d")
     log_filename = os.path.join(LOGS_DIR, f"{logger_name}_{today}.log")
-    
+
     # 7日分のログを保持するローテーティングハンドラー
+    # 追記になることに注意
     file_handler = logging.handlers.TimedRotatingFileHandler(
-        log_filename.replace(f'_{today}', ''),
-        when='D',
+        log_filename.replace(f"_{today}", ""),
+        when="D",
         interval=1,
         backupCount=7,
-        encoding='utf-8'
+        encoding="utf-8",
     )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
-    
+
     # コンソールハンドラー（INFO以上のみ）
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
-    
+
     # ハンドラーをロガーに追加
     _logger.addHandler(file_handler)
     _logger.addHandler(console_handler)
-    
+
     return _logger
 
 
@@ -113,76 +114,76 @@ def get_logger():
 def log_print(*args, **kwargs):
     """
     print文の代替関数。常にINFOレベルでログ出力する。
-    
+
     Args:
         *args: print関数と同じ引数
         **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
     """
     logger = get_logger()
-    
+
     # 引数を文字列に変換してメッセージを構築
     message_parts = []
     for arg in args:
         message_parts.append(str(arg))
-    
-    message = kwargs.get('sep', ' ').join(message_parts)
+
+    message = kwargs.get("sep", " ").join(message_parts)
     logger.info(message)
 
 
 def log_warning(*args, **kwargs):
     """
     WARNING レベルでログ出力する関数。
-    
+
     Args:
         *args: print関数と同じ引数
         **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
     """
     logger = get_logger()
-    
+
     # 引数を文字列に変換してメッセージを構築
     message_parts = []
     for arg in args:
         message_parts.append(str(arg))
-    
-    message = kwargs.get('sep', ' ').join(message_parts)
+
+    message = kwargs.get("sep", " ").join(message_parts)
     logger.warning(message)
 
 
 def log_error(*args, **kwargs):
     """
     ERROR レベルでログ出力する関数。
-    
+
     Args:
         *args: print関数と同じ引数
         **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
     """
     logger = get_logger()
-    
+
     # 引数を文字列に変換してメッセージを構築
     message_parts = []
     for arg in args:
         message_parts.append(str(arg))
-    
-    message = kwargs.get('sep', ' ').join(message_parts)
+
+    message = kwargs.get("sep", " ").join(message_parts)
     logger.error(message)
 
 
 def log_debug(*args, **kwargs):
     """
     DEBUG レベルでログ出力する関数。
-    
+
     Args:
         *args: print関数と同じ引数
         **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
     """
     logger = get_logger()
-    
+
     # 引数を文字列に変換してメッセージを構築
     message_parts = []
     for arg in args:
         message_parts.append(str(arg))
-    
-    message = kwargs.get('sep', ' ').join(message_parts)
+
+    message = kwargs.get("sep", " ").join(message_parts)
     logger.debug(message)
 
 
@@ -397,7 +398,9 @@ def use_requests_session():
     """スレッドごとにSessionをセットするコンテキストマネージャ"""
     session = requests.Session()
     token = _current_session.set(session)  # 現在のセッションを設定
-    log_print(f"[{threading.current_thread().name}] コンテキストセッションを開始: {token}")
+    log_print(
+        f"[{threading.current_thread().name}] コンテキストセッションを開始: {token}"
+    )
     try:
         yield session  # 必要なら明示的に使えるようにもする
     finally:

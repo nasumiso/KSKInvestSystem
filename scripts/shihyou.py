@@ -329,6 +329,9 @@ def analyze_from_kabutan(code_s, upd=UPD_INTERVAL):
     shiyo_data = get_from_kabutan(html)
     # 時価総額
     html = rironkabuka.get_kabutan_base_html(code_s, upd)
+    if not html:
+        log_warning(" kabutan base htmlが取得できていません")
+        return shiyo_data
     shiyo_data = get_from_kabutan_base(html, shiyo_data)
     # print shiyo_data
     return shiyo_data

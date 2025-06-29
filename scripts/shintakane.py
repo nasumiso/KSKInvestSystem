@@ -1089,7 +1089,9 @@ def update_todays_kessan():
         try:
             stocks[code_s]["kessan_mod_date"] = mod_date
             stocks[code_s]["kessan_announce"] = "修正," + item[2] + "," + item[3]
-            log_print("決算修正:", code_s, stocks[code_s]["stock_name"], mod_date, item[3])
+            log_print(
+                "決算修正:", code_s, stocks[code_s]["stock_name"], mod_date, item[3]
+            )
         except KeyError:
             log_print(code_s, "はDBにありません")
     for item in announce_lst:
@@ -1129,9 +1131,7 @@ def main():
     # launchctl load ~/Library/LaunchAgents/launchd_shintakane.plist
     # でdemon実行してます
     """
-    # ロガーの初期化
-    logger = setup_logger('shintakane')
-    
+
     args = "update analyze"
     # args = "update"
     # args = "analyze"
@@ -1179,6 +1179,9 @@ def main():
 # https://kabutan.jp/warning/?mode=5_1
 # TODO: 週足で過去イチの出来高銘柄は、already_listから選んでタグ付けしたい
 if __name__ == "__main__":
+    # ロガーの初期化
+    logger = setup_logger("shintakane")
+
     # カレントディレクトリをこの.pyの場所に
     with chdir(os.path.abspath(os.path.dirname(__file__))):
         parser = argparse.ArgumentParser()
