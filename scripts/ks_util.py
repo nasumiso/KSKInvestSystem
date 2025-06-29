@@ -15,11 +15,14 @@ import time
 
 import requests  # 外部ライブラリ
 from functools import reduce
+import logging
+import logging.handlers
 
 # プロジェクトルートとデータパスの定義
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))  # ks_util.py の場所
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 DATA_DIR = os.path.join(ROOT_DIR, "data")
+LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 
 # ==================================================
 # ユーティリティ
@@ -30,6 +33,111 @@ UPD_INTERVAL = (
 )
 UPD_REEVAL = 2  # INTERVALと同じだがDBキャッシュは使わず再評価はしてほしい
 UPD_FORCE = 3  # 本当に最新なデータ: 間隔に関わらず更新、開いてなくてもファイルキャッシュを使わない
+
+
+# ==================================================
+# ログ管理システム
+# ==================================================
+_logger = None
+
+
+def setup_logger(script_name=None):
+    """
+    アプリケーション用のロガーを設定する
+    
+    Args:
+        script_name: スクリプト名（ログファイル名の一部に使用）
+    
+    Returns:
+        logger: 設定されたloggerオブジェクト
+    """
+    global _logger
+    
+    if _logger is not None:
+        return _logger
+    
+    # logsディレクトリの作成
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    
+    # ロガーの作成
+    logger_name = script_name or 'ks_invest_system'
+    _logger = logging.getLogger(logger_name)
+    _logger.setLevel(logging.DEBUG)
+    
+    # すでにハンドラーが設定されている場合はスキップ
+    if _logger.handlers:
+        return _logger
+    
+    # フォーマッターの作成
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # 日付ベースのファイル名でローテーティングファイルハンドラーを作成
+    today = datetime.now().strftime('%Y%m%d')
+    log_filename = os.path.join(LOGS_DIR, f"{logger_name}_{today}.log")
+    
+    # 7日分のログを保持するローテーティングハンドラー
+    file_handler = logging.handlers.TimedRotatingFileHandler(
+        log_filename.replace(f'_{today}', ''),
+        when='D',
+        interval=1,
+        backupCount=7,
+        encoding='utf-8'
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    
+    # コンソールハンドラー（INFO以上のみ）
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    
+    # ハンドラーをロガーに追加
+    _logger.addHandler(file_handler)
+    _logger.addHandler(console_handler)
+    
+    return _logger
+
+
+def get_logger():
+    """
+    設定済みのロガーを取得する。未設定の場合は自動で設定する。
+    """
+    if _logger is None:
+        return setup_logger()
+    return _logger
+
+
+def log_print(*args, **kwargs):
+    """
+    print文の代替関数。メッセージ内容に基づいて適切なログレベルを自動判定する。
+    
+    Args:
+        *args: print関数と同じ引数
+        **kwargs: print関数と同じキーワード引数（ただし、fileは無視される）
+    """
+    logger = get_logger()
+    
+    # 引数を文字列に変換してメッセージを構築
+    message_parts = []
+    for arg in args:
+        message_parts.append(str(arg))
+    
+    message = kwargs.get('sep', ' ').join(message_parts)
+    
+    # メッセージ内容でログレベルを判定
+    if '!!!' in message:
+        logger.warning(message)
+    else:
+        logger.info(message)
+
+
+# 下位互換性のためのエイリアス
+def smart_print(*args, **kwargs):
+    """log_printのエイリアス"""
+    log_print(*args, **kwargs)
 
 
 def ux_cmd_head(str, line=10):

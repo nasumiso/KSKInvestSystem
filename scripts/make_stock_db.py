@@ -432,7 +432,8 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
     if os.path.exists(table_pickle):
         stocks = load_pickle(table_pickle)
         if not isinstance(stocks, dict):
-            raise "!!![警告] stocksがdict型でありません"
+            log_print("!!![警告] stocksがdict型でありません")
+            raise Exception("stocksがdict型でありません")
     # 更新
     if tables is None:
         tables = []
@@ -598,7 +599,7 @@ def make_signal(stock):
             if delta_day <= 7 and delta_day >= 0:
                 tags.append("ポ")
         except ValueError:
-            print("!!! ポケットピポット日付エラー", spl[0])
+            log_print("!!! ポケットピポット日付エラー", spl[0])
         signal += "\n[ポ]"
         signal += "%s(%s)," % (spl[0], spl[1])
         break  # 一つにしておく(最新日)
@@ -613,7 +614,7 @@ def make_signal(stock):
             if delta_day <= 7 and delta_day >= 0:
                 tags.append("ブ")
         except ValueError:
-            print("!!! ブレイクアウト日付エラー", brkspl[0])
+            log_print("!!! ブレイクアウト日付エラー", brkspl[0])
         signal += "[ブ]"
         signal += "%s(%s)," % (brkspl[0], brkspl[1])
         break  # 一つにしておく(最新日)
@@ -1091,7 +1092,7 @@ def delete_delist_stocks(stocks):
             print("削除:", code_s, stocks[code_s].get("stock_name", "不明"))
             del stocks[code_s]
         else:
-            print("!!! 上場廃止銘柄がDBに存在しません:", code_s)
+            log_print("!!! 上場廃止銘柄がDBに存在しません:", code_s)
     print("上場廃止銘柄の削除完了")
 
 
@@ -1217,6 +1218,9 @@ def convert_python2():
 # ==================================================
 def main():
     """株価DBを更新するメインスクリプト"""
+    # ロガーの初期化
+    logger = setup_logger('make_stock_db')
+    
     import argparse
 
     parser = argparse.ArgumentParser()

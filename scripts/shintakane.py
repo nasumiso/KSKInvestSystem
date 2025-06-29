@@ -105,7 +105,7 @@ def get_latest_dekidakaup_fname():
         today_csv = get_dekidakaup_day_txtname(today) + ".csv"
         count += 1
     if count >= CountMax:
-        print("!!!今日の出来高急増ファイルが見つかりません。")
+        log_print("!!!今日の出来高急増ファイルが見つかりません。")
         return "", today
     return today_csv, today
 
@@ -126,15 +126,15 @@ def get_latest_shintakane_fname():
         today_csv = get_shintakane_day_txtname(today) + ".csv"
         count += 1
     if count >= CountMax:
-        print("!!!今日の新高値ファイルが見つかりません。")
+        log_print("!!!今日の新高値ファイルが見つかりません。")
         return "", today
     return today_csv, today
 
 
 def todays_shintakane(upd=UPD_INTERVAL):
     """本日の新高値銘柄データを解析して結果を表示する"""
-    print("=" * 30)
-    print("新高値銘柄の解析を開始します・・")
+    log_print("=" * 30)
+    log_print("新高値銘柄の解析を開始します・・")
     # 設定パラメータ
     BACK_DAY = 14  # 10 すでに調査したとみなす日数
     # DEKIDAGA_VALUE = 1000*50 # 株価*出来高
@@ -145,7 +145,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # today = datetime.today()
     today_data, latest_csv_dt = get_latest_shintakane_fname()
     today_data_d, latest_csv_dt_d = get_latest_dekidakaup_fname()
-    print("最新新高値ファイル:", today_data, today_data_d)
+    log_print("最新新高値ファイル:", today_data, today_data_d)
 
     # 各種フィルタ関数：テンバガー成長株の条件
     # 出来高による候補フィルタ関数：一定以上の出来高に絞る
@@ -1020,9 +1020,9 @@ def update_todays_kessan():
     announce_lst = []
     cache_dir = os.path.join(DATA_DIR, "todays_kessan_data")
     cache_csv_path = os.path.join(cache_dir, "todays_kessan.csv")
-    print("-" * 30)
-    print("決算発表/修正に対するDB更新")
-    print("-" * 30)
+    log_print("-" * 30)
+    log_print("決算発表/修正に対するDB更新")
+    log_print("-" * 30)
     # とりあえず、本日分までページを読むことにする
     page_max = 33  # 最大確認ページ数
     before_day = 2  # 本日からさかのぼって確認する日数
@@ -1117,7 +1117,7 @@ def update_todays_kessan():
 
 
 def update_pf_kessan_db(stocks):
-    print("-" * 10, "監視銘柄決算データ更新", "-" * 10)
+    log_print("-" * 10, "監視銘柄決算データ更新", "-" * 10)
     import kessan
 
     kessan.save_pf_kessan_db(stocks)
@@ -1129,6 +1129,9 @@ def main():
     # launchctl load ~/Library/LaunchAgents/launchd_shintakane.plist
     # でdemon実行してます
     """
+    # ロガーの初期化
+    logger = setup_logger('shintakane')
+    
     args = "update analyze"
     # args = "update"
     # args = "analyze"
@@ -1137,7 +1140,7 @@ def main():
     # TODO: 業績発表日、反映のらぐのため一日余裕もたせる
     # TODO: 今Qが通期予想伸びより良いも考慮（進捗率的なもの進捗率を見たほうが正確ではある）
     args += " " + " ".join(sys.argv[1:])
-    print("args:", args)
+    log_print("args:", args)
     if "launchd" in args:
         if not wait_connect():  # 接続確立待ち
             raise "!!! ネット接続できませんでした"
