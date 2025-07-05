@@ -103,7 +103,8 @@ def get_price_data(stocks, code_s, upd=UPD_INTERVAL):
             log_print("DBに最新価格情報があるためそれを取得します")
             return stocks[code_s]
     # 価格データを新規更新
-    price_dict = price.get_price_data(code_s, upd)
+    stock = stocks.get(code_s, {})
+    price_dict = price.get_price_data(code_s, stock, upd)
     # 関連銘柄内ランクを更新
     # ↓取得できない＆あまり意味がないので封印
     price_dict["rs_rank_log"] = update_rs_rank(stocks, code_s)
@@ -919,7 +920,11 @@ def list_all_db(upload_csv=True, update_portforio=True):
         vola, sell_press = get_vola_and_sell_press_expr(stock_data)
         # 順位
         # buffet_url = "https://www.buffett-code.com/company/%s/library" % (stock[0])
-        yahoo_url = "https://finance.yahoo.co.jp/quote/%s.T" % (stock[0])
+        # TODO: 福証などでは.Fになる
+        URL_YAHOO_QUOTE = "https://finance.yahoo.com/quote/%s.%s"
+        market_code = get_market_code(stock_data)
+        yahoo_url = URL_YAHOO_QUOTE % (stock[0], market_code)
+
         rank = i + 1
         rank = '=HYPERLINK("%s", "%d")' % (yahoo_url, rank)
         # ---- ポートフォリオ
@@ -999,6 +1004,27 @@ def list_all_db(upload_csv=True, update_portforio=True):
             args=(rank_csv, "code_rank"),
             daemon=False,  # 完了を待つ
         ).start()
+
+
+def get_market_code(stock_data):
+    """銘柄DBデータから、マーケットコードを取得
+    Args:
+        stock_data (dict): 銘柄DBデータ
+    Returns:
+        str: マーケットコード "T" (東証), "S" (札証), "N" (名証), "F" (福証)
+    """
+    if not stock_data:
+        return "T"  # デフォルトは東証
+
+    market_code = "T"
+    market_name = stock_data.get("market", "T")  # デフォルトはT(東証)
+    if market_name == "札証":
+        market_code = "S"
+    elif market_name == "名証":
+        market_code = "N"
+    elif market_name == "福証":
+        market_code = "F"
+    return market_code
 
 
 def load_stock_db():

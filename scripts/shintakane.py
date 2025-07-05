@@ -1207,5 +1207,5 @@ if __name__ == "__main__":
             logger.exception(
                 "Unhandled exception occurred:\n%s", traceback.format_exc()
             )
-            # raise e
-            exit(1)
+            raise e
+            # exit(1)

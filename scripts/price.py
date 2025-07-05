@@ -6,7 +6,8 @@ from datetime import datetime
 import os
 import os.path
 import re
-import requests
+
+import make_stock_db
 
 URL_PRICE_D_KABUTAN = "https://kabutan.jp/stock/kabuka?code=%s&ashi=day&page=%d"
 PRICE_D_FNAME_KABUTAN = os.path.join(
@@ -99,12 +100,12 @@ def get_weekly_html(code_s, cache=True):
     return htmls
 
 
-URL_PRICE_YAHOO = "http://stocks.finance.yahoo.co.jp/stocks/history/?code=%s.T"
+URL_PRICE_YAHOO = "http://stocks.finance.yahoo.co.jp/stocks/history/?code=%s.%s"
 # PRICE_FNAME = "stock_data/yahoo/price/yahoo_price_%d.txt"
 PRICE_FNAME = os.path.join(DATA_DIR, "stock_data/yahoo/price/yahoo_price_%s.txt")
 
 
-def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
+def get_daily_data_yahoo(code_s, stock={}, upd=UPD_INTERVAL):
     """yahooファイナンスから価格データhtmlを取得する
     type: (str, bool) -> str
     Returns:
@@ -126,7 +127,9 @@ def get_daily_data_yahoo(code_s, upd=UPD_INTERVAL):
                     use_cach = True
     # Yahooから取得
     log_print("----> %sの日次価格情報をYahooから取得します・・" % code_s)
-    url = URL_PRICE_YAHOO % code_s
+
+    market_code = make_stock_db.get_market_code(stock)
+    url = URL_PRICE_YAHOO % (code_s, market_code)
     # text = http_get_html(url, use_cache=use_cach, cache_fname=price_fname)
     text = http_get_html_with_retry(url, use_cach=use_cach, cache_fname=price_fname)
     return text
@@ -952,7 +955,7 @@ def get_price_log(price_list, dt):
     return 0
 
 
-def get_price_data_yahoo(code_s, upd=UPD_INTERVAL):
+def get_price_data_yahoo(code_s, stock, upd=UPD_INTERVAL):
     """yahooから日次価格データをパースしてdictで返す
     type: (str, bool) -> dict
     Returns:
@@ -960,7 +963,7 @@ def get_price_data_yahoo(code_s, upd=UPD_INTERVAL):
         list<int>: 現在価格
     """
     # cache = (upd <= UPD_REEVAL)
-    price_text = get_daily_data_yahoo(code_s, upd)
+    price_text = get_daily_data_yahoo(code_s, stock, upd)
     if not price_text:
         return {}, []
     log_print(">>>>> %sの価格データを解析 " % code_s)
@@ -1011,13 +1014,13 @@ def get_daily_price_kabutan(code_s, upd=UPD_INTERVAL):
     return parsed_data_d
 
 
-def get_price_data(code_s, upd=UPD_INTERVAL):
+def get_price_data(code_s, stock={}, upd=UPD_INTERVAL):
     """価格情報を取得して(yahooから)
     更新情報を返す
     type: (str,bool) -> dict
     """
     # 日次データ
-    parsed_data, cur_prices = get_price_data_yahoo(code_s, upd)
+    parsed_data, cur_prices = get_price_data_yahoo(code_s, stock, upd)
     # 週次データを取得してRSを求める
     parsed_data_w = get_weekly_price_data(code_s, upd=upd, prices=cur_prices)
     parsed_data.update(parsed_data_w)
