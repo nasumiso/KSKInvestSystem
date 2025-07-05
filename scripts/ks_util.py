@@ -500,6 +500,7 @@ def http_get_html(
                 return "", res.status_code if "res" in locals() else 500
             else:
                 return ""
+        # requests.exceptions.ReadTimeout TODO:
         if res.encoding != "utf-8":
             log_print("html_encoding:", res.encoding, "encoding:", encoding)
         # htmlをutf8で取得

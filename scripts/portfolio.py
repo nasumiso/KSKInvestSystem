@@ -11,7 +11,7 @@ from ks_util import *
 URL_YAHOO_TOP = "http://www.yahoo.co.jp/"
 URL_YAHOO_LOGIN = (
     "https://login.yahoo.co.jp/config/login?.src=www&.done=http://www.yahoo.co.jp"
-) 
+)
 URL_YAHOO_LOGIN_POST = "https://login.yahoo.co.jp/config/login?"
 URL_YAHOO_FINANCE_PORTFOLIO = (
     "http://info.finance.yahoo.co.jp/portfolio/display/?portfolio_id=pf_1"
@@ -30,7 +30,7 @@ def http_get_yahoo(url, cookies={}):
     # キープアライブ設定
     headers["Connection"] = "Keep-Alive"
 
-    r = requests.get(url, headers=headers, cookies=cookies)
+    r = requests.get(url, headers=headers, cookies=cookies, timeout=5)
     return r
 
 
@@ -221,7 +221,7 @@ def update_my_portfolio():
 
 def main():
     # ロガーの初期化
-    logger = setup_logger('shintakane')
+    logger = setup_logger("shintakane")
 
     args = "update"
     # args = "update get"

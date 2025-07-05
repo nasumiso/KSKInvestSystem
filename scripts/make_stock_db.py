@@ -1328,6 +1328,7 @@ if __name__ == "__main__":
     logger = setup_logger("make_stock_db")
     # カレントディレクトリをこの.pyの場所に
     with chdir(os.path.abspath(os.path.dirname(__file__))):
+        # main()
         try:
             main()
         except Exception as e:
@@ -1335,5 +1336,5 @@ if __name__ == "__main__":
             logger.exception(
                 "Unhandled exception occurred:\n%s", traceback.format_exc()
             )
-            # raise e
-            exit(1)  # エラー終了
+            raise e  # 開発実行時ブレークするため投げる
+            # exit(1)  # エラー終了

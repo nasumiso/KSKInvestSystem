@@ -183,6 +183,10 @@ def get_from_kabutan3(html):
     # ------------------------------
     # eps
     # ------------------------------
+    if not html:
+        log_warning("株探htmlが取得できていない")
+        return {}
+
     # 予想経常利益/発行済株式数
     year_tbl_m = re.search(
         r'<div class="title1">通期</div>.*?<table>(.*?)</table>', html, re.S
@@ -611,7 +615,7 @@ def get_rironkabuka_expr2(record, price):
 
 def main():
     # ロガーの初期化
-    logger = setup_logger('make_stock_db')
+    logger = setup_logger("make_stock_db")
 
     # TODO: 理論株価PTや進捗率はDB保持にしたほうがよいかも
     # 3920, 4493, 4595, 2389, 7270, 5032, 6096, 4169,6195,7808,2410,9107,9264

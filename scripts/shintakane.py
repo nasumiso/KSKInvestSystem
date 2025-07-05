@@ -937,29 +937,29 @@ def get_todays_shintakane():
     log_print("<---- 取得完了")
 
 
-def wait_connect():
-    """
-    laucnhdのための接続
-    """
-    import datetime
-    import time
+# def wait_connect():
+#     """
+#     laucnhdのための接続
+#     """
+#     import datetime
+#     import time
 
-    first_time = datetime.datetime.now()
-    diff = (datetime.datetime.now() - first_time).seconds
-    while diff <= 30:
-        try:
-            url = "https://www.google.co.jp/"
-            import requests
+#     first_time = datetime.datetime.now()
+#     diff = (datetime.datetime.now() - first_time).seconds
+#     while diff <= 30:
+#         try:
+#             url = "https://www.google.co.jp/"
+#             import requests
 
-            requests.get(url)
-            log_print("接続確立")
-            return True
-        except requests.exceptions.ConnectionError as e:
-            log_warning("接続失敗", diff, "秒")
-            log_print(e)
-            time.sleep(5)
-        diff = (datetime.datetime.now() - first_time).seconds
-    return False
+#             requests.get(url)
+#             log_print("接続確立")
+#             return True
+#         except requests.exceptions.ConnectionError as e:
+#             log_warning("接続失敗", diff, "秒")
+#             log_print(e)
+#             time.sleep(5)
+#         diff = (datetime.datetime.now() - first_time).seconds
+#     return False
 
 
 def parse_kessan_html(html):
