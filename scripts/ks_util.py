@@ -534,9 +534,20 @@ def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=
     # 取得に失敗した場合はリトライ
     for count in range(retry + 1):
         # if "Service Temporarily Unavailable" in html:
-        if not (200 <= status_code < 300):  # HTTPステータスコードが200番台は成功
+        success = 200 <= status_code < 300  # HTTPステータスコードが200番台は成功
+        if success:
+            # 成功した場合はリトライループを抜け返す
+            # 通信ブロック度合いによってはここで待機
+            # time.sleep(random.uniform(0.1, 0.4))
+            if count > 0:
+                log_print(f"リトライ取得成功({count+1}回目): {url}")
+            break
+        else:
+            if status_code in (400, 401, 403, 404, 405, 410):
+                log_warning(f"リトライ不要なエラー({status_code})のため中止: {url}")
+                return {}
             if count >= retry:
-                log_warning("やっぱりだめみたいなので中止", url)
+                log_warning("リトライしても通信できないので中止", url)
                 return {}
             log_print(f"取得エラー({status_code})のためリトライ({count+1}回目)", url)
             time.sleep(count + 1)
@@ -548,12 +559,6 @@ def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=
                 cache_fname=cache_fname,
                 with_status=True,
             )
-        else:  # 成功した場合はリトライループを抜け返す
-            # TODO: 通信ブロック度合いによってはここで待機
-            # time.sleep(random.uniform(0.1, 0.4))
-            if count > 0:
-                log_print(f"リトライ取得成功({count+1}回目): {url}")
-            break
     return html
 
 
