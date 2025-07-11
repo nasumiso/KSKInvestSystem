@@ -122,12 +122,13 @@ def log_print(*args, **kwargs):
     """
     logger = get_logger()
 
-    # 引数を文字列に変換してメッセージを構築
-    message_parts = []
-    for arg in args:
-        message_parts.append(str(arg))
+    # ログレベルチェックで早期リターン（パフォーマンス向上）
+    if not logger.isEnabledFor(logging.INFO):
+        return
 
-    message = kwargs.get("sep", " ").join(message_parts)
+    # より効率的な文字列結合
+    sep = kwargs.get("sep", " ")
+    message = sep.join(str(arg) for arg in args)
     logger.info(message)
 
 
@@ -141,12 +142,13 @@ def log_warning(*args, **kwargs):
     """
     logger = get_logger()
 
-    # 引数を文字列に変換してメッセージを構築
-    message_parts = []
-    for arg in args:
-        message_parts.append(str(arg))
+    # ログレベルチェックで早期リターン（パフォーマンス向上）
+    if not logger.isEnabledFor(logging.WARNING):
+        return
 
-    message = kwargs.get("sep", " ").join(message_parts)
+    # より効率的な文字列結合
+    sep = kwargs.get("sep", " ")
+    message = sep.join(str(arg) for arg in args)
     logger.warning(message)
 
 
@@ -160,12 +162,13 @@ def log_error(*args, **kwargs):
     """
     logger = get_logger()
 
-    # 引数を文字列に変換してメッセージを構築
-    message_parts = []
-    for arg in args:
-        message_parts.append(str(arg))
+    # ログレベルチェックで早期リターン（パフォーマンス向上）
+    if not logger.isEnabledFor(logging.ERROR):
+        return
 
-    message = kwargs.get("sep", " ").join(message_parts)
+    # より効率的な文字列結合
+    sep = kwargs.get("sep", " ")
+    message = sep.join(str(arg) for arg in args)
     logger.error(message)
 
 
@@ -179,12 +182,13 @@ def log_debug(*args, **kwargs):
     """
     logger = get_logger()
 
-    # 引数を文字列に変換してメッセージを構築
-    message_parts = []
-    for arg in args:
-        message_parts.append(str(arg))
+    # ログレベルチェックで早期リターン（パフォーマンス向上）
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
 
-    message = kwargs.get("sep", " ").join(message_parts)
+    # より効率的な文字列結合
+    sep = kwargs.get("sep", " ")
+    message = sep.join(str(arg) for arg in args)
     logger.debug(message)
 
 
@@ -210,19 +214,49 @@ def print_dict(dict, ex_key=[]):
     log_print("----------")
 
 
-def memoize(func):
-    cache = {}
+def memoize(func=None, *, maxsize=128):
+    """
+    メモ化デコレータ（サイズ制限付き）
 
-    def mamoized_function(*args):
-        try:
-            return cache[args]
-        except KeyError:
+    Args:
+        func: メモ化対象の関数
+        maxsize: キャッシュの最大サイズ（デフォルト128）
+    """
+    def decorator(f):
+        cache = {}
+        access_order = []  # LRU実装用のアクセス順序
+
+        def memoized_function(*args):
+            # キャッシュヒット時
+            if args in cache:
+                # LRU更新：最近使用したものを末尾に移動
+                access_order.remove(args)
+                access_order.append(args)
+                return cache[args]
+
+            # キャッシュミス時
             log_print("no_memo:", args)
-            value = func(*args)
+            value = f(*args)
+
+            # キャッシュサイズ制限
+            if len(cache) >= maxsize:
+                # LRU: 最も古いエントリを削除
+                oldest_key = access_order.pop(0)
+                del cache[oldest_key]
+
+            # 新しいエントリを追加
             cache[args] = value
+            access_order.append(args)
             return value
 
-    return mamoized_function
+        return memoized_function
+
+    if func is None:
+        # @memoize(maxsize=10) 形式での呼び出し
+        return decorator
+    else:
+        # @memoize 形式での呼び出し（引数なし）
+        return decorator(func)
 
 
 def eprint(*args, **kwargs):
@@ -268,15 +302,13 @@ def backup_file(fname, day=0):
 
 
 def file_write(fname, content):
-    f = open(fname, "w")  # python3では'b'をつけバイナリのまま保存?
-    f.write(content)
-    f.close()
+    with open(fname, "w") as f:  # context managerでファイルハンドルを確実にクローズ
+        f.write(content)
 
 
 def file_read(fname):
-    f = open(fname, "r")  # python3では'b'をつけバイナリのまま読み込み?
-    content = f.read()
-    f.close()
+    with open(fname, "r") as f:  # context managerでファイルハンドルを確実にクローズ
+        content = f.read()
     return content
 
 
@@ -540,7 +572,7 @@ def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=
             # 通信ブロック度合いによってはここで待機
             # time.sleep(random.uniform(0.1, 0.4))
             if count > 0:
-                log_print(f"リトライ取得成功({count+1}回目): {url}")
+                log_print(f"リトライ取得成功({count + 1}回目): {url}")
             break
         else:
             if status_code in (400, 401, 403, 404, 405, 410):
@@ -549,7 +581,7 @@ def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=
             if count >= retry:
                 log_warning("リトライしても通信できないので中止", url)
                 return {}
-            log_print(f"取得エラー({status_code})のためリトライ({count+1}回目)", url)
+            log_print(f"取得エラー({status_code})のためリトライ({count + 1}回目)", url)
             time.sleep(count + 1)
             # リトライ実行(キャッシュは無効化)
             html, status_code = http_get_html(
@@ -594,9 +626,8 @@ def save_pickle(fname, content):
 def load_pickle(fname):
     log_print("%sからpickleロード" % fname)
     try:
-        f = open(fname, "rb")
-        dat = pickle.load(f)
-        f.close()
+        with open(fname, "rb") as f:  # context managerでファイルハンドルを確実にクローズ
+            dat = pickle.load(f)
     except IOError as e:
         log_print(e)
         return {}
@@ -609,9 +640,8 @@ memoized_load_pickle = memoize(load_pickle)  # noqa: E305
 def load_file(fname, tb="r"):
     log_print("%sのfileロード" % fname)
     try:
-        f = open(fname, tb)
-        dat = f.read()
-        f.close()
+        with open(fname, tb) as f:  # context managerでファイルハンドルを確実にクローズ
+            dat = f.read()
     except IOError as e:
         log_print(e)
         return ""

@@ -25,23 +25,24 @@ def search_fromcsv(fname):
         return []
 
     result_list = []
-    csv_r = csv.reader(
-        open(fname, "r", encoding="utf-8")
-    )  # python3ではrbではなくrで開く
-    for row in csv_r:
-        row_dict = {}
-        row_dict["rank"] = row[0]  # 順位
-        # dict["code"] = row[1].split()[0]
-        row_dict["code_s"] = row[1].split()[0]
-        row_dict["name"] = row[1].split()[1] if len(row[1].split()) > 1 else "名前不明"
-        row_dict["place"] = row[2]  # 市場
-        row_dict["sector"] = row[3]  # セクター
-        row_dict["kabuka"] = int(float(row[4].replace(",", "")))  # 株価
-        row_dict["zenjitsuhi"] = int(float(row[5].replace(",", "")))
-        row_dict["zenjitsuhi_per"] = row[6]
-        row_dict["dekidaga"] = float(row[7].replace(",", ""))
-        row_dict["origin"] = "shintakane"
-        result_list.append(row_dict)
+    with open(fname, "r", encoding="utf-8") as f:  # context managerでファイルハンドルを確実にクローズ
+        csv_r = csv.reader(f)
+        for row in csv_r:
+            # 行データの分割結果をキャッシュして効率化
+            row_split = row[1].split()
+            row_dict = {}
+            row_dict["rank"] = row[0]  # 順位
+            # dict["code"] = row[1].split()[0]
+            row_dict["code_s"] = row_split[0]
+            row_dict["name"] = row_split[1] if len(row_split) > 1 else "名前不明"
+            row_dict["place"] = row[2]  # 市場
+            row_dict["sector"] = row[3]  # セクター
+            row_dict["kabuka"] = int(float(row[4].replace(",", "")))  # 株価
+            row_dict["zenjitsuhi"] = int(float(row[5].replace(",", "")))
+            row_dict["zenjitsuhi_per"] = row[6]
+            row_dict["dekidaga"] = float(row[7].replace(",", ""))
+            row_dict["origin"] = "shintakane"
+            result_list.append(row_dict)
     return result_list
 
 
@@ -53,25 +54,26 @@ def search_fromcsv_dekidakaup(fname):
         return []
 
     result_list = []
-    csv_r = csv.reader(
-        open(fname, "r", encoding="utf-8")
-    )  # python3ではrbではなくrで開く
-    for row in csv_r:
-        row_dict = {}
-        row_dict["rank"] = row[0]
-        # dict["code"] = row[1].split()[0]
-        row_dict["code_s"] = row[1].split()[0]
-        row_dict["name"] = row[1].split()[1] if len(row[1].split()) > 1 else "名前不明"
-        row_dict["place"] = row[2]
-        row_dict["sector"] = row[3]
-        row_dict["kabuka"] = int(float(row[4].replace(",", "")))
-        row_dict["zenjitsuhi"] = int(float(row[5].replace(",", "")))
-        row_dict["zenjitsuhi_per"] = row[6]
-        row_dict["dekidaga"] = float(row[7].replace(",", ""))
-        row_dict["average_dekidaga"] = float(row[8].replace(",", ""))  # 平均出来高
-        row_dict["dekidaka_upratio"] = row[9]  # 出来高増加率
-        row_dict["origin"] = "dekidakaup"
-        result_list.append(row_dict)
+    with open(fname, "r", encoding="utf-8") as f:  # context managerでファイルハンドルを確実にクローズ
+        csv_r = csv.reader(f)
+        for row in csv_r:
+            # 行データの分割結果をキャッシュして効率化
+            row_split = row[1].split()
+            row_dict = {}
+            row_dict["rank"] = row[0]
+            # dict["code"] = row[1].split()[0]
+            row_dict["code_s"] = row_split[0]
+            row_dict["name"] = row_split[1] if len(row_split) > 1 else "名前不明"
+            row_dict["place"] = row[2]
+            row_dict["sector"] = row[3]
+            row_dict["kabuka"] = int(float(row[4].replace(",", "")))
+            row_dict["zenjitsuhi"] = int(float(row[5].replace(",", "")))
+            row_dict["zenjitsuhi_per"] = row[6]
+            row_dict["dekidaga"] = float(row[7].replace(",", ""))
+            row_dict["average_dekidaga"] = float(row[8].replace(",", ""))  # 平均出来高
+            row_dict["dekidaka_upratio"] = row[9]  # 出来高増加率
+            row_dict["origin"] = "dekidakaup"
+            result_list.append(row_dict)
     return result_list
 
 
@@ -835,10 +837,9 @@ def get_todays_dekidakaup():
 
     # 新高値情報リストを.csvファイルに保存
     csv_fname = os.path.join(DATA_DIR, "shintakane_data/dekidakaup_" + date + ".csv")
-    csv_w = csv.writer(
-        open(csv_fname, "w", encoding="utf-8")
-    )  # python3ではwbではなく、テキストモードで読み書き
-    csv_w.writerows(rows)
+    with open(csv_fname, "w", encoding="utf-8") as f:  # context managerでファイルハンドルを確実にクローズ
+        csv_w = csv.writer(f)
+        csv_w.writerows(rows)
     log_print("今日の出来高急増を%sに保存しました" % csv_fname)
     log_print("<---- 取得完了")
 
@@ -933,10 +934,9 @@ def get_todays_shintakane():
 
     # 新高値情報リストを.csvファイルに保存
     csv_fname = os.path.join(DATA_DIR, "shintakane_data", "shintakane_" + date + ".csv")
-    csv_w = csv.writer(
-        open(csv_fname, "w", encoding="utf-8")
-    )  # python3ではwbではなく、テキストモードで読み書き
-    csv_w.writerows(rows)
+    with open(csv_fname, "w", encoding="utf-8") as f:  # context managerでファイルハンドルを確実にクローズ
+        csv_w = csv.writer(f)
+        csv_w.writerows(rows)
     log_print("今日の新高値を%sに保存しました" % csv_fname)
 
     log_print("<---- 取得完了")
@@ -1010,13 +1010,12 @@ def parse_kessan_html(html):
 # ------------------------------
 def get_todays_kessan_list(positive=False):
     cache_csv_path = os.path.join(DATA_DIR, "todays_kessan_data", "todays_kessan.csv")
-    csv_r = csv.reader(
-        open(cache_csv_path, "r", encoding="utf-8")
-    )  # python3ではrbではなくrで開く
-    code_s_lst = []
-    for row in csv_r:
-        if kessan.is_positive_kessan(row[3]):
-            code_s_lst.append(row[0])
+    with open(cache_csv_path, "r", encoding="utf-8") as f:  # context managerでファイルハンドルを確実にクローズ
+        csv_r = csv.reader(f)
+        code_s_lst = []
+        for row in csv_r:
+            if kessan.is_positive_kessan(row[3]):
+                code_s_lst.append(row[0])
     return code_s_lst
 
 
