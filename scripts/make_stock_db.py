@@ -921,7 +921,8 @@ def list_all_db(upload_csv=True, update_portforio=True):
         # 順位
         # buffet_url = "https://www.buffett-code.com/company/%s/library" % (stock[0])
         # TODO: 福証などでは.Fになる
-        URL_YAHOO_QUOTE = "https://finance.yahoo.com/quote/%s.%s"
+        # URL_YAHOO_QUOTE = "https://finance.yahoo.com/quote/%s.%s"
+        URL_YAHOO_QUOTE = "https://finance.yahoo.co.jp/quote/%s.%s"
         market_code = get_market_code(stock_data)
         yahoo_url = URL_YAHOO_QUOTE % (stock[0], market_code)
 
