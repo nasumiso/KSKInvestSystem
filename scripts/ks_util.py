@@ -493,8 +493,11 @@ def http_get_html(
                     req_get = requests.get
                     log_print("単独セッションを使用")
             res = req_get(url, headers=headers, cookies=cookies, timeout=5)
-        except requests.exceptions.ConnectionError as e:
-            log_warning("接続失敗")
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ReadTimeout,
+        ) as e:
+            log_warning("接続失敗:")
             log_print(e)
             if with_status:
                 return "", res.status_code if "res" in locals() else 500
@@ -503,9 +506,8 @@ def http_get_html(
         # requests.exceptions.ReadTimeout TODO:
         if res.encoding != "utf-8":
             log_print("html_encoding:", res.encoding, "encoding:", encoding)
-        # htmlをutf8で取得
-        # html = r.text.encode(encoding)
-        html = res.text  # python3ではエンコード済みのテキストが取得される
+        # htmlをutf8で取得(python3ではエンコード済みのテキストが取得される)
+        html = res.text
         # メタ指定での文字コードをutf8に
         # html = html.replace("charset=shift_jis", "charset=utf-8")
 

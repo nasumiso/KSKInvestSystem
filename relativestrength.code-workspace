@@ -2,6 +2,27 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"name": "downloader",
+			"path": "/Users/k_sohara/home/python"
 		}
-	]
+	],
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"name": "Python デバッガー: グローバルPython実行",
+				"type": "debugpy",
+				"request": "launch",
+				"program": "${file}",
+				"console": "integratedTerminal",
+				"cwd": "${fileDirname}",
+				"python": "/usr/bin/python3"
+			}
+		]
+	},
+	"settings": {
+		"python.defaultInterpreterPath": "/usr/bin/python3"
+	}
 }
