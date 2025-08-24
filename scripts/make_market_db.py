@@ -79,6 +79,7 @@ def get_theme_rank_list():
 
     delta, cach_date = get_timedelta_today(cach_path)
     use_cache = delta.days < THEME_RANK_INTERVAL
+    # use_cache = False
     html = http_get_html(
         URL_THEME_RANK_KABUTAN,
         cache_dir=os.path.join(DATA_DIR, "market_data"),
@@ -369,8 +370,8 @@ def convert_python2():
 
 def main():
     # ロガーの初期化
-    logger = setup_logger('make_stock_db')
-    
+    logger = setup_logger("make_stock_db")
+
     market_db = update_market_db()  # noqa: F841
     create_market_csv()
 

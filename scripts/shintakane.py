@@ -392,7 +392,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         "種類",
         "市場",
         "セクター",
-        "詳細セクター",
+        # "詳細セクター",
         "株価",
         "前日比(%)",
         "出来高",
@@ -425,7 +425,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         stock_name = stock_db.get_stock_name_exp(stock)
         sector = stock.get("sector", "セクター名不明")  # d["sector"]
         market = stock.get("market", "市場不明")
-        sector_detail = stock["sector_detail"]
+        # sector_detail = stock["sector_detail"]
         market_cap = int(stock["market_cap"])
         try:
             vola = ",".join(
@@ -464,7 +464,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 origin,
                 market,
                 sector,
-                sector_detail,
+                # sector_detail,
                 kabuka,
                 d["zenjitsuhi_per"],
                 d["dekidaga"],
@@ -493,7 +493,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
                         origin,
                         market,
                         sector,
-                        sector_detail,
+                        # sector_detail,
                         kabuka,
                         d["zenjitsuhi_per"],
                         d["dekidaga"],

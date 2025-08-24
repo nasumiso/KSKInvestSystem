@@ -274,17 +274,17 @@ def analyze_shintakane():
 
     # セクター名わからんのは更新取得する
     # sector_newhight_list: k=セクター名 v=[[1d銘柄数、1d銘柄コード], 1w, 1m]
-    unknown_sector_list = []
-    for key, val in list(sector_newhigh_list.items()):
-        newhigh_lst_m = val[2][1]
-        for code in newhigh_lst_m:
-            if "sector_detail" not in make_stock_db.get_stock_db(code):
-                log_print("%dの詳細セクター更新" % code)
-                unknown_sector_list.append(code)
-    # print unknown_sector_list
-    stocks = make_stock_db.update_db_rows(
-        unknown_sector_list, tables=["master"], latest=True
-    )
+    # unknown_sector_list = []
+    # for key, val in list(sector_newhigh_list.items()):
+    #     newhigh_lst_m = val[2][1]
+    #     for code in newhigh_lst_m:
+    #         if "sector_detail" not in make_stock_db.get_stock_db(code):
+    #             log_print("%dの詳細セクター更新" % code)
+    #             unknown_sector_list.append(code)
+    # # print unknown_sector_list
+    # stocks = make_stock_db.update_db_rows(
+    #     unknown_sector_list, tables=["master"], latest=True
+    # )
     # raise
     log_print("=" * 30)
     log_print("-" * 5, "セクター解析結果")
@@ -308,7 +308,7 @@ def analyze_shintakane():
 
 def main():
     # ロガーの初期化
-    logger = setup_logger('shintakane')
+    logger = setup_logger("shintakane")
 
     # args = ["market"]
     args = ["shintakane"]

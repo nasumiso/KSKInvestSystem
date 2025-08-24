@@ -194,6 +194,9 @@ def get_stock_master_data(code_s, upd):
     # DBにない場合はWebから取得
     detail_text = get_master_data_kabutan(code_s, upd)
     log_print(">>>>> %sのマスター情報を解析 " % code_s)
+    if not detail_text:
+        log_warning("銘柄基本情報htmlが取得できませんでした")
+        return {}
     parsed_data = parse_master_html_kabutan(detail_text)
     if parsed_data:
         # print "銘柄名:%s,時価総額:%d百万円\n最低購入代金:%d"%\
@@ -214,15 +217,15 @@ def get_stock_master_data(code_s, upd):
         parsed_data["access_date"] = datetime.fromtimestamp(stat.st_mtime)
 
     # セクターを取得
-    parsed_data["sector_detail"] = make_sector_data.get_sector_detail(code_s)
-    log_print("詳細セクター:", parsed_data["sector_detail"])
+    # parsed_data["sector_detail"] = make_sector_data.get_sector_detail(code_s)
+    # log_print("詳細セクター:", parsed_data["sector_detail"])
     return parsed_data
 
 
 def main():
     # ロガーの初期化
-    logger = setup_logger('make_stock_db')
-    
+    logger = setup_logger("make_stock_db")
+
     # TODO: !!! 時価総額の値が取得できません でとる
     code_list = ["176A"]  # 7776
     for code in code_list:
