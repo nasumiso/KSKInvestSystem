@@ -18,11 +18,14 @@ def parse_kabutan_account2(html):
     tables = {}
     # 通期データ
     log_print("[今季業績の解析]")
+    if not html:
+        log_warning("業績HTMLデータが空です(フォーマット変更？)")
+        return tables
     year_tbl_m = re.search(
         r'<div class="title1">通期</div>.*?<table>(.*?)</table>', html, re.S
     )
     if not year_tbl_m:
-        log_warning(" 通期テーブルが取得できない（フォーマット変更？）")
+        log_warning("通期テーブルが取得できない（フォーマット変更？）")
         return tables
     year_tbl_html = year_tbl_m.group(1)
 
@@ -568,7 +571,9 @@ def calc_gyoseki_score(tables):
     # print "売上CAGR(%):", average_past_profit_rate
     term_count = len(term_data)
     log_print("%d年平均利益成長率: %d%%" % (term_count, average_past_profit_rate))
-    log_print("%d年平均売上CAGR: %d%%" % (len(term_sales_data), average_past_sales_rate))
+    log_print(
+        "%d年平均売上CAGR: %d%%" % (len(term_sales_data), average_past_sales_rate)
+    )
     # 平均7%以上>4%以上　赤字年は減点
     score_past_profit = (
         step_func(average_past_profit_rate, [0, 4, 7], [0, SCORES[0] / 2, SCORES[0]])
@@ -1023,7 +1028,7 @@ def get_gyoseki_quarity_expr(stock):
 
 def main():
     # ロガーの初期化
-    logger = setup_logger('make_stock_db')
+    logger = setup_logger("make_stock_db")
 
     # TODO: 複利成長率をちゃんとだしたい
     # TODO: 売上成長率・利益成長率の当期と当四半期、5年成長率を表示させたい

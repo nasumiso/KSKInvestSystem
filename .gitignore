@@ -22,3 +22,4 @@ __pycache__/
 # MacOSのDS_Storeファイル
 .DS_Store
 
+.serena

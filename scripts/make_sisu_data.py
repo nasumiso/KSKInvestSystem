@@ -287,35 +287,65 @@ def make_sisu_db():
 
 
 def parse_html_yahoo_jp(html, title=""):
-    rows = []
-    # isMutual = "投資信託 - " in title
-    # if isMutual:
-    # 	expression = r'<td>((\d{4})年(\d+)月(\d+)日)</td><td>(.*?)</td><td>(.*?)</td>'
-    # else:
-    # 	expression = r'<td>((\d{4})年(\d+)月(\d+)日)</td><td>(.*?)</td><td>(.*?)</td><td>(.*?)</td><td>(.*?)</td>'
-    # for m in re.finditer(expression, html):
-    # 	# print m.group(1), m.group(8)
-    # 	day = "%04d-%02d-%02d"%(int(m.group(2)), int(m.group(3)), int(m.group(4)))
-    # 	if isMutual:
-    # 		price = int(float(m.group(5).replace(",", "")))
-    # 	else:
-    # 		price = int(float(m.group(8).replace(",", "")))
-    # 	# print day, price
-    # 	rows.append([day, price])
+    """
+    Yahoo!ファイナンス(日本)の株価時系列テーブルから [日付(YYYY-MM-DD), 調整後終値] を抽出する
+    """
 
-    # 新しい日付から価格データを追加
-    expression = r'<th scope="row" class=".*?">(.*?)</th>.*?<span class=".*?"><span class=".*?"><span class=".*?">(.*?)</span>.*?<span class=".*?"><span class=".*?"><span class=".*?">(.*?)</span>.*?<span class=".*?"><span class=".*?"><span class=".*?">(.*?)</span>.*?<span class=".*?"><span class=".*?"><span class=".*?">(.*?)</span>.*?'
-    # expression = r'<th scope="row" class=".*?">(.*?)</th>(.*?)<span class="(.*?)">(\d+\.?\d*)</span>'
-    for m in re.finditer(expression, html):
-        # print "found:", m.groups()
-        day_exp = r"(\d{4})年(\d+)月(\d+)日"
-        m2 = re.search(day_exp, m.group(1))
-        day = "%04d-%02d-%02d" % (int(m2.group(1)), int(m2.group(2)), int(m2.group(3)))
-        price = int(float(m.group(5).replace(",", "")))
-        # print day, price
-        rows.append([day, price])
+    def strip_html(text):
+        return re.sub(r"<[^>]+>", "", text).strip()
+
+    rows = []
+    tables = re.findall(r"<table[^>]*>(.*?)</table>", html, re.S | re.I)
+    for table_html in tables:
+        # ヘッダの抽出と必要列の特定
+        header_cells = re.findall(r"<th[^>]*>(.*?)</th>", table_html, re.S | re.I)
+        headers = [strip_html(h) for h in header_cells]
+        if not headers or not any("日付" in h for h in headers):
+            continue
+
+        date_idx = next((i for i, h in enumerate(headers) if "日付" in h), None)
+        # 調整後終値を優先、なければ終値
+        price_idx = next(
+            (i for i, h in enumerate(headers) if "調整" in h and "終値" in h), None
+        )
+        if price_idx is None:
+            price_idx = next((i for i, h in enumerate(headers) if "終値" in h), None)
+        if date_idx is None or price_idx is None:
+            continue
+
+        # データ行を走査
+        for tr_html in re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, re.S | re.I)[1:]:
+            cells = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr_html, re.S | re.I)
+            if len(cells) <= max(date_idx, price_idx):
+                continue
+
+            date_text = strip_html(cells[date_idx])
+            # 日付正規化
+            if "年" in date_text:
+                m = re.search(r"(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日", date_text)
+                if not m:
+                    continue
+                date_s = (
+                    f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+                )
+            else:
+                date_text = date_text.replace("/", "-").replace(".", "-")
+                m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", date_text)
+                if not m:
+                    continue
+                date_s = (
+                    f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+                )
+
+            price_text = strip_html(cells[price_idx]).replace(",", "")
+            try:
+                price = int(float(price_text))
+            except Exception:
+                continue
+
+            rows.append([date_s, price])
+
     log_print("直近価格:", rows[:3])
-    # raise
     return rows
 
 
@@ -435,19 +465,6 @@ def make_rs_db():
     if os.path.exists(RS_DB_NAME):
         market_db = pickle.load(open(RS_DB_NAME, "rb"))
 
-    # for i, url in enumerate(ASSET_URLS):
-    # 	# if i != 0:
-    # 	# 	continue
-    # 	print "-"*15
-    # 	# 一年前の日付でリクエスト
-    # 	if "yahoo.co.jp" in url:
-    # 		today = date.today()
-    # 		url = url%(today.year-1, today.month, today.day, \
-    # 			today.year, today.month, today.day)
-    # 	elif "yahoo.com" in url:
-    # 		today = date.today()
-    # 		url = url%(today.month-1, today.day, today.year-1, \
-    # 			today.month-1, today.day, today.year)
     for i, url in enumerate(ASSET_URL2):
         log_print("-" * 15)
         # 一年前の日付でリクエスト
@@ -530,7 +547,7 @@ def convert_python2_to3():
 
 def main():
     # ロガーの初期化
-    logger = setup_logger('make_stock_db')
+    logger = setup_logger("make_stock_db")
 
     # make_sisu_db()
     make_rs_db()
