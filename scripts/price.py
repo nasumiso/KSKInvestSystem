@@ -730,21 +730,37 @@ def parse_price_text_yahoo_old(text):
 def parse_price_text_yahoo_new(text):
     # 現在価格の取得
     price_current = 0
+
+    def _to_int(s):
+        try:
+            return int(float(s.replace(",", "")))
+        except Exception:
+            return 0
+
     try:
-        # m = re.search(r'<span class="_3rXWJKZF">(.*?)</span>', text)
-        # 24.9フォーマット変わった
-        m = re.search(r'<span class="StyledNumber__value__3rXW">(.*?)</span>', text)
-        # 最初の1つ目のspan classが現在価格情報
-        price_current = int(float(m.group(1).replace(",", "")))
-        log_print("現在株価:", price_current)
+        # 柔軟に現在価格を探す: data-testid や StyledNumber の span などを順に試す
+        # 1) data-testid="currentPrice" のパターン
+        m = re.search(r'data-testid="currentPrice"[^>]*>([0-9,]+(?:\.[0-9]+)?)<', text)
+        if m:
+            price_current = _to_int(m.group(1))
+            log_print("現在株価 (data-testid):", price_current)
+        else:
+            # 2) span の class に StyledNumber__value を含むものを探して数値の最初の出現を使う
+            for m in re.finditer(
+                r'<span[^>]*class="[^"]*StyledNumber__value[^"]*"[^>]*>(.*?)</span>',
+                text,
+            ):
+                val = m.group(1).strip()
+                if re.match(r"^[0-9,]+(?:\.[0-9]+)?$", val):
+                    price_current = _to_int(val)
+                    log_print("現在株価 (StyledNumber):", price_current)
+                    break
     except Exception:
         log_print("現在株価なし")  # 上場廃止時もこれ
-        # print "!!! デイリー価格情報がありません(フォーマット変更?)"
-        # return 0, []
 
     # 時系列価格データの取得
     price_list = []
-    m = re.search(r"<tbody>(.*?)</tbody>", text)
+    m = re.search(r"<tbody>(.*?)</tbody>", text, re.DOTALL)
     if not m:
         log_warning(" デイリー価格情報リストがありません(フォーマット変更?)")
         return 0, []  # 上場廃止時もこれ
@@ -753,34 +769,48 @@ def parse_price_text_yahoo_new(text):
     try:
         days = []
         # 日付を先に集める
-        for m in re.finditer(r'<th scope="row".*?>(.*?)</th>', tbody):
-            # print "日付:",m.group(1)
-            days.append(m.group(1))
-        # 24.9フォーマット変わった
-        # for ind, m in enumerate(re.finditer(r'<tr class="_2ZqX1qip">(.*?)</tr>', tbody)):
-        for ind, m in enumerate(
-            re.finditer(r'<tr class="HistoryTable__row__2ZqX">(.*?)</tr>', tbody)
+        for mm in re.finditer(r'<th scope="row".*?>(.*?)</th>', tbody, re.DOTALL):
+            days.append(mm.group(1).strip())
+        # 行はクラス名が一定でないため汎用的に<tr>を取り出して解析
+        for ind, mm in enumerate(
+            re.finditer(r"<tr\b[^>]*>(.*?)</tr>", tbody, re.DOTALL)
         ):
-            trlist = m.group(1)
-            row = []
-            # 始値、高値、安値、終値、出来高、調整後終値
-            row.append(days[ind])
-            # for m2 in re.finditer(r'<span class="_3rXWJKZF">(.*?)</span>', trlist):
-            for m2 in re.finditer(
-                r'<span class="StyledNumber__value__3rXW">(.*?)</span>', trlist
-            ):
-                # print m2.group(1)
-                row.append(m2.group(1))
-            row = [row[0]] + [int(float(_r.replace(",", ""))) for _r in row[1:]]
-            # print "日次データ: ", row
+            trlist = mm.group(1)
+            # 行内の<th>から日付を取得（なければ事前に取得した days からフォールバック）
+            dm = re.search(r"<th[^>]*>(.*?)</th>", trlist, re.DOTALL)
+            if dm:
+                date_str = dm.group(1).strip()
+            else:
+                try:
+                    date_str = days[ind]
+                except Exception:
+                    date_str = ""
+            # 各値は StyledNumber__value を含む span に入っている
+            vals = [
+                m2.group(1).strip()
+                for m2 in re.finditer(
+                    r'<span[^>]*class="[^"]*StyledNumber__value[^"]*"[^>]*>(.*?)</span>',
+                    trlist,
+                    re.DOTALL,
+                )
+            ]
+            # 値が6つ未満ならデータ行でないと判断してスキップ
+            if len(vals) < 6:
+                continue
+            # 整数化。数値以外は0にフォールバック
+            nums = [_to_int(v) for v in vals[:6]]
+            row = [date_str] + nums
             price_list.append(row)
     except Exception as e:
         log_warning(" Yahoo価格リスト解析エラー（フォーマット変更？）", e)
+
+    # 現在価格が取れなければ履歴の最新から取得
     if price_current == 0:
         try:
+            # 7番目のカラムに調整後終値が入っている想定
             price_current = price_list[0][6]
             log_print("現在株価を履歴から取得", price_current)
-        except IndexError:
+        except Exception:
             log_warning("現在株価取得できず")
     # 株式分割の調整
     adjust_divide_price(price_list)
@@ -797,6 +827,37 @@ def parse_price_text_yahoo(text):
     # 新しいっぽいフォーマット
     log_print("Yahoo価格: 新しいフォーマット")
     return parse_price_text_yahoo_new(text)
+
+
+def parse_date_str(s):
+    """日付文字列を解析して date を返す（失敗なら None）。
+    対応フォーマット: 'YYYY年M月D日', 'YYYY/MM/DD', 'YYYY-MM-DD', ISO
+    """
+    if not s:
+        return None
+    # 1) YYYY年M月D日
+    m = re.search(r"(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日", s)
+    if m:
+        try:
+            return datetime.strptime(
+                f"{m.group(1)}/{m.group(2)}/{m.group(3)}", "%Y/%m/%d"
+            ).date()
+        except Exception:
+            return None
+    # 2) YYYY/MM/DD or YYYY-MM-DD
+    m = re.search(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", s)
+    if m:
+        try:
+            return datetime.strptime(
+                f"{m.group(1)}/{m.group(2)}/{m.group(3)}", "%Y/%m/%d"
+            ).date()
+        except Exception:
+            return None
+    # 3) ISO-ish fallback
+    try:
+        return datetime.fromisoformat(s.strip()).date()
+    except Exception:
+        return None
 
 
 def parse_price_text(text):
@@ -861,8 +922,12 @@ def parse_price_text(text):
         kairi = round(100 * float(ref_price - ma10) / ma10, 1)  # 安値からのma10との乖離
         # print "down_vol=", down_vol, "vol=", vol, "ma10=", ma10, "kairi=", kairi
         if vol > down_vol and kairi <= 4:
-            m = re.search(r"(\d*?)年(\d*?)月(\d*?)日", price_list[ind][0])
-            day = m.group(2) + "/" + m.group(3)
+            dt = parse_date_str(price_list[ind][0])
+            if dt:
+                day = dt.strftime("%m/%d")
+            else:
+                # フォーマット不明なら元文字列を短縮して使う
+                day = price_list[ind][0]
             log_print("ポケットピポット:%s(%+d)" % (day, kairi))
             pockets.append("%s,%d" % (day, kairi))
         # break
@@ -914,8 +979,11 @@ def parse_price_text(text):
             # TODO: ボラティリティ的なブレイクアウトを見たほうが良いが、
             # ややめんどうなのでまずはma乖離で ローソク足ボラティリティを使えば良い
             if price_list[ind][6] > price_list[ind + 1][6]:
-                m = re.search(r"(\d*?)年(\d*?)月(\d*?)日", price_list[ind][0])
-                day = m.group(2) + "/" + m.group(3)
+                dt = parse_date_str(price_list[ind][0])
+                if dt:
+                    day = dt.strftime("%m/%d")
+                else:
+                    day = price_list[ind][0]
                 per = 100 * vol / avg_vol - 100
                 log_print("ブレイク:%s,%d" % (day, per))
                 breaks.append("%s,%d" % (day, per))
@@ -927,14 +995,13 @@ def parse_price_text(text):
     for ind in range(LOG_DAY):
         if ind >= len(price_list):
             continue
-        m = re.search(r"(\d*?)年(\d*?)月(\d*?)日", price_list[ind][0])
-        dt = datetime.strptime(
-            m.group(1) + "/" + m.group(2) + "/" + m.group(3), "%Y/%m/%d"
-        ).date()
+        dt = parse_date_str(price_list[ind][0])
+        if not dt:
+            log_warning(" 日付解析失敗: %s" % price_list[ind][0])
+            continue
         pr = price_list[ind][6]  # int 終値
         past_prices.append((dt, pr))
-        # day = m.group(2)+"/"+m.group(3)
-    # print "過去価格", past_prices
+        # print "過去価格", past_prices
     price["price_log"] = past_prices
     # TODO: 週次でやっている20MA押しをやりたい
 
@@ -1057,12 +1124,13 @@ def main():
     # となっているとき、取れていない
     # TODO: ローソク足ボラティリティの計算が疑問　終値の平均で割るところ
     # TODO: 1/5/20出来高変化率もほしい
-    code_list = ["7386"]
+    code_list = ["215A"]
     for code_s in code_list:
         log_print("-" * 30)
         log_print("%sの価格を更新します" % code_s)
+        stock = make_stock_db.load_cacehd_stock_db(code_s)
         price_dict = get_price_data(
-            code_s, UPD_INTERVAL
+            code_s, stock, UPD_INTERVAL
         )  # UPD_INTERVAL/UPD_REEVAL/UPD_FORCE
         log_print(price_dict)
         # td = datetime.today().date()
