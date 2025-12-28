@@ -22,12 +22,18 @@ MARKET_DB_PATH = os.path.join(DATA_DIR, "market_data/market_db.pickle")
 
 def parse_theme_html(html):
     # print ux_cmd_head(html, 10)
-    # <td class="acrank_url"><a href="/themes/?theme=デジタルトランスフォーメーション">デジタルトランスフォーメーション</a></td> # noqa: E501
+    # Example: <td class="acrank_url"><a href="/themes/?theme=...">テーマ名</a></td>
+    if not html:
+        log_warning("parse_theme_html: empty HTML")
+        return []
     themes = []
-    for m in re.finditer(
-        r'<td class="acrank_url"><a href=".*?">(.*?)</a></td>', html
-    ):  # noqa: E501
-        themes.append(m.group(1))
+    # Allow for attribute order/spacing and multi-line HTML
+    pattern = re.compile(
+        r'<td[^>]*class=["\']acrank_url["\'][^>]*>\s*<a[^>]*>(.*?)</a>\s*</td>',
+        re.DOTALL | re.IGNORECASE,
+    )
+    for m in pattern.finditer(html):
+        themes.append(m.group(1).strip())
     return themes
 
 
@@ -38,7 +44,7 @@ def get_timedelta_today(fname):
     # TODO: utilに移動
     if not os.path.exists(fname):
         log_print("%sはありません" % fname)
-        return None
+        return None, None
     stat = os.stat(fname)
     fdate = datetime.fromtimestamp(stat.st_mtime)
     today = datetime.today()
@@ -78,20 +84,38 @@ def get_theme_rank_list():
     cach_path = os.path.join(DATA_DIR, "market_data", "theme_rank.html")
 
     delta, cach_date = get_timedelta_today(cach_path)
-    use_cache = delta.days < THEME_RANK_INTERVAL
-    # use_cache = False
+    if delta is None or cach_date is None:
+        log_print("キャッシュファイルがないため取得します:", cach_path)
+        use_cache = False
+    else:
+        use_cache = delta.days < THEME_RANK_INTERVAL
+
     html = http_get_html(
         URL_THEME_RANK_KABUTAN,
         cache_dir=os.path.join(DATA_DIR, "market_data"),
         cache_fname="theme_rank.html",
         use_cache=use_cache,
     )
+
+    if not html:
+        log_warning("テーマランクのHTML取得に失敗しました。cacheを確認します")
+        # Try to read cache directly if available
+        if os.path.exists(cach_path):
+            html = file_read(cach_path)
+        else:
+            html = ""
+
     theme_rank_list = parse_theme_html(html)
-    prev_cache, prev_day = get_prev_fname(cach_path, cach_date - timedelta(2))
-    if (cach_date - prev_day).days >= INTERVAL_BACKUP:
-        backup_file(cach_path, 0)
-    prev_html = file_read(prev_cache)
-    prev_theme_rank_list = parse_theme_html(prev_html)
+
+    if cach_date:
+        prev_cache, prev_day = get_prev_fname(cach_path, cach_date - timedelta(2))
+    else:
+        prev_cache, prev_day = "", datetime.today() - timedelta(2)
+
+    prev_theme_rank_list = []
+    if prev_cache and os.path.exists(prev_cache):
+        prev_html = file_read(prev_cache)
+        prev_theme_rank_list = parse_theme_html(prev_html)
 
     return theme_rank_list, prev_theme_rank_list, cach_date, prev_day
 

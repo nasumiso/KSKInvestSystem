@@ -22,6 +22,7 @@ Provide concise, actionable guidance so an AI coding agent can be immediately pr
 - `data/stock_data/stocks.pickle` — canonical project DB (pickle). Many functions read/write this file.
 
 ## Conventions & patterns to follow (specific)
+- **コードコメント・`docstring`は日本語で記述してください。** 簡潔で分かりやすい日本語を使い、技術用語やコード・識別子は英語のまま残して問題ありません（例: `get_price_day()` や外部ライブラリ名）。
 - stock identifier: `code_s` (string) is the canonical key for stocks in the DB and across functions — prefer `code_s` over numeric `code`.
 - Update modes: use `UPD_INTERVAL`, `UPD_REEVAL`, `UPD_FORCE` (defined in `ks_util.py`) to control freshness when calling update functions.
 - Logging: prefer `log_print`, `log_warning`, `log_error` helpers (they wire to the centralized logger and rotate files automatically).
