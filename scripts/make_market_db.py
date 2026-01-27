@@ -19,6 +19,13 @@ from ks_util import *
 URL_THEME_RANK_KABUTAN = "https://kabutan.jp/info/accessranking/3_2"
 MARKET_DB_PATH = os.path.join(DATA_DIR, "market_data/market_db.pickle")
 
+# shelveモード切り替え（移行後はTrueに設定）
+USE_SHELVE = True
+
+# shelve用のインポート
+if USE_SHELVE:
+    from db_shelve import get_market_db as _get_market_shelve_db
+
 
 def parse_theme_html(html):
     # print ux_cmd_head(html, 10)
@@ -158,7 +165,7 @@ def get_major_theme(themes):
     銘柄テーマから、主要3テーマを取得する
     @themes 銘柄のテーマ: stock_dbの'themes'キー
     """
-    market_db = memoized_load_pickle(MARKET_DB_PATH)
+    market_db = get_market_db()
     theme_rank = market_db["theme_rank"]  # 現在のランキング
     theme_rank_dict = {v: i + 1 for (i, v) in enumerate(theme_rank)}
     if not themes:
@@ -226,13 +233,27 @@ def make_nasdaq_db():
 
 
 def get_market_db():
-    market_db = memoized_load_pickle(MARKET_DB_PATH)
-    return market_db
+    """マーケットDBを取得（dictとして返す）"""
+    if USE_SHELVE:
+        with _get_market_shelve_db() as db:
+            return db.export_to_dict()
+    else:
+        market_db = memoized_load_pickle(MARKET_DB_PATH)
+        return market_db
+
+
+def _save_market_db(market_db):
+    """マーケットDBを保存"""
+    if USE_SHELVE:
+        with _get_market_shelve_db() as db:
+            db.import_from_dict(market_db)
+    else:
+        save_pickle(MARKET_DB_PATH, market_db)
 
 
 def update_market_db():
     """マーケットDBを読み込んで最新に更新"""
-    market_db = load_pickle(MARKET_DB_PATH)
+    market_db = get_market_db()
 
     theme_db = make_theme_data()
     market_db.update(theme_db)
@@ -247,7 +268,7 @@ def update_market_db():
     nasdaq_db = make_nasdaq_db()
     market_db.update(nasdaq_db)
 
-    save_pickle(MARKET_DB_PATH, market_db)
+    _save_market_db(market_db)
     log_print("MarketDB保存:", list(market_db.keys()))
     return market_db
 
@@ -257,7 +278,7 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
     if shintakane_theme_csv is None:
         shintakane_theme_csv = []
     if not market_db:
-        market_db = load_pickle(MARKET_DB_PATH)
+        market_db = get_market_db()
     csv_path = os.path.join(DATA_DIR, "code_rank_data", "market_data.csv")
 
     theme_rank_list, prev_theme_rank_list, _, prev_day = get_theme_rank_list()

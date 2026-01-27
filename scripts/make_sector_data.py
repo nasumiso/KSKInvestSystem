@@ -12,6 +12,12 @@ from html.parser import HTMLParser
 
 from ks_util import *
 
+# shelveモード切り替え（移行後はTrueに設定）
+USE_SHELVE = True
+
+if USE_SHELVE:
+    from db_shelve import get_sector_db as _get_sector_shelve_db
+
 URL_REUTER_SECTOR_TABLE_TOP = "https://commerce.jp.reuters.com/purchase/fdcScreen2.do"
 URL_REUTER_SECTOR_TABLE = "https://commerce.jp.reuters.com/screening/Sectortop.asp"
 PATH_STOCKS_PICKLE = "stock_data/stocks.pickle"
@@ -122,11 +128,33 @@ def make_sector_data():
     html = http_get_html(URL_REUTER_SECTOR_TABLE, cache_dir="stock_data/sector")
     sector_table = parse_html(html)
     # 保存
-    save_pickle(PATH_SECTOR_DB, sector_table)
+    _save_sector_db(sector_table)
     return sector_table
 
 
 PATH_SECTOR_DB = "stock_data/sector/sector_db.pickle"
+
+
+def _load_sector_db():
+    """セクターDBをロードする内部関数"""
+    if USE_SHELVE:
+        with _get_sector_shelve_db() as db:
+            if len(db) == 0:
+                return {}
+            return db.export_to_dict()
+    else:
+        if not os.path.exists(PATH_SECTOR_DB):
+            return {}
+        return load_pickle(PATH_SECTOR_DB)
+
+
+def _save_sector_db(sector_table):
+    """セクターDBを保存する内部関数"""
+    if USE_SHELVE:
+        with _get_sector_shelve_db() as db:
+            db.import_from_dict(sector_table)
+    else:
+        save_pickle(PATH_SECTOR_DB, sector_table)
 
 
 def get_sector_detail(code_s):
@@ -134,7 +162,7 @@ def get_sector_detail(code_s):
     指定銘柄のセクター情報を取得
     int -> str
     """
-    sector_tables = memoized_load_pickle(PATH_SECTOR_DB)
+    sector_tables = _load_sector_db()
     for sector_name, code_list in list(sector_tables.items()):
         if code_s in code_list:
             return sector_name
@@ -146,12 +174,16 @@ def test_make_secotr_data():
     セクター情報を銘柄DBから読み込み表示
     """
     latest = False
-    if not os.path.exists(PATH_SECTOR_DB) or latest:
+    sector_db_exists = (
+        _get_sector_shelve_db().exists() if USE_SHELVE else os.path.exists(PATH_SECTOR_DB)
+    )
+    if not sector_db_exists or latest:
         sector_table = make_sector_data()
     else:
-        sector_table = load_pickle(PATH_SECTOR_DB)
+        sector_table = _load_sector_db()
     # ロード
-    stocks_db = load_pickle(PATH_STOCKS_PICKLE)
+    import make_stock_db
+    stocks_db = make_stock_db.load_stock_db()
     # 表示
     for sector_name, code_list in list(sector_table.items()):
         unknown_code_list = []
@@ -172,7 +204,7 @@ def update_sector_stockdb():
     """
     stock_db内の銘柄に対して詳細セクター更新
     """
-    sector_tables = load_pickle(PATH_SECTOR_DB)
+    sector_tables = _load_sector_db()
     # 更新
     import make_stock_db
 

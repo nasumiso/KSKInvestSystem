@@ -1,5 +1,11 @@
 from ks_util import *
 
+# shelveモード切り替え（移行後はTrueに設定）
+USE_SHELVE = True
+
+if USE_SHELVE:
+    from db_shelve import get_kessan_db as _get_kessan_shelve_db
+
 
 def is_positive_kessan(summary):
     positive_words = ["上方修正", "増益", "増配", "黒字浮上"]
@@ -98,6 +104,28 @@ def get_kessan_quarter(stock):
 PF_KESSAN_PATH = os.path.join(DATA_DIR, "todays_kessan_data", "pf_kessan.pickle")
 
 
+def _save_kessan_db(pf_kessan_dict):
+    """決算DBを保存する内部関数"""
+    if USE_SHELVE:
+        with _get_kessan_shelve_db() as db:
+            db.import_from_dict(pf_kessan_dict)
+    else:
+        save_pickle(PF_KESSAN_PATH, pf_kessan_dict)
+
+
+def _load_kessan_db():
+    """決算DBをロードする内部関数"""
+    if USE_SHELVE:
+        with _get_kessan_shelve_db() as db:
+            if len(db) == 0:
+                return None
+            return db.export_to_dict()
+    else:
+        if not os.path.exists(PF_KESSAN_PATH):
+            return None
+        return load_pickle(PF_KESSAN_PATH)
+
+
 def save_pf_kessan_db(stocks):
     """決算DBに銘柄の決算情報を保存する"""
     import portfolio
@@ -116,19 +144,18 @@ def save_pf_kessan_db(stocks):
     # 決算日でソート
     # pf_kessan_dict = sorted(pf_kessan_dict.items(), key=lambda x: x[1])
     # print pf_kessan_dict
-    save_pickle(PF_KESSAN_PATH, pf_kessan_dict)
+    _save_kessan_db(pf_kessan_dict)
 
 
 def load_pf_kessan_db():
-    import os.path
-
-    if not os.path.exists(PF_KESSAN_PATH):
+    pf_kessan_dict = _load_kessan_db()
+    if pf_kessan_dict is None:
         # 銘柄DBをロードし、そこから決算情報を抜き出して決算DBに保存
         import make_stock_db as db
 
         stocks = db.load_stock_db()
         save_pf_kessan_db(stocks)
-    pf_kessan_dict = load_pickle(PF_KESSAN_PATH)
+        pf_kessan_dict = _load_kessan_db()
     return pf_kessan_dict
 
 
