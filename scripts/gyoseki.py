@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 import re
 import os
@@ -160,7 +161,7 @@ def parse_kabutan_account2(html):
             ratio_html = ratio_m.group(1)
         elif tble_name == "gyoseki_quarter":
             ratio_m = re.search(
-                r'<tr>\r\n<th scope="row">前年同期比</th>(.*?)</tr>', tbl_html, re.S
+                r'<tr>\r?\n<th scope="row">前年同期比</th>(.*?)</tr>', tbl_html, re.S
             )
             ratio_html = ratio_m.group(1)
         # print ratio_html
@@ -1040,17 +1041,16 @@ def main():
     # TODO: 配当2%まで出してるところが10倍株の意外な要素らしい(井村さん)
     # TODO: 通期進捗率を評価に含める？
     # TODO: 利益率伸びPTを表示に入れたい
-    # code_list = [6789, 6121, 3038,5401, 2301,6095,7697,8001,8035,3668,4483,3994,3923,4478]
-    code_list_s = ["4112"]
+    code_list_s = ["6574"]
     for code_s in code_list_s:
-        # gyoseki_data = get_gyoseki_data(c, UPD_INTERVAL) # UPD_FORCE/UPD_INTERVAL
-        # calc_progress_rate(gyoseki_data)
+        gyoseki_data = get_gyoseki_data(code_s, UPD_INTERVAL)  # UPD_FORCE/UPD_INTERVAL
+        calc_progress_rate(gyoseki_data)
 
-        import make_stock_db as db
+        # import make_stock_db as db
 
-        stock = db.load_cacehd_stock_db(code_s)
-        # print get_gyoseki_expr(stock)
-        log_print(get_gyoseki_quarity_expr(stock))
+        # stock = db.load_cacehd_stock_db(code_s)
+        # # print get_gyoseki_expr(stock)
+        # log_print(get_gyoseki_quarity_expr(stock))
 
 
 if __name__ == "__main__":

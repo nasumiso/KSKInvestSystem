@@ -1,189 +1,189 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+このファイルは、Claude Code (claude.ai/code) がこのリポジトリのコードを扱う際のガイダンスを提供します。
 
-## Project Overview
+## プロジェクト概要
 
-This is a Japanese stock market analysis system that scrapes financial data from various sources (Kabutan, Yahoo Finance Japan), analyzes stocks based on multiple criteria (fundamentals, momentum, technical indicators), and ranks them for investment opportunities. The system focuses on identifying high-growth stocks using screening criteria inspired by growth stock investing methodologies.
+これは日本の株式市場分析システムで、複数のソース（株探、Yahoo Finance Japan）から財務データをスクレイピングし、複数の基準（ファンダメンタルズ、モメンタム、テクニカル指標）に基づいて株式を分析し、投資機会のためにランク付けするシステムです。このシステムは、成長株投資手法に触発されたスクリーニング基準を使用して、高成長株を特定することに焦点を当てています。
 
-## Architecture
+## アーキテクチャ
 
-### Core Data Flow
+### コアデータフロー
 
-1. **Data Acquisition** (`shintakane.py` main flow):
-   - Scrapes daily new high prices from Kabutan (`get_todays_shintakane()`)
-   - Scrapes volume surge stocks (`get_todays_dekidakaup()`)
-   - Fetches earnings announcement updates (`update_todays_kessan()`)
-   - Combines these sources into candidate stock lists
+1. **データ取得** (`shintakane.py` のメインフロー):
+   - 株探から日々の新高値をスクレイピング (`get_todays_shintakane()`)
+   - 出来高急増銘柄をスクレイピング (`get_todays_dekidakaup()`)
+   - 決算発表更新を取得 (`update_todays_kessan()`)
+   - これらのソースを候補銘柄リストに統合
 
-2. **Stock Database** (Pickle-based):
-   - Central database: `data/stock_data/stocks.pickle`
-   - Contains all stock master data, prices, earnings, indicators, theoretical prices
-   - Accessed via `make_stock_db.py` module
+2. **株式データベース** (Pickleベース):
+   - 中央データベース: `data/stock_data/stocks.pickle`
+   - すべての銘柄マスターデータ、株価、決算、指標、理論株価を含む
+   - `make_stock_db.py` モジュールを介してアクセス
 
-3. **Data Update Pipeline** (`update_db_rows()` in `make_stock_db.py`):
-   - **Master data**: Basic company info, sector, themes, market cap (`master.py`)
-   - **Price data**: Daily/weekly prices from Yahoo, technical indicators from Kabutan (`price.py`)
-   - **Earnings data**: Quarterly/annual results, growth rates (`gyoseki.py`)
-   - **Indicator data**: PER, PSR, ROE, margins, credit balance (`shihyou.py`)
-   - **Theoretical price**: Fair value calculations (`rironkabuka.py`)
+3. **データ更新パイプライン** (`make_stock_db.py` の `update_db_rows()`):
+   - **マスターデータ**: 基本企業情報、セクター、テーマ、時価総額 (`master.py`)
+   - **株価データ**: Yahooからの日次/週次株価、株探からのテクニカル指標 (`price.py`)
+   - **決算データ**: 四半期/年次決算、成長率 (`gyoseki.py`)
+   - **指標データ**: PER、PSR、ROE、利益率、信用残 (`shihyou.py`)
+   - **理論株価**: 適正価値計算 (`rironkabuka.py`)
 
-4. **Analysis & Ranking** (`list_all_db()` in `make_stock_db.py`):
-   - Calculates composite score: 40% earnings + 20% indicators + 25% momentum + 15% fundamentals
-   - Updates stock rankings in database
-   - Generates CSV output with detailed metrics
+4. **分析とランキング** (`make_stock_db.py` の `list_all_db()`):
+   - 総合スコアを計算: 業績40% + 指標20% + モメンタム25% + ファンダメンタルズ15%
+   - データベース内の銘柄ランキングを更新
+   - 詳細メトリクス付きCSV出力を生成
 
-5. **Market Analysis** (`make_market_db.py`):
-   - Tracks market indices (TOPIX, S&P500, etc.) from `data/sisu_data/`
-   - Analyzes sector and theme strength
-   - Creates market summary CSV
+5. **市場分析** (`make_market_db.py`):
+   - `data/sisu_data/` から市場指数（TOPIX、S&P500など）を追跡
+   - セクターとテーマの強度を分析
+   - 市場サマリーCSVを作成
 
-### Key Technical Concepts
+### 主要な技術概念
 
-**Momentum Analysis** (`price.py`):
-- **RS (Relative Strength)**: Weighted comparison of current price vs 13/26/39/52-week prices
-- **Momentum Point**: RS normalized against TOPIX RS using normal distribution
-- **Sell Pressure Ratio**: Ratio of buying vs selling volume based on candlestick decomposition
-- **Candlestick Volatility**: Price range standardized by average closing price
-- **Pocket Pivot**: High volume up-day exceeding all recent down-day volumes near MA
-- **Trend Template**: 7-point checklist including MA relationships, 52-week position, RS threshold
+**モメンタム分析** (`price.py`):
+- **RS (相対力指数)**: 現在株価と13/26/39/52週株価の加重比較
+- **モメンタムポイント**: 正規分布を使用してTOPIX RSに対して正規化されたRS
+- **売り圧力比率**: ローソク足分解に基づく買い対売りの出来高比率
+- **ローソク足ボラティリティ**: 平均終値で標準化された価格レンジ
+- **ポケットピボット**: MA付近で最近のすべての下げ日の出来高を上回る高出来高の上昇日
+- **トレンドテンプレート**: MA関係、52週ポジション、RSしきい値を含む7点チェックリスト
 
-**Earnings Quality** (`gyoseki.py`):
-- Growth rates for current quarter and full year (sales & operating profit)
-- Progress rates comparing current quarter to same quarter previous year
-- 5-year and 4-quarter historical growth consistency
+**業績品質** (`gyoseki.py`):
+- 当四半期と通期の成長率（売上高と営業利益）
+- 当四半期と前年同期を比較した進捗率
+- 5年間および4四半期の過去成長一貫性
 
-**Cache Management** (UPD_* constants in `ks_util.py`):
-- `UPD_CACHE (0)`: Use cached data if available
-- `UPD_INTERVAL (1)`: Refresh if interval exceeded, respect file cache
-- `UPD_REEVAL (2)`: Re-evaluate logic but use file cache
-- `UPD_FORCE (3)`: Force fresh download, ignore all caches
+**キャッシュ管理** (`ks_util.py` の UPD_* 定数):
+- `UPD_CACHE (0)`: 利用可能な場合はキャッシュデータを使用
+- `UPD_INTERVAL (1)`: 間隔を超えた場合に更新、ファイルキャッシュを尊重
+- `UPD_REEVAL (2)`: ロジックを再評価するがファイルキャッシュを使用
+- `UPD_FORCE (3)`: 強制的に新規ダウンロード、すべてのキャッシュを無視
 
-### Module Responsibilities
+### モジュールの役割
 
-- `shintakane.py`: Main script for new high/volume screening workflow
-- `make_stock_db.py`: Database management, ranking, CSV generation
-- `price.py`: Price data fetching & technical analysis (Yahoo & Kabutan)
-- `gyoseki.py`: Earnings data parsing & growth scoring
-- `shihyou.py`: Financial indicators (valuation, profitability, credit)
-- `rironkabuka.py`: Theoretical price calculations
-- `master.py`: Company master data & theme analysis
-- `make_market_db.py`: Market indices & sector/theme ranking
-- `ks_util.py`: Utilities (HTTP, logging, pickle DB, file operations)
-- `kessan.py`: Earnings calendar management
-- `portfolio.py`: Personal portfolio tracking
-- `googledrive.py`: Upload results to Google Drive
+- `shintakane.py`: 新高値/出来高スクリーニングワークフローのメインスクリプト
+- `make_stock_db.py`: データベース管理、ランキング、CSV生成
+- `price.py`: 株価データ取得とテクニカル分析（YahooとKabutan）
+- `gyoseki.py`: 決算データ解析と成長スコアリング
+- `shihyou.py`: 財務指標（バリュエーション、収益性、信用）
+- `rironkabuka.py`: 理論株価計算
+- `master.py`: 企業マスターデータとテーマ分析
+- `make_market_db.py`: 市場指数とセクター/テーマランキング
+- `ks_util.py`: ユーティリティ（HTTP、ロギング、pickle DB、ファイル操作）
+- `kessan.py`: 決算カレンダー管理
+- `portfolio.py`: 個人ポートフォリオ追跡
+- `googledrive.py`: Google Driveへの結果アップロード
 
-## Common Development Commands
+## 一般的な開発コマンド
 
-### Running the Main Analysis
+### メイン分析の実行
 
 ```bash
-# Full analysis (scrape + analyze + rank)
+# 完全分析（スクレイピング + 分析 + ランキング）
 cd scripts
 python shintakane.py
 
-# Just analyze existing data without scraping
+# スクレイピングなしで既存データのみを分析
 python shintakane.py analyze
 
-# Update & rank all stocks in database
+# データベース内のすべての銘柄を更新してランク付け
 python make_stock_db.py list_all_db
 ```
 
-### Database Operations
+### データベース操作
 
 ```bash
-# Update specific stocks
-# Edit code_list in make_stock_db.py main() under command == "update"
+# 特定銘柄の更新
+# make_stock_db.py の main() 内で command == "update" の code_list を編集
 python make_stock_db.py update
 
-# View specific stock data
-# Edit code_list in make_stock_db.py main() under command == "list"
+# 特定銘柄データの表示
+# make_stock_db.py の main() 内で command == "list" の code_list を編集
 python make_stock_db.py list
 
-# Clean up delisted stocks
+# 上場廃止銘柄のクリーンアップ
 python make_stock_db.py reflesh
 
-# Backup database
+# データベースのバックアップ
 python make_stock_db.py backup
 ```
 
-### Testing Individual Modules
+### 個別モジュールのテスト
 
 ```bash
-# Test price data fetching for specific stock
-# Edit code_list in price.py main()
+# 特定銘柄の株価データ取得テスト
+# price.py の main() 内で code_list を編集
 python price.py
 
-# Test market data update
+# 市場データ更新のテスト
 python make_market_db.py
 ```
 
-### Automated Execution
+### 自動実行
 
-The cron script `shintakane_cron.sh` runs both main scripts:
-1. `shintakane.py` - Scrapes new candidates & updates their data
-2. `make_stock_db.py` - Updates top 100 stocks & portfolio, generates ranking CSV
+cronスクリプト `shintakane_cron.sh` は両方のメインスクリプトを実行します：
+1. `shintakane.py` - 新候補をスクレイピングしてデータを更新
+2. `make_stock_db.py` - トップ100銘柄とポートフォリオを更新、ランキングCSVを生成
 
-## Data Storage
+## データ保存
 
-- **Database**: `data/stock_data/stocks.pickle` (main stock DB)
-- **Cache**: `data/cache_data/` (HTTP response cache)
-- **Price History**: `data/stock_data/yahoo/price/` and `data/stock_data/kabutan/price/`
-- **Market Indices**: `data/sisu_data/` (.txt files with historical index prices)
-- **Scraped Lists**: `data/shintakane_data/` (daily new high/volume surge CSV)
-- **Results**: `data/shintakane_result_data/` and `data/code_rank_data/` (output CSV)
-- **Logs**: `logs/` directory (rotating daily logs)
+- **データベース**: `data/stock_data/stocks.pickle` (メイン株式DB)
+- **キャッシュ**: `data/cache_data/` (HTTPレスポンスキャッシュ)
+- **株価履歴**: `data/stock_data/yahoo/price/` および `data/stock_data/kabutan/price/`
+- **市場指数**: `data/sisu_data/` (過去の指数株価の.txtファイル)
+- **スクレイピングリスト**: `data/shintakane_data/` (日次の新高値/出来高急増CSV)
+- **結果**: `data/shintakane_result_data/` および `data/code_rank_data/` (出力CSV)
+- **ログ**: `logs/` ディレクトリ (日次ローテーションログ)
 
-## Important Notes
+## 重要な注意事項
 
-### Scraping Sources & Format Changes
+### スクレイピング元とフォーマット変更
 
-Yahoo Finance Japan and Kabutan frequently change their HTML formats. When price/earnings data fails:
-1. Check `parse_price_text_yahoo_new()` in `price.py` for Yahoo format
-2. Check `convert_kabutan_*_html()` functions in `shintakane.py` for Kabutan format
-3. Recent changes handled: Yahoo switched to StyledNumber components (addressed in parse_price_text_yahoo_new)
+Yahoo Finance JapanとKabutanは頻繁にHTMLフォーマットを変更します。株価/決算データが失敗した場合：
+1. Yahooフォーマットについては `price.py` の `parse_price_text_yahoo_new()` を確認
+2. Kabutanフォーマットについては `shintakane.py` の `convert_kabutan_*_html()` 関数を確認
+3. 最近の変更対応: YahooがStyledNumberコンポーネントに切り替え（parse_price_text_yahoo_newで対応済み）
 
-### Session Management
+### セッション管理
 
-HTTP requests use three session patterns:
-- **Thread-local**: `use_requests_session()` context manager for single-threaded sequential requests
-- **Global**: `use_requests_global_session()` for multi-threaded concurrent requests
-- **Direct**: Falls back to `requests.get()` when no session active
+HTTPリクエストは3つのセッションパターンを使用：
+- **スレッドローカル**: シングルスレッドの順次リクエスト用の `use_requests_session()` コンテキストマネージャー
+- **グローバル**: マルチスレッドの同時リクエスト用の `use_requests_global_session()`
+- **直接**: セッションがアクティブでない場合は `requests.get()` にフォールバック
 
-Choose appropriate session type in `update_db_rows()` via `sync` parameter.
+`update_db_rows()` で `sync` パラメータを介して適切なセッションタイプを選択します。
 
-### Code Identifier Format
+### 銘柄コード識別子フォーマット
 
-- All stock codes stored as **strings** (`code_s`), not integers
-- Format: `"0001"` to `"9999"` for 4-digit codes
-- Also supports alphanumeric codes like `"215A"` for certain securities
-- Legacy `code` (int) keys exist but are deprecated
+- すべての銘柄コードは整数ではなく**文字列** (`code_s`) として保存
+- フォーマット: 4桁コードの場合は `"0001"` から `"9999"`
+- 特定の証券のために `"215A"` のような英数字コードもサポート
+- レガシーの `code` (int) キーは存在するが非推奨
 
-### Update Intervals & Decision Logic
+### 更新間隔と判定ロジック
 
-Each data type (master, price, gyoseki, shihyo, rironkabuka) has:
-- `has_*_data()`: Checks if data exists and is recent enough
-- `get_*_data()`: Fetches from cache or web based on UPD parameter
-- Earnings/indicators have special logic to force update after earnings announcement dates
+各データタイプ（master、price、gyoseki、shihyo、rironkabuka）は以下を持ちます：
+- `has_*_data()`: データが存在し十分に新しいかチェック
+- `get_*_data()`: UPDパラメータに基づいてキャッシュまたはWebから取得
+- 決算/指標には決算発表日後に強制更新する特別なロジックがあります
 
-### Multi-threading Considerations
+### マルチスレッディング考慮事項
 
-`update_db_rows_async()` uses ThreadPoolExecutor (5 workers) for parallel data fetching. Ensure:
-- Use `use_requests_global_session()` context manager
-- Access to shared `stocks` dict is thread-safe (reads during fetch, writes after join)
-- Semaphore limits concurrent HTTP requests to 3 (`MAX_REQUESTS` in `ks_util.py`)
+`update_db_rows_async()` は並列データ取得のためにThreadPoolExecutor（5ワーカー）を使用。以下を確認：
+- `use_requests_global_session()` コンテキストマネージャーを使用
+- 共有 `stocks` 辞書へのアクセスはスレッドセーフ（取得中は読み取り、join後に書き込み）
+- セマフォは同時HTTPリクエストを3に制限（`ks_util.py` の `MAX_REQUESTS`）
 
-## Python Environment
+## Python環境
 
-- **Python 3.9+** (uses virtual environment at `.venv/`)
-- Key dependencies: `requests`, `scipy`, Google API libraries for Drive upload
-- All dependencies in `requirements.txt`
-- Originally Python 2, migrated to Python 3 (pickle encoding handled via `convert_pickle_latin1_to_utf8()`)
+- **Python 3.9+** (`.venv/` の仮想環境を使用)
+- 主な依存関係: `requests`、`scipy`、Drive アップロード用の Google API ライブラリ
+- すべての依存関係は `requirements.txt` に記載
+- 元々Python 2、Python 3に移行（pickleエンコーディングは `convert_pickle_latin1_to_utf8()` で処理）
 
-## Special Behaviors
+## 特殊な動作
 
-- **Price day logic**: Before 18:00, price data is considered previous day (`get_price_day()` in `ks_util.py`)
-- **Earnings updates**: Stocks auto-refresh when current date passes stored earnings announcement date
-- **ETF filtering**: ETF codes loaded from `data/ETF_code.txt` and excluded from stock analysis
-- **Logging**: All output goes through custom logger (`ks_util.py`), not direct print statements
+- **株価日ロジック**: 18:00より前は、株価データは前日と見なされる（`ks_util.py` の `get_price_day()`）
+- **決算更新**: 現在の日付が保存された決算発表日を過ぎると、銘柄は自動更新
+- **ETFフィルタリング**: ETFコードは `data/ETF_code.txt` からロードされ、株式分析から除外
+- **ロギング**: すべての出力は直接print文ではなく、カスタムロガー（`ks_util.py`）を経由

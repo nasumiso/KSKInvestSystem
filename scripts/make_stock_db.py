@@ -1271,7 +1271,7 @@ def main():
     # command = "convert_code"
     # command = "convert_python2"
     if command == "update":
-        code_list = "8196"
+        code_list = "471A"
         # code_list = "2979 3226 4384 4434 4443 4448 4449 4475 4477 4478 4479 4480 4483 4485 4488 4490 4493 4599 6835 7071"
         code_list = code_list.split()
         # f = open("update_code_list.txt")

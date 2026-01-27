@@ -112,6 +112,11 @@ def get_theme_rank_list():
     else:
         prev_cache, prev_day = "", datetime.today() - timedelta(2)
 
+    # バックアップ処理を復元（コミット2d731f6で削除されていた処理）
+    if cach_date and prev_cache:
+        if (cach_date - prev_day).days >= INTERVAL_BACKUP:
+            backup_file(cach_path, 0)
+
     prev_theme_rank_list = []
     if prev_cache and os.path.exists(prev_cache):
         prev_html = file_read(prev_cache)
