@@ -17,6 +17,7 @@ import price
 import master
 import make_market_db
 import kessan
+from db_shelve import get_stock_db as _get_stock_shelve_db, ShelveDB, STOCKS_SHELVE
 
 
 def has_stock_data(stocks, code_s, latest=False):
@@ -377,12 +378,15 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
 # ==================================================
 STOCKS_PICKLE = os.path.join(DATA_DIR, "stock_data", "stocks.pickle")
 
+# shelveモード切り替えフラグ（移行後はTrueに設定）
+USE_SHELVE = True
+
 
 def update_db(stocks, stock_data):
     """
     stocksのDBデータをstock_dataのcodeキーで更新する
     Args:
-        stocks(dict<int, dict>): 銘柄DB本体
+        stocks: 銘柄DB本体（dict または ShelveDB）
         stock_data(dict<key, value>): 更新したいdict
     """
     # 更新
@@ -398,6 +402,8 @@ def update_db(stocks, stock_data):
     # レコードにカラムをキーから抜き出し、stock_data要素を追加
     try:
         stock = stocks[code_s]
+        if stock is None:
+            stock = {}
     except KeyError:
         stock = {}
         log_print(str(code_s) + "は新規DB銘柄")
@@ -426,31 +432,41 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
         latest: bool 強制で最新データに更新する
         tables: list<str> 更新するテーブルを指定する[master/price/gyoseki/rironkabuka]
     Return:
-        更新されたDB
+        更新されたDB（shelveモードではdict形式でエクスポート）
     """
-    # pickleロード
-    table_pickle = STOCKS_PICKLE
-    stocks = {}
-    if os.path.exists(table_pickle):
-        stocks = load_pickle(table_pickle)
-        if not isinstance(stocks, dict):
-            log_warning("[警告] stocksがdict型でありません")
-            raise Exception("stocksがdict型でありません")
-    # 更新
     if tables is None:
         tables = []
     latest = upd >= UPD_INTERVAL
     force = upd >= UPD_REEVAL
     log_print("update_tables:", tables, " 更新:", upd, "同期" if sync else "非同期")
 
-    if sync:
-        update_db_rows_sync(code_s_list, upd, tables, stocks, latest, force)
+    if USE_SHELVE:
+        # shelveモード：個別レコードアクセスで高速化
+        with _get_stock_shelve_db() as stocks_db:
+            if sync:
+                update_db_rows_sync(code_s_list, upd, tables, stocks_db, latest, force)
+            else:
+                update_db_rows_async(code_s_list, upd, tables, stocks_db, latest, force)
+            stocks_db.sync()
+            # 後方互換性のためdictとしてエクスポート
+            return stocks_db.export_to_dict()
     else:
-        update_db_rows_async(code_s_list, upd, tables, stocks, latest, force)
+        # pickleモード（後方互換性）
+        table_pickle = STOCKS_PICKLE
+        stocks = {}
+        if os.path.exists(table_pickle):
+            stocks = load_pickle(table_pickle)
+            if not isinstance(stocks, dict):
+                log_warning("[警告] stocksがdict型でありません")
+                raise Exception("stocksがdict型でありません")
 
-    # pickleセーブ
-    save_pickle(table_pickle, stocks)
-    return stocks
+        if sync:
+            update_db_rows_sync(code_s_list, upd, tables, stocks, latest, force)
+        else:
+            update_db_rows_async(code_s_list, upd, tables, stocks, latest, force)
+
+        save_pickle(table_pickle, stocks)
+        return stocks
 
 
 def _update_db_code(c_s, upd, tables, stocks, latest, force):
@@ -512,8 +528,12 @@ def get_stock_db(code):
     """
     指定codeの銘柄DBデータを返す
     """
-    stocks = memoized_load_pickle(STOCKS_PICKLE)
-    return stocks.get(int(code), {})
+    if USE_SHELVE:
+        with _get_stock_shelve_db() as db:
+            return db.get(str(code), {})
+    else:
+        stocks = memoized_load_pickle(STOCKS_PICKLE)
+        return stocks.get(int(code), {})
 
 
 @contextmanager
@@ -534,12 +554,21 @@ def print_to_file(fname):
 
 
 def list_db(code_list=[]):
-    stocks = load_pickle(STOCKS_PICKLE)
-    # print code_list
+    if USE_SHELVE:
+        with _get_stock_shelve_db() as stocks:
+            _list_db_impl(stocks, code_list)
+    else:
+        stocks = load_pickle(STOCKS_PICKLE)
+        _list_db_impl(stocks, code_list)
+
+
+def _list_db_impl(stocks, code_list):
+    """list_dbの実装（shelve/pickle共通）"""
     code_s_list = [str(c) for c in code_list]
     with print_to() as out:
-        for k, v in stocks.items():
+        for k in stocks.keys():
             if not code_s_list or k in code_s_list:
+                v = stocks[k]
                 log_print("[%s]" % k)
                 print_dict(v, ex_key=["shihyo", "gyoseki_current", "gyoseki_quarter"])
     log_print(out.getvalue())
@@ -775,7 +804,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
     # マーケットの更新
     market_db = make_market_db.update_market_db()
     # 銘柄DBロード
-    stocks = load_pickle(STOCKS_PICKLE)
+    stocks = load_stock_db()
     stocks_active = []
     log_print("DB内銘柄数", len(stocks))
     # delete_stocks = []
@@ -1030,14 +1059,26 @@ def get_market_code(stock_data):
 
 def load_stock_db():
     """stockDBのロード
-    時間がかかる
+    shelveモードでは全データをdictとしてエクスポート
+    （後方互換性のため維持）
     """
-    stocks = load_pickle(STOCKS_PICKLE)
-    return stocks
+    if USE_SHELVE:
+        with _get_stock_shelve_db() as db:
+            return db.export_to_dict()
+    else:
+        stocks = load_pickle(STOCKS_PICKLE)
+        return stocks
 
 
 def save_stock_db(stocks):
-    save_pickle(STOCKS_PICKLE, stocks)
+    """stockDBの保存
+    shelveモードではdictを全置換（削除も反映）
+    """
+    if USE_SHELVE:
+        with _get_stock_shelve_db() as db:
+            db.replace_from_dict(stocks)
+    else:
+        save_pickle(STOCKS_PICKLE, stocks)
 
 
 def delete_db_column(stocks, column):
@@ -1057,8 +1098,12 @@ def load_cacehd_stock_db(code_s, force=False):
     """
     stock_path = STOCK_PICKLE_PATH % code_s
     if not os.path.exists(stock_path) or force:
-        stocks = memoized_load_pickle(STOCKS_PICKLE)
-        stock = stocks.get(code_s, None)
+        if USE_SHELVE:
+            with _get_stock_shelve_db() as db:
+                stock = db.get(code_s, None)
+        else:
+            stocks = memoized_load_pickle(STOCKS_PICKLE)
+            stock = stocks.get(code_s, None)
         save_pickle(stock_path, stock)
         return stock
     stock = load_pickle(stock_path)
@@ -1128,7 +1173,7 @@ def reflesh_db():
     """stock_dbを適切な状態に更新する
     現状は上場廃止銘柄の削除
     """
-    stocks = load_pickle(STOCKS_PICKLE)
+    stocks = load_stock_db()
     log_print("DB内銘柄数:", len(stocks))
     # 上場廃止銘柄の削除
     delete_delist_stocks(stocks)
@@ -1144,7 +1189,7 @@ def reflesh_db():
     log_print("削除後DB内銘柄数:", len(stocks))
 
     # 削除後のデータ保存
-    save_pickle(STOCKS_PICKLE, stocks)
+    save_stock_db(stocks)
 
 
 def load_etf_codes():
@@ -1305,7 +1350,7 @@ def main():
     elif command == "update_all_db":
         # 対象コードを取得
         def get_code_list_from_db(min=1000, max=10000):
-            stocks = load_pickle(STOCKS_PICKLE)
+            stocks = load_stock_db()
             code_list = list(stocks.keys())  # [400:]
             code_list.sort()
             code_list = [c for c in code_list if c >= min and c <= max]
