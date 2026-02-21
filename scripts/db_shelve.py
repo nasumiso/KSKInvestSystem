@@ -267,11 +267,21 @@ class ShelveDB:
             return {key: self._db[key] for key in self._db.keys()}
 
     def import_from_dict(self, data: Dict[str, Any]) -> None:
-        """Import dict data into database."""
+        """Import dict data into database (upsert only, does not delete existing keys)."""
         with self._lock:
             self._ensure_open()
             for key, value in data.items():
                 self._db[str(key)] = value  # Ensure string keys
+            self.sync()
+
+    def replace_from_dict(self, data: Dict[str, Any]) -> None:
+        """Replace entire database contents with dict data (deletes keys not in data)."""
+        with self._lock:
+            self._ensure_open()
+            for key in list(self._db.keys()):
+                del self._db[key]
+            for key, value in data.items():
+                self._db[str(key)] = value
             self.sync()
 
     # ===========================================

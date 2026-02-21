@@ -17,7 +17,7 @@ import price
 import master
 import make_market_db
 import kessan
-from db_shelve import get_stock_db, ShelveDB, STOCKS_SHELVE
+from db_shelve import get_stock_db as _get_stock_shelve_db, ShelveDB, STOCKS_SHELVE
 
 
 def has_stock_data(stocks, code_s, latest=False):
@@ -442,7 +442,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
 
     if USE_SHELVE:
         # shelveモード：個別レコードアクセスで高速化
-        with get_stock_db() as stocks_db:
+        with _get_stock_shelve_db() as stocks_db:
             if sync:
                 update_db_rows_sync(code_s_list, upd, tables, stocks_db, latest, force)
             else:
@@ -524,13 +524,12 @@ def update_db_rows_sync(code_s_list, upd, tables, stocks, latest, force):
                 update_db(stocks, stock_data)
 
 
-def get_single_stock(code):
+def get_stock_db(code):
     """
     指定codeの銘柄DBデータを返す
-    （後方互換性のため関数名を変更）
     """
     if USE_SHELVE:
-        with get_stock_db() as db:
+        with _get_stock_shelve_db() as db:
             return db.get(str(code), {})
     else:
         stocks = memoized_load_pickle(STOCKS_PICKLE)
@@ -556,7 +555,7 @@ def print_to_file(fname):
 
 def list_db(code_list=[]):
     if USE_SHELVE:
-        with get_stock_db() as stocks:
+        with _get_stock_shelve_db() as stocks:
             _list_db_impl(stocks, code_list)
     else:
         stocks = load_pickle(STOCKS_PICKLE)
@@ -1064,7 +1063,7 @@ def load_stock_db():
     （後方互換性のため維持）
     """
     if USE_SHELVE:
-        with get_stock_db() as db:
+        with _get_stock_shelve_db() as db:
             return db.export_to_dict()
     else:
         stocks = load_pickle(STOCKS_PICKLE)
@@ -1073,11 +1072,11 @@ def load_stock_db():
 
 def save_stock_db(stocks):
     """stockDBの保存
-    shelveモードではdictをインポート
+    shelveモードではdictを全置換（削除も反映）
     """
     if USE_SHELVE:
-        with get_stock_db() as db:
-            db.import_from_dict(stocks)
+        with _get_stock_shelve_db() as db:
+            db.replace_from_dict(stocks)
     else:
         save_pickle(STOCKS_PICKLE, stocks)
 
@@ -1100,7 +1099,7 @@ def load_cacehd_stock_db(code_s, force=False):
     stock_path = STOCK_PICKLE_PATH % code_s
     if not os.path.exists(stock_path) or force:
         if USE_SHELVE:
-            with get_stock_db() as db:
+            with _get_stock_shelve_db() as db:
                 stock = db.get(code_s, None)
         else:
             stocks = memoized_load_pickle(STOCKS_PICKLE)
