@@ -2,7 +2,7 @@ name: Codex PR Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened]
 
 jobs:
   codex-review:
@@ -18,5 +18,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: '@codex review'
+              body: '@codex review 日本語でレビューしてください'
             });
