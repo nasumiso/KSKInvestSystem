@@ -232,18 +232,26 @@ def make_nasdaq_db():
     return db
 
 
+_market_db_cache = None
+
+
 def get_market_db():
-    """マーケットDBを取得（dictとして返す）"""
+    """マーケットDBを取得（dictとして返す、キャッシュあり）"""
+    global _market_db_cache
+    if _market_db_cache is not None:
+        return _market_db_cache
     if USE_SHELVE:
         with _get_market_shelve_db() as db:
-            return db.export_to_dict()
+            _market_db_cache = db.export_to_dict()
     else:
-        market_db = memoized_load_pickle(MARKET_DB_PATH)
-        return market_db
+        _market_db_cache = memoized_load_pickle(MARKET_DB_PATH)
+    return _market_db_cache
 
 
 def _save_market_db(market_db):
     """マーケットDBを保存"""
+    global _market_db_cache
+    _market_db_cache = None  # キャッシュ無効化
     if USE_SHELVE:
         with _get_market_shelve_db() as db:
             db.import_from_dict(market_db)

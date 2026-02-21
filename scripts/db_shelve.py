@@ -8,6 +8,7 @@ pickleからshelveへの移行用モジュール。
 """
 
 import shelve
+import dbm.dumb
 import threading
 import pickle
 import os
@@ -72,9 +73,10 @@ class ShelveDB:
                 db_dir = os.path.dirname(self._db_path)
                 if db_dir and not os.path.exists(db_dir):
                     os.makedirs(db_dir)
-                self._db = shelve.open(
-                    self._db_path,
-                    flag="c",  # Create if not exists
+                # dbm.dumbを使用（macOSのdbm.ndbmはハッシュ衝突でキー消失するため）
+                dumb_db = dbm.dumb.open(self._db_path, flag="c")
+                self._db = shelve.Shelf(
+                    dumb_db,
                     protocol=pickle.HIGHEST_PROTOCOL,
                     writeback=self._writeback,
                 )
