@@ -95,12 +95,29 @@ cd scripts && python make_market_db.py
 
 ### テスト
 
-標準的なテストランナーはない。モジュール単位の `main()` 関数でスモークテスト:
+pytestで主要モジュールの純粋計算関数をテスト（DB・HTTP通信不要）。
 
 ```bash
-cd scripts && python price.py        # 株価データ取得テスト
-cd scripts && python db_shelve.py    # shelveDB基本テスト
+# 全テスト実行
+pytest tests/ -v
+
+# CIと同じ条件（local_db除外）
+pytest tests/ -v -m "not local_db"
+
+# 特定モジュールのみ
+pytest tests/test_gyoseki.py -v
 ```
+
+| テストファイル | 対象モジュール |
+|---|---|
+| `test_ks_util.py` | `ks_util.py`（**変更時は全テスト実行**） |
+| `test_rironkabuka.py` | `rironkabuka.py` |
+| `test_gyoseki.py` | `gyoseki.py` |
+| `test_price.py` | `price.py` |
+| `test_make_stock_db.py` | `make_stock_db.py` |
+| `test_db_shelve.py` | `db_shelve.py` |
+
+GitHub Actions（`.github/workflows/test.yml`）でPR/push時に自動実行。
 
 ## データ保存場所
 
