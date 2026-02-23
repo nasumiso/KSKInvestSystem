@@ -392,4 +392,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_logger("migrate_pickle_to_shelve")
     exit(main())

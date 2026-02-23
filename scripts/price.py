@@ -1416,4 +1416,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_logger("price")
     main()

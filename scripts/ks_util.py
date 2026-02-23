@@ -99,12 +99,10 @@ def setup_logger(script_name=None):
     # ハンドラーをロガーに追加
     _logger.addHandler(file_handler)
 
-    # コンソールハンドラー（ターミナルからの実行のみ）
-    if sys.stdout.isatty():
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        # console_handler.setFormatter(formatter)  # コンソールはデフォルトフォーマッターで
-        _logger.addHandler(console_handler)
+    # コンソールハンドラー（常に追加。cron時はstdoutがファイルにリダイレクトされる）
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    _logger.addHandler(console_handler)
 
     return _logger
 

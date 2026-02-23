@@ -561,5 +561,6 @@ def test():
 
 
 if __name__ == "__main__":
+    setup_logger("make_sisu_data")
     main()
     # test()
