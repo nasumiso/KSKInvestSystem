@@ -443,6 +443,12 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
     if USE_SHELVE:
         # shelveモード：個別レコードアクセスで高速化
         with _get_stock_shelve_db() as stocks_db:
+            # yfinanceバッチプリフェッチ（price更新対象がある場合、DB参照で市場コード解決）
+            if (not tables or "price" in tables) and code_s_list:
+                try:
+                    price.prefetch_yfinance_batch(code_s_list, stocks=stocks_db)
+                except Exception as e:
+                    log_warning("yfinanceバッチプリフェッチ失敗（個別取得にフォールバック）: %s" % e)
             if sync:
                 update_db_rows_sync(code_s_list, upd, tables, stocks_db, latest, force)
             else:
@@ -459,6 +465,13 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
             if not isinstance(stocks, dict):
                 log_warning("[警告] stocksがdict型でありません")
                 raise Exception("stocksがdict型でありません")
+
+        # yfinanceバッチプリフェッチ（pickleモード）
+        if (not tables or "price" in tables) and code_s_list:
+            try:
+                price.prefetch_yfinance_batch(code_s_list, stocks=stocks)
+            except Exception as e:
+                log_warning("yfinanceバッチプリフェッチ失敗（個別取得にフォールバック）: %s" % e)
 
         if sync:
             update_db_rows_sync(code_s_list, upd, tables, stocks, latest, force)

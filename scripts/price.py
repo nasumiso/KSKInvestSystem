@@ -3,11 +3,28 @@
 from ks_util import *
 
 from datetime import datetime
+import json
 import os
 import os.path
 import re
 
 import make_stock_db
+
+# yfinance APIによるデータ取得（HTMLスクレイピングの代替）
+USE_YFINANCE = True
+
+try:
+    import yfinance as yf
+
+    _HAS_YFINANCE = True
+except ImportError:
+    _HAS_YFINANCE = False
+    if USE_YFINANCE:
+        log_warning("yfinanceがインストールされていません。HTMLスクレイピングを使用します。")
+
+YFINANCE_CACHE_FNAME = os.path.join(
+    DATA_DIR, "stock_data/yahoo/price/yfinance_price_%s.json"
+)
 
 URL_PRICE_D_KABUTAN = "https://kabutan.jp/stock/kabuka?code=%s&ashi=day&page=%d"
 PRICE_D_FNAME_KABUTAN = os.path.join(
@@ -829,6 +846,229 @@ def parse_price_text_yahoo(text):
     return parse_price_text_yahoo_new(text)
 
 
+def _save_yfinance_cache(fname, price_current, price_list):
+    """yfinanceキャッシュをJSON形式で保存する"""
+    data = {
+        "price_current": price_current,
+        "price_list": price_list,
+        "saved_at": datetime.now().isoformat(),
+    }
+    os.makedirs(os.path.dirname(fname), exist_ok=True)
+    with open(fname, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+
+def _load_yfinance_cache(fname):
+    """yfinanceキャッシュをJSON形式で読み込む
+    Returns:
+        (price_current, price_list) or (None, None) if cache miss
+    """
+    if not os.path.exists(fname):
+        return None, None
+    try:
+        with open(fname, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data["price_current"], data["price_list"]
+    except (json.JSONDecodeError, KeyError) as e:
+        log_warning("yfinanceキャッシュ読み込みエラー:", e)
+        return None, None
+
+
+def _convert_df_to_price_list(df):
+    """yfinance DataFrameを既存のprice_list形式に変換する
+    auto_adjust=Trueで取得した場合、OHLCは分割・配当調整済み。
+    adj_closeはcloseと同値になる。
+    Args:
+        df: yfinance historyのDataFrame
+    Returns:
+        list: [date_str, open, high, low, close, volume, adj_close] の7要素リスト
+              新しい日付が先頭
+    """
+    price_list = []
+    for idx in reversed(df.index):
+        row = df.loc[idx]
+        # 日付を"YYYY年M月D日"形式に変換
+        if hasattr(idx, "date"):
+            dt = idx.date() if callable(idx.date) else idx.date
+        else:
+            dt = idx
+        date_str = "%d年%d月%d日" % (dt.year, dt.month, dt.day)
+        open_p = int(row["Open"])
+        high_p = int(row["High"])
+        low_p = int(row["Low"])
+        close_p = int(row["Close"])
+        volume = int(row["Volume"])
+        # auto_adjust=TrueではAdj Closeカラムがないため、closeをそのまま使用
+        # auto_adjust=Falseの場合はAdj Closeがあればそれを使用
+        if "Adj Close" in df.columns:
+            adj_close = int(row["Adj Close"])
+        elif "Adjclose" in df.columns:
+            adj_close = int(row["Adjclose"])
+        else:
+            adj_close = close_p
+        price_list.append([date_str, open_p, high_p, low_p, close_p, volume, adj_close])
+    return price_list
+
+
+def get_daily_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
+    """yfinance APIで日次価格データを取得する
+    Args:
+        code_s: 銘柄コード文字列
+        stock: 銘柄DB情報（マーケットコード判定用）
+        upd: 更新レベル
+    Returns:
+        (price_current, price_list) — 既存parse_price_text_yahoo互換の形式
+    """
+    cache_fname = YFINANCE_CACHE_FNAME % code_s
+
+    # キャッシュチェック
+    if upd < UPD_FORCE and os.path.exists(cache_fname):
+        if upd < UPD_INTERVAL:
+            # UPD_CACHE: キャッシュがあればそのまま使用
+            pc, pl = _load_yfinance_cache(cache_fname)
+            if pc is not None:
+                log_print("yfinanceキャッシュ使用(UPD_CACHE): %s" % code_s)
+                return pc, pl
+        else:
+            # UPD_INTERVAL: キャッシュの日付が期限内かチェック
+            cache_ok, cach_date = is_file_timestamp(cache_fname, INTERVAL_DAY_D)
+            if cache_ok:
+                pc, pl = _load_yfinance_cache(cache_fname)
+                if pc is not None:
+                    log_print("yfinanceキャッシュ使用(UPD_INTERVAL): %s" % code_s)
+                    return pc, pl
+
+    # yfinance APIで取得
+    ticker_symbol = _get_ticker_symbol(code_s, stock)
+
+    log_print("----> %sの日次価格情報をyfinance(%s)から取得します" % (code_s, ticker_symbol))
+    try:
+        with sema:
+            ticker = yf.Ticker(ticker_symbol)
+            df = ticker.history(period="1mo", auto_adjust=True)
+    except Exception as e:
+        log_warning("yfinance取得エラー(%s): %s" % (code_s, e))
+        return None, None
+
+    if df is None or df.empty:
+        log_warning("yfinanceデータなし: %s" % code_s)
+        return None, None
+
+    price_list = _convert_df_to_price_list(df)
+    if not price_list:
+        log_warning("yfinance価格リスト変換失敗: %s" % code_s)
+        return None, None
+
+    # 現在価格は最新の調整後終値
+    price_current = price_list[0][6]  # adj_close
+
+    # キャッシュに保存
+    _save_yfinance_cache(cache_fname, price_current, price_list)
+    log_print("<---- yfinance取得完了: %s 価格=%d データ数=%d" % (code_s, price_current, len(price_list)))
+    return price_current, price_list
+
+
+def _get_ticker_symbol(code_s, stock={}):
+    """銘柄コードからyfinanceティッカーシンボルを生成する"""
+    market_code = make_stock_db.get_market_code(stock)
+    suffix = {"S": ".S", "N": ".N", "F": ".F"}.get(market_code, ".T")
+    return code_s + suffix
+
+
+def prefetch_yfinance_batch(code_s_list, stocks=None):
+    """複数銘柄を一括ダウンロードしてキャッシュに保存する
+    Args:
+        code_s_list: 銘柄コード文字列のリスト
+        stocks: 銘柄DB（市場コード解決用、Noneなら全て東証扱い）
+    """
+    if not _HAS_YFINANCE or not USE_YFINANCE:
+        return
+
+    # キャッシュが有効な銘柄はスキップ
+    codes_to_fetch = []
+    for code_s in code_s_list:
+        cache_fname = YFINANCE_CACHE_FNAME % code_s
+        if os.path.exists(cache_fname):
+            cache_ok, _ = is_file_timestamp(cache_fname, INTERVAL_DAY_D)
+            if cache_ok:
+                continue
+        codes_to_fetch.append(code_s)
+
+    if not codes_to_fetch:
+        log_print("yfinanceバッチ: 全銘柄キャッシュ有効、スキップ")
+        return
+
+    log_print("yfinanceバッチダウンロード: %d銘柄" % len(codes_to_fetch))
+
+    # 銘柄コード→ティッカーシンボルのマッピングを構築
+    code_to_ticker = {}
+    for code_s in codes_to_fetch:
+        stock = {}
+        if stocks is not None:
+            stock = stocks.get(code_s, {})
+        code_to_ticker[code_s] = _get_ticker_symbol(code_s, stock)
+
+    # 100銘柄ずつバッチ処理
+    BATCH_SIZE = 100
+    for batch_start in range(0, len(codes_to_fetch), BATCH_SIZE):
+        batch_codes = codes_to_fetch[batch_start : batch_start + BATCH_SIZE]
+        tickers = [code_to_ticker[c] for c in batch_codes]
+        ticker_str = " ".join(tickers)
+
+        log_print("yfinanceバッチ: %d/%d銘柄を一括取得中..." % (
+            min(batch_start + BATCH_SIZE, len(codes_to_fetch)),
+            len(codes_to_fetch),
+        ))
+
+        try:
+            df = yf.download(
+                ticker_str,
+                period="1mo",
+                auto_adjust=True,
+                threads=True,
+                progress=False,
+            )
+        except Exception as e:
+            log_warning("yfinanceバッチ取得エラー: %s" % e)
+            continue
+
+        if df is None or df.empty:
+            log_warning("yfinanceバッチデータなし")
+            continue
+
+        # 各銘柄のデータを個別にキャッシュに保存
+        for code_s, ticker_s in zip(batch_codes, tickers):
+            try:
+                if len(batch_codes) == 1:
+                    # 1銘柄の場合はMultiIndexにならない
+                    single_df = df
+                else:
+                    # MultiIndexカラムから銘柄を抽出
+                    single_df = df.xs(ticker_s, level=1, axis=1)
+                if single_df.empty:
+                    continue
+                # NaNの行を除去
+                single_df = single_df.dropna(subset=["Close"])
+                if single_df.empty:
+                    continue
+                price_list = _convert_df_to_price_list(single_df)
+                if price_list:
+                    price_current = price_list[0][6]
+                    cache_fname = YFINANCE_CACHE_FNAME % code_s
+                    _save_yfinance_cache(cache_fname, price_current, price_list)
+            except Exception as e:
+                log_warning("yfinanceバッチ個別変換エラー(%s): %s" % (code_s, e))
+                continue
+
+        # バッチ間の待機（レートリミット対策）
+        if batch_start + BATCH_SIZE < len(codes_to_fetch):
+            import time
+            log_print("yfinanceバッチ: 5秒待機（レートリミット対策）...")
+            time.sleep(5)
+
+    log_print("yfinanceバッチダウンロード完了")
+
+
 def parse_date_str(s):
     """日付文字列を解析して date を返す（失敗なら None）。
     対応フォーマット: 'YYYY年M月D日', 'YYYY/MM/DD', 'YYYY-MM-DD', ISO
@@ -860,26 +1100,21 @@ def parse_date_str(s):
         return None
 
 
-def parse_price_text(text):
-    """yahoo価格情報htmlから
-    売り圧力レシオ、ローソク足ボラティリティの解析
-    ポケットピポット、ブレイクアウト
+def parse_price_text_from_list(price_current, price_list):
+    """パース済みprice_listから各種指標を計算する
+    yfinanceパスとHTMLパースパス共通で使用。
     Args:
-        text(str): yahooファイナンスhtml
+        price_current(int): 現在価格
+        price_list(list): [date_str, open, high, low, close, volume, adj_close] のリスト
+                          新しい日付が先頭
     Returns:
-        dict:
+        (dict, list): 指標dict, [終値, 高値, 安値]
     """
     price = {}
-    price_current, price_list = parse_price_text_yahoo(text)
-    # 価格が得られないければ何も更新しない
-    if not price_list:
-        return {}, []
     # 現在価格を更新
     price["price"] = price_current
     # ---- ここからprice_listを使って各種価格に伴う指標の計算
     # ---- 売り圧力レシオとローソク足ボラティリティ
-    # for p in price_list:
-    # 	print p
     # 売り圧力レシオの計算
     sell_pressure_ratio = calc_sell_pressure_ratio(price_list)
 
@@ -1008,6 +1243,22 @@ def parse_price_text(text):
     return price, [price_list[0][6], price_list[0][2], price_list[0][3]]
 
 
+def parse_price_text(text):
+    """yahoo価格情報htmlから
+    売り圧力レシオ、ローソク足ボラティリティの解析
+    ポケットピポット、ブレイクアウト
+    Args:
+        text(str): yahooファイナンスhtml
+    Returns:
+        dict:
+    """
+    price_current, price_list = parse_price_text_yahoo(text)
+    # 価格が得られないければ何も更新しない
+    if not price_list:
+        return {}, []
+    return parse_price_text_from_list(price_current, price_list)
+
+
 def get_price_log(price_list, dt):
     """
     price_list: 過去価格データ　(日付、価格)タプルのリスト
@@ -1024,25 +1275,50 @@ def get_price_log(price_list, dt):
 
 def get_price_data_yahoo(code_s, stock, upd=UPD_INTERVAL):
     """yahooから日次価格データをパースしてdictで返す
-    type: (str, bool) -> dict
+    yfinance APIを優先し、失敗時はHTMLスクレイピングにフォールバック
     Returns:
         dict<int, T>: 解析した価格情報
         list<int>: 現在価格
     """
-    # cache = (upd <= UPD_REEVAL)
+    # yfinanceパス
+    if USE_YFINANCE and _HAS_YFINANCE:
+        try:
+            price_current, price_list = get_daily_data_yfinance(code_s, stock, upd)
+            if price_current is not None and price_list:
+                log_print(">>>>> %sの価格データを解析(yfinance) " % code_s)
+                parsed_data, cur_prices = parse_price_text_from_list(
+                    price_current, price_list
+                )
+                price_val = parsed_data.get("price", 0)
+                # キャッシュの更新日時を取得
+                cache_fname = YFINANCE_CACHE_FNAME % code_s
+                if os.path.exists(cache_fname):
+                    stat = os.stat(cache_fname)
+                    update_date = datetime.fromtimestamp(stat.st_mtime)
+                else:
+                    update_date = datetime.now()
+                log_print("<<<<< 解析完了(yfinance) ", price_val, update_date)
+                set_db_code(parsed_data, code_s)
+                if price_val > 0:
+                    parsed_data["access_date_price"] = update_date
+                return parsed_data, cur_prices
+        except Exception as e:
+            log_warning("yfinanceパス失敗(%s)、HTMLスクレイピングにフォールバック: %s" % (code_s, e))
+
+    # HTMLスクレイピングフォールバック
     price_text = get_daily_data_yahoo(code_s, stock, upd)
     if not price_text:
         return {}, []
-    log_print(">>>>> %sの価格データを解析 " % code_s)
+    log_print(">>>>> %sの価格データを解析(HTML) " % code_s)
     parsed_data, cur_prices = parse_price_text(price_text)
     stat = os.stat(PRICE_FNAME % code_s)
     date = datetime.fromtimestamp(stat.st_mtime)
-    price = parsed_data.get("price", 0)
-    log_print("<<<<< 解析完了 ", price, date)
+    price_val = parsed_data.get("price", 0)
+    log_print("<<<<< 解析完了(HTML) ", price_val, date)
     # 情報を追加して返す
     set_db_code(parsed_data, code_s)
     # 実際に価格が得られた場合は更新日をセット
-    if price > 0:
+    if price_val > 0:
         parsed_data["access_date_price"] = date
     return parsed_data, cur_prices
 
