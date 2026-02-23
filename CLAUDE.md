@@ -116,6 +116,9 @@ pytest tests/test_gyoseki.py -v
 | `test_price.py` | `price.py` |
 | `test_make_stock_db.py` | `make_stock_db.py` |
 | `test_db_shelve.py` | `db_shelve.py` |
+| `test_shihyou.py` | `shihyou.py` |
+| `test_master.py` | `master.py` |
+| `test_make_market_db.py` | `make_market_db.py` |
 
 GitHub Actions（`.github/workflows/test.yml`）でPR/push時に自動実行。
 
