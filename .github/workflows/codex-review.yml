@@ -18,5 +18,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: '@codex review 日本語でレビューしてください'
+              body: '@codex review 日本語でレビューしてください。問題がない場合も「LGTM」等のコメントを残してください。'
             });
