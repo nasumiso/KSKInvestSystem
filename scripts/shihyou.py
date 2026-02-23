@@ -537,6 +537,7 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_logger("shihyou")
     # TODO: 9272ブティックス 取得できてない？
     #!!! 不正な関連銘柄です
     # もでてる

@@ -439,5 +439,6 @@ def test():
 
 
 if __name__ == "__main__":
+    setup_logger("make_market_db")
     main()
     # test()
