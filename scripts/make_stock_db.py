@@ -440,6 +440,13 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
     force = upd >= UPD_REEVAL
     log_print("update_tables:", tables, " 更新:", upd, "同期" if sync else "非同期")
 
+    # yfinanceバッチプリフェッチ（price更新対象がある場合）
+    if (not tables or "price" in tables) and code_s_list:
+        try:
+            price.prefetch_yfinance_batch(code_s_list)
+        except Exception as e:
+            log_warning("yfinanceバッチプリフェッチ失敗（個別取得にフォールバック）: %s" % e)
+
     if USE_SHELVE:
         # shelveモード：個別レコードアクセスで高速化
         with _get_stock_shelve_db() as stocks_db:
