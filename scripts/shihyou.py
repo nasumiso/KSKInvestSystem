@@ -352,16 +352,15 @@ def calc_shihyo_pt(code_s, upd=UPD_INTERVAL, stock={}):
     # PER_MAX = 25
     # PBR_MAX = 10
     # PSR_MAX = 35
-    # 時価総額(小型株ファクター)
-    # 500億>300億>100億
+    # 時価総額ファクター（成長性×流動性×外国資本流入の山型分布）
     jikasogaku_pt = 0
     if "jikasogaku" in shiyo:
-        if shiyo["jikasogaku"] <= 10000 / 100:
-            jikasogaku_pt = JIKASOGAKU_MAX
-        elif shiyo["jikasogaku"] <= 30000 / 100:
-            jikasogaku_pt = JIKASOGAKU_MAX / 2
-        elif shiyo["jikasogaku"] <= 50000 / 100:
-            jikasogaku_pt = JIKASOGAKU_MAX / 3
+        jikasogaku_pt = step_func(
+            shiyo["jikasogaku"],
+            [100, 400, 1000, 3000],
+            [25, JIKASOGAKU_MAX, 15, 5],
+            min_val=0,
+        )
     # 発行株式数(小型株ファクター)
 
     # 有利子負債自己資本比率(クォリティファクター)

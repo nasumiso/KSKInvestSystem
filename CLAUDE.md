@@ -119,6 +119,23 @@ pytest tests/test_gyoseki.py -v
 
 GitHub Actions（`.github/workflows/test.yml`）でPR/push時に自動実行。
 
+### 統合テスト（make_stock_db.py サブコマンド）
+
+スコアリングやランキングのロジックを変更した場合、ローカルDB上で実際の銘柄データを使って検証する。
+
+```bash
+source .venv/bin/activate
+cd scripts
+
+# ランキング全体を再生成して確認
+python make_stock_db.py list_all_db
+```
+
+**注意: コンソールに出力されない。** `log_print` 経由のためすべてログファイルとCSVに出力される。確認先:
+- **ログ**: `logs/make_stock_db.log`（処理経過・エラー）
+- **ランキングCSV**: `data/code_rank_data/code_rank.csv`（最終結果）
+- 正常終了時はGoogle Driveへの自動アップロードも実行される（`Upload Complete` ログで確認）
+
 ## データ保存場所
 
 - **メインDB (shelve)**: `data/stock_data/stocks_shelve`
