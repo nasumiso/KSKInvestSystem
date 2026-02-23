@@ -170,6 +170,24 @@ class TestConvertDfToPriceList:
         # adj_closeが取得されていること
         assert result[0][6] == 1023  # 最新行のAdj Close
 
+    def test_auto_adjust_true_no_adjclose(self):
+        """auto_adjust=TrueでAdj Closeカラムがない場合、closeがadj_closeになること"""
+        import pandas as pd
+
+        dates = pd.bdate_range(end="2025-01-31", periods=3)
+        data = {
+            "Open": [1000, 1010, 1020],
+            "High": [1020, 1030, 1040],
+            "Low": [990, 1000, 1010],
+            "Close": [1005, 1015, 1025],
+            "Volume": [100000, 101000, 102000],
+        }
+        df = pd.DataFrame(data, index=dates)
+        result = price._convert_df_to_price_list(df)
+        # adj_closeがcloseと同値であること
+        assert result[0][6] == result[0][4]  # 最新行
+        assert result[0][6] == 1025
+
 
 # ==================================================
 # yfinanceキャッシュのラウンドトリップ

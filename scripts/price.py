@@ -876,8 +876,10 @@ def _load_yfinance_cache(fname):
 
 def _convert_df_to_price_list(df):
     """yfinance DataFrameを既存のprice_list形式に変換する
+    auto_adjust=Trueで取得した場合、OHLCは分割・配当調整済み。
+    adj_closeはcloseと同値になる。
     Args:
-        df: yfinance historyのDataFrame（auto_adjust=False）
+        df: yfinance historyのDataFrame
     Returns:
         list: [date_str, open, high, low, close, volume, adj_close] の7要素リスト
               新しい日付が先頭
@@ -896,7 +898,8 @@ def _convert_df_to_price_list(df):
         low_p = int(row["Low"])
         close_p = int(row["Close"])
         volume = int(row["Volume"])
-        # Adj Closeカラムの取得（yfinanceバージョンにより名称が異なる場合）
+        # auto_adjust=TrueではAdj Closeカラムがないため、closeをそのまま使用
+        # auto_adjust=Falseの場合はAdj Closeがあればそれを使用
         if "Adj Close" in df.columns:
             adj_close = int(row["Adj Close"])
         elif "Adjclose" in df.columns:
@@ -936,20 +939,13 @@ def get_daily_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
                     return pc, pl
 
     # yfinance APIで取得
-    market_code = make_stock_db.get_market_code(stock)
-    ticker_symbol = "%s.T" % code_s
-    if market_code == "S":
-        ticker_symbol = "%s.S" % code_s
-    elif market_code == "N":
-        ticker_symbol = "%s.N" % code_s
-    elif market_code == "F":
-        ticker_symbol = "%s.F" % code_s
+    ticker_symbol = _get_ticker_symbol(code_s, stock)
 
     log_print("----> %sの日次価格情報をyfinance(%s)から取得します" % (code_s, ticker_symbol))
     try:
         with sema:
             ticker = yf.Ticker(ticker_symbol)
-            df = ticker.history(period="1mo", auto_adjust=False)
+            df = ticker.history(period="1mo", auto_adjust=True)
     except Exception as e:
         log_warning("yfinance取得エラー(%s): %s" % (code_s, e))
         return None, None
@@ -972,10 +968,18 @@ def get_daily_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
     return price_current, price_list
 
 
-def prefetch_yfinance_batch(code_s_list):
+def _get_ticker_symbol(code_s, stock={}):
+    """銘柄コードからyfinanceティッカーシンボルを生成する"""
+    market_code = make_stock_db.get_market_code(stock)
+    suffix = {"S": ".S", "N": ".N", "F": ".F"}.get(market_code, ".T")
+    return code_s + suffix
+
+
+def prefetch_yfinance_batch(code_s_list, stocks=None):
     """複数銘柄を一括ダウンロードしてキャッシュに保存する
     Args:
         code_s_list: 銘柄コード文字列のリスト
+        stocks: 銘柄DB（市場コード解決用、Noneなら全て東証扱い）
     """
     if not _HAS_YFINANCE or not USE_YFINANCE:
         return
@@ -996,11 +1000,19 @@ def prefetch_yfinance_batch(code_s_list):
 
     log_print("yfinanceバッチダウンロード: %d銘柄" % len(codes_to_fetch))
 
+    # 銘柄コード→ティッカーシンボルのマッピングを構築
+    code_to_ticker = {}
+    for code_s in codes_to_fetch:
+        stock = {}
+        if stocks is not None:
+            stock = stocks.get(code_s, {})
+        code_to_ticker[code_s] = _get_ticker_symbol(code_s, stock)
+
     # 100銘柄ずつバッチ処理
     BATCH_SIZE = 100
     for batch_start in range(0, len(codes_to_fetch), BATCH_SIZE):
         batch_codes = codes_to_fetch[batch_start : batch_start + BATCH_SIZE]
-        tickers = ["%s.T" % c for c in batch_codes]
+        tickers = [code_to_ticker[c] for c in batch_codes]
         ticker_str = " ".join(tickers)
 
         log_print("yfinanceバッチ: %d/%d銘柄を一括取得中..." % (
@@ -1012,7 +1024,7 @@ def prefetch_yfinance_batch(code_s_list):
             df = yf.download(
                 ticker_str,
                 period="1mo",
-                auto_adjust=False,
+                auto_adjust=True,
                 threads=True,
                 progress=False,
             )
