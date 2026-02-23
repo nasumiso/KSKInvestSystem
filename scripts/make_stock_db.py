@@ -907,6 +907,12 @@ def list_all_db(upload_csv=True, update_portforio=True):
         update_stock_rank(stock, rank)
     save_stock_db(stocks)  # 更新した順位のDB保存
 
+    # ---- テーマ別株価騰落率を計算してmarket_dbに保存
+    log_print("---- テーマ別株価騰落率を計算")
+    theme_momentum = make_market_db.calc_theme_price_momentum(stocks)
+    market_db["theme_momentum"] = theme_momentum
+    make_market_db._save_market_db(market_db)
+
     # ---- 銘柄ランキング用CSVファイル作成
     log_print("---- CSV項目作成")
     rank_csv = os.path.join(DATA_DIR, "code_rank_data/code_rank.csv")
@@ -1059,6 +1065,9 @@ def list_all_db(upload_csv=True, update_portforio=True):
             args=(rank_csv, "code_rank"),
             daemon=False,  # 完了を待つ
         ).start()
+
+    # テーマ騰落率入りのmarket_data.csvを再生成
+    make_market_db.create_market_csv()
 
 
 def get_market_code(stock_data):
