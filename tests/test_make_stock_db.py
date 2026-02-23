@@ -37,17 +37,23 @@ class TestHasGyosekiData:
     def test_no_code(self):
         """DBに銘柄がない場合"""
         stocks = {}
-        assert make_stock_db.has_gyoseki_data(stocks, "1234") is False
+        has_data, reason = make_stock_db.has_gyoseki_data(stocks, "1234")
+        assert has_data is False
+        assert reason == make_stock_db._UPD_REASON_NO_DATA
 
     def test_no_access_date(self):
         """access_date_gyoseki がない場合"""
         stocks = {"1234": {"stock_name": "Test"}}
-        assert make_stock_db.has_gyoseki_data(stocks, "1234") is False
+        has_data, reason = make_stock_db.has_gyoseki_data(stocks, "1234")
+        assert has_data is False
+        assert reason == make_stock_db._UPD_REASON_NO_DATA
 
     def test_has_data_no_latest(self):
         """latest=False でアクセス日あり"""
         stocks = {"1234": {"access_date_gyoseki": datetime(2025, 1, 1)}}
-        assert make_stock_db.has_gyoseki_data(stocks, "1234", latest=False) is True
+        has_data, reason = make_stock_db.has_gyoseki_data(stocks, "1234", latest=False)
+        assert has_data is True
+        assert reason == make_stock_db._UPD_REASON_NONE
 
 
 # ==================================================
