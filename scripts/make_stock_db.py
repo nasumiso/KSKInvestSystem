@@ -101,7 +101,7 @@ def get_price_data(stocks, code_s, upd=UPD_INTERVAL):
     # DBにありなおかつ最新である場合はそれを返す
     if code_s in stocks:  # and not latest: #デバッグ用強制
         if "access_date_price" in stocks[code_s] and upd < UPD_INTERVAL:
-            log_print("DBに最新価格情報があるためそれを取得します")
+            log_debug("DBに最新価格情報があるためそれを取得します")
             return stocks[code_s]
     # 価格データを新規更新
     stock = stocks.get(code_s, {})
@@ -305,7 +305,7 @@ def get_gyoseki_data(stocks, code_s, upd=UPD_INTERVAL):
     """
     if code_s in stocks:
         if "access_date_gyoseki" in stocks[code_s] and upd < UPD_INTERVAL:
-            log_print("DBから業績情報を取得します")
+            log_debug("DBから業績情報を取得します")
             return stocks[code_s]
     gyoseki_data = gyoseki.get_gyoseki_data(code_s, upd)
     return gyoseki_data
@@ -331,7 +331,7 @@ def get_rironkabuka_data(stocks, code_s, upd=UPD_INTERVAL):
     # code = int(code)
     if code_s in stocks:
         if "access_date_rironkabuka" in stocks[code_s] and upd < UPD_INTERVAL:
-            log_print("DBから理論株価情報を取得します")
+            log_debug("DBから理論株価情報を取得します")
             return stocks[code_s]
     stock = stocks[code_s] if code_s in stocks else None
     data = rironkabuka.get_rironkabuka_data(code_s, upd, stock)
@@ -366,7 +366,7 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
     latest = upd >= UPD_INTERVAL
     if code_s in stocks:
         if "access_date_shihyo" in stocks[code_s] and not latest:
-            log_print("DBから指標情報を取得します")
+            log_debug("DBから指標情報を取得します")
             return stocks[code_s]
     # 指標更新
     data = shihyou.get_shihyo_data(stocks, code_s, upd)
@@ -409,7 +409,7 @@ def update_db(stocks, stock_data):
         log_print(str(code_s) + "は新規DB銘柄")
     for k in list(stock_data.keys()):
         stock[k] = stock_data[k]
-    log_print("DB更新しました: ", code_s, list(stock_data.keys()))
+    log_debug("DB更新しました: ", code_s, list(stock_data.keys()))
     # 更新後のカラム表示
     print_dict(
         stock,

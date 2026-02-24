@@ -93,7 +93,11 @@ def setup_logger(script_name=None):
         backupCount=7,
         encoding="utf-8",
     )
-    file_handler.setLevel(logging.DEBUG)
+    # 環境変数 KS_LOG_DEBUG=1 でDEBUGレベルに変更可能
+    if os.environ.get("KS_LOG_DEBUG") == "1":
+        file_handler.setLevel(logging.DEBUG)
+    else:
+        file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)
 
     # ハンドラーをロガーに追加
@@ -204,14 +208,14 @@ def ux_cmd_head(str, line=10):
 
 def print_dict(dict, ex_key=[]):
     """
-    dictのキー要素を表示
+    dictのキー要素を表示（デバッグレベル）
     """
-    log_print("----------")
+    log_debug("----------")
     for k in list(dict.keys()):
         if k in ex_key:
             continue
-        log_print(k, ": ", dict[k])
-    log_print("----------")
+        log_debug(k, ": ", dict[k])
+    log_debug("----------")
 
 
 def memoize(func):
@@ -221,7 +225,7 @@ def memoize(func):
         try:
             return cache[args]
         except KeyError:
-            log_print("no_memo:", args)
+            log_debug("no_memo:", args)
             value = func(*args)
             cache[args] = value
             return value
@@ -316,15 +320,15 @@ def chdir(path):
     """
     original_dir = os.getcwd()
     try:
-        log_print(f"(chdir)実行パス設定: {original_dir} -> {path}")
+        log_debug(f"(chdir)実行パス設定: {original_dir} -> {path}")
         os.chdir(path)
         yield
     except Exception as e:
-        log_print(f"Error changing directory to {path}: {e}")
+        log_debug(f"Error changing directory to {path}: {e}")
         raise
     finally:
         if os.getcwd() != original_dir:
-            log_print(f"(chdir)元のパスに戻します: {original_dir}")
+            log_debug(f"(chdir)元のパスに戻します: {original_dir}")
             os.chdir(original_dir)
 
 
@@ -403,7 +407,7 @@ def use_requests_session():
     """スレッドごとにSessionをセットするコンテキストマネージャ"""
     session = requests.Session()
     token = _current_session.set(session)  # 現在のセッションを設定
-    log_print(
+    log_debug(
         f"[{threading.current_thread().name}] コンテキストセッションを開始: {token}"
     )
     try:
@@ -411,7 +415,7 @@ def use_requests_session():
     finally:
         session.close()
         _current_session.reset(token)  # セッション終了＋ContextVarを元に戻す
-        log_print(
+        log_debug(
             f"[{threading.current_thread().name}] コンテキストセッションを終了: {token}"
         )
 
@@ -421,13 +425,13 @@ def use_requests_global_session():
     global _global_session
     session = requests.Session()
     _global_session = session
-    log_print(f"[{threading.current_thread().name}] グローバルセッションを開始")
+    log_debug(f"[{threading.current_thread().name}] グローバルセッションを開始")
     try:
         yield session  # 必要ならwith文内で明示的にも使える
     finally:
         session.close()
         _global_session = None
-        log_print(f"[{threading.current_thread().name}] グローバルセッションを終了")
+        log_debug(f"[{threading.current_thread().name}] グローバルセッションを終了")
 
 
 def get_http_cachname(url):
@@ -466,7 +470,7 @@ def http_get_html(
     if cache_dir:
         cache_name = os.path.join(cache_dir, cache_name)
     if use_cache and os.path.exists(cache_name):
-        log_print(
+        log_debug(
             "  htmlをファイルキャッシュから取得します",
             Path(cache_name).relative_to(DATA_DIR),
         )
@@ -476,7 +480,7 @@ def http_get_html(
         return html
 
     # ---- キャッシュがない場合は通信で取得
-    log_print("  htmlを通信で取得します..")
+    log_debug("  htmlを通信で取得します..")
     headers = {"User-Agent": USER_AGENT_CHROME}
     # headers["Connection"] = "Keep-Alive"
     with sema:  # セマフォを使って同時実行数を制限
@@ -485,17 +489,17 @@ def http_get_html(
             session = _global_session
             if session is not None:
                 req_get = session.get
-                log_print("グローバルセッションを使用")
+                log_debug("グローバルセッションを使用")
             else:
                 # 2. ContextVarセッションが有効ならそれを使う
                 session = _current_session.get()
                 if session is not None:
                     req_get = session.get
-                    log_print("ContextVarセッションを使用")
+                    log_debug("ContextVarセッションを使用")
                 else:
                     # 3. どちらもなければrequests.getを直接使う
                     req_get = requests.get
-                    log_print("単独セッションを使用")
+                    log_debug("単独セッションを使用")
             res = req_get(url, headers=headers, cookies=cookies, timeout=5)
         except (
             requests.exceptions.ConnectionError,
@@ -509,13 +513,13 @@ def http_get_html(
                 return ""
         # requests.exceptions.ReadTimeout TODO:
         if res.encoding != "utf-8":
-            log_print("html_encoding:", res.encoding, "encoding:", encoding)
+            log_debug("html_encoding:", res.encoding, "encoding:", encoding)
         # htmlをutf8で取得(python3ではエンコード済みのテキストが取得される)
         html = res.text
         # メタ指定での文字コードをutf8に
         # html = html.replace("charset=shift_jis", "charset=utf-8")
 
-        log_print(
+        log_debug(
             "  取得したhtmlをファイルキャッシュに書き込みます:",
             Path(cache_name).relative_to(DATA_DIR),
         )
@@ -571,18 +575,18 @@ def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=
 def http_post_html(url, use_cache=True, data={}, cookies={}, encoding="utf-8"):
     cache_name = "post_" + get_http_cachname(url)
     if use_cache and os.path.exists(cache_name):
-        log_print("html(post)をファイルキャッシュから取得します", cache_name)
+        log_debug("html(post)をファイルキャッシュから取得します", cache_name)
         html = file_read(cache_name)
         return html, ""
 
     headers = {"User-Agent": USER_AGENT_CHROME}
     r = requests.post(url, headers=headers, data=data, cookies=cookies)
     if r.encoding != "utf-8":
-        log_print("encoding:", r.encoding, "encoding:", encoding)
+        log_debug("encoding:", r.encoding, "encoding:", encoding)
     html = r.text.encode(encoding)
     # html = html.replace("charset=UTF-8", "charset=euc-jp")
 
-    log_print("htmlをファイルキャッシュに書き込みます:", cache_name)
+    log_debug("htmlをファイルキャッシュに書き込みます:", cache_name)
     file_write(cache_name, html)
     return html, r.cookies
 
@@ -591,14 +595,14 @@ def http_post_html(url, use_cache=True, data={}, cookies={}, encoding="utf-8"):
 # pickleデータベースユーティリティ
 # ==================================================
 def save_pickle(fname, content):
-    log_print("%sにpickleセーブ" % fname)
+    log_debug("%sにpickleセーブ" % fname)
     with open(fname, "wb") as f:
         # 高速化のためプロトコル指定
         pickle.dump(content, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def load_pickle(fname):
-    log_print("%sからpickleロード" % fname)
+    log_debug("%sからpickleロード" % fname)
     try:
         f = open(fname, "rb")
         dat = pickle.load(f)
@@ -613,7 +617,7 @@ memoized_load_pickle = memoize(load_pickle)  # noqa: E305
 
 
 def load_file(fname, tb="r"):
-    log_print("%sのfileロード" % fname)
+    log_debug("%sのfileロード" % fname)
     try:
         f = open(fname, tb)
         dat = f.read()

@@ -146,7 +146,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # today = datetime.today()
     today_data, latest_csv_dt = get_latest_shintakane_fname()
     today_data_d, latest_csv_dt_d = get_latest_dekidakaup_fname()
-    log_print("最新新高値ファイル:", today_data, today_data_d)
+    log_debug("最新新高値ファイル:", today_data, today_data_d)
 
     # 各種フィルタ関数：テンバガー成長株の条件
     # 出来高による候補フィルタ関数：一定以上の出来高に絞る
@@ -189,7 +189,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 else:
                     day_list_d = []
                 # day_listとday_list_dを合成
-                log_print(
+                log_debug(
                     "新高値銘柄%d個と出来高急増銘柄%d個を合成(%s)"
                     % (len(day_list), len(day_list_d), day.date())
                 )
@@ -197,11 +197,11 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 # print "---> 計%d個"%len(day_list)
             if len(day_list) == 0:
                 continue
-            log_print("----- %s(%d)を分析" % (day_csv, len(day_list)))
+            log_debug("----- %s(%d)を分析" % (day_csv, len(day_list)))
 
             # 各種フィルタ判定した上でリスト作成
             day_list_filtered = day_list
-            log_print("候補銘柄%d個" % len(day_list_filtered))
+            log_debug("候補銘柄%d個" % len(day_list_filtered))
             # まだalready_listにないものは追加
             already_code = [c["code_s"] for c in already_list]
             for d in day_list_filtered:
@@ -219,7 +219,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     already_list_code = [a["code_s"] for a in already_list]
 
     # 今日のを分析
-    log_print("本日:", today_data, "を分析")
+    log_debug("本日:", today_data, "を分析")
 
     def create_today_list():
         today_list = []  # 本日更新銘柄データ(dict)のリスト
@@ -227,13 +227,13 @@ def todays_shintakane(upd=UPD_INTERVAL):
             today_list = search_fromcsv(today_data)
             # 出来高急増も追加
             today_list_d = search_fromcsv_dekidakaup(today_data_d)
-            log_print(
+            log_debug(
                 "新高値銘柄%d個と出来高急増銘柄%d個を合成"
                 % (len(today_list), len(today_list_d))
             )
             compose_list(today_list, today_list_d)
             # today_listには本日銘柄: 本日の新高値と出来高銘柄リスト
-            log_print("本日銘柄%s個" % len(today_list))
+            log_debug("本日銘柄%s個" % len(today_list))
         return today_list
 
     today_list = create_today_list()
@@ -241,8 +241,8 @@ def todays_shintakane(upd=UPD_INTERVAL):
 
     # 決算発表/修正の銘柄を追加
     kessan_lst_code = get_todays_kessan_list()
-    log_print("決算更新追加:", len(kessan_lst_code), "個")
-    log_print(kessan_lst_code)
+    log_debug("決算更新追加:", len(kessan_lst_code), "個")
+    log_debug(kessan_lst_code)
     # 更新を行う必要のあるすべての銘柄
     updatelist_all_code = already_list_code + today_list_code + kessan_lst_code
     updatelist_all_code = list(set(updatelist_all_code))  # 重複削除
@@ -762,7 +762,7 @@ def get_todays_dekidakaup():
         # 	tdy = tdy-timedelta(days=1)
         goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, PRICE_HOUR)
         if latest_csv_dt > goodissue_dt:
-            log_print(
+            log_debug(
                 "本日分のcsvは取得済みです",
                 latest_csv,
                 latest_csv_dt,
@@ -795,7 +795,7 @@ def get_todays_dekidakaup():
         )
         useCache = cach_dt.date() >= datetime.today().date()
         # TODO: ↑土日も取得してしまう
-        log_print("株探 出来高急増キャシュ：", cach_dt, useCache)
+        log_debug("株探 出来高急増キャシュ：", cach_dt, useCache)
     except (IOError, OSError) as e:
         log_warning("出来高急増ファイルがない", e)
         useCache = False
@@ -811,13 +811,13 @@ def get_todays_dekidakaup():
     )
     date = date_m.group(1) + date_m.group(2) + date_m.group(3)
     date = date[2:]
-    log_print("株探 出来高急増更新日：", date)
+    log_debug("株探 出来高急増更新日：", date)
     # ページ分のhtmlを取得
     # ページ数を取得
     page_div = re.search(r'<div class="pagination">(.*?)</div>', html, re.S).group(0)
     pages = [int(m.group(1)) for m in re.finditer(r"page=(\d)", page_div)]
     page_count = max(pages)
-    log_print("ページ数：", page_count)
+    log_debug("ページ数：", page_count)
     with use_requests_session():
         for p in range(page_count):
             if p < 1:
@@ -857,7 +857,7 @@ def get_todays_shintakane():
             tdy = tdy - timedelta(days=1)
         goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, 17)
         if latest_csv_dt > goodissue_dt:
-            log_print(
+            log_debug(
                 "本日分のcsvは取得済みです",
                 latest_csv,
                 latest_csv_dt,
@@ -889,7 +889,7 @@ def get_todays_shintakane():
             int(latest_date_m.group(3)),
         )
         useCache = cach_dt.date() >= datetime.today().date()
-        log_print("株探新高値 キャシュ：", cach_dt, useCache)
+        log_debug("株探新高値 キャシュ：", cach_dt, useCache)
     except IOError:
         useCache = False
     # 最初のページ
@@ -905,7 +905,7 @@ def get_todays_shintakane():
         re.S,
     )  # re.S:改行を含む
     date = date_m.group(1)[-2:] + date_m.group(2) + date_m.group(3)
-    log_print("株探新高値更新日：", date)
+    log_debug("株探新高値更新日：", date)
     # ページ分のhtmlを取得
     # ページ数を取得
     try:
@@ -915,7 +915,7 @@ def get_todays_shintakane():
         pages = [int(m.group(1)) for m in re.finditer(r"page=(\d)", page_div)]
         page_count = max(pages)
     except AttributeError:
-        log_print("ページ情報がhtmlにないため1とする")
+        log_debug("ページ情報がhtmlにないため1とする")
         page_count = 1
     for p in range(page_count):
         if p < 1:

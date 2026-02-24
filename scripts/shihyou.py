@@ -63,7 +63,7 @@ def get_from_kabutan(html):
     def get_table_prev(val, item_ind):
         try:
             if val.find("－") >= 0:
-                log_print("有利子負債倍率一つ前を見る")
+                log_debug("有利子負債倍率一つ前を見る")
                 items = get_table_row(ms_td[-2])
                 val = items[item_ind]
                 if val.find("－") >= 0:
@@ -77,8 +77,8 @@ def get_from_kabutan(html):
 
     debut = get_table_prev(debut.replace(",", ""), 5)
     jiko_ratio = get_table_prev(jiko_ratio, 1)
-    log_print("有利子負債自己資本比率:", debut)
-    log_print("自己資本比率:", jiko_ratio)
+    log_debug("有利子負債自己資本比率:", debut)
+    log_debug("自己資本比率:", jiko_ratio)
     shiyo_data = {}
     shiyo_data["debt_ratio"] = float(debut)
     shiyo_data["capital_ratio"] = float(jiko_ratio)
@@ -108,13 +108,13 @@ def get_from_kabutan(html):
 
     roe, profit_margin = get_roe_and_profit_margin(profit_htmls[-1])
     if roe == 0 or profit_margin == 0:
-        log_print("ROE一つ前を見る")
+        log_debug("ROE一つ前を見る")
         try:
             roe, profit_margin = get_roe_and_profit_margin(profit_htmls[-2])
         except IndexError:
             pass
-    log_print("ROE:", roe)
-    log_print("売上営業利益率:", profit_margin)
+    log_debug("ROE:", roe)
+    log_debug("売上営業利益率:", profit_margin)
     shiyo_data["ROE"] = roe
     shiyo_data["profit_margin"] = profit_margin
 
@@ -151,7 +151,7 @@ def get_from_kabutan_base(html, shiyo_data):
         return shiyo_data  # その後PER,PSR計算できないので
     else:
         shiyo_data["jikasogaku"] = jikasogaku  # 億円
-        log_print("時価総額(億円):", shiyo_data["jikasogaku"])
+        log_debug("時価総額(億円):", shiyo_data["jikasogaku"])
 
     # ---- PER
     stockinfo_m = re.search(r'<div id="stockinfo_i3">(.*?)</div>', html, re.DOTALL)
@@ -171,10 +171,10 @@ def get_from_kabutan_base(html, shiyo_data):
                 per_m = next(per_ms)
                 if per_m:
                     per = float(per_m.group(1))
-                    log_print("PER:", per)
+                    log_debug("PER:", per)
                     shiyo_data["PER"] = per
             except ValueError:
-                log_print("PER計算できない", per_m.group(1))
+                log_debug("PER計算できない", per_m.group(1))
                 shiyo_data["PER"] = 0
                 need_per = True  # PERを実績から計算する
         else:
@@ -185,10 +185,10 @@ def get_from_kabutan_base(html, shiyo_data):
         if pbr_m:
             try:
                 pbr = float(pbr_m.group(1))
-                log_print("PBR:", pbr)
+                log_debug("PBR:", pbr)
                 shiyo_data["PBR"] = pbr
             except ValueError:
-                log_print("PBR取得できず", pbr_m.group(1))
+                log_debug("PBR取得できず", pbr_m.group(1))
         # 信用倍率、信用買残、信用売残
         name = "credit_ratio"
         try:
@@ -196,12 +196,12 @@ def get_from_kabutan_base(html, shiyo_data):
             if dividend_nd:
                 try:
                     val = float(dividend_nd.group(1))
-                    log_print(name + ":", val)
+                    log_debug(name + ":", val)
                     shiyo_data[name] = val
                 except ValueError:
-                    log_print(name + "取得できず", dividend_nd.group(1))
+                    log_debug(name + "取得できず", dividend_nd.group(1))
         except StopIteration:
-            log_print(name + "取得できず")
+            log_debug(name + "取得できず")
         margin_m = re.search(
             r'<h2 class="mgt6">信用取引&nbsp;\(単位:千株\)</h2>\r\n<table>(.*?)</table>',
             html,
@@ -234,10 +234,10 @@ def get_from_kabutan_base(html, shiyo_data):
         if m:
             try:
                 val = float(m.group(1))
-                log_print("配当利回り:", val)
+                log_debug("配当利回り:", val)
                 shiyo_data["dividend_yield"] = val
             except ValueError:
-                log_print("配当利回り取得できず", m.group(1))
+                log_debug("配当利回り取得できず", m.group(1))
 
     if per == 0.0 and not need_per:
         log_warning(" PER取得できず(フォーマット変更？)")
@@ -272,31 +272,31 @@ def get_from_kabutan_base(html, shiyo_data):
                 latest_term = cur_term
                 uriage_lst.append(uriage)
             except ValueError:
-                log_print("  売上高取得できず:", uriage_m.group(1), cur_term)
+                log_debug("  売上高取得できず:", uriage_m.group(1), cur_term)
 
             try:
                 profit = float(uriage_m.group(3))  # 最終益
                 # latest_term = cur_term
             except ValueError:
-                log_print("  最終益取得できず:", uriage_m.group(3), cur_term)
+                log_debug("  最終益取得できず:", uriage_m.group(3), cur_term)
             try:
                 keijo = float(uriage_m.group(2))  # 経常益
             except ValueError:
                 keijo = 0
-                log_print("   経常益取得できず", uriage_m.group(2), cur_term)
+                log_debug("   経常益取得できず", uriage_m.group(2), cur_term)
             # print uriage
         if uriage_lst:
             uriage = uriage_lst[-1]  # 直近
             if uriage > 0:
                 psr = round(jikasogaku / uriage, 1)
-                log_print(
+                log_debug(
                     "PSR: %.1f 直近売上高(億円): %.1f(%s)" % (psr, uriage, latest_term)
                 )
             else:
-                log_print("売上が0のためPSR計算できず")
+                log_debug("売上が0のためPSR計算できず")
         if need_per and profit != 0:
             per = round(jikasogaku / profit, 1)
-            log_print("PERを実績から計算: ", per, "<- 最終益=%.1f億" % profit)
+            log_debug("PERを実績から計算: ", per, "<- 最終益=%.1f億" % profit)
             if per > 0:
                 shiyo_data["PER"] = per
         mper = 0
@@ -305,10 +305,10 @@ def get_from_kabutan_base(html, shiyo_data):
                 mper = round(jikasogaku / profit, 1)
                 mper = max(mper, 0)
             else:
-                log_print("修正PERを適用")
+                log_debug("修正PERを適用")
                 mper = round(jikasogaku / (keijo * 0.65), 1)
                 mper = max(mper, 0)
-            log_print("MPER:", mper)
+            log_debug("MPER:", mper)
         if mper != 0:
             shiyo_data["MPER"] = mper
         else:
@@ -397,8 +397,8 @@ def calc_shihyo_pt(code_s, upd=UPD_INTERVAL, stock={}):
     # if shiyo.has_key("PSR"):
     # 	psr_pt = step_func(shiyo["PSR"], [0, 0.75, 2.5, 10], [PSR_MAX, PSR_MAX/2, PSR_MAX/4, 0])
 
-    log_print("時価総額pt: %d/%d" % (jikasogaku_pt, JIKASOGAKU_MAX))
-    log_print("有利子負債自己資本比率pt: %d/%d" % (debt_ratio_pt, -DEBT_RATIO_MAX))
+    log_debug("時価総額pt: %d/%d" % (jikasogaku_pt, JIKASOGAKU_MAX))
+    log_debug("有利子負債自己資本比率pt: %d/%d" % (debt_ratio_pt, -DEBT_RATIO_MAX))
     # print "PER pt: %d/%d"%(per_pt, PER_MAX)
     # print "PBR pt: %d/%d"%(pbr_pt, PBR_MAX)
     # print "PSR pt: %d/%d"%(psr_pt, PSR_MAX)
@@ -434,7 +434,7 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
         CACHE_DIR_KABUTAN, get_http_cachname(URL_CODE_KABUTAN % str(code_s))
     )
     tables["access_date_shihyo"] = get_file_datetime(cache_path)
-    log_print("date_shihyo:", tables["access_date_shihyo"])
+    log_debug("date_shihyo:", tables["access_date_shihyo"])
     tables["shihyo_pt"] = shihyo_pt
     # 指標データ登録
     tables["shihyo"] = shihyo_data

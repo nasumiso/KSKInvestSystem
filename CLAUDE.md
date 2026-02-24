@@ -10,7 +10,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **コメント・docstringは日本語で記述**。技術用語・関数名・外部ライブラリ名は英語のまま。
 - 銘柄コードは常に**文字列** (`code_s`) を使用。`"0001"`〜`"9999"` や `"215A"` 形式。レガシーの `code` (int) は非推奨。
-- ロギングは `log_print`, `log_warning`, `log_error` を使用（`ks_util.py`）。直接の `print()` は不可。
+- ロギングは `log_print`, `log_debug`, `log_warning`, `log_error` を使用（`ks_util.py`）。直接の `print()` は不可。
+  - `log_print`（INFO）: フェーズ開始/完了マーカー、サマリー、重要な処理経過など**運用時に必要な情報**
+  - `log_debug`（DEBUG）: 個別銘柄の中間値、per-row詳細、キャッシュ判定など**デバッグ時のみ必要な情報**
+  - ファイルハンドラは通常INFOレベル。`KS_LOG_DEBUG=1` 環境変数でDEBUGレベルに切替可能
+  - 新規ログ追加時は上記の基準で `log_print` / `log_debug` を使い分けること
 - DB操作は `update_db_rows()` を経由。バルク操作は `sync=False` で非同期化可能。
 - 日付判定は `ks_util.get_price_day()` を使用（18:00前は前日扱い）。
 
@@ -157,7 +161,7 @@ python make_stock_db.py list_all_db
 - **株価履歴**: `data/stock_data/yahoo/price/`（yfinance JSON + レガシーHTML）, `data/stock_data/kabutan/price/`
 - **市場指数**: `data/sisu_data/`
 - **結果CSV**: `data/shintakane_result_data/`, `data/code_rank_data/`
-- **ログ**: `logs/`（TimedRotatingFileHandler、7日保持）
+- **ログ**: `logs/`（TimedRotatingFileHandler、7日保持、通常INFOレベル、`KS_LOG_DEBUG=1` でDEBUG出力）
 
 ## 重要な注意事項
 

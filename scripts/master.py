@@ -36,7 +36,7 @@ def parse_master_html_kabutan(html):
 
     jikasogaku = shihyou.parse_jikasogaku_kabutan(html)
     detail["market_cap"] = jikasogaku
-    log_print("時価総額:", jikasogaku)
+    log_debug("時価総額:", jikasogaku)
 
     # 最低購入代金
     lowest_purchase_money = 0
@@ -48,7 +48,7 @@ def parse_master_html_kabutan(html):
             )
         except ValueError:
             pass
-    log_print("最低購入代金:", lowest_purchase_money)
+    log_debug("最低購入代金:", lowest_purchase_money)
     detail["lowest_purchase_money"] = lowest_purchase_money
     # 銘柄名
     m = re.search(r'<h1 id="kobetsu">(.*?)\(\d[0-9a-zA-Z]\d[0-9A-Z]\).*?</h1>', html)
@@ -61,33 +61,33 @@ def parse_master_html_kabutan(html):
         else:
             stock_name = m.group(1).strip()
         detail["stock_name"] = stock_name
-    log_print("銘柄名:", stock_name)
+    log_debug("銘柄名:", stock_name)
     # 市場
     m = re.search(r'<span class="market">(.*?)</span>', html)
     market = "市場名不明"
     if m:
         market = m.group(1).strip()
         detail["market"] = market
-    log_print("市場:", market)
+    log_debug("市場:", market)
     # 業種
     m = re.search(r'<a href="/themes/\?industry=\d{1,2}&market=\d">(.*?)</a>', html)
     sector_name = "セクター名不明"
     if m:
         sector_name = m.group(1).strip()
         detail["sector"] = sector_name
-    log_print("セクター名:", sector_name)
+    log_debug("セクター名:", sector_name)
     # 概要
     m = re.search(r"<th scope='row'>概要</th>\r\n      <td>(.*?)</td>", html)
     overview = ""
     if m:
         overview = m.group(1).strip()
         detail["overview"] = overview
-    log_print("概要:", overview)
+    log_debug("概要:", overview)
     # テーマ
     themes = []
     for m in re.finditer(r'<li><a href="/themes.*?>(.*?)</a></li>', html):
         themes.append(m.group(1))
-    log_print("テーマ:", ",".join(themes))
+    log_debug("テーマ:", ",".join(themes))
     detail["themes"] = ",".join(themes)
     # 比較される銘柄
     relates = []
@@ -95,7 +95,7 @@ def parse_master_html_kabutan(html):
         r'<dd><a href="javascript:set_stock_url\(2,\'(\d\d\d\d)\'', html
     ):
         relates.append(m.group(1))
-    log_print("比較銘柄:", relates)
+    log_debug("比較銘柄:", relates)
     detail["relates"] = ",".join(relates)
     # 決算日
     kessan = ""
@@ -105,7 +105,7 @@ def parse_master_html_kabutan(html):
         m2 = re.search(r'<time datetime=".*?">(.*?)</time>', m.group(1), re.DOTALL)
         if m2:
             kessan = m2.group(1)
-    log_print("決算日:", kessan)
+    log_debug("決算日:", kessan)
     detail["kessanbi"] = kessan
     # 会社サイト
     m = re.search(
@@ -118,7 +118,7 @@ def parse_master_html_kabutan(html):
 
 
 def get_master_data_kabutan(code_s, upd=UPD_INTERVAL):
-    log_print("銘柄詳細ファイルを取得 キャッシュ:")
+    log_debug("銘柄詳細ファイルを取得 キャッシュ:")
     html = rironkabuka.get_kabutan_base_html(code_s, upd)
     return html
 
@@ -153,7 +153,7 @@ get_report_evalutation = memoized_report_evaluation()
 
 
 def calc_fundamental(code_s, themes):
-    log_print("テーマポイントの計算")  # , themes
+    log_debug("テーマポイントの計算")  # , themes
     market_db = make_market_db.get_market_db()
     theme_rank_pt = {v: 30 - i for (i, v) in enumerate(market_db["theme_rank"])}
     total_pt = 0
@@ -162,7 +162,7 @@ def calc_fundamental(code_s, themes):
         # if theme_pt > 0:
         # 	print theme, theme_pt
         total_pt += theme_pt
-    log_print("テーマポイント:", total_pt)
+    log_debug("テーマポイント:", total_pt)
     total_pt = min(total_pt, 100)  # オレレポート封印のため80から100に
 
     # オレレポート分のファンダポイントを加算
@@ -202,7 +202,7 @@ def get_stock_master_data(code_s, upd):
         # print "銘柄名:%s,時価総額:%d百万円\n最低購入代金:%d"%\
         # (parsed_data["stock_name"], parsed_data["market_cap"], parsed_data["lowest_purchase_money"])
         for k, v in list(parsed_data.items()):
-            log_print("%s: %s" % (k, v))
+            log_debug("%s: %s" % (k, v))
         log_print("<<<<< 解析完了 ")
     # テーマからファンダポイントを計算
     funda_pt = calc_fundamental(code_s, parsed_data["themes"])

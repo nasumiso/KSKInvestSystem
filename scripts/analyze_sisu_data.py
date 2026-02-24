@@ -108,8 +108,8 @@ def rankdata(a):
 #         log_print("asset_total_before:", [round(a, 1) for a in asset_total])
 #         total_return = sum(asset_total)
 #         asset_total = [total_return * r / 100 for t, r in zip(asset_total, asset_rate)]
-#         log_print("asset_total_after:", [round(a, 1) for a in asset_total])
-#         log_print("total_return:", round(total_return, 1), round(sum(asset_total), 1))
+#         log_debug("asset_total_after:", [round(a, 1) for a in asset_total])
+#         log_debug("total_return:", round(total_return, 1), round(sum(asset_total), 1))
 #     # 208
 #     log_print("バイアンドホールド(リバランス)	: ", int(total_return))
 
@@ -176,12 +176,12 @@ def rs_3612ma():
                 asset_signal[j] = "SELL"
             asset_return[j] = row[3]
             asset_return_1[j] = row[4]
-        log_print("-" * 15, _row[0])
-        log_print("signal:", asset_signal)
-        log_print("return:", asset_return)
+        log_debug("-" * 15, _row[0])
+        log_debug("signal:", asset_signal)
+        log_debug("return:", asset_return)
         asset_return_rank = rankdata(asset_return)
         asset_return_rank = [8 - r for r in asset_return_rank]
-        log_print("rank:", asset_return_rank)
+        log_debug("rank:", asset_return_rank)
         # アセットレートを更新
         for j, rank in enumerate(asset_return_rank):
             if rank <= 2 and asset_signal[j] == "BUY":
@@ -191,7 +191,7 @@ def rs_3612ma():
                 asset_rate[j] = 100
             elif asset_signal[j] == "SELL":
                 asset_rate[j] = 0
-        log_print("rate:", asset_rate)
+        log_debug("rate:", asset_rate)
         count_100 = asset_rate[:-1].count(100)
         val = 100 / count_100 if count_100 > 0 else 0
         # if val == 100: val = 50
@@ -199,10 +199,10 @@ def rs_3612ma():
             for j, rate in enumerate(asset_rate):
                 asset_rate[j] = val if rate == 100 else 0
             asset_rate[7] = 0  # キャッシュは0に
-        log_print("rate_mod:", asset_rate)
+        log_debug("rate_mod:", asset_rate)
         if not sum(asset_rate) == 100:
             asset_rate[7] = 100 - sum(asset_rate)
-            log_print("おかしいかも？ cash=", asset_rate[7])
+            log_debug("おかしいかも？ cash=", asset_rate[7])
             # break
         # 結果
         buy = []
@@ -221,11 +221,11 @@ def rs_3612ma():
                 have.append(asset + "(" + str(cur) + ")")
                 have_count[j] += 1
         if buy:
-            log_print("買い：", buy)
+            log_debug("買い：", buy)
         if sell:
-            log_print("売り：", sell)
+            log_debug("売り：", sell)
         if have:
-            log_print("保有：", have)
+            log_debug("保有：", have)
         # リターン計算
         tax = False  # 税金考慮ありか
         if i % 52 == 0:  # 年単位
@@ -240,7 +240,7 @@ def rs_3612ma():
             try:
                 total_return_current = total_return_all[index] - input_money_current
                 total_return_prev = total_return_all[max(index - 52 / 4, 0)]
-                log_print(
+                log_debug(
                     "年利益：%.2f(%.1f<-%.1f) %d%% input:%d"
                     % (
                         profit,
@@ -251,9 +251,9 @@ def rs_3612ma():
                     )
                 )
             except ZeroDivisionError as e:
-                log_print("年利益：0")
-        log_print("return1:", [round(a, 3) for a in asset_return_1])
-        log_print("asset_total_before:", [round(a, 1) for a in asset_total])
+                log_debug("年利益：0")
+        log_debug("return1:", [round(a, 3) for a in asset_return_1])
+        log_debug("asset_total_before:", [round(a, 1) for a in asset_total])
         asset_total = [
             t * r1 for t, r1 in zip(asset_total, asset_return_1)
         ]  # 1ヶ月リターン反映
@@ -265,7 +265,7 @@ def rs_3612ma():
             asset_total = [
                 total_return * r / 100 for r in asset_rate
             ]  # レートに基づき再配分
-        log_print("asset_total_after:", [round(a, 1) for a in asset_total])
+        log_debug("asset_total_after:", [round(a, 1) for a in asset_total])
         if isAccum:
             # print "asset_total_before_accum:", [round(a, 1) for a in asset_total]
             # 積立分を追加
@@ -274,10 +274,10 @@ def rs_3612ma():
             ]
             # asset_total = [a+1.0*float(r)/100 for a, r in zip(asset_total, asset_rate_initial)]
             input_money += sum(asset_total) - total_return
-            log_print("  accum:+%.1f(%d)" % (sum(asset_total) - total_return, input_money))
-            log_print("asset_total_accum:", [round(a, 1) for a in asset_total])
+            log_debug("  accum:+%.1f(%d)" % (sum(asset_total) - total_return, input_money))
+            log_debug("asset_total_accum:", [round(a, 1) for a in asset_total])
             total_return = sum(asset_total)
-        log_print("total_return:", round(total_return, 1), round(sum(asset_total), 1))
+        log_debug("total_return:", round(total_return, 1), round(sum(asset_total), 1))
 
         # asset_rate_all.append(asset_rate)
         total_return_all.append(total_return)
@@ -441,17 +441,17 @@ def rs_3612ma():
 #             # 	pass
 #             # else:
 #             # 	asset_rate[j] = 0 #ここ疑問?
-#         log_print("rate:", asset_rate)
+#         log_debug("rate:", asset_rate)
 #         count = asset_rate[:-1].count(100)
 #         val = 100 / count if count > 0 else 0
 #         if val > 0:
 #             for j, rate in enumerate(asset_rate):
 #                 asset_rate[j] = val if rate == 100 else 0
 #             asset_rate[7] = 0  # キャッシュは0に
-#         log_print("rate_mod:", asset_rate)
+#         log_debug("rate_mod:", asset_rate)
 #         if not sum(asset_rate) == 100:
 #             asset_rate[7] += 100 - sum(asset_rate)
-#             log_print("おかしいかも？ cash=", asset_rate[7])
+#             log_debug("おかしいかも？ cash=", asset_rate[7])
 #         # 売買結果
 #         buy = []
 #         sell = []
@@ -482,9 +482,9 @@ def rs_3612ma():
 #         total_return = sum(asset_total)
 #         log_print("   ", asset_rate)
 #         asset_total = [total_return * r / 100 for r in asset_rate]
-#         log_print("asset_total_after:", [round(a, 1) for a in asset_total])
+#         log_debug("asset_total_after:", [round(a, 1) for a in asset_total])
 #         # TODO: なんかここが違うことがある
-#         log_print("total_return:", round(total_return, 1), round(sum(asset_total), 1))
+#         log_debug("total_return:", round(total_return, 1), round(sum(asset_total), 1))
 #         if abs(total_return - sum(asset_total) >= 1):
 #             raise
 #         # break
@@ -519,9 +519,9 @@ def latest_3612ma():
     return_avg = [0] * len(ASSET_CLASSES)
     signal = [0] * len(ASSET_CLASSES)
     for i, asset in enumerate(ASSET_CLASSES):
-        log_print("-" * 15, asset)
+        log_debug("-" * 15, asset)
         table_key = ASSET_TO_FUND[asset]
-        log_print(table_key)
+        log_debug(table_key)
         prices = market_db[table_key]
         # prices = prices[:-1]
         current = float(prices[-1][CLM_PRICE])
@@ -532,7 +532,7 @@ def latest_3612ma():
             prev12 = prices[int(-1 - 52 * 12 // 12)][CLM_PRICE]
         except IndexError:
             prev12 = prices[0][CLM_PRICE]
-        log_print(current, prev1, prev3, prev6, prev12)
+        log_debug(current, prev1, prev3, prev6, prev12)
         return1[i] = 100 * (current / prev1 - 1)
         return3[i] = 100 * (current / prev3 - 1)
         return6[i] = 100 * (current / prev6 - 1)
@@ -547,7 +547,7 @@ def latest_3612ma():
                 avg12 += prices[month_ind][CLM_PRICE]
                 count += 1
             except IndexError:
-                log_print("prices_len:", len(prices), "month_ind:", month_ind)
+                log_debug("prices_len:", len(prices), "month_ind:", month_ind)
                 log_warning(" priceデータがたりません")
         if count < 12:
             log_warning(" priceデータがたりなかったようです", count)
