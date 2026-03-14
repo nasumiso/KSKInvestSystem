@@ -1,10 +1,6 @@
 from ks_util import *
 
-# shelveモード切り替え（移行後はTrueに設定）
-USE_SHELVE = True
-
-if USE_SHELVE:
-    from db_shelve import get_kessan_db as _get_kessan_shelve_db
+from db_shelve import get_kessan_db as _get_kessan_shelve_db
 
 
 def is_positive_kessan(summary):
@@ -106,24 +102,16 @@ PF_KESSAN_PATH = os.path.join(DATA_DIR, "todays_kessan_data", "pf_kessan.pickle"
 
 def _save_kessan_db(pf_kessan_dict):
     """決算DBを保存する内部関数"""
-    if USE_SHELVE:
-        with _get_kessan_shelve_db() as db:
-            db.import_from_dict(pf_kessan_dict)
-    else:
-        save_pickle(PF_KESSAN_PATH, pf_kessan_dict)
+    with _get_kessan_shelve_db() as db:
+        db.import_from_dict(pf_kessan_dict)
 
 
 def _load_kessan_db():
     """決算DBをロードする内部関数"""
-    if USE_SHELVE:
-        with _get_kessan_shelve_db() as db:
-            if len(db) == 0:
-                return None
-            return db.export_to_dict()
-    else:
-        if not os.path.exists(PF_KESSAN_PATH):
+    with _get_kessan_shelve_db() as db:
+        if len(db) == 0:
             return None
-        return load_pickle(PF_KESSAN_PATH)
+        return db.export_to_dict()
 
 
 def save_pf_kessan_db(stocks):

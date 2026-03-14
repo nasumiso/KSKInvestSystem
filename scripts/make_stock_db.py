@@ -3,7 +3,6 @@
 import sys
 import shutil
 from datetime import datetime, date, timedelta
-import pickle
 import csv
 from contextlib import contextmanager
 import io
@@ -384,10 +383,6 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
 # ==================================================
 # database
 # ==================================================
-STOCKS_PICKLE = os.path.join(DATA_DIR, "stock_data", "stocks.pickle")
-
-# shelveモード切り替えフラグ（移行後はTrueに設定）
-USE_SHELVE = True
 
 
 def update_db(stocks, stock_data):
@@ -440,7 +435,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
         latest: bool 強制で最新データに更新する
         tables: list<str> 更新するテーブルを指定する[master/price/gyoseki/rironkabuka]
     Return:
-        更新されたDB（shelveモードではdict形式でエクスポート）
+        更新されたDB（dict形式でエクスポート）
     """
     if tables is None:
         tables = []
@@ -448,46 +443,19 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
     force = upd >= UPD_REEVAL
     log_print("update_tables:", tables, " 更新:", upd, "同期" if sync else "非同期")
 
-    if USE_SHELVE:
-        # shelveモード：個別レコードアクセスで高速化
-        with _get_stock_shelve_db() as stocks_db:
-            # yfinanceバッチプリフェッチ（price更新対象がある場合、DB参照で市場コード解決）
-            if (not tables or "price" in tables) and code_s_list:
-                try:
-                    price.prefetch_yfinance_batch(code_s_list, stocks=stocks_db)
-                except Exception as e:
-                    log_warning("yfinanceバッチプリフェッチ失敗（個別取得にフォールバック）: %s" % e)
-            if sync:
-                update_db_rows_sync(code_s_list, upd, tables, stocks_db, latest, force)
-            else:
-                update_db_rows_async(code_s_list, upd, tables, stocks_db, latest, force)
-            stocks_db.sync()
-            # 後方互換性のためdictとしてエクスポート
-            return stocks_db.export_to_dict()
-    else:
-        # pickleモード（後方互換性）
-        table_pickle = STOCKS_PICKLE
-        stocks = {}
-        if os.path.exists(table_pickle):
-            stocks = load_pickle(table_pickle)
-            if not isinstance(stocks, dict):
-                log_warning("[警告] stocksがdict型でありません")
-                raise Exception("stocksがdict型でありません")
-
-        # yfinanceバッチプリフェッチ（pickleモード）
+    with _get_stock_shelve_db() as stocks_db:
+        # yfinanceバッチプリフェッチ（price更新対象がある場合、DB参照で市場コード解決）
         if (not tables or "price" in tables) and code_s_list:
             try:
-                price.prefetch_yfinance_batch(code_s_list, stocks=stocks)
+                price.prefetch_yfinance_batch(code_s_list, stocks=stocks_db)
             except Exception as e:
                 log_warning("yfinanceバッチプリフェッチ失敗（個別取得にフォールバック）: %s" % e)
-
         if sync:
-            update_db_rows_sync(code_s_list, upd, tables, stocks, latest, force)
+            update_db_rows_sync(code_s_list, upd, tables, stocks_db, latest, force)
         else:
-            update_db_rows_async(code_s_list, upd, tables, stocks, latest, force)
-
-        save_pickle(table_pickle, stocks)
-        return stocks
+            update_db_rows_async(code_s_list, upd, tables, stocks_db, latest, force)
+        stocks_db.sync()
+        return stocks_db.export_to_dict()
 
 
 def _update_db_code(c_s, upd, tables, stocks, latest, force):
@@ -553,12 +521,8 @@ def get_stock_db(code):
     """
     指定codeの銘柄DBデータを返す
     """
-    if USE_SHELVE:
-        with _get_stock_shelve_db() as db:
-            return db.get(str(code), {})
-    else:
-        stocks = memoized_load_pickle(STOCKS_PICKLE)
-        return stocks.get(int(code), {})
+    with _get_stock_shelve_db() as db:
+        return db.get(str(code), {})
 
 
 @contextmanager
@@ -579,16 +543,12 @@ def print_to_file(fname):
 
 
 def list_db(code_list=[]):
-    if USE_SHELVE:
-        with _get_stock_shelve_db() as stocks:
-            _list_db_impl(stocks, code_list)
-    else:
-        stocks = load_pickle(STOCKS_PICKLE)
+    with _get_stock_shelve_db() as stocks:
         _list_db_impl(stocks, code_list)
 
 
 def _list_db_impl(stocks, code_list):
-    """list_dbの実装（shelve/pickle共通）"""
+    """list_dbの実装"""
     code_s_list = [str(c) for c in code_list]
     with print_to() as out:
         for k in stocks.keys():
@@ -1093,26 +1053,18 @@ def get_market_code(stock_data):
 
 def load_stock_db():
     """stockDBのロード
-    shelveモードでは全データをdictとしてエクスポート
-    （後方互換性のため維持）
+    全データをdictとしてエクスポート
     """
-    if USE_SHELVE:
-        with _get_stock_shelve_db() as db:
-            return db.export_to_dict()
-    else:
-        stocks = load_pickle(STOCKS_PICKLE)
-        return stocks
+    with _get_stock_shelve_db() as db:
+        return db.export_to_dict()
 
 
 def save_stock_db(stocks):
     """stockDBの保存
-    shelveモードではdictを全置換（削除も反映）
+    dictを全置換（削除も反映）
     """
-    if USE_SHELVE:
-        with _get_stock_shelve_db() as db:
-            db.replace_from_dict(stocks)
-    else:
-        save_pickle(STOCKS_PICKLE, stocks)
+    with _get_stock_shelve_db() as db:
+        db.replace_from_dict(stocks)
 
 
 def delete_db_column(stocks, column):
@@ -1132,12 +1084,8 @@ def load_cacehd_stock_db(code_s, force=False):
     """
     stock_path = STOCK_PICKLE_PATH % code_s
     if not os.path.exists(stock_path) or force:
-        if USE_SHELVE:
-            with _get_stock_shelve_db() as db:
-                stock = db.get(code_s, None)
-        else:
-            stocks = memoized_load_pickle(STOCKS_PICKLE)
-            stock = stocks.get(code_s, None)
+        with _get_stock_shelve_db() as db:
+            stock = db.get(code_s, None)
         save_pickle(stock_path, stock)
         return stock
     stock = load_pickle(stock_path)
@@ -1162,7 +1110,7 @@ def edit_db():
 
 
 def backup_db():
-    backup_file(STOCKS_PICKLE, 0)
+    backup_file(STOCKS_SHELVE, 0)
 
 
 def delete_delist_stocks(stocks):
@@ -1240,15 +1188,6 @@ def load_etf_codes():
     return new_etf_codes
 
 
-def convert_code_db():
-    """既存のintキーのstockDBを英数字コードキーにコンバート"""
-    stocks_bk = load_pickle("stock_data/stocks_back.pickle")
-    stocks = {}
-    for code, stock in list(stocks_bk.items()):
-        code_s = format(code, "04d")
-        stocks[code_s] = stock
-    save_stock_db(stocks)
-
 
 def test():
     # code = 6560
@@ -1275,49 +1214,6 @@ def test():
     # stocks = load_stock_db()
     # print "before:", len(stocks), "個"
 
-
-# ==================================================
-# pickleの文字コード変換
-# ==================================================
-def _fix_str(obj):
-    if isinstance(obj, dict):
-        return {_fix_str(k): _fix_str(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_fix_str(i) for i in obj]
-    elif isinstance(obj, tuple):
-        return tuple(_fix_str(i) for i in obj)
-    elif isinstance(obj, set):
-        return set(_fix_str(i) for i in obj)
-    elif isinstance(obj, frozenset):
-        return frozenset(_fix_str(i) for i in obj)
-    elif isinstance(obj, str):
-        try:
-            # Python 3 では、Python 2 の str は latin1 として読み込まれている
-            return obj.encode("latin1").decode("utf-8")
-        except Exception:
-            return obj
-    else:
-        return obj
-
-
-def convert_pickle_latin1_to_utf8(old_path, new_path):
-    """古いpickleファイルを読み込み、latin1からutf-8に変換して保存する
-    (2025.6 Python3移行時に実行、もう使わないかと)
-    Args:
-    old_path (str): 変換元のpickleファイルパス
-    new_path (str): 変換後のpickleファイルパス
-    """
-    with open(old_path, "rb") as f:
-        raw = pickle.load(f, encoding="latin1")
-    fixed = _fix_str(raw)
-    with open(new_path, "wb") as f:
-        pickle.dump(fixed, f)  # protocol=4
-    log_print("UTF-8変換完了:", new_path)
-
-
-def convert_python2():
-    STOCKS_PICKLE_PY2 = os.path.join(DATA_DIR, "stock_data", "stocks_py2.pickle")
-    convert_pickle_latin1_to_utf8(STOCKS_PICKLE_PY2, STOCKS_PICKLE)
 
 
 # ==================================================
@@ -1347,8 +1243,6 @@ def main():
     # command = "list"
     # command = "reflesh"
     # command = "test"
-    # command = "convert_code"
-    # command = "convert_python2"
     if command == "update":
         code_list = "471A"
         # code_list = "2979 3226 4384 4434 4443 4448 4449 4475 4477 4478 4479 4480 4483 4485 4488 4490 4493 4599 6835 7071"
@@ -1416,12 +1310,8 @@ def main():
     elif command == "reflesh":  # DBをリフレッシュ(上場廃止銘柄を削除)
         backup_db()
         reflesh_db()
-    elif command == "convert_code":
-        convert_code_db()
     elif command == "test":
         test()
-    elif command == "convert_python2":
-        convert_python2()
 
 
 # TODO: エラーを記述するようにせんと・・

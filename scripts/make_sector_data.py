@@ -12,11 +12,7 @@ from html.parser import HTMLParser
 
 from ks_util import *
 
-# shelveモード切り替え（移行後はTrueに設定）
-USE_SHELVE = True
-
-if USE_SHELVE:
-    from db_shelve import get_sector_db as _get_sector_shelve_db
+from db_shelve import get_sector_db as _get_sector_shelve_db
 
 URL_REUTER_SECTOR_TABLE_TOP = "https://commerce.jp.reuters.com/purchase/fdcScreen2.do"
 URL_REUTER_SECTOR_TABLE = "https://commerce.jp.reuters.com/screening/Sectortop.asp"
@@ -137,24 +133,16 @@ PATH_SECTOR_DB = "stock_data/sector/sector_db.pickle"
 
 def _load_sector_db():
     """セクターDBをロードする内部関数"""
-    if USE_SHELVE:
-        with _get_sector_shelve_db() as db:
-            if len(db) == 0:
-                return {}
-            return db.export_to_dict()
-    else:
-        if not os.path.exists(PATH_SECTOR_DB):
+    with _get_sector_shelve_db() as db:
+        if len(db) == 0:
             return {}
-        return load_pickle(PATH_SECTOR_DB)
+        return db.export_to_dict()
 
 
 def _save_sector_db(sector_table):
     """セクターDBを保存する内部関数"""
-    if USE_SHELVE:
-        with _get_sector_shelve_db() as db:
-            db.import_from_dict(sector_table)
-    else:
-        save_pickle(PATH_SECTOR_DB, sector_table)
+    with _get_sector_shelve_db() as db:
+        db.import_from_dict(sector_table)
 
 
 def get_sector_detail(code_s):
@@ -174,9 +162,7 @@ def test_make_secotr_data():
     セクター情報を銘柄DBから読み込み表示
     """
     latest = False
-    sector_db_exists = (
-        _get_sector_shelve_db().exists() if USE_SHELVE else os.path.exists(PATH_SECTOR_DB)
-    )
+    sector_db_exists = _get_sector_shelve_db().exists()
     if not sector_db_exists or latest:
         sector_table = make_sector_data()
     else:
