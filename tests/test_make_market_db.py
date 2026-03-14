@@ -175,6 +175,43 @@ class TestUpdateShintakaneTheme:
 
 
 # ==================================================
+# _theme_rank_label
+# ==================================================
+class TestThemeRankLabel:
+    """モメンタム順位変動ラベルテスト"""
+
+    def test_rank_up(self):
+        """順位上昇: ↑表示"""
+        prev = {"AI": 5}
+        assert make_market_db._theme_rank_label("AI", 1, prev) == "AI(↑4)"
+
+    def test_rank_down(self):
+        """順位下降: ↓表示"""
+        prev = {"AI": 2}
+        assert make_market_db._theme_rank_label("AI", 5, prev) == "AI(↓3)"
+
+    def test_rank_unchanged(self):
+        """変動なし: ←表示"""
+        prev = {"AI": 3}
+        assert make_market_db._theme_rank_label("AI", 3, prev) == "AI(←)"
+
+    def test_new_theme(self):
+        """新規テーマ: NEW表示"""
+        prev = {}
+        assert make_market_db._theme_rank_label("AI", 1, prev) == "AI(NEW)"
+
+    def test_rank_up_by_one(self):
+        """1つ上昇"""
+        prev = {"防衛": 3}
+        assert make_market_db._theme_rank_label("防衛", 2, prev) == "防衛(↑1)"
+
+    def test_rank_down_by_one(self):
+        """1つ下降"""
+        prev = {"DX": 2}
+        assert make_market_db._theme_rank_label("DX", 3, prev) == "DX(↓1)"
+
+
+# ==================================================
 # calc_theme_price_momentum
 # ==================================================
 class TestCalcThemePriceMomentum:
