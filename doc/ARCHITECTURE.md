@@ -10,9 +10,7 @@
 
 ## 株式データベース（shelveベース）
 
-メインDBはpickleからshelveに移行済み（`USE_SHELVE = True`）。
 - **shelve DB**: `data/stock_data/stocks_shelve`（`db_shelve.py` の `ShelveDB` クラス）
-- **レガシーpickle**: `data/stock_data/stocks.pickle`（`STOCKS_PICKLE`定数で参照、後方互換用に残存）
 - DBアクセスは `db_shelve.get_stock_db()` でシングルトン取得 → `with` 文で使用
 - `ShelveDB` はスレッドセーフ（RLock）、メモ化キャッシュ（`enable_memo()`）対応
 - バックエンドは `dbm.dumb`（macOSの `dbm.ndbm` はハッシュ衝突問題があるため）

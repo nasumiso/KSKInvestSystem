@@ -17,14 +17,7 @@ from ks_util import *
 
 
 URL_THEME_RANK_KABUTAN = "https://kabutan.jp/info/accessranking/3_2"
-MARKET_DB_PATH = os.path.join(DATA_DIR, "market_data/market_db.pickle")
-
-# shelveモード切り替え（移行後はTrueに設定）
-USE_SHELVE = True
-
-# shelve用のインポート
-if USE_SHELVE:
-    from db_shelve import get_market_db as _get_market_shelve_db
+from db_shelve import get_market_db as _get_market_shelve_db
 
 
 def parse_theme_html(html):
@@ -302,11 +295,8 @@ def get_market_db():
     global _market_db_cache
     if _market_db_cache is not None:
         return _market_db_cache
-    if USE_SHELVE:
-        with _get_market_shelve_db() as db:
-            _market_db_cache = db.export_to_dict()
-    else:
-        _market_db_cache = memoized_load_pickle(MARKET_DB_PATH)
+    with _get_market_shelve_db() as db:
+        _market_db_cache = db.export_to_dict()
     return _market_db_cache
 
 
@@ -314,11 +304,8 @@ def _save_market_db(market_db):
     """マーケットDBを保存"""
     global _market_db_cache
     _market_db_cache = None  # キャッシュ無効化
-    if USE_SHELVE:
-        with _get_market_shelve_db() as db:
-            db.import_from_dict(market_db)
-    else:
-        save_pickle(MARKET_DB_PATH, market_db)
+    with _get_market_shelve_db() as db:
+        db.import_from_dict(market_db)
 
 
 def update_market_db():
@@ -484,15 +471,6 @@ def update_shintakane_theme_csv(stocks, today_list, past_list):
     return csv
 
 
-def convert_python2():
-    """Python2のpickleをPython3のpickleに変換
-    一時的実行用
-    """
-    import make_stock_db
-
-    STOCKS_PICKLE_PY2 = os.path.join(DATA_DIR, "market_data", "market_db_py2.pickle")
-    make_stock_db.convert_pickle_latin1_to_utf8(STOCKS_PICKLE_PY2, MARKET_DB_PATH)
-
 
 def main():
     # ロガーの初期化
@@ -502,11 +480,7 @@ def main():
     create_market_csv()
 
 
-def test():
-    convert_python2()
-
 
 if __name__ == "__main__":
     setup_logger("make_market_db")
     main()
-    # test()
