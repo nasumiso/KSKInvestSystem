@@ -589,7 +589,20 @@ def convert_kabutan_dekidakaup_html(html):
         except AttributeError:
             zenjitsuhi = 0
             dekidaka_up = 0
-        # print code, stock_name, market_name, kabuka, zenjitsuhi, dekidaka, dekidaka_up
+
+        # 前日比%を株価と前日比から算出
+        zenjitsuhi_per = "0"
+        if zenjitsuhi != 0:
+            try:
+                price_val = float(kabuka.replace(",", ""))
+                zen_val = float(str(zenjitsuhi).replace(",", "").replace("+", ""))
+                prev_price = price_val - zen_val
+                if prev_price != 0:
+                    per = zen_val / prev_price * 100
+                    sign = "+" if per >= 0 else ""
+                    zenjitsuhi_per = "%s%.2f%%" % (sign, per)
+            except (ValueError, ZeroDivisionError):
+                pass
 
         row = []
         row.append(str(rank))
@@ -598,7 +611,7 @@ def convert_kabutan_dekidakaup_html(html):
         row.append("セクター")
         row.append(kabuka)
         row.append(zenjitsuhi)
-        row.append("0")  # 前日比
+        row.append(zenjitsuhi_per)  # 前日比%
         row.append(dekidaka)  # "出来高"
         row.append("0")  # 平均出来高
         row.append(dekidaka_up)  # 出来高前日比
@@ -746,20 +759,17 @@ def convert_shintakane_html(html):
     return rows
 
 
-def get_todays_dekidakaup():
+def get_todays_dekidakaup(force=False):
     """本日の出来高増銘柄を株探からスクレイピングして
     csv2保存
     """
     log_print("=" * 30)
     log_print("出来高急増銘柄を更新します・・")
     latest_csv, _ = get_latest_dekidakaup_fname()
-    # Force = True
-    if latest_csv:
+    if latest_csv and not force:
         latest_csv_dt = get_file_datetime(latest_csv)
         tdy = datetime.today()
         tdy = get_price_day(tdy)
-        # if tdy.hour < 17:
-        # 	tdy = tdy-timedelta(days=1)
         goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, PRICE_HOUR)
         if latest_csv_dt > goodissue_dt:
             log_debug(
@@ -843,14 +853,14 @@ def get_todays_dekidakaup():
     log_print("<---- 取得完了")
 
 
-def get_todays_shintakane():
+def get_todays_shintakane(force=False):
     """本日の新高値情報を株探から取得し、
     csvファイルに保存する
     """
     log_print("=" * 30)
     log_print("新高値銘柄を更新します・・")
     latest_csv, _ = get_latest_shintakane_fname()
-    if latest_csv:
+    if latest_csv and not force:
         latest_csv_dt = get_file_datetime(latest_csv)
         tdy = datetime.today()
         if tdy.hour < 17:
@@ -1131,13 +1141,8 @@ def update_pf_kessan_db(stocks):
     kessan.save_pf_kessan_db(stocks)
 
 
-def main():
+def main(force=False):
     """メイン関数"""
-    # raise NotImplementedError("main関数は実装されていません")
-    # args = "update analyze"
-    # args = "update"
-    # args = "analyze"
-    # args = "udpate_kessan_db"
     # TODO: 新高値更新タイミングをタグで
     # TODO: 業績発表日、反映のらぐのため一日余裕もたせる
     # TODO: 今Qが通期予想伸びより良いも考慮（進捗率的なもの進捗率を見たほうが正確ではある）
@@ -1151,8 +1156,8 @@ def main():
     # 新高値銘柄一覧の最新情報を取得する
     if "update" in args:
         update_todays_kessan()  # テストコメントアウト
-        get_todays_shintakane()
-        get_todays_dekidakaup()
+        get_todays_shintakane(force=force)
+        get_todays_dekidakaup(force=force)
     # 新高値銘柄の各種解析
     if "analyze" in args:
         todays_shintakane(UPD_INTERVAL)  # UPD_FORCE/UPD_INTERVAL/UPD_CACHE/UPD_REEVAL
@@ -1190,6 +1195,10 @@ if __name__ == "__main__":
         parser.add_argument(
             "--quiet", action="store_true", help="標準出力(print)を抑制する"
         )
+        parser.add_argument(
+            "--force", action="store_true",
+            help="CSV存在チェックをスキップし、HTML取得とCSV生成を強制実行する"
+        )
         args = parser.parse_args()
         log_print("=" * 30)
         log_print("shintakane.pyを実行します", args)
@@ -1198,10 +1207,10 @@ if __name__ == "__main__":
             if args.quiet:
                 log_print("標準出力を抑制します")
                 with suppress_stdout():
-                    main()
+                    main(force=args.force)
                 log_print("抑制終了")
             else:
-                main()
+                main(force=args.force)
         except Exception as e:
             log_print("エラー発生", e)
             logger.exception(

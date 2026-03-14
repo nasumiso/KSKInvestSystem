@@ -192,7 +192,7 @@ def parse_my_portforio():
 
 def update_my_portfolio():
     stocks = []
-    with open("my_watch_list.txt", "r") as f:
+    with open(os.path.join(DATA_DIR, "my_watch_list.txt"), "r") as f:
         stocks = f.readlines()
     import re
 
@@ -201,7 +201,7 @@ def update_my_portfolio():
         m = re.search(r"(\d\d\d\d)(.*)", stock)
         stocks2.append([m.group(1), m.group(2)])
     stocks2_list = [l[0] for l in stocks2]
-    report_fname = "googledrive/投資売買記録 - 銘柄調査.csv"
+    report_fname = os.path.join(DATA_DIR, "googledrive/投資売買記録 - 銘柄調査.csv")
     import csv
 
     csv_r = csv.reader(open(report_fname, "rb"))
@@ -215,7 +215,7 @@ def update_my_portfolio():
                 stocks2.append([code_s, stock_name])
     stocks2.sort(key=lambda s: int(s[0]))
     stocks2_new = ["%s%s\n" % (s[0], s[1]) for s in stocks2]
-    with open("my_watch_list.txt", "w") as f:
+    with open(os.path.join(DATA_DIR, "my_watch_list.txt"), "w") as f:
         f.writelines(stocks2_new)
 
 

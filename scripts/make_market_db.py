@@ -312,6 +312,10 @@ def update_market_db():
     """マーケットDBを読み込んで最新に更新"""
     market_db = get_market_db()
 
+    # 前回のモメンタム順位を退避（上書き前）
+    if "theme_rank" in market_db:
+        market_db["prev_theme_rank"] = list(market_db["theme_rank"])
+
     theme_db = make_theme_data()
     market_db.update(theme_db)
 
@@ -330,6 +334,19 @@ def update_market_db():
     return market_db
 
 
+def _theme_rank_label(theme, cur_rank, prev_rank_dict):
+    """テーマ名にモメンタム順位変動インジケーターを付加する"""
+    if theme not in prev_rank_dict:
+        return "%s(NEW)" % theme
+    diff = prev_rank_dict[theme] - cur_rank  # 正=上昇、負=下降
+    if diff > 0:
+        return "%s(↑%d)" % (theme, diff)
+    elif diff < 0:
+        return "%s(↓%d)" % (theme, -diff)
+    else:
+        return "%s(←)" % theme
+
+
 def create_market_csv(market_db=None, shintakane_theme_csv=None):
     """市場DBから表示用CSVデータにする"""
     if shintakane_theme_csv is None:
@@ -342,7 +359,10 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
     rows = []
     rows.append(["■ テーマランク"])
     row = ["ランク"]
-    row.extend(market_db["theme_rank"])
+    prev_theme_rank = market_db.get("prev_theme_rank", [])
+    prev_rank_dict = {v: i + 1 for (i, v) in enumerate(prev_theme_rank)}
+    for i, theme in enumerate(market_db["theme_rank"]):
+        row.append(_theme_rank_label(theme, i + 1, prev_rank_dict))
     rows.append(row)
     # テーマ別騰落率行
     theme_momentum = market_db.get("theme_momentum", {})
