@@ -266,7 +266,18 @@ def need_kessan_upd(stocks, code_s, dt_access):
     return kessan_upd
 
 
+_UPD_REASON_NONE = 0  # 更新不要
+_UPD_REASON_TTL = 1  # TTL超過による更新
+_UPD_REASON_KESSAN = 2  # 決算発表による更新
+_UPD_REASON_NO_DATA = 3  # データなし
+
+
 def has_active_dbdata(stocks, code_s, access_key, interval_day, latest):
+    """DB上のデータ鮮度を確認する。
+    Returns:
+        tuple(bool, int): (データがあるか, 更新理由)
+        更新理由は _UPD_REASON_* 定数
+    """
     if code_s in stocks:
         # 対象(業績など)データアクセス時間と現在時間を比較
         if access_key in stocks[code_s]:
@@ -276,21 +287,26 @@ def has_active_dbdata(stocks, code_s, access_key, interval_day, latest):
                 kessan_upd = need_kessan_upd(stocks, code_s, dt_access)
                 # アクセス日超過または決算更新
                 timedelta = datetime.today() - dt_access
-                if timedelta.days >= interval_day or kessan_upd:
+                if kessan_upd:
+                    log_print("%s決算更新: %d日ぶり" % (access_key, timedelta.days))
+                    return False, _UPD_REASON_KESSAN
+                if timedelta.days >= interval_day:
                     log_print("%s更新: %d日ぶり" % (access_key, timedelta.days))
-                    return False
+                    return False, _UPD_REASON_TTL
                 else:
                     # print "業績あり: %d日前"%timedelta.days
-                    return True
+                    return True, _UPD_REASON_NONE
             else:
-                return True
-    return False
+                return True, _UPD_REASON_NONE
+    return False, _UPD_REASON_NO_DATA
 
 
 def has_gyoseki_data(stocks, code_s, latest=False):
     """DBに業績情報があるか
     15日経過するか、決算日をすぎている
     @param	latest
+    Returns:
+        tuple(bool, int): (データがあるか, 更新理由)
     """
     INTERVAL_DAY = 15
     return has_active_dbdata(
@@ -312,9 +328,10 @@ def get_gyoseki_data(stocks, code_s, upd=UPD_INTERVAL):
 
 
 def has_rironkabuka_data(stocks, code_s, latest=False):
-    """
-    理論株価データがあるか？
+    """理論株価データがあるか？
     latest: Trueなら最新であるかを調査(一定期間アクセスがあったか)
+    Returns:
+        tuple(bool, int): (データがあるか, 更新理由)
     """
     INTERVAL_DAY = 15
     return has_active_dbdata(
@@ -339,23 +356,14 @@ def get_rironkabuka_data(stocks, code_s, upd=UPD_INTERVAL):
 
 
 def has_shihyo_data(stocks, code_s, latest=False):
-    INTERVAL_DAY = 5  # この設定は微妙
-    if code_s in stocks:
-        # 指標データの取得日と現在との日付チェック
-        if "access_date_shihyo" in stocks[code_s]:
-            if latest:
-                dt_access = stocks[code_s]["access_date_shihyo"]
-                kessan_upd = need_kessan_upd(stocks, code_s, dt_access)
-                timedelta = datetime.today() - dt_access
-                if timedelta.days >= INTERVAL_DAY or kessan_upd:
-                    log_print("指標更新: %d日ぶり" % timedelta.days)
-                    return False
-                else:
-                    # print "指標あり: %d日前"%timedelta.days
-                    return True
-            else:
-                return True
-    return False
+    """指標データがあるか？
+    Returns:
+        tuple(bool, int): (データがあるか, 更新理由)
+    """
+    INTERVAL_DAY = 5
+    return has_active_dbdata(
+        stocks, code_s, "access_date_shihyo", INTERVAL_DAY, latest
+    )
 
 
 def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
@@ -492,17 +500,21 @@ def _update_db_code(c_s, upd, tables, stocks, latest, force):
         if not has_price_data(stocks, c_s, latest) or force:
             stock_data.update(get_price_data(stocks, c_s, upd))
     if not tables or "gyoseki" in tables:
-        if not has_gyoseki_data(stocks, c_s, latest) or force:
-            # アクセス間隔以外でもみてるので、一反強制　TODO:やり方考える
-            stock_data.update(get_gyoseki_data(stocks, c_s, UPD_FORCE))
+        has_data, reason = has_gyoseki_data(stocks, c_s, latest)
+        if not has_data or force:
+            # 決算更新時はファイルキャッシュも無視して最新を取得
+            effective_upd = UPD_FORCE if reason == _UPD_REASON_KESSAN else upd
+            stock_data.update(get_gyoseki_data(stocks, c_s, effective_upd))
     if not tables or "rironkabuka" in tables:
-        if not has_rironkabuka_data(stocks, c_s, latest) or force:
-            # 業績と同じく一反強制
-            stock_data.update(get_rironkabuka_data(stocks, c_s, UPD_FORCE))
+        has_data, reason = has_rironkabuka_data(stocks, c_s, latest)
+        if not has_data or force:
+            effective_upd = UPD_FORCE if reason == _UPD_REASON_KESSAN else upd
+            stock_data.update(get_rironkabuka_data(stocks, c_s, effective_upd))
     if not tables or "shihyo" in tables:
-        if not has_shihyo_data(stocks, c_s, latest) or force:
-            # 業績と同じく一反強制
-            stock_data.update(get_shihyo_data(stocks, c_s, UPD_FORCE))
+        has_data, reason = has_shihyo_data(stocks, c_s, latest)
+        if not has_data or force:
+            effective_upd = UPD_FORCE if reason == _UPD_REASON_KESSAN else upd
+            stock_data.update(get_shihyo_data(stocks, c_s, effective_upd))
     return stock_data
 
 
@@ -895,6 +907,12 @@ def list_all_db(upload_csv=True, update_portforio=True):
         update_stock_rank(stock, rank)
     save_stock_db(stocks)  # 更新した順位のDB保存
 
+    # ---- テーマ別株価騰落率を計算してmarket_dbに保存
+    log_print("---- テーマ別株価騰落率を計算")
+    theme_momentum = make_market_db.calc_theme_price_momentum(stocks)
+    market_db["theme_momentum"] = theme_momentum
+    make_market_db._save_market_db(market_db)
+
     # ---- 銘柄ランキング用CSVファイル作成
     log_print("---- CSV項目作成")
     rank_csv = os.path.join(DATA_DIR, "code_rank_data/code_rank.csv")
@@ -1047,6 +1065,9 @@ def list_all_db(upload_csv=True, update_portforio=True):
             args=(rank_csv, "code_rank"),
             daemon=False,  # 完了を待つ
         ).start()
+
+    # テーマ騰落率入りのmarket_data.csvを再生成
+    make_market_db.create_market_csv()
 
 
 def get_market_code(stock_data):

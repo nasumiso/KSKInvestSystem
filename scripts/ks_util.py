@@ -519,11 +519,18 @@ def http_get_html(
         # メタ指定での文字コードをutf8に
         # html = html.replace("charset=shift_jis", "charset=utf-8")
 
-        log_debug(
-            "  取得したhtmlをファイルキャッシュに書き込みます:",
-            Path(cache_name).relative_to(DATA_DIR),
-        )
-        file_write(cache_name, html)
+        # 成功レスポンスのみキャッシュに書き込む（エラーレスポンスのキャッシュ汚染を防止）
+        if 200 <= res.status_code < 300:
+            log_debug(
+                "  取得したhtmlをファイルキャッシュに書き込みます:",
+                Path(cache_name).relative_to(DATA_DIR),
+            )
+            file_write(cache_name, html)
+        else:
+            log_warning(
+                "  HTTPエラー(%d)のためキャッシュに書き込みません: %s"
+                % (res.status_code, url)
+            )
         if with_status:
             # ステータスコードも返す
             return html, res.status_code

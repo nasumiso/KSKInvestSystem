@@ -183,6 +183,63 @@ def get_major_theme(themes):
     return ",".join(major_themes_rank)
 
 
+def calc_theme_price_momentum(stocks):
+    """テーマ別株価騰落率を計算する。
+    DBの全銘柄から、直近取引日のprice_logがある銘柄の
+    テーマごとの平均日次騰落率(%)と銘柄数を返す。
+
+    Args:
+        stocks (dict): 銘柄DB (code_s -> stock_data)
+    Returns:
+        dict: テーマ名 -> (平均騰落率(%), 銘柄数)
+    """
+    from collections import Counter, defaultdict
+
+    # 直近取引日を特定（price_log[0]の日付の最頻値）
+    dates = []
+    for stock in stocks.values():
+        price_log = stock.get("price_log", [])
+        if len(price_log) >= 2:
+            dates.append(price_log[0][0])
+    if not dates:
+        return {}
+    latest_trade_date = Counter(dates).most_common(1)[0][0]
+    log_print("テーマ騰落率: 直近取引日=%s, 対象候補=%d銘柄" % (latest_trade_date, len(dates)))
+
+    # テーマ別に騰落率を集約
+    theme_changes = defaultdict(list)
+    for code_s, stock in stocks.items():
+        price_log = stock.get("price_log", [])
+        if len(price_log) < 2:
+            continue
+        # 直近取引日と一致する銘柄のみ対象
+        if price_log[0][0] != latest_trade_date:
+            continue
+        today_price = price_log[0][1]
+        prev_price = price_log[1][1]
+        if prev_price <= 0:
+            continue
+        change_rate = (today_price - prev_price) / prev_price * 100
+
+        themes_str = stock.get("themes", "")
+        if not themes_str:
+            continue
+        for theme in themes_str.split(","):
+            theme = theme.strip()
+            if theme:
+                theme_changes[theme].append(change_rate)
+
+    # テーマごとの平均と銘柄数を計算
+    theme_momentum = {}
+    for theme, changes in theme_changes.items():
+        if changes:
+            avg = sum(changes) / len(changes)
+            theme_momentum[theme] = (avg, len(changes))
+
+    log_print("テーマ騰落率: %d テーマを集計" % len(theme_momentum))
+    return theme_momentum
+
+
 def make_db_common(code_s):
     """DBデータ更新共通処理
     type: str -> dict<db>
@@ -300,6 +357,17 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
     row = ["ランク"]
     row.extend(market_db["theme_rank"])
     rows.append(row)
+    # テーマ別騰落率行
+    theme_momentum = market_db.get("theme_momentum", {})
+    if theme_momentum:
+        row = ["騰落率"]
+        for theme in market_db["theme_rank"]:
+            if theme in theme_momentum:
+                avg_rate, count = theme_momentum[theme]
+                row.append("%+.1f%%[%d]" % (avg_rate, count))
+            else:
+                row.append("-")
+        rows.append(row)
     time = market_db["access_date_theme_rank"].date()
     row = [str(time)]
     row.extend(theme_rank_list)

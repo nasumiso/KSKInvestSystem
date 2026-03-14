@@ -37,14 +37,45 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `ShelveDB` はスレッドセーフ（RLock）、メモ化キャッシュ（`enable_memo()`）対応
 - バックエンドは `dbm.dumb`（macOSの `dbm.ndbm` はハッシュ衝突問題があるため）
 
-### キャッシュ管理 (`ks_util.py` の UPD_* 定数)
+### キャッシュ戦略
 
-- `UPD_CACHE (0)`: キャッシュがあればそのまま使用
-- `UPD_INTERVAL (1)`: 間隔超過時のみ更新
-- `UPD_REEVAL (2)`: DBキャッシュは使わず再評価
-- `UPD_FORCE (3)`: すべてのキャッシュを無視して強制取得
+3層の階層構造で、`UPD_*` 定数（`ks_util.py`）が全層を横断して制御する。
 
-各データタイプは `has_*_data()` / `get_*_data()` パターンを持つ。決算発表日後は強制更新ロジックあり。
+**UPD_* 定数（キャッシュ鮮度レベル）:**
+
+| 定数 | 値 | DB層 | ファイル層 | HTTP層 |
+|------|---|------|-----------|--------|
+| `UPD_CACHE` | 0 | DBにあればそのまま使用 | ファイルがあれば使用 | キャッシュ使用 |
+| `UPD_INTERVAL` | 1 | TTL超過時のみ更新 | TTL超過時のみ再取得 | キャッシュ使用 |
+| `UPD_REEVAL` | 2 | DBキャッシュ無視、再評価 | TTL超過時のみ再取得 | キャッシュ使用 |
+| `UPD_FORCE` | 3 | すべて無視 | すべて無視 | 強制取得 |
+
+**① DB層** (`make_stock_db.py`):
+- `has_*_data(stocks, code_s, latest)` でshelve DB上のレコード鮮度を確認（`access_date_*` フィールド）
+- `has_active_dbdata()` ヘルパーで共通化。決算発表後は `need_kessan_upd()` で強制更新
+- `_update_db_code()` 内で `has_*` → False の場合のみ `get_*_data()` を呼ぶ2段階制御
+
+**② ファイル層** (各モジュール):
+- `is_file_timestamp(fname, interval_day)` (`price.py`): ファイル更新日時を営業日ベースでTTL判定
+- `is_cache_latest(url, interval_day)` (`rironkabuka.py`): HTMLキャッシュファイルのTTL判定
+
+| モジュール | データ種別 | TTL | チェック関数 |
+|-----------|-----------|-----|------------|
+| `price.py` | 日次株価 | 1日 | `is_file_timestamp()` |
+| `price.py` | 週次株価 | 7日 | `is_file_timestamp()` |
+| `price.py` | yfinance JSON | 1日 | `is_file_timestamp()` |
+| `make_stock_db.py` | マスター情報 | 7日 | `access_date` 直接比較 |
+| `make_stock_db.py` | 指標 | 5日 | `access_date_shihyo` 直接比較 |
+| `gyoseki.py` | 業績 | 15日 | `is_cache_latest()` |
+| `rironkabuka.py` | 理論株価 | 5日 | `is_cache_latest()` |
+
+**③ HTTP層** (`ks_util.py`):
+- `http_get_html()` の `use_cache` パラメータでファイルキャッシュの読み書きを制御
+- キャッシュファイル名は `get_http_cachname(url)` でURL→ファイル名変換
+
+**④ メモリ層**:
+- `ShelveDB.enable_memo()`: 読み取り集中処理時のインメモリキャッシュ（`db_shelve.py`）
+- `memoize()` デコレータ: `load_pickle`, `load_file` のメモ化（`ks_util.py`）
 
 ### 価格データ取得 (`price.py`)
 

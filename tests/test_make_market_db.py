@@ -172,3 +172,118 @@ class TestUpdateShintakaneTheme:
         )
         assert result[0][0] == "AI"
         assert result[0][1] == 3
+
+
+# ==================================================
+# calc_theme_price_momentum
+# ==================================================
+class TestCalcThemePriceMomentum:
+    """テーマ別株価騰落率テスト"""
+
+    def _make_stock(self, themes, today_price, prev_price, today_date, prev_date):
+        """テスト用銘柄データ作成ヘルパー"""
+        return {
+            "themes": themes,
+            "price_log": [(today_date, today_price), (prev_date, prev_price)],
+        }
+
+    def test_normal(self):
+        """正常系: テーマごとの平均騰落率と銘柄数"""
+        from datetime import date
+
+        d1 = date(2026, 2, 20)
+        d0 = date(2026, 2, 19)
+        stocks = {
+            "1234": self._make_stock("AI,半導体", 1100, 1000, d1, d0),
+            "5678": self._make_stock("AI,DX", 1050, 1000, d1, d0),
+        }
+        result = make_market_db.calc_theme_price_momentum(stocks)
+        # AI: (10% + 5%) / 2 = 7.5%, 2銘柄
+        assert abs(result["AI"][0] - 7.5) < 0.01
+        assert result["AI"][1] == 2
+        # 半導体: 10%, 1銘柄
+        assert abs(result["半導体"][0] - 10.0) < 0.01
+        assert result["半導体"][1] == 1
+        # DX: 5%, 1銘柄
+        assert abs(result["DX"][0] - 5.0) < 0.01
+        assert result["DX"][1] == 1
+
+    def test_empty_stocks(self):
+        """空DBの場合"""
+        result = make_market_db.calc_theme_price_momentum({})
+        assert result == {}
+
+    def test_no_price_log(self):
+        """price_logがない銘柄はスキップ"""
+        stocks = {"1234": {"themes": "AI"}}
+        result = make_market_db.calc_theme_price_momentum(stocks)
+        assert result == {}
+
+    def test_single_price_entry(self):
+        """price_logが1件のみの場合はスキップ"""
+        from datetime import date
+
+        stocks = {
+            "1234": {
+                "themes": "AI",
+                "price_log": [(date(2026, 2, 20), 1000)],
+            },
+        }
+        result = make_market_db.calc_theme_price_momentum(stocks)
+        assert result == {}
+
+    def test_zero_prev_price(self):
+        """前日価格が0の銘柄はスキップ"""
+        from datetime import date
+
+        d1 = date(2026, 2, 20)
+        d0 = date(2026, 2, 19)
+        stocks = {
+            "1234": self._make_stock("AI", 1000, 0, d1, d0),
+        }
+        result = make_market_db.calc_theme_price_momentum(stocks)
+        assert result == {}
+
+    def test_empty_themes(self):
+        """テーマが空文字の銘柄はスキップ"""
+        from datetime import date
+
+        d1 = date(2026, 2, 20)
+        d0 = date(2026, 2, 19)
+        stocks = {
+            "1234": self._make_stock("", 1100, 1000, d1, d0),
+        }
+        result = make_market_db.calc_theme_price_momentum(stocks)
+        assert result == {}
+
+    def test_latest_trade_date_filter(self):
+        """直近取引日と異なるprice_log日付の銘柄は除外"""
+        from datetime import date
+
+        d_latest = date(2026, 2, 20)
+        d_old = date(2026, 2, 19)
+        d_older = date(2026, 2, 18)
+        stocks = {
+            # 直近取引日(2/20)の銘柄 - 集計対象
+            "1234": self._make_stock("AI", 1100, 1000, d_latest, d_old),
+            "5678": self._make_stock("AI", 1050, 1000, d_latest, d_old),
+            # 古い日付(2/19)の銘柄 - 除外
+            "9012": self._make_stock("AI", 900, 1000, d_old, d_older),
+        }
+        result = make_market_db.calc_theme_price_momentum(stocks)
+        # 2/20の2銘柄のみ: (10% + 5%) / 2 = 7.5%
+        assert abs(result["AI"][0] - 7.5) < 0.01
+        assert result["AI"][1] == 2
+
+    def test_negative_change(self):
+        """下落銘柄の計算"""
+        from datetime import date
+
+        d1 = date(2026, 2, 20)
+        d0 = date(2026, 2, 19)
+        stocks = {
+            "1234": self._make_stock("AI", 900, 1000, d1, d0),
+        }
+        result = make_market_db.calc_theme_price_momentum(stocks)
+        assert abs(result["AI"][0] - (-10.0)) < 0.01
+        assert result["AI"][1] == 1
