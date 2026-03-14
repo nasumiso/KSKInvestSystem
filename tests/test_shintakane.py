@@ -232,3 +232,101 @@ class TestConvertKabutanDekidakaupHtml:
         rows = shintakane.convert_kabutan_dekidakaup_html(html)
         # ランク, コード+銘柄名, 市場, セクター, 株価, 前日比, 前日比%, 出来高, 平均出来高, 出来高前日比
         assert len(rows[0]) == 10
+
+
+# ==================================================
+# parse_kessan_html（株探・決算速報）
+# ==================================================
+
+def _build_kessan_row(date, ctg_class, code_s, link, summary):
+    """決算速報HTMLの1行を生成する
+
+    date: "2025-03-14" 形式
+    ctg_class: "ctg3_ks"（修正）or "ctg3_kk"（発表）
+    """
+    return (
+        f'<tr>'
+        f'<td class="news_time"><time datetime="{date}T15:00:00+09:00">{date}</time></td>'
+        f'<td><div class="{ctg_class}" data-code="{code_s}">決算</div></td>'
+        f'<td><a href="{link}">{summary}</a></td>'
+        f'</tr>'
+    )
+
+
+def _build_kessan_html(*rows):
+    """決算速報ページの最小限HTMLを生成する"""
+    rows_html = "".join(rows)
+    return f'<table class="s_news_list mgbt0">{rows_html}</table>'
+
+
+class TestParseKessanHtml:
+    """株探の決算速報HTMLパーステスト"""
+
+    def test_修正と発表の振り分け(self):
+        """ctg3_ksは修正リスト、ctg3_kkは発表リストに振り分けられる"""
+        html = _build_kessan_html(
+            _build_kessan_row("2025-03-14", "ctg3_ks", "1234", "/news/1", "上方修正"),
+            _build_kessan_row("2025-03-14", "ctg3_kk", "5678", "/news/2", "3Q決算発表"),
+        )
+        mod_lst, announce_lst = shintakane.parse_kessan_html(html)
+        assert len(mod_lst) == 1
+        assert len(announce_lst) == 1
+        assert mod_lst[0][0] == "1234"
+        assert announce_lst[0][0] == "5678"
+
+    def test_日付フォーマット変換(self):
+        """YYYY-MM-DD → YYYY/MM/DD に変換される"""
+        html = _build_kessan_html(
+            _build_kessan_row("2025-03-14", "ctg3_ks", "1234", "/news/1", "上方修正"),
+        )
+        mod_lst, _ = shintakane.parse_kessan_html(html)
+        assert mod_lst[0][1] == "2025/03/14"
+
+    def test_コードとリンクとサマリーの抽出(self):
+        """code_s, link, summary が正しく抽出される"""
+        html = _build_kessan_html(
+            _build_kessan_row("2025-03-10", "ctg3_kk", "7203", "/news/article/123", "通期経常25%増益"),
+        )
+        _, announce_lst = shintakane.parse_kessan_html(html)
+        assert announce_lst[0][0] == "7203"
+        assert announce_lst[0][2] == "/news/article/123"
+        assert announce_lst[0][3] == "通期経常25%増益"
+
+    def test_修正のみ(self):
+        """修正のみの場合、発表リストは空"""
+        html = _build_kessan_html(
+            _build_kessan_row("2025-03-14", "ctg3_ks", "1234", "/news/1", "上方修正"),
+            _build_kessan_row("2025-03-13", "ctg3_ks", "5678", "/news/2", "下方修正"),
+        )
+        mod_lst, announce_lst = shintakane.parse_kessan_html(html)
+        assert len(mod_lst) == 2
+        assert len(announce_lst) == 0
+
+    def test_発表のみ(self):
+        """発表のみの場合、修正リストは空"""
+        html = _build_kessan_html(
+            _build_kessan_row("2025-03-14", "ctg3_kk", "9999", "/news/3", "1Q決算発表"),
+        )
+        mod_lst, announce_lst = shintakane.parse_kessan_html(html)
+        assert len(mod_lst) == 0
+        assert len(announce_lst) == 1
+
+    def test_複数銘柄の修正(self):
+        """複数の修正が全て抽出される"""
+        html = _build_kessan_html(
+            _build_kessan_row("2025-03-14", "ctg3_ks", "1111", "/news/a", "増益"),
+            _build_kessan_row("2025-03-14", "ctg3_ks", "2222", "/news/b", "減益"),
+            _build_kessan_row("2025-03-14", "ctg3_ks", "3333", "/news/c", "黒字浮上"),
+        )
+        mod_lst, _ = shintakane.parse_kessan_html(html)
+        assert len(mod_lst) == 3
+        codes = [item[0] for item in mod_lst]
+        assert codes == ["1111", "2222", "3333"]
+
+    def test_タプル要素数(self):
+        """各要素が(code_s, date, link, summary)の4要素タプル"""
+        html = _build_kessan_html(
+            _build_kessan_row("2025-03-14", "ctg3_ks", "1234", "/news/1", "上方修正"),
+        )
+        mod_lst, _ = shintakane.parse_kessan_html(html)
+        assert len(mod_lst[0]) == 4

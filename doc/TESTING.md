@@ -27,12 +27,19 @@ pytest tests/test_gyoseki.py -v
 | `test_db_shelve.py` | `db_shelve.py` | |
 | `test_shihyou.py` | `shihyou.py` | |
 | `test_master.py` | `master.py` | |
-| `test_shintakane.py` | `shintakane.py` | HTMLパース関数 |
+| `test_shintakane.py` | `shintakane.py` | HTMLパース関数（決算含む） |
+| `test_kessan.py` | `kessan.py` | 決算判定・タグ生成 |
 | `test_make_market_db.py` | `make_market_db.py` | |
+| `test_live_html.py` | 全パーサー | HTMLフォーマット変更検知（`live_html`マーカー） |
 
 ### CI
 
 GitHub Actions（`.github/workflows/test.yml`）でPR/push時に自動実行。
+
+```bash
+# CIと同じ条件（local_db, live_html除外）
+pytest tests/ -v -m "not local_db and not live_html"
+```
 
 ## HTMLパース変更時の検証（shintakane.py --force）
 
@@ -43,6 +50,35 @@ cd scripts && python shintakane.py --force
 ```
 
 `--force` を付けるとCSV存在チェックをスキップし、HTMLキャッシュからCSVを再生成する。パース変更後は必ず `--force` で実行して `shintakane_result.csv` に反映されることを確認すること。
+
+## HTMLフォーマット変更検知テスト（live_html）
+
+実際にHTTPでkabutan.jpにアクセスし、各パーサーが期待通りにデータを抽出できるかを確認するテスト。CIでは除外され、ローカルで手動実行する。
+
+```bash
+# 全パーサーの検知テスト実行
+pytest tests/test_live_html.py -v
+```
+
+### いつ実行するか
+
+- データ取得でパースエラーや空データが発生した時
+- kabutan.jpのHTMLフォーマット変更が疑われる時
+- `log_warning("決算ページフォーマット変更?")` 等の警告がログに出た時
+
+### テスト対象と対応モジュール
+
+| テストクラス | 対応モジュール | 確認内容 |
+|---|---|---|
+| `TestLiveHtmlPrice` | `price.py` | 日足HTML取得・パース |
+| `TestLiveHtmlShihyou` | `shihyou.py` | 財務指標・時価総額抽出 |
+| `TestLiveHtmlMaster` | `master.py` | 銘柄基本情報抽出 |
+| `TestLiveHtmlGyoseki` | `gyoseki.py` | 業績データ抽出 |
+| `TestLiveHtmlShintakane` | `shintakane.py` | 新高値銘柄パース |
+| `TestLiveHtmlKessan` | `shintakane.py` | 決算速報パース |
+| `TestLiveHtmlTheme` | `make_market_db.py` | テーマランクパース |
+
+失敗したテストクラスから対応モジュールのパーサーを修正する。
 
 ## 統合テスト（make_stock_db.py サブコマンド）
 

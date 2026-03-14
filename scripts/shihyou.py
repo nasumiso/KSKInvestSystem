@@ -414,7 +414,7 @@ def calc_shihyo_pt(code_s, upd=UPD_INTERVAL, stock={}):
     return shiyo_pt, shiyo
 
 
-CACHE_DIR_KABUTAN = os.path.join(DATA_DIR, "stock_data", "kabutan")
+CACHE_DIR_KABUTAN = os.path.join(DATA_DIR, "stock_data", "kabutan", "finance")
 URL_CODE_KABUTAN = "http://kabutan.jp/stock/finance?code=%s&mode=k"
 
 
