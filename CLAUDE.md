@@ -17,6 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - 新規ログ追加時は上記の基準で `log_print` / `log_debug` を使い分けること
 - DB操作は `update_db_rows()` を経由。バルク操作は `sync=False` で非同期化可能。
 - 日付判定は `ks_util.get_price_day()` を使用（18:00前は前日扱い）。
+- `DATA_DIR` のパス解決は `ks_util._resolve_data_dir()` で行う。環境変数 `KS_DATA_DIR` で上書き可能。詳細は [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) の「データパス解決」を参照。
 
 ## アーキテクチャ
 
