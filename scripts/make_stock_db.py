@@ -1110,7 +1110,11 @@ def edit_db():
 
 
 def backup_db():
-    backup_file(STOCKS_SHELVE, 0)
+    """shelve DBの全ファイル(.dat, .dir, .bak)をバックアップ"""
+    for ext in [".dat", ".dir", ".bak"]:
+        fpath = STOCKS_SHELVE + ext
+        if os.path.exists(fpath):
+            backup_file(fpath, 0)
 
 
 def delete_delist_stocks(stocks):
