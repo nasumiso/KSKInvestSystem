@@ -17,4 +17,4 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt && pip install pytest
       - name: Run tests
-        run: pytest tests/ -v -m "not local_db"
+        run: pytest tests/ -v -m "not local_db and not live_html"

@@ -72,6 +72,9 @@ yfinance使用時はYahoo側のHTMLフォーマット変更の影響を受けな
 HTMLスクレイピングフォールバック使用時のデータ取得失敗時:
 1. Yahoo: `price.py` の `parse_price_text_yahoo_new()` を確認
 2. Kabutan: `shintakane.py` の `convert_kabutan_*_html()` を確認
+3. HTMLフォーマット変更検知テストを実行: `pytest tests/test_live_html.py -v`
+   - 失敗したテストクラスから対応モジュールのパーサーを特定・修正する
+   - 詳細は [doc/TESTING.md](doc/TESTING.md) の「HTMLフォーマット変更検知テスト」を参照
 
 ### DB変更時の注意
 
