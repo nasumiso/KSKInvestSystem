@@ -589,7 +589,20 @@ def convert_kabutan_dekidakaup_html(html):
         except AttributeError:
             zenjitsuhi = 0
             dekidaka_up = 0
-        # print code, stock_name, market_name, kabuka, zenjitsuhi, dekidaka, dekidaka_up
+
+        # 前日比%を株価と前日比から算出
+        zenjitsuhi_per = "0"
+        if zenjitsuhi != 0:
+            try:
+                price_val = float(kabuka.replace(",", ""))
+                zen_val = float(str(zenjitsuhi).replace(",", "").replace("+", ""))
+                prev_price = price_val - zen_val
+                if prev_price != 0:
+                    per = zen_val / prev_price * 100
+                    sign = "+" if per >= 0 else ""
+                    zenjitsuhi_per = "%s%.2f%%" % (sign, per)
+            except (ValueError, ZeroDivisionError):
+                pass
 
         row = []
         row.append(str(rank))
@@ -598,7 +611,7 @@ def convert_kabutan_dekidakaup_html(html):
         row.append("セクター")
         row.append(kabuka)
         row.append(zenjitsuhi)
-        row.append("0")  # 前日比
+        row.append(zenjitsuhi_per)  # 前日比%
         row.append(dekidaka)  # "出来高"
         row.append("0")  # 平均出来高
         row.append(dekidaka_up)  # 出来高前日比

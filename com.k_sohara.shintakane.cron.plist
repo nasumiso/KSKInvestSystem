@@ -14,24 +14,35 @@
       <string>/Users/k_sohara/Library/CloudStorage/Dropbox/document/shintakane/shintakane_cron.sh</string>
     </array>
 
-    <!-- スリープ解除後にも実行する -->
+    <!-- 平日（月〜金）18:00 に実行 -->
     <key>StartCalendarInterval</key>
-    <dict>
-      <key>Hour</key><integer>19</integer>
-      <key>Minute</key><integer>00</integer>
-    </dict>
-
-    <!-- 平日（Monday=1, ..., Sunday=7） -->
-    <key>Weekday</key>
-    <integer>1</integer>
-    <key>Weekday</key>
-    <integer>2</integer>
-    <key>Weekday</key>
-    <integer>3</integer>
-    <key>Weekday</key>
-    <integer>4</integer>
-    <key>Weekday</key>
-    <integer>5</integer>
+    <array>
+      <dict>
+        <key>Weekday</key><integer>1</integer>
+        <key>Hour</key><integer>18</integer>
+        <key>Minute</key><integer>0</integer>
+      </dict>
+      <dict>
+        <key>Weekday</key><integer>2</integer>
+        <key>Hour</key><integer>18</integer>
+        <key>Minute</key><integer>0</integer>
+      </dict>
+      <dict>
+        <key>Weekday</key><integer>3</integer>
+        <key>Hour</key><integer>18</integer>
+        <key>Minute</key><integer>0</integer>
+      </dict>
+      <dict>
+        <key>Weekday</key><integer>4</integer>
+        <key>Hour</key><integer>18</integer>
+        <key>Minute</key><integer>0</integer>
+      </dict>
+      <dict>
+        <key>Weekday</key><integer>5</integer>
+        <key>Hour</key><integer>18</integer>
+        <key>Minute</key><integer>0</integer>
+      </dict>
+    </array>
 
     <!-- ログ出力 -->
     <key>StandardOutPath</key>
@@ -48,6 +59,8 @@
     <dict>
       <key>PATH</key>
       <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+      <key>KS_DATA_DIR</key>
+      <string>/Users/k_sohara/Ext/GoogleDrive/shintakane_data</string>
     </dict>
   </dict>
 </plist>
