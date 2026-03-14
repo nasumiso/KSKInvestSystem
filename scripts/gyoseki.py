@@ -7,7 +7,7 @@ from functools import reduce
 
 from ks_util import *
 
-CACHE_DIR = os.path.join(DATA_DIR, "stock_data/kabutan/")
+CACHE_DIR = os.path.join(DATA_DIR, "stock_data", "kabutan", "finance")
 URL_CODE = "http://kabutan.jp/stock/finance?code=%s&mode=k"
 
 
@@ -814,7 +814,7 @@ def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
     log_print("=" * 5, "業績スコアの計算")
     tables["score_gyoseki"] = calc_gyoseki_score(tables)
     log_print("=" * 5, "業績スコアの計算完了")
-    path = CACHE_DIR + get_http_cachname(URL_CODE % (str(code_s)))
+    path = os.path.join(CACHE_DIR, get_http_cachname(URL_CODE % (str(code_s))))
     tables["access_date_gyoseki"] = get_file_datetime(path)
     log_debug("date:", tables["access_date_gyoseki"])
     # tables["code"] = code

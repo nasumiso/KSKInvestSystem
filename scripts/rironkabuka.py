@@ -35,12 +35,14 @@ def get_gyoseki_data(code, cache=True):
     return text
 
 
-def is_cache_latest(url, interval_day):
+def is_cache_latest(url, interval_day, cache_dir=None):
     """
     URLアクセス時のhtmlキャッシュがあるかどうか(汎用)
     """
+    if cache_dir is None:
+        cache_dir = KABUTAN_CACHE_DIR_FINANCE
     cach_path = get_http_cachname(url)
-    cach_path = os.path.join(KABUTAN_CACHE_DIR, cach_path)
+    cach_path = os.path.join(cache_dir, cach_path)
     if not os.path.exists(cach_path):
         log_debug("キャッシュがない:", cach_path)
         return False
@@ -53,7 +55,8 @@ def is_cache_latest(url, interval_day):
         return False
 
 
-KABUTAN_CACHE_DIR = os.path.join(DATA_DIR, "stock_data", "kabutan")
+KABUTAN_CACHE_DIR_BASE = os.path.join(DATA_DIR, "stock_data", "kabutan", "base")
+KABUTAN_CACHE_DIR_FINANCE = os.path.join(DATA_DIR, "stock_data", "kabutan", "finance")
 KABUTAN_URL_CODE = "http://kabutan.jp/stock/finance?code=%s&mode=k"
 KABUTAN_BASE_URL_CODE = "https://kabutan.jp/stock/?code=%s"
 
@@ -62,8 +65,7 @@ def get_kabutan_html(code_s, upd=UPD_INTERVAL):
     """株探から決算情報htmlをDL取得する
     type: (str,bool)->str
     """
-    if not os.path.exists(KABUTAN_CACHE_DIR):
-        os.mkdir(KABUTAN_CACHE_DIR)
+    os.makedirs(KABUTAN_CACHE_DIR_FINANCE, exist_ok=True)
 
     if upd == UPD_CACHE:
         use_cache = True
@@ -71,36 +73,35 @@ def get_kabutan_html(code_s, upd=UPD_INTERVAL):
         use_cache = False
     else:
         INTERVAL_DAY = 5  # この設定は微妙
-        use_cache = is_cache_latest(KABUTAN_URL_CODE % (str(code_s)), INTERVAL_DAY)
+        use_cache = is_cache_latest(KABUTAN_URL_CODE % (str(code_s)), INTERVAL_DAY, KABUTAN_CACHE_DIR_FINANCE)
     url = KABUTAN_URL_CODE % (str(code_s))
     html = http_get_html_with_retry(
-        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache, retry=4
+        url, cache_dir=KABUTAN_CACHE_DIR_FINANCE, use_cach=use_cache, retry=4
     )
     return html
 
 
 def get_kabutan_base_html(code_s, upd=UPD_INTERVAL):
     """株探から基本情報htmlを通信またはキャッシュから取得"""
-    if not os.path.exists(KABUTAN_CACHE_DIR):
-        os.mkdir(KABUTAN_CACHE_DIR)
+    os.makedirs(KABUTAN_CACHE_DIR_BASE, exist_ok=True)
 
     if upd == UPD_CACHE:
         use_cache = True
     elif upd == UPD_FORCE:
         use_cache = False
     else:
-        use_cache = is_cache_latest(KABUTAN_BASE_URL_CODE % (str(code_s)), upd)
+        use_cache = is_cache_latest(KABUTAN_BASE_URL_CODE % (str(code_s)), upd, KABUTAN_CACHE_DIR_BASE)
 
     url = KABUTAN_BASE_URL_CODE % (str(code_s))
     html = http_get_html_with_retry(
-        url, cache_dir=KABUTAN_CACHE_DIR, use_cach=use_cache, retry=4
+        url, cache_dir=KABUTAN_CACHE_DIR_BASE, use_cach=use_cache, retry=4
     )
     return html
 
 
 def get_kabutan_cachename(code_s):
     cache_fname = get_http_cachname(KABUTAN_BASE_URL_CODE % (str(code_s)))
-    return os.path.join(KABUTAN_CACHE_DIR, cache_fname)
+    return os.path.join(KABUTAN_CACHE_DIR_BASE, cache_fname)
 
 
 # def get_from_kabutan2(html):
@@ -476,7 +477,7 @@ def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
     log_print("=" * 5, "理論株価の計算完了", tables["rironkabuka"])
     # 理論株価作成時間の格納
     cach_path = get_http_cachname(KABUTAN_URL_CODE % (str(code_s)))
-    cach_path = os.path.join(KABUTAN_CACHE_DIR, cach_path)
+    cach_path = os.path.join(KABUTAN_CACHE_DIR_FINANCE, cach_path)
     tables["access_date_rironkabuka"] = get_file_datetime(cach_path)
     log_debug("date:", tables["access_date_rironkabuka"])
     # tables["code"] = code
