@@ -12,6 +12,7 @@ import os.path
 from pathlib import Path
 import sys
 import shutil
+import subprocess
 from datetime import datetime, timedelta
 import pickle
 import contextvars
@@ -27,7 +28,47 @@ import logging.handlers
 # プロジェクトルートとデータパスの定義
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))  # ks_util.py の場所
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
-DATA_DIR = os.path.join(ROOT_DIR, "data")
+
+
+def _resolve_data_dir(fallback_root: str) -> str:
+    """
+    DATA_DIR を解決する。優先順位:
+    1. 環境変数 KS_DATA_DIR（data/ を別の場所に移動した場合に使用）
+    2. git rev-parse --git-common-dir でメインリポジトリの data/ を検出
+       （ワークツリーからメインの data/ を自動参照）
+    3. フォールバック: fallback_root/data（従来通り）
+    """
+    # 1. 環境変数で明示指定
+    env = os.environ.get("KS_DATA_DIR")
+    if env:
+        return os.path.abspath(env)
+    # 2. Git commondir でメインリポジトリを検出（ワークツリー対応）
+    #    ワークツリーでは --git-common-dir がメインの .git/ の絶対パスを返す
+    #    通常リポジトリでは ".git" （相対パス）を返す
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=fallback_root,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        git_common = result.stdout.strip() if result.returncode == 0 else ""
+        if git_common:
+            if not os.path.isabs(git_common):
+                git_common = os.path.join(fallback_root, git_common)
+            git_common = os.path.abspath(git_common)
+            # .git/ の親ディレクトリ = メインリポジトリルート
+            candidate = os.path.join(os.path.dirname(git_common), "data")
+            if os.path.isdir(candidate):
+                return candidate
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    # 3. フォールバック
+    return os.path.join(fallback_root, "data")
+
+
+DATA_DIR = _resolve_data_dir(ROOT_DIR)
 LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 
 # ==================================================

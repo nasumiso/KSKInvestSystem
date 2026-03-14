@@ -81,6 +81,23 @@
 - **直接**: セッション非使用時は `requests.get()` フォールバック
 - `update_db_rows_async()` はThreadPoolExecutor（5ワーカー）使用、同時HTTP数は `MAX_REQUESTS=3` で制限
 
+## データパス解決
+
+`DATA_DIR` は `ks_util.py` の `_resolve_data_dir()` で以下の優先順位で解決される:
+
+1. **環境変数 `KS_DATA_DIR`**: 明示指定。`data/` を別の場所に移動した場合に使用
+2. **Git commondir**: `git rev-parse --git-common-dir` でメインリポジトリの `.git/` を取得し、その親の `data/` を参照。ワークツリーからメインの `data/` を自動検出する
+3. **フォールバック**: `ROOT_DIR/data`（従来通り `__file__` 起点）
+
+```
+# data/ を別の場所に移動した場合
+export KS_DATA_DIR=/path/to/new/data
+
+# ワークツリーからの実行時は自動でメインの data/ を参照（設定不要）
+```
+
+`LOGS_DIR` は常に `ROOT_DIR/logs`（ワークツリー側）を使用し、ログはワークツリーごとに分離される。
+
 ## データ保存場所
 
 - **メインDB (shelve)**: `data/stock_data/stocks_shelve`
