@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import csv
 import shutil
 import traceback
+import glob
 
 import make_stock_db as stock_db
 import make_market_db
@@ -75,11 +76,38 @@ def search_fromcsv_dekidakaup(fname):
     return result_list
 
 
+TODAY_STOCKS_DIR = os.path.join(DATA_DIR, "today_stocks")
+TODAY_STOCKS_HISTORY_DIR = os.path.join(TODAY_STOCKS_DIR, "history")
+HISTORY_KEEP_DAYS = 30
+os.makedirs(TODAY_STOCKS_DIR, exist_ok=True)
+
+
+def _archive_old_csvs(prefix):
+    """30日以前のCSVをhistory/に移動する
+
+    Args:
+        prefix: ファイル名プレフィックス（"shintakane", "dekidakaup", "pts"）
+    """
+    cutoff = datetime.today() - timedelta(days=HISTORY_KEEP_DAYS)
+    cutoff_str = "%02d%02d%02d" % (cutoff.year - 2000, cutoff.month, cutoff.day)
+    pattern = os.path.join(TODAY_STOCKS_DIR, "%s_*.csv" % prefix)
+    moved = 0
+    for fpath in glob.glob(pattern):
+        basename = os.path.basename(fpath)
+        date_part = basename.replace(prefix + "_", "").replace(".csv", "")
+        if date_part < cutoff_str:
+            os.makedirs(TODAY_STOCKS_HISTORY_DIR, exist_ok=True)
+            shutil.move(fpath, TODAY_STOCKS_HISTORY_DIR)
+            moved += 1
+    if moved > 0:
+        log_debug("%s: %d件のCSVを履歴に移動しました" % (prefix, moved))
+
+
 def get_shintakane_day_txtname(today):
     """
     datetime から日付新高値テキストファイル名を取得
     """
-    txt_template = os.path.join(DATA_DIR, "shintakane_data", "shintakane_%02d%02d%02d")
+    txt_template = os.path.join(DATA_DIR, "today_stocks", "shintakane_%02d%02d%02d")
     today_txt = txt_template % (today.year - 2000, today.month, today.day)
     return today_txt
 
@@ -88,7 +116,7 @@ def get_dekidakaup_day_txtname(today):
     """
     datetime から日付テキストファイル名を取得
     """
-    txt_template = os.path.join(DATA_DIR, "shintakane_data", "dekidakaup_%02d%02d%02d")
+    txt_template = os.path.join(DATA_DIR, "today_stocks", "dekidakaup_%02d%02d%02d")
     today_txt = txt_template % (today.year - 2000, today.month, today.day)
     return today_txt
 
@@ -160,7 +188,7 @@ def search_fromcsv_pts(fname):
 
 def get_pts_day_txtname(today):
     """datetime からPTS日付CSVファイルパスを生成"""
-    txt_template = os.path.join(DATA_DIR, "shintakane_data", "pts_%02d%02d%02d")
+    txt_template = os.path.join(DATA_DIR, "today_stocks", "pts_%02d%02d%02d")
     today_txt = txt_template % (today.year - 2000, today.month, today.day)
     return today_txt
 
@@ -473,6 +501,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
         "ファンダ",
         "テーマ",
         "概要",
+        "ニュース1",
+        "ニュース2",
+        "ニュース3",
     ]
     TO_CSV = True
     rows = []
@@ -480,6 +511,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
         rows.append(COLUMNS)
     else:
         [puts(c) for c in COLUMNS]
+
+    import disclosure
+    news_by_code = disclosure.load_todays_news()
 
     def puts_detail(d):
         # 銘柄の情報表示
@@ -547,6 +581,17 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 major_theme,
                 overview,
             ]
+            # ニュース列（最大3件）
+            news_list = news_by_code.get(d["code_s"], [])
+            for i in range(3):
+                if i < len(news_list):
+                    date_e, type_e, heading, url = news_list[i]
+                    # 見出し内のダブルクォートをエスケープ
+                    heading = heading.replace('"', '""')
+                    cell = '=HYPERLINK("%s","%s %s %s")' % (url, date_e, type_e, heading)
+                    row.append(cell)
+                else:
+                    row.append("")
             rows.append(row)
         else:
             try:
@@ -973,12 +1018,13 @@ def get_todays_dekidakaup(force=False):
         rows += convert_kabutan_dekidakaup_html(html)
 
     # 新高値情報リストを.csvファイルに保存
-    csv_fname = os.path.join(DATA_DIR, "shintakane_data/dekidakaup_" + date + ".csv")
+    csv_fname = os.path.join(DATA_DIR, "today_stocks/dekidakaup_" + date + ".csv")
     csv_w = csv.writer(
         open(csv_fname, "w", encoding="utf-8")
     )  # python3ではwbではなく、テキストモードで読み書き
     csv_w.writerows(rows)
     log_print("今日の出来高急増を%sに保存しました" % csv_fname)
+    _archive_old_csvs("dekidakaup")
     log_print("<---- 取得完了")
 
 
@@ -1071,12 +1117,13 @@ def get_todays_shintakane(force=False):
         rows += convert_kabutan_shintakane_html(html)
 
     # 新高値情報リストを.csvファイルに保存
-    csv_fname = os.path.join(DATA_DIR, "shintakane_data", "shintakane_" + date + ".csv")
+    csv_fname = os.path.join(DATA_DIR, "today_stocks", "shintakane_" + date + ".csv")
     csv_w = csv.writer(
         open(csv_fname, "w", encoding="utf-8")
     )  # python3ではwbではなく、テキストモードで読み書き
     csv_w.writerows(rows)
     log_print("今日の新高値を%sに保存しました" % csv_fname)
+    _archive_old_csvs("shintakane")
 
     log_print("<---- 取得完了")
 
@@ -1166,11 +1213,12 @@ def get_todays_pts(force=False):
     rows = convert_kabutan_pts_html(html)
 
     # CSVに保存
-    csv_fname = os.path.join(DATA_DIR, "shintakane_data", "pts_" + date + ".csv")
+    csv_fname = os.path.join(DATA_DIR, "today_stocks", "pts_" + date + ".csv")
     with open(csv_fname, "w", encoding="utf-8") as f:
         csv_w = csv.writer(f)
         csv_w.writerows(rows)
     log_print("今日のPTSランキングを%sに保存しました" % csv_fname)
+    _archive_old_csvs("pts")
     log_print("<---- 取得完了")
 
 

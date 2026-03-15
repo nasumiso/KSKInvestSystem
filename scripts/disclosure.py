@@ -7,9 +7,10 @@ import portfolio
 from ks_util import *
 
 DISCLOSURE_DIR = os.path.join(DATA_DIR, "disclosure")
-DISCLOSURE_DB = "disclosure/disclosure_db.pickle"
+DISCLOSURE_CACHE_DIR = os.path.join(DISCLOSURE_DIR, "cache")
+os.makedirs(DISCLOSURE_CACHE_DIR, exist_ok=True)
 DISCLOSURE_URL = "https://kabutan.jp/stock/news?code=%s"
-DISCLOSURE_CSV = os.path.join(DATA_DIR, "disclosure/disclosure_db.csv")
+DISCLOSURE_CSV = os.path.join(DISCLOSURE_DIR, "disclosure_db.csv")
 
 UPD_INTERVAL = 0
 UPD_CACHE = 1  # html取得できていればキャッシュから
@@ -36,7 +37,7 @@ HEAD_TYPE_EXPR = {
 def need_update_disclosure(code_s):
     """キャッシュとその日時から更新必要を判断"""
     code_url = DISCLOSURE_URL % (code_s)
-    html_path = os.path.join(DISCLOSURE_DIR, get_http_cachname(code_url))
+    html_path = os.path.join(DISCLOSURE_CACHE_DIR, get_http_cachname(code_url))
     if not os.path.exists(html_path):
         return True
     # キャッシュの日時判断
@@ -126,19 +127,11 @@ def update_disclosure(code_s, disc_db=[], upd=UPD_INTERVAL):
         use_cache = False
     # html取得
     code_url = DISCLOSURE_URL % (code_s)
-    html = http_get_html(code_url, use_cache=use_cache, cache_dir=DISCLOSURE_DIR)
+    html = http_get_html(code_url, use_cache=use_cache, cache_dir=DISCLOSURE_CACHE_DIR)
     up_recs = parse_disclosure_html(html)
     # 更新
     disc_db += up_recs
 
-
-# def load_disclosure_db():
-#     """全ディスクロージャーDBのロード
-#     Args:
-#     Returns:
-#         dict<int, disc_record>: ディスクロージャー全データ
-#     """
-#     return load_pickle(DISCLOSURE_DB)
 
 
 def expoert_to_csv(disc_db, csv_path=None):
@@ -251,6 +244,56 @@ def update_disclosure_for_today(code_s_list, days=3):
     todays_csv = os.path.join(DATA_DIR, "disclosure", "todays_disclosure.csv")
     expoert_to_csv(disc_db, csv_path=todays_csv)
     log_print("本日の銘柄ニュース%d件を%sに保存しました" % (len(disc_db), todays_csv))
+
+
+def load_todays_news():
+    """todays_disclosure.csvを読み込み、銘柄コード別にニュースを返す
+
+    Returns:
+        dict<str, list<tuple>>: code_s → [(date_expr, type_expr, heading, url), ...]
+        最大3件/銘柄、CSVの順序（日付降順・優先カテゴリ先）を維持
+    """
+    import csv
+
+    todays_csv = os.path.join(DATA_DIR, "disclosure", "todays_disclosure.csv")
+    if not os.path.exists(todays_csv):
+        log_debug("todays_disclosure.csvが見つかりません: %s" % todays_csv)
+        return {}
+
+    news_by_code = {}
+    with open(todays_csv, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) < 5:
+                continue
+            # ヘッダー行・空行をスキップ
+            if row[0] == "日付" or not row[0].strip():
+                continue
+            # 日付: YYYYMMDD → YY/MM/DD
+            raw_date = row[0].strip()
+            if len(raw_date) == 8 and raw_date.isdigit():
+                date_expr = "%s/%s/%s" % (raw_date[2:4], raw_date[4:6], raw_date[6:8])
+            else:
+                date_expr = raw_date
+            # 銘柄コード: HYPERLINK式からcode_sを抽出
+            m_code = re.search(r'"(\d[0-9a-zA-Z]\d[0-9A-Z])"', row[1])
+            if not m_code:
+                continue
+            code_s = m_code.group(1)
+            # 種類
+            type_expr = row[3].strip()
+            # 本文: HYPERLINK式からURLと見出しを抽出
+            m_link = re.search(r'=HYPERLINK\("(.+?)","(.+?)"\)', row[4])
+            if not m_link:
+                continue
+            url = m_link.group(1)
+            heading = m_link.group(2)
+            if code_s not in news_by_code:
+                news_by_code[code_s] = []
+            if len(news_by_code[code_s]) < 3:
+                news_by_code[code_s].append((date_expr, type_expr, heading, url))
+
+    return news_by_code
 
 
 def main():

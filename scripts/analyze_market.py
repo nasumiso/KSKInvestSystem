@@ -183,7 +183,7 @@ def analyze_shintakane():
     newhigh_list = []
     for _ in range(100):
         day_fmt = current_day.isoformat()[2:10].replace("-", "")
-        fname = "shintakane_data/shintakane_%s.csv" % day_fmt
+        fname = "today_stocks/shintakane_%s.csv" % day_fmt
         if os.path.exists(fname):
             table = read_csv_table(fname)
             newhigh_list.append([day_fmt, table])
