@@ -212,8 +212,13 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 # 同じ銘柄は、要素を合成する
                 for d in day_list_s:
                     if d["code_s"] == item["code_s"]:
-                        # print d["code"], "を合成:", d["origin"], item["origin"]
                         d["origin"] = d["origin"] + item["origin"]
+                        # PTS銘柄の場合はPTS側の株価・前日比・出来高を優先
+                        if item.get("origin", "").find("pts") >= 0:
+                            d["kabuka"] = item["kabuka"]
+                            d["zenjitsuhi"] = item["zenjitsuhi"]
+                            d["zenjitsuhi_per"] = item["zenjitsuhi_per"]
+                            d["dekidaga"] = item["dekidaga"]
                         break
             else:
                 # 新高値にない銘柄は追加
