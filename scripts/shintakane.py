@@ -628,6 +628,8 @@ def convert_kabutan_pts_html(html, max_rows=20):
 
     カラム構成は新高値CSVと同じ8カラム:
     rank, "code_s name", market, sector, kabuka(PTS株価), zenjitsuhi, zenjitsuhi_per, dekidaga
+
+    出来高1000未満の銘柄はフィルタする（薄商い銘柄を除外）
     """
     rows = []
     m_table = re.search(
@@ -665,6 +667,12 @@ def convert_kabutan_pts_html(html, max_rows=20):
             zenjitsuhi = 0
             zenjitsuhi_per = 0
         dekidaka = m.group(8)
+        # 出来高1000未満の薄商い銘柄を除外
+        try:
+            if float(dekidaka.replace(",", "")) < 1000:
+                continue
+        except (ValueError, AttributeError):
+            pass
         row = []
         row.append(str(rank))
         row.append(code + " " + stock_name)
