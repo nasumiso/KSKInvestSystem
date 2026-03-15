@@ -79,6 +79,7 @@ def search_fromcsv_dekidakaup(fname):
 TODAY_STOCKS_DIR = os.path.join(DATA_DIR, "today_stocks")
 TODAY_STOCKS_HISTORY_DIR = os.path.join(TODAY_STOCKS_DIR, "history")
 HISTORY_KEEP_DAYS = 30
+os.makedirs(TODAY_STOCKS_DIR, exist_ok=True)
 
 
 def _archive_old_csvs(prefix):
@@ -500,6 +501,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
         "ファンダ",
         "テーマ",
         "概要",
+        "ニュース1",
+        "ニュース2",
+        "ニュース3",
     ]
     TO_CSV = True
     rows = []
@@ -507,6 +511,9 @@ def todays_shintakane(upd=UPD_INTERVAL):
         rows.append(COLUMNS)
     else:
         [puts(c) for c in COLUMNS]
+
+    import disclosure
+    news_by_code = disclosure.load_todays_news()
 
     def puts_detail(d):
         # 銘柄の情報表示
@@ -574,6 +581,17 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 major_theme,
                 overview,
             ]
+            # ニュース列（最大3件）
+            news_list = news_by_code.get(d["code_s"], [])
+            for i in range(3):
+                if i < len(news_list):
+                    date_e, type_e, heading, url = news_list[i]
+                    # 見出し内のダブルクォートをエスケープ
+                    heading = heading.replace('"', '""')
+                    cell = '=HYPERLINK("%s","%s %s %s")' % (url, date_e, type_e, heading)
+                    row.append(cell)
+                else:
+                    row.append("")
             rows.append(row)
         else:
             try:
