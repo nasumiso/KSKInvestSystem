@@ -7,9 +7,9 @@ import portfolio
 from ks_util import *
 
 DISCLOSURE_DIR = os.path.join(DATA_DIR, "disclosure")
-DISCLOSURE_DB = "disclosure/disclosure_db.pickle"
+DISCLOSURE_CACHE_DIR = os.path.join(DISCLOSURE_DIR, "cache")
 DISCLOSURE_URL = "https://kabutan.jp/stock/news?code=%s"
-DISCLOSURE_CSV = os.path.join(DATA_DIR, "disclosure/disclosure_db.csv")
+DISCLOSURE_CSV = os.path.join(DISCLOSURE_DIR, "disclosure_db.csv")
 
 UPD_INTERVAL = 0
 UPD_CACHE = 1  # html取得できていればキャッシュから
@@ -36,7 +36,7 @@ HEAD_TYPE_EXPR = {
 def need_update_disclosure(code_s):
     """キャッシュとその日時から更新必要を判断"""
     code_url = DISCLOSURE_URL % (code_s)
-    html_path = os.path.join(DISCLOSURE_DIR, get_http_cachname(code_url))
+    html_path = os.path.join(DISCLOSURE_CACHE_DIR, get_http_cachname(code_url))
     if not os.path.exists(html_path):
         return True
     # キャッシュの日時判断
@@ -126,19 +126,11 @@ def update_disclosure(code_s, disc_db=[], upd=UPD_INTERVAL):
         use_cache = False
     # html取得
     code_url = DISCLOSURE_URL % (code_s)
-    html = http_get_html(code_url, use_cache=use_cache, cache_dir=DISCLOSURE_DIR)
+    html = http_get_html(code_url, use_cache=use_cache, cache_dir=DISCLOSURE_CACHE_DIR)
     up_recs = parse_disclosure_html(html)
     # 更新
     disc_db += up_recs
 
-
-# def load_disclosure_db():
-#     """全ディスクロージャーDBのロード
-#     Args:
-#     Returns:
-#         dict<int, disc_record>: ディスクロージャー全データ
-#     """
-#     return load_pickle(DISCLOSURE_DB)
 
 
 def expoert_to_csv(disc_db, csv_path=None):

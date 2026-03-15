@@ -152,8 +152,20 @@ def make_theme_data():  # market_db=None
     )
     theme_rank2_list = [theme for theme, pt in theme_rank2_sorted]
     log_print("モメンタム順位:", ",".join(theme_rank2_list))
+
+    # Kabutanの生ランキング差分からモメンタム順位の変動を計算
+    # モメンタム再ソート後の順位に対して、Kabutan生ランキングの前日比を付与
+    theme_rank_diff = {}
+    for theme in theme_rank2_list:
+        if theme not in prev_theme_rank_dict:
+            theme_rank_diff[theme] = None  # 新規テーマ
+        else:
+            # Kabutanの生ランキングで上昇=正、下降=負
+            theme_rank_diff[theme] = prev_theme_rank_dict[theme] - theme_rank_dict[theme]
+
     market_db = {}
     market_db["theme_rank"] = theme_rank2_list
+    market_db["theme_rank_diff"] = theme_rank_diff
     market_db["access_date_theme_rank"] = cach_date
     return market_db
 
@@ -312,10 +324,6 @@ def update_market_db():
     """マーケットDBを読み込んで最新に更新"""
     market_db = get_market_db()
 
-    # 前回のモメンタム順位を退避（上書き前）
-    if "theme_rank" in market_db:
-        market_db["prev_theme_rank"] = list(market_db["theme_rank"])
-
     theme_db = make_theme_data()
     market_db.update(theme_db)
 
@@ -334,11 +342,15 @@ def update_market_db():
     return market_db
 
 
-def _theme_rank_label(theme, cur_rank, prev_rank_dict):
-    """テーマ名にモメンタム順位変動インジケーターを付加する"""
-    if theme not in prev_rank_dict:
+def _theme_rank_label(theme, diff):
+    """テーマ名にKabutan生ランキングの順位変動インジケーターを付加する
+
+    Args:
+        theme: テーマ名
+        diff: 順位差分（正=上昇、負=下降、None=新規）
+    """
+    if diff is None:
         return "%s(NEW)" % theme
-    diff = prev_rank_dict[theme] - cur_rank  # 正=上昇、負=下降
     if diff > 0:
         return "%s(↑%d)" % (theme, diff)
     elif diff < 0:
@@ -359,10 +371,10 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
     rows = []
     rows.append(["■ テーマランク"])
     row = ["ランク"]
-    prev_theme_rank = market_db.get("prev_theme_rank", [])
-    prev_rank_dict = {v: i + 1 for (i, v) in enumerate(prev_theme_rank)}
-    for i, theme in enumerate(market_db["theme_rank"]):
-        row.append(_theme_rank_label(theme, i + 1, prev_rank_dict))
+    theme_rank_diff = market_db.get("theme_rank_diff", {})
+    for theme in market_db["theme_rank"]:
+        diff = theme_rank_diff.get(theme)
+        row.append(_theme_rank_label(theme, diff))
     rows.append(row)
     # テーマ別騰落率行
     theme_momentum = market_db.get("theme_momentum", {})
