@@ -132,6 +132,56 @@ def get_latest_shintakane_fname():
     return today_csv, today
 
 
+def search_fromcsv_pts(fname):
+    """PTS CSVを読み込んで各銘柄情報をディクショナリのリストにして返す
+
+    カラム構成は新高値CSVと同じ8カラム（search_fromcsvと同一）
+    """
+    if not os.path.exists(fname):
+        return []
+
+    result_list = []
+    csv_r = csv.reader(open(fname, "r", encoding="utf-8"))
+    for row in csv_r:
+        row_dict = {}
+        row_dict["rank"] = row[0]
+        row_dict["code_s"] = row[1].split()[0]
+        row_dict["name"] = row[1].split()[1] if len(row[1].split()) > 1 else "名前不明"
+        row_dict["place"] = row[2]
+        row_dict["sector"] = row[3]
+        row_dict["kabuka"] = int(float(row[4].replace(",", "")))
+        row_dict["zenjitsuhi"] = int(float(row[5].replace(",", "").replace("+", ""))) if row[5] else 0
+        row_dict["zenjitsuhi_per"] = row[6]
+        row_dict["dekidaga"] = float(row[7].replace(",", ""))
+        row_dict["origin"] = "pts"
+        result_list.append(row_dict)
+    return result_list
+
+
+def get_pts_day_txtname(today):
+    """datetime からPTS日付CSVファイルパスを生成"""
+    txt_template = os.path.join(DATA_DIR, "shintakane_data", "pts_%02d%02d%02d")
+    today_txt = txt_template % (today.year - 2000, today.month, today.day)
+    return today_txt
+
+
+def get_latest_pts_fname():
+    """最新日付のPTSファイル名を返す"""
+    today = datetime.today()
+    today_csv = get_pts_day_txtname(today) + ".csv"
+    count = 0
+    CountMax = 60
+    while not os.path.exists(today_csv) and count < CountMax:
+        log_debug("PTS: 今日の情報がありません", today_csv, count)
+        today = today - timedelta(1)
+        today_csv = get_pts_day_txtname(today) + ".csv"
+        count += 1
+    if count >= CountMax:
+        log_warning("PTSファイルが見つかりません。")
+        return "", today
+    return today_csv, today
+
+
 def todays_shintakane(upd=UPD_INTERVAL):
     """本日の新高値銘柄データを解析して結果を表示する"""
     log_print("=" * 30)
@@ -146,7 +196,8 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # today = datetime.today()
     today_data, latest_csv_dt = get_latest_shintakane_fname()
     today_data_d, latest_csv_dt_d = get_latest_dekidakaup_fname()
-    log_debug("最新新高値ファイル:", today_data, today_data_d)
+    today_data_p, latest_csv_dt_p = get_latest_pts_fname()
+    log_debug("最新新高値ファイル:", today_data, today_data_d, today_data_p)
 
     # 各種フィルタ関数：テンバガー成長株の条件
     # 出来高による候補フィルタ関数：一定以上の出来高に絞る
@@ -161,8 +212,13 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 # 同じ銘柄は、要素を合成する
                 for d in day_list_s:
                     if d["code_s"] == item["code_s"]:
-                        # print d["code"], "を合成:", d["origin"], item["origin"]
                         d["origin"] = d["origin"] + item["origin"]
+                        # PTS銘柄の場合はPTS側の株価・前日比・出来高を優先
+                        if item.get("origin", "").find("pts") >= 0:
+                            d["kabuka"] = item["kabuka"]
+                            d["zenjitsuhi"] = item["zenjitsuhi"]
+                            d["zenjitsuhi_per"] = item["zenjitsuhi_per"]
+                            d["dekidaga"] = item["dekidaga"]
                         break
             else:
                 # 新高値にない銘柄は追加
@@ -188,13 +244,19 @@ def todays_shintakane(upd=UPD_INTERVAL):
                     day_list_d = search_fromcsv_dekidakaup(day_csv_d)
                 else:
                     day_list_d = []
-                # day_listとday_list_dを合成
+                # PTSも出来高急増と同様に一定日数以内に制限
+                if i < BACK_DAY_DEKIDAKA:
+                    day_csv_p = get_pts_day_txtname(day) + ".csv"
+                    day_list_p = search_fromcsv_pts(day_csv_p)
+                else:
+                    day_list_p = []
+                # day_listとday_list_d, day_list_pを合成
                 log_debug(
-                    "新高値銘柄%d個と出来高急増銘柄%d個を合成(%s)"
-                    % (len(day_list), len(day_list_d), day.date())
+                    "新高値銘柄%d個と出来高急増銘柄%d個とPTS銘柄%d個を合成(%s)"
+                    % (len(day_list), len(day_list_d), len(day_list_p), day.date())
                 )
                 compose_list(day_list, day_list_d)
-                # print "---> 計%d個"%len(day_list)
+                compose_list(day_list, day_list_p)
             if len(day_list) == 0:
                 continue
             log_debug("----- %s(%d)を分析" % (day_csv, len(day_list)))
@@ -227,12 +289,15 @@ def todays_shintakane(upd=UPD_INTERVAL):
             today_list = search_fromcsv(today_data)
             # 出来高急増も追加
             today_list_d = search_fromcsv_dekidakaup(today_data_d)
+            # PTSも追加
+            today_list_p = search_fromcsv_pts(today_data_p)
             log_debug(
-                "新高値銘柄%d個と出来高急増銘柄%d個を合成"
-                % (len(today_list), len(today_list_d))
+                "新高値銘柄%d個と出来高急増銘柄%d個とPTS銘柄%d個を合成"
+                % (len(today_list), len(today_list_d), len(today_list_p))
             )
             compose_list(today_list, today_list_d)
-            # today_listには本日銘柄: 本日の新高値と出来高銘柄リスト
+            compose_list(today_list, today_list_p)
+            # today_listには本日銘柄: 本日の新高値と出来高とPTS銘柄リスト
             log_debug("本日銘柄%s個" % len(today_list))
         return today_list
 
@@ -396,7 +461,6 @@ def todays_shintakane(upd=UPD_INTERVAL):
         "株価",
         "前日比(%)",
         "出来高",
-        "最低購入代金",
         "時価総額",
         "ローソク足ボラティリティ(20, 5)",
         "売り圧力レシオ(20, 5)",
@@ -443,7 +507,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         signal, tags = stock_db.make_signal(stock)
         tags = "/".join(tags)
         kessanbi = kessan.get_kessanbi_expr(stock)
-        score_gyoseki = stock.get("score_gyoseki", 0)
+        score_gyoseki = int(stock.get("score_gyoseki", 0))
         shihyo_pt = stock.get("shihyo_pt", 0)
         relates_rank = stock.get("relates_rank", 0)
         mom_pt = stock.get("momentum_pt", 0) + 0.1 * relates_rank
@@ -454,6 +518,8 @@ def todays_shintakane(upd=UPD_INTERVAL):
         origin = ""
         if d["origin"].find("shintakane") >= 0:
             origin += "新"
+        if d["origin"].find("pts") >= 0:
+            origin += "P"
         if d["origin"].find("dekidakaup") >= 0:
             origin += "出"
         major_theme = make_market_db.get_major_theme(stock.get("themes", ""))
@@ -468,7 +534,6 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 kabuka,
                 d["zenjitsuhi_per"],
                 d["dekidaga"],
-                purchase_money,
                 market_cap,
                 vola,
                 sell_press,
@@ -559,6 +624,70 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # print "マーケット", "-"*10
     # import analyze_market
     # analyze_market.analyze_market()
+
+
+def convert_kabutan_pts_html(html, max_rows=20):
+    """株探のPTSナイトランキングHTMLをパースしてCSV行リストを返す
+
+    カラム構成は新高値CSVと同じ8カラム:
+    rank, "code_s name", market, sector, kabuka(PTS株価), zenjitsuhi, zenjitsuhi_per, dekidaga
+
+    出来高1000未満の銘柄はフィルタする（薄商い銘柄を除外）
+    """
+    rows = []
+    m_table = re.search(
+        r'<table class="stock_table st_market">(.*?)</table>', html, re.S
+    )
+    if not m_table:
+        return rows
+    body = m_table.group(0)
+    rank = 1
+    for m in re.finditer(
+        r'<td class="tac">(.*?)</td>.*?'
+        r'<th scope="row" class="tal">(.*?)</th>.*?'
+        r'<td class="tac">(.*?)</td>.*?'  # 市場
+        r'<td>(.*?)</td>.*?'  # 通常終値
+        r'<td>(.*?)</td>.*?'  # PTS株価
+        r'<td class="w61">(.*?)</td.*?'  # 前日比
+        r'<td class="w50">(.*?)</td>.*?'  # 前日比%
+        r'<td>(.*?)</td>',  # 出来高
+        body,
+        re.S,
+    ):
+        if rank > max_rows:
+            break
+        code = re.search(r"\d[0-9a-zA-Z]\d[0-9A-Z]", m.group(1)).group(0)
+        stock_name = m.group(2)
+        market_name = m.group(3)
+        # 通常終値は m.group(4)、PTS株価を使用
+        kabuka = m.group(5)
+        try:
+            zenjitsuhi = re.search(r'<span class="up">(.*)</span>', m.group(6)).group(1)
+            zenjitsuhi_per = (
+                re.search(r'<span class="up">(.*)</span>', m.group(7)).group(1) + "%"
+            )
+        except AttributeError:
+            zenjitsuhi = 0
+            zenjitsuhi_per = 0
+        dekidaka = m.group(8)
+        # 出来高1000未満の薄商い銘柄を除外
+        try:
+            if float(dekidaka.replace(",", "")) < 1000:
+                continue
+        except (ValueError, AttributeError):
+            pass
+        row = []
+        row.append(str(rank))
+        row.append(code + " " + stock_name)
+        row.append(market_name)
+        row.append("セクター")
+        row.append(kabuka)
+        row.append(zenjitsuhi)
+        row.append(zenjitsuhi_per)
+        row.append(dekidaka)
+        rank += 1
+        rows.append(row)
+    return rows
 
 
 def convert_kabutan_dekidakaup_html(html):
@@ -977,6 +1106,107 @@ def get_todays_shintakane(force=False):
 #     return False
 
 
+def get_todays_pts(force=False):
+    """本日のPTSナイトランキングを株探から取得し、CSVに保存する"""
+    log_print("=" * 30)
+    log_print("PTSナイトランキングを更新します・・")
+    latest_csv, _ = get_latest_pts_fname()
+    if latest_csv and not force:
+        latest_csv_dt = get_file_datetime(latest_csv)
+        tdy = datetime.today()
+        tdy = get_price_day(tdy)
+        goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, PRICE_HOUR)
+        if latest_csv_dt > goodissue_dt:
+            log_debug(
+                "本日分のPTS CSVは取得済みです",
+                latest_csv,
+                latest_csv_dt,
+                "goodissue",
+                goodissue_dt,
+            )
+            return
+
+    log_print("----> 株探からPTSランキングを取得します・・")
+    URL_KABUTAN_PTS = "https://kabutan.jp/warning/pts_night_price_increase"
+    cache_dir = os.path.join(DATA_DIR, "cache_data")
+    # キャッシュ判定
+    try:
+        latest_html = file_read(
+            os.path.join(cache_dir, get_http_cachname(URL_KABUTAN_PTS))
+        )
+        # 更新日付をヘッダーから取得
+        latest_date_m = re.search(
+            r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>',
+            latest_html,
+            re.S,
+        )
+        cach_dt = datetime(
+            int(latest_date_m.group(1)),
+            int(latest_date_m.group(2)),
+            int(latest_date_m.group(3)),
+        )
+        useCache = cach_dt.date() >= get_price_day(datetime.today()).date()
+        log_debug("株探PTS キャッシュ：", cach_dt, useCache)
+    except (IOError, OSError, AttributeError):
+        useCache = False
+
+    html = http_get_html(URL_KABUTAN_PTS, use_cache=useCache, cache_dir=cache_dir)
+    # 更新日付を取得
+    date_m = re.search(
+        r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>',
+        html,
+        re.S,
+    )
+    if not date_m:
+        log_warning("PTSランキングの日付を取得できません")
+        return
+    date = date_m.group(1)[-2:] + date_m.group(2) + date_m.group(3)
+    log_debug("株探PTS更新日：", date)
+
+    rows = convert_kabutan_pts_html(html)
+
+    # CSVに保存
+    csv_fname = os.path.join(DATA_DIR, "shintakane_data", "pts_" + date + ".csv")
+    with open(csv_fname, "w", encoding="utf-8") as f:
+        csv_w = csv.writer(f)
+        csv_w.writerows(rows)
+    log_print("今日のPTSランキングを%sに保存しました" % csv_fname)
+    log_print("<---- 取得完了")
+
+
+def update_todays_news():
+    """本日の銘柄（新高値・出来高急増・PTS）のニュースを収集する
+
+    main()のupdateフェーズから呼び出す。analyzeモードでは呼ばれない。
+    """
+    import disclosure
+
+    log_print("=" * 30)
+    log_print("本日の銘柄ニュースを収集します・・")
+
+    # 本日の各CSVから銘柄コードリストを生成
+    code_s_list = []
+    shintakane_csv, _ = get_latest_shintakane_fname()
+    if shintakane_csv:
+        code_s_list += [d["code_s"] for d in search_fromcsv(shintakane_csv)]
+    dekidakaup_csv, _ = get_latest_dekidakaup_fname()
+    if dekidakaup_csv:
+        code_s_list += [d["code_s"] for d in search_fromcsv_dekidakaup(dekidakaup_csv)]
+    pts_csv, _ = get_latest_pts_fname()
+    if pts_csv:
+        code_s_list += [d["code_s"] for d in search_fromcsv_pts(pts_csv)]
+    # 重複除去
+    code_s_list = list(set(code_s_list))
+
+    if not code_s_list:
+        log_print("ニュース収集対象銘柄がありません")
+        return
+
+    log_print("ニュース収集対象: %d銘柄" % len(code_s_list))
+    disclosure.update_disclosure_for_today(code_s_list)
+    log_print("<---- ニュース収集完了")
+
+
 def parse_kessan_html(html):
     """決算ページのhtmlを解析して、決算修正と決算発表の
     リストを返す
@@ -1158,6 +1388,8 @@ def main(force=False):
         update_todays_kessan()  # テストコメントアウト
         get_todays_shintakane(force=force)
         get_todays_dekidakaup(force=force)
+        get_todays_pts(force=force)
+        update_todays_news()
     # 新高値銘柄の各種解析
     if "analyze" in args:
         todays_shintakane(UPD_INTERVAL)  # UPD_FORCE/UPD_INTERVAL/UPD_CACHE/UPD_REEVAL

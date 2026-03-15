@@ -330,3 +330,145 @@ class TestParseKessanHtml:
         )
         mod_lst, _ = shintakane.parse_kessan_html(html)
         assert len(mod_lst[0]) == 4
+
+
+# ==================================================
+# convert_kabutan_pts_html（株探・PTSナイトランキング）
+# ==================================================
+
+def _make_kabutan_pts_table(*rows_data):
+    """株探・PTSランキングHTMLのテーブルを生成する
+
+    rows_data: (code, name, market, trade_close, pts_price, zenjitsuhi, zenjitsuhi_per, volume) のタプル
+    """
+    rows_html = ""
+    for code, name, market, trade_close, pts_price, zenjitsuhi, zenjitsuhi_per, volume in rows_data:
+        rows_html += (
+            f'<tr>\n'
+            f'<td class="tac"><a href="/stock/?code={code}">{code}</a></td>\n'
+            f'<th scope="row" class="tal">{name}</th>\n'
+            f'<td class="tac">{market}</td>\n'
+            f'<td class="gaiyou_icon"><a href="/stock/?code={code}"></a></td>\n'
+            f'<td class="chart_icon"><a href="/stock/chart?code={code}"></a></td>\n'
+            f'<td>{trade_close}</td>\n'
+            f'<td>{pts_price}</td>\n'
+            f'<td class="w61"><span class="up">{zenjitsuhi}</span></td>\n'
+            f'<td class="w50"><span class="up">{zenjitsuhi_per}</span>%</td>\n'
+            f'<td>{volume}</td>\n'
+            f'<td>16.5</td>\n'
+            f'<td>6.42</td>\n'
+            f'<td>2.16</td>\n'
+            f'</tr>\n'
+        )
+    return f'<table class="stock_table st_market">{rows_html}</table>'
+
+
+class TestConvertKabutanPtsHtml:
+    """株探のPTSナイトランキングHTMLパーステスト"""
+
+    def test_単一銘柄のパース(self):
+        html = _make_kabutan_pts_table(
+            ("446A", "ノースサンド", "東Ｇ", "1,231", "1,531", "+300", "+24.37", "16,800"),
+        )
+        rows = shintakane.convert_kabutan_pts_html(html)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row[0] == "1"  # ランク
+        assert "446A" in row[1]  # コード+銘柄名
+        assert "ノースサンド" in row[1]
+        assert row[2] == "東Ｇ"  # 市場
+        assert row[3] == "セクター"
+        assert row[4] == "1,531"  # PTS株価（通常終値ではない）
+        assert row[5] == "+300"  # 前日比
+        assert row[6] == "+24.37%"  # 前日比%
+        assert row[7] == "16,800"  # 出来高
+
+    def test_複数銘柄のパース(self):
+        html = _make_kabutan_pts_table(
+            ("446A", "ノースサンド", "東Ｇ", "1,231", "1,531", "+300", "+24.37", "16,800"),
+            ("3441", "山王", "東Ｓ", "1,327", "1,627", "+300", "+22.61", "2,000"),
+        )
+        rows = shintakane.convert_kabutan_pts_html(html)
+        assert len(rows) == 2
+        assert rows[0][0] == "1"
+        assert rows[1][0] == "2"
+        assert "3441" in rows[1][1]
+
+    def test_英数字コード(self):
+        """英数字混在コード（例: 446A）のパース"""
+        html = _make_kabutan_pts_table(
+            ("446A", "ノースサンド", "東Ｇ", "1,231", "1,531", "+300", "+24.37", "16,800"),
+        )
+        rows = shintakane.convert_kabutan_pts_html(html)
+        assert len(rows) == 1
+        assert "446A" in rows[0][1]
+
+    def test_下落銘柄はスキップされる(self):
+        """spanにupクラスがない場合、zenjitsuhi=0になる"""
+        html = (
+            '<table class="stock_table st_market">'
+            '<tr>\n'
+            '<td class="tac"><a href="/stock/?code=1234">1234</a></td>\n'
+            '<th scope="row" class="tal">テスト銘柄</th>\n'
+            '<td class="tac">東Ｐ</td>\n'
+            '<td class="gaiyou_icon"><a href="/stock/?code=1234"></a></td>\n'
+            '<td class="chart_icon"><a href="/stock/chart?code=1234"></a></td>\n'
+            '<td>1,000</td>\n'
+            '<td>950</td>\n'
+            '<td class="w61"><span class="down">-50</span></td>\n'
+            '<td class="w50"><span class="down">-5.00</span>%</td>\n'
+            '<td>100,000</td>\n'
+            '<td>10.0</td>\n'
+            '<td>1.00</td>\n'
+            '<td>3.00</td>\n'
+            '</tr>\n'
+            '</table>'
+        )
+        rows = shintakane.convert_kabutan_pts_html(html)
+        assert len(rows) == 1
+        assert rows[0][5] == 0  # zenjitsuhi
+        assert rows[0][6] == 0  # zenjitsuhi_per
+
+    def test_空テーブル(self):
+        html = '<table class="stock_table st_market"></table>'
+        rows = shintakane.convert_kabutan_pts_html(html)
+        assert rows == []
+
+    def test_出力カラム数(self):
+        """出力行のカラム数が正しいこと（8カラム）"""
+        html = _make_kabutan_pts_table(
+            ("446A", "ノースサンド", "東Ｇ", "1,231", "1,531", "+300", "+24.37", "16,800"),
+        )
+        rows = shintakane.convert_kabutan_pts_html(html)
+        assert len(rows[0]) == 8
+
+    def test_max_rows制限(self):
+        """max_rowsを超える銘柄は無視される"""
+        data = [
+            (f"{i:04d}", f"銘柄{i}", "東Ｐ", "1,000", "1,100", "+100", "+10.00", "10,000")
+            for i in range(1000, 1030)
+        ]
+        html = _make_kabutan_pts_table(*data)
+        rows = shintakane.convert_kabutan_pts_html(html, max_rows=5)
+        assert len(rows) == 5
+
+
+# ==================================================
+# search_fromcsv_pts
+# ==================================================
+class TestSearchFromcsvPts:
+    """PTS CSV読み込みテスト"""
+
+    def test_originがptsになる(self, tmp_path):
+        """CSV読み込み時にorigin='pts'がセットされること"""
+        csv_file = tmp_path / "pts_260315.csv"
+        csv_file.write_text('1,446A ノースサンド,東Ｇ,セクター,"1,531",+300,+24.37%,"16,800"\n', encoding="utf-8")
+        result = shintakane.search_fromcsv_pts(str(csv_file))
+        assert len(result) == 1
+        assert result[0]["origin"] == "pts"
+        assert result[0]["code_s"] == "446A"
+
+    def test_存在しないファイル(self):
+        """存在しないファイルは空リストを返す"""
+        result = shintakane.search_fromcsv_pts("/nonexistent/file.csv")
+        assert result == []

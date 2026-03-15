@@ -110,6 +110,26 @@ class TestLiveHtmlShintakane:
         _sleep()
 
 
+class TestLiveHtmlPts:
+    """shintakane.py — kabutan PTSナイトランキングHTML取得→パース"""
+
+    def test_PTSランキングHTMLのパース(self):
+        """kabutanからPTSランキングHTMLを取得し、パースできること"""
+        url = "https://kabutan.jp/warning/pts_night_price_increase"
+        html = http_get_html(url, use_cache=False)
+        assert html is not None
+        assert len(html) > 0
+        result = shintakane.convert_kabutan_pts_html(html)
+        assert isinstance(result, list)
+        # PTSランキングはナイトセッションがある日はデータがある
+        # 市場状況により0件の場合もあるが、パースエラーは起きないこと
+        if len(result) > 0:
+            row = result[0]
+            assert len(row) == 8  # 8カラム
+            assert row[0] == "1"  # ランク
+        _sleep()
+
+
 class TestLiveHtmlKessan:
     """shintakane.py — kabutan決算速報HTML取得→パース"""
 
