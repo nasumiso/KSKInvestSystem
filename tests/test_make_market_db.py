@@ -318,3 +318,315 @@ class TestCalcThemePriceMomentum:
         result = make_market_db.calc_theme_price_momentum(stocks)
         assert abs(result["AI"][0] - (-10.0)) < 0.01
         assert result["AI"][1] == 1
+
+
+# ==================================================
+# HTML出力関連テスト
+# ==================================================
+
+class TestHtmlThemeRank:
+    """テーマランクHTML生成テスト"""
+
+    def _make_market_db(self):
+        """テスト用market_db"""
+        return {
+            "theme_rank": ["AI", "半導体", "防衛", "DX"],
+            "theme_rank_diff": {
+                "AI": None,    # 新規
+                "半導体": 3,   # 上昇
+                "防衛": 0,     # 変動なし
+                "DX": -2,      # 下降
+            },
+            "theme_momentum": {
+                "AI": (1.5, 10),
+                "半導体": (-0.3, 5),
+                "防衛": (0.0, 8),
+            },
+            "access_date_theme_rank": datetime(2026, 3, 15),
+        }
+
+    def test_new_theme_class(self):
+        """新規テーマにtheme-newクラスが付く"""
+        result = make_market_db._html_theme_rank(self._make_market_db())
+        assert 'theme-new' in result
+        assert 'NEW' in result
+
+    def test_up_theme_class(self):
+        """上昇テーマにtheme-upクラスが付く"""
+        result = make_market_db._html_theme_rank(self._make_market_db())
+        assert 'theme-up' in result
+        assert '↑3' in result
+
+    def test_down_theme_class(self):
+        """下降テーマにtheme-downクラスが付く"""
+        result = make_market_db._html_theme_rank(self._make_market_db())
+        assert 'theme-down' in result
+        assert '↓2' in result
+
+    def test_flat_theme_class(self):
+        """変動なしテーマにtheme-flatクラスが付く"""
+        result = make_market_db._html_theme_rank(self._make_market_db())
+        assert 'theme-flat' in result
+
+    def test_rate_pos_neg(self):
+        """騰落率の正負でrate-pos/rate-negクラスが付く"""
+        result = make_market_db._html_theme_rank(self._make_market_db())
+        assert 'rate-pos' in result
+        assert 'rate-neg' in result
+
+    def test_empty_theme_rank(self):
+        """テーマランクが空の場合は空文字列"""
+        result = make_market_db._html_theme_rank({"theme_rank": []})
+        assert result == ""
+
+    def test_rank_history(self):
+        """Kabutanランキング履歴が含まれる"""
+        db = self._make_market_db()
+        theme_rank_data = (["AI", "半導体"], ["防衛", "DX"], None, datetime(2026, 3, 12))
+        result = make_market_db._html_theme_rank(db, theme_rank_data)
+        assert 'rank-history' in result
+        assert '2026-03-15' in result
+        assert '2026-03-12' in result
+
+    def test_html_escape(self):
+        """テーマ名にHTMLの特殊文字が含まれる場合にエスケープされる"""
+        db = {
+            "theme_rank": ["AI&半導体"],
+            "theme_rank_diff": {"AI&半導体": 1},
+            "theme_momentum": {},
+        }
+        result = make_market_db._html_theme_rank(db)
+        assert 'AI&amp;半導体' in result
+        assert 'AI&半導体' not in result or '&amp;' in result
+
+
+class TestHtmlMarket:
+    """市場指標HTML生成テスト"""
+
+    def _make_market_db(self):
+        """テスト用market_db"""
+        return {
+            "topix": {
+                "rs_raw": 1.18,
+                "trend_template": [],  # 空リスト=◎
+                "distribution_days": ["260213", "260220"],
+                "followthrough_days": ["260305"],
+                "direction_signal": "sell 26/03/13",
+                "spr_buygagher": 49,
+                "spr_20": 47,
+                "spr_5": 45,
+                "rv_20": 3.6,
+                "rv_5": 5.1,
+            },
+            "mothers": {
+                "rs_raw": 1.09,
+                "trend_template": ["ma30>ma40", "RS"],
+                "distribution_days": [],
+                "followthrough_days": [],
+                "direction_signal": "buy 26/03/10",
+                "spr_buygagher": 55,
+                "spr_20": 52,
+                "spr_5": 50,
+                "rv_20": 4.6,
+                "rv_5": 5.4,
+            },
+        }
+
+    def test_signal_sell_class(self):
+        """sellシグナルにsignal-sellクラスが付く"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert 'signal-sell' in result
+
+    def test_signal_buy_class(self):
+        """buyシグナルにsignal-buyクラスが付く"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert 'signal-buy' in result
+
+    def test_trend_good_class(self):
+        """良好トレンド（◎/◯）にtrend-goodクラスが付く"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert 'trend-good' in result
+
+    def test_market_table_header(self):
+        """テーブルヘッダーが含まれる"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert 'market-table' in result
+        assert 'ディストリビューション' in result
+
+    def test_empty_market_db(self):
+        """市場データがない場合は空文字列"""
+        result = make_market_db._html_market({})
+        assert result == ""
+
+
+class TestHtmlKessan:
+    """決算HTML生成テスト"""
+
+    def test_write_to_csv_format(self):
+        """write_to_csv形式（2行セット）のパース"""
+        kessan_csv = [
+            ["03/10", "03/15"],                        # 日付行
+            ["1234銘柄A[1Q]", "5678銘柄B[2Q]"],        # 銘柄行
+        ]
+        result = make_market_db._html_kessan(kessan_csv)
+        assert 'kessan-card' in result
+        assert '1234' in result
+        assert '銘柄A' in result
+        assert '5678' in result
+
+    def test_write_to_csv_current_format(self):
+        """write_to_csv_current形式（1行）のパース"""
+        kessan_csv = [
+            ["03/16", "1234銘柄A[1Q]", "5678銘柄B[2Q]"],
+        ]
+        result = make_market_db._html_kessan(kessan_csv)
+        assert 'kessan-card' in result
+        assert '1234' in result
+        assert '5678' in result
+
+    def test_mixed_format(self):
+        """3種類の混在構造のパース"""
+        kessan_csv = [
+            ["03/01", "03/05"],                          # write_to_csv (before)
+            ["1234銘柄A[1Q]", "5678銘柄B[2Q]"],
+            ["03/16", "9012銘柄C[3Q]"],                  # write_to_csv_current
+            ["04/10", "04/15"],                          # write_to_csv (future)
+            ["3456銘柄D[4Q]", "7890銘柄E[0Q]"],
+        ]
+        result = make_market_db._html_kessan(kessan_csv)
+        assert '1234' in result
+        assert '9012' in result
+        assert '3456' in result
+
+    def test_empty_csv(self):
+        """空リストの場合は空文字列"""
+        result = make_market_db._html_kessan([])
+        assert result == ""
+
+    def test_kabutan_link(self):
+        """株探リンクが生成される"""
+        kessan_csv = [["03/16", "1234銘柄A[1Q]"]]
+        result = make_market_db._html_kessan(kessan_csv)
+        assert 'kabutan.jp/stock/chart?code=1234' in result
+
+
+class TestHtmlDisclosure:
+    """適宜開示HTML生成テスト"""
+
+    def test_hyperlink_parse(self):
+        """=HYPERLINK()パターンが<a>タグに変換される"""
+        disc_csv = [
+            ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
+            [
+                "20260315",
+                '=HYPERLINK("https://kabutan.jp/stock/chart?code=1234","1234")',
+                "テスト銘柄",
+                "開示",
+                '=HYPERLINK("https://example.com/doc.pdf","テスト開示")',
+            ],
+        ]
+        result = make_market_db._html_disclosure(disc_csv)
+        assert '<a href="https://kabutan.jp/stock/chart?code=1234">1234</a>' in result
+        assert '<a href="https://example.com/doc.pdf">テスト開示</a>' in result
+
+    def test_html_escape(self):
+        """銘柄名の特殊文字がエスケープされる"""
+        disc_csv = [
+            ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
+            [
+                "20260315",
+                '=HYPERLINK("https://example.com","1234")',
+                "A&B<C>",
+                "開示",
+                '=HYPERLINK("https://example.com","テスト")',
+            ],
+        ]
+        result = make_market_db._html_disclosure(disc_csv)
+        assert 'A&amp;B&lt;C&gt;' in result
+
+    def test_recent_details_open(self):
+        """直近3日分はdetails openになる"""
+        from datetime import date
+        today = make_market_db.get_price_day(datetime.today())
+        today_str = today.strftime("%Y%m%d")
+        disc_csv = [
+            ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
+            [today_str, "1234", "テスト", "開示", "テスト開示"],
+        ]
+        result = make_market_db._html_disclosure(disc_csv)
+        assert '<details open>' in result
+
+    def test_older_details_closed(self):
+        """古いデータはdetails（折りたたみ）になる"""
+        disc_csv = [
+            ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
+            ["20250101", "1234", "テスト", "開示", "テスト開示"],
+        ]
+        result = make_market_db._html_disclosure(disc_csv)
+        assert '<details>' in result
+        assert '<details open>' not in result
+
+    def test_empty_csv(self):
+        """空リストの場合は空文字列"""
+        result = make_market_db._html_disclosure([])
+        assert result == ""
+
+    def test_gyoseki_row_class(self):
+        """決算・修正行にdisc-row-gyosekiクラスが付く"""
+        disc_csv = [
+            ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
+            ["20260315", "1234", "テスト", "決算", "決算発表"],
+        ]
+        result = make_market_db._html_disclosure(disc_csv)
+        assert 'disc-row-gyoseki' in result
+
+
+class TestCreateMarketHtml:
+    """create_market_html() 統合テスト"""
+
+    def test_generates_html_file(self, tmp_path):
+        """HTMLファイルが生成される"""
+        market_db = {
+            "theme_rank": ["AI"],
+            "theme_rank_diff": {"AI": None},
+            "theme_momentum": {},
+            "access_date_theme_rank": datetime(2026, 3, 15),
+            "topix": {
+                "rs_raw": 1.0,
+                "trend_template": [],
+                "distribution_days": [],
+                "followthrough_days": [],
+                "direction_signal": "none",
+                "spr_buygagher": 50,
+                "spr_20": 50,
+                "spr_5": 50,
+                "rv_20": 3.0,
+                "rv_5": 4.0,
+            },
+        }
+        with patch.object(make_market_db, 'DATA_DIR', str(tmp_path)):
+            os.makedirs(os.path.join(str(tmp_path), "code_rank_data"), exist_ok=True)
+            html_path = make_market_db.create_market_html(market_db)
+            assert os.path.exists(html_path)
+            with open(html_path, encoding="utf-8") as f:
+                content = f.read()
+            assert '<!DOCTYPE html>' in content
+            assert 'テーマランク' in content
+            assert '市場' in content
+
+    def test_sections_omitted_when_none(self, tmp_path):
+        """引数がNoneのセクションは省略される（セクション見出しが生成されない）"""
+        market_db = {
+            "theme_rank": ["AI"],
+            "theme_rank_diff": {"AI": None},
+            "theme_momentum": {},
+        }
+        with patch.object(make_market_db, 'DATA_DIR', str(tmp_path)):
+            os.makedirs(os.path.join(str(tmp_path), "code_rank_data"), exist_ok=True)
+            html_path = make_market_db.create_market_html(market_db)
+            with open(html_path, encoding="utf-8") as f:
+                content = f.read()
+            # セクション見出し（h2タグ）が含まれないことを検証
+            # （CSS内のコメントには含まれるため、h2タグで判定）
+            assert '<h2>決算日</h2>' not in content
+            assert '<h2>適宜開示</h2>' not in content
