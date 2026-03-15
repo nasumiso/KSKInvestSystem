@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 
 import portfolio
@@ -141,7 +141,7 @@ def update_disclosure(code_s, disc_db=[], upd=UPD_INTERVAL):
 #     return load_pickle(DISCLOSURE_DB)
 
 
-def expoert_to_csv(disc_db):
+def expoert_to_csv(disc_db, csv_path=None):
     # まず日付順にソート
     def disc_cmp(a, b):
         pt_a = int(a["date"])
@@ -195,7 +195,8 @@ def expoert_to_csv(disc_db):
 
     import csv
 
-    with open(DISCLOSURE_CSV, "w", encoding="utf-8") as f:  # python3対応(wbから)
+    output_path = csv_path if csv_path else DISCLOSURE_CSV
+    with open(output_path, "w", encoding="utf-8") as f:  # python3対応(wbから)
         csv_w = csv.writer(f)
         csv_w.writerows(rows)
 
@@ -214,6 +215,42 @@ def update_disclosure_all(upd=UPD_INTERVAL):
     # 更新した内容で保存
     # save_pickle(DISCLOSURE_DB, disc_db)
     return expoert_to_csv(disc_db)
+
+
+def filter_recent_news(record_list, days=3):
+    """ニュースレコードリストから直近N日以内のものだけを返す
+
+    Args:
+        record_list: parse_disclosure_html()の返り値（list<dict>）
+        days: 何日以内のニュースを残すか
+    Returns:
+        list<dict>: フィルタされたレコードリスト
+    """
+    if not record_list:
+        return []
+    today = datetime.today()
+    cutoff = today - timedelta(days=days)
+    cutoff_str = cutoff.strftime("%Y%m%d")
+    return [r for r in record_list if r.get("date", "") >= cutoff_str]
+
+
+def update_disclosure_for_today(code_s_list, days=3):
+    """「今日の銘柄」のニュースを収集し、CSVに出力する
+
+    Args:
+        code_s_list: 銘柄コード(文字列)のリスト
+        days: 直近何日以内のニュースを対象とするか
+    """
+    disc_db = []
+    with use_requests_session():
+        for code_s in code_s_list:
+            update_disclosure(code_s, disc_db)
+    # 直近N日以内にフィルタ
+    disc_db = filter_recent_news(disc_db, days=days)
+    # 専用CSVに出力（既存のdisclosure_db.csvは上書きしない）
+    todays_csv = os.path.join(DATA_DIR, "disclosure", "todays_disclosure.csv")
+    expoert_to_csv(disc_db, csv_path=todays_csv)
+    log_print("本日の銘柄ニュース%d件を%sに保存しました" % (len(disc_db), todays_csv))
 
 
 def main():
