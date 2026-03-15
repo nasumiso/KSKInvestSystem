@@ -228,8 +228,8 @@ def filter_recent_news(record_list, days=3):
     """
     if not record_list:
         return []
-    today = datetime.today()
-    cutoff = today - timedelta(days=days)
+    today_date = get_price_day(datetime.today())
+    cutoff = today_date - timedelta(days=days)
     cutoff_str = cutoff.strftime("%Y%m%d")
     return [r for r in record_list if r.get("date", "") >= cutoff_str]
 

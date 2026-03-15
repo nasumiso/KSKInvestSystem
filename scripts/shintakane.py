@@ -239,9 +239,12 @@ def todays_shintakane(upd=UPD_INTERVAL):
                     day_list_d = search_fromcsv_dekidakaup(day_csv_d)
                 else:
                     day_list_d = []
-                # PTSリストも追加
-                day_csv_p = get_pts_day_txtname(day) + ".csv"
-                day_list_p = search_fromcsv_pts(day_csv_p)
+                # PTSも出来高急増と同様に一定日数以内に制限
+                if i < BACK_DAY_DEKIDAKA:
+                    day_csv_p = get_pts_day_txtname(day) + ".csv"
+                    day_list_p = search_fromcsv_pts(day_csv_p)
+                else:
+                    day_list_p = []
                 # day_listとday_list_d, day_list_pを合成
                 log_debug(
                     "新高値銘柄%d個と出来高急増銘柄%d個とPTS銘柄%d個を合成(%s)"
@@ -627,9 +630,12 @@ def convert_kabutan_pts_html(html, max_rows=20):
     rank, "code_s name", market, sector, kabuka(PTS株価), zenjitsuhi, zenjitsuhi_per, dekidaga
     """
     rows = []
-    body = re.search(
+    m_table = re.search(
         r'<table class="stock_table st_market">(.*?)</table>', html, re.S
-    ).group(0)
+    )
+    if not m_table:
+        return rows
+    body = m_table.group(0)
     rank = 1
     for m in re.finditer(
         r'<td class="tac">(.*?)</td>.*?'
@@ -1128,7 +1134,7 @@ def get_todays_pts(force=False):
             int(latest_date_m.group(2)),
             int(latest_date_m.group(3)),
         )
-        useCache = cach_dt.date() >= datetime.today().date()
+        useCache = cach_dt.date() >= get_price_day(datetime.today()).date()
         log_debug("株探PTS キャッシュ：", cach_dt, useCache)
     except (IOError, OSError, AttributeError):
         useCache = False
