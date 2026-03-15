@@ -456,7 +456,6 @@ def todays_shintakane(upd=UPD_INTERVAL):
         "株価",
         "前日比(%)",
         "出来高",
-        "最低購入代金",
         "時価総額",
         "ローソク足ボラティリティ(20, 5)",
         "売り圧力レシオ(20, 5)",
@@ -503,7 +502,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         signal, tags = stock_db.make_signal(stock)
         tags = "/".join(tags)
         kessanbi = kessan.get_kessanbi_expr(stock)
-        score_gyoseki = stock.get("score_gyoseki", 0)
+        score_gyoseki = int(stock.get("score_gyoseki", 0))
         shihyo_pt = stock.get("shihyo_pt", 0)
         relates_rank = stock.get("relates_rank", 0)
         mom_pt = stock.get("momentum_pt", 0) + 0.1 * relates_rank
@@ -530,7 +529,6 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 kabuka,
                 d["zenjitsuhi_per"],
                 d["dekidaga"],
-                purchase_money,
                 market_cap,
                 vola,
                 sell_press,
