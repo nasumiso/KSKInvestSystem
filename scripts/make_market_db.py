@@ -344,9 +344,11 @@ def update_market_db():
     prev_date = market_db.get("access_date_theme_rank")
     cur_theme_rank = market_db.get("theme_rank", [])
     if prev_date and cur_theme_rank:
-        # prev_dateがdatetime.date型の場合はdatetimeに変換（get_price_dayはdatetime必須）
+        # prev_dateがdatetime.date型の場合はdatetimeに変換
+        # 18:00以降として扱い、get_price_dayで当日判定されるようにする
         if not isinstance(prev_date, datetime):
-            prev_date = datetime.combine(prev_date, datetime.min.time())
+            from datetime import time
+            prev_date = datetime.combine(prev_date, time(18, 0))
         prev_day = get_price_day(prev_date)
         today = get_price_day(datetime.today())
         if prev_day != today:
