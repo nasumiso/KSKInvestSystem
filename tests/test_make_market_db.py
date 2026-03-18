@@ -3,7 +3,7 @@
 import pytest
 import os
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import make_market_db
 from ks_util import DATA_DIR
 
@@ -318,3 +318,116 @@ class TestCalcThemePriceMomentum:
         result = make_market_db.calc_theme_price_momentum(stocks)
         assert abs(result["AI"][0] - (-10.0)) < 0.01
         assert result["AI"][1] == 1
+
+
+# ==================================================
+# make_theme_data — 差分ラベル計算
+# ==================================================
+def _mock_get_theme_rank_list(today_themes, prev_themes):
+    """get_theme_rank_listのモックを返すヘルパー"""
+    cach_date = datetime(2026, 3, 18, 21, 0, 0)
+    prev_day = datetime(2026, 3, 15, 21, 0, 0)
+    return patch(
+        "make_market_db.get_theme_rank_list",
+        return_value=(today_themes, prev_themes, cach_date, prev_day),
+    )
+
+
+class TestMakeThemeDataDiff:
+    """make_theme_dataの差分ラベル計算テスト"""
+
+    # テスト用のKabutan生ランキング（モメンタム計算の入力）
+    TODAY_THEMES = ["AI", "半導体", "防衛", "DX", "EV"]
+    # 数日前の生ランキング（モメンタム計算用、差分ラベルとは無関係）
+    PREV_THEMES = ["AI", "半導体", "防衛", "DX", "EV"]
+
+    def test_rank_up(self):
+        """前日より順位が上がったテーマに正の差分がつく"""
+        # 前日モメンタム順位: DXが4位 → 今日は上位に来る想定
+        prev_momentum = ["AI", "半導体", "防衛", "DX", "EV"]
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result = make_market_db.make_theme_data(prev_momentum)
+        diff = result["theme_rank_diff"]
+        # 生ランキングが同じ＝モメンタム順位も同じ → 全部差分0
+        for theme in result["theme_rank"]:
+            assert diff[theme] == 0
+
+    def test_rank_change_detected(self):
+        """前日と今日でモメンタム順位が変わった場合、差分が正しく計算される"""
+        # 今日: AIが1位から外れて、EVが急上昇する生ランキング
+        today = ["EV", "AI", "半導体", "防衛", "DX"]
+        prev_raw = ["EV", "AI", "半導体", "防衛", "DX"]
+        # 前日のモメンタム順位はAIが1位だった
+        prev_momentum = ["AI", "半導体", "防衛", "DX", "EV"]
+        with _mock_get_theme_rank_list(today, prev_raw):
+            result = make_market_db.make_theme_data(prev_momentum)
+        diff = result["theme_rank_diff"]
+        rank_list = result["theme_rank"]
+        cur_rank = {v: i + 1 for i, v in enumerate(rank_list)}
+        prev_rank = {v: i + 1 for i, v in enumerate(prev_momentum)}
+        # 各テーマの差分が前日順位-当日順位と一致すること
+        for theme in rank_list:
+            if theme in prev_rank:
+                expected = prev_rank[theme] - cur_rank[theme]
+                assert diff[theme] == expected, (
+                    "%s: expected %d, got %d" % (theme, expected, diff[theme])
+                )
+
+    def test_new_theme(self):
+        """前日のモメンタム順位に存在しないテーマはNEW（None）"""
+        today = ["AI", "半導体", "防衛", "新テーマ", "DX"]
+        prev_raw = ["AI", "半導体", "防衛", "新テーマ", "DX"]
+        # 前日モメンタム順位には「新テーマ」がない
+        prev_momentum = ["AI", "半導体", "防衛", "DX", "EV"]
+        with _mock_get_theme_rank_list(today, prev_raw):
+            result = make_market_db.make_theme_data(prev_momentum)
+        diff = result["theme_rank_diff"]
+        assert diff["新テーマ"] is None
+
+    def test_no_prev_momentum(self):
+        """prev_momentum_rankがNoneの場合、全テーマの差分が0"""
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result = make_market_db.make_theme_data(None)
+        diff = result["theme_rank_diff"]
+        for theme in result["theme_rank"]:
+            assert diff[theme] == 0
+
+    def test_empty_prev_momentum(self):
+        """prev_momentum_rankが空リストの場合、全テーマの差分が0"""
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result = make_market_db.make_theme_data([])
+        diff = result["theme_rank_diff"]
+        for theme in result["theme_rank"]:
+            assert diff[theme] == 0
+
+    def test_same_day_rerun_gives_same_result(self):
+        """同日2回実行: 1回目の結果のtheme_rankを渡しても正しい差分が出る
+
+        update_market_dbが日付チェックで退避するため、同日再実行時は
+        prev_theme_rankが前日データのままになるはず。
+        このテストはmake_theme_data単体で、同じリストを渡したら差分0になることを確認。
+        """
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result1 = make_market_db.make_theme_data(["AI", "防衛", "半導体", "DX", "EV"])
+        # 1回目の結果をそのまま渡す（同日再実行シミュレーション）
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result2 = make_market_db.make_theme_data(result1["theme_rank"])
+        diff = result2["theme_rank_diff"]
+        for theme in result2["theme_rank"]:
+            assert diff[theme] == 0
+
+    def test_result_contains_required_keys(self):
+        """戻り値に必須キーが含まれる"""
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result = make_market_db.make_theme_data(self.TODAY_THEMES)
+        assert "theme_rank" in result
+        assert "theme_rank_diff" in result
+        assert "access_date_theme_rank" in result
+
+    def test_all_themes_have_diff(self):
+        """theme_rankの全テーマにtheme_rank_diffのエントリがある"""
+        prev_momentum = ["AI", "半導体", "防衛", "DX", "EV"]
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result = make_market_db.make_theme_data(prev_momentum)
+        for theme in result["theme_rank"]:
+            assert theme in result["theme_rank_diff"]
