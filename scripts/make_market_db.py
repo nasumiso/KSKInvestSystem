@@ -105,6 +105,10 @@ def get_theme_rank_list():
         else:
             html = ""
 
+    # HTTP取得でキャッシュが更新された場合、mtimeを再取得
+    if not use_cache:
+        _, cach_date = get_timedelta_today(cach_path)
+
     theme_rank_list = parse_theme_html(html)
 
     if cach_date:
