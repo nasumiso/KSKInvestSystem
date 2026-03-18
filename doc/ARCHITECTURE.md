@@ -8,6 +8,65 @@
 3. **ランキング** (`make_stock_db.py` の `list_all_db()`): 業績40% + 指標20% + モメンタム25% + ファンダメンタルズ15% の総合スコア → CSV出力
 4. **市場分析** (`make_market_db.py`): 指数追跡、セクター/テーマ強度分析
 
+## 市場分析 (`make_market_db.py`)
+
+`update_market_db()` が以下のデータを収集し、市場DB（shelve）に保存する。
+
+### テーマランク
+
+株探のテーマ人気ランキングをスクレイピングし、モメンタムを加味した独自順位を算出する。
+
+**データフロー:**
+
+1. **Kabutan生ランキング取得**: `get_theme_rank_list()` で `theme_rank.html` を取得・パース → 上位30テーマのリスト
+2. **数日前のランキング取得**: 同関数内で `get_prev_fname(cach_path, cach_date - timedelta(2))` により2〜3日前のバックアップHTMLを取得・パース
+3. **モメンタム順位算出**: `make_theme_data()` でKabutan生ランキングと数日前ランキングの差分（勢い）を加味して再ソート
+   - `rank_pt = 31 - rank + moment`（momentは数日前との順位差）
+   - 数日前に圏外だったテーマは `prev_rank = 31` として扱う
+4. **差分ラベル計算**: 当日のモメンタム順位と**前日のモメンタム順位**（DB上の `prev_theme_rank`）を比較
+   - 前日に存在しない → `NEW`
+   - 順位上昇 → `↑N`、下降 → `↓N`、変化なし → `←`
+   - 前日データの退避は `update_market_db()` で日付が変わった時のみ実行（同日複数回実行でも安全）
+
+**用語の区別:**
+
+| 用語 | 説明 | 変数名 |
+|------|------|--------|
+| Kabutan生ランキング | スクレイピングで取得した元のランキング | `theme_rank_list`, `theme_rank_dict` |
+| 数日前ランキング | 2〜3日前のバックアップHTMLから取得した生ランキング | `prev_theme_rank_list`, `prev_theme_rank_dict` |
+| モメンタム順位 | 生ランキング + 勢い補正で再ソートした最終順位 | `theme_rank2_list`, `market_db["theme_rank"]` |
+| 差分ラベル | 当日モメンタム順位 vs 前日モメンタム順位の変動 | `market_db["theme_rank_diff"]` |
+
+**バックアップ:** `theme_rank.html` は取得のたびに `theme_rank_YYMMDD.html` として `DATA_DIR/market_data/` に日付付きで保存される。モメンタム計算の数日前比較にこのバックアップを使用。
+
+### テーマ別騰落率
+
+`calc_theme_price_momentum()` でDB全銘柄の直近取引日の価格変動をテーマ別に集計。`market_db["theme_momentum"]` に `{テーマ名: (平均騰落率%, 銘柄数)}` として保存。
+
+### 市場指数
+
+以下の指数を `make_db_common()` 経由で取得し、RS・トレンドテンプレート等を算出:
+
+| DB キー | 指数 | 株探コード |
+|---------|------|-----------|
+| `topix` | TOPIX | `0010` |
+| `mothers` | グロース250 | `0012` |
+| `nikkei225` | 日経225 | `0000` |
+| `nasdaq` | NASDAQ | `0802` |
+
+### 市場DB構造 (`market_data/market_db_shelve`)
+
+| キー | 型 | 内容 |
+|------|---|------|
+| `theme_rank` | list[str] | モメンタム順位（テーマ名リスト） |
+| `theme_rank_diff` | dict[str, int\|None] | 差分ラベル用（正=上昇, 負=下降, None=NEW） |
+| `prev_theme_rank` | list[str] | 前日のモメンタム順位（日付変更時に自動退避） |
+| `theme_momentum` | dict[str, tuple] | テーマ別騰落率 `(平均%, 銘柄数)` |
+| `access_date_theme_rank` | datetime | テーマランク最終取得日時 |
+| `topix`, `mothers`, `nikkei225`, `nasdaq` | dict | 各指数のprice/RS/トレンドデータ |
+| `distribution_days` | list | ディストリビューション・デイ |
+| `direction_signal` | str | 市場方向シグナル |
+
 ## 株式データベース（shelveベース）
 
 - **shelve DB**: `data/stock_data/stocks_shelve`（`db_shelve.py` の `ShelveDB` クラス）
