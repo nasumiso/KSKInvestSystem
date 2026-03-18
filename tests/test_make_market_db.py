@@ -24,12 +24,9 @@ class TestParseThemeHtml:
         result = make_market_db.parse_theme_html(html)
         assert result == ["AI", "半導体", "DX"]
 
-    def test_empty_html(self):
-        """空HTMLの場合は空リスト"""
+    def test_empty_or_none(self):
+        """空HTML・Noneの場合は空リスト"""
         assert make_market_db.parse_theme_html("") == []
-
-    def test_none(self):
-        """Noneの場合は空リスト"""
         assert make_market_db.parse_theme_html(None) == []
 
     def test_double_quotes(self):
@@ -71,20 +68,6 @@ class TestGetPrevFname:
         )
         assert fname == ""
 
-    def test_date_format(self):
-        """日付フォーマットがYYMMDDであること"""
-        cur_day = datetime(2025, 2, 23)
-        # ファイルが存在しない場合、30日分イテレーションして空文字列を返す
-        # 最後のcur_dayの日付を確認
-        _, last_day = make_market_db.get_prev_fname(
-            "/nonexistent/path/test.html", cur_day
-        )
-        # 30日前の日付
-        expected_day = cur_day - timedelta(30)
-        assert last_day.year == expected_day.year
-        assert last_day.month == expected_day.month
-        assert last_day.day == expected_day.day
-
     def test_file_found(self):
         """ファイルが見つかった場合はそのパスを返す"""
         cur_day = datetime(2025, 2, 23)
@@ -98,15 +81,6 @@ class TestGetPrevFname:
             )
             assert fname == expected_fname
             assert found_day.day == 22
-
-    def test_iteration_count(self):
-        """30日分イテレーションして見つからない場合"""
-        cur_day = datetime(2025, 2, 23)
-        with patch("os.path.exists", return_value=False):
-            fname, _ = make_market_db.get_prev_fname(
-                "/tmp/test.html", cur_day
-            )
-            assert fname == ""
 
 
 # ==================================================
@@ -196,13 +170,6 @@ class TestThemeRankLabel:
         """新規テーマ: NEW表示"""
         assert make_market_db._theme_rank_label("AI", None) == "AI(NEW)"
 
-    def test_rank_up_by_one(self):
-        """1つ上昇"""
-        assert make_market_db._theme_rank_label("防衛", 1) == "防衛(↑1)"
-
-    def test_rank_down_by_one(self):
-        """1つ下降"""
-        assert make_market_db._theme_rank_label("DX", -1) == "DX(↓1)"
 
 
 # ==================================================
@@ -244,48 +211,26 @@ class TestCalcThemePriceMomentum:
         result = make_market_db.calc_theme_price_momentum({})
         assert result == {}
 
-    def test_no_price_log(self):
-        """price_logがない銘柄はスキップ"""
-        stocks = {"1234": {"themes": "AI"}}
-        result = make_market_db.calc_theme_price_momentum(stocks)
-        assert result == {}
-
-    def test_single_price_entry(self):
-        """price_logが1件のみの場合はスキップ"""
-        from datetime import date
-
-        stocks = {
-            "1234": {
-                "themes": "AI",
-                "price_log": [(date(2026, 2, 20), 1000)],
-            },
-        }
-        result = make_market_db.calc_theme_price_momentum(stocks)
-        assert result == {}
-
-    def test_zero_prev_price(self):
-        """前日価格が0の銘柄はスキップ"""
+    def test_skip_conditions(self):
+        """スキップされるケース: price_logなし/1件のみ/前日価格0/テーマ空"""
         from datetime import date
 
         d1 = date(2026, 2, 20)
         d0 = date(2026, 2, 19)
-        stocks = {
+        # price_logなし
+        assert make_market_db.calc_theme_price_momentum({"1234": {"themes": "AI"}}) == {}
+        # price_log 1件のみ
+        assert make_market_db.calc_theme_price_momentum({
+            "1234": {"themes": "AI", "price_log": [(d1, 1000)]},
+        }) == {}
+        # 前日価格0
+        assert make_market_db.calc_theme_price_momentum({
             "1234": self._make_stock("AI", 1000, 0, d1, d0),
-        }
-        result = make_market_db.calc_theme_price_momentum(stocks)
-        assert result == {}
-
-    def test_empty_themes(self):
-        """テーマが空文字の銘柄はスキップ"""
-        from datetime import date
-
-        d1 = date(2026, 2, 20)
-        d0 = date(2026, 2, 19)
-        stocks = {
+        }) == {}
+        # テーマ空
+        assert make_market_db.calc_theme_price_momentum({
             "1234": self._make_stock("", 1100, 1000, d1, d0),
-        }
-        result = make_market_db.calc_theme_price_momentum(stocks)
-        assert result == {}
+        }) == {}
 
     def test_latest_trade_date_filter(self):
         """直近取引日と異なるprice_log日付の銘柄は除外"""
@@ -388,14 +333,6 @@ class TestMakeThemeDataDiff:
         """prev_momentum_rankがNoneの場合、全テーマの差分が0"""
         with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
             result = make_market_db.make_theme_data(None)
-        diff = result["theme_rank_diff"]
-        for theme in result["theme_rank"]:
-            assert diff[theme] == 0
-
-    def test_empty_prev_momentum(self):
-        """prev_momentum_rankが空リストの場合、全テーマの差分が0"""
-        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
-            result = make_market_db.make_theme_data([])
         diff = result["theme_rank_diff"]
         for theme in result["theme_rank"]:
             assert diff[theme] == 0

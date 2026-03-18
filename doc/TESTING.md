@@ -1,19 +1,58 @@
 # テスト方針
 
-## ユニットテスト
+## テスト階層
 
-pytestで主要モジュールの純粋計算関数をテスト（DB・HTTP通信不要）。
+| 層 | 目的 | 外部依存 | マーカー | CI |
+|----|------|----------|----------|-----|
+| 単体テスト | 純粋関数の計算検証 | なし | なし | ○ |
+| 機能テスト | ビジネスフローの結合検証 | HTTP→モック、DB→tmp_path | `functional` | ○ |
+| Live検証 | HTMLフォーマット変更検知 | 実HTTP通信 | `live_html` | × |
 
 ```bash
-# 全テスト実行
-pytest tests/ -v
+# CI（単体 + 機能テスト）
+pytest tests/ -v -m "not local_db and not live_html"
 
-# CIと同じ条件（local_db除外）
-pytest tests/ -v -m "not local_db"
+# 機能テストのみ
+pytest tests/ -v -m "functional"
+
+# 単体テストのみ（高速）
+pytest tests/ -v -m "not local_db and not live_html and not functional"
 
 # 特定モジュールのみ
 pytest tests/test_gyoseki.py -v
 ```
+
+## 機能テスト
+
+複数モジュールを結合し、ビジネスフロー全体の正常動作を検証するテスト。HTTP通信・Google Driveはモックし、shelve DBは`tmp_path`に一時作成して実際のShelveDBクラスで読み書きする。
+
+### テストファイル一覧
+
+| テストファイル | 対象フロー | 備考 |
+|---|---|---|
+| `test_functional_market.py` | `update_market_db()` → `create_market_csv()` | テーマランク差分・冪等性・日付変更 |
+
+### 機能テスト追加の方針
+
+- **モックするもの**: 外部I/O境界（HTTP通信、Google Drive API）
+- **モックしないもの**: パース処理、計算ロジック、shelve DB操作（tmp_path使用）、CSV生成
+- **冪等性テスト**: 同日複数回実行でも結果が安定することを必ず検証
+- **フィクスチャ**: `tests/fixtures/` にHTML等の固定データを配置
+
+### 既存機能の修正時
+
+既存機能を修正する際は、**修正対象に関連する機能テストを必ず実行**して回帰がないことを確認すること。
+
+```bash
+# make_market_db 周りの修正時
+pytest tests/test_functional_market.py tests/test_make_market_db.py -v
+```
+
+機能テストが存在しないモジュールを修正する場合は、修正の影響範囲に応じて機能テストの追加を検討する。
+
+## 単体テスト
+
+pytestで主要モジュールの純粋計算関数をテスト（DB・HTTP通信不要）。
 
 ### テストファイル一覧
 
@@ -30,6 +69,7 @@ pytest tests/test_gyoseki.py -v
 | `test_shintakane.py` | `shintakane.py` | HTMLパース関数（決算含む） |
 | `test_kessan.py` | `kessan.py` | 決算判定・タグ生成 |
 | `test_make_market_db.py` | `make_market_db.py` | |
+| `test_functional_market.py` | `make_market_db.py` | 機能テスト（`functional`マーカー） |
 | `test_live_html.py` | 全パーサー | HTMLフォーマット変更検知（`live_html`マーカー） |
 
 ### CI
