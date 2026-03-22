@@ -821,7 +821,9 @@ def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
         tables["access_date_gyoseki"] = get_file_datetime(path)
         log_debug("date:", tables["access_date_gyoseki"])
     else:
-        log_warning("業績データが空のためaccess_date_gyosekiを更新しません（次回再取得）")
+        # 業績データが空の場合はaccess_dateを削除して次回再取得を促す
+        tables["access_date_gyoseki"] = None
+        log_warning("業績データが空のためaccess_date_gyosekiを削除します（次回再取得）")
     # tables["code"] = code
     set_db_code(tables, code_s)
     return tables

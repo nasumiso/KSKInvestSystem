@@ -438,7 +438,9 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
         tables["access_date_shihyo"] = get_file_datetime(cache_path)
         log_debug("date_shihyo:", tables["access_date_shihyo"])
     else:
-        log_warning("指標データが空のためaccess_date_shihyoを更新しません（次回再取得）")
+        # 指標データが空の場合はaccess_dateを削除して次回再取得を促す
+        tables["access_date_shihyo"] = None
+        log_warning("指標データが空のためaccess_date_shihyoを削除します（次回再取得）")
     if shihyo_data:
         tables["shihyo_pt"] = shihyo_pt
     # 指標データ登録

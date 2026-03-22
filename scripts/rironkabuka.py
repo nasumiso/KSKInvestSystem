@@ -483,7 +483,9 @@ def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
         tables["access_date_rironkabuka"] = get_file_datetime(cach_path)
         log_debug("date:", tables["access_date_rironkabuka"])
     else:
-        log_warning("理論株価が0のためaccess_date_rironkabukaを更新しません（次回再取得）")
+        # 理論株価が計算できなかった場合はaccess_dateを削除して次回再取得を促す
+        tables["access_date_rironkabuka"] = None
+        log_warning("理論株価が0のためaccess_date_rironkabukaを削除します（次回再取得）")
     # tables["code"] = code
     set_db_code(tables, code_s)
     tables["isKonki"] = res[5]
