@@ -739,6 +739,7 @@ def get_access_dates_expr(stock_data):
     Returns:
         str: 更新日文字列 "month/day|day|day".
     """
+    month = None
     date = ""
     if "access_date_gyoseki" in stock_data:
         dt = stock_data["access_date_gyoseki"]
@@ -747,7 +748,7 @@ def get_access_dates_expr(stock_data):
     date_sh = ""
     if "access_date_shihyo" in stock_data:
         dt = stock_data["access_date_shihyo"]
-        if month == dt.month:
+        if month and month == dt.month:
             date_sh = dt.day
         else:
             date_sh = "%s/%s" % (dt.month, dt.day)
@@ -756,7 +757,7 @@ def get_access_dates_expr(stock_data):
     if "access_date_price" in stock_data:
         dt = stock_data["access_date_price"]
         dt = get_price_day(dt)
-        if month == dt.month:
+        if month and month == dt.month:
             date_pr = dt.day
         else:
             date_pr = "%s/%s" % (dt.month, dt.day)
