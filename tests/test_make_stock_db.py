@@ -137,3 +137,58 @@ class TestMakeSignal:
         }
         signal, tags = make_stock_db.make_signal(stock)
         assert "[売過]" in signal
+
+
+# ==================================================
+# update_db — shihyo マージロジック
+# ==================================================
+class TestUpdateDbShihyoMerge:
+    """update_db()のshihyoキー単位マージテスト"""
+
+    def test_empty_shihyo_preserves_existing(self):
+        """空のshihyoで既存データが消えないこと"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "shihyo": {"PER": 15.0, "PBR": 1.2, "PSR": 2.5},
+                "shihyo_pt": 50,
+            }
+        }
+        stock_data = {"code_s": "1234", "shihyo": {}, "shihyo_pt": 0}
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["shihyo"]["PER"] == 15.0
+        assert stocks["1234"]["shihyo"]["PBR"] == 1.2
+        assert stocks["1234"]["shihyo"]["PSR"] == 2.5
+
+    def test_new_shihyo_merges_with_existing(self):
+        """新しいshihyoデータが既存データとマージされること"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "shihyo": {"PER": 15.0, "PBR": 1.2, "ROE": 10.0},
+            }
+        }
+        stock_data = {"code_s": "1234", "shihyo": {"PER": 20.0, "PSR": 3.0}}
+        make_stock_db.update_db(stocks, stock_data)
+        # PERは新しい値で更新
+        assert stocks["1234"]["shihyo"]["PER"] == 20.0
+        # PBR, ROEは既存値が保持
+        assert stocks["1234"]["shihyo"]["PBR"] == 1.2
+        assert stocks["1234"]["shihyo"]["ROE"] == 10.0
+        # PSRは新規追加
+        assert stocks["1234"]["shihyo"]["PSR"] == 3.0
+
+    def test_new_stock_with_shihyo(self):
+        """新規銘柄にshihyoが正常に設定されること"""
+        stocks = {}
+        stock_data = {"code_s": "5678", "shihyo": {"PER": 12.0}}
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["5678"]["shihyo"]["PER"] == 12.0
+
+    def test_new_stock_with_empty_shihyo(self):
+        """新規銘柄で空shihyoの場合、shihyoキーが存在しないこと"""
+        stocks = {}
+        stock_data = {"code_s": "5678", "shihyo": {}}
+        make_stock_db.update_db(stocks, stock_data)
+        # 空のshihyoはマージされないため、shihyoキーは設定されない
+        assert stocks["5678"].get("shihyo", {}) == {}

@@ -411,7 +411,17 @@ def update_db(stocks, stock_data):
         stock = {}
         log_print(str(code_s) + "は新規DB銘柄")
     for k in list(stock_data.keys()):
-        stock[k] = stock_data[k]
+        if k == "shihyo":
+            # shihyoはキー単位でマージし、スクレイピング失敗時の既存データ消失を防止
+            new_shihyo = stock_data[k]
+            if new_shihyo:
+                existing_shihyo = stock.get("shihyo", {})
+                existing_shihyo.update(new_shihyo)
+                stock["shihyo"] = existing_shihyo
+            else:
+                log_debug("shihyoが空のため既存データを保持します")
+        else:
+            stock[k] = stock_data[k]
     log_debug("DB更新しました: ", code_s, list(stock_data.keys()))
     # 更新後のカラム表示
     print_dict(
