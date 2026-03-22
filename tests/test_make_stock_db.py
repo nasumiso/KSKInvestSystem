@@ -186,12 +186,13 @@ class TestUpdateDbShihyoMerge:
         assert stocks["5678"]["shihyo"]["PER"] == 12.0
 
     def test_new_stock_with_empty_shihyo(self):
-        """新規銘柄で空shihyoの場合、shihyoキーが存在しないこと"""
+        """新規銘柄で空shihyoの場合、空dictとしてキーが初期化されること"""
         stocks = {}
         stock_data = {"code_s": "5678", "shihyo": {}}
         make_stock_db.update_db(stocks, stock_data)
-        # 空のshihyoはマージされないため、shihyoキーは設定されない
-        assert stocks["5678"].get("shihyo", {}) == {}
+        # 新規銘柄では空dictでもキーを初期化（下流でKeyErrorを防ぐ）
+        assert "shihyo" in stocks["5678"]
+        assert stocks["5678"]["shihyo"] == {}
 
 
 class TestUpdateDbProtectedListKeys:

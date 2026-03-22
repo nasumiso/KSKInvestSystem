@@ -429,12 +429,17 @@ def update_db(stocks, stock_data):
                 existing = stock.get(k, {})
                 existing.update(new_val)
                 stock[k] = existing
+            elif k not in stock:
+                # 新規銘柄では空dictでもキーを初期化（下流で KeyError を防ぐ）
+                stock[k] = {}
             else:
                 log_debug("%sが空のため既存データを保持します" % k)
         elif k in _PROTECTED_LIST_KEYS:
             # listは空リストでの上書きを防止
             if new_val:
                 stock[k] = new_val
+            elif k not in stock:
+                stock[k] = []
             else:
                 log_debug("%sが空のため既存データを保持します" % k)
         elif k in _PROTECTED_ZERO_KEYS:
