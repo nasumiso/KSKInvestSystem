@@ -441,8 +441,8 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
         # 指標データが空の場合はaccess_dateを削除して次回再取得を促す
         tables["access_date_shihyo"] = None
         log_warning("指標データが空のためaccess_date_shihyoを削除します（次回再取得）")
-    if shihyo_data:
-        tables["shihyo_pt"] = shihyo_pt
+    # shihyo_ptは下流で無条件参照されるため常に設定する
+    tables["shihyo_pt"] = shihyo_pt
     # 指標データ登録
     tables["shihyo"] = shihyo_data
     # tables["PER"] = shihyo_data["PER"]
