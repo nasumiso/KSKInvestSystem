@@ -439,7 +439,8 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
         log_debug("date_shihyo:", tables["access_date_shihyo"])
     else:
         log_warning("指標データが空のためaccess_date_shihyoを更新しません（次回再取得）")
-    tables["shihyo_pt"] = shihyo_pt
+    if shihyo_data:
+        tables["shihyo_pt"] = shihyo_pt
     # 指標データ登録
     tables["shihyo"] = shihyo_data
     # tables["PER"] = shihyo_data["PER"]
