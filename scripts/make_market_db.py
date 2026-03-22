@@ -340,34 +340,24 @@ def update_market_db():
     """マーケットDBを読み込んで最新に更新"""
     market_db = get_market_db()
 
-    # 前日のモメンタム順位をDBに保存（日付が変わった場合のみ退避）
+    # 前日のモメンタム順位をDBに保存（カレンダー日が変わった場合のみ退避）
+    # ※ get_price_dayは18時前後で日付が変わるため、同日中の再実行で
+    #   退避が二重に走り「当日vs当日」比較になる問題を防ぐ
     prev_date = market_db.get("access_date_theme_rank")
     cur_theme_rank = market_db.get("theme_rank", [])
-    today = get_price_day(datetime.today())
+    today_cal = datetime.today().date()
     if prev_date and cur_theme_rank:
-        # prev_dateがdatetime.date型の場合はdatetimeに変換
-        # 18:00以降として扱い、get_price_dayで当日判定されるようにする
-        if not isinstance(prev_date, datetime):
-            from datetime import time
-            prev_date = datetime.combine(prev_date, time(18, 0))
-        prev_day = get_price_day(prev_date)
-        if prev_day != today:
-            # 日付が変わった → 現在のtheme_rankを前日データとして退避
+        if isinstance(prev_date, datetime):
+            prev_cal = prev_date.date()
+        else:
+            prev_cal = prev_date
+        if prev_cal != today_cal:
+            # カレンダー日が変わった → 現在のtheme_rankを前日データとして退避
             market_db["prev_theme_rank"] = list(cur_theme_rank)
-            log_print("前日モメンタム順位を退避: %s" % prev_day)
+            log_print("前日モメンタム順位を退避: %s" % prev_cal)
     prev_momentum_rank = market_db.get("prev_theme_rank", [])
     theme_db = make_theme_data(prev_momentum_rank)
-    # 同日再実行: theme_rank（モメンタム順位）は更新するが、
-    # theme_rank_diff（前日比の変動）は初回計算値を保持する
-    diff_calc_date = market_db.get("theme_rank_diff_date")
-    saved_diff = market_db.get("theme_rank_diff")
     market_db.update(theme_db)
-    if diff_calc_date == today and saved_diff is not None:
-        market_db["theme_rank_diff"] = saved_diff
-        log_debug("同日再実行: theme_rank_diffを保持")
-    else:
-        # 初回計算: 差分計算日を記録
-        market_db["theme_rank_diff_date"] = today
 
     topix_db = make_topix_db()
     market_db.update(topix_db)
