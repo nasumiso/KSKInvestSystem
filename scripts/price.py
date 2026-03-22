@@ -1071,26 +1071,30 @@ def get_price_data_yahoo(code_s, stock, upd=UPD_INTERVAL):
         dict<int, T>: 解析した価格情報
         list<int>: 現在価格
     """
-    price_current, price_list = get_daily_data_yfinance(code_s, stock, upd)
-    if price_current is None or not price_list:
+    try:
+        price_current, price_list = get_daily_data_yfinance(code_s, stock, upd)
+        if price_current is None or not price_list:
+            return {}, []
+        log_print(">>>>> %sの価格データを解析(yfinance) " % code_s)
+        parsed_data, cur_prices = parse_price_text_from_list(
+            price_current, price_list
+        )
+        price_val = parsed_data.get("price", 0)
+        # キャッシュの更新日時を取得
+        cache_fname = YFINANCE_CACHE_FNAME % code_s
+        if os.path.exists(cache_fname):
+            stat = os.stat(cache_fname)
+            update_date = datetime.fromtimestamp(stat.st_mtime)
+        else:
+            update_date = datetime.now()
+        log_print("<<<<< 解析完了(yfinance) ", price_val, update_date)
+        set_db_code(parsed_data, code_s)
+        if price_val > 0:
+            parsed_data["access_date_price"] = update_date
+        return parsed_data, cur_prices
+    except Exception as e:
+        log_warning("yfinance価格取得失敗(%s): %s" % (code_s, e))
         return {}, []
-    log_print(">>>>> %sの価格データを解析(yfinance) " % code_s)
-    parsed_data, cur_prices = parse_price_text_from_list(
-        price_current, price_list
-    )
-    price_val = parsed_data.get("price", 0)
-    # キャッシュの更新日時を取得
-    cache_fname = YFINANCE_CACHE_FNAME % code_s
-    if os.path.exists(cache_fname):
-        stat = os.stat(cache_fname)
-        update_date = datetime.fromtimestamp(stat.st_mtime)
-    else:
-        update_date = datetime.now()
-    log_print("<<<<< 解析完了(yfinance) ", price_val, update_date)
-    set_db_code(parsed_data, code_s)
-    if price_val > 0:
-        parsed_data["access_date_price"] = update_date
-    return parsed_data, cur_prices
 
 
 def get_weekly_price_data(code_s, upd=UPD_INTERVAL, prices=[]):
