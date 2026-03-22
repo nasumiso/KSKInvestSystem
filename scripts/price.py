@@ -10,17 +10,7 @@ import re
 
 import make_stock_db
 
-# yfinance APIによるデータ取得（HTMLスクレイピングの代替）
-USE_YFINANCE = True
-
-try:
-    import yfinance as yf
-
-    _HAS_YFINANCE = True
-except ImportError:
-    _HAS_YFINANCE = False
-    if USE_YFINANCE:
-        log_warning("yfinanceがインストールされていません。HTMLスクレイピングを使用します。")
+import yfinance as yf
 
 YFINANCE_CACHE_FNAME = os.path.join(
     DATA_DIR, "stock_data/yahoo/price/yfinance_price_%s.json"
@@ -117,39 +107,6 @@ def get_weekly_html(code_s, cache=True):
     return htmls
 
 
-URL_PRICE_YAHOO = "http://stocks.finance.yahoo.co.jp/stocks/history/?code=%s.%s"
-# PRICE_FNAME = "stock_data/yahoo/price/yahoo_price_%d.txt"
-PRICE_FNAME = os.path.join(DATA_DIR, "stock_data/yahoo/price/yahoo_price_%s.txt")
-
-
-def get_daily_data_yahoo(code_s, stock={}, upd=UPD_INTERVAL):
-    """yahooファイナンスから価格データhtmlを取得する
-    type: (str, bool) -> str
-    Returns:
-        str: htmlテキスト
-    """
-    # キャッシュファイルから取得
-    price_fname = PRICE_FNAME % code_s
-    use_cach = False
-    if os.path.exists(price_fname):
-        if upd < UPD_INTERVAL:
-            use_cach = True
-        else:
-            if upd == UPD_FORCE:
-                use_cach = False
-            else:
-                # キャッシュの日付が期限内かチェック
-                cache, _ = is_file_timestamp(PRICE_FNAME % code_s, INTERVAL_DAY_D)
-                if cache:
-                    use_cach = True
-    # Yahooから取得
-    log_print("----> %sの日次価格情報をYahooから取得します・・" % code_s)
-
-    market_code = make_stock_db.get_market_code(stock)
-    url = URL_PRICE_YAHOO % (code_s, market_code)
-    # text = http_get_html(url, use_cache=use_cach, cache_fname=price_fname)
-    text = http_get_html_with_retry(url, use_cach=use_cach, cache_fname=price_fname)
-    return text
 
 
 def calc_avg_volume_d(price_list):
@@ -696,154 +653,6 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
     return price_dict
 
 
-# 株式分割調整
-
-
-def adjust_divide_price(price_list):
-    for price in price_list:
-        ratio = float(price[4]) / price[6]
-        if ratio > 1:
-            log_debug("株式分割%d倍 %s %d->" % (ratio, price[0], price[4]), end=" ")
-            price[1] = int(price[1] / ratio)
-            price[2] = int(price[2] / ratio)
-            price[3] = int(price[3] / ratio)
-            price[4] = int(price[4] / ratio)
-            log_debug("%d" % price[4])
-
-
-def parse_price_text_yahoo_old(text):
-    m = re.search(r'<td class="stoksPrice">(.*?)</td>', text)
-    try:
-        price_current = int(float(m.group(1).replace(",", "")))
-    except Exception:
-        log_warning(" デイリー価格情報がありません(フォーマット変更?)")
-        return 0, []
-
-    # ---- 価格データの解析
-    m = re.search(r'<table.*"boardFin yjSt marB6">(.*)</table>', text, re.DOTALL)
-    # print m.group(1)
-    rows = []
-    for m in re.finditer(r"<td>(.*)</td>", text):
-        # print m.group(1)
-        rows.append(m.group(1))
-    price_list = []
-    r = iter(rows)
-    while True:
-        try:
-            # 日付、始値、高値、安値、終値、出来高、調整後終値
-            row = [next(r), next(r), next(r), next(r), next(r), next(r), next(r)]
-            # print row
-            row = [_r.replace(",", "") for _r in row]
-            for i, _r in enumerate(row[1:]):
-                row[1 + i] = int(float(_r))
-            # print "---", row, "---"
-            price_list.append(row)
-        except StopIteration as e:
-            break
-    adjust_divide_price(price_list)
-    return price_current, price_list
-
-
-def parse_price_text_yahoo_new(text):
-    # 現在価格の取得
-    price_current = 0
-
-    def _to_int(s):
-        try:
-            return int(float(s.replace(",", "")))
-        except Exception:
-            return 0
-
-    try:
-        # 柔軟に現在価格を探す: data-testid や StyledNumber の span などを順に試す
-        # 1) data-testid="currentPrice" のパターン
-        m = re.search(r'data-testid="currentPrice"[^>]*>([0-9,]+(?:\.[0-9]+)?)<', text)
-        if m:
-            price_current = _to_int(m.group(1))
-            log_debug("現在株価 (data-testid):", price_current)
-        else:
-            # 2) span の class に StyledNumber__value を含むものを探して数値の最初の出現を使う
-            for m in re.finditer(
-                r'<span[^>]*class="[^"]*StyledNumber__value[^"]*"[^>]*>(.*?)</span>',
-                text,
-            ):
-                val = m.group(1).strip()
-                if re.match(r"^[0-9,]+(?:\.[0-9]+)?$", val):
-                    price_current = _to_int(val)
-                    log_debug("現在株価 (StyledNumber):", price_current)
-                    break
-    except Exception:
-        log_debug("現在株価なし")  # 上場廃止時もこれ
-
-    # 時系列価格データの取得
-    price_list = []
-    m = re.search(r"<tbody>(.*?)</tbody>", text, re.DOTALL)
-    if not m:
-        log_warning(" デイリー価格情報リストがありません(フォーマット変更?)")
-        return 0, []  # 上場廃止時もこれ
-
-    tbody = m.group(1)
-    try:
-        days = []
-        # 日付を先に集める
-        for mm in re.finditer(r'<th scope="row".*?>(.*?)</th>', tbody, re.DOTALL):
-            days.append(mm.group(1).strip())
-        # 行はクラス名が一定でないため汎用的に<tr>を取り出して解析
-        for ind, mm in enumerate(
-            re.finditer(r"<tr\b[^>]*>(.*?)</tr>", tbody, re.DOTALL)
-        ):
-            trlist = mm.group(1)
-            # 行内の<th>から日付を取得（なければ事前に取得した days からフォールバック）
-            dm = re.search(r"<th[^>]*>(.*?)</th>", trlist, re.DOTALL)
-            if dm:
-                date_str = dm.group(1).strip()
-            else:
-                try:
-                    date_str = days[ind]
-                except Exception:
-                    date_str = ""
-            # 各値は StyledNumber__value を含む span に入っている
-            vals = [
-                m2.group(1).strip()
-                for m2 in re.finditer(
-                    r'<span[^>]*class="[^"]*StyledNumber__value[^"]*"[^>]*>(.*?)</span>',
-                    trlist,
-                    re.DOTALL,
-                )
-            ]
-            # 値が6つ未満ならデータ行でないと判断してスキップ
-            if len(vals) < 6:
-                continue
-            # 整数化。数値以外は0にフォールバック
-            nums = [_to_int(v) for v in vals[:6]]
-            row = [date_str] + nums
-            price_list.append(row)
-    except Exception as e:
-        log_warning(" Yahoo価格リスト解析エラー（フォーマット変更？）", e)
-
-    # 現在価格が取れなければ履歴の最新から取得
-    if price_current == 0:
-        try:
-            # 7番目のカラムに調整後終値が入っている想定
-            price_current = price_list[0][6]
-            log_debug("現在株価を履歴から取得", price_current)
-        except Exception:
-            log_warning("現在株価取得できず")
-    # 株式分割の調整
-    adjust_divide_price(price_list)
-    return price_current, price_list
-
-
-def parse_price_text_yahoo(text):
-    # ETFなどに使われてる古いっぽいフォーマット
-    # 現在価格
-    m = re.search(r'<td class="stoksPrice">(.*?)</td>', text)
-    if m:
-        log_debug("Yahoo価格: 古いフォーマット")
-        return parse_price_text_yahoo_old(text)
-    # 新しいっぽいフォーマット
-    log_debug("Yahoo価格: 新しいフォーマット")
-    return parse_price_text_yahoo_new(text)
 
 
 def _save_yfinance_cache(fname, price_current, price_list):
@@ -917,7 +726,7 @@ def get_daily_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
         stock: 銘柄DB情報（マーケットコード判定用）
         upd: 更新レベル
     Returns:
-        (price_current, price_list) — 既存parse_price_text_yahoo互換の形式
+        (price_current, price_list) — 現在価格と価格リスト
     """
     cache_fname = YFINANCE_CACHE_FNAME % code_s
 
@@ -981,8 +790,6 @@ def prefetch_yfinance_batch(code_s_list, stocks=None):
         code_s_list: 銘柄コード文字列のリスト
         stocks: 銘柄DB（市場コード解決用、Noneなら全て東証扱い）
     """
-    if not _HAS_YFINANCE or not USE_YFINANCE:
-        return
 
     # キャッシュが有効な銘柄はスキップ
     codes_to_fetch = []
@@ -1243,21 +1050,6 @@ def parse_price_text_from_list(price_current, price_list):
     return price, [price_list[0][6], price_list[0][2], price_list[0][3]]
 
 
-def parse_price_text(text):
-    """yahoo価格情報htmlから
-    売り圧力レシオ、ローソク足ボラティリティの解析
-    ポケットピポット、ブレイクアウト
-    Args:
-        text(str): yahooファイナンスhtml
-    Returns:
-        dict:
-    """
-    price_current, price_list = parse_price_text_yahoo(text)
-    # 価格が得られないければ何も更新しない
-    if not price_list:
-        return {}, []
-    return parse_price_text_from_list(price_current, price_list)
-
 
 def get_price_log(price_list, dt):
     """
@@ -1274,53 +1066,35 @@ def get_price_log(price_list, dt):
 
 
 def get_price_data_yahoo(code_s, stock, upd=UPD_INTERVAL):
-    """yahooから日次価格データをパースしてdictで返す
-    yfinance APIを優先し、失敗時はHTMLスクレイピングにフォールバック
+    """yfinance APIから日次価格データをパースしてdictで返す
     Returns:
         dict<int, T>: 解析した価格情報
         list<int>: 現在価格
     """
-    # yfinanceパス
-    if USE_YFINANCE and _HAS_YFINANCE:
-        try:
-            price_current, price_list = get_daily_data_yfinance(code_s, stock, upd)
-            if price_current is not None and price_list:
-                log_print(">>>>> %sの価格データを解析(yfinance) " % code_s)
-                parsed_data, cur_prices = parse_price_text_from_list(
-                    price_current, price_list
-                )
-                price_val = parsed_data.get("price", 0)
-                # キャッシュの更新日時を取得
-                cache_fname = YFINANCE_CACHE_FNAME % code_s
-                if os.path.exists(cache_fname):
-                    stat = os.stat(cache_fname)
-                    update_date = datetime.fromtimestamp(stat.st_mtime)
-                else:
-                    update_date = datetime.now()
-                log_print("<<<<< 解析完了(yfinance) ", price_val, update_date)
-                set_db_code(parsed_data, code_s)
-                if price_val > 0:
-                    parsed_data["access_date_price"] = update_date
-                return parsed_data, cur_prices
-        except Exception as e:
-            log_warning("yfinanceパス失敗(%s)、HTMLスクレイピングにフォールバック: %s" % (code_s, e))
-
-    # HTMLスクレイピングフォールバック
-    price_text = get_daily_data_yahoo(code_s, stock, upd)
-    if not price_text:
+    try:
+        price_current, price_list = get_daily_data_yfinance(code_s, stock, upd)
+        if price_current is None or not price_list:
+            return {}, []
+        log_print(">>>>> %sの価格データを解析(yfinance) " % code_s)
+        parsed_data, cur_prices = parse_price_text_from_list(
+            price_current, price_list
+        )
+        price_val = parsed_data.get("price", 0)
+        # キャッシュの更新日時を取得
+        cache_fname = YFINANCE_CACHE_FNAME % code_s
+        if os.path.exists(cache_fname):
+            stat = os.stat(cache_fname)
+            update_date = datetime.fromtimestamp(stat.st_mtime)
+        else:
+            update_date = datetime.now()
+        log_print("<<<<< 解析完了(yfinance) ", price_val, update_date)
+        set_db_code(parsed_data, code_s)
+        if price_val > 0:
+            parsed_data["access_date_price"] = update_date
+        return parsed_data, cur_prices
+    except Exception as e:
+        log_warning("yfinance価格取得失敗(%s): %s" % (code_s, e))
         return {}, []
-    log_print(">>>>> %sの価格データを解析(HTML) " % code_s)
-    parsed_data, cur_prices = parse_price_text(price_text)
-    stat = os.stat(PRICE_FNAME % code_s)
-    date = datetime.fromtimestamp(stat.st_mtime)
-    price_val = parsed_data.get("price", 0)
-    log_print("<<<<< 解析完了(HTML) ", price_val, date)
-    # 情報を追加して返す
-    set_db_code(parsed_data, code_s)
-    # 実際に価格が得られた場合は更新日をセット
-    if price_val > 0:
-        parsed_data["access_date_price"] = date
-    return parsed_data, cur_prices
 
 
 def get_weekly_price_data(code_s, upd=UPD_INTERVAL, prices=[]):
@@ -1336,8 +1110,6 @@ def get_weekly_price_data(code_s, upd=UPD_INTERVAL, prices=[]):
     # print ux_cmd_head(price_htmls[0], 3)
     log_print(">>>>> %sの週次価格データを解析 " % code_s)
     parsed_data_w = parse_pricew_htmls_kabutan(price_htmls, prices)
-    # stat = os.stat(PRICE_FNAME%code)
-    # date = datetime.fromtimestamp(stat.st_mtime)
     log_print("<<<<< 解析完了 ")
     return parsed_data_w
 
