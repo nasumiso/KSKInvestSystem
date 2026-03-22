@@ -192,3 +192,96 @@ class TestUpdateDbShihyoMerge:
         make_stock_db.update_db(stocks, stock_data)
         # 空のshihyoはマージされないため、shihyoキーは設定されない
         assert stocks["5678"].get("shihyo", {}) == {}
+
+
+class TestUpdateDbProtectedListKeys:
+    """update_db()のlist型キー保護テスト"""
+
+    def test_empty_list_preserves_existing(self):
+        """空リストで既存のlist型データが消えないこと"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "stddev_volatility": [12.5, 15.0],
+                "sell_pressure_ratio": [0.8, 0.6, 0.7],
+                "gyoseki_current": [{"year": 2025, "sales": 1000}],
+            }
+        }
+        stock_data = {
+            "code_s": "1234",
+            "stddev_volatility": [],
+            "sell_pressure_ratio": [],
+            "gyoseki_current": [],
+        }
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["stddev_volatility"] == [12.5, 15.0]
+        assert stocks["1234"]["sell_pressure_ratio"] == [0.8, 0.6, 0.7]
+        assert stocks["1234"]["gyoseki_current"] == [{"year": 2025, "sales": 1000}]
+
+    def test_new_list_overwrites_existing(self):
+        """新しいlist型データが正常に上書きされること"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "stddev_volatility": [12.5, 15.0],
+            }
+        }
+        stock_data = {
+            "code_s": "1234",
+            "stddev_volatility": [20.0, 25.0],
+        }
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["stddev_volatility"] == [20.0, 25.0]
+
+
+class TestUpdateDbProtectedZeroKeys:
+    """update_db()の理論株価ゼロ値保護テスト"""
+
+    def test_zero_rironkabuka_preserves_existing(self):
+        """理論株価が0で既存値が消えないこと"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "rironkabuka": 1500,
+                "rironkabuka_up": 2000,
+                "rironkabuka_down": 1000,
+                "rironkabuka_preceding": 1600,
+            }
+        }
+        stock_data = {
+            "code_s": "1234",
+            "rironkabuka": 0,
+            "rironkabuka_up": 0,
+            "rironkabuka_down": 0,
+            "rironkabuka_preceding": 0,
+        }
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["rironkabuka"] == 1500
+        assert stocks["1234"]["rironkabuka_up"] == 2000
+        assert stocks["1234"]["rironkabuka_down"] == 1000
+        assert stocks["1234"]["rironkabuka_preceding"] == 1600
+
+    def test_nonzero_rironkabuka_updates(self):
+        """理論株価が非0で正常に更新されること"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "rironkabuka": 1500,
+            }
+        }
+        stock_data = {
+            "code_s": "1234",
+            "rironkabuka": 1800,
+        }
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["rironkabuka"] == 1800
+
+    def test_new_stock_with_zero_rironkabuka(self):
+        """新規銘柄で理論株価0の場合、0が設定されること"""
+        stocks = {}
+        stock_data = {
+            "code_s": "5678",
+            "rironkabuka": 0,
+        }
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["5678"]["rironkabuka"] == 0
