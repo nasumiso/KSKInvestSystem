@@ -417,10 +417,9 @@ def update_db(stocks, stock_data):
         "stddev_volatility", "sell_pressure_ratio", "sell_pressure_ratio_w",
         "price_log",
     }
-    # 0値での上書きを防止するキー（計算失敗時に0やフォールバック値が返される）
+    # 0値での上書きを防止するキー（計算失敗時に0が返される）
     _PROTECTED_ZERO_KEYS = {
         "rironkabuka", "rironkabuka_up", "rironkabuka_down", "rironkabuka_preceding",
-        "shihyo_pt", "score_gyoseki",
     }
     for k in list(stock_data.keys()):
         new_val = stock_data[k]
