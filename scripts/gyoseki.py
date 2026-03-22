@@ -812,15 +812,19 @@ def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
 
     # 業績得点の追加
     log_print("=" * 5, "業績スコアの計算")
-    tables["score_gyoseki"] = calc_gyoseki_score(tables)
+    gyoseki_score = calc_gyoseki_score(tables)
     log_print("=" * 5, "業績スコアの計算完了")
     path = os.path.join(CACHE_DIR, get_http_cachname(URL_CODE % (str(code_s))))
+    # score_gyosekiは下流で無条件参照されるため常に設定する（空テーブル時はフォールバック値20）
+    tables["score_gyoseki"] = gyoseki_score
     if "gyoseki_current" in tables:
         # 業績データが取得できた場合のみaccess_dateを更新（空の場合は次回再取得を促す）
         tables["access_date_gyoseki"] = get_file_datetime(path)
         log_debug("date:", tables["access_date_gyoseki"])
     else:
-        log_warning("業績データが空のためaccess_date_gyosekiを更新しません（次回再取得）")
+        # 業績データが空の場合はaccess_dateを削除して次回再取得を促す
+        tables["access_date_gyoseki"] = None
+        log_warning("業績データが空のためaccess_date_gyosekiを削除します（次回再取得）")
     # tables["code"] = code
     set_db_code(tables, code_s)
     return tables

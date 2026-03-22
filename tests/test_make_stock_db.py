@@ -286,3 +286,67 @@ class TestUpdateDbProtectedZeroKeys:
         }
         make_stock_db.update_db(stocks, stock_data)
         assert stocks["5678"]["rironkabuka"] == 0
+
+
+class TestUpdateDbAccessDateDeletion:
+    """update_db()のaccess_date削除テスト"""
+
+    def test_none_access_date_deletes_existing(self):
+        """access_date_*がNoneの場合、既存のaccess_dateが削除されること"""
+        from datetime import datetime
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "access_date_shihyo": datetime(2026, 1, 1),
+                "shihyo": {"PER": 15.0},
+            }
+        }
+        stock_data = {"code_s": "1234", "access_date_shihyo": None, "shihyo": {}}
+        make_stock_db.update_db(stocks, stock_data)
+        assert "access_date_shihyo" not in stocks["1234"]
+        # shihyoの既存値は保持される
+        assert stocks["1234"]["shihyo"]["PER"] == 15.0
+
+    def test_none_access_date_no_error_when_missing(self):
+        """access_date_*が元々存在しない場合にエラーにならないこと"""
+        stocks = {"1234": {"code_s": "1234"}}
+        stock_data = {"code_s": "1234", "access_date_gyoseki": None}
+        make_stock_db.update_db(stocks, stock_data)
+        assert "access_date_gyoseki" not in stocks["1234"]
+
+    def test_valid_access_date_is_set(self):
+        """access_date_*が有効値の場合は正常に設定されること"""
+        from datetime import datetime
+        stocks = {"1234": {"code_s": "1234"}}
+        dt = datetime(2026, 3, 22)
+        stock_data = {"code_s": "1234", "access_date_shihyo": dt}
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["access_date_shihyo"] == dt
+
+
+class TestUpdateDbSignalKeys:
+    """pocket_pivot/breakoutが保護対象外であることのテスト"""
+
+    def test_empty_pocket_pivot_clears_existing(self):
+        """pocket_pivotが空リストで既存値が消えること（正常な状態遷移）"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "pocket_pivot": [("2026-03-01", 1500)],
+            }
+        }
+        stock_data = {"code_s": "1234", "pocket_pivot": []}
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["pocket_pivot"] == []
+
+    def test_empty_breakout_clears_existing(self):
+        """breakoutが空リストで既存値が消えること（正常な状態遷移）"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "breakout": [("2026-03-01", 2000)],
+            }
+        }
+        stock_data = {"code_s": "1234", "breakout": []}
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["breakout"] == []

@@ -415,7 +415,7 @@ def update_db(stocks, stock_data):
     _PROTECTED_LIST_KEYS = {
         "gyoseki_current", "gyoseki_quarter",
         "stddev_volatility", "sell_pressure_ratio", "sell_pressure_ratio_w",
-        "pocket_pivot", "breakout", "price_log",
+        "price_log",
     }
     # 0値での上書きを防止するキー（計算失敗時に0が返される）
     _PROTECTED_ZERO_KEYS = {
@@ -423,6 +423,12 @@ def update_db(stocks, stock_data):
     }
     for k in list(stock_data.keys()):
         new_val = stock_data[k]
+        if k.startswith("access_date_") and new_val is None:
+            # スクレイピング失敗時: access_dateを削除して次回再取得を促す
+            if k in stock:
+                del stock[k]
+                log_debug("%sを削除しました（次回再取得）" % k)
+            continue
         if k in _PROTECTED_DICT_KEYS:
             # dictはキー単位でマージし、空dictでの上書きを防止
             if new_val:
@@ -732,6 +738,7 @@ def get_access_dates_expr(stock_data):
     Returns:
         str: 更新日文字列 "month/day|day|day".
     """
+    month = None
     date = ""
     if "access_date_gyoseki" in stock_data:
         dt = stock_data["access_date_gyoseki"]
@@ -740,7 +747,7 @@ def get_access_dates_expr(stock_data):
     date_sh = ""
     if "access_date_shihyo" in stock_data:
         dt = stock_data["access_date_shihyo"]
-        if month == dt.month:
+        if month and month == dt.month:
             date_sh = dt.day
         else:
             date_sh = "%s/%s" % (dt.month, dt.day)
@@ -749,7 +756,7 @@ def get_access_dates_expr(stock_data):
     if "access_date_price" in stock_data:
         dt = stock_data["access_date_price"]
         dt = get_price_day(dt)
-        if month == dt.month:
+        if month and month == dt.month:
             date_pr = dt.day
         else:
             date_pr = "%s/%s" % (dt.month, dt.day)
