@@ -478,8 +478,12 @@ def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
     # 理論株価作成時間の格納
     cach_path = get_http_cachname(KABUTAN_URL_CODE % (str(code_s)))
     cach_path = os.path.join(KABUTAN_CACHE_DIR_FINANCE, cach_path)
-    tables["access_date_rironkabuka"] = get_file_datetime(cach_path)
-    log_debug("date:", tables["access_date_rironkabuka"])
+    if tables["rironkabuka"] > 0:
+        # 理論株価が計算できた場合のみaccess_dateを更新（失敗時は次回再取得を促す）
+        tables["access_date_rironkabuka"] = get_file_datetime(cach_path)
+        log_debug("date:", tables["access_date_rironkabuka"])
+    else:
+        log_warning("理論株価が0のためaccess_date_rironkabukaを更新しません（次回再取得）")
     # tables["code"] = code
     set_db_code(tables, code_s)
     tables["isKonki"] = res[5]

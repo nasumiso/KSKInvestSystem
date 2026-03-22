@@ -410,8 +410,48 @@ def update_db(stocks, stock_data):
     except KeyError:
         stock = {}
         log_print(str(code_s) + "は新規DB銘柄")
+    # スクレイピング失敗時に空データで既存値を上書きしないよう保護するキー
+    _PROTECTED_DICT_KEYS = {"shihyo"}
+    _PROTECTED_LIST_KEYS = {
+        "gyoseki_current", "gyoseki_quarter",
+        "stddev_volatility", "sell_pressure_ratio", "sell_pressure_ratio_w",
+        "pocket_pivot", "breakout", "price_log",
+    }
+    # 0値での上書きを防止するキー（計算失敗時に0が返される）
+    _PROTECTED_ZERO_KEYS = {
+        "rironkabuka", "rironkabuka_up", "rironkabuka_down", "rironkabuka_preceding",
+    }
     for k in list(stock_data.keys()):
-        stock[k] = stock_data[k]
+        new_val = stock_data[k]
+        if k in _PROTECTED_DICT_KEYS:
+            # dictはキー単位でマージし、空dictでの上書きを防止
+            if new_val:
+                existing = stock.get(k, {})
+                existing.update(new_val)
+                stock[k] = existing
+            elif k not in stock:
+                # 新規銘柄では空dictでもキーを初期化（下流で KeyError を防ぐ）
+                stock[k] = {}
+            else:
+                log_debug("%sが空のため既存データを保持します" % k)
+        elif k in _PROTECTED_LIST_KEYS:
+            # listは空リストでの上書きを防止
+            if new_val:
+                stock[k] = new_val
+            elif k not in stock:
+                stock[k] = []
+            else:
+                log_debug("%sが空のため既存データを保持します" % k)
+        elif k in _PROTECTED_ZERO_KEYS:
+            # 0値での上書きを防止（計算失敗時に既存値を保持）
+            if new_val:
+                stock[k] = new_val
+            elif k in stock:
+                log_debug("%sが0のため既存データを保持します" % k)
+            else:
+                stock[k] = new_val
+        else:
+            stock[k] = new_val
     log_debug("DB更新しました: ", code_s, list(stock_data.keys()))
     # 更新後のカラム表示
     print_dict(
