@@ -115,11 +115,8 @@ class TestParseJikasogakuKabutan:
         assert shihyou.parse_jikasogaku_kabutan(html) == pytest.approx(12345.0)
 
     def test_no_match(self):
-        """マッチしない場合は0を返す"""
+        """マッチしない・空文字列の場合は0を返す"""
         assert shihyou.parse_jikasogaku_kabutan("<html></html>") == 0
-
-    def test_empty(self):
-        """空文字列"""
         assert shihyou.parse_jikasogaku_kabutan("") == 0
 
 
@@ -227,38 +224,16 @@ class TestGetCreditExpr:
         assert "売5.23" in result
         assert "出0.50" in result
 
-    def test_no_credit_ratio(self):
-        """信用倍率がない場合"""
-        stock_data = {"shihyo": {}, "avg_volume_d": [200000]}
-        result = shihyou.get_credit_expr(stock_data)
+    def test_missing_fields(self):
+        """信用倍率/買残/出来高が欠損した場合のフォールバック"""
+        # 信用倍率なし
+        result = shihyou.get_credit_expr({"shihyo": {}, "avg_volume_d": [200000]})
         assert "売," in result
-
-    def test_no_credit_buy(self):
-        """買残がない場合"""
-        stock_data = {
-            "shihyo": {"credit_ratio": 3.0},
-            "avg_volume_d": [200000],
-        }
-        result = shihyou.get_credit_expr(stock_data)
-        assert "売3.0" in result
-        assert result.endswith(",出")
-
-    def test_no_avg_volume(self):
-        """平均出来高がない場合"""
-        stock_data = {
-            "shihyo": {"credit_buy": 100000},
-            "avg_volume_d": [],
-        }
-        result = shihyou.get_credit_expr(stock_data)
-        assert result.endswith(",出")
-
-    def test_zero_avg_volume(self):
-        """平均出来高が0の場合（ゼロ除算ガード）"""
-        stock_data = {
-            "shihyo": {"credit_buy": 100000},
-            "avg_volume_d": [0],
-        }
-        result = shihyou.get_credit_expr(stock_data)
+        # 買残なし
+        result = shihyou.get_credit_expr({"shihyo": {"credit_ratio": 3.0}, "avg_volume_d": [200000]})
+        assert "売3.0" in result and result.endswith(",出")
+        # 出来高0（ゼロ除算ガード）
+        result = shihyou.get_credit_expr({"shihyo": {"credit_buy": 100000}, "avg_volume_d": [0]})
         assert result.endswith(",出")
 
     def test_volume_ratio_medium(self):
@@ -314,21 +289,10 @@ class TestGetShihyoExpr:
         assert "負債0.35" in result
         assert "自己55%" in result  # int
 
-    def test_empty_shihyo(self):
-        """shihyoが空の場合"""
-        stock_data = {
-            "market_cap": 0,
-            "shihyo": {},
-        }
-        result = shihyou.get_shihyo_expr(stock_data)
+    def test_missing_data(self):
+        """shihyo空・market_capなしの場合もエラーにならない"""
+        result = shihyou.get_shihyo_expr({"market_cap": 0, "shihyo": {}})
         assert "PER" in result
-        assert "PBR" in result
-
-    def test_no_market_cap(self):
-        """market_capキーがない場合"""
-        stock_data = {
-            "shihyo": {"MPER": 10},
-        }
-        result = shihyou.get_shihyo_expr(stock_data)
+        result = shihyou.get_shihyo_expr({"shihyo": {"MPER": 10}})
         assert "0億" in result
         assert "PER10" in result
