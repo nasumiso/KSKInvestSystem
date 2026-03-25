@@ -5,6 +5,7 @@
 # =================================================
 
 import re
+import threading
 from datetime import datetime, timedelta
 import csv
 import os
@@ -316,15 +317,20 @@ def make_nasdaq_db():
 
 
 _market_db_cache = None
+_market_db_lock = threading.Lock()
 
 
 def get_market_db():
-    """マーケットDBを取得（dictとして返す、キャッシュあり）"""
+    """マーケットDBを取得（dictとして返す、キャッシュあり・スレッドセーフ）"""
     global _market_db_cache
     if _market_db_cache is not None:
         return _market_db_cache
-    with _get_market_shelve_db() as db:
-        _market_db_cache = db.export_to_dict()
+    with _market_db_lock:
+        # ダブルチェックロッキング: ロック取得中に他スレッドがキャッシュ済みの場合
+        if _market_db_cache is not None:
+            return _market_db_cache
+        with _get_market_shelve_db() as db:
+            _market_db_cache = db.export_to_dict()
     return _market_db_cache
 
 

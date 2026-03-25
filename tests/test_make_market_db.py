@@ -2,6 +2,8 @@
 
 import pytest
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 import make_market_db
@@ -368,3 +370,60 @@ class TestMakeThemeDataDiff:
             result = make_market_db.make_theme_data(prev_momentum)
         for theme in result["theme_rank"]:
             assert theme in result["theme_rank_diff"]
+
+
+# ==================================================
+# get_market_db — スレッドセーフティ
+# ==================================================
+class TestGetMarketDbThreadSafety:
+    """get_market_dbのマルチスレッド同時呼び出しテスト
+
+    修正前はキャッシュチェックとDB open/closeの間にロックがなく、
+    複数スレッドが同時にキャッシュミス→シングルトンDBのopen/closeが
+    競合してRuntimeError: Database not openが発生していた。
+    """
+
+    def test_concurrent_get_market_db_no_error(self, tmp_path):
+        """5スレッドから同時にget_market_dbを呼んでもエラーにならない"""
+        import db_shelve
+
+        # テスト用の一時shelve DBを作成
+        test_db_path = str(tmp_path / "test_market_db")
+        test_db = db_shelve.ShelveDB(test_db_path)
+        with test_db:
+            test_db["theme_rank"] = ["AI", "半導体", "DX"]
+            test_db["access_date"] = "2026-03-24"
+
+        # キャッシュをクリアし、シングルトンをテスト用DBに差し替え
+        make_market_db._market_db_cache = None
+        original_get = db_shelve._market_db
+        db_shelve._market_db = db_shelve.ShelveDB(test_db_path)
+
+        errors = []
+        results = []
+        barrier = threading.Barrier(5)
+
+        def worker():
+            try:
+                barrier.wait()  # 全スレッドが揃ってから同時に呼び出す
+                result = make_market_db.get_market_db()
+                results.append(result)
+            except Exception as e:
+                errors.append(e)
+
+        try:
+            threads = [threading.Thread(target=worker) for _ in range(5)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10)
+
+            assert errors == [], f"スレッドでエラー発生: {errors}"
+            assert len(results) == 5
+            # 全スレッドが同じデータを取得すること
+            for r in results:
+                assert r["theme_rank"] == ["AI", "半導体", "DX"]
+        finally:
+            # クリーンアップ
+            make_market_db._market_db_cache = None
+            db_shelve._market_db = original_get

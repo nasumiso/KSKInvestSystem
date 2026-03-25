@@ -156,12 +156,12 @@ def parse_kabutan_account2(html):
         ldict = {}
         if tble_name == "gyoseki_current":
             ratio_m = re.search(
-                r'<tr>\n<th scope="row">前期比</th>(.*?)</tr>', tbl_html, re.S
+                r'<tr>\r?\n<th scope="row"[^>]*>.*?前期比.*?</th>(.*?)</tr>', tbl_html, re.S
             )
             ratio_html = ratio_m.group(1)
         elif tble_name == "gyoseki_quarter":
             ratio_m = re.search(
-                r'<tr>\r?\n<th scope="row">前年同期比</th>(.*?)</tr>', tbl_html, re.S
+                r'<tr>\r?\n<th scope="row"[^>]*>.*?前年同期比.*?</th>(.*?)</tr>', tbl_html, re.S
             )
             ratio_html = ratio_m.group(1)
         # print ratio_html
