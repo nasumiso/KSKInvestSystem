@@ -26,6 +26,12 @@ HEAD_TYPE_DIC = {
     "newsctg1_b": "zairyo",      # 市況 → 材料扱い
     "newsctg13_b": "zairyo",     # 業界 → 材料扱い
     "newsctg4_b": "zairyo",      # テク → 材料扱い
+    # 旧HTML形式（キャッシュ互換）: <td class="ctgXX">
+    "ctg5": "special",
+    "ctg3_kk": "modify",
+    "ctg3_ks": "modify",
+    "ctg12": "5per",
+    "ctg9": "kessan",
 }
 
 HEAD_TYPE_EXPR = {
@@ -126,6 +132,30 @@ def parse_disclosure_html(html):
                 record["url"] = url
             record["heading"] = heading
             record_list.append(record)
+        # 旧HTML形式のフォールバック（キャッシュに残っている旧フォーマット対応）
+        # 新パターンでkaiji以外が取れなかった場合のみ実行
+        non_kaiji = [r for r in record_list if r["type"] != "kaiji"]
+        if not non_kaiji:
+            for m in re.finditer(
+                r'<td class="(.*?)"></td>\s+?<td><a href="(.*?)">(.*?)</a></td>', html
+            ):
+                if "nmode=0" not in m.group(2):
+                    tag = m.group(1)
+                    url = m.group(2)
+                    heading = m.group(3)
+                    head_type = HEAD_TYPE_DIC.get(tag, "zairyo")
+                    m3 = re.search(r"b=[n|k](\d*)", url)
+                    if not m3:
+                        continue
+                    date = m3.group(1)[:8]
+                    record = {}
+                    record["type"] = head_type
+                    set_db_code(record, code_s)
+                    record["stock_name"] = stock_name
+                    record["date"] = date
+                    record["url"] = "https://kabutan.jp/" + url
+                    record["heading"] = heading
+                    record_list.append(record)
     except AttributeError:
         log_warning(" 適宜開示htmlパース失敗: 株探フォーマット変更？")
     log_print("%sの適宜開示データ%d個追加" % (code_s, len(record_list)))

@@ -255,3 +255,24 @@ class TestParseDisclosureHtml:
         """コードが取れないHTMLは空リストを返す"""
         result = disclosure.parse_disclosure_html("<html><head><title>test</title></head></html>")
         assert result == {}
+
+    def test_旧HTMLフォーマットのフォールバック(self):
+        """キャッシュに残った旧HTML形式でも材料等が取得できる"""
+        old_html = """
+        <html>
+        <head><title>テスト銘柄【1234】｜ニュース｜株探（かぶたん）</title></head>
+        <body>
+        <td class="td_kaiji"><a href="https://kabutan.jp/disclosures/pdf/20260310/test/" target="pdf">開示見出し<img src="pdf.gif" /></a></td>
+        <td class="ctg9"></td>
+        <td><a href="/stock/news?code=1234&b=n202603100500">決算ニュース</a></td>
+        <td class="ctg5"></td>
+        <td><a href="/stock/news?code=1234&b=n202603090300">特集ニュース</a></td>
+        </body>
+        </html>
+        """
+        records = disclosure.parse_disclosure_html(old_html)
+        types = {r["type"] for r in records}
+        assert "kaiji" in types, "開示が取得できていない"
+        assert "kessan" in types, "旧形式の決算が取得できていない"
+        assert "special" in types, "旧形式の特集が取得できていない"
+        assert len(records) == 3
