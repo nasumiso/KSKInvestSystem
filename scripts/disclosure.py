@@ -17,12 +17,16 @@ UPD_CACHE = 1  # html取得できていればキャッシュから
 UPD_FORCE = 2  # html取得から強制
 
 HEAD_TYPE_DIC = {
-    "ctg5": "special",  # 特集
-    "ctg3_kk": "modify",  # 修正下方
-    "ctg3_ks": "modify",  # 修正上方
-    "ctg12": "5per",  # 5%
-    "ctg9": "kessan",
-}  # 決算
+    # 新HTML形式（2026年3月〜）: <div class="newslist_ctg newsctgXX_b">
+    "newsctg5_b": "special",     # 特集
+    "newsctg3_kk_b": "modify",   # 決算・修正下方
+    "newsctg3_ks_b": "modify",   # 修正上方
+    "newsctg12_b": "5per",       # 5%
+    "newsctg9_b": "kessan",      # 注目/決算
+    "newsctg1_b": "zairyo",      # 市況 → 材料扱い
+    "newsctg13_b": "zairyo",     # 業界 → 材料扱い
+    "newsctg4_b": "zairyo",      # テク → 材料扱い
+}
 
 HEAD_TYPE_EXPR = {
     "kaiji": "開示",
@@ -89,28 +93,39 @@ def parse_disclosure_html(html):
             record["url"] = url
             record["heading"] = heading
             record_list.append(record)
-        # それ以外
-        # ctg9:決算 ctg2:材料
-        for m in re.finditer(
-            r'<td class="(.*?)"></td>\s+?<td><a href="(.*?)">(.*?)</a></td>', html
-        ):  # |re.DOTALL: .が複数行にマッチする re.MULTILINE: ^$が行頭行末
-            if not "nmode=0" in m.group(2):  # これは月へのリンクのため除く
-                tag = m.group(1)
-                url = m.group(2)
-                heading = m.group(3)
-                head_type = HEAD_TYPE_DIC.get(tag, "zairyo")
-                # print tag, head_type, url, heading
-                m3 = re.search(r"b=[n|k](\d*)", url)
-                date = m3.group(1)[:8]  # 20220603
-                record = {}
-                record["type"] = head_type
-                # record["code"] = code
-                set_db_code(record, code_s)
-                record["stock_name"] = stock_name
-                record["date"] = date
-                record["url"] = "https://kabutan.jp/" + url
-                record["heading"] = heading
-                record_list.append(record)
+        # それ以外（材料・修正・5%・特集・決算・市況・テク等）
+        # 新HTML: <tr>単位で time, newslist_ctg div, リンクを一括抽出
+        _NEWS_PATTERN = re.compile(
+            r'<tr>\s*'
+            r'<td[^>]*><time datetime="(\d{4})-(\d{2})-(\d{2})T[^"]*">[^<]*</time></td>\s*'
+            r'<td><div class="newslist_ctg\s+(newsctg\w+)"[^>]*>[^<]*</div></td>\s*'
+            r'<td>(?:<img[^>]*>)?\s*<a href="([^"]*)">(.*?)</a></td>',
+            re.S,
+        )
+        for m in _NEWS_PATTERN.finditer(html):
+            year, month, day = m.group(1), m.group(2), m.group(3)
+            tag = m.group(4)
+            url = m.group(5)
+            heading = m.group(6)
+            # 開示は既存パターンで取得済みのためスキップ
+            if tag == "newsctg_kaiji_b":
+                continue
+            if "nmode=0" in url:  # 月へのリンクは除外
+                continue
+            head_type = HEAD_TYPE_DIC.get(tag, "zairyo")
+            date = "%s%s%s" % (year, month, day)
+            record = {}
+            record["type"] = head_type
+            set_db_code(record, code_s)
+            record["stock_name"] = stock_name
+            record["date"] = date
+            # 相対URLを絶対URLに変換
+            if url.startswith("/"):
+                record["url"] = "https://kabutan.jp" + url
+            else:
+                record["url"] = url
+            record["heading"] = heading
+            record_list.append(record)
     except AttributeError:
         log_warning(" 適宜開示htmlパース失敗: 株探フォーマット変更？")
     log_print("%sの適宜開示データ%d個追加" % (code_s, len(record_list)))

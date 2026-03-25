@@ -17,6 +17,7 @@ import price
 import shihyou
 import master
 import gyoseki
+import disclosure
 import shintakane
 import make_market_db
 import rironkabuka
@@ -157,4 +158,27 @@ class TestLiveHtmlTheme:
         result = make_market_db.parse_theme_html(html)
         assert isinstance(result, list)
         assert len(result) > 0  # テーマランクは常にデータがある
+        _sleep()
+
+
+class TestLiveHtmlDisclosure:
+    """disclosure.py — kabutanニュースHTML取得→パース"""
+
+    def test_ニュースデータの抽出(self):
+        """kabutanからニュースHTMLを取得し、全カテゴリがパースできること"""
+        import requests
+        url = "https://kabutan.jp/stock/news?code=7203"
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        html = resp.text
+        assert html is not None
+        records = disclosure.parse_disclosure_html(html)
+        assert isinstance(records, list)
+        assert len(records) > 0, "ニュースが1件も取得できていない"
+        # 開示のみ取得できる壊れた状態を検知: kaiji以外が必ず含まれること
+        types = {r["type"] for r in records}
+        non_kaiji = types - {"kaiji"}
+        assert len(non_kaiji) > 0, (
+            "kaiji以外のニュースカテゴリが取得できていない "
+            "(HTMLフォーマット変更？ 取得type: %s)" % types
+        )
         _sleep()
