@@ -179,13 +179,13 @@ def get_kabutan_cachename(code_s):
 # 	return dic
 
 
-def get_from_kabutan3(html):
+def get_from_kabutan3(html, code_s=""):
     """株探htmlから理論株価計算のための解析情報を返す"""
     # ------------------------------
     # eps
     # ------------------------------
     if not html:
-        log_warning("株探htmlが取得できていない")
+        log_warning(code_s, "株探htmlが取得できていない")
         return {}
 
     # 予想経常利益/発行済株式数
@@ -193,7 +193,7 @@ def get_from_kabutan3(html):
         r'<div class="title1">通期</div>.*?<table>(.*?)</table>', html, re.S
     )
     if not year_tbl_m:
-        log_warning(" 通期テーブルが取得できない（フォーマット変更？）")
+        log_warning(code_s, "通期テーブルが取得できない（フォーマット変更？）")
         return {}
     year_tbl_html = year_tbl_m.group(1)
     # 各期の数字をテーブルに
@@ -420,7 +420,7 @@ def analyze_from_kabutan(code_s, upd=UPD_INTERVAL, stock=None):
     # dic = get_from_kabutan2(html)
     # htmlから理論株価に必要なデータ解析
     # BPS:財務の一株純資産(前期末) EPS:一株利益(今季)
-    dic = get_from_kabutan3(html)
+    dic = get_from_kabutan3(html, code_s)
     calced = False
     if dic:
         # ---- 理論株価計算
@@ -451,7 +451,7 @@ def analyze_from_kabutan(code_s, upd=UPD_INTERVAL, stock=None):
         except TypeError:
             pass
     if not calced:
-        log_warning(" 理論株価計算できず")
+        log_warning(code_s, "理論株価計算できず")
         theory_price = (0, 0, 0, 0, 0, False)
     return theory_price
 
@@ -465,7 +465,7 @@ def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
         dict<str(key), any>(理論株価データ):
         key = rironkabuka, rironkabuka_up, rironkabuka_down, rironkabuka_preceding, access_date_rironkabuka ,code
     """
-    log_print("-" * 5, "理論株価の計算 upd:", upd)
+    log_print("-" * 5, "理論株価の計算", code_s, "upd:", upd)
     tables = {}
     # 決算htmlを解析して理論株価に必要なデータを取得
     res = analyze_from_kabutan(code_s, upd, stock)
@@ -474,7 +474,7 @@ def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
     tables["rironkabuka_up"] = res[1]
     tables["rironkabuka_down"] = res[2]
     tables["rironkabuka_preceding"] = res[3]
-    log_print("=" * 5, "理論株価の計算完了", tables["rironkabuka"])
+    log_print("=" * 5, "理論株価の計算完了", code_s, tables["rironkabuka"])
     # 理論株価作成時間の格納
     cach_path = get_http_cachname(KABUTAN_URL_CODE % (str(code_s)))
     cach_path = os.path.join(KABUTAN_CACHE_DIR_FINANCE, cach_path)
@@ -485,7 +485,7 @@ def get_rironkabuka_data(code_s, upd=UPD_INTERVAL, stock=None):
     else:
         # 理論株価が計算できなかった場合はaccess_dateを削除して次回再取得を促す
         tables["access_date_rironkabuka"] = None
-        log_warning("理論株価が0のためaccess_date_rironkabukaを削除します（次回再取得）")
+        log_warning(code_s, "理論株価が0のためaccess_date_rironkabukaを削除します（次回再取得）")
     # tables["code"] = code
     set_db_code(tables, code_s)
     tables["isKonki"] = res[5]
