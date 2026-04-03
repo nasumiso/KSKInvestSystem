@@ -655,6 +655,11 @@ def todays_shintakane(upd=UPD_INTERVAL):
             "shintakane_result_data/shintakane_result_%02d%02d%02d.csv"
             % (latest_csv_dt.year % 2000, latest_csv_dt.month, latest_csv_dt.day),
         )
+        log_print(
+            "結果CSV書き込み: %s (日付=%s, 本日銘柄=%d, 過去銘柄=%d, 行数=%d)"
+            % (shintakane_result_csv, latest_csv_dt.date(),
+               len(today_only_list), len(already_only_list), len(rows))
+        )
         with open(shintakane_result_csv, "w", encoding="utf-8") as f:
             shintakane_result_csv_w = csv.writer(f)
             shintakane_result_csv_w.writerows(rows)
@@ -1445,15 +1450,13 @@ def main(force=False):
         shintakane_result_csv = os.path.join(
             DATA_DIR, "shintakane_result_data/shintakane_result.csv"
         )
-        import threading
         import googledrive
 
-        threading.Thread(
-            target=googledrive.upload_csv,
-            args=(shintakane_result_csv, "shintakane_result"),
-            daemon=False,
-        ).start()
-        # googledrive.upload_csv(shintakane_result_csv, "shintakane_result")
+        # 同期アップロード（非同期だとmarket_dataアップロードと競合するため）
+        try:
+            googledrive.upload_csv(shintakane_result_csv, "shintakane_result")
+        except Exception as e:
+            log_error("GoogleDriveアップロード失敗: %s" % e)
     # 現在の銘柄DBをもとに決算DBの更新
     if "udpate_kessan_db" in args:
         stocks = stock_db.load_stock_db()
