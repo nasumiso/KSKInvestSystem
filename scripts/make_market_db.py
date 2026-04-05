@@ -560,6 +560,7 @@ tr:hover { background: #f5f5f5; }
 .kessan-card.future { border-left: 3px solid #3498db; }
 .kessan-card.past { opacity: 0.6; }
 .kessan-card .card-date { font-weight: bold; color: #2c3e50; margin-bottom: 6px; font-size: 0.95em; }
+.kessan-4q { color: #c0392b; font-weight: bold; }
 .kessan-card .stock-list { list-style: none; padding: 0; }
 .kessan-card .stock-list li { padding: 2px 0; border-bottom: 1px dotted #eee; }
 .kessan-card .stock-list li:last-child { border-bottom: none; }
@@ -878,14 +879,24 @@ def _html_kessan(kessan_csv):
                     code_s = match.group(1)
                     stock_name = match.group(2)
                     quarter = match.group(3)
-                    items.append(
-                        '<li><a href="https://kabutan.jp/stock/chart?code=%s">%s</a> %s [%sQ]</li>' % (
-                            html_mod.escape(code_s),
-                            html_mod.escape(code_s),
-                            html_mod.escape(stock_name),
-                            quarter,
+                    if quarter == "4":
+                        items.append(
+                            '<li class="kessan-4q"><a href="https://kabutan.jp/stock/chart?code=%s">%s</a> <b>%s [%sQ]</b></li>' % (
+                                html_mod.escape(code_s),
+                                html_mod.escape(code_s),
+                                html_mod.escape(stock_name),
+                                quarter,
+                            )
                         )
-                    )
+                    else:
+                        items.append(
+                            '<li><a href="https://kabutan.jp/stock/chart?code=%s">%s</a> %s [%sQ]</li>' % (
+                                html_mod.escape(code_s),
+                                html_mod.escape(code_s),
+                                html_mod.escape(stock_name),
+                                quarter,
+                            )
+                        )
                 else:
                     items.append('<li>%s</li>' % html_mod.escape(stock_expr))
             cards.append(
