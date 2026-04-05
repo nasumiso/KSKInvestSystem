@@ -560,7 +560,7 @@ tr:hover { background: #f5f5f5; }
 .kessan-card.future { border-left: 3px solid #3498db; }
 .kessan-card.past { opacity: 0.6; }
 .kessan-card .card-date { font-weight: bold; color: #2c3e50; margin-bottom: 6px; font-size: 0.95em; }
-.kessan-4q { color: #c0392b; font-weight: bold; }
+.kessan-4q { font-weight: bold; }
 .kessan-card .stock-list { list-style: none; padding: 0; }
 .kessan-card .stock-list li { padding: 2px 0; border-bottom: 1px dotted #eee; }
 .kessan-card .stock-list li:last-child { border-bottom: none; }
