@@ -321,13 +321,8 @@ def main():
     # ロガーの初期化
     logger = setup_logger('shintakane')
 
-    # Sheets API でセル更新テスト
-    upload_csv_via_sheets(
-        os.path.join(DATA_DIR, "shintakane_result_data/shintakane_result.csv"),
-        "shintakane_result"
-    )
     # upload_csv('code_rank_data/code_rank.csv', "code_rank")
-    # upload_csv(os.path.join(DATA_DIR, "code_rank_data/market_data.csv"), "market_data")
+    upload_csv(os.path.join(DATA_DIR, "code_rank_data/market_data.csv"), "market_data")
 
 
 if __name__ == "__main__":
