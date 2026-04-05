@@ -30,7 +30,7 @@ pytest tests/test_gyoseki.py -v
 
 | テストファイル | 対象フロー | 備考 |
 |---|---|---|
-| `test_functional_market.py` | `update_market_db()` → `create_market_csv()` | テーマランク差分・冪等性・日付変更 |
+| `test_functional_market.py` | `update_market_db()` → `create_market_csv()` → HTML生成 | テーマランク差分・冪等性・日付変更 |
 
 ### 機能テスト追加の方針
 

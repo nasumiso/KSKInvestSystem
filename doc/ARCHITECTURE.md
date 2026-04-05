@@ -160,6 +160,30 @@ export KS_DATA_DIR=/path/to/new/data
 
 `LOGS_DIR` は常に `ROOT_DIR/logs`（ワークツリー側）を使用し、ログはワークツリーごとに分離される。
 
+## Google Drive アップロード (`googledrive.py`)
+
+分析結果をGoogle Driveにアップロードし、スプレッドシートまたはHTMLとして閲覧可能にする。
+
+### アップロード対象
+
+| 対象 | 形式 | API | 呼び出し元 |
+|------|------|-----|-----------|
+| `shintakane_result.csv` | Sheets API セル更新 | `upload_csv_via_sheets()` | `shintakane.py` |
+| `code_rank.csv` | Sheets API セル更新 | `upload_csv_via_sheets()` | `make_stock_db.py` |
+| `market_data.html` | Drive API ファイル更新 | `upload_html()` | `make_market_db.py` |
+
+### 非同期アップロード機構
+
+すべてのアップロードは `upload_csv_async()` / `upload_html_async()` で非同期スレッド化される。
+
+- **スレッド間排他**: `threading.Lock` で同一プロセス内の同時アップロードを防止
+- **プロセス間排他**: `fcntl.flock` によるファイルロック（`googledrive/.upload_lock`）でOAuth2認証の競合を防止
+- **完了待ち**: `wait_all_uploads()` で全スレッドの完了を保証。失敗・タイムアウト時は例外送出
+
+### cron実行時の並行化 (`shintakane_cron.sh`)
+
+`shintakane.py` をバックグラウンド実行し、main()完了をPID付きフラグファイル（`logs/.shintakane_main_done.{PID}`）で通知。`make_stock_db.py` はフラグ検出後に開始され、`shintakane_result` のアップロードと `make_stock_db.py` のDB処理が並行実行される。
+
 ## データ保存場所
 
 - **メインDB (shelve)**: `data/stock_data/stocks_shelve`
@@ -167,5 +191,5 @@ export KS_DATA_DIR=/path/to/new/data
 - **HTTPキャッシュ**: `data/cache_data/`
 - **株価履歴**: `data/stock_data/yahoo/price/`（yfinance JSON + レガシーHTML）, `data/stock_data/kabutan/price/`
 - **市場指数**: `data/sisu_data/`
-- **結果CSV**: `data/shintakane_result_data/`, `data/code_rank_data/`
+- **結果CSV/HTML**: `data/shintakane_result_data/`, `data/code_rank_data/`（`market_data.html` 含む）
 - **ログ**: `logs/`（TimedRotatingFileHandler、7日保持、通常INFOレベル、`KS_LOG_DEBUG=1` でDEBUG出力）
