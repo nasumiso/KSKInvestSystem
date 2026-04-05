@@ -1060,18 +1060,11 @@ def list_all_db(upload_csv=True, update_portforio=True):
         rank_csv_w = csv.writer(f)
         rank_csv_w.writerows(rows)
 
-    # GoogleDriveにアップロード
+    # GoogleDriveにアップロード（非同期、ファイルロックでプロセス間排他制御）
     if upload_csv:
         import googledrive
 
-        # googledrive.upload_csv(rank_csv, "code_rank")
-        import threading
-
-        threading.Thread(
-            target=googledrive.upload_csv,
-            args=(rank_csv, "code_rank"),
-            daemon=False,  # 完了を待つ
-        ).start()
+        googledrive.upload_csv_async(rank_csv, "code_rank")
 
     # テーマ騰落率入りのmarket_data.csvを再生成
     make_market_db.create_market_csv()
@@ -1363,6 +1356,10 @@ def main():
         reflesh_db()
     elif command == "test":
         test()
+
+    # 非同期アップロードの完了を待つ（list_all_db等で起動されたスレッド）
+    import googledrive
+    googledrive.wait_all_uploads()
 
 
 # TODO: エラーを記述するようにせんと・・
