@@ -504,10 +504,12 @@ class TestHtmlDisclosure:
         assert '<details open>' in result
 
     def test_older_details_closed(self):
-        """古いデータはdetails（折りたたみ）になる"""
+        """直近3日より前（30日以内）のデータはdetails（折りたたみ）になる"""
+        # 10日前の日付を使用（30日以内なので表示される）
+        ten_days_ago = (datetime.today() - timedelta(days=10)).strftime("%Y%m%d")
         disc_csv = [
             ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
-            ["20250101", "1234", "テスト", "開示", "テスト開示"],
+            [ten_days_ago, "1234", "テスト", "開示", "テスト開示"],
         ]
         result = make_market_db._html_disclosure(disc_csv)
         assert '<details>' in result

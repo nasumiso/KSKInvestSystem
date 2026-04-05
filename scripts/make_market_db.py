@@ -650,21 +650,29 @@ def _html_theme_rank(market_db, theme_rank_data=None):
             parts.append('<h3>Kabutanランキング履歴</h3>')
             parts.append('<div class="rank-history"><table>')
             access_date = market_db.get("access_date_theme_rank")
-            if access_date and theme_rank_list:
-                cells = '<td>%s</td>' % access_date.strftime("%Y-%m-%d")
-                for t in theme_rank_list[:10]:
+            def _rank_row(date_str, rank_list):
+                """ランキング行を生成（10位まで表示 + 残りは折りたたみ）"""
+                cells = '<td>%s</td>' % date_str
+                for t in rank_list[:10]:
                     cells += '<td>%s</td>' % html_mod.escape(t)
-                if len(theme_rank_list) > 10:
-                    cells += '<td style="color:#999">...</td>'
-                parts.append('<tr>%s</tr>' % cells)
+                if len(rank_list) > 10:
+                    cells += '<td style="color:#999; cursor:pointer" '
+                    cells += 'onclick="this.parentElement.nextElementSibling.hidden=!this.parentElement.nextElementSibling.hidden"'
+                    cells += '>▶ ...</td>'
+                row = '<tr>%s</tr>' % cells
+                if len(rank_list) > 10:
+                    extra_cells = '<td></td>'
+                    for t in rank_list[10:30]:
+                        extra_cells += '<td>%s</td>' % html_mod.escape(t)
+                    row += '<tr hidden>%s</tr>' % extra_cells
+                return row
+
+            if access_date and theme_rank_list:
+                date_str = access_date.strftime("%Y-%m-%d")
+                parts.append(_rank_row(date_str, theme_rank_list))
             if prev_day and prev_theme_rank_list:
                 prev_date_str = prev_day.strftime("%Y-%m-%d") if hasattr(prev_day, 'strftime') else str(prev_day)
-                cells = '<td>%s</td>' % prev_date_str
-                for t in prev_theme_rank_list[:10]:
-                    cells += '<td>%s</td>' % html_mod.escape(t)
-                if len(prev_theme_rank_list) > 10:
-                    cells += '<td style="color:#999">...</td>'
-                parts.append('<tr>%s</tr>' % cells)
+                parts.append(_rank_row(prev_date_str, prev_theme_rank_list))
             parts.append('</table></div>')
 
     return '\n'.join(parts)
@@ -829,51 +837,74 @@ def _html_kessan(kessan_csv):
             return 0
     entries.sort(key=lambda x: parse_mmdd(x[0]))
 
-    # カードHTML生成
-    parts = ['<h2>決算日</h2>\n<div class="kessan-grid">']
+    # 過去/未来を分類
+    past_entries = []
+    future_entries = []
     for date_str, stock_strs in entries:
-        # 過去/未来の判定
         try:
             m, d = date_str.split("/")
-            # 年を推定（today付近の日付）
             year = today.year
             dt = datetime(year, int(m), int(d)).date()
-            # 1月の決算が12月のtodayから見て未来の場合
             if dt.month < today.month - 6:
                 dt = datetime(year + 1, int(m), int(d)).date()
             is_past = dt < today
         except (ValueError, TypeError):
             is_past = False
+        if is_past:
+            past_entries.append((date_str, stock_strs))
+        else:
+            future_entries.append((date_str, stock_strs))
 
-        card_class = "kessan-card past" if is_past else "kessan-card future"
-        date_label = "%s (済)" % date_str if is_past else date_str
-
-        items = []
-        for stock_expr in stock_strs:
-            match = _RE_KESSAN_STOCK.match(stock_expr)
-            if match:
-                code_s = match.group(1)
-                stock_name = match.group(2)
-                quarter = match.group(3)
-                items.append(
-                    '<li><a href="https://kabutan.jp/stock/chart?code=%s">%s</a> %s [%sQ]</li>' % (
-                        html_mod.escape(code_s),
-                        html_mod.escape(code_s),
-                        html_mod.escape(stock_name),
-                        quarter,
+    def _render_cards(entries_list, is_past=False):
+        """決算カードのHTML生成"""
+        cards = []
+        for date_str, stock_strs in entries_list:
+            card_class = "kessan-card past" if is_past else "kessan-card future"
+            date_label = "%s (済)" % date_str if is_past else date_str
+            items = []
+            for stock_expr in stock_strs:
+                match = _RE_KESSAN_STOCK.match(stock_expr)
+                if match:
+                    code_s = match.group(1)
+                    stock_name = match.group(2)
+                    quarter = match.group(3)
+                    items.append(
+                        '<li><a href="https://kabutan.jp/stock/chart?code=%s">%s</a> %s [%sQ]</li>' % (
+                            html_mod.escape(code_s),
+                            html_mod.escape(code_s),
+                            html_mod.escape(stock_name),
+                            quarter,
+                        )
                     )
-                )
-            else:
-                items.append('<li>%s</li>' % html_mod.escape(stock_expr))
+                else:
+                    items.append('<li>%s</li>' % html_mod.escape(stock_expr))
+            cards.append(
+                '  <div class="%s">\n'
+                '    <div class="card-date">%s</div>\n'
+                '    <ul class="stock-list">%s</ul>\n'
+                '  </div>' % (card_class, html_mod.escape(date_label), '\n      '.join(items))
+            )
+        return '\n'.join(cards)
 
+    # カードHTML生成
+    parts = ['<h2>決算日</h2>']
+
+    # 未来の決算（常に表示）
+    if future_entries:
+        parts.append('<div class="kessan-grid">')
+        parts.append(_render_cards(future_entries, is_past=False))
+        parts.append('</div>')
+
+    # 過去の決算（折りたたみ）
+    if past_entries:
         parts.append(
-            '  <div class="%s">\n'
-            '    <div class="card-date">%s</div>\n'
-            '    <ul class="stock-list">%s</ul>\n'
-            '  </div>' % (card_class, html_mod.escape(date_label), '\n      '.join(items))
+            '<details>\n'
+            '<summary style="cursor:pointer; color:#666; margin:8px 0;">▶ 済の決算を表示 (%d件)</summary>\n'
+            '<div class="kessan-grid">' % len(past_entries)
         )
+        parts.append(_render_cards(past_entries, is_past=True))
+        parts.append('</div>\n</details>')
 
-    parts.append('</div>')
     return '\n'.join(parts)
 
 
@@ -914,6 +945,8 @@ def _html_disclosure(disc_csv):
     today = get_price_day(datetime.today())
     three_days_ago = today - timedelta(days=3)
 
+    thirty_days_ago = today - timedelta(days=30)
+
     recent_rows = []
     older_rows = []
     for row in data_rows:
@@ -921,6 +954,8 @@ def _html_disclosure(disc_csv):
         try:
             # YYYYMMDD形式
             dt = datetime.strptime(date_str, "%Y%m%d").date()
+            if dt < thirty_days_ago:
+                continue  # 30日以上前のデータは除外
             if dt >= three_days_ago:
                 recent_rows.append(row)
             else:
