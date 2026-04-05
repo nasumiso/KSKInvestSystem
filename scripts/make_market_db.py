@@ -347,20 +347,18 @@ def update_market_db():
     market_db = get_market_db()
 
     # 前日のモメンタム順位をDBに保存（カレンダー日が変わった場合のみ退避）
-    # ※ get_price_dayは18時前後で日付が変わるため、同日中の再実行で
-    #   退避が二重に走り「当日vs当日」比較になる問題を防ぐ
-    prev_date = market_db.get("access_date_theme_rank")
+    # ※ access_date_theme_rankはキャッシュファイルのmtimeであり実行日ではないため、
+    #   休日（キャッシュ未更新）に複数回実行すると毎回退避が走り
+    #   prev_theme_rankが当日データで上書きされる問題があった。
+    #   退避実行日を別途記録し、同日再実行時は退避をスキップする。
+    last_save_date = market_db.get("prev_theme_rank_save_date")
     cur_theme_rank = market_db.get("theme_rank", [])
     today_cal = datetime.today().date()
-    if prev_date and cur_theme_rank:
-        if isinstance(prev_date, datetime):
-            prev_cal = prev_date.date()
-        else:
-            prev_cal = prev_date
-        if prev_cal != today_cal:
-            # カレンダー日が変わった → 現在のtheme_rankを前日データとして退避
-            market_db["prev_theme_rank"] = list(cur_theme_rank)
-            log_print("前日モメンタム順位を退避: %s" % prev_cal)
+    if cur_theme_rank and last_save_date != today_cal:
+        # 本日まだ退避していない → 現在のtheme_rankを前日データとして退避
+        market_db["prev_theme_rank"] = list(cur_theme_rank)
+        market_db["prev_theme_rank_save_date"] = today_cal
+        log_print("前日モメンタム順位を退避: %s" % today_cal)
     prev_momentum_rank = market_db.get("prev_theme_rank", [])
     theme_db = make_theme_data(prev_momentum_rank)
     market_db.update(theme_db)
