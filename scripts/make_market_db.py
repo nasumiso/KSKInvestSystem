@@ -497,11 +497,8 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
         csv_w = csv.writer(f)
         csv_w.writerows(rows)
 
-    # GoogleDriveにアップロード（同期: 非同期だとshintakane_resultと競合するため）
-    try:
-        googledrive.upload_csv(csv_path, "market_data")
-    except Exception as e:
-        log_warning("GoogleDriveアップロード失敗(market_data): %s" % e)
+    # GoogleDriveにアップロード（非同期、ファイルロックでプロセス間排他制御）
+    googledrive.upload_csv_async(csv_path, "market_data")
 
 
 def update_shintakane_theme(stocks, code_list):

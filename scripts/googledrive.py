@@ -12,6 +12,9 @@
 使い方:
 スクリプトを直接実行することで、CSV ファイルを Google Drive に Google スプレッドシートとしてアップロードまたは更新できます。
 """  # noqa: E501
+import threading
+import fcntl
+
 from ks_util import *
 
 # 外部ライブラリ GoogleDriveAPI
@@ -111,6 +114,65 @@ def upload_csv(csv_name, up_file_name):
     )
 
     log_print("Upload Complete File ID: %s" % updated_file.get("id"))
+
+
+# --- 非同期アップロード機構 ---
+# スレッド間排他（同一プロセス内）
+_upload_lock = threading.Lock()
+# 実行中スレッドの追跡
+_upload_threads = []
+# スレッド内で発生した例外を収集
+_upload_errors = []
+# プロセス間排他用ロックファイル
+_LOCK_FILE = os.path.join(DATA_DIR, "googledrive/.upload_lock")
+
+
+def _upload_csv_with_lock(csv_name, up_file_name):
+    """ファイルロック付きアップロード（プロセス間 + スレッド間排他）"""
+    try:
+        with _upload_lock:
+            with open(_LOCK_FILE, "w") as lf:
+                fcntl.flock(lf, fcntl.LOCK_EX)
+                try:
+                    upload_csv(csv_name, up_file_name)
+                finally:
+                    fcntl.flock(lf, fcntl.LOCK_UN)
+    except Exception as e:
+        log_warning("GoogleDriveアップロード失敗(%s): %s" % (up_file_name, e))
+        _upload_errors.append(e)
+
+
+def upload_csv_async(csv_name, up_file_name):
+    """非同期アップロード。スレッドを起動して即座に返る。"""
+    t = threading.Thread(
+        target=_upload_csv_with_lock,
+        args=(csv_name, up_file_name),
+        daemon=False,
+    )
+    _upload_threads.append(t)
+    t.start()
+    return t
+
+
+def wait_all_uploads(timeout=300):
+    """全アップロードスレッドの完了を待つ。失敗・タイムアウトがあれば例外を送出。"""
+    timed_out = []
+    for t in _upload_threads:
+        t.join(timeout=timeout)
+        if t.is_alive():
+            log_warning("アップロードスレッドがタイムアウトしました: %s" % t.name)
+            timed_out.append(t.name)
+    _upload_threads.clear()
+    all_errors = list(_upload_errors)
+    _upload_errors.clear()
+    if timed_out:
+        all_errors.append(
+            TimeoutError("タイムアウト: %s" % ", ".join(timed_out))
+        )
+    if all_errors:
+        raise RuntimeError(
+            "GoogleDriveアップロードで%d件の失敗: %s" % (len(all_errors), all_errors)
+        )
 
 
 def main():
