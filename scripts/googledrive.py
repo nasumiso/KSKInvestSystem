@@ -152,10 +152,14 @@ def upload_csv_via_sheets(csv_name, up_file_name):
     sheets_service = get_sheets_service()
     spreadsheet_id = FILE_DICT[up_file_name]
 
-    # CSV読み込み
+    # CSV読み込み（短い行を最大列数に合わせて空文字パディング）
     with open(csv_name, "r", encoding="utf-8") as f:
         reader = csv.reader(f)
         values = list(reader)
+    if values:
+        max_cols = max(len(row) for row in values)
+        for row in values:
+            row.extend([""] * (max_cols - len(row)))
 
     # SHEETS_CONFIG からタブ名を取得
     sheet_name = SHEETS_CONFIG[up_file_name]["sheet_name"]

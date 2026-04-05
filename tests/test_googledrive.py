@@ -128,6 +128,36 @@ class TestUploadCsvViaSheets:
         assert "A3" in clear_kwargs["range"]
 
     @patch("googledrive.get_sheets_service")
+    def test_ragged_rows_padded(self, mock_get_service):
+        """列数が異なる行（セクションヘッダー等）が最大列数にパディングされる"""
+        from googledrive import upload_csv_via_sheets
+
+        mock_service = MagicMock()
+        mock_get_service.return_value = mock_service
+
+        # 1列のセクション行 + 3列のデータ行
+        test_rows = [["【本日銘柄】"], ["1234", "テスト", "東証P"]]
+        mock_service.spreadsheets().get().execute.return_value = {
+            "sheets": [{"properties": {
+                "title": "shintakane_result",
+                "gridProperties": {"rowCount": 2, "columnCount": 3}
+            }}]
+        }
+
+        csv_content = self._make_csv_content(test_rows)
+        m = mock_open(read_data=csv_content)
+        with patch("builtins.open", m):
+            upload_csv_via_sheets("test.csv", "shintakane_result")
+
+        # update に渡された values を確認
+        call_kwargs = mock_service.spreadsheets().values().update.call_args[1]
+        sent_values = call_kwargs["body"]["values"]
+        # セクション行が3列にパディングされている
+        assert len(sent_values[0]) == 3
+        assert sent_values[0] == ["【本日銘柄】", "", ""]
+        assert sent_values[1] == ["1234", "テスト", "東証P"]
+
+    @patch("googledrive.get_sheets_service")
     def test_raises_on_missing_tab(self, mock_get_service):
         """対象タブが見つからない場合 ValueError を送出"""
         import pytest
