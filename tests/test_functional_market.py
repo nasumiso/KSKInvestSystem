@@ -229,10 +229,12 @@ class TestUpdateMarketDbFlow:
         make_market_db._market_db_cache = None
         db_shelve._market_db = None
 
-        # DBのaccess_date_theme_rankを「昨日」に書き換えて日付変更をシミュレート
+        # prev_theme_rank_save_dateを「昨日」に書き換えて日付変更をシミュレート
         with db_shelve.get_market_db() as db:
             db_dict = db.export_to_dict()
-            db_dict["access_date_theme_rank"] = datetime.today() - timedelta(days=1)
+            db_dict["prev_theme_rank_save_date"] = (
+                datetime.today() - timedelta(days=1)
+            ).date()
             db.import_from_dict(db_dict)
 
         # キャッシュリセット
