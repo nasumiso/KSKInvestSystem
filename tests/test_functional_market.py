@@ -273,3 +273,4 @@ class TestUpdateMarketDbFlow:
         assert "↑" in rank_text or "↓" in rank_text, (
             "CSV内に差分ラベルが含まれていない: %s" % rank_text
         )
+
