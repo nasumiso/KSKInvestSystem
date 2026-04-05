@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shintakane Portal</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: #f5f6f8;
+    color: #1a1a1a;
+    padding: 2rem;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    color: #333;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1rem;
+  }
+  .card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    transition: box-shadow 0.15s;
+  }
+  .card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  }
+  .card-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+  }
+  .card-label.daily { color: #2563eb; }
+  .card-label.weekly { color: #7c3aed; }
+  .card-label.manual { color: #d97706; }
+  .card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+  }
+  .card-desc {
+    font-size: 0.85rem;
+    color: #666;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<h1>Shintakane Portal</h1>
+
+<div class="grid">
+  <a class="card" href="https://drive.google.com/file/d/1LLHCOpljXC6bnyZqh2EOuhDBOvogF3_J/view" target="_blank" rel="noopener">
+    <div class="card-label daily">Daily</div>
+    <div class="card-title">Market Data</div>
+    <div class="card-desc">テーマランク、市場指標（TOPIX / マザーズ / 日経225 / NASDAQ）、決算カレンダー、適時開示</div>
+  </a>
+
+  <a class="card" href="https://docs.google.com/spreadsheets/d/1KxOFvfgT7o_XGDASGylxA0Rn9yEqPLSv6Yweb_jGsHk/edit" target="_blank" rel="noopener">
+    <div class="card-label daily">Daily</div>
+    <div class="card-title">Shintakane Result</div>
+    <div class="card-desc">新高値銘柄の追跡・分析結果（当日の新高値 + 継続監視銘柄）</div>
+  </a>
+
+  <a class="card" href="https://docs.google.com/spreadsheets/d/1zto-8-fZ5hTZfXY6k2C49HZHbyA3OE8BgkReAViLSNU/edit" target="_blank" rel="noopener">
+    <div class="card-label weekly">Weekly</div>
+    <div class="card-title">Code Rank</div>
+    <div class="card-desc">全銘柄スコアリング・ランキング（収益性 / バリュー / モメンタム / テクニカル指標）</div>
+  </a>
+
+  <a class="card" href="https://docs.google.com/spreadsheets/d/1dveeGsQUiw1XzIE6k-GUiy16CXw4J6qzFp9-aosde70/edit" target="_blank" rel="noopener">
+    <div class="card-label manual">Manual</div>
+    <div class="card-title">銘柄調査</div>
+    <div class="card-desc">個別銘柄の手動評価・調査メモ（S〜Eランク）</div>
+  </a>
+</div>
+
+</body>
+</html>

@@ -467,10 +467,11 @@ def todays_shintakane(upd=UPD_INTERVAL):
         make_market_db.update_market_db()
         past_code = [t["code_s"] for t in already_only_list]
         today_code = [t["code_s"] for t in today_list]
-        shintakane_theme_csv = make_market_db.update_shintakane_theme_csv(
-            stocks, today_code, past_code
-        )
-        make_market_db.create_market_csv(None, shintakane_theme_csv)
+        # shintakane_theme_csv = make_market_db.update_shintakane_theme_csv(
+        #     stocks, today_code, past_code
+        # )
+        # make_market_db.create_market_csv(None, shintakane_theme_csv)
+        make_market_db.create_market_csv()  # shintakane_theme_csv は不要になった
 
     update_market()  # マーケットDB更新、アップロード
 

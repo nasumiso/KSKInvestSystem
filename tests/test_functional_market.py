@@ -73,6 +73,7 @@ def market_env(tmp_path):
     """
     market_data_dir, code_rank_dir = _setup_tmp_dirs(tmp_path)
     csv_path = str(code_rank_dir / "market_data.csv")
+    html_path = str(code_rank_dir / "market_data.html")
     shelve_path = str(market_data_dir / "market_db_shelve")
 
     today_html = _load_fixture("theme_rank_today.html")
@@ -127,6 +128,8 @@ def market_env(tmp_path):
 
     # Google Drive、決算、適宜開示をモック
     patches.append(patch("googledrive.upload_csv"))
+    patches.append(patch("googledrive.upload_html"))
+    patches.append(patch("googledrive.upload_html_async"))
     patches.append(patch("kessan.make_kessan_csv", return_value=[]))
     patches.append(patch("disclosure.update_disclosure_all", return_value=[]))
 
@@ -141,6 +144,7 @@ def market_env(tmp_path):
         "market_data_dir": market_data_dir,
         "code_rank_dir": code_rank_dir,
         "csv_path": csv_path,
+        "html_path": html_path,
         "shelve_path": shelve_path,
         "today_html": today_html,
         "prev_html": prev_html,
@@ -159,7 +163,7 @@ class TestUpdateMarketDbFlow:
     """update_market_db → create_market_csv の結合テスト"""
 
     def test_update_and_create_csv(self, market_env):
-        """初回実行: テーマランク取得→DB保存→CSV生成の一連フロー"""
+        """初回実行: テーマランク取得→DB保存→HTML生成の一連フロー"""
         # update_market_db実行
         market_db = make_market_db.update_market_db()
 
@@ -170,29 +174,25 @@ class TestUpdateMarketDbFlow:
         assert "topix" in market_db
         assert len(market_db["theme_rank"]) == 30
 
-        # CSV生成
+        # HTML生成
         make_market_db.create_market_csv(market_db)
 
-        # CSVが生成されていること
-        csv_path = market_env["csv_path"]
-        assert os.path.exists(csv_path)
+        # HTMLが生成されていること
+        html_path = market_env["html_path"]
+        assert os.path.exists(html_path)
 
-        rows = _read_csv(csv_path)
+        with open(html_path, encoding="utf-8") as f:
+            content = f.read()
 
         # テーマランクセクションが含まれること
-        assert rows[0][0] == "■ テーマランク"
+        assert "テーマランク" in content
 
-        # ランク行にテーマ名が含まれること
-        rank_row = rows[1]
-        assert rank_row[0] == "ランク"
-        # テーマ名が含まれる（ラベル付き）
-        rank_text = ",".join(rank_row)
-        assert "AI" in rank_text
-        assert "半導体" in rank_text
+        # テーマ名が含まれること
+        assert "AI" in content
+        assert "半導体" in content
 
         # 市場セクションが含まれること
-        market_headers = [r[0] for r in rows if r]
-        assert "■市場" in market_headers
+        assert "市場" in content
 
     def test_idempotent_same_day(self, market_env):
         """同日2回実行でprev_theme_rankが上書きされず差分ラベルが安定する
@@ -264,13 +264,13 @@ class TestUpdateMarketDbFlow:
         non_zero_diffs = [v for v in diff.values() if v is not None and v != 0]
         assert len(non_zero_diffs) > 0, "日付変更後に差分ラベルが全て0になっている"
 
-        # CSV生成して差分ラベルが反映されていること
+        # HTML生成して差分ラベルが反映されていること
         make_market_db.create_market_csv(market_db2)
-        rows = _read_csv(market_env["csv_path"])
-        rank_row = rows[1]
-        rank_text = ",".join(rank_row)
+        html_path = market_env["html_path"]
+        with open(html_path, encoding="utf-8") as f:
+            content = f.read()
         # ↑または↓のラベルが含まれるはず
-        assert "↑" in rank_text or "↓" in rank_text, (
-            "CSV内に差分ラベルが含まれていない: %s" % rank_text
+        assert "↑" in content or "↓" in content, (
+            "HTML内に差分ラベルが含まれていない"
         )
 

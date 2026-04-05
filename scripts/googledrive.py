@@ -116,6 +116,36 @@ def upload_csv(csv_name, up_file_name):
     log_print("Upload Complete File ID: %s" % updated_file.get("id"))
 
 
+def upload_html(html_path):
+    """HTMLファイルをGoogleDriveの「投資データ」フォルダにアップロードする"""
+    log_print("%sをGoogleDriveにアップロードします" % html_path)
+    drive_service = get_drive_service()
+    folder_id = FOLDER_DICT["投資データ"]
+    fname = os.path.basename(html_path)
+
+    # 既存ファイルを検索（同名ファイルがあれば上書き更新）
+    results = drive_service.files().list(
+        q="name='%s' and '%s' in parents and trashed=false" % (fname, folder_id),
+        fields="files(id)"
+    ).execute()
+    files = results.get("files", [])
+
+    media = MediaFileUpload(html_path, mimetype="text/html", resumable=True)
+
+    if files:
+        # 既存ファイルを更新
+        file_id = files[0]["id"]
+        drive_service.files().update(fileId=file_id, media_body=media).execute()
+        log_print("Upload(更新) Complete: %s" % fname)
+    else:
+        # 新規作成
+        file_metadata = {"name": fname, "parents": [folder_id]}
+        drive_service.files().create(
+            body=file_metadata, media_body=media, fields="id"
+        ).execute()
+        log_print("Upload(新規) Complete: %s" % fname)
+
+
 # --- 非同期アップロード機構 ---
 # スレッド間排他（同一プロセス内）
 _upload_lock = threading.Lock()
@@ -127,26 +157,38 @@ _upload_errors = []
 _LOCK_FILE = os.path.join(DATA_DIR, "googledrive/.upload_lock")
 
 
-def _upload_csv_with_lock(csv_name, up_file_name):
+def _upload_with_lock(func, *args):
     """ファイルロック付きアップロード（プロセス間 + スレッド間排他）"""
     try:
         with _upload_lock:
             with open(_LOCK_FILE, "w") as lf:
                 fcntl.flock(lf, fcntl.LOCK_EX)
                 try:
-                    upload_csv(csv_name, up_file_name)
+                    func(*args)
                 finally:
                     fcntl.flock(lf, fcntl.LOCK_UN)
     except Exception as e:
-        log_warning("GoogleDriveアップロード失敗(%s): %s" % (up_file_name, e))
+        log_warning("GoogleDriveアップロード失敗: %s" % e)
         _upload_errors.append(e)
 
 
 def upload_csv_async(csv_name, up_file_name):
-    """非同期アップロード。スレッドを起動して即座に返る。"""
+    """CSV非同期アップロード。スレッドを起動して即座に返る。"""
     t = threading.Thread(
-        target=_upload_csv_with_lock,
-        args=(csv_name, up_file_name),
+        target=_upload_with_lock,
+        args=(upload_csv, csv_name, up_file_name),
+        daemon=False,
+    )
+    _upload_threads.append(t)
+    t.start()
+    return t
+
+
+def upload_html_async(html_path):
+    """HTML非同期アップロード。スレッドを起動して即座に返る。"""
+    t = threading.Thread(
+        target=_upload_with_lock,
+        args=(upload_html, html_path),
         daemon=False,
     )
     _upload_threads.append(t)
