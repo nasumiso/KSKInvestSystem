@@ -410,8 +410,54 @@ def update_db(stocks, stock_data):
     except KeyError:
         stock = {}
         log_print(str(code_s) + "は新規DB銘柄")
+    # スクレイピング失敗時に空データで既存値を上書きしないよう保護するキー
+    _PROTECTED_DICT_KEYS = {"shihyo"}
+    _PROTECTED_LIST_KEYS = {
+        "gyoseki_current", "gyoseki_quarter",
+        "stddev_volatility", "sell_pressure_ratio", "sell_pressure_ratio_w",
+        "price_log",
+    }
+    # 0値での上書きを防止するキー（計算失敗時に0が返される）
+    _PROTECTED_ZERO_KEYS = {
+        "rironkabuka", "rironkabuka_up", "rironkabuka_down", "rironkabuka_preceding",
+    }
     for k in list(stock_data.keys()):
-        stock[k] = stock_data[k]
+        new_val = stock_data[k]
+        if k.startswith("access_date_") and new_val is None:
+            # スクレイピング失敗時: access_dateを削除して次回再取得を促す
+            if k in stock:
+                del stock[k]
+                log_debug("%sを削除しました（次回再取得）" % k)
+            continue
+        if k in _PROTECTED_DICT_KEYS:
+            # dictはキー単位でマージし、空dictでの上書きを防止
+            if new_val:
+                existing = stock.get(k, {})
+                existing.update(new_val)
+                stock[k] = existing
+            elif k not in stock:
+                # 新規銘柄では空dictでもキーを初期化（下流で KeyError を防ぐ）
+                stock[k] = {}
+            else:
+                log_debug("%sが空のため既存データを保持します" % k)
+        elif k in _PROTECTED_LIST_KEYS:
+            # listは空リストでの上書きを防止
+            if new_val:
+                stock[k] = new_val
+            elif k not in stock:
+                stock[k] = []
+            else:
+                log_debug("%sが空のため既存データを保持します" % k)
+        elif k in _PROTECTED_ZERO_KEYS:
+            # 0値での上書きを防止（計算失敗時に既存値を保持）
+            if new_val:
+                stock[k] = new_val
+            elif k in stock:
+                log_debug("%sが0のため既存データを保持します" % k)
+            else:
+                stock[k] = new_val
+        else:
+            stock[k] = new_val
     log_debug("DB更新しました: ", code_s, list(stock_data.keys()))
     # 更新後のカラム表示
     print_dict(
@@ -692,6 +738,7 @@ def get_access_dates_expr(stock_data):
     Returns:
         str: 更新日文字列 "month/day|day|day".
     """
+    month = None
     date = ""
     if "access_date_gyoseki" in stock_data:
         dt = stock_data["access_date_gyoseki"]
@@ -700,7 +747,7 @@ def get_access_dates_expr(stock_data):
     date_sh = ""
     if "access_date_shihyo" in stock_data:
         dt = stock_data["access_date_shihyo"]
-        if month == dt.month:
+        if month and month == dt.month:
             date_sh = dt.day
         else:
             date_sh = "%s/%s" % (dt.month, dt.day)
@@ -709,7 +756,7 @@ def get_access_dates_expr(stock_data):
     if "access_date_price" in stock_data:
         dt = stock_data["access_date_price"]
         dt = get_price_day(dt)
-        if month == dt.month:
+        if month and month == dt.month:
             date_pr = dt.day
         else:
             date_pr = "%s/%s" % (dt.month, dt.day)
@@ -1013,18 +1060,11 @@ def list_all_db(upload_csv=True, update_portforio=True):
         rank_csv_w = csv.writer(f)
         rank_csv_w.writerows(rows)
 
-    # GoogleDriveにアップロード
+    # GoogleDriveにアップロード（非同期、ファイルロックでプロセス間排他制御）
     if upload_csv:
         import googledrive
 
-        # googledrive.upload_csv(rank_csv, "code_rank")
-        import threading
-
-        threading.Thread(
-            target=googledrive.upload_csv,
-            args=(rank_csv, "code_rank"),
-            daemon=False,  # 完了を待つ
-        ).start()
+        googledrive.upload_csv_async(rank_csv, "code_rank")
 
     # テーマ騰落率入りのmarket_data.csvを再生成
     make_market_db.create_market_csv()
@@ -1316,6 +1356,10 @@ def main():
         reflesh_db()
     elif command == "test":
         test()
+
+    # 非同期アップロードの完了を待つ（list_all_db等で起動されたスレッド）
+    import googledrive
+    googledrive.wait_all_uploads()
 
 
 # TODO: エラーを記述するようにせんと・・

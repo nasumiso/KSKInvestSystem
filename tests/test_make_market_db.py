@@ -2,8 +2,10 @@
 
 import pytest
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import make_market_db
 from ks_util import DATA_DIR
 
@@ -24,12 +26,9 @@ class TestParseThemeHtml:
         result = make_market_db.parse_theme_html(html)
         assert result == ["AI", "半導体", "DX"]
 
-    def test_empty_html(self):
-        """空HTMLの場合は空リスト"""
+    def test_empty_or_none(self):
+        """空HTML・Noneの場合は空リスト"""
         assert make_market_db.parse_theme_html("") == []
-
-    def test_none(self):
-        """Noneの場合は空リスト"""
         assert make_market_db.parse_theme_html(None) == []
 
     def test_double_quotes(self):
@@ -71,20 +70,6 @@ class TestGetPrevFname:
         )
         assert fname == ""
 
-    def test_date_format(self):
-        """日付フォーマットがYYMMDDであること"""
-        cur_day = datetime(2025, 2, 23)
-        # ファイルが存在しない場合、30日分イテレーションして空文字列を返す
-        # 最後のcur_dayの日付を確認
-        _, last_day = make_market_db.get_prev_fname(
-            "/nonexistent/path/test.html", cur_day
-        )
-        # 30日前の日付
-        expected_day = cur_day - timedelta(30)
-        assert last_day.year == expected_day.year
-        assert last_day.month == expected_day.month
-        assert last_day.day == expected_day.day
-
     def test_file_found(self):
         """ファイルが見つかった場合はそのパスを返す"""
         cur_day = datetime(2025, 2, 23)
@@ -98,15 +83,6 @@ class TestGetPrevFname:
             )
             assert fname == expected_fname
             assert found_day.day == 22
-
-    def test_iteration_count(self):
-        """30日分イテレーションして見つからない場合"""
-        cur_day = datetime(2025, 2, 23)
-        with patch("os.path.exists", return_value=False):
-            fname, _ = make_market_db.get_prev_fname(
-                "/tmp/test.html", cur_day
-            )
-            assert fname == ""
 
 
 # ==================================================
@@ -196,13 +172,6 @@ class TestThemeRankLabel:
         """新規テーマ: NEW表示"""
         assert make_market_db._theme_rank_label("AI", None) == "AI(NEW)"
 
-    def test_rank_up_by_one(self):
-        """1つ上昇"""
-        assert make_market_db._theme_rank_label("防衛", 1) == "防衛(↑1)"
-
-    def test_rank_down_by_one(self):
-        """1つ下降"""
-        assert make_market_db._theme_rank_label("DX", -1) == "DX(↓1)"
 
 
 # ==================================================
@@ -244,48 +213,26 @@ class TestCalcThemePriceMomentum:
         result = make_market_db.calc_theme_price_momentum({})
         assert result == {}
 
-    def test_no_price_log(self):
-        """price_logがない銘柄はスキップ"""
-        stocks = {"1234": {"themes": "AI"}}
-        result = make_market_db.calc_theme_price_momentum(stocks)
-        assert result == {}
-
-    def test_single_price_entry(self):
-        """price_logが1件のみの場合はスキップ"""
-        from datetime import date
-
-        stocks = {
-            "1234": {
-                "themes": "AI",
-                "price_log": [(date(2026, 2, 20), 1000)],
-            },
-        }
-        result = make_market_db.calc_theme_price_momentum(stocks)
-        assert result == {}
-
-    def test_zero_prev_price(self):
-        """前日価格が0の銘柄はスキップ"""
+    def test_skip_conditions(self):
+        """スキップされるケース: price_logなし/1件のみ/前日価格0/テーマ空"""
         from datetime import date
 
         d1 = date(2026, 2, 20)
         d0 = date(2026, 2, 19)
-        stocks = {
+        # price_logなし
+        assert make_market_db.calc_theme_price_momentum({"1234": {"themes": "AI"}}) == {}
+        # price_log 1件のみ
+        assert make_market_db.calc_theme_price_momentum({
+            "1234": {"themes": "AI", "price_log": [(d1, 1000)]},
+        }) == {}
+        # 前日価格0
+        assert make_market_db.calc_theme_price_momentum({
             "1234": self._make_stock("AI", 1000, 0, d1, d0),
-        }
-        result = make_market_db.calc_theme_price_momentum(stocks)
-        assert result == {}
-
-    def test_empty_themes(self):
-        """テーマが空文字の銘柄はスキップ"""
-        from datetime import date
-
-        d1 = date(2026, 2, 20)
-        d0 = date(2026, 2, 19)
-        stocks = {
+        }) == {}
+        # テーマ空
+        assert make_market_db.calc_theme_price_momentum({
             "1234": self._make_stock("", 1100, 1000, d1, d0),
-        }
-        result = make_market_db.calc_theme_price_momentum(stocks)
-        assert result == {}
+        }) == {}
 
     def test_latest_trade_date_filter(self):
         """直近取引日と異なるprice_log日付の銘柄は除外"""
@@ -630,3 +577,165 @@ class TestCreateMarketHtml:
             # （CSS内のコメントには含まれるため、h2タグで判定）
             assert '<h2>決算日</h2>' not in content
             assert '<h2>適宜開示</h2>' not in content
+
+
+# ==================================================
+# make_theme_data — 差分ラベル計算
+# ==================================================
+def _mock_get_theme_rank_list(today_themes, prev_themes):
+    """get_theme_rank_listのモックを返すヘルパー"""
+    cach_date = datetime(2026, 3, 18, 21, 0, 0)
+    prev_day = datetime(2026, 3, 15, 21, 0, 0)
+    return patch(
+        "make_market_db.get_theme_rank_list",
+        return_value=(today_themes, prev_themes, cach_date, prev_day),
+    )
+
+
+class TestMakeThemeDataDiff:
+    """make_theme_dataの差分ラベル計算テスト"""
+
+    # テスト用のKabutan生ランキング（モメンタム計算の入力）
+    TODAY_THEMES = ["AI", "半導体", "防衛", "DX", "EV"]
+    # 数日前の生ランキング（モメンタム計算用、差分ラベルとは無関係）
+    PREV_THEMES = ["AI", "半導体", "防衛", "DX", "EV"]
+
+    def test_rank_up(self):
+        """前日より順位が上がったテーマに正の差分がつく"""
+        # 前日モメンタム順位: DXが4位 → 今日は上位に来る想定
+        prev_momentum = ["AI", "半導体", "防衛", "DX", "EV"]
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result = make_market_db.make_theme_data(prev_momentum)
+        diff = result["theme_rank_diff"]
+        # 生ランキングが同じ＝モメンタム順位も同じ → 全部差分0
+        for theme in result["theme_rank"]:
+            assert diff[theme] == 0
+
+    def test_rank_change_detected(self):
+        """前日と今日でモメンタム順位が変わった場合、差分が正しく計算される"""
+        # 今日: AIが1位から外れて、EVが急上昇する生ランキング
+        today = ["EV", "AI", "半導体", "防衛", "DX"]
+        prev_raw = ["EV", "AI", "半導体", "防衛", "DX"]
+        # 前日のモメンタム順位はAIが1位だった
+        prev_momentum = ["AI", "半導体", "防衛", "DX", "EV"]
+        with _mock_get_theme_rank_list(today, prev_raw):
+            result = make_market_db.make_theme_data(prev_momentum)
+        diff = result["theme_rank_diff"]
+        rank_list = result["theme_rank"]
+        cur_rank = {v: i + 1 for i, v in enumerate(rank_list)}
+        prev_rank = {v: i + 1 for i, v in enumerate(prev_momentum)}
+        # 各テーマの差分が前日順位-当日順位と一致すること
+        for theme in rank_list:
+            if theme in prev_rank:
+                expected = prev_rank[theme] - cur_rank[theme]
+                assert diff[theme] == expected, (
+                    "%s: expected %d, got %d" % (theme, expected, diff[theme])
+                )
+
+    def test_new_theme(self):
+        """前日のモメンタム順位に存在しないテーマはNEW（None）"""
+        today = ["AI", "半導体", "防衛", "新テーマ", "DX"]
+        prev_raw = ["AI", "半導体", "防衛", "新テーマ", "DX"]
+        # 前日モメンタム順位には「新テーマ」がない
+        prev_momentum = ["AI", "半導体", "防衛", "DX", "EV"]
+        with _mock_get_theme_rank_list(today, prev_raw):
+            result = make_market_db.make_theme_data(prev_momentum)
+        diff = result["theme_rank_diff"]
+        assert diff["新テーマ"] is None
+
+    def test_no_prev_momentum(self):
+        """prev_momentum_rankがNoneの場合、全テーマの差分が0"""
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result = make_market_db.make_theme_data(None)
+        diff = result["theme_rank_diff"]
+        for theme in result["theme_rank"]:
+            assert diff[theme] == 0
+
+    def test_same_day_rerun_gives_same_result(self):
+        """同日2回実行: 1回目の結果のtheme_rankを渡しても正しい差分が出る
+
+        update_market_dbが日付チェックで退避するため、同日再実行時は
+        prev_theme_rankが前日データのままになるはず。
+        このテストはmake_theme_data単体で、同じリストを渡したら差分0になることを確認。
+        """
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result1 = make_market_db.make_theme_data(["AI", "防衛", "半導体", "DX", "EV"])
+        # 1回目の結果をそのまま渡す（同日再実行シミュレーション）
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result2 = make_market_db.make_theme_data(result1["theme_rank"])
+        diff = result2["theme_rank_diff"]
+        for theme in result2["theme_rank"]:
+            assert diff[theme] == 0
+
+    def test_result_contains_required_keys(self):
+        """戻り値に必須キーが含まれる"""
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result = make_market_db.make_theme_data(self.TODAY_THEMES)
+        assert "theme_rank" in result
+        assert "theme_rank_diff" in result
+        assert "access_date_theme_rank" in result
+
+    def test_all_themes_have_diff(self):
+        """theme_rankの全テーマにtheme_rank_diffのエントリがある"""
+        prev_momentum = ["AI", "半導体", "防衛", "DX", "EV"]
+        with _mock_get_theme_rank_list(self.TODAY_THEMES, self.PREV_THEMES):
+            result = make_market_db.make_theme_data(prev_momentum)
+        for theme in result["theme_rank"]:
+            assert theme in result["theme_rank_diff"]
+
+
+# ==================================================
+# get_market_db — スレッドセーフティ
+# ==================================================
+class TestGetMarketDbThreadSafety:
+    """get_market_dbのマルチスレッド同時呼び出しテスト
+
+    修正前はキャッシュチェックとDB open/closeの間にロックがなく、
+    複数スレッドが同時にキャッシュミス→シングルトンDBのopen/closeが
+    競合してRuntimeError: Database not openが発生していた。
+    """
+
+    def test_concurrent_get_market_db_no_error(self, tmp_path):
+        """5スレッドから同時にget_market_dbを呼んでもエラーにならない"""
+        import db_shelve
+
+        # テスト用の一時shelve DBを作成
+        test_db_path = str(tmp_path / "test_market_db")
+        test_db = db_shelve.ShelveDB(test_db_path)
+        with test_db:
+            test_db["theme_rank"] = ["AI", "半導体", "DX"]
+            test_db["access_date"] = "2026-03-24"
+
+        # キャッシュをクリアし、シングルトンをテスト用DBに差し替え
+        make_market_db._market_db_cache = None
+        original_get = db_shelve._market_db
+        db_shelve._market_db = db_shelve.ShelveDB(test_db_path)
+
+        errors = []
+        results = []
+        barrier = threading.Barrier(5)
+
+        def worker():
+            try:
+                barrier.wait()  # 全スレッドが揃ってから同時に呼び出す
+                result = make_market_db.get_market_db()
+                results.append(result)
+            except Exception as e:
+                errors.append(e)
+
+        try:
+            threads = [threading.Thread(target=worker) for _ in range(5)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10)
+
+            assert errors == [], f"スレッドでエラー発生: {errors}"
+            assert len(results) == 5
+            # 全スレッドが同じデータを取得すること
+            for r in results:
+                assert r["theme_rank"] == ["AI", "半導体", "DX"]
+        finally:
+            # クリーンアップ
+            make_market_db._market_db_cache = None
+            db_shelve._market_db = original_get

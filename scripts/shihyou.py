@@ -433,8 +433,15 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
     cache_path = os.path.join(
         CACHE_DIR_KABUTAN, get_http_cachname(URL_CODE_KABUTAN % str(code_s))
     )
-    tables["access_date_shihyo"] = get_file_datetime(cache_path)
-    log_debug("date_shihyo:", tables["access_date_shihyo"])
+    if shihyo_data:
+        # 指標データが取得できた場合のみaccess_dateを更新（空の場合は次回再取得を促す）
+        tables["access_date_shihyo"] = get_file_datetime(cache_path)
+        log_debug("date_shihyo:", tables["access_date_shihyo"])
+    else:
+        # 指標データが空の場合はaccess_dateを削除して次回再取得を促す
+        tables["access_date_shihyo"] = None
+        log_warning("指標データが空のためaccess_date_shihyoを削除します（次回再取得）")
+    # shihyo_ptは下流で無条件参照されるため常に設定する
     tables["shihyo_pt"] = shihyo_pt
     # 指標データ登録
     tables["shihyo"] = shihyo_data

@@ -137,3 +137,216 @@ class TestMakeSignal:
         }
         signal, tags = make_stock_db.make_signal(stock)
         assert "[売過]" in signal
+
+
+# ==================================================
+# update_db — shihyo マージロジック
+# ==================================================
+class TestUpdateDbShihyoMerge:
+    """update_db()のshihyoキー単位マージテスト"""
+
+    def test_empty_shihyo_preserves_existing(self):
+        """空のshihyoで既存データが消えないこと"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "shihyo": {"PER": 15.0, "PBR": 1.2, "PSR": 2.5},
+                "shihyo_pt": 50,
+            }
+        }
+        stock_data = {"code_s": "1234", "shihyo": {}, "shihyo_pt": 0}
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["shihyo"]["PER"] == 15.0
+        assert stocks["1234"]["shihyo"]["PBR"] == 1.2
+        assert stocks["1234"]["shihyo"]["PSR"] == 2.5
+
+    def test_new_shihyo_merges_with_existing(self):
+        """新しいshihyoデータが既存データとマージされること"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "shihyo": {"PER": 15.0, "PBR": 1.2, "ROE": 10.0},
+            }
+        }
+        stock_data = {"code_s": "1234", "shihyo": {"PER": 20.0, "PSR": 3.0}}
+        make_stock_db.update_db(stocks, stock_data)
+        # PERは新しい値で更新
+        assert stocks["1234"]["shihyo"]["PER"] == 20.0
+        # PBR, ROEは既存値が保持
+        assert stocks["1234"]["shihyo"]["PBR"] == 1.2
+        assert stocks["1234"]["shihyo"]["ROE"] == 10.0
+        # PSRは新規追加
+        assert stocks["1234"]["shihyo"]["PSR"] == 3.0
+
+    def test_new_stock_with_shihyo(self):
+        """新規銘柄にshihyoが正常に設定されること"""
+        stocks = {}
+        stock_data = {"code_s": "5678", "shihyo": {"PER": 12.0}}
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["5678"]["shihyo"]["PER"] == 12.0
+
+    def test_new_stock_with_empty_shihyo(self):
+        """新規銘柄で空shihyoの場合、空dictとしてキーが初期化されること"""
+        stocks = {}
+        stock_data = {"code_s": "5678", "shihyo": {}}
+        make_stock_db.update_db(stocks, stock_data)
+        # 新規銘柄では空dictでもキーを初期化（下流でKeyErrorを防ぐ）
+        assert "shihyo" in stocks["5678"]
+        assert stocks["5678"]["shihyo"] == {}
+
+
+class TestUpdateDbProtectedListKeys:
+    """update_db()のlist型キー保護テスト"""
+
+    def test_empty_list_preserves_existing(self):
+        """空リストで既存のlist型データが消えないこと"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "stddev_volatility": [12.5, 15.0],
+                "sell_pressure_ratio": [0.8, 0.6, 0.7],
+                "gyoseki_current": [{"year": 2025, "sales": 1000}],
+            }
+        }
+        stock_data = {
+            "code_s": "1234",
+            "stddev_volatility": [],
+            "sell_pressure_ratio": [],
+            "gyoseki_current": [],
+        }
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["stddev_volatility"] == [12.5, 15.0]
+        assert stocks["1234"]["sell_pressure_ratio"] == [0.8, 0.6, 0.7]
+        assert stocks["1234"]["gyoseki_current"] == [{"year": 2025, "sales": 1000}]
+
+    def test_new_list_overwrites_existing(self):
+        """新しいlist型データが正常に上書きされること"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "stddev_volatility": [12.5, 15.0],
+            }
+        }
+        stock_data = {
+            "code_s": "1234",
+            "stddev_volatility": [20.0, 25.0],
+        }
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["stddev_volatility"] == [20.0, 25.0]
+
+
+class TestUpdateDbProtectedZeroKeys:
+    """update_db()の理論株価ゼロ値保護テスト"""
+
+    def test_zero_rironkabuka_preserves_existing(self):
+        """理論株価が0で既存値が消えないこと"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "rironkabuka": 1500,
+                "rironkabuka_up": 2000,
+                "rironkabuka_down": 1000,
+                "rironkabuka_preceding": 1600,
+            }
+        }
+        stock_data = {
+            "code_s": "1234",
+            "rironkabuka": 0,
+            "rironkabuka_up": 0,
+            "rironkabuka_down": 0,
+            "rironkabuka_preceding": 0,
+        }
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["rironkabuka"] == 1500
+        assert stocks["1234"]["rironkabuka_up"] == 2000
+        assert stocks["1234"]["rironkabuka_down"] == 1000
+        assert stocks["1234"]["rironkabuka_preceding"] == 1600
+
+    def test_nonzero_rironkabuka_updates(self):
+        """理論株価が非0で正常に更新されること"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "rironkabuka": 1500,
+            }
+        }
+        stock_data = {
+            "code_s": "1234",
+            "rironkabuka": 1800,
+        }
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["rironkabuka"] == 1800
+
+    def test_new_stock_with_zero_rironkabuka(self):
+        """新規銘柄で理論株価0の場合、0が設定されること"""
+        stocks = {}
+        stock_data = {
+            "code_s": "5678",
+            "rironkabuka": 0,
+        }
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["5678"]["rironkabuka"] == 0
+
+
+class TestUpdateDbAccessDateDeletion:
+    """update_db()のaccess_date削除テスト"""
+
+    def test_none_access_date_deletes_existing(self):
+        """access_date_*がNoneの場合、既存のaccess_dateが削除されること"""
+        from datetime import datetime
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "access_date_shihyo": datetime(2026, 1, 1),
+                "shihyo": {"PER": 15.0},
+            }
+        }
+        stock_data = {"code_s": "1234", "access_date_shihyo": None, "shihyo": {}}
+        make_stock_db.update_db(stocks, stock_data)
+        assert "access_date_shihyo" not in stocks["1234"]
+        # shihyoの既存値は保持される
+        assert stocks["1234"]["shihyo"]["PER"] == 15.0
+
+    def test_none_access_date_no_error_when_missing(self):
+        """access_date_*が元々存在しない場合にエラーにならないこと"""
+        stocks = {"1234": {"code_s": "1234"}}
+        stock_data = {"code_s": "1234", "access_date_gyoseki": None}
+        make_stock_db.update_db(stocks, stock_data)
+        assert "access_date_gyoseki" not in stocks["1234"]
+
+    def test_valid_access_date_is_set(self):
+        """access_date_*が有効値の場合は正常に設定されること"""
+        from datetime import datetime
+        stocks = {"1234": {"code_s": "1234"}}
+        dt = datetime(2026, 3, 22)
+        stock_data = {"code_s": "1234", "access_date_shihyo": dt}
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["access_date_shihyo"] == dt
+
+
+class TestUpdateDbSignalKeys:
+    """pocket_pivot/breakoutが保護対象外であることのテスト"""
+
+    def test_empty_pocket_pivot_clears_existing(self):
+        """pocket_pivotが空リストで既存値が消えること（正常な状態遷移）"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "pocket_pivot": [("2026-03-01", 1500)],
+            }
+        }
+        stock_data = {"code_s": "1234", "pocket_pivot": []}
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["pocket_pivot"] == []
+
+    def test_empty_breakout_clears_existing(self):
+        """breakoutが空リストで既存値が消えること（正常な状態遷移）"""
+        stocks = {
+            "1234": {
+                "code_s": "1234",
+                "breakout": [("2026-03-01", 2000)],
+            }
+        }
+        stock_data = {"code_s": "1234", "breakout": []}
+        make_stock_db.update_db(stocks, stock_data)
+        assert stocks["1234"]["breakout"] == []

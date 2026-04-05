@@ -106,6 +106,10 @@ def get_theme_rank_list():
         else:
             html = ""
 
+    # HTTP取得でキャッシュが更新された場合、mtimeを再取得
+    if not use_cache:
+        _, cach_date = get_timedelta_today(cach_path)
+
     theme_rank_list = parse_theme_html(html)
 
     if cach_date:
@@ -130,8 +134,12 @@ THEME_RANK_INTERVAL = 1  # 再取得までの日数
 INTERVAL_BACKUP = 3  # バックアップ日数
 
 
-def make_theme_data():  # market_db=None
-    """テーマランクデータを作成"""
+def make_theme_data(prev_momentum_rank=None):
+    """テーマランクデータを作成
+
+    Args:
+        prev_momentum_rank: 前日のモメンタム順位リスト（差分ラベル計算用）
+    """
     log_print("テーマランクデータを作成します")
     theme_rank_list, prev_theme_rank_list, cach_date, _ = get_theme_rank_list()
 
@@ -154,15 +162,23 @@ def make_theme_data():  # market_db=None
     theme_rank2_list = [theme for theme, pt in theme_rank2_sorted]
     log_print("モメンタム順位:", ",".join(theme_rank2_list))
 
-    # Kabutanの生ランキング差分からモメンタム順位の変動を計算
-    # モメンタム再ソート後の順位に対して、Kabutan生ランキングの前日比を付与
+    # 当日モメンタム順位 vs 前日モメンタム順位の差分を計算
     theme_rank_diff = {}
-    for theme in theme_rank2_list:
-        if theme not in prev_theme_rank_dict:
-            theme_rank_diff[theme] = None  # 新規テーマ
-        else:
-            # Kabutanの生ランキングで上昇=正、下降=負
-            theme_rank_diff[theme] = prev_theme_rank_dict[theme] - theme_rank_dict[theme]
+    if prev_momentum_rank:
+        prev_momentum_dict = {v: i + 1 for (i, v) in enumerate(prev_momentum_rank)}
+        cur_momentum_dict = {v: i + 1 for (i, v) in enumerate(theme_rank2_list)}
+        for theme in theme_rank2_list:
+            if theme not in prev_momentum_dict:
+                theme_rank_diff[theme] = None  # 新規テーマ
+            else:
+                # 前日順位 - 当日順位: 正=上昇、負=下降
+                theme_rank_diff[theme] = (
+                    prev_momentum_dict[theme] - cur_momentum_dict[theme]
+                )
+    else:
+        # 前日データがない場合は差分なし
+        for theme in theme_rank2_list:
+            theme_rank_diff[theme] = 0
 
     market_db = {}
     market_db["theme_rank"] = theme_rank2_list
@@ -301,15 +317,20 @@ def make_nasdaq_db():
 
 
 _market_db_cache = None
+_market_db_lock = threading.Lock()
 
 
 def get_market_db():
-    """マーケットDBを取得（dictとして返す、キャッシュあり）"""
+    """マーケットDBを取得（dictとして返す、キャッシュあり・スレッドセーフ）"""
     global _market_db_cache
     if _market_db_cache is not None:
         return _market_db_cache
-    with _get_market_shelve_db() as db:
-        _market_db_cache = db.export_to_dict()
+    with _market_db_lock:
+        # ダブルチェックロッキング: ロック取得中に他スレッドがキャッシュ済みの場合
+        if _market_db_cache is not None:
+            return _market_db_cache
+        with _get_market_shelve_db() as db:
+            _market_db_cache = db.export_to_dict()
     return _market_db_cache
 
 
@@ -325,7 +346,23 @@ def update_market_db():
     """マーケットDBを読み込んで最新に更新"""
     market_db = get_market_db()
 
-    theme_db = make_theme_data()
+    # 前日のモメンタム順位をDBに保存（カレンダー日が変わった場合のみ退避）
+    # ※ get_price_dayは18時前後で日付が変わるため、同日中の再実行で
+    #   退避が二重に走り「当日vs当日」比較になる問題を防ぐ
+    prev_date = market_db.get("access_date_theme_rank")
+    cur_theme_rank = market_db.get("theme_rank", [])
+    today_cal = datetime.today().date()
+    if prev_date and cur_theme_rank:
+        if isinstance(prev_date, datetime):
+            prev_cal = prev_date.date()
+        else:
+            prev_cal = prev_date
+        if prev_cal != today_cal:
+            # カレンダー日が変わった → 現在のtheme_rankを前日データとして退避
+            market_db["prev_theme_rank"] = list(cur_theme_rank)
+            log_print("前日モメンタム順位を退避: %s" % prev_cal)
+    prev_momentum_rank = market_db.get("prev_theme_rank", [])
+    theme_db = make_theme_data(prev_momentum_rank)
     market_db.update(theme_db)
 
     topix_db = make_topix_db()
@@ -421,11 +458,8 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
                                    kessan_csv=kessan_csv, disc_csv=disc_csv,
                                    theme_rank_data=theme_rank_data)
 
-    # GoogleDriveに非同期アップロード（HTMLファイルとして）
-    import threading
-    threading.Thread(
-        target=googledrive.upload_html, args=(html_path,), daemon=False
-    ).start()
+    # GoogleDriveに非同期アップロード（ファイルロックでプロセス間排他制御）
+    googledrive.upload_html_async(html_path)
 
 
 def update_shintakane_theme(stocks, code_list):

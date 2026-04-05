@@ -10,34 +10,20 @@ import gyoseki
 class TestCalcGrowthRate:
     """成長率計算のテスト（-100~+100%）"""
 
-    def test_positive_growth(self):
-        """正の成長"""
-        # 100 → 120 = +20%
+    def test_normal(self):
+        """正の成長・マイナス成長・変化なし"""
         assert gyoseki.calc_growth_rate(100, 120) == 20
-
-    def test_negative_growth(self):
-        """マイナス成長"""
-        # 100 → 80 = -20%
         assert gyoseki.calc_growth_rate(100, 80) == -20
-
-    def test_no_change(self):
-        """変化なし"""
         assert gyoseki.calc_growth_rate(100, 100) == 0
-
-    def test_zero_both(self):
-        """ゼロ同士"""
         assert gyoseki.calc_growth_rate(0, 0) == 0
 
     def test_from_negative(self):
         """赤字からの成長（林式計算）"""
         result = gyoseki.calc_growth_rate(-100, 50)
-        # (50 - (-100)) / ((|50| + |-100|) * 0.5) = 150 / 75 = 2.0
-        # return int(100 * 2.0 - 100) = 100
         assert result == 100
 
     def test_large_growth(self):
         """大幅成長"""
-        # 100 → 300 = +200%
         assert gyoseki.calc_growth_rate(100, 300) == 200
 
 
@@ -76,37 +62,17 @@ class TestCalcCagr:
     """年平均成長率（CAGR）のテスト"""
 
     def test_normal(self):
-        """正常な成長"""
-        # [100, 110, 121] → 2年で21%成長 → CAGR ≈ 10%
-        result = gyoseki.calc_cagr([100, 110, 121])
-        assert result == pytest.approx(0.1, abs=0.001)
+        """正常な成長と減少"""
+        assert gyoseki.calc_cagr([100, 110, 121]) == pytest.approx(0.1, abs=0.001)
+        assert gyoseki.calc_cagr([100, 90, 81]) == pytest.approx(-0.1, abs=0.001)
+        assert gyoseki.calc_cagr([100, 100, 100]) == pytest.approx(0.0)
 
-    def test_single_value(self):
-        """1要素 → 0"""
-        assert gyoseki.calc_cagr([100]) == 0
-
-    def test_empty(self):
-        """空リスト → 0"""
+    def test_invalid_inputs(self):
+        """空・1要素・初期値ゼロ/マイナス → 0"""
         assert gyoseki.calc_cagr([]) == 0
-
-    def test_first_zero(self):
-        """初期値ゼロ → 0"""
+        assert gyoseki.calc_cagr([100]) == 0
         assert gyoseki.calc_cagr([0, 100, 200]) == 0
-
-    def test_first_negative(self):
-        """初期値マイナス → 0"""
         assert gyoseki.calc_cagr([-50, 100, 200]) == 0
-
-    def test_constant(self):
-        """変化なし"""
-        result = gyoseki.calc_cagr([100, 100, 100])
-        assert result == pytest.approx(0.0)
-
-    def test_decline(self):
-        """減少トレンド"""
-        # [100, 90, 81] → 2年で-19% → CAGR ≈ -10%
-        result = gyoseki.calc_cagr([100, 90, 81])
-        assert result == pytest.approx(-0.1, abs=0.001)
 
 
 # ==================================================

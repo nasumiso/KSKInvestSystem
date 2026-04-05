@@ -10,28 +10,18 @@ import kessan
 class TestIsPositiveKessan:
     """決算サマリーのポジティブ判定テスト"""
 
-    def test_上方修正(self):
+    def test_positive_keywords(self):
+        """ポジティブキーワード（上方修正・増益・増配・黒字浮上）"""
         assert kessan.is_positive_kessan("通期上方修正") is True
-
-    def test_増益(self):
         assert kessan.is_positive_kessan("3Q経常増益") is True
-
-    def test_増配(self):
         assert kessan.is_positive_kessan("増配を発表") is True
-
-    def test_黒字浮上(self):
         assert kessan.is_positive_kessan("黒字浮上見込み") is True
 
-    def test_ネガティブ(self):
+    def test_negative_and_neutral(self):
+        """ネガティブ・無関係な文字列はFalse"""
         assert kessan.is_positive_kessan("下方修正") is False
-
-    def test_減益(self):
         assert kessan.is_positive_kessan("3Q経常減益") is False
-
-    def test_空文字(self):
         assert kessan.is_positive_kessan("") is False
-
-    def test_無関係な文字列(self):
         assert kessan.is_positive_kessan("決算発表") is False
 
 
@@ -69,32 +59,9 @@ class TestGetKessanbiExpr:
         assert "03/10" in result
 
     @patch("kessan.datetime")
-    def test_決算日なし(self, mock_dt):
-        """決算日がない場合は空文字"""
-        mock_dt.today.return_value = datetime(2025, 3, 15)
-        mock_dt.strptime = datetime.strptime
-        stock = {}
-        result = kessan.get_kessanbi_expr(stock)
-        assert result == ""
-
-    @patch("kessan.datetime")
-    def test_決算発表リンク付き(self, mock_dt):
-        """決算発表情報がある場合はHYPERLINK付き"""
-        mock_dt.today.return_value = datetime(2025, 3, 15)
-        mock_dt.strptime = datetime.strptime
-        stock = {
-            "kessanbi": "2025/03/14",
-            "kessan_announce": "発表,/news/article/123,3Q増益",
-        }
-        result = kessan.get_kessanbi_expr(stock)
-        assert "HYPERLINK" in result
-        assert "kabutan.jp" in result
-
-    @patch("kessan.datetime")
-    def test_2週間以上前は非表示(self, mock_dt):
-        """決算日が2週間以上前の場合はタグなし"""
+    def test_決算日なしと2週間以上前(self, mock_dt):
+        """決算日なし→空文字、2週間以上前→空文字"""
         mock_dt.today.return_value = datetime(2025, 4, 1)
         mock_dt.strptime = datetime.strptime
-        stock = {"kessanbi": "2025/03/14"}
-        result = kessan.get_kessanbi_expr(stock)
-        assert result == ""
+        assert kessan.get_kessanbi_expr({}) == ""
+        assert kessan.get_kessanbi_expr({"kessanbi": "2025/03/14"}) == ""

@@ -125,24 +125,15 @@ class TestIsDelist:
     """上場廃止判定テスト"""
 
     def test_delist(self):
-        """market_cap=0かつpurchase=0の場合はTrue"""
+        """market_cap=0かつpurchase=0 → True、空dictも同様"""
         assert master.is_delist({"market_cap": 0, "lowest_purchase_money": 0}) is True
-
-    def test_has_market_cap(self):
-        """market_capが正の場合はFalse"""
-        assert master.is_delist({"market_cap": 100, "lowest_purchase_money": 0}) is False
-
-    def test_has_purchase(self):
-        """purchaseが正の場合はFalse"""
-        assert master.is_delist({"market_cap": 0, "lowest_purchase_money": 50000}) is False
-
-    def test_both_positive(self):
-        """両方正の場合はFalse"""
-        assert master.is_delist({"market_cap": 100, "lowest_purchase_money": 50000}) is False
-
-    def test_empty_dict(self):
-        """空dictの場合はTrue（デフォルト値0）"""
         assert master.is_delist({}) is True
+
+    def test_not_delist(self):
+        """どちらかが正の場合はFalse"""
+        assert master.is_delist({"market_cap": 100, "lowest_purchase_money": 0}) is False
+        assert master.is_delist({"market_cap": 0, "lowest_purchase_money": 50000}) is False
+        assert master.is_delist({"market_cap": 100, "lowest_purchase_money": 50000}) is False
 
     def test_missing_keys(self):
         """片方のキーのみの場合"""

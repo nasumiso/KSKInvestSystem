@@ -656,6 +656,11 @@ def todays_shintakane(upd=UPD_INTERVAL):
             "shintakane_result_data/shintakane_result_%02d%02d%02d.csv"
             % (latest_csv_dt.year % 2000, latest_csv_dt.month, latest_csv_dt.day),
         )
+        log_print(
+            "結果CSV書き込み: %s (日付=%s, 本日銘柄=%d, 過去銘柄=%d, 行数=%d)"
+            % (shintakane_result_csv, latest_csv_dt.date(),
+               len(today_only_list), len(already_only_list), len(rows))
+        )
         with open(shintakane_result_csv, "w", encoding="utf-8") as f:
             shintakane_result_csv_w = csv.writer(f)
             shintakane_result_csv_w.writerows(rows)
@@ -1446,15 +1451,10 @@ def main(force=False):
         shintakane_result_csv = os.path.join(
             DATA_DIR, "shintakane_result_data/shintakane_result.csv"
         )
-        import threading
         import googledrive
 
-        threading.Thread(
-            target=googledrive.upload_csv,
-            args=(shintakane_result_csv, "shintakane_result"),
-            daemon=False,
-        ).start()
-        # googledrive.upload_csv(shintakane_result_csv, "shintakane_result")
+        # 非同期アップロード（ファイルロックでプロセス間排他制御）
+        googledrive.upload_csv_async(shintakane_result_csv, "shintakane_result")
     # 現在の銘柄DBをもとに決算DBの更新
     if "udpate_kessan_db" in args:
         stocks = stock_db.load_stock_db()
@@ -1484,6 +1484,8 @@ if __name__ == "__main__":
         log_print("=" * 30)
         log_print("shintakane.pyを実行します", args)
         log_print("=" * 30)
+        # main()完了通知用フラグファイル（cron.shがバックグラウンド実行時に検知）
+        done_flag = os.path.join(LOGS_DIR, ".shintakane_main_done.%d" % os.getpid())
         try:
             if args.quiet:
                 log_print("標準出力を抑制します")
@@ -1492,10 +1494,19 @@ if __name__ == "__main__":
                 log_print("抑制終了")
             else:
                 main(force=args.force)
+            # main()完了をcron.shに���知（アップロードはまだ裏で継続中の可能性あり）
+            with open(done_flag, "w") as f:
+                f.write(str(os.getpid()))
+            # 非同期アップロードの完了を待つ
+            import googledrive
+            googledrive.wait_all_uploads()
         except Exception as e:
             log_print("エラー発生", e)
             logger.exception(
                 "Unhandled exception occurred:\n%s", traceback.format_exc()
             )
             raise e
-            # exit(1)
+        finally:
+            # フラグファイルのクリーンアップ
+            if os.path.exists(done_flag):
+                os.remove(done_flag)
