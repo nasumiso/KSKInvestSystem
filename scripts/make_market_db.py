@@ -796,9 +796,21 @@ def _html_kessan(kessan_csv):
             i += 1
             continue
 
-        # 最初のセル以外にも日付パターンがあるか確認 → write_to_csv形式
-        other_dates = [c for c in row[1:] if date_pattern.match(str(c).strip())]
-        if other_dates:
+        # write_to_csv形式かwrite_to_csv_current形式かを判定
+        # write_to_csv形式: 日付のみの行 + 次行が銘柄リスト
+        # write_to_csv_current形式: 日付 + 同一行に銘柄
+        #
+        # 判定基準:
+        # 1. row[1:]にも日付がある → write_to_csv形式（複数日付）
+        # 2. row[1:]が空 → write_to_csv形式（日付1件のみ）
+        # 3. row[1:]が非空かつ日付でない → write_to_csv_current形式
+        other_cells = [str(c).strip() for c in row[1:] if str(c).strip()]
+        is_write_to_csv = (
+            not other_cells  # 日付のみの行（1日分）
+            or all(date_pattern.match(c) for c in other_cells)  # 全て日付（複数日分）
+        )
+
+        if is_write_to_csv:
             # write_to_csv形式: 次の行が銘柄リスト行
             dates_row = row
             i += 1

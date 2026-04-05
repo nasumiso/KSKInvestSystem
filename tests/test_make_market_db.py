@@ -421,6 +421,17 @@ class TestHtmlKessan:
         assert '銘柄A' in result
         assert '5678' in result
 
+    def test_write_to_csv_single_date(self):
+        """write_to_csv形式（日付1件のみ）のパース — 欠落回帰テスト"""
+        kessan_csv = [
+            ["04/02"],                        # 日付が1件だけの行
+            ["1234銘柄A[1Q]"],                 # 銘柄行
+        ]
+        result = make_market_db._html_kessan(kessan_csv)
+        assert 'kessan-card' in result
+        assert '1234' in result
+        assert '銘柄A' in result
+
     def test_write_to_csv_current_format(self):
         """write_to_csv_current形式（1行）のパース"""
         kessan_csv = [
