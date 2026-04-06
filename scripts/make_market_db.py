@@ -689,7 +689,6 @@ def _html_market(market_db):
         ("topix", "TOPIX"),
         ("mothers", "マザーズ指数"),
         ("nikkei225", "日経225"),
-        ("nasdaq", "NASDAQ"),
     ]
 
     rows_html = []

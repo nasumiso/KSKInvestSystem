@@ -161,6 +161,13 @@ def upload_csv_via_sheets(csv_name, up_file_name):
         for row in values:
             row.extend([""] * (max_cols - len(row)))
 
+    # USER_ENTEREDモードで「+4.05%」等がパーセント数値に変換されるのを防止
+    # %で終わる非数式セルの先頭に「'」を付けて文字列リテラル扱いにする
+    for row in values:
+        for i, cell in enumerate(row):
+            if cell.endswith("%") and not cell.startswith("="):
+                row[i] = "'" + cell
+
     # SHEETS_CONFIG からタブ名を取得
     sheet_name = SHEETS_CONFIG[up_file_name]["sheet_name"]
 
@@ -255,15 +262,16 @@ _upload_lock = threading.Lock()
 _upload_threads = []
 # スレッド内で発生した例外を収集
 _upload_errors = []
-# プロセス間排他用ロックファイル
-_LOCK_FILE = os.path.join(DATA_DIR, "googledrive/.upload_lock")
+# プロセス間排他用ロックファイル（ローカルFSに配置。Google Drive等リモートFSでは
+# fcntl.flockが正しく動作せずハングするため）
+_LOCK_FILE = "/tmp/shintakane_upload.lock"
 
 
 def _upload_with_lock(func, *args):
     """ファイルロック付きアップロード（プロセス間 + スレッド間排他）"""
     try:
         with _upload_lock:
-            with open(_LOCK_FILE, "w") as lf:
+            with open(_LOCK_FILE, "a") as lf:
                 fcntl.flock(lf, fcntl.LOCK_EX)
                 try:
                     func(*args)
