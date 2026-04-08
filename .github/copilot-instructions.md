@@ -10,7 +10,7 @@ Provide concise, actionable guidance so an AI coding agent can be immediately pr
   - data/ : persistent CSVs, cached HTML, and the single DB pickle `data/stock_data/stocks.pickle`.
   - logs/ : application logs (per-script, rotated by `ks_util.setup_logger`).
   - cron / launchd integration: `shintakane_cron.sh` and `com.k_sohara.shintakane.cron.plist` schedule nightly runs.
-- Data flow: crawler/scraper -> (cache_data) -> per-module parsers (e.g., `master.py`, `rironkabuka.py`) -> consolidated DB pickle `stocks.pickle` -> CSV exports / Google Drive uploads (`googledrive.py`).
+- Data flow: crawler/scraper -> (today_stocks/html_cache) -> per-module parsers (e.g., `master.py`, `rironkabuka.py`) -> consolidated DB pickle `stocks.pickle` -> CSV exports / Google Drive uploads (`googledrive.py`).
 
 ## Important files & responsibilities (quick map)
 - `scripts/shintakane.py` — high-level orchestration: collects "新高値"/出来高急増 lists, composes candidate lists, calls database updates, generates market CSVs.
@@ -28,7 +28,7 @@ Provide concise, actionable guidance so an AI coding agent can be immediately pr
 - Logging: prefer `log_print`, `log_warning`, `log_error` helpers (they wire to the centralized logger and rotate files automatically).
 - DB updates: prefer `update_db_rows(code_list, upd=..., tables=[...], sync=Boolean)` from `make_stock_db.py` — prefer async `sync=False` for bulk operations when safe.
 - Date/price handling: `ks_util.get_price_day(dt)` applies the project-specific rule where price timestamps before 18:00 count as previous trading day.
-- Caching: HTML caches live under `data/cache_data` and cached kabutan files are referenced by cache helpers (e.g., `rironkabuka.get_kabutan_base_html`). Respect existing cache files when debugging.
+- Caching: HTML caches live under `data/today_stocks/html_cache` and cached kabutan files are referenced by cache helpers (e.g., `rironkabuka.get_kabutan_base_html`). Respect existing cache files when debugging.
 
 ## External integrations & secrets
 - Google Drive API: `scripts/googledrive.py` uses client secret + credentials in `data/googledrive/` — keep these secrets out of commits. The repo expects the credential files at those paths.

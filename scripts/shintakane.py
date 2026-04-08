@@ -964,7 +964,7 @@ def get_todays_dekidakaup(force=False):
     log_print("----> 株探から出来高急増情報を取得します・・")
     URL_KABUTAN_DEKIDAKA = "https://kabutan.jp/tansaku/"
     QUERY = "?mode=2_0311&market=0&capitalization=-1&stc=v3&stm=1&page=%d"
-    cache_dir = os.path.join(DATA_DIR, "cache_data")
+    cache_dir = os.path.join(DATA_DIR, "today_stocks", "html_cache")
     path_dekidaka = os.path.join(
         cache_dir, get_http_cachname(URL_KABUTAN_DEKIDAKA + QUERY % 1)
     )
@@ -1062,7 +1062,7 @@ def get_todays_shintakane(force=False):
     # QUERY = "?mode=3_3&market=0&capitalization=-1&stc=&stm=0&page=%d"
     QUERY = "record_w52_high_price?market=0&capitalization=-1" "&stc=&stm=0&page=%d"
     # 最新キャッシュ取得日を取得
-    cache_dir = os.path.join(DATA_DIR, "cache_data")
+    cache_dir = os.path.join(DATA_DIR, "today_stocks", "html_cache")
     try:
         latest_html = file_read(
             os.path.join(
@@ -1181,7 +1181,7 @@ def get_todays_pts(force=False):
 
     log_print("----> 株探からPTSランキングを取得します・・")
     URL_KABUTAN_PTS = "https://kabutan.jp/warning/pts_night_price_increase"
-    cache_dir = os.path.join(DATA_DIR, "cache_data")
+    cache_dir = os.path.join(DATA_DIR, "today_stocks", "html_cache")
     # キャッシュ判定
     try:
         latest_html = file_read(

@@ -7,7 +7,7 @@ disclosure/
 code_rank_data/
 stock_data/
 todays_kessan_data/
-cache_data/
+today_stocks/html_cache/
 logs/
 data/googledrive/drive_credential.json
 

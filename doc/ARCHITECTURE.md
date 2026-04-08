@@ -188,7 +188,7 @@ export KS_DATA_DIR=/path/to/new/data
 
 - **メインDB (shelve)**: `data/stock_data/stocks_shelve`
 - **市場DB**: `data/market_data/market_db_shelve`
-- **HTTPキャッシュ**: `data/cache_data/`
+- **HTTPキャッシュ**: `data/today_stocks/html_cache/`
 - **株価履歴**: `data/stock_data/yahoo/price/`（yfinance JSON + レガシーHTML）, `data/stock_data/kabutan/price/`
 - **市場指数**: `data/sisu_data/`
 - **結果CSV/HTML**: `data/shintakane_result_data/`, `data/code_rank_data/`（`market_data.html` 含む）
