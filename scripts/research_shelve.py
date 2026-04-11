@@ -74,6 +74,8 @@ RECORD_FIELDS = frozenset(
         "cramer",
         "shikiho_comments",
         "snapshots",
+        "analysis_date_raw",
+        "kessan_date_raw",
     }
 )
 
@@ -181,12 +183,16 @@ def create_research_record(
     cramer: str = "",
     shikiho_comments: Optional[List[str]] = None,
     snapshots: Optional[List[Dict[str, Any]]] = None,
+    analysis_date_raw: str = "",
+    kessan_date_raw: str = "",
 ) -> Dict[str, Any]:
     """銘柄調査レコードのひな型 dict を生成する。
 
     - code_s は normalize_code_s で大文字化される
     - overall_rating は空/S〜E のみ許容
     - shikiho_comments と snapshots はリストでない場合に空リストで補完
+    - analysis_date_raw / kessan_date_raw はスプシ原文保持用(例: "11/13",
+      "22四季報春" などの異形も許容。形式バリデーションはしない。型チェックのみ)
     - 返却した dict は upsert_research_record にそのまま渡せる
     """
     validate_code_s(code_s)
@@ -194,6 +200,14 @@ def create_research_record(
     if not isinstance(stock_name, str):
         raise TypeError(f"stock_name must be str, got {type(stock_name).__name__}")
     validate_rating(overall_rating)
+    if not isinstance(analysis_date_raw, str):
+        raise TypeError(
+            f"analysis_date_raw must be str, got {type(analysis_date_raw).__name__}"
+        )
+    if not isinstance(kessan_date_raw, str):
+        raise TypeError(
+            f"kessan_date_raw must be str, got {type(kessan_date_raw).__name__}"
+        )
 
     shikiho = list(shikiho_comments) if shikiho_comments else []
     snaps = list(snapshots) if snapshots else []
@@ -209,6 +223,8 @@ def create_research_record(
         "cramer": cramer,
         "shikiho_comments": shikiho,
         "snapshots": snaps,
+        "analysis_date_raw": analysis_date_raw,
+        "kessan_date_raw": kessan_date_raw,
     }
 
 
@@ -569,6 +585,8 @@ def format_record_full(record: Dict[str, Any]) -> str:
     cramer = record.get("cramer", "")
     shikiho = record.get("shikiho_comments") or []
     snapshots = record.get("snapshots") or []
+    analysis_date_raw = record.get("analysis_date_raw", "")
+    kessan_date_raw = record.get("kessan_date_raw", "")
 
     sep = "=" * _SEPARATOR_LEN
     lines: List[str] = []
@@ -579,6 +597,8 @@ def format_record_full(record: Dict[str, Any]) -> str:
     # --- 基本情報ブロック ---
     lines.append(f"概要         : {_indent_multiline(overview, ' ' * 15)}")
     lines.append(f"機関投資家   : {_indent_multiline(inst, ' ' * 15)}")
+    lines.append(f"分析日       : {_value_or_dash(analysis_date_raw)}")
+    lines.append(f"決算日       : {_value_or_dash(kessan_date_raw)}")
     lines.append("")
 
     # --- 手動メモ群ブロック ---
@@ -589,8 +609,9 @@ def format_record_full(record: Dict[str, Any]) -> str:
     if shikiho:
         lines.append(f"四季報コメント ({len(shikiho)}件):")
         for i, comment in enumerate(shikiho, start=1):
-            first_line = comment.split("\n")[0]
-            lines.append(f"  [{i}] {first_line}")
+            # 1 セル内に 【タイトル】... が複数ブロック連結されている場合があるので、
+            # 全文を改行インデント付きで表示する
+            lines.append(f"  [{i}] {_indent_multiline(comment, ' ' * 6)}")
     else:
         lines.append(f"四季報コメント : {_EMPTY_MARK}")
     lines.append("")

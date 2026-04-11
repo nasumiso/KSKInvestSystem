@@ -524,3 +524,77 @@ class TestFormat:
         assert fields[1] == "-"  # rating 空は "-"
         assert fields[3] == "0"
         assert fields[4] == "-"  # overview 空は "-"
+
+
+# ==================================================
+# 分析日・決算日フィールド (issue #92 で追加)
+# ==================================================
+class TestAnalysisKessanDateFields:
+    """analysis_date_raw / kessan_date_raw の保存と表示のテスト"""
+
+    def test_create_record_with_date_fields(self):
+        """分析日・決算日を渡すと dict に含まれる"""
+        rec = rs.create_research_record(
+            "3496",
+            "アズーム",
+            analysis_date_raw="11/13",
+            kessan_date_raw="01/30",
+        )
+        assert rec["analysis_date_raw"] == "11/13"
+        assert rec["kessan_date_raw"] == "01/30"
+
+    def test_upsert_and_get_date_fields(self, db_path):
+        """upsert → get のラウンドトリップで分析日・決算日が保持される"""
+        rec = rs.create_research_record(
+            "3496",
+            "アズーム",
+            analysis_date_raw="11/13",
+            kessan_date_raw="22四季報春",
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert loaded is not None
+        assert loaded["analysis_date_raw"] == "11/13"
+        assert loaded["kessan_date_raw"] == "22四季報春"
+
+    def test_date_fields_default_empty(self):
+        """省略時のデフォルトが空文字"""
+        rec = rs.create_research_record("3496", "アズーム")
+        assert rec["analysis_date_raw"] == ""
+        assert rec["kessan_date_raw"] == ""
+
+    def test_format_record_full_shows_dates(self):
+        """format_record_full の出力に分析日・決算日が含まれる"""
+        rec = rs.create_research_record(
+            "3496",
+            "アズーム",
+            analysis_date_raw="11/13",
+            kessan_date_raw="01/30",
+        )
+        output = rs.format_record_full(rec)
+        assert "分析日" in output
+        assert "11/13" in output
+        assert "決算日" in output
+        assert "01/30" in output
+
+    def test_format_record_full_empty_dates_show_dash(self):
+        """空の分析日・決算日は - で表示される"""
+        rec = rs.create_research_record("3496", "アズーム")
+        output = rs.format_record_full(rec)
+        # ラベル自体は存在する
+        assert "分析日" in output
+        assert "決算日" in output
+
+    def test_create_record_rejects_non_str_analysis_date(self):
+        """analysis_date_raw が非文字列なら TypeError"""
+        with pytest.raises(TypeError):
+            rs.create_research_record(
+                "3496", "アズーム", analysis_date_raw=123,
+            )
+
+    def test_create_record_rejects_non_str_kessan_date(self):
+        """kessan_date_raw が非文字列なら TypeError"""
+        with pytest.raises(TypeError):
+            rs.create_research_record(
+                "3496", "アズーム", kessan_date_raw=None,
+            )
