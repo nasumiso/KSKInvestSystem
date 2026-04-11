@@ -55,6 +55,11 @@ cd scripts && python make_stock_db.py backup
 
 # 市場データ更新
 cd scripts && python make_market_db.py
+
+# 銘柄調査DB(research_shelve)の表示・バックアップ
+cd scripts && python research_shelve.py show 3496
+cd scripts && python research_shelve.py list --rating S,A --keyword 駐車場
+cd scripts && python research_shelve.py backup
 ```
 
 ### 自動実行

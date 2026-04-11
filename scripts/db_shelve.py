@@ -310,6 +310,7 @@ STOCKS_SHELVE = os.path.join(DATA_DIR, "stock_data", "stocks_shelve")
 MARKET_SHELVE = os.path.join(DATA_DIR, "market_data", "market_db_shelve")
 KESSAN_SHELVE = os.path.join(DATA_DIR, "todays_kessan_data", "pf_kessan_shelve")
 SECTOR_SHELVE = os.path.join(DATA_DIR, "stock_data", "sector", "sector_db_shelve")
+RESEARCH_SHELVE = os.path.join(DATA_DIR, "stock_data", "research_shelve")
 
 
 # ===========================================
