@@ -77,6 +77,43 @@ DISTRIBUTE_DATA = {
 }
 
 RS_DB_NAME = os.path.join(DATA_DIR, "sisu_data", "rs_db.pickle")
+_SISU_DIR = os.path.join(DATA_DIR, "sisu_data")
+_SISU_HTML_CACHE_DIR = os.path.join(_SISU_DIR, "html_cache")
+
+
+def _migrate_sisu_html_cache():
+    """旧パス(sisu_data/)のHTMLキャッシュをhtml_cache/に移動"""
+    old_dir = _SISU_DIR
+    new_dir = _SISU_HTML_CACHE_DIR
+    if os.path.isdir(new_dir):
+        return
+    moved = 0
+    for fname in os.listdir(old_dir):
+        if fname.endswith(".html"):
+            os.makedirs(new_dir, exist_ok=True)
+            shutil.move(os.path.join(old_dir, fname), os.path.join(new_dir, fname))
+            moved += 1
+    if moved > 0:
+        log_print("sisu_data: %d件のHTMLキャッシュをhtml_cache/に移動" % moved)
+
+
+def _cleanup_old_sisu_html_cache(days=30):
+    """30日以前のHTMLキャッシュを削除"""
+    if not os.path.isdir(_SISU_HTML_CACHE_DIR):
+        return
+    from datetime import datetime, timedelta
+    cutoff = datetime.today() - timedelta(days=days)
+    removed = 0
+    for fname in os.listdir(_SISU_HTML_CACHE_DIR):
+        if not fname.endswith(".html"):
+            continue
+        fpath = os.path.join(_SISU_HTML_CACHE_DIR, fname)
+        mtime = datetime.fromtimestamp(os.stat(fpath).st_mtime)
+        if mtime < cutoff:
+            os.remove(fpath)
+            removed += 1
+    if removed > 0:
+        log_debug("sisu_data: %d件の古いHTMLキャッシュを削除" % removed)
 
 
 def parse_yahoo_jp(text):
@@ -461,6 +498,9 @@ def make_rs_db():
     """
     RS投資用DBを作成
     """
+    _migrate_sisu_html_cache()
+    os.makedirs(_SISU_HTML_CACHE_DIR, exist_ok=True)
+
     market_db = {}
     if os.path.exists(RS_DB_NAME):
         market_db = pickle.load(open(RS_DB_NAME, "rb"))
@@ -480,7 +520,7 @@ def make_rs_db():
 
             log_debug("Request.. %s" % url_p)
             html = http_get_html(
-                url_p, cache_dir=os.path.join(DATA_DIR, "sisu_data"), use_cache=True
+                url_p, cache_dir=_SISU_HTML_CACHE_DIR, use_cache=True
             )
             rows = parse_html(html)
             log_debug("parse完了:", url_p)
@@ -533,6 +573,8 @@ def make_rs_db():
         log_debug(table[-3:])
     # DB保存
     pickle.dump(market_db, open(RS_DB_NAME, "wb"))
+    # 古いHTMLキャッシュを削除
+    _cleanup_old_sisu_html_cache()
 
 
 def convert_python2_to3():

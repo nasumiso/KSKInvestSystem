@@ -7,17 +7,20 @@ allowed-tools: Read, Grep, WebSearch
 
 # テーマ急上昇ニュース調査
 
-market_data.csv のテーマランク上位3テーマについて、急上昇の理由となる市場ニュース・材料をWebSearchで調査する。
+market_data.html のテーマランク上位3テーマについて、急上昇の理由となる市場ニュース・材料をWebSearchで調査する。
 
 ## 手順
 
 ### 1. テーマランクデータの読み取り
 
-`data/code_rank_data/market_data.csv` を読み込み、以下を抽出する:
+`$KS_DATA_DIR/code_rank_data/market_data.html`（デフォルト: `/Users/k_sohara/Ext/GoogleDrive/shintakane_data/code_rank_data/market_data.html`）を読み込み、以下を抽出する:
 
-- 「■ テーマランク」セクションを探す
-- 「ランク」で始まる行から、2列目以降の上位3テーマ名を取得
-- 「騰落率」で始まる行があれば、対応する3テーマの騰落率データ（`+X.X%[N]` 形式）も取得
+- `<h2>テーマランク</h2>` の後にある `<div class="theme-grid">` 内の `<div class="theme-badge ...">` 要素を解析する
+- 各バッジから以下を取得:
+  - ランク: `<span class="rank">` の内容（例: `#1`）
+  - テーマ名: `<span class="name">` の内容
+  - 騰落率: `<span class="rate ...">` の内容（例: `+0.1% [95]`）
+- 上位3テーマ（#1〜#3）を取得する
 
 ### 2. 各テーマのニュース検索
 
@@ -55,5 +58,5 @@ Sources:
 
 - 各テーマにつき2-3件のニュース・材料を簡潔に要約する
 - 出典URLを必ず付記する（Sourcesセクション）
-- CSVファイルが存在しない、またはテーマランクセクションがない場合はその旨を伝える
+- HTMLファイルが存在しない、またはテーマランクセクションがない場合はその旨を伝える
 - 検索結果が見つからない場合は「関連ニュースが見つかりませんでした」と記載する

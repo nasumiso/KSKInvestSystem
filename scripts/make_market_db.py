@@ -578,6 +578,7 @@ tr:hover { background: #f5f5f5; }
 .theme-badge .change-down { color: #2980b9; }
 .rate-pos { color: #c0392b; }
 .rate-neg { color: #2980b9; }
+.rate-bold { font-weight: bold; }
 .theme-heat-2 { background: #ef5350; border-color: #e53935; }
 .theme-heat-1 { background: #ef9a9a; border-color: #e57373; }
 .theme-heat0  { background: #fff; }
@@ -660,24 +661,30 @@ def _html_theme_rank(market_db, theme_rank_data=None):
             change_class = ""
             change_text = "→"
 
+        # 順位変動に応じたヒートマップクラス
+        if diff is None:
+            heat_class = "theme-heat0"
+        elif diff >= 8:
+            heat_class = "theme-heat2"
+        elif diff >= 4:
+            heat_class = "theme-heat1"
+        elif diff <= -8:
+            heat_class = "theme-heat-2"
+        elif diff <= -4:
+            heat_class = "theme-heat-1"
+        else:
+            heat_class = "theme-heat0"
+
         # 騰落率
         rate_html = ""
-        heat_class = "theme-heat0"
         if theme in theme_momentum:
             avg_rate, count = theme_momentum[theme]
             rate_class = "rate-pos" if avg_rate >= 0 else "rate-neg"
+            if abs(avg_rate) >= 3:
+                rate_class += " rate-bold"
             rate_html = '<span class="rate %s">%+.1f%% <small>[%d]</small></span>' % (
                 rate_class, avg_rate, count
             )
-            # 騰落率に応じたヒートマップクラス
-            if avg_rate >= 4:
-                heat_class = "theme-heat2"
-            elif avg_rate >= 2:
-                heat_class = "theme-heat1"
-            elif avg_rate <= -4:
-                heat_class = "theme-heat-2"
-            elif avg_rate <= -2:
-                heat_class = "theme-heat-1"
 
         theme_escaped = html_mod.escape(theme)
         parts.append(

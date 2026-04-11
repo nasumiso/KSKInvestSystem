@@ -78,6 +78,8 @@ def search_fromcsv_dekidakaup(fname):
 
 TODAY_STOCKS_DIR = os.path.join(DATA_DIR, "today_stocks")
 TODAY_STOCKS_HISTORY_DIR = os.path.join(TODAY_STOCKS_DIR, "history")
+RESULT_DATA_DIR = os.path.join(DATA_DIR, "shintakane_result_data")
+RESULT_HISTORY_DIR = os.path.join(RESULT_DATA_DIR, "history")
 HISTORY_KEEP_DAYS = 30
 os.makedirs(TODAY_STOCKS_DIR, exist_ok=True)
 
@@ -101,6 +103,23 @@ def _archive_old_csvs(prefix):
             moved += 1
     if moved > 0:
         log_debug("%s: %d件のCSVを履歴に移動しました" % (prefix, moved))
+
+
+def _archive_old_result_csvs():
+    """30日以前のshintakane_result_YYMMDD.csvをhistory/に移動"""
+    cutoff = datetime.today() - timedelta(days=HISTORY_KEEP_DAYS)
+    cutoff_str = "%02d%02d%02d" % (cutoff.year - 2000, cutoff.month, cutoff.day)
+    pattern = os.path.join(RESULT_DATA_DIR, "shintakane_result_*.csv")
+    moved = 0
+    for fpath in glob.glob(pattern):
+        basename = os.path.basename(fpath)
+        date_part = basename.replace("shintakane_result_", "").replace(".csv", "")
+        if date_part < cutoff_str:
+            os.makedirs(RESULT_HISTORY_DIR, exist_ok=True)
+            shutil.move(fpath, RESULT_HISTORY_DIR)
+            moved += 1
+    if moved > 0:
+        log_debug("shintakane_result: %d件のCSVを履歴に移動しました" % moved)
 
 
 def get_shintakane_day_txtname(today):
@@ -669,6 +688,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
             shintakane_result_csv,
             os.path.join(DATA_DIR, "shintakane_result_data/shintakane_result.csv"),
         )
+        _archive_old_result_csvs()
 
     # マーケット情報を表示
     # TODO: yahooUSのhtml形式が変わったようなので対応するまで封印
@@ -1314,12 +1334,23 @@ def get_todays_kessan_list(positive=False):
     return code_s_lst
 
 
+def _migrate_kessan_html_cache(kessan_dir, cache_dir):
+    """旧パス(todays_kessan_data/)のHTMLキャッシュをhtml_cache/に移動"""
+    for fname in os.listdir(kessan_dir):
+        if fname.startswith("todays_kessan_page_") and fname.endswith(".html"):
+            shutil.move(os.path.join(kessan_dir, fname), os.path.join(cache_dir, fname))
+
+
 def update_todays_kessan():
     """決算速報URLを解析して銘柄コード更新リストにする"""
     modify_lst = []
     announce_lst = []
-    cache_dir = os.path.join(DATA_DIR, "todays_kessan_data")
-    cache_csv_path = os.path.join(cache_dir, "todays_kessan.csv")
+    kessan_dir = os.path.join(DATA_DIR, "todays_kessan_data")
+    cache_dir = os.path.join(kessan_dir, "html_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    # 旧パスからの移行（初回のみ）
+    _migrate_kessan_html_cache(kessan_dir, cache_dir)
+    cache_csv_path = os.path.join(kessan_dir, "todays_kessan.csv")
     log_print("-" * 30)
     log_print("決算発表/修正に対するDB更新")
     log_print("-" * 30)
