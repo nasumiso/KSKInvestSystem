@@ -150,7 +150,7 @@ class StockPrice(BaseModel):
 **現状の問題:**
 - Yahoo/KabutanのHTML解析が各モジュールに散在
 - フォーマット変更の影響が広範囲に及ぶ
-- 回帰テストが不足（`data/cache_data` の HTML を fixtures にしていない）
+- 回帰テストが不足（`data/today_stocks/html_cache/` の HTML を fixtures にしていない）
 
 **改善案:**
 - 取得・パースを「ソースアダプタ」に集約

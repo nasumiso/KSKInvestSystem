@@ -78,6 +78,8 @@ def search_fromcsv_dekidakaup(fname):
 
 TODAY_STOCKS_DIR = os.path.join(DATA_DIR, "today_stocks")
 TODAY_STOCKS_HISTORY_DIR = os.path.join(TODAY_STOCKS_DIR, "history")
+RESULT_DATA_DIR = os.path.join(DATA_DIR, "shintakane_result_data")
+RESULT_HISTORY_DIR = os.path.join(RESULT_DATA_DIR, "history")
 HISTORY_KEEP_DAYS = 30
 os.makedirs(TODAY_STOCKS_DIR, exist_ok=True)
 
@@ -101,6 +103,23 @@ def _archive_old_csvs(prefix):
             moved += 1
     if moved > 0:
         log_debug("%s: %d件のCSVを履歴に移動しました" % (prefix, moved))
+
+
+def _archive_old_result_csvs():
+    """30日以前のshintakane_result_YYMMDD.csvをhistory/に移動"""
+    cutoff = datetime.today() - timedelta(days=HISTORY_KEEP_DAYS)
+    cutoff_str = "%02d%02d%02d" % (cutoff.year - 2000, cutoff.month, cutoff.day)
+    pattern = os.path.join(RESULT_DATA_DIR, "shintakane_result_*.csv")
+    moved = 0
+    for fpath in glob.glob(pattern):
+        basename = os.path.basename(fpath)
+        date_part = basename.replace("shintakane_result_", "").replace(".csv", "")
+        if date_part < cutoff_str:
+            os.makedirs(RESULT_HISTORY_DIR, exist_ok=True)
+            shutil.move(fpath, RESULT_HISTORY_DIR)
+            moved += 1
+    if moved > 0:
+        log_debug("shintakane_result: %d件のCSVを履歴に移動しました" % moved)
 
 
 def get_shintakane_day_txtname(today):
@@ -669,6 +688,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
             shintakane_result_csv,
             os.path.join(DATA_DIR, "shintakane_result_data/shintakane_result.csv"),
         )
+        _archive_old_result_csvs()
 
     # マーケット情報を表示
     # TODO: yahooUSのhtml形式が変わったようなので対応するまで封印
@@ -964,7 +984,7 @@ def get_todays_dekidakaup(force=False):
     log_print("----> 株探から出来高急増情報を取得します・・")
     URL_KABUTAN_DEKIDAKA = "https://kabutan.jp/tansaku/"
     QUERY = "?mode=2_0311&market=0&capitalization=-1&stc=v3&stm=1&page=%d"
-    cache_dir = os.path.join(DATA_DIR, "cache_data")
+    cache_dir = os.path.join(DATA_DIR, "today_stocks", "html_cache")
     path_dekidaka = os.path.join(
         cache_dir, get_http_cachname(URL_KABUTAN_DEKIDAKA + QUERY % 1)
     )
@@ -1062,7 +1082,7 @@ def get_todays_shintakane(force=False):
     # QUERY = "?mode=3_3&market=0&capitalization=-1&stc=&stm=0&page=%d"
     QUERY = "record_w52_high_price?market=0&capitalization=-1" "&stc=&stm=0&page=%d"
     # 最新キャッシュ取得日を取得
-    cache_dir = os.path.join(DATA_DIR, "cache_data")
+    cache_dir = os.path.join(DATA_DIR, "today_stocks", "html_cache")
     try:
         latest_html = file_read(
             os.path.join(
@@ -1181,7 +1201,7 @@ def get_todays_pts(force=False):
 
     log_print("----> 株探からPTSランキングを取得します・・")
     URL_KABUTAN_PTS = "https://kabutan.jp/warning/pts_night_price_increase"
-    cache_dir = os.path.join(DATA_DIR, "cache_data")
+    cache_dir = os.path.join(DATA_DIR, "today_stocks", "html_cache")
     # キャッシュ判定
     try:
         latest_html = file_read(
@@ -1314,12 +1334,23 @@ def get_todays_kessan_list(positive=False):
     return code_s_lst
 
 
+def _migrate_kessan_html_cache(kessan_dir, cache_dir):
+    """旧パス(todays_kessan_data/)のHTMLキャッシュをhtml_cache/に移動"""
+    for fname in os.listdir(kessan_dir):
+        if fname.startswith("todays_kessan_page_") and fname.endswith(".html"):
+            shutil.move(os.path.join(kessan_dir, fname), os.path.join(cache_dir, fname))
+
+
 def update_todays_kessan():
     """決算速報URLを解析して銘柄コード更新リストにする"""
     modify_lst = []
     announce_lst = []
-    cache_dir = os.path.join(DATA_DIR, "todays_kessan_data")
-    cache_csv_path = os.path.join(cache_dir, "todays_kessan.csv")
+    kessan_dir = os.path.join(DATA_DIR, "todays_kessan_data")
+    cache_dir = os.path.join(kessan_dir, "html_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    # 旧パスからの移行（初回のみ）
+    _migrate_kessan_html_cache(kessan_dir, cache_dir)
+    cache_csv_path = os.path.join(kessan_dir, "todays_kessan.csv")
     log_print("-" * 30)
     log_print("決算発表/修正に対するDB更新")
     log_print("-" * 30)
@@ -1484,8 +1515,6 @@ if __name__ == "__main__":
         log_print("=" * 30)
         log_print("shintakane.pyを実行します", args)
         log_print("=" * 30)
-        # main()完了通知用フラグファイル（cron.shがバックグラウンド実行時に検知）
-        done_flag = os.path.join(LOGS_DIR, ".shintakane_main_done.%d" % os.getpid())
         try:
             if args.quiet:
                 log_print("標準出力を抑制します")
@@ -1494,9 +1523,6 @@ if __name__ == "__main__":
                 log_print("抑制終了")
             else:
                 main(force=args.force)
-            # main()完了をcron.shに���知（アップロードはまだ裏で継続中の可能性あり）
-            with open(done_flag, "w") as f:
-                f.write(str(os.getpid()))
             # 非同期アップロードの完了を待つ
             import googledrive
             googledrive.wait_all_uploads()
@@ -1506,7 +1532,3 @@ if __name__ == "__main__":
                 "Unhandled exception occurred:\n%s", traceback.format_exc()
             )
             raise e
-        finally:
-            # フラグファイルのクリーンアップ
-            if os.path.exists(done_flag):
-                os.remove(done_flag)

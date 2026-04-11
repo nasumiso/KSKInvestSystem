@@ -17,7 +17,7 @@
 
 - **URL**: `https://kabutan.jp/warning/pts_night_price_increase`
 - **取得上位**: 20銘柄（1ページ分のみ）
-- **キャッシュ**: 既存パターンに準拠。`data/cache_data/` にHTMLキャッシュ保存
+- **キャッシュ**: 既存パターンに準拠。`data/today_stocks/html_cache/` にHTMLキャッシュ保存
 - **キャッシュ判定**: `get_price_day()` ベースで当日分があればスキップ（18:00境界）。既存の `get_todays_shintakane()` / `get_todays_dekidakaup()` と同じロジック
 - **CSV保存**: `data/shintakane_data/pts_YYMMDD.csv`
   - 既存の新高値CSVと同じ8カラム構成:

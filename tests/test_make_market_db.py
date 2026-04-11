@@ -292,28 +292,27 @@ class TestHtmlThemeRank:
             "access_date_theme_rank": datetime(2026, 3, 15),
         }
 
-    def test_new_theme_class(self):
-        """新規テーマにtheme-newクラスが付く"""
+    def test_new_theme_change(self):
+        """新規テーマにNEWテキストが付く"""
         result = make_market_db._html_theme_rank(self._make_market_db())
-        assert 'theme-new' in result
         assert 'NEW' in result
 
-    def test_up_theme_class(self):
-        """上昇テーマにtheme-upクラスが付く"""
+    def test_up_theme_change(self):
+        """上昇テーマにchange-upクラスと↑テキストが付く"""
         result = make_market_db._html_theme_rank(self._make_market_db())
-        assert 'theme-up' in result
+        assert 'change-up' in result
         assert '↑3' in result
 
-    def test_down_theme_class(self):
-        """下降テーマにtheme-downクラスが付く"""
+    def test_down_theme_change(self):
+        """下降テーマにchange-downクラスと↓テキストが付く"""
         result = make_market_db._html_theme_rank(self._make_market_db())
-        assert 'theme-down' in result
+        assert 'change-down' in result
         assert '↓2' in result
 
-    def test_flat_theme_class(self):
-        """変動なしテーマにtheme-flatクラスが付く"""
+    def test_flat_theme_change(self):
+        """変動なしテーマに→テキストが付く"""
         result = make_market_db._html_theme_rank(self._make_market_db())
-        assert 'theme-flat' in result
+        assert '>→<' in result
 
     def test_rate_pos_neg(self):
         """騰落率の正負でrate-pos/rate-negクラスが付く"""

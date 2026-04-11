@@ -6,7 +6,7 @@
 - 単一の `data/stock_data/stocks.pickle` にDBを保存 → 同時書き込み・破損リスクがある。  
 - CI / 自動化テストが無く、変更の安全性が担保されていない。  
 - Google Drive 認証に古いライブラリ（`oauth2client` 等）を使用。Secrets 管理が不明瞭。  
-- パーサの回帰テストが不足（`data/cache_data` の HTML を fixtures にしていない）。
+- パーサの回帰テストが不足（`data/today_stocks/html_cache/` の HTML を fixtures にしていない）。
 
 ## 優先度：高（すぐ着手推奨） ✅
 1. **Pickle → SQLite（段階的移行）**  

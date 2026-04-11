@@ -43,6 +43,8 @@ def _setup_tmp_dirs(tmp_path):
     """テスト用ディレクトリ構成を作成"""
     market_data_dir = tmp_path / "market_data"
     market_data_dir.mkdir()
+    theme_rank_dir = market_data_dir / "theme_rank"
+    theme_rank_dir.mkdir()
     code_rank_dir = tmp_path / "code_rank_data"
     code_rank_dir.mkdir()
     return market_data_dir, code_rank_dir
@@ -50,10 +52,12 @@ def _setup_tmp_dirs(tmp_path):
 
 def _write_theme_rank_cache(market_data_dir, html, backup_name=None):
     """テーマランクHTMLをキャッシュファイルとして配置"""
-    cache_path = market_data_dir / "theme_rank.html"
+    theme_rank_dir = market_data_dir / "theme_rank"
+    theme_rank_dir.mkdir(exist_ok=True)
+    cache_path = theme_rank_dir / "theme_rank.html"
     cache_path.write_text(html, encoding="utf-8")
     if backup_name:
-        backup_path = market_data_dir / backup_name
+        backup_path = theme_rank_dir / backup_name
         backup_path.write_text(html, encoding="utf-8")
     return str(cache_path)
 
@@ -87,7 +91,8 @@ def market_env(tmp_path):
     backup_name = "theme_rank_%02d%02d%02d.html" % (
         prev_date.year - 2000, prev_date.month, prev_date.day
     )
-    (market_data_dir / backup_name).write_text(prev_html, encoding="utf-8")
+    theme_rank_dir = market_data_dir / "theme_rank"
+    (theme_rank_dir / backup_name).write_text(prev_html, encoding="utf-8")
 
     # パッチ対象をまとめて適用
     patches = []
@@ -245,7 +250,7 @@ class TestUpdateMarketDbFlow:
         today2_html = market_env["prev_html"]  # 順序が異なるHTMLを使用
         with patch("make_market_db.http_get_html", return_value=today2_html):
             # キャッシュファイルも更新
-            cache_path = market_env["market_data_dir"] / "theme_rank.html"
+            cache_path = market_env["market_data_dir"] / "theme_rank" / "theme_rank.html"
             cache_path.write_text(today2_html, encoding="utf-8")
             market_db2 = make_market_db.update_market_db()
 

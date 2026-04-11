@@ -52,6 +52,38 @@ def get_timedelta_today(fname):
     return get_price_day(today) - get_price_day(fdate), fdate
 
 
+def _migrate_theme_rank_files():
+    """旧パス(market_data/)のtheme_rankファイルを新パス(market_data/theme_rank/)に移動
+
+    初回のみ実行: theme_rank/ディレクトリが未作成で旧パスにファイルがある場合。
+    """
+    old_dir = os.path.join(DATA_DIR, "market_data")
+    new_dir = os.path.join(DATA_DIR, "market_data", "theme_rank")
+    old_cache = os.path.join(old_dir, "theme_rank.html")
+    if not os.path.exists(old_cache) or os.path.isdir(new_dir):
+        return
+    os.makedirs(new_dir, exist_ok=True)
+    log_print("theme_rankファイルを新ディレクトリに移動:", new_dir)
+    shutil.move(old_cache, os.path.join(new_dir, "theme_rank.html"))
+    for fname in os.listdir(old_dir):
+        if re.match(r"theme_rank_\d{6}\.html$", fname):
+            shutil.move(os.path.join(old_dir, fname), os.path.join(new_dir, fname))
+
+
+def _archive_old_theme_rank(theme_rank_dir, days=30):
+    """30日以前のtheme_rank_YYMMDD.htmlをhistory/に移動"""
+    history_dir = os.path.join(theme_rank_dir, "history")
+    today = datetime.today()
+    for fname in os.listdir(theme_rank_dir):
+        if not re.match(r"theme_rank_\d{6}\.html$", fname):
+            continue
+        fpath = os.path.join(theme_rank_dir, fname)
+        mtime = datetime.fromtimestamp(os.stat(fpath).st_mtime)
+        if (today - mtime).days > days:
+            os.makedirs(history_dir, exist_ok=True)
+            shutil.move(fpath, os.path.join(history_dir, fname))
+
+
 def get_prev_fname(fname, cur_day=datetime.today()):
     """
     fnameの日付より古い日付のファイルを返す
@@ -82,7 +114,12 @@ def get_theme_rank_list():
     Returns:
         現在のランクデータ、数日前のランクデータ、日付、数日前の日付
     """
-    cach_path = os.path.join(DATA_DIR, "market_data", "theme_rank.html")
+    # 旧パスからの移行（初回のみ）
+    _migrate_theme_rank_files()
+
+    theme_rank_dir = os.path.join(DATA_DIR, "market_data", "theme_rank")
+    os.makedirs(theme_rank_dir, exist_ok=True)
+    cach_path = os.path.join(theme_rank_dir, "theme_rank.html")
 
     delta, cach_date = get_timedelta_today(cach_path)
     if delta is None or cach_date is None:
@@ -93,7 +130,7 @@ def get_theme_rank_list():
 
     html = http_get_html(
         URL_THEME_RANK_KABUTAN,
-        cache_dir=os.path.join(DATA_DIR, "market_data"),
+        cache_dir=theme_rank_dir,
         cache_fname="theme_rank.html",
         use_cache=use_cache,
     )
@@ -121,6 +158,9 @@ def get_theme_rank_list():
     if cach_date and prev_cache:
         if (cach_date - prev_day).days >= INTERVAL_BACKUP:
             backup_file(cach_path, 0)
+
+    # 30日以前のバックアップをhistory/に移動
+    _archive_old_theme_rank(theme_rank_dir)
 
     prev_theme_rank_list = []
     if prev_cache and os.path.exists(prev_cache):
@@ -530,20 +570,20 @@ tr:hover { background: #f5f5f5; }
   border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px;
   background: #fff; min-width: 110px; font-size: 0.85em;
 }
-.theme-badge .rank { font-size: 0.75em; color: #999; }
-.theme-badge .name { font-weight: bold; text-align: center; }
-.theme-badge .change { font-size: 0.8em; margin-top: 2px; }
+.theme-badge .rank { font-size: 0.75em; color: #333; }
+.theme-badge .name { font-weight: bold; text-align: center; color: #333; }
+.theme-badge .change { font-size: 0.8em; margin-top: 2px; color: #333; }
 .theme-badge .rate { font-size: 0.8em; margin-top: 2px; }
-.theme-new { border-color: #3498db; background: #ebf5fb; }
-.theme-new .change { color: #2980b9; font-weight: bold; }
-.theme-up { border-color: #27ae60; }
-.theme-up .change { color: #27ae60; }
-.theme-down { border-color: #e74c3c; }
-.theme-down .change { color: #e74c3c; }
-.theme-flat { border-color: #95a5a6; }
-.theme-flat .change { color: #95a5a6; }
+.theme-badge .change-up { color: #c0392b; }
+.theme-badge .change-down { color: #2980b9; }
 .rate-pos { color: #c0392b; }
 .rate-neg { color: #2980b9; }
+.rate-bold { font-weight: bold; }
+.theme-heat-2 { background: #ef5350; border-color: #e53935; }
+.theme-heat-1 { background: #ef9a9a; border-color: #e57373; }
+.theme-heat0  { background: #fff; }
+.theme-heat1  { background: #a5d6a7; border-color: #81c784; }
+.theme-heat2  { background: #66bb6a; border-color: #4caf50; }
 
 /* 市場テーブル */
 .market-table th { background: #2c3e50; color: #fff; }
@@ -607,25 +647,41 @@ def _html_theme_rank(market_db, theme_rank_data=None):
 
     for i, theme in enumerate(theme_rank):
         diff = theme_rank_diff.get(theme)
-        # CSSクラスの決定
+        # 順位変動テキストとCSSクラスの決定
         if diff is None:
-            css_class = "theme-new"
+            change_class = ""
             change_text = "NEW"
         elif diff > 0:
-            css_class = "theme-up"
+            change_class = "change-up"
             change_text = "↑%d" % diff
         elif diff < 0:
-            css_class = "theme-down"
+            change_class = "change-down"
             change_text = "↓%d" % (-diff)
         else:
-            css_class = "theme-flat"
+            change_class = ""
             change_text = "→"
+
+        # 順位変動に応じたヒートマップクラス
+        if diff is None:
+            heat_class = "theme-heat0"
+        elif diff >= 8:
+            heat_class = "theme-heat2"
+        elif diff >= 4:
+            heat_class = "theme-heat1"
+        elif diff <= -8:
+            heat_class = "theme-heat-2"
+        elif diff <= -4:
+            heat_class = "theme-heat-1"
+        else:
+            heat_class = "theme-heat0"
 
         # 騰落率
         rate_html = ""
         if theme in theme_momentum:
             avg_rate, count = theme_momentum[theme]
             rate_class = "rate-pos" if avg_rate >= 0 else "rate-neg"
+            if abs(avg_rate) >= 3:
+                rate_class += " rate-bold"
             rate_html = '<span class="rate %s">%+.1f%% <small>[%d]</small></span>' % (
                 rate_class, avg_rate, count
             )
@@ -635,9 +691,9 @@ def _html_theme_rank(market_db, theme_rank_data=None):
             '  <div class="theme-badge %s">\n'
             '    <span class="rank">#%d</span>\n'
             '    <span class="name">%s</span>\n'
-            '    <span class="change">%s</span>\n'
+            '    <span class="change %s">%s</span>\n'
             '    %s\n'
-            '  </div>' % (css_class, i + 1, theme_escaped, change_text, rate_html)
+            '  </div>' % (heat_class, i + 1, theme_escaped, change_class, change_text, rate_html)
         )
 
     parts.append('</div>')
@@ -689,7 +745,6 @@ def _html_market(market_db):
         ("topix", "TOPIX"),
         ("mothers", "マザーズ指数"),
         ("nikkei225", "日経225"),
-        ("nasdaq", "NASDAQ"),
     ]
 
     rows_html = []

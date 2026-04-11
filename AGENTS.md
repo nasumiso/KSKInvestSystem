@@ -26,4 +26,4 @@ Recent commit messages are short and direct, often in Japanese (e.g., “フォ�
 - Screenshots or sample rows if output formats changed.
 
 ## Data, Cache, and Logs
-Primary DB: `data/stock_data/stocks.pickle`. HTTP cache: `data/cache_data/`. Outputs are written to `data/shintakane_result_data/` and `data/code_rank_data/`. Logs rotate in `logs/`; check them when scraping or parsing fails.
+Primary DB: `data/stock_data/stocks.pickle`. HTTP cache: `data/today_stocks/html_cache/`. Outputs are written to `data/shintakane_result_data/` and `data/code_rank_data/`. Logs rotate in `logs/`; check them when scraping or parsing fails.
