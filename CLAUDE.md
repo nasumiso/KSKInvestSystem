@@ -55,6 +55,16 @@ cd scripts && python make_stock_db.py backup
 
 # 市場データ更新
 cd scripts && python make_market_db.py
+
+# 銘柄調査DB(research_shelve)の表示・バックアップ
+cd scripts && python research_shelve.py show 3496
+cd scripts && python research_shelve.py list --rating S,A --keyword 駐車場
+cd scripts && python research_shelve.py backup
+
+# スプシCSV → research_shelve 移行(issue #92)
+cd scripts && python migrate_research_from_csv.py "<csv_path>" --dry-run                                   # DB を触らず検証
+cd scripts && python migrate_research_from_csv.py "<csv_path>" --db-path /tmp/verify --show 3496,247A,6920 # 一時DBで目視確認
+cd scripts && python migrate_research_from_csv.py "<csv_path>"                                             # 本番移行
 ```
 
 ### 自動実行
