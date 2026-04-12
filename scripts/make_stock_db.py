@@ -1288,15 +1288,27 @@ def update_research_snapshots(*, db_path=None):
         if not stock:
             continue
 
+        # 決算トリガー日付を収集
+        # kessan_mod_date（修正日）が窓内にある場合、kessanbi（元の発表日）は
+        # 採用しない。修正後の stocks データは修正後の値のみを含むため、
+        # 元の発表日に修正後データを書くと履歴が捏造される。
+        kessanbi_str = stock.get("kessanbi", "")
+        mod_date_str = stock.get("kessan_mod_date", "")
         trigger_dates = []
-        for date_field in ("kessanbi", "kessan_mod_date"):
-            date_str = stock.get(date_field, "")
-            if not date_str:
-                continue
+        mod_in_window = False
+        if mod_date_str:
             try:
-                dt = datetime.strptime(date_str, "%Y/%m/%d").date()
+                dt = datetime.strptime(mod_date_str, "%Y/%m/%d").date()
                 if 0 <= (today - dt).days <= KESSAN_WINDOW_DAYS:
-                    trigger_dates.append(date_str)
+                    trigger_dates.append(mod_date_str)
+                    mod_in_window = True
+            except ValueError:
+                pass
+        if kessanbi_str and not mod_in_window:
+            try:
+                dt = datetime.strptime(kessanbi_str, "%Y/%m/%d").date()
+                if 0 <= (today - dt).days <= KESSAN_WINDOW_DAYS:
+                    trigger_dates.append(kessanbi_str)
             except ValueError:
                 pass
 
@@ -1317,7 +1329,7 @@ def update_research_snapshots(*, db_path=None):
                     continue
 
                 progress_expr, growth_expr = gyoseki.get_gyoseki_expr(stock)
-                ir_quant = progress_expr + growth_expr
+                ir_quant = growth_expr + progress_expr  # [A]...[Q]...[P]... の順
                 quality_indicators = shihyou.get_shihyo_expr(stock)
                 rironkabuka_kairi = rironkabuka.get_rironkabuka_expr(stock)
 

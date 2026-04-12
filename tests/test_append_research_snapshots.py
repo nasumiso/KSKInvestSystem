@@ -114,8 +114,8 @@ class TestUpdateResearchSnapshots:
         assert loaded["snapshots"][0]["data_source"] == "manual"
         assert loaded["snapshots"][0]["ir_quant"] == "手動入力"
 
-    def test_kessanbi_and_mod_date_separate_snapshots(self, db_path, monkeypatch):
-        """決算発表と決算修正が別日なら 2 件の別スナップショット"""
+    def test_mod_date_suppresses_kessanbi(self, db_path, monkeypatch):
+        """修正日が窓内なら kessanbi は採用されない（修正後データで元発表日を上書きしない）"""
         ann_date = _today_str(-3)
         mod_date = _today_str()
         stock = _make_stock("3496", kessanbi=ann_date, kessan_mod_date=mod_date)
@@ -127,10 +127,24 @@ class TestUpdateResearchSnapshots:
         make_stock_db.update_research_snapshots(db_path=db_path)
 
         loaded = rs.get_research_record("3496", db_path=db_path)
-        assert len(loaded["snapshots"]) == 2
-        dates = {s["date_yy_m"] for s in loaded["snapshots"]}
-        assert _today_yy_m_d(-3) in dates
-        assert _today_yy_m_d() in dates
+        assert len(loaded["snapshots"]) == 1
+        assert loaded["snapshots"][0]["date_yy_m"] == _today_yy_m_d()
+
+    def test_kessanbi_used_when_mod_date_outside_window(self, db_path, monkeypatch):
+        """修正日が窓外なら kessanbi が使われる"""
+        ann_date = _today_str(-3)
+        old_mod_date = _today_str(-20)  # 窓外
+        stock = _make_stock("3496", kessanbi=ann_date, kessan_mod_date=old_mod_date)
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        make_stock_db.update_research_snapshots(db_path=db_path)
+
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert len(loaded["snapshots"]) == 1
+        assert loaded["snapshots"][0]["date_yy_m"] == _today_yy_m_d(-3)
 
     def test_migration_not_affected_by_auto(self, db_path, monkeypatch):
         """既存の migration (月精度) があっても auto (日精度) は追記される"""
