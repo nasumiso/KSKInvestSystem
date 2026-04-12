@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}[{{ record.code_s }}] {{ record.stock_name or '' }} - 銘柄詳細 | Shintakane Research{% endblock %}
+
+{% block content %}
+{# ===== 1. ヘッダー ===== #}
+<div class="stock-header">
+  <div class="left">
+    <h1>
+      {% if record.overall_rating %}
+      <span class="rating-badge rating-{{ record.overall_rating }}">{{ record.overall_rating }}</span>
+      {% endif %}
+      <small style="color:#888;font-size:0.5em;">{{ record.code_s }}</small>
+      {{ record.stock_name or '' }}
+    </h1>
+    <div class="meta">
+      {% if record.analysis_date_raw %}分析日: {{ record.analysis_date_raw }}{% endif %}
+      {% if record.analysis_date_raw and record.kessan_date_raw %} | {% endif %}
+      {% if record.kessan_date_raw %}決算日: {{ record.kessan_date_raw }}{% endif %}
+    </div>
+  </div>
+</div>
+
+{# ===== 2. 業績スナップショット時系列 ===== #}
+{% set snapshots = record.snapshots or [] %}
+{% if snapshots %}
+<details open>
+  <summary><strong>業績スナップショット時系列</strong> ({{ snapshots|length }}件)</summary>
+  <form id="ir-comment-form" action="/stock/{{ record.code_s }}/ir_comment" method="post">
+  <div style="overflow-x:auto;">
+    <table class="snapshot-table">
+      <thead>
+        <tr>
+          <th>日付</th>
+          <th>ソース</th>
+          <th>IR分析定量</th>
+          <th style="min-width:220px;">IR分析コメント</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for snap in snapshots %}
+        <tr>
+          <td><strong>{{ snap.date_yy_m }}</strong></td>
+          <td>
+            {% if snap.data_source == 'auto' %}
+            <span class="source-auto">auto</span>
+            {% elif snap.data_source == 'manual' %}
+            <span class="source-manual">manual</span>
+            {% elif snap.data_source == 'migration' %}
+            <span class="source-migration">migration</span>
+            {% else %}
+            <span>{{ snap.data_source or '' }}</span>
+            {% endif %}
+          </td>
+          <td style="white-space:pre-wrap;">{{ snap.ir_quant or '' }}</td>
+          <td><textarea class="editable-field" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir">{{ snap.ir_comment or '' }}</textarea></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  </form>
+  <div class="save-bar" id="save-bar-ir">
+    <span>未保存の変更があります</span>
+    <div class="btn-group">
+      <button class="outline secondary" style="padding:0.3em 0.8em;margin:0;" onclick="revertForm('ir')">元に戻す</button>
+      <button style="padding:0.3em 1em;margin:0;" onclick="document.getElementById('ir-comment-form').submit()">保存</button>
+    </div>
+  </div>
+</details>
+{% endif %}
+
+{# ===== 3. 指標スナップショット時系列 ===== #}
+{% set has_quality = snapshots|selectattr('quality_indicators')|list %}
+{% if has_quality %}
+<details open>
+  <summary><strong>指標スナップショット時系列</strong></summary>
+  <div style="overflow-x:auto;">
+    <table class="snapshot-table">
+      <thead>
+        <tr>
+          <th>日付</th>
+          <th>クォリティ指標</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for snap in snapshots %}
+        {% if snap.quality_indicators %}
+        <tr>
+          <td>{{ snap.date_yy_m }}</td>
+          <td style="white-space:pre-wrap;">{{ snap.quality_indicators }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+
+{# ===== 4. 理論株価乖離率時系列 ===== #}
+{% set has_kairi = snapshots|selectattr('rironkabuka_kairi')|list %}
+{% if has_kairi %}
+<details open>
+  <summary><strong>理論株価乖離率時系列</strong></summary>
+  <div style="overflow-x:auto;">
+    <table class="snapshot-table">
+      <thead>
+        <tr>
+          <th>日付</th>
+          <th>理論株価乖離</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for snap in snapshots %}
+        {% if snap.rironkabuka_kairi %}
+        <tr>
+          <td>{{ snap.date_yy_m }}</td>
+          <td>{{ snap.rironkabuka_kairi }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+
+{# ===== 5. 手動メモ（click-to-edit） ===== #}
+<div class="memo-section" id="memo-section">
+  <h3>手動メモ</h3>
+  <form id="memo-form" action="/stock/{{ record.code_s }}/memo" method="post">
+
+    <div class="memo-field">
+      <label>総合評価</label>
+      <select class="editable-select" name="overall_rating" data-form="memo">
+        <option value="">未評価</option>
+        {% for r in valid_ratings %}
+        <option value="{{ r }}" {{ 'selected' if record.overall_rating == r }}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="memo-field">
+      <label>機関投資家コメント</label>
+      <textarea class="editable-field" name="institutional_comment" rows="3" data-form="memo">{{ record.institutional_comment or '' }}</textarea>
+    </div>
+
+    <div class="memo-field">
+      <label>メモ・総括</label>
+      <textarea class="editable-field" name="memo" rows="6" data-form="memo">{{ record.memo or '' }}</textarea>
+    </div>
+
+    <div class="memo-field">
+      <label>OpenWork</label>
+      <input class="editable-field" type="text" name="openwork" value="{{ record.openwork or '' }}" data-form="memo" style="max-width:8em;">
+    </div>
+
+    <div class="memo-field">
+      <label>ジムクレイマー</label>
+      <textarea class="editable-field" name="cramer" rows="2" data-form="memo">{{ record.cramer or '' }}</textarea>
+    </div>
+
+  </form>
+  <div class="save-bar" id="save-bar-memo">
+    <span>未保存の変更があります</span>
+    <div class="btn-group">
+      <button class="outline secondary" style="padding:0.3em 0.8em;margin:0;" onclick="revertForm('memo')">元に戻す</button>
+      <button style="padding:0.3em 1em;margin:0;" onclick="document.getElementById('memo-form').submit()">保存</button>
+    </div>
+  </div>
+</div>
+
+{# ===== 6. 四季報（click-to-edit） ===== #}
+<div class="memo-section" id="shikiho-section">
+  <h3>四季報</h3>
+  <form id="shikiho-form" action="/stock/{{ record.code_s }}/shikiho" method="post">
+
+    <div class="memo-field">
+      <label>企業概要</label>
+      <textarea class="editable-field" name="overview" rows="3" data-form="shikiho">{{ record.overview or '' }}</textarea>
+    </div>
+
+    <div class="memo-field">
+      {% set shikiho = record.shikiho_comments or [] %}
+      <label>四季報コメント (<span id="shikiho-count">{{ shikiho|length }}</span>/5件)</label>
+      <div id="shikiho-edit-area">
+        {% for comment in shikiho %}
+        <div class="shikiho-entry" style="display:flex;align-items:start;gap:0.3em;margin-bottom:0.3em;">
+          <span style="font-size:0.8em;color:#888;width:1.5em;padding-top:0.6em;">{{ loop.index }}.</span>
+          <textarea class="editable-field" name="shikiho_comments_{{ loop.index0 }}" rows="2" style="flex:1;" data-form="shikiho">{{ comment }}</textarea>
+          <button type="button" class="outline secondary" style="padding:0.2em 0.5em;font-size:0.8em;margin:0;margin-top:0.4em;" onclick="removeShikiho(this)" title="削除">&times;</button>
+        </div>
+        {% endfor %}
+        <button type="button" id="btn-add-shikiho" class="outline" style="margin-top:0.3em;padding:0.2em 0.8em;font-size:0.85em;" onclick="addShikiho()"
+          {% if shikiho|length >= 5 %}style="display:none;"{% endif %}>+ 追加 (残り{{ 5 - shikiho|length }}件)</button>
+      </div>
+    </div>
+
+  </form>
+  <div class="save-bar" id="save-bar-shikiho">
+    <span>未保存の変更があります</span>
+    <div class="btn-group">
+      <button class="outline secondary" style="padding:0.3em 0.8em;margin:0;" onclick="revertForm('shikiho')">元に戻す</button>
+      <button style="padding:0.3em 1em;margin:0;" onclick="document.getElementById('shikiho-form').submit()">保存</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
