@@ -1289,28 +1289,25 @@ def update_research_snapshots(*, db_path=None):
             continue
 
         # 決算トリガー日付を収集
-        # kessan_mod_date（修正日）が窓内にある場合、kessanbi（元の発表日）は
-        # 採用しない。修正後の stocks データは修正後の値のみを含むため、
-        # 元の発表日に修正後データを書くと履歴が捏造される。
-        kessanbi_str = stock.get("kessanbi", "")
-        mod_date_str = stock.get("kessan_mod_date", "")
-        trigger_dates = []
-        mod_in_window = False
-        if mod_date_str:
+        # 両方が窓内の場合、stocks データは最新の決算イベント時点の値のみを
+        # 保持するため、新しい方の日付のみを採用する（古い方に書くと履歴捏造）。
+        candidates = []
+        for date_field in ("kessanbi", "kessan_mod_date"):
+            date_str = stock.get(date_field, "")
+            if not date_str:
+                continue
             try:
-                dt = datetime.strptime(mod_date_str, "%Y/%m/%d").date()
+                dt = datetime.strptime(date_str, "%Y/%m/%d").date()
                 if 0 <= (today - dt).days <= KESSAN_WINDOW_DAYS:
-                    trigger_dates.append(mod_date_str)
-                    mod_in_window = True
+                    candidates.append((dt, date_str))
             except ValueError:
                 pass
-        if kessanbi_str and not mod_in_window:
-            try:
-                dt = datetime.strptime(kessanbi_str, "%Y/%m/%d").date()
-                if 0 <= (today - dt).days <= KESSAN_WINDOW_DAYS:
-                    trigger_dates.append(kessanbi_str)
-            except ValueError:
-                pass
+        if len(candidates) >= 2:
+            # 新しい日付のみ採用
+            candidates.sort(reverse=True)
+            trigger_dates = [candidates[0][1]]
+        else:
+            trigger_dates = [c[1] for c in candidates]
 
         if not trigger_dates:
             continue
