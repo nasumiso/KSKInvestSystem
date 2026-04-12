@@ -114,6 +114,7 @@ stocks_shelve（日次更新の揮発性キャッシュ）とは別に、銘柄�
 | ファイル | 役割 |
 |---------|------|
 | `scripts/research_shelve.py` | 基盤（スキーマ・CRUD・バリデーション・CLI） |
+| `scripts/webapp/` | ブラウザUI（Flask、閲覧・編集） |
 | `scripts/migrate_research_from_csv.py` | スプレッドシートCSVからの移行（実行済み） |
 
 ### CLI
@@ -123,6 +124,28 @@ python research_shelve.py show <code_s>                          # 調査デー�
 python research_shelve.py list [--rating S,A] [--keyword ...]    # フィルタ一覧
 python research_shelve.py backup                                 # DBバックアップ
 ```
+
+### Webアプリ (`scripts/webapp/`)
+
+research_shelveの閲覧・編集用ブラウザUI。Flask製、`http://localhost:5001` で起動。
+
+**主な機能:**
+- 銘柄検索・フィルタ（評価ランク、キーワード、銘柄コード）
+- 銘柄詳細表示（スナップショット時系列、クォリティ指標、理論株価乖離）
+- クリック編集（評価ランク、メモ、四季報コメント、IRコメント）
+
+**構成:**
+
+| ファイル | 役割 |
+|---------|------|
+| `webapp/app.py` | エントリポイント（`python -m webapp.app`） |
+| `webapp/__init__.py` | アプリファクトリ（`create_app()`） |
+| `webapp/helpers.py` | research_shelveとのデータ連携層 |
+| `webapp/routes/` | ルート定義（search / detail / memo） |
+| `webapp/templates/` | Jinja2テンプレート |
+| `webapp/static/` | CSS・JS（PicoCSS、変更検知・保存バー） |
+
+**排他制御:** helpers.pyの書き込み操作は `_flock()` でプロセス間排他を行い、バッチスクリプトとの同時実行に対応。
 
 ## キャッシュ戦略
 

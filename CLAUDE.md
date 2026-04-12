@@ -61,6 +61,9 @@ cd scripts && python research_shelve.py show 3496
 cd scripts && python research_shelve.py list --rating S,A --keyword 駐車場
 cd scripts && python research_shelve.py backup
 
+# 銘柄調査Webアプリ（research_shelveのブラウザUI）
+cd scripts && python -m webapp.app    # http://localhost:5001 で起動
+
 # スプシCSV → research_shelve 移行(issue #92)
 cd scripts && python migrate_research_from_csv.py "<csv_path>" --dry-run                                   # DB を触らず検証
 cd scripts && python migrate_research_from_csv.py "<csv_path>" --db-path /tmp/verify --show 3496,247A,6920 # 一時DBで目視確認
