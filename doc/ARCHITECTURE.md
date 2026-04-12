@@ -79,6 +79,51 @@
 - `ShelveDB` はスレッドセーフ（RLock）、メモ化キャッシュ（`enable_memo()`）対応
 - バックエンドは `dbm.dumb`（macOSの `dbm.ndbm` はハッシュ衝突問題があるため）
 
+## 銘柄調査データベース（research_shelve）
+
+stocks_shelve（日次更新の揮発性キャッシュ）とは別に、銘柄調査の蓄積データを保持する専用DB。手動メモと決算スナップショットを不可逆な資産として管理する。詳細な設計仕様は [doc/requirements/phase1_requirements.md](requirements/phase1_requirements.md) を参照。
+
+### DB分離の原則
+
+| | stocks_shelve | research_shelve |
+|---|---|---|
+| 性質 | 揮発性キャッシュ（最新値で上書き） | 不可逆な蓄積資産（時系列＋手動メモ） |
+| 更新 | 毎日自動（TTL管理） | 決算検知時に自動追記＋随時手動 |
+| 復元 | スクレイピングで再構築可 | 消えたら復元不可 |
+
+依存関係は一方向: stocks_shelve → 読み取り → research_shelve に書き込み。
+
+### レコード構造
+
+`code_s` をキーに、3ブロックで構成:
+
+- **識別・評価**: 銘柄名、総合評価（S〜E）、企業概要、機関投資家コメント
+- **手動メモ**: OpenWork、ジムクレイマー、四季報コメント、メモ・総括
+- **スナップショット** (list): 決算タイミングごとの IR定量データ・クォリティ指標・理論株価乖離（`date_yy_m` 降順）
+
+### 決算スナップショットの自動追記
+
+`make_stock_db.py` の `update_research_snapshots()` が `list_all_db()` 末尾で実行:
+
+- research_shelve管理銘柄のうち、決算発表日/修正通知日から14日以内（`KESSAN_WINDOW_DAYS`）の銘柄が対象
+- `gyoseki`・`shihyou`・`rironkabuka` から自動抽出、`data_source: "auto"` で記録
+- 同一 `date_yy_m` のスナップショットは冪等上書き
+
+### モジュール構成
+
+| ファイル | 役割 |
+|---------|------|
+| `scripts/research_shelve.py` | 基盤（スキーマ・CRUD・バリデーション・CLI） |
+| `scripts/migrate_research_from_csv.py` | スプレッドシートCSVからの移行（実行済み） |
+
+### CLI
+
+```bash
+python research_shelve.py show <code_s>                          # 調査データ全表示
+python research_shelve.py list [--rating S,A] [--keyword ...]    # フィルタ一覧
+python research_shelve.py backup                                 # DBバックアップ
+```
+
 ## キャッシュ戦略
 
 3層の階層構造で、`UPD_*` 定数（`ks_util.py`）が全層を横断して制御する。
@@ -192,4 +237,5 @@ export KS_DATA_DIR=/path/to/new/data
 - **株価履歴**: `data/stock_data/yahoo/price/`（yfinance JSON + レガシーHTML）, `data/stock_data/kabutan/price/`
 - **市場指数**: `data/sisu_data/`
 - **結果CSV/HTML**: `data/shintakane_result_data/`, `data/code_rank_data/`（`market_data.html` 含む）
+- **銘柄調査DB**: `data/stock_data/research_shelve`
 - **ログ**: `logs/`（TimedRotatingFileHandler、7日保持、通常INFOレベル、`KS_LOG_DEBUG=1` でDEBUG出力）

@@ -1,5 +1,7 @@
 # Phase 1 要件定義：銘柄調査DB（research_shelve）の構築
 
+> **ステータス: 実装完了** — 全 issue (#91〜#94) クローズ済み、PR #107・#108・#113 マージ済み
+
 > 銘柄調査スプレッドシートの手動管理から、Shintakaneと連携した半自動管理への移行
 
 ---
@@ -131,7 +133,7 @@ CLAUDE.md の当該規約は **`stocks_shelve` に対するスクレイピング
 
 代わりに、`research_shelve` では **公開関数（`upsert_research_record` / `upsert_snapshot` / `delete_research_record` 等）を経由した更新のみ**を行うルールとし、他のモジュールが `ShelveDB(RESEARCH_SHELVE)` を直接開いて書き換えてはならない。
 
-### スナップショット自動追記の要件（issue #94 で実装予定）
+### スナップショット自動追記の要件（issue #94 で実装済み）
 
 - **トリガー**: 既存の `need_kessan_upd()` による決算発表検知。決算更新が走った銘柄のみが対象
 - **整形ロジック**: code_rank.csv 出力時に使用している既存の整形関数 (`get_shihyo_expr` / `get_gyoseki_expr` / `get_rironkabuka_expr` 等) を流用する
@@ -144,7 +146,7 @@ CLAUDE.md の当該規約は **`stocks_shelve` に対するスクレイピング
 
 ## 5. 既存スプレッドシートからの移行
 
-> **実装状況**: issue #91 では実データ (`銘柄調査 - 銘柄調査.csv`, 853 行 × 17 列) を精査してレコード構造を確定したのみ。実際のパース・移行は issue #92 で対応する。
+> **実装状況**: issue #92 で移行スクリプト (`scripts/migrate_research_from_csv.py`) を実装済み。issue #93 で実データ移行を完了（853行中851行を成功移行）。
 
 ### 移行対象
 
@@ -220,7 +222,7 @@ Phase 1では最低限のCLIコマンドで操作できるようにする。
 ## 8. 実装順序
 
 1. research_shelve 基盤モジュール + CLIコマンド **✅ 完了（issue #91 / PR #107）**
-2. 移行スクリプト（パース + 一括移行） → **issue #92 で対応**
-3. 実データで移行実行 → 目視確認 → 調整 → **issue #93 で対応**
-4. Shintakane連携（`list_all_db()` へのスナップショット自動追記） → **issue #94 で対応**
-5. 運用開始
+2. 移行スクリプト（パース + 一括移行） **✅ 完了（issue #92 / PR #108）**
+3. 実データで移行実行 → 目視確認 → 調整 **✅ 完了（issue #93 / PR #108）**
+4. Shintakane連携（`list_all_db()` へのスナップショット自動追記） **✅ 完了（issue #94 / PR #113）**
+5. 運用開始 **✅ 運用中**
