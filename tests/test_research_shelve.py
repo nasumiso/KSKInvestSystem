@@ -149,8 +149,8 @@ class TestSchema:
         assert sorted_desc == ["26.1", "25.11", "25.7", "24.2"]
 
     def test_date_yy_m_sort_key_value(self):
-        assert rs.date_yy_m_sort_key("26.1") == (26, 1)
-        assert rs.date_yy_m_sort_key("25.11") == (25, 11)
+        assert rs.date_yy_m_sort_key("26.1") == (26, 1, 0)
+        assert rs.date_yy_m_sort_key("25.11") == (25, 11, 0)
 
     # --- ケース8: overall_rating 不正値 ---
     @pytest.mark.parametrize("bad", ["Z", "s", "A+", "不明"])
@@ -598,3 +598,70 @@ class TestAnalysisKessanDateFields:
             rs.create_research_record(
                 "3496", "アズーム", kessan_date_raw=None,
             )
+
+
+# ==================================================
+# date_yy_m 日精度拡張 (issue #94)
+# ==================================================
+class TestDateYyMDayPrecision:
+    """YY.M.D 形式の日精度拡張テスト"""
+
+    def test_validate_yy_m_d_accepted(self):
+        """日精度 YY.M.D が許容される"""
+        rs.validate_date_yy_m("26.4.15")
+        rs.validate_date_yy_m("25.11.1")
+        rs.validate_date_yy_m("26.1.31")
+
+    def test_validate_yy_m_d_invalid_day(self):
+        """日が 32 以上で ValueError"""
+        with pytest.raises(ValueError, match="日は1-31"):
+            rs.validate_date_yy_m("26.4.32")
+
+    def test_validate_yy_m_d_day_zero(self):
+        """日が 0 で ValueError"""
+        with pytest.raises(ValueError, match="日は1-31"):
+            rs.validate_date_yy_m("26.4.0")
+
+    def test_sort_key_with_day(self):
+        """日精度の sort_key が (year, month, day) の 3-tuple"""
+        assert rs.date_yy_m_sort_key("26.4.15") == (26, 4, 15)
+
+    def test_sort_key_without_day(self):
+        """月精度の sort_key が (year, month, 0) の 3-tuple"""
+        assert rs.date_yy_m_sort_key("26.4") == (26, 4, 0)
+
+    def test_sort_order_mixed(self):
+        """月精度と日精度が混在時のソート順: 26.4 < 26.4.15 < 26.5"""
+        dates = ["26.5", "26.4", "26.4.15", "26.1"]
+        sorted_desc = sorted(dates, key=rs.date_yy_m_sort_key, reverse=True)
+        assert sorted_desc == ["26.5", "26.4.15", "26.4", "26.1"]
+
+    def test_upsert_yy_m_and_yy_m_d_coexist(self, db_path):
+        """同一銘柄に YY.M と YY.M.D が並存できる"""
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=db_path)
+        rs.upsert_snapshot(
+            "3496", rs.create_snapshot("26.4", data_source="migration"),
+            db_path=db_path,
+        )
+        rs.upsert_snapshot(
+            "3496", rs.create_snapshot("26.4.15", data_source="auto"),
+            db_path=db_path,
+        )
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert len(loaded["snapshots"]) == 2
+        dates = {s["date_yy_m"] for s in loaded["snapshots"]}
+        assert dates == {"26.4", "26.4.15"}
+
+    def test_create_snapshot_with_day(self):
+        """create_snapshot が日精度を受け付ける"""
+        snap = rs.create_snapshot("26.4.15", ir_quant="[P]1Q28%", data_source="auto")
+        assert snap["date_yy_m"] == "26.4.15"
+        assert snap["data_source"] == "auto"
+
+    def test_existing_yy_m_tests_still_pass(self):
+        """既存の月精度形式が引き続き動作する回帰テスト"""
+        rs.validate_date_yy_m("26.1")
+        rs.validate_date_yy_m("25.11")
+        assert rs.date_yy_m_sort_key("26.1") == (26, 1, 0)
+        assert rs.date_yy_m_sort_key("25.11") == (25, 11, 0)

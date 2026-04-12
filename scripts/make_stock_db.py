@@ -1261,6 +1261,88 @@ def test():
 
 
 # ==================================================
+# research_shelve スナップショット自動追記
+# ==================================================
+
+KESSAN_WINDOW_DAYS = 14
+
+
+def update_research_snapshots(*, db_path=None):
+    """research_shelve 管理銘柄のうち決算更新があったものにスナップショットを自動追記する。
+
+    research_shelve の全レコードを走査し、各銘柄の kessanbi / kessan_mod_date が
+    14 日以内なら追記対象。同じ date_yy_m のスナップショットが既にあればスキップ。
+    """
+    import research_shelve
+
+    stocks = load_stock_db()
+    today = get_price_day(datetime.today())
+
+    all_records = research_shelve.list_research_records(db_path=db_path)
+
+    count = 0
+    skipped_existing = 0
+    for record in all_records:
+        code_s = record.get("code_s", "")
+        stock = stocks.get(code_s, {})
+        if not stock:
+            continue
+
+        trigger_dates = []
+        for date_field in ("kessanbi", "kessan_mod_date"):
+            date_str = stock.get(date_field, "")
+            if not date_str:
+                continue
+            try:
+                dt = datetime.strptime(date_str, "%Y/%m/%d").date()
+                if 0 <= (today - dt).days <= KESSAN_WINDOW_DAYS:
+                    trigger_dates.append(date_str)
+            except ValueError:
+                pass
+
+        if not trigger_dates:
+            continue
+
+        existing_dates = {
+            s["date_yy_m"] for s in record.get("snapshots", [])
+        }
+
+        for trigger_date_str in trigger_dates:
+            try:
+                dt = datetime.strptime(trigger_date_str, "%Y/%m/%d")
+                date_yy_m = f"{dt.year % 100}.{dt.month}.{dt.day}"
+
+                if date_yy_m in existing_dates:
+                    skipped_existing += 1
+                    continue
+
+                progress_expr, growth_expr = gyoseki.get_gyoseki_expr(stock)
+                ir_quant = progress_expr + growth_expr
+                quality_indicators = shihyou.get_shihyo_expr(stock)
+                rironkabuka_kairi = rironkabuka.get_rironkabuka_expr(stock)
+
+                snapshot = research_shelve.create_snapshot(
+                    date_yy_m,
+                    ir_quant=ir_quant,
+                    quality_indicators=quality_indicators,
+                    rironkabuka_kairi=rironkabuka_kairi,
+                    data_source="auto",
+                )
+                research_shelve.upsert_snapshot(
+                    code_s, snapshot, overwrite_same_date=True, db_path=db_path,
+                )
+                existing_dates.add(date_yy_m)
+                count += 1
+            except Exception as e:
+                log_warning(f"[research] スナップショット追記失敗: {code_s} {e}")
+
+    log_print(
+        f"[research] スナップショット自動追記: {count} 件追記"
+        + (f", {skipped_existing} 件スキップ(既存)" if skipped_existing else "")
+    )
+
+
+# ==================================================
 # main
 # ==================================================
 def main():
@@ -1315,6 +1397,7 @@ def main():
         UPLOAD_CSV = True  # True/False
         UPDATE_PORTFOLIO = True
         list_all_db(UPLOAD_CSV, UPDATE_PORTFOLIO)
+        update_research_snapshots()
     elif command == "edit":
         edit_db()
     elif command == "backup":
