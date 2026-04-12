@@ -52,8 +52,8 @@ except ImportError:
 # 厳密に4文字。"123" / "1234A" / "A215" は reject する。
 CODE_S_PATTERN = re.compile(r"^(?:\d{4}|\d{3}[A-Z])$")
 
-# 日付形式 (スプレッドシート準拠の YY.M 表記)
-DATE_YY_M_PATTERN = re.compile(r"^(\d{2})\.(\d{1,2})$")
+# 日付形式 (YY.M = 月精度, YY.M.D = 日精度)
+DATE_YY_M_PATTERN = re.compile(r"^(\d{2})\.(\d{1,2})(?:\.(\d{1,2}))?$")
 
 # 総合評価の許容値
 VALID_RATINGS = frozenset({"", "S", "A", "B", "C", "D", "E"})
@@ -121,21 +121,27 @@ def validate_code_s(code_s: Any) -> None:
 def validate_date_yy_m(date_yy_m: Any) -> None:
     """スナップショットの日付形式を検証する。
 
-    形式: "YY.M" または "YY.MM" (例: "26.1", "25.11")
-    月が1-12の範囲にない場合は ValueError。
+    形式: "YY.M" / "YY.MM"（月精度）または "YY.M.D" / "YY.MM.DD"（日精度）
+    例: "26.1", "25.11", "26.4.15"
     """
     if not isinstance(date_yy_m, str):
         raise TypeError(f"date_yy_m must be str, got {type(date_yy_m).__name__}")
     m = DATE_YY_M_PATTERN.match(date_yy_m)
     if not m:
         raise ValueError(
-            f"invalid date_yy_m: {date_yy_m!r} (期待形式は 'YY.M' or 'YY.MM')"
+            f"invalid date_yy_m: {date_yy_m!r} (期待形式は 'YY.M' or 'YY.M.D')"
         )
     month = int(m.group(2))
     if not 1 <= month <= 12:
         raise ValueError(
             f"invalid date_yy_m month: {date_yy_m!r} (月は1-12の範囲)"
         )
+    if m.group(3) is not None:
+        day = int(m.group(3))
+        if not 1 <= day <= 31:
+            raise ValueError(
+                f"invalid date_yy_m day: {date_yy_m!r} (日は1-31の範囲)"
+            )
 
 
 def validate_rating(rating: Any) -> None:
@@ -158,13 +164,15 @@ def validate_data_source(data_source: Any) -> None:
 def date_yy_m_sort_key(date_yy_m: str) -> tuple:
     """スナップショット並び替え用のソートキーを返す。
 
-    "26.1" -> (26, 1), "25.11" -> (25, 11) のように (年, 月) タプルを返す。
+    "26.1" -> (26, 1, 0), "25.11" -> (25, 11, 0), "26.4.15" -> (26, 4, 15)
+    日なしは day=0 として同月内で先に来る。
     降順ソート時は sort(..., reverse=True) で最新が先頭になる。
     """
     m = DATE_YY_M_PATTERN.match(date_yy_m)
     if not m:
         raise ValueError(f"invalid date_yy_m for sort: {date_yy_m!r}")
-    return (int(m.group(1)), int(m.group(2)))
+    day = int(m.group(3)) if m.group(3) else 0
+    return (int(m.group(1)), int(m.group(2)), day)
 
 
 # ===========================================
