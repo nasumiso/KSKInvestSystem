@@ -17,8 +17,11 @@ delete_research_record 等) を経由して更新を行い、他のモジュー�
 直接 ShelveDB(RESEARCH_SHELVE) を開いて書き換えてはならない。
 """
 
+import fcntl
 import os
 import re
+import threading
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
 from db_shelve import RESEARCH_SHELVE, ShelveDB
@@ -265,6 +268,58 @@ def create_snapshot(
 
 
 # ===========================================
+# プロセス間排他制御
+# ===========================================
+
+def _lock_path_for(db_path: Optional[str] = None) -> str:
+    """ロックファイルパスを返す。"""
+    base = db_path if db_path is not None else RESEARCH_SHELVE
+    return base + ".lock"
+
+
+# リエントラント検出用: 同一スレッドが既にロックを保持しているか
+_flock_holder = threading.local()
+
+
+@contextmanager
+def _flock(db_path: Optional[str] = None):
+    """research_shelve 書き込み用の排他ロック (fcntl.flock)。
+
+    Web側 (helpers.py) とバッチ側 (upsert_snapshot 等) の両方が
+    同じロックファイルを取ることで、プロセス間の read-modify-write
+    競合を防止する。
+
+    リエントラント対応: helpers が外側で _flock() を取得した状態で
+    upsert_research_record() を呼ぶと内部でも _flock() に入るが、
+    同一スレッドの場合はロック取得をスキップしてデッドロックを防ぐ。
+    """
+    if getattr(_flock_holder, "depth", 0) > 0:
+        # 同一スレッドで既にロック保持中 → そのまま通過
+        _flock_holder.depth += 1
+        try:
+            yield
+        finally:
+            _flock_holder.depth -= 1
+        return
+
+    lock_file = _lock_path_for(db_path)
+    lock_dir = os.path.dirname(lock_file)
+    if lock_dir and not os.path.exists(lock_dir):
+        os.makedirs(lock_dir, exist_ok=True)
+    fd = open(lock_file, "a")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        _flock_holder.depth = 1
+        try:
+            yield
+        finally:
+            _flock_holder.depth = 0
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
+
+
+# ===========================================
 # CRUD層
 # ===========================================
 
@@ -323,16 +378,17 @@ def upsert_research_record(
     - record["code_s"] は必須
     - 既存レコードがあれば完全上書き (部分マージは行わない)
     - 未知フィールドは警告ログ付きで保存 (後方互換のため)
+    - fcntl.flock でプロセス間排他を保証
     """
     _validate_record_for_upsert(record)
     normalized = normalize_code_s(record["code_s"])
-    # 正規化した code_s で保存 (元 record が入力ミス混じりでも一貫性を保つ)
     stored = dict(record)
     stored["code_s"] = normalized
     path = _resolve_db_path(db_path)
-    with ShelveDB(path) as db:
-        existed = normalized in db
-        db[normalized] = stored
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            existed = normalized in db
+            db[normalized] = stored
     if existed:
         log_print("research_shelve: レコード更新", normalized)
     else:
@@ -347,14 +403,16 @@ def delete_research_record(
     """銘柄調査レコードを削除する。
 
     成功時は True、非存在時は False (KeyError ではなく bool を返す)。
+    fcntl.flock でプロセス間排他を保証。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
     path = _resolve_db_path(db_path)
-    with ShelveDB(path) as db:
-        if normalized not in db:
-            return False
-        del db[normalized]
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            if normalized not in db:
+                return False
+            del db[normalized]
     log_print("research_shelve: レコード削除", normalized)
     return True
 
@@ -406,27 +464,28 @@ def upsert_snapshot(
     new_date = snapshot["date_yy_m"]
     path = _resolve_db_path(db_path)
 
-    with ShelveDB(path) as db:
-        if normalized not in db:
-            raise KeyError(
-                f"research_shelve: レコード未登録の銘柄にスナップショットを"
-                f"追加できません: {normalized} "
-                f"(先に upsert_research_record を呼んでください)"
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            if normalized not in db:
+                raise KeyError(
+                    f"research_shelve: レコード未登録の銘柄にスナップショットを"
+                    f"追加できません: {normalized} "
+                    f"(先に upsert_research_record を呼んでください)"
+                )
+            record = db[normalized]
+            snapshots = list(record.get("snapshots") or [])
+
+            if overwrite_same_date:
+                snapshots = [s for s in snapshots if s.get("date_yy_m") != new_date]
+
+            snapshots.append(dict(snapshot))
+            snapshots.sort(
+                key=lambda s: date_yy_m_sort_key(s["date_yy_m"]),
+                reverse=True,
             )
-        record = db[normalized]
-        snapshots = list(record.get("snapshots") or [])
 
-        if overwrite_same_date:
-            snapshots = [s for s in snapshots if s.get("date_yy_m") != new_date]
-
-        snapshots.append(dict(snapshot))
-        snapshots.sort(
-            key=lambda s: date_yy_m_sort_key(s["date_yy_m"]),
-            reverse=True,
-        )
-
-        record["snapshots"] = snapshots
-        db[normalized] = record  # 再代入で永続化
+            record["snapshots"] = snapshots
+            db[normalized] = record  # 再代入で永続化
 
     log_print(
         "research_shelve: スナップショット追記",

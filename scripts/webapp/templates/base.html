@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Shintakane Research{% endblock %}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<nav class="container-fluid">
+  <ul>
+    <li><a href="/" class="brand">Shintakane Research</a></li>
+  </ul>
+  <ul>
+    <li class="quick-search">
+      <form action="/" method="get" style="display:flex;align-items:center;gap:0.4em;margin:0;">
+        <input type="text" name="code_s" placeholder="銘柄コード" aria-label="銘柄コード検索"
+               style="width:8em;padding:0.3em 0.5em;margin:0;font-size:0.9em;height:auto;">
+        <button type="submit" class="outline" style="padding:0.3em 0.7em;margin:0;font-size:0.9em;">Go</button>
+      </form>
+    </li>
+  </ul>
+</nav>
+
+<main class="container">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="container" style="text-align:center;font-size:0.8em;color:#aaa;margin-top:2em;padding-bottom:1em;">
+  Shintakane Research
+</footer>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

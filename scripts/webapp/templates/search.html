@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}検索 | Shintakane Research{% endblock %}
+
+{% block content %}
+<h2>銘柄調査DB検索</h2>
+
+<form method="get" action="/" style="margin-bottom:1.5em;">
+  <div style="display:flex;gap:0.8em;flex-wrap:wrap;align-items:end;">
+    <div>
+      <label for="filter-code" style="font-size:0.85em;">銘柄コード</label>
+      <input id="filter-code" type="text" name="code_s" value="{{ filter_code_s }}"
+             placeholder="例: 3496" style="width:8em;padding:0.4em;margin:0;">
+    </div>
+    <div>
+      <label for="filter-rating" style="font-size:0.85em;">評価</label>
+      <select id="filter-rating" name="rating" style="padding:0.4em;margin:0;">
+        <option value="">全て</option>
+        {% for r in ["S","A","B","C","D","E"] %}
+        <option value="{{ r }}" {{ 'selected' if filter_rating == r }}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="filter-keyword" style="font-size:0.85em;">キーワード</label>
+      <input id="filter-keyword" type="text" name="keyword" value="{{ filter_keyword }}"
+             placeholder="銘柄名・メモ等" style="width:14em;padding:0.4em;margin:0;">
+    </div>
+    <div>
+      <button type="submit" style="padding:0.4em 1em;margin:0;">検索</button>
+    </div>
+  </div>
+</form>
+
+<p style="font-size:0.85em;color:#666;">{{ records|length }} 件</p>
+
+{% if records %}
+<div style="overflow-x:auto;">
+<table style="font-size:0.85em;">
+  <thead>
+    <tr>
+      <th>コード</th>
+      <th>評価</th>
+      <th>銘柄名</th>
+      <th>スナップ数</th>
+      <th>概要</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for rec in records %}
+    <tr>
+      <td><a href="/stock/{{ rec.code_s }}">{{ rec.code_s }}</a></td>
+      <td>
+        {% if rec.overall_rating %}
+        <span class="rating-badge rating-{{ rec.overall_rating }}">{{ rec.overall_rating }}</span>
+        {% else %}-{% endif %}
+      </td>
+      <td><a href="/stock/{{ rec.code_s }}">{{ rec.stock_name or '-' }}</a></td>
+      <td>{{ (rec.snapshots or [])|length }}</td>
+      <td>{{ (rec.overview or '')[:40] }}{% if (rec.overview or '')|length > 40 %}...{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p>該当する銘柄がありません。</p>
+{% endif %}
+{% endblock %}
