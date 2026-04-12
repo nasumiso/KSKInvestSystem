@@ -8,6 +8,10 @@ document.querySelectorAll('.editable-field, .editable-select').forEach(function(
   initialValues[el.name] = el.value;
 });
 
+/* --- 四季報エリアのDOM構造スナップショット（revert用） --- */
+var shikihoEditArea = document.getElementById('shikiho-edit-area');
+var shikihoInitialHTML = shikihoEditArea ? shikihoEditArea.innerHTML : '';
+
 /* --- 変更検知: 編集すると保存バーを表示 --- */
 document.addEventListener('input', function(e) {
   var el = e.target;
@@ -28,6 +32,10 @@ function updateSaveBar(formName) {
 
 /* --- 元に戻す --- */
 function revertForm(formName) {
+  if (formName === 'shikiho') {
+    revertShikiho();
+    return;
+  }
   document.querySelectorAll('[data-form="' + formName + '"]').forEach(function(el) {
     if (initialValues[el.name] !== undefined) {
       el.value = initialValues[el.name];
@@ -35,6 +43,31 @@ function revertForm(formName) {
     el.classList.remove('dirty');
   });
   updateSaveBar(formName);
+}
+
+/* --- 四季報: DOM構造ごと復元して初期値を再適用 --- */
+function revertShikiho() {
+  var area = document.getElementById('shikiho-edit-area');
+  if (!area) return;
+  /* DOM構造を初期状態に復元（行の追加/削除を巻き戻す） */
+  area.innerHTML = shikihoInitialHTML;
+  /* 復元されたフィールドに初期値を再適用 */
+  area.querySelectorAll('.editable-field').forEach(function(el) {
+    if (initialValues[el.name] !== undefined) {
+      el.value = initialValues[el.name];
+    }
+    el.classList.remove('dirty');
+  });
+  /* overview も初期値に戻す（shikihoフォーム内の非四季報エリアフィールド） */
+  document.querySelectorAll('[data-form="shikiho"]').forEach(function(el) {
+    if (!area.contains(el)) {
+      if (initialValues[el.name] !== undefined) {
+        el.value = initialValues[el.name];
+      }
+      el.classList.remove('dirty');
+    }
+  });
+  updateSaveBar('shikiho');
 }
 
 /* --- 四季報コメント: 追加/削除 --- */

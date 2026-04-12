@@ -18,8 +18,6 @@ def app(db_path, monkeypatch):
     """テスト用Flaskアプリ (DBパス差し替え済み)"""
     monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
     monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
-    monkeypatch.setattr("webapp.helpers.RESEARCH_SHELVE", db_path)
-    monkeypatch.setattr("webapp.helpers._LOCK_PATH", db_path + ".lock")
 
     # テストデータ投入
     rec = rs.create_research_record(

@@ -2,14 +2,12 @@
 DB読み書きヘルパー。
 
 research_shelve のデータ取得・更新をWebアプリ用にラップする。
-fcntl.flock によるプロセス間排他制御を適用し、バッチ処理との安全な共存を保証する。
+排他制御は research_shelve._flock() を共用し、Web側とバッチ側で
+同じロックファイルを取ることでプロセス間の安全な共存を保証する。
 """
 
-import fcntl
-import os
 from typing import Any, Dict, List, Optional
 
-from db_shelve import RESEARCH_SHELVE
 from research_shelve import (
     get_research_record,
     upsert_research_record,
@@ -17,20 +15,9 @@ from research_shelve import (
     validate_code_s,
     normalize_code_s,
     validate_rating,
+    _flock,
     VALID_RATINGS,
 )
-
-# ロックファイルパス (バッチ側と共通)
-_LOCK_PATH = RESEARCH_SHELVE + ".lock"
-
-
-def _ensure_lock_file() -> None:
-    """ロックファイルが存在しなければ作成する。"""
-    lock_dir = os.path.dirname(_LOCK_PATH)
-    if lock_dir and not os.path.exists(lock_dir):
-        os.makedirs(lock_dir, exist_ok=True)
-    if not os.path.exists(_LOCK_PATH):
-        open(_LOCK_PATH, "a").close()
 
 
 def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
@@ -52,33 +39,29 @@ def save_memo(code_s: str, form_data: dict) -> None:
     """手動メモフィールドを更新する。
 
     対象: overall_rating, institutional_comment, memo, openwork, cramer
-    read-modify-write サイクル全体を flock で排他する。
+    read-modify-write サイクル全体を _flock で排他する。
+    upsert_research_record 内部でも _flock を取るが、fcntl.flock は
+    同一プロセス・同一スレッドからの再取得をブロックしないため問題ない。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
 
-    _ensure_lock_file()
-    with open(_LOCK_PATH, "r") as lock_fd:
-        fcntl.flock(lock_fd, fcntl.LOCK_EX)
-        try:
-            record = get_research_record(normalized)
-            if record is None:
-                raise ValueError(f"レコード未登録: {normalized}")
+    with _flock():
+        record = get_research_record(normalized)
+        if record is None:
+            raise ValueError(f"レコード未登録: {normalized}")
 
-            # フォームから取得してレコードを更新
-            new_rating = form_data.get("overall_rating", "")
-            validate_rating(new_rating)
-            record["overall_rating"] = new_rating
-            record["institutional_comment"] = form_data.get(
-                "institutional_comment", ""
-            )
-            record["memo"] = form_data.get("memo", "")
-            record["openwork"] = form_data.get("openwork", "")
-            record["cramer"] = form_data.get("cramer", "")
+        new_rating = form_data.get("overall_rating", "")
+        validate_rating(new_rating)
+        record["overall_rating"] = new_rating
+        record["institutional_comment"] = form_data.get(
+            "institutional_comment", ""
+        )
+        record["memo"] = form_data.get("memo", "")
+        record["openwork"] = form_data.get("openwork", "")
+        record["cramer"] = form_data.get("cramer", "")
 
-            upsert_research_record(record)
-        finally:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        upsert_research_record(record)
 
 
 def save_shikiho(code_s: str, form_data: dict) -> None:
@@ -89,30 +72,24 @@ def save_shikiho(code_s: str, form_data: dict) -> None:
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
 
-    _ensure_lock_file()
-    with open(_LOCK_PATH, "r") as lock_fd:
-        fcntl.flock(lock_fd, fcntl.LOCK_EX)
-        try:
-            record = get_research_record(normalized)
-            if record is None:
-                raise ValueError(f"レコード未登録: {normalized}")
+    with _flock():
+        record = get_research_record(normalized)
+        if record is None:
+            raise ValueError(f"レコード未登録: {normalized}")
 
-            record["overview"] = form_data.get("overview", "")
+        record["overview"] = form_data.get("overview", "")
 
-            # shikiho_comments_0, shikiho_comments_1, ... を収集
-            comments: List[str] = []
-            for i in range(5):
-                key = f"shikiho_comments_{i}"
-                val = form_data.get(key)
-                if val is not None:
-                    stripped = val.strip()
-                    if stripped:
-                        comments.append(stripped)
-            record["shikiho_comments"] = comments
+        comments: List[str] = []
+        for i in range(5):
+            key = f"shikiho_comments_{i}"
+            val = form_data.get(key)
+            if val is not None:
+                stripped = val.strip()
+                if stripped:
+                    comments.append(stripped)
+        record["shikiho_comments"] = comments
 
-            upsert_research_record(record)
-        finally:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        upsert_research_record(record)
 
 
 def save_ir_comments(code_s: str, form_data: dict) -> None:
@@ -123,22 +100,17 @@ def save_ir_comments(code_s: str, form_data: dict) -> None:
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
 
-    _ensure_lock_file()
-    with open(_LOCK_PATH, "r") as lock_fd:
-        fcntl.flock(lock_fd, fcntl.LOCK_EX)
-        try:
-            record = get_research_record(normalized)
-            if record is None:
-                raise ValueError(f"レコード未登録: {normalized}")
+    with _flock():
+        record = get_research_record(normalized)
+        if record is None:
+            raise ValueError(f"レコード未登録: {normalized}")
 
-            snapshots = record.get("snapshots") or []
-            for snap in snapshots:
-                date = snap.get("date_yy_m", "")
-                form_key = f"ir_comment_{date}"
-                if form_key in form_data:
-                    snap["ir_comment"] = form_data[form_key]
+        snapshots = record.get("snapshots") or []
+        for snap in snapshots:
+            date = snap.get("date_yy_m", "")
+            form_key = f"ir_comment_{date}"
+            if form_key in form_data:
+                snap["ir_comment"] = form_data[form_key]
 
-            record["snapshots"] = snapshots
-            upsert_research_record(record)
-        finally:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        record["snapshots"] = snapshots
+        upsert_research_record(record)

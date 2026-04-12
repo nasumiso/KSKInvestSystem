@@ -17,11 +17,8 @@ def db_path(tmp_path):
 @pytest.fixture
 def populated_db(db_path, monkeypatch):
     """テストデータ入りDBを準備し、helpers のDB参照先を差し替える"""
-    # research_shelve の RESEARCH_SHELVE を差し替え
     monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
     monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
-    monkeypatch.setattr("webapp.helpers.RESEARCH_SHELVE", db_path)
-    monkeypatch.setattr("webapp.helpers._LOCK_PATH", db_path + ".lock")
 
     # テストデータ投入
     rec = rs.create_research_record(
