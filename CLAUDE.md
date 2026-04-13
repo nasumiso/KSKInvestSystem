@@ -72,7 +72,7 @@ cd scripts && python migrate_research_from_csv.py "<csv_path>"                  
 
 ### 自動実行
 
-`shintakane_cron.sh` が `shintakane.py`（バックグラウンド）→ `make_stock_db.py` を実行。`shintakane.py` の main() 完了をフラグファイルで検知後に `make_stock_db.py` を開始し、アップロードとDB処理を並行化。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で定期実行。
+`shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で定期実行。
 
 ### テスト
 

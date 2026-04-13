@@ -245,12 +245,11 @@ export KS_DATA_DIR=/path/to/new/data
 すべてのアップロードは `upload_csv_async()` / `upload_html_async()` で非同期スレッド化される。
 
 - **スレッド間排他**: `threading.Lock` で同一プロセス内の同時アップロードを防止
-- **プロセス間排他**: `fcntl.flock` によるファイルロック（`googledrive/.upload_lock`）でOAuth2認証の競合を防止
 - **完了待ち**: `wait_all_uploads()` で全スレッドの完了を保証。失敗・タイムアウト時は例外送出
 
-### cron実行時の並行化 (`shintakane_cron.sh`)
+### cron実行 (`shintakane_cron.sh`)
 
-`shintakane.py` をバックグラウンド実行し、main()完了をPID付きフラグファイル（`logs/.shintakane_main_done.{PID}`）で通知。`make_stock_db.py` はフラグ検出後に開始され、`shintakane_result` のアップロードと `make_stock_db.py` のDB処理が並行実行される。
+`shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で定期実行。
 
 ## データ保存場所
 

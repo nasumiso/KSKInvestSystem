@@ -14,7 +14,6 @@
 """  # noqa: E501
 import csv
 import threading
-import fcntl
 
 from ks_util import *
 
@@ -262,21 +261,13 @@ _upload_lock = threading.Lock()
 _upload_threads = []
 # スレッド内で発生した例外を収集
 _upload_errors = []
-# プロセス間排他用ロックファイル（ローカルFSに配置。Google Drive等リモートFSでは
-# fcntl.flockが正しく動作せずハングするため）
-_LOCK_FILE = "/tmp/shintakane_upload.lock"
 
 
 def _upload_with_lock(func, *args):
-    """ファイルロック付きアップロード（プロセス間 + スレッド間排他）"""
+    """スレッド間排他付きアップロード"""
     try:
         with _upload_lock:
-            with open(_LOCK_FILE, "a") as lf:
-                fcntl.flock(lf, fcntl.LOCK_EX)
-                try:
-                    func(*args)
-                finally:
-                    fcntl.flock(lf, fcntl.LOCK_UN)
+            func(*args)
     except Exception as e:
         log_warning("GoogleDriveアップロード失敗: %s" % e)
         _upload_errors.append(e)
