@@ -2,7 +2,16 @@
 
 var MAX_SHIKIHO = 5;
 
-/* --- 初期値を記録（変更検知用） --- */
+/* --- リッチテキスト表示 → 編集モード切替 (issue #115) --- */
+function switchToEdit(displayEl) {
+  var editEl = displayEl.nextElementSibling;
+  if (!editEl) return;
+  displayEl.style.display = 'none';
+  editEl.style.display = '';
+  editEl.focus();
+}
+
+/* --- 初期値を記録（変更検知用、display:none の要素も含む） --- */
 var initialValues = {};
 document.querySelectorAll('.editable-field, .editable-select').forEach(function(el) {
   initialValues[el.name] = el.value;

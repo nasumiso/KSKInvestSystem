@@ -52,7 +52,10 @@
             {% endif %}
           </td>
           <td style="white-space:pre-wrap;">{{ snap.ir_quant or '' }}</td>
-          <td><textarea class="editable-field" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir">{{ snap.ir_comment or '' }}</textarea></td>
+          <td>
+            <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
+            <textarea class="editable-field rich-edit" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir" style="display:none;">{{ snap.ir_comment or '' }}</textarea>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -147,12 +150,14 @@
 
     <div class="memo-field">
       <label>メモ・総括</label>
-      <textarea class="editable-field" name="memo" rows="6" data-form="memo">{{ record.memo or '' }}</textarea>
+      <div class="rich-display" onclick="switchToEdit(this)">{{ (record.memo or '')|safe }}</div>
+      <textarea class="editable-field rich-edit" name="memo" rows="6" data-form="memo" style="display:none;">{{ record.memo or '' }}</textarea>
     </div>
 
     <div class="memo-field">
       <label>OpenWork</label>
-      <input class="editable-field" type="text" name="openwork" value="{{ record.openwork or '' }}" data-form="memo" style="max-width:8em;">
+      <div class="rich-display rich-display-inline" onclick="switchToEdit(this)" style="max-width:8em;">{{ (record.openwork or '')|safe }}</div>
+      <input class="editable-field rich-edit" type="text" name="openwork" value="{{ record.openwork or '' }}" data-form="memo" style="max-width:8em;display:none;">
     </div>
 
     <div class="memo-field">

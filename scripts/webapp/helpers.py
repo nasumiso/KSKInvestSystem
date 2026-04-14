@@ -8,6 +8,7 @@ research_shelve のデータ取得・更新をWebアプリ用にラップする�
 
 from typing import Any, Dict, List, Optional
 
+from html_sanitizer import sanitize_html
 from research_shelve import (
     get_research_record,
     upsert_research_record,
@@ -57,8 +58,8 @@ def save_memo(code_s: str, form_data: dict) -> None:
         record["institutional_comment"] = form_data.get(
             "institutional_comment", ""
         )
-        record["memo"] = form_data.get("memo", "")
-        record["openwork"] = form_data.get("openwork", "")
+        record["memo"] = sanitize_html(form_data.get("memo", ""))
+        record["openwork"] = sanitize_html(form_data.get("openwork", ""))
         record["cramer"] = form_data.get("cramer", "")
 
         upsert_research_record(record)
@@ -110,7 +111,7 @@ def save_ir_comments(code_s: str, form_data: dict) -> None:
             date = snap.get("date_yy_m", "")
             form_key = f"ir_comment_{date}"
             if form_key in form_data:
-                snap["ir_comment"] = form_data[form_key]
+                snap["ir_comment"] = sanitize_html(form_data[form_key])
 
         record["snapshots"] = snapshots
         upsert_research_record(record)

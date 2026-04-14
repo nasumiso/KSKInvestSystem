@@ -535,12 +535,18 @@ def _parse_rating_filter(rating: Optional[str]) -> Optional[set]:
 
 
 def _matches_keyword(record: Dict[str, Any], keyword_lower: str) -> bool:
-    """レコードが keyword (小文字) を含むかを判定する。"""
+    """レコードが keyword (小文字) を含むかを判定する。
+
+    HTML タグが含まれるフィールドではタグを除去してから検索する。
+    """
+    from html_sanitizer import strip_html_tags
+
     for field in KEYWORD_SEARCH_FIELDS:
         value = record.get(field, "")
         if not isinstance(value, str):
             continue
-        if keyword_lower in value.lower():
+        plain = strip_html_tags(value)
+        if keyword_lower in plain.lower():
             return True
     return False
 
