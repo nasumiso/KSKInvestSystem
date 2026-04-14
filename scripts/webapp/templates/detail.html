@@ -13,9 +13,8 @@
       {{ record.stock_name or '' }}
     </h1>
     <div class="meta">
-      {% if record.analysis_date_raw %}分析日: {{ record.analysis_date_raw }}{% endif %}
-      {% if record.analysis_date_raw and record.kessan_date_raw %} | {% endif %}
-      {% if record.kessan_date_raw %}決算日: {{ record.kessan_date_raw }}{% endif %}
+      分析日: <input class="editable-field inline-date" type="text" name="analysis_date_raw" value="{{ record.analysis_date_raw or '' }}" data-form="memo" form="memo-form" placeholder="MM/DD" style="width:5em;display:inline;padding:0.1em 0.3em;font-size:0.9em;">
+      {% if stock.kessanbi %} | 決算日: {{ stock.kessanbi[2:] }}{% endif %}
     </div>
   </div>
 </div>
@@ -52,20 +51,16 @@
             {% endif %}
           </td>
           <td style="white-space:pre-wrap;">{{ snap.ir_quant or '' }}</td>
-          <td><textarea class="editable-field" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir">{{ snap.ir_comment or '' }}</textarea></td>
+          <td>
+            <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
+            <textarea class="editable-field rich-edit" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir" style="display:none;">{{ snap.ir_comment or '' }}</textarea>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   </form>
-  <div class="save-bar" id="save-bar-ir">
-    <span>未保存の変更があります</span>
-    <div class="btn-group">
-      <button class="outline secondary" style="padding:0.3em 0.8em;margin:0;" onclick="revertForm('ir')">元に戻す</button>
-      <button style="padding:0.3em 1em;margin:0;" onclick="document.getElementById('ir-comment-form').submit()">保存</button>
-    </div>
-  </div>
 </details>
 {% endif %}
 
@@ -147,12 +142,14 @@
 
     <div class="memo-field">
       <label>メモ・総括</label>
-      <textarea class="editable-field" name="memo" rows="6" data-form="memo">{{ record.memo or '' }}</textarea>
+      <div class="rich-display" onclick="switchToEdit(this)">{{ (record.memo or '')|safe }}</div>
+      <textarea class="editable-field rich-edit" name="memo" rows="6" data-form="memo" style="display:none;">{{ record.memo or '' }}</textarea>
     </div>
 
     <div class="memo-field">
       <label>OpenWork</label>
-      <input class="editable-field" type="text" name="openwork" value="{{ record.openwork or '' }}" data-form="memo" style="max-width:8em;">
+      <div class="rich-display" onclick="switchToEdit(this)">{{ (record.openwork or '')|safe }}</div>
+      <textarea class="editable-field rich-edit" name="openwork" rows="4" data-form="memo" style="display:none;">{{ record.openwork or '' }}</textarea>
     </div>
 
     <div class="memo-field">
@@ -161,13 +158,6 @@
     </div>
 
   </form>
-  <div class="save-bar" id="save-bar-memo">
-    <span>未保存の変更があります</span>
-    <div class="btn-group">
-      <button class="outline secondary" style="padding:0.3em 0.8em;margin:0;" onclick="revertForm('memo')">元に戻す</button>
-      <button style="padding:0.3em 1em;margin:0;" onclick="document.getElementById('memo-form').submit()">保存</button>
-    </div>
-  </div>
 </div>
 
 {# ===== 6. 四季報（click-to-edit） ===== #}
@@ -197,12 +187,5 @@
     </div>
 
   </form>
-  <div class="save-bar" id="save-bar-shikiho">
-    <span>未保存の変更があります</span>
-    <div class="btn-group">
-      <button class="outline secondary" style="padding:0.3em 0.8em;margin:0;" onclick="revertForm('shikiho')">元に戻す</button>
-      <button style="padding:0.3em 1em;margin:0;" onclick="document.getElementById('shikiho-form').submit()">保存</button>
-    </div>
-  </div>
 </div>
 {% endblock %}

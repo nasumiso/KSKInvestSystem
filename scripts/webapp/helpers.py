@@ -6,8 +6,12 @@ research_shelve のデータ取得・更新をWebアプリ用にラップする�
 同じロックファイルを取ることでプロセス間の安全な共存を保証する。
 """
 
+import re
+from datetime import date
 from typing import Any, Dict, List, Optional
 
+from db_shelve import STOCKS_SHELVE, ShelveDB
+from html_sanitizer import sanitize_html
 from research_shelve import (
     get_research_record,
     upsert_research_record,
@@ -26,6 +30,18 @@ def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
     return get_research_record(code_s)
 
 
+def get_stock_data(code_s: str) -> Dict[str, Any]:
+    """stocks_shelve から1銘柄のデータを取得する。
+
+    存在しない場合は空 dict を返す（テンプレート側で安全に参照可能）。
+    今後 detail view に stocks_shelve のフィールドを追加する際は、
+    この関数経由で取得しテンプレートに渡す。
+    """
+    normalized = normalize_code_s(code_s)
+    with ShelveDB(STOCKS_SHELVE) as db:
+        return db.get(normalized) or {}
+
+
 def search_records(
     *,
     rating: Optional[str] = None,
@@ -33,6 +49,26 @@ def search_records(
 ) -> List[Dict[str, Any]]:
     """銘柄調査レコードをフィルタ検索する。"""
     return list_research_records(rating=rating, keyword=keyword)
+
+
+_MM_DD_PATTERN = re.compile(r"^(\d{1,2})/(\d{1,2})$")
+
+
+def _normalize_analysis_date(raw: str) -> str:
+    """分析日の入力を YY/MM/DD 形式に正規化する。
+
+    - "4/14"  → "26/4/14"  (現在の年の下2桁を補完)
+    - "26/4/14" → そのまま (既に年付き)
+    - "" → "" (空はそのまま)
+    """
+    raw = raw.strip()
+    if not raw:
+        return raw
+    m = _MM_DD_PATTERN.match(raw)
+    if m:
+        yy = date.today().year % 100
+        return f"{yy}/{raw}"
+    return raw
 
 
 def save_memo(code_s: str, form_data: dict) -> None:
@@ -57,9 +93,14 @@ def save_memo(code_s: str, form_data: dict) -> None:
         record["institutional_comment"] = form_data.get(
             "institutional_comment", ""
         )
-        record["memo"] = form_data.get("memo", "")
-        record["openwork"] = form_data.get("openwork", "")
+        record["memo"] = sanitize_html(form_data.get("memo", ""))
+        record["openwork"] = sanitize_html(form_data.get("openwork", ""))
         record["cramer"] = form_data.get("cramer", "")
+
+        if "analysis_date_raw" in form_data:
+            record["analysis_date_raw"] = _normalize_analysis_date(
+                form_data["analysis_date_raw"]
+            )
 
         upsert_research_record(record)
 
@@ -110,7 +151,7 @@ def save_ir_comments(code_s: str, form_data: dict) -> None:
             date = snap.get("date_yy_m", "")
             form_key = f"ir_comment_{date}"
             if form_key in form_data:
-                snap["ir_comment"] = form_data[form_key]
+                snap["ir_comment"] = sanitize_html(form_data[form_key])
 
         record["snapshots"] = snapshots
         upsert_research_record(record)

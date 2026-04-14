@@ -30,6 +30,16 @@ report() {
 
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行開始 ====="
 
+# --- webapp 起動（未起動の場合のみ） ---
+if ! lsof -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
+  echo "webapp を起動します (port 5001)"
+  rotate_log ../logs/webapp.log
+  nohup python -m webapp.app >> ../logs/webapp.log 2>&1 &
+  echo "webapp PID: $!"
+else
+  echo "webapp は既に起動中です (port 5001)"
+fi
+
 # --- shintakane.py ---
 rotate_log ../logs/shintakane.log
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') shintakane.py 開始 =====" >> ../logs/shintakane.log
