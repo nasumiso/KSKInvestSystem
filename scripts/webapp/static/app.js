@@ -126,9 +126,9 @@ function updateShikihoState() {
     btn.style.display = remaining <= 0 ? 'none' : '';
     btn.textContent = '+ 追加 (残り' + remaining + '件)';
   }
-  /* 件数変更は常にdirty扱い */
-  var bar = document.getElementById('save-bar-shikiho');
-  if (bar) bar.classList.add('visible');
+  /* 件数変更時は即座に自動保存 */
+  var form = document.getElementById('shikiho-form');
+  if (form) form.submit();
 }
 
 function addShikiho() {
