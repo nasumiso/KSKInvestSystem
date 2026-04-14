@@ -13,9 +13,8 @@
       {{ record.stock_name or '' }}
     </h1>
     <div class="meta">
-      {% if record.analysis_date_raw %}分析日: {{ record.analysis_date_raw }}{% endif %}
-      {% if record.analysis_date_raw and record.kessan_date_raw %} | {% endif %}
-      {% if record.kessan_date_raw %}決算日: {{ record.kessan_date_raw }}{% endif %}
+      分析日: <input class="editable-field inline-date" type="text" name="analysis_date_raw" value="{{ record.analysis_date_raw or '' }}" data-form="memo" form="memo-form" placeholder="MM/DD" style="width:5em;display:inline;padding:0.1em 0.3em;font-size:0.9em;">
+      {% if record.kessan_date_raw %} | 決算日: {{ record.kessan_date_raw }}{% endif %}
     </div>
   </div>
 </div>
