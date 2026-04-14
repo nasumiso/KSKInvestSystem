@@ -934,12 +934,14 @@ def _html_kessan(kessan_csv):
                     code_s = match.group(1)
                     stock_name = match.group(2)
                     quarter = match.group(3)
+                    name_html = '<a href="http://localhost:5001/stock/%s">%s</a>' % (
+                        html_mod.escape(code_s), html_mod.escape(stock_name))
                     if quarter == "4":
                         items.append(
                             '<li class="kessan-4q"><a href="https://kabutan.jp/stock/chart?code=%s">%s</a> <b>%s [%sQ]</b></li>' % (
                                 html_mod.escape(code_s),
                                 html_mod.escape(code_s),
-                                html_mod.escape(stock_name),
+                                name_html,
                                 quarter,
                             )
                         )
@@ -948,7 +950,7 @@ def _html_kessan(kessan_csv):
                             '<li><a href="https://kabutan.jp/stock/chart?code=%s">%s</a> %s [%sQ]</li>' % (
                                 html_mod.escape(code_s),
                                 html_mod.escape(code_s),
-                                html_mod.escape(stock_name),
+                                name_html,
                                 quarter,
                             )
                         )
@@ -1061,7 +1063,14 @@ def _html_disclosure(disc_csv):
             else:
                 code_html = html_mod.escape(str(row[1]))
 
-            stock_name = html_mod.escape(str(row[2]))
+            # 銘柄名にWebAppリンクを付与
+            raw_name = html_mod.escape(str(row[2]))
+            disc_code = code_match.group(2).strip() if code_match else ""
+            if disc_code:
+                stock_name = '<a href="http://localhost:5001/stock/%s">%s</a>' % (
+                    html_mod.escape(disc_code), raw_name)
+            else:
+                stock_name = raw_name
             type_label = html_mod.escape(str(row[3]))
 
             # 本文（HYPERLINK解析）
