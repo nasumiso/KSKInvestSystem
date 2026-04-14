@@ -62,13 +62,6 @@
     </table>
   </div>
   </form>
-  <div class="save-bar" id="save-bar-ir">
-    <span>未保存の変更があります</span>
-    <div class="btn-group">
-      <button class="outline secondary" style="padding:0.3em 0.8em;margin:0;" onclick="revertForm('ir')">元に戻す</button>
-      <button style="padding:0.3em 1em;margin:0;" onclick="document.getElementById('ir-comment-form').submit()">保存</button>
-    </div>
-  </div>
 </details>
 {% endif %}
 
@@ -166,13 +159,6 @@
     </div>
 
   </form>
-  <div class="save-bar" id="save-bar-memo">
-    <span>未保存の変更があります</span>
-    <div class="btn-group">
-      <button class="outline secondary" style="padding:0.3em 0.8em;margin:0;" onclick="revertForm('memo')">元に戻す</button>
-      <button style="padding:0.3em 1em;margin:0;" onclick="document.getElementById('memo-form').submit()">保存</button>
-    </div>
-  </div>
 </div>
 
 {# ===== 6. 四季報（click-to-edit） ===== #}
@@ -202,12 +188,5 @@
     </div>
 
   </form>
-  <div class="save-bar" id="save-bar-shikiho">
-    <span>未保存の変更があります</span>
-    <div class="btn-group">
-      <button class="outline secondary" style="padding:0.3em 0.8em;margin:0;" onclick="revertForm('shikiho')">元に戻す</button>
-      <button style="padding:0.3em 1em;margin:0;" onclick="document.getElementById('shikiho-form').submit()">保存</button>
-    </div>
-  </div>
 </div>
 {% endblock %}

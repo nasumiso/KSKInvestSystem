@@ -79,6 +79,36 @@ function revertShikiho() {
   updateSaveBar('shikiho');
 }
 
+/* --- フォーカスアウト時の自動保存 --- */
+var _autoSaveFormIds = {
+  'ir': 'ir-comment-form',
+  'memo': 'memo-form',
+  'shikiho': 'shikiho-form'
+};
+
+document.addEventListener('focusout', function(e) {
+  var el = e.target;
+  if (!el.classList.contains('editable-field') && !el.classList.contains('editable-select')) return;
+  var formName = el.dataset.form;
+  if (!formName) return;
+
+  /* フォーカス移動先が同じフォーム内なら保存しない（タブ移動対応） */
+  setTimeout(function() {
+    var next = document.activeElement;
+    if (next && next.dataset && next.dataset.form === formName) return;
+
+    /* dirty なフィールドがあれば自動保存 */
+    var fields = document.querySelectorAll('[data-form="' + formName + '"]');
+    var hasDirty = Array.from(fields).some(function(f) { return f.classList.contains('dirty'); });
+    if (!hasDirty) return;
+
+    var formId = _autoSaveFormIds[formName];
+    if (!formId) return;
+    var form = document.getElementById(formId);
+    if (form) form.submit();
+  }, 100);
+});
+
 /* --- 四季報コメント: 追加/削除 --- */
 function updateShikihoState() {
   var entries = document.querySelectorAll('#shikiho-edit-area .shikiho-entry');
