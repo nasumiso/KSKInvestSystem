@@ -14,7 +14,7 @@
     </h1>
     <div class="meta">
       分析日: <input class="editable-field inline-date" type="text" name="analysis_date_raw" value="{{ record.analysis_date_raw or '' }}" data-form="memo" form="memo-form" placeholder="MM/DD" style="width:5em;display:inline;padding:0.1em 0.3em;font-size:0.9em;">
-      {% if record.kessan_date_raw %} | 決算日: {{ record.kessan_date_raw }}{% endif %}
+      {% if stock.kessanbi %} | 決算日: {{ stock.kessanbi[2:] }}{% endif %}
     </div>
   </div>
 </div>
@@ -148,8 +148,8 @@
 
     <div class="memo-field">
       <label>OpenWork</label>
-      <div class="rich-display rich-display-inline" onclick="switchToEdit(this)" style="max-width:8em;">{{ (record.openwork or '')|safe }}</div>
-      <input class="editable-field rich-edit" type="text" name="openwork" value="{{ record.openwork or '' }}" data-form="memo" style="max-width:8em;display:none;">
+      <div class="rich-display" onclick="switchToEdit(this)">{{ (record.openwork or '')|safe }}</div>
+      <textarea class="editable-field rich-edit" name="openwork" rows="4" data-form="memo" style="display:none;">{{ record.openwork or '' }}</textarea>
     </div>
 
     <div class="memo-field">

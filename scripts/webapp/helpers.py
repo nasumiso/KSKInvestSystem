@@ -10,6 +10,7 @@ import re
 from datetime import date
 from typing import Any, Dict, List, Optional
 
+from db_shelve import STOCKS_SHELVE, ShelveDB
 from html_sanitizer import sanitize_html
 from research_shelve import (
     get_research_record,
@@ -27,6 +28,18 @@ def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
     """1銘柄の調査レコードを取得する。"""
     validate_code_s(code_s)
     return get_research_record(code_s)
+
+
+def get_stock_data(code_s: str) -> Dict[str, Any]:
+    """stocks_shelve から1銘柄のデータを取得する。
+
+    存在しない場合は空 dict を返す（テンプレート側で安全に参照可能）。
+    今後 detail view に stocks_shelve のフィールドを追加する際は、
+    この関数経由で取得しテンプレートに渡す。
+    """
+    normalized = normalize_code_s(code_s)
+    with ShelveDB(STOCKS_SHELVE) as db:
+        return db.get(normalized) or {}
 
 
 def search_records(
