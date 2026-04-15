@@ -4,6 +4,7 @@ from datetime import date
 import json
 import os
 import tempfile
+from unittest.mock import patch
 import pytest
 
 import price
@@ -238,10 +239,12 @@ class TestConvertWeeklyDfToKabutanFormat:
     """yfinance週足DataFrame→Kabutan互換形式の変換テスト"""
 
     def _make_weekly_df(self, weeks=60):
-        """テスト用の週足DataFrameを生成する"""
+        """テスト用の週足DataFrameを生成する
+        十分に過去の固定日付範囲を使い、不完全週フィルタの影響を受けないようにする。
+        """
         import pandas as pd
 
-        dates = pd.date_range(end="2026-04-14", periods=weeks, freq="W-MON")
+        dates = pd.date_range(start="2024-01-01", periods=weeks, freq="W-MON")
         data = {
             "Open": [1000 + i * 5 for i in range(weeks)],
             "High": [1020 + i * 5 for i in range(weeks)],
@@ -252,11 +255,10 @@ class TestConvertWeeklyDfToKabutanFormat:
         return pd.DataFrame(data, index=dates)
 
     def test_output_length(self):
-        """出力レコード数がDataFrameの行数以下（不完全週が除外される場合がある）"""
+        """出力レコード数がDataFrameの行数と一致（過去日付のため不完全週なし）"""
         df = self._make_weekly_df(60)
         result = price._convert_weekly_df_to_kabutan_format(df)
-        # 最新行が今週の場合は不完全週として除外されるため、59または60になる
-        assert len(result) >= 59 and len(result) <= 60
+        assert len(result) == 60
 
     def test_eight_elements(self):
         """各レコードが8要素タプルであること"""
@@ -313,6 +315,13 @@ class TestConvertWeeklyDfToKabutanFormat:
 # ==================================================
 class TestCalcWeeklyIndicators:
     """週次指標計算の統合テスト"""
+
+    @pytest.fixture(autouse=True)
+    def _mock_market_db(self):
+        """CI環境にmarket_db_shelveがないためモックする"""
+        mock_db = {"topix": {"rs_raw": 1.0}}
+        with patch("make_market_db.get_market_db", return_value=mock_db):
+            yield
 
     def _make_weekly_price_list(self, weeks=55):
         """テスト用のKabutan互換weekly_price_listを生成する
