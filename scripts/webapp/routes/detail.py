@@ -6,7 +6,7 @@ GET /stock/<code_s> : 銘柄の全セクション表示
 
 from flask import Blueprint, render_template, abort
 
-from webapp.helpers import get_research_detail, get_stock_data
+from webapp.helpers import get_research_detail, get_stock_data, get_disclosures
 from research_shelve import VALID_RATINGS
 
 detail_bp = Blueprint("detail", __name__)
@@ -20,10 +20,12 @@ def stock_detail(code_s: str):
         abort(404)
 
     stock = get_stock_data(code_s)
+    disclosures = get_disclosures(code_s)
 
     return render_template(
         "detail.html",
         record=record,
         stock=stock,
+        disclosures=disclosures,
         valid_ratings=sorted(VALID_RATINGS - {""}),
     )
