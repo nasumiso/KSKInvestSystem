@@ -12,9 +12,12 @@ from typing import Any, Dict, List, Optional
 
 from db_shelve import STOCKS_SHELVE, ShelveDB
 from html_sanitizer import sanitize_html
+from ks_util import get_price_day, log_warning
 from research_shelve import (
     get_research_record,
     upsert_research_record,
+    create_research_record,
+    create_snapshot,
     list_research_records,
     validate_code_s,
     normalize_code_s,
@@ -40,6 +43,62 @@ def get_stock_data(code_s: str) -> Dict[str, Any]:
     normalized = normalize_code_s(code_s)
     with ShelveDB(STOCKS_SHELVE) as db:
         return db.get(normalized) or {}
+
+
+def add_stock(code_s: str) -> str:
+    """銘柄を research_shelve に追加する。
+
+    stocks_shelve からデータを取得し、スナップショット付きでレコードを作成する。
+
+    Args:
+        code_s: 銘柄コード
+    Returns:
+        正規化された code_s
+    Raises:
+        ValueError: 入力不正、stocks_shelve に未登録、既に登録済み
+    """
+    from datetime import datetime
+    code_s = normalize_code_s(code_s)
+    validate_code_s(code_s)
+
+    # 既存チェック
+    if get_research_record(code_s) is not None:
+        raise ValueError(f"{code_s} は既に登録されています")
+
+    # stocks_shelve から取得
+    stock = get_stock_data(code_s)
+    if not stock:
+        raise ValueError(f"{code_s} は株式DBに未登録です（先に make_stock_db.py で登録してください）")
+
+    stock_name = stock.get("stock_name", "")
+
+    # スナップショット生成（失敗してもレコード作成は続行）
+    snapshots = []
+    try:
+        import gyoseki
+        import shihyou
+        import rironkabuka
+
+        progress_expr, growth_expr = gyoseki.get_gyoseki_expr(stock)
+        ir_quant = growth_expr + progress_expr
+
+        today = get_price_day(datetime.today())
+        date_yy_m = f"{today.year % 100}.{today.month}.{today.day}"
+
+        snapshot = create_snapshot(
+            date_yy_m,
+            ir_quant=ir_quant,
+            quality_indicators=shihyou.get_shihyo_expr(stock),
+            rironkabuka_kairi=rironkabuka.get_rironkabuka_expr(stock),
+            data_source="auto",
+        )
+        snapshots = [snapshot]
+    except Exception as e:
+        log_warning(f"[research] 銘柄追加時スナップショット生成失敗: {code_s} {e}")
+
+    record = create_research_record(code_s, stock_name, snapshots=snapshots)
+    upsert_research_record(record)
+    return code_s
 
 
 def get_disclosures(code_s: str) -> List[tuple]:

@@ -31,6 +31,14 @@
   </div>
 </form>
 
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  {% for category, message in messages %}
+  <div style="padding:0.5em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;{% if category == 'error' %}background:#ffeaea;color:#c00;border:1px solid #fcc;{% else %}background:#eaffea;color:#060;border:1px solid #cfc;{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+{% endwith %}
+
 <p style="font-size:0.85em;color:#666;">{{ records|length }} 件</p>
 
 {% if records %}
