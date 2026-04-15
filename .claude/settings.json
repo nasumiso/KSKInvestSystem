@@ -3,16 +3,5 @@
     "feature-dev@claude-plugins-official": true,
     "code-review@claude-plugins-official": true
   },
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "直前のターンでPythonコードを修正したか？修正した場合、関連テストを実行済みか？\n\n- コード変更なし or 1-2行の軽微変更 → true\n- テスト実行済み → true\n- テスト未実施 → false + 必要なテストを1行で説明"
-          }
-        ]
-      }
-    ]
-  }
+  "hooks": {}
 }
