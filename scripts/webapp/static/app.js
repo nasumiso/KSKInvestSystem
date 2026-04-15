@@ -11,6 +11,16 @@ function switchToEdit(displayEl) {
   editEl.focus();
 }
 
+/* --- Escape キーでフォーカスを外す（→ 自動保存が発火） --- */
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    var el = document.activeElement;
+    if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.tagName === 'SELECT')) {
+      el.blur();
+    }
+  }
+});
+
 /* --- 初期値を記録（変更検知用、display:none の要素も含む） --- */
 var initialValues = {};
 document.querySelectorAll('.editable-field, .editable-select').forEach(function(el) {

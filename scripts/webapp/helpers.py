@@ -53,6 +53,33 @@ def search_records(
 
 _MM_DD_PATTERN = re.compile(r"^(\d{1,2})/(\d{1,2})$")
 
+# マークダウン風記法 → HTML 変換パターン
+# **太字** → <b>太字</b>（先に処理、* と区別するため）
+_RE_BOLD = re.compile(r"\*\*(.+?)\*\*")
+# *赤字* → <span style="color:#ff0000">赤字</span>（** 処理後に実行）
+_RE_RED = re.compile(r"\*(.+?)\*")
+# [テキスト](URL) → <a href="URL" target="_blank">テキスト</a>
+_RE_NAMED_LINK = re.compile(r'\[([^\]]+)\]\((https?://[^\s)]+)\)')
+# URL自動リンク化（既に <a> タグ内でないURLを対象）
+_RE_URL = re.compile(r'(?<!["\'>])(https?://[^\s<>\'"]+)')
+
+
+def _markdown_to_html(text: str) -> str:
+    """マークダウン風記法を HTML に変換する。
+
+    - **太字** → <b>太字</b>
+    - *赤字* → <span style="color:#ff0000">赤字</span>
+    - [テキスト](URL) → <a href="URL" target="_blank">テキスト</a>
+    - URL → <a href="URL" target="_blank">URL</a>
+    """
+    if not text:
+        return text
+    text = _RE_BOLD.sub(r"<b>\1</b>", text)
+    text = _RE_RED.sub(r'<span style="color:#ff0000">\1</span>', text)
+    text = _RE_NAMED_LINK.sub(r'<a href="\2" target="_blank">\1</a>', text)
+    text = _RE_URL.sub(r'<a href="\1" target="_blank">\1</a>', text)
+    return text
+
 
 def _normalize_analysis_date(raw: str) -> str:
     """分析日の入力を YY/MM/DD 形式に正規化する。
@@ -93,8 +120,8 @@ def save_memo(code_s: str, form_data: dict) -> None:
         record["institutional_comment"] = form_data.get(
             "institutional_comment", ""
         )
-        record["memo"] = sanitize_html(form_data.get("memo", ""))
-        record["openwork"] = sanitize_html(form_data.get("openwork", ""))
+        record["memo"] = sanitize_html(_markdown_to_html(form_data.get("memo", "")))
+        record["openwork"] = sanitize_html(_markdown_to_html(form_data.get("openwork", "")))
         record["cramer"] = form_data.get("cramer", "")
 
         if "analysis_date_raw" in form_data:
@@ -151,7 +178,7 @@ def save_ir_comments(code_s: str, form_data: dict) -> None:
             date = snap.get("date_yy_m", "")
             form_key = f"ir_comment_{date}"
             if form_key in form_data:
-                snap["ir_comment"] = sanitize_html(form_data[form_key])
+                snap["ir_comment"] = sanitize_html(_markdown_to_html(form_data[form_key]))
 
         record["snapshots"] = snapshots
         upsert_research_record(record)
