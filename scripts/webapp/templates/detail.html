@@ -109,7 +109,7 @@
         {% if snap.quality_indicators %}
         <tr>
           <td>{{ snap.date_yy_m }}</td>
-          <td style="white-space:pre-wrap;">{{ snap.quality_indicators }}</td>
+          <td>{{ snap.quality_indicators|replace('\n', ' ') }}</td>
         </tr>
         {% endif %}
         {% endfor %}
