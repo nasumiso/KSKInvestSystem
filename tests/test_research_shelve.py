@@ -455,8 +455,8 @@ class TestFormat:
             openwork="3.72",
             cramer="独自ビジネス",
             shikiho_comments=[
-                "【最高益】駐車場借り上げが順調",
-                "【連続最高益】主力事業続伸",
+                {"period": "26.3", "comment": "【最高益】駐車場借り上げが順調"},
+                {"period": "25.12", "comment": "【連続最高益】主力事業続伸"},
             ],
             snapshots=[
                 rs.create_snapshot(

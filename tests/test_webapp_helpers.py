@@ -124,26 +124,39 @@ class TestSaveShikiho:
         form = {
             "overview": "更新概要",
             "shikiho_comments_0": "コメント1",
+            "shikiho_periods_0": "26.3",
             "shikiho_comments_1": "コメント2",
+            "shikiho_periods_1": "25.12",
             "shikiho_comments_2": "コメント3",
+            "shikiho_periods_2": "25.9",
         }
         helpers.save_shikiho("3496", form)
 
         rec = helpers.get_research_detail("3496")
         assert rec["overview"] == "更新概要"
-        assert rec["shikiho_comments"] == ["コメント1", "コメント2", "コメント3"]
+        assert rec["shikiho_comments"] == [
+            {"period": "26.3", "comment": "コメント1"},
+            {"period": "25.12", "comment": "コメント2"},
+            {"period": "25.9", "comment": "コメント3"},
+        ]
 
     def test_save_shikiho_empty_comments_skipped(self, populated_db):
         form = {
             "overview": "概要",
             "shikiho_comments_0": "有効",
+            "shikiho_periods_0": "26.3",
             "shikiho_comments_1": "  ",  # 空白のみ → スキップ
+            "shikiho_periods_1": "25.12",
             "shikiho_comments_2": "有効2",
+            "shikiho_periods_2": "25.9",
         }
         helpers.save_shikiho("3496", form)
 
         rec = helpers.get_research_detail("3496")
-        assert rec["shikiho_comments"] == ["有効", "有効2"]
+        assert rec["shikiho_comments"] == [
+            {"period": "26.3", "comment": "有効"},
+            {"period": "25.9", "comment": "有効2"},
+        ]
 
 
 class TestSaveIrComments:

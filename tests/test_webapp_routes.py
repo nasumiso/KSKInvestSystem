@@ -124,6 +124,7 @@ class TestShikihoPostRoutes:
         resp = client.post("/stock/3496/shikiho", data={
             "overview": "新概要",
             "shikiho_comments_0": "コメント1",
+            "shikiho_periods_0": "26.3",
         })
         assert resp.status_code == 302
 
@@ -131,6 +132,7 @@ class TestShikihoPostRoutes:
         client.post("/stock/3496/shikiho", data={
             "overview": "更新概要",
             "shikiho_comments_0": "更新コメント",
+            "shikiho_periods_0": "26.3",
         })
         resp = client.get("/stock/3496")
         html = resp.data.decode()

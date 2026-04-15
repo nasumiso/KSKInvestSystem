@@ -61,11 +61,7 @@ def add_stock(code_s: str) -> str:
     code_s = normalize_code_s(code_s)
     validate_code_s(code_s)
 
-    # 既存チェック
-    if get_research_record(code_s) is not None:
-        raise ValueError(f"{code_s} は既に登録されています")
-
-    # stocks_shelve から取得
+    # stocks_shelve から取得（ロック外で読み取り専用）
     stock = get_stock_data(code_s)
     if not stock:
         raise ValueError(f"{code_s} は株式DBに未登録です（先に make_stock_db.py で登録してください）")
@@ -96,8 +92,12 @@ def add_stock(code_s: str) -> str:
     except Exception as e:
         log_warning(f"[research] 銘柄追加時スナップショット生成失敗: {code_s} {e}")
 
-    record = create_research_record(code_s, stock_name, snapshots=snapshots)
-    upsert_research_record(record)
+    # 既存チェック + 書き込みをアトミックに実行
+    with _flock():
+        if get_research_record(code_s) is not None:
+            raise ValueError(f"{code_s} は既に登録されています")
+        record = create_research_record(code_s, stock_name, snapshots=snapshots)
+        upsert_research_record(record)
     return code_s
 
 
@@ -203,7 +203,7 @@ def save_memo(code_s: str, form_data: dict) -> None:
 def save_shikiho(code_s: str, form_data: dict) -> None:
     """四季報フィールドを更新する。
 
-    対象: overview, shikiho_comments (最大5件)
+    対象: overview, shikiho_comments (最大8件、List[dict])
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
@@ -215,14 +215,15 @@ def save_shikiho(code_s: str, form_data: dict) -> None:
 
         record["overview"] = form_data.get("overview", "")
 
-        comments: List[str] = []
-        for i in range(5):
-            key = f"shikiho_comments_{i}"
-            val = form_data.get(key)
-            if val is not None:
-                stripped = val.strip()
-                if stripped:
-                    comments.append(stripped)
+        comments: List[Dict[str, str]] = []
+        for i in range(10):
+            comment = form_data.get(f"shikiho_comments_{i}", "").strip()
+            period = form_data.get(f"shikiho_periods_{i}", "").strip()
+            if comment:
+                comments.append({"period": period, "comment": comment})
+        # 8件超は古い順（先頭）を切り詰め、新しいもの（末尾）を残す
+        if len(comments) > 8:
+            comments = comments[-8:]
         record["shikiho_comments"] = comments
 
         upsert_research_record(record)
