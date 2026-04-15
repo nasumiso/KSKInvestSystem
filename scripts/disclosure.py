@@ -352,6 +352,9 @@ def load_disclosure_for_code(code_s, days=30):
     """
     import csv
 
+    # 英字部分を大文字化して正規化（"135a" → "135A"）
+    code_s = code_s.strip().upper()
+
     if not os.path.exists(DISCLOSURE_CSV):
         log_debug("disclosure_db.csvが見つかりません: %s" % DISCLOSURE_CSV)
         return []
