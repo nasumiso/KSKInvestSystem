@@ -352,6 +352,47 @@ def _validate_record_for_upsert(record: Dict[str, Any]) -> None:
         )
 
 
+def _normalize_shikiho_comments(comments):
+    """四季報コメントを List[dict] に正規化する（後方互換）。
+
+    各要素を個別に判定し、str なら {"period": "", "comment": str} に変換。
+    dict はそのまま保持。混在データにも対応。
+    """
+    if not comments:
+        return []
+    result = []
+    for item in comments:
+        if isinstance(item, str):
+            result.append({"period": "", "comment": item})
+        elif isinstance(item, dict):
+            result.append(item)
+    return result
+
+
+def current_shikiho_period() -> str:
+    """現在月から四季報の発行時期を返す。
+
+    発売月の翌月までがその号:
+    12月・1月・2月 → X.12（新春号）
+     3月・4月・5月 → X.3 （春号）
+     6月・7月・8月 → X.6 （夏号）
+     9月・10月・11月 → X.9 （秋号）
+    """
+    from datetime import date as _date
+    today = _date.today()
+    yy = today.year % 100
+    m = today.month
+    if m <= 2:
+        return f"{yy - 1}.12"
+    if m <= 5:
+        return f"{yy}.3"
+    if m <= 8:
+        return f"{yy}.6"
+    if m <= 11:
+        return f"{yy}.9"
+    return f"{yy}.12"
+
+
 def get_research_record(
     code_s: str,
     *,
@@ -360,12 +401,18 @@ def get_research_record(
     """1銘柄の調査レコードを取得する。
 
     存在しなければ None。code_s は内部で正規化される。
+    shikiho_comments は List[dict] に自動正規化される（後方互換）。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
     path = _resolve_db_path(db_path)
     with ShelveDB(path) as db:
-        return db.get(normalized)
+        record = db.get(normalized)
+    if record is not None:
+        record["shikiho_comments"] = _normalize_shikiho_comments(
+            record.get("shikiho_comments", [])
+        )
+    return record
 
 
 def upsert_research_record(
@@ -681,10 +728,14 @@ def format_record_full(record: Dict[str, Any]) -> str:
     lines.append(f"ジムクレイマー : {_indent_multiline(cramer, ' ' * 17)}")
     if shikiho:
         lines.append(f"四季報コメント ({len(shikiho)}件):")
-        for i, comment in enumerate(shikiho, start=1):
-            # 1 セル内に 【タイトル】... が複数ブロック連結されている場合があるので、
-            # 全文を改行インデント付きで表示する
-            lines.append(f"  [{i}] {_indent_multiline(comment, ' ' * 6)}")
+        for item in shikiho:
+            if isinstance(item, dict):
+                period = item.get("period", "") or "-"
+                comment = item.get("comment", "")
+            else:
+                period = "-"
+                comment = str(item)
+            lines.append(f"  [{period}] {_indent_multiline(comment, ' ' * 8)}")
     else:
         lines.append(f"四季報コメント : {_EMPTY_MARK}")
     lines.append("")

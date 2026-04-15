@@ -12,10 +12,11 @@
       <small style="color:#888;font-size:0.5em;">{{ record.code_s }}</small>
       {{ record.stock_name or '' }}
     </h1>
+    {% if stock.overview %}<div style="color:#555;font-size:0.85em;margin-bottom:0.2em;">{{ stock.overview }}</div>{% endif %}
     <div class="meta">
       分析日: <input class="editable-field inline-date" type="text" name="analysis_date_raw" value="{{ record.analysis_date_raw or '' }}" data-form="memo" form="memo-form" placeholder="MM/DD" style="width:5em;display:inline;padding:0.1em 0.3em;font-size:0.9em;">
       {% if stock.kessanbi %} | 決算日: {{ stock.kessanbi[2:] }}{% endif %}
-      <div style="margin-top:0.2em;">
+      <div>
         <a href="https://kabutan.jp/stock/chart?code={{ record.code_s }}&time=w" target="_blank" rel="noopener noreferrer">チャート</a>
         | <a href="https://kabutan.jp/stock/finance?code={{ record.code_s }}" target="_blank" rel="noopener noreferrer">業績</a>
         | <a href="https://finance.yahoo.co.jp/quote/{{ record.code_s }}.T/forum" target="_blank" rel="noopener noreferrer">掲示板</a>
@@ -167,17 +168,17 @@
 
     <div class="memo-field">
       {% set shikiho = record.shikiho_comments or [] %}
-      <label>四季報コメント (<span id="shikiho-count">{{ shikiho|length }}</span>/5件)</label>
+      <label>四季報コメント (<span id="shikiho-count">{{ shikiho|length }}</span>/8件)</label>
       <div id="shikiho-edit-area">
-        {% for comment in shikiho %}
+        {% for item in shikiho %}
         <div class="shikiho-entry" style="display:flex;align-items:start;gap:0.3em;margin-bottom:0.3em;">
-          <span style="font-size:0.8em;color:#888;width:1.5em;padding-top:0.6em;">{{ loop.index }}.</span>
-          <textarea class="editable-field" name="shikiho_comments_{{ loop.index0 }}" rows="2" style="flex:1;" data-form="shikiho">{{ comment }}</textarea>
-          <button type="button" class="outline secondary" style="padding:0.2em 0.5em;font-size:0.8em;margin:0;margin-top:0.4em;" onclick="removeShikiho(this)" title="削除">&times;</button>
+          <span style="font-size:0.8em;color:#888;min-width:3em;padding-top:0.6em;">{{ item.period or '-' }}</span>
+          <input type="hidden" name="shikiho_periods_{{ loop.index0 }}" value="{{ item.period or '' }}">
+          <textarea class="editable-field" name="shikiho_comments_{{ loop.index0 }}" rows="4" style="flex:1;" data-form="shikiho">{{ item.comment }}</textarea>
+          {# 削除ボタンは非表示（基本的に消さないため） #}
         </div>
         {% endfor %}
-        <button type="button" id="btn-add-shikiho" class="outline" style="margin-top:0.3em;padding:0.2em 0.8em;font-size:0.85em;" onclick="addShikiho()"
-          {% if shikiho|length >= 5 %}style="display:none;"{% endif %}>+ 追加 (残り{{ 5 - shikiho|length }}件)</button>
+        <button type="button" id="btn-add-shikiho" class="outline" style="margin-top:0.3em;padding:0.2em 0.8em;font-size:0.85em;" onclick="addShikiho()">+ 追加</button>
       </div>
     </div>
 
