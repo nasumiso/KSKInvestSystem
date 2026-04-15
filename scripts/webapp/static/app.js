@@ -169,7 +169,7 @@ function updateShikihoState(opts) {
   });
   var btn = document.getElementById('btn-add-shikiho');
   if (btn) {
-    btn.style.display = '';
+    btn.style.display = count >= MAX_SHIKIHO ? 'none' : '';
     btn.textContent = '+ 追加';
   }
   /* 件数変更時は非同期で自動保存（save=false で抑制可能） */
@@ -183,6 +183,7 @@ function addShikiho() {
   var area = document.getElementById('shikiho-edit-area');
   if (!area) return;
   var entries = area.querySelectorAll('.shikiho-entry');
+  if (entries.length >= MAX_SHIKIHO) return;
   var idx = entries.length;
   var period = currentShikihoPeriod();
   var div = document.createElement('div');
