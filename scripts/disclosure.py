@@ -341,6 +341,67 @@ def load_todays_news():
     return news_by_code
 
 
+def load_disclosure_for_code(code_s, days=30):
+    """disclosure_db.csvから指定銘柄の直近N日以内の開示を返す
+
+    Args:
+        code_s: 銘柄コード（文字列）
+        days: 何日以内の開示を返すか（デフォルト30日）
+    Returns:
+        list[tuple]: [(date_expr, type_expr, heading, url), ...] 日付降順
+    """
+    import csv
+
+    # 英字部分を大文字化して正規化（"135a" → "135A"）
+    code_s = code_s.strip().upper()
+
+    if not os.path.exists(DISCLOSURE_CSV):
+        log_debug("disclosure_db.csvが見つかりません: %s" % DISCLOSURE_CSV)
+        return []
+
+    today_date = get_price_day(datetime.today())
+    cutoff = today_date - timedelta(days=days)
+    cutoff_str = cutoff.strftime("%Y%m%d")
+
+    results = []
+    with open(DISCLOSURE_CSV, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) < 5:
+                continue
+            # ヘッダー行・空行をスキップ
+            if row[0] == "日付" or not row[0].strip():
+                continue
+            # 銘柄コード: HYPERLINK式からcode_sを抽出
+            m_code = re.search(r'"(\d[0-9a-zA-Z]\d[0-9A-Z])"', row[1])
+            if not m_code:
+                continue
+            if m_code.group(1) != code_s:
+                continue
+            # 日付フィルタ
+            raw_date = row[0].strip()
+            if raw_date < cutoff_str:
+                continue
+            # 種類（「材料」はノイズが多いため除外）
+            type_expr = row[3].strip()
+            if type_expr == "材料":
+                continue
+            # 日付: YYYYMMDD → MM/DD
+            if len(raw_date) == 8 and raw_date.isdigit():
+                date_expr = "%s/%s" % (raw_date[4:6], raw_date[6:8])
+            else:
+                date_expr = raw_date
+            # 本文: HYPERLINK式からURLと見出しを抽出
+            m_link = re.search(r'=HYPERLINK\("(.+?)","(.+?)"\)', row[4])
+            if not m_link:
+                continue
+            url = m_link.group(1)
+            heading = m_link.group(2)
+            results.append((date_expr, type_expr, heading, url))
+
+    return results
+
+
 def main():
     # ロガーの初期化
     logger = setup_logger('shintakane')

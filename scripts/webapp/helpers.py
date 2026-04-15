@@ -42,6 +42,15 @@ def get_stock_data(code_s: str) -> Dict[str, Any]:
         return db.get(normalized) or {}
 
 
+def get_disclosures(code_s: str) -> List[tuple]:
+    """銘柄の直近適時開示リストを返す。CSVがなければ空リスト。"""
+    try:
+        import disclosure
+        return disclosure.load_disclosure_for_code(code_s)
+    except Exception:
+        return []
+
+
 def search_records(
     *,
     rating: Optional[str] = None,

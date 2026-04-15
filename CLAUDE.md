@@ -61,7 +61,7 @@ cd scripts && python research_shelve.py show 3496
 cd scripts && python research_shelve.py list --rating S,A --keyword 駐車場
 cd scripts && python research_shelve.py backup
 
-# 銘柄調査Webアプリ（research_shelveのブラウザUI）
+# Shintakane Research（銘柄調査WebApp）
 cd scripts && python -m webapp.app    # http://localhost:5001 で起動
 
 # スプシCSV → research_shelve 移行(issue #92)

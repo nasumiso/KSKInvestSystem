@@ -114,7 +114,7 @@ stocks_shelve（日次更新の揮発性キャッシュ）とは別に、銘柄�
 | ファイル | 役割 |
 |---------|------|
 | `scripts/research_shelve.py` | 基盤（スキーマ・CRUD・バリデーション・CLI） |
-| `scripts/webapp/` | ブラウザUI（Flask、閲覧・編集） |
+| `scripts/webapp/` | Shintakane Research（銘柄調査WebApp、Flask） |
 | `scripts/migrate_research_from_csv.py` | スプレッドシートCSVからの移行（実行済み） |
 
 ### CLI
@@ -125,9 +125,9 @@ python research_shelve.py list [--rating S,A] [--keyword ...]    # フィルタ�
 python research_shelve.py backup                                 # DBバックアップ
 ```
 
-### Webアプリ (`scripts/webapp/`)
+### Shintakane Research (`scripts/webapp/`)
 
-research_shelveの閲覧・編集用ブラウザUI。Flask製、`http://localhost:5001` で起動。
+銘柄調査WebApp。research_shelveの閲覧・編集用。Flask製、`http://localhost:5001` で起動。
 
 **主な機能:**
 - 銘柄検索・フィルタ（評価ランク、キーワード、銘柄コード）

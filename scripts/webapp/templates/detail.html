@@ -24,6 +24,33 @@
   </div>
 </div>
 
+{# ===== 適時開示 ===== #}
+{% if disclosures %}
+<details>
+  <summary><strong>適時開示</strong> ({{ disclosures|length }}件)</summary>
+  <div style="overflow-x:auto;">
+    <table class="snapshot-table">
+      <thead>
+        <tr>
+          <th>日付</th>
+          <th>種類</th>
+          <th>内容</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for date, type, heading, url in disclosures %}
+        <tr>
+          <td>{{ date }}</td>
+          <td>{{ type }}</td>
+          <td><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ heading }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+
 {# ===== 2. 業績スナップショット時系列 ===== #}
 {% set snapshots = record.snapshots or [] %}
 {% if snapshots %}
@@ -87,7 +114,7 @@
         {% if snap.quality_indicators %}
         <tr>
           <td>{{ snap.date_yy_m }}</td>
-          <td style="white-space:pre-wrap;">{{ snap.quality_indicators }}</td>
+          <td>{{ snap.quality_indicators|replace('\n', ' ') }}</td>
         </tr>
         {% endif %}
         {% endfor %}
