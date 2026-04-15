@@ -92,7 +92,8 @@ function revertShikiho() {
 /* --- 非同期フォーム送信（ページリロードなし） --- */
 function submitFormAsync(form) {
   var formData = new FormData(form);
-  fetch(form.action, { method: 'POST', body: formData }).then(function() {
+  fetch(form.action, { method: 'POST', body: formData }).then(function(response) {
+    if (!response.ok) return;
     /* 保存完了: dirty フラグをリセットして初期値を更新 */
     form.querySelectorAll('.editable-field, .editable-select').forEach(function(el) {
       initialValues[el.name] = el.value;
@@ -176,11 +177,6 @@ function addShikiho() {
   var area = document.getElementById('shikiho-edit-area');
   if (!area) return;
   var entries = area.querySelectorAll('.shikiho-entry');
-  /* 8件を超える場合は古い順（末尾）を削除 */
-  while (entries.length >= MAX_SHIKIHO) {
-    entries[entries.length - 1].remove();
-    entries = area.querySelectorAll('.shikiho-entry');
-  }
   var idx = entries.length;
   var period = currentShikihoPeriod();
   var div = document.createElement('div');

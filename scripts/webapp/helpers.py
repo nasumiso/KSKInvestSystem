@@ -216,11 +216,14 @@ def save_shikiho(code_s: str, form_data: dict) -> None:
         record["overview"] = form_data.get("overview", "")
 
         comments: List[Dict[str, str]] = []
-        for i in range(8):
+        for i in range(10):
             comment = form_data.get(f"shikiho_comments_{i}", "").strip()
             period = form_data.get(f"shikiho_periods_{i}", "").strip()
             if comment:
                 comments.append({"period": period, "comment": comment})
+        # 8件超は古い順（先頭）を切り詰め、新しいもの（末尾）を残す
+        if len(comments) > 8:
+            comments = comments[-8:]
         record["shikiho_comments"] = comments
 
         upsert_research_record(record)
