@@ -15,6 +15,9 @@ import yfinance as yf
 YFINANCE_CACHE_FNAME = os.path.join(
     DATA_DIR, "stock_data/yahoo/price/yfinance_price_%s.json"
 )
+YFINANCE_WEEKLY_CACHE_FNAME = os.path.join(
+    DATA_DIR, "stock_data/yahoo/price/yfinance_price_w_%s.json"
+)
 
 URL_PRICE_D_KABUTAN = "https://kabutan.jp/stock/kabuka?code=%s&ashi=day&page=%d"
 PRICE_D_FNAME_KABUTAN = os.path.join(
@@ -367,36 +370,20 @@ def parse_price_d_html_kabutan(html):
     return dic
 
 
-def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
-    """株探の週次データから
-    RSを求める
+def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
+    """weekly_price_listから各種週次指標を計算する
+    parse_pricew_htmls_kabutanから指標計算部分を分離。
+    yfinanceパスとKabutanパス共通で使用する。
+    Args:
+        weekly_price_list: 8要素タプル(文字列)のリスト
+            [0]日付, [1]始値, [2]高値, [3]安値, [4]終値, [5]前週比, [6]前週比%, [7]売買高
+            カンマ区切り数値文字列、新しい日付が先頭
+        cur_prices: [終値, 高値, 安値] の現在価格リスト
+    Returns:
+        dict: 指標dict (rs_raw, momentum_pt, trend_template, etc.)
     """
     price_dict = {}
 
-    # ---- 週次データを集計
-    def calc_weekly_price_list():
-        # index: [0]日付、[1]始値、[2]高値、[3]安値、[4]終値、前週比、前週比％、[7]売買高
-        weekly_price_list = []  # 週次価格データ
-        for ind, html in enumerate(htmls):
-            if not html:
-                log_warning("!!! 週次データが取得できていない", ind + 1, "ページ目")
-                continue
-            j = 0
-            for m in re.finditer(
-                r'<th scope="row"><time datetime=".*?">(.*?)</time></th>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>',
-                html,
-                re.DOTALL,
-            ):
-                if ind >= 1 and j == 0:
-                    # 変則的だが、2ページ以降の最初の要素は現在株価なので省く
-                    j += 1
-                    continue
-                weekly_price_list.append(m.groups())
-                # print m.groups()
-                j += 1
-        return weekly_price_list
-
-    weekly_price_list = calc_weekly_price_list()
     try:
         prices = [int(float(p[4].replace(",", ""))) for p in weekly_price_list]
         highs = [int(float(p[2].replace(",", ""))) for p in weekly_price_list]
@@ -653,6 +640,36 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
     return price_dict
 
 
+def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
+    """株探の週次HTMLデータからweekly_price_listを抽出し、指標を計算する"""
+
+    # ---- 週次データを集計
+    def calc_weekly_price_list():
+        # index: [0]日付、[1]始値、[2]高値、[3]安値、[4]終値、前週比、前週比％、[7]売買高
+        weekly_price_list = []  # 週次価格データ
+        for ind, html in enumerate(htmls):
+            if not html:
+                log_warning("!!! 週次データが取得できていない", ind + 1, "ページ目")
+                continue
+            j = 0
+            for m in re.finditer(
+                r'<th scope="row"><time datetime=".*?">(.*?)</time></th>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>',
+                html,
+                re.DOTALL,
+            ):
+                if ind >= 1 and j == 0:
+                    # 変則的だが、2ページ以降の最初の要素は現在株価なので省く
+                    j += 1
+                    continue
+                weekly_price_list.append(m.groups())
+                # print m.groups()
+                j += 1
+        return weekly_price_list
+
+    weekly_price_list = calc_weekly_price_list()
+    return _calc_weekly_indicators(weekly_price_list, cur_prices)
+
+
 
 
 def _save_yfinance_cache(fname, price_current, price_list):
@@ -784,6 +801,103 @@ def _get_ticker_symbol(code_s, stock={}):
     return code_s + suffix
 
 
+def _convert_weekly_df_to_kabutan_format(df):
+    """yfinance週足DataFrameをKabutan互換のweekly_price_list形式に変換する
+    最新行が今週（未確定）の場合は除外する。
+    Args:
+        df: yfinance historyのDataFrame (interval="1wk")
+    Returns:
+        list[tuple[str, ...]]: 8要素タプルのリスト、新しい日付が先頭
+            (日付, 始値, 高値, 安値, 終値, 前週比, 前週比%, 売買高)
+            前週比/前週比%は指標計算で未使用のため"0"固定
+    """
+    from datetime import timedelta
+    # get_price_day()は18:00前なら前日扱い。週足判定でも同じ基準日を使う
+    price_day = get_price_day(datetime.now())
+
+    weekly_price_list = []
+    for idx in reversed(df.index):
+        row = df.loc[idx]
+        if hasattr(idx, "date"):
+            dt = idx.date() if callable(idx.date) else idx.date
+        else:
+            dt = idx
+        # yfinanceの週足バーは月曜ラベル。そのバーの金曜日 = dt + 4日。
+        # 基準日(price_day)がバーの金曜日より前 → 今週はまだ未確定なので除外
+        bar_friday = dt + timedelta(days=4)
+        if price_day < bar_friday:
+            continue
+        date_str = "%d年%d月%d日" % (dt.year, dt.month, dt.day)
+        open_p = "{:,}".format(int(row["Open"]))
+        high_p = "{:,}".format(int(row["High"]))
+        low_p = "{:,}".format(int(row["Low"]))
+        close_p = "{:,}".format(int(row["Close"]))
+        volume = "{:,}".format(int(row["Volume"]))
+        weekly_price_list.append((date_str, open_p, high_p, low_p, close_p, "0", "0", volume))
+    return weekly_price_list
+
+
+def get_weekly_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
+    """yfinance APIで週次価格データを取得する
+    Args:
+        code_s: 銘柄コード文字列
+        stock: 銘柄DB情報（マーケットコード判定用）
+        upd: 更新レベル
+    Returns:
+        list[tuple[str, ...]] | None: Kabutan互換のweekly_price_list、失敗時None
+    """
+    cache_fname = YFINANCE_WEEKLY_CACHE_FNAME % code_s
+
+    # キャッシュチェック
+    if upd < UPD_FORCE and os.path.exists(cache_fname):
+        if upd < UPD_INTERVAL:
+            # UPD_CACHE: キャッシュがあればそのまま使用
+            _, pl = _load_yfinance_cache(cache_fname)
+            if pl is not None:
+                log_debug("yfinance週足キャッシュ使用(UPD_CACHE): %s" % code_s)
+                return [tuple(row) for row in pl]
+        else:
+            # UPD_INTERVAL: キャッシュの日付が期限内かチェック
+            cache_ok, cach_date = is_file_timestamp(cache_fname, INTERVAL_DAY_W)
+            if cache_ok:
+                _, pl = _load_yfinance_cache(cache_fname)
+                if pl is not None:
+                    log_debug("yfinance週足キャッシュ使用(UPD_INTERVAL): %s" % code_s)
+                    return [tuple(row) for row in pl]
+
+    # yfinance APIで取得
+    ticker_symbol = _get_ticker_symbol(code_s, stock)
+
+    log_print("----> %sの週次価格情報をyfinance(%s)から取得します" % (code_s, ticker_symbol))
+    try:
+        with sema:
+            ticker = yf.Ticker(ticker_symbol)
+            df = ticker.history(period="2y", interval="1wk", auto_adjust=True)
+    except Exception as e:
+        log_warning("yfinance週足取得エラー(%s): %s" % (code_s, e))
+        return None
+
+    if df is None or df.empty:
+        log_warning("yfinance週足データなし: %s" % code_s)
+        return None
+
+    # NaN行を除去
+    df = df.dropna(subset=["Close"])
+    if df.empty:
+        log_warning("yfinance週足データなし(NaN除去後): %s" % code_s)
+        return None
+
+    weekly_price_list = _convert_weekly_df_to_kabutan_format(df)
+    if not weekly_price_list:
+        log_warning("yfinance週足価格リスト変換失敗: %s" % code_s)
+        return None
+
+    # キャッシュに保存（price_currentは週足では不要だがスキーマ互換のためNone）
+    _save_yfinance_cache(cache_fname, None, weekly_price_list)
+    log_print("<---- yfinance週足取得完了: %s データ数=%d週" % (code_s, len(weekly_price_list)))
+    return weekly_price_list
+
+
 def prefetch_yfinance_batch(code_s_list, stocks=None):
     """複数銘柄を一括ダウンロードしてキャッシュに保存する
     Args:
@@ -874,6 +988,95 @@ def prefetch_yfinance_batch(code_s_list, stocks=None):
             time.sleep(5)
 
     log_print("yfinanceバッチダウンロード完了")
+
+
+def prefetch_yfinance_weekly_batch(code_s_list, stocks=None):
+    """複数銘柄の週足データを一括ダウンロードしてキャッシュに保存する
+    Args:
+        code_s_list: 銘柄コード文字列のリスト
+        stocks: 銘柄DB（市場コード解決用、Noneなら全て東証扱い）
+    """
+
+    # キャッシュが有効な銘柄はスキップ
+    codes_to_fetch = []
+    for code_s in code_s_list:
+        cache_fname = YFINANCE_WEEKLY_CACHE_FNAME % code_s
+        if os.path.exists(cache_fname):
+            cache_ok, _ = is_file_timestamp(cache_fname, INTERVAL_DAY_W)
+            if cache_ok:
+                continue
+        codes_to_fetch.append(code_s)
+
+    if not codes_to_fetch:
+        log_print("yfinance週足バッチ: 全銘柄キャッシュ有効、スキップ")
+        return
+
+    log_print("yfinance週足バッチダウンロード: %d銘柄" % len(codes_to_fetch))
+
+    # 銘柄コード→ティッカーシンボルのマッピングを構築
+    code_to_ticker = {}
+    for code_s in codes_to_fetch:
+        stock = {}
+        if stocks is not None:
+            stock = stocks.get(code_s, {})
+        code_to_ticker[code_s] = _get_ticker_symbol(code_s, stock)
+
+    # 100銘柄ずつバッチ処理
+    BATCH_SIZE = 100
+    for batch_start in range(0, len(codes_to_fetch), BATCH_SIZE):
+        batch_codes = codes_to_fetch[batch_start : batch_start + BATCH_SIZE]
+        tickers = [code_to_ticker[c] for c in batch_codes]
+        ticker_str = " ".join(tickers)
+
+        log_print("yfinance週足バッチ: %d/%d銘柄を一括取得中..." % (
+            min(batch_start + BATCH_SIZE, len(codes_to_fetch)),
+            len(codes_to_fetch),
+        ))
+
+        try:
+            df = yf.download(
+                ticker_str,
+                period="2y",
+                interval="1wk",
+                auto_adjust=True,
+                threads=True,
+                progress=False,
+            )
+        except Exception as e:
+            log_warning("yfinance週足バッチ取得エラー: %s" % e)
+            continue
+
+        if df is None or df.empty:
+            log_warning("yfinance週足バッチデータなし")
+            continue
+
+        # 各銘柄のデータを個別にキャッシュに保存
+        for code_s, ticker_s in zip(batch_codes, tickers):
+            try:
+                if len(batch_codes) == 1:
+                    single_df = df
+                else:
+                    single_df = df.xs(ticker_s, level=1, axis=1)
+                if single_df.empty:
+                    continue
+                single_df = single_df.dropna(subset=["Close"])
+                if single_df.empty:
+                    continue
+                weekly_price_list = _convert_weekly_df_to_kabutan_format(single_df)
+                if weekly_price_list:
+                    cache_fname = YFINANCE_WEEKLY_CACHE_FNAME % code_s
+                    _save_yfinance_cache(cache_fname, None, weekly_price_list)
+            except Exception as e:
+                log_warning("yfinance週足バッチ個別変換エラー(%s): %s" % (code_s, e))
+                continue
+
+        # バッチ間の待機（レートリミット対策）
+        if batch_start + BATCH_SIZE < len(codes_to_fetch):
+            import time
+            log_print("yfinance週足バッチ: 5秒待機（レートリミット対策）...")
+            time.sleep(5)
+
+    log_print("yfinance週足バッチダウンロード完了")
 
 
 def parse_date_str(s):
@@ -1097,20 +1300,40 @@ def get_price_data_yahoo(code_s, stock, upd=UPD_INTERVAL):
         return {}, []
 
 
-def get_weekly_price_data(code_s, upd=UPD_INTERVAL, prices=[]):
+# 市場指数コード（Kabutan固有、yfinanceでは無効）
+_MARKET_INDEX_CODES = {"0000", "0010", "0012", "0800", "0802"}
+
+
+def get_weekly_price_data(code_s, stock={}, upd=UPD_INTERVAL, prices=[]):
+    """週次データからRSを返す
+    一般銘柄はyfinance優先、市場指数はKabutan固定。
+    Args:
+        code_s: 銘柄コード文字列
+        stock: 銘柄DB情報（マーケットコード判定用）
+        upd: 更新レベル
+        prices: [終値, 高値, 安値] の現在価格リスト
+    Returns:
+        dict: 指標dict
     """
-    週次データからRSを返す
-    type: str -> dict
-    """
+    # 市場指数コードはyfinanceティッカーに変換できないためKabutan固定
+    if code_s not in _MARKET_INDEX_CODES:
+        weekly_price_list = get_weekly_data_yfinance(code_s, stock, upd)
+        if weekly_price_list is not None:
+            log_print(">>>>> %sの週次価格データを解析(yfinance) " % code_s)
+            parsed_data_w = _calc_weekly_indicators(weekly_price_list, prices)
+            log_print("<<<<< 解析完了(yfinance) ")
+            return parsed_data_w
+        log_print("yfinance週足取得失敗、Kabutanフォールバック: %s" % code_s)
+
+    # Kabutanパス（市場指数 or yfinanceフォールバック）
     cache = upd <= UPD_REEVAL
     price_htmls = get_weekly_html(code_s, cache)
     if not price_htmls:
-        log_warning(" 株探から週次価格を取得できません")
+        log_warning(" 株探からも週次価格を取得できません")
         return {}
-    # print ux_cmd_head(price_htmls[0], 3)
-    log_print(">>>>> %sの週次価格データを解析 " % code_s)
+    log_print(">>>>> %sの週次価格データを解析(Kabutan) " % code_s)
     parsed_data_w = parse_pricew_htmls_kabutan(price_htmls, prices)
-    log_print("<<<<< 解析完了 ")
+    log_print("<<<<< 解析完了(Kabutan) ")
     return parsed_data_w
 
 
@@ -1137,7 +1360,7 @@ def get_price_data(code_s, stock={}, upd=UPD_INTERVAL):
     # 日次データ
     parsed_data, cur_prices = get_price_data_yahoo(code_s, stock, upd)
     # 週次データを取得してRSを求める
-    parsed_data_w = get_weekly_price_data(code_s, upd=upd, prices=cur_prices)
+    parsed_data_w = get_weekly_price_data(code_s, stock=stock, upd=upd, prices=cur_prices)
     parsed_data.update(parsed_data_w)
     return parsed_data
 

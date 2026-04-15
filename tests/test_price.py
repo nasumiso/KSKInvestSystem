@@ -232,6 +232,224 @@ class TestYfinanceCacheRoundtrip:
 
 
 # ==================================================
+# _convert_weekly_df_to_kabutan_format
+# ==================================================
+class TestConvertWeeklyDfToKabutanFormat:
+    """yfinance週足DataFrame→Kabutan互換形式の変換テスト"""
+
+    def _make_weekly_df(self, weeks=60):
+        """テスト用の週足DataFrameを生成する"""
+        import pandas as pd
+
+        dates = pd.date_range(end="2026-04-14", periods=weeks, freq="W-MON")
+        data = {
+            "Open": [1000 + i * 5 for i in range(weeks)],
+            "High": [1020 + i * 5 for i in range(weeks)],
+            "Low": [980 + i * 5 for i in range(weeks)],
+            "Close": [1010 + i * 5 for i in range(weeks)],
+            "Volume": [100000 + i * 1000 for i in range(weeks)],
+        }
+        return pd.DataFrame(data, index=dates)
+
+    def test_output_length(self):
+        """出力レコード数がDataFrameの行数以下（不完全週が除外される場合がある）"""
+        df = self._make_weekly_df(60)
+        result = price._convert_weekly_df_to_kabutan_format(df)
+        # 最新行が今週の場合は不完全週として除外されるため、59または60になる
+        assert len(result) >= 59 and len(result) <= 60
+
+    def test_eight_elements(self):
+        """各レコードが8要素タプルであること"""
+        df = self._make_weekly_df(10)
+        result = price._convert_weekly_df_to_kabutan_format(df)
+        for row in result:
+            assert isinstance(row, tuple)
+            assert len(row) == 8
+
+    def test_newest_first(self):
+        """新しい日付が先頭に来ること"""
+        df = self._make_weekly_df(10)
+        result = price._convert_weekly_df_to_kabutan_format(df)
+        d0 = price.parse_date_str(result[0][0])
+        d_last = price.parse_date_str(result[-1][0])
+        assert d0 > d_last
+
+    def test_date_format_japanese(self):
+        """日付が"YYYY年M月D日"形式であること"""
+        import re
+        df = self._make_weekly_df(3)
+        result = price._convert_weekly_df_to_kabutan_format(df)
+        for row in result:
+            assert re.match(r"\d{4}年\d{1,2}月\d{1,2}日", row[0])
+
+    def test_comma_separated_numbers(self):
+        """数値がカンマ区切り文字列であること、replace(',','')で数値変換可能"""
+        df = self._make_weekly_df(5)
+        result = price._convert_weekly_df_to_kabutan_format(df)
+        for row in result:
+            for val in [row[1], row[2], row[3], row[4], row[7]]:
+                # カンマを除去して数値変換可能であること
+                assert int(float(val.replace(",", ""))) >= 0
+
+    def test_prev_week_fields_are_zero(self):
+        """前週比（[5]）と前週比%（[6]）が"0"固定であること"""
+        df = self._make_weekly_df(5)
+        result = price._convert_weekly_df_to_kabutan_format(df)
+        for row in result:
+            assert row[5] == "0"
+            assert row[6] == "0"
+
+    def test_all_string_elements(self):
+        """全要素が文字列であること"""
+        df = self._make_weekly_df(5)
+        result = price._convert_weekly_df_to_kabutan_format(df)
+        for row in result:
+            for val in row:
+                assert isinstance(val, str)
+
+
+# ==================================================
+# _calc_weekly_indicators
+# ==================================================
+class TestCalcWeeklyIndicators:
+    """週次指標計算の統合テスト"""
+
+    def _make_weekly_price_list(self, weeks=55):
+        """テスト用のKabutan互換weekly_price_listを生成する
+        8要素タプル(文字列): (日付, 始値, 高値, 安値, 終値, 前週比, 前週比%, 売買高)
+        """
+        base_price = 1000
+        result = []
+        for i in range(weeks):
+            day = weeks - i
+            date_str = "2026年1月%d日" % max(day, 1)
+            # 緩やかな上昇トレンド
+            close = base_price + i * 3
+            open_p = close - 5
+            high = close + 10
+            low = close - 15
+            volume = 100000 + i * 500
+            result.append((
+                date_str,
+                "{:,}".format(open_p),
+                "{:,}".format(high),
+                "{:,}".format(low),
+                "{:,}".format(close),
+                "0",
+                "0",
+                "{:,}".format(volume),
+            ))
+        return result
+
+    def test_returns_dict(self):
+        """戻り値がdictであること"""
+        wpl = self._make_weekly_price_list(55)
+        result = price._calc_weekly_indicators(wpl)
+        assert isinstance(result, dict)
+
+    def test_rs_raw_positive(self):
+        """rs_rawが正の値であること"""
+        wpl = self._make_weekly_price_list(55)
+        result = price._calc_weekly_indicators(wpl)
+        assert "rs_raw" in result
+        assert result["rs_raw"] > 0
+
+    def test_trend_template_is_list(self):
+        """trend_templateがリストであること"""
+        wpl = self._make_weekly_price_list(55)
+        result = price._calc_weekly_indicators(wpl)
+        assert "trend_template" in result
+        assert isinstance(result["trend_template"], list)
+
+    def test_sell_pressure_ratio_w(self):
+        """sell_pressure_ratio_wが3要素リストであること"""
+        wpl = self._make_weekly_price_list(55)
+        result = price._calc_weekly_indicators(wpl)
+        assert "sell_pressure_ratio_w" in result
+        assert len(result["sell_pressure_ratio_w"]) == 3
+
+    def test_price_kairi_wma10(self):
+        """price_kairi_wma10がfloat/intであること"""
+        wpl = self._make_weekly_price_list(55)
+        result = price._calc_weekly_indicators(wpl)
+        assert "price_kairi_wma10" in result
+        assert isinstance(result["price_kairi_wma10"], (int, float))
+
+    def test_new_high_is_list(self):
+        """new_highがリストであること"""
+        wpl = self._make_weekly_price_list(55)
+        result = price._calc_weekly_indicators(wpl)
+        assert "new_high" in result
+        assert isinstance(result["new_high"], list)
+
+    def test_pullback_20_is_string(self):
+        """pullback_20がstrであること"""
+        wpl = self._make_weekly_price_list(55)
+        result = price._calc_weekly_indicators(wpl)
+        assert "pullback_20" in result
+        assert isinstance(result["pullback_20"], str)
+
+    def test_empty_list_returns_empty_dict(self):
+        """空リストの場合は空dictが返ること"""
+        result = price._calc_weekly_indicators([])
+        assert isinstance(result, dict)
+
+    def test_cur_prices_override(self):
+        """cur_pricesを渡した場合にRS計算で使用されること"""
+        wpl = self._make_weekly_price_list(55)
+        # 現在価格を高めに設定するとrs_rawが高くなるはず
+        result_default = price._calc_weekly_indicators(wpl)
+        result_high = price._calc_weekly_indicators(wpl, cur_prices=[9999, 9999, 9999])
+        assert result_high["rs_raw"] > result_default["rs_raw"]
+
+
+# ==================================================
+# yfinance週足キャッシュのラウンドトリップ
+# ==================================================
+class TestYfinanceWeeklyCacheRoundtrip:
+    """週足JSONキャッシュの保存・読み込みテスト"""
+
+    def test_save_and_load_weekly(self):
+        """週足キャッシュの保存→読み込みでデータ復元されること"""
+        weekly_price_list = [
+            ("2026年4月14日", "1,200", "1,220", "1,180", "1,210", "0", "0", "150,000"),
+            ("2026年4月7日", "1,190", "1,210", "1,170", "1,200", "0", "0", "140,000"),
+        ]
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            fname = f.name
+        try:
+            price._save_yfinance_cache(fname, None, weekly_price_list)
+            _, loaded_pl = price._load_yfinance_cache(fname)
+            assert loaded_pl is not None
+            assert len(loaded_pl) == 2
+            # JSONではtupleがlistになるが、要素は保持される
+            assert loaded_pl[0][4] == "1,210"
+            assert loaded_pl[1][7] == "140,000"
+        finally:
+            os.unlink(fname)
+
+
+# ==================================================
+# _MARKET_INDEX_CODES
+# ==================================================
+class TestMarketIndexCodes:
+    """市場指数コードのガードテスト"""
+
+    def test_topix_is_index(self):
+        """TOPIXコードが市場指数として認識されること"""
+        assert "0010" in price._MARKET_INDEX_CODES
+
+    def test_nikkei_is_index(self):
+        """日経225コードが市場指数として認識されること"""
+        assert "0000" in price._MARKET_INDEX_CODES
+
+    def test_regular_stock_is_not_index(self):
+        """通常の銘柄コードが市場指数でないこと"""
+        assert "7203" not in price._MARKET_INDEX_CODES
+        assert "3496" not in price._MARKET_INDEX_CODES
+
+
+# ==================================================
 # parse_price_text_from_list
 # ==================================================
 class TestParsePriceTextFromList:
