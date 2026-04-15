@@ -89,19 +89,22 @@ function revertShikiho() {
   updateSaveBar('shikiho');
 }
 
-/* --- 非同期フォーム送信（ページリロードなし） --- */
+/* --- 非同期フォーム送信（直列化でリクエスト順序を保証） --- */
+var _saveQueue = Promise.resolve();
 function submitFormAsync(form) {
   var formData = new FormData(form);
-  fetch(form.action, { method: 'POST', body: formData }).then(function(response) {
-    if (!response.ok) return;
-    /* 保存完了: dirty フラグをリセットして初期値を更新 */
-    form.querySelectorAll('.editable-field, .editable-select').forEach(function(el) {
-      initialValues[el.name] = el.value;
-      el.classList.remove('dirty');
+  _saveQueue = _saveQueue.then(function() {
+    return fetch(form.action, { method: 'POST', body: formData }).then(function(response) {
+      if (!response.ok) return;
+      /* 保存完了: dirty フラグをリセットして初期値を更新 */
+      form.querySelectorAll('.editable-field, .editable-select').forEach(function(el) {
+        initialValues[el.name] = el.value;
+        el.classList.remove('dirty');
+      });
+      var formName = (form.querySelector('[data-form]') || {}).dataset;
+      if (formName && formName.form) updateSaveBar(formName.form);
     });
-    var formName = (form.querySelector('[data-form]') || {}).dataset;
-    if (formName && formName.form) updateSaveBar(formName.form);
-  });
+  }).catch(function() { /* ネットワークエラー時もキューを継続 */ });
 }
 
 /* --- フォーカスアウト時の自動保存 --- */
@@ -148,7 +151,8 @@ function currentShikihoPeriod() {
 }
 
 /* --- 四季報コメント: 追加/削除 --- */
-function updateShikihoState() {
+function updateShikihoState(opts) {
+  var save = (opts && opts.save !== undefined) ? opts.save : true;
   var entries = document.querySelectorAll('#shikiho-edit-area .shikiho-entry');
   var count = entries.length;
   var countEl = document.getElementById('shikiho-count');
@@ -168,9 +172,11 @@ function updateShikihoState() {
     btn.style.display = '';
     btn.textContent = '+ 追加';
   }
-  /* 件数変更時は非同期で自動保存 */
-  var form = document.getElementById('shikiho-form');
-  if (form) submitFormAsync(form);
+  /* 件数変更時は非同期で自動保存（save=false で抑制可能） */
+  if (save) {
+    var form = document.getElementById('shikiho-form');
+    if (form) submitFormAsync(form);
+  }
 }
 
 function addShikiho() {
@@ -188,7 +194,8 @@ function addShikiho() {
     '<textarea class="editable-field" name="shikiho_comments_' + idx + '" rows="4" style="flex:1;" data-form="shikiho" placeholder="四季報コメントを入力..."></textarea>';
   area.insertBefore(div, document.getElementById('btn-add-shikiho'));
   var ta = div.querySelector('textarea');
-  updateShikihoState();
+  /* UI更新のみ、保存はしない（空のtextareaで保存するとデータロスになる） */
+  updateShikihoState({ save: false });
   ta.focus();
 }
 
