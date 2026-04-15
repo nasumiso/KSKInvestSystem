@@ -62,7 +62,6 @@
       <thead>
         <tr>
           <th>日付</th>
-          <th>ソース</th>
           <th>IR分析定量</th>
           <th style="min-width:220px;">IR分析コメント</th>
         </tr>
@@ -71,17 +70,6 @@
         {% for snap in snapshots %}
         <tr>
           <td><strong>{{ snap.date_yy_m }}</strong></td>
-          <td>
-            {% if snap.data_source == 'auto' %}
-            <span class="source-auto">auto</span>
-            {% elif snap.data_source == 'manual' %}
-            <span class="source-manual">manual</span>
-            {% elif snap.data_source == 'migration' %}
-            <span class="source-migration">migration</span>
-            {% else %}
-            <span>{{ snap.data_source or '' }}</span>
-            {% endif %}
-          </td>
           <td style="white-space:pre-wrap;">{{ snap.ir_quant or '' }}</td>
           <td>
             <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
