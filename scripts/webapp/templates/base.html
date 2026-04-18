@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Shintakane Research{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -12,6 +13,7 @@
 <nav class="container-fluid">
   <ul>
     <li><a href="/" class="brand">Shintakane Research</a></li>
+    <li><a href="/market" class="nav-link">市場データ</a></li>
   </ul>
   <ul>
     <li class="quick-search">
