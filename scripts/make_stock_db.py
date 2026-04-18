@@ -1267,50 +1267,91 @@ def test():
 KESSAN_WINDOW_DAYS = 14
 
 
-def update_research_snapshots(*, db_path=None):
-    """research_shelve 管理銘柄のうち決算更新があったものにスナップショットを自動追記する。
+def _collect_trigger_dates(stock, today):
+    """stock の kessanbi / kessan_mod_date から KESSAN_WINDOW_DAYS 以内のトリガー日を返す。
 
-    research_shelve の全レコードを走査し、各銘柄の kessanbi / kessan_mod_date が
-    14 日以内なら追記対象。同じ date_yy_m のスナップショットが既にあればスキップ。
+    両方が窓内の場合は新しい方のみ採用 (stocks データが最新イベント時点の値しか
+    保持しないため、古い方に書くと履歴捏造になる)。
+    """
+    candidates = []
+    for date_field in ("kessanbi", "kessan_mod_date"):
+        date_str = stock.get(date_field, "")
+        if not date_str:
+            continue
+        try:
+            dt = datetime.strptime(date_str, "%Y/%m/%d").date()
+            if 0 <= (today - dt).days <= KESSAN_WINDOW_DAYS:
+                candidates.append((dt, date_str))
+        except ValueError:
+            pass
+    if len(candidates) >= 2:
+        candidates.sort(reverse=True)
+        return [candidates[0][1]]
+    return [c[1] for c in candidates]
+
+
+def update_research_snapshots(*, db_path=None):
+    """ウォッチ銘柄のうち決算更新があったものにスナップショットを自動追記する。
+
+    対象は `my_watch_list.txt` 記載のコード (通常 + H付き保有) の union に限定。
+    kessanbi / kessan_mod_date が 14 日以内の銘柄のみが処理対象。
+    ウォッチ銘柄でかつ決算ウィンドウ内でも research_shelve 未登録の場合は、
+    空レコードを自動登録してから同一実行内でスナップショットも追記する。
+    ウィンドウ外の未登録ウォッチ銘柄は登録しない (research DB を汚染しないため)。
+    同じ date_yy_m のスナップショットが既にあればスキップ。
     """
     import research_shelve
+    import portfolio
+
+    # ウォッチ集合の構築 (通常コード + H付き保有)
+    try:
+        watch_codes, possess_codes = portfolio.parse_my_portforio()
+    except FileNotFoundError:
+        log_warning(
+            "[research] my_watch_list.txt が見つからないためスナップショット自動追記をスキップ"
+        )
+        return
+    watch_set = set(watch_codes) | set(possess_codes)
 
     stocks = load_stock_db()
     today = get_price_day(datetime.today())
 
     all_records = research_shelve.list_research_records(db_path=db_path)
+    existing_records = {
+        r.get("code_s", ""): r for r in all_records if r.get("code_s", "")
+    }
 
+    # ウォッチ集合 × 決算ウィンドウ内の銘柄だけを対象に、
+    # 必要なら自動登録してからスナップショットを追記する
+    added_count = 0
     count = 0
     skipped_existing = 0
-    for record in all_records:
-        code_s = record.get("code_s", "")
-        stock = stocks.get(code_s, {})
+    eligible_count = 0
+    for code_s in watch_set:
+        stock = stocks.get(code_s)
         if not stock:
             continue
 
-        # 決算トリガー日付を収集
-        # 両方が窓内の場合、stocks データは最新の決算イベント時点の値のみを
-        # 保持するため、新しい方の日付のみを採用する（古い方に書くと履歴捏造）。
-        candidates = []
-        for date_field in ("kessanbi", "kessan_mod_date"):
-            date_str = stock.get(date_field, "")
-            if not date_str:
-                continue
-            try:
-                dt = datetime.strptime(date_str, "%Y/%m/%d").date()
-                if 0 <= (today - dt).days <= KESSAN_WINDOW_DAYS:
-                    candidates.append((dt, date_str))
-            except ValueError:
-                pass
-        if len(candidates) >= 2:
-            # 新しい日付のみ採用
-            candidates.sort(reverse=True)
-            trigger_dates = [candidates[0][1]]
-        else:
-            trigger_dates = [c[1] for c in candidates]
-
+        trigger_dates = _collect_trigger_dates(stock, today)
         if not trigger_dates:
-            continue
+            continue  # 決算ウィンドウ外なので何もしない (未登録でも登録しない)
+
+        eligible_count += 1
+
+        record = existing_records.get(code_s)
+        if record is None:
+            # 未登録かつ決算ウィンドウ内 → このタイミングで初めて登録
+            stock_name = stock.get("stock_name", "")
+            try:
+                record = research_shelve.create_research_record(
+                    code_s=code_s, stock_name=stock_name
+                )
+                research_shelve.upsert_research_record(record, db_path=db_path)
+                existing_records[code_s] = record
+                added_count += 1
+            except Exception as e:
+                log_warning(f"[research] ウォッチ銘柄の自動登録失敗: {code_s} {e}")
+                continue
 
         existing_dates = {
             s["date_yy_m"] for s in record.get("snapshots", [])
@@ -1345,6 +1386,12 @@ def update_research_snapshots(*, db_path=None):
             except Exception as e:
                 log_warning(f"[research] スナップショット追記失敗: {code_s} {e}")
 
+    log_print(
+        f"[research] ウォッチ対象: {eligible_count} 銘柄が決算ウィンドウ内 "
+        f"(ウォッチ総数 {len(watch_set)})"
+    )
+    if added_count:
+        log_print(f"[research] ウォッチ銘柄の自動登録: {added_count} 件")
     log_print(
         f"[research] スナップショット自動追記: {count} 件追記"
         + (f", {skipped_existing} 件スキップ(既存)" if skipped_existing else "")
