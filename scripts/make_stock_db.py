@@ -1268,21 +1268,66 @@ KESSAN_WINDOW_DAYS = 14
 
 
 def update_research_snapshots(*, db_path=None):
-    """research_shelve 管理銘柄のうち決算更新があったものにスナップショットを自動追記する。
+    """ウォッチ銘柄のうち決算更新があったものにスナップショットを自動追記する。
 
-    research_shelve の全レコードを走査し、各銘柄の kessanbi / kessan_mod_date が
-    14 日以内なら追記対象。同じ date_yy_m のスナップショットが既にあればスキップ。
+    対象は `my_watch_list.txt` 記載のコード (通常 + H付き保有) の union に限定。
+    ウォッチ集合に含まれるが research_shelve 未登録の銘柄は、stocks_shelve に
+    存在すれば空レコードを自動登録してから同一実行内でスナップショットも追記する。
+    各銘柄の kessanbi / kessan_mod_date が 14 日以内なら追記対象。
+    同じ date_yy_m のスナップショットが既にあればスキップ。
     """
     import research_shelve
+    import portfolio
+
+    # ウォッチ集合の構築 (通常コード + H付き保有)
+    try:
+        watch_codes, possess_codes = portfolio.parse_my_portforio()
+    except FileNotFoundError:
+        log_warning(
+            "[research] my_watch_list.txt が見つからないためスナップショット自動追記をスキップ"
+        )
+        return
+    watch_set = set(watch_codes) | set(possess_codes)
 
     stocks = load_stock_db()
     today = get_price_day(datetime.today())
 
     all_records = research_shelve.list_research_records(db_path=db_path)
+    existing_codes = {r.get("code_s", "") for r in all_records}
+
+    # ウォッチ集合のうち research_shelve 未登録で stocks_shelve に存在するものを自動登録
+    added_count = 0
+    for code_s in watch_set:
+        if code_s in existing_codes:
+            continue
+        stock = stocks.get(code_s)
+        if not stock:
+            continue
+        stock_name = stock.get("stock_name", "")
+        try:
+            new_record = research_shelve.create_research_record(
+                code_s=code_s, stock_name=stock_name
+            )
+            research_shelve.upsert_research_record(new_record, db_path=db_path)
+            all_records.append(new_record)
+            existing_codes.add(code_s)
+            added_count += 1
+        except Exception as e:
+            log_warning(f"[research] ウォッチ銘柄の自動登録失敗: {code_s} {e}")
+
+    if added_count:
+        log_print(f"[research] ウォッチ銘柄の自動登録: {added_count} 件")
+
+    # ウォッチ集合に含まれるレコードだけを走査対象にする
+    target_records = [r for r in all_records if r.get("code_s", "") in watch_set]
+    log_print(
+        f"[research] ウォッチ対象: {len(target_records)} 銘柄 "
+        f"(ウォッチ総数 {len(watch_set)})"
+    )
 
     count = 0
     skipped_existing = 0
-    for record in all_records:
+    for record in target_records:
         code_s = record.get("code_s", "")
         stock = stocks.get(code_s, {})
         if not stock:

@@ -7,6 +7,7 @@ import pytest
 
 import research_shelve as rs
 import make_stock_db
+import portfolio
 
 
 @pytest.fixture
@@ -49,6 +50,21 @@ def _fix_today(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _watchlist_all(monkeypatch):
+    """デフォルトで全銘柄をウォッチ扱いにする (parse_my_portforio を monkeypatch)。
+    個別テストで絞り込みたい場合はテスト内で再 monkeypatch する。"""
+    # ("*", []) を返すと update_research_snapshots 側の set() が
+    # {"*"} になり「ワイルドカード」にはならないので、
+    # 代わりに多数の銘柄コードを返し "存在するものだけヒット" させる。
+    # 実際にはテスト側が load_stock_db を monkeypatch して対象コードを限定するので、
+    # ここでは「対象コードを含む十分広いリスト」を返せばよい。
+    wide = [f"{i:04d}" for i in range(1, 10000)] + ["215A", "247A"]
+    monkeypatch.setattr(
+        portfolio, "parse_my_portforio", lambda: (wide, [])
+    )
+
+
 class TestUpdateResearchSnapshots:
     """update_research_snapshots のユニットテスト"""
 
@@ -69,16 +85,84 @@ class TestUpdateResearchSnapshots:
         assert snap["date_yy_m"] == _today_yy_m_d()
         assert snap["data_source"] == "auto"
 
-    def test_unregistered_stock_skipped(self, db_path, monkeypatch):
-        """research_shelve にレコードがない銘柄はスキップ"""
+    def test_unwatched_stock_skipped(self, db_path, monkeypatch):
+        """research_shelve に登録済みでもウォッチリストにない銘柄は追記対象外"""
         today = _today_str()
-        stock = _make_stock("9999", kessanbi=today)
-        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"9999": stock})
+        stock = _make_stock("3496", kessanbi=today)
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+        # ウォッチリストから 3496 を除外
+        monkeypatch.setattr(portfolio, "parse_my_portforio", lambda: (["1234"], []))
+
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=db_path)
 
         make_stock_db.update_research_snapshots(db_path=db_path)
 
-        loaded = rs.get_research_record("9999", db_path=db_path)
-        assert loaded is None
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert len(loaded["snapshots"]) == 0
+
+    def test_watchlist_unregistered_auto_creates_record(self, db_path, monkeypatch):
+        """ウォッチリストにあり未登録の銘柄は自動登録され、スナップショットも追記される"""
+        today = _today_str()
+        stock = _make_stock("3496", kessanbi=today, stock_name="アズーム")
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+        monkeypatch.setattr(portfolio, "parse_my_portforio", lambda: (["3496"], []))
+
+        # 事前にレコードなし
+        assert rs.get_research_record("3496", db_path=db_path) is None
+
+        make_stock_db.update_research_snapshots(db_path=db_path)
+
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert loaded is not None
+        assert loaded["stock_name"] == "アズーム"
+        assert len(loaded["snapshots"]) == 1
+        assert loaded["snapshots"][0]["data_source"] == "auto"
+
+    def test_watchlist_not_in_stocks_shelve_skipped(self, db_path, monkeypatch):
+        """ウォッチリストにあるが stocks_shelve にない銘柄は登録もスナップショットもされない"""
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {})
+        monkeypatch.setattr(portfolio, "parse_my_portforio", lambda: (["9999"], []))
+
+        make_stock_db.update_research_snapshots(db_path=db_path)
+
+        assert rs.get_research_record("9999", db_path=db_path) is None
+
+    def test_possess_code_also_in_scope(self, db_path, monkeypatch):
+        """H付き保有銘柄もウォッチ集合に含まれスナップショット対象になる"""
+        today = _today_str()
+        stock = _make_stock("3496", kessanbi=today, stock_name="アズーム")
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+        # 通常コード側は空、possess 側に 3496
+        monkeypatch.setattr(portfolio, "parse_my_portforio", lambda: ([], ["3496"]))
+
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        make_stock_db.update_research_snapshots(db_path=db_path)
+
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert len(loaded["snapshots"]) == 1
+
+    def test_watchlist_file_missing_no_crash(self, db_path, monkeypatch):
+        """my_watch_list.txt 不在時は FileNotFoundError を握りつぶして早期 return"""
+        today = _today_str()
+        stock = _make_stock("3496", kessanbi=today)
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+
+        def _raise():
+            raise FileNotFoundError("my_watch_list.txt")
+
+        monkeypatch.setattr(portfolio, "parse_my_portforio", _raise)
+
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        # 例外で落ちずに正常 return することを確認
+        make_stock_db.update_research_snapshots(db_path=db_path)
+
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert len(loaded["snapshots"]) == 0
 
     def test_skip_existing_auto(self, db_path, monkeypatch):
         """同一 date_yy_m の auto スナップショットがある場合はスキップ"""
