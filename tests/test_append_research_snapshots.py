@@ -119,6 +119,32 @@ class TestUpdateResearchSnapshots:
         assert len(loaded["snapshots"]) == 1
         assert loaded["snapshots"][0]["data_source"] == "auto"
 
+    def test_watchlist_unregistered_outside_window_not_created(self, db_path, monkeypatch):
+        """ウォッチ内・未登録でも決算ウィンドウ外なら自動登録されない (research DB を汚染しない)"""
+        old_date = _today_str(-30)  # 窓外
+        stock = _make_stock("3496", kessanbi=old_date, stock_name="アズーム")
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+        monkeypatch.setattr(portfolio, "parse_my_portforio", lambda: (["3496"], []))
+
+        assert rs.get_research_record("3496", db_path=db_path) is None
+
+        make_stock_db.update_research_snapshots(db_path=db_path)
+
+        # 決算ウィンドウ外なので空レコードも作られないこと
+        assert rs.get_research_record("3496", db_path=db_path) is None
+
+    def test_watchlist_unregistered_no_kessan_date_not_created(self, db_path, monkeypatch):
+        """ウォッチ内・未登録で kessanbi も kessan_mod_date も持たない銘柄は登録されない"""
+        stock = _make_stock("3496", stock_name="アズーム")  # 決算日なし
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+        monkeypatch.setattr(portfolio, "parse_my_portforio", lambda: (["3496"], []))
+
+        assert rs.get_research_record("3496", db_path=db_path) is None
+
+        make_stock_db.update_research_snapshots(db_path=db_path)
+
+        assert rs.get_research_record("3496", db_path=db_path) is None
+
     def test_watchlist_not_in_stocks_shelve_skipped(self, db_path, monkeypatch):
         """ウォッチリストにあるが stocks_shelve にない銘柄は登録もスナップショットもされない"""
         monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {})
