@@ -6,9 +6,10 @@ research_shelve のデータ取得・更新をWebアプリ用にラップする�
 同じロックファイルを取ることでプロセス間の安全な共存を保証する。
 """
 
+import os
 import re
-from datetime import date
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 from db_shelve import STOCKS_SHELVE, ShelveDB
 from html_sanitizer import sanitize_html
@@ -24,6 +25,8 @@ from research_shelve import (
     validate_rating,
     _flock,
     VALID_RATINGS,
+    VALID_EXPECTATIONS,
+    MAX_KESSAN_COMMENTS,
 )
 
 
@@ -251,3 +254,491 @@ def save_ir_comments(code_s: str, form_data: dict) -> None:
 
         record["snapshots"] = snapshots
         upsert_research_record(record)
+
+
+# =======================================================
+# 市場データ / 決算カレンダー用ヘルパー (issue #127)
+# =======================================================
+
+_KESSANBI_PATTERN = re.compile(r"^\d{4}/\d{1,2}/\d{1,2}$")
+
+
+def _parse_kessanbi(kessanbi: str) -> Optional[date]:
+    """YYYY/MM/DD 文字列を date に変換する。形式不正時は None。"""
+    if not isinstance(kessanbi, str) or not _KESSANBI_PATTERN.match(kessanbi):
+        return None
+    try:
+        return datetime.strptime(kessanbi, "%Y/%m/%d").date()
+    except ValueError:
+        return None
+
+
+def get_market_html_parts() -> Dict[str, str]:
+    """market_data.html を読み込み、決算セクション以外のパーツを dict で返す。
+
+    返り値のキー:
+      - "available": bool 相当の "1" or "" （ファイル存在判定）
+      - "css": <style> タグの中身
+      - "header": <h1> の HTML
+      - "body_without_kessan": <body> 内のコンテンツのうち、
+         <h2>決算日</h2> 以下のブロック（次の <h2> 直前まで、または
+         <details><summary>▶ 済の決算を表示...</summary> 含む）を除去したもの。
+         <h1> は除外し、決算セクションのあった位置にプレースホルダ
+         "<!--KESSAN_PLACEHOLDER-->" を挿入。
+      - "footer": <footer> タグ
+
+    ファイル未存在時は {"available": ""} を返す。
+    BeautifulSoup が未インストールの場合も {"available": ""} を返す。
+    """
+    try:
+        from ks_util import DATA_DIR
+        data_dir = DATA_DIR
+    except Exception:
+        data_dir = os.environ.get("KS_DATA_DIR", "")
+    html_path = os.path.join(data_dir, "code_rank_data", "market_data.html")
+    if not os.path.exists(html_path):
+        return {"available": ""}
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        log_warning("[market] BeautifulSoup 未インストールのため market_data.html を読み込めません")
+        return {"available": ""}
+
+    try:
+        with open(html_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+    except OSError as e:
+        log_warning(f"[market] market_data.html 読み込み失敗: {e}")
+        return {"available": ""}
+
+    soup = BeautifulSoup(html_content, "html.parser")
+
+    # CSS
+    style_tag = soup.find("style")
+    css = style_tag.string if style_tag and style_tag.string else ""
+
+    # h1
+    h1_tag = soup.find("h1")
+    header_html = str(h1_tag) if h1_tag else ""
+
+    # 決算セクションを除去してプレースホルダ挿入
+    # 構造: <h2>決算日</h2> の直後に <div class="kessan-grid"> と <details>
+    # （過去決算折りたたみ）が続く。次の <h2> までを対象にする。
+    body = soup.find("body")
+    if body is None:
+        return {"available": ""}
+
+    kessan_h2 = None
+    for h2 in body.find_all("h2"):
+        if h2.get_text(strip=True) == "決算日":
+            kessan_h2 = h2
+            break
+
+    if kessan_h2 is not None:
+        to_remove = []
+        # h2決算日 から 次の h2 or footer or 末尾までを削除対象に
+        sibling = kessan_h2
+        while sibling is not None:
+            next_sib = sibling.next_sibling
+            # 次要素が <h2>（決算以外）または <footer> なら停止
+            if sibling is not kessan_h2 and hasattr(sibling, "name"):
+                if sibling.name == "h2" or sibling.name == "footer":
+                    break
+            to_remove.append(sibling)
+            sibling = next_sib
+        # プレースホルダを h2決算日 の位置に挿入
+        placeholder = soup.new_tag("div", id="kessan-placeholder-mark")
+        placeholder.string = "__KESSAN_PLACEHOLDER__"
+        kessan_h2.insert_before(placeholder)
+        for el in to_remove:
+            el.extract()
+
+    # h1 も body から除く（テンプレート側で header として別途描画）
+    if h1_tag is not None:
+        h1_tag.extract()
+
+    # footer 抽出
+    footer_tag = body.find("footer")
+    footer_html = str(footer_tag) if footer_tag else ""
+    if footer_tag is not None:
+        footer_tag.extract()
+
+    body_html = body.decode_contents()
+
+    return {
+        "available": "1",
+        "css": css or "",
+        "header": header_html,
+        "body_without_kessan": body_html,
+        "footer": footer_html,
+    }
+
+
+def _price_reaction_from_log(price_log: List, kessanbi_dt: date) -> str:
+    """price_log と決算日 date から変動率を算出する内部関数。
+
+    price_log: [(date, int終値), ...]
+    kessanbi_dt: 決算日の date
+    """
+    if not price_log:
+        return ""
+    try:
+        sorted_log = sorted(price_log, key=lambda x: x[0], reverse=True)
+    except (TypeError, IndexError):
+        return ""
+
+    before_price: Optional[int] = None
+    after_price: Optional[int] = None
+    for entry in sorted_log:
+        try:
+            entry_dt, entry_pr = entry[0], entry[1]
+        except (IndexError, TypeError):
+            continue
+        if not isinstance(entry_dt, date):
+            continue
+        if entry_dt <= kessanbi_dt and before_price is None:
+            before_price = entry_pr
+        if entry_dt > kessanbi_dt:
+            after_price = entry_pr
+
+    if before_price is None or after_price is None or before_price == 0:
+        return ""
+    try:
+        change = (float(after_price) / float(before_price) - 1.0) * 100.0
+    except (ValueError, ZeroDivisionError):
+        return ""
+    sign = "+" if change >= 0 else ""
+    return f"{sign}{change:.1f}"
+
+
+def calc_price_reaction(code_s: str, kessanbi: str) -> str:
+    """決算日前営業日終値と翌営業日終値から株価変動率を算出する。
+
+    Args:
+        code_s: 銘柄コード
+        kessanbi: YYYY/MM/DD 形式
+
+    Returns:
+        "+3.2" / "-1.5" 形式。取得不可時は "".
+    """
+    kessanbi_dt = _parse_kessanbi(kessanbi)
+    if kessanbi_dt is None:
+        return ""
+
+    stock = get_stock_data(code_s)
+    return _price_reaction_from_log(stock.get("price_log") or [], kessanbi_dt)
+
+
+def _bulk_price_logs(code_list: List[str]) -> Dict[str, List]:
+    """stocks_shelve を1回だけ開いて複数銘柄の price_log を dict で返す。"""
+    if not code_list:
+        return {}
+    result: Dict[str, List] = {}
+    normalized_codes = set()
+    for c in code_list:
+        try:
+            normalized_codes.add(normalize_code_s(c))
+        except Exception:
+            continue
+    with ShelveDB(STOCKS_SHELVE) as db:
+        for code in normalized_codes:
+            rec = db.get(code)
+            if rec:
+                result[code] = rec.get("price_log") or []
+    return result
+
+
+def _sort_kessan_comments(comments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """kessan_comments を kessanbi 昇順に安定ソート。"""
+    def _key(entry):
+        dt = _parse_kessanbi(entry.get("kessanbi", ""))
+        return dt or date.min
+    return sorted(comments, key=_key)
+
+
+def _validate_kessan_comment_input(form_data: dict) -> Tuple[str, int, str, str, str]:
+    """フォーム入力を検証し、正規化した値を返す。
+
+    Returns:
+        (kessanbi, quarter, pre_expectation, pre_outlook, post_comment)
+    Raises:
+        ValueError: 入力不正
+    """
+    kessanbi = (form_data.get("kessanbi") or "").strip()
+    if _parse_kessanbi(kessanbi) is None:
+        raise ValueError(f"kessanbi は YYYY/MM/DD 形式: got {kessanbi!r}")
+
+    quarter_raw = form_data.get("quarter", "")
+    try:
+        quarter = int(quarter_raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"quarter は整数: got {quarter_raw!r}")
+    if quarter < 0 or quarter > 4:
+        raise ValueError(f"quarter は 0〜4: got {quarter}")
+
+    pre_expectation = (form_data.get("pre_expectation") or "").strip()
+    if pre_expectation not in VALID_EXPECTATIONS:
+        raise ValueError(f"pre_expectation 不正: {pre_expectation!r}")
+
+    pre_outlook = form_data.get("pre_outlook", "") or ""
+    post_comment = form_data.get("post_comment", "") or ""
+
+    return kessanbi, quarter, pre_expectation, pre_outlook, post_comment
+
+
+def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
+    """決算コメントを1件 upsert する。
+
+    - 同じ (kessanbi, quarter) のエントリが既にあれば上書き
+    - なければ追加
+    - 12件超過時は最古（kessanbi 昇順の先頭）を削除
+    - research_shelve 未登録なら add_stock() で自動登録
+    - post_price_change は price_log から自動計算してスナップショット化
+
+    Returns:
+        保存したエントリ dict
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+
+    kessanbi, quarter, pre_expectation, pre_outlook, post_comment = (
+        _validate_kessan_comment_input(form_data)
+    )
+
+    # 変動率をスナップショット算出
+    post_price_change = calc_price_reaction(normalized, kessanbi)
+
+    with _flock():
+        record = get_research_record(normalized)
+        if record is None:
+            # 自動登録（_flock を再入しないよう add_stock の内部ロックに依存）
+            add_stock(normalized)
+            record = get_research_record(normalized)
+            if record is None:
+                raise ValueError(f"レコード登録失敗: {normalized}")
+
+        comments: List[Dict[str, Any]] = list(record.get("kessan_comments") or [])
+        # 同一 (kessanbi, quarter) を探す
+        target_idx = None
+        for i, entry in enumerate(comments):
+            if (
+                entry.get("kessanbi") == kessanbi
+                and int(entry.get("quarter", 0) or 0) == quarter
+            ):
+                target_idx = i
+                break
+
+        new_entry: Dict[str, Any] = {
+            "kessanbi": kessanbi,
+            "quarter": quarter,
+            "pre_expectation": pre_expectation,
+            "pre_outlook": pre_outlook,
+            "post_price_change": post_price_change,
+            "post_comment": post_comment,
+        }
+        if target_idx is not None:
+            # 既存エントリ上書き。post_price_change はリアルタイム計算失敗時は既存値を優先
+            existing = comments[target_idx]
+            if not post_price_change and existing.get("post_price_change"):
+                new_entry["post_price_change"] = existing["post_price_change"]
+            comments[target_idx] = new_entry
+        else:
+            comments.append(new_entry)
+
+        # 昇順ソート + 12件超の最古を削除
+        comments = _sort_kessan_comments(comments)
+        if len(comments) > MAX_KESSAN_COMMENTS:
+            comments = comments[-MAX_KESSAN_COMMENTS:]
+
+        record["kessan_comments"] = comments
+        upsert_research_record(record)
+
+    return new_entry
+
+
+def get_kessan_comment(code_s: str, kessanbi: str) -> Optional[Dict[str, Any]]:
+    """特定の (code_s, kessanbi) のコメントエントリを返す。未登録/未存在は None。"""
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    record = get_research_record(normalized)
+    if record is None:
+        return None
+    for entry in record.get("kessan_comments") or []:
+        if entry.get("kessanbi") == kessanbi:
+            return entry
+    return None
+
+
+def get_market_kessan_data() -> Dict[str, Any]:
+    """決算カレンダー表示用データを構築する。
+
+    用語定義（本モジュール共通）:
+      - ウォッチリスト: my_watch_list.txt 上の未保有銘柄
+      - 保有銘柄: my_watch_list.txt 上の H プレフィックス付き銘柄
+      - ポートフォリオ: ウォッチリスト ∪ 保有銘柄（= 日常的に追跡する対象）
+
+    - pf_kessan_shelve から全ポートフォリオ銘柄の kessanbi (YYYY/MM/DD) を取得
+    - research_shelve の kessan_comments をマージ（ただし現在のポートフォリオに
+      含まれる銘柄のみ。ポートフォリオから外した銘柄のコメントは /market には
+      表示せず、銘柄詳細ページ側で閲覧する想定）
+    - 基準日は get_price_day() で判定し、過去/未来に分類
+    - 未来は (date_str, [stock dict, ...]) のリスト、日付昇順
+    - 過去は (date_str, [stock dict, ...]) のリスト、日付降順
+
+    Returns:
+        {
+          "base_day": date,
+          "future_entries": [(kessanbi_str, [stock dict]), ...],
+          "past_entries":  [(kessanbi_str, [stock dict]), ...],
+        }
+        各 stock dict:
+          code_s, stock_name, kessanbi, quarter,
+          pre_expectation, pre_outlook, post_price_change, post_comment,
+          has_comment (bool)
+    """
+    import kessan  # 遅延 import (sys.path 解決後)
+    try:
+        pf_dict = kessan.load_pf_kessan_db() or {}
+    except Exception as e:
+        log_warning(f"[market] load_pf_kessan_db 失敗: {e}")
+        pf_dict = {}
+
+    # ポートフォリオ (= ウォッチリスト ∪ 保有銘柄) を取得
+    possess_set: set = set()
+    portfolio_set: set = set()
+    try:
+        import portfolio
+        watch_list, possess_list = portfolio.parse_my_portforio()
+        possess_set = set(possess_list)
+        portfolio_set = set(watch_list) | set(possess_list)
+    except Exception as e:
+        log_warning(f"[market] parse_my_portforio 失敗: {e}")
+
+    base_day = get_price_day(datetime.today())
+
+    # (code_s, kessanbi) をキーに統合
+    merged: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    for key, v in pf_dict.items():
+        code_s = (v.get("code_s") or key or "").strip()
+        if not code_s:
+            continue
+        # pf_kessan_shelve にはポートフォリオ外の卒業銘柄が残留している
+        # ケースがあるため、現在のポートフォリオでフィルタする。
+        # portfolio_set が空（parse 失敗時）はフィルタしない安全側に倒す。
+        if portfolio_set and code_s not in portfolio_set:
+            continue
+        kessanbi = (v.get("kessanbi") or "").strip()
+        if not kessanbi or _parse_kessanbi(kessanbi) is None:
+            continue
+        merged_key = (code_s, kessanbi)
+        merged[merged_key] = {
+            "code_s": code_s,
+            "stock_name": v.get("stock_name", ""),
+            "kessanbi": kessanbi,
+            "quarter": v.get("kessan_quarter", 0) or 0,
+            "pre_expectation": "",
+            "pre_outlook": "",
+            "post_price_change": "",
+            "post_comment": "",
+            "has_comment": False,
+            "is_possess": code_s in possess_set,
+        }
+
+    # research_shelve のコメント済みエントリをマージ
+    try:
+        records = list_research_records()
+    except Exception as e:
+        log_warning(f"[market] list_research_records 失敗: {e}")
+        records = []
+
+    for rec in records:
+        code_s = rec.get("code_s", "")
+        if not code_s:
+            continue
+        # ポートフォリオ外の銘柄コメントは /market に表示しない
+        # （銘柄詳細ページ側で過去ログとして閲覧する想定 — issue #131）
+        # portfolio_set が空（parse 失敗時）はフィルタしない安全側に倒す
+        if portfolio_set and code_s not in portfolio_set:
+            continue
+        for entry in rec.get("kessan_comments") or []:
+            kessanbi = entry.get("kessanbi", "")
+            if not kessanbi:
+                continue
+            merged_key = (code_s, kessanbi)
+            quarter = entry.get("quarter", 0) or 0
+            base = merged.get(merged_key)
+            stock_name = (base or {}).get("stock_name") or rec.get("stock_name", "")
+            merged[merged_key] = {
+                "code_s": code_s,
+                "stock_name": stock_name,
+                "kessanbi": kessanbi,
+                "quarter": quarter if quarter else (base or {}).get("quarter", 0),
+                "pre_expectation": entry.get("pre_expectation", "") or "",
+                "pre_outlook": entry.get("pre_outlook", "") or "",
+                "post_price_change": entry.get("post_price_change", "") or "",
+                "post_comment": entry.get("post_comment", "") or "",
+                "has_comment": bool(
+                    entry.get("pre_outlook") or entry.get("post_comment")
+                    or entry.get("pre_expectation")
+                ),
+                "is_possess": code_s in possess_set,
+            }
+
+    # 過去エントリで post_price_change 未保存のものだけ一括で price_log 取得
+    past_codes_need_calc = set()
+    for entry in merged.values():
+        dt = _parse_kessanbi(entry["kessanbi"])
+        if dt is None:
+            continue
+        if dt < base_day and not entry.get("post_price_change"):
+            past_codes_need_calc.add(entry["code_s"])
+
+    price_logs_cache = _bulk_price_logs(list(past_codes_need_calc)) if past_codes_need_calc else {}
+
+    # 日付ごとにグループ化
+    future_groups: Dict[str, List[Dict[str, Any]]] = {}
+    past_groups: Dict[str, List[Dict[str, Any]]] = {}
+    for entry in merged.values():
+        kessanbi = entry["kessanbi"]
+        dt = _parse_kessanbi(kessanbi)
+        if dt is None:
+            continue
+        # 過去の変動率を計算できれば補完（保存済み値が無い場合のみ、キャッシュ利用）
+        if dt < base_day and not entry.get("post_price_change"):
+            log = price_logs_cache.get(entry["code_s"], [])
+            entry["post_price_change"] = _price_reaction_from_log(log, dt)
+        groups = past_groups if dt < base_day else future_groups
+        groups.setdefault(kessanbi, []).append(entry)
+
+    # 銘柄コード順にカード内ソート
+    for d in list(future_groups.values()) + list(past_groups.values()):
+        d.sort(key=lambda e: e["code_s"])
+
+    future_entries = sorted(
+        future_groups.items(),
+        key=lambda kv: _parse_kessanbi(kv[0]) or date.max,
+    )
+    past_entries_all = sorted(
+        past_groups.items(),
+        key=lambda kv: _parse_kessanbi(kv[0]) or date.min,
+        reverse=True,
+    )
+    # 過去7日間は常時表示、それ以前は details で折りたたみ
+    recent_cutoff = base_day - timedelta(days=7)
+    recent_past_entries: List = []
+    older_past_entries: List = []
+    for kv in past_entries_all:
+        dt = _parse_kessanbi(kv[0]) or date.min
+        if dt >= recent_cutoff:
+            recent_past_entries.append(kv)
+        else:
+            older_past_entries.append(kv)
+
+    return {
+        "base_day": base_day,
+        "future_entries": future_entries,
+        "past_entries": past_entries_all,  # 後方互換
+        "recent_past_entries": recent_past_entries,
+        "older_past_entries": older_past_entries,
+    }

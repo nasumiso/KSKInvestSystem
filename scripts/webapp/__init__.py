@@ -23,9 +23,11 @@ def create_app() -> Flask:
     from webapp.routes.search import search_bp
     from webapp.routes.detail import detail_bp
     from webapp.routes.memo import memo_bp
+    from webapp.routes.market import market_bp
 
     app.register_blueprint(search_bp)
     app.register_blueprint(detail_bp)
     app.register_blueprint(memo_bp)
+    app.register_blueprint(market_bp)
 
     return app

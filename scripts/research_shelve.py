@@ -61,6 +61,10 @@ DATE_YY_M_PATTERN = re.compile(r"^(\d{2})\.(\d{1,2})(?:\.(\d{1,2}))?$")
 # 総合評価の許容値
 VALID_RATINGS = frozenset({"", "S", "A", "B", "C", "D", "E"})
 
+# 決算コメントの期待度許容値 (◎/○/▲/△/× または未設定)
+# 順序: ◎ > ○ > ▲ > △ > × (期待度が高い順)
+VALID_EXPECTATIONS = frozenset({"", "◎", "○", "▲", "△", "×"})
+
 # スナップショットのデータソース区分
 VALID_DATA_SOURCES = frozenset({"manual", "migration", "auto"})
 
@@ -76,11 +80,27 @@ RECORD_FIELDS = frozenset(
         "openwork",
         "cramer",
         "shikiho_comments",
+        "kessan_comments",
         "snapshots",
         "analysis_date_raw",
         "kessan_date_raw",
     }
 )
+
+# 決算コメントエントリの既知フィールド
+KESSAN_COMMENT_FIELDS = frozenset(
+    {
+        "kessanbi",          # YYYY/MM/DD
+        "quarter",           # 1-4 (int)
+        "pre_expectation",   # ◎/○/△/× or ""
+        "pre_outlook",       # 事前見通し (フリーテキスト)
+        "post_price_change", # 決算反応の株価変動率 (%) スナップショット
+        "post_comment",      # 決算後コメント (フリーテキスト)
+    }
+)
+
+# 決算コメントの最大件数 (四半期12回分 ≒ 3年)
+MAX_KESSAN_COMMENTS = 12
 
 # スナップショットの既知フィールド
 SNAPSHOT_FIELDS = frozenset(
@@ -193,6 +213,7 @@ def create_research_record(
     openwork: str = "",
     cramer: str = "",
     shikiho_comments: Optional[List[str]] = None,
+    kessan_comments: Optional[List[Dict[str, Any]]] = None,
     snapshots: Optional[List[Dict[str, Any]]] = None,
     analysis_date_raw: str = "",
     kessan_date_raw: str = "",
@@ -201,7 +222,7 @@ def create_research_record(
 
     - code_s は normalize_code_s で大文字化される
     - overall_rating は空/S〜E のみ許容
-    - shikiho_comments と snapshots はリストでない場合に空リストで補完
+    - shikiho_comments / kessan_comments / snapshots はリストでない場合に空リストで補完
     - analysis_date_raw / kessan_date_raw はスプシ原文保持用(例: "11/13",
       "22四季報春" などの異形も許容。形式バリデーションはしない。型チェックのみ)
     - 返却した dict は upsert_research_record にそのまま渡せる
@@ -221,6 +242,7 @@ def create_research_record(
         )
 
     shikiho = list(shikiho_comments) if shikiho_comments else []
+    kessan = list(kessan_comments) if kessan_comments else []
     snaps = list(snapshots) if snapshots else []
 
     return {
@@ -233,6 +255,7 @@ def create_research_record(
         "openwork": openwork,
         "cramer": cramer,
         "shikiho_comments": shikiho,
+        "kessan_comments": kessan,
         "snapshots": snaps,
         "analysis_date_raw": analysis_date_raw,
         "kessan_date_raw": kessan_date_raw,
@@ -402,6 +425,7 @@ def get_research_record(
 
     存在しなければ None。code_s は内部で正規化される。
     shikiho_comments は List[dict] に自動正規化される（後方互換）。
+    kessan_comments は未設定の旧レコードに対し空リストで補完する（後方互換）。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
@@ -412,6 +436,8 @@ def get_research_record(
         record["shikiho_comments"] = _normalize_shikiho_comments(
             record.get("shikiho_comments", [])
         )
+        if not isinstance(record.get("kessan_comments"), list):
+            record["kessan_comments"] = []
     return record
 
 
@@ -704,6 +730,7 @@ def format_record_full(record: Dict[str, Any]) -> str:
     openwork = record.get("openwork", "")
     cramer = record.get("cramer", "")
     shikiho = record.get("shikiho_comments") or []
+    kessan_comments = record.get("kessan_comments") or []
     snapshots = record.get("snapshots") or []
     analysis_date_raw = record.get("analysis_date_raw", "")
     kessan_date_raw = record.get("kessan_date_raw", "")
@@ -738,6 +765,22 @@ def format_record_full(record: Dict[str, Any]) -> str:
             lines.append(f"  [{period}] {_indent_multiline(comment, ' ' * 8)}")
     else:
         lines.append(f"四季報コメント : {_EMPTY_MARK}")
+    if kessan_comments:
+        lines.append(f"決算コメント ({len(kessan_comments)}件):")
+        for entry in kessan_comments:
+            if not isinstance(entry, dict):
+                continue
+            kessanbi = entry.get("kessanbi", "-") or "-"
+            quarter = entry.get("quarter", "-")
+            pre_exp = entry.get("pre_expectation", "") or "-"
+            pre = entry.get("pre_outlook", "")
+            price_change = entry.get("post_price_change", "") or "-"
+            post = entry.get("post_comment", "")
+            lines.append(f"  [{kessanbi} {quarter}Q 期待度:{pre_exp} 反応:{price_change}%]")
+            lines.append(f"    事前    : {_indent_multiline(pre, ' ' * 14)}")
+            lines.append(f"    事後    : {_indent_multiline(post, ' ' * 14)}")
+    else:
+        lines.append(f"決算コメント   : {_EMPTY_MARK}")
     lines.append("")
 
     # --- スナップショットブロック ---

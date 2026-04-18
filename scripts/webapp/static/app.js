@@ -16,7 +16,18 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     var el = document.activeElement;
     if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.tagName === 'SELECT')) {
-      el.blur();
+      /* 決算エディタ内の field ならその場で保存してからアコーディオン閉じる */
+      if (el.classList && el.classList.contains('kessan-field')) {
+        var editor = el.closest('.kessan-editor');
+        var li = editor ? editor.closest('.kessan-stock') : null;
+        el.blur();
+        if (li) {
+          saveKessanFromEditor(li);
+          if (editor) editor.style.display = 'none';
+        }
+      } else {
+        el.blur();
+      }
     }
   }
 });
@@ -208,3 +219,140 @@ function removeShikiho(btn) {
   btn.closest('.shikiho-entry').remove();
   updateShikihoState();
 }
+
+/* ==========================================================
+ * 決算カレンダー (issue #127)
+ *   インラインアコーディオン: クリックで入力欄を展開
+ *   blur で自動保存 (_saveQueue 経由で直列化)
+ * ========================================================== */
+
+/* 銘柄行クリック: リンク・エディタ内クリックは除外して編集UIを展開 */
+function handleKessanRowClick(e, li) {
+  /* 親要素を辿って、クリック起点が除外対象（リンク・エディタ内）か判定 */
+  var target = e.target;
+  while (target && target !== li) {
+    if (target.tagName === 'A') return;
+    if (target.classList && target.classList.contains('kessan-editor')) return;
+    if (target.classList && target.classList.contains('kessan-comment-view')) return;
+    target = target.parentNode;
+  }
+  openKessanEditor(li);
+}
+
+function openKessanEditor(li) {
+  var editor = li.querySelector('.kessan-editor');
+  if (!editor) return;
+
+  var isOpen = editor.style.display !== 'none';
+  if (isOpen) {
+    editor.style.display = 'none';
+    return;
+  }
+
+  editor.style.display = '';
+  if (editor.dataset.loaded === '0') {
+    var code = li.dataset.code;
+    var kessanbi = li.dataset.kessanbi;
+    var url = '/api/kessan_comment/' + encodeURIComponent(code) +
+              '?kessanbi=' + encodeURIComponent(kessanbi);
+    fetch(url).then(function(res) {
+      return res.ok ? res.json() : null;
+    }).then(function(data) {
+      if (!data) return;
+      var preExp = editor.querySelector('.kessan-pre-expectation');
+      var preOut = editor.querySelector('.kessan-pre-outlook');
+      var postCom = editor.querySelector('.kessan-post-comment');
+      var postPc = editor.querySelector('.kessan-post-price-change');
+      if (preExp) preExp.value = data.pre_expectation || '';
+      if (preOut) preOut.value = data.pre_outlook || '';
+      if (postCom) postCom.value = data.post_comment || '';
+      if (postPc && data.post_price_change) {
+        postPc.textContent = data.post_price_change;
+      }
+      editor.dataset.loaded = '1';
+      rememberKessanInitialValues(editor);
+    }).catch(function() { /* ネットワーク失敗時は静かに無視 */ });
+  }
+
+  var preOutEl = editor.querySelector('.kessan-pre-outlook');
+  if (preOutEl) preOutEl.focus();
+}
+
+function rememberKessanInitialValues(editor) {
+  editor.querySelectorAll('.kessan-field').forEach(function(el) {
+    el.dataset.initial = el.value;
+  });
+}
+
+function isKessanDirty(editor) {
+  var dirty = false;
+  editor.querySelectorAll('.kessan-field').forEach(function(el) {
+    if (el.value !== (el.dataset.initial || '')) dirty = true;
+  });
+  return dirty;
+}
+
+function saveKessanFromEditor(li) {
+  var editor = li.querySelector('.kessan-editor');
+  if (!editor) return;
+  if (!isKessanDirty(editor)) return;
+
+  var code = li.dataset.code;
+  var kessanbi = li.dataset.kessanbi;
+  var quarter = li.dataset.quarter || '0';
+  var preExp = editor.querySelector('.kessan-pre-expectation');
+  var preOut = editor.querySelector('.kessan-pre-outlook');
+  var postCom = editor.querySelector('.kessan-post-comment');
+
+  var formData = new FormData();
+  formData.append('kessanbi', kessanbi);
+  formData.append('quarter', quarter);
+  formData.append('pre_expectation', preExp ? preExp.value : '');
+  formData.append('pre_outlook', preOut ? preOut.value : '');
+  formData.append('post_comment', postCom ? postCom.value : '');
+
+  var url = '/api/kessan_comment/' + encodeURIComponent(code);
+  _saveQueue = _saveQueue.then(function() {
+    return fetch(url, { method: 'POST', body: formData }).then(function(res) {
+      if (!res.ok) return null;
+      return res.json();
+    }).then(function(data) {
+      if (!data) return;
+      /* 初期値リセット */
+      rememberKessanInitialValues(editor);
+      /* post_price_change 表示更新 */
+      var postPc = editor.querySelector('.kessan-post-price-change');
+      if (postPc && data.post_price_change) {
+        postPc.textContent = data.post_price_change;
+      }
+      /* has-comment クラス付与で左縁に色がつく */
+      if (data.pre_outlook || data.post_comment || data.pre_expectation) {
+        li.classList.add('has-comment');
+      }
+    });
+  }).catch(function() { /* エラー時もキュー継続 */ });
+}
+
+/* フォーカスアウトで保存。kessan-field からのフォーカス遷移先が
+   同じエディタ内なら保存しない（タブ移動対応） */
+document.addEventListener('focusout', function(e) {
+  var el = e.target;
+  if (!el.classList || !el.classList.contains('kessan-field')) return;
+  var editor = el.closest('.kessan-editor');
+  if (!editor) return;
+
+  setTimeout(function() {
+    var next = document.activeElement;
+    if (next && editor.contains(next)) return;
+    var li = editor.closest('.kessan-stock');
+    if (li) saveKessanFromEditor(li);
+  }, 100);
+});
+
+/* Enter 押下でセレクトを確定させた時にもフォーカスアウトを促す（select は change で明示的に） */
+document.addEventListener('change', function(e) {
+  var el = e.target;
+  if (!el.classList || !el.classList.contains('kessan-pre-expectation')) return;
+  var li = el.closest('.kessan-stock');
+  if (li) saveKessanFromEditor(li);
+});
