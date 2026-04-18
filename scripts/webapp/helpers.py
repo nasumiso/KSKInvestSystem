@@ -572,9 +572,14 @@ def get_kessan_comment(code_s: str, kessanbi: str) -> Optional[Dict[str, Any]]:
 def get_market_kessan_data() -> Dict[str, Any]:
     """決算カレンダー表示用データを構築する。
 
+    用語定義（本モジュール共通）:
+      - ウォッチリスト: my_watch_list.txt 上の未保有銘柄
+      - 保有銘柄: my_watch_list.txt 上の H プレフィックス付き銘柄
+      - ポートフォリオ: ウォッチリスト ∪ 保有銘柄（= 日常的に追跡する対象）
+
     - pf_kessan_shelve から全ポートフォリオ銘柄の kessanbi (YYYY/MM/DD) を取得
-    - research_shelve の kessan_comments をマージ（ただし現在のポートフォリオ
-      内の銘柄のみ。ウォッチリスト/保有から外した銘柄のコメントは /market には
+    - research_shelve の kessan_comments をマージ（ただし現在のポートフォリオに
+      含まれる銘柄のみ。ポートフォリオから外した銘柄のコメントは /market には
       表示せず、銘柄詳細ページ側で閲覧する想定）
     - 基準日は get_price_day() で判定し、過去/未来に分類
     - 未来は (date_str, [stock dict, ...]) のリスト、日付昇順
@@ -598,10 +603,7 @@ def get_market_kessan_data() -> Dict[str, Any]:
         log_warning(f"[market] load_pf_kessan_db 失敗: {e}")
         pf_dict = {}
 
-    # ポートフォリオ銘柄セットを取得
-    # - watch_list: ウォッチリスト銘柄
-    # - possess_list: 保有銘柄 (H プレフィックス付き)
-    # - portfolio_set: 両者の和集合 = /market 表示対象
+    # ポートフォリオ (= ウォッチリスト ∪ 保有銘柄) を取得
     possess_set: set = set()
     portfolio_set: set = set()
     try:
@@ -621,8 +623,8 @@ def get_market_kessan_data() -> Dict[str, Any]:
         code_s = (v.get("code_s") or key or "").strip()
         if not code_s:
             continue
-        # pf_kessan_shelve には卒業銘柄が残留しているケースがあるため、
-        # 現在のポートフォリオ (ウォッチリスト + 保有) でフィルタする。
+        # pf_kessan_shelve にはポートフォリオ外の卒業銘柄が残留している
+        # ケースがあるため、現在のポートフォリオでフィルタする。
         # portfolio_set が空（parse 失敗時）はフィルタしない安全側に倒す。
         if portfolio_set and code_s not in portfolio_set:
             continue
