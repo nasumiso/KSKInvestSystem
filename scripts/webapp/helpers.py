@@ -573,7 +573,9 @@ def get_market_kessan_data() -> Dict[str, Any]:
     """決算カレンダー表示用データを構築する。
 
     - pf_kessan_shelve から全ポートフォリオ銘柄の kessanbi (YYYY/MM/DD) を取得
-    - research_shelve の kessan_comments でコメント済みエントリをマージ
+    - research_shelve の kessan_comments をマージ（ただし現在のポートフォリオ
+      内の銘柄のみ。ウォッチリスト/保有から外した銘柄のコメントは /market には
+      表示せず、銘柄詳細ページ側で閲覧する想定）
     - 基準日は get_price_day() で判定し、過去/未来に分類
     - 未来は (date_str, [stock dict, ...]) のリスト、日付昇順
     - 過去は (date_str, [stock dict, ...]) のリスト、日付降順
@@ -596,12 +598,17 @@ def get_market_kessan_data() -> Dict[str, Any]:
         log_warning(f"[market] load_pf_kessan_db 失敗: {e}")
         pf_dict = {}
 
-    # 保有銘柄セットを取得 (H プレフィックス付きの銘柄)
+    # ポートフォリオ銘柄セットを取得
+    # - watch_list: ウォッチリスト銘柄
+    # - possess_list: 保有銘柄 (H プレフィックス付き)
+    # - portfolio_set: 両者の和集合 = /market 表示対象
     possess_set: set = set()
+    portfolio_set: set = set()
     try:
         import portfolio
-        _, possess_list = portfolio.parse_my_portforio()
+        watch_list, possess_list = portfolio.parse_my_portforio()
         possess_set = set(possess_list)
+        portfolio_set = set(watch_list) | set(possess_list)
     except Exception as e:
         log_warning(f"[market] parse_my_portforio 失敗: {e}")
 
@@ -613,6 +620,11 @@ def get_market_kessan_data() -> Dict[str, Any]:
     for key, v in pf_dict.items():
         code_s = (v.get("code_s") or key or "").strip()
         if not code_s:
+            continue
+        # pf_kessan_shelve には卒業銘柄が残留しているケースがあるため、
+        # 現在のポートフォリオ (ウォッチリスト + 保有) でフィルタする。
+        # portfolio_set が空（parse 失敗時）はフィルタしない安全側に倒す。
+        if portfolio_set and code_s not in portfolio_set:
             continue
         kessanbi = (v.get("kessanbi") or "").strip()
         if not kessanbi or _parse_kessanbi(kessanbi) is None:
@@ -641,6 +653,11 @@ def get_market_kessan_data() -> Dict[str, Any]:
     for rec in records:
         code_s = rec.get("code_s", "")
         if not code_s:
+            continue
+        # ポートフォリオ外の銘柄コメントは /market に表示しない
+        # （銘柄詳細ページ側で過去ログとして閲覧する想定 — issue #131）
+        # portfolio_set が空（parse 失敗時）はフィルタしない安全側に倒す
+        if portfolio_set and code_s not in portfolio_set:
             continue
         for entry in rec.get("kessan_comments") or []:
             kessanbi = entry.get("kessanbi", "")
