@@ -315,3 +315,73 @@ nav .quick-search {
   font-weight: bold;
   margin-right: 3px;
 }
+
+/* 株価変動率 (market.html / detail.html 両方で使用)
+   NOTE: market.html が以前から class 指定していたが style.css に未定義だった。本対応で両ページが正しく色付けされる。 */
+.rate-pos { color: #c0392b; }
+.rate-neg { color: #2874a6; }
+
+/* 決算コメント履歴テーブル (detail.html 専用)
+   Pico CSS のテーブル既定スタイル (背景色・ストライプ) を打ち消す */
+.kessan-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+  table-layout: fixed;
+  background: transparent;
+  --pico-background-color: transparent;
+  --pico-table-row-stripped-background-color: transparent;
+}
+.kessan-history-table th,
+.kessan-history-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+  vertical-align: middle;
+  background: transparent;
+  color: #333;
+}
+.kessan-history-table th {
+  background: #f7f7f7;
+  color: #555;
+  font-weight: bold;
+}
+.kessan-history-table .col-date { width: 8em; white-space: nowrap; }
+.kessan-history-table .col-q { width: 3em; }
+.kessan-history-table .col-exp { width: 3.5em; }
+.kessan-history-table .col-change { width: 5em; white-space: nowrap; }
+.kessan-history-table .col-outlook { width: 18em; }
+/* col-reaction は幅指定なし → 残り全幅に伸びる */
+/* Q セルは改行させず、1 行に収める */
+.kessan-history-table td.col-q { white-space: nowrap; color: #888; }
+/* Pico CSS のテーブルストライプ (tr:nth-child) を打ち消す。hover/focus は別ルールで指定済み */
+.kessan-history-table tbody tr,
+.kessan-history-table tbody tr:nth-child(even),
+.kessan-history-table tbody tr:nth-child(odd) {
+  background-color: transparent;
+}
+.kessan-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0;  /* table-layout:fixed と組み合わせて残り幅に伸縮 */
+}
+/* 行クリック: 見通し・反応セルを折返し表示に切替 */
+.kessan-history-table tbody tr { cursor: pointer; }
+.kessan-history-table tbody tr:hover { background: #fafafa; }
+.kessan-history-table tr.kessan-row-expanded .kessan-ellipsis {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+.kessan-history-count {
+  color: #888;
+  font-weight: normal;
+  font-size: 0.85em;
+}
+.kessan-empty {
+  color: #999;
+  font-style: italic;
+  padding: 8px 0;
+}

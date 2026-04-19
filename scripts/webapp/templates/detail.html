@@ -184,4 +184,57 @@
 
   </form>
 </div>
+
+{# ===== 7. 決算コメント履歴 (閲覧のみ、降順) ===== #}
+{# 編集は /market ページで行う。ここでは /market で登録・自動算出された内容を時系列で確認する。 #}
+<div class="memo-section" id="kessan-history-section">
+  {% set kessan_hist = record.kessan_comments or [] %}
+  <h3>決算コメント履歴 <span class="kessan-history-count">({{ kessan_hist|length }}件)</span></h3>
+  {% if not kessan_hist %}
+    <p class="kessan-empty">決算コメントなし</p>
+  {% else %}
+    <table class="kessan-history-table">
+      <colgroup>
+        <col class="col-date">
+        <col class="col-q">
+        <col class="col-exp">
+        <col class="col-change">
+        <col class="col-outlook">
+        <col class="col-reaction">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>決算日</th>
+          <th>Q</th>
+          <th>期待</th>
+          <th>変動</th>
+          <th>見通し</th>
+          <th>反応</th>
+        </tr>
+      </thead>
+      {# 行クリックで「見通し・反応」セルの折返し表示をトグル #}
+      <tbody onclick="toggleKessanRow(event)">
+        {% for entry in kessan_hist | reverse %}
+        <tr>
+          <td class="col-date">{{ entry.kessanbi }}</td>
+          <td class="col-q">{% if entry.quarter %}{{ entry.quarter }}Q{% endif %}</td>
+          <td class="col-exp">
+            {% if entry.pre_expectation %}
+              <span class="kessan-expectation-badge exp-{{ entry.pre_expectation }}">{{ entry.pre_expectation }}</span>
+            {% endif %}
+          </td>
+          <td class="col-change">
+            {% if entry.post_price_change %}
+              {% set pc = entry.post_price_change %}
+              <span class="kessan-price-change {% if pc.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc }}%</span>
+            {% else %}-{% endif %}
+          </td>
+          <td class="col-outlook kessan-ellipsis" title="{{ entry.pre_outlook or '' }}">{{ entry.pre_outlook or '' }}</td>
+          <td class="col-reaction kessan-ellipsis" title="{{ entry.post_comment or '' }}">{{ entry.post_comment or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
 {% endblock %}

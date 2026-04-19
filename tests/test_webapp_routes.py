@@ -26,10 +26,37 @@ def app(db_path, monkeypatch):
         memo="テストメモ",
         overview="駐車場サブリース",
         shikiho_comments=["最高益"],
+        kessan_comments=[
+            # 昇順で保存 (本番 _sort_kessan_comments は ASC)
+            {
+                "kessanbi": "2024/02/14", "quarter": 2, "pre_expectation": "△",
+                "pre_outlook": "", "post_price_change": "",
+                "post_comment": "[S] S高 期待上振れ",  # post_price_change 空パターン
+            },
+            {
+                "kessanbi": "2024/05/14", "quarter": 4, "pre_expectation": "◎",
+                "pre_outlook": "通期上振れ期待",
+                "post_price_change": "-3.1",
+                "post_comment": "[E] -3.1% ガイダンス弱気で売られる",
+            },
+            {
+                "kessanbi": "2024/08/14", "quarter": 1, "pre_expectation": "○",
+                "pre_outlook": "順調に推移見込み",
+                "post_price_change": "+5.2",
+                "post_comment": "[B] +5.2% 好決算で反応良好",
+            },
+        ],
     )
     rs.upsert_research_record(rec, db_path=db_path)
     snap = rs.create_snapshot("26.4", ir_quant="[A]28%", ir_comment="好調", data_source="auto")
     rs.upsert_snapshot("3496", snap, db_path=db_path)
+
+    # kessan_comments 空の銘柄 (空状態テスト用)
+    rec_empty = rs.create_research_record(
+        "1234", "空テスト",
+        overall_rating="B",
+    )
+    rs.upsert_research_record(rec_empty, db_path=db_path)
 
     app = create_app()
     app.config["TESTING"] = True
@@ -88,6 +115,63 @@ class TestDetailRoute:
     def test_detail_404_for_unknown(self, client):
         resp = client.get("/stock/9999")
         assert resp.status_code == 404
+
+
+class TestDetailKessanHistory:
+    """GET /stock/<code_s> の決算コメント履歴セクションのテスト (issue #131)"""
+
+    def test_section_rendered(self, client):
+        """セクション見出し・件数・テーブルクラスが HTML に出現"""
+        html = client.get("/stock/3496").data.decode()
+        assert "決算コメント履歴" in html
+        assert "(3件)" in html
+        assert "kessan-history-table" in html
+
+    def test_descending_order(self, client):
+        """kessanbi 降順 (新しい順) で表示される"""
+        html = client.get("/stock/3496").data.decode()
+        idx_latest = html.index("2024/08/14")
+        idx_middle = html.index("2024/05/14")
+        idx_oldest = html.index("2024/02/14")
+        assert idx_latest < idx_middle < idx_oldest
+
+    def test_expectation_badges(self, client):
+        """各 pre_expectation に対応する CSS クラスが出力される"""
+        html = client.get("/stock/3496").data.decode()
+        assert "exp-◎" in html
+        assert "exp-○" in html
+        assert "exp-△" in html
+
+    def test_price_change_rate_class_positive(self, client):
+        """+5.2% 行に rate-pos クラスが付く"""
+        html = client.get("/stock/3496").data.decode()
+        assert "rate-pos" in html
+        assert "+5.2%" in html
+
+    def test_price_change_rate_class_negative(self, client):
+        """-3.1% 行に rate-neg クラスが付く"""
+        html = client.get("/stock/3496").data.decode()
+        assert "rate-neg" in html
+        assert "-3.1%" in html
+
+    def test_empty_post_price_change_shows_dash(self, client):
+        """post_price_change 空のエントリでも post_comment 先頭の [S] S高 文字列は残る"""
+        html = client.get("/stock/3496").data.decode()
+        assert "S高" in html  # post_comment に保持されている
+
+    def test_outlook_ellipsis_with_title_attr(self, client):
+        """見通し列に title 属性 (ホバー全文) が付与される"""
+        html = client.get("/stock/3496").data.decode()
+        # pre_outlook が title 属性として含まれる
+        assert 'title="通期上振れ期待"' in html
+        assert 'title="順調に推移見込み"' in html
+
+    def test_empty_state_message(self, client):
+        """kessan_comments=[] の銘柄では「決算コメントなし」メッセージ"""
+        html = client.get("/stock/1234").data.decode()
+        assert "決算コメント履歴" in html  # セクションは表示
+        assert "(0件)" in html
+        assert "決算コメントなし" in html
 
 
 class TestMemoPostRoutes:

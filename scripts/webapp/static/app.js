@@ -2,6 +2,14 @@
 
 var MAX_SHIKIHO = 8;
 
+/* --- 決算コメント履歴テーブル: 行クリックで「見通し・反応」セルの折返し表示をトグル (issue #131) --- */
+/* デフォルトは1行ellipsis表示。クリックで full-text 折返し表示に展開。 */
+function toggleKessanRow(event) {
+  var tr = event.target.closest('tr');
+  if (!tr) return;
+  tr.classList.toggle('kessan-row-expanded');
+}
+
 /* --- リッチテキスト表示 → 編集モード切替 (issue #115) --- */
 function switchToEdit(displayEl) {
   var editEl = displayEl.nextElementSibling;
