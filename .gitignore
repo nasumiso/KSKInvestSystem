@@ -24,3 +24,6 @@ __pycache__/
 
 .serena
 data_old/
+
+# theme-newsスキルの調査履歴（ローカル専用）
+.claude/skills/theme-news/history/
