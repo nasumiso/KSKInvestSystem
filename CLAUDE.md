@@ -68,6 +68,11 @@ cd scripts && python -m webapp.app    # http://localhost:5001 で起動
 cd scripts && python migrate_research_from_csv.py "<csv_path>" --dry-run                                   # DB を触らず検証
 cd scripts && python migrate_research_from_csv.py "<csv_path>" --db-path /tmp/verify --show 3496,247A,6920 # 一時DBで目視確認
 cd scripts && python migrate_research_from_csv.py "<csv_path>"                                             # 本番移行
+
+# 過去決算メモ log → research_shelve.kessan_comments 移行(issue #131)
+cd scripts && python migrate_kessan_comments_from_log.py ../data/kessan_comments_log.txt --dry-run                                   # パースのみ検証
+cd scripts && python migrate_kessan_comments_from_log.py ../data/kessan_comments_log.txt --db-path /tmp/verify_kessan --show 5032,9556 # 一時DBで目視確認
+cd scripts && python migrate_kessan_comments_from_log.py ../data/kessan_comments_log.txt                                             # 本番移行
 ```
 
 ### 自動実行
