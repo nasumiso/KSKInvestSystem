@@ -315,3 +315,60 @@ nav .quick-search {
   font-weight: bold;
   margin-right: 3px;
 }
+
+/* 株価変動率 (market.html / detail.html 両方で使用)
+   NOTE: market.html が以前から class 指定していたが style.css に未定義だった。本対応で両ページが正しく色付けされる。 */
+.rate-pos { color: #c0392b; }
+.rate-neg { color: #2874a6; }
+
+/* 決算コメント履歴テーブル (detail.html 専用) */
+.kessan-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+  table-layout: fixed;
+}
+.kessan-history-table th,
+.kessan-history-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+  vertical-align: middle;
+}
+.kessan-history-table th {
+  background: #f7f7f7;
+  color: #555;
+  font-weight: bold;
+}
+.kessan-history-table .col-date { width: 7em; white-space: nowrap; }
+.kessan-history-table .col-q { width: 2.5em; color: #888; }
+.kessan-history-table .col-exp { width: 3.5em; }
+.kessan-history-table .col-change { width: 5em; white-space: nowrap; }
+.kessan-history-table .col-outlook { width: 18em; }
+/* col-reaction は幅指定なし → 残り全幅に伸びる */
+.kessan-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0;  /* table-layout:fixed と組み合わせて残り幅に伸縮 */
+}
+/* 行クリック/Enter/Space: 見通し・反応セルを折返し表示に切替 (モバイル・キーボード対応) */
+.kessan-history-table tbody tr { cursor: pointer; }
+.kessan-history-table tbody tr:hover { background: #fafafa; }
+.kessan-history-table tbody tr:focus { outline: 2px solid #3498db; outline-offset: -2px; }
+.kessan-history-table tr.kessan-row-expanded .kessan-ellipsis {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+.kessan-history-count {
+  color: #888;
+  font-weight: normal;
+  font-size: 0.85em;
+}
+.kessan-empty {
+  color: #999;
+  font-style: italic;
+  padding: 8px 0;
+}
