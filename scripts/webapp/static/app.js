@@ -333,12 +333,79 @@ function saveKessanFromEditor(li) {
       if (postPc && data.post_price_change) {
         postPc.textContent = data.post_price_change;
       }
+      /* 閲覧用 view DOM を再構築（リロード不要で反映） */
+      updateKessanViewDOM(li, data);
       /* has-comment クラス付与で左縁に色がつく */
       if (data.pre_outlook || data.post_comment || data.pre_expectation) {
         li.classList.add('has-comment');
+      } else {
+        li.classList.remove('has-comment');
       }
     });
   }).catch(function() { /* エラー時もキュー継続 */ });
+}
+
+/* 保存成功後、li 内の表示用 DOM（見通し・反応・期待度バッジ）を更新 */
+function updateKessanViewDOM(li, data) {
+  var isPast = li.dataset.isPast === '1';
+
+  /* 期待度バッジ */
+  var badge = li.querySelector('.kessan-expectation-badge');
+  if (data.pre_expectation) {
+    if (badge) {
+      badge.className = 'kessan-expectation-badge exp-' + data.pre_expectation;
+      badge.textContent = data.pre_expectation;
+    } else {
+      badge = document.createElement('span');
+      badge.className = 'kessan-expectation-badge exp-' + data.pre_expectation;
+      badge.textContent = data.pre_expectation;
+      /* 4Q ラベルの後ろ、変動率の前に挿入 */
+      var qLabel = li.querySelector('.kessan-q-label');
+      var refNode = qLabel ? qLabel.nextSibling : li.querySelector('.kessan-comment-view');
+      li.insertBefore(badge, refNode || li.firstChild);
+    }
+  } else if (badge) {
+    badge.remove();
+  }
+
+  /* 見通し・反応の view ブロック */
+  var view = li.querySelector('.kessan-comment-view');
+  var hasPreOut = !!data.pre_outlook;
+  var hasPostCom = isPast && !!data.post_comment;
+
+  if (!hasPreOut && !hasPostCom) {
+    if (view) view.remove();
+    return;
+  }
+
+  if (!view) {
+    view = document.createElement('div');
+    view.className = 'kessan-comment-view';
+    /* エディタの直前に挿入 */
+    var editor = li.querySelector('.kessan-editor');
+    li.insertBefore(view, editor);
+  }
+  view.innerHTML = '';
+  if (hasPreOut) {
+    var pre = document.createElement('div');
+    pre.className = 'kessan-pre-view';
+    var preLabel = document.createElement('span');
+    preLabel.className = 'kessan-view-label';
+    preLabel.textContent = '見通し:';
+    pre.appendChild(preLabel);
+    pre.appendChild(document.createTextNode(' ' + data.pre_outlook));
+    view.appendChild(pre);
+  }
+  if (hasPostCom) {
+    var post = document.createElement('div');
+    post.className = 'kessan-post-view';
+    var postLabel = document.createElement('span');
+    postLabel.className = 'kessan-view-label';
+    postLabel.textContent = '反応:';
+    post.appendChild(postLabel);
+    post.appendChild(document.createTextNode(' ' + data.post_comment));
+    view.appendChild(post);
+  }
 }
 
 /* フォーカスアウトで保存。kessan-field からのフォーカス遷移先が

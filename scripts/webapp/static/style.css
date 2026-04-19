@@ -300,9 +300,9 @@ nav .quick-search {
 /* 決算コメント常時表示 (編集中以外でも見える) */
 .kessan-comment-view {
   margin: 2px 0 2px 14px;
-  font-size: 0.82em;
+  font-size: 0.95em;
   color: #555;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 .kessan-pre-view,
 .kessan-post-view {
