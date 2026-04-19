@@ -194,6 +194,118 @@ class TestTokenizer:
         tokens, _ = mig.tokenize_lines([""])
         assert isinstance(tokens[0], mig.BlankToken)
 
+    # --- 追加パターン (log_all で発見された実ケース) ---
+
+    def test_star_then_expectation_order(self):
+        """☆◯ 順: 保有マーク + 期待度 (順序違い)"""
+        tokens, _ = mig.tokenize_lines(["☆◯5575Ｇｌｏｂｅｅ[2Q]: 安い"])
+        t = tokens[0]
+        assert isinstance(t, mig.StockToken)
+        assert t.pre_expectation == "○"
+        assert t.code_s == "5575"
+        assert t.pre_outlook == "安い"
+
+    def test_star_then_triangle(self):
+        """☆▲ 順も受ける"""
+        tokens, _ = mig.tokenize_lines(["☆▲4417グローバル[4Q]: 地合いで下落"])
+        t = tokens[0]
+        assert isinstance(t, mig.StockToken)
+        assert t.pre_expectation == "▲"
+
+    def test_expectation_then_star(self):
+        """X☆ 順も受ける (念のため逆順)"""
+        tokens, _ = mig.tokenize_lines(["◯☆5575Globee[2Q]: 安い"])
+        t = tokens[0]
+        assert isinstance(t, mig.StockToken)
+        assert t.pre_expectation == "○"
+
+    def test_star_fullwidth_space_expectation(self):
+        """☆ ◯ (間に全角空白) も受ける"""
+        tokens, _ = mig.tokenize_lines(["☆\u3000◯4783NCD[4Q]: まだ安い"])
+        t = tokens[0]
+        assert isinstance(t, mig.StockToken)
+        assert t.pre_expectation == "○"
+        assert t.code_s == "4783"
+
+    def test_emoji_star_as_holding(self):
+        """⭐ (U+2B50) は ☆ と同様に保有マーク"""
+        tokens, _ = mig.tokenize_lines(["⭐6324ハーモニック[3Q]"])
+        t = tokens[0]
+        assert isinstance(t, mig.StockToken)
+        assert t.pre_expectation == ""
+        assert t.code_s == "6324"
+
+    def test_emoji_star_with_vs15(self):
+        """⭐︎ (U+2B50+U+FE0E) も保有マーク扱い"""
+        tokens, _ = mig.tokenize_lines(["⭐\ufe0e6324ハーモニック[3Q]"])
+        t = tokens[0]
+        assert isinstance(t, mig.StockToken)
+        assert t.pre_expectation == ""
+        assert t.code_s == "6324"
+
+    def test_post_line_no_percent_with_rating(self):
+        """←S: 2連 見通し... (レーティングあり、%なし)"""
+        tokens, _ = mig.tokenize_lines(["\u3000←S: 2連 見通し良好"])
+        t = tokens[0]
+        assert isinstance(t, mig.PostToken)
+        assert t.rating_letter == "S"
+        assert t.price_change == ""
+        assert t.comment_body == "2連 見通し良好"
+
+    def test_post_line_raw_no_rating(self):
+        """←S高 これが正解... (レーティングもコロンもなし)"""
+        tokens, _ = mig.tokenize_lines(["\u3000←S高 これが正解"])
+        t = tokens[0]
+        assert isinstance(t, mig.PostToken)
+        assert t.rating_letter == ""
+        assert t.price_change == ""
+        assert t.comment_body == "S高 これが正解"
+
+    def test_tab_separated_multi_stock(self):
+        """タブ区切り複数銘柄行も MultiStockToken"""
+        tokens, _ = mig.tokenize_lines(["3791IGポート[2Q]\t6668アドテック[1Q]"])
+        assert isinstance(tokens[0], mig.MultiStockToken)
+
+    def test_stock_without_quarter_is_q0(self):
+        """[nQ] 無し銘柄行は quarter=0 として受け入れる (ユーザー再判断で変更)"""
+        tokens, warnings = mig.tokenize_lines(["◯3021PCNET: 2Q凹みそう？そこが買いかも"])
+        t = tokens[0]
+        assert isinstance(t, mig.StockToken)
+        assert t.code_s == "3021"
+        assert t.quarter == 0
+        assert t.pre_expectation == "○"
+        # pre_outlook は銘柄名 + コロン以降すべて残る (fallback)
+        assert "凹みそう" in t.pre_outlook
+
+    def test_name_only_line_is_unknown(self):
+        """コード無し名前だけの行は UnknownToken (スキップ)"""
+        tokens, warnings = mig.tokenize_lines(["GAテクノ"])
+        assert isinstance(tokens[0], mig.UnknownToken)
+
+    def test_arrow_to_right_also_accepted(self):
+        """→ (U+2192) も ← と同じ post 行として扱う (タイポ対応)"""
+        tokens, _ = mig.tokenize_lines(["\u3000→E: -13% 上方もものたりなかった"])
+        t = tokens[0]
+        assert isinstance(t, mig.PostToken)
+        assert t.rating_letter == "E"
+        assert t.price_change == "-13"
+
+    def test_stock_trailing_comma_stripped(self):
+        """銘柄行末尾のカンマ単独は無視される (warning なし)"""
+        tokens, warnings = mig.tokenize_lines(["5032あ[3Q],"])
+        t = tokens[0]
+        assert isinstance(t, mig.StockToken)
+        assert t.pre_outlook == ""
+        # "銘柄行末尾形式不明" warning が出ないこと
+        assert not any("末尾形式不明" in w["message"] for w in warnings)
+
+    def test_stock_outlook_without_colon(self):
+        """[nQ] の後にコロンなしの自由記述も pre_outlook として扱う"""
+        tokens, _ = mig.tokenize_lines(["☆1491中外鉱業[3Q] 出口にしたい"])
+        t = tokens[0]
+        assert isinstance(t, mig.StockToken)
+        assert t.pre_outlook == "出口にしたい"
+
 
 # ==================================================
 # 3. TestBuildEntries

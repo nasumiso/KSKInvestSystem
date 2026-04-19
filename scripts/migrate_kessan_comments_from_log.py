@@ -66,10 +66,13 @@ except ImportError:
 # 定数・正規表現
 # ===========================================
 
-# 期待度マーカー (行頭1文字、☆ は除外)
+# 期待度マーカー (☆/⭐ は期待度ではなく保有マーク)
 # ◯ (U+25EF) は ○ (U+25CB) に正規化してから VALID_EXPECTATIONS と比較
 PRE_EXPECTATION_CHARS = frozenset({"◎", "○", "◯", "▲", "△", "×"})
-HOLDING_MARKER = "☆"
+# 保有マーク (pre_expectation には入れない)。⭐(U+2B50) + 異体字セレクタ ︎(U+FE0E) は
+# スマートフォン絵文字として入力されやすい。NFKC では正規化されないため明示リストに追加。
+HOLDING_MARKERS = frozenset({"☆", "⭐", "\u2b50"})
+VARIATION_SELECTOR_RE = re.compile(r"[\ufe00-\ufe0f]")  # 異体字セレクタ (⭐︎ 等)
 
 # 決算コメントのスキーマ由来定数 (research_shelve 側の実装と整合)
 MAX_KESSAN_COMMENTS = rs.MAX_KESSAN_COMMENTS
@@ -81,19 +84,37 @@ YEAR_HEADER = re.compile(r"^<\s*(\d{4})\s*年\s*>$")
 # 日付ヘッダ: "[03/11]"
 DATE_HEADER = re.compile(r"^\[(\d{1,2})/(\d{1,2})\]$")
 
-# 銘柄行: [先頭 pre_expectation 記号?][☆?][コード][名称][/Q表記][: 見通し?]
+# 銘柄行 (行頭マーカー除去後): [コード][名称][/Q表記][: 見通し?]
 # quarter は 0-4 (0=通期相当、webapp/helpers.py:476 の既存スキーマと整合)
 STOCK_HEAD = re.compile(
-    r"^([◎○◯▲△×])?(☆)?(\d{3}[A-Z]|\d{4})(.*?)\[([0-4])Q\](.*)$"
+    r"^(\d{3}[A-Z]|\d{4})(.*?)\[([0-4])Q\](.*)$"
+)
+
+# 銘柄行 ([nQ] なし版、行頭マーカー除去後): [コード][名称と続き]
+# quarter=0 (不明) として扱う。見通しはコロンあり/なしどちらでも可。
+STOCK_HEAD_NO_QUARTER = re.compile(
+    r"^(\d{3}[A-Z]|\d{4})(.*)$"
 )
 
 # コード単体検出 (複数銘柄行の判定用)
 CODE_PATTERN = re.compile(r"(\d{3}[A-Z]|\d{4})")
 
-# 事後行: "　←X: ±N% 本文" (先頭は全角空白または任意空白)
-POST_LINE = re.compile(
-    r"^[\u3000\s]+←\s*([A-Za-z])\s*:\s*"
+# 事後行 (数値%あり): "　←X: ±N% 本文"
+# 矢印は ← (U+2190) / → (U+2192) の双方を許容 (タイポ対応)
+POST_LINE_WITH_PERCENT = re.compile(
+    r"^[\u3000\s]+[←→]\s*([A-Za-z])\s*:\s*"
     r"([+\-]?\d+(?:\.\d+)?)\s*%\s*(.*)$"
+)
+
+# 事後行 (レーティング + コロン + 本文、%なし): "　←S: 2連 見通し..."
+POST_LINE_NO_PERCENT = re.compile(
+    r"^[\u3000\s]+[←→]\s*([A-Za-z])\s*:\s*(.+)$"
+)
+
+# 事後行 (レーティングもなく矢印+本文のみ): "　←S高 これが正解..." "　←一時的好調？"
+# レーティングを含まないため post_comment に raw 本文のみ格納。
+POST_LINE_RAW = re.compile(
+    r"^[\u3000\s]+[←→]\s*(.+)$"
 )
 
 # post_price_change バリデーション
@@ -187,6 +208,38 @@ def _normalize_expectation(ch: Optional[str]) -> str:
     return ch
 
 
+def _strip_leading_markers(text: str) -> Tuple[str, str]:
+    """銘柄行先頭の保有マーク (☆/⭐/異体字セレクタ) と期待度マーカーを剥がす。
+
+    順不同: 保有マーク → 期待度、または期待度 → 保有マーク のどちらも対応。
+    保有マークの直後の全角空白・半角空白は食う ("☆ ◯4783..." → "◯4783...")。
+
+    Returns:
+        (pre_expectation, rest)  pre_expectation は "" または VALID_EXPECTATIONS 相当
+    """
+    pre_exp = ""
+    rest = text
+    # 最大 4 回ループ: 保有マーク/期待度マーカー/空白/異体字セレクタを順に剥がす
+    for _ in range(4):
+        if not rest:
+            break
+        # 先頭異体字セレクタ (⭐ に続く U+FE0E など) を除去
+        rest = VARIATION_SELECTOR_RE.sub("", rest, count=1) if rest and "\ufe00" <= rest[0] <= "\ufe0f" else rest
+        head = rest[0] if rest else ""
+        if head in HOLDING_MARKERS:
+            rest = rest[1:]
+            # 直後の空白 (全角 U+3000 / 半角) を食う
+            rest = rest.lstrip(" \u3000")
+            continue
+        if head in PRE_EXPECTATION_CHARS and not pre_exp:
+            pre_exp = _normalize_expectation(head)
+            rest = rest[1:]
+            rest = rest.lstrip(" \u3000")
+            continue
+        break
+    return pre_exp, rest
+
+
 def tokenize_lines(lines: List[str]) -> Tuple[List[Token], List[Dict[str, Any]]]:
     """行リストをトークン列に変換する純関数。
 
@@ -198,23 +251,45 @@ def tokenize_lines(lines: List[str]) -> Tuple[List[Token], List[Dict[str, Any]]]
     warnings: List[Dict[str, Any]] = []
 
     for idx, raw in enumerate(lines, start=1):
-        # 先頭の全角空白は POST_LINE の検出に必要なので NFKC する前に判定する
-        if POST_LINE.match(raw):
-            m = POST_LINE.match(raw)
+        # 事後行 (%あり) — 先頭の全角空白は NFKC 前に判定する必要がある
+        m_post_pct = POST_LINE_WITH_PERCENT.match(raw)
+        if m_post_pct:
             tokens.append(PostToken(
-                rating_letter=m.group(1),
-                price_change=m.group(2),
-                comment_body=m.group(3).strip(),
+                rating_letter=m_post_pct.group(1),
+                price_change=m_post_pct.group(2),
+                comment_body=m_post_pct.group(3).strip(),
                 line_no=idx,
             ))
             continue
 
-        # 空行 (全角空白のみ含む行は post 扱いで既に処理済み)
+        # 事後行 (%なし、レーティングあり) — "　←S: 2連 見通し..."
+        m_post_nop = POST_LINE_NO_PERCENT.match(raw)
+        if m_post_nop:
+            tokens.append(PostToken(
+                rating_letter=m_post_nop.group(1),
+                price_change="",  # 数値化不可
+                comment_body=m_post_nop.group(2).strip(),
+                line_no=idx,
+            ))
+            continue
+
+        # 事後行 (レーティングなし、矢印と本文のみ) — "　←S高 これが正解..."
+        m_post_raw = POST_LINE_RAW.match(raw)
+        if m_post_raw:
+            tokens.append(PostToken(
+                rating_letter="",
+                price_change="",
+                comment_body=m_post_raw.group(1).strip(),
+                line_no=idx,
+            ))
+            continue
+
+        # 空行
         if raw.strip() == "":
             tokens.append(BlankToken(line_no=idx))
             continue
 
-        # NFKC で全角コード・名称を半角化
+        # NFKC で全角コード・名称を半角化 (事後行の判定後に行う)
         normalized = unicodedata.normalize("NFKC", raw).strip()
 
         # 年ヘッダ
@@ -233,31 +308,44 @@ def tokenize_lines(lines: List[str]) -> Tuple[List[Token], List[Dict[str, Any]]]
             ))
             continue
 
-        # 複数銘柄行判定: カンマ + コードが 2 つ以上
-        if "," in normalized and len(CODE_PATTERN.findall(normalized)) >= 2:
+        # 複数銘柄行判定: (カンマ または タブ) + コードが 2 つ以上
+        if ("," in normalized or "\t" in normalized) \
+                and len(CODE_PATTERN.findall(normalized)) >= 2:
             tokens.append(MultiStockToken(line_no=idx))
             continue
 
-        # 銘柄行 (◯→○ 正規化は STOCK_HEAD の char class でどちらも受けるが、
-        #          pre_expectation 出力時に正規化する)
-        m_stock = STOCK_HEAD.match(normalized)
+        # 銘柄行: 先頭マーカー (保有/期待度) を剥がしてから STOCK_HEAD にかける
+        pre_exp, rest = _strip_leading_markers(normalized)
+        m_stock = STOCK_HEAD.match(rest)
+        quarter: Optional[int] = None
+        tail_raw = ""
+        code_s = ""
         if m_stock:
-            pre_exp_raw = m_stock.group(1)
-            pre_exp = _normalize_expectation(pre_exp_raw)
-            code_s = m_stock.group(3).upper()
-            quarter = int(m_stock.group(5))
-            tail = m_stock.group(6)  # "[nQ]" 以降の残り
-            # 先頭の ": " または ":" があれば pre_outlook、なければ ""
+            code_s = m_stock.group(1).upper()
+            quarter = int(m_stock.group(3))
+            tail_raw = m_stock.group(4)
+        else:
+            # [nQ] 表記なしの銘柄行: 銘柄コード + (任意の続き) なら quarter=0 として受入
+            m_nq = STOCK_HEAD_NO_QUARTER.match(rest)
+            if m_nq:
+                code_s = m_nq.group(1).upper()
+                quarter = 0  # 不明扱い
+                tail_raw = m_nq.group(2)
+
+        if quarter is not None:
+            tail = tail_raw.strip()
+            # 末尾単独の区切り文字 (',' や '\t') は意味を持たないので除去
+            tail = tail.rstrip(",\t 　")
+            # pre_outlook 抽出:
+            #   "  : xxx"  → "xxx"       (標準形式)
+            #   ":xxx"     → "xxx"       (スペースなし)
+            #   " xxx"     → "xxx"       (コロンなしの自由記述 / 銘柄名残り)
+            #   ""         → ""          (何もなし)
             pre_outlook = ""
-            tail_stripped = tail.strip()
-            if tail_stripped.startswith(":"):
-                pre_outlook = tail_stripped[1:].strip()
-            elif tail_stripped:
-                # コロンなしで続きがある場合は warning として無視
-                warnings.append({
-                    "line_no": idx,
-                    "message": f"銘柄行の末尾形式不明 (': xxx' を期待): {tail_stripped!r}",
-                })
+            if tail.startswith(":"):
+                pre_outlook = tail[1:].strip()
+            elif tail:
+                pre_outlook = tail.strip()
             tokens.append(StockToken(
                 pre_expectation=pre_exp,
                 code_s=code_s,
@@ -294,11 +382,25 @@ class ParsedEntry:
 
 
 def _format_post_comment(rating_letter: str, price_change: str, body: str) -> str:
-    """post_comment を '[X] ±N% 本文' 形式で組み立てる。"""
+    """post_comment を '[X] ±N% 本文' 形式で組み立てる。
+
+    - rating_letter と price_change が両方揃っていれば '[X] ±N% 本文'
+    - price_change のみ無ければ '[X] 本文'
+    - rating_letter のみ無ければ '±N% 本文' (実ログにはほぼ無い)
+    - 両方無ければ raw 本文のみ
+    """
     # price_change に既に符号がない場合は正数として扱う
     if price_change and not price_change.startswith(("+", "-")):
         price_change = "+" + price_change
-    return f"[{rating_letter}] {price_change}% {body}".rstrip()
+
+    parts = []
+    if rating_letter:
+        parts.append(f"[{rating_letter}]")
+    if price_change:
+        parts.append(f"{price_change}%")
+    if body:
+        parts.append(body)
+    return " ".join(parts)
 
 
 def build_entries_from_tokens(
