@@ -20,6 +20,7 @@ from research_shelve import (
     create_research_record,
     create_snapshot,
     list_research_records,
+    sort_shikiho_comments_desc,
     validate_code_s,
     normalize_code_s,
     validate_rating,
@@ -31,9 +32,18 @@ from research_shelve import (
 
 
 def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
-    """1銘柄の調査レコードを取得する。"""
+    """1銘柄の調査レコードを取得する。
+
+    表示用に shikiho_comments を period 降順（新しい順）に並べ替える。
+    period 空 / "-" は最古扱いで末尾に寄せ、同値同士は元リスト順を保つ。
+    """
     validate_code_s(code_s)
-    return get_research_record(code_s)
+    record = get_research_record(code_s)
+    if record is not None:
+        record["shikiho_comments"] = sort_shikiho_comments_desc(
+            record.get("shikiho_comments") or []
+        )
+    return record
 
 
 def get_stock_data(code_s: str) -> Dict[str, Any]:

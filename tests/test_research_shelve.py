@@ -152,6 +152,51 @@ class TestSchema:
         assert rs.date_yy_m_sort_key("26.1") == (26, 1, 0)
         assert rs.date_yy_m_sort_key("25.11") == (25, 11, 0)
 
+    # --- ケース7b: sort_shikiho_comments_desc ---
+    def test_sort_shikiho_comments_desc_basic(self):
+        """period ありを降順、空/- は末尾"""
+        items = [
+            {"period": "", "comment": "A"},
+            {"period": "26.3", "comment": "B"},
+            {"period": "25.12", "comment": "C"},
+            {"period": "-", "comment": "D"},
+        ]
+        result = rs.sort_shikiho_comments_desc(items)
+        assert [it["comment"] for it in result] == ["B", "C", "A", "D"]
+
+    def test_sort_shikiho_comments_desc_preserves_empty_order(self):
+        """空/- 同士の相対順序は元リスト順を維持（安定ソート）"""
+        items = [
+            {"period": "", "comment": "A"},
+            {"period": "26.3", "comment": "B"},
+            {"period": "", "comment": "C"},
+            {"period": "-", "comment": "D"},
+            {"period": "", "comment": "E"},
+        ]
+        result = rs.sort_shikiho_comments_desc(items)
+        assert [it["comment"] for it in result] == ["B", "A", "C", "D", "E"]
+
+    def test_sort_shikiho_comments_desc_empty_list(self):
+        assert rs.sort_shikiho_comments_desc([]) == []
+
+    def test_sort_shikiho_comments_desc_all_with_period(self):
+        items = [
+            {"period": "25.7", "comment": "A"},
+            {"period": "26.1", "comment": "B"},
+            {"period": "25.11", "comment": "C"},
+        ]
+        result = rs.sort_shikiho_comments_desc(items)
+        assert [it["comment"] for it in result] == ["B", "C", "A"]
+
+    def test_sort_shikiho_comments_desc_invalid_period(self):
+        """不正な period は最古扱い（クラッシュしない）"""
+        items = [
+            {"period": "26.3", "comment": "A"},
+            {"period": "不明", "comment": "B"},
+        ]
+        result = rs.sort_shikiho_comments_desc(items)
+        assert [it["comment"] for it in result] == ["A", "B"]
+
     # --- ケース8: overall_rating 不正値 ---
     @pytest.mark.parametrize("bad", ["Z", "s", "A+", "不明"])
     def test_create_record_invalid_rating(self, bad):

@@ -392,6 +392,28 @@ def _normalize_shikiho_comments(comments):
     return result
 
 
+def sort_shikiho_comments_desc(
+    comments: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """四季報コメントを period 降順（新しい順）に並べ替える。
+
+    period が空 または "-" のエントリは最古扱いで末尾に寄せる。
+    空同士の相対順序は元リストの順序を維持する（過去インポート時の
+    新しい順が保たれているため）。Python の sorted は安定ソートなので
+    同キーのエントリは元順序を保つ。
+    """
+    def _key(item: Dict[str, Any]) -> tuple:
+        period = (item.get("period") or "").strip()
+        if not period or period == "-":
+            return (-1, 0, 0)
+        try:
+            return date_yy_m_sort_key(period)
+        except ValueError:
+            return (-1, 0, 0)
+
+    return sorted(comments, key=_key, reverse=True)
+
+
 def current_shikiho_period() -> str:
     """現在月から四季報の発行時期を返す。
 
