@@ -136,6 +136,16 @@ nav .brand {
   font-size: 1.1em;
   text-decoration: none;
 }
+nav .nav-link {
+  padding: 0.25em 0.6em;
+  color: #2c3e50;
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 0.95em;
+}
+nav .nav-link:hover {
+  background: #ecf0f1;
+}
 nav .quick-search {
   display: flex;
   align-items: center;
@@ -184,4 +194,124 @@ nav .quick-search {
 .rich-display a {
   color: #3498db;
   text-decoration: underline;
+}
+
+/* =========================================================
+ * 決算カレンダー (issue #127)
+ * market_data.html から取り込んだ .kessan-grid / .kessan-card
+ * のベーススタイルに、webapp 固有の拡張を重ねる。
+ * ========================================================= */
+
+.kessan-stock {
+  padding: 2px 0;
+  border-left: 3px solid transparent;
+  padding-left: 6px;
+  margin-left: -6px;
+  cursor: pointer;
+}
+.kessan-stock:hover {
+  background: #f5faff;
+}
+.kessan-stock.has-comment {
+  border-left-color: #f39c12;
+  background: #fffcf4;
+}
+.kessan-stock.has-comment:hover {
+  background: #fff5e3;
+}
+.kessan-q-label {
+  color: #888;
+  font-size: 0.85em;
+  margin-left: 2px;
+}
+.kessan-price-change {
+  font-size: 0.85em;
+  font-weight: bold;
+  margin-left: 4px;
+}
+.kessan-expectation-badge {
+  display: inline-block;
+  padding: 0 5px;
+  margin-left: 3px;
+  border-radius: 3px;
+  font-size: 0.8em;
+  font-weight: bold;
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+}
+.kessan-expectation-badge.exp-◎ { background: #e74c3c; color: #fff; border-color: #c0392b; }
+.kessan-expectation-badge.exp-○ { background: #f39c12; color: #fff; border-color: #d68910; }
+.kessan-expectation-badge.exp-▲ { background: #f1c40f; color: #333; border-color: #d4ac0d; }
+.kessan-expectation-badge.exp-△ { background: #bdc3c7; color: #333; border-color: #95a5a6; }
+.kessan-expectation-badge.exp-× { background: #3498db; color: #fff; border-color: #2874a6; }
+
+.kessan-editor {
+  margin: 4px 0 6px 14px;
+  padding: 6px 8px;
+  border-left: 2px solid #bbb;
+  background: #fafafa;
+  font-size: 0.85em;
+}
+.kessan-editor-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.kessan-editor-row label {
+  flex: 0 0 6em;
+  color: #555;
+  font-size: 0.9em;
+  padding-top: 2px;
+  margin: 0;
+}
+.kessan-editor-row textarea,
+.kessan-editor-row select {
+  flex: 1;
+  margin: 0;
+  padding: 3px 5px;
+  font-size: 0.95em;
+  min-height: auto;
+}
+.kessan-editor-row select {
+  flex: 0 0 5em;
+}
+.kessan-editor-row textarea {
+  resize: vertical;
+}
+.kessan-field-display {
+  padding: 3px 5px;
+  font-family: monospace;
+  font-size: 0.95em;
+  color: #333;
+}
+
+/* 保有銘柄マーク */
+.kessan-possess-mark {
+  color: #e67e22;
+  font-weight: bold;
+  margin-right: 2px;
+}
+.kessan-stock.is-possess {
+  background: #fff9ed;
+}
+
+/* 決算コメント常時表示 (編集中以外でも見える) */
+.kessan-comment-view {
+  margin: 2px 0 2px 14px;
+  font-size: 0.82em;
+  color: #555;
+  line-height: 1.4;
+}
+.kessan-pre-view,
+.kessan-post-view {
+  padding: 1px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.kessan-view-label {
+  color: #888;
+  font-weight: bold;
+  margin-right: 3px;
 }

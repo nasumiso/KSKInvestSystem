@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Shintakane Research{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -12,14 +13,27 @@
 <nav class="container-fluid">
   <ul>
     <li><a href="/" class="brand">Shintakane Research</a></li>
+    <li><a href="/market" class="nav-link">市場データ</a></li>
   </ul>
   <ul>
     <li class="quick-search">
       <form action="/" method="get" style="display:flex;align-items:center;gap:0.4em;margin:0;">
-        <input type="text" name="code_s" placeholder="銘柄コード" aria-label="銘柄コード検索"
+        <input id="nav-code" type="text" name="code_s" placeholder="銘柄コード" aria-label="銘柄コード検索"
                style="width:8em;padding:0.3em 0.5em;margin:0;font-size:0.9em;height:auto;">
         <button type="submit" class="outline" style="padding:0.3em 0.7em;margin:0;font-size:0.9em;">Go</button>
+        <button type="button" class="outline" style="padding:0.3em 0.7em;margin:0;font-size:0.9em;white-space:nowrap;" onclick="navAddStock()">+ 追加</button>
       </form>
+      <form id="nav-add-form" method="post" action="/stock/add" style="display:none;">
+        <input type="hidden" name="add_code_s" id="nav-add-code">
+      </form>
+      <script>
+      function navAddStock() {
+        var code = document.getElementById('nav-code').value.trim();
+        if (!code) { alert('銘柄コードを入力してください'); return; }
+        document.getElementById('nav-add-code').value = code;
+        document.getElementById('nav-add-form').submit();
+      }
+      </script>
     </li>
   </ul>
 </nav>

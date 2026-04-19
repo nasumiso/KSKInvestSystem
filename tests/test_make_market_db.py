@@ -472,10 +472,11 @@ class TestHtmlDisclosure:
 
     def test_hyperlink_parse(self):
         """=HYPERLINK()パターンが<a>タグに変換される"""
+        today_str = make_market_db.get_price_day(datetime.today()).strftime("%Y%m%d")
         disc_csv = [
             ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
             [
-                "20260315",
+                today_str,
                 '=HYPERLINK("https://kabutan.jp/stock/chart?code=1234","1234")',
                 "テスト銘柄",
                 "開示",
@@ -488,10 +489,11 @@ class TestHtmlDisclosure:
 
     def test_html_escape(self):
         """銘柄名の特殊文字がエスケープされる"""
+        today_str = make_market_db.get_price_day(datetime.today()).strftime("%Y%m%d")
         disc_csv = [
             ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
             [
-                "20260315",
+                today_str,
                 '=HYPERLINK("https://example.com","1234")',
                 "A&B<C>",
                 "開示",
@@ -532,9 +534,10 @@ class TestHtmlDisclosure:
 
     def test_gyoseki_row_class(self):
         """決算・修正行にdisc-row-gyosekiクラスが付く"""
+        today_str = make_market_db.get_price_day(datetime.today()).strftime("%Y%m%d")
         disc_csv = [
             ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
-            ["20260315", "1234", "テスト", "決算", "決算発表"],
+            [today_str, "1234", "テスト", "決算", "決算発表"],
         ]
         result = make_market_db._html_disclosure(disc_csv)
         assert 'disc-row-gyoseki' in result

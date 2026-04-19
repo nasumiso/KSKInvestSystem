@@ -4,9 +4,9 @@
 GET / : 銘柄コード/名前/評価でフィルタし一覧表示
 """
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template, request, redirect, url_for, flash
 
-from webapp.helpers import search_records
+from webapp.helpers import search_records, add_stock
 
 search_bp = Blueprint("search", __name__)
 
@@ -33,3 +33,15 @@ def index():
         filter_keyword=keyword or "",
         filter_code_s=code_s,
     )
+
+
+@search_bp.route("/stock/add", methods=["POST"])
+def add_stock_route():
+    """銘柄追加。"""
+    code_s = request.form.get("add_code_s", "").strip()
+    try:
+        code_s = add_stock(code_s)
+        return redirect(url_for("detail.stock_detail", code_s=code_s))
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return redirect(url_for("search.index"))

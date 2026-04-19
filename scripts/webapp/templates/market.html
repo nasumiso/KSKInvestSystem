@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}市場データ - Shintakane Research{% endblock %}
+{% block content %}
+
+{% if market_parts.available %}
+<style>
+/* market_data.html から取り込んだ scoped CSS */
+{{ market_parts.css | safe }}
+</style>
+{{ market_parts.header | safe }}
+{% else %}
+<div style="padding:12px;margin:12px 0;background:#fef3e6;border:1px solid #f5c37c;border-radius:6px;">
+  市場データ (<code>market_data.html</code>) が未生成です。<br>
+  <small>scripts/make_market_db.py を実行すると生成されます。決算カレンダーは以下の通り利用できます。</small>
+</div>
+{% endif %}
+
+{# 市場データ本文: 決算セクションはプレースホルダに置き換え済み #}
+{% set body_parts = market_parts.get('body_without_kessan', '').split('<div id="kessan-placeholder-mark">__KESSAN_PLACEHOLDER__</div>') %}
+{% if body_parts[0] %}
+{{ body_parts[0] | safe }}
+{% endif %}
+
+{# ここから動的決算セクション #}
+<h2>決算日</h2>
+<div id="kessan-section">
+  {% macro render_kessan_editor(s, is_past) -%}
+    <div class="kessan-editor" style="display:none;" data-loaded="0">
+      <div class="kessan-editor-row">
+        <label>期待度:</label>
+        <select class="kessan-field kessan-pre-expectation">
+          {% for opt in expectation_options %}
+            <option value="{{ opt }}">{{ opt or '—' }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="kessan-editor-row">
+        <label>事前見通し:</label>
+        <textarea class="kessan-field kessan-pre-outlook" rows="2" placeholder="決算前の見通し"></textarea>
+      </div>
+      {% if is_past %}
+      <div class="kessan-editor-row">
+        <label>株価変動率:</label>
+        <span class="kessan-field-display kessan-post-price-change">{{ s.post_price_change or '-' }}</span>
+      </div>
+      <div class="kessan-editor-row">
+        <label>反応コメ:</label>
+        <textarea class="kessan-field kessan-post-comment" rows="2" placeholder="決算後の反応・コメント"></textarea>
+      </div>
+      {% endif %}
+    </div>
+  {%- endmacro %}
+
+  {% macro render_stock_li(s, is_past) -%}
+    {% set li_class = 'kessan-4q' if (s.quarter|string) == '4' else '' %}
+    {% set possess_class = ' is-possess' if s.is_possess else '' %}
+    <li class="{{ li_class }} kessan-stock{% if s.has_comment %} has-comment{% endif %}{{ possess_class }}"
+        data-code="{{ s.code_s }}"
+        data-kessanbi="{{ s.kessanbi }}"
+        data-quarter="{{ s.quarter }}"
+        data-is-past="{{ '1' if is_past else '0' }}"
+        onclick="handleKessanRowClick(event, this)"
+        title="クリックでコメント編集">
+      {% if s.is_possess %}<span class="kessan-possess-mark" title="保有銘柄">☆</span>{% endif %}
+      <a href="https://kabutan.jp/stock/chart?code={{ s.code_s }}" target="_blank">{{ s.code_s }}</a>
+      <a href="/stock/{{ s.code_s }}">{{ s.stock_name or '-' }}</a>
+      {% if s.quarter %}<span class="kessan-q-label">[{{ s.quarter }}Q]</span>{% endif %}
+      {% if s.pre_expectation %}<span class="kessan-expectation-badge exp-{{ s.pre_expectation }}">{{ s.pre_expectation }}</span>{% endif %}
+      {% if is_past and s.post_price_change %}
+        {% set pc = s.post_price_change %}
+        <span class="kessan-price-change {% if pc.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc }}%</span>
+      {% endif %}
+      {% if s.pre_outlook or s.post_comment %}
+      <div class="kessan-comment-view">
+        {% if s.pre_outlook %}<div class="kessan-pre-view"><span class="kessan-view-label">見通し:</span> {{ s.pre_outlook }}</div>{% endif %}
+        {% if is_past and s.post_comment %}<div class="kessan-post-view"><span class="kessan-view-label">反応:</span> {{ s.post_comment }}</div>{% endif %}
+      </div>
+      {% endif %}
+      {{ render_kessan_editor(s, is_past) }}
+    </li>
+  {%- endmacro %}
+
+  {# 直近1週間の過去決算: 常時表示（未来決算の前に配置） #}
+  {% if kessan_data.recent_past_entries %}
+  <div class="kessan-grid">
+    {% for kessanbi, stocks in kessan_data.recent_past_entries %}
+    <div class="kessan-card past">
+      <div class="card-date">{{ kessanbi[5:] }} (済)</div>
+      <ul class="stock-list">
+        {% for s in stocks %}{{ render_stock_li(s, true) }}{% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if kessan_data.future_entries %}
+  <div class="kessan-grid">
+    {% for kessanbi, stocks in kessan_data.future_entries %}
+    <div class="kessan-card future">
+      <div class="card-date">{{ kessanbi[5:] }}</div>
+      <ul class="stock-list">
+        {% for s in stocks %}{{ render_stock_li(s, false) }}{% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# それ以前の過去決算: 折りたたみ #}
+  {% if kessan_data.older_past_entries %}
+  <details>
+    <summary style="cursor:pointer; color:#666; margin:8px 0;">▶ さらに前の決算を表示 ({{ kessan_data.older_past_entries|length }}件)</summary>
+    <div class="kessan-grid">
+      {% for kessanbi, stocks in kessan_data.older_past_entries %}
+      <div class="kessan-card past">
+        <div class="card-date">{{ kessanbi[5:] }} (済)</div>
+        <ul class="stock-list">
+          {% for s in stocks %}{{ render_stock_li(s, true) }}{% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  {% if not kessan_data.future_entries and not kessan_data.past_entries %}
+  <div style="color:#888;padding:12px;">決算予定の銘柄がありません（ポートフォリオ設定を確認してください）。</div>
+  {% endif %}
+</div>
+
+{# 決算以降の本文 (適時開示など) #}
+{% if body_parts|length > 1 and body_parts[1] %}
+{{ body_parts[1] | safe }}
+{% endif %}
+
+{% if market_parts.available %}
+{{ market_parts.footer | safe }}
+{% endif %}
+
+{% endblock %}
