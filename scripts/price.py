@@ -801,6 +801,46 @@ def _get_ticker_symbol(code_s, stock={}):
     return code_s + suffix
 
 
+def _parse_weekly_cache_date(date_str):
+    """"YYYY年M月D日"形式の日付文字列をdate型に変換する。失敗時はNone。"""
+    m = re.match(r"(\d+)年(\d+)月(\d+)日", date_str or "")
+    if not m:
+        return None
+    from datetime import date as _date
+    try:
+        return _date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+
+
+def _is_weekly_cache_fresh(weekly_price_list):
+    """週足キャッシュが最新確定週を含んでいるかを判定する。
+
+    yfinance週足バーは月曜ラベル。先頭行(最新バー)の月曜 + 4日 = 金曜。
+    その金曜が、直近の確定週の金曜以降であれば、キャッシュは最新確定週を含んでいる。
+    直近の確定週の金曜は price_day (18時前なら前日扱い) から週末分を遡って算出する。
+    Args:
+        weekly_price_list: _convert_weekly_df_to_kabutan_format形式のリスト
+    Returns:
+        bool: 確定週を含んでいればTrue
+    """
+    from datetime import timedelta
+    if not weekly_price_list:
+        return False
+    head_date = _parse_weekly_cache_date(weekly_price_list[0][0])
+    if head_date is None:
+        return False
+    price_day = get_price_day(datetime.now())
+    # price_day が週末(土=5, 日=6)なら直近金曜まで遡る
+    wd = price_day.weekday()
+    if wd >= 5:
+        latest_confirmed_friday = price_day - timedelta(days=wd - 4)
+    else:
+        latest_confirmed_friday = price_day
+    bar_friday = head_date + timedelta(days=4)
+    return bar_friday >= latest_confirmed_friday
+
+
 def _convert_weekly_df_to_kabutan_format(df):
     """yfinance週足DataFrameをKabutan互換のweekly_price_list形式に変換する
     最新行が今週（未確定）の場合は除外する。
@@ -857,13 +897,15 @@ def get_weekly_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
                 log_debug("yfinance週足キャッシュ使用(UPD_CACHE): %s" % code_s)
                 return [tuple(row) for row in pl]
         else:
-            # UPD_INTERVAL: キャッシュの日付が期限内かチェック
+            # UPD_INTERVAL: TTL内かつ内容が最新確定週を含んでいればキャッシュ使用
             cache_ok, cach_date = is_file_timestamp(cache_fname, INTERVAL_DAY_W)
             if cache_ok:
                 _, pl = _load_yfinance_cache(cache_fname)
-                if pl is not None:
+                if pl is not None and _is_weekly_cache_fresh([tuple(row) for row in pl]):
                     log_debug("yfinance週足キャッシュ使用(UPD_INTERVAL): %s" % code_s)
                     return [tuple(row) for row in pl]
+                elif pl is not None:
+                    log_debug("yfinance週足キャッシュ古い(最新確定週なし)、再取得: %s" % code_s)
 
     # yfinance APIで取得
     ticker_symbol = _get_ticker_symbol(code_s, stock)
@@ -997,14 +1039,16 @@ def prefetch_yfinance_weekly_batch(code_s_list, stocks=None):
         stocks: 銘柄DB（市場コード解決用、Noneなら全て東証扱い）
     """
 
-    # キャッシュが有効な銘柄はスキップ
+    # キャッシュが有効 かつ 最新確定週を含んでいる銘柄はスキップ
     codes_to_fetch = []
     for code_s in code_s_list:
         cache_fname = YFINANCE_WEEKLY_CACHE_FNAME % code_s
         if os.path.exists(cache_fname):
             cache_ok, _ = is_file_timestamp(cache_fname, INTERVAL_DAY_W)
             if cache_ok:
-                continue
+                _, pl = _load_yfinance_cache(cache_fname)
+                if pl is not None and _is_weekly_cache_fresh([tuple(row) for row in pl]):
+                    continue
         codes_to_fetch.append(code_s)
 
     if not codes_to_fetch:

@@ -311,6 +311,69 @@ class TestConvertWeeklyDfToKabutanFormat:
 
 
 # ==================================================
+# _is_weekly_cache_fresh
+# ==================================================
+class TestIsWeeklyCacheFresh:
+    """週足キャッシュの鮮度判定テスト(最新確定週を含むか)"""
+
+    def _row(self, date_str):
+        """指定日付ラベルの8要素ダミー行"""
+        return (date_str, "0", "0", "0", "0", "0", "0", "0")
+
+    def test_empty_list_is_stale(self):
+        """空リストは古い判定"""
+        assert price._is_weekly_cache_fresh([]) is False
+
+    def test_invalid_date_is_stale(self):
+        """日付パース失敗は古い判定"""
+        assert price._is_weekly_cache_fresh([self._row("invalid")]) is False
+
+    def test_contains_latest_confirmed_week(self):
+        """先頭バーの金曜 <= price_day なら新鮮"""
+        # price_day=2026-04-17(金), 先頭バー=2026年4月13日(月) → 金曜=2026-04-17
+        from datetime import datetime as _dt
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 4, 17, 20, 0)
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            pl = [self._row("2026年4月13日"), self._row("2026年4月6日")]
+            assert price._is_weekly_cache_fresh(pl) is True
+
+    def test_missing_latest_confirmed_week(self):
+        """先頭バーの金曜 > price_day なら古い(＝最新確定週が未取得)"""
+        # price_day=2026-04-17(金), 先頭バー=2026年4月6日(月) → 金曜=2026-04-10
+        # 2026-04-17 > 2026-04-10 なので先頭=04/06週 = 古い(04/13週が欠落)
+        from datetime import datetime as _dt
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 4, 17, 20, 0)
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            pl = [self._row("2026年4月6日"), self._row("2026年3月30日")]
+            assert price._is_weekly_cache_fresh(pl) is False
+
+    def test_weekend_rolls_back_to_friday(self):
+        """週末(日曜)実行時でも直近金曜基準で新鮮判定できる
+
+        regression: 2026-04-19(日曜)に実行すると get_price_day=2026-04-19 を返すが、
+        直近確定週の金曜は 2026-04-17。先頭=2026/04/13(月)のバー金曜=04/17 は
+        最新確定週の金曜に一致するので新鮮判定されるべき。
+        """
+        from datetime import datetime as _dt
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 4, 19, 20, 0)  # 日曜
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            pl = [self._row("2026年4月13日"), self._row("2026年4月6日")]
+            assert price._is_weekly_cache_fresh(pl) is True
+
+    def test_saturday_rolls_back_to_friday(self):
+        """土曜実行時も同様(直近金曜に丸める)"""
+        from datetime import datetime as _dt
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 4, 18, 20, 0)  # 土曜
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            pl = [self._row("2026年4月13日"), self._row("2026年4月6日")]
+            assert price._is_weekly_cache_fresh(pl) is True
+
+
+# ==================================================
 # _calc_weekly_indicators
 # ==================================================
 class TestCalcWeeklyIndicators:
