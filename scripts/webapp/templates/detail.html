@@ -27,7 +27,7 @@
 
 {# ===== 適時開示 ===== #}
 {% if disclosures %}
-<details>
+<details{% if disclosures_has_recent %} open{% endif %}>
   <summary><strong>適時開示</strong> ({{ disclosures|length }}件)</summary>
   <div style="overflow-x:auto;">
     <table class="snapshot-table">
@@ -39,7 +39,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for date, type, heading, url in disclosures %}
+        {% for date, type, heading, url in disclosures[:5] %}
         <tr>
           <td>{{ date }}</td>
           <td>{{ type }}</td>
@@ -48,6 +48,22 @@
         {% endfor %}
       </tbody>
     </table>
+    {% if disclosures|length > 5 %}
+    <details class="more" style="margin-top:0.3em;">
+      <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ disclosures|length - 5 }} 件を表示</summary>
+      <table class="snapshot-table">
+        <tbody>
+          {% for date, type, heading, url in disclosures[5:] %}
+          <tr>
+            <td>{{ date }}</td>
+            <td>{{ type }}</td>
+            <td><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ heading }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
   </div>
 </details>
 {% endif %}

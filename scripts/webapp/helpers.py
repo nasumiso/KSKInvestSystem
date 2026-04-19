@@ -123,6 +123,38 @@ def get_disclosures(code_s: str) -> List[tuple]:
         return []
 
 
+def has_recent_disclosure(disclosures: List[tuple], days: int = 7) -> bool:
+    """直近 N 日以内の開示が1件以上あるか判定する。
+
+    disclosures 各要素の先頭は "MM/DD" 形式の日付文字列。
+    年情報は持たないため、MM/DD を「今日と同年」にしたとき
+    今日より未来の日付になる場合は前年扱いとする（年跨ぎ対応）。
+    """
+    if not disclosures:
+        return False
+    today = get_price_day(datetime.today())
+    cutoff = today - timedelta(days=days)
+    for row in disclosures:
+        date_expr = row[0] if row else ""
+        m = _MM_DD_PATTERN.match(date_expr.strip())
+        if not m:
+            continue
+        mm = int(m.group(1))
+        dd = int(m.group(2))
+        try:
+            d = date(today.year, mm, dd)
+        except ValueError:
+            continue
+        if d > today:
+            try:
+                d = date(today.year - 1, mm, dd)
+            except ValueError:
+                continue
+        if cutoff <= d <= today:
+            return True
+    return False
+
+
 def search_records(
     *,
     rating: Optional[str] = None,

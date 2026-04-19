@@ -184,3 +184,69 @@ class TestSaveIrComments:
         snaps = rec["snapshots"]
         assert snaps[0]["ir_comment"] == "26.4のみ更新"
         assert snaps[1]["ir_comment"] == "順調"  # 未変更
+
+
+class TestHasRecentDisclosure:
+    """has_recent_disclosure のテスト"""
+
+    @staticmethod
+    def _today():
+        from datetime import datetime
+        from ks_util import get_price_day
+        return get_price_day(datetime.today())
+
+    def test_empty_list(self):
+        assert helpers.has_recent_disclosure([]) is False
+
+    def test_within_7days(self):
+        today = self._today()
+        date_str = today.strftime("%m/%d")
+        disclosures = [(date_str, "決算", "タイトル", "http://example.com")]
+        assert helpers.has_recent_disclosure(disclosures, days=7) is True
+
+    def test_exactly_7days_ago(self):
+        from datetime import timedelta
+        d = self._today() - timedelta(days=7)
+        disclosures = [(d.strftime("%m/%d"), "決算", "タイトル", "http://example.com")]
+        assert helpers.has_recent_disclosure(disclosures, days=7) is True
+
+    def test_older_than_7days(self):
+        from datetime import timedelta
+        d = self._today() - timedelta(days=10)
+        disclosures = [(d.strftime("%m/%d"), "決算", "タイトル", "http://example.com")]
+        assert helpers.has_recent_disclosure(disclosures, days=7) is False
+
+    def test_mixed_recent_and_old(self):
+        from datetime import timedelta
+        today = self._today()
+        old = today - timedelta(days=20)
+        recent = today - timedelta(days=3)
+        disclosures = [
+            (old.strftime("%m/%d"), "決算", "古い", "http://example.com"),
+            (recent.strftime("%m/%d"), "決算", "新しい", "http://example.com"),
+        ]
+        assert helpers.has_recent_disclosure(disclosures, days=7) is True
+
+    def test_invalid_date_skipped(self):
+        disclosures = [("invalid", "決算", "タイトル", "http://example.com")]
+        assert helpers.has_recent_disclosure(disclosures, days=7) is False
+
+    def test_year_boundary(self, monkeypatch):
+        """年跨ぎ: 今日より未来の MM/DD は前年扱い"""
+        import webapp.helpers as h
+        from datetime import date
+        # 今日を 2026/1/3 に固定
+        class _FakeDatetime:
+            @staticmethod
+            def today():
+                class _D:
+                    def __init__(self, y, m, d):
+                        self._d = date(y, m, d)
+                    def date(self):
+                        return self._d
+                return _D(2026, 1, 3)
+        monkeypatch.setattr(h, "datetime", _FakeDatetime)
+        monkeypatch.setattr(h, "get_price_day", lambda _: date(2026, 1, 3))
+        # 12/28 は昨年扱いで6日前 → True
+        disclosures = [("12/28", "決算", "昨年末", "http://example.com")]
+        assert helpers.has_recent_disclosure(disclosures, days=7) is True
