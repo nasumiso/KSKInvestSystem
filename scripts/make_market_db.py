@@ -310,7 +310,7 @@ def make_db_common(code_s):
     priced_dict = price.get_daily_price_kabutan(code_s)
     db.update(priced_dict)
     pr = priced_dict.get("price", 0)
-    pricew_dict = price.get_weekly_price_data(code_s, UPD_INTERVAL, [pr, pr, pr])
+    pricew_dict = price.get_weekly_price_data(code_s, upd=UPD_INTERVAL, prices=[pr, pr, pr])
     log_print("RS_RAW=", pricew_dict.get("rs_raw", 0))
     db.update(pricew_dict)
     return db

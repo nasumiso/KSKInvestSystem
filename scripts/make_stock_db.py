@@ -496,6 +496,10 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
                 price.prefetch_yfinance_batch(code_s_list, stocks=stocks_db)
             except Exception as e:
                 log_warning("yfinanceバッチプリフェッチ失敗（個別取得にフォールバック）: %s" % e)
+            try:
+                price.prefetch_yfinance_weekly_batch(code_s_list, stocks=stocks_db)
+            except Exception as e:
+                log_warning("yfinance週足バッチプリフェッチ失敗（個別取得にフォールバック）: %s" % e)
         if sync:
             update_db_rows_sync(code_s_list, upd, tables, stocks_db, latest, force)
         else:
