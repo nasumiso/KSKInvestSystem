@@ -817,8 +817,10 @@ def _is_weekly_cache_fresh(weekly_price_list):
     """週足キャッシュが最新確定週を含んでいるかを判定する。
 
     yfinance週足バーは月曜ラベル。先頭行(最新バー)の月曜 + 4日 = 金曜。
-    その金曜が、直近の確定週の金曜以降であれば、キャッシュは最新確定週を含んでいる。
-    直近の確定週の金曜は price_day (18時前なら前日扱い) から週末分を遡って算出する。
+    その金曜が、直近の確定済み金曜以降であれば、キャッシュは最新確定週を含んでいる。
+    「直近の確定済み金曜」は price_day(18時前なら前日扱い) から曜日に応じて遡って算出する。
+        月(0)→-3 火(1)→-4 水(2)→-5 木(3)→-6 金(4)→-0 土(5)→-1 日(6)→-2
+    これは (wd - 4) % 7 で求められる(曜日4=金曜基準で直近の金曜までの戻り日数)。
     Args:
         weekly_price_list: _convert_weekly_df_to_kabutan_format形式のリスト
     Returns:
@@ -831,12 +833,8 @@ def _is_weekly_cache_fresh(weekly_price_list):
     if head_date is None:
         return False
     price_day = get_price_day(datetime.now())
-    # price_day が週末(土=5, 日=6)なら直近金曜まで遡る
     wd = price_day.weekday()
-    if wd >= 5:
-        latest_confirmed_friday = price_day - timedelta(days=wd - 4)
-    else:
-        latest_confirmed_friday = price_day
+    latest_confirmed_friday = price_day - timedelta(days=(wd - 4) % 7)
     bar_friday = head_date + timedelta(days=4)
     return bar_friday >= latest_confirmed_friday
 

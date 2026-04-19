@@ -372,6 +372,57 @@ class TestIsWeeklyCacheFresh:
             pl = [self._row("2026年4月13日"), self._row("2026年4月6日")]
             assert price._is_weekly_cache_fresh(pl) is True
 
+    def test_monday_uses_last_fridays_confirmation(self):
+        """月曜夜: 先週金曜(04/17)が直近確定金曜。先頭=04/13バーの金曜=04/17 で新鮮判定
+
+        regression: 以前は月曜の当日(04/20)を確定金曜として扱っていたため、
+        週足に先週分が揃っていても毎回 stale 判定され全銘柄を再ダウンロードしていた。
+        """
+        from datetime import datetime as _dt
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 4, 20, 20, 0)  # 月曜
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            pl = [self._row("2026年4月13日"), self._row("2026年4月6日")]
+            assert price._is_weekly_cache_fresh(pl) is True
+
+    def test_thursday_uses_last_fridays_confirmation(self):
+        """木曜夜: 直近確定金曜は先週金曜(04/17)。先頭=04/13バー(金=04/17)で新鮮"""
+        from datetime import datetime as _dt
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 4, 23, 20, 0)  # 木曜
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            pl = [self._row("2026年4月13日"), self._row("2026年4月6日")]
+            assert price._is_weekly_cache_fresh(pl) is True
+
+    def test_friday_uses_same_day_as_confirmation(self):
+        """金曜夜(18時以降): 今日(04/24)が直近確定金曜。先頭=04/20バーの金曜=04/24で新鮮"""
+        from datetime import datetime as _dt
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 4, 24, 20, 0)  # 金曜20:00
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            pl = [self._row("2026年4月20日"), self._row("2026年4月13日")]
+            assert price._is_weekly_cache_fresh(pl) is True
+
+    def test_friday_before_close_uses_previous_week(self):
+        """金曜18時前: get_price_dayが前日(木)を返す→直近確定金曜は先週金曜"""
+        from datetime import datetime as _dt
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 4, 24, 10, 0)  # 金曜朝
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            # 先頭=04/13バー(金=04/17)、18時前なので確定金曜=04/17で新鮮
+            pl = [self._row("2026年4月13日"), self._row("2026年4月6日")]
+            assert price._is_weekly_cache_fresh(pl) is True
+
+    def test_monday_stale_when_missing_last_week(self):
+        """月曜夜: 先週分がキャッシュに無ければ古い判定"""
+        from datetime import datetime as _dt
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 4, 20, 20, 0)  # 月曜
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            # 先頭=04/06バー(金=04/10) < 確定金曜=04/17 → 古い
+            pl = [self._row("2026年4月6日"), self._row("2026年3月30日")]
+            assert price._is_weekly_cache_fresh(pl) is False
+
 
 # ==================================================
 # _calc_weekly_indicators
