@@ -321,12 +321,16 @@ nav .quick-search {
 .rate-pos { color: #c0392b; }
 .rate-neg { color: #2874a6; }
 
-/* 決算コメント履歴テーブル (detail.html 専用) */
+/* 決算コメント履歴テーブル (detail.html 専用)
+   Pico CSS のテーブル既定スタイル (背景色・ストライプ) を打ち消す */
 .kessan-history-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.88em;
   table-layout: fixed;
+  background: transparent;
+  --pico-background-color: transparent;
+  --pico-table-row-stripped-background-color: transparent;
 }
 .kessan-history-table th,
 .kessan-history-table td {
@@ -334,28 +338,37 @@ nav .quick-search {
   border-bottom: 1px solid #eee;
   text-align: left;
   vertical-align: middle;
+  background: transparent;
+  color: #333;
 }
 .kessan-history-table th {
   background: #f7f7f7;
   color: #555;
   font-weight: bold;
 }
-.kessan-history-table .col-date { width: 7em; white-space: nowrap; }
-.kessan-history-table .col-q { width: 2.5em; color: #888; }
+.kessan-history-table .col-date { width: 8em; white-space: nowrap; }
+.kessan-history-table .col-q { width: 3em; }
 .kessan-history-table .col-exp { width: 3.5em; }
 .kessan-history-table .col-change { width: 5em; white-space: nowrap; }
 .kessan-history-table .col-outlook { width: 18em; }
 /* col-reaction は幅指定なし → 残り全幅に伸びる */
+/* Q セルは改行させず、1 行に収める */
+.kessan-history-table td.col-q { white-space: nowrap; color: #888; }
+/* Pico CSS のテーブルストライプ (tr:nth-child) を打ち消す。hover/focus は別ルールで指定済み */
+.kessan-history-table tbody tr,
+.kessan-history-table tbody tr:nth-child(even),
+.kessan-history-table tbody tr:nth-child(odd) {
+  background-color: transparent;
+}
 .kessan-ellipsis {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 0;  /* table-layout:fixed と組み合わせて残り幅に伸縮 */
 }
-/* 行クリック/Enter/Space: 見通し・反応セルを折返し表示に切替 (モバイル・キーボード対応) */
+/* 行クリック: 見通し・反応セルを折返し表示に切替 */
 .kessan-history-table tbody tr { cursor: pointer; }
 .kessan-history-table tbody tr:hover { background: #fafafa; }
-.kessan-history-table tbody tr:focus { outline: 2px solid #3498db; outline-offset: -2px; }
 .kessan-history-table tr.kessan-row-expanded .kessan-ellipsis {
   white-space: normal;
   overflow: visible;

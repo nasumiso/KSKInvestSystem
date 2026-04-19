@@ -212,10 +212,10 @@
           <th>反応</th>
         </tr>
       </thead>
-      {# クリック/Enter/Space で「見通し・反応」セルの折返し表示をトグル (モバイル/キーボード対応) #}
-      <tbody onclick="toggleKessanRow(event)" onkeydown="onKessanRowKey(event)">
+      {# 行クリックで「見通し・反応」セルの折返し表示をトグル #}
+      <tbody onclick="toggleKessanRow(event)">
         {% for entry in kessan_hist | reverse %}
-        <tr tabindex="0" role="button" aria-label="行をクリックして見通し・反応の全文を表示">
+        <tr>
           <td class="col-date">{{ entry.kessanbi }}</td>
           <td class="col-q">{% if entry.quarter %}{{ entry.quarter }}Q{% endif %}</td>
           <td class="col-exp">

@@ -2,20 +2,11 @@
 
 var MAX_SHIKIHO = 8;
 
-/* --- 決算コメント履歴テーブル: 行クリック/Enter/Space で「見通し・反応」セルの折返し表示をトグル (issue #131) --- */
-/* デフォルトは1行ellipsis表示。クリック or キーボード操作で full-text 折返し表示に展開。
-   モバイル/タッチ + キーボードのアクセシビリティを確保。 */
+/* --- 決算コメント履歴テーブル: 行クリックで「見通し・反応」セルの折返し表示をトグル (issue #131) --- */
+/* デフォルトは1行ellipsis表示。クリックで full-text 折返し表示に展開。 */
 function toggleKessanRow(event) {
   var tr = event.target.closest('tr');
   if (!tr) return;
-  tr.classList.toggle('kessan-row-expanded');
-}
-
-function onKessanRowKey(event) {
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  var tr = event.target.closest('tr');
-  if (!tr) return;
-  event.preventDefault();  // Space によるスクロールを抑止
   tr.classList.toggle('kessan-row-expanded');
 }
 
