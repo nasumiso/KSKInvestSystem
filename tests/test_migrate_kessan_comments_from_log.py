@@ -752,6 +752,68 @@ class TestLocalUpsert:
                 update_fields=["kessan_matagi", "nonexistent_field"],
             )
 
+    def test_normal_upsert_preserves_existing_held_flags(self, db_path):
+        """通常モードの既存上書きで held_before/after の True を退行させない
+
+        webapp 側が学習した保有痕跡 (held_before_kessan / held_after_kessan)
+        をログ由来の全上書きで消してはいけない (PR レビュー P2)。
+        """
+        _preregister(db_path, "5032")
+        # 事前に True 状態のエントリを直接 DB に入れる (webapp 学習済み状態を模擬)
+        rec = rs.get_research_record("5032", db_path=db_path)
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/03/11",
+            "quarter": 3,
+            "pre_expectation": "○",
+            "pre_outlook": "既存見通し",
+            "post_price_change": "-15",
+            "post_comment": "[E] -15% x",
+            "kessan_matagi": True,
+            "held_before_kessan": True,
+            "held_after_kessan": True,
+        }]
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        # ログから同じ (kessanbi, quarter) を通常モードで upsert
+        mig._upsert_kessan_comment_local(
+            self._entry(kessan_matagi=False),  # ログ由来は False だが
+            db_path=db_path,
+        )
+
+        loaded = rs.get_research_record("5032", db_path=db_path)
+        entry = loaded["kessan_comments"][0]
+        # 既存の True を保持
+        assert entry["held_before_kessan"] is True
+        assert entry["held_after_kessan"] is True
+
+    def test_normal_upsert_accepts_new_true_flags(self, db_path):
+        """True 側の更新は反映される (片方だけ True に立てるケース)"""
+        _preregister(db_path, "5032")
+        # 既存は held_* 両方 False
+        rec = rs.get_research_record("5032", db_path=db_path)
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/03/11",
+            "quarter": 3,
+            "pre_expectation": "○",
+            "pre_outlook": "x",
+            "post_price_change": "",
+            "post_comment": "",
+            "kessan_matagi": False,
+            "held_before_kessan": False,
+            "held_after_kessan": False,
+        }]
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        # ログ側から通常保存 (ログは常に held_* を False でくるが、
+        # もし将来的に True 化されたエントリで呼び出された場合も退行しないこと)
+        mig._upsert_kessan_comment_local(self._entry(), db_path=db_path)
+
+        loaded = rs.get_research_record("5032", db_path=db_path)
+        entry = loaded["kessan_comments"][0]
+        # 既存が False なので False のままで問題ない
+        assert entry["held_before_kessan"] is False
+        assert entry["held_after_kessan"] is False
+
 
 # ==================================================
 # 6. TestMigrateLogToResearchShelve

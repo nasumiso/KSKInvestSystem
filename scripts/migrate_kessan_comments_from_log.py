@@ -652,10 +652,20 @@ def _upsert_kessan_comment_local(
             saved_entry = merged
         else:
             if target_idx is not None:
-                comments[target_idx] = full_entry
+                # 通常モードの既存上書き:
+                # webapp が学習した held_before_kessan / held_after_kessan は
+                # ログには情報が無いため、既存の True を退行させない。
+                # ただし True は下げない一方向更新 (新規側が True ならそれを採用)。
+                existing = comments[target_idx]
+                new_entry = dict(full_entry)
+                for key in ("held_before_kessan", "held_after_kessan"):
+                    if existing.get(key) and not new_entry.get(key):
+                        new_entry[key] = True
+                comments[target_idx] = new_entry
+                saved_entry = new_entry
             else:
                 comments.append(full_entry)
-            saved_entry = full_entry
+                saved_entry = full_entry
 
         # 昇順ソート + 12 件超の最古削除
         comments = _sort_kessan_comments(comments)
