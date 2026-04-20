@@ -271,9 +271,11 @@ function openKessanEditor(li) {
       var preOut = editor.querySelector('.kessan-pre-outlook');
       var postCom = editor.querySelector('.kessan-post-comment');
       var postPc = editor.querySelector('.kessan-post-price-change');
+      var matagi = editor.querySelector('.kessan-matagi');
       if (preExp) preExp.value = data.pre_expectation || '';
       if (preOut) preOut.value = data.pre_outlook || '';
       if (postCom) postCom.value = data.post_comment || '';
+      if (matagi) matagi.checked = !!data.kessan_matagi;
       if (postPc && data.post_price_change) {
         postPc.textContent = data.post_price_change;
       }
@@ -288,14 +290,19 @@ function openKessanEditor(li) {
 
 function rememberKessanInitialValues(editor) {
   editor.querySelectorAll('.kessan-field').forEach(function(el) {
-    el.dataset.initial = el.value;
+    if (el.type === 'checkbox') {
+      el.dataset.initial = el.checked ? '1' : '0';
+    } else {
+      el.dataset.initial = el.value;
+    }
   });
 }
 
 function isKessanDirty(editor) {
   var dirty = false;
   editor.querySelectorAll('.kessan-field').forEach(function(el) {
-    if (el.value !== (el.dataset.initial || '')) dirty = true;
+    var current = el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+    if (current !== (el.dataset.initial || '')) dirty = true;
   });
   return dirty;
 }
@@ -311,6 +318,7 @@ function saveKessanFromEditor(li) {
   var preExp = editor.querySelector('.kessan-pre-expectation');
   var preOut = editor.querySelector('.kessan-pre-outlook');
   var postCom = editor.querySelector('.kessan-post-comment');
+  var matagi = editor.querySelector('.kessan-matagi');
 
   var formData = new FormData();
   formData.append('kessanbi', kessanbi);
@@ -318,6 +326,16 @@ function saveKessanFromEditor(li) {
   formData.append('pre_expectation', preExp ? preExp.value : '');
   formData.append('pre_outlook', preOut ? preOut.value : '');
   formData.append('post_comment', postCom ? postCom.value : '');
+  /* kessan_matagi は checkbox が初期値と変わった時のみ送信する。
+     (未操作で常に送ると save_kessan_comment 側で override 扱いになり、
+      held_before && held_after による自動昇格が効かなくなる) */
+  if (matagi) {
+    var initial = matagi.dataset.initial || '0';
+    var current = matagi.checked ? '1' : '0';
+    if (current !== initial) {
+      formData.append('kessan_matagi', current);
+    }
+  }
 
   var url = '/api/kessan_comment/' + encodeURIComponent(code);
   _saveQueue = _saveQueue.then(function() {
@@ -345,9 +363,25 @@ function saveKessanFromEditor(li) {
   }).catch(function() { /* エラー時もキュー継続 */ });
 }
 
-/* 保存成功後、li 内の表示用 DOM（見通し・反応・期待度バッジ）を更新 */
+/* 保存成功後、li 内の表示用 DOM（見通し・反応・期待度バッジ・決算またぎ）を更新 */
 function updateKessanViewDOM(li, data) {
   var isPast = li.dataset.isPast === '1';
+
+  /* 決算またぎ ◆ マーク */
+  var matagiMark = li.querySelector('.kessan-matagi-mark');
+  if (data.kessan_matagi) {
+    if (!matagiMark) {
+      matagiMark = document.createElement('span');
+      matagiMark.className = 'kessan-matagi-mark';
+      matagiMark.title = '決算またぎ保有';
+      matagiMark.textContent = '◆';
+      var possessMark = li.querySelector('.kessan-possess-mark');
+      var refNode = possessMark ? possessMark.nextSibling : li.firstChild;
+      li.insertBefore(matagiMark, refNode);
+    }
+  } else if (matagiMark) {
+    matagiMark.remove();
+  }
 
   /* 期待度バッジ */
   var badge = li.querySelector('.kessan-expectation-badge');

@@ -250,3 +250,175 @@ class TestHasRecentDisclosure:
         # 12/28 は昨年扱いで6日前 → True
         disclosures = [("12/28", "決算", "昨年末", "http://example.com")]
         assert helpers.has_recent_disclosure(disclosures, days=7) is True
+
+
+class TestSaveKessanCommentMatagi:
+    """save_kessan_comment の held_before/after + kessan_matagi AND 判定 (issue #138)"""
+
+    @pytest.fixture
+    def setup_db(self, db_path, monkeypatch):
+        """RESEARCH_SHELVE を tmp_path に差し替えて初期レコードを 1 件入れる"""
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr(helpers, "RESEARCH_SHELVE", db_path, raising=False)
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rs.upsert_research_record(rec, db_path=db_path)
+        # price_log は未登録でOK (calc_price_reaction は空文字を返す)
+        monkeypatch.setattr(helpers, "calc_price_reaction", lambda c, k: "")
+        return db_path
+
+    @pytest.fixture
+    def today_2026_03_15(self, monkeypatch):
+        """テスト用に get_price_day を 2026/3/15 に固定"""
+        from datetime import date as _date
+        monkeypatch.setattr(helpers, "get_price_day", lambda _: _date(2026, 3, 15))
+
+    def _form(self, **overrides):
+        base = {
+            "kessanbi": "2026/03/11",  # today より前 → 決算後
+            "quarter": "3",
+            "pre_expectation": "○",
+            "pre_outlook": "事前",
+            "post_comment": "",
+        }
+        base.update(overrides)
+        return base
+
+    def test_past_entry_with_possess_sets_held_after_only(
+        self, setup_db, today_2026_03_15, monkeypatch
+    ):
+        """過去の決算 + 現在保有 → held_after_kessan のみ True (before は False のまま)"""
+        monkeypatch.setattr(helpers, "_is_possess_now", lambda c: True)
+        entry = helpers.save_kessan_comment("5032", self._form())
+        assert entry["held_before_kessan"] is False
+        assert entry["held_after_kessan"] is True
+        # AND 判定なので kessan_matagi は False
+        assert entry["kessan_matagi"] is False
+
+    def test_future_entry_with_possess_sets_held_before_only(
+        self, setup_db, today_2026_03_15, monkeypatch
+    ):
+        """未来の決算 + 現在保有 → held_before_kessan のみ True"""
+        monkeypatch.setattr(helpers, "_is_possess_now", lambda c: True)
+        form = self._form(kessanbi="2026/04/20")
+        entry = helpers.save_kessan_comment("5032", form)
+        assert entry["held_before_kessan"] is True
+        assert entry["held_after_kessan"] is False
+        assert entry["kessan_matagi"] is False
+
+    def test_new_entry_without_possess_sets_both_false(
+        self, setup_db, today_2026_03_15, monkeypatch
+    ):
+        """新規作成時、保有してなければ held フラグは両方 False"""
+        monkeypatch.setattr(helpers, "_is_possess_now", lambda c: False)
+        entry = helpers.save_kessan_comment("5032", self._form())
+        assert entry["held_before_kessan"] is False
+        assert entry["held_after_kessan"] is False
+        assert entry["kessan_matagi"] is False
+
+    def test_two_phase_save_flips_matagi_by_and(
+        self, setup_db, today_2026_03_15, monkeypatch
+    ):
+        """
+        決算前に保有で保存 → held_before=True、
+        時間を進めて決算後に保有で再保存 → held_after=True で AND で kessan_matagi=True
+        """
+        monkeypatch.setattr(helpers, "_is_possess_now", lambda c: True)
+        # フェーズ1: today=2026/3/15, kessanbi=2026/4/20 (未来)
+        from datetime import date as _date
+        monkeypatch.setattr(helpers, "get_price_day", lambda _: _date(2026, 3, 15))
+        form = self._form(kessanbi="2026/04/20")
+        helpers.save_kessan_comment("5032", form)
+
+        # フェーズ2: 時計進行、today=2026/4/25 で同じ kessanbi は過去に変わる
+        monkeypatch.setattr(helpers, "get_price_day", lambda _: _date(2026, 4, 25))
+        entry = helpers.save_kessan_comment("5032", form)
+        assert entry["held_before_kessan"] is True
+        assert entry["held_after_kessan"] is True
+        assert entry["kessan_matagi"] is True
+
+    def test_existing_true_is_not_downgraded(
+        self, setup_db, today_2026_03_15, monkeypatch
+    ):
+        """既存 held_after=True / kessan_matagi=True は現在非保有でも下げない"""
+        monkeypatch.setattr(helpers, "_is_possess_now", lambda c: True)
+        # 1回目: 保有中で held_after を立てる
+        helpers.save_kessan_comment("5032", self._form(pre_outlook="init"))
+        # matagi を手動で True にしておく (二相統合の代用)
+        monkeypatch.setattr(helpers, "_is_possess_now", lambda c: False)
+        entry2 = helpers.save_kessan_comment(
+            "5032", self._form(pre_outlook="update"),
+        )
+        # held_after が False に下がっていないこと
+        assert entry2["held_after_kessan"] is True
+
+    def test_form_override_wins(self, setup_db, today_2026_03_15, monkeypatch):
+        """form 明示の kessan_matagi が最優先"""
+        monkeypatch.setattr(helpers, "_is_possess_now", lambda c: True)
+        form = self._form(kessan_matagi="1")
+        entry = helpers.save_kessan_comment("5032", form)
+        # held_after しか True にならないが、form override で kessan_matagi=True
+        assert entry["kessan_matagi"] is True
+
+
+class TestPersistKessanHeldFlags:
+    """_persist_kessan_held_flags の挙動 (並行書き込み安全対応)"""
+
+    @pytest.fixture
+    def setup_db(self, db_path, monkeypatch):
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/03/11",
+                "quarter": 3,
+                "pre_expectation": "○",
+                "pre_outlook": "既存見通し",
+                "post_price_change": "-15",
+                "post_comment": "[E] -15% x",
+                "kessan_matagi": False,
+                "held_before_kessan": False,
+                "held_after_kessan": False,
+            },
+        ]
+        rs.upsert_research_record(rec, db_path=db_path)
+        return db_path
+
+    def test_promotes_held_after_only(self, setup_db):
+        """held_after=True のみ指定すれば後側だけが True 化、matagi は False"""
+        helpers._persist_kessan_held_flags([
+            ("5032", "2026/03/11", 3, {"held_after_kessan": True}),
+        ])
+        loaded = rs.get_research_record("5032")
+        entry = loaded["kessan_comments"][0]
+        assert entry["held_after_kessan"] is True
+        assert entry["held_before_kessan"] is False
+        assert entry["kessan_matagi"] is False
+        # 他フィールドは温存
+        assert entry["pre_outlook"] == "既存見通し"
+
+    def test_and_promotion_activates_matagi(self, setup_db):
+        """held_before=True と held_after=True が両方立てば kessan_matagi も True"""
+        # 先に held_before を立て、
+        helpers._persist_kessan_held_flags([
+            ("5032", "2026/03/11", 3, {"held_before_kessan": True}),
+        ])
+        # 次に held_after を立てる → AND で kessan_matagi=True
+        helpers._persist_kessan_held_flags([
+            ("5032", "2026/03/11", 3, {"held_after_kessan": True}),
+        ])
+        loaded = rs.get_research_record("5032")
+        entry = loaded["kessan_comments"][0]
+        assert entry["held_before_kessan"] is True
+        assert entry["held_after_kessan"] is True
+        assert entry["kessan_matagi"] is True
+
+    def test_noop_when_no_match(self, setup_db):
+        """未マッチのターゲットは黙ってスキップ"""
+        helpers._persist_kessan_held_flags([
+            ("5032", "2099/01/01", 1, {"held_after_kessan": True}),
+        ])
+        loaded = rs.get_research_record("5032")
+        assert loaded["kessan_comments"][0]["held_after_kessan"] is False
+        assert len(loaded["kessan_comments"]) == 1

@@ -166,6 +166,7 @@ class StockToken:
     quarter: int           # 0〜4
     pre_outlook: str       # ": xxx" 部分。なければ ""
     line_no: int
+    had_holding_mark: bool = False  # ☆/⭐/⭐︎ が先頭に付いていたか (決算またぎの痕跡)
 
 
 @dataclass
@@ -208,16 +209,19 @@ def _normalize_expectation(ch: Optional[str]) -> str:
     return ch
 
 
-def _strip_leading_markers(text: str) -> Tuple[str, str]:
+def _strip_leading_markers(text: str) -> Tuple[str, bool, str]:
     """銘柄行先頭の保有マーク (☆/⭐/異体字セレクタ) と期待度マーカーを剥がす。
 
     順不同: 保有マーク → 期待度、または期待度 → 保有マーク のどちらも対応。
     保有マークの直後の全角空白・半角空白は食う ("☆ ◯4783..." → "◯4783...")。
 
     Returns:
-        (pre_expectation, rest)  pre_expectation は "" または VALID_EXPECTATIONS 相当
+        (pre_expectation, had_holding_mark, rest)
+        pre_expectation: "" または VALID_EXPECTATIONS 相当
+        had_holding_mark: ☆/⭐/⭐︎ を検出したら True (決算またぎの痕跡)
     """
     pre_exp = ""
+    had_holding_mark = False
     rest = text
     # 最大 4 回ループ: 保有マーク/期待度マーカー/空白/異体字セレクタを順に剥がす
     for _ in range(4):
@@ -227,6 +231,7 @@ def _strip_leading_markers(text: str) -> Tuple[str, str]:
         rest = VARIATION_SELECTOR_RE.sub("", rest, count=1) if rest and "\ufe00" <= rest[0] <= "\ufe0f" else rest
         head = rest[0] if rest else ""
         if head in HOLDING_MARKERS:
+            had_holding_mark = True
             rest = rest[1:]
             # 直後の空白 (全角 U+3000 / 半角) を食う
             rest = rest.lstrip(" \u3000")
@@ -237,7 +242,7 @@ def _strip_leading_markers(text: str) -> Tuple[str, str]:
             rest = rest.lstrip(" \u3000")
             continue
         break
-    return pre_exp, rest
+    return pre_exp, had_holding_mark, rest
 
 
 def tokenize_lines(lines: List[str]) -> Tuple[List[Token], List[Dict[str, Any]]]:
@@ -315,7 +320,7 @@ def tokenize_lines(lines: List[str]) -> Tuple[List[Token], List[Dict[str, Any]]]
             continue
 
         # 銘柄行: 先頭マーカー (保有/期待度) を剥がしてから STOCK_HEAD にかける
-        pre_exp, rest = _strip_leading_markers(normalized)
+        pre_exp, had_holding_mark, rest = _strip_leading_markers(normalized)
         m_stock = STOCK_HEAD.match(rest)
         quarter: Optional[int] = None
         tail_raw = ""
@@ -352,6 +357,7 @@ def tokenize_lines(lines: List[str]) -> Tuple[List[Token], List[Dict[str, Any]]]
                 quarter=quarter,
                 pre_outlook=pre_outlook,
                 line_no=idx,
+                had_holding_mark=had_holding_mark,
             ))
             continue
 
@@ -378,6 +384,7 @@ class ParsedEntry:
     pre_outlook: str
     post_price_change: str  # 符号付き文字列、% なし。post なしは ""
     post_comment: str       # post なしは ""
+    kessan_matagi: bool = False  # 決算日をまたいで保有していたか (ログ上の ☆ 由来)
     source_line_no: int = 0  # 診断用
 
 
@@ -481,6 +488,7 @@ def build_entries_from_tokens(
             pre_outlook=pending.pre_outlook,
             post_price_change=post_price_change,
             post_comment=post_comment,
+            kessan_matagi=pending.had_holding_mark,
             source_line_no=pending.line_no,
         ))
         pending = None
@@ -552,7 +560,8 @@ def _upsert_kessan_comment_local(
     entry: ParsedEntry,
     *,
     db_path: Optional[str] = None,
-) -> Dict[str, Any]:
+    update_fields: Optional[List[str]] = None,
+) -> Optional[Dict[str, Any]]:
     """entry を research_shelve に upsert する (本スクリプト専用のローカル実装)。
 
     排他制御: `_flock(db_path)` で read-modify-write 全体を囲む。
@@ -568,23 +577,45 @@ def _upsert_kessan_comment_local(
         最小レコード (stock_name="") を作って当該 db_path に登録する。
         検証 (--db-path /tmp/...) やテスト時に本番 DB が影響を受けない。
 
+    update_fields が指定された場合:
+      - 既存エントリに (kessanbi, quarter) マッチする行だけを対象に、
+        指定フィールドのみを更新する (他フィールドは既存値を保持)。
+      - マッチしないエントリは新規追加せずスキップし、戻り値は None。
+        (12件キャップによる既存履歴の追い出しを防ぐ安全策)
+      - update_fields の値は KESSAN_COMMENT_FIELDS の部分集合でなければ ValueError。
+
     Returns:
-        保存したエントリ dict。
+        保存したエントリ dict。update_fields 指定で未マッチスキップ時は None。
     """
     normalized = rs.normalize_code_s(entry.code_s)
 
-    saved_entry: Dict[str, Any] = {
+    full_entry: Dict[str, Any] = {
         "kessanbi": entry.kessanbi,
         "quarter": entry.quarter,
         "pre_expectation": entry.pre_expectation,
         "pre_outlook": entry.pre_outlook,
         "post_price_change": entry.post_price_change,
         "post_comment": entry.post_comment,
+        "kessan_matagi": bool(entry.kessan_matagi),
+        # ログには決算前後の保有履歴情報が含まれないため False 固定。
+        # 後日 webapp 側で is_possess を見て昇格される。
+        "held_before_kessan": False,
+        "held_after_kessan": False,
     }
+
+    if update_fields:
+        unknown = set(update_fields) - set(rs.KESSAN_COMMENT_FIELDS)
+        if unknown:
+            raise ValueError(
+                f"update_fields に未知フィールド: {sorted(unknown)}"
+            )
 
     with _flock(db_path):
         record = rs.get_research_record(normalized, db_path=db_path)
         if record is None:
+            if update_fields:
+                # 既存のみ更新モードではレコード自体が無ければスキップ
+                return None
             if db_path is None:
                 # 本番 DB: webapp の save_kessan_comment と同じパターン
                 # add_stock は内部で _flock() を取るがリエントラントなので OK
@@ -610,10 +641,34 @@ def _upsert_kessan_comment_local(
                 target_idx = i
                 break
 
-        if target_idx is not None:
-            comments[target_idx] = saved_entry
+        if update_fields:
+            # 既存エントリに一致したときだけ、指定フィールドのみを上書き
+            if target_idx is None:
+                return None
+            merged = dict(comments[target_idx])
+            for field in update_fields:
+                merged[field] = full_entry[field]
+            comments[target_idx] = merged
+            saved_entry = merged
         else:
-            comments.append(saved_entry)
+            if target_idx is not None:
+                # 通常モードの既存上書き:
+                # webapp が学習した / 手動編集された保有系フラグ
+                # (held_before_kessan / held_after_kessan / kessan_matagi) は、
+                # ログ側には十分な情報が無いため退行させない (True → False させない)。
+                # 新規側が True ならそれを採用する一方向更新。
+                existing = comments[target_idx]
+                new_entry = dict(full_entry)
+                for key in (
+                    "held_before_kessan", "held_after_kessan", "kessan_matagi",
+                ):
+                    if existing.get(key) and not new_entry.get(key):
+                        new_entry[key] = True
+                comments[target_idx] = new_entry
+                saved_entry = new_entry
+            else:
+                comments.append(full_entry)
+                saved_entry = full_entry
 
         # 昇順ソート + 12 件超の最古削除
         comments = _sort_kessan_comments(comments)
@@ -646,6 +701,7 @@ def migrate_log_to_research_shelve(
     dry_run: bool = False,
     default_year: Optional[int] = None,
     show_codes: Optional[List[str]] = None,
+    update_fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """ログファイル全体を研究DBに移行する。
 
@@ -654,6 +710,7 @@ def migrate_log_to_research_shelve(
         2. dry_run=False ならバックアップ
         3. 各エントリを _upsert_kessan_comment_local で upsert
            - 失敗時は log_warning + failed_entries に追加、継続
+           - update_fields 指定時は未マッチのエントリをスキップ集計
         4. show_codes が指定されたら format_record_full で stdout に出力
         5. サマリ dict を返す
     """
@@ -667,6 +724,10 @@ def migrate_log_to_research_shelve(
 
     total = len(entries)
     log_print(f"[migrate_kessan] 有効エントリ: {total}")
+    if update_fields:
+        log_print(
+            f"[migrate_kessan] update_fields モード: {update_fields} のみ既存エントリに反映"
+        )
 
     # バックアップ
     backup_paths: List[str] = []
@@ -686,13 +747,19 @@ def migrate_log_to_research_shelve(
     # 実行
     failed_entries: List[Dict[str, Any]] = []
     succeeded = 0
+    skipped_unmatched = 0
 
     log_print("[migrate_kessan] 移行開始...")
     for idx, entry in enumerate(entries, start=1):
         try:
             _validate_entry(entry)
             if not dry_run:
-                _upsert_kessan_comment_local(entry, db_path=db_path)
+                result = _upsert_kessan_comment_local(
+                    entry, db_path=db_path, update_fields=update_fields,
+                )
+                if update_fields and result is None:
+                    skipped_unmatched += 1
+                    continue
             succeeded += 1
         except (ValueError, TypeError) as e:
             log_warning(
@@ -712,6 +779,10 @@ def migrate_log_to_research_shelve(
         f"[migrate_kessan] 完了: 成功 {succeeded} 件、失敗 {len(failed_entries)} 件"
         f" (パース warning {len(parse_warnings)} 件)"
     )
+    if update_fields:
+        log_print(
+            f"[migrate_kessan] update_fields モードの未マッチスキップ: {skipped_unmatched} 件"
+        )
 
     if failed_entries:
         log_print("[migrate_kessan] 失敗エントリ一覧:")
@@ -756,6 +827,8 @@ def migrate_log_to_research_shelve(
         "parse_warnings": parse_warnings,
         "dry_run": dry_run,
         "backup_paths": backup_paths,
+        "skipped_unmatched": skipped_unmatched,
+        "update_fields": update_fields,
     }
 
 
@@ -801,11 +874,26 @@ def main() -> int:
         default=None,
         help="<YYYY年> ヘッダが先頭に無い場合の default 年 (edge case)",
     )
+    parser.add_argument(
+        "--update-fields",
+        default=None,
+        help=(
+            "既存エントリに対して指定フィールドのみ更新するモード。"
+            "カンマ区切りで複数可 (例: --update-fields kessan_matagi)。"
+            "未マッチのエントリは新規追加せずスキップする (既存履歴の追い出し防止)。"
+        ),
+    )
     args = parser.parse_args()
 
     show_codes: Optional[List[str]] = None
     if args.show:
         show_codes = [c.strip() for c in args.show.split(",") if c.strip()]
+
+    update_fields: Optional[List[str]] = None
+    if args.update_fields:
+        update_fields = [
+            f.strip() for f in args.update_fields.split(",") if f.strip()
+        ]
 
     summary = migrate_log_to_research_shelve(
         args.log_path,
@@ -813,6 +901,7 @@ def main() -> int:
         dry_run=args.dry_run,
         default_year=args.year,
         show_codes=show_codes,
+        update_fields=update_fields,
     )
 
     return 1 if summary["failed"] > 0 else 0

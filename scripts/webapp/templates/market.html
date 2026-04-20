@@ -47,6 +47,10 @@
         <label>反応コメ:</label>
         <textarea class="kessan-field kessan-post-comment" rows="2" placeholder="決算後の反応・コメント"></textarea>
       </div>
+      <div class="kessan-editor-row">
+        <label>決算またぎ:</label>
+        <input type="checkbox" class="kessan-field kessan-matagi">
+      </div>
       {% endif %}
     </div>
   {%- endmacro %}
@@ -62,6 +66,7 @@
         onclick="handleKessanRowClick(event, this)"
         title="クリックでコメント編集">
       {% if s.is_possess %}<span class="kessan-possess-mark" title="保有銘柄">☆</span>{% endif %}
+      {% if s.kessan_matagi %}<span class="kessan-matagi-mark" title="決算またぎ保有">◆</span>{% endif %}
       <a href="https://kabutan.jp/stock/chart?code={{ s.code_s }}" target="_blank">{{ s.code_s }}</a>
       <a href="/stock/{{ s.code_s }}">{{ s.stock_name or '-' }}</a>
       {% if s.quarter %}<span class="kessan-q-label">[{{ s.quarter }}Q]</span>{% endif %}

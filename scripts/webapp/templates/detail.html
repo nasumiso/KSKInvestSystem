@@ -232,7 +232,10 @@
       <tbody onclick="toggleKessanRow(event)">
         {% for entry in kessan_hist | reverse %}
         <tr>
-          <td class="col-date">{{ entry.kessanbi }}</td>
+          <td class="col-date">
+            {{ entry.kessanbi }}
+            {% if entry.kessan_matagi %}<span class="kessan-matagi-mark" title="決算またぎ保有">◆</span>{% endif %}
+          </td>
           <td class="col-q">{% if entry.quarter %}{{ entry.quarter }}Q{% endif %}</td>
           <td class="col-exp">
             {% if entry.pre_expectation %}

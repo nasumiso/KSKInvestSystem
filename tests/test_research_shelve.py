@@ -259,6 +259,43 @@ class TestCrud:
         loaded = rs.get_research_record("135A", db_path=db_path)
         assert loaded["code_s"] == "135A"
 
+    # --- kessan_matagi スキーマ拡張 (issue #138) ---
+    def test_kessan_comment_fields_includes_kessan_matagi(self):
+        """KESSAN_COMMENT_FIELDS に kessan_matagi が含まれる"""
+        assert "kessan_matagi" in rs.KESSAN_COMMENT_FIELDS
+
+    def test_get_research_record_backfills_kessan_matagi_false(self, db_path):
+        """旧形式 (kessan_matagi 無) のエントリは読み込み時に False で補完される"""
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        # kessan_matagi なしの旧エントリを直接埋め込み
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/03/11",
+            "quarter": 3,
+            "pre_expectation": "○",
+            "pre_outlook": "見通し",
+            "post_price_change": "-15",
+            "post_comment": "[E] -15% x",
+        }]
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("5032", db_path=db_path)
+        assert loaded["kessan_comments"][0]["kessan_matagi"] is False
+
+    def test_get_research_record_preserves_kessan_matagi_true(self, db_path):
+        """True で保存されたエントリは読み込み時も True"""
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/03/11",
+            "quarter": 3,
+            "pre_expectation": "○",
+            "pre_outlook": "見通し",
+            "post_price_change": "-15",
+            "post_comment": "[E] -15% x",
+            "kessan_matagi": True,
+        }]
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("5032", db_path=db_path)
+        assert loaded["kessan_comments"][0]["kessan_matagi"] is True
+
 
 # ==================================================
 # スナップショット層: upsert_snapshot
