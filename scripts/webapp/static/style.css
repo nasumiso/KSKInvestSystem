@@ -297,6 +297,14 @@ nav .quick-search {
   background: #fff9ed;
 }
 
+/* 決算またぎ (決算日をまたいで保有) マーク */
+.kessan-matagi-mark {
+  color: #c49b2d;
+  font-weight: bold;
+  margin-right: 2px;
+  font-size: 0.9em;
+}
+
 /* 決算コメント常時表示 (編集中以外でも見える) */
 .kessan-comment-view {
   margin: 2px 0 2px 14px;

@@ -65,6 +65,49 @@ class TestReadLogLines:
 
 
 # ==================================================
+# 2-pre. TestStripLeadingMarkers
+# ==================================================
+class TestStripLeadingMarkers:
+    """_strip_leading_markers の直接テスト (戻り値 3-tuple)"""
+
+    def test_no_markers(self):
+        pre, held, rest = mig._strip_leading_markers("5032あ[3Q]")
+        assert pre == ""
+        assert held is False
+        assert rest == "5032あ[3Q]"
+
+    def test_holding_mark_only(self):
+        pre, held, rest = mig._strip_leading_markers("☆5032あ[3Q]")
+        assert pre == ""
+        assert held is True
+        assert rest == "5032あ[3Q]"
+
+    def test_expectation_only(self):
+        pre, held, rest = mig._strip_leading_markers("◯5032あ[3Q]")
+        assert pre == "○"  # 正規化
+        assert held is False
+        assert rest == "5032あ[3Q]"
+
+    def test_holding_then_expectation(self):
+        pre, held, rest = mig._strip_leading_markers("☆◯5032あ[3Q]")
+        assert pre == "○"
+        assert held is True
+        assert rest == "5032あ[3Q]"
+
+    def test_expectation_then_holding(self):
+        pre, held, rest = mig._strip_leading_markers("◯☆5032あ[3Q]")
+        assert pre == "○"
+        assert held is True
+        assert rest == "5032あ[3Q]"
+
+    def test_emoji_star_with_vs15(self):
+        """⭐︎ (U+2B50+U+FE0E) は held=True"""
+        pre, held, rest = mig._strip_leading_markers("⭐\ufe0e6324")
+        assert held is True
+        assert rest == "6324"
+
+
+# ==================================================
 # 2. TestTokenizer
 # ==================================================
 class TestTokenizer:
@@ -96,7 +139,7 @@ class TestTokenizer:
         assert t.pre_outlook == ""
 
     def test_stock_with_holding_mark(self):
-        """☆ は holding marker で pre_expectation にしない"""
+        """☆ は holding marker で pre_expectation にしない + had_holding_mark=True"""
         tokens, _ = mig.tokenize_lines(["☆5032ＡＮＹＣＯＬＯＲ[3Q]"])
         t = tokens[0]
         assert isinstance(t, mig.StockToken)
@@ -104,6 +147,14 @@ class TestTokenizer:
         assert t.code_s == "5032"
         assert t.quarter == 3
         assert t.pre_outlook == ""
+        assert t.had_holding_mark is True
+
+    def test_stock_without_holding_mark(self):
+        """☆ 無しでは had_holding_mark=False"""
+        tokens, _ = mig.tokenize_lines(["◯9556ＩＮＴＬＯＯＰ[2Q]"])
+        t = tokens[0]
+        assert isinstance(t, mig.StockToken)
+        assert t.had_holding_mark is False
 
     def test_stock_with_pre_expectation_marui(self):
         """◯ (U+25EF) は ○ (U+25CB) に正規化される"""
@@ -314,7 +365,7 @@ class TestBuildEntries:
     """エントリ組立層のテスト"""
 
     def test_stock_with_post_full_attach(self):
-        """stock + post 行がアタッチされて 1 エントリ生成"""
+        """stock + post 行がアタッチされて 1 エントリ生成 + ☆ が kessan_matagi=True に反映"""
         tokens, _ = mig.tokenize_lines([
             "<2026年>",
             "[03/11]",
@@ -331,6 +382,19 @@ class TestBuildEntries:
         assert e.pre_outlook == ""
         assert e.post_price_change == "-15"
         assert e.post_comment == "[E] -15% 棚卸資産グッズ？評価損"
+        assert e.kessan_matagi is True
+
+    def test_stock_without_holding_mark_kessan_matagi_false(self):
+        """☆ 無しの銘柄行は kessan_matagi=False"""
+        tokens, _ = mig.tokenize_lines([
+            "<2026年>",
+            "[03/12]",
+            "◯9556ＩＮＴＬＯＯＰ[2Q]: かなり安く",
+            "\u3000←E: -18% ほげ",
+        ])
+        entries, _ = mig.build_entries_from_tokens(tokens)
+        assert len(entries) == 1
+        assert entries[0].kessan_matagi is False
 
     def test_stock_with_outlook_no_post(self):
         """見通しあり・事後なし → エントリ生成 (post フィールドは空)"""
@@ -624,6 +688,69 @@ class TestLocalUpsert:
         # db_path が渡っていること
         assert calls[0][0] == (db_path,) or calls[0][1].get("db_path") == db_path \
             or (len(calls[0][0]) > 0 and calls[0][0][0] == db_path)
+
+    def test_kessan_matagi_saved_by_default(self, db_path):
+        """通常 upsert で kessan_matagi が保存される"""
+        _preregister(db_path, "5032")
+        mig._upsert_kessan_comment_local(
+            self._entry(kessan_matagi=True), db_path=db_path,
+        )
+        rec = rs.get_research_record("5032", db_path=db_path)
+        assert rec["kessan_comments"][0]["kessan_matagi"] is True
+
+    def test_update_fields_only_modifies_target_field(self, db_path):
+        """--update-fields kessan_matagi: 他フィールドは既存値を保持"""
+        _preregister(db_path, "5032")
+        # 初回: kessan_matagi=False で通常保存
+        mig._upsert_kessan_comment_local(
+            self._entry(
+                pre_outlook="手動修正後の内容",
+                post_comment="[C] -3% 手動追記",
+                kessan_matagi=False,
+            ),
+            db_path=db_path,
+        )
+        # update_fields モードで kessan_matagi のみ True 化
+        result = mig._upsert_kessan_comment_local(
+            self._entry(
+                pre_outlook="古いログの内容",     # これは反映されないはず
+                post_comment="古いログ post",    # これも反映されないはず
+                kessan_matagi=True,
+            ),
+            db_path=db_path,
+            update_fields=["kessan_matagi"],
+        )
+        assert result is not None
+        rec = rs.get_research_record("5032", db_path=db_path)
+        entry = rec["kessan_comments"][0]
+        assert entry["kessan_matagi"] is True
+        # 他フィールドは既存値保持
+        assert entry["pre_outlook"] == "手動修正後の内容"
+        assert entry["post_comment"] == "[C] -3% 手動追記"
+
+    def test_update_fields_unmatched_is_skipped(self, db_path):
+        """--update-fields 指定でマッチなしなら新規追加せずスキップ (None を返す)"""
+        _preregister(db_path, "5032")
+        # マッチするエントリ無しで update_fields 呼び出し
+        result = mig._upsert_kessan_comment_local(
+            self._entry(kessanbi="2099/01/01", kessan_matagi=True),
+            db_path=db_path,
+            update_fields=["kessan_matagi"],
+        )
+        assert result is None
+        rec = rs.get_research_record("5032", db_path=db_path)
+        # 新規追加されていないこと
+        assert rec["kessan_comments"] == []
+
+    def test_update_fields_rejects_unknown_field(self, db_path):
+        """update_fields に KESSAN_COMMENT_FIELDS 外のキーが入ると ValueError"""
+        _preregister(db_path, "5032")
+        with pytest.raises(ValueError):
+            mig._upsert_kessan_comment_local(
+                self._entry(),
+                db_path=db_path,
+                update_fields=["kessan_matagi", "nonexistent_field"],
+            )
 
 
 # ==================================================

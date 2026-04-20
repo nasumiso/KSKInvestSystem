@@ -498,11 +498,113 @@ def _sort_kessan_comments(comments: List[Dict[str, Any]]) -> List[Dict[str, Any]
     return sorted(comments, key=_key)
 
 
-def _validate_kessan_comment_input(form_data: dict) -> Tuple[str, int, str, str, str]:
+_FORM_TRUE_VALUES = frozenset({"1", "true", "True", "on", "yes"})
+_FORM_FALSE_VALUES = frozenset({"0", "false", "False", "off", "no"})
+
+
+def _is_possess_now(code_s: str) -> bool:
+    """code_s が現在の保有リスト (my_watch_list.txt の H プレフィックス) に含まれるか。
+
+    parse 失敗時は False (kessan_matagi を誤って立てない安全側に倒す)。
+    """
+    try:
+        import portfolio
+        _, possess_list = portfolio.parse_my_portforio()
+        return code_s in set(possess_list)
+    except Exception as e:
+        log_warning(f"[kessan_matagi] parse_my_portforio 失敗: {e}")
+        return False
+
+
+def _persist_kessan_held_flags(
+    targets: List[Tuple[str, str, int, Dict[str, bool]]],
+) -> None:
+    """指定された (code_s, kessanbi, quarter) の保有系フラグを True に永続化する。
+
+    updates dict は {"held_before_kessan": True, ...} のような True 立ち上げ指示。
+    True は False に下げない (True だけを追記する一方向更新)。
+
+    並行書き込み安全対応:
+      - ロック下で get_research_record() による **再取得** を行い、
+        呼び出し元が保持していた可能性のある stale な record は使わない。
+      - updates の指定キー以外には触らない (他フィールドの並行編集は温存)。
+      - 該当エントリが見つからない / 全指定キーが既に True ならスキップ。
+
+    同一 code_s の複数 (kessanbi, quarter) を 1 回の lock にまとめる。
+    """
+    # code_s 単位でまとめる
+    grouped: Dict[str, List[Tuple[str, int, Dict[str, bool]]]] = {}
+    for code_s, kessanbi, quarter, updates in targets:
+        grouped.setdefault(code_s, []).append((kessanbi, quarter, updates))
+
+    for code_s, items in grouped.items():
+        try:
+            with _flock():
+                record = get_research_record(code_s)
+                if record is None:
+                    continue
+                comments = list(record.get("kessan_comments") or [])
+                changed = False
+                for kessanbi, quarter, updates in items:
+                    for existing in comments:
+                        if (
+                            existing.get("kessanbi") == kessanbi
+                            and int(existing.get("quarter", 0) or 0) == quarter
+                        ):
+                            for key, new_val in updates.items():
+                                # True のみ追記 (False 降格しない)
+                                if new_val and not existing.get(key):
+                                    existing[key] = True
+                                    changed = True
+                            # AND 判定を permanent 側でも保証
+                            if (
+                                existing.get("held_before_kessan")
+                                and existing.get("held_after_kessan")
+                                and not existing.get("kessan_matagi")
+                            ):
+                                existing["kessan_matagi"] = True
+                                changed = True
+                            break
+                if changed:
+                    record["kessan_comments"] = comments
+                    upsert_research_record(record)
+        except Exception as e:
+            log_warning(f"[kessan_matagi] 永続化失敗 code={code_s}: {e}")
+
+
+def _parse_form_tristate_bool(raw: Any) -> Optional[bool]:
+    """フォーム値を bool / None (=未指定) に正規化する。
+
+    - True/False をそのまま受理
+    - "1"/"true"/"on"/"yes" → True、"0"/"false"/"off"/"no" → False
+    - None, "" は未指定として None を返す
+    - それ以外は ValueError
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s == "":
+            return None
+        if s in _FORM_TRUE_VALUES:
+            return True
+        if s in _FORM_FALSE_VALUES:
+            return False
+    raise ValueError(f"bool として解釈不能: {raw!r}")
+
+
+def _validate_kessan_comment_input(
+    form_data: dict,
+) -> Tuple[str, int, str, str, str, Optional[bool]]:
     """フォーム入力を検証し、正規化した値を返す。
 
     Returns:
-        (kessanbi, quarter, pre_expectation, pre_outlook, post_comment)
+        (kessanbi, quarter, pre_expectation, pre_outlook, post_comment,
+         kessan_matagi_override)
+        kessan_matagi_override は None / True / False。
+        None は「フォームに指定なし」で、save 側の自動判定を使う。
     Raises:
         ValueError: 入力不正
     """
@@ -525,7 +627,21 @@ def _validate_kessan_comment_input(form_data: dict) -> Tuple[str, int, str, str,
     pre_outlook = form_data.get("pre_outlook", "") or ""
     post_comment = form_data.get("post_comment", "") or ""
 
-    return kessanbi, quarter, pre_expectation, pre_outlook, post_comment
+    kessan_matagi_override: Optional[bool]
+    if "kessan_matagi" in form_data:
+        try:
+            kessan_matagi_override = _parse_form_tristate_bool(
+                form_data.get("kessan_matagi")
+            )
+        except ValueError as e:
+            raise ValueError(f"kessan_matagi 不正: {e}")
+    else:
+        kessan_matagi_override = None
+
+    return (
+        kessanbi, quarter, pre_expectation, pre_outlook, post_comment,
+        kessan_matagi_override,
+    )
 
 
 def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
@@ -543,12 +659,16 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
 
-    kessanbi, quarter, pre_expectation, pre_outlook, post_comment = (
-        _validate_kessan_comment_input(form_data)
-    )
+    (
+        kessanbi, quarter, pre_expectation, pre_outlook, post_comment,
+        kessan_matagi_override,
+    ) = _validate_kessan_comment_input(form_data)
 
     # 変動率をスナップショット算出
     post_price_change = calc_price_reaction(normalized, kessanbi)
+
+    # 現在保有中か (kessan_matagi 初期値判定用)
+    is_possess_now = _is_possess_now(normalized)
 
     with _flock():
         record = get_research_record(normalized)
@@ -570,6 +690,38 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
                 target_idx = i
                 break
 
+        # 既存 held フラグを引き継ぐ (True は下げない)
+        existing_held_before = False
+        existing_held_after = False
+        existing_matagi = False
+        if target_idx is not None:
+            existing = comments[target_idx]
+            existing_held_before = bool(existing.get("held_before_kessan", False))
+            existing_held_after = bool(existing.get("held_after_kessan", False))
+            existing_matagi = bool(existing.get("kessan_matagi", False))
+
+        # 決算前後の切り分け: kessanbi と現在日の比較で held_before/after を更新
+        kessanbi_dt = _parse_kessanbi(kessanbi)
+        today = get_price_day(datetime.today())
+        held_before = existing_held_before
+        held_after = existing_held_after
+        if is_possess_now and kessanbi_dt is not None:
+            if kessanbi_dt >= today:
+                held_before = True
+            else:
+                held_after = True
+
+        # kessan_matagi の確定:
+        #   1. form_data に明示指定があればそれを優先 (手動トグル)
+        #   2. 既存エントリが True ならそれを維持
+        #   3. held_before AND held_after なら True (AND 判定)
+        if kessan_matagi_override is not None:
+            kessan_matagi = kessan_matagi_override
+        elif existing_matagi:
+            kessan_matagi = True
+        else:
+            kessan_matagi = bool(held_before and held_after)
+
         new_entry: Dict[str, Any] = {
             "kessanbi": kessanbi,
             "quarter": quarter,
@@ -577,6 +729,9 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
             "pre_outlook": pre_outlook,
             "post_price_change": post_price_change,
             "post_comment": post_comment,
+            "kessan_matagi": kessan_matagi,
+            "held_before_kessan": held_before,
+            "held_after_kessan": held_after,
         }
         if target_idx is not None:
             # 既存エントリ上書き。post_price_change はリアルタイム計算失敗時は既存値を優先
@@ -685,6 +840,9 @@ def get_market_kessan_data() -> Dict[str, Any]:
             "post_comment": "",
             "has_comment": False,
             "is_possess": code_s in possess_set,
+            "kessan_matagi": False,
+            "held_before_kessan": False,
+            "held_after_kessan": False,
         }
 
     # research_shelve のコメント済みエントリをマージ
@@ -725,6 +883,9 @@ def get_market_kessan_data() -> Dict[str, Any]:
                     or entry.get("pre_expectation")
                 ),
                 "is_possess": code_s in possess_set,
+                "kessan_matagi": bool(entry.get("kessan_matagi", False)),
+                "held_before_kessan": bool(entry.get("held_before_kessan", False)),
+                "held_after_kessan": bool(entry.get("held_after_kessan", False)),
             }
 
     # 過去エントリで post_price_change 未保存のものだけ一括で price_log 取得
@@ -741,6 +902,11 @@ def get_market_kessan_data() -> Dict[str, Any]:
     # 日付ごとにグループ化
     future_groups: Dict[str, List[Dict[str, Any]]] = {}
     past_groups: Dict[str, List[Dict[str, Any]]] = {}
+    # kessan_matagi 関連フィールドで新たに True 化した per-entry を記録し、
+    # ループ後に専用関数で shelve に永続化する。
+    # (stale rec を直接 upsert すると並行編集を上書きするため、lock 下で再取得する)
+    # targets: [(code_s, kessanbi, quarter, {"held_before_kessan": True, ...}), ...]
+    persist_targets: List[Tuple[str, str, int, Dict[str, bool]]] = []
     for entry in merged.values():
         kessanbi = entry["kessanbi"]
         dt = _parse_kessanbi(kessanbi)
@@ -750,8 +916,42 @@ def get_market_kessan_data() -> Dict[str, Any]:
         if dt < base_day and not entry.get("post_price_change"):
             log = price_logs_cache.get(entry["code_s"], [])
             entry["post_price_change"] = _price_reaction_from_log(log, dt)
+
+        # 前後保有フラグのスナップショット化
+        # - 未来エントリ (dt >= base_day): is_possess=True なら held_before_kessan=True
+        # - 過去エントリ (dt <  base_day): is_possess=True なら held_after_kessan=True
+        # True は False に下げない (過去の保有痕跡は不可逆保持)
+        updates: Dict[str, bool] = {}
+        if entry.get("is_possess"):
+            if dt >= base_day and not entry.get("held_before_kessan"):
+                entry["held_before_kessan"] = True
+                updates["held_before_kessan"] = True
+            elif dt < base_day and not entry.get("held_after_kessan"):
+                entry["held_after_kessan"] = True
+                updates["held_after_kessan"] = True
+
+        # AND 判定: 決算前保有 & 決算後保有 の両方満たせば kessan_matagi=True 確定
+        if (
+            entry.get("held_before_kessan")
+            and entry.get("held_after_kessan")
+            and not entry.get("kessan_matagi")
+        ):
+            entry["kessan_matagi"] = True
+            updates["kessan_matagi"] = True
+
+        if updates:
+            persist_targets.append((
+                entry["code_s"],
+                entry["kessanbi"],
+                int(entry.get("quarter", 0) or 0),
+                updates,
+            ))
+
         groups = past_groups if dt < base_day else future_groups
         groups.setdefault(kessanbi, []).append(entry)
+
+    if persist_targets:
+        _persist_kessan_held_flags(persist_targets)
 
     # 銘柄コード順にカード内ソート
     for d in list(future_groups.values()) + list(past_groups.values()):

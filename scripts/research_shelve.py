@@ -90,12 +90,16 @@ RECORD_FIELDS = frozenset(
 # 決算コメントエントリの既知フィールド
 KESSAN_COMMENT_FIELDS = frozenset(
     {
-        "kessanbi",          # YYYY/MM/DD
-        "quarter",           # 1-4 (int)
-        "pre_expectation",   # ◎/○/△/× or ""
-        "pre_outlook",       # 事前見通し (フリーテキスト)
-        "post_price_change", # 決算反応の株価変動率 (%) スナップショット
-        "post_comment",      # 決算後コメント (フリーテキスト)
+        "kessanbi",             # YYYY/MM/DD
+        "quarter",              # 1-4 (int)
+        "pre_expectation",      # ◎/○/△/× or ""
+        "pre_outlook",          # 事前見通し (フリーテキスト)
+        "post_price_change",    # 決算反応の株価変動率 (%) スナップショット
+        "post_comment",         # 決算後コメント (フリーテキスト)
+        "held_before_kessan",   # 決算前に保有中だったか (bool, 未来エントリで永続化)
+        "held_after_kessan",    # 決算後に保有中だったか (bool, 過去エントリで永続化)
+        "kessan_matagi",        # 決算日をまたいで保有していたか (bool)
+                                # 自動判定: held_before AND held_after / ログ☆由来 / UI手動
     }
 )
 
@@ -448,6 +452,8 @@ def get_research_record(
     存在しなければ None。code_s は内部で正規化される。
     shikiho_comments は List[dict] に自動正規化される（後方互換）。
     kessan_comments は未設定の旧レコードに対し空リストで補完する（後方互換）。
+    kessan_comments の各エントリに kessan_matagi / held_before_kessan /
+    held_after_kessan が無ければ False で補完する（後方互換）。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
@@ -460,6 +466,14 @@ def get_research_record(
         )
         if not isinstance(record.get("kessan_comments"), list):
             record["kessan_comments"] = []
+        for entry in record["kessan_comments"]:
+            if not isinstance(entry, dict):
+                continue
+            for key in (
+                "kessan_matagi", "held_before_kessan", "held_after_kessan",
+            ):
+                if key not in entry:
+                    entry[key] = False
     return record
 
 
@@ -798,7 +812,10 @@ def format_record_full(record: Dict[str, Any]) -> str:
             pre = entry.get("pre_outlook", "")
             price_change = entry.get("post_price_change", "") or "-"
             post = entry.get("post_comment", "")
-            lines.append(f"  [{kessanbi} {quarter}Q 期待度:{pre_exp} 反応:{price_change}%]")
+            matagi_mark = "◆" if entry.get("kessan_matagi") else ""
+            lines.append(
+                f"  [{kessanbi} {quarter}Q 期待度:{pre_exp} 反応:{price_change}% {matagi_mark}]"
+            )
             lines.append(f"    事前    : {_indent_multiline(pre, ' ' * 14)}")
             lines.append(f"    事後    : {_indent_multiline(post, ' ' * 14)}")
     else:

@@ -50,6 +50,7 @@ def get_kessan_comment_api(code_s: str):
             "pre_outlook": "",
             "post_price_change": "",
             "post_comment": "",
+            "kessan_matagi": False,
         }
     return jsonify(entry)
 
