@@ -786,6 +786,37 @@ class TestLocalUpsert:
         assert entry["held_before_kessan"] is True
         assert entry["held_after_kessan"] is True
 
+    def test_normal_upsert_preserves_existing_kessan_matagi_true(self, db_path):
+        """通常モードで既存の kessan_matagi=True を ☆なしログで False に下げない
+
+        webapp の自動昇格や手動トグルで True になっていたエントリは、
+        ログ側に ☆ が無くても True を保持する (PR レビュー P2 追加分)。
+        """
+        _preregister(db_path, "5032")
+        rec = rs.get_research_record("5032", db_path=db_path)
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/03/11",
+            "quarter": 3,
+            "pre_expectation": "○",
+            "pre_outlook": "既存見通し",
+            "post_price_change": "-15",
+            "post_comment": "[E] -15% x",
+            "kessan_matagi": True,          # 既存 True (webapp 由来)
+            "held_before_kessan": False,
+            "held_after_kessan": True,
+        }]
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        # ログ側 ☆なし (kessan_matagi=False) で通常保存
+        mig._upsert_kessan_comment_local(
+            self._entry(kessan_matagi=False),
+            db_path=db_path,
+        )
+
+        loaded = rs.get_research_record("5032", db_path=db_path)
+        entry = loaded["kessan_comments"][0]
+        assert entry["kessan_matagi"] is True  # 退行しない
+
     def test_normal_upsert_accepts_new_true_flags(self, db_path):
         """True 側の更新は反映される (片方だけ True に立てるケース)"""
         _preregister(db_path, "5032")

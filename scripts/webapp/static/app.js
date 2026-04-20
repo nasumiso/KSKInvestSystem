@@ -326,8 +326,15 @@ function saveKessanFromEditor(li) {
   formData.append('pre_expectation', preExp ? preExp.value : '');
   formData.append('pre_outlook', preOut ? preOut.value : '');
   formData.append('post_comment', postCom ? postCom.value : '');
+  /* kessan_matagi は checkbox が初期値と変わった時のみ送信する。
+     (未操作で常に送ると save_kessan_comment 側で override 扱いになり、
+      held_before && held_after による自動昇格が効かなくなる) */
   if (matagi) {
-    formData.append('kessan_matagi', matagi.checked ? '1' : '0');
+    var initial = matagi.dataset.initial || '0';
+    var current = matagi.checked ? '1' : '0';
+    if (current !== initial) {
+      formData.append('kessan_matagi', current);
+    }
   }
 
   var url = '/api/kessan_comment/' + encodeURIComponent(code);

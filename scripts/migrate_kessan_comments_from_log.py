@@ -653,12 +653,15 @@ def _upsert_kessan_comment_local(
         else:
             if target_idx is not None:
                 # 通常モードの既存上書き:
-                # webapp が学習した held_before_kessan / held_after_kessan は
-                # ログには情報が無いため、既存の True を退行させない。
-                # ただし True は下げない一方向更新 (新規側が True ならそれを採用)。
+                # webapp が学習した / 手動編集された保有系フラグ
+                # (held_before_kessan / held_after_kessan / kessan_matagi) は、
+                # ログ側には十分な情報が無いため退行させない (True → False させない)。
+                # 新規側が True ならそれを採用する一方向更新。
                 existing = comments[target_idx]
                 new_entry = dict(full_entry)
-                for key in ("held_before_kessan", "held_after_kessan"):
+                for key in (
+                    "held_before_kessan", "held_after_kessan", "kessan_matagi",
+                ):
                     if existing.get(key) and not new_entry.get(key):
                         new_entry[key] = True
                 comments[target_idx] = new_entry
