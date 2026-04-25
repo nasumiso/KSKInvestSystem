@@ -296,6 +296,38 @@ class TestCrud:
         loaded = rs.get_research_record("5032", db_path=db_path)
         assert loaded["kessan_comments"][0]["kessan_matagi"] is True
 
+    def test_get_research_record_normalizes_old_post_price_change(self, db_path):
+        """旧 post_price_change のみ持つエントリは post_price_changes に正規化される (issue #133)"""
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/03/11",
+            "quarter": 3,
+            "pre_expectation": "○",
+            "pre_outlook": "見通し",
+            "post_price_change": "-15",
+            "post_comment": "[E] -15% x",
+        }]
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("5032", db_path=db_path)
+        entry = loaded["kessan_comments"][0]
+        assert entry["post_price_changes"] == {"1d": "-15", "5d": ""}
+
+    def test_get_research_record_preserves_post_price_changes_dict(self, db_path):
+        """新形式 post_price_changes は読出時もそのまま"""
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/03/11",
+            "quarter": 3,
+            "pre_expectation": "○",
+            "pre_outlook": "見通し",
+            "post_price_changes": {"1d": "+3.2", "5d": "+5.1"},
+            "post_comment": "",
+        }]
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("5032", db_path=db_path)
+        entry = loaded["kessan_comments"][0]
+        assert entry["post_price_changes"] == {"1d": "+3.2", "5d": "+5.1"}
+
 
 # ==================================================
 # スナップショット層: upsert_snapshot

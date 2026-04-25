@@ -56,6 +56,80 @@ class TestGetResearchDetail:
         rec = helpers.get_research_detail("9999")
         assert rec is None
 
+    def test_backfills_missing_5d_from_price_log(
+        self, populated_db, monkeypatch
+    ):
+        """過去エントリで 5d が欠損していれば price_log から補完される (issue #133)"""
+        from datetime import date as _date, timedelta as _td
+        kessan = _date(2026, 4, 1)
+        # 決算日以下の終値 + 1d, 2d, ..., 6d 後の終値
+        log = [(kessan - _td(days=1), 1000)]
+        for i, pr in enumerate([1032, 1040, 1045, 1048, 1051], start=1):
+            log.append((kessan + _td(days=i), pr))
+        monkeypatch.setattr(
+            helpers,
+            "_bulk_price_logs",
+            lambda codes: {"3496": log} if "3496" in codes else {},
+        )
+        # today を決算後に固定 (補完対象は dt < base_day のもののみ)
+        monkeypatch.setattr(
+            helpers, "get_price_day", lambda _: _date(2026, 4, 25)
+        )
+        # 1d だけ持つエントリを直接挿入 (5d は欠損)
+        rec = rs.get_research_record("3496")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/04/01",
+            "quarter": 4,
+            "pre_expectation": "○",
+            "pre_outlook": "テスト",
+            "post_price_changes": {"1d": "+3.2", "5d": ""},
+            "post_comment": "",
+            "kessan_matagi": False,
+            "held_before_kessan": False,
+            "held_after_kessan": False,
+        }]
+        rs.upsert_research_record(rec)
+
+        detail = helpers.get_research_detail("3496")
+        entry = detail["kessan_comments"][0]
+        assert entry["post_price_changes"]["1d"] == "+3.2"
+        # 5d が補完されていること (1000 → 1051 = +5.1%)
+        assert entry["post_price_changes"]["5d"] == "+5.1"
+
+    def test_does_not_backfill_future_entries(
+        self, populated_db, monkeypatch
+    ):
+        """未来の決算エントリ (dt >= base_day) は補完対象外"""
+        from datetime import date as _date, timedelta as _td
+        kessan = _date(2026, 5, 1)  # 未来
+        log = [(kessan - _td(days=1), 1000), (kessan + _td(days=1), 1050)]
+        monkeypatch.setattr(
+            helpers,
+            "_bulk_price_logs",
+            lambda codes: {"3496": log},
+        )
+        monkeypatch.setattr(
+            helpers, "get_price_day", lambda _: _date(2026, 4, 25)
+        )
+        rec = rs.get_research_record("3496")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/05/01",
+            "quarter": 1,
+            "pre_expectation": "",
+            "pre_outlook": "",
+            "post_price_changes": {"1d": "", "5d": ""},
+            "post_comment": "",
+            "kessan_matagi": False,
+            "held_before_kessan": False,
+            "held_after_kessan": False,
+        }]
+        rs.upsert_research_record(rec)
+
+        detail = helpers.get_research_detail("3496")
+        entry = detail["kessan_comments"][0]
+        # 未来エントリなので補完されず空のまま
+        assert entry["post_price_changes"] == {"1d": "", "5d": ""}
+
 
 class TestSearchRecords:
     """search_records のテスト"""
@@ -263,8 +337,15 @@ class TestSaveKessanCommentMatagi:
         monkeypatch.setattr(helpers, "RESEARCH_SHELVE", db_path, raising=False)
         rec = rs.create_research_record("5032", "ANYCOLOR")
         rs.upsert_research_record(rec, db_path=db_path)
-        # price_log は未登録でOK (calc_price_reaction は空文字を返す)
+        # price_log は未登録でOK
+        # calc_price_reaction (旧API) と calc_price_reactions (新API) の両方を差し替え。
+        # 実コードは calc_price_reactions を呼ぶが、互換ラッパ経由を含めて空に固定する。
         monkeypatch.setattr(helpers, "calc_price_reaction", lambda c, k: "")
+        monkeypatch.setattr(
+            helpers,
+            "calc_price_reactions",
+            lambda c, k: {key: "" for key, _ in helpers.KESSAN_REACTION_PERIODS},
+        )
         return db_path
 
     @pytest.fixture
@@ -422,3 +503,196 @@ class TestPersistKessanHeldFlags:
         loaded = rs.get_research_record("5032")
         assert loaded["kessan_comments"][0]["held_after_kessan"] is False
         assert len(loaded["kessan_comments"]) == 1
+
+
+class TestPriceReactionFromLog:
+    """_price_reaction_from_log の N営業日後計算 (issue #133)"""
+
+    def _make_log(self, kessan_dt, before_pr, after_prs):
+        """決算日以下の終値 + 決算日より後の営業日終値リストから price_log を作る"""
+        from datetime import timedelta as _td
+        log = [(kessan_dt - _td(days=1), before_pr)]
+        for i, pr in enumerate(after_prs, start=1):
+            log.append((kessan_dt + _td(days=i), pr))
+        return log
+
+    def test_returns_1d_change_when_n_is_1(self):
+        from datetime import date
+        kessan = date(2026, 4, 1)
+        log = self._make_log(kessan, 1000, [1032])
+        assert helpers._price_reaction_from_log(log, kessan, n_business_days=1) == "+3.2"
+
+    def test_returns_5d_change_when_n_is_5(self):
+        from datetime import date
+        kessan = date(2026, 4, 1)
+        # 1000 → 1d後 1032, ..., 5d後 1051 (=+5.1%)
+        log = self._make_log(kessan, 1000, [1032, 1040, 1045, 1048, 1051])
+        assert helpers._price_reaction_from_log(log, kessan, n_business_days=5) == "+5.1"
+
+    def test_returns_empty_when_n5_not_enough_log(self):
+        from datetime import date
+        kessan = date(2026, 4, 1)
+        # 後ろが4本しか無い → n=5 で取得不可
+        log = self._make_log(kessan, 1000, [1010, 1020, 1030, 1040])
+        assert helpers._price_reaction_from_log(log, kessan, n_business_days=5) == ""
+
+    def test_returns_empty_when_no_before_price(self):
+        from datetime import date, timedelta
+        kessan = date(2026, 4, 1)
+        # 決算日以下の log が無い (全部 future)
+        log = [(kessan + timedelta(days=i), 1000 + i) for i in range(1, 6)]
+        assert helpers._price_reaction_from_log(log, kessan, n_business_days=1) == ""
+
+    def test_negative_change_format(self):
+        from datetime import date
+        kessan = date(2026, 4, 1)
+        log = self._make_log(kessan, 1000, [985])
+        assert helpers._price_reaction_from_log(log, kessan, n_business_days=1) == "-1.5"
+
+    def test_invalid_n_returns_empty(self):
+        from datetime import date
+        kessan = date(2026, 4, 1)
+        log = self._make_log(kessan, 1000, [1032])
+        assert helpers._price_reaction_from_log(log, kessan, n_business_days=0) == ""
+
+
+class TestCalcPriceReactions:
+    """calc_price_reactions の dict 返却 (issue #133)"""
+
+    def test_returns_dict_with_both_periods(self, monkeypatch):
+        from datetime import date, timedelta
+        kessan = date(2026, 4, 1)
+        log = [(kessan - timedelta(days=1), 1000)]
+        for i, pr in enumerate([1032, 1040, 1045, 1048, 1051], start=1):
+            log.append((kessan + timedelta(days=i), pr))
+        monkeypatch.setattr(helpers, "get_stock_data", lambda c: {"price_log": log})
+        result = helpers.calc_price_reactions("5032", "2026/04/01")
+        assert result == {"1d": "+3.2", "5d": "+5.1"}
+
+    def test_invalid_kessanbi_returns_empty_dict(self):
+        result = helpers.calc_price_reactions("5032", "invalid-date")
+        assert result == {"1d": "", "5d": ""}
+
+    def test_partial_log_returns_partial_dict(self, monkeypatch):
+        from datetime import date, timedelta
+        kessan = date(2026, 4, 1)
+        # 後ろ1本しか無い → 1d は取れて 5d は ""
+        log = [(kessan - timedelta(days=1), 1000), (kessan + timedelta(days=1), 1050)]
+        monkeypatch.setattr(helpers, "get_stock_data", lambda c: {"price_log": log})
+        result = helpers.calc_price_reactions("5032", "2026/04/01")
+        assert result["1d"] == "+5.0"
+        assert result["5d"] == ""
+
+
+class TestNormalizePostPriceChanges:
+    """normalize_kessan_post_price_changes の後方互換正規化 (issue #133)"""
+
+    def test_new_format_passthrough(self):
+        entry = {"post_price_changes": {"1d": "+3", "5d": "+5"}}
+        result = rs.normalize_kessan_post_price_changes(entry)
+        assert result == {"1d": "+3", "5d": "+5"}
+
+    def test_old_format_lifts_to_1d(self):
+        entry = {"post_price_change": "-15"}
+        result = rs.normalize_kessan_post_price_changes(entry)
+        assert result == {"1d": "-15", "5d": ""}
+
+    def test_both_present_prefers_new(self):
+        entry = {
+            "post_price_change": "-15",
+            "post_price_changes": {"1d": "+2", "5d": "+3"},
+        }
+        result = rs.normalize_kessan_post_price_changes(entry)
+        assert result == {"1d": "+2", "5d": "+3"}
+
+    def test_neither_present_returns_empty(self):
+        result = rs.normalize_kessan_post_price_changes({})
+        assert result == {"1d": "", "5d": ""}
+
+    def test_partial_new_format_filled_with_empty(self):
+        entry = {"post_price_changes": {"1d": "+3"}}  # 5d 欠落
+        result = rs.normalize_kessan_post_price_changes(entry)
+        assert result == {"1d": "+3", "5d": ""}
+
+
+class TestSaveKessanCommentMultiPeriod:
+    """save_kessan_comment の dict 化 + 期間別ガード (issue #133)"""
+
+    @pytest.fixture
+    def setup_db(self, db_path, monkeypatch):
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr(helpers, "RESEARCH_SHELVE", db_path, raising=False)
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rs.upsert_research_record(rec, db_path=db_path)
+        from datetime import date as _date
+        monkeypatch.setattr(helpers, "get_price_day", lambda _: _date(2026, 4, 25))
+        monkeypatch.setattr(helpers, "_is_possess_now", lambda c: False)
+        return db_path
+
+    def _form(self, **overrides):
+        base = {
+            "kessanbi": "2026/03/11",
+            "quarter": "3",
+            "pre_expectation": "○",
+            "pre_outlook": "事前",
+            "post_comment": "",
+        }
+        base.update(overrides)
+        return base
+
+    def test_new_entry_saves_post_price_changes_dict(self, setup_db, monkeypatch):
+        """新規保存時、post_price_changes が dict で保存され post_price_change は含まれない"""
+        monkeypatch.setattr(
+            helpers, "calc_price_reactions",
+            lambda c, k: {"1d": "+3.2", "5d": "+5.1"},
+        )
+        entry = helpers.save_kessan_comment("5032", self._form())
+        assert entry["post_price_changes"] == {"1d": "+3.2", "5d": "+5.1"}
+        # 旧キーは新規エントリには含めない
+        assert "post_price_change" not in entry
+
+    def test_overwrite_keeps_existing_5d_when_new_calc_fails(self, setup_db, monkeypatch):
+        """既存に 5d=+5.1 がある状態で再計算が 5d="" を返したら、5d は既存値を保持"""
+        # フェーズ1: 両期間取れる
+        monkeypatch.setattr(
+            helpers, "calc_price_reactions",
+            lambda c, k: {"1d": "+3.2", "5d": "+5.1"},
+        )
+        helpers.save_kessan_comment("5032", self._form())
+        # フェーズ2: 5d だけ取れず "" になる
+        monkeypatch.setattr(
+            helpers, "calc_price_reactions",
+            lambda c, k: {"1d": "+4.0", "5d": ""},
+        )
+        entry = helpers.save_kessan_comment("5032", self._form())
+        assert entry["post_price_changes"]["1d"] == "+4.0"
+        # 既存の +5.1 が保持されている
+        assert entry["post_price_changes"]["5d"] == "+5.1"
+
+    def test_overwrite_legacy_record_lifts_1d_value(self, setup_db, monkeypatch):
+        """既存が旧 post_price_change のみ持つレコードを上書きする時、1d 既存値が保持される"""
+        # 旧形式のみのレコードを直接挿入
+        rec = rs.get_research_record("5032")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/03/11",
+                "quarter": 3,
+                "pre_expectation": "○",
+                "pre_outlook": "init",
+                "post_price_change": "-7.5",  # 旧形式のみ
+                "post_comment": "",
+                "kessan_matagi": False,
+                "held_before_kessan": False,
+                "held_after_kessan": False,
+            },
+        ]
+        rs.upsert_research_record(rec)
+        # 新計算が両方 "" を返す → 既存 1d="-7.5" が保持されるはず
+        monkeypatch.setattr(
+            helpers, "calc_price_reactions",
+            lambda c, k: {"1d": "", "5d": ""},
+        )
+        entry = helpers.save_kessan_comment("5032", self._form(pre_outlook="updated"))
+        assert entry["post_price_changes"]["1d"] == "-7.5"
+        assert entry["post_price_changes"]["5d"] == ""

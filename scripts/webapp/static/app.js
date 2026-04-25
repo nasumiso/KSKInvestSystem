@@ -270,15 +270,12 @@ function openKessanEditor(li) {
       var preExp = editor.querySelector('.kessan-pre-expectation');
       var preOut = editor.querySelector('.kessan-pre-outlook');
       var postCom = editor.querySelector('.kessan-post-comment');
-      var postPc = editor.querySelector('.kessan-post-price-change');
       var matagi = editor.querySelector('.kessan-matagi');
       if (preExp) preExp.value = data.pre_expectation || '';
       if (preOut) preOut.value = data.pre_outlook || '';
       if (postCom) postCom.value = data.post_comment || '';
       if (matagi) matagi.checked = !!data.kessan_matagi;
-      if (postPc && data.post_price_change) {
-        postPc.textContent = data.post_price_change;
-      }
+      updatePostPriceChangeDisplay(editor, data);
       editor.dataset.loaded = '1';
       rememberKessanInitialValues(editor);
     }).catch(function() { /* ネットワーク失敗時は静かに無視 */ });
@@ -296,6 +293,19 @@ function rememberKessanInitialValues(editor) {
       el.dataset.initial = el.value;
     }
   });
+}
+
+/* 1d/5d 反応率を editor の post-price-change スパンに反映する。
+   API が空文字を返したときは、テンプレ初期描画で入っている値を
+   上書きしない（market 側の補完計算結果が消えないようにするため）。 */
+function updatePostPriceChangeDisplay(editor, data) {
+  var postPc = editor.querySelector('.kessan-post-price-change');
+  if (!postPc) return;
+  var changes = data.post_price_changes || {};
+  var pc1Span = postPc.querySelector('.kessan-pc-1d');
+  var pc5Span = postPc.querySelector('.kessan-pc-5d');
+  if (pc1Span && changes['1d']) pc1Span.textContent = changes['1d'];
+  if (pc5Span && changes['5d']) pc5Span.textContent = changes['5d'];
 }
 
 function isKessanDirty(editor) {
@@ -346,11 +356,7 @@ function saveKessanFromEditor(li) {
       if (!data) return;
       /* 初期値リセット */
       rememberKessanInitialValues(editor);
-      /* post_price_change 表示更新 */
-      var postPc = editor.querySelector('.kessan-post-price-change');
-      if (postPc && data.post_price_change) {
-        postPc.textContent = data.post_price_change;
-      }
+      updatePostPriceChangeDisplay(editor, data);
       /* 閲覧用 view DOM を再構築（リロード不要で反映） */
       updateKessanViewDOM(li, data);
       /* has-comment クラス付与で左縁に色がつく */

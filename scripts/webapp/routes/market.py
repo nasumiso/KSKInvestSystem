@@ -6,6 +6,8 @@ GET  /api/kessan_comment/<code_s>    : 指定銘柄・決算日のコメント�
 POST /api/kessan_comment/<code_s>    : 決算コメントを保存 (新規 or 上書き)
 """
 
+from typing import Any, Dict
+
 from flask import Blueprint, jsonify, render_template, request
 
 from webapp.helpers import (
@@ -14,9 +16,41 @@ from webapp.helpers import (
     get_market_kessan_data,
     save_kessan_comment,
 )
-from research_shelve import VALID_EXPECTATIONS
+from research_shelve import (
+    KESSAN_REACTION_PERIODS,
+    VALID_EXPECTATIONS,
+    normalize_kessan_post_price_changes,
+)
 
 market_bp = Blueprint("market", __name__)
+
+
+# API レスポンスに含める決算コメントエントリのキー集合
+# 旧 post_price_change は API 契約上含めない（_serialize_kessan_entry_for_api で除外）
+_API_ENTRY_KEYS = (
+    "kessanbi",
+    "quarter",
+    "pre_expectation",
+    "pre_outlook",
+    "post_comment",
+    "kessan_matagi",
+    "held_before_kessan",
+    "held_after_kessan",
+)
+
+
+def _serialize_kessan_entry_for_api(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """決算コメントエントリを API 用に整形する。
+
+    新スキーマ (post_price_changes) のみを返し、旧 post_price_change キーは含めない。
+    旧形式のみのデータを受け取った場合は post_price_changes に正規化して返す。
+    """
+    result: Dict[str, Any] = {}
+    for key in _API_ENTRY_KEYS:
+        if key in entry:
+            result[key] = entry[key]
+    result["post_price_changes"] = normalize_kessan_post_price_changes(entry)
+    return result
 
 
 @market_bp.route("/market", methods=["GET"])
@@ -48,11 +82,12 @@ def get_kessan_comment_api(code_s: str):
             "quarter": 0,
             "pre_expectation": "",
             "pre_outlook": "",
-            "post_price_change": "",
+            "post_price_changes": {key: "" for key, _ in KESSAN_REACTION_PERIODS},
             "post_comment": "",
             "kessan_matagi": False,
         }
-    return jsonify(entry)
+        return jsonify(entry)
+    return jsonify(_serialize_kessan_entry_for_api(entry))
 
 
 @market_bp.route("/api/kessan_comment/<code_s>", methods=["POST"])
@@ -63,4 +98,4 @@ def post_kessan_comment_api(code_s: str):
         entry = save_kessan_comment(code_s, form)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    return jsonify(entry)
+    return jsonify(_serialize_kessan_entry_for_api(entry))

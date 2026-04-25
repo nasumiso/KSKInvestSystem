@@ -25,9 +25,11 @@ from research_shelve import (
     normalize_code_s,
     validate_rating,
     _flock,
+    normalize_kessan_post_price_changes,
     VALID_RATINGS,
     VALID_EXPECTATIONS,
     MAX_KESSAN_COMMENTS,
+    KESSAN_REACTION_PERIODS,
 )
 
 
@@ -36,6 +38,8 @@ def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
 
     表示用に shikiho_comments を period 降順（新しい順）に並べ替える。
     period 空 / "-" は最古扱いで末尾に寄せ、同値同士は元リスト順を保つ。
+    過去の決算コメントで post_price_changes に欠損期間があれば
+    price_log から補完計算して in-memory で埋める（永続化はしない）。
     """
     validate_code_s(code_s)
     record = get_research_record(code_s)
@@ -43,7 +47,49 @@ def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
         record["shikiho_comments"] = sort_shikiho_comments_desc(
             record.get("shikiho_comments") or []
         )
+        _backfill_post_price_changes_for_entries(
+            code_s,
+            record.get("kessan_comments") or [],
+        )
     return record
+
+
+def _backfill_post_price_changes_for_entries(
+    code_s: str,
+    entries: List[Dict[str, Any]],
+) -> None:
+    """過去エントリの post_price_changes に欠損期間があれば price_log から補完する。
+
+    永続化はせず、entry dict を in-place で更新する。
+    決算日が未来 (今日以降) のエントリは補完対象外。
+    """
+    if not entries:
+        return
+    base_day = get_price_day(datetime.today())
+
+    targets: List[Tuple[Dict[str, Any], date]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        dt = _parse_kessanbi(entry.get("kessanbi", ""))
+        if dt is None or dt >= base_day:
+            continue
+        changes = entry.get("post_price_changes") or {}
+        if any(not changes.get(key) for key, _ in KESSAN_REACTION_PERIODS):
+            targets.append((entry, dt))
+    if not targets:
+        return
+
+    log = _bulk_price_logs([code_s]).get(normalize_code_s(code_s), [])
+    if not log:
+        return
+    for entry, dt in targets:
+        existing = entry.get("post_price_changes") or {}
+        calculated = _price_reactions_from_log(log, dt)
+        for key, _ in KESSAN_REACTION_PERIODS:
+            if not existing.get(key) and calculated.get(key):
+                existing[key] = calculated[key]
+        entry["post_price_changes"] = existing
 
 
 def get_stock_data(code_s: str) -> Dict[str, Any]:
@@ -416,21 +462,23 @@ def get_market_html_parts() -> Dict[str, str]:
     }
 
 
-def _price_reaction_from_log(price_log: List, kessanbi_dt: date) -> str:
-    """price_log と決算日 date から変動率を算出する内部関数。
+def _split_log_around_kessanbi(
+    price_log: List,
+    kessanbi_dt: date,
+) -> Tuple[Optional[int], List[Tuple[date, int]]]:
+    """price_log を「決算日以下の最新営業日終値」と「決算日より後の昇順タプル列」に分ける。
 
-    price_log: [(date, int終値), ...]
-    kessanbi_dt: 決算日の date
+    複数期間の反応率計算でソート/分割を共有するための共通前処理。
     """
     if not price_log:
-        return ""
+        return None, []
     try:
-        sorted_log = sorted(price_log, key=lambda x: x[0], reverse=True)
+        sorted_log = sorted(price_log, key=lambda x: x[0])  # 昇順
     except (TypeError, IndexError):
-        return ""
+        return None, []
 
     before_price: Optional[int] = None
-    after_price: Optional[int] = None
+    after_entries: List[Tuple[date, int]] = []
     for entry in sorted_log:
         try:
             entry_dt, entry_pr = entry[0], entry[1]
@@ -438,12 +486,17 @@ def _price_reaction_from_log(price_log: List, kessanbi_dt: date) -> str:
             continue
         if not isinstance(entry_dt, date):
             continue
-        if entry_dt <= kessanbi_dt and before_price is None:
+        if entry_dt <= kessanbi_dt:
+            # 昇順なので最後に上書きされた値が「決算日以下の最新営業日」
             before_price = entry_pr
-        if entry_dt > kessanbi_dt:
-            after_price = entry_pr
+        else:
+            after_entries.append((entry_dt, entry_pr))
+    return before_price, after_entries
 
-    if before_price is None or after_price is None or before_price == 0:
+
+def _format_reaction(before_price: Optional[int], after_price: int) -> str:
+    """前営業日終値 → N営業日後終値の変動率を符号付き文字列で返す。失敗時は ""。"""
+    if before_price is None or before_price == 0:
         return ""
     try:
         change = (float(after_price) / float(before_price) - 1.0) * 100.0
@@ -453,22 +506,73 @@ def _price_reaction_from_log(price_log: List, kessanbi_dt: date) -> str:
     return f"{sign}{change:.1f}"
 
 
-def calc_price_reaction(code_s: str, kessanbi: str) -> str:
-    """決算日前営業日終値と翌営業日終値から株価変動率を算出する。
+def _price_reaction_from_log(
+    price_log: List,
+    kessanbi_dt: date,
+    *,
+    n_business_days: int = 1,
+) -> str:
+    """price_log と決算日 date から N 営業日後変動率を算出する内部関数。
+
+    price_log: [(date, int終値), ...]
+    n=1 → 決算日翌営業日終値 / 決算日以下の最新営業日終値 - 1
+    n=5 → 5営業日後終値 / 決算日以下の最新営業日終値 - 1
+    log が不足する場合は "".
+
+    複数期間を一括計算する場合は _price_reactions_from_log を使うとソートを共有できる。
+    """
+    if n_business_days < 1:
+        return ""
+    before_price, after_entries = _split_log_around_kessanbi(price_log, kessanbi_dt)
+    if len(after_entries) < n_business_days:
+        return ""
+    return _format_reaction(before_price, after_entries[n_business_days - 1][1])
+
+
+def _price_reactions_from_log(
+    price_log: List,
+    kessanbi_dt: date,
+    periods: Tuple[Tuple[str, int], ...] = KESSAN_REACTION_PERIODS,
+) -> Dict[str, str]:
+    """price_log を1回だけソート/分割し、複数期間の反応率を一括算出する。
+
+    各期間で取得不可なら値は ""。
+    """
+    before_price, after_entries = _split_log_around_kessanbi(price_log, kessanbi_dt)
+    result: Dict[str, str] = {}
+    for key, n in periods:
+        if n < 1 or len(after_entries) < n:
+            result[key] = ""
+            continue
+        result[key] = _format_reaction(before_price, after_entries[n - 1][1])
+    return result
+
+
+def calc_price_reactions(code_s: str, kessanbi: str) -> Dict[str, str]:
+    """決算日前営業日終値と複数期間後の終値から株価変動率を算出する。
 
     Args:
         code_s: 銘柄コード
         kessanbi: YYYY/MM/DD 形式
 
     Returns:
-        "+3.2" / "-1.5" 形式。取得不可時は "".
+        {"1d": "+3.2", "5d": "+5.1"} 形式。各期間で取得不可時は "" を入れる。
     """
     kessanbi_dt = _parse_kessanbi(kessanbi)
     if kessanbi_dt is None:
-        return ""
-
+        return {key: "" for key, _ in KESSAN_REACTION_PERIODS}
     stock = get_stock_data(code_s)
-    return _price_reaction_from_log(stock.get("price_log") or [], kessanbi_dt)
+    log = stock.get("price_log") or []
+    return _price_reactions_from_log(log, kessanbi_dt)
+
+
+def calc_price_reaction(code_s: str, kessanbi: str) -> str:
+    """[後方互換] 決算日翌営業日の変動率のみを返す。
+
+    新規呼び出しは calc_price_reactions を使うこと。
+    既存テスト・移行期コードからの呼び出しのため残置している。
+    """
+    return calc_price_reactions(code_s, kessanbi).get("1d", "")
 
 
 def _bulk_price_logs(code_list: List[str]) -> Dict[str, List]:
@@ -651,7 +755,7 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
     - なければ追加
     - 12件超過時は最古（kessanbi 昇順の先頭）を削除
     - research_shelve 未登録なら add_stock() で自動登録
-    - post_price_change は price_log から自動計算してスナップショット化
+    - post_price_changes は price_log から各期間 (1d/5d) を自動計算してスナップショット化
 
     Returns:
         保存したエントリ dict
@@ -664,8 +768,8 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
         kessan_matagi_override,
     ) = _validate_kessan_comment_input(form_data)
 
-    # 変動率をスナップショット算出
-    post_price_change = calc_price_reaction(normalized, kessanbi)
+    # 期間別変動率をスナップショット算出
+    post_price_changes = calc_price_reactions(normalized, kessanbi)
 
     # 現在保有中か (kessan_matagi 初期値判定用)
     is_possess_now = _is_possess_now(normalized)
@@ -727,17 +831,23 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
             "quarter": quarter,
             "pre_expectation": pre_expectation,
             "pre_outlook": pre_outlook,
-            "post_price_change": post_price_change,
+            "post_price_changes": dict(post_price_changes),
             "post_comment": post_comment,
             "kessan_matagi": kessan_matagi,
             "held_before_kessan": held_before,
             "held_after_kessan": held_after,
         }
         if target_idx is not None:
-            # 既存エントリ上書き。post_price_change はリアルタイム計算失敗時は既存値を優先
+            # 既存エントリ上書き。各期間ごとにリアルタイム計算失敗時は既存値を優先
+            # （旧 post_price_change のみ持つレコードでも 1d 値を引き継ぐ）
             existing = comments[target_idx]
-            if not post_price_change and existing.get("post_price_change"):
-                new_entry["post_price_change"] = existing["post_price_change"]
+            existing_changes = normalize_kessan_post_price_changes(existing)
+            merged_changes: Dict[str, str] = {}
+            for key, _ in KESSAN_REACTION_PERIODS:
+                new_v = post_price_changes.get(key, "")
+                old_v = existing_changes.get(key, "")
+                merged_changes[key] = new_v if new_v else old_v
+            new_entry["post_price_changes"] = merged_changes
             comments[target_idx] = new_entry
         else:
             comments.append(new_entry)
@@ -790,8 +900,9 @@ def get_market_kessan_data() -> Dict[str, Any]:
         }
         各 stock dict:
           code_s, stock_name, kessanbi, quarter,
-          pre_expectation, pre_outlook, post_price_change, post_comment,
+          pre_expectation, pre_outlook, post_price_changes, post_comment,
           has_comment (bool)
+        post_price_changes は {"1d": str, "5d": str} の dict。取得不可期間は ""
     """
     import kessan  # 遅延 import (sys.path 解決後)
     try:
@@ -836,7 +947,7 @@ def get_market_kessan_data() -> Dict[str, Any]:
             "quarter": v.get("kessan_quarter", 0) or 0,
             "pre_expectation": "",
             "pre_outlook": "",
-            "post_price_change": "",
+            "post_price_changes": {key: "" for key, _ in KESSAN_REACTION_PERIODS},
             "post_comment": "",
             "has_comment": False,
             "is_possess": code_s in possess_set,
@@ -876,7 +987,7 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 "quarter": quarter if quarter else (base or {}).get("quarter", 0),
                 "pre_expectation": entry.get("pre_expectation", "") or "",
                 "pre_outlook": entry.get("pre_outlook", "") or "",
-                "post_price_change": entry.get("post_price_change", "") or "",
+                "post_price_changes": normalize_kessan_post_price_changes(entry),
                 "post_comment": entry.get("post_comment", "") or "",
                 "has_comment": bool(
                     entry.get("pre_outlook") or entry.get("post_comment")
@@ -888,13 +999,17 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 "held_after_kessan": bool(entry.get("held_after_kessan", False)),
             }
 
-    # 過去エントリで post_price_change 未保存のものだけ一括で price_log 取得
+    # 過去エントリで post_price_changes のいずれかの期間が空のものだけ
+    # 一括で price_log を取得し補完計算する
     past_codes_need_calc = set()
     for entry in merged.values():
         dt = _parse_kessanbi(entry["kessanbi"])
         if dt is None:
             continue
-        if dt < base_day and not entry.get("post_price_change"):
+        if dt >= base_day:
+            continue
+        changes = entry.get("post_price_changes") or {}
+        if any(not changes.get(key) for key, _ in KESSAN_REACTION_PERIODS):
             past_codes_need_calc.add(entry["code_s"])
 
     price_logs_cache = _bulk_price_logs(list(past_codes_need_calc)) if past_codes_need_calc else {}
@@ -912,10 +1027,17 @@ def get_market_kessan_data() -> Dict[str, Any]:
         dt = _parse_kessanbi(kessanbi)
         if dt is None:
             continue
-        # 過去の変動率を計算できれば補完（保存済み値が無い場合のみ、キャッシュ利用）
-        if dt < base_day and not entry.get("post_price_change"):
-            log = price_logs_cache.get(entry["code_s"], [])
-            entry["post_price_change"] = _price_reaction_from_log(log, dt)
+        # 過去の変動率を計算できれば補完（保存済み値が無い期間のみ、キャッシュ利用）
+        # 各銘柄の price_log は1回だけソート/分割して全期間で共有する
+        if dt < base_day:
+            existing_changes = entry.get("post_price_changes") or {}
+            if any(not existing_changes.get(key) for key, _ in KESSAN_REACTION_PERIODS):
+                log = price_logs_cache.get(entry["code_s"], [])
+                calculated = _price_reactions_from_log(log, dt)
+                for key, _ in KESSAN_REACTION_PERIODS:
+                    if not existing_changes.get(key) and calculated.get(key):
+                        existing_changes[key] = calculated[key]
+                entry["post_price_changes"] = existing_changes
 
         # 前後保有フラグのスナップショット化
         # - 未来エントリ (dt >= base_day): is_possess=True なら held_before_kessan=True
