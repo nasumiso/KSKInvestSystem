@@ -331,6 +331,24 @@ class TestParseKessanHtml:
         mod_lst, _ = shintakane.parse_kessan_html(html)
         assert len(mod_lst[0]) == 4
 
+    def test_2つのテーブル両方からパースする(self):
+        """株探の決算速報ページは `s_news_list mgbt0` と `s_news_list mgt0`
+        の2テーブル構成。後半テーブルの記事も拾える必要がある (regression)"""
+        rows_front = _build_kessan_row(
+            "2026-04-24", "ctg3_ks", "7774", "/news/a", "前期経常を上方修正"
+        )
+        rows_back = _build_kessan_row(
+            "2026-04-24", "ctg3_ks", "6324", "/news/b", "ハーモニック、前期経常を67％上方修正"
+        )
+        html = (
+            f'<table class="s_news_list mgbt0">{rows_front}</table>'
+            f'<table class="s_news_list mgt0">{rows_back}</table>'
+        )
+        mod_lst, _ = shintakane.parse_kessan_html(html)
+        codes = [item[0] for item in mod_lst]
+        assert "7774" in codes
+        assert "6324" in codes
+
 
 # ==================================================
 # convert_kabutan_pts_html（株探・PTSナイトランキング）

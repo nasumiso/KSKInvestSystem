@@ -1294,7 +1294,7 @@ def _collect_trigger_dates(stock, today):
     return [c[1] for c in candidates]
 
 
-def update_research_snapshots(*, db_path=None):
+def update_research_snapshots(*, db_path=None, code_filter=None):
     """ウォッチ銘柄のうち決算更新があったものにスナップショットを自動追記する。
 
     対象は `my_watch_list.txt` 記載のコード (通常 + H付き保有) の union に限定。
@@ -1303,6 +1303,11 @@ def update_research_snapshots(*, db_path=None):
     空レコードを自動登録してから同一実行内でスナップショットも追記する。
     ウィンドウ外の未登録ウォッチ銘柄は登録しない (research DB を汚染しないため)。
     同じ date_yy_m のスナップショットが既にあればスキップ。
+
+    Args:
+        db_path: research_shelve の DB パス上書き (テスト用)
+        code_filter: 銘柄コード集合を渡すと、ウォッチ集合との積に限定する。
+                     None の場合はウォッチ集合全体が対象。
     """
     import research_shelve
     import portfolio
@@ -1316,6 +1321,14 @@ def update_research_snapshots(*, db_path=None):
         )
         return
     watch_set = set(watch_codes) | set(possess_codes)
+    if code_filter is not None:
+        filter_set = set(code_filter)
+        not_in_watch = filter_set - watch_set
+        if not_in_watch:
+            log_warning(
+                f"[research] code_filter にウォッチ外銘柄が含まれるためスキップ: {sorted(not_in_watch)}"
+            )
+        watch_set = watch_set & filter_set
 
     stocks = load_stock_db()
     today = get_price_day(datetime.today())
@@ -1415,6 +1428,18 @@ def main():
     parser.add_argument(
         "command", type=str, nargs="?", default="list_all_db", help="実行するコマンド"
     )
+    parser.add_argument(
+        "codes",
+        type=str,
+        nargs="*",
+        default=[],
+        help="update / list に渡す銘柄コード（複数可）。未指定時はソース内のデフォルトを使用",
+    )
+    parser.add_argument(
+        "--snapshot",
+        action="store_true",
+        help="update 後にウォッチ銘柄のスナップショット自動追記を実行",
+    )
     args = parser.parse_args()
     log_print("=" * 30)
     log_print("make_stock_db.pyを実行します", args)
@@ -1430,9 +1455,12 @@ def main():
     # command = "reflesh"
     # command = "test"
     if command == "update":
-        code_list = "471A"
-        # code_list = "2979 3226 4384 4434 4443 4448 4449 4475 4477 4478 4479 4480 4483 4485 4488 4490 4493 4599 6835 7071"
-        code_list = code_list.split()
+        if args.codes:
+            code_list = list(args.codes)
+        else:
+            code_list = "471A"
+            # code_list = "2979 3226 4384 4434 4443 4448 4449 4475 4477 4478 4479 4480 4483 4485 4488 4490 4493 4599 6835 7071"
+            code_list = code_list.split()
         # f = open("update_code_list.txt")
         # lines = f.readlines()
         # code_list = [l.strip() for l in lines]
@@ -1446,11 +1474,17 @@ def main():
         update_db_rows(
             code_list, upd=UPD_FORCE, tables=tables
         )  # UPD_FORCE/UPD_REEVAL/UPD_INTERVAL
+        if args.snapshot:
+            # update 対象の銘柄に絞ってスナップショットを追記する
+            update_research_snapshots(code_filter=code_list)
     elif command == "list":
         # DB内銘柄情報表示
-        code_list = "4483"
-        # code_list = "3242 3686 6058 6432 7435"
-        code_list = code_list.split()
+        if args.codes:
+            code_list = list(args.codes)
+        else:
+            code_list = "4483"
+            # code_list = "3242 3686 6058 6432 7435"
+            code_list = code_list.split()
         list_db(code_list)
     elif command == "list_all_db":
         # DBの情報をランキングで表示する

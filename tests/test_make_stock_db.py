@@ -350,3 +350,97 @@ class TestUpdateDbSignalKeys:
         stock_data = {"code_s": "1234", "breakout": []}
         make_stock_db.update_db(stocks, stock_data)
         assert stocks["1234"]["breakout"] == []
+
+
+# ==================================================
+# main() の CLI 引数 (update / list の銘柄指定)
+# ==================================================
+class TestMainCLIArgs:
+    """`make_stock_db.py update 6324` のように銘柄を引数指定できることのテスト"""
+
+    def _patch_common(self, monkeypatch):
+        import googledrive
+        monkeypatch.setattr(googledrive, "wait_all_uploads", lambda: None)
+
+    def test_update_with_codes(self, monkeypatch):
+        """update に銘柄コードを渡すと code_list がそれになる"""
+        called = {}
+
+        def fake_update_db_rows(code_list, upd=None, tables=None):
+            called["code_list"] = code_list
+
+        monkeypatch.setattr(make_stock_db, "update_db_rows", fake_update_db_rows)
+        monkeypatch.setattr(make_stock_db, "update_research_snapshots", lambda: None)
+        self._patch_common(monkeypatch)
+
+        monkeypatch.setattr("sys.argv", ["make_stock_db.py", "update", "6324"])
+        make_stock_db.main()
+        assert called["code_list"] == ["6324"]
+
+    def test_update_with_multiple_codes(self, monkeypatch):
+        """複数銘柄も渡せる"""
+        called = {}
+
+        def fake_update_db_rows(code_list, upd=None, tables=None):
+            called["code_list"] = code_list
+
+        monkeypatch.setattr(make_stock_db, "update_db_rows", fake_update_db_rows)
+        monkeypatch.setattr(make_stock_db, "update_research_snapshots", lambda: None)
+        self._patch_common(monkeypatch)
+
+        monkeypatch.setattr(
+            "sys.argv", ["make_stock_db.py", "update", "6324", "7203", "215A"]
+        )
+        make_stock_db.main()
+        assert called["code_list"] == ["6324", "7203", "215A"]
+
+    def test_update_without_codes_uses_default(self, monkeypatch):
+        """codes 未指定時はソース内デフォルトが使われる (既存挙動維持)"""
+        called = {}
+
+        def fake_update_db_rows(code_list, upd=None, tables=None):
+            called["code_list"] = code_list
+
+        monkeypatch.setattr(make_stock_db, "update_db_rows", fake_update_db_rows)
+        monkeypatch.setattr(make_stock_db, "update_research_snapshots", lambda: None)
+        self._patch_common(monkeypatch)
+
+        monkeypatch.setattr("sys.argv", ["make_stock_db.py", "update"])
+        make_stock_db.main()
+        assert called["code_list"] == ["471A"]
+
+    def test_update_snapshot_flag(self, monkeypatch):
+        """--snapshot フラグで update_research_snapshots が指定銘柄に絞って呼ばれる"""
+        called = {"update_db_rows": False, "snapshot_kwargs": None}
+
+        def fake_update_db_rows(code_list, upd=None, tables=None):
+            called["update_db_rows"] = True
+
+        def fake_snapshots(*, db_path=None, code_filter=None):
+            called["snapshot_kwargs"] = {"db_path": db_path, "code_filter": code_filter}
+
+        monkeypatch.setattr(make_stock_db, "update_db_rows", fake_update_db_rows)
+        monkeypatch.setattr(make_stock_db, "update_research_snapshots", fake_snapshots)
+        self._patch_common(monkeypatch)
+
+        monkeypatch.setattr(
+            "sys.argv", ["make_stock_db.py", "update", "6324", "7203", "--snapshot"]
+        )
+        make_stock_db.main()
+        assert called["update_db_rows"] is True
+        # update 対象銘柄だけがフィルタに渡る (ウォッチ全銘柄を走らせない)
+        assert called["snapshot_kwargs"]["code_filter"] == ["6324", "7203"]
+
+    def test_list_with_codes(self, monkeypatch):
+        """list に銘柄コードを渡すと code_list がそれになる"""
+        called = {}
+
+        def fake_list_db(code_list):
+            called["code_list"] = code_list
+
+        monkeypatch.setattr(make_stock_db, "list_db", fake_list_db)
+        self._patch_common(monkeypatch)
+
+        monkeypatch.setattr("sys.argv", ["make_stock_db.py", "list", "6324"])
+        make_stock_db.main()
+        assert called["code_list"] == ["6324"]

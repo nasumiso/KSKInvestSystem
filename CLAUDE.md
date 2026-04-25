@@ -41,11 +41,13 @@ cd scripts && python shintakane.py analyze
 # DB全銘柄のランキング更新 + CSV出力
 cd scripts && python make_stock_db.py list_all_db
 
-# 特定銘柄の更新（main()内のcode_listを編集して実行）
-cd scripts && python make_stock_db.py update
+# 特定銘柄の更新 (引数で指定可。未指定時はソース内デフォルト)
+cd scripts && python make_stock_db.py update 6324             # 単一銘柄
+cd scripts && python make_stock_db.py update 6324 7203 215A   # 複数銘柄
+cd scripts && python make_stock_db.py update 6324 --snapshot  # 更新後にスナップショットも自動追記
 
-# 特定銘柄データの表示
-cd scripts && python make_stock_db.py list
+# 特定銘柄データの表示 (引数で指定可)
+cd scripts && python make_stock_db.py list 6324
 
 # 上場廃止銘柄のクリーンアップ
 cd scripts && python make_stock_db.py reflesh
