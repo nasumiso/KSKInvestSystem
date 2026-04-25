@@ -7,6 +7,28 @@ import shihyou
 # ==================================================
 # get_from_kabutan
 # ==================================================
+def _build_cf_html(cash="9000", prev_cash="8000",
+                   period="2023.03", prev_period="2022.03"):
+    """キャッシュフロー推移テーブル(cashflow_name アンカー直後)のHTMLを生成。
+    cash/prev_cash は現金等残高(百万円)。td[5]に配置。"""
+    return (
+        '<a name="cashflow_name" id="cashflow_name"></a>'
+        '<table>'
+        '<tr ><th scope="row">{prev_period}</th>'
+        '<td>x</td><td>x</td><td>x</td><td>x</td><td>x</td>'
+        '<td>{prev_cash}</td><td>x</td></tr>'
+        '<tr ><th scope="row">{period}</th>'
+        '<td>x</td><td>x</td><td>x</td><td>x</td><td>x</td>'
+        '<td>{cash}</td><td>x</td></tr>'
+        '</table>'
+    ).format(
+        cash=cash,
+        prev_cash=prev_cash,
+        period=period,
+        prev_period=prev_period,
+    )
+
+
 class TestGetFromKabutan:
     """株探HTML財務テーブルからの指標抽出テスト"""
 
@@ -14,14 +36,22 @@ class TestGetFromKabutan:
     def _build_zaimu_html(jiko_ratio="50.0", debt_ratio="0.5",
                           roe="15.0", profit_margin="10.0",
                           prev_jiko="45.0", prev_debt="0.8",
-                          prev_roe="12.0", prev_profit="8.0"):
-        """財務テーブルとROEテーブルを含む最小限HTMLを生成"""
-        return (
+                          prev_roe="12.0", prev_profit="8.0",
+                          jikoshihon_mil="20000", prev_jikoshihon_mil="18000",
+                          cf_html=None,
+                          latest_period="2023.03", prev_period="2022.03"):
+        """財務テーブルとROEテーブルを含む最小限HTMLを生成。
+        jikoshihon_mil: 自己資本(百万円, items[3])
+        latest_period: 最終行の期表記(<th>内)。"YY.MM-MM" 形式なら中間期扱いとなる
+        cf_html: キャッシュフロー推移テーブルHTML(None=含めない)"""
+        zaimu = (
             '財務 【実績】<table>'
-            '<tr ><td>2022</td><td>{prev_jiko}</td><td>x</td><td>x</td>'
-            '<td>x</td><td>{prev_debt}</td></tr>'
-            '<tr ><td>2023</td><td>{jiko}</td><td>x</td><td>x</td>'
-            '<td>x</td><td>{debt}</td></tr>'
+            '<tr ><th scope="row">{prev_period}</th>'
+            '<td>x</td><td>{prev_jiko}</td><td>x</td>'
+            '<td>{prev_jikoshihon}</td><td>x</td><td>{prev_debt}</td></tr>'
+            '<tr ><th scope="row">{latest_period}</th>'
+            '<td>x</td><td>{jiko}</td><td>x</td>'
+            '<td>{jikoshihon}</td><td>x</td><td>{debt}</td></tr>'
             '</table>'
             '<table><th scope="col" class="fb_02">　ＲＯＥ</th>'
             '<tbody>'
@@ -33,7 +63,12 @@ class TestGetFromKabutan:
             roe=roe, profit=profit_margin,
             prev_jiko=prev_jiko, prev_debt=prev_debt,
             prev_roe=prev_roe, prev_profit=prev_profit,
+            jikoshihon=jikoshihon_mil, prev_jikoshihon=prev_jikoshihon_mil,
+            latest_period=latest_period, prev_period=prev_period,
         )
+        if cf_html is not None:
+            zaimu += cf_html
+        return zaimu
 
     def test_normal(self):
         """正常系: 全指標が正しく抽出される"""
@@ -86,6 +121,185 @@ class TestGetFromKabutan:
         result = shihyou.get_from_kabutan(html)
         assert result["ROE"] == pytest.approx(12.0)
         assert result["profit_margin"] == pytest.approx(8.0)
+
+    def test_jikoshihon_extraction(self):
+        """自己資本(実額・億円)の抽出: items[4]=百万円→億円換算"""
+        # 20000百万円 = 200億円
+        html = self._build_zaimu_html(jikoshihon_mil="20000")
+        result = shihyou.get_from_kabutan(html)
+        assert result["jikoshihon"] == pytest.approx(200.0)
+
+    def test_jikoshihon_dash_fallback(self):
+        """自己資本がダッシュ(－)の場合は前期にフォールバック"""
+        html = self._build_zaimu_html(
+            jikoshihon_mil="－", prev_jikoshihon_mil="15000"
+        )
+        result = shihyou.get_from_kabutan(html)
+        assert result["jikoshihon"] == pytest.approx(150.0)
+
+    def test_cash_equiv_extraction(self):
+        """現金等残高(億円)が CFテーブルから抽出される"""
+        cf = _build_cf_html(cash="9000")  # 9000百万円=90億円
+        html = self._build_zaimu_html(cf_html=cf)
+        result = shihyou.get_from_kabutan(html)
+        assert result["cash_equiv"] == pytest.approx(90.0)
+
+    def test_cash_equiv_missing_anchor(self):
+        """CFテーブル(cashflow_name アンカー)がないHTMLでは cash_equiv キーが入らない"""
+        html = self._build_zaimu_html()  # cf_html=None
+        result = shihyou.get_from_kabutan(html)
+        assert "cash_equiv" not in result
+
+    def test_jikoshihon_skips_quarter_row(self):
+        """最終行が中間期(YY.MM-MM)なら、EVR用の自己資本は通期(YYYY.MM)行から取る"""
+        # 通期2023.03の自己資本=200億, 中間期25.04-12の自己資本=350億
+        # → EVR用の jikoshihon は 通期の 200億 になることを確認
+        html = (
+            '財務 【実績】<table>'
+            '<tr ><th scope="row">2023.03</th>'
+            '<td>x</td><td>50.0</td><td>x</td>'
+            '<td>20000</td><td>x</td><td>0.4</td></tr>'
+            '<tr ><th scope="row">25.04-12</th>'
+            '<td>x</td><td>55.0</td><td>x</td>'
+            '<td>35000</td><td>x</td><td>0.7</td></tr>'
+            '</table>'
+        )
+        result = shihyou.get_from_kabutan(html)
+        # 既存の debt_ratio/capital_ratio は最終行(中間期)から
+        assert result["debt_ratio"] == pytest.approx(0.7)
+        assert result["capital_ratio"] == pytest.approx(55.0)
+        # EVR用 jikoshihon と debt_ratio_annual は通期行から
+        assert result["jikoshihon"] == pytest.approx(200.0)  # 20000百万円→200億
+        assert result["debt_ratio_annual"] == pytest.approx(0.4)
+
+    def test_evr_period_fallback_aligns_cash(self):
+        """最新通期のEVR用BS値が欠損なら、現金もフォールバック先の通期に合わせる"""
+        cf = _build_cf_html(
+            cash="9000",
+            prev_cash="8000",
+            period="2023.03",
+            prev_period="2022.03",
+        )
+        html = self._build_zaimu_html(
+            jikoshihon_mil="－",
+            debt_ratio="－",
+            prev_jikoshihon_mil="18000",
+            prev_debt="0.8",
+            latest_period="2023.03",
+            prev_period="2022.03",
+            cf_html=cf,
+        )
+        result = shihyou.get_from_kabutan(html)
+        assert result["evr_period"] == "2022.03"
+        assert result["jikoshihon"] == pytest.approx(180.0)
+        assert result["debt_ratio_annual"] == pytest.approx(0.8)
+        assert result["cash_equiv"] == pytest.approx(80.0)
+
+    def test_period_normalization_with_kessan_kubun(self):
+        """期表記に <span class="kubun1">連</span> や末尾 "*" が混入していても通期として認識する。
+        実HTMLでは新興上場銘柄(402A等)で "連　2023.05*" のように出る。"""
+        # 財務とCFで同じ正規化された期が evr_period として使われることを確認
+        zaimu = (
+            '財務 【実績】<table>'
+            '<tr ><th scope="row">'
+            '<span class="kubun1">連&nbsp;&nbsp;</span>2023.05*&nbsp;&nbsp;</th>'
+            '<td>x</td><td>50.0</td><td>x</td>'
+            '<td>20000</td><td>x</td><td>0.4</td></tr>'
+            '<tr ><th scope="row">'
+            '<span class="kubun1">連&nbsp;&nbsp;</span>25.06-02&nbsp;&nbsp;</th>'
+            '<td>x</td><td>48.0</td><td>x</td>'
+            '<td>30000</td><td>x</td><td>0.7</td></tr>'
+            '</table>'
+        )
+        cf = (
+            '<a name="cashflow_name" id="cashflow_name"></a>'
+            '<table>'
+            '<tr ><th scope="row">'
+            '<span class="kubun1">&nbsp;&nbsp;</span>2023.05*&nbsp;&nbsp;</th>'
+            '<td>x</td><td>x</td><td>x</td><td>x</td><td>x</td>'
+            '<td>5000</td><td>x</td></tr>'
+            '</table>'
+        )
+        result = shihyou.get_from_kabutan(zaimu + cf)
+        # 通期 "2023.05*" → "2023.05" に正規化されてマッチする
+        assert result["evr_period"] == "2023.05"
+        assert result["jikoshihon"] == pytest.approx(200.0)
+        assert result["debt_ratio_annual"] == pytest.approx(0.4)
+        # 現金もCFテーブルの 2023.05* 行から正規化された期で突き合わせ取得
+        assert result["cash_equiv"] == pytest.approx(50.0)
+
+    def test_jikoshihon_no_annual_row(self):
+        """通期行が無い(全部中間期)場合、EVR用キーは付与されない"""
+        html = (
+            '財務 【実績】<table>'
+            '<tr ><th scope="row">25.01-03</th>'
+            '<td>x</td><td>50.0</td><td>x</td>'
+            '<td>20000</td><td>x</td><td>0.5</td></tr>'
+            '<tr ><th scope="row">25.04-12</th>'
+            '<td>x</td><td>55.0</td><td>x</td>'
+            '<td>35000</td><td>x</td><td>0.7</td></tr>'
+            '</table>'
+        )
+        result = shihyou.get_from_kabutan(html)
+        assert "jikoshihon" not in result
+        assert "debt_ratio_annual" not in result
+
+
+# ==================================================
+# parse_cash_kabutan
+# ==================================================
+class TestParseCashKabutan:
+    """CFテーブルから現金等残高(億円)抽出テスト"""
+
+    def test_normal(self):
+        """正常系: 最新行のtd[5]が現金等残高(百万円→億円)"""
+        html = _build_cf_html(cash="9000", prev_cash="8000")
+        assert shihyou.parse_cash_kabutan(html) == pytest.approx(90.0)
+
+    def test_no_anchor(self):
+        """cashflow_name アンカーがない場合は None"""
+        html = '<table><tr ><td>1</td></tr></table>'
+        assert shihyou.parse_cash_kabutan(html) is None
+
+    def test_no_rows(self):
+        """テーブルに <tr > 行がない場合は None"""
+        html = '<a name="cashflow_name"></a><table><thead><tr><th>x</th></tr></thead></table>'
+        assert shihyou.parse_cash_kabutan(html) is None
+
+    def test_dash_fallback_to_prev(self):
+        """最新行が－の場合は前期にフォールバック"""
+        html = _build_cf_html(cash="－", prev_cash="8000")
+        assert shihyou.parse_cash_kabutan(html) == pytest.approx(80.0)
+
+    def test_target_period(self):
+        """target_period 指定時は同じ期の現金等残高だけを返す"""
+        html = _build_cf_html(
+            cash="9000",
+            prev_cash="8000",
+            period="2023.03",
+            prev_period="2022.03",
+        )
+        assert shihyou.parse_cash_kabutan(
+            html, target_period="2022.03"
+        ) == pytest.approx(80.0)
+
+    def test_target_period_does_not_fallback_to_other_period(self):
+        """target_period 指定時に対象期が欠損なら他期へフォールバックしない"""
+        html = _build_cf_html(
+            cash="9000",
+            prev_cash="8000",
+            period="2023.03",
+            prev_period="2022.03",
+        )
+        assert shihyou.parse_cash_kabutan(html, target_period="2021.03") is None
+
+    def test_too_few_tds(self):
+        """tdが6個未満の場合は None"""
+        html = (
+            '<a name="cashflow_name"></a>'
+            '<table><tr ><td>1</td><td>2</td></tr></table>'
+        )
+        assert shihyou.parse_cash_kabutan(html) is None
 
 
 # ==================================================
@@ -203,6 +417,86 @@ class TestGetFromKabutanBase:
         result = shihyou.get_from_kabutan_base(html, {})
         assert result["dividend_yield"] == pytest.approx(2.5)
 
+    def test_ev_sales_calculation(self):
+        """EVR計算: Issue記載の例 時価500・負債100(=jiko200×0.5)・現金50・売上300 → EV=550, EVR≒1.8"""
+        html = self._build_base_html(jikasogaku="500", uriage="300")
+        result = shihyou.get_from_kabutan_base(
+            html,
+            {"debt_ratio_annual": 0.5, "jikoshihon": 200.0, "cash_equiv": 50.0},
+        )
+        assert result["EV_Sales"] == pytest.approx(1.8)
+        assert "EV_Sales_approx" not in result
+
+    def test_ev_sales_low_debt_high_cash(self):
+        """無借金高キャッシュ: EVR < PSR (時価100, 売上50, debt=0, cash=50)"""
+        # PSR=100/50=2.0, EV=100+0-50=50, EVR=50/50=1.0
+        html = self._build_base_html(jikasogaku="100", uriage="50")
+        result = shihyou.get_from_kabutan_base(
+            html,
+            {"debt_ratio_annual": 0.0, "jikoshihon": 100.0, "cash_equiv": 50.0},
+        )
+        assert result["PSR"] == pytest.approx(2.0)
+        assert result["EV_Sales"] == pytest.approx(1.0)
+        assert result["EV_Sales"] < result["PSR"]
+
+    def test_ev_sales_high_debt(self):
+        """高負債: EVR > PSR (時価100, 売上50, jiko=100, debt_ratio=3 → 負債300)"""
+        # PSR=100/50=2.0, EV=100+300-0=400, EVR=400/50=8.0
+        html = self._build_base_html(jikasogaku="100", uriage="50")
+        result = shihyou.get_from_kabutan_base(
+            html,
+            {"debt_ratio_annual": 3.0, "jikoshihon": 100.0, "cash_equiv": 0.0},
+        )
+        assert result["PSR"] == pytest.approx(2.0)
+        assert result["EV_Sales"] == pytest.approx(8.0)
+        assert result["EV_Sales"] > result["PSR"]
+
+    def test_ev_sales_negative(self):
+        """ネットキャッシュ企業: EVが負になる(時価100, 負債=0, 現金150, 売上50) → EVR=-1.0"""
+        # EV = 100 + 0 - 150 = -50, EVR = -50/50 = -1.0
+        html = self._build_base_html(jikasogaku="100", uriage="50")
+        result = shihyou.get_from_kabutan_base(
+            html,
+            {"debt_ratio_annual": 0.0, "jikoshihon": 100.0, "cash_equiv": 150.0},
+        )
+        assert result["EV_Sales"] == pytest.approx(-1.0)
+
+    def test_ev_sales_missing_cash_approx(self):
+        """cash_equiv 未提供の場合は現金=0で近似計算し EV_Sales_approx=True"""
+        html = self._build_base_html(jikasogaku="500", uriage="300")
+        result = shihyou.get_from_kabutan_base(
+            html,
+            {"debt_ratio_annual": 0.5, "jikoshihon": 200.0},
+        )
+        # EV = 500 + 100 - 0 = 600, EVR = 600/300 = 2.0
+        assert result["EV_Sales"] == pytest.approx(2.0)
+        assert result.get("EV_Sales_approx") is True
+
+    def test_ev_sales_missing_debt_ratio(self):
+        """debt_ratio_annual/jikoshihon が無い場合は EV_Sales 未設定(PSRフォールバック対象)"""
+        html = self._build_base_html(jikasogaku="100", uriage="50")
+        result = shihyou.get_from_kabutan_base(html, {})
+        assert "EV_Sales" not in result
+        # PSR は通常通り計算される
+        assert result["PSR"] == pytest.approx(2.0)
+
+    def test_ev_sales_uses_annual_debt_not_quarter(self):
+        """期ズレ防止: shiyo_data に debt_ratio(中間期)があっても EVR は debt_ratio_annual を優先する"""
+        html = self._build_base_html(jikasogaku="500", uriage="300")
+        # 中間期 debt_ratio=2.0 を入れても無視され、通期 debt_ratio_annual=0.5 が使われる想定
+        result = shihyou.get_from_kabutan_base(
+            html,
+            {
+                "debt_ratio": 2.0,         # 中間期（既存キー）→EVR計算では使わない
+                "debt_ratio_annual": 0.5,  # 通期（新キー）→こちらを使う
+                "jikoshihon": 200.0,
+                "cash_equiv": 50.0,
+            },
+        )
+        # 通期=0.5 を使った場合: 負債100, EV=550, EVR=1.8
+        # 中間期=2.0 を使った場合: 負債400, EV=850, EVR=2.8 になってしまう
+        assert result["EV_Sales"] == pytest.approx(1.8)
+
 
 # ==================================================
 # get_credit_expr
@@ -296,3 +590,44 @@ class TestGetShihyoExpr:
         result = shihyou.get_shihyo_expr({"shihyo": {"MPER": 10}})
         assert "0億" in result
         assert "PER10" in result
+
+    def test_ev_sales_display(self):
+        """EV_Sales があれば EVR{値} を表示し PSR は出さない"""
+        stock_data = {
+            "market_cap": 500,
+            "shihyo": {"MPER": 15, "PBR": 1.2, "EV_Sales": 2.5, "PSR": 3.0},
+        }
+        result = shihyou.get_shihyo_expr(stock_data)
+        assert "EVR2.5" in result
+        assert "PSR" not in result
+
+    def test_ev_sales_approx_display(self):
+        """EV_Sales_approx=True の場合は EVR{値}~ 表記"""
+        stock_data = {
+            "market_cap": 500,
+            "shihyo": {
+                "MPER": 15, "PBR": 1.2,
+                "EV_Sales": 2.5, "EV_Sales_approx": True,
+            },
+        }
+        result = shihyou.get_shihyo_expr(stock_data)
+        assert "EVR2.5~" in result
+
+    def test_psr_fallback_display(self):
+        """EV_Sales 欠損で PSR にフォールバック"""
+        stock_data = {
+            "market_cap": 500,
+            "shihyo": {"MPER": 15, "PBR": 1.2, "PSR": 3.0},
+        }
+        result = shihyou.get_shihyo_expr(stock_data)
+        assert "PSR3.0" in result
+        assert "EVR" not in result
+
+    def test_ev_sales_negative_display(self):
+        """EV_Sales が負値（ネットキャッシュ企業）でも文字列に含まれる"""
+        stock_data = {
+            "market_cap": 500,
+            "shihyo": {"MPER": 15, "PBR": 1.2, "EV_Sales": -0.3},
+        }
+        result = shihyou.get_shihyo_expr(stock_data)
+        assert "EVR-0.3" in result

@@ -9,6 +9,37 @@ from ks_util import *
 
 import rironkabuka
 
+
+def _clean_html_text(html_text):
+    return re.sub(r"<[^>]+>", "", html_text).replace("&nbsp;", "").strip()
+
+
+def _get_table_row_period(row_html):
+    """財務/CFテーブル行の <th> から期表記を抽出して正規化する。
+
+    kabutanの期表記には "連　2023.05*" や "予　2025.06" のように会計区分文字や
+    上場前マーカー "*" が混入する。通期 (YYYY.MM) パターンが含まれていれば
+    その数値部分だけを返し、含まれなければクリーン後の生テキスト
+    (中間期 "25.06-02" 等) を返す。空 <th> や <th> なしは "" を返す。
+    """
+    th_m = re.search(r"<th[^>]*>(.*?)</th>", row_html, re.S)
+    if not th_m:
+        return ""
+    text = _clean_html_text(th_m.group(1))
+    # "YY.MM-MM" のような中間期表記はそのまま（後段で通期判定に落とす）
+    if re.search(r"\d{1,2}\.\d{1,2}-\d{1,2}", text):
+        return text
+    # "YYYY.MM" を抜き出す（"連　2023.05*" → "2023.05"）
+    m = re.search(r"\d{4}\.\d{1,2}", text)
+    if m:
+        return m.group(0)
+    return text
+
+
+def _is_annual_period(period_text):
+    return re.fullmatch(r"\d{4}\.\d{1,2}", period_text) is not None
+
+
 # ==================================================
 # 株探から指標データを取得
 # ==================================================
@@ -83,6 +114,57 @@ def get_from_kabutan(html):
     shiyo_data["debt_ratio"] = float(debut)
     shiyo_data["capital_ratio"] = float(jiko_ratio)
 
+    # ---- EVR計算用の通期行データを取得
+    # CFテーブルは通期のみのため、自己資本・有利子負債倍率・現金を同じ通期に揃える。
+    # 既存の debt_ratio/capital_ratio (ms_td[-1]=中間期含む最新行) は他用途で使われ続ける。
+    # 列構成: [1株純資産, 自己資本比率, 総資産, 自己資本, 剰余金, 有利子負債倍率, 発表日]
+    # 通期判定: <th>内の期表記が "YYYY.MM" 形式（中間期は "YY.MM-MM" 形式）
+    annual_rows = [
+        (period, row_html)
+        for row_html in reversed(ms_td)
+        for period in [_get_table_row_period(row_html)]
+        if _is_annual_period(period)
+    ]
+    if annual_rows:
+        log_debug("EVR用通期行数:", len(annual_rows))
+
+        def parse_annual_float(items_a, item_ind):
+            try:
+                val = items_a[item_ind].replace(",", "")
+            except IndexError:
+                return None
+            if "－" in val:
+                return None
+            try:
+                return float(val)
+            except ValueError:
+                return None
+
+        for period, row in annual_rows:
+            items_a = get_table_row(row)
+            jiko_val = parse_annual_float(items_a, 3)
+            debt_annual = parse_annual_float(items_a, 5)
+            if jiko_val is None or debt_annual is None:
+                continue
+            shiyo_data["evr_period"] = period
+            shiyo_data["jikoshihon"] = jiko_val / 100.0  # 百万円→億円
+            shiyo_data["debt_ratio_annual"] = debt_annual
+            log_debug("EVR用通期:", period)
+            log_debug("自己資本(億円,通期):", shiyo_data["jikoshihon"])
+            log_debug("有利子負債倍率(通期):", debt_annual)
+            break
+        if "evr_period" not in shiyo_data:
+            log_debug("EVR用通期データ取得できず（EVRは計算しない）")
+    else:
+        log_debug("通期行が見つからず（EVRは計算しない）")
+
+    # 現金等残高(億円) — CFテーブル(同じfinance HTML内)からEVR用通期に合わせる
+    evr_period = shiyo_data.get("evr_period")
+    cash_equiv = parse_cash_kabutan(html, target_period=evr_period)
+    if evr_period and cash_equiv is not None:
+        shiyo_data["cash_equiv"] = cash_equiv
+        log_debug("現金等残高(億円,通期):", cash_equiv)
+
     # ---- ROE, 売上営業利益率取得
     profit_html_m = re.search(
         r'<table>.*?<th scope="col" class="fb_02">　ＲＯＥ</th>.*?<tbody>(.*?)</tbody>.*?</table>',
@@ -119,6 +201,48 @@ def get_from_kabutan(html):
     shiyo_data["profit_margin"] = profit_margin
 
     return shiyo_data
+
+
+def parse_cash_kabutan(html, target_period=None):
+    """
+    株探 finance htmlのキャッシュフロー推移テーブルから
+    現金等残高(億円)を取得する。target_period 指定時は同じ期の行だけを見る。
+    取得失敗時は None を返す。
+    """
+    # cashflow_name アンカー直後の最初のテーブルを取る
+    m = re.search(
+        r'name="cashflow_name".*?<table>(.*?)</table>',
+        html,
+        re.S,
+    )
+    if not m:
+        return None
+    rows = re.findall(r"<tr >.*?</tr>", m.group(1), re.S)
+    if not rows:
+        return None
+    # <td>[5] = 現金等残高(百万円)
+    def get_cash_td(row_html):
+        tds = re.findall(r"<td.*?>(.*?)</td>", row_html, re.S)
+        if len(tds) < 6:
+            return ""
+        return tds[5].replace(",", "").strip()
+
+    if target_period:
+        rows = [row for row in rows if _get_table_row_period(row) == target_period]
+        if not rows:
+            return None
+
+    # target_period 指定なしの場合だけ、従来通り最新行から直前行へフォールバックする。
+    target_rows = reversed(rows) if target_period is None else rows
+    raw = ""
+    for row in target_rows:
+        raw = get_cash_td(row)
+        if raw not in ("－", "-", "", "&nbsp;"):
+            break
+    try:
+        return float(raw) / 100.0  # 百万円→億円
+    except ValueError:
+        return None
 
 
 def parse_jikasogaku_kabutan(html):
@@ -317,6 +441,43 @@ def get_from_kabutan_base(html, shiyo_data):
         log_warning(" PSR取得できず(フォーマット変更？)")
     else:
         shiyo_data["PSR"] = psr
+
+    # ---- EVR (Enterprise Value / Sales)
+    # EV = 時価総額 + 有利子負債 - 現金等残高
+    # 有利子負債(億円) = 自己資本(億円) × 有利子負債倍率
+    if uriage_lst:
+        uriage_for_ev = uriage_lst[-1]
+    else:
+        uriage_for_ev = 0
+    if uriage_for_ev > 0 and jikasogaku > 0:
+        # EVR用: 自己資本・有利子負債倍率は通期最新行で揃える(CFが通期のため)
+        debt_ratio = shiyo_data.get("debt_ratio_annual")
+        jikoshihon = shiyo_data.get("jikoshihon")
+        if debt_ratio is not None and jikoshihon is not None:
+            interest_debt = jikoshihon * debt_ratio
+            cash = shiyo_data.get("cash_equiv")
+            cash_approx = cash is None
+            if cash_approx:
+                cash = 0.0
+            ev = jikasogaku + interest_debt - cash
+            ev_sales = round(ev / uriage_for_ev, 1)  # 負値も保存する
+            log_debug(
+                "EVR: %.1f EV: %.1f(時価%.1f+負債%.1f-現金%.1f) 売上: %.1f%s"
+                % (
+                    ev_sales,
+                    ev,
+                    jikasogaku,
+                    interest_debt,
+                    cash,
+                    uriage_for_ev,
+                    " (現金近似)" if cash_approx else "",
+                )
+            )
+            shiyo_data["EV_Sales"] = ev_sales
+            if cash_approx:
+                shiyo_data["EV_Sales_approx"] = True
+        else:
+            log_debug("EVR計算不能（debt_ratio/jikoshihonなし）→ PSR で代用")
     return shiyo_data
 
 
@@ -498,18 +659,28 @@ def get_shihyo_expr(stock_data):
         ind_marketcap = "-"
     ind_per = "%s" % get_indicator_exp("MPER")
     ind_pbr = "%s" % get_indicator_exp("PBR", 1)
-    ind_psr = "%s" % get_indicator_exp("PSR", 1)
+    # EVR優先、欠損時はPSRにフォールバック
+    shihyo = stock_data.get("shihyo", {})
+    if "EV_Sales" in shihyo:
+        ind_value_label = "EVR"
+        ind_value = get_indicator_exp("EV_Sales", 1)
+        if shihyo.get("EV_Sales_approx"):
+            ind_value = "%s~" % ind_value
+    else:
+        ind_value_label = "PSR"
+        ind_value = get_indicator_exp("PSR", 1)
     ind_roe = "%s" % get_indicator_exp("ROE")
     ind_margin = "%s%%" % get_indicator_exp("profit_margin")
     ind_debt = "%s" % get_indicator_exp("debt_ratio", 2)
     ind_capital = "%s%%" % get_indicator_exp("capital_ratio")
     # ind_credit = "%s"%get_indicator_exp("credit_ratio", 2)
     ind_dividend_yield = "%s" % get_indicator_exp("dividend_yield", 1)
-    indicator = "%s億 PER%s PBR%s PSR%s 配当%s ROE%s 利益率%s 負債%s 自己%s" % (
+    indicator = "%s億 PER%s PBR%s %s%s 配当%s ROE%s 利益率%s 負債%s 自己%s" % (
         ind_marketcap,
         ind_per,
         ind_pbr,
-        ind_psr,
+        ind_value_label,
+        ind_value,
         ind_dividend_yield,
         ind_roe,
         ind_margin,
