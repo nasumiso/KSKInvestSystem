@@ -1278,7 +1278,7 @@ def parse_price_text_from_list(price_current, price_list):
     # print breaks
     # ---- 過去価格
     past_prices = []
-    LOG_DAY = 10
+    LOG_DAY = 20
     for ind in range(LOG_DAY):
         if ind >= len(price_list):
             continue

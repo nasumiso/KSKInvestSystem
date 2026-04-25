@@ -633,3 +633,17 @@ class TestParsePriceTextFromList:
         price_list = self._make_price_list_7col()
         _, cur_prices = price.parse_price_text_from_list(1050, price_list)
         assert len(cur_prices) == 3
+
+    def test_price_log_capped_at_20(self):
+        """price_log は LOG_DAY=20 に揃う (issue #133 で 10→20 に拡張)"""
+        # 25 件入力 → 上限 20 件のみ保持
+        price_list = self._make_price_list_7col(count=25)
+        result_dict, _ = price.parse_price_text_from_list(1050, price_list)
+        assert len(result_dict["price_log"]) == 20
+
+    def test_price_log_handles_short_input(self):
+        """LOG_DAY より少ない入力でも安全に処理される (range の length ガード)"""
+        price_list = self._make_price_list_7col(count=5)
+        result_dict, _ = price.parse_price_text_from_list(1050, price_list)
+        # 入力が5件しかなければ price_log も最大5件
+        assert len(result_dict["price_log"]) <= 5

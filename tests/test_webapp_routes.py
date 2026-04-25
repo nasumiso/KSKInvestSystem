@@ -239,3 +239,69 @@ class TestIrCommentPostRoutes:
         resp = client.get("/stock/3496")
         html = resp.data.decode()
         assert "IR更新済み" in html
+
+
+class TestKessanCommentApiContract:
+    """GET/POST /api/kessan_comment のレスポンス契約 (issue #133)
+
+    旧 post_price_change を返さず、新 post_price_changes のみ返すことを保証する。
+    """
+
+    def test_get_unregistered_returns_only_new_schema(self, client):
+        """未登録銘柄 GET → デフォルトレスポンスは post_price_changes のみで旧キー無し"""
+        resp = client.get("/api/kessan_comment/9999?kessanbi=2026/04/01")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "post_price_changes" in data
+        assert data["post_price_changes"] == {"1d": "", "5d": ""}
+        assert "post_price_change" not in data
+
+    def test_get_legacy_record_returns_normalized_dict(self, client):
+        """旧 post_price_change のみのレコード GET → post_price_changes に正規化、旧キー無し"""
+        # fixture の 2024/05/14 は post_price_change="-3.1" のみ
+        resp = client.get("/api/kessan_comment/3496?kessanbi=2024/05/14")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["post_price_changes"] == {"1d": "-3.1", "5d": ""}
+        assert "post_price_change" not in data
+
+    def test_get_new_format_record_passthrough(self, client, db_path):
+        """新形式 post_price_changes 持ちレコード GET → そのまま、旧キー無し"""
+        # 直接 shelve に新形式を書き込む
+        rec = rs.get_research_record("3496", db_path=db_path)
+        rec["kessan_comments"].append({
+            "kessanbi": "2026/03/15",
+            "quarter": 4,
+            "pre_expectation": "○",
+            "pre_outlook": "テスト",
+            "post_price_changes": {"1d": "+2.5", "5d": "+4.0"},
+            "post_comment": "新形式",
+            "kessan_matagi": False,
+            "held_before_kessan": False,
+            "held_after_kessan": False,
+        })
+        rs.upsert_research_record(rec, db_path=db_path)
+        resp = client.get("/api/kessan_comment/3496?kessanbi=2026/03/15")
+        data = resp.get_json()
+        assert data["post_price_changes"] == {"1d": "+2.5", "5d": "+4.0"}
+        assert "post_price_change" not in data
+
+    def test_post_response_returns_only_new_schema(self, client, monkeypatch):
+        """POST 後のレスポンスにも post_price_changes のみ含まれ、旧キー無し"""
+        from webapp import helpers as _helpers
+        monkeypatch.setattr(
+            _helpers, "calc_price_reactions",
+            lambda c, k: {"1d": "+1.0", "5d": "+2.0"},
+        )
+        monkeypatch.setattr(_helpers, "_is_possess_now", lambda c: False)
+        resp = client.post("/api/kessan_comment/3496", data={
+            "kessanbi": "2026/04/22",
+            "quarter": "1",
+            "pre_expectation": "○",
+            "pre_outlook": "API契約テスト",
+            "post_comment": "",
+        })
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["post_price_changes"] == {"1d": "+1.0", "5d": "+2.0"}
+        assert "post_price_change" not in data

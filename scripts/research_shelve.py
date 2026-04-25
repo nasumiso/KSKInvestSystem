@@ -87,6 +87,10 @@ RECORD_FIELDS = frozenset(
     }
 )
 
+# 決算コメントの反応率を計算する期間 (キー名, 営業日数) のタプル列
+# 表示・保存・後方互換正規化すべての場面でこの定数を参照する
+KESSAN_REACTION_PERIODS = (("1d", 1), ("5d", 5))
+
 # 決算コメントエントリの既知フィールド
 KESSAN_COMMENT_FIELDS = frozenset(
     {
@@ -94,7 +98,10 @@ KESSAN_COMMENT_FIELDS = frozenset(
         "quarter",              # 1-4 (int)
         "pre_expectation",      # ◎/○/△/× or ""
         "pre_outlook",          # 事前見通し (フリーテキスト)
-        "post_price_change",    # 決算反応の株価変動率 (%) スナップショット
+        "post_price_change",    # [旧形式・後方互換用] 決算反応の株価変動率 (%) スナップショット
+                                #   新規書込みでは使わない。読出時は post_price_changes に正規化される
+        "post_price_changes",   # 決算反応の株価変動率 (%) スナップショット (dict)
+                                #   {"1d": "+3.2", "5d": "+5.1"} 形式。取れない期間は空文字
         "post_comment",         # 決算後コメント (フリーテキスト)
         "held_before_kessan",   # 決算前に保有中だったか (bool, 未来エントリで永続化)
         "held_after_kessan",    # 決算後に保有中だったか (bool, 過去エントリで永続化)
@@ -102,6 +109,26 @@ KESSAN_COMMENT_FIELDS = frozenset(
                                 # 自動判定: held_before AND held_after / ログ☆由来 / UI手動
     }
 )
+
+
+def _normalize_kessan_post_price_changes(entry: Dict[str, Any]) -> Dict[str, str]:
+    """決算コメントエントリの post_price_changes を正規化する。
+
+    - 新形式 dict があれば各期間キーを str に正規化して返す
+    - 無ければ旧 post_price_change を {"1d": <値>, "5d": ""} に補完
+    - どちらも無ければ全期間 "" を返す
+    """
+    raw = entry.get("post_price_changes")
+    result: Dict[str, str] = {key: "" for key, _ in KESSAN_REACTION_PERIODS}
+    if isinstance(raw, dict):
+        for key, _ in KESSAN_REACTION_PERIODS:
+            v = raw.get(key, "")
+            result[key] = str(v) if v else ""
+        return result
+    legacy = entry.get("post_price_change", "") or ""
+    if legacy:
+        result["1d"] = str(legacy)
+    return result
 
 # 決算コメントの最大件数 (四半期12回分 ≒ 3年)
 MAX_KESSAN_COMMENTS = 12
@@ -454,6 +481,8 @@ def get_research_record(
     kessan_comments は未設定の旧レコードに対し空リストで補完する（後方互換）。
     kessan_comments の各エントリに kessan_matagi / held_before_kessan /
     held_after_kessan が無ければ False で補完する（後方互換）。
+    post_price_changes が無く旧 post_price_change のみがある場合、
+    {"1d": <旧値>, "5d": ""} に正規化する（後方互換）。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
@@ -474,6 +503,7 @@ def get_research_record(
             ):
                 if key not in entry:
                     entry[key] = False
+            entry["post_price_changes"] = _normalize_kessan_post_price_changes(entry)
     return record
 
 
@@ -810,11 +840,16 @@ def format_record_full(record: Dict[str, Any]) -> str:
             quarter = entry.get("quarter", "-")
             pre_exp = entry.get("pre_expectation", "") or "-"
             pre = entry.get("pre_outlook", "")
-            price_change = entry.get("post_price_change", "") or "-"
+            changes = _normalize_kessan_post_price_changes(entry)
+            reactions_parts = []
+            for key, _ in KESSAN_REACTION_PERIODS:
+                v = changes.get(key, "")
+                reactions_parts.append(f"{key}={v}%" if v else f"{key}=-")
+            reactions_str = " ".join(reactions_parts)
             post = entry.get("post_comment", "")
             matagi_mark = "◆" if entry.get("kessan_matagi") else ""
             lines.append(
-                f"  [{kessanbi} {quarter}Q 期待度:{pre_exp} 反応:{price_change}% {matagi_mark}]"
+                f"  [{kessanbi} {quarter}Q 期待度:{pre_exp} 反応:{reactions_str} {matagi_mark}]"
             )
             lines.append(f"    事前    : {_indent_multiline(pre, ' ' * 14)}")
             lines.append(f"    事後    : {_indent_multiline(post, ' ' * 14)}")

@@ -41,7 +41,11 @@
       {% if is_past %}
       <div class="kessan-editor-row">
         <label>株価変動率:</label>
-        <span class="kessan-field-display kessan-post-price-change">{{ s.post_price_change or '-' }}</span>
+        <span class="kessan-field-display kessan-post-price-change">
+          <span class="kessan-pc-1d">{{ s.post_price_changes['1d'] or '-' }}</span>
+          /
+          <span class="kessan-pc-5d">{{ s.post_price_changes['5d'] or '-' }}</span>
+        </span>
       </div>
       <div class="kessan-editor-row">
         <label>反応コメ:</label>
@@ -71,9 +75,14 @@
       <a href="/stock/{{ s.code_s }}">{{ s.stock_name or '-' }}</a>
       {% if s.quarter %}<span class="kessan-q-label">[{{ s.quarter }}Q]</span>{% endif %}
       {% if s.pre_expectation %}<span class="kessan-expectation-badge exp-{{ s.pre_expectation }}">{{ s.pre_expectation }}</span>{% endif %}
-      {% if is_past and s.post_price_change %}
-        {% set pc = s.post_price_change %}
-        <span class="kessan-price-change {% if pc.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc }}%</span>
+      {% if is_past and (s.post_price_changes['1d'] or s.post_price_changes['5d']) %}
+        {% set pc1 = s.post_price_changes['1d'] %}
+        {% set pc5 = s.post_price_changes['5d'] %}
+        <span class="kessan-price-change">
+          {% if pc1 %}<span class="{% if pc1.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc1 }}%</span>{% else %}<span>-</span>{% endif %}
+          /
+          {% if pc5 %}<span class="{% if pc5.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc5 }}%</span>{% else %}<span>-</span>{% endif %}
+        </span>
       {% endif %}
       {% if s.pre_outlook or s.post_comment %}
       <div class="kessan-comment-view">

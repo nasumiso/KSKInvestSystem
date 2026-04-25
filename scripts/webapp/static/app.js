@@ -276,8 +276,12 @@ function openKessanEditor(li) {
       if (preOut) preOut.value = data.pre_outlook || '';
       if (postCom) postCom.value = data.post_comment || '';
       if (matagi) matagi.checked = !!data.kessan_matagi;
-      if (postPc && data.post_price_change) {
-        postPc.textContent = data.post_price_change;
+      if (postPc) {
+        var changes = data.post_price_changes || {};
+        var pc1Span = postPc.querySelector('.kessan-pc-1d');
+        var pc5Span = postPc.querySelector('.kessan-pc-5d');
+        if (pc1Span) pc1Span.textContent = changes['1d'] || '-';
+        if (pc5Span) pc5Span.textContent = changes['5d'] || '-';
       }
       editor.dataset.loaded = '1';
       rememberKessanInitialValues(editor);
@@ -346,10 +350,14 @@ function saveKessanFromEditor(li) {
       if (!data) return;
       /* 初期値リセット */
       rememberKessanInitialValues(editor);
-      /* post_price_change 表示更新 */
+      /* post_price_changes 表示更新 (1d/5d 併記) */
       var postPc = editor.querySelector('.kessan-post-price-change');
-      if (postPc && data.post_price_change) {
-        postPc.textContent = data.post_price_change;
+      if (postPc) {
+        var changes = data.post_price_changes || {};
+        var pc1Span = postPc.querySelector('.kessan-pc-1d');
+        var pc5Span = postPc.querySelector('.kessan-pc-5d');
+        if (pc1Span) pc1Span.textContent = changes['1d'] || '-';
+        if (pc5Span) pc5Span.textContent = changes['5d'] || '-';
       }
       /* 閲覧用 view DOM を再構築（リロード不要で反映） */
       updateKessanViewDOM(li, data);
