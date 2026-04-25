@@ -190,21 +190,32 @@ class TestUpdateResearchSnapshots:
         loaded = rs.get_research_record("3496", db_path=db_path)
         assert len(loaded["snapshots"]) == 0
 
-    def test_skip_existing_auto(self, db_path, monkeypatch):
-        """同一 date_yy_m の auto スナップショットがある場合はスキップ"""
+    def test_overwrite_existing_auto(self, db_path, monkeypatch):
+        """同一 date_yy_m の auto スナップショットは最新値で上書きされる
+        (決算修正で業績が変わった場合に古い値が残らないよう、auto 同士は上書き)"""
+        import gyoseki
+
         today = _today_str()
         stock = _make_stock("3496", kessanbi=today)
         monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+        # gyoseki.get_gyoseki_expr が新しい値を返すようにモック
+        monkeypatch.setattr(
+            gyoseki, "get_gyoseki_expr", lambda s: ("[P]新進捗", "[A]新成長")
+        )
 
         rec = rs.create_research_record("3496", "アズーム")
         rs.upsert_research_record(rec, db_path=db_path)
-        snap = rs.create_snapshot(_today_yy_m_d(), data_source="auto")
+        snap = rs.create_snapshot(
+            _today_yy_m_d(), ir_quant="古い業績", data_source="auto"
+        )
         rs.upsert_snapshot("3496", snap, db_path=db_path)
 
         make_stock_db.update_research_snapshots(db_path=db_path)
 
         loaded = rs.get_research_record("3496", db_path=db_path)
         assert len(loaded["snapshots"]) == 1
+        assert loaded["snapshots"][0]["data_source"] == "auto"
+        assert loaded["snapshots"][0]["ir_quant"] == "[A]新成長[P]新進捗"
 
     def test_skip_existing_manual_protects_data(self, db_path, monkeypatch):
         """同一 date_yy_m の manual スナップショットがある場合もスキップ（manual 保護）"""

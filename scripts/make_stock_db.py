@@ -1370,8 +1370,8 @@ def update_research_snapshots(*, db_path=None, code_filter=None):
                 log_warning(f"[research] ウォッチ銘柄の自動登録失敗: {code_s} {e}")
                 continue
 
-        existing_dates = {
-            s["date_yy_m"] for s in record.get("snapshots", [])
+        existing_by_date = {
+            s["date_yy_m"]: s for s in record.get("snapshots", [])
         }
 
         for trigger_date_str in trigger_dates:
@@ -1379,7 +1379,10 @@ def update_research_snapshots(*, db_path=None, code_filter=None):
                 dt = datetime.strptime(trigger_date_str, "%Y/%m/%d")
                 date_yy_m = f"{dt.year % 100}.{dt.month}.{dt.day}"
 
-                if date_yy_m in existing_dates:
+                # 手動編集 (data_source != "auto") の同日スナップショットは尊重して上書きしない。
+                # auto 同士なら、決算修正等で値が変わるため上書きさせる。
+                existing = existing_by_date.get(date_yy_m)
+                if existing and existing.get("data_source") != "auto":
                     skipped_existing += 1
                     continue
 
@@ -1398,7 +1401,7 @@ def update_research_snapshots(*, db_path=None, code_filter=None):
                 research_shelve.upsert_snapshot(
                     code_s, snapshot, overwrite_same_date=True, db_path=db_path,
                 )
-                existing_dates.add(date_yy_m)
+                existing_by_date[date_yy_m] = snapshot
                 count += 1
             except Exception as e:
                 log_warning(f"[research] スナップショット追記失敗: {code_s} {e}")
