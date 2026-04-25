@@ -25,7 +25,7 @@ from research_shelve import (
     normalize_code_s,
     validate_rating,
     _flock,
-    _normalize_kessan_post_price_changes,
+    normalize_kessan_post_price_changes,
     VALID_RATINGS,
     VALID_EXPECTATIONS,
     MAX_KESSAN_COMMENTS,
@@ -418,28 +418,20 @@ def get_market_html_parts() -> Dict[str, str]:
     }
 
 
-def _price_reaction_from_log(
+def _split_log_around_kessanbi(
     price_log: List,
     kessanbi_dt: date,
-    *,
-    n_business_days: int = 1,
-) -> str:
-    """price_log と決算日 date から N 営業日後変動率を算出する内部関数。
+) -> Tuple[Optional[int], List[Tuple[date, int]]]:
+    """price_log を「決算日以下の最新営業日終値」と「決算日より後の昇順タプル列」に分ける。
 
-    price_log: [(date, int終値), ...]
-    kessanbi_dt: 決算日の date
-    n_business_days: 決算日より後の何営業日目の終値を見るか (>=1)
-
-    n=1 → 決算日翌営業日終値 / 決算日以下の最新営業日終値 - 1
-    n=5 → 5営業日後終値 / 決算日以下の最新営業日終値 - 1
-    log が不足する場合は "".
+    複数期間の反応率計算でソート/分割を共有するための共通前処理。
     """
-    if not price_log or n_business_days < 1:
-        return ""
+    if not price_log:
+        return None, []
     try:
         sorted_log = sorted(price_log, key=lambda x: x[0])  # 昇順
     except (TypeError, IndexError):
-        return ""
+        return None, []
 
     before_price: Optional[int] = None
     after_entries: List[Tuple[date, int]] = []
@@ -455,18 +447,61 @@ def _price_reaction_from_log(
             before_price = entry_pr
         else:
             after_entries.append((entry_dt, entry_pr))
+    return before_price, after_entries
 
+
+def _format_reaction(before_price: Optional[int], after_price: int) -> str:
+    """前営業日終値 → N営業日後終値の変動率を符号付き文字列で返す。失敗時は ""。"""
     if before_price is None or before_price == 0:
         return ""
-    if len(after_entries) < n_business_days:
-        return ""
-    after_price = after_entries[n_business_days - 1][1]
     try:
         change = (float(after_price) / float(before_price) - 1.0) * 100.0
     except (ValueError, ZeroDivisionError):
         return ""
     sign = "+" if change >= 0 else ""
     return f"{sign}{change:.1f}"
+
+
+def _price_reaction_from_log(
+    price_log: List,
+    kessanbi_dt: date,
+    *,
+    n_business_days: int = 1,
+) -> str:
+    """price_log と決算日 date から N 営業日後変動率を算出する内部関数。
+
+    price_log: [(date, int終値), ...]
+    n=1 → 決算日翌営業日終値 / 決算日以下の最新営業日終値 - 1
+    n=5 → 5営業日後終値 / 決算日以下の最新営業日終値 - 1
+    log が不足する場合は "".
+
+    複数期間を一括計算する場合は _price_reactions_from_log を使うとソートを共有できる。
+    """
+    if n_business_days < 1:
+        return ""
+    before_price, after_entries = _split_log_around_kessanbi(price_log, kessanbi_dt)
+    if len(after_entries) < n_business_days:
+        return ""
+    return _format_reaction(before_price, after_entries[n_business_days - 1][1])
+
+
+def _price_reactions_from_log(
+    price_log: List,
+    kessanbi_dt: date,
+    periods: Tuple[Tuple[str, int], ...] = KESSAN_REACTION_PERIODS,
+) -> Dict[str, str]:
+    """price_log を1回だけソート/分割し、複数期間の反応率を一括算出する。
+
+    各期間で取得不可なら値は ""。
+    """
+    before_price, after_entries = _split_log_around_kessanbi(price_log, kessanbi_dt)
+    result: Dict[str, str] = {}
+    for key, n in periods:
+        if n < 1 or len(after_entries) < n:
+            result[key] = ""
+            continue
+        result[key] = _format_reaction(before_price, after_entries[n - 1][1])
+    return result
 
 
 def calc_price_reactions(code_s: str, kessanbi: str) -> Dict[str, str]:
@@ -484,10 +519,7 @@ def calc_price_reactions(code_s: str, kessanbi: str) -> Dict[str, str]:
         return {key: "" for key, _ in KESSAN_REACTION_PERIODS}
     stock = get_stock_data(code_s)
     log = stock.get("price_log") or []
-    return {
-        key: _price_reaction_from_log(log, kessanbi_dt, n_business_days=n)
-        for key, n in KESSAN_REACTION_PERIODS
-    }
+    return _price_reactions_from_log(log, kessanbi_dt)
 
 
 def calc_price_reaction(code_s: str, kessanbi: str) -> str:
@@ -765,7 +797,7 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
             # 既存エントリ上書き。各期間ごとにリアルタイム計算失敗時は既存値を優先
             # （旧 post_price_change のみ持つレコードでも 1d 値を引き継ぐ）
             existing = comments[target_idx]
-            existing_changes = _normalize_kessan_post_price_changes(existing)
+            existing_changes = normalize_kessan_post_price_changes(existing)
             merged_changes: Dict[str, str] = {}
             for key, _ in KESSAN_REACTION_PERIODS:
                 new_v = post_price_changes.get(key, "")
@@ -911,7 +943,7 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 "quarter": quarter if quarter else (base or {}).get("quarter", 0),
                 "pre_expectation": entry.get("pre_expectation", "") or "",
                 "pre_outlook": entry.get("pre_outlook", "") or "",
-                "post_price_changes": _normalize_kessan_post_price_changes(entry),
+                "post_price_changes": normalize_kessan_post_price_changes(entry),
                 "post_comment": entry.get("post_comment", "") or "",
                 "has_comment": bool(
                     entry.get("pre_outlook") or entry.get("post_comment")
@@ -952,16 +984,15 @@ def get_market_kessan_data() -> Dict[str, Any]:
         if dt is None:
             continue
         # 過去の変動率を計算できれば補完（保存済み値が無い期間のみ、キャッシュ利用）
+        # 各銘柄の price_log は1回だけソート/分割して全期間で共有する
         if dt < base_day:
             existing_changes = entry.get("post_price_changes") or {}
             if any(not existing_changes.get(key) for key, _ in KESSAN_REACTION_PERIODS):
                 log = price_logs_cache.get(entry["code_s"], [])
-                for key, n in KESSAN_REACTION_PERIODS:
-                    if existing_changes.get(key):
-                        continue
-                    calc = _price_reaction_from_log(log, dt, n_business_days=n)
-                    if calc:
-                        existing_changes[key] = calc
+                calculated = _price_reactions_from_log(log, dt)
+                for key, _ in KESSAN_REACTION_PERIODS:
+                    if not existing_changes.get(key) and calculated.get(key):
+                        existing_changes[key] = calculated[key]
                 entry["post_price_changes"] = existing_changes
 
         # 前後保有フラグのスナップショット化

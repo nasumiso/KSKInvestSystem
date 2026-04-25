@@ -111,7 +111,7 @@ KESSAN_COMMENT_FIELDS = frozenset(
 )
 
 
-def _normalize_kessan_post_price_changes(entry: Dict[str, Any]) -> Dict[str, str]:
+def normalize_kessan_post_price_changes(entry: Dict[str, Any]) -> Dict[str, str]:
     """決算コメントエントリの post_price_changes を正規化する。
 
     - 新形式 dict があれば各期間キーを str に正規化して返す
@@ -503,7 +503,7 @@ def get_research_record(
             ):
                 if key not in entry:
                     entry[key] = False
-            entry["post_price_changes"] = _normalize_kessan_post_price_changes(entry)
+            entry["post_price_changes"] = normalize_kessan_post_price_changes(entry)
     return record
 
 
@@ -840,7 +840,7 @@ def format_record_full(record: Dict[str, Any]) -> str:
             quarter = entry.get("quarter", "-")
             pre_exp = entry.get("pre_expectation", "") or "-"
             pre = entry.get("pre_outlook", "")
-            changes = _normalize_kessan_post_price_changes(entry)
+            changes = normalize_kessan_post_price_changes(entry)
             reactions_parts = []
             for key, _ in KESSAN_REACTION_PERIODS:
                 v = changes.get(key, "")

@@ -511,16 +511,16 @@ class TestCalcPriceReactions:
 
 
 class TestNormalizePostPriceChanges:
-    """_normalize_kessan_post_price_changes の後方互換正規化 (issue #133)"""
+    """normalize_kessan_post_price_changes の後方互換正規化 (issue #133)"""
 
     def test_new_format_passthrough(self):
         entry = {"post_price_changes": {"1d": "+3", "5d": "+5"}}
-        result = rs._normalize_kessan_post_price_changes(entry)
+        result = rs.normalize_kessan_post_price_changes(entry)
         assert result == {"1d": "+3", "5d": "+5"}
 
     def test_old_format_lifts_to_1d(self):
         entry = {"post_price_change": "-15"}
-        result = rs._normalize_kessan_post_price_changes(entry)
+        result = rs.normalize_kessan_post_price_changes(entry)
         assert result == {"1d": "-15", "5d": ""}
 
     def test_both_present_prefers_new(self):
@@ -528,16 +528,16 @@ class TestNormalizePostPriceChanges:
             "post_price_change": "-15",
             "post_price_changes": {"1d": "+2", "5d": "+3"},
         }
-        result = rs._normalize_kessan_post_price_changes(entry)
+        result = rs.normalize_kessan_post_price_changes(entry)
         assert result == {"1d": "+2", "5d": "+3"}
 
     def test_neither_present_returns_empty(self):
-        result = rs._normalize_kessan_post_price_changes({})
+        result = rs.normalize_kessan_post_price_changes({})
         assert result == {"1d": "", "5d": ""}
 
     def test_partial_new_format_filled_with_empty(self):
         entry = {"post_price_changes": {"1d": "+3"}}  # 5d 欠落
-        result = rs._normalize_kessan_post_price_changes(entry)
+        result = rs.normalize_kessan_post_price_changes(entry)
         assert result == {"1d": "+3", "5d": ""}
 
 

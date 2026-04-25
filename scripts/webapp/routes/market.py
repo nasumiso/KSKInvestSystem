@@ -19,7 +19,7 @@ from webapp.helpers import (
 from research_shelve import (
     KESSAN_REACTION_PERIODS,
     VALID_EXPECTATIONS,
-    _normalize_kessan_post_price_changes,
+    normalize_kessan_post_price_changes,
 )
 
 market_bp = Blueprint("market", __name__)
@@ -49,7 +49,7 @@ def _serialize_kessan_entry_for_api(entry: Dict[str, Any]) -> Dict[str, Any]:
     for key in _API_ENTRY_KEYS:
         if key in entry:
             result[key] = entry[key]
-    result["post_price_changes"] = _normalize_kessan_post_price_changes(entry)
+    result["post_price_changes"] = normalize_kessan_post_price_changes(entry)
     return result
 
 
