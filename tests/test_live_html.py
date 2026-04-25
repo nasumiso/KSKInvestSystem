@@ -66,6 +66,31 @@ class TestLiveHtmlShihyou:
         assert jikasogaku > 0  # トヨタなら必ず正の値
         _sleep()
 
+    def test_自己資本実額の抽出(self):
+        """財務テーブルから自己資本(実額・億円)が抽出できること"""
+        html = rironkabuka.get_kabutan_html(TEST_CODE, upd=-1)
+        result = shihyou.get_from_kabutan(html)
+        assert "jikoshihon" in result
+        assert result["jikoshihon"] > 0  # トヨタなら兆円規模
+        _sleep()
+
+    def test_現金等残高の抽出(self):
+        """CFテーブルから現金等残高(億円)が抽出できること"""
+        html = rironkabuka.get_kabutan_html(TEST_CODE, upd=-1)
+        cash = shihyou.parse_cash_kabutan(html)
+        assert cash is not None
+        assert cash > 0
+        _sleep()
+
+    def test_EVR統合計算(self):
+        """analyze_from_kabutan が EV_Sales を計算できること"""
+        result = shihyou.analyze_from_kabutan(TEST_CODE, upd=-1)
+        assert "EV_Sales" in result
+        # トヨタは大型製造業なので EVR は正値で 1.0 前後の想定。
+        # ネットキャッシュ企業の場合は負値もあり得るため範囲は緩めに見る。
+        assert isinstance(result["EV_Sales"], float)
+        _sleep()
+
 
 class TestLiveHtmlMaster:
     """master.py — kabutan銘柄基本情報HTML取得→パース"""
