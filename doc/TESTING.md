@@ -6,6 +6,7 @@
 |----|------|----------|----------|-----|
 | 単体テスト | 純粋関数の計算検証 | なし | なし | ○ |
 | 機能テスト | ビジネスフローの結合検証 | HTTP→モック、DB→tmp_path | `functional` | ○ |
+| 統合テスト | stockDB ロジック変更時の 1 銘柄 E2E 検証 | 実HTTP（kabutan/yfinance） | — | × |
 | Live検証 | HTMLフォーマット変更検知 | 実HTTP通信 | `live_html` | × |
 
 ```bash
@@ -120,9 +121,30 @@ pytest tests/test_live_html.py -v
 
 失敗したテストクラスから対応モジュールのパーサーを修正する。
 
-## 統合テスト（make_stock_db.py サブコマンド）
+## 統合テスト（1 銘柄 E2E）
 
-スコアリングやランキングのロジックを変更した場合、ローカルDB上で実際の銘柄データを使って検証する。
+stockDB ロジック（指標計算・価格取得・業績取得など）を変更したら、本番 DB から 1 銘柄だけを強制再取得して挙動を確認する。全銘柄を回さないので 1 ループが軽く、ロジック修正のイテレーションに使える。
+
+```bash
+source .venv/bin/activate
+cd scripts
+
+# 1 銘柄を強制再取得（UPD_FORCE で master/price/shihyo/gyoseki/rironkabuka を再評価）
+python make_stock_db.py update 6324
+
+# 複数銘柄
+python make_stock_db.py update 6324 7203 215A
+
+# 更新 + ウォッチ銘柄スナップショット追記までワンショット
+python make_stock_db.py update 6324 --snapshot
+
+# 更新後の DB 中身を確認（score_gyoseki / momentum_pt / funda_pt / price_log 等）
+python make_stock_db.py list 6324
+```
+
+## 手動回帰確認（全銘柄 list_all_db）
+
+統合テスト（1 銘柄 E2E）で担保しきれない大域的な動作（全銘柄ランキング、Google Drive アップロード等）はローカル DB で目視確認する。
 
 ```bash
 source .venv/bin/activate
