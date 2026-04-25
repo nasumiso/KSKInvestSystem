@@ -1307,10 +1307,12 @@ def parse_kessan_html(html):
             log_warning("決算ページフォーマット変更?")
         return kessan_list
 
-    # htmlから、決算情報が含まれば箇所を取得(正規表現にコストかかるため高速化)
-    body_html = re.search(
-        r'<table class="s_news_list mgbt0">(.*?)</table>', html, re.S
-    ).group(1)
+    # 決算情報のテーブルは1ページに `s_news_list mgbt0` と `s_news_list mgt0` の
+    # 2つに分かれている。両方を連結して対象にしないと後半テーブルの記事が漏れる
+    bodies = re.findall(
+        r'<table class="s_news_list[^"]*">(.*?)</table>', html, re.S
+    )
+    body_html = "".join(bodies)
     mod_lst = re_search_kessan("ctg3_ks", body_html)
     log_print("決算修正:", [item[:2] for item in mod_lst])
 

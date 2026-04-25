@@ -389,3 +389,47 @@ class TestUpdateResearchSnapshots:
         assert isinstance(snap["ir_quant"], str)
         assert isinstance(snap["quality_indicators"], str)
         assert isinstance(snap["rironkabuka_kairi"], str)
+
+    def test_code_filter_limits_targets(self, db_path, monkeypatch):
+        """code_filter を渡すと指定銘柄だけが処理される (他銘柄は触らない)"""
+        today = _today_str()
+        stock_a = _make_stock("3496", kessanbi=today, stock_name="アズーム")
+        stock_b = _make_stock("6324", kessanbi=today, stock_name="ハーモニック")
+        monkeypatch.setattr(
+            make_stock_db, "load_stock_db",
+            lambda: {"3496": stock_a, "6324": stock_b},
+        )
+        monkeypatch.setattr(
+            portfolio, "parse_my_portforio", lambda: (["3496", "6324"], [])
+        )
+
+        for code_s, name in [("3496", "アズーム"), ("6324", "ハーモニック")]:
+            rec = rs.create_research_record(code_s, name)
+            rs.upsert_research_record(rec, db_path=db_path)
+
+        make_stock_db.update_research_snapshots(
+            db_path=db_path, code_filter=["6324"]
+        )
+
+        # 6324 だけスナップショットが追記され、3496 は触られない
+        rec_a = rs.get_research_record("3496", db_path=db_path)
+        rec_b = rs.get_research_record("6324", db_path=db_path)
+        assert len(rec_a["snapshots"]) == 0
+        assert len(rec_b["snapshots"]) == 1
+
+    def test_code_filter_outside_watchlist_skipped(self, db_path, monkeypatch):
+        """code_filter にウォッチ外の銘柄を指定すると何もしない (汚染防止)"""
+        today = _today_str()
+        stock = _make_stock("9999", kessanbi=today, stock_name="ウォッチ外")
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"9999": stock})
+        monkeypatch.setattr(portfolio, "parse_my_portforio", lambda: (["3496"], []))
+
+        rec = rs.create_research_record("9999", "ウォッチ外")
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        make_stock_db.update_research_snapshots(
+            db_path=db_path, code_filter=["9999"]
+        )
+
+        loaded = rs.get_research_record("9999", db_path=db_path)
+        assert len(loaded["snapshots"]) == 0
