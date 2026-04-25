@@ -38,6 +38,8 @@ def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
 
     表示用に shikiho_comments を period 降順（新しい順）に並べ替える。
     period 空 / "-" は最古扱いで末尾に寄せ、同値同士は元リスト順を保つ。
+    過去の決算コメントで post_price_changes に欠損期間があれば
+    price_log から補完計算して in-memory で埋める（永続化はしない）。
     """
     validate_code_s(code_s)
     record = get_research_record(code_s)
@@ -45,7 +47,49 @@ def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
         record["shikiho_comments"] = sort_shikiho_comments_desc(
             record.get("shikiho_comments") or []
         )
+        _backfill_post_price_changes_for_entries(
+            code_s,
+            record.get("kessan_comments") or [],
+        )
     return record
+
+
+def _backfill_post_price_changes_for_entries(
+    code_s: str,
+    entries: List[Dict[str, Any]],
+) -> None:
+    """過去エントリの post_price_changes に欠損期間があれば price_log から補完する。
+
+    永続化はせず、entry dict を in-place で更新する。
+    決算日が未来 (今日以降) のエントリは補完対象外。
+    """
+    if not entries:
+        return
+    base_day = get_price_day(datetime.today())
+
+    targets: List[Tuple[Dict[str, Any], date]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        dt = _parse_kessanbi(entry.get("kessanbi", ""))
+        if dt is None or dt >= base_day:
+            continue
+        changes = entry.get("post_price_changes") or {}
+        if any(not changes.get(key) for key, _ in KESSAN_REACTION_PERIODS):
+            targets.append((entry, dt))
+    if not targets:
+        return
+
+    log = _bulk_price_logs([code_s]).get(normalize_code_s(code_s), [])
+    if not log:
+        return
+    for entry, dt in targets:
+        existing = entry.get("post_price_changes") or {}
+        calculated = _price_reactions_from_log(log, dt)
+        for key, _ in KESSAN_REACTION_PERIODS:
+            if not existing.get(key) and calculated.get(key):
+                existing[key] = calculated[key]
+        entry["post_price_changes"] = existing
 
 
 def get_stock_data(code_s: str) -> Dict[str, Any]:

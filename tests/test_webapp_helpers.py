@@ -56,6 +56,80 @@ class TestGetResearchDetail:
         rec = helpers.get_research_detail("9999")
         assert rec is None
 
+    def test_backfills_missing_5d_from_price_log(
+        self, populated_db, monkeypatch
+    ):
+        """過去エントリで 5d が欠損していれば price_log から補完される (issue #133)"""
+        from datetime import date as _date, timedelta as _td
+        kessan = _date(2026, 4, 1)
+        # 決算日以下の終値 + 1d, 2d, ..., 6d 後の終値
+        log = [(kessan - _td(days=1), 1000)]
+        for i, pr in enumerate([1032, 1040, 1045, 1048, 1051], start=1):
+            log.append((kessan + _td(days=i), pr))
+        monkeypatch.setattr(
+            helpers,
+            "_bulk_price_logs",
+            lambda codes: {"3496": log} if "3496" in codes else {},
+        )
+        # today を決算後に固定 (補完対象は dt < base_day のもののみ)
+        monkeypatch.setattr(
+            helpers, "get_price_day", lambda _: _date(2026, 4, 25)
+        )
+        # 1d だけ持つエントリを直接挿入 (5d は欠損)
+        rec = rs.get_research_record("3496")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/04/01",
+            "quarter": 4,
+            "pre_expectation": "○",
+            "pre_outlook": "テスト",
+            "post_price_changes": {"1d": "+3.2", "5d": ""},
+            "post_comment": "",
+            "kessan_matagi": False,
+            "held_before_kessan": False,
+            "held_after_kessan": False,
+        }]
+        rs.upsert_research_record(rec)
+
+        detail = helpers.get_research_detail("3496")
+        entry = detail["kessan_comments"][0]
+        assert entry["post_price_changes"]["1d"] == "+3.2"
+        # 5d が補完されていること (1000 → 1051 = +5.1%)
+        assert entry["post_price_changes"]["5d"] == "+5.1"
+
+    def test_does_not_backfill_future_entries(
+        self, populated_db, monkeypatch
+    ):
+        """未来の決算エントリ (dt >= base_day) は補完対象外"""
+        from datetime import date as _date, timedelta as _td
+        kessan = _date(2026, 5, 1)  # 未来
+        log = [(kessan - _td(days=1), 1000), (kessan + _td(days=1), 1050)]
+        monkeypatch.setattr(
+            helpers,
+            "_bulk_price_logs",
+            lambda codes: {"3496": log},
+        )
+        monkeypatch.setattr(
+            helpers, "get_price_day", lambda _: _date(2026, 4, 25)
+        )
+        rec = rs.get_research_record("3496")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/05/01",
+            "quarter": 1,
+            "pre_expectation": "",
+            "pre_outlook": "",
+            "post_price_changes": {"1d": "", "5d": ""},
+            "post_comment": "",
+            "kessan_matagi": False,
+            "held_before_kessan": False,
+            "held_after_kessan": False,
+        }]
+        rs.upsert_research_record(rec)
+
+        detail = helpers.get_research_detail("3496")
+        entry = detail["kessan_comments"][0]
+        # 未来エントリなので補完されず空のまま
+        assert entry["post_price_changes"] == {"1d": "", "5d": ""}
+
 
 class TestSearchRecords:
     """search_records のテスト"""
