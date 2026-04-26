@@ -638,6 +638,54 @@ class TestCreateMarketHtml:
             assert '<h2>決算日</h2>' not in content
             assert '<h2>適宜開示</h2>' not in content
 
+    def test_disclosure_section_not_in_market_html(self, tmp_path):
+        """適宜開示は market_data.html から完全に分離されている (issue #148 関連)"""
+        market_db = {
+            "theme_rank": ["AI"],
+            "theme_rank_diff": {"AI": None},
+            "theme_momentum": {},
+        }
+        # 決算データ・適宜開示データを与えても、適宜開示見出しは出ない
+        kessan_csv = [["日付", "コード", "銘柄"]]
+        with patch.object(make_market_db, 'DATA_DIR', str(tmp_path)):
+            os.makedirs(os.path.join(str(tmp_path), "code_rank_data"), exist_ok=True)
+            html_path = make_market_db.create_market_html(
+                market_db, kessan_csv=kessan_csv
+            )
+            with open(html_path, encoding="utf-8") as f:
+                content = f.read()
+            # 適宜開示見出しが市場HTMLに含まれない
+            assert '<h2>適宜開示</h2>' not in content
+
+
+class TestCreateDisclosureHtml:
+    """create_disclosure_html() 統合テスト (issue #148 関連で新設)"""
+
+    def test_generates_html_file(self, tmp_path):
+        """適宜開示HTMLファイルが生成される"""
+        disc_csv = [
+            ["日付", "コード", "銘柄名", "種類", "本文"],  # ヘッダー行
+            ["20260424", '=HYPERLINK("https://example.com","6324")',
+             "ハーモニック", "決算", '=HYPERLINK("https://example.com","決算短信")'],
+        ]
+        with patch.object(make_market_db, 'DATA_DIR', str(tmp_path)):
+            os.makedirs(os.path.join(str(tmp_path), "code_rank_data"), exist_ok=True)
+            html_path = make_market_db.create_disclosure_html(disc_csv)
+            assert os.path.exists(html_path)
+            assert html_path.endswith("disclosure_data.html")
+            with open(html_path, encoding="utf-8") as f:
+                content = f.read()
+            assert '<!DOCTYPE html>' in content
+            assert '適宜開示' in content
+            assert '6324' in content
+
+    def test_empty_disc_csv_still_produces_file(self, tmp_path):
+        """disc_csv が空でもファイル自体は生成される (見出しは出ない)"""
+        with patch.object(make_market_db, 'DATA_DIR', str(tmp_path)):
+            os.makedirs(os.path.join(str(tmp_path), "code_rank_data"), exist_ok=True)
+            html_path = make_market_db.create_disclosure_html(None)
+            assert os.path.exists(html_path)
+
 
 # ==================================================
 # make_theme_data — 差分ラベル計算

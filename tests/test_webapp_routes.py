@@ -305,3 +305,44 @@ class TestKessanCommentApiContract:
         data = resp.get_json()
         assert data["post_price_changes"] == {"1d": "+1.0", "5d": "+2.0"}
         assert "post_price_change" not in data
+
+
+class TestDisclosureRoute:
+    """GET /disclosure のテスト (issue #148 関連で新設)"""
+
+    def test_disclosure_returns_200(self, client):
+        """ファイル未生成でも 200 を返し、未生成案内を表示"""
+        resp = client.get("/disclosure")
+        assert resp.status_code == 200
+
+    def test_disclosure_shows_unavailable_message_when_html_missing(self, client, monkeypatch):
+        """disclosure_data.html 未生成時は未生成案内が表示される"""
+        from webapp.routes import disclosure as _disc_route
+        monkeypatch.setattr(_disc_route, "get_disclosure_html_parts", lambda: {"available": ""})
+        resp = client.get("/disclosure")
+        html = resp.data.decode()
+        assert "disclosure_data.html" in html
+        assert "未生成" in html
+
+    def test_disclosure_renders_html_when_available(self, client, monkeypatch):
+        """disclosure_data.html が利用可能なら body / header / footer が描画される"""
+        from webapp.routes import disclosure as _disc_route
+        monkeypatch.setattr(_disc_route, "get_disclosure_html_parts", lambda: {
+            "available": "1",
+            "css": ".disc-table { color: red; }",
+            "header": "<h1>適宜開示 <span>2026-04-26</span></h1>",
+            "body": '<table class="disc-table"><tr><td>テストデータ</td></tr></table>',
+            "footer": "<footer>fin</footer>",
+        })
+        resp = client.get("/disclosure")
+        html = resp.data.decode()
+        assert "テストデータ" in html
+        assert "適宜開示" in html
+        assert "fin" in html
+
+    def test_global_nav_has_disclosure_link(self, client):
+        """グローバルナビに /disclosure へのリンクがある"""
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert 'href="/disclosure"' in html
+        assert "適宜開示" in html

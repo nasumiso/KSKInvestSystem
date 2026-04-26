@@ -11,7 +11,6 @@ import csv
 import os
 
 import price
-import googledrive
 import make_stock_db
 
 from ks_util import *
@@ -509,14 +508,13 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
     import disclosure
     disc_csv = disclosure.update_disclosure_all()
 
-    # HTML版を生成（CSV版に置き換え）
+    # HTML版を生成（市場データ + 適宜開示）。
+    # webapp が DATA_DIR からローカル参照するため、GoogleDrive アップロードは行わない。
     theme_rank_data = (theme_rank_list, prev_theme_rank_list, None, prev_day)
-    html_path = create_market_html(market_db,
-                                   kessan_csv=kessan_csv, disc_csv=disc_csv,
-                                   theme_rank_data=theme_rank_data)
-
-    # GoogleDriveに非同期アップロード（ファイルロックでプロセス間排他制御）
-    googledrive.upload_html_async(html_path)
+    create_market_html(market_db,
+                       kessan_csv=kessan_csv,
+                       theme_rank_data=theme_rank_data)
+    create_disclosure_html(disc_csv)
 
 
 def update_shintakane_theme(stocks, code_list):
@@ -1135,14 +1133,16 @@ def _html_disclosure(disc_csv):
 
 
 def create_market_html(market_db,
-                       kessan_csv=None, disc_csv=None,
+                       kessan_csv=None,
                        theme_rank_data=None):
     """市場DBから表示用HTMLファイルを生成する
+
+    適宜開示セクションは別ページ化されたため本HTMLには含まれない。
+    create_disclosure_html() で disclosure_data.html を生成する。
 
     Args:
         market_db: 市場DB（必須）
         kessan_csv: 決算CSVデータ（Noneの場合はセクション省略）
-        disc_csv: 適宜開示CSVデータ（Noneの場合はセクション省略）
         theme_rank_data: get_theme_rank_list()の返り値タプル（Noneの場合は履歴テーブル省略）
     Returns:
         str: 生成したHTMLファイルのパス
@@ -1157,7 +1157,6 @@ def create_market_html(market_db,
     theme_html = _html_theme_rank(market_db, theme_rank_data)
     market_html = _html_market(market_db)
     kessan_html = _html_kessan(kessan_csv) if kessan_csv else ""
-    disc_html = _html_disclosure(disc_csv) if disc_csv else ""
 
     # HTMLテンプレートに埋め込み
     html_content = (
@@ -1170,7 +1169,6 @@ def create_market_html(market_db,
         '</head>\n'
         '<body>\n\n'
         '<h1>市場データ <span class="date">%s</span></h1>\n\n'
-        '%s\n\n'
         '%s\n\n'
         '%s\n\n'
         '%s\n\n'
@@ -1187,6 +1185,56 @@ def create_market_html(market_db,
         theme_html,
         market_html,
         kessan_html,
+        now.strftime("%Y-%m-%d %H:%M"),
+    )
+
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
+    log_print("HTML生成完了: %s" % html_path)
+    return html_path
+
+
+def create_disclosure_html(disc_csv):
+    """適宜開示データから表示用HTMLファイルを生成する
+
+    issue #148 関連: 市場データページの導線改善のため、
+    適宜開示セクションを market_data.html から分離して独立ページ化。
+
+    Args:
+        disc_csv: 適宜開示CSVデータ
+    Returns:
+        str: 生成したHTMLファイルのパス
+    """
+    html_path = os.path.join(DATA_DIR, "code_rank_data", "disclosure_data.html")
+
+    now = datetime.now()
+    weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
+    date_str = "%s (%s)" % (now.strftime("%Y-%m-%d"), weekday_names[now.weekday()])
+
+    disc_html = _html_disclosure(disc_csv) if disc_csv else ""
+
+    html_content = (
+        '<!DOCTYPE html>\n'
+        '<html lang="ja">\n'
+        '<head>\n'
+        '<meta charset="UTF-8">\n'
+        '<title>適宜開示 - %s</title>\n'
+        '<style>\n%s</style>\n'
+        '</head>\n'
+        '<body>\n\n'
+        '<h1>適宜開示 <span class="date">%s</span></h1>\n\n'
+        '%s\n\n'
+        '<footer style="margin-top: 40px; padding-top: 12px; border-top: 1px solid #ddd; '
+        'font-size: 0.8em; color: #999;">\n'
+        '  生成日時: %s | shintakane分析システム\n'
+        '</footer>\n\n'
+        '</body>\n'
+        '</html>\n'
+    ) % (
+        now.strftime("%Y-%m-%d"),
+        _HTML_CSS,
+        date_str,
         disc_html,
         now.strftime("%Y-%m-%d %H:%M"),
     )

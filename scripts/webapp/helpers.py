@@ -462,6 +462,70 @@ def get_market_html_parts() -> Dict[str, str]:
     }
 
 
+def get_disclosure_html_parts() -> Dict[str, str]:
+    """disclosure_data.html を読み込み、CSS / header / body / footer を dict で返す。
+
+    返り値のキー:
+      - "available": "1" or "" （ファイル存在判定）
+      - "css": <style> タグの中身
+      - "header": <h1> の HTML
+      - "body": <body> 内のコンテンツ（h1, footer を除去したもの）
+      - "footer": <footer> タグ
+
+    ファイル未存在時または BeautifulSoup 未インストール時は {"available": ""}。
+    """
+    try:
+        from ks_util import DATA_DIR
+        data_dir = DATA_DIR
+    except Exception:
+        data_dir = os.environ.get("KS_DATA_DIR", "")
+    html_path = os.path.join(data_dir, "code_rank_data", "disclosure_data.html")
+    if not os.path.exists(html_path):
+        return {"available": ""}
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        log_warning("[disclosure] BeautifulSoup 未インストールのため disclosure_data.html を読み込めません")
+        return {"available": ""}
+
+    try:
+        with open(html_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+    except OSError as e:
+        log_warning(f"[disclosure] disclosure_data.html 読み込み失敗: {e}")
+        return {"available": ""}
+
+    soup = BeautifulSoup(html_content, "html.parser")
+
+    style_tag = soup.find("style")
+    css = style_tag.string if style_tag and style_tag.string else ""
+
+    h1_tag = soup.find("h1")
+    header_html = str(h1_tag) if h1_tag else ""
+
+    body = soup.find("body")
+    if body is None:
+        return {"available": ""}
+
+    if h1_tag is not None:
+        h1_tag.extract()
+
+    footer_tag = body.find("footer")
+    footer_html = str(footer_tag) if footer_tag else ""
+    if footer_tag is not None:
+        footer_tag.extract()
+
+    body_html = body.decode_contents()
+
+    return {
+        "available": "1",
+        "css": css or "",
+        "header": header_html,
+        "body": body_html,
+        "footer": footer_html,
+    }
+
+
 def _split_log_around_kessanbi(
     price_log: List,
     kessanbi_dt: date,

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}適宜開示 - Shintakane Research{% endblock %}
+{% block content %}
+
+{% if disclosure_parts.available %}
+<style>
+/* disclosure_data.html から取り込んだ scoped CSS */
+{{ disclosure_parts.css | safe }}
+</style>
+{{ disclosure_parts.header | safe }}
+{{ disclosure_parts.body | safe }}
+{{ disclosure_parts.footer | safe }}
+{% else %}
+<div style="padding:12px;margin:12px 0;background:#fef3e6;border:1px solid #f5c37c;border-radius:6px;">
+  適宜開示データ (<code>disclosure_data.html</code>) が未生成です。<br>
+  <small>scripts/make_market_db.py を実行すると生成されます。</small>
+</div>
+{% endif %}
+
+{% endblock %}
