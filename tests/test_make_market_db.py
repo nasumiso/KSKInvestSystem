@@ -376,6 +376,30 @@ class TestHtmlMarket:
                 "rv_20": 4.6,
                 "rv_5": 5.4,
             },
+            "nasdaq": {
+                "rs_raw": 1.05,
+                "trend_template": [],
+                "distribution_days": ["260301"],
+                "followthrough_days": [],
+                "direction_signal": "neutral 26/03/13",
+                "spr_buygagher": 50,
+                "spr_20": 48,
+                "spr_5": 47,
+                "rv_20": 2.1,
+                "rv_5": 3.2,
+            },
+            "sp500": {
+                "rs_raw": 1.02,
+                "trend_template": [],
+                "distribution_days": [],
+                "followthrough_days": ["260308"],
+                "direction_signal": "neutral 26/03/13",
+                "spr_buygagher": 51,
+                "spr_20": 50,
+                "spr_5": 49,
+                "rv_20": 1.8,
+                "rv_5": 2.5,
+            },
         }
 
     def test_signal_sell_class(self):
@@ -403,6 +427,27 @@ class TestHtmlMarket:
         """市場データがない場合は空文字列"""
         result = make_market_db._html_market({})
         assert result == ""
+
+    def test_nasdaq_row_rendered(self):
+        """NASDAQ行が市場テーブルに表示される (issue #148)"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert "<td><strong>NASDAQ</strong></td>" in result
+
+    def test_sp500_row_rendered(self):
+        """S&P 500行が市場テーブルに表示される (issue #148)。
+        market_nameはhtml.escapeを通るため、& → &amp; となる。"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert "<td><strong>S&amp;P 500</strong></td>" in result
+
+    def test_us_indices_skipped_when_missing(self):
+        """nasdaq/sp500 キー欠落時は該当行が出ず、既存の TOPIX/マザーズは出る"""
+        partial_db = {
+            k: v for k, v in self._make_market_db().items() if k in ("topix", "mothers")
+        }
+        result = make_market_db._html_market(partial_db)
+        assert "<td><strong>TOPIX</strong></td>" in result
+        assert "NASDAQ" not in result
+        assert "S&amp;P 500" not in result
 
 
 class TestHtmlKessan:

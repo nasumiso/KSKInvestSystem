@@ -348,12 +348,29 @@ def make_dow_db():
     return db
 
 
+def _make_us_index_db(code_s, ticker_symbol, key):
+    """米国指数 (NASDAQ / S&P500 等) を yfinance 経由で取得する共通処理"""
+    db_dict = {}
+    daily_dict = price.get_us_index_daily(code_s, ticker_symbol)
+    db_dict.update(daily_dict)
+    pr = daily_dict.get("price", 0)
+    weekly_dict = price.get_us_index_weekly(
+        code_s, ticker_symbol, prices=[pr, pr, pr]
+    )
+    log_print("RS_RAW=", weekly_dict.get("rs_raw", 0))
+    db_dict.update(weekly_dict)
+    return {key: db_dict}
+
+
 def make_nasdaq_db():
-    code_s = "0802"
-    db_dict = make_db_common(code_s)
-    db = {}
-    db["nasdaq"] = db_dict
-    return db
+    """NASDAQ総合指数を yfinance (^IXIC) 経由で取得する。
+    旧 Kabutan 0802 経由はフォーマット変更で動作しなくなったため切替済み。"""
+    return _make_us_index_db("_IXIC", "^IXIC", "nasdaq")
+
+
+def make_sp500_db():
+    """S&P500を yfinance (^GSPC) 経由で取得する"""
+    return _make_us_index_db("_GSPC", "^GSPC", "sp500")
 
 
 _market_db_cache = None
@@ -412,6 +429,8 @@ def update_market_db():
     market_db.update(nikkei_db)
     nasdaq_db = make_nasdaq_db()
     market_db.update(nasdaq_db)
+    sp500_db = make_sp500_db()
+    market_db.update(sp500_db)
 
     _save_market_db(market_db)
     log_print("MarketDB保存:", list(market_db.keys()))
@@ -745,6 +764,8 @@ def _html_market(market_db):
         ("topix", "TOPIX"),
         ("mothers", "マザーズ指数"),
         ("nikkei225", "日経225"),
+        ("nasdaq", "NASDAQ"),
+        ("sp500", "S&P 500"),
     ]
 
     rows_html = []

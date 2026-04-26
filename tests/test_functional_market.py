@@ -130,6 +130,10 @@ def market_env(tmp_path):
         make_market_db, "make_nasdaq_db",
         return_value={"nasdaq": index_data.copy()},
     ))
+    patches.append(patch.object(
+        make_market_db, "make_sp500_db",
+        return_value={"sp500": index_data.copy()},
+    ))
 
     # Google Drive、決算、適宜開示をモック
     patches.append(patch("googledrive.upload_csv"))
