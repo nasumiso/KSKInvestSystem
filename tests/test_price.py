@@ -311,6 +311,148 @@ class TestConvertWeeklyDfToKabutanFormat:
 
 
 # ==================================================
+# _convert_daily_df_to_kabutan_format (issue #148)
+# ==================================================
+class TestConvertDailyDfToKabutanFormat:
+    """yfinance日足DataFrame→Kabutan互換8要素タプル形式の変換テスト"""
+
+    def _make_daily_df(self, days=30, base_close=1000):
+        import pandas as pd
+
+        dates = pd.date_range(start="2024-01-01", periods=days, freq="B")
+        data = {
+            "Open": [base_close + i * 5 for i in range(days)],
+            "High": [base_close + 20 + i * 5 for i in range(days)],
+            "Low": [base_close - 20 + i * 5 for i in range(days)],
+            "Close": [base_close + 10 + i * 5 for i in range(days)],
+            "Volume": [100000 + i * 1000 for i in range(days)],
+        }
+        return pd.DataFrame(data, index=dates)
+
+    def test_output_length(self):
+        df = self._make_daily_df(30)
+        result = price._convert_daily_df_to_kabutan_format(df)
+        assert len(result) == 30
+
+    def test_eight_elements(self):
+        df = self._make_daily_df(10)
+        result = price._convert_daily_df_to_kabutan_format(df)
+        for row in result:
+            assert isinstance(row, tuple)
+            assert len(row) == 8
+
+    def test_newest_first(self):
+        """新しい日付が先頭に来る (Kabutan互換のYY/MM/DD文字列順序で確認)"""
+        df = self._make_daily_df(10)
+        result = price._convert_daily_df_to_kabutan_format(df)
+        # YY/MM/DD は文字列ソートで時系列順になる
+        assert result[0][0] > result[-1][0]
+
+    def test_date_format_kabutan_compatible(self):
+        """日付がKabutan日次互換のYY/MM/DD形式 (_html_marketのs[3:]切り出しと整合)"""
+        import re
+        df = self._make_daily_df(5)
+        result = price._convert_daily_df_to_kabutan_format(df)
+        for row in result:
+            assert re.match(r"^\d{2}/\d{2}/\d{2}$", row[0])
+
+    def test_prev_diff_field_zero(self):
+        """前日比 (index 5) は'0'固定 (指標計算で未使用)"""
+        df = self._make_daily_df(5)
+        result = price._convert_daily_df_to_kabutan_format(df)
+        for row in result:
+            assert row[5] == "0"
+
+    def test_prev_diff_pct_calculated(self):
+        """前日比% (index 6) が前日終値からの変動率として計算されている"""
+        df = self._make_daily_df(5)
+        result = price._convert_daily_df_to_kabutan_format(df)
+        # result[0] が最新、result[1] が前日。result[0][6] = (close0 - close1) / close1 * 100
+        close0 = int(result[0][4].replace(",", ""))
+        close1 = int(result[1][4].replace(",", ""))
+        expected = (close0 - close1) * 100.0 / close1
+        actual = float(result[0][6])
+        # 文字列フォーマット時に小数2桁に丸めているため、誤差は0.01未満で十分
+        assert abs(actual - expected) < 0.01
+
+    def test_oldest_row_prev_diff_pct_zero(self):
+        """最古日 (前日データなし) の前日比%は'0'固定"""
+        df = self._make_daily_df(5)
+        result = price._convert_daily_df_to_kabutan_format(df)
+        assert result[-1][6] == "0"
+
+    def test_all_string_elements(self):
+        df = self._make_daily_df(5)
+        result = price._convert_daily_df_to_kabutan_format(df)
+        for row in result:
+            for val in row:
+                assert isinstance(val, str)
+
+
+# ==================================================
+# _calc_daily_indicators (parse_price_d_html_kabutan からの切り出し: issue #148)
+# ==================================================
+class TestCalcDailyIndicators:
+    """日次指標計算のテスト"""
+
+    def _make_price_list(self, n=25, with_distribution=False):
+        """8要素タプル文字列リストを生成 (新しい日付が先頭)"""
+        rows = []
+        for i in range(n):
+            day = "26%02d%02d" % ((i // 28) + 1, (i % 28) + 1)
+            close = 1000 + i * 5
+            open_p = close - 3
+            high = close + 10
+            low = close - 10
+            volume = 100000 + i * 100
+            ratio = 0.5
+            rows.append((
+                day,
+                "{:,}".format(open_p),
+                "{:,}".format(high),
+                "{:,}".format(low),
+                "{:,}".format(close),
+                "0",
+                "{:.2f}".format(ratio),
+                "{:,}".format(volume),
+            ))
+        # 新しい日付が先頭なので reverse
+        rows.reverse()
+        return rows
+
+    def test_returns_required_keys(self):
+        rows = self._make_price_list(25)
+        result = price._calc_daily_indicators(rows)
+        for key in (
+            "distribution_days", "followthrough_days", "direction_signal",
+            "spr_20", "spr_5", "spr_buygagher", "rv_20", "rv_5",
+        ):
+            assert key in result
+
+    def test_empty_input_returns_empty(self):
+        result = price._calc_daily_indicators([])
+        assert result == {}
+
+    def test_direction_signal_format(self):
+        """direction_signal は '<sig>,<日付>' 形式"""
+        rows = self._make_price_list(25)
+        result = price._calc_daily_indicators(rows)
+        assert "," in result["direction_signal"]
+        sig, day = result["direction_signal"].split(",", 1)
+        assert sig in ("neutral", "sell")
+
+    def test_zero_range_day_does_not_crash(self):
+        """高値=安値の日があってもZeroDivisionErrorにならない"""
+        rows = self._make_price_list(25)
+        # rows[0] は最新。高値=安値で値幅ゼロにする
+        d, o, _h, _l, c, r5, r6, v = rows[0]
+        rows[0] = (d, o, c, c, c, r5, r6, v)
+        result = price._calc_daily_indicators(rows)
+        # 例外を起こさず、必須キーが返る
+        assert "distribution_days" in result
+
+
+# ==================================================
 # _is_weekly_cache_fresh
 # ==================================================
 class TestIsWeeklyCacheFresh:

@@ -376,6 +376,30 @@ class TestHtmlMarket:
                 "rv_20": 4.6,
                 "rv_5": 5.4,
             },
+            "nasdaq": {
+                "rs_raw": 1.05,
+                "trend_template": [],
+                "distribution_days": ["260301"],
+                "followthrough_days": [],
+                "direction_signal": "neutral 26/03/13",
+                "spr_buygagher": 50,
+                "spr_20": 48,
+                "spr_5": 47,
+                "rv_20": 2.1,
+                "rv_5": 3.2,
+            },
+            "sp500": {
+                "rs_raw": 1.02,
+                "trend_template": [],
+                "distribution_days": [],
+                "followthrough_days": ["260308"],
+                "direction_signal": "neutral 26/03/13",
+                "spr_buygagher": 51,
+                "spr_20": 50,
+                "spr_5": 49,
+                "rv_20": 1.8,
+                "rv_5": 2.5,
+            },
         }
 
     def test_signal_sell_class(self):
@@ -403,6 +427,27 @@ class TestHtmlMarket:
         """市場データがない場合は空文字列"""
         result = make_market_db._html_market({})
         assert result == ""
+
+    def test_nasdaq_row_rendered(self):
+        """NASDAQ行が市場テーブルに表示される (issue #148)"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert "<td><strong>NASDAQ</strong></td>" in result
+
+    def test_sp500_row_rendered(self):
+        """S&P 500行が市場テーブルに表示される (issue #148)。
+        market_nameはhtml.escapeを通るため、& → &amp; となる。"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert "<td><strong>S&amp;P 500</strong></td>" in result
+
+    def test_us_indices_skipped_when_missing(self):
+        """nasdaq/sp500 キー欠落時は該当行が出ず、既存の TOPIX/マザーズは出る"""
+        partial_db = {
+            k: v for k, v in self._make_market_db().items() if k in ("topix", "mothers")
+        }
+        result = make_market_db._html_market(partial_db)
+        assert "<td><strong>TOPIX</strong></td>" in result
+        assert "NASDAQ" not in result
+        assert "S&amp;P 500" not in result
 
 
 class TestHtmlKessan:
@@ -592,6 +637,54 @@ class TestCreateMarketHtml:
             # （CSS内のコメントには含まれるため、h2タグで判定）
             assert '<h2>決算日</h2>' not in content
             assert '<h2>適宜開示</h2>' not in content
+
+    def test_disclosure_section_not_in_market_html(self, tmp_path):
+        """適宜開示は market_data.html から完全に分離されている (issue #148 関連)"""
+        market_db = {
+            "theme_rank": ["AI"],
+            "theme_rank_diff": {"AI": None},
+            "theme_momentum": {},
+        }
+        # 決算データ・適宜開示データを与えても、適宜開示見出しは出ない
+        kessan_csv = [["日付", "コード", "銘柄"]]
+        with patch.object(make_market_db, 'DATA_DIR', str(tmp_path)):
+            os.makedirs(os.path.join(str(tmp_path), "code_rank_data"), exist_ok=True)
+            html_path = make_market_db.create_market_html(
+                market_db, kessan_csv=kessan_csv
+            )
+            with open(html_path, encoding="utf-8") as f:
+                content = f.read()
+            # 適宜開示見出しが市場HTMLに含まれない
+            assert '<h2>適宜開示</h2>' not in content
+
+
+class TestCreateDisclosureHtml:
+    """create_disclosure_html() 統合テスト (issue #148 関連で新設)"""
+
+    def test_generates_html_file(self, tmp_path):
+        """適宜開示HTMLファイルが生成される"""
+        disc_csv = [
+            ["日付", "コード", "銘柄名", "種類", "本文"],  # ヘッダー行
+            ["20260424", '=HYPERLINK("https://example.com","6324")',
+             "ハーモニック", "決算", '=HYPERLINK("https://example.com","決算短信")'],
+        ]
+        with patch.object(make_market_db, 'DATA_DIR', str(tmp_path)):
+            os.makedirs(os.path.join(str(tmp_path), "code_rank_data"), exist_ok=True)
+            html_path = make_market_db.create_disclosure_html(disc_csv)
+            assert os.path.exists(html_path)
+            assert html_path.endswith("disclosure_data.html")
+            with open(html_path, encoding="utf-8") as f:
+                content = f.read()
+            assert '<!DOCTYPE html>' in content
+            assert '適宜開示' in content
+            assert '6324' in content
+
+    def test_empty_disc_csv_still_produces_file(self, tmp_path):
+        """disc_csv が空でもファイル自体は生成される (見出しは出ない)"""
+        with patch.object(make_market_db, 'DATA_DIR', str(tmp_path)):
+            os.makedirs(os.path.join(str(tmp_path), "code_rank_data"), exist_ok=True)
+            html_path = make_market_db.create_disclosure_html(None)
+            assert os.path.exists(html_path)
 
 
 # ==================================================

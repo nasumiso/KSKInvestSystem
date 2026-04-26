@@ -251,7 +251,6 @@ def calc_sell_pressure_ratio(price_list):
 
 def parse_price_d_html_kabutan(html):
     """日次の株探価格htmlデータを解析する"""
-    # print ux_cmd_head(html, 10)
     # ---- 日次データの作成
     daily_price_list = []
     for m in re.finditer(
@@ -260,8 +259,22 @@ def parse_price_d_html_kabutan(html):
         re.DOTALL,
     ):
         daily_price_list.append(m.groups())
-    # print "日次データ:", len(daily_price_list), daily_price_list
 
+    return _calc_daily_indicators(daily_price_list)
+
+
+def _calc_daily_indicators(daily_price_list):
+    """daily_price_listから日次指標を計算する
+    parse_price_d_html_kabutanから指標計算部分を分離。
+    Kabutan HTML パスと yfinance パス共通で使用する。
+    Args:
+        daily_price_list: 8要素タプル(文字列)のリスト
+            [0]日付, [1]始値, [2]高値, [3]安値, [4]終値, [5]前日比, [6]前日比%, [7]売買高
+            カンマ区切り数値文字列、新しい日付が先頭
+    Returns:
+        dict: distribution_days / followthrough_days / direction_signal /
+              spr_20 / spr_5 / spr_buygagher / rv_20 / rv_5
+    """
     # ---- ディストリビューション
     distribution_day = []  # 日付のリスト
     followthrough_day = []
@@ -269,7 +282,6 @@ def parse_price_d_html_kabutan(html):
     # 　前日より0.1%以下で上半分で引ける場合はカウントしない[モラレス]
     # 前日よりわずかに高くても下で引けていけばカウント[モラレス]
     # 　例：0.1%上昇で25%以下で引ける
-    # 日付、始値、高値、安値、終値、前週比、前週比％、売買高
     count_day = 20
     target_days = list(
         reversed(daily_price_list[: count_day + 1])
@@ -296,30 +308,28 @@ def parse_price_d_html_kabutan(html):
             pdp = float(pd[4].replace(",", ""))
             dv = int(d[7].replace(",", ""))  # 売買高
             pdv = int(pd[7].replace(",", ""))
-            dph = float(d[2].replace(",", ""))  # 始値
-            dpl = float(d[3].replace(",", ""))  # 高値
+            dph = float(d[2].replace(",", ""))  # 高値
+            dpl = float(d[3].replace(",", ""))  # 安値
             dr = float(d[6].replace(",", ""))  # 前日比パーセント
         except ValueError:
-            # TODO: ここに来ているみたい
             log_debug("%sはデータ取得できず" % d[0])
             continue
-        # print d[0], "の解析"
+        if dph == dpl:
+            # 高値=安値で値幅ゼロのケース (休場日や寄らずなど) は除外
+            continue
         pr_pos = (dp - dpl) / (dph - dpl)
-        # print "値幅位置:", pr_pos
         if dp < pdp:  # 前日より安く出来高が増える
             if dv > pdv:
                 if dr >= -0.1 and pr_pos >= 0.5:
-                    print("前日より0.1%以下で上半分で引ける場合はカウントしない", d[0])
+                    log_debug("前日より0.1%以下で上半分で引ける場合はカウントしない", d[0])
                 else:
                     distribution_day.append(d[0])
-                    # print "ディストリビューション:", d[0]
         else:
             if dv > pdv:
                 log_debug("dr", dr, "pr_pos", pr_pos)
                 if dr <= 0.1 and pr_pos <= 0.25:
                     log_debug("前日よりわずかに高くても下で引けていけばカウント", d[0])
                     distribution_day.append(d[0])
-                    # print "ディストリビューション:", d[0]
         # フォロースルー: 反転から4~7日目で(ここは判定していない)
         # 平均以上の出来高で1.7%以上の上昇
         # 本当はその時から過去20日の出来高にしないといけないが取得できない・・
@@ -346,7 +356,6 @@ def parse_price_d_html_kabutan(html):
             return 0
         return int(float(str.replace(",", "")))
 
-    # TODO:
     # 日付、始値、高値、安値、終値、前週比、前週比％、売買高
     # ->日付、始値、高値、安値、終値、出来高
     price_list_spr = [
@@ -873,6 +882,188 @@ def _convert_weekly_df_to_kabutan_format(df):
         volume = "{:,}".format(int(row["Volume"]))
         weekly_price_list.append((date_str, open_p, high_p, low_p, close_p, "0", "0", volume))
     return weekly_price_list
+
+
+def _convert_daily_df_to_kabutan_format(df):
+    """yfinance日足DataFrameをKabutan互換のdaily_price_list形式に変換する
+    Args:
+        df: yfinance historyのDataFrame (interval="1d")
+    Returns:
+        list[tuple[str, ...]]: 8要素タプルのリスト、新しい日付が先頭
+            (日付, 始値, 高値, 安値, 終値, 前日比, 前日比%, 売買高)
+            日付は Kabutan の日次表示と同じ "YY/MM/DD" 形式 (例: "26/04/24")。
+            _html_market が distribution_days 等を `s[3:]` で表示用に切り取るため、
+            この形式で揃える必要がある。
+            前日比%は (close - prev_close) / prev_close * 100、前日比そのものは
+            指標計算で未使用のため"0"固定
+    """
+    rows = []
+    for idx in reversed(df.index):
+        row = df.loc[idx]
+        if hasattr(idx, "date"):
+            dt = idx.date() if callable(idx.date) else idx.date
+        else:
+            dt = idx
+        rows.append((dt, row))
+
+    daily_price_list = []
+    for i, (dt, row) in enumerate(rows):
+        date_str = "%02d/%02d/%02d" % (dt.year % 100, dt.month, dt.day)
+        open_p = "{:,}".format(int(row["Open"]))
+        high_p = "{:,}".format(int(row["High"]))
+        low_p = "{:,}".format(int(row["Low"]))
+        close_p_int = int(row["Close"])
+        close_p = "{:,}".format(close_p_int)
+        volume = "{:,}".format(int(row["Volume"]))
+        # 前日比%を計算 (前日 = リスト上で次のインデックス、より古い日)
+        if i + 1 < len(rows):
+            prev_close = int(rows[i + 1][1]["Close"])
+            if prev_close != 0:
+                ratio_pct = (close_p_int - prev_close) * 100.0 / prev_close
+                ratio_pct_str = "{:.2f}".format(ratio_pct)
+            else:
+                ratio_pct_str = "0"
+        else:
+            # 最古の日は前日データなし → 計算不可。指標計算側で前日とのペアにならないので 0 でよい
+            ratio_pct_str = "0"
+        daily_price_list.append(
+            (date_str, open_p, high_p, low_p, close_p, "0", ratio_pct_str, volume)
+        )
+    return daily_price_list
+
+
+def get_us_index_daily(code_s, ticker_symbol, upd=UPD_INTERVAL):
+    """米国指数の日次価格データをyfinanceから取得する
+    日本指数の get_daily_price_kabutan と対になる関数。
+    Args:
+        code_s: キャッシュキー識別用の擬似コード ("_IXIC" / "_GSPC" など)
+        ticker_symbol: yfinanceティッカー ("^IXIC" / "^GSPC" など)
+        upd: 更新レベル
+    Returns:
+        dict: 日次指標 (price, distribution_days, direction_signal, spr_*, rv_* 等)
+              失敗時は空dict
+    """
+    cache_fname = YFINANCE_CACHE_FNAME % code_s
+
+    # キャッシュチェック
+    if upd < UPD_FORCE and os.path.exists(cache_fname):
+        cache_ok, _ = is_file_timestamp(cache_fname, INTERVAL_DAY_D)
+        if upd < UPD_INTERVAL or cache_ok:
+            pc, pl = _load_yfinance_cache(cache_fname)
+            if pc is not None and pl:
+                log_debug("yfinance米国指数日足キャッシュ使用: %s" % code_s)
+                daily_price_list = [tuple(row) for row in pl]
+                dic = _calc_daily_indicators(daily_price_list)
+                if dic:
+                    dic["price"] = int(pc)
+                    dic["access_date_price"] = datetime.fromtimestamp(
+                        os.stat(cache_fname).st_mtime
+                    )
+                return dic
+
+    log_print("----> %sの日次価格情報をyfinance(%s)から取得します" % (code_s, ticker_symbol))
+    try:
+        with sema:
+            ticker = yf.Ticker(ticker_symbol)
+            df = ticker.history(period="3mo", interval="1d", auto_adjust=True)
+    except Exception as e:
+        log_warning("yfinance米国指数日足取得エラー(%s): %s" % (code_s, e))
+        return {}
+
+    if df is None or df.empty:
+        log_warning("yfinance米国指数日足データなし: %s" % code_s)
+        return {}
+
+    df = df.dropna(subset=["Close"])
+    if df.empty:
+        log_warning("yfinance米国指数日足データなし(NaN除去後): %s" % code_s)
+        return {}
+
+    daily_price_list = _convert_daily_df_to_kabutan_format(df)
+    if not daily_price_list:
+        log_warning("yfinance米国指数日足変換失敗: %s" % code_s)
+        return {}
+
+    log_print(">>>>> %sの日次価格データを解析(yfinance) " % code_s)
+    dic = _calc_daily_indicators(daily_price_list)
+    log_print("<<<<< 解析完了(yfinance) ")
+    if not dic:
+        return {}
+
+    # 最新終値を price として保存 (国内指数の parse_price_d_html_kabutan は price を返さないが、
+    # market_db には price キーが入る慣習なので明示的に詰めておく)
+    try:
+        latest_close = int(daily_price_list[0][4].replace(",", ""))
+    except (ValueError, IndexError):
+        latest_close = 0
+    dic["price"] = latest_close
+    dic["access_date_price"] = datetime.now()
+
+    # キャッシュに保存
+    _save_yfinance_cache(cache_fname, latest_close, daily_price_list)
+    log_print("<---- yfinance米国指数日足取得完了: %s 価格=%d データ数=%d" % (
+        code_s, latest_close, len(daily_price_list)))
+    return dic
+
+
+def get_us_index_weekly(code_s, ticker_symbol, upd=UPD_INTERVAL, prices=[]):
+    """米国指数の週次価格データをyfinanceから取得して指標計算する
+    日本指数の get_weekly_price_data と対になる関数。
+    Args:
+        code_s: キャッシュキー識別用の擬似コード
+        ticker_symbol: yfinanceティッカー
+        upd: 更新レベル
+        prices: [終値, 高値, 安値] の現在価格リスト
+    Returns:
+        dict: 週次指標 (rs_raw, momentum_pt, trend_template 等)。失敗時は空dict
+    """
+    cache_fname = YFINANCE_WEEKLY_CACHE_FNAME % code_s
+
+    # キャッシュチェック
+    if upd < UPD_FORCE and os.path.exists(cache_fname):
+        if upd < UPD_INTERVAL:
+            _, pl = _load_yfinance_cache(cache_fname)
+            if pl is not None:
+                log_debug("yfinance米国指数週足キャッシュ使用(UPD_CACHE): %s" % code_s)
+                weekly_price_list = [tuple(row) for row in pl]
+                return _calc_weekly_indicators(weekly_price_list, prices)
+        else:
+            cache_ok, _ = is_file_timestamp(cache_fname, INTERVAL_DAY_W)
+            if cache_ok:
+                _, pl = _load_yfinance_cache(cache_fname)
+                if pl is not None and _is_weekly_cache_fresh([tuple(row) for row in pl]):
+                    log_debug("yfinance米国指数週足キャッシュ使用(UPD_INTERVAL): %s" % code_s)
+                    weekly_price_list = [tuple(row) for row in pl]
+                    return _calc_weekly_indicators(weekly_price_list, prices)
+
+    log_print("----> %sの週次価格情報をyfinance(%s)から取得します" % (code_s, ticker_symbol))
+    try:
+        with sema:
+            ticker = yf.Ticker(ticker_symbol)
+            df = ticker.history(period="2y", interval="1wk", auto_adjust=True)
+    except Exception as e:
+        log_warning("yfinance米国指数週足取得エラー(%s): %s" % (code_s, e))
+        return {}
+
+    if df is None or df.empty:
+        log_warning("yfinance米国指数週足データなし: %s" % code_s)
+        return {}
+
+    df = df.dropna(subset=["Close"])
+    if df.empty:
+        log_warning("yfinance米国指数週足データなし(NaN除去後): %s" % code_s)
+        return {}
+
+    weekly_price_list = _convert_weekly_df_to_kabutan_format(df)
+    if not weekly_price_list:
+        log_warning("yfinance米国指数週足変換失敗: %s" % code_s)
+        return {}
+
+    _save_yfinance_cache(cache_fname, None, weekly_price_list)
+    log_print(">>>>> %sの週次価格データを解析(yfinance) " % code_s)
+    parsed_data_w = _calc_weekly_indicators(weekly_price_list, prices)
+    log_print("<<<<< 解析完了(yfinance) 週数=%d" % len(weekly_price_list))
+    return parsed_data_w
 
 
 def get_weekly_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
