@@ -171,3 +171,156 @@ class TestDbCode:
         rec = {}
         ks_util.set_db_code(rec, "215A")
         assert ks_util.get_db_code(rec) == "215A"
+
+
+# ==================================================
+# http_get_html (issue #43)
+# ==================================================
+class TestHttpGetHtmlSession:
+    """http_get_html の Session フォールバック / 例外パスのテスト
+
+    issue #43:
+      - _global_session を廃止、ContextVar (use_requests_session) と直接 requests.get の
+        2 段階フォールバックに簡略化
+      - ConnectionError / ReadTimeout 発生時は常に ("", 500) を返す
+        (旧コード: `res.status_code if "res" in locals() else 500` は常に 500 を返す
+         死にコードだったので簡略化)
+    """
+
+    def test_uses_context_session_when_available(self, monkeypatch, tmp_path):
+        """ContextVarセッションが有効ならそのSession.get経由で通信する"""
+        from unittest.mock import MagicMock
+
+        # キャッシュ書込時の Path.relative_to(DATA_DIR) のため、DATA_DIR を tmp_path に差し替え
+        monkeypatch.setattr(ks_util, "DATA_DIR", str(tmp_path))
+
+        mock_response = MagicMock()
+        mock_response.text = "<html>ctx</html>"
+        mock_response.status_code = 200
+        mock_response.encoding = "utf-8"
+
+        # 直接 requests.get が呼ばれていないことを検出するため
+        direct_get = MagicMock(
+            side_effect=AssertionError("requests.get should not be called")
+        )
+        monkeypatch.setattr(ks_util.requests, "get", direct_get)
+
+        with ks_util.use_requests_session() as session:
+            session.get = MagicMock(return_value=mock_response)
+            html = ks_util.http_get_html(
+                "http://example.com/test1",
+                use_cache=False,
+                cache_dir=str(tmp_path),
+            )
+            assert html == "<html>ctx</html>"
+            session.get.assert_called_once()
+            direct_get.assert_not_called()
+
+    def test_falls_back_to_direct_requests_get(self, monkeypatch, tmp_path):
+        """ContextVarセッションが無い場合は requests.get を直接使う"""
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr(ks_util, "DATA_DIR", str(tmp_path))
+
+        mock_response = MagicMock()
+        mock_response.text = "<html>direct</html>"
+        mock_response.status_code = 200
+        mock_response.encoding = "utf-8"
+        direct_get = MagicMock(return_value=mock_response)
+        monkeypatch.setattr(ks_util.requests, "get", direct_get)
+
+        # ContextVar セッションを使わない
+        html = ks_util.http_get_html(
+            "http://example.com/test2",
+            use_cache=False,
+            cache_dir=str(tmp_path),
+        )
+        assert html == "<html>direct</html>"
+        direct_get.assert_called_once()
+
+    def test_returns_500_on_connection_error_with_status(self, monkeypatch, tmp_path):
+        """ConnectionError 発生時、with_status=True なら ("", 500) を返す"""
+        from unittest.mock import MagicMock
+        import requests
+
+        direct_get = MagicMock(
+            side_effect=requests.exceptions.ConnectionError("boom")
+        )
+        monkeypatch.setattr(ks_util.requests, "get", direct_get)
+
+        result = ks_util.http_get_html(
+            "http://example.com/error",
+            use_cache=False,
+            cache_dir=str(tmp_path),
+            with_status=True,
+        )
+        assert result == ("", 500)
+
+    def test_returns_500_on_read_timeout_with_status(self, monkeypatch, tmp_path):
+        """ReadTimeout 発生時、with_status=True なら ("", 500) を返す"""
+        from unittest.mock import MagicMock
+        import requests
+
+        direct_get = MagicMock(
+            side_effect=requests.exceptions.ReadTimeout("timed out")
+        )
+        monkeypatch.setattr(ks_util.requests, "get", direct_get)
+
+        result = ks_util.http_get_html(
+            "http://example.com/timeout",
+            use_cache=False,
+            cache_dir=str(tmp_path),
+            with_status=True,
+        )
+        assert result == ("", 500)
+
+    def test_returns_empty_on_connection_error_without_status(
+        self, monkeypatch, tmp_path
+    ):
+        """ConnectionError 発生時、with_status=False なら "" のみ返す"""
+        from unittest.mock import MagicMock
+        import requests
+
+        direct_get = MagicMock(
+            side_effect=requests.exceptions.ConnectionError("boom")
+        )
+        monkeypatch.setattr(ks_util.requests, "get", direct_get)
+
+        html = ks_util.http_get_html(
+            "http://example.com/error_nostatus",
+            use_cache=False,
+            cache_dir=str(tmp_path),
+        )
+        assert html == ""
+
+    def test_global_session_removed(self):
+        """issue #43: _global_session / use_requests_global_session は削除済み"""
+        assert not hasattr(ks_util, "_global_session")
+        assert not hasattr(ks_util, "use_requests_global_session")
+
+
+class TestUseRequestsSessionThreadIsolation:
+    """ThreadPoolExecutor の各ワーカーで Session が独立して生成されることを確認
+
+    issue #43: 旧 _global_session は複数スレッドで requests.Session を共有して
+    レースコンディションを起こしていた。ContextVar 版 use_requests_session を
+    各ワーカーで呼ぶ形にすると、ワーカーごとに独立した Session が生成される。
+    """
+
+    def test_each_worker_gets_distinct_session(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        def worker(_):
+            with ks_util.use_requests_session() as s:
+                return id(s)
+
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            results = list(ex.map(worker, range(20)))
+
+        # ThreadPoolExecutor 5 ワーカー × 20 タスクで、単一 Session 共有
+        # (= 旧 _global_session の挙動) ではないことを検証。
+        # 同一スレッドが再利用された場合は use_requests_session の終了時に
+        # session.close され、次回呼び出しで新規 Session が作られる。
+        # 並列度 5 で実行しているので、少なくとも 5 種類の Session id が
+        # 生成されていれば「単一 Session 共有」ではないことが言える。
+        assert len(set(results)) >= 5

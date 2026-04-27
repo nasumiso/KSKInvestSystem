@@ -537,26 +537,30 @@ def _update_db_code(c_s, upd, tables, stocks, latest, force):
 
 
 def update_db_rows_async(code_s_list, upd, tables, stocks, latest, force):
-    """非同期版update_db_rows"""
-    with use_requests_global_session():
-        from concurrent.futures import ThreadPoolExecutor
+    """非同期版update_db_rows。
+    (issue #43): ワーカー内で個別 Session を持たせてスレッドセーフ性を確保する。
+    旧 use_requests_global_session() は requests.Session の Cookie Jar / コネクション
+    プールを複数スレッドで共有してレースコンディションを起こすため使用しない。
+    """
+    from concurrent.futures import ThreadPoolExecutor
 
-        MAX_WORKERS = 5  # スレッドワーカー数
-        # 並列通信実行
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # listで囲むことで結果待ち
-            results = list(
-                executor.map(
-                    lambda c_s: _update_db_code(
-                        c_s, upd, tables, stocks, latest, force
-                    ),
-                    code_s_list,
-                )
-            )
-            # 結果をDBに反映
-            for stock_data in results:
-                if stock_data:
-                    update_db(stocks, stock_data)
+    MAX_WORKERS = 5  # スレッドワーカー数
+
+    def _worker(c_s):
+        # ThreadPoolExecutor の各ワーカーは別 ContextVar スコープなので、
+        # ここで use_requests_session() を呼ぶとスレッドごとに独立した Session が
+        # 生成され、http_get_html 経由で利用される。
+        with use_requests_session():
+            return _update_db_code(c_s, upd, tables, stocks, latest, force)
+
+    # 並列通信実行
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # listで囲むことで結果待ち
+        results = list(executor.map(_worker, code_s_list))
+        # 結果をDBに反映
+        for stock_data in results:
+            if stock_data:
+                update_db(stocks, stock_data)
 
 
 def update_db_rows_sync(code_s_list, upd, tables, stocks, latest, force):

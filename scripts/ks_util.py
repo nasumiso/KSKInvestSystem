@@ -432,12 +432,11 @@ USER_AGENT_CHROME = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/36.0.1985.125 Safari/537.36"
 )
-# スレッドローカル(スレッド間で共有されない)なセッションコンテキスト変数
-# つまり、マルチスレッドでは使い回せない
+# スレッドごとに独立したSessionを持たせるためのコンテキスト変数
+# (issue #43): requests.Session はスレッドセーフではないため、複数スレッドで
+# 共有するとレースコンディションが発生する。マルチスレッド呼び出し側は
+# 各ワーカー内で use_requests_session() を呼んで個別 Session を持たせること。
 _current_session = contextvars.ContextVar("current_requests_session", default=None)
-# グローバルなセッション変数
-# 本来はhttp_get_htmlの引数にセッションを渡せるようにすべき
-_global_session = None
 
 MAX_REQUESTS = 3  # セマフォによる同時実行数の制限
 sema = threading.Semaphore(MAX_REQUESTS)
@@ -445,7 +444,11 @@ sema = threading.Semaphore(MAX_REQUESTS)
 
 @contextmanager
 def use_requests_session():
-    """スレッドごとにSessionをセットするコンテキストマネージャ"""
+    """スレッドごとにSessionをセットするコンテキストマネージャ。
+    (issue #43): マルチスレッド呼び出しでは各ワーカー内でこの関数を呼ぶこと。
+    ThreadPoolExecutor の各ワーカーは別 ContextVar スコープを持つため、
+    Session はワーカーごとに独立して生成され、スレッドセーフ問題は起きない。
+    """
     session = requests.Session()
     token = _current_session.set(session)  # 現在のセッションを設定
     log_debug(
@@ -459,20 +462,6 @@ def use_requests_session():
         log_debug(
             f"[{threading.current_thread().name}] コンテキストセッションを終了: {token}"
         )
-
-
-@contextmanager
-def use_requests_global_session():
-    global _global_session
-    session = requests.Session()
-    _global_session = session
-    log_debug(f"[{threading.current_thread().name}] グローバルセッションを開始")
-    try:
-        yield session  # 必要ならwith文内で明示的にも使える
-    finally:
-        session.close()
-        _global_session = None
-        log_debug(f"[{threading.current_thread().name}] グローバルセッションを終了")
 
 
 def get_http_cachname(url):
@@ -526,21 +515,17 @@ def http_get_html(
     # headers["Connection"] = "Keep-Alive"
     with sema:  # セマフォを使って同時実行数を制限
         try:
-            # 1. グローバルセッションが有効ならそれを使う
-            session = _global_session
+            # ContextVarセッションが有効ならそれを使う、なければrequests.getを直接使う
+            # (issue #43): _global_session は requests.Session のスレッドセーフ問題を
+            # 引き起こすため廃止。マルチスレッド呼び出し側は各ワーカーで
+            # use_requests_session() を呼んで ContextVar 経由の独立 Session を使うこと。
+            session = _current_session.get()
             if session is not None:
                 req_get = session.get
-                log_debug("グローバルセッションを使用")
+                log_debug("ContextVarセッションを使用")
             else:
-                # 2. ContextVarセッションが有効ならそれを使う
-                session = _current_session.get()
-                if session is not None:
-                    req_get = session.get
-                    log_debug("ContextVarセッションを使用")
-                else:
-                    # 3. どちらもなければrequests.getを直接使う
-                    req_get = requests.get
-                    log_debug("単独セッションを使用")
+                req_get = requests.get
+                log_debug("単独セッションを使用")
             res = req_get(url, headers=headers, cookies=cookies, timeout=5)
         except (
             requests.exceptions.ConnectionError,
@@ -548,8 +533,9 @@ def http_get_html(
         ) as e:
             log_warning("接続失敗:")
             log_print(e)
+            # res は req_get(...) 完了前の例外なので未定義。常に 500 を返す。
             if with_status:
-                return "", res.status_code if "res" in locals() else 500
+                return "", 500
             else:
                 return ""
         # requests.exceptions.ReadTimeout TODO:
