@@ -346,3 +346,125 @@ class TestDisclosureRoute:
         html = resp.data.decode()
         assert 'href="/disclosure"' in html
         assert "適宜開示" in html
+
+
+class TestMarketRouteKessanCard:
+    """GET /market の決算日カード表示テスト
+
+    当日決算 (kessanbi == today) は中身は past 扱いで反応コメ枠を出すが、
+    カードの見た目 ("(済)" ラベル / past クラス) は通常表示にする。
+    """
+
+    def _make_stub_entry(self, code_s, kessanbi, **overrides):
+        base = {
+            "code_s": code_s,
+            "stock_name": f"銘柄{code_s}",
+            "kessanbi": kessanbi,
+            "quarter": 4,
+            "pre_expectation": "",
+            "pre_outlook": "",
+            "post_price_changes": {"1d": "", "5d": ""},
+            "post_comment": "",
+            "has_comment": False,
+            "is_possess": False,
+            "kessan_matagi": False,
+            "held_before_kessan": False,
+            "held_after_kessan": False,
+        }
+        base.update(overrides)
+        return base
+
+    def test_today_card_has_no_done_label(self, client, monkeypatch):
+        """当日決算カード (today_entries) は "(済)" ラベルなし、past クラスなしで描画される"""
+        from datetime import datetime as _dt
+        today_str = _dt.today().strftime("%Y/%m/%d")
+        today_md = _dt.today().strftime("%m/%d")
+        yesterday_str = "2026/04/26"
+
+        from webapp.routes import market as _market_route
+        monkeypatch.setattr(
+            _market_route, "get_market_kessan_data",
+            lambda: {
+                "base_day": _dt.today().date(),
+                "future_entries": [],
+                "past_entries": [],
+                "recent_past_entries": [
+                    (yesterday_str, [self._make_stub_entry("7203", yesterday_str)]),
+                ],
+                "today_entries": [
+                    (today_str, [self._make_stub_entry("6501", today_str)]),
+                ],
+                "older_past_entries": [],
+            },
+        )
+
+        resp = client.get("/market")
+        html = resp.data.decode()
+        assert resp.status_code == 200
+
+        # 当日カード: "(済)" なし、past クラスなし
+        assert f'<div class="card-date">{today_md}</div>' in html
+        # 前日カード: "(済)" あり、past クラスあり
+        assert '<div class="card-date">04/26 (済)</div>' in html
+        assert 'kessan-card past' in html
+
+    def test_today_card_appears_between_recent_past_and_future(
+        self, client, monkeypatch
+    ):
+        """カード表示順は recent_past → today → future"""
+        from datetime import datetime as _dt
+        today_str = _dt.today().strftime("%Y/%m/%d")
+        today_md = _dt.today().strftime("%m/%d")
+        yesterday_str = "2026/04/26"
+        tomorrow_str = "2026/04/30"
+
+        from webapp.routes import market as _market_route
+        monkeypatch.setattr(
+            _market_route, "get_market_kessan_data",
+            lambda: {
+                "base_day": _dt.today().date(),
+                "future_entries": [
+                    (tomorrow_str, [self._make_stub_entry("9984", tomorrow_str)]),
+                ],
+                "past_entries": [],
+                "recent_past_entries": [
+                    (yesterday_str, [self._make_stub_entry("7203", yesterday_str)]),
+                ],
+                "today_entries": [
+                    (today_str, [self._make_stub_entry("6501", today_str)]),
+                ],
+                "older_past_entries": [],
+            },
+        )
+
+        resp = client.get("/market")
+        html = resp.data.decode()
+        idx_yesterday = html.find("04/26 (済)")
+        idx_today = html.find(f'<div class="card-date">{today_md}</div>')
+        idx_tomorrow = html.find("04/30")
+        assert 0 < idx_yesterday < idx_today < idx_tomorrow
+
+    def test_today_card_still_renders_post_fields(self, client, monkeypatch):
+        """当日カードでも中身は past (is_past=True) として render され、反応コメ・株価変動率枠が出る"""
+        from datetime import datetime as _dt
+        today_str = _dt.today().strftime("%Y/%m/%d")
+
+        from webapp.routes import market as _market_route
+        monkeypatch.setattr(
+            _market_route, "get_market_kessan_data",
+            lambda: {
+                "base_day": _dt.today().date(),
+                "future_entries": [],
+                "past_entries": [],
+                "recent_past_entries": [],
+                "today_entries": [
+                    (today_str, [self._make_stub_entry("6501", today_str)]),
+                ],
+                "older_past_entries": [],
+            },
+        )
+
+        resp = client.get("/market")
+        html = resp.data.decode()
+        # data-is-past="1" で past 扱い (反応コメ枠が出る)
+        assert 'data-is-past="1"' in html

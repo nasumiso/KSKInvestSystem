@@ -164,8 +164,8 @@ class TestGetMarketKessanData:
             # get_price_day も同じ datetime を参照するため、helpers 経由で暗黙にカバーされる
         return setup
 
-    def test_today_kessan_goes_to_recent_past(self, kessan_env):
-        """当日決算は recent_past_entries に振り分けられる (issue: 当日反応コメ入力)"""
+    def test_today_kessan_goes_to_today_entries(self, kessan_env):
+        """当日決算は today_entries に振り分けられる (recent_past でも future でもない)"""
         from datetime import datetime as _dt
         today_dt = _dt(2026, 4, 27, 10, 0)  # 4/27 朝
         pf_dict = {
@@ -178,10 +178,11 @@ class TestGetMarketKessanData:
         }
         kessan_env(pf_dict, today_dt)
         result = helpers.get_market_kessan_data()
-        # 当日 (4/27) は past 側 (recent_past_entries) に入る
+        today_keys = [k for k, _ in result["today_entries"]]
         past_keys = [k for k, _ in result["recent_past_entries"]]
         future_keys = [k for k, _ in result["future_entries"]]
-        assert "2026/04/27" in past_keys
+        assert "2026/04/27" in today_keys
+        assert "2026/04/27" not in past_keys
         assert "2026/04/27" not in future_keys
 
     def test_yesterday_kessan_in_recent_past(self, kessan_env):
@@ -199,7 +200,9 @@ class TestGetMarketKessanData:
         kessan_env(pf_dict, today_dt)
         result = helpers.get_market_kessan_data()
         past_keys = [k for k, _ in result["recent_past_entries"]]
+        today_keys = [k for k, _ in result["today_entries"]]
         assert "2026/04/26" in past_keys
+        assert "2026/04/26" not in today_keys
 
     def test_tomorrow_kessan_in_future(self, kessan_env):
         """翌日以降の決算は future_entries"""
@@ -217,11 +220,13 @@ class TestGetMarketKessanData:
         result = helpers.get_market_kessan_data()
         future_keys = [k for k, _ in result["future_entries"]]
         past_keys = [k for k, _ in result["recent_past_entries"]]
+        today_keys = [k for k, _ in result["today_entries"]]
         assert "2026/04/28" in future_keys
         assert "2026/04/28" not in past_keys
+        assert "2026/04/28" not in today_keys
 
     def test_today_kessan_morning_before_18(self, kessan_env):
-        """18 時前 (base_day=前日) でも当日決算は past 側に入る (本修正の核心)"""
+        """18 時前 (base_day=前日) でも当日決算は today_entries に入る"""
         from datetime import datetime as _dt
         today_dt = _dt(2026, 4, 27, 9, 0)  # 9 時 = base_day は 4/26
         pf_dict = {
@@ -234,10 +239,10 @@ class TestGetMarketKessanData:
         }
         kessan_env(pf_dict, today_dt)
         result = helpers.get_market_kessan_data()
-        past_keys = [k for k, _ in result["recent_past_entries"]]
-        # 修正前: base_day=4/26 で dt(4/27) >= base_day(4/26) → future へ落ちる
-        # 修正後: today_cal=4/27 で dt(4/27) <= today_cal(4/27) → past
-        assert "2026/04/27" in past_keys
+        today_keys = [k for k, _ in result["today_entries"]]
+        # 18 時前 (base_day=4/26) でも today_cal=4/27 が判定基準なので
+        # 当日決算は today_entries に分類される
+        assert "2026/04/27" in today_keys
 
 
 class TestSearchRecords:

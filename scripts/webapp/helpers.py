@@ -1081,6 +1081,7 @@ def get_market_kessan_data() -> Dict[str, Any]:
     # 日付ごとにグループ化
     future_groups: Dict[str, List[Dict[str, Any]]] = {}
     past_groups: Dict[str, List[Dict[str, Any]]] = {}
+    today_groups: Dict[str, List[Dict[str, Any]]] = {}
     # kessan_matagi 関連フィールドで新たに True 化した per-entry を記録し、
     # ループ後に専用関数で shelve に永続化する。
     # (stale rec を直接 upsert すると並行編集を上書きするため、lock 下で再取得する)
@@ -1133,24 +1134,39 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 updates,
             ))
 
-        # 表示振り分けはカレンダー上の今日基準。当日決算は past 扱いとし、
-        # 株価変動率枠・反応コメ・決算またぎフィールドを当日中に編集できるようにする
-        # (株価変動率の値は当日中は空欄でも、引け後の手動入力は可能)。
+        # 表示振り分けはカレンダー上の今日基準で 3 群に分ける:
+        # - past_groups (dt < today_cal): 過去決算 (反応コメ・株価変動率を表示)
+        # - today_groups (dt == today_cal): 当日決算。中身は past 相当で
+        #   反応コメ・決算またぎを当日中に編集できるが、表示位置はカード扱いで
+        #   future の前に置く。
+        # - future_groups (dt > today_cal): 未来決算 (事前見通しのみ編集)
         # held_before/after の判定はこれより上の base_day ベースを維持
         # (当日中の保有は「決算前保有」として扱うため)。
         today_cal = datetime.today().date()
-        groups = past_groups if dt <= today_cal else future_groups
-        groups.setdefault(kessanbi, []).append(entry)
+        if dt < today_cal:
+            past_groups.setdefault(kessanbi, []).append(entry)
+        elif dt == today_cal:
+            today_groups.setdefault(kessanbi, []).append(entry)
+        else:
+            future_groups.setdefault(kessanbi, []).append(entry)
 
     if persist_targets:
         _persist_kessan_held_flags(persist_targets)
 
     # 銘柄コード順にカード内ソート
-    for d in list(future_groups.values()) + list(past_groups.values()):
+    for d in (
+        list(future_groups.values())
+        + list(today_groups.values())
+        + list(past_groups.values())
+    ):
         d.sort(key=lambda e: e["code_s"])
 
     future_entries = sorted(
         future_groups.items(),
+        key=lambda kv: _parse_kessanbi(kv[0]) or date.max,
+    )
+    today_entries = sorted(
+        today_groups.items(),
         key=lambda kv: _parse_kessanbi(kv[0]) or date.max,
     )
     past_entries_all = sorted(
@@ -1172,6 +1188,7 @@ def get_market_kessan_data() -> Dict[str, Any]:
     return {
         "base_day": base_day,
         "future_entries": future_entries,
+        "today_entries": today_entries,
         "past_entries": past_entries_all,  # 後方互換
         "recent_past_entries": recent_past_entries,
         "older_past_entries": older_past_entries,

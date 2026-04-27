@@ -94,12 +94,28 @@
     </li>
   {%- endmacro %}
 
-  {# 直近1週間の過去決算: 常時表示（未来決算の前に配置） #}
+  {# 直近1週間の過去決算: 常時表示 #}
   {% if kessan_data.recent_past_entries %}
   <div class="kessan-grid">
     {% for kessanbi, stocks in kessan_data.recent_past_entries %}
     <div class="kessan-card past">
       <div class="card-date">{{ kessanbi[5:] }} (済)</div>
+      <ul class="stock-list">
+        {% for s in stocks %}{{ render_stock_li(s, true) }}{% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# 当日決算: recent_past の後・未来決算の前に配置。
+     中身は past 扱い (is_past=true) で反応コメ・株価変動率・決算またぎを当日中に
+     編集できるようにするが、カードの見た目は通常 (past クラスなし、"(済)" ラベルなし)。 #}
+  {% if kessan_data.today_entries %}
+  <div class="kessan-grid">
+    {% for kessanbi, stocks in kessan_data.today_entries %}
+    <div class="kessan-card">
+      <div class="card-date">{{ kessanbi[5:] }}</div>
       <ul class="stock-list">
         {% for s in stocks %}{{ render_stock_li(s, true) }}{% endfor %}
       </ul>
