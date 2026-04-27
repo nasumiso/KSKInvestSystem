@@ -131,6 +131,115 @@ class TestGetResearchDetail:
         assert entry["post_price_changes"] == {"1d": "", "5d": ""}
 
 
+class TestGetMarketKessanData:
+    """get_market_kessan_data の振り分けロジックテスト"""
+
+    @pytest.fixture
+    def kessan_env(self, populated_db, monkeypatch):
+        """pf_kessan_shelve / portfolio / 価格ログ等を共通モック"""
+        # 当日決算/過去/未来をテストごとに pf_dict で渡せるよう、
+        # load_pf_kessan_db は外側から指定可能なヘルパとして組み立てる
+        from datetime import datetime as _dt
+
+        def setup(pf_dict, today_dt):
+            # kessan.load_pf_kessan_db
+            import kessan as _k
+            monkeypatch.setattr(_k, "load_pf_kessan_db", lambda: pf_dict)
+            # portfolio.parse_my_portforio (ウォッチ・保有なしで全銘柄通す)
+            import portfolio as _p
+            monkeypatch.setattr(
+                _p, "parse_my_portforio", lambda: ([], [])
+            )
+            # 価格ログ (反応率計算で使われるが、当日扱いの検証では不要)
+            monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {})
+            # datetime.today() を固定
+            class FrozenDateTime(_dt):
+                @classmethod
+                def today(cls):
+                    return today_dt
+                @classmethod
+                def now(cls, tz=None):
+                    return today_dt
+            monkeypatch.setattr(helpers, "datetime", FrozenDateTime)
+            # get_price_day も同じ datetime を参照するため、helpers 経由で暗黙にカバーされる
+        return setup
+
+    def test_today_kessan_goes_to_recent_past(self, kessan_env):
+        """当日決算は recent_past_entries に振り分けられる (issue: 当日反応コメ入力)"""
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 4, 27, 10, 0)  # 4/27 朝
+        pf_dict = {
+            "6501": {
+                "code_s": "6501",
+                "stock_name": "日立製作所",
+                "kessanbi": "2026/04/27",
+                "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        result = helpers.get_market_kessan_data()
+        # 当日 (4/27) は past 側 (recent_past_entries) に入る
+        past_keys = [k for k, _ in result["recent_past_entries"]]
+        future_keys = [k for k, _ in result["future_entries"]]
+        assert "2026/04/27" in past_keys
+        assert "2026/04/27" not in future_keys
+
+    def test_yesterday_kessan_in_recent_past(self, kessan_env):
+        """前日決算は従来通り recent_past_entries"""
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 4, 27, 10, 0)
+        pf_dict = {
+            "6501": {
+                "code_s": "6501",
+                "stock_name": "日立製作所",
+                "kessanbi": "2026/04/26",
+                "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        result = helpers.get_market_kessan_data()
+        past_keys = [k for k, _ in result["recent_past_entries"]]
+        assert "2026/04/26" in past_keys
+
+    def test_tomorrow_kessan_in_future(self, kessan_env):
+        """翌日以降の決算は future_entries"""
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 4, 27, 10, 0)
+        pf_dict = {
+            "6501": {
+                "code_s": "6501",
+                "stock_name": "日立製作所",
+                "kessanbi": "2026/04/28",
+                "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        result = helpers.get_market_kessan_data()
+        future_keys = [k for k, _ in result["future_entries"]]
+        past_keys = [k for k, _ in result["recent_past_entries"]]
+        assert "2026/04/28" in future_keys
+        assert "2026/04/28" not in past_keys
+
+    def test_today_kessan_morning_before_18(self, kessan_env):
+        """18 時前 (base_day=前日) でも当日決算は past 側に入る (本修正の核心)"""
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 4, 27, 9, 0)  # 9 時 = base_day は 4/26
+        pf_dict = {
+            "6501": {
+                "code_s": "6501",
+                "stock_name": "日立製作所",
+                "kessanbi": "2026/04/27",
+                "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        result = helpers.get_market_kessan_data()
+        past_keys = [k for k, _ in result["recent_past_entries"]]
+        # 修正前: base_day=4/26 で dt(4/27) >= base_day(4/26) → future へ落ちる
+        # 修正後: today_cal=4/27 で dt(4/27) <= today_cal(4/27) → past
+        assert "2026/04/27" in past_keys
+
+
 class TestSearchRecords:
     """search_records のテスト"""
 
