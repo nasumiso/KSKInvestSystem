@@ -108,10 +108,11 @@
   </div>
   {% endif %}
 
-  {# 当日決算: recent_past の後・未来決算の前に配置。
-     中身は past 扱い (is_past=true) で反応コメ・株価変動率・決算またぎを当日中に
-     編集できるようにするが、カードの見た目は通常 (past クラスなし、"(済)" ラベルなし)。 #}
-  {% if kessan_data.today_entries %}
+  {# 当日決算 + 未来決算: 同じグリッドに横並び表示。
+     当日カードは中身は past 扱い (is_past=true) で反応コメ・株価変動率・
+     決算またぎを当日中に編集可能。見た目は通常 (past クラスなし、"(済)" ラベルなし)。
+     未来カードは future クラスで事前見通しのみ編集可。 #}
+  {% if kessan_data.today_entries or kessan_data.future_entries %}
   <div class="kessan-grid">
     {% for kessanbi, stocks in kessan_data.today_entries %}
     <div class="kessan-card">
@@ -121,11 +122,6 @@
       </ul>
     </div>
     {% endfor %}
-  </div>
-  {% endif %}
-
-  {% if kessan_data.future_entries %}
-  <div class="kessan-grid">
     {% for kessanbi, stocks in kessan_data.future_entries %}
     <div class="kessan-card future">
       <div class="card-date">{{ kessanbi[5:] }}</div>
