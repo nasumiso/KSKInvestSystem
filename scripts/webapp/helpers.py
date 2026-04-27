@@ -1133,7 +1133,13 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 updates,
             ))
 
-        groups = past_groups if dt < base_day else future_groups
+        # 表示振り分けはカレンダー上の今日基準。当日決算は past 扱いとし、
+        # 株価変動率枠・反応コメ・決算またぎフィールドを当日中に編集できるようにする
+        # (株価変動率の値は当日中は空欄でも、引け後の手動入力は可能)。
+        # held_before/after の判定はこれより上の base_day ベースを維持
+        # (当日中の保有は「決算前保有」として扱うため)。
+        today_cal = datetime.today().date()
+        groups = past_groups if dt <= today_cal else future_groups
         groups.setdefault(kessanbi, []).append(entry)
 
     if persist_targets:
