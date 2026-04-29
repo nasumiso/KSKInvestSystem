@@ -93,6 +93,22 @@ class TestParseDateStr:
         result = price.parse_date_str("決算日: 2025年 3月 1日 発表")
         assert result == date(2025, 3, 1)
 
+    def test_yy_slash_format(self):
+        """YY/MM/DD 形式 (Kabutan の2桁年表記、20YY と解釈)"""
+        result = price.parse_date_str("26/04/28")
+        assert result == date(2026, 4, 28)
+
+    def test_yy_hyphen_format(self):
+        """YY-MM-DD 形式"""
+        result = price.parse_date_str("26-04-28")
+        assert result == date(2026, 4, 28)
+
+    def test_yy_format_does_not_match_4digit(self):
+        """4桁年は YY 形式の正規表現に引っかからない (回帰防止)"""
+        # 4桁年は規則 (2) でパースされるため、YY 規則がうっかり動作しないこと
+        result = price.parse_date_str("2025/06/10")
+        assert result == date(2025, 6, 10)
+
 
 # ==================================================
 # _convert_df_to_price_list
@@ -451,6 +467,84 @@ class TestCalcDailyIndicators:
         # 例外を起こさず、必須キーが返る
         assert "distribution_days" in result
 
+    def _make_price_list_with_real_dates(self, n=30, base_close=1000):
+        """parse_date_strで解釈可能な日付ラベル付きの8要素タプル列を生成
+        日付は 'YYYY/MM/DD' 形式、新しい日付が先頭。
+        """
+        from datetime import date as _date, timedelta
+        rows = []
+        d0 = _date(2026, 4, 28)
+        for i in range(n):
+            dt = d0 - timedelta(days=i)
+            close = base_close + (n - i) * 5  # 単調増加（新しいほど高い）
+            open_p = close - 3
+            high = close + 10
+            low = close - 10
+            volume = 100000 + i * 100
+            rows.append((
+                "{:04d}/{:02d}/{:02d}".format(dt.year, dt.month, dt.day),
+                "{:,}".format(open_p),
+                "{:,}".format(high),
+                "{:,}".format(low),
+                "{:,}".format(close),
+                "0",
+                "0.50",
+                "{:,}".format(volume),
+            ))
+        return rows
+
+    def test_price_log_returned(self):
+        """戻り値dictに price_log キーが含まれる"""
+        rows = self._make_price_list_with_real_dates(30)
+        result = price._calc_daily_indicators(rows)
+        assert "price_log" in result
+        assert isinstance(result["price_log"], list)
+
+    def test_price_log_capped_at_25(self):
+        """price_log は最大 25 件"""
+        rows = self._make_price_list_with_real_dates(30)
+        result = price._calc_daily_indicators(rows)
+        assert len(result["price_log"]) == 25
+
+    def test_price_log_tuple_format(self):
+        """price_log の各要素は (date, int) タプル"""
+        rows = self._make_price_list_with_real_dates(30)
+        result = price._calc_daily_indicators(rows)
+        for dt, close in result["price_log"]:
+            assert isinstance(dt, date)
+            assert isinstance(close, int)
+
+    def test_price_log_descending_dates(self):
+        """price_log は日付降順 (新しい日付が先頭)"""
+        rows = self._make_price_list_with_real_dates(30)
+        result = price._calc_daily_indicators(rows)
+        dates = [d for d, _ in result["price_log"]]
+        assert dates == sorted(dates, reverse=True)
+
+    def test_price_log_close_values_match_input(self):
+        """price_log の終値は入力 [4]終値 と一致 (前日比% [6] と取り違えていない)"""
+        rows = self._make_price_list_with_real_dates(30, base_close=2000)
+        result = price._calc_daily_indicators(rows)
+        # 先頭は新しい日付。入力先頭の終値と一致
+        expected_close = int(rows[0][4].replace(",", ""))
+        assert result["price_log"][0][1] == expected_close
+
+    def test_price_log_short_input(self):
+        """入力が25件未満なら全件保存"""
+        rows = self._make_price_list_with_real_dates(10)
+        result = price._calc_daily_indicators(rows)
+        assert len(result["price_log"]) == 10
+
+    def test_price_log_skips_invalid_date(self):
+        """日付パース不能行は skip し、他の行は保存される"""
+        rows = self._make_price_list_with_real_dates(25)
+        # 中央付近の日付を不正にする
+        d, o, h, l, c, r5, r6, v = rows[10]
+        rows[10] = ("INVALID_DATE", o, h, l, c, r5, r6, v)
+        result = price._calc_daily_indicators(rows)
+        # 不正行を除いた24件が保存される
+        assert len(result["price_log"]) == 24
+
 
 # ==================================================
 # _is_weekly_cache_fresh
@@ -776,12 +870,12 @@ class TestParsePriceTextFromList:
         _, cur_prices = price.parse_price_text_from_list(1050, price_list)
         assert len(cur_prices) == 3
 
-    def test_price_log_capped_at_20(self):
-        """price_log は LOG_DAY=20 に揃う (issue #133 で 10→20 に拡張)"""
-        # 25 件入力 → 上限 20 件のみ保持
-        price_list = self._make_price_list_7col(count=25)
+    def test_price_log_capped_at_25(self):
+        """price_log は LOG_DAY=25 に揃う"""
+        # 30 件入力 → 上限 25 件のみ保持
+        price_list = self._make_price_list_7col(count=30)
         result_dict, _ = price.parse_price_text_from_list(1050, price_list)
-        assert len(result_dict["price_log"]) == 20
+        assert len(result_dict["price_log"]) == 25
 
     def test_price_log_handles_short_input(self):
         """LOG_DAY より少ない入力でも安全に処理される (range の length ガード)"""

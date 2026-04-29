@@ -376,6 +376,20 @@ def _calc_daily_indicators(daily_price_list):
     dic["rv_20"] = rv_20
     dic["rv_5"] = rv_5
 
+    # rs_line 計算で参照される。Kabutan/yfinance 両経路で同じ (date, int終値) 型にする
+    LOG_DAY = 25
+    past_prices = []
+    for ind in range(min(LOG_DAY, len(daily_price_list))):
+        dt = parse_date_str(daily_price_list[ind][0])
+        if not dt:
+            continue
+        try:
+            pr = int(float(daily_price_list[ind][4].replace(",", "")))
+        except (ValueError, IndexError):
+            continue
+        past_prices.append((dt, pr))
+    dic["price_log"] = past_prices
+
     return dic
 
 
@@ -1314,7 +1328,9 @@ def prefetch_yfinance_weekly_batch(code_s_list, stocks=None):
 
 def parse_date_str(s):
     """日付文字列を解析して date を返す（失敗なら None）。
-    対応フォーマット: 'YYYY年M月D日', 'YYYY/MM/DD', 'YYYY-MM-DD', ISO
+    対応フォーマット: 'YYYY年M月D日', 'YYYY/MM/DD', 'YYYY-MM-DD', 'YY/MM/DD', 'YY-MM-DD', ISO
+
+    Kabutan 株価HTMLの2桁年表記（例 '26/04/28'）は 20YY と解釈する。
     """
     if not s:
         return None
@@ -1336,7 +1352,16 @@ def parse_date_str(s):
             ).date()
         except Exception:
             return None
-    # 3) ISO-ish fallback
+    # 3) YY/MM/DD or YY-MM-DD (Kabutan の2桁年表記)
+    m = re.match(r"^\s*(\d{2})[/-](\d{1,2})[/-](\d{1,2})\s*$", s)
+    if m:
+        try:
+            return datetime.strptime(
+                f"20{m.group(1)}/{m.group(2)}/{m.group(3)}", "%Y/%m/%d"
+            ).date()
+        except Exception:
+            return None
+    # 4) ISO-ish fallback
     try:
         return datetime.fromisoformat(s.strip()).date()
     except Exception:
@@ -1469,7 +1494,7 @@ def parse_price_text_from_list(price_current, price_list):
     # print breaks
     # ---- 過去価格
     past_prices = []
-    LOG_DAY = 20
+    LOG_DAY = 25
     for ind in range(LOG_DAY):
         if ind >= len(price_list):
             continue
