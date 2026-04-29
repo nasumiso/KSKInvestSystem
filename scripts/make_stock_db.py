@@ -887,16 +887,22 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
                 tags.append("警")
 
     # rs_line 新高値・ダイバージェンス（当日発生のみ）
+    # list_all_db は更新対象外の銘柄もCSVに出すため、price_log が数日〜数週間古い
+    # 銘柄が混じる。rs_line[0] が当日 (= 最新営業日 = TOPIX price_log[0]の日付) で
+    # ある場合だけタグを立てる。古いキャッシュで連日タグが残るのを防ぐため。
     if market_db is not None:
         if rs_line is None:
             rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
-        if compute_rs_line_new_high(stock, market_db, rs_line=rs_line):
-            tags.append("R高")
-        div = compute_rs_line_divergence(stock, market_db, rs_line=rs_line)
-        if div == "bullish":
-            tags.append("強乖")
-        elif div == "bearish":
-            tags.append("弱乖")
+        topix_log = market_db.get("topix", {}).get("price_log", [])
+        latest_date = topix_log[0][0] if topix_log else None
+        if rs_line and latest_date and rs_line[0][0] == latest_date:
+            if compute_rs_line_new_high(stock, market_db, rs_line=rs_line):
+                tags.append("R高")
+            div = compute_rs_line_divergence(stock, market_db, rs_line=rs_line)
+            if div == "bullish":
+                tags.append("強乖")
+            elif div == "bearish":
+                tags.append("弱乖")
 
     # print signal, tags
     return signal, tags

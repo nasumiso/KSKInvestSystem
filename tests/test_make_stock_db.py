@@ -784,3 +784,36 @@ class TestMakeSignalRsLine:
         market_db = {"topix": {"price_log": topix_log}}
         _, tags = make_stock_db.make_signal(stock, market_db=market_db)
         assert "弱乖" in tags
+
+    def test_rs_line_tags_skipped_for_stale_stock(self):
+        """銘柄 price_log が当日でない (古いキャッシュ) ならRS系タグは付かない。
+
+        list_all_db は更新対象外の銘柄もCSVに出すため、price_log が数週間
+        古い銘柄が混じる。連日同じシグナルが残らないように当日限定にする必要がある。
+        """
+        d0 = date(2026, 4, 28)
+        # 銘柄 price_log は1週間前まで (新高値が立つ条件のデータ)
+        stock = {
+            "price_log": [(d0 - timedelta(days=7 + i), 2000 + (25 - i) * 10) for i in range(25)],
+        }
+        # TOPIX は当日 (d0) まで
+        market_db = {
+            "topix": {"price_log": [(d0 - timedelta(days=i), 1000) for i in range(32)]},
+        }
+        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
+        # rs_line[0] は1週間前の日付なので当日扱いにならず、タグは付かない
+        assert "R高" not in tags
+        assert "強乖" not in tags
+        assert "弱乖" not in tags
+
+    def test_rs_line_tags_emit_when_latest_date_matches(self):
+        """銘柄 price_log[0] の日付が TOPIX price_log[0] と一致する場合はタグが立つ"""
+        d0 = date(2026, 4, 28)
+        stock = {
+            "price_log": [(d0 - timedelta(days=i), 2000 + (25 - i) * 10) for i in range(25)],
+        }
+        market_db = {
+            "topix": {"price_log": [(d0 - timedelta(days=i), 1000) for i in range(25)]},
+        }
+        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
+        assert "R高" in tags
