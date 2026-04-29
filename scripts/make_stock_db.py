@@ -158,6 +158,89 @@ def update_rs_rank(stocks, code_s):
     return update_stock_log(rs_rank_log, rs_rank)
 
 
+# ==================================================
+# RSライン: 銘柄終値/TOPIX終値 の生比率系列
+# ==================================================
+def _topix_close_map(market_db):
+    """TOPIX の price_log から日付→終値の dict を生成する"""
+    topix_log = market_db.get("topix", {}).get("price_log", []) if market_db else []
+    return {dt: close for dt, close in topix_log if close}
+
+
+def compute_rs_line(stock, market_db, topix_map=None):
+    """銘柄とTOPIXの日次終値系列から rs_line（生比率）を計算する純粋関数。
+
+    Args:
+        stock (dict): 銘柄DBの1銘柄分dict (price_log を持つ)
+        market_db (dict): get_market_db() の戻り値 (topix.price_log を持つ)
+        topix_map (dict, optional): 事前構築済みの {date: topix_close}。
+            全銘柄ループから呼ぶ場合、銘柄ごとの再構築を避けるため事前に
+            _topix_close_map() で1回だけ作って渡すと無駄が減る。
+
+    Returns:
+        list[tuple[date, float]]: rs_line系列（日付降順）。
+            日付不一致や TOPIX/銘柄の終値が0の日は除外。
+            データ不足時は空リスト。
+    """
+    stock_log = stock.get("price_log", [])
+    if not stock_log:
+        return []
+    if topix_map is None:
+        topix_map = _topix_close_map(market_db)
+    if not topix_map:
+        return []
+    rs_line = []
+    for dt, stock_close in stock_log:
+        topix_close = topix_map.get(dt)
+        if not topix_close or not stock_close:
+            continue
+        rs_line.append((dt, float(stock_close) / float(topix_close)))
+    return rs_line
+
+
+def compute_rs_line_changes(stock, market_db, topix_map=None):
+    """rs_line の 5日前比 A・20日前比 B 騰落率を%値で計算する。
+
+    Returns:
+        tuple[float|None, float|None]: (短期A%, 中期B%)
+            - rs_line が 6本未満 → (None, None)
+            - rs_line が 6本以上21本未満 → (A, None)
+            - rs_line が 21本以上 → (A, B)
+            past値が0の場合も None
+    """
+    rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
+    if not rs_line:
+        return (None, None)
+    current = rs_line[0][1]
+
+    def _change(offset):
+        if len(rs_line) <= offset:
+            return None
+        past = rs_line[offset][1]
+        if past == 0:
+            return None
+        return (current - past) / past * 100
+
+    return (_change(5), _change(20))
+
+
+def _fmt_rs_change(v):
+    """rs_line 騰落率を符号付き整数% に整形 (None は "-")"""
+    return "-" if v is None else "%+d" % round(v)
+
+
+def get_rs_line_changes_expr(stock, market_db, topix_map=None):
+    """rs_line 騰落率を CSV 表示用の '中期B%/短期A%' 文字列にする。
+
+    Returns:
+        str: 例 "+12/+5"。両方計算不能なら "" 、片方のみなら "-/+5" 等
+    """
+    a, b = compute_rs_line_changes(stock, market_db, topix_map=topix_map)
+    if a is None and b is None:
+        return ""
+    return "%s/%s" % (_fmt_rs_change(b), _fmt_rs_change(a))
+
+
 def get_rank_log_expr(stock):
     """RSログを表示用に整形"""
     rs_rank_log = stock.get("rs_rank_log", [])
@@ -944,6 +1027,8 @@ def list_all_db(upload_csv=True, update_portforio=True):
             log_print("バックアップ:", backup_csv)
             shutil.copy(rank_csv, backup_csv)
     # CSV用項目作成
+    # 全銘柄ループの前に TOPIX 終値マップを1回だけ構築（rs_line 計算用）
+    topix_map = _topix_close_map(market_db)
     rows = []
     rows.append(
         [
@@ -958,7 +1043,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
             "総合PT",
             "プロフィット/クォリティ",
             "バリュー/サイズ",
-            "モメンタム(現在.5/20日過去)",
+            "モメンタム(現在.20日比/5日比)",
             "ファンダメンタル",
             "更新日(業績|指標|価格)",
             "シグナル",
@@ -1030,7 +1115,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
         stock_name = get_stock_name_exp(stock_data)
         sector = stock_data.get("sector", "")
         # relates_rank = stock_data.get("relates_rank", 0) # 関連銘柄内順位:封印
-        rs_log = get_rank_log_expr(stock_data)  # RSの表示
+        rs_log = get_rs_line_changes_expr(stock_data, market_db, topix_map=topix_map)
         momentum = "%d.%s" % (stock[4], rs_log)
         # 行要素作成
         rows.append(

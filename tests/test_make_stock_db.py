@@ -1,6 +1,6 @@
 """make_stock_db.py のロジックテスト"""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import pytest
 
 import make_stock_db
@@ -444,3 +444,165 @@ class TestMainCLIArgs:
         monkeypatch.setattr("sys.argv", ["make_stock_db.py", "list", "6324"])
         make_stock_db.main()
         assert called["code_list"] == ["6324"]
+
+
+# ==================================================
+# compute_rs_line
+# ==================================================
+def _make_log(n, base=1000, step=5, d0=date(2026, 4, 28)):
+    """日付降順 (date, int) タプルリスト生成。新しい日付が先頭。
+    base + step*(n-i) で銘柄系列が単調増加するように作る。
+    """
+    return [(d0 - timedelta(days=i), base + step * (n - i)) for i in range(n)]
+
+
+class TestComputeRsLine:
+    """rs_line (銘柄終値/TOPIX終値) 計算の単体テスト"""
+
+    def test_returns_empty_when_stock_log_missing(self):
+        """銘柄側 price_log が無いと空リスト"""
+        market_db = {"topix": {"price_log": _make_log(25)}}
+        assert make_stock_db.compute_rs_line({}, market_db) == []
+
+    def test_returns_empty_when_topix_log_missing(self):
+        """TOPIX 側 price_log が無いと空リスト"""
+        stock = {"price_log": _make_log(25)}
+        assert make_stock_db.compute_rs_line(stock, {"topix": {}}) == []
+        assert make_stock_db.compute_rs_line(stock, {}) == []
+
+    def test_basic_calculation(self):
+        """全日付一致時、ratio = stock/topix で系列が返る"""
+        stock = {"price_log": _make_log(25, base=2000, step=10)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=2)}}
+        result = make_stock_db.compute_rs_line(stock, market_db)
+        assert len(result) == 25
+        # 先頭: stock = 2000 + 10*25 = 2250, topix = 1000 + 2*25 = 1050
+        assert abs(result[0][1] - (2250.0 / 1050.0)) < 1e-6
+
+    def test_skips_dates_missing_in_topix(self):
+        """銘柄にあって TOPIX にない日付は除外"""
+        d0 = date(2026, 4, 28)
+        stock = {"price_log": [(d0, 2000), (d0 - timedelta(days=1), 1990)]}
+        market_db = {"topix": {"price_log": [(d0, 1000)]}}  # 前日なし
+        result = make_stock_db.compute_rs_line(stock, market_db)
+        assert len(result) == 1
+        assert result[0][1] == 2.0
+
+    def test_skips_zero_topix_close(self):
+        """TOPIX 終値0は計算不能なので除外"""
+        d0 = date(2026, 4, 28)
+        stock = {"price_log": [(d0, 2000), (d0 - timedelta(days=1), 1990)]}
+        market_db = {"topix": {"price_log": [(d0, 1000), (d0 - timedelta(days=1), 0)]}}
+        result = make_stock_db.compute_rs_line(stock, market_db)
+        assert len(result) == 1
+
+    def test_skips_zero_stock_close(self):
+        """銘柄終値0も除外"""
+        d0 = date(2026, 4, 28)
+        stock = {"price_log": [(d0, 0), (d0 - timedelta(days=1), 1990)]}
+        market_db = {"topix": {"price_log": [(d0, 1000), (d0 - timedelta(days=1), 1000)]}}
+        result = make_stock_db.compute_rs_line(stock, market_db)
+        assert len(result) == 1
+
+    def test_handles_short_stock_log(self):
+        """銘柄系列が短い場合 (上場直後) は短い分だけ"""
+        stock = {"price_log": _make_log(5, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000)}}
+        result = make_stock_db.compute_rs_line(stock, market_db)
+        assert len(result) == 5
+
+    def test_descending_dates(self):
+        """戻り値は日付降順 (新しい日付が先頭)"""
+        stock = {"price_log": _make_log(25, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000)}}
+        result = make_stock_db.compute_rs_line(stock, market_db)
+        dates = [d for d, _ in result]
+        assert dates == sorted(dates, reverse=True)
+
+
+# ==================================================
+# compute_rs_line_changes
+# ==================================================
+class TestComputeRsLineChanges:
+    """rs_line 騰落率 (5日前比 A / 20日前比 B) の単体テスト"""
+
+    def test_none_when_rs_line_empty(self):
+        a, b = make_stock_db.compute_rs_line_changes({}, {"topix": {}})
+        assert a is None and b is None
+
+    def test_none_when_too_short_for_short_change(self):
+        """rs_line が 6本未満なら 5日前比 A も計算不能"""
+        stock = {"price_log": _make_log(5, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(5, base=1000)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is None and b is None
+
+    def test_short_only_when_partial_data(self):
+        """rs_line が 6本以上21本未満なら A だけ計算可、B は None"""
+        stock = {"price_log": _make_log(10, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(10, base=1000)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is not None and b is None
+
+    def test_both_when_full_data(self):
+        """rs_line が 21本以上で A・B 両方計算可"""
+        stock = {"price_log": _make_log(25, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is not None and b is not None
+
+    def test_uptrend_positive_signs(self):
+        """rs_line が上昇トレンド (TOPIX より速く上昇) なら A・B プラス"""
+        # 銘柄: 速く上昇 (step=20), TOPIX: 緩やか (step=2) → ratio は単調増加
+        stock = {"price_log": _make_log(25, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=2)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a > 0 and b > 0
+
+    def test_downtrend_negative_signs(self):
+        """rs_line 下降トレンド (TOPIX より遅い) なら A・B マイナス"""
+        # 銘柄: 緩やか上昇 (step=2), TOPIX: 速く上昇 (step=20)
+        stock = {"price_log": _make_log(25, base=2000, step=2)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=20)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a < 0 and b < 0
+
+
+# ==================================================
+# get_rs_line_changes_expr
+# ==================================================
+class TestGetRsLineChangesExpr:
+    """rs_line 騰落率の CSV 表示文字列テスト"""
+
+    def test_empty_when_uncomputable(self):
+        """rs_line が計算不能なら空文字"""
+        s = make_stock_db.get_rs_line_changes_expr({}, {"topix": {}})
+        assert s == ""
+
+    def test_format_both_present(self):
+        """A・B 両方計算可: '中期B%/短期A%' 形式 (符号付き整数)"""
+        stock = {"price_log": _make_log(25, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=2)}}
+        s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
+        # B/A の順、符号付き
+        parts = s.split("/")
+        assert len(parts) == 2
+        assert parts[0].startswith("+") or parts[0].startswith("-")
+        assert parts[1].startswith("+") or parts[1].startswith("-")
+
+    def test_format_partial_only_a(self):
+        """A のみ計算可なら '-/+5' のように B は '-'"""
+        stock = {"price_log": _make_log(10, base=2000, step=10)}
+        market_db = {"topix": {"price_log": _make_log(10, base=1000, step=2)}}
+        s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
+        # B は計算不能で "-", A は数値
+        assert s.startswith("-/")
+
+    def test_negative_format(self):
+        """マイナス側の符号も正しく表示される"""
+        stock = {"price_log": _make_log(25, base=2000, step=2)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=20)}}
+        s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
+        parts = s.split("/")
+        assert parts[0].startswith("-")
+        assert parts[1].startswith("-")
