@@ -28,6 +28,57 @@ INTERVAL_DAY_D = 1
 INTERVAL_DAY_W = 7
 
 
+# モメンタムポイント動的キャリブレーション (issue #104) のデフォルト値。
+# market_db['momentum_calib'] が無い・古い・サンプル不足の場合のフォールバック先。
+# 値は #104 検証時の実測 (3,822 銘柄, log(rs_rel) の平均/標準偏差)。
+MOMENTUM_CALIB_DEFAULT_LOC = -0.058
+MOMENTUM_CALIB_DEFAULT_SCALE = 0.275
+# フォールバック発動条件: サンプル数が下限未満、または updated_at がこの日数より前。
+MOMENTUM_CALIB_MIN_SAMPLES = 500
+MOMENTUM_CALIB_MAX_AGE_DAYS = 30
+
+
+def get_momentum_calib(market_db=None):
+    """モメンタム計算用の loc/scale を取得する。
+
+    market_db['momentum_calib'] が利用可能ならそれを返し、
+    無い・古い・サンプル不足の場合はデフォルト値にフォールバックする。
+
+    Args:
+        market_db (dict): マーケットDB。Noneなら make_market_db.get_market_db()。
+
+    Returns:
+        tuple: (loc, scale, source) -- source は "calib" または "fallback"
+    """
+    if market_db is None:
+        import make_market_db
+        market_db = make_market_db.get_market_db()
+    calib = market_db.get("momentum_calib")
+    if not calib:
+        return MOMENTUM_CALIB_DEFAULT_LOC, MOMENTUM_CALIB_DEFAULT_SCALE, "fallback"
+
+    sample_count = calib.get("sample_count", 0)
+    if sample_count < MOMENTUM_CALIB_MIN_SAMPLES:
+        log_warning(
+            "[momentum_calib] sample_count=%d がしきい値 %d 未満のためフォールバック"
+            % (sample_count, MOMENTUM_CALIB_MIN_SAMPLES)
+        )
+        return MOMENTUM_CALIB_DEFAULT_LOC, MOMENTUM_CALIB_DEFAULT_SCALE, "fallback"
+
+    updated_at = calib.get("updated_at")
+    if updated_at is None:
+        return MOMENTUM_CALIB_DEFAULT_LOC, MOMENTUM_CALIB_DEFAULT_SCALE, "fallback"
+    age_days = (datetime.now() - updated_at).days
+    if age_days > MOMENTUM_CALIB_MAX_AGE_DAYS:
+        log_warning(
+            "[momentum_calib] updated_at が %d 日前 (上限 %d) のためフォールバック"
+            % (age_days, MOMENTUM_CALIB_MAX_AGE_DAYS)
+        )
+        return MOMENTUM_CALIB_DEFAULT_LOC, MOMENTUM_CALIB_DEFAULT_SCALE, "fallback"
+
+    return calib["loc"], calib["scale"], "calib"
+
+
 def get_daily_html_kabutan(code_s, cache=True):
     """日次時系列価格データhtmlを取得する"""
     html = ""

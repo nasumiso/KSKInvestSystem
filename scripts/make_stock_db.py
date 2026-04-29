@@ -241,6 +241,72 @@ def get_rs_line_changes_expr(stock, market_db, topix_map=None):
     return "%s/%s" % (_fmt_rs_change(b), _fmt_rs_change(a))
 
 
+def compute_rs_line_new_high(stock, market_db, topix_map=None, lookback=20):
+    """rs_line[0] が直近 lookback 日の最高値を更新したかを判定する純粋関数。
+
+    横ばい（同値）は False とする。連日同値の場合に毎日 True が立つのを防ぎ、
+    「今日新高値を取った」イベントだけをタグ化するため。
+
+    Args:
+        stock (dict): 銘柄DB1件
+        market_db (dict): マーケットDB
+        topix_map (dict, optional): 事前構築済み TOPIX 終値マップ
+        lookback (int): 比較対象日数（デフォルト20）
+
+    Returns:
+        bool: rs_line[0] > max(rs_line[1:lookback+1]) なら True。
+            データ不足 (rs_line が lookback+1 本未満) は False。
+    """
+    rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
+    if len(rs_line) < lookback + 1:
+        return False
+    current = rs_line[0][1]
+    return current > max(v for _, v in rs_line[1:lookback + 1])
+
+
+def compute_rs_line_divergence(stock, market_db, topix_map=None,
+                               offset=20, threshold=3.0):
+    """株価と rs_line の同期間騰落率の食い違い（ダイバージェンス）を判定する。
+
+    rs_line[0] と rs_line[offset] の日付を基準に、銘柄 price_log から
+    同日終値を引いて騰落率を算出する。インデックスではなく日付で揃えるのは、
+    rs_line が TOPIX と日付一致した日だけ残るため、price_log と rs_line の
+    [offset] 番目が同じ日とは限らないため。
+
+    Args:
+        stock (dict): 銘柄DB1件
+        market_db (dict): マーケットDB
+        topix_map (dict, optional): 事前構築済み TOPIX 終値マップ
+        offset (int): rs_line 上で比較する過去オフセット（デフォルト20）
+        threshold (float): ダイバージェンス判定の最小%（デフォルト3.0）
+
+    Returns:
+        str: "bullish"（強気: 株価↓ rs_line↑）/ "bearish"（弱気: 株価↑ rs_line↓）/ ""
+    """
+    rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
+    if len(rs_line) <= offset:
+        return ""
+    dt_now, rs_now = rs_line[0]
+    dt_past, rs_past = rs_line[offset]
+    if rs_past == 0:
+        return ""
+    rs_change = (rs_now - rs_past) / rs_past * 100
+
+    price_log = stock.get("price_log", [])
+    price_map = {dt: close for dt, close in price_log if close}
+    price_now = price_map.get(dt_now)
+    price_past = price_map.get(dt_past)
+    if not price_now or not price_past:
+        return ""
+    price_change = (price_now - price_past) / price_past * 100
+
+    if price_change <= -threshold and rs_change >= threshold:
+        return "bullish"
+    if price_change >= threshold and rs_change <= -threshold:
+        return "bearish"
+    return ""
+
+
 def get_rank_log_expr(stock):
     """RSログを表示用に整形"""
     rs_rank_log = stock.get("rs_rank_log", [])
@@ -719,8 +785,12 @@ def get_trend_template_expr(stock):
     return ""
 
 
-def make_signal(stock):
-    """銘柄DBデータから、シグナル情報を作成する"""
+def make_signal(stock, market_db=None, topix_map=None):
+    """銘柄DBデータから、シグナル情報を作成する。
+
+    market_db を渡すと rs_line ベースのタグ (R高 / 強乖 / 弱乖) も付与される。
+    後方互換のため market_db=None ならスキップ。
+    """
     today = datetime.today()
     signal = ""
     tags = []
@@ -801,6 +871,16 @@ def make_signal(stock):
             elif warn == 1:
                 tags.append("警")
 
+    # rs_line 新高値・ダイバージェンス（当日発生のみ）
+    if market_db is not None:
+        if compute_rs_line_new_high(stock, market_db, topix_map=topix_map):
+            tags.append("R高")
+        div = compute_rs_line_divergence(stock, market_db, topix_map=topix_map)
+        if div == "bullish":
+            tags.append("強乖")
+        elif div == "bearish":
+            tags.append("弱乖")
+
     # print signal, tags
     return signal, tags
 
@@ -874,9 +954,9 @@ def get_vola_and_sell_press_expr(stock_data):
     return vola, sell_press
 
 
-def get_signal_tags_prevrank_expr(stock_data):
+def get_signal_tags_prevrank_expr(stock_data, market_db=None, topix_map=None):
     tags = []  # タグ
-    signal, tags = make_signal(stock_data)  # シグナル
+    signal, tags = make_signal(stock_data, market_db=market_db, topix_map=topix_map)
 
     # ---- 過去順位と株価上昇率
     try:
@@ -912,6 +992,147 @@ def get_signal_tags_prevrank_expr(stock_data):
 
     tags = "/".join(tags)
     return signal, tags, prev_rank
+
+
+# ==================================================
+# モメンタムポイント動的キャリブレーション (issue #104)
+# ==================================================
+
+# 直近 N 日以内に rs_raw が更新された銘柄のみキャリブレーション対象とする。
+# 短すぎるとサンプル不足、長すぎると相場環境の変化に追従できない。
+MOMENTUM_CALIB_N_DAYS = 14
+# 統計的に意味のある loc/scale を出すための最小サンプル数。
+# 現状DBは 3,800 銘柄程度。500未満になる場合はデータ取得が壊れているサインとして扱う。
+MOMENTUM_CALIB_MIN_SAMPLES = 500
+# キャリブレーションを実行する曜日 (0=月, 5=土, 6=日)。
+# 土曜は cron がスキップされる場合があるため、日曜以降の最初の実行でも
+# 「直近キャリブレーションから6日以上経過」をフォールバック条件として補完する。
+MOMENTUM_CALIB_WEEKDAY = 5
+# フォールバック発動: 前回キャリブレーションから何日以上経過したら強制実行するか。
+MOMENTUM_CALIB_STALE_DAYS = 6
+
+
+def calibrate_momentum_pt(stocks=None, market_db=None, save=True):
+    """モメンタムポイントの分布パラメータ (loc/scale) を実測してmarket_dbに保存する。
+
+    log(rs_rel) = log(銘柄rs_raw / TOPIX rs_raw) の平均と標準偏差を、
+    直近 MOMENTUM_CALIB_N_DAYS 日以内に rs_raw が更新された銘柄から実測する。
+
+    Args:
+        stocks (dict): 銘柄DB (code_s -> stock_data)。Noneならload_stock_db()。
+        market_db (dict): マーケットDB。Noneならget_market_db()。
+        save (bool): 結果をmarket_db['momentum_calib']に保存するか。
+
+    Returns:
+        dict | None: キャリブレーション結果 (loc/scale/sample_count/updated_at/n_days)。
+                     最小サンプル数を満たさない場合はNone。
+    """
+    import math
+    import statistics
+
+    if stocks is None:
+        stocks = load_stock_db()
+    if market_db is None:
+        market_db = make_market_db.get_market_db()
+
+    topix = market_db.get("topix", {})
+    topix_rs_raw = topix.get("rs_raw", 0)
+    if not topix_rs_raw or topix_rs_raw <= 0:
+        log_warning(
+            "[momentum_calib] TOPIX rs_raw が取得できないためキャリブレーション中止"
+        )
+        return None
+
+    # 直近 N 日の閾値 (rs_raw は週次価格更新時に書き込まれるため access_date_price をプロキシとする)
+    today_dt = get_price_day(datetime.today())
+    threshold = today_dt - timedelta(days=MOMENTUM_CALIB_N_DAYS)
+
+    log_rels = []
+    for stock in stocks.values():
+        rs_raw = stock.get("rs_raw", 0)
+        if not rs_raw or rs_raw <= 0:
+            continue
+        access_date = stock.get("access_date_price")
+        if access_date is None:
+            continue
+        if get_price_day(access_date) < threshold:
+            continue  # 古いrs_rawは除外
+        rs_rel = rs_raw / topix_rs_raw
+        if rs_rel <= 0:
+            continue
+        log_rels.append(math.log(rs_rel))
+
+    sample_count = len(log_rels)
+    log_print(
+        "[momentum_calib] 対象銘柄: %d (直近%d日以内, TOPIX rs_raw=%.4f)"
+        % (sample_count, MOMENTUM_CALIB_N_DAYS, topix_rs_raw)
+    )
+
+    if sample_count < MOMENTUM_CALIB_MIN_SAMPLES:
+        log_warning(
+            "[momentum_calib] サンプル数 %d < 最小要件 %d のためキャリブレーションを保存しません"
+            % (sample_count, MOMENTUM_CALIB_MIN_SAMPLES)
+        )
+        return None
+
+    loc_raw = statistics.mean(log_rels)
+    scale_raw = statistics.stdev(log_rels)
+    # scale 調整方針: 「実測値そのまま」 (issue #104 要件 §4)。
+    # 将来 倍率調整 / 下限保証 に切り替える場合はここを差し替える。
+    scale_final = _adjust_momentum_scale(scale_raw)
+
+    calib = {
+        "loc": loc_raw,
+        "scale": scale_final,
+        "sample_count": sample_count,
+        "updated_at": datetime.now(),
+        "n_days": MOMENTUM_CALIB_N_DAYS,
+    }
+    log_print(
+        "[momentum_calib] loc=%.4f, scale=%.4f, n=%d"
+        % (calib["loc"], calib["scale"], calib["sample_count"])
+    )
+
+    if save:
+        market_db["momentum_calib"] = calib
+        make_market_db._save_market_db(market_db)
+        log_print("[momentum_calib] market_db['momentum_calib'] に保存しました")
+    return calib
+
+
+def _adjust_momentum_scale(scale_raw):
+    """scale 調整関数。
+    Phase 1 では実測値そのまま。将来、倍率調整 (scale_raw * α) や
+    下限保証 (max(scale_raw, 下限値)) に切り替える場合はここを差し替える。
+    """
+    return scale_raw
+
+
+def should_run_momentum_calibration(market_db=None):
+    """週次トリガー: 今キャリブレーションを実行すべきか判定する。
+
+    判定ルール:
+    - 前回キャリブレーション情報がない → 実行
+    - 前回キャリブレーションから MOMENTUM_CALIB_STALE_DAYS 日以上経過 → 実行
+      (土曜にcronがスキップされた場合の救済)
+    - 今日が MOMENTUM_CALIB_WEEKDAY (土曜) → 実行
+    - 上記以外 → 実行しない
+    """
+    if market_db is None:
+        market_db = make_market_db.get_market_db()
+    calib = market_db.get("momentum_calib")
+    today = datetime.today()
+
+    if not calib or "updated_at" not in calib:
+        return True
+
+    last = calib["updated_at"]
+    days_since = (today - last).days
+    if days_since >= MOMENTUM_CALIB_STALE_DAYS:
+        return True
+    if today.weekday() == MOMENTUM_CALIB_WEEKDAY:
+        return True
+    return False
 
 
 # ==================================================
@@ -1096,7 +1317,9 @@ def list_all_db(upload_csv=True, update_portforio=True):
             ports.append("保")
         ports = "".join(ports)
         # ---- タグ、シグナル
-        signal, tags, prev_rank = get_signal_tags_prevrank_expr(stock_data)
+        signal, tags, prev_rank = get_signal_tags_prevrank_expr(
+            stock_data, market_db=market_db, topix_map=topix_map
+        )
 
         # ---- 指標用の項目
         indicator_expr = shihyou.get_shihyo_expr(stock_data)
@@ -1161,6 +1384,17 @@ def list_all_db(upload_csv=True, update_portforio=True):
 
     # テーマ騰落率入りのmarket_data.csvを再生成
     make_market_db.create_market_csv()
+
+    # モメンタムポイント動的キャリブレーション (週次トリガー、issue #104)
+    # list_all_db は全銘柄を走査しており、stocks dict を再利用すれば
+    # 追加の DB 読み込みなしでキャリブレーション可能。
+    if should_run_momentum_calibration(market_db):
+        log_print("[momentum_calib] 週次キャリブレーションを実行します")
+        try:
+            calibrate_momentum_pt(stocks=stocks, market_db=market_db)
+        except Exception as e:
+            log_warning("[momentum_calib] キャリブレーション失敗: %s" % e)
+            log_warning(traceback.format_exc())
 
 
 def get_market_code(stock_data):
@@ -1629,6 +1863,10 @@ def main():
     elif command == "reflesh":  # DBをリフレッシュ(上場廃止銘柄を削除)
         backup_db()
         reflesh_db()
+    elif command == "calibrate_momentum":
+        # モメンタムポイント動的キャリブレーション (issue #104)
+        # 週次トリガーをバイパスして強制実行する。初回検証や緊急時の再校正用。
+        calibrate_momentum_pt()
     elif command == "test":
         test()
 

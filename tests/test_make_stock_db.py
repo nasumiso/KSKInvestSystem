@@ -606,3 +606,147 @@ class TestGetRsLineChangesExpr:
         parts = s.split("/")
         assert parts[0].startswith("-")
         assert parts[1].startswith("-")
+
+
+# ==================================================
+# calibrate_momentum_pt (issue #104)
+# ==================================================
+class TestCalibrateMomentumPt:
+    """モメンタムポイント動的キャリブレーションのテスト"""
+
+    def _make_stocks(self, n, rs_raw_values=None, days_ago=0):
+        """rs_raw を持つ銘柄を n 件生成 (access_date_price は今日 - days_ago)"""
+        import math
+
+        if rs_raw_values is None:
+            # log(rs_rel) が おおよそ平均0, σ=0.3 になるように rs_rel を散らす
+            # rs_raw / topix_rs_raw = exp(N(0, 0.3))
+            rs_raw_values = [math.exp(0.3 * (i / n - 0.5) * 2) for i in range(n)]
+        access_date = datetime.today() - timedelta(days=days_ago)
+        stocks = {}
+        for i, rs_raw in enumerate(rs_raw_values):
+            code_s = f"{i+1:04d}"
+            stocks[code_s] = {
+                "rs_raw": rs_raw,
+                "access_date_price": access_date,
+            }
+        return stocks
+
+    def test_returns_calib_with_enough_samples(self):
+        """サンプル数が十分なら loc/scale が返る"""
+        stocks = self._make_stocks(600)
+        market_db = {"topix": {"rs_raw": 1.0}}
+        calib = make_stock_db.calibrate_momentum_pt(
+            stocks=stocks, market_db=market_db, save=False
+        )
+        assert calib is not None
+        assert "loc" in calib
+        assert "scale" in calib
+        assert calib["sample_count"] == 600
+        assert calib["n_days"] == make_stock_db.MOMENTUM_CALIB_N_DAYS
+
+    def test_returns_none_when_insufficient_samples(self):
+        """最小サンプル数未満なら None を返す"""
+        stocks = self._make_stocks(100)
+        market_db = {"topix": {"rs_raw": 1.0}}
+        calib = make_stock_db.calibrate_momentum_pt(
+            stocks=stocks, market_db=market_db, save=False
+        )
+        assert calib is None
+
+    def test_returns_none_when_topix_rs_raw_missing(self):
+        """TOPIX の rs_raw が無い場合は None"""
+        stocks = self._make_stocks(600)
+        market_db = {"topix": {}}
+        calib = make_stock_db.calibrate_momentum_pt(
+            stocks=stocks, market_db=market_db, save=False
+        )
+        assert calib is None
+
+    def test_excludes_old_rs_raw(self):
+        """直近 N 日より古い rs_raw は除外される"""
+        # 600 件のうち 400 件は古いデータ → 200 件しか有効でない → None
+        old_stocks = self._make_stocks(400, days_ago=30)
+        new_stocks = self._make_stocks(200, days_ago=1)
+        # キーが衝突するので別範囲に
+        merged = {f"old{k}": v for k, v in old_stocks.items()}
+        merged.update({f"new{k}": v for k, v in new_stocks.items()})
+        market_db = {"topix": {"rs_raw": 1.0}}
+        calib = make_stock_db.calibrate_momentum_pt(
+            stocks=merged, market_db=market_db, save=False
+        )
+        # 200件しか有効でないので最小要件500未満→None
+        assert calib is None
+
+    def test_excludes_zero_or_negative_rs_raw(self):
+        """rs_raw <= 0 の銘柄は除外される"""
+        import math
+
+        rs_raw_values = [math.exp(0.3 * (i / 600 - 0.5) * 2) for i in range(600)]
+        # 200件をゼロにする
+        for i in range(200):
+            rs_raw_values[i] = 0
+        stocks = self._make_stocks(600, rs_raw_values=rs_raw_values)
+        market_db = {"topix": {"rs_raw": 1.0}}
+        calib = make_stock_db.calibrate_momentum_pt(
+            stocks=stocks, market_db=market_db, save=False
+        )
+        # 400件しか有効でない → None
+        assert calib is None
+
+    def test_loc_scale_within_expected_range(self):
+        """rs_rel が log-normal に従えば loc は 0 近傍、 scale は 0.3 近傍"""
+        import math
+
+        # log(rs_rel) を平均0, σ=0.3 で離散的に作る
+        n = 1000
+        log_rels = [0.3 * ((i + 0.5) / n - 0.5) * 4 for i in range(n)]  # 一様→σ約0.35
+        rs_raw_values = [math.exp(lr) for lr in log_rels]
+        stocks = self._make_stocks(n, rs_raw_values=rs_raw_values)
+        market_db = {"topix": {"rs_raw": 1.0}}
+        calib = make_stock_db.calibrate_momentum_pt(
+            stocks=stocks, market_db=market_db, save=False
+        )
+        assert calib is not None
+        # 一様分布の中心は0
+        assert abs(calib["loc"]) < 0.05
+        # σは0.1〜0.5の範囲に収まる (一様分布なので正確には予測不能だが上下限は妥当)
+        assert 0.1 < calib["scale"] < 0.5
+
+
+# ==================================================
+# should_run_momentum_calibration (issue #104)
+# ==================================================
+class TestShouldRunMomentumCalibration:
+    """週次トリガー判定のテスト"""
+
+    def test_no_calib_returns_true(self):
+        """momentum_calib が無ければ実行する"""
+        market_db = {}
+        assert make_stock_db.should_run_momentum_calibration(market_db) is True
+
+    def test_no_updated_at_returns_true(self):
+        """updated_at が無ければ実行する"""
+        market_db = {"momentum_calib": {"loc": 0, "scale": 0.3}}
+        assert make_stock_db.should_run_momentum_calibration(market_db) is True
+
+    def test_stale_returns_true(self):
+        """前回から MOMENTUM_CALIB_STALE_DAYS 以上経過していたら実行"""
+        old = datetime.now() - timedelta(
+            days=make_stock_db.MOMENTUM_CALIB_STALE_DAYS + 1
+        )
+        market_db = {"momentum_calib": {"updated_at": old}}
+        assert make_stock_db.should_run_momentum_calibration(market_db) is True
+
+    def test_recent_non_target_weekday_returns_false(self):
+        """最近実行済みかつ今日がトリガー曜日でなければ実行しない"""
+        # 「最近」: 1日前
+        # 今日が トリガー曜日と同じ場合はパス: 月曜なら火曜に変える、など
+        recent = datetime.now() - timedelta(days=1)
+        market_db = {"momentum_calib": {"updated_at": recent}}
+        result = make_stock_db.should_run_momentum_calibration(market_db)
+        # 今日の曜日で結果が変わるので、両方の可能性を許容
+        if datetime.today().weekday() == make_stock_db.MOMENTUM_CALIB_WEEKDAY:
+            assert result is True
+        else:
+            assert result is False
