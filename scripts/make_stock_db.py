@@ -161,10 +161,15 @@ def update_rs_rank(stocks, code_s):
 # ==================================================
 # RSライン: 銘柄終値/TOPIX終値 の生比率系列
 # ==================================================
+def _build_close_map(price_log):
+    """(date, close) タプル列から日付→終値の dict を生成する。終値0や偽値は除外。"""
+    return {dt: close for dt, close in price_log if close}
+
+
 def _topix_close_map(market_db):
     """TOPIX の price_log から日付→終値の dict を生成する"""
     topix_log = market_db.get("topix", {}).get("price_log", []) if market_db else []
-    return {dt: close for dt, close in topix_log if close}
+    return _build_close_map(topix_log)
 
 
 def compute_rs_line(stock, market_db, topix_map=None):
@@ -209,6 +214,33 @@ def compute_rs_line_changes(stock, market_db, topix_map=None):
             past値が0の場合も None
     """
     rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
+    return _rs_line_changes_from_line(rs_line)
+
+
+def _fmt_rs_change(v):
+    """rs_line 騰落率を符号付き整数% に整形 (None は "-")"""
+    return "-" if v is None else "%+d" % round(v)
+
+
+def get_rs_line_changes_expr(stock, market_db, topix_map=None, rs_line=None):
+    """rs_line 騰落率を CSV 表示用の '中期B%/短期A%' 文字列にする。
+
+    rs_line を渡せば再計算をスキップする (CSV ループで複数の rs_line 系関数を
+    呼ぶ際に共有するため)。
+
+    Returns:
+        str: 例 "+12/+5"。両方計算不能なら "" 、片方のみなら "-/+5" 等
+    """
+    if rs_line is None:
+        rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
+    a, b = _rs_line_changes_from_line(rs_line)
+    if a is None and b is None:
+        return ""
+    return "%s/%s" % (_fmt_rs_change(b), _fmt_rs_change(a))
+
+
+def _rs_line_changes_from_line(rs_line):
+    """rs_line 系列から 5日前比 A・20日前比 B 騰落率を計算する内部関数"""
     if not rs_line:
         return (None, None)
     current = rs_line[0][1]
@@ -224,21 +256,69 @@ def compute_rs_line_changes(stock, market_db, topix_map=None):
     return (_change(5), _change(20))
 
 
-def _fmt_rs_change(v):
-    """rs_line 騰落率を符号付き整数% に整形 (None は "-")"""
-    return "-" if v is None else "%+d" % round(v)
+def compute_rs_line_new_high(stock, market_db, topix_map=None, lookback=20, rs_line=None):
+    """rs_line[0] が直近 lookback 日の最高値を更新したかを判定する純粋関数。
 
+    横ばい（同値）は False とする。連日同値の場合に毎日 True が立つのを防ぎ、
+    「今日新高値を取った」イベントだけをタグ化するため。
 
-def get_rs_line_changes_expr(stock, market_db, topix_map=None):
-    """rs_line 騰落率を CSV 表示用の '中期B%/短期A%' 文字列にする。
+    rs_line を渡せば再計算をスキップする。
+
+    Args:
+        stock (dict): 銘柄DB1件
+        market_db (dict): マーケットDB
+        topix_map (dict, optional): 事前構築済み TOPIX 終値マップ
+        lookback (int): 比較対象日数（デフォルト20）
+        rs_line (list, optional): 事前計算済みの rs_line 系列
 
     Returns:
-        str: 例 "+12/+5"。両方計算不能なら "" 、片方のみなら "-/+5" 等
+        bool: rs_line[0] > max(rs_line[1:lookback+1]) なら True。
+            データ不足 (rs_line が lookback+1 本未満) は False。
     """
-    a, b = compute_rs_line_changes(stock, market_db, topix_map=topix_map)
-    if a is None and b is None:
+    if rs_line is None:
+        rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
+    if len(rs_line) < lookback + 1:
+        return False
+    current = rs_line[0][1]
+    return current > max(v for _, v in rs_line[1:lookback + 1])
+
+
+def compute_rs_line_divergence(stock, market_db, topix_map=None,
+                               offset=20, threshold=3.0, rs_line=None):
+    """株価と rs_line の同期間騰落率の食い違い（ダイバージェンス）を判定する。
+
+    rs_line[0] と rs_line[offset] の日付を基準に、銘柄 price_log から
+    同日終値を引いて騰落率を算出する。インデックスではなく日付で揃えるのは、
+    rs_line が TOPIX と日付一致した日だけ残るため、price_log と rs_line の
+    [offset] 番目が同じ日とは限らないため。
+
+    rs_line を渡せば再計算をスキップする。
+
+    Returns:
+        str: "bullish"（強気: 株価↓ rs_line↑）/ "bearish"（弱気: 株価↑ rs_line↓）/ ""
+    """
+    if rs_line is None:
+        rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
+    if len(rs_line) <= offset:
         return ""
-    return "%s/%s" % (_fmt_rs_change(b), _fmt_rs_change(a))
+    dt_now, rs_now = rs_line[0]
+    dt_past, rs_past = rs_line[offset]
+    if rs_past == 0:
+        return ""
+    rs_change = (rs_now - rs_past) / rs_past * 100
+
+    price_map = _build_close_map(stock.get("price_log", []))
+    price_now = price_map.get(dt_now)
+    price_past = price_map.get(dt_past)
+    if not price_now or not price_past:
+        return ""
+    price_change = (price_now - price_past) / price_past * 100
+
+    if price_change <= -threshold and rs_change >= threshold:
+        return "bullish"
+    if price_change >= threshold and rs_change <= -threshold:
+        return "bearish"
+    return ""
 
 
 def get_rank_log_expr(stock):
@@ -719,8 +799,13 @@ def get_trend_template_expr(stock):
     return ""
 
 
-def make_signal(stock):
-    """銘柄DBデータから、シグナル情報を作成する"""
+def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
+    """銘柄DBデータから、シグナル情報を作成する。
+
+    market_db を渡すと rs_line ベースのタグ (R高 / 強乖 / 弱乖) も付与される。
+    後方互換のため market_db=None ならスキップ。
+    rs_line を渡せば再計算をスキップする。
+    """
     today = datetime.today()
     signal = ""
     tags = []
@@ -801,6 +886,24 @@ def make_signal(stock):
             elif warn == 1:
                 tags.append("警")
 
+    # rs_line 新高値・ダイバージェンス（当日発生のみ）
+    # list_all_db は更新対象外の銘柄もCSVに出すため、price_log が数日〜数週間古い
+    # 銘柄が混じる。rs_line[0] が当日 (= 最新営業日 = TOPIX price_log[0]の日付) で
+    # ある場合だけタグを立てる。古いキャッシュで連日タグが残るのを防ぐため。
+    if market_db is not None:
+        if rs_line is None:
+            rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
+        topix_log = market_db.get("topix", {}).get("price_log", [])
+        latest_date = topix_log[0][0] if topix_log else None
+        if rs_line and latest_date and rs_line[0][0] == latest_date:
+            if compute_rs_line_new_high(stock, market_db, rs_line=rs_line):
+                tags.append("R高")
+            div = compute_rs_line_divergence(stock, market_db, rs_line=rs_line)
+            if div == "bullish":
+                tags.append("強乖")
+            elif div == "bearish":
+                tags.append("弱乖")
+
     # print signal, tags
     return signal, tags
 
@@ -874,9 +977,10 @@ def get_vola_and_sell_press_expr(stock_data):
     return vola, sell_press
 
 
-def get_signal_tags_prevrank_expr(stock_data):
+def get_signal_tags_prevrank_expr(stock_data, market_db=None, topix_map=None, rs_line=None):
     tags = []  # タグ
-    signal, tags = make_signal(stock_data)  # シグナル
+    signal, tags = make_signal(stock_data, market_db=market_db,
+                               topix_map=topix_map, rs_line=rs_line)
 
     # ---- 過去順位と株価上昇率
     try:
@@ -1095,8 +1199,12 @@ def list_all_db(upload_csv=True, update_portforio=True):
         if stock[0] in possess_list:
             ports.append("保")
         ports = "".join(ports)
+        # rs_line を1回だけ計算して下流の関数で使い回す
+        rs_line = compute_rs_line(stock_data, market_db, topix_map=topix_map)
         # ---- タグ、シグナル
-        signal, tags, prev_rank = get_signal_tags_prevrank_expr(stock_data)
+        signal, tags, prev_rank = get_signal_tags_prevrank_expr(
+            stock_data, market_db=market_db, topix_map=topix_map, rs_line=rs_line
+        )
 
         # ---- 指標用の項目
         indicator_expr = shihyou.get_shihyo_expr(stock_data)
@@ -1115,7 +1223,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
         stock_name = get_stock_name_exp(stock_data)
         sector = stock_data.get("sector", "")
         # relates_rank = stock_data.get("relates_rank", 0) # 関連銘柄内順位:封印
-        rs_log = get_rs_line_changes_expr(stock_data, market_db, topix_map=topix_map)
+        rs_log = get_rs_line_changes_expr(stock_data, market_db, rs_line=rs_line)
         momentum = "%d.%s" % (stock[4], rs_log)
         # 行要素作成
         rows.append(
