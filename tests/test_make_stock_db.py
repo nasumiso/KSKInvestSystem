@@ -456,6 +456,22 @@ def _make_log(n, base=1000, step=5, d0=date(2026, 4, 28)):
     return [(d0 - timedelta(days=i), base + step * (n - i)) for i in range(n)]
 
 
+def _make_div_logs(stock_now, stock_past, topix_now, topix_past, n=25,
+                   d0=date(2026, 4, 28)):
+    """offset=20 でちょうど stock_now/past, topix_now/past となる日付降順タプル列を生成。
+
+    index 0 = 今日 (stock_now / topix_now), index 20 = 20日前 (stock_past / topix_past)。
+    """
+    stock_log, topix_log = [], []
+    for i in range(n):
+        t = i / 20.0
+        stock_log.append((d0 - timedelta(days=i),
+                          int(stock_now + (stock_past - stock_now) * t)))
+        topix_log.append((d0 - timedelta(days=i),
+                          int(topix_now + (topix_past - topix_now) * t)))
+    return stock_log, topix_log
+
+
 class TestComputeRsLine:
     """rs_line (銘柄終値/TOPIX終値) 計算の単体テスト"""
 
@@ -606,3 +622,165 @@ class TestGetRsLineChangesExpr:
         parts = s.split("/")
         assert parts[0].startswith("-")
         assert parts[1].startswith("-")
+
+
+# ==================================================
+# compute_rs_line_new_high
+# ==================================================
+class TestComputeRsLineNewHigh:
+    """rs_line 新高値判定の単体テスト"""
+
+    def test_returns_false_when_empty(self):
+        assert make_stock_db.compute_rs_line_new_high({}, {"topix": {}}) is False
+
+    def test_returns_false_when_short(self):
+        """rs_line が lookback+1 本未満なら False"""
+        stock = {"price_log": _make_log(10, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(10, base=1000)}}
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db, lookback=20) is False
+
+    def test_returns_true_when_strict_high(self):
+        """rs_line[0] が直近20日の最高値より厳密に大きい → True"""
+        stock = {"price_log": _make_log(25, base=2000, step=10)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=0)}}
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db) is True
+
+    def test_returns_false_when_not_high(self):
+        """rs_line[0] が過去より小さい → False"""
+        d0 = date(2026, 4, 28)
+        # 古い日付ほど高い値、今日ほど低い値
+        price_log = [(d0 - timedelta(days=i), 2000 + i * 10) for i in range(25)]
+        stock = {"price_log": price_log}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=0)}}
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db) is False
+
+    def test_returns_false_when_equal(self):
+        """同値（横ばい）は False — Q3「当日発生」のため厳密比較 >"""
+        d0 = date(2026, 4, 28)
+        price_log = [(d0 - timedelta(days=i), 2000) for i in range(25)]
+        stock = {"price_log": price_log}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=0)}}
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db) is False
+
+    def test_lookback_parameter(self):
+        """lookback を変えて短期判定として使えること"""
+        d0 = date(2026, 4, 28)
+        # 直近6日: 2050, 2040, 2030, 2020, 2010, 2000 (新→古)
+        # それ以前: 2200+ (高い値)
+        price_log = []
+        for i in range(6):
+            price_log.append((d0 - timedelta(days=i), 2050 - i * 10))
+        for i in range(6, 25):
+            price_log.append((d0 - timedelta(days=i), 2200 + i))
+        stock = {"price_log": price_log}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=0)}}
+        # lookback=5: 直近5日の最高値 (2040) を 2050 が更新 → True
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db, lookback=5) is True
+        # lookback=20: 過去20日に 2200+ がある → False
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db, lookback=20) is False
+
+
+# ==================================================
+# compute_rs_line_divergence
+# ==================================================
+class TestComputeRsLineDivergence:
+    """株価×rs_line ダイバージェンス判定の単体テスト"""
+
+    def test_returns_empty_when_no_data(self):
+        assert make_stock_db.compute_rs_line_divergence({}, {"topix": {}}) == ""
+
+    def test_returns_empty_when_short(self):
+        """rs_line が offset+1 本未満なら ''"""
+        stock = {"price_log": _make_log(10, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(10, base=1000)}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db, offset=20) == ""
+
+    def test_bullish_divergence(self):
+        """株価↓ かつ rs_line↑ → 'bullish'
+        銘柄 1900/2000 (-5%), TOPIX 900/1000 (-10%) → rs +5.5%
+        """
+        stock_log, topix_log = _make_div_logs(1900, 2000, 900, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db) == "bullish"
+
+    def test_bearish_divergence(self):
+        """株価↑ かつ rs_line↓ → 'bearish'
+        銘柄 2100/2000 (+5%), TOPIX 1100/1000 (+10%) → rs -4.5%
+        """
+        stock_log, topix_log = _make_div_logs(2100, 2000, 1100, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db) == "bearish"
+
+    def test_no_divergence_same_direction(self):
+        """株価・rs_line が同方向（両方プラス）→ ''"""
+        stock = {"price_log": _make_log(25, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=2)}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db) == ""
+
+    def test_below_threshold(self):
+        """株価変化が閾値未満なら ''
+        銘柄 1980/2000 (-1%, 閾値3%未満)
+        """
+        stock_log, topix_log = _make_div_logs(1980, 2000, 900, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db) == ""
+
+    def test_threshold_parameter(self):
+        """threshold を変えれば判定が変わる
+        銘柄-2%, TOPIX-4% → rs +2.08%
+        threshold=3% で発火しない、threshold=1% で bullish
+        """
+        stock_log, topix_log = _make_div_logs(1960, 2000, 960, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db, threshold=3.0) == ""
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db, threshold=1.0) == "bullish"
+
+
+# ==================================================
+# make_signal — RSライン拡張
+# ==================================================
+class TestMakeSignalRsLine:
+    """make_signal で market_db を渡したときの rs_line 系タグ付与テスト"""
+
+    def test_market_db_none_skips_rs_line_tags(self):
+        """market_db=None で呼ばれた場合、RSライン系タグは付かない（後方互換）"""
+        d0 = date(2026, 4, 28)
+        stock = {
+            "price_log": [(d0 - timedelta(days=i), 2000 + (25 - i) * 10) for i in range(25)],
+        }
+        _, tags = make_stock_db.make_signal(stock)
+        assert "R高" not in tags
+        assert "強乖" not in tags
+        assert "弱乖" not in tags
+
+    def test_rs_line_new_high_tag(self):
+        """rs_line 新高値発生時に R高 タグが付く"""
+        d0 = date(2026, 4, 28)
+        stock = {
+            "price_log": [(d0 - timedelta(days=i), 2000 + (25 - i) * 10) for i in range(25)],
+        }
+        market_db = {
+            "topix": {"price_log": [(d0 - timedelta(days=i), 1000) for i in range(25)]},
+        }
+        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
+        assert "R高" in tags
+
+    def test_rs_line_bullish_divergence_tag(self):
+        """強気ダイバージェンス発生時に 強乖 タグが付く"""
+        stock_log, topix_log = _make_div_logs(1900, 2000, 900, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
+        assert "強乖" in tags
+
+    def test_rs_line_bearish_divergence_tag(self):
+        """弱気ダイバージェンス発生時に 弱乖 タグが付く"""
+        stock_log, topix_log = _make_div_logs(2100, 2000, 1100, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
+        assert "弱乖" in tags
