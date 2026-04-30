@@ -267,88 +267,66 @@ def _calc_daily_indicators(daily_price_list):
     """daily_price_listから日次指標を計算する
     parse_price_d_html_kabutanから指標計算部分を分離。
     Kabutan HTML パスと yfinance パス共通で使用する。
+
+    DD/FTD 判定は O'Neil 原典準拠 (issue #117 Part A):
+    - 通常DD: 前日比 -0.2% 以下 + 出来高が前日より増加
+    - FTD候補: 前日比 +1.0% 以上 + 出来高が前日より増加
+      (ラリーアテンプト Day 4 以降の判定は market_state.py 側で行うため、ここでは候補日のみ拾う)
+
+    direction_signal の最終値は make_market_db.py が market_state を計算してから上書きする。
+    本関数では空文字をデフォルトとして入れておく (フィールド自体は後方互換で維持)。
+
+    Stalling Day はデータ拡張PRで対応 (52週高値が必要)。
+
     Args:
         daily_price_list: 8要素タプル(文字列)のリスト
             [0]日付, [1]始値, [2]高値, [3]安値, [4]終値, [5]前日比, [6]前日比%, [7]売買高
             カンマ区切り数値文字列、新しい日付が先頭
     Returns:
-        dict: distribution_days / followthrough_days / direction_signal /
-              spr_20 / spr_5 / spr_buygagher / rv_20 / rv_5
+        dict: distribution_days / distribution_days_with_close / followthrough_days /
+              daily_history / direction_signal / spr_20 / spr_5 / spr_buygagher / rv_20 / rv_5
     """
-    # ---- ディストリビューション
-    distribution_day = []  # 日付のリスト
+    # ---- ディストリビューション / フォロースルー候補
+    distribution_day = []  # 日付のリスト (後方互換)
+    distribution_day_with_close = []  # (date, close) タプルのリスト (新規、State Machine 用)
     followthrough_day = []
-    # 前日より安く、出来高が増える日
-    # 　前日より0.1%以下で上半分で引ける場合はカウントしない[モラレス]
-    # 前日よりわずかに高くても下で引けていけばカウント[モラレス]
-    # 　例：0.1%上昇で25%以下で引ける
     count_day = 20
     target_days = list(
         reversed(daily_price_list[: count_day + 1])
     )  # インデックスが若いほど前の日にする
-    # 平均出来高
-    avg_vol = 0
-    avg_len = 0
-    for d in target_days:
-        try:
-            dv = int(d[7].replace(",", ""))  # 売買高
-            avg_vol += dv
-            avg_len += 1
-        except ValueError:
-            pass
-    if avg_len == 0:
+    if len(target_days) < 2:
         log_warning(" デイリー価格解析できず")
         return {}
-    avg_vol = avg_vol / avg_len
     current_day = target_days[-1][0]
     log_debug(current_day, "のディストリビューションカウント")
     for d, pd in zip(target_days[1:], target_days[:-1]):
         try:
             dp = float(d[4].replace(",", ""))  # 終値
-            pdp = float(pd[4].replace(",", ""))
             dv = int(d[7].replace(",", ""))  # 売買高
             pdv = int(pd[7].replace(",", ""))
-            dph = float(d[2].replace(",", ""))  # 高値
-            dpl = float(d[3].replace(",", ""))  # 安値
             dr = float(d[6].replace(",", ""))  # 前日比パーセント
         except ValueError:
             log_debug("%sはデータ取得できず" % d[0])
             continue
-        if dph == dpl:
-            # 高値=安値で値幅ゼロのケース (休場日や寄らずなど) は除外
-            continue
-        pr_pos = (dp - dpl) / (dph - dpl)
-        if dp < pdp:  # 前日より安く出来高が増える
-            if dv > pdv:
-                if dr >= -0.1 and pr_pos >= 0.5:
-                    log_debug("前日より0.1%以下で上半分で引ける場合はカウントしない", d[0])
-                else:
-                    distribution_day.append(d[0])
-        else:
-            if dv > pdv:
-                log_debug("dr", dr, "pr_pos", pr_pos)
-                if dr <= 0.1 and pr_pos <= 0.25:
-                    log_debug("前日よりわずかに高くても下で引けていけばカウント", d[0])
-                    distribution_day.append(d[0])
-        # フォロースルー: 反転から4~7日目で(ここは判定していない)
-        # 平均以上の出来高で1.7%以上の上昇
-        # 本当はその時から過去20日の出来高にしないといけないが取得できない・・
-        if dr >= 1.7 and dv >= avg_vol:
+        # 通常 DD (原典準拠)
+        if dr <= -0.2 and dv > pdv:
+            distribution_day.append(d[0])
+            distribution_day_with_close.append((d[0], dp))
+        # FTD候補 (ラリーアテンプト判定は market_state.py 側で行う)
+        if dr >= 1.0 and dv > pdv:
             followthrough_day.append(d[0])
     dic = {}
     dic["distribution_days"] = distribution_day
+    dic["distribution_days_with_close"] = distribution_day_with_close
     dic["followthrough_days"] = followthrough_day
+    # daily_history (新しい日が先頭) を State Machine の DD 失効判定で使う
+    dic["daily_history"] = [d[0] for d in daily_price_list[:count_day + 1]]
     log_debug("ディストリビューション:", distribution_day)
-    log_debug("フォロースルー:", followthrough_day)
+    log_debug("フォロースルー候補:", followthrough_day)
 
-    # ---- シグナル
-    signal = "neutral"
-    # TODO: とりあえず簡易
-    if len(distribution_day) >= 5:
-        signal = "sell"
-
-    dic["direction_signal"] = signal + "," + current_day
-    log_debug("シグナル:", dic["direction_signal"])
+    # direction_signal は make_market_db.py が market_state を計算してから上書きする。
+    # 計算前のデフォルト値として空文字を入れておく (後方互換のためフィールド自体は維持)。
+    dic["direction_signal"] = ""
 
     # ---- 売り圧力レシオ
     def to_numeric(str):

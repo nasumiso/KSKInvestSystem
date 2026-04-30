@@ -440,7 +440,8 @@ class TestCalcDailyIndicators:
         rows = self._make_price_list(25)
         result = price._calc_daily_indicators(rows)
         for key in (
-            "distribution_days", "followthrough_days", "direction_signal",
+            "distribution_days", "distribution_days_with_close", "followthrough_days",
+            "daily_history", "direction_signal",
             "spr_20", "spr_5", "spr_buygagher", "rv_20", "rv_5",
         ):
             assert key in result
@@ -449,13 +450,32 @@ class TestCalcDailyIndicators:
         result = price._calc_daily_indicators([])
         assert result == {}
 
-    def test_direction_signal_format(self):
-        """direction_signal は '<sig>,<日付>' 形式"""
+    def test_direction_signal_default_empty(self):
+        """direction_signal は _calc_daily_indicators の段階では空文字。
+        最終値は make_market_db.py の State Machine 計算で上書きされる
+        (issue #117 Part A)"""
         rows = self._make_price_list(25)
         result = price._calc_daily_indicators(rows)
-        assert "," in result["direction_signal"]
-        sig, day = result["direction_signal"].split(",", 1)
-        assert sig in ("neutral", "sell")
+        assert result["direction_signal"] == ""
+
+    def test_distribution_days_with_close_format(self):
+        """distribution_days_with_close は (date, close) タプルのリスト"""
+        rows = self._make_price_list(25)
+        result = price._calc_daily_indicators(rows)
+        for entry in result["distribution_days_with_close"]:
+            assert len(entry) == 2
+            date, close = entry
+            assert isinstance(date, str)
+            assert isinstance(close, float)
+
+    def test_daily_history_newest_first(self):
+        """daily_history は新しい日付が先頭"""
+        rows = self._make_price_list(25)
+        result = price._calc_daily_indicators(rows)
+        history = result["daily_history"]
+        assert len(history) > 0
+        # rows[0] が最新日付なので history[0] と一致
+        assert history[0] == rows[0][0]
 
     def test_zero_range_day_does_not_crash(self):
         """高値=安値の日があってもZeroDivisionErrorにならない"""
