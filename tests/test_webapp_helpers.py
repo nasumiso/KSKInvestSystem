@@ -244,6 +244,49 @@ class TestGetMarketKessanData:
         # 当日決算は today_entries に分類される
         assert "2026/04/27" in today_keys
 
+    def test_today_kessan_includes_pts_in_post_price_changes(
+        self, kessan_env, db_path
+    ):
+        """当日決算エントリの post_price_changes に PTS キーが含まれる (issue #154)"""
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 4, 27, 19, 0)
+        pf_dict = {
+            "6501": {
+                "code_s": "6501",
+                "stock_name": "日立製作所",
+                "kessanbi": "2026/04/27",
+                "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        # research_shelve に PTS 入りの kessan_comments を予め登録
+        rec = rs.create_research_record("6501", "日立製作所")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/04/27",
+            "quarter": 4,
+            "pre_expectation": "",
+            "pre_outlook": "",
+            "post_price_changes": {"pts": "+2.5", "1d": "", "5d": ""},
+            "post_comment": "",
+            "kessan_matagi": False,
+            "held_before_kessan": False,
+            "held_after_kessan": False,
+        }]
+        rs.upsert_research_record(rec)
+
+        result = helpers.get_market_kessan_data()
+        today_entries = result["today_entries"]
+        # 4/27 のエントリがあり、その中の 6501 が PTS を持つ
+        found = False
+        for kessanbi, stocks in today_entries:
+            if kessanbi != "2026/04/27":
+                continue
+            for s in stocks:
+                if s["code_s"] == "6501":
+                    assert s["post_price_changes"].get("pts") == "+2.5"
+                    found = True
+        assert found, "6501 のエントリが today_entries に見つからない"
+
 
 class TestSearchRecords:
     """search_records のテスト"""
@@ -810,3 +853,127 @@ class TestSaveKessanCommentMultiPeriod:
         entry = helpers.save_kessan_comment("5032", self._form(pre_outlook="updated"))
         assert entry["post_price_changes"]["1d"] == "-7.5"
         assert entry["post_price_changes"]["5d"] == ""
+
+    def test_overwrite_preserves_pts_key(self, setup_db, monkeypatch):
+        """既存エントリに PTS キーがある状態で save_kessan_comment しても消えない (issue #154)"""
+        # 既存に PTS 入りで 1 件
+        rec = rs.get_research_record("5032")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/03/11",
+                "quarter": 3,
+                "pre_expectation": "○",
+                "pre_outlook": "init",
+                "post_price_changes": {"pts": "+2.5", "1d": "+3.2", "5d": ""},
+                "post_comment": "",
+                "kessan_matagi": False,
+                "held_before_kessan": False,
+                "held_after_kessan": False,
+            },
+        ]
+        rs.upsert_research_record(rec)
+        # webapp で再保存 (calc_price_reactions は 1d/5d だけ返す)
+        monkeypatch.setattr(
+            helpers, "calc_price_reactions",
+            lambda c, k: {"1d": "+4.0", "5d": "+5.1"},
+        )
+        entry = helpers.save_kessan_comment("5032", self._form(pre_outlook="updated"))
+        # 1d/5d は新値で更新、PTS キーは既存値を維持
+        assert entry["post_price_changes"]["1d"] == "+4.0"
+        assert entry["post_price_changes"]["5d"] == "+5.1"
+        assert entry["post_price_changes"]["pts"] == "+2.5"
+
+
+class TestUpsertKessanPtsChange:
+    """upsert_kessan_pts_change のテスト (issue #154)"""
+
+    @pytest.fixture
+    def setup_db(self, db_path, monkeypatch):
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr(helpers, "RESEARCH_SHELVE", db_path, raising=False)
+        return db_path
+
+    def test_creates_new_entry_when_no_kessan_comment(self, setup_db, monkeypatch):
+        """既存 kessan_comments が空の銘柄に PTS を upsert → 新規エントリ作成"""
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rs.upsert_research_record(rec)
+        entry = helpers.upsert_kessan_pts_change("5032", "2026/04/30", 4, "+2.5")
+        assert entry["kessanbi"] == "2026/04/30"
+        assert entry["quarter"] == 4
+        assert entry["post_price_changes"] == {"pts": "+2.5"}
+        # 永続化されていること
+        loaded = rs.get_research_record("5032")
+        assert loaded["kessan_comments"][0]["post_price_changes"]["pts"] == "+2.5"
+
+    def test_updates_existing_entry_pts_only(self, setup_db, monkeypatch):
+        """既存 (kessanbi, quarter) エントリの PTS のみ更新、他キーは保持"""
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/04/30",
+                "quarter": 4,
+                "pre_expectation": "◎",
+                "pre_outlook": "強気",
+                "post_price_changes": {"1d": "", "5d": ""},
+                "post_comment": "",
+                "kessan_matagi": False,
+                "held_before_kessan": False,
+                "held_after_kessan": False,
+            },
+        ]
+        rs.upsert_research_record(rec)
+        entry = helpers.upsert_kessan_pts_change("5032", "2026/04/30", 4, "-1.8")
+        assert entry["post_price_changes"]["pts"] == "-1.8"
+        # 他フィールドは保持
+        assert entry["pre_expectation"] == "◎"
+        assert entry["pre_outlook"] == "強気"
+
+    def test_creates_record_when_research_record_missing(
+        self, setup_db, monkeypatch
+    ):
+        """research_shelve に未登録 → add_stock 経由で先行登録される"""
+        # add_stock の中身は stocks_shelve に依存するためモック
+        called = {"add_stock": 0}
+
+        def fake_add_stock(code_s):
+            # add_stock が呼ばれたら、空レコードを直接作る
+            r = rs.create_research_record(code_s, "TEST")
+            rs.upsert_research_record(r)
+            called["add_stock"] += 1
+            return code_s
+
+        monkeypatch.setattr(helpers, "add_stock", fake_add_stock)
+        entry = helpers.upsert_kessan_pts_change("5032", "2026/04/30", 4, "+2.5")
+        assert called["add_stock"] == 1
+        assert entry["post_price_changes"]["pts"] == "+2.5"
+
+    def test_rejects_invalid_kessanbi(self, setup_db):
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rs.upsert_research_record(rec)
+        with pytest.raises(ValueError):
+            helpers.upsert_kessan_pts_change("5032", "2026-04-30", 4, "+2.5")
+
+    def test_separate_quarter_creates_new_entry(self, setup_db):
+        """同じ kessanbi でも quarter が違えば別エントリ"""
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/04/30",
+                "quarter": 4,
+                "pre_expectation": "",
+                "pre_outlook": "",
+                "post_price_changes": {"pts": "+2.5"},
+                "post_comment": "",
+                "kessan_matagi": False,
+                "held_before_kessan": False,
+                "held_after_kessan": False,
+            },
+        ]
+        rs.upsert_research_record(rec)
+        helpers.upsert_kessan_pts_change("5032", "2026/04/30", 1, "+5.0")
+        loaded = rs.get_research_record("5032")
+        # 2 エントリある (q=4 と q=1)
+        assert len(loaded["kessan_comments"]) == 2
+        quarters = sorted(int(e["quarter"]) for e in loaded["kessan_comments"])
+        assert quarters == [1, 4]

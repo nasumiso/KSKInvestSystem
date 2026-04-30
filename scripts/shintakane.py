@@ -14,6 +14,7 @@ import make_stock_db as stock_db
 import make_market_db
 
 import kessan
+import pts_data
 from ks_util import *
 
 
@@ -206,10 +207,15 @@ def search_fromcsv_pts(fname):
 
 
 def get_pts_day_txtname(today):
-    """datetime からPTS日付CSVファイルパスを生成"""
-    txt_template = os.path.join(DATA_DIR, "today_stocks", "pts_%02d%02d%02d")
-    today_txt = txt_template % (today.year - 2000, today.month, today.day)
-    return today_txt
+    """datetime からPTS日付CSVファイルパス (拡張子なし) を生成
+
+    pts_data.get_pts_csv_path_for_date() に委譲。戻り値は ``.csv`` を含まない
+    既存契約を維持する。
+    """
+    csv_path = pts_data.get_pts_csv_path_for_date(today.date() if isinstance(today, datetime) else today)
+    if csv_path.endswith(".csv"):
+        return csv_path[:-4]
+    return csv_path
 
 
 def get_latest_pts_fname():

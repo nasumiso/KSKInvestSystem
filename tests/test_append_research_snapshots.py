@@ -479,3 +479,200 @@ class TestUpdateResearchSnapshots:
 
         loaded = rs.get_research_record("9999", db_path=db_path)
         assert len(loaded["snapshots"]) == 0
+
+
+class TestUpdatePtsReactions:
+    """update_pts_reactions のユニットテスト (issue #154)"""
+
+    @pytest.fixture
+    def setup_db(self, db_path, monkeypatch):
+        """research_shelve のパスを差し替え"""
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        from webapp import helpers as _helpers
+        monkeypatch.setattr(_helpers, "RESEARCH_SHELVE", db_path, raising=False)
+        return db_path
+
+    def test_writes_pts_for_today_kessan_in_watch_set(self, setup_db, monkeypatch):
+        """watch_set ∩ 当日決算 ∩ PTS データありの銘柄に PTS が書き込まれる"""
+        from datetime import datetime as _dt
+        today = _dt.today().date()
+        today_str = today.strftime("%Y/%m/%d")
+
+        stock = _make_stock("3496", kessanbi=today_str, stock_name="アズーム")
+        stock["kessan_quarter"] = 4
+        stocks = {"3496": stock}
+
+        monkeypatch.setattr(
+            "pts_data.load_pts_changes_for_date",
+            lambda d: {"3496": "+2.5"},
+        )
+
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=setup_db)
+
+        make_stock_db.update_pts_reactions({"3496"}, today, stocks=stocks)
+
+        loaded = rs.get_research_record("3496", db_path=setup_db)
+        assert len(loaded["kessan_comments"]) == 1
+        entry = loaded["kessan_comments"][0]
+        assert entry["kessanbi"] == today_str
+        assert entry["quarter"] == 4
+        assert entry["post_price_changes"]["pts"] == "+2.5"
+
+    def test_skips_when_kessanbi_is_not_today(self, setup_db, monkeypatch):
+        """kessanbi != today の銘柄には PTS を書き込まない"""
+        from datetime import datetime as _dt
+        today = _dt.today().date()
+        yesterday = _today_str(-1)
+
+        stock = _make_stock("3496", kessanbi=yesterday, stock_name="アズーム")
+        stock["kessan_quarter"] = 4
+        stocks = {"3496": stock}
+
+        monkeypatch.setattr(
+            "pts_data.load_pts_changes_for_date",
+            lambda d: {"3496": "+2.5"},
+        )
+
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=setup_db)
+
+        make_stock_db.update_pts_reactions({"3496"}, today, stocks=stocks)
+
+        loaded = rs.get_research_record("3496", db_path=setup_db)
+        assert loaded["kessan_comments"] == []
+
+    def test_skips_when_not_in_watch_set(self, setup_db, monkeypatch):
+        """watch_set 外の銘柄は PTS が書き込まれない (research DB 汚染防止)"""
+        from datetime import datetime as _dt
+        today = _dt.today().date()
+        today_str = today.strftime("%Y/%m/%d")
+
+        stock = _make_stock("3496", kessanbi=today_str, stock_name="アズーム")
+        stock["kessan_quarter"] = 4
+        stocks = {"3496": stock}
+
+        monkeypatch.setattr(
+            "pts_data.load_pts_changes_for_date",
+            lambda d: {"3496": "+2.5"},
+        )
+
+        # 事前レコードなし。watch_set にも含めない
+        make_stock_db.update_pts_reactions({"9999"}, today, stocks=stocks)
+
+        # 自動登録もされない (research DB 汚染なし)
+        assert rs.get_research_record("3496", db_path=setup_db) is None
+
+    def test_skips_when_pts_csv_missing(self, setup_db, monkeypatch):
+        """PTS CSV 不在 (空 dict) ならスキップ、書き込みなし"""
+        from datetime import datetime as _dt
+        today = _dt.today().date()
+        today_str = today.strftime("%Y/%m/%d")
+
+        stock = _make_stock("3496", kessanbi=today_str, stock_name="アズーム")
+        stock["kessan_quarter"] = 4
+        stocks = {"3496": stock}
+
+        # 空 dict (CSV 不在の擬似)
+        monkeypatch.setattr(
+            "pts_data.load_pts_changes_for_date",
+            lambda d: {},
+        )
+
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=setup_db)
+
+        make_stock_db.update_pts_reactions({"3496"}, today, stocks=stocks)
+
+        loaded = rs.get_research_record("3496", db_path=setup_db)
+        assert loaded["kessan_comments"] == []
+
+    def test_skips_when_pts_dict_lacks_code(self, setup_db, monkeypatch):
+        """PTS dict に当該銘柄のエントリが無ければスキップ"""
+        from datetime import datetime as _dt
+        today = _dt.today().date()
+        today_str = today.strftime("%Y/%m/%d")
+
+        stock = _make_stock("3496", kessanbi=today_str, stock_name="アズーム")
+        stock["kessan_quarter"] = 4
+        stocks = {"3496": stock}
+
+        monkeypatch.setattr(
+            "pts_data.load_pts_changes_for_date",
+            lambda d: {"7203": "+0.5"},  # 別銘柄しかない
+        )
+
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=setup_db)
+
+        make_stock_db.update_pts_reactions({"3496"}, today, stocks=stocks)
+
+        loaded = rs.get_research_record("3496", db_path=setup_db)
+        assert loaded["kessan_comments"] == []
+
+    def test_creates_kessan_entry_when_missing(self, setup_db, monkeypatch):
+        """kessan_comments が空でも PTS 用に新規エントリが作られる"""
+        from datetime import datetime as _dt
+        today = _dt.today().date()
+        today_str = today.strftime("%Y/%m/%d")
+
+        stock = _make_stock("3496", kessanbi=today_str, stock_name="アズーム")
+        stock["kessan_quarter"] = 4
+        stocks = {"3496": stock}
+
+        monkeypatch.setattr(
+            "pts_data.load_pts_changes_for_date",
+            lambda d: {"3496": "+1.2"},
+        )
+
+        # research_shelve は登録済みだが kessan_comments は空
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=setup_db)
+
+        make_stock_db.update_pts_reactions({"3496"}, today, stocks=stocks)
+
+        loaded = rs.get_research_record("3496", db_path=setup_db)
+        assert len(loaded["kessan_comments"]) == 1
+        entry = loaded["kessan_comments"][0]
+        assert entry["post_price_changes"]["pts"] == "+1.2"
+
+    def test_updates_pts_only_on_existing_entry(self, setup_db, monkeypatch):
+        """既存 (kessanbi, quarter) エントリの PTS のみ更新、他キーは保持"""
+        from datetime import datetime as _dt
+        today = _dt.today().date()
+        today_str = today.strftime("%Y/%m/%d")
+
+        stock = _make_stock("3496", kessanbi=today_str, stock_name="アズーム")
+        stock["kessan_quarter"] = 4
+        stocks = {"3496": stock}
+
+        monkeypatch.setattr(
+            "pts_data.load_pts_changes_for_date",
+            lambda d: {"3496": "+1.2"},
+        )
+
+        rec = rs.create_research_record("3496", "アズーム")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": today_str,
+                "quarter": 4,
+                "pre_expectation": "◎",
+                "pre_outlook": "強気",
+                "post_price_changes": {"1d": "", "5d": ""},
+                "post_comment": "",
+                "kessan_matagi": False,
+                "held_before_kessan": False,
+                "held_after_kessan": False,
+            },
+        ]
+        rs.upsert_research_record(rec, db_path=setup_db)
+
+        make_stock_db.update_pts_reactions({"3496"}, today, stocks=stocks)
+
+        loaded = rs.get_research_record("3496", db_path=setup_db)
+        entry = loaded["kessan_comments"][0]
+        assert entry["post_price_changes"]["pts"] == "+1.2"
+        # 他フィールドは保持
+        assert entry["pre_expectation"] == "◎"
+        assert entry["pre_outlook"] == "強気"

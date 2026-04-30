@@ -328,6 +328,40 @@ class TestCrud:
         entry = loaded["kessan_comments"][0]
         assert entry["post_price_changes"] == {"1d": "+3.2", "5d": "+5.1"}
 
+    def test_get_research_record_preserves_pts_key(self, db_path):
+        """PTS キー (issue #154) は normalize 後も保持される"""
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/04/30",
+            "quarter": 4,
+            "pre_expectation": "○",
+            "pre_outlook": "",
+            "post_price_changes": {"pts": "+2.5", "1d": "", "5d": ""},
+            "post_comment": "",
+        }]
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("5032", db_path=db_path)
+        entry = loaded["kessan_comments"][0]
+        assert entry["post_price_changes"].get("pts") == "+2.5"
+        assert entry["post_price_changes"].get("1d") == ""
+        assert entry["post_price_changes"].get("5d") == ""
+
+    def test_normalize_does_not_inject_pts_for_legacy_entries(self, db_path):
+        """旧形式 (post_price_change のみ) からの正規化では PTS は付与しない"""
+        rec = rs.create_research_record("5032", "ANYCOLOR")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/03/11",
+            "quarter": 3,
+            "pre_expectation": "○",
+            "pre_outlook": "",
+            "post_price_change": "-15",
+            "post_comment": "",
+        }]
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("5032", db_path=db_path)
+        entry = loaded["kessan_comments"][0]
+        assert "pts" not in entry["post_price_changes"]
+
 
 # ==================================================
 # スナップショット層: upsert_snapshot
