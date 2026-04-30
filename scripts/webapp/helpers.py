@@ -906,7 +906,9 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
             # （旧 post_price_change のみ持つレコードでも 1d 値を引き継ぐ）
             existing = comments[target_idx]
             existing_changes = normalize_kessan_post_price_changes(existing)
-            merged_changes: Dict[str, str] = {}
+            # 未知キー (例: "pts" — 別経路で書き込まれる) を保持するため
+            # 既存 dict をベースに 1d/5d だけ上書きマージする
+            merged_changes: Dict[str, str] = dict(existing_changes)
             for key, _ in KESSAN_REACTION_PERIODS:
                 new_v = post_price_changes.get(key, "")
                 old_v = existing_changes.get(key, "")
@@ -917,6 +919,87 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
             comments.append(new_entry)
 
         # 昇順ソート + 12件超の最古を削除
+        comments = _sort_kessan_comments(comments)
+        if len(comments) > MAX_KESSAN_COMMENTS:
+            comments = comments[-MAX_KESSAN_COMMENTS:]
+
+        record["kessan_comments"] = comments
+        upsert_research_record(record)
+
+    return new_entry
+
+
+def upsert_kessan_pts_change(
+    code_s: str,
+    kessanbi: str,
+    quarter: int,
+    pts_value: str,
+) -> Dict[str, Any]:
+    """当日決算銘柄の kessan_comments に PTS 騰落率を upsert する。
+
+    - 既存 (kessanbi, quarter) エントリがあれば post_price_changes['pts'] のみ更新
+    - 無ければ最小限のエントリを新規作成
+    - レコード自体が無ければ add_stock() で先行登録
+    - quarter は make_stock_db 側で stock['kessan_quarter'] から渡される
+
+    Args:
+        code_s: 銘柄コード
+        kessanbi: YYYY/MM/DD 形式
+        quarter: 1〜4 (0 は未取得扱い)
+        pts_value: "+2.5" 形式 (% 記号は除去済み、符号は保持)
+
+    Returns:
+        upsert したエントリ dict
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    if _parse_kessanbi(kessanbi) is None:
+        raise ValueError(f"kessanbi は YYYY/MM/DD 形式: got {kessanbi!r}")
+    pts_str = str(pts_value) if pts_value is not None else ""
+
+    # add_stock は内部で _flock を取るため _flock 外で呼ぶ
+    if get_research_record(normalized) is None:
+        try:
+            add_stock(normalized)
+        except ValueError:
+            # 競合で先に登録されたケースは続行 (再取得時に拾える)
+            pass
+
+    with _flock():
+        record = get_research_record(normalized)
+        if record is None:
+            raise ValueError(f"レコード登録失敗: {normalized}")
+
+        comments: List[Dict[str, Any]] = list(record.get("kessan_comments") or [])
+        target_idx = None
+        for i, entry in enumerate(comments):
+            if (
+                entry.get("kessanbi") == kessanbi
+                and int(entry.get("quarter", 0) or 0) == int(quarter or 0)
+            ):
+                target_idx = i
+                break
+
+        if target_idx is not None:
+            existing = comments[target_idx]
+            ppc = dict(existing.get("post_price_changes") or {})
+            ppc["pts"] = pts_str
+            existing["post_price_changes"] = ppc
+            new_entry = existing
+        else:
+            new_entry = {
+                "kessanbi": kessanbi,
+                "quarter": int(quarter or 0),
+                "pre_expectation": "",
+                "pre_outlook": "",
+                "post_price_changes": {"pts": pts_str},
+                "post_comment": "",
+                "kessan_matagi": False,
+                "held_before_kessan": False,
+                "held_after_kessan": False,
+            }
+            comments.append(new_entry)
+
         comments = _sort_kessan_comments(comments)
         if len(comments) > MAX_KESSAN_COMMENTS:
             comments = comments[-MAX_KESSAN_COMMENTS:]

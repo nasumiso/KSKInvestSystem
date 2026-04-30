@@ -1516,7 +1516,7 @@ def update_research_snapshots(*, db_path=None, code_filter=None):
         log_warning(
             "[research] my_watch_list.txt が見つからないためスナップショット自動追記をスキップ"
         )
-        return
+        return set()
     watch_set = set(watch_codes) | set(possess_codes)
     if code_filter is not None:
         filter_set = set(code_filter)
@@ -1620,6 +1620,52 @@ def update_research_snapshots(*, db_path=None, code_filter=None):
         + (f", {skipped_existing} 件スキップ(既存)" if skipped_existing else "")
     )
 
+    return watch_set
+
+
+def update_pts_reactions(watch_set, today_date, *, stocks=None):
+    """当日決算銘柄の kessan_comments に PTS 騰落率を追記する。
+
+    - today_date: datetime.date (get_price_day の戻り値)
+    - PTS CSV の日付と today_date が一致する場合のみ書き込み
+      (load_pts_changes_for_date が日付一致を保証)
+    - watch_set 制限で research_shelve 汚染を防ぐ
+    - stocks=None なら自前で load_stock_db() を呼ぶ (呼び出し側の重複ロード回避)
+    - PTS CSV 不在 / watch_set 空のときは warning + スキップ
+    """
+    import pts_data
+    from webapp.helpers import upsert_kessan_pts_change
+
+    if not watch_set:
+        log_warning("[pts] watch_set が空のため PTS 反応の追記をスキップ")
+        return
+
+    pts_changes = pts_data.load_pts_changes_for_date(today_date)
+    if not pts_changes:
+        log_warning("[pts] 当日 PTS CSV が見つからないため PTS 反応の追記をスキップ")
+        return
+
+    if stocks is None:
+        stocks = load_stock_db()
+
+    today_str = today_date.strftime("%Y/%m/%d")
+    written = 0
+    # PTS データ件数は当日決算 ~10件、watch_set は ~325件。
+    # 積を取って先に絞り込む方が走査件数が少なく意図が明確になる。
+    for code_s in watch_set & pts_changes.keys():
+        stock = stocks.get(code_s)
+        if not stock or stock.get("kessanbi") != today_str:
+            continue
+        quarter = int(stock.get("kessan_quarter") or 0)
+        try:
+            upsert_kessan_pts_change(
+                code_s, today_str, quarter, pts_changes[code_s]
+            )
+            written += 1
+        except Exception as e:
+            log_warning(f"[pts] PTS 反応の追記失敗: {code_s} {e}")
+    log_print(f"[pts] PTS 反応を当日決算銘柄 {written} 件に追記")
+
 
 # ==================================================
 # main
@@ -1682,7 +1728,9 @@ def main():
         )  # UPD_FORCE/UPD_REEVAL/UPD_INTERVAL
         if args.snapshot:
             # update 対象の銘柄に絞ってスナップショットを追記する
-            update_research_snapshots(code_filter=code_list)
+            watch_set = update_research_snapshots(code_filter=code_list)
+            today_date = get_price_day(datetime.today())
+            update_pts_reactions(watch_set or set(), today_date)
     elif command == "list":
         # DB内銘柄情報表示
         if args.codes:
@@ -1697,7 +1745,9 @@ def main():
         UPLOAD_CSV = True  # True/False
         UPDATE_PORTFOLIO = True
         list_all_db(UPLOAD_CSV, UPDATE_PORTFOLIO)
-        update_research_snapshots()
+        watch_set = update_research_snapshots()
+        today_date = get_price_day(datetime.today())
+        update_pts_reactions(watch_set or set(), today_date)
     elif command == "edit":
         edit_db()
     elif command == "backup":

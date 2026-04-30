@@ -115,6 +115,7 @@ def normalize_kessan_post_price_changes(entry: Dict[str, Any]) -> Dict[str, str]
     """決算コメントエントリの post_price_changes を正規化する。
 
     - 新形式 dict があれば各期間キーを str に正規化して返す
+    - dict に "pts" キー (PTS ナイトセッション前日比) があれば保持する
     - 無ければ旧 post_price_change を {"1d": <値>, "5d": ""} に補完
     - どちらも無ければ全期間 "" を返す
     """
@@ -124,6 +125,10 @@ def normalize_kessan_post_price_changes(entry: Dict[str, Any]) -> Dict[str, str]
         for key, _ in KESSAN_REACTION_PERIODS:
             v = raw.get(key, "")
             result[key] = str(v) if v else ""
+        # PTS は KESSAN_REACTION_PERIODS とは別系統 (時間軸が違う) なので個別に扱う
+        pts_v = raw.get("pts", "")
+        if pts_v:
+            result["pts"] = str(pts_v)
         return result
     legacy = entry.get("post_price_change", "") or ""
     if legacy:

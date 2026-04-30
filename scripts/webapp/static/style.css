@@ -229,6 +229,16 @@ nav .quick-search {
   font-weight: bold;
   margin-left: 4px;
 }
+.kessan-pts-label {
+  display: inline-block;
+  background: #34495e;
+  color: #fff;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 0.75em;
+  font-weight: bold;
+  margin-right: 3px;
+}
 .kessan-expectation-badge {
   display: inline-block;
   padding: 0 5px;
