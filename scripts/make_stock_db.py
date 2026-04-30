@@ -1623,7 +1623,7 @@ def update_research_snapshots(*, db_path=None, code_filter=None):
     return watch_set
 
 
-def update_pts_reactions(watch_set, today_date, *, stocks=None, db_path=None):
+def update_pts_reactions(watch_set, today_date, *, stocks=None):
     """当日決算銘柄の kessan_comments に PTS 騰落率を追記する。
 
     - today_date: datetime.date (get_price_day の戻り値)
