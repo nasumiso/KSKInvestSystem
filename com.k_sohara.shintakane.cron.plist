@@ -5,15 +5,12 @@
  launchctl load ~/Library/LaunchAgents/com.k_sohara.shintakane.cron.plist で反映
  編集したら、unload してから load し直すこと (launchctl print で実状態を確認)
 
- 案C (issue: launchd cron が走らない問題対応):
-   ノートPCはスリープ中が多いため、StartCalendarInterval だけだと
-   定刻にスリープしていると missed trigger が補完されず実行が抜ける。
-   StartInterval=1800 (30分) と RunAtLoad=true でスリープ復帰後の最初の起動でも
-   走るようにし、shintakane_cron.sh 側の「1日1回ガード」で過剰実行を抑える。
-   StartCalendarInterval は平日のみ指定するが、StartInterval は曜日に関係なく
-   発火するため、土日も30分ごとに shintakane_cron.sh が呼ばれる。ただし
-   shintakane_cron.sh の guard で「19時前」「当日実行済み」なら即exitするので、
-   実質的には平日19時以降の最初の起動で1回だけ Python が走る。 -->
+ 設計方針:
+   平日19:00 の StartCalendarInterval が定刻実行。
+   スリープ復帰の補完は RunAtLoad=true (ログイン/再起動/launchctl load 時に1回)
+   に任せる。スリープ頻度が低い前提なら、これで十分。
+   shintakane_cron.sh 側の TTY 検知ガードで、launchd 経由かつ19時前の起動
+   (例: 朝マシンを開いた時の RunAtLoad 発火) のみサイレントスキップする。 -->
 <plist version="1.0">
   <dict>
     <key>Label</key>
@@ -24,8 +21,7 @@
       <string>/Users/k_sohara/Library/CloudStorage/Dropbox/document/shintakane/shintakane_cron.sh</string>
     </array>
 
-    <!-- 平日(月〜金)19:00 に定刻実行。スリープ中なら missed されるため、
-         下記 StartInterval / RunAtLoad で補完する。 -->
+    <!-- 平日(月〜金)19:00 に定刻実行 -->
     <key>StartCalendarInterval</key>
     <array>
       <dict>
@@ -55,14 +51,7 @@
       </dict>
     </array>
 
-    <!-- 30分ごとの補完起動。スリープから復帰した直後の30分以内に確実に発火する。
-         shintakane_cron.sh の guard で土日や19時前は即exitするので、
-         実害なく「平日19時以降の最初のwake」で1回だけ実行される。 -->
-    <key>StartInterval</key>
-    <integer>1800</integer>
-
-    <!-- ログイン/再起動/launchctl load 時にも 1 回起動。
-         shintakane_cron.sh の guard でスキップ条件はそのまま効く。 -->
+    <!-- ログイン/再起動/launchctl load 時にも 1 回起動 (19時前なら shintakane_cron.sh のガードでスキップ) -->
     <key>RunAtLoad</key>
     <true/>
 

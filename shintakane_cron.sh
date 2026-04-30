@@ -4,23 +4,10 @@
 cd "$(dirname "$0")" || exit 1
 mkdir -p logs
 
-# ===== 1日1回ガード (案C: ノートPC運用、スリープ復帰後に最初の起動で走らせる) =====
-# launchd の StartInterval=1800 (30分) で何度も起動されるが、本ガードにより
-# 「19時以降」かつ「当日まだ未実行」の最初の起動でのみ Python を起動する。
-# 19時前の起動 (RunAtLoad=true での起動含む) は即座にスキップ。
-LAST_RUN_FILE="$HOME/.shintakane_cron_last_run"
-TODAY=$(date +%Y-%m-%d)
-TARGET_HOUR=19
-CURRENT_HOUR=$(date +%-H)  # %-H は0埋めなし (例: 09 ではなく 9)
-if [ -f "$LAST_RUN_FILE" ]; then
-  LAST_DATE=$(cat "$LAST_RUN_FILE" 2>/dev/null)
-  if [ "$LAST_DATE" = "$TODAY" ]; then
-    # 既に当日実行済み — サイレント終了 (launchdが30分毎に呼んでもログを汚さない)
-    exit 0
-  fi
-fi
-if [ "$CURRENT_HOUR" -lt "$TARGET_HOUR" ]; then
-  # 19時前 — サイレント終了
+# launchd 経由の起動 (TTYなし) のみ「19時前ならスキップ」を適用。
+# 朝マシンを開いた時に RunAtLoad=true で発火しても、株価終値が揃ってない時間帯では
+# 走らせたくない。一方、手動で `bash shintakane_cron.sh` を打った時は時刻問わず実行する。
+if [ ! -t 1 ] && [ "$(date +%-H)" -lt 19 ]; then
   exit 0
 fi
 
@@ -79,9 +66,3 @@ echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行結果 ====="
 report "shintakane.py" $RET1 ../logs/shintakane.log
 report "make_stock_db.py" $RET2 ../logs/make_stock_db.log
 echo "================================================"
-
-# 1日1回ガード用フラグ更新: 両方成功した場合のみ「当日完了」とマーク
-# (片方でも失敗していたらフラグを立てず、次の30分後の起動でリトライさせる)
-if [ "$RET1" -eq 0 ] && [ "$RET2" -eq 0 ]; then
-  echo "$TODAY" > "$LAST_RUN_FILE"
-fi
