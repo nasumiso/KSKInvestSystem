@@ -607,6 +607,8 @@ tr:hover { background: #f5f5f5; }
 .signal-sell { background: #fdedec; color: #c0392b; font-weight: bold; }
 .signal-buy { background: #eafaf1; color: #27ae60; font-weight: bold; }
 .trend-good { color: #27ae60; font-weight: bold; }
+.rs-strong { color: #27ae60; font-weight: bold; }
+.rs-weak { color: #c0392b; font-weight: bold; }
 
 /* 決算 */
 .kessan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
@@ -750,6 +752,44 @@ def _html_theme_rank(market_db, theme_rank_data=None):
     return '\n'.join(parts)
 
 
+# 指数向けトレンドテンプレート判定で「RS基準達成」とみなす rs_raw 閾値 (issue #148 Part 1)。
+# 銘柄向けの rs_rank>=75 は指数 (TOPIX 自身など) では常に未達となるため、
+# 直近1年で 5% 以上上昇していれば「RS基準達成」扱いとする緩い基準を採用。
+INDEX_RS_TREND_THRESHOLD = 1.05
+
+
+def _adjust_index_trend_template(db):
+    """指数向けに trend_template の RS 基準を補正する。
+
+    銘柄向けの rs_rank>=75 判定は指数では常に未達となるため、
+    rs_raw > INDEX_RS_TREND_THRESHOLD なら "RS" を未達リストから外す。
+
+    Args:
+        db: 指数DBの1指数分dict (rs_raw, trend_template を持つ)
+    Returns:
+        dict: trend_template だけ補正したコピー (元dictは破壊しない)
+    """
+    misses = list(db.get("trend_template", []))
+    if "RS" in misses and db.get("rs_raw", 0) > INDEX_RS_TREND_THRESHOLD:
+        misses.remove("RS")
+    adjusted = dict(db)
+    adjusted["trend_template"] = misses
+    return adjusted
+
+
+def _rs_class(rs_raw):
+    """rs_raw 値からCSSクラス名を返す。
+    >1.0=rs-strong (緑) / <1.0=rs-weak (赤) / =1.0 もしくは未取得 = クラスなし
+    """
+    if not rs_raw:
+        return ""
+    if rs_raw > 1.0:
+        return ' class="rs-strong"'
+    if rs_raw < 1.0:
+        return ' class="rs-weak"'
+    return ""
+
+
 def _html_market(market_db):
     """市場指標セクションのHTMLを生成する
 
@@ -772,7 +812,9 @@ def _html_market(market_db):
             continue
         try:
             db = market_db[db_name]
-            trend_expr = make_stock_db.get_trend_template_expr(db)
+            # 指数向けに trend_template の RS 基準を補正してから表示文字列を作る (issue #148 Part 1)
+            adjusted_db = _adjust_index_trend_template(db)
+            trend_expr = make_stock_db.get_trend_template_expr(adjusted_db)
             distribution_days = ", ".join([s[3:] for s in db.get("distribution_days", [])])
             followthrough_days = ", ".join([s[3:] for s in db.get("followthrough_days", [])])
             signal = db.get("direction_signal", "")
@@ -791,10 +833,13 @@ def _html_market(market_db):
             if trend_expr.startswith("◯") or trend_expr.startswith("◎"):
                 trend_class = ' class="trend-good"'
 
+            rs_raw = db.get("rs_raw", "")
+            rs_class = _rs_class(rs_raw)
+
             rows_html.append(
                 '<tr>\n'
                 '  <td><strong>%s</strong></td>\n'
-                '  <td>%s</td>\n'
+                '  <td%s>%s</td>\n'
                 '  <td%s>%s</td>\n'
                 '  <td>%s</td>\n'
                 '  <td>%s</td>\n'
@@ -803,7 +848,7 @@ def _html_market(market_db):
                 '  <td>%.1f, %.1f</td>\n'
                 '</tr>' % (
                     html_mod.escape(market_name),
-                    db.get("rs_raw", ""),
+                    rs_class, rs_raw,
                     trend_class, html_mod.escape(str(trend_expr)),
                     html_mod.escape(distribution_days),
                     html_mod.escape(followthrough_days),

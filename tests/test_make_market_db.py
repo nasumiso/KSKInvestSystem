@@ -449,6 +449,110 @@ class TestHtmlMarket:
         assert "NASDAQ" not in result
         assert "S&amp;P 500" not in result
 
+    def test_rs_strong_class_when_rs_raw_above_one(self):
+        """rs_raw > 1.0 で rs-strong クラスが付く (issue #148 Part 1)"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert 'rs-strong' in result
+
+    def test_rs_weak_class_when_rs_raw_below_one(self):
+        """rs_raw < 1.0 で rs-weak クラスが付く (issue #148 Part 1)"""
+        db = self._make_market_db()
+        db["topix"]["rs_raw"] = 0.92
+        result = make_market_db._html_market(db)
+        assert 'rs-weak' in result
+
+    def test_rs_no_class_when_rs_raw_equals_one(self):
+        """rs_raw == 1.0 ではクラス付かない (デフォルト灰)"""
+        db = {
+            "topix": dict(self._make_market_db()["topix"], rs_raw=1.0)
+        }
+        result = make_market_db._html_market(db)
+        assert 'rs-strong' not in result
+        assert 'rs-weak' not in result
+
+    def test_index_rs_threshold_removes_RS_from_trend(self):
+        """rs_raw > 1.05 なら trend_template の "RS" 未達が除外される (issue #148 Part 1)"""
+        db = {
+            "mothers": dict(
+                self._make_market_db()["mothers"],
+                rs_raw=1.09,
+                trend_template=["ma30>ma40", "RS"],
+            )
+        }
+        result = make_market_db._html_market(db)
+        # "RS" が除外されたので残りは ma30>ma40 のみ → trend_template_expr は "◯ma30>ma40"
+        # "RS" だけの未達文字列が表示文字列に出てないことを確認
+        # (ma30>ma40 はタグとして残るので含まれる)
+        assert ',RS' not in result and 'RS,' not in result
+
+    def test_index_rs_threshold_below_does_not_remove_RS(self):
+        """rs_raw <= 1.05 なら "RS" 未達は除外されない"""
+        db = {
+            "mothers": dict(
+                self._make_market_db()["mothers"],
+                rs_raw=1.04,
+                trend_template=["ma30>ma40", "RS"],
+            )
+        }
+        result = make_market_db._html_market(db)
+        # 未達リストに "RS" が含まれて表示される (◯ma30>ma40,RS のような形)
+        assert 'RS' in result
+
+
+class TestAdjustIndexTrendTemplate:
+    """指数向け trend_template 補正のテスト (issue #148 Part 1)"""
+
+    def test_removes_RS_when_above_threshold(self):
+        """rs_raw > 1.05 で "RS" が除外される"""
+        db = {"rs_raw": 1.10, "trend_template": ["ma30>ma40", "RS"]}
+        result = make_market_db._adjust_index_trend_template(db)
+        assert "RS" not in result["trend_template"]
+        assert "ma30>ma40" in result["trend_template"]
+
+    def test_keeps_RS_at_threshold(self):
+        """rs_raw == 1.05 (境界値、strict >) では除外されない"""
+        db = {"rs_raw": 1.05, "trend_template": ["RS"]}
+        result = make_market_db._adjust_index_trend_template(db)
+        assert "RS" in result["trend_template"]
+
+    def test_keeps_RS_when_below_threshold(self):
+        """rs_raw < 1.05 では "RS" は除外されない"""
+        db = {"rs_raw": 1.02, "trend_template": ["RS"]}
+        result = make_market_db._adjust_index_trend_template(db)
+        assert "RS" in result["trend_template"]
+
+    def test_no_op_when_RS_not_in_misses(self):
+        """trend_template に "RS" がなければ何もしない"""
+        db = {"rs_raw": 1.20, "trend_template": ["ma30>ma40"]}
+        result = make_market_db._adjust_index_trend_template(db)
+        assert result["trend_template"] == ["ma30>ma40"]
+
+    def test_does_not_mutate_original(self):
+        """元のdictを破壊しない"""
+        original = {"rs_raw": 1.20, "trend_template": ["RS"]}
+        original_misses = list(original["trend_template"])
+        make_market_db._adjust_index_trend_template(original)
+        assert original["trend_template"] == original_misses
+
+
+class TestRsClass:
+    """rs_raw 値からCSSクラスを返すテスト (issue #148 Part 1)"""
+
+    def test_strong_when_above_one(self):
+        assert make_market_db._rs_class(1.15) == ' class="rs-strong"'
+
+    def test_weak_when_below_one(self):
+        assert make_market_db._rs_class(0.92) == ' class="rs-weak"'
+
+    def test_no_class_when_equal_one(self):
+        assert make_market_db._rs_class(1.0) == ""
+
+    def test_no_class_when_zero(self):
+        assert make_market_db._rs_class(0) == ""
+
+    def test_no_class_when_empty_string(self):
+        assert make_market_db._rs_class("") == ""
+
 
 class TestHtmlKessan:
     """決算HTML生成テスト"""
