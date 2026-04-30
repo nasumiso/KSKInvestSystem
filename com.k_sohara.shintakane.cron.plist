@@ -1,9 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
- <!-- これを~/Library/LaunchAgents/ に配置 
- launchctl start com.k_sohara.shintakane.cronで実行 
- 編集したら、startをunload/loadして反映 -->
+ <!-- これを~/Library/LaunchAgents/ に配置
+ launchctl load ~/Library/LaunchAgents/com.k_sohara.shintakane.cron.plist で反映
+ 編集したら、unload してから load し直すこと (launchctl print で実状態を確認)
+
+ 案C (issue: launchd cron が走らない問題対応):
+   ノートPCはスリープ中が多いため、StartCalendarInterval だけだと
+   定刻にスリープしていると missed trigger が補完されず実行が抜ける。
+   StartInterval=1800 (30分) と RunAtLoad=true でスリープ復帰後の最初の起動でも
+   走るようにし、shintakane_cron.sh 側の「1日1回ガード」で過剰実行を抑える。
+   StartCalendarInterval は平日のみ指定するが、StartInterval は曜日に関係なく
+   発火するため、土日も30分ごとに shintakane_cron.sh が呼ばれる。ただし
+   shintakane_cron.sh の guard で「19時前」「当日実行済み」なら即exitするので、
+   実質的には平日19時以降の最初の起動で1回だけ Python が走る。 -->
 <plist version="1.0">
   <dict>
     <key>Label</key>
@@ -14,45 +24,53 @@
       <string>/Users/k_sohara/Library/CloudStorage/Dropbox/document/shintakane/shintakane_cron.sh</string>
     </array>
 
-    <!-- 平日（月〜金）18:00 に実行 -->
+    <!-- 平日(月〜金)19:00 に定刻実行。スリープ中なら missed されるため、
+         下記 StartInterval / RunAtLoad で補完する。 -->
     <key>StartCalendarInterval</key>
     <array>
       <dict>
         <key>Weekday</key><integer>1</integer>
-        <key>Hour</key><integer>18</integer>
+        <key>Hour</key><integer>19</integer>
         <key>Minute</key><integer>0</integer>
       </dict>
       <dict>
         <key>Weekday</key><integer>2</integer>
-        <key>Hour</key><integer>18</integer>
+        <key>Hour</key><integer>19</integer>
         <key>Minute</key><integer>0</integer>
       </dict>
       <dict>
         <key>Weekday</key><integer>3</integer>
-        <key>Hour</key><integer>18</integer>
+        <key>Hour</key><integer>19</integer>
         <key>Minute</key><integer>0</integer>
       </dict>
       <dict>
         <key>Weekday</key><integer>4</integer>
-        <key>Hour</key><integer>18</integer>
+        <key>Hour</key><integer>19</integer>
         <key>Minute</key><integer>0</integer>
       </dict>
       <dict>
         <key>Weekday</key><integer>5</integer>
-        <key>Hour</key><integer>18</integer>
+        <key>Hour</key><integer>19</integer>
         <key>Minute</key><integer>0</integer>
       </dict>
     </array>
+
+    <!-- 30分ごとの補完起動。スリープから復帰した直後の30分以内に確実に発火する。
+         shintakane_cron.sh の guard で土日や19時前は即exitするので、
+         実害なく「平日19時以降の最初のwake」で1回だけ実行される。 -->
+    <key>StartInterval</key>
+    <integer>1800</integer>
+
+    <!-- ログイン/再起動/launchctl load 時にも 1 回起動。
+         shintakane_cron.sh の guard でスキップ条件はそのまま効く。 -->
+    <key>RunAtLoad</key>
+    <true/>
 
     <!-- ログ出力 -->
     <key>StandardOutPath</key>
     <string>/tmp/shintakane_launchd_stdout.log</string>
     <key>StandardErrorPath</key>
     <string>/tmp/shintakane_launchd_stderr.log</string>
-
-    <!-- スリープから復帰後に実行 -->
-    <key>StartOnMount</key>
-    <true/>
 
     <!-- 環境変数の継承 -->
     <key>EnvironmentVariables</key>
