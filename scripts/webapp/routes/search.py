@@ -17,14 +17,29 @@ def index():
     rating = request.args.get("rating", "").strip() or None
     keyword = request.args.get("keyword", "").strip() or None
     code_s = request.args.get("code_s", "").strip()
+    # ナビの汎用検索欄: code_s 部分一致 OR 銘柄名(他テキスト)部分一致
+    q = request.args.get("q", "").strip()
 
-    records = search_records(rating=rating, keyword=keyword)
-
-    # 銘柄コードフィルタ (部分一致)
-    if code_s:
-        records = [
-            r for r in records if code_s.upper() in r.get("code_s", "")
+    if q:
+        # q は code_s 部分一致 OR keyword 一致 (search_records が見る複数フィールド)
+        q_upper = q.upper()
+        code_match = [
+            r for r in search_records(rating=rating)
+            if q_upper in r.get("code_s", "")
         ]
+        keyword_match = search_records(rating=rating, keyword=q)
+        seen = set()
+        records = []
+        for r in code_match + keyword_match:
+            cs = r.get("code_s", "")
+            if cs and cs not in seen:
+                seen.add(cs)
+                records.append(r)
+        records.sort(key=lambda r: r.get("code_s", ""))
+    else:
+        records = search_records(rating=rating, keyword=keyword)
+        if code_s:
+            records = [r for r in records if code_s.upper() in r.get("code_s", "")]
 
     return render_template(
         "search.html",
@@ -32,6 +47,7 @@ def index():
         filter_rating=rating or "",
         filter_keyword=keyword or "",
         filter_code_s=code_s,
+        filter_q=q,
     )
 
 

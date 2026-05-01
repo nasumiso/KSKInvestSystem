@@ -28,11 +28,18 @@ def stock_detail(code_s: str):
     disclosures = get_disclosures(code_s)
     disclosures_has_recent = has_recent_disclosure(disclosures, days=7)
 
+    snapshots = record.get("snapshots") or []
+    indicator_snaps = [
+        s for s in snapshots
+        if s.get("quality_indicators") or s.get("rironkabuka_kairi")
+    ]
+
     return render_template(
         "detail.html",
         record=record,
         stock=stock,
         disclosures=disclosures,
         disclosures_has_recent=disclosures_has_recent,
+        indicator_snaps=indicator_snaps,
         valid_ratings=sorted(VALID_RATINGS - {""}),
     )
