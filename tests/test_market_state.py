@@ -265,6 +265,117 @@ class TestDeriveState:
 
 
 # ==================================================
+# is_below_10ma_clearly (issue #117 Part B)
+# ==================================================
+class TestIsBelow10maClearly:
+    """週足10MA 明確割れ判定"""
+
+    def test_kairi_above_threshold(self):
+        """kairi = -0.5% (閾値より上) → False"""
+        assert ms.is_below_10ma_clearly(-0.5) is False
+
+    def test_kairi_at_threshold(self):
+        """kairi = -1.0% (境界) → True"""
+        assert ms.is_below_10ma_clearly(-1.0) is True
+
+    def test_kairi_below_threshold(self):
+        """kairi = -1.5% → True"""
+        assert ms.is_below_10ma_clearly(-1.5) is True
+
+    def test_kairi_positive(self):
+        """kairi = 1.0% (上) → False"""
+        assert ms.is_below_10ma_clearly(1.0) is False
+
+    def test_kairi_zero(self):
+        assert ms.is_below_10ma_clearly(0) is False
+
+    def test_kairi_none(self):
+        assert ms.is_below_10ma_clearly(None) is False
+
+    def test_kairi_invalid(self):
+        assert ms.is_below_10ma_clearly("foo") is False
+
+
+# ==================================================
+# derive_state with below_10ma (issue #117 Part B 補助遷移)
+# ==================================================
+class TestDeriveStateWith10maAux:
+    """週足10MA 補助遷移ルール"""
+
+    def test_confirmed_to_pressure_via_below_10ma(self):
+        """DD<4 でも 10MA明確割れで pressure 降格"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.CONFIRMED_UPTREND, valid_dd_count=2, ftd_today=False,
+            below_10ma=True,
+        )
+        assert state == ms.UPTREND_UNDER_PRESSURE
+        assert trigger == "below_10ma"
+
+    def test_confirmed_to_correction_via_dd4_and_below_10ma(self):
+        """DD=4 + 10MA明確割れ で correction 降格 (correction優先)"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.CONFIRMED_UPTREND, valid_dd_count=4, ftd_today=False,
+            below_10ma=True,
+        )
+        assert state == ms.MARKET_IN_CORRECTION
+        assert trigger == "dd>=4_and_below_10ma"
+
+    def test_confirmed_stays_pressure_when_dd4_above_10ma(self):
+        """DD=4 + 10MA上 → pressure 降格 (correction にはならない、現状挙動維持)"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.CONFIRMED_UPTREND, valid_dd_count=4, ftd_today=False,
+            below_10ma=False,
+        )
+        assert state == ms.UPTREND_UNDER_PRESSURE
+        assert trigger == "dd>=4"
+
+    def test_confirmed_to_correction_via_dd6_ignores_10ma(self):
+        """DD≥6 なら 10MA関係なく correction (DD>=6が最優先)"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.CONFIRMED_UPTREND, valid_dd_count=6, ftd_today=False,
+            below_10ma=False,
+        )
+        assert state == ms.MARKET_IN_CORRECTION
+        assert trigger == "dd>=6"
+
+    def test_pressure_stays_when_dd_low_below_10ma(self):
+        """DD<4 だが 10MA明確割れ → pressure 維持 (復帰しない)"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.UPTREND_UNDER_PRESSURE, valid_dd_count=2, ftd_today=False,
+            below_10ma=True,
+        )
+        assert state == ms.UPTREND_UNDER_PRESSURE
+        assert trigger == "stay"
+
+    def test_pressure_to_confirmed_when_dd_low_and_above_10ma(self):
+        """DD<4 + 10MA上 → confirmed 復帰"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.UPTREND_UNDER_PRESSURE, valid_dd_count=2, ftd_today=False,
+            below_10ma=False,
+        )
+        assert state == ms.CONFIRMED_UPTREND
+        assert trigger == "dd<4_recover"
+
+    def test_correction_to_confirmed_via_ftd_ignores_10ma(self):
+        """FTD出れば10MA関係なく confirmed"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.MARKET_IN_CORRECTION, valid_dd_count=10, ftd_today=True,
+            below_10ma=True,
+        )
+        assert state == ms.CONFIRMED_UPTREND
+        assert trigger == "ftd"
+
+    def test_below_10ma_default_false_backward_compat(self):
+        """引数省略で既存挙動維持 (10MAルール不発動)"""
+        # confirmed + DD=2 + below_10ma 引数なし → confirmed 維持
+        state, trigger = ms.derive_state(
+            prev_state=ms.CONFIRMED_UPTREND, valid_dd_count=2, ftd_today=False,
+        )
+        assert state == ms.CONFIRMED_UPTREND
+        assert trigger == "stay"
+
+
+# ==================================================
 # append_state_history
 # ==================================================
 class TestAppendStateHistory:

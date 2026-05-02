@@ -37,6 +37,11 @@ DD_THRESHOLD_TO_CONFIRMED_FROM_PRESSURE = 4  # pressure → confirmed: DD < 4 �
 FTD_GAIN_THRESHOLD = 1.0  # %、ラリー Day 4 以降の最低上昇率
 FTD_MIN_DAYS_FROM_RALLY_START = 3  # Day 1 から3取引日後 = Day 4
 
+# 週足10MA 補助遷移 (issue #117 Part B)
+# 週足10MA = 日足50MA とほぼ同義 (10週 ≈ 50営業日)。指数価格の中期トレンド維持を補助判定する。
+# 単純な < 0 ではノイズに反応するため、明確に下回る水準として -1% を採用。
+WEEKLY_10MA_BREAK_THRESHOLD = -1.0  # %、price_kairi_wma10 がこれ以下なら明確割れ
+
 # state_history 保持件数
 STATE_HISTORY_MAX = 30
 
@@ -180,10 +185,27 @@ def check_follow_through_day(today, prev, rally_meta, daily_history):
 # ==================================================
 # 状態遷移
 # ==================================================
-def derive_state(prev_state, valid_dd_count, ftd_today):
-    """前日 state と当日の DD 数 / FTD成立から、新 state を計算する (純関数)。
+def is_below_10ma_clearly(kairi):
+    """price_kairi_wma10 から「10週MA明確割れ」を判定する純関数 (issue #117 Part B)。
 
-    遷移ルール:
+    Args:
+        kairi: price_kairi_wma10 (10週MAとの乖離率%)。None や数値以外の場合は False
+
+    Returns:
+        bool: kairi <= WEEKLY_10MA_BREAK_THRESHOLD (= -1.0%) なら True
+    """
+    if kairi is None:
+        return False
+    try:
+        return float(kairi) <= WEEKLY_10MA_BREAK_THRESHOLD
+    except (TypeError, ValueError):
+        return False
+
+
+def derive_state(prev_state, valid_dd_count, ftd_today, below_10ma=False):
+    """前日 state と当日の DD 数 / FTD成立 / 10MA割れから、新 state を計算する (純関数)。
+
+    遷移ルール (DD/FTD ベース):
     - market_in_correction → confirmed_uptrend: FTD成立
     - confirmed_uptrend → uptrend_under_pressure: 有効DD ≥ 4 (かつ < 6)
     - confirmed_uptrend → market_in_correction: 有効DD ≥ 6
@@ -191,16 +213,22 @@ def derive_state(prev_state, valid_dd_count, ftd_today):
     - uptrend_under_pressure → confirmed_uptrend: 有効DD < 4
     - それ以外: 状態維持
 
+    補助ルール (issue #117 Part B、週足10MA明確割れ = price_kairi_wma10 <= -1%):
+    - confirmed_uptrend → market_in_correction: DD ≥ 4 かつ 10MA明確割れ (correction優先)
+    - confirmed_uptrend → uptrend_under_pressure: DD < 4 でも 10MA明確割れ
+    - uptrend_under_pressure → confirmed_uptrend: DD < 4 かつ NOT 10MA明確割れ
+
     Args:
         prev_state: 前日の state (None の場合は初期判定)
         valid_dd_count: 有効DD数
         ftd_today: bool 当日 FTD 成立か
+        below_10ma: bool 週足10MA明確割れ (is_below_10ma_clearly の結果を渡す)
 
     Returns:
         tuple: (new_state, trigger_reason)
-            trigger_reason: 遷移理由文字列 ("ftd" / "dd>=4" / "dd>=6" / "dd<4_recover" / "init" / "stay")
     """
     # 初回 (prev_state なし) は遷移ルールと同じ閾値で判定
+    # 補助ルールは初回判定では使わない (履歴がないため安全側)
     if prev_state is None or prev_state not in ALL_STATES:
         if valid_dd_count >= DD_THRESHOLD_TO_CORRECTION:
             return MARKET_IN_CORRECTION, "init"
@@ -214,16 +242,21 @@ def derive_state(prev_state, valid_dd_count, ftd_today):
         return MARKET_IN_CORRECTION, "stay"
 
     if prev_state == CONFIRMED_UPTREND:
+        # correction を優先評価 (より厳しい状態を優先)
         if valid_dd_count >= DD_THRESHOLD_TO_CORRECTION:
             return MARKET_IN_CORRECTION, "dd>=6"
+        if valid_dd_count >= DD_THRESHOLD_TO_PRESSURE and below_10ma:
+            return MARKET_IN_CORRECTION, "dd>=4_and_below_10ma"
         if valid_dd_count >= DD_THRESHOLD_TO_PRESSURE:
             return UPTREND_UNDER_PRESSURE, "dd>=4"
+        if below_10ma:
+            return UPTREND_UNDER_PRESSURE, "below_10ma"
         return CONFIRMED_UPTREND, "stay"
 
     if prev_state == UPTREND_UNDER_PRESSURE:
         if valid_dd_count >= DD_THRESHOLD_TO_CORRECTION:
             return MARKET_IN_CORRECTION, "dd>=6"
-        if valid_dd_count < DD_THRESHOLD_TO_CONFIRMED_FROM_PRESSURE:
+        if valid_dd_count < DD_THRESHOLD_TO_CONFIRMED_FROM_PRESSURE and not below_10ma:
             return CONFIRMED_UPTREND, "dd<4_recover"
         return UPTREND_UNDER_PRESSURE, "stay"
 

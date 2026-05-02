@@ -493,11 +493,15 @@ def _update_index_market_state(prev_index_db, new_index_db):
                 today_dict, prev_dict, rally_meta, daily_history,
             )
 
-    # 6. 状態遷移
+    # 6. 状態遷移 (DD/FTD + 週足10MA明確割れ補助ルール、issue #117 Part B)
+    below_10ma = market_state.is_below_10ma_clearly(
+        new_index_db.get("price_kairi_wma10")
+    )
     new_state, trigger = market_state.derive_state(
         prev_state=prev_state,
         valid_dd_count=len(valid_dd),
         ftd_today=ftd_today,
+        below_10ma=below_10ma,
     )
 
     # 7. state_history 更新
