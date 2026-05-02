@@ -99,6 +99,50 @@ class TestGetTrendTemplateExpr:
 
 
 # ==================================================
+# get_index_trend_template_expr (issue #117 Part B)
+# ==================================================
+class TestGetIndexTrendTemplateExpr:
+    """指数向けトレンドテンプレート簡略表記"""
+
+    def test_no_key(self):
+        assert make_stock_db.get_index_trend_template_expr({}) == ("-", "")
+
+    def test_perfect(self):
+        """全通過 → ◎ 7/7、ホバー文字列は空"""
+        assert make_stock_db.get_index_trend_template_expr({"trend_template": []}) == ("◎ 7/7", "")
+
+    def test_minor_miss(self):
+        """1-2 不通過 → ◯ N/7、ホバーに不通過項目"""
+        display, miss = make_stock_db.get_index_trend_template_expr(
+            {"trend_template": ["ma30>ma40", "RS"]}
+        )
+        assert display == "◯ 5/7"
+        assert miss == "ma30>ma40,RS"
+
+    def test_moderate_miss(self):
+        """3-4 不通過 → ▲ N/7"""
+        display, miss = make_stock_db.get_index_trend_template_expr(
+            {"trend_template": ["a", "b", "c", "d"]}
+        )
+        assert display == "▲ 3/7"
+        assert miss == "a,b,c,d"
+
+    def test_many_miss(self):
+        """5-7 不通過 → △ N/7"""
+        display, miss = make_stock_db.get_index_trend_template_expr(
+            {"trend_template": ["a", "b", "c", "d", "e"]}
+        )
+        assert display == "△ 2/7"
+        assert miss == "a,b,c,d,e"
+
+    def test_all_miss(self):
+        display, miss = make_stock_db.get_index_trend_template_expr(
+            {"trend_template": ["a", "b", "c", "d", "e", "f", "g"]}
+        )
+        assert display == "△ 0/7"
+
+
+# ==================================================
 # make_signal
 # ==================================================
 class TestMakeSignal:

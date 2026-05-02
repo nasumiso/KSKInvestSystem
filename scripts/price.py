@@ -260,7 +260,89 @@ def parse_price_d_html_kabutan(html):
     ):
         daily_price_list.append(m.groups())
 
-    return _calc_daily_indicators(daily_price_list)
+    dic = _calc_daily_indicators(daily_price_list)
+    # Stalling Day を後付け検出するため raw データを内部的に保持 (Part B)
+    if dic:
+        dic["_daily_price_list_raw"] = daily_price_list
+    return dic
+
+
+def _is_stalling_day(d, pd, high52_weekly):
+    """Stalling Day (停滞日) 判定 (O'Neil 原典準拠 / issue #117 Part B)
+
+    条件 (すべて満たす):
+    - 52週高値の97%以上 (高値圏)
+    - 前日比が 0% 超 ~ +0.4% 未満 (微増)
+    - 出来高が前日より増加
+    - 終値が日足の下半分 (高値から引けが離れた)
+
+    Args:
+        d: 当日 8要素タプル (日付, 始値, 高値, 安値, 終値, 前日比, 前日比%, 売買高)
+        pd: 前日 8要素タプル
+        high52_weekly: 52週高値 (週足から計算済)
+    Returns:
+        bool: Stalling Day なら True
+    """
+    if not high52_weekly or high52_weekly <= 0:
+        return False
+    try:
+        dh = float(d[2].replace(",", ""))
+        dl = float(d[3].replace(",", ""))
+        dp = float(d[4].replace(",", ""))
+        dv = int(d[7].replace(",", ""))
+        pdv = int(pd[7].replace(",", ""))
+        dr = float(d[6].replace(",", ""))
+    except (ValueError, IndexError):
+        return False
+    if dp < high52_weekly * 0.97:
+        return False
+    if not (0 < dr < 0.4):
+        return False
+    if dv <= pdv:
+        return False
+    if dh <= dl:
+        return False
+    return dp <= dl + (dh - dl) / 2
+
+
+def add_stalling_days(dic, daily_price_list, high52_weekly):
+    """既存の日次指標 dict に Stalling Day を追加検出する (issue #117 Part B)
+
+    `_calc_daily_indicators` で計算した distribution_days* の結果に、
+    Stalling Day を後付けで追加する。通常DDと重複しない日のみ追加。
+    日付順序は古い→新しい (元々の append 順) を保つ。
+
+    Args:
+        dic: _calc_daily_indicators の戻り値 dict
+        daily_price_list: 元の日次価格リスト (新しい日が先頭)
+        high52_weekly: 52週高値 (週足計算後に取得可能になる)
+    Returns:
+        dict: 同じ dict (in-place 更新)
+    """
+    if not high52_weekly or not daily_price_list or not dic:
+        return dic
+    count_day = 20
+    target_days = list(reversed(daily_price_list[: count_day + 1]))
+    if len(target_days) < 2:
+        return dic
+    existing_dd = set(dic.get("distribution_days", []))
+    new_dd_dates = list(dic.get("distribution_days", []))
+    new_dd_with_close = list(dic.get("distribution_days_with_close", []))
+    for d, pd in zip(target_days[1:], target_days[:-1]):
+        if d[0] in existing_dd:
+            continue  # 既に通常DDとして計上されている
+        if _is_stalling_day(d, pd, high52_weekly):
+            try:
+                dp = float(d[4].replace(",", ""))
+            except ValueError:
+                continue
+            new_dd_dates.append(d[0])
+            new_dd_with_close.append((d[0], dp))
+            existing_dd.add(d[0])
+            log_debug("Stalling Day:", d[0])
+    dic["distribution_days"] = new_dd_dates
+    dic["distribution_days_with_close"] = new_dd_with_close
+    return dic
 
 
 def _calc_daily_indicators(daily_price_list):
@@ -273,10 +355,11 @@ def _calc_daily_indicators(daily_price_list):
     - FTD候補: 前日比 +1.0% 以上 + 出来高が前日より増加
       (ラリーアテンプト Day 4 以降の判定は market_state.py 側で行うため、ここでは候補日のみ拾う)
 
+    Stalling Day は週足の high52_weekly が必要なため、本関数では検出せず
+    `add_stalling_days()` を呼び出し側で別途実行する (Part B)。
+
     direction_signal の最終値は make_market_db.py が market_state を計算してから上書きする。
     本関数では空文字をデフォルトとして入れておく (フィールド自体は後方互換で維持)。
-
-    Stalling Day はデータ拡張PRで対応 (52週高値が必要)。
 
     Args:
         daily_price_list: 8要素タプル(文字列)のリスト
@@ -502,6 +585,14 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
     rs_rank = calc_momentum_pt()
     if rs_rank > 0:  # 0はエラーのため更新しない
         price_dict["momentum_pt"] = rs_rank
+
+    # ---- 52週高値/安値 (Stalling Day 判定で日足側からも参照する)
+    try:
+        if highs and lows:
+            price_dict["high52_weekly"] = max(highs[0:52])
+            price_dict["low52_weekly"] = min(lows[0:52])
+    except (ValueError, IndexError):
+        pass
 
     # ---- トレンドテンプレート
     def calc_trend_template():
@@ -951,6 +1042,7 @@ def get_us_index_daily(code_s, ticker_symbol, upd=UPD_INTERVAL):
                     dic["access_date_price"] = datetime.fromtimestamp(
                         os.stat(cache_fname).st_mtime
                     )
+                    dic["_daily_price_list_raw"] = daily_price_list
                 return dic
 
     log_print("----> %sの日次価格情報をyfinance(%s)から取得します" % (code_s, ticker_symbol))
@@ -990,6 +1082,7 @@ def get_us_index_daily(code_s, ticker_symbol, upd=UPD_INTERVAL):
         latest_close = 0
     dic["price"] = latest_close
     dic["access_date_price"] = datetime.now()
+    dic["_daily_price_list_raw"] = daily_price_list
 
     # キャッシュに保存
     _save_yfinance_cache(cache_fname, latest_close, daily_price_list)

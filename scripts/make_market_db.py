@@ -312,6 +312,11 @@ def make_db_common(code_s):
     pricew_dict = price.get_weekly_price_data(code_s, upd=UPD_INTERVAL, prices=[pr, pr, pr])
     log_print("RS_RAW=", pricew_dict.get("rs_raw", 0))
     db.update(pricew_dict)
+    # Stalling Day 後付け検出 (issue #117 Part B): 週足の high52_weekly を使う
+    high52 = db.get("high52_weekly")
+    raw = db.pop("_daily_price_list_raw", None)
+    if high52 and raw:
+        price.add_stalling_days(db, raw, high52)
     return db
 
 
@@ -358,6 +363,11 @@ def _make_us_index_db(code_s, ticker_symbol, key):
     )
     log_print("RS_RAW=", weekly_dict.get("rs_raw", 0))
     db_dict.update(weekly_dict)
+    # Stalling Day 後付け検出 (issue #117 Part B)
+    high52 = db_dict.get("high52_weekly")
+    raw = db_dict.pop("_daily_price_list_raw", None)
+    if high52 and raw:
+        price.add_stalling_days(db_dict, raw, high52)
     return {key: db_dict}
 
 
@@ -943,7 +953,7 @@ def _html_market(market_db):
             db = market_db[db_name]
             # 指数向けに trend_template の RS 基準を補正してから表示文字列を作る (issue #148 Part 1)
             adjusted_db = _adjust_index_trend_template(db)
-            trend_expr = make_stock_db.get_trend_template_expr(adjusted_db)
+            trend_expr, trend_misses = make_stock_db.get_index_trend_template_expr(adjusted_db)
 
             # State Machine と整合した DD/FTD/状態表示 (Part B)
             state_meta = db.get("state_meta", {}) or {}
@@ -987,10 +997,12 @@ def _html_market(market_db):
             state_css = market_state.STATE_CSS_CLASS.get(state, "")
             state_class = ' class="%s"' % state_css if state_css else ""
 
-            # トレンドのCSSクラス
+            # トレンドのCSSクラス + 不通過項目を title 属性 (ホバー詳細)
             trend_class = ""
             if trend_expr.startswith("◯") or trend_expr.startswith("◎"):
                 trend_class = ' class="trend-good"'
+            trend_title = (' title="不通過: %s"' % html_mod.escape(trend_misses)
+                           if trend_misses else "")
 
             rs_raw = db.get("rs_raw", "")
             rs_class = _rs_class(rs_raw)
@@ -999,7 +1011,7 @@ def _html_market(market_db):
                 '<tr>\n'
                 '  <td><strong>%s</strong></td>\n'
                 '  <td%s>%s</td>\n'
-                '  <td%s>%s</td>\n'
+                '  <td%s%s>%s</td>\n'
                 '  <td%s%s>%s</td>\n'
                 '  <td>%s</td>\n'
                 '  <td%s>%s</td>\n'
@@ -1008,7 +1020,7 @@ def _html_market(market_db):
                 '</tr>' % (
                     html_mod.escape(market_name),
                     rs_class, rs_raw,
-                    trend_class, html_mod.escape(str(trend_expr)),
+                    trend_class, trend_title, html_mod.escape(str(trend_expr)),
                     dd_class, dd_title, html_mod.escape(dd_display),
                     html_mod.escape(ftd_rally_display),
                     state_class, html_mod.escape(state_display),
