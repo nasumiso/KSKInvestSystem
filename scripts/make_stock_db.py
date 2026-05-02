@@ -800,7 +800,7 @@ def get_trend_template_expr(stock):
 
 
 def get_index_trend_template_expr(stock):
-    """指数向けトレンドテンプレート簡略表記 (issue #117 Part B)
+    """指数向けトレンドテンプレート簡略表記。
 
     個別銘柄向け get_trend_template_expr と異なり、
     通過率を分数で示し詳細はホバー (title属性) に逃がす。

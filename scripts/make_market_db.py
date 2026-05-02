@@ -312,7 +312,7 @@ def make_db_common(code_s):
     pricew_dict = price.get_weekly_price_data(code_s, upd=UPD_INTERVAL, prices=[pr, pr, pr])
     log_print("RS_RAW=", pricew_dict.get("rs_raw", 0))
     db.update(pricew_dict)
-    # Stalling Day 後付け検出 (issue #117 Part B): 週足の high52_weekly を使う
+    # Stalling Day は週足の high52_weekly を使うため、週足計算後に後付け検出
     high52 = db.get("high52_weekly")
     raw = db.pop("_daily_price_list_raw", None)
     if high52 and raw:
@@ -363,7 +363,6 @@ def _make_us_index_db(code_s, ticker_symbol, key):
     )
     log_print("RS_RAW=", weekly_dict.get("rs_raw", 0))
     db_dict.update(weekly_dict)
-    # Stalling Day 後付け検出 (issue #117 Part B)
     high52 = db_dict.get("high52_weekly")
     raw = db_dict.pop("_daily_price_list_raw", None)
     if high52 and raw:
@@ -411,8 +410,8 @@ def _save_market_db(market_db):
 def _update_index_market_state(prev_index_db, new_index_db):
     """指数 dict に market_state / state_meta / state_history / direction_signal を計算して書き込む。
 
-    issue #117 Part A: 前日 state_meta を引き継ぎ、当日の DD/FTD 候補から
-    market_state.py の純関数群で新state を導出する。
+    前日 state_meta を引き継ぎ、当日の DD/FTD 候補から market_state.py の純関数群で
+    新state を導出する。
 
     Args:
         prev_index_db: 前日の market_db[index_name] dict (なければ {})
@@ -493,7 +492,7 @@ def _update_index_market_state(prev_index_db, new_index_db):
                 today_dict, prev_dict, rally_meta, daily_history,
             )
 
-    # 6. 状態遷移 (DD/FTD + 週足10MA明確割れ補助ルール、issue #117 Part B)
+    # 6. 状態遷移 (DD/FTD + 週足10MA明確割れ補助ルール)
     below_10ma = market_state.is_below_10ma_clearly(
         new_index_db.get("price_kairi_wma10")
     )
@@ -558,7 +557,6 @@ def update_market_db():
         new_data = maker()  # {index_name: {...}}
         new_index_db = new_data.get(index_name, {})
         if new_index_db:
-            # 市場状態の計算 (issue #117 Part A)
             try:
                 _update_index_market_state(prev_index_db, new_index_db)
             except Exception as e:
@@ -743,11 +741,11 @@ tr:hover { background: #f5f5f5; }
 .trend-good { color: #27ae60; font-weight: bold; }
 .rs-strong { color: #27ae60; font-weight: bold; }
 .rs-weak { color: #c0392b; font-weight: bold; }
-/* market_state (issue #117 Part A) */
+/* market_state */
 .state-confirmed { background: #eafaf1; color: #27ae60; font-weight: bold; }
 .state-pressure  { background: #fffbe6; color: #b8860b; font-weight: bold; }
 .state-correction { background: #fdedec; color: #c0392b; font-weight: bold; }
-/* DD 進行度の警告色 (issue #117 Part B) */
+/* DD 進行度の警告色 */
 .dd-pressure  { background: #fffbe6; color: #b8860b; font-weight: bold; }
 .dd-correction { background: #fdedec; color: #c0392b; font-weight: bold; }
 
@@ -959,7 +957,7 @@ def _html_market(market_db):
             adjusted_db = _adjust_index_trend_template(db)
             trend_expr, trend_misses = make_stock_db.get_index_trend_template_expr(adjusted_db)
 
-            # State Machine と整合した DD/FTD/状態表示 (Part B)
+            # State Machine と整合した DD/FTD/状態表示
             state_meta = db.get("state_meta", {}) or {}
             state_history = db.get("state_history", []) or []
             state = db.get("market_state", "")

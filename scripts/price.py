@@ -261,14 +261,14 @@ def parse_price_d_html_kabutan(html):
         daily_price_list.append(m.groups())
 
     dic = _calc_daily_indicators(daily_price_list)
-    # Stalling Day を後付け検出するため raw データを内部的に保持 (Part B)
+    # Stalling Day を後付け検出するため raw データを内部的に保持
     if dic:
         dic["_daily_price_list_raw"] = daily_price_list
     return dic
 
 
 def _is_stalling_day(d, pd, high52_weekly):
-    """Stalling Day (停滞日) 判定 (O'Neil 原典準拠 / issue #117 Part B)
+    """Stalling Day (停滞日) 判定 (O'Neil 原典準拠)
 
     条件 (すべて満たす):
     - 52週高値の97%以上 (高値圏)
@@ -306,7 +306,7 @@ def _is_stalling_day(d, pd, high52_weekly):
 
 
 def add_stalling_days(dic, daily_price_list, high52_weekly):
-    """既存の日次指標 dict に Stalling Day を追加検出する (issue #117 Part B)
+    """既存の日次指標 dict に Stalling Day を追加検出する。
 
     `_calc_daily_indicators` で計算した distribution_days* の結果に、
     Stalling Day を後付けで追加する。通常DDと重複しない日のみ追加。
@@ -350,13 +350,13 @@ def _calc_daily_indicators(daily_price_list):
     parse_price_d_html_kabutanから指標計算部分を分離。
     Kabutan HTML パスと yfinance パス共通で使用する。
 
-    DD/FTD 判定は O'Neil 原典準拠 (issue #117 Part A):
+    DD/FTD 判定は O'Neil 原典準拠:
     - 通常DD: 前日比 -0.2% 以下 + 出来高が前日より増加
     - FTD候補: 前日比 +1.0% 以上 + 出来高が前日より増加
       (ラリーアテンプト Day 4 以降の判定は market_state.py 側で行うため、ここでは候補日のみ拾う)
 
     Stalling Day は週足の high52_weekly が必要なため、本関数では検出せず
-    `add_stalling_days()` を呼び出し側で別途実行する (Part B)。
+    `add_stalling_days()` を呼び出し側で別途実行する。
 
     direction_signal の最終値は make_market_db.py が market_state を計算してから上書きする。
     本関数では空文字をデフォルトとして入れておく (フィールド自体は後方互換で維持)。

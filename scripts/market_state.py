@@ -37,7 +37,6 @@ DD_THRESHOLD_TO_CONFIRMED_FROM_PRESSURE = 4  # pressure → confirmed: DD < 4 �
 FTD_GAIN_THRESHOLD = 1.0  # %、ラリー Day 4 以降の最低上昇率
 FTD_MIN_DAYS_FROM_RALLY_START = 3  # Day 1 から3取引日後 = Day 4
 
-# 週足10MA 補助遷移 (issue #117 Part B)
 # 週足10MA = 日足50MA とほぼ同義 (10週 ≈ 50営業日)。指数価格の中期トレンド維持を補助判定する。
 # 単純な < 0 ではノイズに反応するため、明確に下回る水準として -1% を採用。
 WEEKLY_10MA_BREAK_THRESHOLD = -1.0  # %、price_kairi_wma10 がこれ以下なら明確割れ
@@ -186,7 +185,7 @@ def check_follow_through_day(today, prev, rally_meta, daily_history):
 # 状態遷移
 # ==================================================
 def is_below_10ma_clearly(kairi):
-    """price_kairi_wma10 から「10週MA明確割れ」を判定する純関数 (issue #117 Part B)。
+    """price_kairi_wma10 から「10週MA明確割れ」を判定する純関数。
 
     Args:
         kairi: price_kairi_wma10 (10週MAとの乖離率%)。None や数値以外の場合は False
@@ -213,7 +212,7 @@ def derive_state(prev_state, valid_dd_count, ftd_today, below_10ma=False):
     - uptrend_under_pressure → confirmed_uptrend: 有効DD < 4
     - それ以外: 状態維持
 
-    補助ルール (issue #117 Part B、週足10MA明確割れ = price_kairi_wma10 <= -1%):
+    補助ルール (週足10MA明確割れ = price_kairi_wma10 <= -1%):
     - confirmed_uptrend → market_in_correction: DD ≥ 4 かつ 10MA明確割れ (correction優先)
     - confirmed_uptrend → uptrend_under_pressure: DD < 4 でも 10MA明確割れ
     - uptrend_under_pressure → confirmed_uptrend: DD < 4 かつ NOT 10MA明確割れ
@@ -226,6 +225,8 @@ def derive_state(prev_state, valid_dd_count, ftd_today, below_10ma=False):
 
     Returns:
         tuple: (new_state, trigger_reason)
+            trigger_reason は "ftd" / "dd>=4" / "dd>=6" / "dd>=4_and_below_10ma" /
+            "below_10ma" / "dd<4_recover" / "init" / "stay"
     """
     # 初回 (prev_state なし) は遷移ルールと同じ閾値で判定
     # 補助ルールは初回判定では使わない (履歴がないため安全側)
@@ -298,7 +299,7 @@ def to_direction_signal(state, today_date):
 
 
 # ==================================================
-# 表示用ヘルパー (issue #117 Part B)
+# 表示用ヘルパー
 # ==================================================
 STATE_LABEL = {
     CONFIRMED_UPTREND: "上昇トレンド",
