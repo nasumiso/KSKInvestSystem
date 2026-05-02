@@ -1211,6 +1211,11 @@ def _html_disclosure(disc_csv):
             continue
         if row[0] == "":  # 空行
             continue
+        # 見出しが ASCII のみ = 日本語IRの英語版重複なので除外
+        body_match = _RE_HYPERLINK.match(str(row[4]))
+        heading = body_match.group(2) if body_match else str(row[4])
+        if heading.isascii():
+            continue
         data_rows.append(row)
 
     if not data_rows:

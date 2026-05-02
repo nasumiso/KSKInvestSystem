@@ -397,6 +397,9 @@ def load_disclosure_for_code(code_s, days=30):
                 continue
             url = m_link.group(1)
             heading = m_link.group(2)
+            # 見出しが ASCII のみ = 日本語IRの英語版重複なので除外
+            if heading.isascii():
+                continue
             results.append((date_expr, type_expr, heading, url))
 
     return results

@@ -972,3 +972,43 @@ class TestGetMarketDbThreadSafety:
             # クリーンアップ
             make_market_db._market_db_cache = None
             db_shelve._market_db = original_get
+
+
+# ==================================================
+# _html_disclosure
+# ==================================================
+class TestHtmlDisclosure:
+    """_html_disclosure の英語版IR重複除外テスト"""
+
+    def _row(self, heading, code="3496", name="アズーム"):
+        from datetime import datetime
+        today = datetime.today().strftime("%Y%m%d")
+        return [
+            today,
+            '=HYPERLINK("https://kabutan.jp/stock/chart?code=%s","%s")' % (code, code),
+            name,
+            "開示",
+            '=HYPERLINK("https://example.com/x","%s")' % heading,
+        ]
+
+    def test_日本語見出しはHTMLに含まれる(self):
+        rows = [self._row("業績予想の修正に関するお知らせ")]
+        html = make_market_db._html_disclosure(rows)
+        assert "業績予想の修正に関するお知らせ" in html
+
+    def test_ASCIIのみの見出しは除外される(self):
+        rows = [self._row("Notice Concerning Status of Treasury Stock Acquisition")]
+        html = make_market_db._html_disclosure(rows)
+        assert "Notice Concerning" not in html
+
+    def test_日本語と英語混在で日本語のみ残る(self):
+        rows = [
+            self._row("決算短信"),
+            self._row("[Summary]Consolidated Financial Results"),
+            self._row("自己株式の取得状況に関するお知らせ"),
+        ]
+        html = make_market_db._html_disclosure(rows)
+        assert "決算短信" in html
+        assert "自己株式の取得状況に関するお知らせ" in html
+        assert "Summary" not in html
+        assert "Consolidated" not in html
