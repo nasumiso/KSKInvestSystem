@@ -265,6 +265,117 @@ class TestDeriveState:
 
 
 # ==================================================
+# is_below_10ma_clearly (issue #117 Part B)
+# ==================================================
+class TestIsBelow10maClearly:
+    """週足10MA 明確割れ判定"""
+
+    def test_kairi_above_threshold(self):
+        """kairi = -0.5% (閾値より上) → False"""
+        assert ms.is_below_10ma_clearly(-0.5) is False
+
+    def test_kairi_at_threshold(self):
+        """kairi = -1.0% (境界) → True"""
+        assert ms.is_below_10ma_clearly(-1.0) is True
+
+    def test_kairi_below_threshold(self):
+        """kairi = -1.5% → True"""
+        assert ms.is_below_10ma_clearly(-1.5) is True
+
+    def test_kairi_positive(self):
+        """kairi = 1.0% (上) → False"""
+        assert ms.is_below_10ma_clearly(1.0) is False
+
+    def test_kairi_zero(self):
+        assert ms.is_below_10ma_clearly(0) is False
+
+    def test_kairi_none(self):
+        assert ms.is_below_10ma_clearly(None) is False
+
+    def test_kairi_invalid(self):
+        assert ms.is_below_10ma_clearly("foo") is False
+
+
+# ==================================================
+# derive_state with below_10ma (issue #117 Part B 補助遷移)
+# ==================================================
+class TestDeriveStateWith10maAux:
+    """週足10MA 補助遷移ルール"""
+
+    def test_confirmed_to_pressure_via_below_10ma(self):
+        """DD<4 でも 10MA明確割れで pressure 降格"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.CONFIRMED_UPTREND, valid_dd_count=2, ftd_today=False,
+            below_10ma=True,
+        )
+        assert state == ms.UPTREND_UNDER_PRESSURE
+        assert trigger == "below_10ma"
+
+    def test_confirmed_to_correction_via_dd4_and_below_10ma(self):
+        """DD=4 + 10MA明確割れ で correction 降格 (correction優先)"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.CONFIRMED_UPTREND, valid_dd_count=4, ftd_today=False,
+            below_10ma=True,
+        )
+        assert state == ms.MARKET_IN_CORRECTION
+        assert trigger == "dd>=4_and_below_10ma"
+
+    def test_confirmed_stays_pressure_when_dd4_above_10ma(self):
+        """DD=4 + 10MA上 → pressure 降格 (correction にはならない、現状挙動維持)"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.CONFIRMED_UPTREND, valid_dd_count=4, ftd_today=False,
+            below_10ma=False,
+        )
+        assert state == ms.UPTREND_UNDER_PRESSURE
+        assert trigger == "dd>=4"
+
+    def test_confirmed_to_correction_via_dd6_ignores_10ma(self):
+        """DD≥6 なら 10MA関係なく correction (DD>=6が最優先)"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.CONFIRMED_UPTREND, valid_dd_count=6, ftd_today=False,
+            below_10ma=False,
+        )
+        assert state == ms.MARKET_IN_CORRECTION
+        assert trigger == "dd>=6"
+
+    def test_pressure_stays_when_dd_low_below_10ma(self):
+        """DD<4 だが 10MA明確割れ → pressure 維持 (復帰しない)"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.UPTREND_UNDER_PRESSURE, valid_dd_count=2, ftd_today=False,
+            below_10ma=True,
+        )
+        assert state == ms.UPTREND_UNDER_PRESSURE
+        assert trigger == "stay"
+
+    def test_pressure_to_confirmed_when_dd_low_and_above_10ma(self):
+        """DD<4 + 10MA上 → confirmed 復帰"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.UPTREND_UNDER_PRESSURE, valid_dd_count=2, ftd_today=False,
+            below_10ma=False,
+        )
+        assert state == ms.CONFIRMED_UPTREND
+        assert trigger == "dd<4_recover"
+
+    def test_correction_to_confirmed_via_ftd_ignores_10ma(self):
+        """FTD出れば10MA関係なく confirmed"""
+        state, trigger = ms.derive_state(
+            prev_state=ms.MARKET_IN_CORRECTION, valid_dd_count=10, ftd_today=True,
+            below_10ma=True,
+        )
+        assert state == ms.CONFIRMED_UPTREND
+        assert trigger == "ftd"
+
+    def test_below_10ma_default_false_backward_compat(self):
+        """引数省略で既存挙動維持 (10MAルール不発動)"""
+        # confirmed + DD=2 + below_10ma 引数なし → confirmed 維持
+        state, trigger = ms.derive_state(
+            prev_state=ms.CONFIRMED_UPTREND, valid_dd_count=2, ftd_today=False,
+        )
+        assert state == ms.CONFIRMED_UPTREND
+        assert trigger == "stay"
+
+
+# ==================================================
 # append_state_history
 # ==================================================
 class TestAppendStateHistory:
@@ -304,3 +415,136 @@ class TestToDirectionSignal:
     def test_format(self):
         s = ms.to_direction_signal(ms.CONFIRMED_UPTREND, "26/04/30")
         assert s == "confirmed_uptrend,26/04/30"
+
+
+# ==================================================
+# format_state_label (Part B)
+# ==================================================
+class TestFormatStateLabel:
+    """state を日本語ラベルに変換"""
+
+    def test_confirmed(self):
+        assert ms.format_state_label(ms.CONFIRMED_UPTREND) == "上昇トレンド"
+
+    def test_pressure(self):
+        assert ms.format_state_label(ms.UPTREND_UNDER_PRESSURE) == "圧力下"
+
+    def test_correction(self):
+        assert ms.format_state_label(ms.MARKET_IN_CORRECTION) == "調整相場"
+
+    def test_none(self):
+        assert ms.format_state_label(None) == ""
+
+    def test_unknown_returns_original(self):
+        assert ms.format_state_label("foo_bar") == "foo_bar"
+
+
+# ==================================================
+# find_state_transition_date (Part B)
+# ==================================================
+class TestFindStateTransitionDate:
+    """state_history から現在 state の遷移日を抽出"""
+
+    def test_basic(self):
+        history = [
+            ("26/05/01", ms.CONFIRMED_UPTREND, "stay"),
+            ("26/04/30", ms.CONFIRMED_UPTREND, "stay"),
+            ("26/04/15", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/04/14", ms.MARKET_IN_CORRECTION, "stay"),
+        ]
+        assert ms.find_state_transition_date(history, ms.CONFIRMED_UPTREND) == "26/04/15"
+
+    def test_single_match(self):
+        history = [("26/05/01", ms.CONFIRMED_UPTREND, "init")]
+        assert ms.find_state_transition_date(history, ms.CONFIRMED_UPTREND) == "26/05/01"
+
+    def test_single_mismatch(self):
+        history = [("26/05/01", ms.MARKET_IN_CORRECTION, "init")]
+        assert ms.find_state_transition_date(history, ms.CONFIRMED_UPTREND) is None
+
+    def test_empty(self):
+        assert ms.find_state_transition_date([], ms.CONFIRMED_UPTREND) is None
+
+    def test_no_match(self):
+        history = [
+            ("26/05/01", ms.MARKET_IN_CORRECTION, "stay"),
+            ("26/04/30", ms.UPTREND_UNDER_PRESSURE, "dd>=6"),
+        ]
+        assert ms.find_state_transition_date(history, ms.CONFIRMED_UPTREND) is None
+
+    def test_state_changed_today(self):
+        """今日 state が変わった場合 → 今日の日を返す"""
+        history = [
+            ("26/05/01", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/04/30", ms.MARKET_IN_CORRECTION, "stay"),
+        ]
+        assert ms.find_state_transition_date(history, ms.CONFIRMED_UPTREND) == "26/05/01"
+
+
+# ==================================================
+# extract_ftd_history (Part B)
+# ==================================================
+class TestExtractFtdHistory:
+    """state_history から FTD 成立日を抽出"""
+
+    def test_basic(self):
+        history = [
+            ("26/05/01", ms.CONFIRMED_UPTREND, "stay"),
+            ("26/04/15", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/04/14", ms.MARKET_IN_CORRECTION, "stay"),
+            ("26/03/01", ms.CONFIRMED_UPTREND, "ftd"),
+        ]
+        assert ms.extract_ftd_history(history) == ["26/04/15", "26/03/01"]
+
+    def test_max_count(self):
+        history = [
+            ("26/05/01", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/04/01", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/03/01", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/02/01", ms.CONFIRMED_UPTREND, "ftd"),
+        ]
+        result = ms.extract_ftd_history(history, max_count=2)
+        assert result == ["26/05/01", "26/04/01"]
+
+    def test_no_ftd(self):
+        history = [
+            ("26/05/01", ms.CONFIRMED_UPTREND, "stay"),
+            ("26/04/30", ms.UPTREND_UNDER_PRESSURE, "dd>=4"),
+        ]
+        assert ms.extract_ftd_history(history) == []
+
+    def test_empty(self):
+        assert ms.extract_ftd_history([]) == []
+
+
+# ==================================================
+# calc_rally_day (Part B)
+# ==================================================
+class TestCalcRallyDay:
+    """ラリーアテンプト Day N 計算"""
+
+    def test_day1_today(self):
+        """ラリー開始日 = 当日 → Day 1"""
+        history = ["26/04/30", "26/04/29", "26/04/28"]
+        assert ms.calc_rally_day("26/04/30", history) == 1
+
+    def test_day3(self):
+        """ラリー開始から2日経過 → Day 3"""
+        history = ["26/04/30", "26/04/29", "26/04/28", "26/04/27"]
+        assert ms.calc_rally_day("26/04/28", history) == 3
+
+    def test_day4(self):
+        """ラリー開始から3日経過 → Day 4 (FTD候補開始)"""
+        history = ["26/04/30", "26/04/29", "26/04/28", "26/04/27"]
+        assert ms.calc_rally_day("26/04/27", history) == 4
+
+    def test_no_rally_start(self):
+        assert ms.calc_rally_day(None, ["26/04/30"]) is None
+
+    def test_empty_history(self):
+        assert ms.calc_rally_day("26/04/30", []) is None
+
+    def test_start_not_in_history(self):
+        """ラリー開始日が daily_history に無い (窓外) → None"""
+        history = ["26/04/30", "26/04/29"]
+        assert ms.calc_rally_day("26/03/01", history) is None

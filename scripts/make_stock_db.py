@@ -799,6 +799,31 @@ def get_trend_template_expr(stock):
     return ""
 
 
+def get_index_trend_template_expr(stock):
+    """指数向けトレンドテンプレート簡略表記。
+
+    個別銘柄向け get_trend_template_expr と異なり、
+    通過率を分数で示し詳細はホバー (title属性) に逃がす。
+
+    Returns:
+        tuple: (display_str, miss_str) — display は "◎ 7/7" 等、
+               miss_str は不通過項目をカンマ区切り (空なら "")
+    """
+    if "trend_template" not in stock:
+        return ("-", "")
+    misses = stock["trend_template"]
+    miss_count = len(misses)
+    pass_count = 7 - miss_count
+    miss_str = ",".join(misses) if misses else ""
+    if miss_count == 0:
+        return ("◎ %d/7" % pass_count, miss_str)
+    if miss_count <= 2:
+        return ("◯ %d/7" % pass_count, miss_str)
+    if miss_count <= 4:
+        return ("▲ %d/7" % pass_count, miss_str)
+    return ("△ %d/7" % pass_count, miss_str)
+
+
 def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
     """銘柄DBデータから、シグナル情報を作成する。
 

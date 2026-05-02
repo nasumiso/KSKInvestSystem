@@ -903,3 +903,113 @@ class TestParsePriceTextFromList:
         result_dict, _ = price.parse_price_text_from_list(1050, price_list)
         # 入力が5件しかなければ price_log も最大5件
         assert len(result_dict["price_log"]) <= 5
+
+
+# ==================================================
+# Stalling Day 判定 (issue #117 Part B)
+# ==================================================
+class TestStallingDay:
+    """Stalling Day (停滞日) 判定"""
+
+    def _row(self, date, open_p, high, low, close, ratio_pct, volume):
+        """8要素タプルを作る"""
+        return (
+            date,
+            "{:,}".format(open_p),
+            "{:,}".format(high),
+            "{:,}".format(low),
+            "{:,}".format(close),
+            "0",
+            "{:.2f}".format(ratio_pct),
+            "{:,}".format(volume),
+        )
+
+    def test_is_stalling_day_basic(self):
+        """52週高値圏 + 微増 + 出来高増 + 下半分引け → True"""
+        # 52週高値=1000、当日 close=975 (97.5% > 97%)、ratio=+0.2%、出来高増、下半分
+        d = self._row("260501", 970, 985, 970, 975, 0.2, 12000)
+        # 下半分: dl=970, dh=985, half=977.5、close=975 ≤ 977.5
+        pd = self._row("260430", 968, 980, 965, 970, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is True
+
+    def test_is_stalling_day_skipped_below_high(self):
+        """52週高値の97%未満なら False"""
+        # close=900、52週高値=1000 → 90%
+        d = self._row("260501", 895, 905, 890, 900, 0.2, 12000)
+        pd = self._row("260430", 895, 905, 890, 898, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is False
+
+    def test_is_stalling_day_skipped_too_high_ratio(self):
+        """前日比 +0.4% 以上なら False (FTD候補に近い)"""
+        d = self._row("260501", 970, 985, 970, 985, 0.5, 12000)
+        pd = self._row("260430", 968, 980, 965, 980, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is False
+
+    def test_is_stalling_day_skipped_negative_ratio(self):
+        """前日比マイナスなら False (通常DDの領域)"""
+        d = self._row("260501", 970, 985, 970, 975, -0.1, 12000)
+        pd = self._row("260430", 968, 980, 965, 980, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is False
+
+    def test_is_stalling_day_skipped_no_volume_increase(self):
+        """出来高増していなければ False"""
+        d = self._row("260501", 970, 985, 970, 975, 0.2, 10000)
+        pd = self._row("260430", 968, 980, 965, 970, 0.0, 12000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is False
+
+    def test_is_stalling_day_skipped_upper_close(self):
+        """終値が日足の上半分なら False (下半分引けが条件)"""
+        # close=982、low=970, high=985、half=977.5 → 上半分
+        d = self._row("260501", 970, 985, 970, 982, 0.2, 12000)
+        pd = self._row("260430", 968, 980, 965, 980, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is False
+
+    def test_is_stalling_day_skipped_no_high52(self):
+        """high52_weekly が無ければ False"""
+        d = self._row("260501", 970, 985, 970, 975, 0.2, 12000)
+        pd = self._row("260430", 968, 980, 965, 970, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=None) is False
+        assert price._is_stalling_day(d, pd, high52_weekly=0) is False
+
+    def test_add_stalling_days_appends(self):
+        """add_stalling_days で既存DD に Stalling Day が追加される"""
+        # 既に通常DDが1つあり、別の日が Stalling Day 候補
+        daily_price_list = [
+            self._row("260501", 970, 985, 970, 975, 0.2, 12000),  # Stalling 候補
+            self._row("260430", 968, 980, 965, 970, 0.0, 10000),  # 前日
+            self._row("260429", 980, 990, 970, 970, -0.5, 11000),  # 通常DD
+            self._row("260428", 980, 990, 970, 975, 0.0, 9000),
+        ]
+        dic = {
+            "distribution_days": ["260429"],
+            "distribution_days_with_close": [("260429", 970.0)],
+        }
+        price.add_stalling_days(dic, daily_price_list, high52_weekly=1000)
+        assert "260501" in dic["distribution_days"]
+        assert ("260501", 975.0) in dic["distribution_days_with_close"]
+        # 既存の通常DDは保持
+        assert "260429" in dic["distribution_days"]
+
+    def test_add_stalling_days_no_duplicate(self):
+        """既に通常DDとして計上されている日は重複追加しない"""
+        daily_price_list = [
+            self._row("260501", 970, 985, 970, 975, 0.2, 12000),
+            self._row("260430", 968, 980, 965, 970, 0.0, 10000),
+        ]
+        dic = {
+            "distribution_days": ["260501"],
+            "distribution_days_with_close": [("260501", 975.0)],
+        }
+        price.add_stalling_days(dic, daily_price_list, high52_weekly=1000)
+        # 同じ日付が2回追加されていないこと
+        assert dic["distribution_days"].count("260501") == 1
+        assert len(dic["distribution_days_with_close"]) == 1
+
+    def test_add_stalling_days_skipped_no_high52(self):
+        """high52_weekly が無い場合は何もしない"""
+        daily_price_list = [
+            self._row("260501", 970, 985, 970, 975, 0.2, 12000),
+        ]
+        dic = {"distribution_days": [], "distribution_days_with_close": []}
+        price.add_stalling_days(dic, daily_price_list, high52_weekly=None)
+        assert dic["distribution_days"] == []
