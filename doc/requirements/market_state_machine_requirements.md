@@ -1,8 +1,11 @@
-# Market State Machine 要件定義 (issue #117 Part A)
+# Market State Machine 要件定義 (issue #117 Part A / Part B)
 
 > 既存の市場方向シグナル (`scripts/price.py:266-351 _calc_daily_indicators()` 内のDD/FTD判定 + `direction_signal`) を、O'Neil/IBD原典に準拠した3状態の State Machine に置き換える。
 >
 > 関連 issue: #117
+>
+> **本書は Part A 着手時点の仕様 (本文) + Part B で確定した変更点 (末尾の Addendum セクション) を併記している。**
+> 現在の実装は Part A + Part B の両方を反映している。Part A 本文で「スコープ外」「未実装」とされたもののうち Part B で実装されたものは Addendum を参照すること。
 
 ---
 
@@ -336,6 +339,62 @@ CSSクラスは `make_market_db.py:605-` の市場テーブルCSSブロックに
 ## 11. 関連
 
 - 本要件は issue #117 の Part A の実装仕様を定義する
-- Part B: シグナル連動 (`make_signal()` 改修) — `direction_signal` または `market_state` を参照する別要件
+- Part B: 市場セクション表示の State Machine 整合 + Stalling Day + 週足10MA補助遷移 — Addendum 参照
 - Part C: Minervini Breadth (トレンドテンプレート通過銘柄数による市場健全性評価) — 別要件
-- 関連ドキュメント: `doc/ARCHITECTURE.md` の市場DB構造 (`market_state` 追加で更新が必要)
+- 関連ドキュメント: `doc/ARCHITECTURE.md` の市場DB構造
+
+---
+
+## Addendum: Part B 完了時点の変更点 (issue #117 PR #166)
+
+Part B 着手時に当初想定していた「`make_signal()` のタグ干渉」(`[ブ]` → `[ブ?]`/`[ブ!]`) は **破棄**。代わりに以下を実装した。
+
+### 実装した変更
+
+#### 表示の State Machine 整合 (`_html_market`)
+
+- 列構成: 「シグナル」→「**市場状態**」、「ディストリビューション」→「**DD**」、「フォロースルー」→「**FTD/ラリー**」、「トレンド」は指数向け簡略表記
+- DD列: `数 / 6` (危険水準との比率)、詳細日付はホバー、4-5は黄、6+は赤
+- FTD/ラリー列: `confirmed`/`pressure` 時は `last_ftd_date`、`correction` 時は「ラリー Day N」
+- 市場状態列: 日本語ラベル + 遷移日 `(M/D〜)`、CSS で3色表示
+- トレンド列 (指数のみ): `◎ 7/7` / `◯ 5/7` / `▲ 3/7` / `△ 0/7` 形式、不通過項目はホバー (title属性)
+- 売り圧力レシオ列の買い集め指数 A-E 評価を削除
+- マザーズ指数 → グロース250 (DBキー `mothers` は維持)
+
+#### Stalling Day 検出 (本文 §1, §8 で「Part A 不可」とされていた)
+
+- 週足計算で 52週高値 (`high52_weekly`) を保存
+- `make_db_common` / `_make_us_index_db` で日足計算後 + 週足計算後に `add_stalling_days()` を呼び、通常DDに追加検出
+- 判定条件: 52週高値の97%以上 + 微増 (0% < dr < 0.4%) + 出来高増 + 終値が日足の下半分
+- 通常DDと重複する日は除外
+- データ拡張PRを待たずに既存データで実装可能になった (週足52本 = 52週分が既に取得済)
+
+#### 週足10MA 補助遷移 (本文 §6 注で「データ拡張PR後」とされていた)
+
+- 週足10MA = 日足50MA とほぼ同義 (10週 ≈ 50営業日) なので、`price_kairi_wma10` を使って実装
+- 定数 `WEEKLY_10MA_BREAK_THRESHOLD = -1.0` (% を超える明確な割れを判定)
+- 純関数 `is_below_10ma_clearly(kairi)` を追加
+- `derive_state` に `below_10ma=False` 引数追加 (後方互換)、補助遷移ルール:
+  - `confirmed → correction`: DD ≥ 4 かつ 10MA明確割れ (correction優先)
+  - `confirmed → pressure`: DD < 4 でも 10MA明確割れ
+  - `pressure → confirmed`: DD < 4 **かつ** NOT 10MA明確割れ (10MA下なら復帰しない)
+  - `correction → confirmed`: FTD成立 (10MA関係なく現状維持)
+
+### 残スコープ外 (本文の §8 から変更なし or 当面保留)
+
+- ボラティリティ連動FTD閾値 (200日HV計算が必要、効果限定的、保留)
+- Minervini Breadth (Part C、別 issue で対応予定だが優先度低)
+- 過去期間バックテスト検証 (運用しながら確認)
+- 個別銘柄シグナルとの連動 (`[ブ?]`/`[ブ!]` 等) — 当初の Part B 案だが、ユーザー判断で**実装しない**ことに変更
+
+### 当初の本文との差分要約
+
+| 項目 | 本文 (Part A 時点) | Part B 完了後 |
+|---|---|---|
+| Stalling Day | スコープ外 | **実装済** |
+| 50日MA 状態遷移 | データ拡張PR後 | **週足10MAで代替実装済** |
+| 「シグナル」列の値 | 英文字 `<state>,YYMMDD` | 日本語ラベル + 遷移日 |
+| DD列の表示 | 日付列挙 `02/13, 02/20, ...` | `2 / 6` 形式 + ホバー詳細 |
+| FTD列の表示 | 強い陽線リスト | 真のFTD or ラリー Day N |
+| マザーズ指数表記 | 「マザーズ指数」 | 「グロース250」 |
+| `make_signal()` 連動 (Part B) | 当初: タグ干渉案 | **実装しない** (市場表示精度向上に振り替え) |

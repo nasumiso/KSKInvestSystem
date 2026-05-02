@@ -1,5 +1,9 @@
 # market_data HTML出力機能の追加
 
+> **注**: 本文書は HTML 出力機能を導入した時点の設計プラン (履歴) です。
+> 市場テーブルの列構成や `direction_signal` の値は issue #117 Part A/B で大きく変更されています。
+> 現在の仕様は [doc/requirements/market_state_machine_requirements.md](requirements/market_state_machine_requirements.md) を参照してください。
+
 ## Context
 
 market_data.csv をGoogleスプレッドシートにアップロードして閲覧しているが、CSVの可読性が低い（色分けなし、リンクが`=HYPERLINK()`関数表示、全データがフラットに並ぶ）。ブラウザで開くだけで見やすいHTMLファイルを並行生成する。プロトタイプ（`/tmp/market_data_prototype.html`）の方向性はユーザー承認済み。

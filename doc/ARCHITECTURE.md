@@ -68,9 +68,21 @@
 | `prev_theme_rank` | list[str] | 前日のモメンタム順位（日付変更時に自動退避） |
 | `theme_momentum` | dict[str, tuple] | テーマ別騰落率 `(平均%, 銘柄数)` |
 | `access_date_theme_rank` | datetime | テーマランク最終取得日時 |
-| `topix`, `mothers`, `nikkei225`, `nasdaq` | dict | 各指数のprice/RS/トレンドデータ |
-| `distribution_days` | list | ディストリビューション・デイ |
-| `direction_signal` | str | 市場方向シグナル |
+| `topix`, `mothers`, `nikkei225`, `nasdaq`, `sp500` | dict | 各指数のprice/RS/トレンド/State Machine データ |
+
+各指数 dict が持つ主要キー (issue #117 Part A/B):
+
+| キー | 型 | 内容 |
+|------|---|------|
+| `market_state` | str | `confirmed_uptrend` / `uptrend_under_pressure` / `market_in_correction` |
+| `state_meta` | dict | `distribution_days_with_close` (有効DD), `last_ftd_date`, `rally_attempt_*` |
+| `state_history` | list | 直近30件の `(date, state, trigger)` 履歴 |
+| `high52_weekly` | float | 週足52本の最高値 (Stalling Day判定で参照) |
+| `price_kairi_wma10` | float | 現在価格の10週MA乖離率% (10MA明確割れ判定で参照) |
+| `direction_signal` | str | 後方互換、`<state>,YYMMDD` 形式 |
+| `distribution_days`, `followthrough_days` | list | 後方互換 (表示は state_meta から生成) |
+
+詳細仕様は [doc/requirements/market_state_machine_requirements.md](requirements/market_state_machine_requirements.md) を参照。
 
 ## 株式データベース（shelveベース）
 
