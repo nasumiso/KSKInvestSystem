@@ -304,3 +304,136 @@ class TestToDirectionSignal:
     def test_format(self):
         s = ms.to_direction_signal(ms.CONFIRMED_UPTREND, "26/04/30")
         assert s == "confirmed_uptrend,26/04/30"
+
+
+# ==================================================
+# format_state_label (Part B)
+# ==================================================
+class TestFormatStateLabel:
+    """state を日本語ラベルに変換"""
+
+    def test_confirmed(self):
+        assert ms.format_state_label(ms.CONFIRMED_UPTREND) == "上昇トレンド"
+
+    def test_pressure(self):
+        assert ms.format_state_label(ms.UPTREND_UNDER_PRESSURE) == "圧力下"
+
+    def test_correction(self):
+        assert ms.format_state_label(ms.MARKET_IN_CORRECTION) == "調整相場"
+
+    def test_none(self):
+        assert ms.format_state_label(None) == ""
+
+    def test_unknown_returns_original(self):
+        assert ms.format_state_label("foo_bar") == "foo_bar"
+
+
+# ==================================================
+# find_state_transition_date (Part B)
+# ==================================================
+class TestFindStateTransitionDate:
+    """state_history から現在 state の遷移日を抽出"""
+
+    def test_basic(self):
+        history = [
+            ("26/05/01", ms.CONFIRMED_UPTREND, "stay"),
+            ("26/04/30", ms.CONFIRMED_UPTREND, "stay"),
+            ("26/04/15", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/04/14", ms.MARKET_IN_CORRECTION, "stay"),
+        ]
+        assert ms.find_state_transition_date(history, ms.CONFIRMED_UPTREND) == "26/04/15"
+
+    def test_single_match(self):
+        history = [("26/05/01", ms.CONFIRMED_UPTREND, "init")]
+        assert ms.find_state_transition_date(history, ms.CONFIRMED_UPTREND) == "26/05/01"
+
+    def test_single_mismatch(self):
+        history = [("26/05/01", ms.MARKET_IN_CORRECTION, "init")]
+        assert ms.find_state_transition_date(history, ms.CONFIRMED_UPTREND) is None
+
+    def test_empty(self):
+        assert ms.find_state_transition_date([], ms.CONFIRMED_UPTREND) is None
+
+    def test_no_match(self):
+        history = [
+            ("26/05/01", ms.MARKET_IN_CORRECTION, "stay"),
+            ("26/04/30", ms.UPTREND_UNDER_PRESSURE, "dd>=6"),
+        ]
+        assert ms.find_state_transition_date(history, ms.CONFIRMED_UPTREND) is None
+
+    def test_state_changed_today(self):
+        """今日 state が変わった場合 → 今日の日を返す"""
+        history = [
+            ("26/05/01", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/04/30", ms.MARKET_IN_CORRECTION, "stay"),
+        ]
+        assert ms.find_state_transition_date(history, ms.CONFIRMED_UPTREND) == "26/05/01"
+
+
+# ==================================================
+# extract_ftd_history (Part B)
+# ==================================================
+class TestExtractFtdHistory:
+    """state_history から FTD 成立日を抽出"""
+
+    def test_basic(self):
+        history = [
+            ("26/05/01", ms.CONFIRMED_UPTREND, "stay"),
+            ("26/04/15", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/04/14", ms.MARKET_IN_CORRECTION, "stay"),
+            ("26/03/01", ms.CONFIRMED_UPTREND, "ftd"),
+        ]
+        assert ms.extract_ftd_history(history) == ["26/04/15", "26/03/01"]
+
+    def test_max_count(self):
+        history = [
+            ("26/05/01", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/04/01", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/03/01", ms.CONFIRMED_UPTREND, "ftd"),
+            ("26/02/01", ms.CONFIRMED_UPTREND, "ftd"),
+        ]
+        result = ms.extract_ftd_history(history, max_count=2)
+        assert result == ["26/05/01", "26/04/01"]
+
+    def test_no_ftd(self):
+        history = [
+            ("26/05/01", ms.CONFIRMED_UPTREND, "stay"),
+            ("26/04/30", ms.UPTREND_UNDER_PRESSURE, "dd>=4"),
+        ]
+        assert ms.extract_ftd_history(history) == []
+
+    def test_empty(self):
+        assert ms.extract_ftd_history([]) == []
+
+
+# ==================================================
+# calc_rally_day (Part B)
+# ==================================================
+class TestCalcRallyDay:
+    """ラリーアテンプト Day N 計算"""
+
+    def test_day1_today(self):
+        """ラリー開始日 = 当日 → Day 1"""
+        history = ["26/04/30", "26/04/29", "26/04/28"]
+        assert ms.calc_rally_day("26/04/30", history) == 1
+
+    def test_day3(self):
+        """ラリー開始から2日経過 → Day 3"""
+        history = ["26/04/30", "26/04/29", "26/04/28", "26/04/27"]
+        assert ms.calc_rally_day("26/04/28", history) == 3
+
+    def test_day4(self):
+        """ラリー開始から3日経過 → Day 4 (FTD候補開始)"""
+        history = ["26/04/30", "26/04/29", "26/04/28", "26/04/27"]
+        assert ms.calc_rally_day("26/04/27", history) == 4
+
+    def test_no_rally_start(self):
+        assert ms.calc_rally_day(None, ["26/04/30"]) is None
+
+    def test_empty_history(self):
+        assert ms.calc_rally_day("26/04/30", []) is None
+
+    def test_start_not_in_history(self):
+        """ラリー開始日が daily_history に無い (窓外) → None"""
+        history = ["26/04/30", "26/04/29"]
+        assert ms.calc_rally_day("26/03/01", history) is None

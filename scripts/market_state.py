@@ -262,3 +262,99 @@ def to_direction_signal(state, today_date):
     既存形式 "<value>,YYMMDD" を継続、value のみ変更。
     """
     return "%s,%s" % (state, today_date)
+
+
+# ==================================================
+# 表示用ヘルパー (issue #117 Part B)
+# ==================================================
+STATE_LABEL = {
+    CONFIRMED_UPTREND: "上昇トレンド",
+    UPTREND_UNDER_PRESSURE: "圧力下",
+    MARKET_IN_CORRECTION: "調整相場",
+}
+
+STATE_CSS_CLASS = {
+    CONFIRMED_UPTREND: "state-confirmed",
+    UPTREND_UNDER_PRESSURE: "state-pressure",
+    MARKET_IN_CORRECTION: "state-correction",
+}
+
+
+def format_state_label(state):
+    """state 値を日本語ラベルに変換する。未知の値は元値を返す。"""
+    if state is None:
+        return ""
+    return STATE_LABEL.get(state, state)
+
+
+def find_state_transition_date(state_history, current_state):
+    """state_history (新しい順) から current_state が続いている最初の日付を返す。
+
+    遷移日 = 過去にさかのぼって current_state が連続する最も古い日。
+
+    Args:
+        state_history: [(date, state, trigger), ...] (新しい日が先頭)
+        current_state: 現在の state
+
+    Returns:
+        str | None: 遷移日。current_state エントリが無い・空履歴は None
+    """
+    if not state_history or current_state is None:
+        return None
+    transition_date = None
+    for entry in state_history:
+        if not entry or len(entry) < 2:
+            break
+        date_str, state = entry[0], entry[1]
+        if state == current_state:
+            transition_date = date_str
+        else:
+            break
+    return transition_date
+
+
+def extract_ftd_history(state_history, max_count=3):
+    """state_history から trigger=='ftd' のエントリ日付を新しい順に返す。
+
+    Args:
+        state_history: [(date, state, trigger), ...] (新しい日が先頭)
+        max_count: 最大件数
+
+    Returns:
+        list[str]: FTD成立日の日付リスト
+    """
+    if not state_history:
+        return []
+    result = []
+    for entry in state_history:
+        if not entry or len(entry) < 3:
+            continue
+        if entry[2] == "ftd":
+            result.append(entry[0])
+            if len(result) >= max_count:
+                break
+    return result
+
+
+def calc_rally_day(rally_start_date, daily_history):
+    """ラリーアテンプト開始日から当日までの取引日数 (Day N) を返す。
+
+    correction 状態でラリーアテンプトが追跡されているとき、
+    Day 1 = ラリー開始日、Day 4 以降が FTD 判定対象になる。
+
+    Args:
+        rally_start_date: state_meta.rally_attempt_start_date (str | None)
+        daily_history: [date_str, ...] 新しい日が先頭
+
+    Returns:
+        int | None: Day N (1始まり)。ラリー未開始または日付不一致なら None
+    """
+    if not rally_start_date or not daily_history:
+        return None
+    try:
+        start_idx = daily_history.index(rally_start_date)
+    except ValueError:
+        return None
+    # daily_history は新しい日が先頭、当日は index 0
+    # start_idx は当日から見て start_idx 日前 → Day = start_idx + 1
+    return start_idx + 1

@@ -733,6 +733,9 @@ tr:hover { background: #f5f5f5; }
 .state-confirmed { background: #eafaf1; color: #27ae60; font-weight: bold; }
 .state-pressure  { background: #fffbe6; color: #b8860b; font-weight: bold; }
 .state-correction { background: #fdedec; color: #c0392b; font-weight: bold; }
+/* DD 進行度の警告色 (issue #117 Part B) */
+.dd-pressure  { background: #fffbe6; color: #b8860b; font-weight: bold; }
+.dd-correction { background: #fdedec; color: #c0392b; font-weight: bold; }
 
 /* 決算 */
 .kessan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
@@ -922,9 +925,11 @@ def _html_market(market_db):
     Returns:
         str: 市場セクションのHTML文字列
     """
+    import market_state
+
     markets = [
         ("topix", "TOPIX"),
-        ("mothers", "マザーズ指数"),
+        ("mothers", "グロース250"),
         ("nikkei225", "日経225"),
         ("nasdaq", "NASDAQ"),
         ("sp500", "S&P 500"),
@@ -939,27 +944,48 @@ def _html_market(market_db):
             # 指数向けに trend_template の RS 基準を補正してから表示文字列を作る (issue #148 Part 1)
             adjusted_db = _adjust_index_trend_template(db)
             trend_expr = make_stock_db.get_trend_template_expr(adjusted_db)
-            distribution_days = ", ".join([s[3:] for s in db.get("distribution_days", [])])
-            followthrough_days = ", ".join([s[3:] for s in db.get("followthrough_days", [])])
-            signal = db.get("direction_signal", "")
-            diff = db.get("spr_buygagher", 0) - db.get("spr_20", 0)
-            spr_eval = step_func(diff, [-10, -5, 0, 5, 10], ["E", "D", "C", "B", "A"])
 
-            # シグナルのCSSクラス (issue #117 Part A: market_state ベース)
-            # signal の値は "<state>,YYMMDD" 形式 (例: "confirmed_uptrend,26/04/30")
-            signal_str = str(signal).lower()
-            signal_class = ""
-            if "market_in_correction" in signal_str:
-                signal_class = ' class="state-correction"'
-            elif "uptrend_under_pressure" in signal_str:
-                signal_class = ' class="state-pressure"'
-            elif "confirmed_uptrend" in signal_str:
-                signal_class = ' class="state-confirmed"'
-            # 後方互換: 旧 sell/buy にもフォールバック
-            elif "sell" in signal_str:
-                signal_class = ' class="signal-sell"'
-            elif "buy" in signal_str:
-                signal_class = ' class="signal-buy"'
+            # State Machine と整合した DD/FTD/状態表示 (Part B)
+            state_meta = db.get("state_meta", {}) or {}
+            state_history = db.get("state_history", []) or []
+            state = db.get("market_state", "")
+
+            # DD列: 有効DD数 / 危険水準 (例: "3 / 6"、6以上は "6+ / 6")
+            # 状態でセル色を切替: pressure=黄、correction=赤
+            dd_with_close = state_meta.get("distribution_days_with_close", []) or []
+            dd_count = len(dd_with_close)
+            dd_threshold = market_state.DD_THRESHOLD_TO_CORRECTION
+            if dd_count >= dd_threshold:
+                dd_display = "%d+ / %d" % (dd_threshold, dd_threshold)
+            else:
+                dd_display = "%d / %d" % (dd_count, dd_threshold)
+            dd_dates = ", ".join([d[0][3:] for d in dd_with_close if d and len(d) >= 1])
+            dd_title = ' title="%s"' % html_mod.escape(dd_dates) if dd_dates else ""
+            dd_class = ""
+            if dd_count >= market_state.DD_THRESHOLD_TO_CORRECTION:
+                dd_class = ' class="dd-correction"'
+            elif dd_count >= market_state.DD_THRESHOLD_TO_PRESSURE:
+                dd_class = ' class="dd-pressure"'
+
+            # FTD/ラリー列: correction中はラリー Day N、それ以外は直近FTD日
+            if state == market_state.MARKET_IN_CORRECTION:
+                rally_start = state_meta.get("rally_attempt_start_date")
+                daily_history = db.get("daily_history", []) or []
+                day_n = market_state.calc_rally_day(rally_start, daily_history)
+                ftd_rally_display = "ラリー Day %d" % day_n if day_n else "—"
+            else:
+                last_ftd = state_meta.get("last_ftd_date")
+                ftd_rally_display = last_ftd[3:] if last_ftd else "—"
+
+            # 市場状態: 日本語ラベル + 遷移日
+            state_label = market_state.format_state_label(state)
+            trans_date = market_state.find_state_transition_date(state_history, state)
+            if state_label and trans_date:
+                state_display = "%s (%s〜)" % (state_label, trans_date[3:])
+            else:
+                state_display = state_label
+            state_css = market_state.STATE_CSS_CLASS.get(state, "")
+            state_class = ' class="%s"' % state_css if state_css else ""
 
             # トレンドのCSSクラス
             trend_class = ""
@@ -974,19 +1000,19 @@ def _html_market(market_db):
                 '  <td><strong>%s</strong></td>\n'
                 '  <td%s>%s</td>\n'
                 '  <td%s>%s</td>\n'
-                '  <td>%s</td>\n'
+                '  <td%s%s>%s</td>\n'
                 '  <td>%s</td>\n'
                 '  <td%s>%s</td>\n'
-                '  <td>%d, %d, <strong>%s</strong></td>\n'
+                '  <td>%d, %d</td>\n'
                 '  <td>%.1f, %.1f</td>\n'
                 '</tr>' % (
                     html_mod.escape(market_name),
                     rs_class, rs_raw,
                     trend_class, html_mod.escape(str(trend_expr)),
-                    html_mod.escape(distribution_days),
-                    html_mod.escape(followthrough_days),
-                    signal_class, html_mod.escape(str(signal)),
-                    db.get("spr_20", 0), db.get("spr_5", 0), spr_eval,
+                    dd_class, dd_title, html_mod.escape(dd_display),
+                    html_mod.escape(ftd_rally_display),
+                    state_class, html_mod.escape(state_display),
+                    db.get("spr_20", 0), db.get("spr_5", 0),
                     db.get("rv_20", 0.0), db.get("rv_5", 0.0),
                 )
             )
@@ -1001,8 +1027,8 @@ def _html_market(market_db):
         '<table class="market-table">\n'
         '<thead><tr>\n'
         '  <th>市場名</th><th>RS</th><th>トレンド</th>\n'
-        '  <th>ディストリビューション</th><th>フォロースルー</th>\n'
-        '  <th>シグナル</th><th>売り圧力レシオ (20,5)</th><th>ボラティリティ (20,5)</th>\n'
+        '  <th>DD</th><th>FTD/ラリー</th>\n'
+        '  <th>市場状態</th><th>売り圧力レシオ (20,5)</th><th>ボラティリティ (20,5)</th>\n'
         '</tr></thead>\n'
         '<tbody>'
     )
