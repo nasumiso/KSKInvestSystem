@@ -398,6 +398,118 @@ def _save_market_db(market_db):
         db.import_from_dict(market_db)
 
 
+def _update_index_market_state(prev_index_db, new_index_db):
+    """指数 dict に market_state / state_meta / state_history / direction_signal を計算して書き込む。
+
+    issue #117 Part A: 前日 state_meta を引き継ぎ、当日の DD/FTD 候補から
+    market_state.py の純関数群で新state を導出する。
+
+    Args:
+        prev_index_db: 前日の market_db[index_name] dict (なければ {})
+        new_index_db: 当日の指数 dict (mutate される)
+    """
+    import market_state
+
+    # 1. 前日 state_meta を取得 (なければ空)
+    prev_meta = prev_index_db.get("state_meta", {}) or {}
+    prev_state = prev_index_db.get("market_state")
+    prev_history = prev_index_db.get("state_history", []) or []
+
+    # 2. 当日のDD候補を前日のDDリストにマージ
+    today_dd_with_close = list(prev_meta.get("distribution_days_with_close", []))
+    new_dd_with_close = new_index_db.get("distribution_days_with_close", []) or []
+    # 重複を排除しつつ新しいDDを追加
+    existing_dates = {d for d, _ in today_dd_with_close}
+    for dd_date, dd_close in new_dd_with_close:
+        if dd_date not in existing_dates:
+            today_dd_with_close.append((dd_date, dd_close))
+            existing_dates.add(dd_date)
+
+    # 3. 当日終値・履歴で DD を失効処理
+    daily_history = new_index_db.get("daily_history", []) or []
+    today_close = float(new_index_db.get("price", 0) or 0)
+    valid_dd = market_state.expire_distribution_days(
+        today_dd_with_close, today_close=today_close, daily_history=daily_history,
+    )
+
+    # 4. ラリーアテンプト追跡 (Correction 状態のときのみ)
+    rally_meta = {
+        "rally_attempt_start_date": prev_meta.get("rally_attempt_start_date"),
+        "rally_attempt_start_low": prev_meta.get("rally_attempt_start_low"),
+    }
+    today_low = float(new_index_db.get("low", 0) or 0)
+    today_high = float(new_index_db.get("high", 0) or 0)
+    today_volume = int(new_index_db.get("volume", 0) or 0)
+    # 当日と前日の close/low/volume を取得 (price_log[0] が当日、[1] が前日のはず)
+    price_log = new_index_db.get("price_log", []) or []
+    today_date = daily_history[0] if daily_history else (
+        price_log[0][0] if price_log else ""
+    )
+    prev_close = 0.0
+    prev_volume = 0
+    prev_low = 0.0
+    if len(price_log) >= 2:
+        prev_close = float(price_log[1][1] or 0)
+    # price_log には close のみ。low/volume は当日分しか new_index_db に残らない
+    # daily_history と組み合わせて 1日前の low/volume が必要だが、現状取れない
+    # ラリー判定は close 基準 (前日 close) で十分動く。low/volume は当日分のみ参照
+    today_dict = {
+        "date": today_date,
+        "close": today_close,
+        "low": today_low,
+        "high": today_high,
+        "volume": today_volume,
+    }
+    prev_dict = {
+        "close": prev_close,
+        "volume": int(prev_meta.get("prev_volume", 0) or 0),
+        "low": prev_low,
+    }
+
+    if prev_state == market_state.MARKET_IN_CORRECTION:
+        rally_meta = market_state.update_rally_attempt(rally_meta, today_dict, prev_dict)
+    else:
+        # Correction 以外ではラリー追跡は不要 (リセット)
+        rally_meta = {"rally_attempt_start_date": None, "rally_attempt_start_low": None}
+
+    # 5. FTD 判定 (Correction 状態 + ラリー追跡中のみ)
+    ftd_today = False
+    if prev_state == market_state.MARKET_IN_CORRECTION:
+        # FTD 判定には今日の出来高 vs 前日出来高が必要
+        # prev_meta に prev_volume が無くても、price_log から推定できないので簡易判定
+        # 当日の出来高は new_index_db['volume']、前日は state_meta に保存しておく
+        if prev_dict["volume"] > 0 and today_dict["volume"] > 0:
+            ftd_today = market_state.check_follow_through_day(
+                today_dict, prev_dict, rally_meta, daily_history,
+            )
+
+    # 6. 状態遷移
+    new_state, trigger = market_state.derive_state(
+        prev_state=prev_state,
+        valid_dd_count=len(valid_dd),
+        ftd_today=ftd_today,
+    )
+
+    # 7. state_history 更新
+    new_history = market_state.append_state_history(
+        prev_history, today_date or "", new_state, trigger,
+    )
+
+    # 8. 結果を new_index_db に書き戻し
+    new_index_db["market_state"] = new_state
+    new_index_db["state_meta"] = {
+        "rally_attempt_start_date": rally_meta.get("rally_attempt_start_date"),
+        "rally_attempt_start_low": rally_meta.get("rally_attempt_start_low"),
+        "distribution_days_with_close": valid_dd,
+        "last_ftd_date": today_date if ftd_today else prev_meta.get("last_ftd_date"),
+        "prev_volume": today_volume,  # 次回呼び出し用に保存
+    }
+    new_index_db["state_history"] = new_history
+    new_index_db["direction_signal"] = market_state.to_direction_signal(
+        new_state, today_date or "",
+    )
+
+
 def update_market_db():
     """マーケットDBを読み込んで最新に更新"""
     market_db = get_market_db()
@@ -419,17 +531,25 @@ def update_market_db():
     theme_db = make_theme_data(prev_momentum_rank)
     market_db.update(theme_db)
 
-    topix_db = make_topix_db()
-    market_db.update(topix_db)
-
-    mothers_db = make_mothers_db()
-    market_db.update(mothers_db)
-    nikkei_db = make_nikkei_db()
-    market_db.update(nikkei_db)
-    nasdaq_db = make_nasdaq_db()
-    market_db.update(nasdaq_db)
-    sp500_db = make_sp500_db()
-    market_db.update(sp500_db)
+    # 各指数を更新 (まず DD/FTD 候補と当日価格を取得)
+    index_makers = [
+        ("topix", make_topix_db),
+        ("mothers", make_mothers_db),
+        ("nikkei225", make_nikkei_db),
+        ("nasdaq", make_nasdaq_db),
+        ("sp500", make_sp500_db),
+    ]
+    for index_name, maker in index_makers:
+        prev_index_db = market_db.get(index_name, {}) or {}
+        new_data = maker()  # {index_name: {...}}
+        new_index_db = new_data.get(index_name, {})
+        if new_index_db:
+            # 市場状態の計算 (issue #117 Part A)
+            try:
+                _update_index_market_state(prev_index_db, new_index_db)
+            except Exception as e:
+                log_warning("[market_state] %s の State 計算失敗: %s" % (index_name, e))
+        market_db[index_name] = new_index_db
 
     _save_market_db(market_db)
     log_print("MarketDB保存:", list(market_db.keys()))
@@ -609,6 +729,10 @@ tr:hover { background: #f5f5f5; }
 .trend-good { color: #27ae60; font-weight: bold; }
 .rs-strong { color: #27ae60; font-weight: bold; }
 .rs-weak { color: #c0392b; font-weight: bold; }
+/* market_state (issue #117 Part A) */
+.state-confirmed { background: #eafaf1; color: #27ae60; font-weight: bold; }
+.state-pressure  { background: #fffbe6; color: #b8860b; font-weight: bold; }
+.state-correction { background: #fdedec; color: #c0392b; font-weight: bold; }
 
 /* 決算 */
 .kessan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
@@ -821,11 +945,20 @@ def _html_market(market_db):
             diff = db.get("spr_buygagher", 0) - db.get("spr_20", 0)
             spr_eval = step_func(diff, [-10, -5, 0, 5, 10], ["E", "D", "C", "B", "A"])
 
-            # シグナルのCSSクラス
+            # シグナルのCSSクラス (issue #117 Part A: market_state ベース)
+            # signal の値は "<state>,YYMMDD" 形式 (例: "confirmed_uptrend,26/04/30")
+            signal_str = str(signal).lower()
             signal_class = ""
-            if "sell" in str(signal).lower():
+            if "market_in_correction" in signal_str:
+                signal_class = ' class="state-correction"'
+            elif "uptrend_under_pressure" in signal_str:
+                signal_class = ' class="state-pressure"'
+            elif "confirmed_uptrend" in signal_str:
+                signal_class = ' class="state-confirmed"'
+            # 後方互換: 旧 sell/buy にもフォールバック
+            elif "sell" in signal_str:
                 signal_class = ' class="signal-sell"'
-            elif "buy" in str(signal).lower():
+            elif "buy" in signal_str:
                 signal_class = ' class="signal-buy"'
 
             # トレンドのCSSクラス

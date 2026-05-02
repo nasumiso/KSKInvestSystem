@@ -403,14 +403,35 @@ class TestHtmlMarket:
         }
 
     def test_signal_sell_class(self):
-        """sellシグナルにsignal-sellクラスが付く"""
+        """sellシグナルにsignal-sellクラスが付く (後方互換: 旧文字列でも動く)"""
         result = make_market_db._html_market(self._make_market_db())
         assert 'signal-sell' in result
 
     def test_signal_buy_class(self):
-        """buyシグナルにsignal-buyクラスが付く"""
+        """buyシグナルにsignal-buyクラスが付く (後方互換: 旧文字列でも動く)"""
         result = make_market_db._html_market(self._make_market_db())
         assert 'signal-buy' in result
+
+    def test_state_correction_class(self):
+        """direction_signal が market_in_correction なら state-correction クラス (issue #117 Part A)"""
+        db = self._make_market_db()
+        db["topix"]["direction_signal"] = "market_in_correction,26/04/30"
+        result = make_market_db._html_market(db)
+        assert 'state-correction' in result
+
+    def test_state_pressure_class(self):
+        """direction_signal が uptrend_under_pressure なら state-pressure クラス"""
+        db = self._make_market_db()
+        db["topix"]["direction_signal"] = "uptrend_under_pressure,26/04/30"
+        result = make_market_db._html_market(db)
+        assert 'state-pressure' in result
+
+    def test_state_confirmed_class(self):
+        """direction_signal が confirmed_uptrend なら state-confirmed クラス"""
+        db = self._make_market_db()
+        db["topix"]["direction_signal"] = "confirmed_uptrend,26/04/30"
+        result = make_market_db._html_market(db)
+        assert 'state-confirmed' in result
 
     def test_trend_good_class(self):
         """良好トレンド（◎/◯）にtrend-goodクラスが付く"""
