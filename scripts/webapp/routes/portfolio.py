@@ -1,12 +1,14 @@
-"""保有銘柄ダッシュボードルート (Phase 3b / issue #171)。
+"""保有銘柄ダッシュボードルート (Phase 3b / issue #171, issue #175)。
 
 GET  /portfolio?status=hold|semi|watch  : 3 タブ式ダッシュボード
 POST /portfolio/add                     : 3監 への新規追加
 POST /portfolio/<code_s>/transition     : ステータス変更
 POST /portfolio/<code_s>/delete         : 削除 (3監 のみ)
+POST /portfolio/<code_s>/memo           : memo 部分更新 (issue #175)
 
 portfolio_shelve のレコードに stocks_shelve から指標を補完して表示する。
-書き込み API はすべて末尾で sync_to_my_watch_list_txt() を呼び、txt 同期を行う。
+書き込み API は txt 関連の状態を変えるもの (add/transition/delete) のみ
+末尾で sync_to_my_watch_list_txt() を呼ぶ。memo 更新は txt 内容に影響しないため同期不要。
 """
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
@@ -187,6 +189,59 @@ def transition(code_s: str):
 
     _sync_txt_safely()
     return redirect(url_for("portfolio.dashboard", status=STATUS_VALUE_TO_QUERY[new_status]))
+
+
+def _extract_memo_fields_from_form(form) -> dict:
+    """request.form から MEMO_FIELDS に該当するキーのみを抽出する。
+
+    部分更新セマンティクス (codex P1 対応):
+    - キー自体が form に含まれない → 該当フィールドは fields に入れない (現行値据え置き)
+    - キーは含まれるが値が "" → 該当フィールドは "" として扱う (メモ削除の意図)
+    したがって `form.get(field, "")` で埋めるのは不可。
+
+    抽出した値は textarea の改行 (\\r\\n / \\r) を \\n に正規化し、前後 strip する。
+    MEMO_FIELDS 外のキーは無視 (form に紛れ込んでも reject しない)。
+    """
+    fields = {}
+    for field in ps.MEMO_FIELDS:
+        if field not in form:
+            continue
+        raw = form[field] or ""
+        normalized = raw.replace("\r\n", "\n").replace("\r", "\n").strip()
+        fields[field] = normalized
+    return fields
+
+
+@portfolio_bp.route("/portfolio/<code_s>/memo", methods=["POST"])
+def update_memo(code_s: str):
+    """memo を部分更新する (issue #175)。
+
+    フォームから送られた MEMO_FIELDS のキーのみを対象に部分更新する。
+    送られなかったキーは現行値据え置き。空文字を明示送信した場合はメモ削除扱い。
+    """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+
+    try:
+        ps.validate_code_s(code_s)
+    except (ValueError, TypeError) as e:
+        flash(f"不正な銘柄コード: {e}", "error")
+        return redirect(url_for("portfolio.dashboard"))
+
+    fields = _extract_memo_fields_from_form(request.form)
+
+    try:
+        ps.update_memo(code_s, fields)
+    except KeyError:
+        flash(f"{code_s} は portfolio_shelve に未登録です", "error")
+        return redirect(url_for("portfolio.dashboard"))
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
+
+    flash(f"{code_s} のメモを保存しました", "info")
+    return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
 
 
 @portfolio_bp.route("/portfolio/add", methods=["POST"])

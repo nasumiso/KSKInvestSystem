@@ -318,6 +318,114 @@ class TestDeletePost:
 
 
 # ==================================================
+# POST /portfolio/<code_s>/memo (issue #175 部分更新)
+# ==================================================
+class TestUpdateMemoPost:
+
+    def test_memo_full_eight_fields_persist(self, client, portfolio_db_path):
+        """ブラウザ form と同じく全 8 項目を送ったら全部反映される"""
+        form_data = {field: f"val_{field}" for field in ps.MEMO_FIELDS}
+        resp = client.post("/portfolio/6324/memo", data=form_data)
+        assert resp.status_code == 302
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        for field, expected in form_data.items():
+            assert rec["memo"][field] == expected
+        # action_log に "メモ更新" が 1 件追加 (初回登録 + メモ更新 = 2 件)
+        logs = ps.list_action_logs("6324", db_path=portfolio_db_path)
+        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 1
+
+    def test_memo_partial_three_fields_keeps_others(self, client, portfolio_db_path):
+        """部分送信: 送られたキーだけ更新、未送信フィールドは現行値据え置き (codex P1)"""
+        # 事前に 5 項目をセット
+        prefilled = {
+            "trade_idea": "X",
+            "watch_in_reason": "Y",
+            "stage": "1S",
+            "inago_origin": "twitter",
+            "jukyu_chart": "CWH",
+        }
+        ps.update_memo("6324", prefilled, db_path=portfolio_db_path)
+
+        # 3 項目だけ送信 (form に他のキーを含めない)
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"trade_idea": "X2", "watch_in_reason": "Y2", "stage": "2S"},
+        )
+        assert resp.status_code == 302
+
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        # 送られた 3 項目は更新
+        assert rec["memo"]["trade_idea"] == "X2"
+        assert rec["memo"]["watch_in_reason"] == "Y2"
+        assert rec["memo"]["stage"] == "2S"
+        # 送られなかった 2 項目は据え置き
+        assert rec["memo"]["inago_origin"] == "twitter"
+        assert rec["memo"]["jukyu_chart"] == "CWH"
+
+    def test_memo_empty_string_overwrites(self, client, portfolio_db_path):
+        """空文字を明示送信したら "" に上書き (メモ削除扱い)"""
+        ps.update_memo("6324", {"trade_idea": "X"}, db_path=portfolio_db_path)
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"trade_idea": ""},
+        )
+        assert resp.status_code == 302
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["memo"]["trade_idea"] == ""
+
+    def test_memo_no_diff_no_action_log(self, client, portfolio_db_path):
+        """全項目を現行値そのまま送ったら action_log は増えない"""
+        ps.update_memo("6324", {"trade_idea": "X"}, db_path=portfolio_db_path)
+        before_logs = ps.list_action_logs("6324", db_path=portfolio_db_path)
+
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"trade_idea": "X"},  # 現行値と同じ
+        )
+        assert resp.status_code == 302
+        after_logs = ps.list_action_logs("6324", db_path=portfolio_db_path)
+        assert len(after_logs) == len(before_logs)
+
+    def test_memo_unregistered_code_flash_error(self, client, portfolio_db_path):
+        resp = client.post(
+            "/portfolio/9999/memo",
+            data={"trade_idea": "X"},
+        )
+        assert resp.status_code == 302
+        assert ps.get_record("9999", db_path=portfolio_db_path) is None
+
+    def test_memo_invalid_code_flash_error(self, client):
+        resp = client.post(
+            "/portfolio/abc/memo",
+            data={"trade_idea": "X"},
+        )
+        assert resp.status_code == 302
+
+    def test_memo_normalizes_crlf_in_textarea(self, client, portfolio_db_path):
+        """textarea の改行 \\r\\n は \\n に正規化される"""
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"trade_idea": "上値追い\r\n決算待ち\r\n"},
+        )
+        assert resp.status_code == 302
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        # 前後 strip + \r\n → \n 正規化
+        assert rec["memo"]["trade_idea"] == "上値追い\n決算待ち"
+
+    def test_memo_unknown_form_field_ignored(self, client, portfolio_db_path):
+        """MEMO_FIELDS 外のフォームキーは無視され、エラーにならない"""
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"trade_idea": "X", "csrf_token": "dummy", "garbage": "ignored"},
+        )
+        assert resp.status_code == 302
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["memo"]["trade_idea"] == "X"
+        assert "csrf_token" not in rec["memo"]
+        assert "garbage" not in rec["memo"]
+
+
+# ==================================================
 # P2 (codex 指摘): 未知コードの監視追加 reject
 # ==================================================
 class TestAddUnknownCodeRejected:
@@ -435,4 +543,14 @@ class TestFallbackFromTxt:
             "/portfolio/3496/delete", data={"reason": "テスト"}
         )
         assert resp.status_code == 302
+        assert ps.list_records(db_path=portfolio_db_path) == []
+
+    def test_fallback_rejects_memo_post(self, fallback_client, tmp_path):
+        """フォールバック中は /portfolio/<code>/memo も reject (issue #175)"""
+        portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
+        resp = fallback_client.post(
+            "/portfolio/3496/memo", data={"trade_idea": "X"}
+        )
+        assert resp.status_code == 302
+        # shelve は空のまま (memo 更新で 1 件作られたら fallback 解除事故が起きる)
         assert ps.list_records(db_path=portfolio_db_path) == []
