@@ -87,6 +87,8 @@ MEMO_FIELDS = frozenset(
         "inago_origin",           # イナゴ元・きっかけ
         "takaichi_sensitivity",   # 高市感応度
         "last_research_update",   # 銘柄調査スプシでの更新日 (M/D 形式、年なし)
+        "stage",                  # ステージ評価 (例: "1S", "2S(3T)", "3S")
+        "jukyu_chart",            # 需給チャートメモ (例: "月足低位ブレイク CWH")
     }
 )
 
@@ -263,6 +265,8 @@ def create_memo(
     inago_origin: str = "",
     takaichi_sensitivity: str = "",
     last_research_update: str = "",
+    stage: str = "",
+    jukyu_chart: str = "",
 ) -> Dict[str, str]:
     """手動メモ dict を生成する。"""
     return {
@@ -272,6 +276,8 @@ def create_memo(
         "inago_origin": inago_origin,
         "takaichi_sensitivity": takaichi_sensitivity,
         "last_research_update": last_research_update,
+        "stage": stage,
+        "jukyu_chart": jukyu_chart,
     }
 
 

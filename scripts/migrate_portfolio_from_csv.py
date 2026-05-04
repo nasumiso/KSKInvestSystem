@@ -54,7 +54,9 @@ COL_CODE_S = 0           # 銘柄コード
 COL_STOCK_NAME = 1       # 銘柄名
 COL_GYOUTAI = 3          # 業態・テーマ
 COL_LAST_UPDATE = 18     # 銘柄調査の更新日 (M/D 形式)
+COL_STAGE = 20           # ステージ (例: "1S", "2S(3T)", "3S")
 COL_WATCH_REASON = 31    # ウォッチ・IN理由
+COL_JUKYU_CHART = 32     # 需給チャートメモ (例: "月足低位ブレイク CWH")
 COL_INAGO = 33           # イナゴ元・きっかけ
 COL_TRADE_IDEA = 34      # 投資売買アイデア
 COL_TAKAICHI = 35        # 高市感応度
@@ -132,6 +134,8 @@ def parse_memo_columns(row: List[str]) -> Tuple[Dict[str, str], List[str]]:
         inago_origin=(row[COL_INAGO] or "").strip(),
         takaichi_sensitivity=(row[COL_TAKAICHI] or "").strip(),
         last_research_update=(row[COL_LAST_UPDATE] or "").strip(),
+        stage=(row[COL_STAGE] or "").strip(),
+        jukyu_chart=(row[COL_JUKYU_CHART] or "").strip(),
     )
     return memo, warnings
 

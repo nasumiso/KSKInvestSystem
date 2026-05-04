@@ -1424,6 +1424,29 @@ def _annual_growth(stock: Dict[str, Any]) -> tuple:
     return result[1], result[2]
 
 
+def _format_buy_collection(stock: Dict[str, Any]) -> str:
+    """買い集めの週/日アルファベット評価を "週,日" の形式で返す (例: "D,E")。
+
+    code_rank.csv SRR 列の "47,32,D,E,-6" のうち最後 (50DMA乖離率を除く)
+    アルファベット 2 文字に相当する。price.get_spr_expr のロジックを再利用。
+    """
+    if not stock:
+        return "—"
+    sprs = stock.get("sell_pressure_ratio") or []
+    sprs_w = stock.get("sell_pressure_ratio_w") or []
+    if not sprs:
+        return "—"
+    try:
+        from price import get_spr_expr  # 遅延 import (循環回避)
+        full = get_spr_expr(sprs, sprs_w)
+    except Exception:
+        return "—"
+    # full は "47,32,D,E" や "47,32,D" 等。アルファベット部分のみ抽出
+    parts = full.split(",")
+    letters = [p for p in parts if p and not p.lstrip("+-").isdigit()]
+    return ",".join(letters) if letters else "—"
+
+
 def _progress_quarter_and_diff(stock: Dict[str, Any]) -> tuple:
     """gyoseki.calc_progress_rate から (quarter_label, diff_str) を返す。
 
@@ -1483,7 +1506,9 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "quarter": "—",
             "progress_diff": "—",
             "trend_template": "—",
+            "trend_template_tooltip": "—",
             "tags": "—",
+            "buy_collection": "—",
             "theoretical_diff": "—",
             "gyoseki": {},
             "indicators_raw": {},
@@ -1524,6 +1549,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "trend_template": trend_expr,
         "trend_template_tooltip": trend_tooltip,
         "tags": _format_tags(stock),
+        "buy_collection": _format_buy_collection(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
         "gyoseki": {
             "isKonki": stock.get("isKonki"),
