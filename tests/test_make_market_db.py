@@ -1195,3 +1195,130 @@ class TestHtmlDisclosure:
         assert "自己株式の取得状況に関するお知らせ" in html
         assert "Summary" not in html
         assert "Consolidated" not in html
+
+
+# ==================================================
+# _is_index_fetch_valid + update_market_db 取得失敗時の保護 (issue #179)
+# ==================================================
+class TestIndexFetchValid:
+    """_is_index_fetch_valid のユニットテスト"""
+
+    def test_empty_dict_is_invalid(self):
+        assert make_market_db._is_index_fetch_valid({}) is False
+
+    def test_none_is_invalid(self):
+        assert make_market_db._is_index_fetch_valid(None) is False
+
+    def test_missing_price_log_is_invalid(self):
+        # 週足だけ部分的に成功した dict (rs_raw 等あるが price_log 無し)
+        partial = {"rs_raw": 0, "trend_template": "0/7"}
+        assert make_market_db._is_index_fetch_valid(partial) is False
+
+    def test_empty_price_log_is_invalid(self):
+        assert make_market_db._is_index_fetch_valid({"price_log": []}) is False
+
+    def test_non_empty_price_log_is_valid(self):
+        valid = {"price_log": [(datetime(2026, 5, 1).date(), 3728)]}
+        assert make_market_db._is_index_fetch_valid(valid) is True
+
+
+class TestUpdateMarketDbSkipsOnFetchFailure:
+    """update_market_db: 指数取得失敗時に前日データが上書きされないこと (issue #179)"""
+
+    @staticmethod
+    def _good_index_dict(rs=1.17):
+        """price_log を持つ "成功" dict のひな形"""
+        return {
+            "price": 3728,
+            "price_log": [(datetime(2026, 5, 1).date(), 3728)],
+            "daily_history": ["26/05/01"],
+            "rs_raw": rs,
+            "spr_20": 50,
+            "spr_5": 52,
+            "rv_20": 2.22,
+            "rv_5": 2.3,
+            "distribution_days_with_close": [],
+        }
+
+    def _patch_common(self, prev_db):
+        """get_market_db / _save_market_db / make_theme_data をパッチする contextmanager 集合"""
+        from unittest.mock import patch
+        captured = {}
+
+        def fake_save(db):
+            captured["saved"] = dict(db)
+
+        return (
+            captured,
+            patch.object(make_market_db, "get_market_db", return_value=dict(prev_db)),
+            patch.object(make_market_db, "_save_market_db", side_effect=fake_save),
+            patch.object(
+                make_market_db, "make_theme_data", return_value={"theme_rank": []}
+            ),
+        )
+
+    def test_前日DBが取得失敗時に保持される(self):
+        """前日に正常取得した topix が、当日の取得失敗で上書きされない"""
+        prev_topix = self._good_index_dict(rs=1.17)
+        prev_db = {"topix": prev_topix, "theme_rank": []}
+        captured, p_get, p_save, p_theme = self._patch_common(prev_db)
+
+        empty_maker = lambda: {"topix": {}}
+        good_mothers = lambda: {"mothers": self._good_index_dict(rs=1.08)}
+        good_nikkei = lambda: {"nikkei225": self._good_index_dict(rs=1.29)}
+        good_nasdaq = lambda: {"nasdaq": self._good_index_dict(rs=1.17)}
+        good_sp500 = lambda: {"sp500": self._good_index_dict(rs=1.11)}
+
+        with p_get, p_save, p_theme, \
+                patch.object(make_market_db, "make_topix_db", side_effect=empty_maker), \
+                patch.object(make_market_db, "make_mothers_db", side_effect=good_mothers), \
+                patch.object(make_market_db, "make_nikkei_db", side_effect=good_nikkei), \
+                patch.object(make_market_db, "make_nasdaq_db", side_effect=good_nasdaq), \
+                patch.object(make_market_db, "make_sp500_db", side_effect=good_sp500):
+            make_market_db.update_market_db()
+
+        saved_topix = captured["saved"]["topix"]
+        assert saved_topix == prev_topix, "前日 topix dict がそのまま保持されるべき"
+        # 他指数は更新されていること
+        assert captured["saved"]["mothers"]["rs_raw"] == 1.08
+
+    def test_週足のみ成功でも前日DB保持(self):
+        """週足だけ部分的に成功 (rs_raw=0, price_log 無し) でも上書きされない"""
+        prev_topix = self._good_index_dict(rs=1.17)
+        prev_db = {"topix": prev_topix, "theme_rank": []}
+        captured, p_get, p_save, p_theme = self._patch_common(prev_db)
+
+        partial_maker = lambda: {
+            "topix": {"rs_raw": 0, "trend_template": "0/7", "pullback_20": 0}
+        }
+        good = lambda key, rs: (lambda: {key: self._good_index_dict(rs=rs)})
+
+        with p_get, p_save, p_theme, \
+                patch.object(make_market_db, "make_topix_db", side_effect=partial_maker), \
+                patch.object(make_market_db, "make_mothers_db", side_effect=good("mothers", 1.08)), \
+                patch.object(make_market_db, "make_nikkei_db", side_effect=good("nikkei225", 1.29)), \
+                patch.object(make_market_db, "make_nasdaq_db", side_effect=good("nasdaq", 1.17)), \
+                patch.object(make_market_db, "make_sp500_db", side_effect=good("sp500", 1.11)):
+            make_market_db.update_market_db()
+
+        assert captured["saved"]["topix"] == prev_topix
+
+    def test_初回起動で取得失敗時はキー確保(self):
+        """既存DBに topix が無い状態で取得失敗 → 空 dict をセットして
+        下流の market_db['topix'] 参照が KeyError にならないようにする"""
+        prev_db = {"theme_rank": []}  # topix キー無し
+        captured, p_get, p_save, p_theme = self._patch_common(prev_db)
+
+        empty_maker = lambda: {"topix": {}}
+        good = lambda key, rs: (lambda: {key: self._good_index_dict(rs=rs)})
+
+        with p_get, p_save, p_theme, \
+                patch.object(make_market_db, "make_topix_db", side_effect=empty_maker), \
+                patch.object(make_market_db, "make_mothers_db", side_effect=good("mothers", 1.08)), \
+                patch.object(make_market_db, "make_nikkei_db", side_effect=good("nikkei225", 1.29)), \
+                patch.object(make_market_db, "make_nasdaq_db", side_effect=good("nasdaq", 1.17)), \
+                patch.object(make_market_db, "make_sp500_db", side_effect=good("sp500", 1.11)):
+            make_market_db.update_market_db()
+
+        assert "topix" in captured["saved"]
+        assert captured["saved"]["topix"] == {}
