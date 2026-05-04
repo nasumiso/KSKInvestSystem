@@ -1348,7 +1348,8 @@ def list_portfolio_with_indicators(records: List[Dict[str, Any]]) -> List[Dict[s
         records: portfolio_shelve.list_records の戻り値 (既に status 等で絞り込み済み)
 
     Returns:
-        各 dict: portfolio レコード + {stock_name, rank, per, market_cap, dividend, rs,
+        各 dict: portfolio レコード + {stock_name, rank, kessanbi_md, per, market_cap,
+                                     dividend, rs, sales_growth, profit_growth,
                                      trend_template, tags, theoretical_diff,
                                      gyoseki, indicators_raw}
         rank 昇順 (rank が None の銘柄は末尾)。
@@ -1405,6 +1406,34 @@ def _format_theoretical_diff(stock: Dict[str, Any]) -> str:
     return f"{int(kairi)}%"
 
 
+def _annual_growth(stock: Dict[str, Any]) -> tuple:
+    """gyoseki.calc_annual_growth を遅延 import で呼んで (sales%, profit%) を返す。
+
+    code_rank.csv の業績列 [A]X%,Y% の X, Y。取れなければ (None, None)。
+    """
+    if not stock:
+        return (None, None)
+    try:
+        from gyoseki import calc_annual_growth  # 遅延 import (循環回避)
+        result = calc_annual_growth(stock)
+    except Exception:
+        return (None, None)
+    if not result:
+        return (None, None)
+    # result = (年度, 売上%, 営利%)
+    return result[1], result[2]
+
+
+def _format_kessanbi_md(kessanbi: Any) -> str:
+    """kessanbi (YYYY/MM/DD) を MM/DD 形式に整形して返す。空なら "—"。"""
+    if not kessanbi or not isinstance(kessanbi, str):
+        return "—"
+    parts = kessanbi.split("/")
+    if len(parts) >= 3:
+        return f"{parts[1]}/{parts[2]}"
+    return kessanbi
+
+
 def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     """stocks_shelve の dict から portfolio 一覧表示用の指標を抽出する。
 
@@ -1413,10 +1442,13 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     if not stock:
         return {
             "rank": None,
+            "kessanbi_md": "—",
             "per": "—",
             "market_cap": "—",
             "dividend": "—",
             "rs": "—",
+            "sales_growth": "—",
+            "profit_growth": "—",
             "trend_template": "—",
             "tags": "—",
             "theoretical_diff": "—",
@@ -1433,22 +1465,31 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     per = shihyo.get("PER")
     market_cap = stock.get("market_cap") or shihyo.get("jikasogaku")
     dividend_yield = shihyo.get("dividend_yield")
-    rs_raw = stock.get("rs_raw")
+    # RS 列は code_rank.csv の「モメンタム(現在.20日比/5日比)」列の先頭値 (0〜100 の momentum_pt)
+    momentum_pt = stock.get("momentum_pt")
+    sales_growth, profit_growth = _annual_growth(stock)
 
     from make_stock_db import get_trend_template_expr  # 遅延 import (循環回避)
 
+    trend_expr = get_trend_template_expr(stock)
+    trend_misses = stock.get("trend_template") if isinstance(stock.get("trend_template"), list) else []
+    # tooltip 用: 不通過項目の全件 (テーブル列で見切れた時にホバーで参照)
+    trend_tooltip = ",".join(trend_misses) if trend_misses else trend_expr
+
     return {
         "rank": rank if isinstance(rank, int) else None,
+        "kessanbi_md": _format_kessanbi_md(stock.get("kessanbi")),
         "per": f"{per:.1f}" if isinstance(per, (int, float)) else "—",
         "market_cap": f"{market_cap:.0f}億" if isinstance(market_cap, (int, float)) else "—",
         "dividend": f"{dividend_yield:.2f}%" if isinstance(dividend_yield, (int, float)) else "—",
-        "rs": f"{rs_raw:.2f}" if isinstance(rs_raw, (int, float)) else "—",
-        "trend_template": get_trend_template_expr(stock),
+        "rs": f"{int(momentum_pt)}" if isinstance(momentum_pt, (int, float)) else "—",
+        "sales_growth": f"{int(sales_growth)}%" if isinstance(sales_growth, (int, float)) else "—",
+        "profit_growth": f"{int(profit_growth)}%" if isinstance(profit_growth, (int, float)) else "—",
+        "trend_template": trend_expr,
+        "trend_template_tooltip": trend_tooltip,
         "tags": _format_tags(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
         "gyoseki": {
-            "score_gyoseki": stock.get("score_gyoseki"),
-            "kessanbi": stock.get("kessanbi"),
             "isKonki": stock.get("isKonki"),
         },
         "indicators_raw": stock,

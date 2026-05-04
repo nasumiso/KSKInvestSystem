@@ -86,6 +86,7 @@ MEMO_FIELDS = frozenset(
         "trade_idea",             # 投資売買アイデア
         "inago_origin",           # イナゴ元・きっかけ
         "takaichi_sensitivity",   # 高市感応度
+        "last_research_update",   # 銘柄調査スプシでの更新日 (M/D 形式、年なし)
     }
 )
 
@@ -261,6 +262,7 @@ def create_memo(
     trade_idea: str = "",
     inago_origin: str = "",
     takaichi_sensitivity: str = "",
+    last_research_update: str = "",
 ) -> Dict[str, str]:
     """手動メモ dict を生成する。"""
     return {
@@ -269,6 +271,7 @@ def create_memo(
         "trade_idea": trade_idea,
         "inago_origin": inago_origin,
         "takaichi_sensitivity": takaichi_sensitivity,
+        "last_research_update": last_research_update,
     }
 
 

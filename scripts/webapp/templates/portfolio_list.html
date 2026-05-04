@@ -37,10 +37,13 @@
       <th>コード</th>
       <th>銘柄名</th>
       <th>順位</th>
+      <th>決算日</th>
       <th>PER</th>
       <th>時価総額</th>
       <th>配当</th>
-      <th>RS</th>
+      <th>売上成長</th>
+      <th>利益成長</th>
+      <th>モメンタム</th>
       <th>トレンド</th>
       <th>タグ</th>
       <th>理論株価乖離</th>
@@ -57,27 +60,31 @@
       <td><a href="/stock/{{ row.code_s }}">{{ row.code_s }}</a></td>
       <td>{{ row.stock_name }}</td>
       <td>{{ row.rank if row.rank is not none else "—" }}</td>
+      <td>{{ row.kessanbi_md }}</td>
       <td>{{ row.per }}</td>
       <td>{{ row.market_cap }}</td>
       <td>{{ row.dividend }}</td>
+      <td>{{ row.sales_growth }}</td>
+      <td>{{ row.profit_growth }}</td>
       <td>{{ row.rs }}</td>
-      <td>{{ row.trend_template }}</td>
+      <td title="{{ row.trend_template_tooltip }}"
+          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ row.trend_template }}</td>
       <td>{{ row.tags }}</td>
       <td>{{ row.theoretical_diff }}</td>
     </tr>
     <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
-      <td colspan="11" style="background:#f8f8f8;padding:0.8em 1em;">
+      <td colspan="14" style="background:#f8f8f8;padding:0.8em 1em;">
         <div style="display:flex;flex-wrap:wrap;gap:1.5em;">
-          <div style="flex:1;min-width:240px;">
-            <strong style="font-size:0.85em;color:#666;">業績</strong>
-            <div style="font-size:0.85em;">
-              スコア: {{ row.gyoseki.score_gyoseki if row.gyoseki.score_gyoseki is not none else "—" }}
-              / 決算日: {{ row.gyoseki.kessanbi or "—" }}
-              {% if row.gyoseki.isKonki %} / 今期 {% endif %}
-            </div>
+          {% if row.gyoseki.isKonki %}
+          <div style="flex:0 0 auto;">
+            <strong style="font-size:0.85em;color:#666;">今期</strong>
           </div>
+          {% endif %}
           <div style="flex:1;min-width:240px;">
             <strong style="font-size:0.85em;color:#666;">手動メモ</strong>
+            {% if row.memo.last_research_update %}
+            <span style="font-size:0.85em;color:#999;margin-left:0.5em;">調査更新日: {{ row.memo.last_research_update }}</span>
+            {% endif %}
             <ul style="font-size:0.85em;margin:0.3em 0 0 1em;padding:0;">
               {% if row.memo.gyoutai_theme %}<li><strong>業態・テーマ:</strong> {{ row.memo.gyoutai_theme }}</li>{% endif %}
               {% if row.memo.watch_in_reason %}<li><strong>IN 理由:</strong> {{ row.memo.watch_in_reason }}</li>{% endif %}

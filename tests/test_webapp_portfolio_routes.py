@@ -54,21 +54,29 @@ def app(portfolio_db_path, stocks_db_path, txt_path, monkeypatch):
         db["6324"] = {
             "code_s": "6324", "stock_name": "ハーモニックドライブシステムズ",
             "shihyo": {"PER": 308.0, "dividend_yield": 0.39, "jikasogaku": 4960.0},
-            "market_cap": 4705.0, "rs_raw": 1.63, "trend_template": [],
+            "market_cap": 4705.0, "momentum_pt": 90, "trend_template": [],
             "stock_rank_log": [("2026-05-03", 612)],
             "price": 5150, "rironkabuka": 659,
         }
         db["3496"] = {
             "code_s": "3496", "stock_name": "アズーム",
             "shihyo": {"PER": 30.0, "dividend_yield": 1.5},
-            "market_cap": 100.0, "rs_raw": 2.5, "trend_template": [],
+            "market_cap": 100.0, "momentum_pt": 85, "trend_template": [],
             "stock_rank_log": [("2026-05-03", 50)],
             "new_high": ["新"],
+            # 年度成長率テスト用 (calc_annual_growth は tbl[-2], tbl[-3] を比較)
+            # gyoseki_current[i] = [年度, 売上, 営業益, 経常益, 純利益, EPS, BPS]
+            # -3=2023, -2=2024 (基準), -1=2025予 → 売上 50→100 (+100%), 営利 5→10 (+100%)
+            "gyoseki_current": [
+                ["2023.03", 50, 5, 5, 3, 0, 0],
+                ["2024.03", 100, 10, 11, 6, 0, 0],
+                ["2025.03", 138, 22, 22, 12, 0, 0],
+            ],
         }
         db["7203"] = {
             "code_s": "7203", "stock_name": "トヨタ自動車",
             "shihyo": {"PER": 12.0, "dividend_yield": 2.5},
-            "market_cap": 30000.0, "rs_raw": 0.95,
+            "market_cap": 30000.0, "momentum_pt": 40,
             "trend_template": ["不通過1", "不通過2", "不通過3"],
             "stock_rank_log": [("2026-05-03", 200)],
         }
@@ -124,13 +132,15 @@ class TestDashboardGet:
         assert "1 件" in html or "(1)" in html or ">1<" in html
 
     def test_dashboard_shows_indicators(self, client):
-        """1保 タブで PER / RS / 順位等の指標が表示される"""
+        """1保 タブで PER / モメンタム / 順位等の指標が表示される"""
         resp = client.get("/portfolio?status=hold")
         html = resp.data.decode()
         # アズームの指標
         assert "30.0" in html  # PER
-        assert "2.50" in html  # RS
+        assert ">85<" in html  # モメンタム
         assert "50" in html    # rank
+        # 売上成長%・利益成長% (アズーム fixture の gyoseki_current から計算: 50→100 は +100%)
+        assert ">100%<" in html
 
 
 class TestAddPost:

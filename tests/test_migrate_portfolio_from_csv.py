@@ -232,6 +232,32 @@ class TestMigrate:
         assert "\n" in rec["memo"]["gyoutai_theme"]
         assert rec["memo"]["takaichi_sensitivity"] == "C:給付付き税額控除"
 
+    def test_preserve_existing_status(self, sample_csv, db_path):
+        """既存レコードに 1保 / 2準 がある時、再インポートで status を保持する"""
+        # 1 回目: 通常移行 (全部 3監)
+        mp.migrate_csv_to_portfolio_shelve(sample_csv, db_path=db_path)
+        # 4377 を 1保 に変更
+        ps.transition_status("4377", "1保", db_path=db_path)
+
+        # 2 回目: preserve_existing_status=True で再インポート
+        mp.migrate_csv_to_portfolio_shelve(
+            sample_csv, db_path=db_path, preserve_existing_status=True,
+            record_initial_log=False,
+        )
+        rec = ps.get_record("4377", db_path=db_path)
+        assert rec["status"] == "1保"  # 保持される
+
+    def test_preserve_existing_status_off_resets_status(self, sample_csv, db_path):
+        """preserve_existing_status=False (デフォルト) では既存 status が 3監 にリセットされる"""
+        mp.migrate_csv_to_portfolio_shelve(sample_csv, db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+
+        mp.migrate_csv_to_portfolio_shelve(
+            sample_csv, db_path=db_path, record_initial_log=False,
+        )
+        rec = ps.get_record("4377", db_path=db_path)
+        assert rec["status"] == "3監"
+
     def test_skips_invalid_rows(self, tmp_path, db_path):
         csv_path = tmp_path / "with_invalid.csv"
         rows = [

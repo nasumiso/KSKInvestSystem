@@ -53,6 +53,7 @@ EXPECTED_COL_COUNT = 36
 COL_CODE_S = 0           # 銘柄コード
 COL_STOCK_NAME = 1       # 銘柄名
 COL_GYOUTAI = 3          # 業態・テーマ
+COL_LAST_UPDATE = 18     # 銘柄調査の更新日 (M/D 形式)
 COL_WATCH_REASON = 31    # ウォッチ・IN理由
 COL_INAGO = 33           # イナゴ元・きっかけ
 COL_TRADE_IDEA = 34      # 投資売買アイデア
@@ -113,7 +114,7 @@ def read_csv_rows(csv_path: str) -> List[List[str]]:
 # ===========================================
 
 def parse_memo_columns(row: List[str]) -> Tuple[Dict[str, str], List[str]]:
-    """5 つのメモ列をパースして memo dict を返す。
+    """6 つのメモ列をパースして memo dict を返す。
 
     Returns: (memo dict, warnings)
     """
@@ -130,6 +131,7 @@ def parse_memo_columns(row: List[str]) -> Tuple[Dict[str, str], List[str]]:
         trade_idea=(row[COL_TRADE_IDEA] or "").strip(),
         inago_origin=(row[COL_INAGO] or "").strip(),
         takaichi_sensitivity=(row[COL_TAKAICHI] or "").strip(),
+        last_research_update=(row[COL_LAST_UPDATE] or "").strip(),
     )
     return memo, warnings
 
@@ -186,6 +188,7 @@ def migrate_csv_to_portfolio_shelve(
     dry_run: bool = False,
     db_path: Optional[str] = None,
     record_initial_log: bool = True,
+    preserve_existing_status: bool = False,
 ) -> Dict[str, Any]:
     """CSV 全体を portfolio_shelve に移行する。
 
@@ -194,6 +197,8 @@ def migrate_csv_to_portfolio_shelve(
         dry_run: True なら読み込み・組立まで行うが書き込まない
         db_path: portfolio_shelve のパス上書き (テスト用)
         record_initial_log: True なら各レコードに 初回登録 ログを記録 (デフォルト)
+        preserve_existing_status: True なら既存レコードのステータスを保持し、memo のみ上書き
+            (運用後の再インポート用。初回移行では False で OK = 全部 3監 で書く)
 
     Returns: {"total": int, "saved": int, "skipped": int, "warnings": List[str]}
     """
@@ -220,7 +225,14 @@ def migrate_csv_to_portfolio_shelve(
             saved += 1
             continue
         # 既存があれば上書き、新規なら追加
-        existed = ps.get_record(record["code_s"], db_path=db_path) is not None
+        existing = ps.get_record(record["code_s"], db_path=db_path)
+        existed = existing is not None
+        if existed and preserve_existing_status:
+            # 既存レコードのステータス・registered_at を保持し、memo を CSV のもので上書き
+            record["status"] = existing.get("status", record["status"])
+            if existing.get("registered_at"):
+                record["registered_at"] = existing["registered_at"]
+            record["updated_at"] = ps.now_iso()
         ps.upsert_record(record, db_path=db_path)
         if record_initial_log and not existed:
             ps.append_action_log(
@@ -273,6 +285,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="portfolio_shelve のパス上書き (テスト用)",
     )
+    parser.add_argument(
+        "--preserve-status",
+        action="store_true",
+        help="既存レコードの status を保持し memo のみ上書きする (運用後の再インポート用)",
+    )
     return parser
 
 
@@ -286,6 +303,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.csv_path,
         dry_run=args.dry_run,
         db_path=args.db_path,
+        preserve_existing_status=args.preserve_status,
     )
     print(
         f"total={result['total']} saved={result['saved']} "
