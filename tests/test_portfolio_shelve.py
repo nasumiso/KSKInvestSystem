@@ -420,7 +420,7 @@ class TestSyncToTxt:
         between = content[h_pos:w_pos]
         assert "\n\n" in between
 
-    def test_sync_treats_2jun_as_watch(self, db_path, tmp_path):
+    def test_sync_treats_2jun_as_watch(self, db_path, tmp_path, stocks_db_for_sync):
         """2準 は H 接頭辞なしで書き出される (txt は 2 値)"""
         ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "2準", db_path=db_path)
