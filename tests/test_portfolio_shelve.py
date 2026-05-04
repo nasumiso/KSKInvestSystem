@@ -81,21 +81,21 @@ class TestSchema:
         assert memo["watch_in_reason"] == ""
 
     def test_create_record_minimal(self):
-        rec = ps.create_record("4377", "ワンキャリア")
+        rec = ps.create_record("4377")
         assert rec["code_s"] == "4377"
-        assert rec["stock_name"] == "ワンキャリア"
+        assert "stock_name" not in rec  # 新スキーマでは銘柄名を持たない
         assert rec["status"] == "3監"
         assert rec["registered_at"]
         assert rec["updated_at"] == rec["registered_at"]
         assert set(rec["memo"].keys()) == ps.MEMO_FIELDS
 
     def test_create_record_with_explicit_status(self):
-        rec = ps.create_record("4377", "ワンキャリア", status="1保")
+        rec = ps.create_record("4377", status="1保")
         assert rec["status"] == "1保"
 
     def test_create_record_invalid_status(self):
         with pytest.raises(ValueError):
-            ps.create_record("4377", "ワンキャリア", status="未定")
+            ps.create_record("4377", status="未定")
 
 
 # ==================================================
@@ -104,16 +104,17 @@ class TestSchema:
 class TestAddToWatch:
 
     def test_add_to_watch_creates_record(self, db_path):
-        rec = ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        rec = ps.add_to_watch("4377", db_path=db_path)
         assert rec["code_s"] == "4377"
         assert rec["status"] == "3監"
+        assert "stock_name" not in rec  # 新スキーマでは銘柄名を持たない
 
         loaded = ps.get_record("4377", db_path=db_path)
         assert loaded is not None
-        assert loaded["stock_name"] == "ワンキャリア"
+        assert "stock_name" not in loaded
 
     def test_add_to_watch_records_initial_log(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path, reason="新規登録")
+        ps.add_to_watch("4377", db_path=db_path, reason="新規登録")
         logs = ps.list_action_logs("4377", db_path=db_path)
         assert len(logs) == 1
         assert logs[0]["action_type"] == "初回登録"
@@ -123,12 +124,12 @@ class TestAddToWatch:
         assert logs[0]["seq"] == 1
 
     def test_add_to_watch_duplicate_raises(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         with pytest.raises(ValueError):
-            ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+            ps.add_to_watch("4377", db_path=db_path)
 
     def test_add_to_watch_normalizes_code_s(self, db_path):
-        ps.add_to_watch("215a", "テスト銘柄", db_path=db_path)
+        ps.add_to_watch("215a", db_path=db_path)
         loaded = ps.get_record("215A", db_path=db_path)
         assert loaded is not None
         assert loaded["code_s"] == "215A"
@@ -140,7 +141,7 @@ class TestAddToWatch:
 class TestTransitionStatus:
 
     def test_transition_3kan_to_2jun(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         rec = ps.transition_status(
             "4377", "2準", reason="そろそろ買う", db_path=db_path
         )
@@ -154,7 +155,7 @@ class TestTransitionStatus:
 
     def test_transition_1ho_to_2jun_records_uri_kyaku(self, db_path):
         """1保 -> 2準 は売却として記録される"""
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "1保", db_path=db_path)
         ps.transition_status("4377", "2準", reason="決算後売り", db_path=db_path)
 
@@ -166,13 +167,13 @@ class TestTransitionStatus:
         assert logs[2]["status_to"] == "2準"
 
     def test_transition_to_1ho_directly_from_3kan(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         rec = ps.transition_status("4377", "1保", db_path=db_path)
         assert rec["status"] == "1保"
 
     def test_transition_invalid_path_rejected(self, db_path):
         """禁止遷移は ValueError"""
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         # 3監 -> 3監 は同一遷移として ALLOWED に入っていないので禁止
         # ただし transition_status は同一ステータスなら no-op としているため
         # ここでは別の禁止パターンを試す。実装の ALLOWED_TRANSITIONS 上、
@@ -182,7 +183,7 @@ class TestTransitionStatus:
             ps.transition_status("9999", "2準", db_path=db_path)
 
     def test_transition_same_status_is_noop(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "3監", db_path=db_path)  # no-op
         logs = ps.list_action_logs("4377", db_path=db_path)
         assert len(logs) == 1  # 初回登録だけ、ステータス変更ログは出ない
@@ -194,14 +195,14 @@ class TestTransitionStatus:
 class TestDeleteRecord:
 
     def test_delete_3kan_succeeds(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         ok = ps.delete_record("4377", reason="興味なくなった", db_path=db_path)
         assert ok is True
         assert ps.get_record("4377", db_path=db_path) is None
 
     def test_delete_records_log_after_record_gone(self, db_path):
         """削除しても action_log は残る"""
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         ps.delete_record("4377", reason="不要", db_path=db_path)
         logs = ps.list_action_logs("4377", db_path=db_path)
         # 初回登録 + 削除 = 2件
@@ -211,7 +212,7 @@ class TestDeleteRecord:
 
     def test_delete_1ho_rejected(self, db_path):
         """1保 から直接削除は禁止"""
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "1保", db_path=db_path)
         with pytest.raises(ValueError):
             ps.delete_record("4377", db_path=db_path)
@@ -219,7 +220,7 @@ class TestDeleteRecord:
         assert ps.get_record("4377", db_path=db_path) is not None
 
     def test_delete_2jun_rejected(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "2準", db_path=db_path)
         with pytest.raises(ValueError):
             ps.delete_record("4377", db_path=db_path)
@@ -235,8 +236,8 @@ class TestDeleteRecord:
 class TestListing:
 
     def test_list_records_filters_by_status(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
-        ps.add_to_watch("7089", "フォースタートアップス", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
         ps.transition_status("7089", "1保", db_path=db_path)
 
         watch = ps.list_records(status="3監", db_path=db_path)
@@ -248,16 +249,16 @@ class TestListing:
         assert [r["code_s"] for r in all_recs] == ["4377", "7089"]
 
     def test_list_records_sorted_by_code_s(self, db_path):
-        ps.add_to_watch("7089", "フォースタートアップス", db_path=db_path)
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
-        ps.add_to_watch("215A", "アクセルスペース", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("215A", db_path=db_path)
 
         recs = ps.list_records(db_path=db_path)
         assert [r["code_s"] for r in recs] == ["215A", "4377", "7089"]
 
     def test_list_action_logs_per_code(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
-        ps.add_to_watch("7089", "フォースタートアップス", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
         ps.transition_status("4377", "2準", db_path=db_path)
 
         logs_4377 = ps.list_action_logs("4377", db_path=db_path)
@@ -269,7 +270,7 @@ class TestListing:
         assert len(all_logs) == 3
 
     def test_list_action_logs_sorted_by_seq(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         # seq が二桁・三桁で正しく順序が保たれることを確認するため複数遷移
         for next_status in ["2準", "1保", "2準", "1保", "2準", "3監", "2準"]:
             ps.transition_status("4377", next_status, db_path=db_path)
@@ -285,7 +286,7 @@ class TestListing:
 class TestUpsertRecord:
 
     def test_upsert_record_creates_without_log(self, db_path):
-        rec = ps.create_record("4377", "ワンキャリア")
+        rec = ps.create_record("4377")
         ps.upsert_record(rec, db_path=db_path)
         loaded = ps.get_record("4377", db_path=db_path)
         assert loaded is not None
@@ -294,18 +295,17 @@ class TestUpsertRecord:
         assert logs == []
 
     def test_upsert_record_overwrites(self, db_path):
-        rec1 = ps.create_record("4377", "ワンキャリア", status="3監")
+        rec1 = ps.create_record("4377", status="3監")
         ps.upsert_record(rec1, db_path=db_path)
-        rec2 = ps.create_record("4377", "ワンキャリア改名", status="1保")
+        rec2 = ps.create_record("4377", status="1保")
         ps.upsert_record(rec2, db_path=db_path)
 
         loaded = ps.get_record("4377", db_path=db_path)
-        assert loaded["stock_name"] == "ワンキャリア改名"
         assert loaded["status"] == "1保"
 
     def test_upsert_record_requires_code_s(self, db_path):
         with pytest.raises(ValueError):
-            ps.upsert_record({"stock_name": "x"}, db_path=db_path)
+            ps.upsert_record({"status": "3監"}, db_path=db_path)
 
 
 # ==================================================
@@ -315,8 +315,8 @@ class TestKeyNamespaceIsolation:
 
     def test_action_log_persists_after_delete(self, db_path):
         """レコード削除後も action_log は残るかつ他キーに影響しない"""
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
-        ps.add_to_watch("7089", "フォースタートアップス", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
         ps.delete_record("4377", db_path=db_path)
 
         # 4377 のレコードはなくなる
@@ -328,8 +328,8 @@ class TestKeyNamespaceIsolation:
         assert ps.get_record("7089", db_path=db_path) is not None
 
     def test_seq_counter_isolated_per_code(self, db_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
-        ps.add_to_watch("7089", "フォースタートアップス", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
         ps.transition_status("4377", "2準", db_path=db_path)
         ps.transition_status("7089", "2準", db_path=db_path)
 
@@ -343,12 +343,38 @@ class TestKeyNamespaceIsolation:
 # ==================================================
 # my_watch_list.txt 一方向同期
 # ==================================================
+@pytest.fixture
+def stocks_db_for_sync(tmp_path, monkeypatch):
+    """sync_to_my_watch_list_txt が銘柄名を引くための stocks_shelve を差し替え。
+
+    銘柄名は portfolio_shelve には保存されないため、sync は stocks_shelve / research_shelve
+    から都度取得する。テストでは tmp_path の stocks_shelve を用意して期待値を入れておく。
+    """
+    from db_shelve import ShelveDB
+
+    stocks_path = str(tmp_path / "test_stocks_shelve")
+    research_path = str(tmp_path / "test_research_shelve")
+    monkeypatch.setattr("db_shelve.STOCKS_SHELVE", stocks_path)
+    monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", research_path)
+
+    name_map = {
+        "4377": "ワンキャリア",
+        "7089": "フォースタートアップス",
+        "5032": "AnyColor",
+        "6232": "ACSL",
+    }
+    with ShelveDB(stocks_path) as db:
+        for code, name in name_map.items():
+            db[code] = {"code_s": code, "stock_name": name}
+    return stocks_path
+
+
 class TestSyncToTxt:
 
-    def test_sync_writes_holds_with_h_prefix(self, db_path, tmp_path):
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+    def test_sync_writes_holds_with_h_prefix(self, db_path, tmp_path, stocks_db_for_sync):
+        ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "1保", db_path=db_path)
-        ps.add_to_watch("7089", "フォースタートアップス", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
         ps.transition_status("7089", "1保", db_path=db_path)
 
         txt_path = str(tmp_path / "my_watch_list.txt")
@@ -356,15 +382,15 @@ class TestSyncToTxt:
 
         with open(txt_path, encoding="utf-8") as f:
             content = f.read()
-        # 1保 が H 接頭辞付きで code_s 昇順に並ぶ
+        # 1保 が H 接頭辞付きで code_s 昇順に並ぶ。銘柄名は stocks_shelve から引かれる。
         assert "H4377ワンキャリア" in content
         assert "H7089フォースタートアップス" in content
         # 4377 が 7089 より先に来る
         assert content.index("H4377") < content.index("H7089")
 
-    def test_sync_writes_watch_without_prefix(self, db_path, tmp_path):
-        ps.add_to_watch("5032", "AnyColor", db_path=db_path)
-        ps.add_to_watch("6232", "ACSL", db_path=db_path)
+    def test_sync_writes_watch_without_prefix(self, db_path, tmp_path, stocks_db_for_sync):
+        ps.add_to_watch("5032", db_path=db_path)
+        ps.add_to_watch("6232", db_path=db_path)
 
         txt_path = str(tmp_path / "my_watch_list.txt")
         ps.sync_to_my_watch_list_txt(txt_path=txt_path, db_path=db_path)
@@ -376,10 +402,10 @@ class TestSyncToTxt:
         # H 接頭辞は付かない
         assert "H5032" not in content
 
-    def test_sync_separates_holds_from_others(self, db_path, tmp_path):
-        ps.add_to_watch("4377", "保有銘柄", db_path=db_path)
+    def test_sync_separates_holds_from_others(self, db_path, tmp_path, stocks_db_for_sync):
+        ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "1保", db_path=db_path)
-        ps.add_to_watch("5032", "ウォッチ銘柄", db_path=db_path)
+        ps.add_to_watch("5032", db_path=db_path)
 
         txt_path = str(tmp_path / "my_watch_list.txt")
         ps.sync_to_my_watch_list_txt(txt_path=txt_path, db_path=db_path)
@@ -388,7 +414,7 @@ class TestSyncToTxt:
             content = f.read()
         # 1保 → 空行 → 3監 の順 (現行 my_watch_list.txt の見た目互換)
         h_pos = content.index("H4377")
-        w_pos = content.index("5032ウォッチ銘柄")
+        w_pos = content.index("5032AnyColor")
         assert h_pos < w_pos
         # 間に空行あり
         between = content[h_pos:w_pos]
@@ -396,7 +422,7 @@ class TestSyncToTxt:
 
     def test_sync_treats_2jun_as_watch(self, db_path, tmp_path):
         """2準 は H 接頭辞なしで書き出される (txt は 2 値)"""
-        ps.add_to_watch("4377", "ワンキャリア", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "2準", db_path=db_path)
 
         txt_path = str(tmp_path / "my_watch_list.txt")

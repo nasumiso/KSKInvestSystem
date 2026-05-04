@@ -65,17 +65,19 @@ KEY_RECORD_PREFIX = "record:"
 KEY_ACTION_LOG_PREFIX = "action_log:"
 KEY_SEQ_PREFIX = "_seq:"
 
-# レコードの既知フィールド
+# レコードの既知フィールド (銘柄名は持たない: 表示時に stocks_shelve / research_shelve から都度取得する)
 RECORD_FIELDS = frozenset(
     {
         "code_s",
-        "stock_name",
         "status",
         "registered_at",
         "updated_at",
         "memo",
     }
 )
+
+# 旧スキーマ由来で許容するが扱わないフィールド (新スキーマでは未使用、過去データ互換のため warning しない)
+LEGACY_RECORD_FIELDS = frozenset({"stock_name"})
 
 MEMO_FIELDS = frozenset(
     {
@@ -272,7 +274,6 @@ def create_memo(
 
 def create_record(
     code_s: str,
-    stock_name: str,
     *,
     status: str = "3監",
     memo: Optional[Dict[str, str]] = None,
@@ -281,6 +282,9 @@ def create_record(
 ) -> Dict[str, Any]:
     """portfolio レコード dict を生成する。
 
+    銘柄名はこのレコードには保存しない (要件 §4: 指標データは保存せず stocks_shelve から
+    都度参照する原則を銘柄名にも適用)。
+
     - code_s は normalize_code_s で大文字化される
     - status はデフォルト "3監" (新規追加用)
     - memo が None なら空メモで埋める
@@ -288,8 +292,6 @@ def create_record(
     """
     validate_code_s(code_s)
     normalized_code = normalize_code_s(code_s)
-    if not isinstance(stock_name, str):
-        raise TypeError(f"stock_name must be str, got {type(stock_name).__name__}")
     validate_status(status)
     if memo is None:
         memo = create_memo()
@@ -298,7 +300,6 @@ def create_record(
     timestamp = registered_at or now_iso()
     return {
         "code_s": normalized_code,
-        "stock_name": stock_name,
         "status": status,
         "registered_at": timestamp,
         "updated_at": updated_at or timestamp,
@@ -451,13 +452,14 @@ def list_action_logs(
 
 def add_to_watch(
     code_s: str,
-    stock_name: str,
     *,
     memo: Optional[Dict[str, str]] = None,
     reason: str = "",
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """銘柄を 3監 として新規追加する。
+
+    銘柄名は持たない (表示時に stocks_shelve / research_shelve から都度取得)。
 
     - 既存レコードが存在する場合は ValueError (重複登録防止)
     - 同時に 初回登録 アクションログを 1 件記録
@@ -466,7 +468,7 @@ def add_to_watch(
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
-    record = create_record(normalized, stock_name, status="3監", memo=memo)
+    record = create_record(normalized, status="3監", memo=memo)
     path = _resolve_db_path(db_path)
     with _flock(db_path):
         with ShelveDB(path) as db:
@@ -484,7 +486,7 @@ def add_to_watch(
             reason=reason,
             db_path=db_path,
         )
-    log_print("portfolio_shelve: 3監 追加", normalized, stock_name)
+    log_print("portfolio_shelve: 3監 追加", normalized)
     return record
 
 
@@ -509,7 +511,7 @@ def upsert_record(
     stored = dict(record)
     stored["code_s"] = normalized
 
-    unknown = set(stored.keys()) - RECORD_FIELDS
+    unknown = set(stored.keys()) - RECORD_FIELDS - LEGACY_RECORD_FIELDS
     if unknown:
         log_warning(
             "portfolio_shelve: 未知のレコードフィールドを保存します:",
@@ -638,6 +640,42 @@ def delete_record(
 # my_watch_list.txt 一方向同期
 # ===========================================
 
+def _resolve_stock_names(code_list: List[str]) -> Dict[str, str]:
+    """code_s ごとの銘柄名を解決する (stocks_shelve → research_shelve → "" の優先順)。
+
+    portfolio_shelve は銘柄名を持たないため、表示や txt 同期で必要なら都度こちらを呼ぶ。
+    両 shelve とも未登録なら空文字。
+    """
+    from db_shelve import STOCKS_SHELVE, RESEARCH_SHELVE  # 遅延 import (循環回避)
+
+    result: Dict[str, str] = {c: "" for c in code_list}
+    if not code_list:
+        return result
+
+    try:
+        with ShelveDB(STOCKS_SHELVE) as db:
+            for c in code_list:
+                rec = db.get(c)
+                if rec and rec.get("stock_name"):
+                    result[c] = rec["stock_name"]
+    except Exception:
+        # stocks_shelve が無い等は無視 (research_shelve fallback に進む)
+        pass
+
+    missing = [c for c, n in result.items() if not n]
+    if missing:
+        try:
+            with ShelveDB(RESEARCH_SHELVE) as db:
+                for c in missing:
+                    rec = db.get(c)
+                    if rec and rec.get("stock_name"):
+                        result[c] = rec["stock_name"]
+        except Exception:
+            pass
+
+    return result
+
+
 def sync_to_my_watch_list_txt(
     *,
     txt_path: Optional[str] = None,
@@ -647,6 +685,9 @@ def sync_to_my_watch_list_txt(
 
     一方向同期 (shelve → txt)。txt 廃止 issue (将来) で sync 自体を停止する想定。
     旧コードと既存運用との互換のため、Phase 3 完了後も同期は有効のまま残す。
+
+    銘柄名は portfolio_shelve には保存されていないため stocks_shelve / research_shelve から
+    都度引く (どちらにも無ければ code のみ書き出す)。
 
     フォーマット (現行 my_watch_list.txt 互換):
     - 1保 → "H<code_s><stock_name>" (H 接頭辞)
@@ -677,13 +718,17 @@ def sync_to_my_watch_list_txt(
         key=lambda r: r.get("code_s", ""),
     )
 
+    name_map = _resolve_stock_names([r.get("code_s", "") for r in holds + others])
+
     lines: List[str] = []
     for r in holds:
-        lines.append(f"H{r.get('code_s', '')}{r.get('stock_name', '')}")
+        code = r.get("code_s", "")
+        lines.append(f"H{code}{name_map.get(code, '')}")
     if holds and others:
         lines.append("")
     for r in others:
-        lines.append(f"{r.get('code_s', '')}{r.get('stock_name', '')}")
+        code = r.get("code_s", "")
+        lines.append(f"{code}{name_map.get(code, '')}")
 
     txt_dir = os.path.dirname(txt_path)
     if txt_dir and not os.path.exists(txt_dir):

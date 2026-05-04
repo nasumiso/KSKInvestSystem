@@ -28,7 +28,6 @@
         {% else %}
         <form action="/portfolio/add" method="POST" style="display:inline;margin:0;">
           <input type="hidden" name="code_s" value="{{ record.code_s }}">
-          <input type="hidden" name="stock_name" value="{{ record.stock_name or '' }}">
           <button type="submit" class="outline" style="padding:0.2em 0.6em;font-size:0.85em;margin:0;"
                   onclick="return confirm('{{ record.code_s }} {{ record.stock_name or '' }} を監視に追加しますか?')">
             + 監視に追加

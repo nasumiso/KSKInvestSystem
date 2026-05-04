@@ -159,9 +159,10 @@ def build_record_from_row(
         return None, warnings
 
     code_s = ps.normalize_code_s(code_raw)
-    stock_name = (row[COL_STOCK_NAME] or "").strip() if len(row) > COL_STOCK_NAME else ""
-    if not stock_name:
-        warnings.append(f"{code_s}: 銘柄名が空")
+    # 銘柄名は portfolio_shelve には保存しない (要件 §4: 表示時に他DBから取得)。
+    # CSV の銘柄名列は無視するが、空欄は CSV 側の不備として警告のみ出す。
+    if len(row) > COL_STOCK_NAME and not (row[COL_STOCK_NAME] or "").strip():
+        warnings.append(f"{code_s}: CSV の銘柄名列が空 (portfolio_shelve に保存しないため致命的ではない)")
 
     memo, memo_warnings = parse_memo_columns(row)
     warnings.extend(memo_warnings)
@@ -169,7 +170,6 @@ def build_record_from_row(
     # 仕様: ステータスは仮で 3監 (後段の txt 取り込みで上書きされる)
     record = ps.create_record(
         code_s,
-        stock_name,
         status="3監",
         memo=memo,
     )
@@ -240,9 +240,7 @@ def migrate_csv_to_portfolio_shelve(
     if dry_run and sample_records:
         log_print("migrate_portfolio: dry-run サンプル (先頭 3 件):")
         for rec in sample_records:
-            log_print(
-                f"  - {rec['code_s']} {rec['stock_name']} status={rec['status']}"
-            )
+            log_print(f"  - {rec['code_s']} status={rec['status']}")
             for k, v in rec["memo"].items():
                 if v:
                     snippet = v[:40].replace("\n", " ")

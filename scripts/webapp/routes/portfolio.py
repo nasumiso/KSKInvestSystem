@@ -12,7 +12,7 @@ portfolio_shelve のレコードに stocks_shelve から指標を補完して表
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 import portfolio_shelve as ps
-from webapp.helpers import get_stock_data, list_portfolio_with_indicators
+from webapp.helpers import list_portfolio_with_indicators, resolve_stock_name
 
 portfolio_bp = Blueprint("portfolio", __name__)
 
@@ -158,7 +158,8 @@ def add():
     """銘柄を 3監 として新規追加する。
 
     既存登録済みなら ValueError → flash 警告で no-op。
-    銘柄名は stocks_shelve から引く (なければフォーム値 → 空文字)。
+    銘柄名は portfolio_shelve には保存しない (表示時に他DBから引く)。
+    flash メッセージ用にだけ stocks_shelve / research_shelve から取得する。
     """
     code_s = (request.form.get("code_s") or "").strip()
     if not code_s:
@@ -172,20 +173,16 @@ def add():
         return redirect(url_for("portfolio.dashboard"))
 
     normalized = ps.normalize_code_s(code_s)
-    stock = get_stock_data(normalized)
-    stock_name = (
-        stock.get("stock_name")
-        or (request.form.get("stock_name") or "").strip()
-    )
 
     try:
-        ps.add_to_watch(normalized, stock_name, reason="WebApp 追加")
+        ps.add_to_watch(normalized, reason="WebApp 追加")
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("portfolio.dashboard", status="watch"))
 
     _sync_txt_safely()
-    flash(f"{normalized} {stock_name} を監視に追加しました", "info")
+    name_for_flash = resolve_stock_name(normalized)
+    flash(f"{normalized} {name_for_flash} を監視に追加しました".rstrip(), "info")
     return redirect(url_for("portfolio.dashboard", status="watch"))
 
 

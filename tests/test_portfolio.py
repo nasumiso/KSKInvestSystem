@@ -52,7 +52,7 @@ class TestFallbackToTxt:
     def test_uses_shelve_when_populated(self, isolated_data_dir):
         """shelve に登録があれば shelve を使う (txt は無関係)"""
         # shelve に書き込み
-        ps.add_to_watch("7047", "ポート")
+        ps.add_to_watch("7047")
         ps.transition_status("7047", "1保")
         # txt とは別の銘柄
         _write_txt(isolated_data_dir, "H9999別銘柄\n")
@@ -127,16 +127,16 @@ class TestStep1CompatibilityWithTxtOnly:
 class TestReturnTypeAndOrder:
 
     def test_returns_two_lists(self, isolated_data_dir):
-        ps.add_to_watch("7047", "ポート")
+        ps.add_to_watch("7047")
         watch, hold = portfolio.parse_my_portforio()
         assert isinstance(watch, list)
         assert isinstance(hold, list)
 
     def test_sorted_by_code_s(self, isolated_data_dir):
         for code in ["7089", "4377", "215A"]:
-            ps.add_to_watch(code, code)
+            ps.add_to_watch(code)
         for code in ["7047", "2980", "402A"]:
-            ps.add_to_watch(code, code)
+            ps.add_to_watch(code)
             ps.transition_status(code, "1保")
 
         watch, hold = portfolio.parse_my_portforio()
@@ -146,7 +146,7 @@ class TestReturnTypeAndOrder:
 
     def test_2jun_treated_as_watch(self, isolated_data_dir):
         """2準 はウォッチ側に含まれる (txt には 2準 がないが、shelve 経由では発生する)"""
-        ps.add_to_watch("7047", "ポート")
+        ps.add_to_watch("7047")
         ps.transition_status("7047", "2準")
         watch, hold = portfolio.parse_my_portforio()
         assert "7047" in watch
@@ -173,7 +173,7 @@ class TestStep2SetRelation:
         old_set = set(old_watch) | set(old_hold)
 
         # スプシのみの銘柄を追加
-        ps.add_to_watch("4377", "スプシ追加銘柄")  # 3監
+        ps.add_to_watch("4377")  # 3監
 
         # 新 parse の集合
         new_watch, new_hold = portfolio.parse_my_portforio()

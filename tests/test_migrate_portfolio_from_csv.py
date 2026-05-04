@@ -151,7 +151,7 @@ class TestBuildRecordFromRow:
         rec, warnings = mp.build_record_from_row(row)
         assert rec is not None
         assert rec["code_s"] == "4377"
-        assert rec["stock_name"] == "ワンキャリア"
+        assert "stock_name" not in rec  # 新スキーマでは保存しない
         assert rec["status"] == "3監"  # 仮ステータス
         assert warnings == []
 
@@ -188,8 +188,8 @@ class TestBuildRecordFromRow:
         row = _make_row(code_s="4377")
         rec, warnings = mp.build_record_from_row(row)
         assert rec is not None
-        assert rec["stock_name"] == ""
-        assert any("銘柄名が空" in w for w in warnings)
+        assert "stock_name" not in rec  # 新スキーマでは保存しない
+        assert any("銘柄名" in w for w in warnings)
 
 
 # ==================================================

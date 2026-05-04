@@ -132,9 +132,7 @@ class TestMergeWithExisting:
         """既存レコード (スプシ由来、メモあり) のステータスを txt で上書き"""
         # 先にスプシ由来レコードを upsert (ステータスは仮で "3監")
         memo = ps.create_memo(gyoutai_theme="人材", trade_idea="押し目")
-        existing = ps.create_record(
-            "7047", "ポート (スプシ名)", status="3監", memo=memo,
-        )
+        existing = ps.create_record("7047", status="3監", memo=memo)
         ps.upsert_record(existing, db_path=db_path)
 
         # txt 取り込み (1保 として上書き)
@@ -147,11 +145,11 @@ class TestMergeWithExisting:
         # メモは保持
         assert rec["memo"]["gyoutai_theme"] == "人材"
         assert rec["memo"]["trade_idea"] == "押し目"
-        # stock_name はスプシ由来を保持 (上書きしない)
-        assert rec["stock_name"] == "ポート (スプシ名)"
+        # 新スキーマでは stock_name は portfolio_shelve に保存されない
+        assert "stock_name" not in rec
 
     def test_no_change_when_status_matches(self, db_path):
-        existing = ps.create_record("5032", "AnyColor", status="3監")
+        existing = ps.create_record("5032", status="3監")
         ps.upsert_record(existing, db_path=db_path)
 
         result = mw.merge_into_shelve(
@@ -165,7 +163,7 @@ class TestMergeWithExisting:
 
     def test_records_status_change_log(self, db_path):
         """既存ステータスからの変更ログが記録される"""
-        existing = ps.create_record("7047", "ポート", status="3監")
+        existing = ps.create_record("7047", status="3監")
         ps.upsert_record(existing, db_path=db_path)
 
         mw.merge_into_shelve(

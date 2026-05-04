@@ -1293,61 +1293,116 @@ def _bulk_get_stock_data(code_list: List[str]) -> Dict[str, Dict[str, Any]]:
     return result
 
 
+def resolve_stock_name(code_s: str) -> str:
+    """銘柄名を stocks_shelve → research_shelve → "" の優先順で取得する。
+
+    portfolio_shelve は銘柄名を持たないため、表示時はこの関数経由で都度取得する。
+    """
+    from db_shelve import RESEARCH_SHELVE  # 遅延 import (循環回避)
+
+    if not code_s:
+        return ""
+    normalized = normalize_code_s(code_s)
+    with ShelveDB(STOCKS_SHELVE) as db:
+        rec = db.get(normalized)
+        if rec and rec.get("stock_name"):
+            return rec["stock_name"]
+    with ShelveDB(RESEARCH_SHELVE) as db:
+        rec = db.get(normalized)
+        if rec and rec.get("stock_name"):
+            return rec["stock_name"]
+    return ""
+
+
+def _bulk_resolve_stock_names(code_list: List[str]) -> Dict[str, str]:
+    """複数 code_s 分の銘柄名をバルク取得する (一覧画面用)。"""
+    from db_shelve import RESEARCH_SHELVE  # 遅延 import (循環回避)
+
+    result: Dict[str, str] = {c: "" for c in code_list if c}
+    if not result:
+        return result
+
+    with ShelveDB(STOCKS_SHELVE) as db:
+        for c in list(result.keys()):
+            rec = db.get(normalize_code_s(c))
+            if rec and rec.get("stock_name"):
+                result[c] = rec["stock_name"]
+
+    missing = [c for c, n in result.items() if not n]
+    if missing:
+        with ShelveDB(RESEARCH_SHELVE) as db:
+            for c in missing:
+                rec = db.get(normalize_code_s(c))
+                if rec and rec.get("stock_name"):
+                    result[c] = rec["stock_name"]
+    return result
+
+
 def list_portfolio_with_indicators(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """portfolio_shelve のレコード列に stocks_shelve から最新指標を補完する (Phase 3b)。
+
+    銘柄名は portfolio_shelve に保存されていないため stocks_shelve / research_shelve から
+    都度取得してマージする (要件 §4 の延長)。
 
     Args:
         records: portfolio_shelve.list_records の戻り値 (既に status 等で絞り込み済み)
 
     Returns:
-        各 dict: portfolio レコード + {rank, per, market_cap, dividend, rs,
-                                     trend_template, signals, theoretical_diff,
+        各 dict: portfolio レコード + {stock_name, rank, per, market_cap, dividend, rs,
+                                     trend_template, tags, theoretical_diff,
                                      gyoseki, indicators_raw}
         rank 昇順 (rank が None の銘柄は末尾)。
     """
     if not records:
         return []
 
-    stock_map = _bulk_get_stock_data([r.get("code_s", "") for r in records])
+    code_list = [r.get("code_s", "") for r in records]
+    stock_map = _bulk_get_stock_data(code_list)
+    name_map = _bulk_resolve_stock_names(code_list)
     rows: List[Dict[str, Any]] = []
     for rec in records:
+        code_s = rec.get("code_s", "")
         row = dict(rec)
-        row.update(_extract_indicators_for_portfolio(stock_map.get(rec.get("code_s", ""), {})))
+        row["stock_name"] = name_map.get(code_s, "") or rec.get("stock_name", "")  # 旧データ互換
+        row.update(_extract_indicators_for_portfolio(stock_map.get(code_s, {})))
         rows.append(row)
 
     rows.sort(key=lambda r: (r.get("rank") is None, r.get("rank") or 0, r.get("code_s", "")))
     return rows
 
 
-def _format_signals(stock: Dict[str, Any]) -> str:
-    """stocks_shelve のシグナル系フィールドをテキストにまとめる。
+def _format_tags(stock: Dict[str, Any]) -> str:
+    """code_rank.csv「タグ」列と同じ表記を返す。
 
-    Phase 3b は赤バッジ強調なし、テキスト列のみ。要件 §5-2 と §5-3 (Phase 4 送り)。
+    make_stock_db.make_signal() の tags リストを "/" join する。
+    market_db を渡さないので R高/強乖/弱乖 タグは出ない (Phase 4 送り)。
     """
-    parts: List[str] = []
-    new_high = stock.get("new_high") or []
-    if new_high:
-        parts.append("[新]" + "".join(new_high))
-    breakout = stock.get("breakout") or []
-    if breakout:
-        parts.append("[ブ]" + ",".join(b.split(",")[0] for b in breakout if isinstance(b, str)))
-    pocket_pivot = stock.get("pocket_pivot") or []
-    if pocket_pivot:
-        parts.append("[ポ]" + ",".join(p.split(",")[0] for p in pocket_pivot if isinstance(p, str)))
-    return " ".join(parts) if parts else "—"
+    if not stock:
+        return "—"
+    try:
+        from make_stock_db import make_signal  # 遅延 import
+        _signal, tags = make_signal(stock)
+    except Exception:
+        return "—"
+    return "/".join(tags) if tags else "—"
 
 
 def _format_theoretical_diff(stock: Dict[str, Any]) -> str:
-    """理論株価乖離率の表示。price と rironkabuka_up/down/rironkabuka から算出。"""
-    price = stock.get("price")
-    riron = stock.get("rironkabuka")
-    if not price or not riron:
+    """理論株価乖離率の表示 (code_rank.csv「理論株価(乖離率|上限,下限))」列の最初の値)。
+
+    rironkabuka.get_rironkabuka_kairi(stock) を再利用して同じ計算ロジックを使う。
+    返り値の tuple の先頭が乖離率 (= `(理論株価 - 株価) / 株価 * 100`)。
+    """
+    if not stock:
         return "—"
     try:
-        diff_pct = (float(price) - float(riron)) / float(riron) * 100
-        return f"{diff_pct:+.1f}%"
-    except (TypeError, ValueError, ZeroDivisionError):
+        from rironkabuka import get_rironkabuka_kairi  # 遅延 import
+        kairi, _up, _down, _preceding = get_rironkabuka_kairi(stock)
+    except Exception:
         return "—"
+    if not stock.get("price") or not stock.get("rironkabuka"):
+        return "—"
+    return f"{int(kairi)}%"
 
 
 def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
@@ -1363,7 +1418,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "dividend": "—",
             "rs": "—",
             "trend_template": "—",
-            "signals": "—",
+            "tags": "—",
             "theoretical_diff": "—",
             "gyoseki": {},
             "indicators_raw": {},
@@ -1389,7 +1444,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "dividend": f"{dividend_yield:.2f}%" if isinstance(dividend_yield, (int, float)) else "—",
         "rs": f"{rs_raw:.2f}" if isinstance(rs_raw, (int, float)) else "—",
         "trend_template": get_trend_template_expr(stock),
-        "signals": _format_signals(stock),
+        "tags": _format_tags(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
         "gyoseki": {
             "score_gyoseki": stock.get("score_gyoseki"),

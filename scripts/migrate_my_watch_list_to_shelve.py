@@ -86,22 +86,22 @@ def merge_into_shelve(
     既存レコードがある場合 (スプシ移行済み):
     - ステータスは txt 優先で上書き
     - メモは既存の値を保持 (スプシ採用)
-    - stock_name は既存を保持 (スプシ優先) ※ txt の名前は揺れがあるため
     既存レコードがない場合 (txt のみ):
-    - 新規レコード作成 (ステータス、銘柄名、メモは空)
+    - 新規レコード作成 (ステータスは txt 由来、メモは空)
+
+    銘柄名は portfolio_shelve には保存しない (txt から読んでもレコードには埋めない)。
+    表示時は stocks_shelve / research_shelve から都度取得する。
 
     Returns: {"total": int, "created": int, "updated": int, "unchanged": int}
     """
     created = 0
     updated = 0
     unchanged = 0
-    for code_s, stock_name, status in entries:
+    for code_s, _stock_name, status in entries:
         existing = ps.get_record(code_s, db_path=db_path)
         if existing is None:
             # 新規 (txt のみ存在パターン)
-            new_record = ps.create_record(
-                code_s, stock_name, status=status,
-            )
+            new_record = ps.create_record(code_s, status=status)
             ps.upsert_record(new_record, db_path=db_path)
             ps.append_action_log(
                 code_s,

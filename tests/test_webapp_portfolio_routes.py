@@ -41,11 +41,12 @@ def app(portfolio_db_path, stocks_db_path, txt_path, monkeypatch):
     # my_watch_list.txt の出力先を tmp_path に
     monkeypatch.setattr("portfolio_shelve.DATA_DIR", os.path.dirname(txt_path))
 
-    # 銘柄を 3 件 portfolio_shelve に登録 (各タブに 1 件ずつ)
-    ps.add_to_watch("6324", "ハーモニックドライブシステムズ", reason="テスト 3監", db_path=portfolio_db_path)
-    ps.add_to_watch("3496", "アズーム", reason="テスト 1保 用", db_path=portfolio_db_path)
+    # 銘柄を 3 件 portfolio_shelve に登録 (各タブに 1 件ずつ)。
+    # 銘柄名は portfolio_shelve には保存されず、表示時に stocks_shelve から引かれる。
+    ps.add_to_watch("6324", reason="テスト 3監", db_path=portfolio_db_path)
+    ps.add_to_watch("3496", reason="テスト 1保 用", db_path=portfolio_db_path)
     ps.transition_status("3496", "1保", reason="テスト 1保 へ昇格 (3監→1保)", db_path=portfolio_db_path)
-    ps.add_to_watch("7203", "トヨタ自動車", reason="テスト 2準 用", db_path=portfolio_db_path)
+    ps.add_to_watch("7203", reason="テスト 2準 用", db_path=portfolio_db_path)
     ps.transition_status("7203", "2準", reason="テスト 2準 へ昇格 (3監→2準)", db_path=portfolio_db_path)
 
     # stocks_shelve にダミーデータ
@@ -136,17 +137,17 @@ class TestAddPost:
     """POST /portfolio/add"""
 
     def test_add_new_code_succeeds(self, client, portfolio_db_path, stocks_db_path):
-        # stocks_shelve に新銘柄登録
+        # stocks_shelve に新銘柄登録 (銘柄名は表示時に他DBから引かれる)
         with ShelveDB(stocks_db_path) as db:
             db["8035"] = {"code_s": "8035", "stock_name": "東京エレクトロン"}
 
         resp = client.post("/portfolio/add", data={"code_s": "8035"})
         assert resp.status_code == 302
-        # shelve に登録されている
+        # shelve に登録されている (banner 名は持たない)
         rec = ps.get_record("8035", db_path=portfolio_db_path)
         assert rec is not None
         assert rec["status"] == "3監"
-        assert rec["stock_name"] == "東京エレクトロン"
+        assert "stock_name" not in rec  # 新スキーマでは保存しない
         # 初回登録ログが記録されている
         logs = ps.list_action_logs(code_s="8035", db_path=portfolio_db_path)
         assert any(log.get("action_type") == "初回登録" for log in logs)
