@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}保有銘柄 | Shintakane Research{% endblock %}
+
+{% block content %}
+<h2>保有銘柄ダッシュボード</h2>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  {% for category, message in messages %}
+  <div style="padding:0.5em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;{% if category == 'error' %}background:#ffeaea;color:#c00;border:1px solid #fcc;{% else %}background:#eaffea;color:#060;border:1px solid #cfc;{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+{% endwith %}
+
+<nav style="margin-bottom:1em;">
+  <ul style="display:flex;gap:0.5em;list-style:none;padding:0;margin:0;border-bottom:1px solid #ddd;">
+    {% for q, status_val, label in tabs %}
+    <li>
+      <a href="/portfolio?status={{ q }}"
+         style="display:inline-block;padding:0.5em 1em;text-decoration:none;
+                {% if q == active_query %}border-bottom:2px solid #06c;font-weight:bold;{% else %}color:#666;{% endif %}">
+        {{ label }} <span style="color:#999;font-size:0.85em;">{{ counts[q] }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</nav>
+
+<p style="font-size:0.85em;color:#666;">{{ rows|length }} 件</p>
+
+{% if rows %}
+<div style="overflow-x:auto;">
+<table style="font-size:0.85em;">
+  <thead>
+    <tr>
+      <th></th>
+      <th>コード</th>
+      <th>銘柄名</th>
+      <th>順位</th>
+      <th>PER</th>
+      <th>時価総額</th>
+      <th>配当</th>
+      <th>RS</th>
+      <th>トレンド</th>
+      <th>シグナル</th>
+      <th>理論株価乖離</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>
+        <details>
+          <summary style="cursor:pointer;list-style:none;">▸</summary>
+        </details>
+      </td>
+      <td><a href="/stock/{{ row.code_s }}">{{ row.code_s }}</a></td>
+      <td>{{ row.stock_name }}</td>
+      <td>{{ row.rank if row.rank is not none else "—" }}</td>
+      <td>{{ row.per }}</td>
+      <td>{{ row.market_cap }}</td>
+      <td>{{ row.dividend }}</td>
+      <td>{{ row.rs }}</td>
+      <td>{{ row.trend_template }}</td>
+      <td>{{ row.signals }}</td>
+      <td>{{ row.theoretical_diff }}</td>
+    </tr>
+    <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
+      <td colspan="11" style="background:#f8f8f8;padding:0.8em 1em;">
+        <div style="display:flex;flex-wrap:wrap;gap:1.5em;">
+          <div style="flex:1;min-width:240px;">
+            <strong style="font-size:0.85em;color:#666;">業績</strong>
+            <div style="font-size:0.85em;">
+              スコア: {{ row.gyoseki.score_gyoseki if row.gyoseki.score_gyoseki is not none else "—" }}
+              / 決算日: {{ row.gyoseki.kessanbi or "—" }}
+              {% if row.gyoseki.isKonki %} / 今期 {% endif %}
+            </div>
+          </div>
+          <div style="flex:1;min-width:240px;">
+            <strong style="font-size:0.85em;color:#666;">手動メモ</strong>
+            <ul style="font-size:0.85em;margin:0.3em 0 0 1em;padding:0;">
+              {% if row.memo.gyoutai_theme %}<li><strong>業態・テーマ:</strong> {{ row.memo.gyoutai_theme }}</li>{% endif %}
+              {% if row.memo.watch_in_reason %}<li><strong>IN 理由:</strong> {{ row.memo.watch_in_reason }}</li>{% endif %}
+              {% if row.memo.trade_idea %}<li><strong>売買アイデア:</strong> {{ row.memo.trade_idea }}</li>{% endif %}
+              {% if row.memo.inago_origin %}<li><strong>イナゴ元:</strong> {{ row.memo.inago_origin }}</li>{% endif %}
+              {% if row.memo.takaichi_sensitivity %}<li><strong>高市感応度:</strong> {{ row.memo.takaichi_sensitivity }}</li>{% endif %}
+              {% if not (row.memo.gyoutai_theme or row.memo.watch_in_reason or row.memo.trade_idea or row.memo.inago_origin or row.memo.takaichi_sensitivity) %}
+              <li style="color:#aaa;">メモなし</li>
+              {% endif %}
+            </ul>
+          </div>
+          <div style="flex:0 0 240px;">
+            <strong style="font-size:0.85em;color:#666;">操作</strong>
+            <div style="display:flex;flex-direction:column;gap:0.5em;margin-top:0.3em;font-size:0.85em;">
+              <a href="/stock/{{ row.code_s }}">→ 銘柄詳細</a>
+              {% if transitions %}
+              <form action="/portfolio/{{ row.code_s }}/transition" method="POST" style="display:flex;flex-direction:column;gap:0.3em;margin:0;">
+                <label style="font-size:0.85em;color:#666;">ステータス変更</label>
+                <select name="new_status" style="padding:0.3em;font-size:0.85em;margin:0;">
+                  {% for label, value in transitions %}
+                  <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <textarea name="reason" placeholder="理由 (任意)" rows="2" style="font-size:0.85em;padding:0.3em;margin:0;"></textarea>
+                <button type="submit" style="padding:0.3em 0.6em;font-size:0.85em;margin:0;"
+                        onclick="return confirm('{{ row.code_s }} のステータスを変更しますか?')">変更</button>
+              </form>
+              {% endif %}
+              {% if active_query == "watch" %}
+              <form action="/portfolio/{{ row.code_s }}/delete" method="POST"
+                    style="display:flex;flex-direction:column;gap:0.3em;margin:0;border-top:1px dashed #ccc;padding-top:0.5em;">
+                <label style="font-size:0.85em;color:#c00;">削除 (監視のみ)</label>
+                <textarea name="reason" placeholder="削除理由 (必須)" rows="2" required style="font-size:0.85em;padding:0.3em;margin:0;"></textarea>
+                <button type="submit" class="contrast" style="padding:0.3em 0.6em;font-size:0.85em;margin:0;"
+                        onclick="return confirm('{{ row.code_s }} を完全に削除しますか? (アクションログは残ります)')">削除</button>
+              </form>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script>
+// summary クリックで対応する .row-detail を展開
+document.querySelectorAll('table details').forEach(function(d) {
+  d.addEventListener('toggle', function() {
+    var row = d.closest('tr');
+    var nextRow = row.nextElementSibling;
+    if (nextRow && nextRow.classList.contains('row-detail')) {
+      nextRow.style.display = d.open ? '' : 'none';
+    }
+    var summary = d.querySelector('summary');
+    if (summary) summary.textContent = d.open ? '▾' : '▸';
+  });
+});
+</script>
+
+{% else %}
+<p style="color:#888;">該当銘柄なし</p>
+{% endif %}
+
+{% endblock %}

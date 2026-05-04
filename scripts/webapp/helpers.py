@@ -1276,3 +1276,125 @@ def get_market_kessan_data() -> Dict[str, Any]:
         "recent_past_entries": recent_past_entries,
         "older_past_entries": older_past_entries,
     }
+
+
+def _bulk_get_stock_data(code_list: List[str]) -> Dict[str, Dict[str, Any]]:
+    """stocks_shelve を 1 度だけ open して複数銘柄をまとめて取得する。
+
+    `get_stock_data` を N 回呼ぶと N 回 open/close するため、一覧画面用のバルク版。
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    with ShelveDB(STOCKS_SHELVE) as db:
+        for code_s in code_list:
+            if not code_s:
+                continue
+            normalized = normalize_code_s(code_s)
+            result[code_s] = db.get(normalized) or {}
+    return result
+
+
+def list_portfolio_with_indicators(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """portfolio_shelve のレコード列に stocks_shelve から最新指標を補完する (Phase 3b)。
+
+    Args:
+        records: portfolio_shelve.list_records の戻り値 (既に status 等で絞り込み済み)
+
+    Returns:
+        各 dict: portfolio レコード + {rank, per, market_cap, dividend, rs,
+                                     trend_template, signals, theoretical_diff,
+                                     gyoseki, indicators_raw}
+        rank 昇順 (rank が None の銘柄は末尾)。
+    """
+    if not records:
+        return []
+
+    stock_map = _bulk_get_stock_data([r.get("code_s", "") for r in records])
+    rows: List[Dict[str, Any]] = []
+    for rec in records:
+        row = dict(rec)
+        row.update(_extract_indicators_for_portfolio(stock_map.get(rec.get("code_s", ""), {})))
+        rows.append(row)
+
+    rows.sort(key=lambda r: (r.get("rank") is None, r.get("rank") or 0, r.get("code_s", "")))
+    return rows
+
+
+def _format_signals(stock: Dict[str, Any]) -> str:
+    """stocks_shelve のシグナル系フィールドをテキストにまとめる。
+
+    Phase 3b は赤バッジ強調なし、テキスト列のみ。要件 §5-2 と §5-3 (Phase 4 送り)。
+    """
+    parts: List[str] = []
+    new_high = stock.get("new_high") or []
+    if new_high:
+        parts.append("[新]" + "".join(new_high))
+    breakout = stock.get("breakout") or []
+    if breakout:
+        parts.append("[ブ]" + ",".join(b.split(",")[0] for b in breakout if isinstance(b, str)))
+    pocket_pivot = stock.get("pocket_pivot") or []
+    if pocket_pivot:
+        parts.append("[ポ]" + ",".join(p.split(",")[0] for p in pocket_pivot if isinstance(p, str)))
+    return " ".join(parts) if parts else "—"
+
+
+def _format_theoretical_diff(stock: Dict[str, Any]) -> str:
+    """理論株価乖離率の表示。price と rironkabuka_up/down/rironkabuka から算出。"""
+    price = stock.get("price")
+    riron = stock.get("rironkabuka")
+    if not price or not riron:
+        return "—"
+    try:
+        diff_pct = (float(price) - float(riron)) / float(riron) * 100
+        return f"{diff_pct:+.1f}%"
+    except (TypeError, ValueError, ZeroDivisionError):
+        return "—"
+
+
+def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
+    """stocks_shelve の dict から portfolio 一覧表示用の指標を抽出する。
+
+    値は表示用の文字列 (なければ "—")。stocks_shelve の実フィールドに直結。
+    """
+    if not stock:
+        return {
+            "rank": None,
+            "per": "—",
+            "market_cap": "—",
+            "dividend": "—",
+            "rs": "—",
+            "trend_template": "—",
+            "signals": "—",
+            "theoretical_diff": "—",
+            "gyoseki": {},
+            "indicators_raw": {},
+        }
+
+    shihyo = stock.get("shihyo") or {}
+
+    # 順位は stock_rank_log の最新値 (= 直近更新時点での順位)
+    rank_log = stock.get("stock_rank_log") or []
+    rank = rank_log[0][1] if rank_log else None
+
+    per = shihyo.get("PER")
+    market_cap = stock.get("market_cap") or shihyo.get("jikasogaku")
+    dividend_yield = shihyo.get("dividend_yield")
+    rs_raw = stock.get("rs_raw")
+
+    from make_stock_db import get_trend_template_expr  # 遅延 import (循環回避)
+
+    return {
+        "rank": rank if isinstance(rank, int) else None,
+        "per": f"{per:.1f}" if isinstance(per, (int, float)) else "—",
+        "market_cap": f"{market_cap:.0f}億" if isinstance(market_cap, (int, float)) else "—",
+        "dividend": f"{dividend_yield:.2f}%" if isinstance(dividend_yield, (int, float)) else "—",
+        "rs": f"{rs_raw:.2f}" if isinstance(rs_raw, (int, float)) else "—",
+        "trend_template": get_trend_template_expr(stock),
+        "signals": _format_signals(stock),
+        "theoretical_diff": _format_theoretical_diff(stock),
+        "gyoseki": {
+            "score_gyoseki": stock.get("score_gyoseki"),
+            "kessanbi": stock.get("kessanbi"),
+            "isKonki": stock.get("isKonki"),
+        },
+        "indicators_raw": stock,
+    }

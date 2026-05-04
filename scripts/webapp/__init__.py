@@ -25,11 +25,13 @@ def create_app() -> Flask:
     from webapp.routes.memo import memo_bp
     from webapp.routes.market import market_bp
     from webapp.routes.disclosure import disclosure_bp
+    from webapp.routes.portfolio import portfolio_bp
 
     app.register_blueprint(search_bp)
     app.register_blueprint(detail_bp)
     app.register_blueprint(memo_bp)
     app.register_blueprint(market_bp)
     app.register_blueprint(disclosure_bp)
+    app.register_blueprint(portfolio_bp)
 
     return app

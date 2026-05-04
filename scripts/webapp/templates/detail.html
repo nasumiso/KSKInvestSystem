@@ -21,6 +21,21 @@
         | <a href="https://kabutan.jp/stock/finance?code={{ record.code_s }}" target="_blank" rel="noopener noreferrer">業績</a>
         | <a href="https://finance.yahoo.co.jp/quote/{{ record.code_s }}.T/forum" target="_blank" rel="noopener noreferrer">掲示板</a>
       </div>
+      <div style="margin-top:0.4em;">
+        {% if portfolio_status %}
+        <span style="color:#666;font-size:0.85em;">保有銘柄: <strong>{{ portfolio_status_label }}</strong></span>
+        <a href="/portfolio?status={{ portfolio_status_query }}" style="font-size:0.85em;">→ ダッシュボードで開く</a>
+        {% else %}
+        <form action="/portfolio/add" method="POST" style="display:inline;margin:0;">
+          <input type="hidden" name="code_s" value="{{ record.code_s }}">
+          <input type="hidden" name="stock_name" value="{{ record.stock_name or '' }}">
+          <button type="submit" class="outline" style="padding:0.2em 0.6em;font-size:0.85em;margin:0;"
+                  onclick="return confirm('{{ record.code_s }} {{ record.stock_name or '' }} を監視に追加しますか?')">
+            + 監視に追加
+          </button>
+        </form>
+        {% endif %}
+      </div>
     </div>
   </div>
 </div>
