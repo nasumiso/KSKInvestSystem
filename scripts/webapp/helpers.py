@@ -1350,8 +1350,8 @@ def list_portfolio_with_indicators(records: List[Dict[str, Any]]) -> List[Dict[s
     Returns:
         各 dict: portfolio レコード + {stock_name, rank, kessanbi_md, per, market_cap,
                                      dividend, rs, sales_growth, profit_growth,
-                                     trend_template, tags, theoretical_diff,
-                                     gyoseki, indicators_raw}
+                                     quarter, progress_diff, trend_template, tags,
+                                     theoretical_diff, gyoseki, indicators_raw}
         rank 昇順 (rank が None の銘柄は末尾)。
     """
     if not records:
@@ -1424,6 +1424,37 @@ def _annual_growth(stock: Dict[str, Any]) -> tuple:
     return result[1], result[2]
 
 
+def _progress_quarter_and_diff(stock: Dict[str, Any]) -> tuple:
+    """gyoseki.calc_progress_rate から (quarter_label, diff_str) を返す。
+
+    code_rank.csv 進捗率列 [P]3Q70%(72%),62%(44%) を分解:
+    - quarter_label: "3Q" などの文字列 (quarter=0 / 取れない時は "—")
+    - diff_str: "(sales-sales_pre)/(profit-profit_pre)" を整数化 (例: "-2/+18")
+                取れなければ "—"
+    """
+    if not stock:
+        return ("—", "—")
+    try:
+        from gyoseki import calc_progress_rate  # 遅延 import (循環回避)
+        progress = calc_progress_rate(stock)
+    except Exception:
+        return ("—", "—")
+    quarter = progress.get("quarter", 0) if isinstance(progress, dict) else 0
+    if not quarter or quarter <= 0:
+        return ("—", "—")
+    quarter_label = f"{quarter}Q"
+    sales = progress.get("sales")
+    sales_pre = progress.get("sales_pre")
+    profit = progress.get("profit")
+    profit_pre = progress.get("profit_pre")
+    if not all(isinstance(v, (int, float)) for v in (sales, sales_pre, profit, profit_pre)):
+        return (quarter_label, "—")
+    sales_diff = round(sales - sales_pre)
+    profit_diff = round(profit - profit_pre)
+    diff_str = f"{sales_diff:+d}/{profit_diff:+d}"
+    return (quarter_label, diff_str)
+
+
 def _format_kessanbi_md(kessanbi: Any) -> str:
     """kessanbi (YYYY/MM/DD) を MM/DD 形式に整形して返す。空なら "—"。"""
     if not kessanbi or not isinstance(kessanbi, str):
@@ -1449,6 +1480,8 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "rs": "—",
             "sales_growth": "—",
             "profit_growth": "—",
+            "quarter": "—",
+            "progress_diff": "—",
             "trend_template": "—",
             "tags": "—",
             "theoretical_diff": "—",
@@ -1468,6 +1501,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     # RS 列は code_rank.csv の「モメンタム(現在.20日比/5日比)」列の先頭値 (0〜100 の momentum_pt)
     momentum_pt = stock.get("momentum_pt")
     sales_growth, profit_growth = _annual_growth(stock)
+    quarter_label, progress_diff = _progress_quarter_and_diff(stock)
 
     from make_stock_db import get_trend_template_expr  # 遅延 import (循環回避)
 
@@ -1485,6 +1519,8 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "rs": f"{int(momentum_pt)}" if isinstance(momentum_pt, (int, float)) else "—",
         "sales_growth": f"{int(sales_growth)}%" if isinstance(sales_growth, (int, float)) else "—",
         "profit_growth": f"{int(profit_growth)}%" if isinstance(profit_growth, (int, float)) else "—",
+        "quarter": quarter_label,
+        "progress_diff": progress_diff,
         "trend_template": trend_expr,
         "trend_template_tooltip": trend_tooltip,
         "tags": _format_tags(stock),

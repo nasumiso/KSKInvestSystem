@@ -43,6 +43,8 @@
       <th>配当</th>
       <th>売上成長</th>
       <th>利益成長</th>
+      <th title="決算Q (進行中の四半期)">決算Q</th>
+      <th title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
       <th>モメンタム</th>
       <th>トレンド</th>
       <th>タグ</th>
@@ -66,6 +68,8 @@
       <td>{{ row.dividend }}</td>
       <td>{{ row.sales_growth }}</td>
       <td>{{ row.profit_growth }}</td>
+      <td>{{ row.quarter }}</td>
+      <td>{{ row.progress_diff }}</td>
       <td>{{ row.rs }}</td>
       <td title="{{ row.trend_template_tooltip }}"
           style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ row.trend_template }}</td>
@@ -73,7 +77,7 @@
       <td>{{ row.theoretical_diff }}</td>
     </tr>
     <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
-      <td colspan="14" style="background:#f8f8f8;padding:0.8em 1em;">
+      <td colspan="16" style="background:#f8f8f8;padding:0.8em 1em;">
         <div style="display:flex;flex-wrap:wrap;gap:1.5em;">
           {% if row.gyoseki.isKonki %}
           <div style="flex:0 0 auto;">
@@ -99,7 +103,6 @@
           <div style="flex:0 0 240px;">
             <strong style="font-size:0.85em;color:#666;">操作</strong>
             <div style="display:flex;flex-direction:column;gap:0.5em;margin-top:0.3em;font-size:0.85em;">
-              <a href="/stock/{{ row.code_s }}">→ 銘柄詳細</a>
               {% if transitions %}
               <form action="/portfolio/{{ row.code_s }}/transition" method="POST" style="display:flex;flex-direction:column;gap:0.3em;margin:0;">
                 <label style="font-size:0.85em;color:#666;">ステータス変更</label>
