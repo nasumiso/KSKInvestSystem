@@ -575,9 +575,8 @@ def update_market_db():
                 "[market] %s の日次取得失敗のため DB 更新をスキップ "
                 "(前日データを保持)" % index_name
             )
-            # 前日データがあれば保持。無い (初回起動など) 場合のみ
-            # 空 dict をセットして下流の market_db["topix"] 直接参照で
-            # KeyError にならないようにする。
+            # 初回起動など prev_index_db が無いケースで
+            # price.py 等の market_db["topix"] 直接参照が KeyError になるのを防ぐ
             if index_name not in market_db:
                 market_db[index_name] = prev_index_db
             continue
