@@ -315,3 +315,93 @@ class TestDeletePost:
         assert resp.status_code == 302
         # 9999 はもとから未登録
         assert ps.get_record("9999", db_path=portfolio_db_path) is None
+
+
+# ==================================================
+# P2 (codex 指摘): 未知コードの監視追加 reject
+# ==================================================
+class TestAddUnknownCodeRejected:
+    """stocks_shelve に未登録のコードは reject されるべき (codex P2)"""
+
+    def test_add_unknown_code_does_not_persist(
+        self, client, portfolio_db_path, stocks_db_path
+    ):
+        before = len(ps.list_records(db_path=portfolio_db_path))
+        # 9999 は stocks_shelve に存在しない (fixture 未登録)
+        resp = client.post("/portfolio/add", data={"code_s": "9999"})
+        assert resp.status_code == 302
+        # shelve のレコードは変わらない
+        assert len(ps.list_records(db_path=portfolio_db_path)) == before
+        assert ps.get_record("9999", db_path=portfolio_db_path) is None
+
+
+# ==================================================
+# P1 (codex 指摘): portfolio_shelve 未移行時 txt フォールバック
+# ==================================================
+@pytest.fixture
+def fallback_app(tmp_path, monkeypatch):
+    """portfolio_shelve が空 + my_watch_list.txt にデータあり、の状態を再現する。"""
+    portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
+    stocks_db_path = str(tmp_path / "test_stocks_shelve")
+    txt_path = tmp_path / "my_watch_list.txt"
+
+    monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db_path)
+    monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db_path)
+    monkeypatch.setattr("db_shelve.STOCKS_SHELVE", stocks_db_path)
+    monkeypatch.setattr("webapp.helpers.STOCKS_SHELVE", stocks_db_path)
+    monkeypatch.setattr("portfolio_shelve.DATA_DIR", str(tmp_path))
+    monkeypatch.setattr("portfolio.DATA_DIR", str(tmp_path))
+
+    # shelve は空のまま、txt に保有 (H...) と監視を書き込む
+    txt_path.write_text(
+        "# kabutan\n"
+        "H6324\n"   # 保有
+        "3496\n"    # 監視
+        "7203\n",   # 監視
+        encoding="utf-8",
+    )
+
+    # 表示時に銘柄名解決するため stocks_shelve にも入れる
+    with ShelveDB(stocks_db_path) as db:
+        db["6324"] = {"code_s": "6324", "stock_name": "ハーモニックドライブシステムズ",
+                      "shihyo": {"PER": 308.0}}
+        db["3496"] = {"code_s": "3496", "stock_name": "アズーム",
+                      "shihyo": {"PER": 30.0}}
+        db["7203"] = {"code_s": "7203", "stock_name": "トヨタ自動車",
+                      "shihyo": {"PER": 12.0}}
+
+    app = create_app()
+    app.config["TESTING"] = True
+    return app
+
+
+@pytest.fixture
+def fallback_client(fallback_app):
+    return fallback_app.test_client()
+
+
+class TestFallbackFromTxt:
+
+    def test_fallback_dashboard_shows_txt_records(self, fallback_client):
+        # 1保 タブ (デフォルト) にハーモニック (H プレフィクス) が出る
+        resp = fallback_client.get("/portfolio")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "ハーモニック" in html
+        # 監視タブには 3496/7203 が出る
+        resp = fallback_client.get("/portfolio?status=watch")
+        html = resp.data.decode()
+        assert "アズーム" in html
+        assert "トヨタ" in html
+
+    def test_fallback_shows_banner(self, fallback_client):
+        resp = fallback_client.get("/portfolio")
+        html = resp.data.decode()
+        assert "未移行モード" in html
+
+    def test_fallback_disables_transition_form(self, fallback_client):
+        # 書き込み UI (ステータス変更フォーム) は出ない
+        resp = fallback_client.get("/portfolio")
+        html = resp.data.decode()
+        assert "/transition" not in html
+        assert "/delete" not in html

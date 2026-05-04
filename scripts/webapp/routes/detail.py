@@ -6,6 +6,7 @@ GET /stock/<code_s> : 銘柄の全セクション表示
 
 from flask import Blueprint, render_template, abort
 
+import portfolio
 import portfolio_shelve as ps
 from webapp.helpers import (
     get_research_detail,
@@ -38,6 +39,17 @@ def stock_detail(code_s: str):
 
     portfolio_record = ps.get_record(code_s)
     portfolio_status = portfolio_record.get("status") if portfolio_record else None
+    if portfolio_status is None:
+        # shelve 未移行環境のフォールバック: my_watch_list.txt 経由の所属を見る
+        # (portfolio.parse_my_portforio は shelve 空時に txt フォールバックする)
+        try:
+            watch, possess = portfolio.parse_my_portforio()
+        except Exception:  # noqa: BLE001
+            watch, possess = ([], [])
+        if code_s in possess:
+            portfolio_status = "1保"
+        elif code_s in watch:
+            portfolio_status = "3監"
     portfolio_status_label = STATUS_VALUE_TO_LABEL.get(portfolio_status) if portfolio_status else None
     portfolio_status_query = STATUS_VALUE_TO_QUERY.get(portfolio_status) if portfolio_status else None
 

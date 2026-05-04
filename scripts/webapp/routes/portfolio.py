@@ -11,8 +11,13 @@ portfolio_shelve のレコードに stocks_shelve から指標を補完して表
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
+import portfolio
 import portfolio_shelve as ps
-from webapp.helpers import list_portfolio_with_indicators, resolve_stock_name
+from webapp.helpers import (
+    get_stock_data,
+    list_portfolio_with_indicators,
+    resolve_stock_name,
+)
 
 portfolio_bp = Blueprint("portfolio", __name__)
 
@@ -174,6 +179,15 @@ def add():
 
     normalized = ps.normalize_code_s(code_s)
 
+    # 未知コード防衛: stocks_shelve に存在しないコードは銘柄名解決もできず、
+    # txt 同期したときに識別不能な行が混ざるので reject する。
+    if not get_stock_data(normalized):
+        flash(
+            f"{normalized} は stocks_shelve に未登録のコードです。先に銘柄DBへの登録が必要です。",
+            "error",
+        )
+        return redirect(url_for("portfolio.dashboard", status="watch"))
+
     try:
         ps.add_to_watch(normalized, reason="WebApp 追加")
     except ValueError as e:
@@ -186,6 +200,27 @@ def add():
     return redirect(url_for("portfolio.dashboard", status="watch"))
 
 
+def _build_fallback_records() -> list[dict]:
+    """portfolio_shelve が空のとき、my_watch_list.txt から仮レコードを組み立てる。
+
+    Phase 3a で portfolio_shelve に移行したが、本ブランチを移行未実施環境で
+    動かすと shelve が空 → ダッシュボードも空になり既存運用が壊れる。
+    `portfolio.parse_my_portforio()` は同条件で txt にフォールバックする
+    挙動を持つので、UI も同じソースを共有する。
+    txt 由来レコードはメモを持たず、書き込み API も走らせない (= 表示専用)。
+    """
+    try:
+        watch, possess = portfolio.parse_my_portforio()
+    except Exception:  # noqa: BLE001 — txt 不在等は表示空でフェイルセーフ
+        return []
+    records: list[dict] = []
+    for code_s in possess:
+        records.append(ps.create_record(code_s, status="1保"))
+    for code_s in watch:
+        records.append(ps.create_record(code_s, status="3監"))
+    return records
+
+
 @portfolio_bp.route("/portfolio")
 def dashboard():
     """3 タブ式ダッシュボード。"""
@@ -193,6 +228,10 @@ def dashboard():
 
     # 全レコードを 1 度だけ取得し、件数 (全タブ) と表示行 (active タブ) を共に算出する
     all_records = ps.list_records()
+    fallback_mode = not all_records
+    if fallback_mode:
+        all_records = _build_fallback_records()
+
     counts = {q: 0 for q, _, _ in TABS}
     for r in all_records:
         st = r.get("status")
@@ -201,7 +240,9 @@ def dashboard():
 
     active_records = [r for r in all_records if r.get("status") == active_status]
     rows = list_portfolio_with_indicators(active_records)
-    transitions = _allowed_transitions_from(active_status)
+    # フォールバック中は書き込み UI (ステータス変更フォーム / 削除フォーム) を
+    # 出さない。shelve が空のため transition / delete を呼ぶと KeyError になる。
+    transitions = [] if fallback_mode else _allowed_transitions_from(active_status)
 
     return render_template(
         "portfolio_list.html",
@@ -212,4 +253,5 @@ def dashboard():
         rows=rows,
         transitions=transitions,
         status_label=STATUS_VALUE_TO_LABEL,
+        fallback_mode=fallback_mode,
     )

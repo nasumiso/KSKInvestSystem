@@ -8,6 +8,13 @@
 </style>
 <h2>保有銘柄ダッシュボード</h2>
 
+{% if fallback_mode %}
+<div style="padding:0.6em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;background:#fff8e0;color:#a07000;border:1px solid #ecd07a;">
+  <strong>portfolio_shelve 未移行モード</strong>: 表示は <code>my_watch_list.txt</code> から復元しています。
+  ステータス変更・追加・削除などの書き込み操作は、Phase 3a 移行スクリプトを実行するまで無効です。
+</div>
+{% endif %}
+
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
   {% for category, message in messages %}
@@ -140,7 +147,7 @@
                         onclick="return confirm('{{ row.code_s }} のステータスを変更しますか?')">変更</button>
               </form>
               {% endif %}
-              {% if active_query == "watch" %}
+              {% if active_query == "watch" and not fallback_mode %}
               <form action="/portfolio/{{ row.code_s }}/delete" method="POST"
                     style="display:flex;flex-direction:column;gap:0.3em;margin:0;border-top:1px dashed #ccc;padding-top:0.5em;">
                 <label style="font-size:0.85em;color:#c00;">削除 (監視のみ)</label>
