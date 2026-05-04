@@ -39,9 +39,10 @@ def stock_detail(code_s: str):
 
     portfolio_record = ps.get_record(code_s)
     portfolio_status = portfolio_record.get("status") if portfolio_record else None
-    if portfolio_status is None:
-        # shelve 未移行環境のフォールバック: my_watch_list.txt 経由の所属を見る
-        # (portfolio.parse_my_portforio は shelve 空時に txt フォールバックする)
+    # shelve 未移行環境のフォールバック: shelve が空のとき my_watch_list.txt 経由の所属を見る
+    # (portfolio.parse_my_portforio は shelve 空時に txt フォールバックする)
+    portfolio_fallback_mode = not ps.list_records()
+    if portfolio_status is None and portfolio_fallback_mode:
         try:
             watch, possess = portfolio.parse_my_portforio()
         except Exception:  # noqa: BLE001
@@ -64,4 +65,5 @@ def stock_detail(code_s: str):
         portfolio_status=portfolio_status,
         portfolio_status_label=portfolio_status_label,
         portfolio_status_query=portfolio_status_query,
+        portfolio_fallback_mode=portfolio_fallback_mode,
     )

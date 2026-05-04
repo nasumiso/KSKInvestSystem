@@ -92,6 +92,29 @@ def _redirect_to_current_tab(code_s: str, fallback_query: str = "watch"):
     return redirect(url_for("portfolio.dashboard", status=current_query))
 
 
+def _is_fallback_mode() -> bool:
+    """portfolio_shelve が空 = txt フォールバック中かを判定する。
+
+    フォールバック中に書き込み POST を許すと、shelve に 1 件レコードができた
+    時点で次回 dashboard が `list_records()` 非空 → フォールバック解除 →
+    残りの txt 銘柄が画面上から消える、という運用事故が起きる (codex 指摘)。
+    各 POST ハンドラ冒頭で本関数を見て reject する。
+    """
+    return not ps.list_records()
+
+
+def _reject_when_fallback(redirect_query: str = "watch"):
+    """フォールバック中なら flash + redirect を返す。そうでなければ None。"""
+    if _is_fallback_mode():
+        flash(
+            "portfolio_shelve 未移行モードのため、書き込み操作は無効です。"
+            "Phase 3a 移行スクリプト (migrate_my_watch_list_to_shelve.py) を実行してください。",
+            "error",
+        )
+        return redirect(url_for("portfolio.dashboard", status=redirect_query))
+    return None
+
+
 @portfolio_bp.route("/portfolio/<code_s>/delete", methods=["POST"])
 def delete(code_s: str):
     """3監 銘柄の物理削除。理由必須。
@@ -99,6 +122,10 @@ def delete(code_s: str):
     1保 / 2準 銘柄に対する直接 POST は portfolio_shelve.delete_record 内部で
     ValueError → flash で対応。UI 側でも 3監 タブのみ削除ボタンを表示する。
     """
+    rejected = _reject_when_fallback(redirect_query="watch")
+    if rejected is not None:
+        return rejected
+
     reason = (request.form.get("reason") or "").strip()
     if not reason:
         flash("削除理由は必須です", "error")
@@ -132,6 +159,10 @@ def transition(code_s: str):
     portfolio_shelve.transition_status のバリデーションに任せる。
     同一遷移は no-op (Phase 3a 仕様)、不正遷移は ValueError。
     """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+
     new_status = (request.form.get("new_status") or "").strip()
     reason = (request.form.get("reason") or "").strip()
 
@@ -166,6 +197,10 @@ def add():
     銘柄名は portfolio_shelve には保存しない (表示時に他DBから引く)。
     flash メッセージ用にだけ stocks_shelve / research_shelve から取得する。
     """
+    rejected = _reject_when_fallback(redirect_query="watch")
+    if rejected is not None:
+        return rejected
+
     code_s = (request.form.get("code_s") or "").strip()
     if not code_s:
         flash("銘柄コードが空です", "error")

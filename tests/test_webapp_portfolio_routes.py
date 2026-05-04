@@ -405,3 +405,34 @@ class TestFallbackFromTxt:
         html = resp.data.decode()
         assert "/transition" not in html
         assert "/delete" not in html
+
+    def test_fallback_rejects_add_post(self, fallback_client, tmp_path):
+        """フォールバック中は /portfolio/add も reject (= shelve に書き込まれない)。
+
+        codex 指摘: バナーで「無効」と表示しても POST が通ると、shelve に 1 件
+        書かれた瞬間にフォールバック解除 → 残りの txt 銘柄が画面から消える。
+        """
+        portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
+        before = ps.list_records(db_path=portfolio_db_path)
+        resp = fallback_client.post("/portfolio/add", data={"code_s": "8035"})
+        assert resp.status_code == 302
+        # shelve にレコードは増えていない
+        after = ps.list_records(db_path=portfolio_db_path)
+        assert len(after) == len(before)
+        assert ps.get_record("8035", db_path=portfolio_db_path) is None
+
+    def test_fallback_rejects_transition_post(self, fallback_client, tmp_path):
+        portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
+        resp = fallback_client.post(
+            "/portfolio/3496/transition", data={"new_status": "1保"}
+        )
+        assert resp.status_code == 302
+        assert ps.list_records(db_path=portfolio_db_path) == []
+
+    def test_fallback_rejects_delete_post(self, fallback_client, tmp_path):
+        portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
+        resp = fallback_client.post(
+            "/portfolio/3496/delete", data={"reason": "テスト"}
+        )
+        assert resp.status_code == 302
+        assert ps.list_records(db_path=portfolio_db_path) == []

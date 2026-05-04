@@ -25,6 +25,8 @@
         {% if portfolio_status %}
         <span style="color:#666;font-size:0.85em;">保有銘柄: <strong>{{ portfolio_status_label }}</strong></span>
         <a href="/portfolio?status={{ portfolio_status_query }}" style="font-size:0.85em;">→ ダッシュボードで開く</a>
+        {% elif portfolio_fallback_mode %}
+        <span style="color:#a07000;font-size:0.85em;">portfolio_shelve 未移行モード: 監視追加は移行後に有効化されます</span>
         {% else %}
         <form action="/portfolio/add" method="POST" style="display:inline;margin:0;">
           <input type="hidden" name="code_s" value="{{ record.code_s }}">
