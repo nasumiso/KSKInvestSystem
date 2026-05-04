@@ -407,6 +407,20 @@ def _save_market_db(market_db):
         db.import_from_dict(market_db)
 
 
+def _is_index_fetch_valid(new_index_db):
+    """指数取得結果が日次データを含む有効な dict かを判定する。
+
+    通信失敗等で日次取得が失敗した場合、price_log が欠落 or 空になる。
+    週足だけ部分的に成功した dict (rs_raw=0 等を含む) も "日次が無い"
+    として無効扱いにし、前日DBの上書きを防ぐ。
+    """
+    if not new_index_db:
+        return False
+    if not new_index_db.get("price_log"):
+        return False
+    return True
+
+
 def _update_index_market_state(prev_index_db, new_index_db):
     """指数 dict に market_state / state_meta / state_history / direction_signal を計算して書き込む。
 
@@ -556,11 +570,20 @@ def update_market_db():
         prev_index_db = market_db.get(index_name, {}) or {}
         new_data = maker()  # {index_name: {...}}
         new_index_db = new_data.get(index_name, {})
-        if new_index_db:
-            try:
-                _update_index_market_state(prev_index_db, new_index_db)
-            except Exception as e:
-                log_warning("[market_state] %s の State 計算失敗: %s" % (index_name, e))
+        if not _is_index_fetch_valid(new_index_db):
+            log_warning(
+                "[market] %s の日次取得失敗のため DB 更新をスキップ "
+                "(前日データを保持)" % index_name
+            )
+            # 初回起動など prev_index_db が無いケースで
+            # price.py 等の market_db["topix"] 直接参照が KeyError になるのを防ぐ
+            if index_name not in market_db:
+                market_db[index_name] = prev_index_db
+            continue
+        try:
+            _update_index_market_state(prev_index_db, new_index_db)
+        except Exception as e:
+            log_warning("[market_state] %s の State 計算失敗: %s" % (index_name, e))
         market_db[index_name] = new_index_db
 
     _save_market_db(market_db)
