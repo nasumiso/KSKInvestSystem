@@ -58,7 +58,7 @@ CODE_S_PATTERN = re.compile(r"^(?:\d{4}|\d{3}[A-Z])$")
 VALID_STATUSES = frozenset({"1保", "2準", "3監"})
 
 # アクションログ種別
-VALID_ACTION_TYPES = frozenset({"初回登録", "ステータス変更", "売却", "削除"})
+VALID_ACTION_TYPES = frozenset({"初回登録", "ステータス変更", "売却", "削除", "メモ更新"})
 
 # キー名前空間プレフィックス
 KEY_RECORD_PREFIX = "record:"
@@ -643,6 +643,93 @@ def delete_record(
         )
     log_print("portfolio_shelve: レコード削除", normalized)
     return True
+
+
+def update_memo(
+    code_s: str,
+    fields: Dict[str, Any],
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """既存レコードの memo フィールドを部分更新する。
+
+    部分更新セマンティクス:
+    - fields に含まれるキーのみ更新する。fields に存在しないキーは現行値を保持
+    - 値 "" を明示的に渡した場合は「メモ削除」として "" に上書き
+    - 値 None は "" に正規化 (空文字送信と同じ扱い)
+
+    バリデーション:
+    - fields のキーは MEMO_FIELDS のサブセットでなければ ValueError
+    - 値は str (または None) のみ許容、それ以外は TypeError
+    - レコード未登録なら KeyError
+    - 排他制御は transition_status と同じ _flock パターン
+
+    差分判定:
+    - fields の各 key について現行値と完全一致すれば no-op
+      (action_log 追記なし、updated_at 据え置き)
+    - 1 つでも変更があれば action_log に "メモ更新" を 1 件追加
+      (差分内容は記録しない、reason は空文字)
+
+    Returns: 更新後のレコード dict (no-op 時も現行 record を返す)
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    if not isinstance(fields, dict):
+        raise TypeError(f"fields must be dict, got {type(fields).__name__}")
+
+    unknown_keys = set(fields.keys()) - MEMO_FIELDS
+    if unknown_keys:
+        raise ValueError(
+            f"portfolio_shelve: 未知の memo フィールド {sorted(unknown_keys)} "
+            f"(許容値: {sorted(MEMO_FIELDS)})"
+        )
+
+    normalized_fields: Dict[str, str] = {}
+    for k, v in fields.items():
+        if v is None:
+            normalized_fields[k] = ""
+        elif isinstance(v, str):
+            normalized_fields[k] = v
+        else:
+            raise TypeError(
+                f"portfolio_shelve: memo[{k!r}] must be str or None, "
+                f"got {type(v).__name__}"
+            )
+
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            key = _record_key(normalized)
+            if key not in db:
+                raise KeyError(
+                    f"portfolio_shelve: {normalized} はレコード未登録です"
+                )
+            record = db[key]
+            current_memo = record.get("memo", {}) or {}
+            changed = any(
+                current_memo.get(k, "") != v
+                for k, v in normalized_fields.items()
+            )
+            if not changed:
+                log_print(
+                    "portfolio_shelve: メモ更新スキップ (差分なし)",
+                    normalized,
+                )
+                return record
+            record["memo"] = {**current_memo, **normalized_fields}
+            record["updated_at"] = now_iso()
+            db[key] = record
+        append_action_log(
+            normalized,
+            "メモ更新",
+            db_path=db_path,
+        )
+    log_print(
+        "portfolio_shelve: メモ更新",
+        normalized,
+        f"keys={sorted(normalized_fields.keys())}",
+    )
+    return record
 
 
 # ===========================================

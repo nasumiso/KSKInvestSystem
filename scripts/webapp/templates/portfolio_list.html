@@ -118,8 +118,35 @@
             <strong style="font-size:0.85em;color:#666;">今期</strong>
           </div>
           {% endif %}
-          <div style="flex:0 1 auto;min-width:240px;max-width:50em;">
+          <div style="flex:0 1 auto;min-width:300px;max-width:50em;">
             <strong style="font-size:0.85em;color:#666;">手動メモ</strong>
+            {% if not fallback_mode %}
+            <form action="/portfolio/{{ row.code_s }}/memo" method="POST"
+                  style="display:flex;flex-direction:column;gap:0.4em;margin:0.3em 0 0 0;font-size:0.85em;">
+              {% for field, label in [
+                  ("gyoutai_theme", "業態・テーマ"),
+                  ("watch_in_reason", "IN 理由"),
+                  ("trade_idea", "売買アイデア"),
+                  ("inago_origin", "イナゴ元"),
+                  ("takaichi_sensitivity", "高市感応度"),
+                  ("last_research_update", "調査更新日"),
+                  ("stage", "ステージ"),
+                  ("jukyu_chart", "需給チャート"),
+              ] %}
+              <label style="display:flex;flex-direction:column;gap:0.1em;margin:0;">
+                <span style="color:#666;">{{ label }}</span>
+                <textarea name="{{ field }}" rows="2"
+                          style="font-size:0.85em;padding:0.3em;margin:0;font-family:inherit;"
+                          >{{ row.memo[field] or "" }}</textarea>
+              </label>
+              {% endfor %}
+              <button type="submit"
+                      style="padding:0.3em 0.6em;font-size:0.85em;margin:0.2em 0 0 0;align-self:flex-start;">
+                メモを保存
+              </button>
+            </form>
+            {% else %}
+            {# フォールバックモード時は読み取り専用表示を維持 #}
             {% if row.memo.last_research_update %}
             <span style="font-size:0.85em;color:#999;margin-left:0.5em;">調査更新日: {{ row.memo.last_research_update }}</span>
             {% endif %}
@@ -130,6 +157,7 @@
               <li><strong>高市感応度:</strong> {{ row.memo.takaichi_sensitivity or "—" }}</li>
               <li><strong>需給チャート:</strong> {{ row.memo.jukyu_chart or "—" }}</li>
             </ul>
+            {% endif %}
           </div>
           <div style="flex:0 0 240px;">
             <strong style="font-size:0.85em;color:#666;">操作</strong>

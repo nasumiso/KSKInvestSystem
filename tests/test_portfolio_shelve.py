@@ -341,6 +341,105 @@ class TestKeyNamespaceIsolation:
 
 
 # ==================================================
+# 高レベル操作: update_memo (部分更新)
+# ==================================================
+class TestUpdateMemo:
+
+    def test_update_single_field(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        rec = ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == "上値追い"
+        # action_log に "メモ更新" 1 件 (初回登録 1 件 + メモ更新 1 件 = 計 2 件)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len(logs) == 2
+        assert logs[1]["action_type"] == "メモ更新"
+        assert logs[1]["status_from"] is None
+        assert logs[1]["status_to"] is None
+
+    def test_update_partial_keeps_other_fields(self, db_path):
+        """部分更新: fields に含まれないキーは現行値据え置き (codex P1 対応)"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo(
+            "4377",
+            {"trade_idea": "A", "watch_in_reason": "B", "stage": "1S"},
+            db_path=db_path,
+        )
+        # 1 項目だけ送信、残りは据え置きされるべき
+        rec = ps.update_memo("4377", {"trade_idea": "X"}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == "X"
+        assert rec["memo"]["watch_in_reason"] == "B"  # 据え置き
+        assert rec["memo"]["stage"] == "1S"           # 据え置き
+
+    def test_update_with_empty_string_overwrites(self, db_path):
+        """空文字を明示的に渡したらメモ削除として "" に上書き"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        rec = ps.update_memo("4377", {"trade_idea": ""}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == ""
+        # action_log: 初回登録 + メモ更新×2 = 3 件
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len(logs) == 3
+
+    def test_update_with_none_normalizes_to_empty_string(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        rec = ps.update_memo("4377", {"trade_idea": None}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == ""
+
+    def test_update_all_eight_fields(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        all_fields = {f: f"val_{f}" for f in ps.MEMO_FIELDS}
+        rec = ps.update_memo("4377", all_fields, db_path=db_path)
+        for k, v in all_fields.items():
+            assert rec["memo"][k] == v
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 1
+
+    def test_update_no_diff_is_noop(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        rec_before = ps.get_record("4377", db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        rec_after = ps.get_record("4377", db_path=db_path)
+        # updated_at が変わらない (no-op)
+        assert rec_before["updated_at"] == rec_after["updated_at"]
+        # action_log: 初回登録 + メモ更新×1 のみ (no-op で増えない)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 1
+
+    def test_update_empty_dict_is_noop(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        rec = ps.update_memo("4377", {}, db_path=db_path)
+        # KeyError なし、no-op として現行 record を返す
+        assert rec["code_s"] == "4377"
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 0
+
+    def test_update_unknown_field_raises(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(ValueError):
+            ps.update_memo("4377", {"unknown_field": "x"}, db_path=db_path)
+
+    def test_update_non_str_value_raises(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(TypeError):
+            ps.update_memo("4377", {"trade_idea": 123}, db_path=db_path)
+
+    def test_update_unregistered_record_raises(self, db_path):
+        with pytest.raises(KeyError):
+            ps.update_memo("9999", {"trade_idea": "X"}, db_path=db_path)
+
+    def test_update_invalid_code_s_raises(self, db_path):
+        with pytest.raises(ValueError):
+            ps.update_memo("abc", {"trade_idea": "X"}, db_path=db_path)
+
+    def test_update_normalizes_code_s(self, db_path):
+        ps.add_to_watch("215A", db_path=db_path)
+        rec = ps.update_memo("215a", {"trade_idea": "X"}, db_path=db_path)
+        assert rec["code_s"] == "215A"
+        assert rec["memo"]["trade_idea"] == "X"
+
+
+# ==================================================
 # my_watch_list.txt 一方向同期
 # ==================================================
 @pytest.fixture
