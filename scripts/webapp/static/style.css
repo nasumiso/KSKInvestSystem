@@ -32,12 +32,10 @@ table.snapshot-table th {
 table.snapshot-table td {
   vertical-align: top;
 }
-/* 業績スナップショット時系列: IR分析コメントを優先的に広く取り、定量列は内容に応じて狭める */
-table.ir-snapshot-table { table-layout: fixed; width: 100%; }
-table.ir-snapshot-table .col-date       { width: 5em; }
-table.ir-snapshot-table .col-ir-quant   { width: 14em; }
-table.ir-snapshot-table .col-ir-comment { width: auto; }
-table.ir-snapshot-table td { word-break: break-word; }
+/* 業績スナップショット時系列: IR分析定量を1行表示、コメント列に残り全幅を割り当て */
+table.ir-snapshot-table { width: 100%; }
+table.ir-snapshot-table td.ir-quant-cell { white-space: nowrap; width: 1%; }
+table.ir-snapshot-table td.ir-comment-cell { width: 100%; word-break: break-word; }
 .source-auto { color: #888; font-size: 0.8em; }
 .source-manual { color: #2ecc71; font-size: 0.8em; font-weight: bold; }
 .source-migration { color: #3498db; font-size: 0.8em; }

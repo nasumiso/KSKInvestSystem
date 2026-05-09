@@ -76,11 +76,6 @@
   <form id="ir-comment-form" action="/stock/{{ record.code_s }}/ir_comment" method="post">
   <div style="overflow-x:auto;">
     <table class="snapshot-table ir-snapshot-table">
-      <colgroup>
-        <col class="col-date">
-        <col class="col-ir-quant">
-        <col class="col-ir-comment">
-      </colgroup>
       <thead>
         <tr>
           <th>日付</th>
@@ -92,8 +87,8 @@
         {% for snap in snapshots[:5] %}
         <tr>
           <td><strong>{{ snap.date_yy_m }}</strong></td>
-          <td style="white-space:pre-wrap;">{{ snap.ir_quant or '' }}</td>
-          <td>
+          <td class="ir-quant-cell">{{ snap.ir_quant or '' }}</td>
+          <td class="ir-comment-cell">
             <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
             <textarea class="editable-field rich-edit" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir" style="display:none;">{{ snap.ir_comment or '' }}</textarea>
           </td>
@@ -105,17 +100,12 @@
     <details class="more" style="margin-top:0.3em;">
       <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ snapshots|length - 5 }} 件を表示</summary>
       <table class="snapshot-table ir-snapshot-table">
-        <colgroup>
-          <col class="col-date">
-          <col class="col-ir-quant">
-          <col class="col-ir-comment">
-        </colgroup>
         <tbody>
           {% for snap in snapshots[5:] %}
           <tr>
             <td><strong>{{ snap.date_yy_m }}</strong></td>
-            <td style="white-space:pre-wrap;">{{ snap.ir_quant or '' }}</td>
-            <td>
+            <td class="ir-quant-cell">{{ snap.ir_quant or '' }}</td>
+            <td class="ir-comment-cell">
               <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
               <textarea class="editable-field rich-edit" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir" style="display:none;">{{ snap.ir_comment or '' }}</textarea>
             </td>
