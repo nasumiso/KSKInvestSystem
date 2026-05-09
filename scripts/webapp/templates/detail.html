@@ -75,12 +75,17 @@
   <summary><strong>業績スナップショット時系列</strong> ({{ snapshots|length }}件)</summary>
   <form id="ir-comment-form" action="/stock/{{ record.code_s }}/ir_comment" method="post">
   <div style="overflow-x:auto;">
-    <table class="snapshot-table">
+    <table class="snapshot-table ir-snapshot-table">
+      <colgroup>
+        <col class="col-date">
+        <col class="col-ir-quant">
+        <col class="col-ir-comment">
+      </colgroup>
       <thead>
         <tr>
           <th>日付</th>
           <th>IR分析定量</th>
-          <th style="min-width:220px;">IR分析コメント</th>
+          <th>IR分析コメント</th>
         </tr>
       </thead>
       <tbody>
@@ -99,7 +104,12 @@
     {% if snapshots|length > 5 %}
     <details class="more" style="margin-top:0.3em;">
       <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ snapshots|length - 5 }} 件を表示</summary>
-      <table class="snapshot-table">
+      <table class="snapshot-table ir-snapshot-table">
+        <colgroup>
+          <col class="col-date">
+          <col class="col-ir-quant">
+          <col class="col-ir-comment">
+        </colgroup>
         <tbody>
           {% for snap in snapshots[5:] %}
           <tr>
