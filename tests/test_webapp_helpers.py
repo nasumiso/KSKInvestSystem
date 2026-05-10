@@ -1495,3 +1495,54 @@ class TestFormatPer:
 
     def test_string(self):
         assert helpers._format_per("25") == "—"
+
+
+class TestProgressQuarterAndDiff:
+    """_progress_quarter_and_diff の quarter_label 表示テスト"""
+
+    def test_quarter_zero_returns_0q(self, monkeypatch):
+        """1Q 未発表 (quarter=0) は '0Q' を表示する (旧仕様の '—' から変更)"""
+        # calc_progress_rate が {"quarter": 0} だけ返すケース (1Q 未発表 / 新年度初期)
+        import gyoseki
+        monkeypatch.setattr(gyoseki, "calc_progress_rate", lambda stock: {"quarter": 0})
+        label, diff = helpers._progress_quarter_and_diff({"code_s": "0001"})
+        assert label == "0Q"
+        assert diff == "—"  # sales/profit が無いので diff は "—"
+
+    def test_quarter_3_with_full_data(self, monkeypatch):
+        """3Q + 全数値あり -> '3Q' + diff 文字列"""
+        import gyoseki
+        monkeypatch.setattr(
+            gyoseki, "calc_progress_rate",
+            lambda stock: {
+                "quarter": 3,
+                "sales": 70.0, "sales_pre": 72.0,
+                "profit": 62.0, "profit_pre": 44.0,
+            },
+        )
+        label, diff = helpers._progress_quarter_and_diff({"code_s": "0001"})
+        assert label == "3Q"
+        assert diff == "-2/+18"
+
+    def test_no_progress_dict_returns_dash(self, monkeypatch):
+        """calc_progress_rate がデータ不足で {} を返すときは '—'"""
+        import gyoseki
+        monkeypatch.setattr(gyoseki, "calc_progress_rate", lambda stock: {})
+        label, diff = helpers._progress_quarter_and_diff({"code_s": "0001"})
+        assert label == "—"
+        assert diff == "—"
+
+    def test_empty_stock_returns_dash(self):
+        label, diff = helpers._progress_quarter_and_diff({})
+        assert label == "—"
+        assert diff == "—"
+
+    def test_calc_raises_returns_dash(self, monkeypatch):
+        """calc_progress_rate が例外を投げても '—' で安全にフォールバック"""
+        import gyoseki
+        def boom(stock):
+            raise RuntimeError("boom")
+        monkeypatch.setattr(gyoseki, "calc_progress_rate", boom)
+        label, diff = helpers._progress_quarter_and_diff({"code_s": "0001"})
+        assert label == "—"
+        assert diff == "—"
