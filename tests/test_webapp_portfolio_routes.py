@@ -140,7 +140,8 @@ class TestDashboardGet:
         assert ">85<" in html  # モメンタム
         assert "50" in html    # rank
         # 売上成長%・利益成長% (アズーム fixture の gyoseki_current から計算: 50→100 は +100%)
-        assert ">100%<" in html
+        # 値の "%" は列ヘッダ側 ("利益成長(%)") に集約 (issue #177)
+        assert ">100<" in html
 
 
 class TestAddPost:

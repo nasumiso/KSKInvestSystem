@@ -1405,7 +1405,8 @@ def _format_theoretical_diff(stock: Dict[str, Any]) -> str:
         return "—"
     if not stock.get("price") or not stock.get("rironkabuka"):
         return "—"
-    return f"{int(kairi)}%"
+    # "%" 表記は列ヘッダ側 ("理論株価乖離(%)") に集約 (issue #177)、値は数値のみ
+    return f"{int(kairi)}"
 
 
 def _annual_growth(stock: Dict[str, Any]) -> tuple:
@@ -1620,13 +1621,14 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "market_cap": _market_cap_category(market_cap_raw) or "—",
         "market_cap_raw": market_cap_raw,
         "market_cap_category": _market_cap_category(market_cap_raw),
-        "dividend": f"{dividend_yield:.2f}%" if isinstance(dividend_yield, (int, float)) else "—",
+        # "%" 表記は列ヘッダ側 ("配当(%)") に集約 (issue #177)、値は数値のみ (小数1桁)
+        "dividend": f"{dividend_yield:.1f}" if isinstance(dividend_yield, (int, float)) else "—",
         "dividend_raw": dividend_yield if isinstance(dividend_yield, (int, float)) else None,
         "rs": f"{int(momentum_pt)}" if isinstance(momentum_pt, (int, float)) else "—",
         "rs_raw": int(momentum_pt) if isinstance(momentum_pt, (int, float)) else None,
-        "sales_growth": f"{int(sales_growth)}%" if isinstance(sales_growth, (int, float)) else "—",
+        "sales_growth": f"{int(sales_growth)}" if isinstance(sales_growth, (int, float)) else "—",
         "sales_growth_raw": sales_growth if isinstance(sales_growth, (int, float)) else None,
-        "profit_growth": f"{int(profit_growth)}%" if isinstance(profit_growth, (int, float)) else "—",
+        "profit_growth": f"{int(profit_growth)}" if isinstance(profit_growth, (int, float)) else "—",
         "profit_growth_raw": profit_growth if isinstance(profit_growth, (int, float)) else None,
         "quarter": quarter_label,
         "progress_diff": progress_diff,
