@@ -1360,12 +1360,14 @@ def list_portfolio_with_indicators(records: List[Dict[str, Any]]) -> List[Dict[s
     code_list = [r.get("code_s", "") for r in records]
     stock_map = _bulk_get_stock_data(code_list)
     name_map = _bulk_resolve_stock_names(code_list)
+    today = date.today()  # 全 row 共通の基準日 (issue #177)
     rows: List[Dict[str, Any]] = []
     for rec in records:
         code_s = rec.get("code_s", "")
         row = dict(rec)
         row["stock_name"] = name_map.get(code_s, "") or rec.get("stock_name", "")  # 旧データ互換
         row.update(_extract_indicators_for_portfolio(stock_map.get(code_s, {})))
+        row["styles"] = compute_cell_styles(row, today=today)
         rows.append(row)
 
     rows.sort(key=lambda r: (r.get("rank") is None, r.get("rank") or 0, r.get("code_s", "")))
@@ -1488,28 +1490,99 @@ def _format_kessanbi_md(kessanbi: Any) -> str:
     return kessanbi
 
 
+def _theoretical_diff_raw(stock: Dict[str, Any]) -> Optional[float]:
+    """理論株価乖離率の生値 (整数化前) を返す。取れなければ None。"""
+    if not stock or not stock.get("price") or not stock.get("rironkabuka"):
+        return None
+    try:
+        from rironkabuka import get_rironkabuka_kairi  # 遅延 import
+        kairi, _up, _down, _preceding = get_rironkabuka_kairi(stock)
+    except Exception:
+        return None
+    return kairi if isinstance(kairi, (int, float)) else None
+
+
+def _progress_diff_eiri_raw(stock: Dict[str, Any]) -> Optional[float]:
+    """進捗率乖離 (営利) の生値を返す。"+3/+15" の右側 = profit - profit_pre。"""
+    if not stock:
+        return None
+    try:
+        from gyoseki import calc_progress_rate  # 遅延 import
+        progress = calc_progress_rate(stock)
+    except Exception:
+        return None
+    if not isinstance(progress, dict):
+        return None
+    profit = progress.get("profit")
+    profit_pre = progress.get("profit_pre")
+    if not all(isinstance(v, (int, float)) for v in (profit, profit_pre)):
+        return None
+    return profit - profit_pre
+
+
+def _market_cap_category(billion_yen: Optional[float]) -> Optional[str]:
+    """時価総額 (億円) からカテゴリ名を返す。スプシの IFS と同じ閾値。"""
+    if not isinstance(billion_yen, (int, float)):
+        return None
+    if billion_yen < 100:
+        return "極小"
+    if billion_yen < 400:
+        return "小"
+    if billion_yen < 1000:
+        return "中"
+    if billion_yen < 3000:
+        return "大"
+    return "特大"
+
+
+def _gyoseki_quarity_expr_safe(stock: Dict[str, Any]) -> str:
+    """gyoseki.get_gyoseki_quarity_expr を安全に呼ぶ (例外時は空文字)。
+
+    末尾に "<C3>" タグが付いていれば 3Q 連続利益率向上の意味。
+    """
+    if not stock:
+        return ""
+    try:
+        from gyoseki import get_gyoseki_quarity_expr  # 遅延 import
+        return get_gyoseki_quarity_expr(stock) or ""
+    except Exception:
+        return ""
+
+
 def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     """stocks_shelve の dict から portfolio 一覧表示用の指標を抽出する。
 
-    値は表示用の文字列 (なければ "—")。stocks_shelve の実フィールドに直結。
+    表示用文字列 (なければ "—") に加え、色判定用の生値 *_raw と派生フィールドも
+    同時に返す (issue #177 条件付き書式移植のため)。
     """
     if not stock:
         return {
             "rank": None,
             "kessanbi_md": "—",
+            "kessanbi_raw": None,
             "per": "—",
+            "per_raw": None,
             "market_cap": "—",
+            "market_cap_raw": None,
+            "market_cap_category": None,
             "dividend": "—",
+            "dividend_raw": None,
             "rs": "—",
+            "rs_raw": None,
             "sales_growth": "—",
+            "sales_growth_raw": None,
             "profit_growth": "—",
+            "profit_growth_raw": None,
             "quarter": "—",
             "progress_diff": "—",
+            "progress_diff_eiri_raw": None,
             "trend_template": "—",
             "trend_template_tooltip": "—",
             "tags": "—",
             "buy_collection": "—",
             "theoretical_diff": "—",
+            "theoretical_diff_raw": None,
+            "gyoseki_quarity_expr": "",
             "gyoseki": {},
             "indicators_raw": {},
         }
@@ -1535,24 +1608,222 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     # tooltip 用: 不通過項目の全件 (テーブル列で見切れた時にホバーで参照)
     trend_tooltip = ",".join(trend_misses) if trend_misses else trend_expr
 
+    market_cap_raw = market_cap if isinstance(market_cap, (int, float)) else None
+
     return {
         "rank": rank if isinstance(rank, int) else None,
         "kessanbi_md": _format_kessanbi_md(stock.get("kessanbi")),
+        "kessanbi_raw": _parse_kessanbi(stock.get("kessanbi", "")),
         "per": f"{per:.1f}" if isinstance(per, (int, float)) else "—",
+        "per_raw": per if isinstance(per, (int, float)) else None,
         "market_cap": f"{market_cap:.0f}億" if isinstance(market_cap, (int, float)) else "—",
+        "market_cap_raw": market_cap_raw,
+        "market_cap_category": _market_cap_category(market_cap_raw),
         "dividend": f"{dividend_yield:.2f}%" if isinstance(dividend_yield, (int, float)) else "—",
+        "dividend_raw": dividend_yield if isinstance(dividend_yield, (int, float)) else None,
         "rs": f"{int(momentum_pt)}" if isinstance(momentum_pt, (int, float)) else "—",
+        "rs_raw": int(momentum_pt) if isinstance(momentum_pt, (int, float)) else None,
         "sales_growth": f"{int(sales_growth)}%" if isinstance(sales_growth, (int, float)) else "—",
+        "sales_growth_raw": sales_growth if isinstance(sales_growth, (int, float)) else None,
         "profit_growth": f"{int(profit_growth)}%" if isinstance(profit_growth, (int, float)) else "—",
+        "profit_growth_raw": profit_growth if isinstance(profit_growth, (int, float)) else None,
         "quarter": quarter_label,
         "progress_diff": progress_diff,
+        "progress_diff_eiri_raw": _progress_diff_eiri_raw(stock),
         "trend_template": trend_expr,
         "trend_template_tooltip": trend_tooltip,
         "tags": _format_tags(stock),
         "buy_collection": _format_buy_collection(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
+        "theoretical_diff_raw": _theoretical_diff_raw(stock),
+        "gyoseki_quarity_expr": _gyoseki_quarity_expr_safe(stock),
         "gyoseki": {
             "isKonki": stock.get("isKonki"),
         },
         "indicators_raw": stock,
     }
+
+
+# ==================================================
+# 条件付き書式 (issue #177): スプシ「保有銘柄」シートの色分けを移植
+# 詳細は doc/PORTFOLIO_COLOR_RULES.md を参照
+# ==================================================
+
+PORTFOLIO_COLORS = {
+    "薄黄": "#fce8b2",   # 良 (PER低い、配当>3、RS≧70 等)
+    "濃黄": "#fbbc04",   # 強良 (順位<300、配当≧5、RS>80 等)
+    "薄赤": "#f4c7c3",   # 警告 (ステージ2S、3Q連続向上タグ)
+    "青":   "#4285f4",   # 警告シグナル (警/売)
+    "赤":   "#ea4335",   # 強警告シグナル (ポ/ブ/最)
+    "薄灰": "#cccccc",   # データ古い (14日以上)
+    "濃灰": "#999999",   # データ古い (1ヶ月以上)
+    "水色": "#6fa8dc",   # データなし/低スコア (買い集めDD以下、トレンド空)
+}
+
+# 買い集めスコア (A=5, B=4, ..., E=1)。スプシの CHOOSE(CODE-64,5,4,3,2,1) に対応
+_BUY_COLLECTION_SCORE = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1}
+
+
+def _parse_research_update_md(md_str: Optional[str], today: date) -> Optional[date]:
+    """'4/27' を date オブジェクトにする。today より未来なら去年扱い。"""
+    if not md_str or md_str == "—":
+        return None
+    try:
+        m, d = md_str.split("/")
+        candidate = date(today.year, int(m), int(d))
+        if candidate > today:
+            candidate = date(today.year - 1, int(m), int(d))
+        return candidate
+    except (ValueError, AttributeError):
+        return None
+
+
+def _buy_collection_score_sum(s: Optional[str]) -> Optional[int]:
+    """'C,C' → 各文字スコアの合計 (A=5..E=1)。フォーマット不正なら None。"""
+    if not s or "," not in s:
+        return None
+    parts = s.split(",")
+    if len(parts) < 2:
+        return None
+    left = parts[0].strip()
+    right = parts[1].strip()
+    if left not in _BUY_COLLECTION_SCORE or right not in _BUY_COLLECTION_SCORE:
+        return None
+    return _BUY_COLLECTION_SCORE[left] + _BUY_COLLECTION_SCORE[right]
+
+
+def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Dict[str, str]:
+    """row の生値から各セルの inline style 文字列を返す (issue #177)。
+
+    Args:
+        row: list_portfolio_with_indicators が組み立てた表示用 dict (raw フィールド含む)
+        today: 基準日 (省略時は date.today())。
+            ※ CLAUDE.md L28 は日付判定に get_price_day() を規約化しているが、
+            色付けは UI 補助で日単位粒度で十分なため本機能のみ date.today() を許可
+            (ユーザーと合意済み)。詳細は .claude/plans/issue-177-portfolio-color-rules.md §4-1。
+
+    Returns:
+        dict[列名, style 文字列]。色なしの列は dict に含めない。
+        例: {"per": "background:#fce8b2", "rs": "background:#fbbc04",
+             "tags": "background:#ea4335;color:#fff"}
+    """
+    if today is None:
+        today = date.today()
+    styles: Dict[str, str] = {}
+    bg = lambda color: f"background:{PORTFOLIO_COLORS[color]}"  # noqa: E731
+    bg_with_white = lambda color: f"background:{PORTFOLIO_COLORS[color]};color:#fff"  # noqa: E731
+
+    # --- 順位 (ルール 14, 31): rank < 300 → 濃黄
+    rank = row.get("rank")
+    if isinstance(rank, int) and rank < 300:
+        styles["rank"] = bg("濃黄")
+
+    # --- 売上成長 (ルール 17): >= 30 → 薄黄
+    sg = row.get("sales_growth_raw")
+    if isinstance(sg, (int, float)) and sg >= 30:
+        styles["sales_growth"] = bg("薄黄")
+
+    # --- 利益成長 (ルール 17): >= 30 → 薄黄
+    pg = row.get("profit_growth_raw")
+    if isinstance(pg, (int, float)) and pg >= 30:
+        styles["profit_growth"] = bg("薄黄")
+
+    # --- PER (ルール 16): (利益成長% + 配当%) / PER > 1 → 薄黄 (PEG的指標、割安)
+    per_raw = row.get("per_raw")
+    div_raw = row.get("dividend_raw")
+    if (
+        isinstance(per_raw, (int, float)) and per_raw > 0
+        and isinstance(pg, (int, float))
+        and isinstance(div_raw, (int, float))
+        and (pg + div_raw) / per_raw > 1
+    ):
+        styles["per"] = bg("薄黄")
+
+    # --- 理論株価乖離 (ルール 15): > 50 → 薄黄
+    theo = row.get("theoretical_diff_raw")
+    if isinstance(theo, (int, float)) and theo > 50:
+        styles["theoretical_diff"] = bg("薄黄")
+
+    # --- 配当 (ルール 32, 33): >= 5 濃黄 / > 3 薄黄
+    if isinstance(div_raw, (int, float)):
+        if div_raw >= 5:
+            styles["dividend"] = bg("濃黄")
+        elif div_raw > 3:
+            styles["dividend"] = bg("薄黄")
+
+    # --- 進捗率乖離 (ルール 9, 10): <C3>タグ 薄赤 / 営利乖離≧20 濃黄
+    quarity = row.get("gyoseki_quarity_expr") or ""
+    eiri_raw = row.get("progress_diff_eiri_raw")
+    if "<C3>" in quarity:
+        styles["progress_diff"] = bg("薄赤")
+    elif isinstance(eiri_raw, (int, float)) and eiri_raw >= 20:
+        styles["progress_diff"] = bg("濃黄")
+
+    # --- 決算日 (ルール 22, 23): 更新日±1ヶ月+3Q 濃黄 / ±1ヶ月のみ 薄黄
+    kessanbi_raw = row.get("kessanbi_raw")
+    last_update_md = (row.get("memo") or {}).get("last_research_update")
+    last_update_dt = _parse_research_update_md(last_update_md, today)
+    quarter = row.get("quarter") or ""
+    if (
+        isinstance(kessanbi_raw, date)
+        and isinstance(last_update_dt, date)
+        and last_update_dt <= kessanbi_raw <= last_update_dt + timedelta(days=31)
+    ):
+        if quarter == "3Q":
+            styles["kessanbi_md"] = bg("濃黄")
+        else:
+            styles["kessanbi_md"] = bg("薄黄")
+
+    # --- 更新日 (ルール 1, 8): 1ヶ月以上前 濃灰 (>=30日) / 14日以上前 薄灰
+    if isinstance(last_update_dt, date):
+        diff_days = (today - last_update_dt).days
+        if diff_days >= 30:
+            styles["last_research_update"] = bg("濃灰")
+        elif diff_days >= 14:
+            styles["last_research_update"] = bg("薄灰")
+
+    # --- ステージ (ルール 13): "2S" 含む → 薄赤
+    stage = (row.get("memo") or {}).get("stage") or ""
+    if "2S" in stage:
+        styles["stage"] = bg("薄赤")
+
+    # --- RS (ルール 27, 28): > 80 濃黄 / >= 70 薄黄
+    rs_raw = row.get("rs_raw")
+    if isinstance(rs_raw, (int, float)):
+        if rs_raw > 80:
+            styles["rs"] = bg("濃黄")
+        elif rs_raw >= 70:
+            styles["rs"] = bg("薄黄")
+
+    # --- トレンド (ルール 24, 25, 26): "◎" 濃黄 / "◯" 薄黄 / 空欄("—") 水色
+    trend = row.get("trend_template") or ""
+    if "◎" in trend:
+        styles["trend_template"] = bg("濃黄")
+    elif "◯" in trend:
+        styles["trend_template"] = bg("薄黄")
+    elif not trend or trend == "—":
+        styles["trend_template"] = bg("水色")
+
+    # --- シグナル (ルール 2-7): 強い色から順に評価
+    tags = row.get("tags") or ""
+    if any(c in tags for c in ("ポ", "ブ", "最")):
+        styles["tags"] = bg_with_white("赤")
+    elif any(c in tags for c in ("警", "売")):
+        styles["tags"] = bg_with_white("青")
+    elif "押" in tags:
+        styles["tags"] = f"color:{PORTFOLIO_COLORS['青']}"
+
+    # --- 買い集め (ルール 20, 21): スコア合計 ≧ 8 濃黄 / ≦ 4 水色
+    score = _buy_collection_score_sum(row.get("buy_collection"))
+    if isinstance(score, int):
+        if score >= 8:
+            styles["buy_collection"] = bg("濃黄")
+        elif score <= 4:
+            styles["buy_collection"] = bg("水色")
+
+    # --- 時価総額 (ルール 29, 30): カテゴリ "中" / "大" → 薄黄 (極小/小/特大は色なし)
+    cat = row.get("market_cap_category")
+    if cat in ("中", "大"):
+        styles["market_cap"] = bg("薄黄")
+
+    return styles
