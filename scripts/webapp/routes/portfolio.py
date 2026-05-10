@@ -16,6 +16,7 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 import portfolio
 import portfolio_shelve as ps
 from webapp.helpers import (
+    compute_cell_styles,
     get_stock_data,
     list_portfolio_with_indicators,
     resolve_stock_name,
@@ -265,7 +266,22 @@ def update_memo(code_s: str):
         return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
 
     if is_ajax:
-        return jsonify({"ok": True, "code_s": code_s, "fields": fields})
+        # 保存後の row を再構築して、更新済みフィールドと styles を返す
+        # (codex P2 対応: inline 編集後にクライアント側で色を即時更新するため)
+        rec = ps.get_record(code_s) or {}
+        body = {"ok": True, "code_s": code_s, "fields": fields}
+        if rec:
+            rows = list_portfolio_with_indicators([rec])
+            if rows:
+                row = rows[0]
+                body["styles"] = row.get("styles") or {}
+                # 表示文字列も返す (更新日 / ステージ等の見た目同期に使う)
+                body["display"] = {
+                    "last_research_update": (row.get("memo") or {}).get("last_research_update") or "—",
+                    "stage": (row.get("memo") or {}).get("stage") or "—",
+                    "gyoutai_theme": (row.get("memo") or {}).get("gyoutai_theme") or "",
+                }
+        return jsonify(body)
     flash(f"{code_s} のメモを保存しました", "info")
     return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
 

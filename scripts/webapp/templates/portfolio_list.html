@@ -98,7 +98,7 @@
         <a href="/stock/{{ row.code_s }}">{{ row.stock_name }}</a>
       </td>
       <td title="{{ row.memo.gyoutai_theme }} (クリックで編集)"
-          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="gyoutai_theme" data-multiline="1"{% endif %}
+          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="gyoutai_theme" data-multiline="1" data-full="{{ row.memo.gyoutai_theme or '' }}"{% endif %}
           style="max-width:11em;line-height:1.2;font-size:0.85em;overflow:hidden;{% if not fallback_mode %}cursor:pointer;{% endif %}">
         {% if row.memo.gyoutai_theme %}
           {% for theme_line in row.memo.gyoutai_theme.split("\n")[:2] %}
@@ -114,11 +114,14 @@
       <td style="{{ row.styles.dividend or '' }}">{{ row.dividend }}</td>
       <td>{{ row.quarter }}</td>
       <td style="{{ row.styles.progress_diff or '' }}">{{ row.progress_diff }}</td>
-      <td style="{{ row.styles.kessanbi_md or '' }}">{{ row.kessanbi_md }}</td>
+      <td data-style-field="kessanbi_md"
+          style="{{ row.styles.kessanbi_md or '' }}">{{ row.kessanbi_md }}</td>
       <td title="クリックで編集 (M/D 形式 or 日付ピッカー)"
+          data-style-field="last_research_update"
           {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="last_research_update" data-input-type="date"{% endif %}
           style="{{ row.styles.last_research_update or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.last_research_update or "—" }}</td>
       <td title="クリックで編集 (ステージ変更時は更新日も自動で当日に)"
+          data-style-field="stage"
           {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="stage" data-touch-update="1"{% endif %}
           style="{{ row.styles.stage or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.stage or "—" }}</td>
       <td style="{{ row.styles.rs or '' }}">{{ row.rs }}</td>
@@ -239,6 +242,9 @@ document.querySelectorAll('table details').forEach(function(d) {
   function renderGyoutaiTheme(td, value) {
     // 改行で 2 行まで表示する既存ルールを再現
     td.innerHTML = '';
+    // 全文は data-full に保持 (3 行目以降を保護、codex P1 対応)
+    td.dataset.full = value || '';
+    td.title = (value || '') + ' (クリックで編集)';
     if (!value) {
       td.appendChild(document.createTextNode('—'));
       return;
@@ -256,15 +262,75 @@ document.querySelectorAll('table details').forEach(function(d) {
     td.textContent = value || '—';
   }
 
+  // PORTFOLIO_COLORS のうち背景色に使われる HEX (compute_cell_styles の bg() / bg_with_white() 出力)。
+  // 既存セルの背景色をクリアする際にこの集合を使って判定する。
+  var PORTFOLIO_BG_COLORS = [
+    '#fce8b2', '#fbbc04', '#f4c7c3',
+    '#4285f4', '#ea4335',
+    '#cccccc', '#999999', '#6fa8dc',
+  ];
+
+  // セルの style 属性のうち、background:/color: 部分のみ差し替える。
+  // base style (max-width 等) は温存。
+  function setCellColorStyle(td, colorStyle) {
+    if (!td) return;
+    var existing = td.getAttribute('style') || '';
+    // 既存の background: / color: ルールを除去 (色付けに関するもののみ)
+    var cleaned = existing
+      .split(';')
+      .map(function(s) { return s.trim(); })
+      .filter(function(s) {
+        if (!s) return false;
+        var lower = s.toLowerCase();
+        // background:#xxx は色付け由来なので除去対象。color:#xxx は signal 列の文字色用なので
+        // 既知の portfolio 色 HEX が含まれる場合のみ除去 (誤って #bbb 等を消さないため)
+        if (lower.startsWith('background:') || lower.startsWith('background-color:')) return false;
+        if (lower.startsWith('color:')) {
+          for (var i = 0; i < PORTFOLIO_BG_COLORS.length; i++) {
+            if (lower.indexOf(PORTFOLIO_BG_COLORS[i].toLowerCase()) !== -1) return false;
+          }
+        }
+        return true;
+      })
+      .join(';');
+    var newStyle = cleaned;
+    if (colorStyle) {
+      newStyle = (newStyle ? newStyle + ';' : '') + colorStyle;
+    }
+    td.setAttribute('style', newStyle);
+  }
+
+  // サーバから受け取った styles を該当セルに反映する。
+  // セル特定は data-style-field 属性から (= 色付け対象列に埋めたマーカー)。
+  // 受け取った styles に該当キーがなければ「色なし」として既存色をクリアする。
+  var STYLE_FIELDS_TO_SYNC = [
+    'kessanbi_md', 'last_research_update', 'stage',
+    // 色付け対象だが inline 編集で間接的にも影響しない列はここに含めなくて良い。
+    // ただし将来 stage / 更新日変更で他列に波及するロジックが入ったら追加する。
+  ];
+  function applyStylesToRow(tr, styles) {
+    if (!tr) return;
+    STYLE_FIELDS_TO_SYNC.forEach(function(field) {
+      var td = tr.querySelector('td[data-style-field="' + field + '"]');
+      if (!td) return;
+      setCellColorStyle(td, styles[field] || '');
+    });
+  }
+
   function startEdit(td) {
     if (td.dataset.editing === '1') return;
     td.dataset.editing = '1';
 
     var field = td.dataset.field;
-    var currentValue = (td.dataset.field === 'gyoutai_theme')
-      ? Array.from(td.querySelectorAll('div')).map(function(d) { return d.textContent; }).join('\n').trim()
-      : td.textContent.trim();
-    if (currentValue === '—') currentValue = '';
+    // gyoutai_theme は表示が 2 行までに切り詰められているため、編集元値は data-full
+    // (全文) から取る。表示テキストから復元すると 3 行目以降が消える (codex P1 対応)。
+    var currentValue;
+    if (td.dataset.full !== undefined) {
+      currentValue = td.dataset.full;
+    } else {
+      currentValue = td.textContent.trim();
+      if (currentValue === '—') currentValue = '';
+    }
 
     var input;
     if (td.dataset.multiline === '1') {
@@ -337,16 +403,26 @@ document.querySelectorAll('table details').forEach(function(d) {
           else renderPlain(td, currentValue);
           return;
         }
-        // 自セル更新
-        if (field === 'gyoutai_theme') renderGyoutaiTheme(td, newValue);
-        else renderPlain(td, newValue);
+        // 自セル更新 (display 値があれば使う、なければ送信値)
+        var disp = (res.body.display) || {};
+        var displayValue = (disp[field] !== undefined) ? disp[field] : newValue;
+        if (field === 'gyoutai_theme') renderGyoutaiTheme(td, displayValue);
+        else renderPlain(td, displayValue);
 
         // ステージ編集時は同じ行の last_research_update セルも更新
+        var tr = td.closest('tr');
         if (touchUpdate) {
-          var tr = td.closest('tr');
           var dateTd = tr && tr.querySelector('td.editable[data-field="last_research_update"]');
-          if (dateTd) renderPlain(dateTd, fields['last_research_update']);
+          if (dateTd) {
+            var dateDisp = (disp.last_research_update !== undefined) ? disp.last_research_update : fields['last_research_update'];
+            renderPlain(dateTd, dateDisp);
+          }
         }
+
+        // サーバから新しい styles が返ったらセルの style 属性も同期更新
+        // (codex P2 対応: inline 編集後の色のズレを防ぐ)
+        var newStyles = res.body.styles || {};
+        applyStylesToRow(tr, newStyles);
       }).catch(function(err) {
         alert('保存失敗: ' + err);
         if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);

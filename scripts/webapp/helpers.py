@@ -1764,6 +1764,7 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         styles["progress_diff"] = bg("濃黄")
 
     # --- 決算日 (ルール 22, 23): 更新日±1ヶ月+3Q 濃黄 / ±1ヶ月のみ 薄黄
+    # 翻訳表の業務的意味は「更新日 ±1ヶ月以内」なので絶対日数差で両側判定 (codex P2 対応)
     kessanbi_raw = row.get("kessanbi_raw")
     last_update_md = (row.get("memo") or {}).get("last_research_update")
     last_update_dt = _parse_research_update_md(last_update_md, today)
@@ -1771,7 +1772,7 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
     if (
         isinstance(kessanbi_raw, date)
         and isinstance(last_update_dt, date)
-        and last_update_dt <= kessanbi_raw <= last_update_dt + timedelta(days=31)
+        and abs((kessanbi_raw - last_update_dt).days) <= 31
     ):
         if quarter == "3Q":
             styles["kessanbi_md"] = bg("濃黄")

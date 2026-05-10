@@ -1154,6 +1154,19 @@ class TestComputeCellStyles:
         )
         assert styles["kessanbi_md"] == f"background:{C['薄黄']}"
 
+    def test_kessanbi_before_update_within_month_light_yellow(self):
+        # 決算日が更新日より前でも ±1ヶ月以内なら色付け (codex P2 対応: 絶対日数差判定)
+        # 例: today=6/15、更新日 5/20、決算日 5/10 (更新日の 10 日前) → 薄黄
+        styles = helpers.compute_cell_styles(
+            {
+                "kessanbi_raw": date(2026, 5, 10),
+                "memo": {"last_research_update": "5/20"},
+                "quarter": "1Q",
+            },
+            today=date(2026, 6, 15),
+        )
+        assert styles["kessanbi_md"] == f"background:{C['薄黄']}"
+
     def test_kessanbi_outside_month_no_color(self):
         styles = helpers.compute_cell_styles(
             {
@@ -1162,6 +1175,19 @@ class TestComputeCellStyles:
                 "quarter": "3Q",
             },
             today=TODAY,
+        )
+        assert "kessanbi_md" not in styles
+
+    def test_kessanbi_before_update_outside_month_no_color(self):
+        # 決算日が更新日より前で 1 ヶ月超なら色なし
+        # 例: today=6/15、更新日 5/20、決算日 4/10 (更新日の 40 日前) → 色なし
+        styles = helpers.compute_cell_styles(
+            {
+                "kessanbi_raw": date(2026, 4, 10),
+                "memo": {"last_research_update": "5/20"},
+                "quarter": "1Q",
+            },
+            today=date(2026, 6, 15),
         )
         assert "kessanbi_md" not in styles
 
