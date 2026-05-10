@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}保有銘柄 | Shintakane Research{% endblock %}
+
+{% block content %}
+{# 一覧の列数を多く表示するため、main.container のデフォルト max-width を上書きして全幅化 #}
+<style>
+  main.container { max-width: 100% !important; padding-left: 0.8em !important; padding-right: 0.8em !important; }
+</style>
+<h2>保有銘柄ダッシュボード</h2>
+
+{% if fallback_mode %}
+<div style="padding:0.6em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;background:#fff8e0;color:#a07000;border:1px solid #ecd07a;">
+  <strong>portfolio_shelve 未移行モード</strong>: 表示は <code>my_watch_list.txt</code> から復元しています。
+  ステータス変更・追加・削除などの書き込み操作は、Phase 3a 移行スクリプトを実行するまで無効です。
+</div>
+{% endif %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  {% for category, message in messages %}
+  <div style="padding:0.5em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;{% if category == 'error' %}background:#ffeaea;color:#c00;border:1px solid #fcc;{% else %}background:#eaffea;color:#060;border:1px solid #cfc;{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+{% endwith %}
+
+<nav style="margin-bottom:1em;">
+  <ul style="display:flex;gap:0.5em;list-style:none;padding:0;margin:0;border-bottom:1px solid #ddd;">
+    {% for q, status_val, label in tabs %}
+    <li>
+      <a href="/portfolio?status={{ q }}"
+         style="display:inline-block;padding:0.5em 1em;text-decoration:none;
+                {% if q == active_query %}border-bottom:2px solid #06c;font-weight:bold;{% else %}color:#666;{% endif %}">
+        {{ label }} <span style="color:#999;font-size:0.85em;">{{ counts[q] }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</nav>
+
+<p style="font-size:0.85em;color:#666;">{{ rows|length }} 件</p>
+
+{% if rows %}
+<div style="overflow-x:auto;">
+<table style="font-size:0.85em;">
+  <thead>
+    <tr>
+      <th></th>
+      <th>コード</th>
+      <th>銘柄名</th>
+      <th>業態・テーマ</th>
+      <th>順位</th>
+      <th>売上成長</th>
+      <th>利益成長</th>
+      <th>PER</th>
+      <th>理論株価乖離</th>
+      <th>配当</th>
+      <th title="決算Q (進行中の四半期)">決算Q</th>
+      <th title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
+      <th>決算日</th>
+      <th>更新日</th>
+      <th>ステージ</th>
+      <th>RS</th>
+      <th>RSライン(20,5)</th>
+      <th>トレンド</th>
+      <th>タグ</th>
+      <th>株価向き(20,5)</th>
+      <th>買い集め</th>
+      <th>時価総額</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>
+        <details>
+          <summary style="cursor:pointer;list-style:none;">▸</summary>
+        </details>
+      </td>
+      <td><a href="https://kabutan.jp/stock/chart?code={{ row.code_s }}" target="_blank" rel="noopener noreferrer">{{ row.code_s }}</a></td>
+      <td title="{{ row.stock_name }}"
+          style="max-width:10em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+        <a href="/stock/{{ row.code_s }}">{{ row.stock_name }}</a>
+      </td>
+      <td title="{{ row.memo.gyoutai_theme }}"
+          style="max-width:11em;line-height:1.2;font-size:0.85em;overflow:hidden;">
+        {% if row.memo.gyoutai_theme %}
+          {% for theme_line in row.memo.gyoutai_theme.split("\n")[:2] %}
+          <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ theme_line }}</div>
+          {% endfor %}
+        {% else %}—{% endif %}
+      </td>
+      <td>{{ row.rank if row.rank is not none else "—" }}</td>
+      <td>{{ row.sales_growth }}</td>
+      <td>{{ row.profit_growth }}</td>
+      <td>{{ row.per }}</td>
+      <td>{{ row.theoretical_diff }}</td>
+      <td>{{ row.dividend }}</td>
+      <td>{{ row.quarter }}</td>
+      <td>{{ row.progress_diff }}</td>
+      <td>{{ row.kessanbi_md }}</td>
+      <td>{{ row.memo.last_research_update or "—" }}</td>
+      <td>{{ row.memo.stage or "—" }}</td>
+      <td>{{ row.rs }}</td>
+      <td style="color:#bbb;">—</td>
+      <td title="{{ row.trend_template_tooltip }}"
+          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ row.trend_template }}</td>
+      <td title="{{ row.tags }}"
+          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ row.tags }}</td>
+      <td style="color:#bbb;">—</td>
+      <td>{{ row.buy_collection }}</td>
+      <td>{{ row.market_cap }}</td>
+    </tr>
+    <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
+      <td colspan="22" style="background:#f8f8f8;padding:0.8em 1em;">
+        <div style="display:flex;flex-wrap:wrap;gap:0.8em;align-items:flex-start;">
+          {% if row.gyoseki.isKonki %}
+          <div style="flex:0 0 auto;">
+            <strong style="font-size:0.85em;color:#666;">今期</strong>
+          </div>
+          {% endif %}
+          <div style="flex:0 1 auto;min-width:300px;max-width:50em;">
+            <strong style="font-size:0.85em;color:#666;">手動メモ</strong>
+            {% if not fallback_mode %}
+            <form action="/portfolio/{{ row.code_s }}/memo" method="POST"
+                  style="display:flex;flex-direction:column;gap:0.4em;margin:0.3em 0 0 0;font-size:0.85em;">
+              {% for field, label in [
+                  ("gyoutai_theme", "業態・テーマ"),
+                  ("watch_in_reason", "IN 理由"),
+                  ("trade_idea", "売買アイデア"),
+                  ("inago_origin", "イナゴ元"),
+                  ("takaichi_sensitivity", "高市感応度"),
+                  ("last_research_update", "調査更新日"),
+                  ("stage", "ステージ"),
+                  ("jukyu_chart", "需給チャート"),
+              ] %}
+              <label style="display:flex;flex-direction:column;gap:0.1em;margin:0;">
+                <span style="color:#666;">{{ label }}</span>
+                <textarea name="{{ field }}" rows="2"
+                          style="font-size:0.85em;padding:0.3em;margin:0;font-family:inherit;"
+                          >{{ row.memo[field] or "" }}</textarea>
+              </label>
+              {% endfor %}
+              <button type="submit"
+                      style="padding:0.3em 0.6em;font-size:0.85em;margin:0.2em 0 0 0;align-self:flex-start;">
+                メモを保存
+              </button>
+            </form>
+            {% else %}
+            {# フォールバックモード時は読み取り専用表示を維持 #}
+            {% if row.memo.last_research_update %}
+            <span style="font-size:0.85em;color:#999;margin-left:0.5em;">調査更新日: {{ row.memo.last_research_update }}</span>
+            {% endif %}
+            <ul style="font-size:0.85em;margin:0.3em 0 0 1em;padding:0;">
+              <li><strong>IN 理由:</strong> {{ row.memo.watch_in_reason or "—" }}</li>
+              <li><strong>売買アイデア:</strong> {{ row.memo.trade_idea or "—" }}</li>
+              <li><strong>イナゴ元:</strong> {{ row.memo.inago_origin or "—" }}</li>
+              <li><strong>高市感応度:</strong> {{ row.memo.takaichi_sensitivity or "—" }}</li>
+              <li><strong>需給チャート:</strong> {{ row.memo.jukyu_chart or "—" }}</li>
+            </ul>
+            {% endif %}
+          </div>
+          <div style="flex:0 0 240px;">
+            <strong style="font-size:0.85em;color:#666;">操作</strong>
+            <div style="display:flex;flex-direction:column;gap:0.5em;margin-top:0.3em;font-size:0.85em;">
+              {% if transitions %}
+              <form action="/portfolio/{{ row.code_s }}/transition" method="POST" style="display:flex;flex-direction:column;gap:0.3em;margin:0;">
+                <label style="font-size:0.85em;color:#666;">ステータス変更</label>
+                <select name="new_status" style="padding:0.3em;font-size:0.85em;margin:0;">
+                  {% for label, value in transitions %}
+                  <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <textarea name="reason" placeholder="理由 (任意)" rows="2" style="font-size:0.85em;padding:0.3em;margin:0;"></textarea>
+                <button type="submit" style="padding:0.3em 0.6em;font-size:0.85em;margin:0;"
+                        onclick="return confirm('{{ row.code_s }} のステータスを変更しますか?')">変更</button>
+              </form>
+              {% endif %}
+              {% if active_query == "watch" and not fallback_mode %}
+              <form action="/portfolio/{{ row.code_s }}/delete" method="POST"
+                    style="display:flex;flex-direction:column;gap:0.3em;margin:0;border-top:1px dashed #ccc;padding-top:0.5em;">
+                <label style="font-size:0.85em;color:#c00;">削除 (監視のみ)</label>
+                <textarea name="reason" placeholder="削除理由 (必須)" rows="2" required style="font-size:0.85em;padding:0.3em;margin:0;"></textarea>
+                <button type="submit" class="contrast" style="padding:0.3em 0.6em;font-size:0.85em;margin:0;"
+                        onclick="return confirm('{{ row.code_s }} を完全に削除しますか? (アクションログは残ります)')">削除</button>
+              </form>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script>
+// summary クリックで対応する .row-detail を展開
+document.querySelectorAll('table details').forEach(function(d) {
+  d.addEventListener('toggle', function() {
+    var row = d.closest('tr');
+    var nextRow = row.nextElementSibling;
+    if (nextRow && nextRow.classList.contains('row-detail')) {
+      nextRow.style.display = d.open ? '' : 'none';
+    }
+    var summary = d.querySelector('summary');
+    if (summary) summary.textContent = d.open ? '▾' : '▸';
+  });
+});
+</script>
+
+{% else %}
+<p style="color:#888;">該当銘柄なし</p>
+{% endif %}
+
+{% endblock %}

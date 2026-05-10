@@ -1,0 +1,347 @@
+"""保有銘柄ダッシュボードルート (Phase 3b / issue #171, issue #175)。
+
+GET  /portfolio?status=hold|semi|watch  : 3 タブ式ダッシュボード
+POST /portfolio/add                     : 3監 への新規追加
+POST /portfolio/<code_s>/transition     : ステータス変更
+POST /portfolio/<code_s>/delete         : 削除 (3監 のみ)
+POST /portfolio/<code_s>/memo           : memo 部分更新 (issue #175)
+
+portfolio_shelve のレコードに stocks_shelve から指標を補完して表示する。
+書き込み API は txt 関連の状態を変えるもの (add/transition/delete) のみ
+末尾で sync_to_my_watch_list_txt() を呼ぶ。memo 更新は txt 内容に影響しないため同期不要。
+"""
+
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+
+import portfolio
+import portfolio_shelve as ps
+from webapp.helpers import (
+    get_stock_data,
+    list_portfolio_with_indicators,
+    resolve_stock_name,
+)
+
+portfolio_bp = Blueprint("portfolio", __name__)
+
+
+STATUS_QUERY_TO_VALUE = {
+    "hold": "1保",
+    "semi": "2準",
+    "watch": "3監",
+}
+STATUS_VALUE_TO_QUERY = {v: k for k, v in STATUS_QUERY_TO_VALUE.items()}
+
+# 内部キー (1保/2準/3監) → ユーザー可視ラベル (保有/準保有/監視)。
+# DB 内部表記は数字付きのまま、UI 表示時はこのマップで日本語ラベルに置換する。
+STATUS_VALUE_TO_LABEL = {
+    "1保": "保有",
+    "2準": "準保有",
+    "3監": "監視",
+}
+
+# タブ表示順 (左から右): (query, status_value, label)
+TABS = [
+    ("hold", "1保", STATUS_VALUE_TO_LABEL["1保"]),
+    ("semi", "2準", STATUS_VALUE_TO_LABEL["2準"]),
+    ("watch", "3監", STATUS_VALUE_TO_LABEL["3監"]),
+]
+DEFAULT_TAB = TABS[0][0]
+
+
+def _resolve_status_query(query: str) -> tuple[str, str]:
+    """クエリ文字列を (正規化クエリ, status 値) に変換。不明値は DEFAULT_TAB。"""
+    q = (query or "").strip().lower()
+    if q not in STATUS_QUERY_TO_VALUE:
+        q = DEFAULT_TAB
+    return q, STATUS_QUERY_TO_VALUE[q]
+
+
+def _allowed_transitions_from(current: str) -> list[tuple[str, str]]:
+    """現在のステータスから許可される遷移先を (label, value) で返す。
+
+    label は UI 表示用 (例: 保有→準保有 は「準保有 (売却)」のように補注を入れる)。
+    """
+    pairs: list[tuple[str, str]] = []
+    for st_from, st_to in ps.ALLOWED_TRANSITIONS:
+        if st_from != current:
+            continue
+        label = STATUS_VALUE_TO_LABEL.get(st_to, st_to)
+        if current == "1保" and st_to == "2準":
+            label = f"{label} (売却)"
+        pairs.append((label, st_to))
+    pairs.sort(key=lambda x: x[1])
+    return pairs
+
+
+def _sync_txt_safely() -> None:
+    """shelve→txt 同期を try/except で囲んで失敗してもハンドラを止めない。
+
+    IO エラー時は flash で通知。shelve 更新は既に成功済みなので 200 系で返す。
+    """
+    try:
+        ps.sync_to_my_watch_list_txt()
+    except Exception as e:
+        flash(f"my_watch_list.txt 同期に失敗: {e}", "error")
+
+
+def _redirect_to_current_tab(code_s: str, fallback_query: str = "watch"):
+    """code_s の現在ステータスのタブにリダイレクトする。
+
+    エラー時に元タブに戻すための共通処理。レコードが取れない場合は fallback。
+    """
+    current = ps.get_record(code_s) or {}
+    current_query = STATUS_VALUE_TO_QUERY.get(current.get("status"), fallback_query)
+    return redirect(url_for("portfolio.dashboard", status=current_query))
+
+
+def _is_fallback_mode() -> bool:
+    """portfolio_shelve が空 = txt フォールバック中かを判定する。
+
+    フォールバック中に書き込み POST を許すと、shelve に 1 件レコードができた
+    時点で次回 dashboard が `list_records()` 非空 → フォールバック解除 →
+    残りの txt 銘柄が画面上から消える、という運用事故が起きる (codex 指摘)。
+    各 POST ハンドラ冒頭で本関数を見て reject する。
+    """
+    return not ps.list_records()
+
+
+def _reject_when_fallback(redirect_query: str = "watch"):
+    """フォールバック中なら flash + redirect を返す。そうでなければ None。"""
+    if _is_fallback_mode():
+        flash(
+            "portfolio_shelve 未移行モードのため、書き込み操作は無効です。"
+            "Phase 3a 移行スクリプト (migrate_my_watch_list_to_shelve.py) を実行してください。",
+            "error",
+        )
+        return redirect(url_for("portfolio.dashboard", status=redirect_query))
+    return None
+
+
+@portfolio_bp.route("/portfolio/<code_s>/delete", methods=["POST"])
+def delete(code_s: str):
+    """3監 銘柄の物理削除。理由必須。
+
+    1保 / 2準 銘柄に対する直接 POST は portfolio_shelve.delete_record 内部で
+    ValueError → flash で対応。UI 側でも 3監 タブのみ削除ボタンを表示する。
+    """
+    rejected = _reject_when_fallback(redirect_query="watch")
+    if rejected is not None:
+        return rejected
+
+    reason = (request.form.get("reason") or "").strip()
+    if not reason:
+        flash("削除理由は必須です", "error")
+        return redirect(url_for("portfolio.dashboard", status="watch"))
+
+    try:
+        ps.validate_code_s(code_s)
+    except (ValueError, TypeError) as e:
+        flash(f"不正な銘柄コード: {e}", "error")
+        return redirect(url_for("portfolio.dashboard", status="watch"))
+
+    try:
+        deleted = ps.delete_record(code_s, reason=reason)
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return _redirect_to_current_tab(code_s, fallback_query="watch")
+
+    if not deleted:
+        flash(f"{code_s} は portfolio_shelve に未登録です", "error")
+    else:
+        flash(f"{code_s} を削除しました", "info")
+
+    _sync_txt_safely()
+    return redirect(url_for("portfolio.dashboard", status="watch"))
+
+
+@portfolio_bp.route("/portfolio/<code_s>/transition", methods=["POST"])
+def transition(code_s: str):
+    """ステータス変更 (1保→2準 は内部で「売却」種別として記録)。
+
+    portfolio_shelve.transition_status のバリデーションに任せる。
+    同一遷移は no-op (Phase 3a 仕様)、不正遷移は ValueError。
+    """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+
+    new_status = (request.form.get("new_status") or "").strip()
+    reason = (request.form.get("reason") or "").strip()
+
+    try:
+        ps.validate_code_s(code_s)
+    except (ValueError, TypeError) as e:
+        flash(f"不正な銘柄コード: {e}", "error")
+        return redirect(url_for("portfolio.dashboard"))
+
+    if new_status not in ps.VALID_STATUSES:
+        flash(f"不正なステータス: {new_status!r}", "error")
+        return redirect(url_for("portfolio.dashboard"))
+
+    try:
+        ps.transition_status(code_s, new_status, reason=reason)
+    except KeyError as e:
+        flash(f"レコード未登録: {e}", "error")
+        return redirect(url_for("portfolio.dashboard"))
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
+
+    _sync_txt_safely()
+    return redirect(url_for("portfolio.dashboard", status=STATUS_VALUE_TO_QUERY[new_status]))
+
+
+def _extract_memo_fields_from_form(form) -> dict:
+    """request.form から MEMO_FIELDS に該当するキーのみを抽出する。
+
+    部分更新セマンティクス (codex P1 対応):
+    - キー自体が form に含まれない → 該当フィールドは fields に入れない (現行値据え置き)
+    - キーは含まれるが値が "" → 該当フィールドは "" として扱う (メモ削除の意図)
+    したがって `form.get(field, "")` で埋めるのは不可。
+
+    抽出した値は textarea の改行 (\\r\\n / \\r) を \\n に正規化し、前後 strip する。
+    MEMO_FIELDS 外のキーは無視 (form に紛れ込んでも reject しない)。
+    """
+    fields = {}
+    for field in ps.MEMO_FIELDS:
+        if field not in form:
+            continue
+        raw = form[field] or ""
+        normalized = raw.replace("\r\n", "\n").replace("\r", "\n").strip()
+        fields[field] = normalized
+    return fields
+
+
+@portfolio_bp.route("/portfolio/<code_s>/memo", methods=["POST"])
+def update_memo(code_s: str):
+    """memo を部分更新する (issue #175)。
+
+    フォームから送られた MEMO_FIELDS のキーのみを対象に部分更新する。
+    送られなかったキーは現行値据え置き。空文字を明示送信した場合はメモ削除扱い。
+    """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+
+    try:
+        ps.validate_code_s(code_s)
+    except (ValueError, TypeError) as e:
+        flash(f"不正な銘柄コード: {e}", "error")
+        return redirect(url_for("portfolio.dashboard"))
+
+    fields = _extract_memo_fields_from_form(request.form)
+
+    try:
+        ps.update_memo(code_s, fields)
+    except KeyError:
+        flash(f"{code_s} は portfolio_shelve に未登録です", "error")
+        return redirect(url_for("portfolio.dashboard"))
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
+
+    flash(f"{code_s} のメモを保存しました", "info")
+    return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
+
+
+@portfolio_bp.route("/portfolio/add", methods=["POST"])
+def add():
+    """銘柄を 3監 として新規追加する。
+
+    既存登録済みなら ValueError → flash 警告で no-op。
+    銘柄名は portfolio_shelve には保存しない (表示時に他DBから引く)。
+    flash メッセージ用にだけ stocks_shelve / research_shelve から取得する。
+    """
+    rejected = _reject_when_fallback(redirect_query="watch")
+    if rejected is not None:
+        return rejected
+
+    code_s = (request.form.get("code_s") or "").strip()
+    if not code_s:
+        flash("銘柄コードが空です", "error")
+        return redirect(url_for("portfolio.dashboard"))
+
+    try:
+        ps.validate_code_s(code_s)
+    except (ValueError, TypeError) as e:
+        flash(f"不正な銘柄コード: {e}", "error")
+        return redirect(url_for("portfolio.dashboard"))
+
+    normalized = ps.normalize_code_s(code_s)
+
+    # 未知コード防衛: stocks_shelve に存在しないコードは銘柄名解決もできず、
+    # txt 同期したときに識別不能な行が混ざるので reject する。
+    if not get_stock_data(normalized):
+        flash(
+            f"{normalized} は stocks_shelve に未登録のコードです。先に銘柄DBへの登録が必要です。",
+            "error",
+        )
+        return redirect(url_for("portfolio.dashboard", status="watch"))
+
+    try:
+        ps.add_to_watch(normalized, reason="WebApp 追加")
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("portfolio.dashboard", status="watch"))
+
+    _sync_txt_safely()
+    name_for_flash = resolve_stock_name(normalized)
+    flash(f"{normalized} {name_for_flash} を監視に追加しました".rstrip(), "info")
+    return redirect(url_for("portfolio.dashboard", status="watch"))
+
+
+def _build_fallback_records() -> list[dict]:
+    """portfolio_shelve が空のとき、my_watch_list.txt から仮レコードを組み立てる。
+
+    Phase 3a で portfolio_shelve に移行したが、本ブランチを移行未実施環境で
+    動かすと shelve が空 → ダッシュボードも空になり既存運用が壊れる。
+    `portfolio.parse_my_portforio()` は同条件で txt にフォールバックする
+    挙動を持つので、UI も同じソースを共有する。
+    txt 由来レコードはメモを持たず、書き込み API も走らせない (= 表示専用)。
+    """
+    try:
+        watch, possess = portfolio.parse_my_portforio()
+    except Exception:  # noqa: BLE001 — txt 不在等は表示空でフェイルセーフ
+        return []
+    records: list[dict] = []
+    for code_s in possess:
+        records.append(ps.create_record(code_s, status="1保"))
+    for code_s in watch:
+        records.append(ps.create_record(code_s, status="3監"))
+    return records
+
+
+@portfolio_bp.route("/portfolio")
+def dashboard():
+    """3 タブ式ダッシュボード。"""
+    active_query, active_status = _resolve_status_query(request.args.get("status", DEFAULT_TAB))
+
+    # 全レコードを 1 度だけ取得し、件数 (全タブ) と表示行 (active タブ) を共に算出する
+    all_records = ps.list_records()
+    fallback_mode = not all_records
+    if fallback_mode:
+        all_records = _build_fallback_records()
+
+    counts = {q: 0 for q, _, _ in TABS}
+    for r in all_records:
+        st = r.get("status")
+        if st in STATUS_VALUE_TO_QUERY:
+            counts[STATUS_VALUE_TO_QUERY[st]] += 1
+
+    active_records = [r for r in all_records if r.get("status") == active_status]
+    rows = list_portfolio_with_indicators(active_records)
+    # フォールバック中は書き込み UI (ステータス変更フォーム / 削除フォーム) を
+    # 出さない。shelve が空のため transition / delete を呼ぶと KeyError になる。
+    transitions = [] if fallback_mode else _allowed_transitions_from(active_status)
+
+    return render_template(
+        "portfolio_list.html",
+        tabs=TABS,
+        active_query=active_query,
+        active_status=active_status,
+        counts=counts,
+        rows=rows,
+        transitions=transitions,
+        status_label=STATUS_VALUE_TO_LABEL,
+        fallback_mode=fallback_mode,
+    )

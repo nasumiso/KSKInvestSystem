@@ -168,17 +168,15 @@ def parse_portfolio_txt():
     return stocks
 
 
-def parse_my_portforio():
-    """自分のウォッチリストの銘柄コードリストを返す
-    Returns:
-        (list<str>,list<str>): ウォッチリストの銘柄コードリスト、保有リスト
+def _parse_my_portforio_from_txt():
+    """my_watch_list.txt を直接パースして (watch, possess) を返す。
+
+    portfolio_shelve 移行前の旧実装。Phase 3a 移行完了後は
+    parse_my_portforio() のフォールバックとしてのみ使われる。
     """
-    # stocks = {}
     content = file_read(os.path.join(DATA_DIR, "my_watch_list.txt"))
     code_s_list = []
     possess_list = []
-    # 英数字コード対応
-    # for m in re.finditer(r'\d\d\d\d', content):
     for m in re.finditer(r"H?(\d[0-9a-zA-Z]\d[0-9A-Z])", content):
         if m.group(0).find("H") >= 0:
             if not m.group(1) in possess_list:
@@ -186,7 +184,39 @@ def parse_my_portforio():
         else:
             if not m.group(1) in code_s_list:
                 code_s_list.append(m.group(1))
-    # print code_list
+    return code_s_list, possess_list
+
+
+def parse_my_portforio():
+    """自分のウォッチリストの銘柄コードリストを返す。
+
+    Returns:
+        (list<str>,list<str>): (ウォッチ, 保有)
+            ウォッチ = ステータスが 2準 / 3監 の銘柄
+            保有     = ステータスが 1保 の銘柄
+            両リストとも code_s 昇順
+
+    portfolio_shelve を真実源として参照する (Phase 3a)。
+    portfolio_shelve が未作成・空の場合は my_watch_list.txt にフォールバック
+    する (移行前および shelve 障害時の保険)。
+    """
+    try:
+        import portfolio_shelve as ps
+        records = ps.list_records()
+    except Exception as e:
+        log_warning(f"parse_my_portforio: portfolio_shelve 参照失敗、txt にフォールバック: {e}")
+        return _parse_my_portforio_from_txt()
+
+    if not records:
+        # shelve は存在するが空 → txt フォールバック (移行前の挙動互換)
+        return _parse_my_portforio_from_txt()
+
+    possess_list = sorted(
+        r["code_s"] for r in records if r.get("status") == "1保"
+    )
+    code_s_list = sorted(
+        r["code_s"] for r in records if r.get("status") in ("2準", "3監")
+    )
     return code_s_list, possess_list
 
 

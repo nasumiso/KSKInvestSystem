@@ -1276,3 +1276,283 @@ def get_market_kessan_data() -> Dict[str, Any]:
         "recent_past_entries": recent_past_entries,
         "older_past_entries": older_past_entries,
     }
+
+
+def _bulk_get_stock_data(code_list: List[str]) -> Dict[str, Dict[str, Any]]:
+    """stocks_shelve を 1 度だけ open して複数銘柄をまとめて取得する。
+
+    `get_stock_data` を N 回呼ぶと N 回 open/close するため、一覧画面用のバルク版。
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    with ShelveDB(STOCKS_SHELVE) as db:
+        for code_s in code_list:
+            if not code_s:
+                continue
+            normalized = normalize_code_s(code_s)
+            result[code_s] = db.get(normalized) or {}
+    return result
+
+
+def resolve_stock_name(code_s: str) -> str:
+    """銘柄名を stocks_shelve → research_shelve → "" の優先順で取得する。
+
+    portfolio_shelve は銘柄名を持たないため、表示時はこの関数経由で都度取得する。
+    """
+    from db_shelve import RESEARCH_SHELVE  # 遅延 import (循環回避)
+
+    if not code_s:
+        return ""
+    normalized = normalize_code_s(code_s)
+    with ShelveDB(STOCKS_SHELVE) as db:
+        rec = db.get(normalized)
+        if rec and rec.get("stock_name"):
+            return rec["stock_name"]
+    with ShelveDB(RESEARCH_SHELVE) as db:
+        rec = db.get(normalized)
+        if rec and rec.get("stock_name"):
+            return rec["stock_name"]
+    return ""
+
+
+def _bulk_resolve_stock_names(code_list: List[str]) -> Dict[str, str]:
+    """複数 code_s 分の銘柄名をバルク取得する (一覧画面用)。"""
+    from db_shelve import RESEARCH_SHELVE  # 遅延 import (循環回避)
+
+    result: Dict[str, str] = {c: "" for c in code_list if c}
+    if not result:
+        return result
+
+    with ShelveDB(STOCKS_SHELVE) as db:
+        for c in list(result.keys()):
+            rec = db.get(normalize_code_s(c))
+            if rec and rec.get("stock_name"):
+                result[c] = rec["stock_name"]
+
+    missing = [c for c, n in result.items() if not n]
+    if missing:
+        with ShelveDB(RESEARCH_SHELVE) as db:
+            for c in missing:
+                rec = db.get(normalize_code_s(c))
+                if rec and rec.get("stock_name"):
+                    result[c] = rec["stock_name"]
+    return result
+
+
+def list_portfolio_with_indicators(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """portfolio_shelve のレコード列に stocks_shelve から最新指標を補完する (Phase 3b)。
+
+    銘柄名は portfolio_shelve に保存されていないため stocks_shelve / research_shelve から
+    都度取得してマージする (要件 §4 の延長)。
+
+    Args:
+        records: portfolio_shelve.list_records の戻り値 (既に status 等で絞り込み済み)
+
+    Returns:
+        各 dict: portfolio レコード + {stock_name, rank, kessanbi_md, per, market_cap,
+                                     dividend, rs, sales_growth, profit_growth,
+                                     quarter, progress_diff, trend_template, tags,
+                                     theoretical_diff, gyoseki, indicators_raw}
+        rank 昇順 (rank が None の銘柄は末尾)。
+    """
+    if not records:
+        return []
+
+    code_list = [r.get("code_s", "") for r in records]
+    stock_map = _bulk_get_stock_data(code_list)
+    name_map = _bulk_resolve_stock_names(code_list)
+    rows: List[Dict[str, Any]] = []
+    for rec in records:
+        code_s = rec.get("code_s", "")
+        row = dict(rec)
+        row["stock_name"] = name_map.get(code_s, "") or rec.get("stock_name", "")  # 旧データ互換
+        row.update(_extract_indicators_for_portfolio(stock_map.get(code_s, {})))
+        rows.append(row)
+
+    rows.sort(key=lambda r: (r.get("rank") is None, r.get("rank") or 0, r.get("code_s", "")))
+    return rows
+
+
+def _format_tags(stock: Dict[str, Any]) -> str:
+    """code_rank.csv「タグ」列と同じ表記を返す。
+
+    make_stock_db.make_signal() の tags リストを "/" join する。
+    market_db を渡さないので R高/強乖/弱乖 タグは出ない (Phase 4 送り)。
+    """
+    if not stock:
+        return "—"
+    try:
+        from make_stock_db import make_signal  # 遅延 import
+        _signal, tags = make_signal(stock)
+    except Exception:
+        return "—"
+    return "/".join(tags) if tags else "—"
+
+
+def _format_theoretical_diff(stock: Dict[str, Any]) -> str:
+    """理論株価乖離率の表示 (code_rank.csv「理論株価(乖離率|上限,下限))」列の最初の値)。
+
+    rironkabuka.get_rironkabuka_kairi(stock) を再利用して同じ計算ロジックを使う。
+    返り値の tuple の先頭が乖離率 (= `(理論株価 - 株価) / 株価 * 100`)。
+    """
+    if not stock:
+        return "—"
+    try:
+        from rironkabuka import get_rironkabuka_kairi  # 遅延 import
+        kairi, _up, _down, _preceding = get_rironkabuka_kairi(stock)
+    except Exception:
+        return "—"
+    if not stock.get("price") or not stock.get("rironkabuka"):
+        return "—"
+    return f"{int(kairi)}%"
+
+
+def _annual_growth(stock: Dict[str, Any]) -> tuple:
+    """gyoseki.calc_annual_growth を遅延 import で呼んで (sales%, profit%) を返す。
+
+    code_rank.csv の業績列 [A]X%,Y% の X, Y。取れなければ (None, None)。
+    """
+    if not stock:
+        return (None, None)
+    try:
+        from gyoseki import calc_annual_growth  # 遅延 import (循環回避)
+        result = calc_annual_growth(stock)
+    except Exception:
+        return (None, None)
+    if not result:
+        return (None, None)
+    # result = (年度, 売上%, 営利%)
+    return result[1], result[2]
+
+
+def _format_buy_collection(stock: Dict[str, Any]) -> str:
+    """買い集めの週/日アルファベット評価を "週,日" の形式で返す (例: "D,E")。
+
+    code_rank.csv SRR 列の "47,32,D,E,-6" のうち最後 (50DMA乖離率を除く)
+    アルファベット 2 文字に相当する。price.get_spr_expr のロジックを再利用。
+    """
+    if not stock:
+        return "—"
+    sprs = stock.get("sell_pressure_ratio") or []
+    sprs_w = stock.get("sell_pressure_ratio_w") or []
+    if not sprs:
+        return "—"
+    try:
+        from price import get_spr_expr  # 遅延 import (循環回避)
+        full = get_spr_expr(sprs, sprs_w)
+    except Exception:
+        return "—"
+    # full は "47,32,D,E" や "47,32,D" 等。アルファベット部分のみ抽出
+    parts = full.split(",")
+    letters = [p for p in parts if p and not p.lstrip("+-").isdigit()]
+    return ",".join(letters) if letters else "—"
+
+
+def _progress_quarter_and_diff(stock: Dict[str, Any]) -> tuple:
+    """gyoseki.calc_progress_rate から (quarter_label, diff_str) を返す。
+
+    code_rank.csv 進捗率列 [P]3Q70%(72%),62%(44%) を分解:
+    - quarter_label: "3Q" などの文字列 (quarter=0 / 取れない時は "—")
+    - diff_str: "(sales-sales_pre)/(profit-profit_pre)" を整数化 (例: "-2/+18")
+                取れなければ "—"
+    """
+    if not stock:
+        return ("—", "—")
+    try:
+        from gyoseki import calc_progress_rate  # 遅延 import (循環回避)
+        progress = calc_progress_rate(stock)
+    except Exception:
+        return ("—", "—")
+    quarter = progress.get("quarter", 0) if isinstance(progress, dict) else 0
+    if not quarter or quarter <= 0:
+        return ("—", "—")
+    quarter_label = f"{quarter}Q"
+    sales = progress.get("sales")
+    sales_pre = progress.get("sales_pre")
+    profit = progress.get("profit")
+    profit_pre = progress.get("profit_pre")
+    if not all(isinstance(v, (int, float)) for v in (sales, sales_pre, profit, profit_pre)):
+        return (quarter_label, "—")
+    sales_diff = round(sales - sales_pre)
+    profit_diff = round(profit - profit_pre)
+    diff_str = f"{sales_diff:+d}/{profit_diff:+d}"
+    return (quarter_label, diff_str)
+
+
+def _format_kessanbi_md(kessanbi: Any) -> str:
+    """kessanbi (YYYY/MM/DD) を MM/DD 形式に整形して返す。空なら "—"。"""
+    if not kessanbi or not isinstance(kessanbi, str):
+        return "—"
+    parts = kessanbi.split("/")
+    if len(parts) >= 3:
+        return f"{parts[1]}/{parts[2]}"
+    return kessanbi
+
+
+def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
+    """stocks_shelve の dict から portfolio 一覧表示用の指標を抽出する。
+
+    値は表示用の文字列 (なければ "—")。stocks_shelve の実フィールドに直結。
+    """
+    if not stock:
+        return {
+            "rank": None,
+            "kessanbi_md": "—",
+            "per": "—",
+            "market_cap": "—",
+            "dividend": "—",
+            "rs": "—",
+            "sales_growth": "—",
+            "profit_growth": "—",
+            "quarter": "—",
+            "progress_diff": "—",
+            "trend_template": "—",
+            "trend_template_tooltip": "—",
+            "tags": "—",
+            "buy_collection": "—",
+            "theoretical_diff": "—",
+            "gyoseki": {},
+            "indicators_raw": {},
+        }
+
+    shihyo = stock.get("shihyo") or {}
+
+    # 順位は stock_rank_log の最新値 (= 直近更新時点での順位)
+    rank_log = stock.get("stock_rank_log") or []
+    rank = rank_log[0][1] if rank_log else None
+
+    per = shihyo.get("PER")
+    market_cap = stock.get("market_cap") or shihyo.get("jikasogaku")
+    dividend_yield = shihyo.get("dividend_yield")
+    # RS 列は code_rank.csv の「モメンタム(現在.20日比/5日比)」列の先頭値 (0〜100 の momentum_pt)
+    momentum_pt = stock.get("momentum_pt")
+    sales_growth, profit_growth = _annual_growth(stock)
+    quarter_label, progress_diff = _progress_quarter_and_diff(stock)
+
+    from make_stock_db import get_trend_template_expr  # 遅延 import (循環回避)
+
+    trend_expr = get_trend_template_expr(stock)
+    trend_misses = stock.get("trend_template") if isinstance(stock.get("trend_template"), list) else []
+    # tooltip 用: 不通過項目の全件 (テーブル列で見切れた時にホバーで参照)
+    trend_tooltip = ",".join(trend_misses) if trend_misses else trend_expr
+
+    return {
+        "rank": rank if isinstance(rank, int) else None,
+        "kessanbi_md": _format_kessanbi_md(stock.get("kessanbi")),
+        "per": f"{per:.1f}" if isinstance(per, (int, float)) else "—",
+        "market_cap": f"{market_cap:.0f}億" if isinstance(market_cap, (int, float)) else "—",
+        "dividend": f"{dividend_yield:.2f}%" if isinstance(dividend_yield, (int, float)) else "—",
+        "rs": f"{int(momentum_pt)}" if isinstance(momentum_pt, (int, float)) else "—",
+        "sales_growth": f"{int(sales_growth)}%" if isinstance(sales_growth, (int, float)) else "—",
+        "profit_growth": f"{int(profit_growth)}%" if isinstance(profit_growth, (int, float)) else "—",
+        "quarter": quarter_label,
+        "progress_diff": progress_diff,
+        "trend_template": trend_expr,
+        "trend_template_tooltip": trend_tooltip,
+        "tags": _format_tags(stock),
+        "buy_collection": _format_buy_collection(stock),
+        "theoretical_diff": _format_theoretical_diff(stock),
+        "gyoseki": {
+            "isKonki": stock.get("isKonki"),
+        },
+        "indicators_raw": stock,
+    }
