@@ -5,6 +5,15 @@
 {# 一覧の列数を多く表示するため、main.container のデフォルト max-width を上書きして全幅化 #}
 <style>
   main.container { max-width: 100% !important; padding-left: 0.8em !important; padding-right: 0.8em !important; }
+  /* 22 列をできるだけ表示するための列幅微調整 (issue #177)。
+     全体 font-size ダウン + セル padding 圧縮 + ヘッダ折り返し許可。 */
+  table.portfolio-list { font-size: 0.78em; }
+  table.portfolio-list th, table.portfolio-list td {
+    padding: 0.3em 0.4em;
+    white-space: normal;  /* ヘッダの折り返しを許可してセル幅を縮める */
+  }
+  /* 数値・短文列は明示的に狭くする */
+  table.portfolio-list td.num { text-align: right; }
 </style>
 <h2>保有銘柄ダッシュボード</h2>
 
@@ -41,7 +50,7 @@
 
 {% if rows %}
 <div style="overflow-x:auto;">
-<table style="font-size:0.85em;">
+<table class="portfolio-list">
   <thead>
     <tr>
       <th></th>
