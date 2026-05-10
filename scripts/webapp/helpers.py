@@ -1454,7 +1454,9 @@ def _progress_quarter_and_diff(stock: Dict[str, Any]) -> tuple:
     """gyoseki.calc_progress_rate から (quarter_label, diff_str) を返す。
 
     code_rank.csv 進捗率列 [P]3Q70%(72%),62%(44%) を分解:
-    - quarter_label: "3Q" などの文字列 (quarter=0 / 取れない時は "—")
+    - quarter_label: "3Q" などの文字列。
+        - quarter=0 (1Q 未発表 / 新年度開始直後) は "0Q" として明示
+        - calc_progress_rate が値を返さない (データ不足) ときは "—"
     - diff_str: "(sales-sales_pre)/(profit-profit_pre)" を整数化 (例: "-2/+18")
                 取れなければ "—"
     """
@@ -1465,8 +1467,10 @@ def _progress_quarter_and_diff(stock: Dict[str, Any]) -> tuple:
         progress = calc_progress_rate(stock)
     except Exception:
         return ("—", "—")
-    quarter = progress.get("quarter", 0) if isinstance(progress, dict) else 0
-    if not quarter or quarter <= 0:
+    if not isinstance(progress, dict) or "quarter" not in progress:
+        return ("—", "—")
+    quarter = progress.get("quarter", 0)
+    if not isinstance(quarter, int) or quarter < 0:
         return ("—", "—")
     quarter_label = f"{quarter}Q"
     sales = progress.get("sales")
