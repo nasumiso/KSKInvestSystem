@@ -538,3 +538,133 @@ class TestSyncToTxt:
         ps.sync_to_my_watch_list_txt(txt_path=txt_path, db_path=db_path)
         with open(txt_path, encoding="utf-8") as f:
             assert f.read() == ""
+
+    def test_sync_skips_excluded(self, db_path, tmp_path, stocks_db_for_sync):
+        """excluded=True のレコードは txt 出力に含まれない"""
+        ps.add_to_watch("5032", db_path=db_path)
+        ps.add_to_watch("6232", db_path=db_path)
+        ps.exclude_from_universe("6232", db_path=db_path)
+
+        txt_path = str(tmp_path / "my_watch_list.txt")
+        ps.sync_to_my_watch_list_txt(txt_path=txt_path, db_path=db_path)
+
+        with open(txt_path, encoding="utf-8") as f:
+            content = f.read()
+        assert "5032AnyColor" in content
+        assert "6232" not in content
+
+
+# ==================================================
+# ユニバース除外 (issue #186)
+# ==================================================
+class TestExcludeFromUniverse:
+
+    def test_exclude_3kan_record(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        result = ps.exclude_from_universe("4377", reason="不要", db_path=db_path)
+        assert result is True
+        record = ps.get_record("4377", db_path=db_path)
+        assert record["excluded"] is True
+
+    def test_exclude_logs_action(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.exclude_from_universe("4377", reason="ノイズ", db_path=db_path)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        # [初回登録, ユニバース除外]
+        assert logs[-1]["action_type"] == "ユニバース除外"
+        assert logs[-1]["reason"] == "ノイズ"
+
+    def test_exclude_already_excluded_returns_false(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.exclude_from_universe("4377", db_path=db_path)
+        result = ps.exclude_from_universe("4377", db_path=db_path)
+        assert result is False
+
+    def test_exclude_1ho_rejected(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        with pytest.raises(ValueError, match="3監"):
+            ps.exclude_from_universe("4377", db_path=db_path)
+
+    def test_exclude_2jun_rejected(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "2準", db_path=db_path)
+        with pytest.raises(ValueError, match="3監"):
+            ps.exclude_from_universe("4377", db_path=db_path)
+
+    def test_exclude_unregistered_returns_false(self, db_path):
+        result = ps.exclude_from_universe("4377", db_path=db_path)
+        assert result is False
+
+    def test_exclude_empty_reason_ok(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        result = ps.exclude_from_universe("4377", db_path=db_path)
+        assert result is True
+
+
+class TestAddToWatchRevive:
+
+    def test_revive_excluded_record(self, db_path):
+        ps.add_to_watch("4377", memo=ps.create_memo(stage="3S"), db_path=db_path)
+        ps.exclude_from_universe("4377", db_path=db_path)
+        record = ps.add_to_watch("4377", db_path=db_path)
+        assert record["excluded"] is False
+        # メモは保持される
+        assert record["memo"]["stage"] == "3S"
+
+    def test_revive_logs_universe_exclusion_with_revive_reason(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.exclude_from_universe("4377", reason="ノイズ", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        # 末尾は復活ログ (action_type=ユニバース除外, reason=復活)
+        assert logs[-1]["action_type"] == "ユニバース除外"
+        assert logs[-1]["reason"] == "復活"
+
+    def test_add_to_watch_active_record_still_raises(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(ValueError, match="既に登録済み"):
+            ps.add_to_watch("4377", db_path=db_path)
+
+
+class TestPortfolioRecordBackwardCompat:
+
+    def test_legacy_record_without_excluded_loads_as_false(self, db_path):
+        """旧スキーマのレコード (excluded キーなし) を直接書き込み、list_records で読める"""
+        from db_shelve import ShelveDB
+
+        legacy_record = {
+            "code_s": "4377",
+            "status": "3監",
+            "registered_at": "2024-01-01T00:00:00+09:00",
+            "updated_at": "2024-01-01T00:00:00+09:00",
+            "memo": ps.create_memo(),
+        }
+        with ShelveDB(db_path) as db:
+            db["record:4377"] = legacy_record
+
+        records = ps.list_records(db_path=db_path)
+        assert len(records) == 1
+        # excluded キーが無くても表示される (デフォルト False 扱い)
+        assert records[0]["code_s"] == "4377"
+
+
+class TestListRecordsFilterExcluded:
+
+    def test_default_filters_excluded(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("5032", db_path=db_path)
+        ps.exclude_from_universe("4377", db_path=db_path)
+
+        records = ps.list_records(db_path=db_path)
+        codes = [r["code_s"] for r in records]
+        assert codes == ["5032"]
+
+    def test_include_excluded_returns_all(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("5032", db_path=db_path)
+        ps.exclude_from_universe("4377", db_path=db_path)
+
+        records = ps.list_records(include_excluded=True, db_path=db_path)
+        codes = [r["code_s"] for r in records]
+        assert codes == ["4377", "5032"]

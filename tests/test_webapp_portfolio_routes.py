@@ -257,65 +257,153 @@ class TestTransitionPost:
         assert ps.get_record("9999", db_path=portfolio_db_path) is None
 
 
-class TestDeletePost:
-    """POST /portfolio/<code_s>/delete"""
+class TestBulkExclude:
+    """POST /portfolio/bulk-exclude (issue #186)"""
 
-    def test_delete_3kan_with_reason_succeeds(self, client, portfolio_db_path):
-        # 6324 は 3監 (fixture)
-        resp = client.post(
-            "/portfolio/6324/delete",
-            data={"reason": "監視終了"},
-        )
+    def test_bulk_exclude_single_3kan(self, client, portfolio_db_path):
+        resp = client.post("/portfolio/bulk-exclude", data={"codes": "6324"})
         assert resp.status_code == 302
-        # レコードは物理削除
-        assert ps.get_record("6324", db_path=portfolio_db_path) is None
-        # 削除アクションログは残る
-        logs = ps.list_action_logs(code_s="6324", db_path=portfolio_db_path)
-        assert any(log.get("action_type") == "削除" for log in logs)
-
-    def test_delete_1ho_flash_error(self, client, portfolio_db_path):
-        """1保 銘柄を削除しようとすると ValueError → flash で reject"""
-        resp = client.post(
-            "/portfolio/3496/delete",
-            data={"reason": "誤操作テスト"},
-        )
-        assert resp.status_code == 302
-        # レコードは残る
-        rec = ps.get_record("3496", db_path=portfolio_db_path)
-        assert rec is not None
-        assert rec["status"] == "1保"
-
-    def test_delete_2jun_flash_error(self, client, portfolio_db_path):
-        """2準 銘柄を削除しようとすると ValueError → flash で reject"""
-        resp = client.post(
-            "/portfolio/7203/delete",
-            data={"reason": "誤操作テスト"},
-        )
-        assert resp.status_code == 302
-        rec = ps.get_record("7203", db_path=portfolio_db_path)
-        assert rec is not None
-        assert rec["status"] == "2準"
-
-    def test_delete_empty_reason_flash_error(self, client, portfolio_db_path):
-        """理由が空の削除は flash エラー"""
-        resp = client.post(
-            "/portfolio/6324/delete",
-            data={"reason": ""},
-        )
-        assert resp.status_code == 302
-        # レコードは残る
         rec = ps.get_record("6324", db_path=portfolio_db_path)
         assert rec is not None
+        assert rec["excluded"] is True
+        # アクションログに「ユニバース除外」
+        logs = ps.list_action_logs("6324", db_path=portfolio_db_path)
+        assert any(log.get("action_type") == "ユニバース除外" for log in logs)
 
-    def test_delete_unknown_code_flash_error(self, client, portfolio_db_path):
-        """未登録銘柄に対する削除は False 返却 → flash"""
+    def test_bulk_exclude_multiple(self, client, portfolio_db_path):
+        # 追加で 3監 をもう 1 件登録
+        ps.add_to_watch("4377", reason="テスト追加", db_path=portfolio_db_path)
         resp = client.post(
-            "/portfolio/9999/delete",
-            data={"reason": "テスト"},
+            "/portfolio/bulk-exclude",
+            data={"codes": ["6324", "4377"]},
         )
         assert resp.status_code == 302
-        # 9999 はもとから未登録
+        for code in ("6324", "4377"):
+            rec = ps.get_record(code, db_path=portfolio_db_path)
+            assert rec is not None
+            assert rec["excluded"] is True
+
+    def test_bulk_exclude_1ho_mixed_partial_success(self, client, portfolio_db_path):
+        """3監 + 1保 混入時、3監 のみ除外され 1保 はそのまま残る"""
+        resp = client.post(
+            "/portfolio/bulk-exclude",
+            data={"codes": ["6324", "3496"]},
+        )
+        assert resp.status_code == 302
+        # 3監 6324 は除外
+        rec_watch = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec_watch["excluded"] is True
+        # 1保 3496 は除外されない
+        rec_hold = ps.get_record("3496", db_path=portfolio_db_path)
+        assert rec_hold["excluded"] is False
+        assert rec_hold["status"] == "1保"
+
+    def test_bulk_exclude_empty_codes_flash_error(self, client, portfolio_db_path):
+        resp = client.post("/portfolio/bulk-exclude", data={})
+        assert resp.status_code == 302
+        # 6324 は除外されない
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["excluded"] is False
+
+    def test_bulk_exclude_unknown_code_no_change(self, client, portfolio_db_path):
+        """未登録コードのみ送信された場合、何も変更されない"""
+        resp = client.post("/portfolio/bulk-exclude", data={"codes": "9999"})
+        assert resp.status_code == 302
         assert ps.get_record("9999", db_path=portfolio_db_path) is None
+        # 既存の 6324 は影響なし
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["excluded"] is False
+
+    def test_bulk_exclude_invalid_code_in_list(self, client, portfolio_db_path):
+        """不正なコードが混じっても他のコードは正常に処理される"""
+        resp = client.post(
+            "/portfolio/bulk-exclude",
+            data={"codes": ["INVALID!", "6324"]},
+        )
+        assert resp.status_code == 302
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["excluded"] is True
+
+
+class TestExcludedHidden:
+    """除外済みレコードはダッシュボードから消える (issue #186)"""
+
+    def test_excluded_record_not_in_watch_tab(self, client, portfolio_db_path):
+        ps.exclude_from_universe("6324", db_path=portfolio_db_path)
+        resp = client.get("/portfolio?status=watch")
+        assert resp.status_code == 200
+        # データテーブル行に 6324 が出ない (data-code 属性で判定)
+        assert b'data-code="6324"' not in resp.data
+
+    def test_excluded_record_not_in_any_tab(self, client, portfolio_db_path):
+        # 1保 を除外できないので一旦 3監 へ戻して除外
+        ps.transition_status("3496", "2準", db_path=portfolio_db_path)
+        ps.transition_status("3496", "3監", db_path=portfolio_db_path)
+        ps.exclude_from_universe("3496", db_path=portfolio_db_path)
+        for q in ("hold", "semi", "watch"):
+            resp = client.get(f"/portfolio?status={q}")
+            assert b'data-code="3496"' not in resp.data, f"3496 はタブ {q} で非表示のはず"
+
+
+class TestAddRevival:
+    """除外済みコードを再投入すると復活する (issue #186)"""
+
+    def test_revive_via_add_post(self, client, portfolio_db_path):
+        ps.exclude_from_universe("6324", db_path=portfolio_db_path)
+        resp = client.post("/portfolio/add", data={"code_s": "6324"})
+        assert resp.status_code == 302
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["excluded"] is False
+        # 「ユニバース除外」action_type の reason="復活" ログが追記される
+        logs = ps.list_action_logs("6324", db_path=portfolio_db_path)
+        revive_logs = [
+            log for log in logs
+            if log.get("action_type") == "ユニバース除外" and log.get("reason") == "復活"
+        ]
+        assert len(revive_logs) == 1
+
+    def test_revive_does_not_require_stocks_shelve(
+        self, client, portfolio_db_path, stocks_db_path, monkeypatch
+    ):
+        """除外済みレコードは stocks_shelve に登録が無くても復活できる"""
+        ps.exclude_from_universe("6324", db_path=portfolio_db_path)
+        # stocks_shelve 上の 6324 を削除して未登録状態にする
+        with ShelveDB(stocks_db_path) as db:
+            del db["6324"]
+        resp = client.post("/portfolio/add", data={"code_s": "6324"})
+        assert resp.status_code == 302
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["excluded"] is False
+
+
+class TestFallbackJudgmentWithAllExcluded:
+    """全レコードが excluded=True でも fallback モードと誤判定されない (issue #186)"""
+
+    def test_dashboard_not_in_fallback_when_all_excluded(self, client, portfolio_db_path):
+        # 全レコードを除外可能な状態 (3監) にしてから除外
+        ps.transition_status("3496", "2準", db_path=portfolio_db_path)
+        ps.transition_status("3496", "3監", db_path=portfolio_db_path)
+        ps.transition_status("7203", "3監", db_path=portfolio_db_path)
+        for code in ("6324", "3496", "7203"):
+            ps.exclude_from_universe(code, db_path=portfolio_db_path)
+        # この状態で /portfolio を開いても fallback バナーが出ないこと
+        resp = client.get("/portfolio?status=watch")
+        assert resp.status_code == 200
+        # fallback バナー文言の一部 ("portfolio_shelve 未移行" 等) が出ていない
+        assert "portfolio_shelve 未移行".encode("utf-8") not in resp.data
+
+    def test_revive_works_when_all_excluded(self, client, portfolio_db_path):
+        # 全レコードを除外
+        ps.transition_status("3496", "2準", db_path=portfolio_db_path)
+        ps.transition_status("3496", "3監", db_path=portfolio_db_path)
+        ps.transition_status("7203", "3監", db_path=portfolio_db_path)
+        for code in ("6324", "3496", "7203"):
+            ps.exclude_from_universe(code, db_path=portfolio_db_path)
+        # この状態で復活が許可されること
+        resp = client.post("/portfolio/add", data={"code_s": "6324"})
+        assert resp.status_code == 302
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["excluded"] is False
 
 
 # ==================================================
@@ -610,13 +698,14 @@ class TestFallbackFromTxt:
         assert resp.status_code == 302
         assert ps.list_records(db_path=portfolio_db_path) == []
 
-    def test_fallback_rejects_delete_post(self, fallback_client, tmp_path):
+    def test_fallback_rejects_bulk_exclude_post(self, fallback_client, tmp_path):
+        """フォールバック中は /portfolio/bulk-exclude も reject (issue #186)"""
         portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
         resp = fallback_client.post(
-            "/portfolio/3496/delete", data={"reason": "テスト"}
+            "/portfolio/bulk-exclude", data={"codes": "3496"}
         )
         assert resp.status_code == 302
-        assert ps.list_records(db_path=portfolio_db_path) == []
+        assert ps.list_records(include_excluded=True, db_path=portfolio_db_path) == []
 
     def test_fallback_rejects_memo_post(self, fallback_client, tmp_path):
         """フォールバック中は /portfolio/<code>/memo も reject (issue #175)"""

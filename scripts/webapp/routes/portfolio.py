@@ -1,13 +1,13 @@
-"""保有銘柄ダッシュボードルート (Phase 3b / issue #171, issue #175)。
+"""保有銘柄ダッシュボードルート (Phase 3b / issue #171, issue #175, issue #186)。
 
 GET  /portfolio?status=hold|semi|watch  : 3 タブ式ダッシュボード
-POST /portfolio/add                     : 3監 への新規追加
+POST /portfolio/add                     : 3監 への新規追加 / 除外済みの復活
 POST /portfolio/<code_s>/transition     : ステータス変更
-POST /portfolio/<code_s>/delete         : 削除 (3監 のみ)
+POST /portfolio/bulk-exclude            : 3監 銘柄をユニバースから除外 (一括)
 POST /portfolio/<code_s>/memo           : memo 部分更新 (issue #175)
 
 portfolio_shelve のレコードに stocks_shelve から指標を補完して表示する。
-書き込み API は txt 関連の状態を変えるもの (add/transition/delete) のみ
+書き込み API は txt 関連の状態を変えるもの (add/transition/bulk-exclude) のみ
 末尾で sync_to_my_watch_list_txt() を呼ぶ。memo 更新は txt 内容に影響しないため同期不要。
 """
 
@@ -102,8 +102,11 @@ def _is_fallback_mode() -> bool:
     時点で次回 dashboard が `list_records()` 非空 → フォールバック解除 →
     残りの txt 銘柄が画面上から消える、という運用事故が起きる (codex 指摘)。
     各 POST ハンドラ冒頭で本関数を見て reject する。
+
+    issue #186: 全レコードが excluded=True の状態を fallback と誤判定しない
+    ため、include_excluded=True で取得して空判定する。
     """
-    return not ps.list_records()
+    return not ps.list_records(include_excluded=True)
 
 
 def _reject_when_fallback(redirect_query: str = "watch"):
@@ -118,40 +121,49 @@ def _reject_when_fallback(redirect_query: str = "watch"):
     return None
 
 
-@portfolio_bp.route("/portfolio/<code_s>/delete", methods=["POST"])
-def delete(code_s: str):
-    """3監 銘柄の物理削除。理由必須。
+@portfolio_bp.route("/portfolio/bulk-exclude", methods=["POST"])
+def bulk_exclude():
+    """3監 銘柄を一括でユニバースから除外する (物理削除はしない)。
 
-    1保 / 2準 銘柄に対する直接 POST は portfolio_shelve.delete_record 内部で
-    ValueError → flash で対応。UI 側でも 3監 タブのみ削除ボタンを表示する。
+    フォーム: codes=<code1>&codes=<code2>... / reason=<任意>
+    部分成功許容。1保/2準 が混入していたら該当のみ flash error で報告し、
+    3監 のみ除外を実行する。
     """
     rejected = _reject_when_fallback(redirect_query="watch")
     if rejected is not None:
         return rejected
 
+    codes = [c.strip() for c in request.form.getlist("codes") if c and c.strip()]
     reason = (request.form.get("reason") or "").strip()
-    if not reason:
-        flash("削除理由は必須です", "error")
+
+    if not codes:
+        flash("除外対象が指定されていません", "error")
         return redirect(url_for("portfolio.dashboard", status="watch"))
 
-    try:
-        ps.validate_code_s(code_s)
-    except (ValueError, TypeError) as e:
-        flash(f"不正な銘柄コード: {e}", "error")
-        return redirect(url_for("portfolio.dashboard", status="watch"))
+    success: list[str] = []
+    failures: list[str] = []
+    for raw in codes:
+        try:
+            ps.validate_code_s(raw)
+            normalized = ps.normalize_code_s(raw)
+        except (ValueError, TypeError) as e:
+            failures.append(f"{raw}: 不正なコード ({e})")
+            continue
+        try:
+            ok = ps.exclude_from_universe(normalized, reason=reason)
+        except (ValueError, TypeError) as e:
+            failures.append(f"{normalized}: {e}")
+            continue
+        if ok:
+            success.append(normalized)
+        else:
+            failures.append(f"{normalized}: 未登録または既に除外済み")
 
-    try:
-        deleted = ps.delete_record(code_s, reason=reason)
-    except (ValueError, TypeError) as e:
-        flash(str(e), "error")
-        return _redirect_to_current_tab(code_s, fallback_query="watch")
-
-    if not deleted:
-        flash(f"{code_s} は portfolio_shelve に未登録です", "error")
-    else:
-        flash(f"{code_s} を削除しました", "info")
-
-    _sync_txt_safely()
+    if success:
+        _sync_txt_safely()
+        flash(f"{len(success)} 件をユニバースから除外しました ({', '.join(success)})", "info")
+    if failures:
+        flash("除外できなかったコードがあります: " + " / ".join(failures), "error")
     return redirect(url_for("portfolio.dashboard", status="watch"))
 
 
@@ -288,11 +300,12 @@ def update_memo(code_s: str):
 
 @portfolio_bp.route("/portfolio/add", methods=["POST"])
 def add():
-    """銘柄を 3監 として新規追加する。
+    """銘柄を 3監 として新規追加する。除外済みコードを再投入したら復活する。
 
-    既存登録済みなら ValueError → flash 警告で no-op。
-    銘柄名は portfolio_shelve には保存しない (表示時に他DBから引く)。
-    flash メッセージ用にだけ stocks_shelve / research_shelve から取得する。
+    挙動:
+    - portfolio_shelve に未登録 → stocks_shelve 存在チェック → 新規追加
+    - portfolio_shelve に excluded=True で存在 → 復活 (stocks_shelve チェック skip)
+    - portfolio_shelve に excluded=False で存在 → 既登録扱い、ValueError flash
     """
     rejected = _reject_when_fallback(redirect_query="watch")
     if rejected is not None:
@@ -311,14 +324,17 @@ def add():
 
     normalized = ps.normalize_code_s(code_s)
 
-    # 未知コード防衛: stocks_shelve に存在しないコードは銘柄名解決もできず、
-    # txt 同期したときに識別不能な行が混ざるので reject する。
-    if not get_stock_data(normalized):
-        flash(
-            f"{normalized} は stocks_shelve に未登録のコードです。先に銘柄DBへの登録が必要です。",
-            "error",
-        )
-        return redirect(url_for("portfolio.dashboard", status="watch"))
+    # 既存レコード (除外済 含む) があれば stocks_shelve チェックを skip して復活パスへ。
+    # 未登録コードのときのみ未知コード防衛を適用する。
+    existing = ps.get_record(normalized)
+    is_revival = bool(existing and existing.get("excluded", False))
+    if existing is None:
+        if not get_stock_data(normalized):
+            flash(
+                f"{normalized} は stocks_shelve に未登録のコードです。先に銘柄DBへの登録が必要です。",
+                "error",
+            )
+            return redirect(url_for("portfolio.dashboard", status="watch"))
 
     try:
         ps.add_to_watch(normalized, reason="WebApp 追加")
@@ -328,7 +344,10 @@ def add():
 
     _sync_txt_safely()
     name_for_flash = resolve_stock_name(normalized)
-    flash(f"{normalized} {name_for_flash} を監視に追加しました".rstrip(), "info")
+    if is_revival:
+        flash(f"{normalized} {name_for_flash} をユニバースに復活しました".rstrip(), "info")
+    else:
+        flash(f"{normalized} {name_for_flash} を監視に追加しました".rstrip(), "info")
     return redirect(url_for("portfolio.dashboard", status="watch"))
 
 
@@ -358,22 +377,25 @@ def dashboard():
     """3 タブ式ダッシュボード。"""
     active_query, active_status = _resolve_status_query(request.args.get("status", DEFAULT_TAB))
 
-    # 全レコードを 1 度だけ取得し、件数 (全タブ) と表示行 (active タブ) を共に算出する
-    all_records = ps.list_records()
-    fallback_mode = not all_records
+    # issue #186: fallback 判定は除外含む全件で行う (全件除外時の誤判定を避ける)。
+    # 表示・件数カウントは除外を弾いた visible_records を使う。
+    all_records_inc = ps.list_records(include_excluded=True)
+    fallback_mode = not all_records_inc
     if fallback_mode:
-        all_records = _build_fallback_records()
+        visible_records = _build_fallback_records()
+    else:
+        visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
 
     counts = {q: 0 for q, _, _ in TABS}
-    for r in all_records:
+    for r in visible_records:
         st = r.get("status")
         if st in STATUS_VALUE_TO_QUERY:
             counts[STATUS_VALUE_TO_QUERY[st]] += 1
 
-    active_records = [r for r in all_records if r.get("status") == active_status]
+    active_records = [r for r in visible_records if r.get("status") == active_status]
     rows = list_portfolio_with_indicators(active_records)
-    # フォールバック中は書き込み UI (ステータス変更フォーム / 削除フォーム) を
-    # 出さない。shelve が空のため transition / delete を呼ぶと KeyError になる。
+    # フォールバック中は書き込み UI (ステータス変更フォーム / 削除モード) を
+    # 出さない。shelve が空のため transition / exclude を呼ぶと KeyError になる。
     transitions = [] if fallback_mode else _allowed_transitions_from(active_status)
 
     return render_template(

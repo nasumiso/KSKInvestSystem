@@ -21,6 +21,24 @@
   }
   /* 数値・短文列は明示的に狭くする */
   table.portfolio-list td.num { text-align: right; }
+  /* 削除モード時のみチェックボックス列を表示 (issue #186) */
+  .bulk-col { display: none; }
+  body.delete-mode .bulk-col { display: table-cell; }
+  /* 一括削除アクションバー */
+  #bulk-delete-bar {
+    position: sticky; bottom: 0; z-index: 10;
+    background: #fff; border-top: 2px solid #c00;
+    padding: 0.5em 1em; margin-top: 0.5em;
+    display: flex; gap: 0.8em; align-items: center;
+  }
+  .portfolio-add-form {
+    display: flex; gap: 0.5em; align-items: center;
+    margin-bottom: 0.6em; font-size: 0.85em;
+  }
+  .portfolio-add-form input[type="text"] { padding: 0.25em 0.4em; margin: 0; }
+  .portfolio-add-form button { padding: 0.3em 0.8em; margin: 0; }
+  .portfolio-add-form .hint { color: #999; font-size: 0.85em; }
+  #toggle-delete-mode { padding: 0.3em 0.8em; margin-bottom: 0.5em; font-size: 0.85em; }
 </style>
 <h2>保有銘柄ダッシュボード</h2>
 
@@ -55,11 +73,28 @@
 
 <p style="font-size:0.85em;color:#666;">{{ rows|length }} 件</p>
 
+{% if active_query == "watch" and not fallback_mode %}
+<form action="/portfolio/add" method="POST" class="portfolio-add-form">
+  <label>コード <input type="text" name="code_s" required pattern="[0-9A-Za-z]+" maxlength="4" style="width:6em;"></label>
+  <button type="submit">追加</button>
+  <span class="hint">(除外済みコードを再入力すると復活します)</span>
+</form>
+<button type="button" id="toggle-delete-mode">削除モード</button>
+{% if rows %}
+<div id="bulk-delete-bar" style="display:none;">
+  <span><strong id="selected-count">0</strong> 件選択中</span>
+  <button type="button" id="bulk-delete-execute" class="contrast">削除 (ユニバース除外)</button>
+  <button type="button" id="bulk-delete-cancel">キャンセル</button>
+</div>
+{% endif %}
+{% endif %}
+
 {% if rows %}
 <div style="overflow-x:auto;">
 <table class="portfolio-list">
   <thead>
     <tr>
+      {% if active_query == "watch" and not fallback_mode %}<th class="bulk-col"></th>{% endif %}
       <th></th>
       <th>コード</th>
       <th>銘柄名</th>
@@ -86,7 +121,10 @@
   </thead>
   <tbody>
     {% for row in rows %}
-    <tr>
+    <tr data-code="{{ row.code_s }}">
+      {% if active_query == "watch" and not fallback_mode %}
+      <td class="bulk-col"><input type="checkbox" class="bulk-cb" value="{{ row.code_s }}"></td>
+      {% endif %}
       <td>
         <details>
           <summary style="cursor:pointer;list-style:none;">▸</summary>
@@ -135,7 +173,7 @@
       <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
     </tr>
     <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
-      <td colspan="22" style="background:#f8f8f8;padding:0.8em 1em;">
+      <td colspan="{% if active_query == 'watch' and not fallback_mode %}23{% else %}22{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
         <div style="display:flex;flex-wrap:wrap;gap:0.8em;align-items:flex-start;">
           {% if row.gyoseki.isKonki %}
           <div style="flex:0 0 auto;">
@@ -197,15 +235,7 @@
                         onclick="return confirm('{{ row.code_s }} のステータスを変更しますか?')">変更</button>
               </form>
               {% endif %}
-              {% if active_query == "watch" and not fallback_mode %}
-              <form action="/portfolio/{{ row.code_s }}/delete" method="POST"
-                    style="display:flex;flex-direction:column;gap:0.3em;margin:0;border-top:1px dashed #ccc;padding-top:0.5em;">
-                <label style="font-size:0.85em;color:#c00;">削除 (監視のみ)</label>
-                <textarea name="reason" placeholder="削除理由 (必須)" rows="2" required style="font-size:0.85em;padding:0.3em;margin:0;"></textarea>
-                <button type="submit" class="contrast" style="padding:0.3em 0.6em;font-size:0.85em;margin:0;"
-                        onclick="return confirm('{{ row.code_s }} を完全に削除しますか? (アクションログは残ります)')">削除</button>
-              </form>
-              {% endif %}
+              {# 削除はテーブル上部の「削除モード」 (issue #186) で一括処理する #}
             </div>
           </div>
         </div>
@@ -452,6 +482,52 @@ document.querySelectorAll('table details').forEach(function(d) {
       startEdit(td);
     });
   });
+})();
+
+// ========== 削除モード = ユニバース除外一括 (issue #186) ==========
+(function() {
+  var toggle = document.getElementById('toggle-delete-mode');
+  if (!toggle) return;  // 3監タブ以外では何もしない
+  var bar = document.getElementById('bulk-delete-bar');
+  var countEl = document.getElementById('selected-count');
+  var execBtn = document.getElementById('bulk-delete-execute');
+  var cancelBtn = document.getElementById('bulk-delete-cancel');
+
+  function refresh() {
+    var checked = document.querySelectorAll('.bulk-cb:checked');
+    if (countEl) countEl.textContent = checked.length;
+    if (bar) bar.style.display = document.body.classList.contains('delete-mode') ? '' : 'none';
+  }
+  function clearChecks() {
+    document.querySelectorAll('.bulk-cb').forEach(function(c) { c.checked = false; });
+  }
+  toggle.addEventListener('click', function() {
+    document.body.classList.toggle('delete-mode');
+    if (!document.body.classList.contains('delete-mode')) clearChecks();
+    refresh();
+  });
+  if (cancelBtn) cancelBtn.addEventListener('click', function() {
+    document.body.classList.remove('delete-mode');
+    clearChecks();
+    refresh();
+  });
+  document.addEventListener('change', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('bulk-cb')) refresh();
+  });
+  if (execBtn) execBtn.addEventListener('click', function() {
+    var codes = Array.prototype.slice.call(document.querySelectorAll('.bulk-cb:checked')).map(function(c) { return c.value; });
+    if (!codes.length) return;
+    if (!confirm(codes.length + ' 件をユニバースから除外します。よろしいですか?')) return;
+    var fd = new FormData();
+    codes.forEach(function(c) { fd.append('codes', c); });
+    fetch('/portfolio/bulk-exclude', { method: 'POST', body: fd })
+      .then(function(r) {
+        if (r.redirected) location.href = r.url;
+        else location.reload();
+      })
+      .catch(function(err) { alert('除外失敗: ' + err); });
+  });
+  refresh();
 })();
 </script>
 
