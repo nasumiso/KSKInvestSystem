@@ -1616,7 +1616,8 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "kessanbi_raw": _parse_kessanbi(stock.get("kessanbi", "")),
         "per": f"{per:.1f}" if isinstance(per, (int, float)) else "—",
         "per_raw": per if isinstance(per, (int, float)) else None,
-        "market_cap": f"{market_cap:.0f}億" if isinstance(market_cap, (int, float)) else "—",
+        # 表示はカテゴリ文字列 ("極小"〜"特大")。スプシの IFS 式に対応 (issue #177)
+        "market_cap": _market_cap_category(market_cap_raw) or "—",
         "market_cap_raw": market_cap_raw,
         "market_cap_category": _market_cap_category(market_cap_raw),
         "dividend": f"{dividend_yield:.2f}%" if isinstance(dividend_yield, (int, float)) else "—",
