@@ -140,7 +140,8 @@ class TestDashboardGet:
         assert ">85<" in html  # モメンタム
         assert "50" in html    # rank
         # 売上成長%・利益成長% (アズーム fixture の gyoseki_current から計算: 50→100 は +100%)
-        assert ">100%<" in html
+        # 値の "%" は列ヘッダ側 ("利益成長(%)") に集約 (issue #177)
+        assert ">100<" in html
 
 
 class TestAddPost:
@@ -423,6 +424,78 @@ class TestUpdateMemoPost:
         assert rec["memo"]["trade_idea"] == "X"
         assert "csrf_token" not in rec["memo"]
         assert "garbage" not in rec["memo"]
+
+
+# ==================================================
+# AJAX inline 編集 (issue #177): JSON レスポンス
+# ==================================================
+class TestUpdateMemoAjax:
+    """X-Requested-With ヘッダ付き POST で JSON 応答が返ること"""
+
+    def test_ajax_partial_update_returns_json(self, client, portfolio_db_path):
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"stage": "2S", "last_research_update": "5/10"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        assert resp.is_json
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["code_s"] == "6324"
+        assert body["fields"]["stage"] == "2S"
+        assert body["fields"]["last_research_update"] == "5/10"
+        # shelve に反映されている
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["memo"]["stage"] == "2S"
+        assert rec["memo"]["last_research_update"] == "5/10"
+
+    def test_ajax_response_includes_styles_and_display(self, client, portfolio_db_path):
+        # codex P2 対応: 保存後にクライアント側で色を即時更新するため、
+        # サーバは styles と display を AJAX レスポンスに含める。
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"stage": "2S", "last_research_update": "5/10"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert "styles" in body
+        # ステージ "2S" は薄赤色付け対象 (ルール 13)
+        assert body["styles"].get("stage") == "background:#f4c7c3"
+        # display フィールドに保存後の表示値が入っている
+        assert body["display"]["stage"] == "2S"
+        assert body["display"]["last_research_update"] == "5/10"
+
+    def test_ajax_unknown_code_returns_404_json(self, client):
+        resp = client.post(
+            "/portfolio/9999/memo",
+            data={"stage": "1S"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 404
+        body = resp.get_json()
+        assert body["ok"] is False
+        assert "未登録" in body["error"]
+
+    def test_ajax_invalid_code_returns_400_json(self, client):
+        resp = client.post(
+            "/portfolio/abc/memo",
+            data={"stage": "1S"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["ok"] is False
+
+    def test_non_ajax_still_redirects(self, client, portfolio_db_path):
+        # 既存挙動: ヘッダなしの form POST はリダイレクト維持
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"stage": "2S"},
+        )
+        assert resp.status_code == 302
+        assert not resp.is_json
 
 
 # ==================================================

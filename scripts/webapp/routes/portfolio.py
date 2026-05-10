@@ -11,11 +11,12 @@ portfolio_shelve のレコードに stocks_shelve から指標を補完して表
 末尾で sync_to_my_watch_list_txt() を呼ぶ。memo 更新は txt 内容に影響しないため同期不要。
 """
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
 import portfolio
 import portfolio_shelve as ps
 from webapp.helpers import (
+    compute_cell_styles,
     get_stock_data,
     list_portfolio_with_indicators,
     resolve_stock_name,
@@ -212,20 +213,39 @@ def _extract_memo_fields_from_form(form) -> dict:
     return fields
 
 
+def _is_ajax_request() -> bool:
+    """AJAX リクエストかを判定する (issue #177 inline 編集対応)。
+
+    fetch() からの呼び出しは X-Requested-With ヘッダ or JSON Accept で識別する。
+    """
+    return (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or request.accept_mimetypes.best == "application/json"
+    )
+
+
 @portfolio_bp.route("/portfolio/<code_s>/memo", methods=["POST"])
 def update_memo(code_s: str):
-    """memo を部分更新する (issue #175)。
+    """memo を部分更新する (issue #175 / #177 inline 編集対応)。
 
     フォームから送られた MEMO_FIELDS のキーのみを対象に部分更新する。
     送られなかったキーは現行値据え置き。空文字を明示送信した場合はメモ削除扱い。
+
+    AJAX リクエスト時は JSON で結果を返す (issue #177): {ok, code_s, fields}
+    通常 form 送信時は flash + redirect (既存 issue #175 挙動)。
     """
+    is_ajax = _is_ajax_request()
     rejected = _reject_when_fallback()
     if rejected is not None:
+        if is_ajax:
+            return jsonify({"ok": False, "error": "fallback_mode"}), 409
         return rejected
 
     try:
         ps.validate_code_s(code_s)
     except (ValueError, TypeError) as e:
+        if is_ajax:
+            return jsonify({"ok": False, "error": f"不正な銘柄コード: {e}"}), 400
         flash(f"不正な銘柄コード: {e}", "error")
         return redirect(url_for("portfolio.dashboard"))
 
@@ -234,12 +254,34 @@ def update_memo(code_s: str):
     try:
         ps.update_memo(code_s, fields)
     except KeyError:
-        flash(f"{code_s} は portfolio_shelve に未登録です", "error")
+        msg = f"{code_s} は portfolio_shelve に未登録です"
+        if is_ajax:
+            return jsonify({"ok": False, "error": msg}), 404
+        flash(msg, "error")
         return redirect(url_for("portfolio.dashboard"))
     except (ValueError, TypeError) as e:
+        if is_ajax:
+            return jsonify({"ok": False, "error": str(e)}), 400
         flash(str(e), "error")
         return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
 
+    if is_ajax:
+        # 保存後の row を再構築して、更新済みフィールドと styles を返す
+        # (codex P2 対応: inline 編集後にクライアント側で色を即時更新するため)
+        rec = ps.get_record(code_s) or {}
+        body = {"ok": True, "code_s": code_s, "fields": fields}
+        if rec:
+            rows = list_portfolio_with_indicators([rec])
+            if rows:
+                row = rows[0]
+                body["styles"] = row.get("styles") or {}
+                # 表示文字列も返す (更新日 / ステージ等の見た目同期に使う)
+                body["display"] = {
+                    "last_research_update": (row.get("memo") or {}).get("last_research_update") or "—",
+                    "stage": (row.get("memo") or {}).get("stage") or "—",
+                    "gyoutai_theme": (row.get("memo") or {}).get("gyoutai_theme") or "",
+                }
+        return jsonify(body)
     flash(f"{code_s} のメモを保存しました", "info")
     return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
 
