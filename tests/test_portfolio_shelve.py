@@ -583,14 +583,21 @@ class TestExcludeFromUniverse:
     def test_exclude_1ho_rejected(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "1保", db_path=db_path)
-        with pytest.raises(ValueError, match="3監"):
+        with pytest.raises(ValueError, match="2準/3監"):
             ps.exclude_from_universe("4377", db_path=db_path)
 
-    def test_exclude_2jun_rejected(self, db_path):
+    def test_exclude_2jun_allowed(self, db_path):
+        """2準 銘柄もユニバース除外可能 (1保 は禁止のまま)"""
         ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "2準", db_path=db_path)
-        with pytest.raises(ValueError, match="3監"):
-            ps.exclude_from_universe("4377", db_path=db_path)
+        result = ps.exclude_from_universe("4377", reason="準保有から除外", db_path=db_path)
+        assert result is True
+        rec = ps.get_record("4377", db_path=db_path)
+        assert rec is not None
+        assert rec["excluded"] is True
+        assert rec["status"] == "2準"  # status は変えない、excluded フラグのみ
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert any(l["action_type"] == "ユニバース除外" for l in logs)
 
     def test_exclude_unregistered_returns_false(self, db_path):
         result = ps.exclude_from_universe("4377", db_path=db_path)

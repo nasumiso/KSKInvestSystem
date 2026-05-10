@@ -21,7 +21,7 @@
   }
   /* 数値・短文列は明示的に狭くする */
   table.portfolio-list td.num { text-align: right; }
-  /* 削除モード時のみチェックボックス列を表示 (issue #186) */
+  /* 削除モード時のみチェックボックス列を表示 */
   .bulk-col { display: none; }
   body.delete-mode .bulk-col { display: table-cell; }
   /* 一括削除アクションバー */
@@ -33,14 +33,27 @@
   }
   .portfolio-add-form {
     display: flex; gap: 0.5em; align-items: center;
-    margin-bottom: 0.6em; font-size: 0.85em;
+    margin: 0; font-size: 0.85em;
   }
   .portfolio-add-form input[type="text"] { padding: 0.25em 0.4em; margin: 0; }
   .portfolio-add-form button { padding: 0.3em 0.8em; margin: 0; }
   .portfolio-add-form .hint { color: #999; font-size: 0.85em; }
-  #toggle-delete-mode { padding: 0.3em 0.8em; margin-bottom: 0.5em; font-size: 0.85em; }
+  /* 管理ボタン + 展開パネル */
+  .dashboard-header { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; }
+  #toggle-manage-mode { padding: 0.3em 0.8em; font-size: 0.85em; margin: 0; }
+  #manage-panel {
+    padding: 0.6em 0.8em; margin: 0.4em 0 0.6em 0;
+    background: #f5f7fa; border: 1px solid #d8dee6; border-radius: 4px;
+    display: flex; flex-wrap: wrap; gap: 0.8em; align-items: center;
+  }
+  #toggle-delete-mode { padding: 0.3em 0.8em; font-size: 0.85em; margin: 0; }
 </style>
-<h2>保有銘柄ダッシュボード</h2>
+<div class="dashboard-header">
+  <h2 style="margin:0;">保有銘柄ダッシュボード</h2>
+  {% if not fallback_mode %}
+  <button type="button" id="toggle-manage-mode">管理</button>
+  {% endif %}
+</div>
 
 {% if fallback_mode %}
 <div style="padding:0.6em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;background:#fff8e0;color:#a07000;border:1px solid #ecd07a;">
@@ -73,14 +86,17 @@
 
 <p style="font-size:0.85em;color:#666;">{{ rows|length }} 件</p>
 
-{% if active_query == "watch" and not fallback_mode %}
-<form action="/portfolio/add" method="POST" class="portfolio-add-form">
-  <label>コード <input type="text" name="code_s" required pattern="[0-9A-Za-z]+" maxlength="4" style="width:6em;"></label>
-  <button type="submit">追加</button>
-  <span class="hint">(除外済みコードを再入力すると復活します)</span>
-</form>
-<button type="button" id="toggle-delete-mode">削除モード</button>
-{% if rows %}
+{% if not fallback_mode %}
+<div id="manage-panel" style="display:none;">
+  <form action="/portfolio/add" method="POST" class="portfolio-add-form">
+    <label>コード <input type="text" name="code_s" required pattern="[0-9A-Za-z]+" maxlength="4" style="width:6em;"></label>
+    <button type="submit">追加</button>
+  </form>
+  {% if active_query in ("watch", "semi") and rows %}
+  <button type="button" id="toggle-delete-mode">削除モード</button>
+  {% endif %}
+</div>
+{% if active_query in ("watch", "semi") and rows %}
 <div id="bulk-delete-bar" style="display:none;">
   <span><strong id="selected-count">0</strong> 件選択中</span>
   <button type="button" id="bulk-delete-execute" class="contrast">削除 (ユニバース除外)</button>
@@ -94,7 +110,7 @@
 <table class="portfolio-list">
   <thead>
     <tr>
-      {% if active_query == "watch" and not fallback_mode %}<th class="bulk-col"></th>{% endif %}
+      {% if active_query in ("watch", "semi") and not fallback_mode %}<th class="bulk-col"></th>{% endif %}
       <th></th>
       <th>コード</th>
       <th>銘柄名</th>
@@ -122,7 +138,7 @@
   <tbody>
     {% for row in rows %}
     <tr data-code="{{ row.code_s }}">
-      {% if active_query == "watch" and not fallback_mode %}
+      {% if active_query in ("watch", "semi") and not fallback_mode %}
       <td class="bulk-col"><input type="checkbox" class="bulk-cb" value="{{ row.code_s }}"></td>
       {% endif %}
       <td>
@@ -158,7 +174,7 @@
           data-style-field="last_research_update"
           {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="last_research_update" data-input-type="date"{% endif %}
           style="{{ row.styles.last_research_update or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.last_research_update or "—" }}</td>
-      <td title="クリックで編集 (ステージ変更時は更新日も自動で当日に)"
+      <td title="クリックで編集 (ステージ変更時は更新日も自動で当日に) / Ctrl+クリックで株探チャート"
           data-style-field="stage"
           {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="stage" data-touch-update="1"{% endif %}
           style="{{ row.styles.stage or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.stage or "—" }}</td>
@@ -173,7 +189,7 @@
       <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
     </tr>
     <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
-      <td colspan="{% if active_query == 'watch' and not fallback_mode %}23{% else %}22{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
+      <td colspan="{% if active_query in ('watch', 'semi') and not fallback_mode %}23{% else %}22{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
         <div style="display:flex;flex-wrap:wrap;gap:0.8em;align-items:flex-start;">
           {% if row.gyoseki.isKonki %}
           <div style="flex:0 0 auto;">
@@ -479,19 +495,52 @@ document.querySelectorAll('table details').forEach(function(d) {
     td.addEventListener('click', function(e) {
       // セル内のリンク (銘柄詳細など) クリックは編集モードに入らない
       if (e.target.tagName === 'A') return;
+      // ステージセルで Ctrl/Cmd+クリックなら株探チャートを別タブで開く (編集はしない)
+      if (td.dataset.field === 'stage' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        var code = td.dataset.code;
+        if (code) {
+          window.open('https://kabutan.jp/stock/chart?code=' + encodeURIComponent(code), '_blank', 'noopener');
+        }
+        return;
+      }
       startEdit(td);
     });
   });
 })();
 
-// ========== 削除モード = ユニバース除外一括 (issue #186) ==========
+// ========== 管理パネル開閉 ==========
+(function() {
+  var manageToggle = document.getElementById('toggle-manage-mode');
+  var panel = document.getElementById('manage-panel');
+  if (!manageToggle || !panel) return;
+  manageToggle.addEventListener('click', function() {
+    var open = panel.style.display !== 'none';
+    if (open) {
+      // 閉じる際は削除モードもクリア
+      panel.style.display = 'none';
+      document.body.classList.remove('delete-mode');
+      document.querySelectorAll('.bulk-cb').forEach(function(c) { c.checked = false; });
+      var bar = document.getElementById('bulk-delete-bar');
+      if (bar) bar.style.display = 'none';
+      var cnt = document.getElementById('selected-count');
+      if (cnt) cnt.textContent = '0';
+    } else {
+      panel.style.display = '';
+    }
+  });
+})();
+
+// ========== 削除モード = ユニバース除外一括 ==========
 (function() {
   var toggle = document.getElementById('toggle-delete-mode');
-  if (!toggle) return;  // 3監タブ以外では何もしない
+  if (!toggle) return;  // watch/semi タブ以外では何もしない
   var bar = document.getElementById('bulk-delete-bar');
   var countEl = document.getElementById('selected-count');
   var execBtn = document.getElementById('bulk-delete-execute');
   var cancelBtn = document.getElementById('bulk-delete-cancel');
+  // 現在のタブ (active_query) を Jinja で埋め込んで JS から参照
+  var returnTo = {{ active_query | tojson }};
 
   function refresh() {
     var checked = document.querySelectorAll('.bulk-cb:checked');
@@ -520,6 +569,7 @@ document.querySelectorAll('table details').forEach(function(d) {
     if (!confirm(codes.length + ' 件をユニバースから除外します。よろしいですか?')) return;
     var fd = new FormData();
     codes.forEach(function(c) { fd.append('codes', c); });
+    fd.append('return_to', returnTo);
     fetch('/portfolio/bulk-exclude', { method: 'POST', body: fd })
       .then(function(r) {
         if (r.redirected) location.href = r.url;

@@ -135,8 +135,8 @@ class TestDashboardGet:
         """1保 タブで PER / モメンタム / 順位等の指標が表示される"""
         resp = client.get("/portfolio?status=hold")
         html = resp.data.decode()
-        # アズームの指標
-        assert "30.0" in html  # PER
+        # アズームの指標 (PER は二桁なので整数表記: 30)
+        assert ">30<" in html  # PER (二桁以上は整数)
         assert ">85<" in html  # モメンタム
         assert "50" in html    # rank
         # 売上成長%・利益成長% (アズーム fixture の gyoseki_current から計算: 50→100 は +100%)
@@ -297,6 +297,50 @@ class TestBulkExclude:
         rec_hold = ps.get_record("3496", db_path=portfolio_db_path)
         assert rec_hold["excluded"] is False
         assert rec_hold["status"] == "1保"
+
+    def test_bulk_exclude_2jun_allowed(self, client, portfolio_db_path):
+        """2準 銘柄もユニバース除外可能"""
+        resp = client.post(
+            "/portfolio/bulk-exclude",
+            data={"codes": "7203"},
+        )
+        assert resp.status_code == 302
+        rec = ps.get_record("7203", db_path=portfolio_db_path)
+        assert rec is not None
+        assert rec["excluded"] is True
+        assert rec["status"] == "2準"  # status は 2準 のまま、excluded フラグのみ立つ
+        logs = ps.list_action_logs("7203", db_path=portfolio_db_path)
+        assert any(log.get("action_type") == "ユニバース除外" for log in logs)
+
+    def test_bulk_exclude_2jun_3kan_mixed(self, client, portfolio_db_path):
+        """2準 と 3監 を混ぜても両方除外される"""
+        resp = client.post(
+            "/portfolio/bulk-exclude",
+            data={"codes": ["6324", "7203"]},
+        )
+        assert resp.status_code == 302
+        for code in ("6324", "7203"):
+            rec = ps.get_record(code, db_path=portfolio_db_path)
+            assert rec is not None
+            assert rec["excluded"] is True
+
+    def test_bulk_exclude_redirects_to_return_to(self, client, portfolio_db_path):
+        """return_to=semi なら /portfolio?status=semi にリダイレクト"""
+        resp = client.post(
+            "/portfolio/bulk-exclude",
+            data={"codes": "7203", "return_to": "semi"},
+        )
+        assert resp.status_code == 302
+        assert "status=semi" in resp.headers["Location"]
+
+    def test_bulk_exclude_invalid_return_to_falls_back(self, client, portfolio_db_path):
+        """不正な return_to は watch にフォールバック"""
+        resp = client.post(
+            "/portfolio/bulk-exclude",
+            data={"codes": "6324", "return_to": "evil"},
+        )
+        assert resp.status_code == 302
+        assert "status=watch" in resp.headers["Location"]
 
     def test_bulk_exclude_empty_codes_flash_error(self, client, portfolio_db_path):
         resp = client.post("/portfolio/bulk-exclude", data={})
