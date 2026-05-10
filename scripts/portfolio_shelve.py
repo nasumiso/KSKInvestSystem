@@ -22,7 +22,9 @@ shelve ベースのラッパー。
 - 追加: (新規) -> 3監 (1保/2準への直接登録は禁止)
 - ステータス変更: 3監 <-> 2準 <-> 1保 / 3監 <-> 1保
 - 売却: 1保 -> 2準 (アクションログ種別「売却」で記録)
-- 削除: 3監 のみ (1保/2準 から直接削除は禁止、レコードは物理削除)
+- 削除: 3監 のみ (1保/2準 から直接削除は禁止、レコードは物理削除) ※現在 UI 経路なし
+- ユニバース除外: 3監 のみ。`excluded=True` フラグで論理削除し、メモ・ログを保持。
+  add_to_watch で同コード再投入すると excluded=False に戻して復活する
 """
 
 import fcntl
@@ -58,7 +60,9 @@ CODE_S_PATTERN = re.compile(r"^(?:\d{4}|\d{3}[A-Z])$")
 VALID_STATUSES = frozenset({"1保", "2準", "3監"})
 
 # アクションログ種別
-VALID_ACTION_TYPES = frozenset({"初回登録", "ステータス変更", "売却", "削除", "メモ更新"})
+VALID_ACTION_TYPES = frozenset(
+    {"初回登録", "ステータス変更", "売却", "削除", "メモ更新", "ユニバース除外"}
+)
 
 # キー名前空間プレフィックス
 KEY_RECORD_PREFIX = "record:"
@@ -73,6 +77,7 @@ RECORD_FIELDS = frozenset(
         "registered_at",
         "updated_at",
         "memo",
+        "excluded",
     }
 )
 
@@ -313,6 +318,7 @@ def create_record(
         "registered_at": timestamp,
         "updated_at": updated_at or timestamp,
         "memo": dict(memo),
+        "excluded": False,
     }
 
 
@@ -336,11 +342,14 @@ def get_record(
 def list_records(
     status: Optional[str] = None,
     *,
+    include_excluded: bool = False,
     db_path: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """保有レコードを一覧取得する。
 
     - status: None で全件、"1保"/"2準"/"3監" 指定で絞り込み
+    - include_excluded: False (既定) なら excluded=True のレコードを除外。
+      True なら除外フラグ無視で全件返す (DB 整合性チェックや fallback 判定用)
     - 結果は code_s 昇順
     """
     if status is not None:
@@ -354,6 +363,8 @@ def list_records(
             if not isinstance(value, dict):
                 continue
             if status is not None and value.get("status") != status:
+                continue
+            if not include_excluded and value.get("excluded", False):
                 continue
             results.append(value)
     results.sort(key=lambda r: r.get("code_s", ""))
@@ -466,37 +477,62 @@ def add_to_watch(
     reason: str = "",
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """銘柄を 3監 として新規追加する。
+    """銘柄を 3監 として登録、または除外済みレコードをユニバース復活させる。
 
     銘柄名は持たない (表示時に stocks_shelve / research_shelve から都度取得)。
 
-    - 既存レコードが存在する場合は ValueError (重複登録防止)
-    - 同時に 初回登録 アクションログを 1 件記録
+    挙動:
+    - 既存レコードなし → 新規追加 (3監)。「初回登録」ログを reason 引数で記録
+    - 既存レコードあり & excluded=True → 復活 (excluded=False に戻す)。
+      memo / status は既存値を保持。「ユニバース除外」ログを reason="復活" で記録
+      (復活時は reason 引数は無視される)
+    - 既存レコードあり & excluded=False → ValueError (重複登録防止)
 
-    Returns: 追加したレコード
+    Returns: 追加または復活したレコード
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
-    record = create_record(normalized, status="3監", memo=memo)
     path = _resolve_db_path(db_path)
     with _flock(db_path):
         with ShelveDB(path) as db:
-            if _record_key(normalized) in db:
-                raise ValueError(
-                    f"portfolio_shelve: {normalized} は既に登録済みです"
-                )
-            db[_record_key(normalized)] = record
-        # ログ追加 (内部で flock 取得済みでもリエントラント対応)
-        append_action_log(
-            normalized,
-            "初回登録",
-            status_from=None,
-            status_to="3監",
-            reason=reason,
-            db_path=db_path,
-        )
-    log_print("portfolio_shelve: 3監 追加", normalized)
-    return record
+            key = _record_key(normalized)
+            existing = db.get(key)
+            if existing is not None and isinstance(existing, dict):
+                if existing.get("excluded", False):
+                    existing["excluded"] = False
+                    existing["updated_at"] = now_iso()
+                    db[key] = existing
+                    revived_record = existing
+                    revived = True
+                else:
+                    raise ValueError(
+                        f"portfolio_shelve: {normalized} は既に登録済みです"
+                    )
+            else:
+                record = create_record(normalized, status="3監", memo=memo)
+                db[key] = record
+                revived_record = record
+                revived = False
+        if revived:
+            # 復活時は明示的に reason="復活" を記録 (除外ログとの判別用、reason 引数は無視)
+            append_action_log(
+                normalized,
+                "ユニバース除外",
+                reason="復活",
+                db_path=db_path,
+            )
+            log_print("portfolio_shelve: ユニバース復活", normalized)
+        else:
+            append_action_log(
+                normalized,
+                "初回登録",
+                status_from=None,
+                status_to="3監",
+                reason=reason,
+                db_path=db_path,
+            )
+            log_print("portfolio_shelve: 3監 追加", normalized)
+    return revived_record
 
 
 def upsert_record(
@@ -645,6 +681,54 @@ def delete_record(
     return True
 
 
+def exclude_from_universe(
+    code_s: str,
+    *,
+    reason: str = "",
+    db_path: Optional[str] = None,
+) -> bool:
+    """3監レコードをユニバースから除外する (物理削除はしない)。
+
+    - 1保/2準 を除外しようとすると ValueError
+    - レコードが存在しない場合は False を返す
+    - 既に除外済みなら no-op で False を返す
+    - 成功時はアクションログ「ユニバース除外」を 1 件記録
+
+    Returns: 除外を新規に行った場合 True、未存在/既除外なら False
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    if not isinstance(reason, str):
+        raise TypeError(f"reason must be str, got {type(reason).__name__}")
+
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            key = _record_key(normalized)
+            if key not in db:
+                return False
+            record = db[key]
+            if record.get("excluded", False):
+                return False
+            current_status = record.get("status")
+            if current_status != "3監":
+                raise ValueError(
+                    f"portfolio_shelve: {normalized} は status={current_status!r} のため "
+                    "ユニバース除外できません (3監 のみ除外可能、先に 3監 へ遷移してください)"
+                )
+            record["excluded"] = True
+            record["updated_at"] = now_iso()
+            db[key] = record
+        append_action_log(
+            normalized,
+            "ユニバース除外",
+            reason=reason,
+            db_path=db_path,
+        )
+    log_print("portfolio_shelve: ユニバース除外", normalized)
+    return True
+
+
 def update_memo(
     code_s: str,
     fields: Dict[str, Any],
@@ -781,6 +865,8 @@ def sync_to_my_watch_list_txt(
 
     一方向同期 (shelve → txt)。txt 廃止 issue (将来) で sync 自体を停止する想定。
     旧コードと既存運用との互換のため、Phase 3 完了後も同期は有効のまま残す。
+
+    excluded=True のレコードは出力しない (`list_records` のデフォルトで除外される)。
 
     銘柄名は portfolio_shelve には保存されていないため stocks_shelve / research_shelve から
     都度引く (どちらにも無ければ code のみ書き出す)。
