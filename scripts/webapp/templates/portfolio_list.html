@@ -89,26 +89,26 @@
           {% endfor %}
         {% else %}—{% endif %}
       </td>
-      <td>{{ row.rank if row.rank is not none else "—" }}</td>
-      <td>{{ row.sales_growth }}</td>
-      <td>{{ row.profit_growth }}</td>
-      <td>{{ row.per }}</td>
-      <td>{{ row.theoretical_diff }}</td>
-      <td>{{ row.dividend }}</td>
+      <td style="{{ row.styles.rank or '' }}">{{ row.rank if row.rank is not none else "—" }}</td>
+      <td style="{{ row.styles.sales_growth or '' }}">{{ row.sales_growth }}</td>
+      <td style="{{ row.styles.profit_growth or '' }}">{{ row.profit_growth }}</td>
+      <td style="{{ row.styles.per or '' }}">{{ row.per }}</td>
+      <td style="{{ row.styles.theoretical_diff or '' }}">{{ row.theoretical_diff }}</td>
+      <td style="{{ row.styles.dividend or '' }}">{{ row.dividend }}</td>
       <td>{{ row.quarter }}</td>
-      <td>{{ row.progress_diff }}</td>
-      <td>{{ row.kessanbi_md }}</td>
-      <td>{{ row.memo.last_research_update or "—" }}</td>
-      <td>{{ row.memo.stage or "—" }}</td>
-      <td>{{ row.rs }}</td>
+      <td style="{{ row.styles.progress_diff or '' }}">{{ row.progress_diff }}</td>
+      <td style="{{ row.styles.kessanbi_md or '' }}">{{ row.kessanbi_md }}</td>
+      <td style="{{ row.styles.last_research_update or '' }}">{{ row.memo.last_research_update or "—" }}</td>
+      <td style="{{ row.styles.stage or '' }}">{{ row.memo.stage or "—" }}</td>
+      <td style="{{ row.styles.rs or '' }}">{{ row.rs }}</td>
       <td style="color:#bbb;">—</td>
       <td title="{{ row.trend_template_tooltip }}"
-          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ row.trend_template }}</td>
+          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.trend_template or '' }}">{{ row.trend_template }}</td>
       <td title="{{ row.tags }}"
-          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ row.tags }}</td>
+          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
       <td style="color:#bbb;">—</td>
-      <td>{{ row.buy_collection }}</td>
-      <td>{{ row.market_cap }}</td>
+      <td style="{{ row.styles.buy_collection or '' }}">{{ row.buy_collection }}</td>
+      <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
     </tr>
     <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
       <td colspan="22" style="background:#f8f8f8;padding:0.8em 1em;">
