@@ -97,8 +97,9 @@
           style="max-width:10em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
         <a href="/stock/{{ row.code_s }}">{{ row.stock_name }}</a>
       </td>
-      <td title="{{ row.memo.gyoutai_theme }}"
-          style="max-width:11em;line-height:1.2;font-size:0.85em;overflow:hidden;">
+      <td title="{{ row.memo.gyoutai_theme }} (クリックで編集)"
+          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="gyoutai_theme" data-multiline="1"{% endif %}
+          style="max-width:11em;line-height:1.2;font-size:0.85em;overflow:hidden;{% if not fallback_mode %}cursor:pointer;{% endif %}">
         {% if row.memo.gyoutai_theme %}
           {% for theme_line in row.memo.gyoutai_theme.split("\n")[:2] %}
           <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ theme_line }}</div>
@@ -114,8 +115,12 @@
       <td>{{ row.quarter }}</td>
       <td style="{{ row.styles.progress_diff or '' }}">{{ row.progress_diff }}</td>
       <td style="{{ row.styles.kessanbi_md or '' }}">{{ row.kessanbi_md }}</td>
-      <td style="{{ row.styles.last_research_update or '' }}">{{ row.memo.last_research_update or "—" }}</td>
-      <td style="{{ row.styles.stage or '' }}">{{ row.memo.stage or "—" }}</td>
+      <td title="クリックで編集 (M/D 形式 or 日付ピッカー)"
+          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="last_research_update" data-input-type="date"{% endif %}
+          style="{{ row.styles.last_research_update or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.last_research_update or "—" }}</td>
+      <td title="クリックで編集 (ステージ変更時は更新日も自動で当日に)"
+          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="stage" data-touch-update="1"{% endif %}
+          style="{{ row.styles.stage or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.stage or "—" }}</td>
       <td style="{{ row.styles.rs or '' }}">{{ row.rs }}</td>
       <td style="color:#bbb;">—</td>
       <td title="{{ row.trend_template_tooltip }}"
@@ -139,14 +144,12 @@
             {% if not fallback_mode %}
             <form action="/portfolio/{{ row.code_s }}/memo" method="POST"
                   style="display:flex;flex-direction:column;gap:0.4em;margin:0.3em 0 0 0;font-size:0.85em;">
+              {# 業態・テーマ / 更新日 / ステージ は表内 inline 編集に移動 (issue #177) #}
               {% for field, label in [
-                  ("gyoutai_theme", "業態・テーマ"),
                   ("watch_in_reason", "IN 理由"),
                   ("trade_idea", "売買アイデア"),
                   ("inago_origin", "イナゴ元"),
                   ("takaichi_sensitivity", "高市感応度"),
-                  ("last_research_update", "調査更新日"),
-                  ("stage", "ステージ"),
                   ("jukyu_chart", "需給チャート"),
               ] %}
               <label style="display:flex;flex-direction:column;gap:0.1em;margin:0;">
@@ -223,6 +226,157 @@ document.querySelectorAll('table details').forEach(function(d) {
     if (summary) summary.textContent = d.open ? '▾' : '▸';
   });
 });
+
+// ========== inline 編集 (issue #177) ==========
+// .editable セルをクリック → input/textarea に置換 → blur で fetch POST → DOM 書き戻し
+// ステージ列 (data-touch-update="1") の編集時は更新日も自動的に当日 M/D に更新する。
+(function() {
+  function todayMD() {
+    var d = new Date();
+    return (d.getMonth() + 1) + '/' + d.getDate();  // M/D 形式
+  }
+
+  function renderGyoutaiTheme(td, value) {
+    // 改行で 2 行まで表示する既存ルールを再現
+    td.innerHTML = '';
+    if (!value) {
+      td.appendChild(document.createTextNode('—'));
+      return;
+    }
+    var lines = value.split('\n').slice(0, 2);
+    lines.forEach(function(line) {
+      var div = document.createElement('div');
+      div.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      div.textContent = line;
+      td.appendChild(div);
+    });
+  }
+
+  function renderPlain(td, value) {
+    td.textContent = value || '—';
+  }
+
+  function startEdit(td) {
+    if (td.dataset.editing === '1') return;
+    td.dataset.editing = '1';
+
+    var field = td.dataset.field;
+    var currentValue = (td.dataset.field === 'gyoutai_theme')
+      ? Array.from(td.querySelectorAll('div')).map(function(d) { return d.textContent; }).join('\n').trim()
+      : td.textContent.trim();
+    if (currentValue === '—') currentValue = '';
+
+    var input;
+    if (td.dataset.multiline === '1') {
+      input = document.createElement('textarea');
+      input.rows = 2;
+      input.style.cssText = 'width:11em;font-size:0.85em;padding:0.2em;font-family:inherit;';
+    } else if (td.dataset.inputType === 'date') {
+      input = document.createElement('input');
+      input.type = 'date';
+      input.style.cssText = 'font-size:0.85em;padding:0.2em;width:9em;';
+      // M/D を YYYY-MM-DD に変換 (year は当年補完、未来日なら前年)
+      if (currentValue && /^\d{1,2}\/\d{1,2}$/.test(currentValue)) {
+        var parts = currentValue.split('/');
+        var y = new Date().getFullYear();
+        var m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
+        var cand = new Date(y, m - 1, d);
+        if (cand > new Date()) y -= 1;
+        input.value = y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+      }
+    } else {
+      input = document.createElement('input');
+      input.type = 'text';
+      input.style.cssText = 'font-size:0.85em;padding:0.2em;width:6em;';
+    }
+    if (input.tagName === 'TEXTAREA' || input.type === 'text') {
+      input.value = currentValue;
+    }
+
+    td.innerHTML = '';
+    td.appendChild(input);
+    input.focus();
+    if (input.type === 'text' || input.tagName === 'TEXTAREA') input.select();
+
+    var finished = false;
+    function commit() {
+      if (finished) return;
+      finished = true;
+      td.dataset.editing = '';
+
+      var newValue = input.value;
+      // <input type="date"> の YYYY-MM-DD → M/D
+      if (input.type === 'date' && newValue) {
+        var p = newValue.split('-');
+        newValue = parseInt(p[1], 10) + '/' + parseInt(p[2], 10);
+      }
+      newValue = (newValue || '').replace(/\r\n/g, '\n').trim();
+
+      var fields = {};
+      fields[field] = newValue;
+      // ステージ編集時は更新日も当日に
+      var touchUpdate = (td.dataset.touchUpdate === '1');
+      if (touchUpdate) {
+        fields['last_research_update'] = todayMD();
+      }
+
+      var formData = new FormData();
+      Object.keys(fields).forEach(function(k) { formData.append(k, fields[k]); });
+      var code = td.dataset.code;
+      fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData,
+      }).then(function(resp) {
+        return resp.json().then(function(body) { return { ok: resp.ok, body: body }; });
+      }).then(function(res) {
+        if (!res.ok || !res.body.ok) {
+          alert('保存失敗: ' + (res.body && res.body.error || 'unknown'));
+          // 元値で再描画
+          if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
+          else renderPlain(td, currentValue);
+          return;
+        }
+        // 自セル更新
+        if (field === 'gyoutai_theme') renderGyoutaiTheme(td, newValue);
+        else renderPlain(td, newValue);
+
+        // ステージ編集時は同じ行の last_research_update セルも更新
+        if (touchUpdate) {
+          var tr = td.closest('tr');
+          var dateTd = tr && tr.querySelector('td.editable[data-field="last_research_update"]');
+          if (dateTd) renderPlain(dateTd, fields['last_research_update']);
+        }
+      }).catch(function(err) {
+        alert('保存失敗: ' + err);
+        if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
+        else renderPlain(td, currentValue);
+      });
+    }
+
+    function cancel() {
+      if (finished) return;
+      finished = true;
+      td.dataset.editing = '';
+      if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
+      else renderPlain(td, currentValue);
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      if (e.key === 'Enter' && input.tagName !== 'TEXTAREA') { e.preventDefault(); input.blur(); }
+    });
+  }
+
+  document.querySelectorAll('td.editable').forEach(function(td) {
+    td.addEventListener('click', function(e) {
+      // セル内のリンク (銘柄詳細など) クリックは編集モードに入らない
+      if (e.target.tagName === 'A') return;
+      startEdit(td);
+    });
+  });
+})();
 </script>
 
 {% else %}
