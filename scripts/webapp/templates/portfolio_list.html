@@ -12,6 +12,13 @@
     padding: 0.3em 0.4em;
     white-space: normal;  /* ヘッダの折り返しを許可してセル幅を縮める */
   }
+  /* 長いヘッダラベル ("RSライン(20,5)" 等) が列幅を引っ張らないよう、
+     ヘッダ側に max-width を設けて強制改行させる。データセル幅優先。 */
+  table.portfolio-list thead th {
+    max-width: 4em;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
   /* 数値・短文列は明示的に狭くする */
   table.portfolio-list td.num { text-align: right; }
 </style>
