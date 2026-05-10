@@ -1453,3 +1453,45 @@ class TestBuyCollectionScore:
     def test_with_spaces(self):
         # "A, B" のようなスペース付きでも動く
         assert helpers._buy_collection_score_sum("A, B") == 9
+
+
+class TestFormatPer:
+    """_format_per のユニットテスト (二桁以上は整数、一桁は小数1桁)"""
+
+    def test_two_digit_int(self):
+        assert helpers._format_per(25) == "25"
+
+    def test_two_digit_float(self):
+        assert helpers._format_per(30.0) == "30"
+
+    def test_two_digit_float_rounds(self):
+        # 二桁以上は整数化 (四捨五入)
+        assert helpers._format_per(25.4) == "25"
+        assert helpers._format_per(25.6) == "26"
+
+    def test_single_digit_float(self):
+        assert helpers._format_per(5.3) == "5.3"
+
+    def test_single_digit_int(self):
+        assert helpers._format_per(3) == "3.0"
+
+    def test_zero(self):
+        assert helpers._format_per(0) == "0.0"
+
+    def test_boundary_ten(self):
+        # ちょうど 10 は整数表記
+        assert helpers._format_per(10) == "10"
+        assert helpers._format_per(10.0) == "10"
+
+    def test_boundary_just_below_ten(self):
+        assert helpers._format_per(9.9) == "9.9"
+
+    def test_negative_under_ten(self):
+        # 負の PER (赤字) は一桁扱い
+        assert helpers._format_per(-3.5) == "-3.5"
+
+    def test_none(self):
+        assert helpers._format_per(None) == "—"
+
+    def test_string(self):
+        assert helpers._format_per("25") == "—"

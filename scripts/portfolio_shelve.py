@@ -681,15 +681,18 @@ def delete_record(
     return True
 
 
+EXCLUDABLE_STATUSES = frozenset({"2準", "3監"})
+
+
 def exclude_from_universe(
     code_s: str,
     *,
     reason: str = "",
     db_path: Optional[str] = None,
 ) -> bool:
-    """3監レコードをユニバースから除外する (物理削除はしない)。
+    """2準/3監 レコードをユニバースから除外する (物理削除はしない)。
 
-    - 1保/2準 を除外しようとすると ValueError
+    - 1保 を除外しようとすると ValueError (保有中銘柄の誤除外を防ぐ)
     - レコードが存在しない場合は False を返す
     - 既に除外済みなら no-op で False を返す
     - 成功時はアクションログ「ユニバース除外」を 1 件記録
@@ -711,10 +714,10 @@ def exclude_from_universe(
             if record.get("excluded", False):
                 return False
             current_status = record.get("status")
-            if current_status != "3監":
+            if current_status not in EXCLUDABLE_STATUSES:
                 raise ValueError(
                     f"portfolio_shelve: {normalized} は status={current_status!r} のため "
-                    "ユニバース除外できません (3監 のみ除外可能、先に 3監 へ遷移してください)"
+                    "ユニバース除外できません (2準/3監 のみ除外可能)"
                 )
             record["excluded"] = True
             record["updated_at"] = now_iso()

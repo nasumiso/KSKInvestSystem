@@ -123,11 +123,11 @@ def _reject_when_fallback(redirect_query: str = "watch"):
 
 @portfolio_bp.route("/portfolio/bulk-exclude", methods=["POST"])
 def bulk_exclude():
-    """3監 銘柄を一括でユニバースから除外する (物理削除はしない)。
+    """2準/3監 銘柄を一括でユニバースから除外する (物理削除はしない)。
 
-    フォーム: codes=<code1>&codes=<code2>... / reason=<任意>
-    部分成功許容。1保/2準 が混入していたら該当のみ flash error で報告し、
-    3監 のみ除外を実行する。
+    フォーム: codes=<code1>&codes=<code2>... / reason=<任意> / return_to=<hold|semi|watch>
+    部分成功許容。1保 が混入していたら該当のみ flash error で報告し、2準/3監 のみ除外を実行する。
+    return_to はリダイレクト先タブ。不正値は watch にフォールバック。
     """
     rejected = _reject_when_fallback(redirect_query="watch")
     if rejected is not None:
@@ -135,10 +135,13 @@ def bulk_exclude():
 
     codes = [c.strip() for c in request.form.getlist("codes") if c and c.strip()]
     reason = (request.form.get("reason") or "").strip()
+    return_to = (request.form.get("return_to") or "watch").strip()
+    if return_to not in STATUS_QUERY_TO_VALUE:
+        return_to = "watch"
 
     if not codes:
         flash("除外対象が指定されていません", "error")
-        return redirect(url_for("portfolio.dashboard", status="watch"))
+        return redirect(url_for("portfolio.dashboard", status=return_to))
 
     success: list[str] = []
     failures: list[str] = []
@@ -164,7 +167,7 @@ def bulk_exclude():
         flash(f"{len(success)} 件をユニバースから除外しました ({', '.join(success)})", "info")
     if failures:
         flash("除外できなかったコードがあります: " + " / ".join(failures), "error")
-    return redirect(url_for("portfolio.dashboard", status="watch"))
+    return redirect(url_for("portfolio.dashboard", status=return_to))
 
 
 @portfolio_bp.route("/portfolio/<code_s>/transition", methods=["POST"])

@@ -1491,6 +1491,20 @@ def _format_kessanbi_md(kessanbi: Any) -> str:
     return kessanbi
 
 
+def _format_per(per: Any) -> str:
+    """PER を表示用文字列に整形する。
+
+    - 二桁以上 (>= 10): 整数表記 (例: 25, 30)
+    - 一桁 (< 10): 小数1桁 (例: 5.3, 3.0)
+    - 数値でない: "—"
+    """
+    if not isinstance(per, (int, float)):
+        return "—"
+    if per >= 10:
+        return f"{per:.0f}"
+    return f"{per:.1f}"
+
+
 def _theoretical_diff_raw(stock: Dict[str, Any]) -> Optional[float]:
     """理論株価乖離率の生値 (整数化前) を返す。取れなければ None。"""
     if not stock or not stock.get("price") or not stock.get("rironkabuka"):
@@ -1615,7 +1629,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "rank": rank if isinstance(rank, int) else None,
         "kessanbi_md": _format_kessanbi_md(stock.get("kessanbi")),
         "kessanbi_raw": _parse_kessanbi(stock.get("kessanbi", "")),
-        "per": f"{per:.1f}" if isinstance(per, (int, float)) else "—",
+        "per": _format_per(per),
         "per_raw": per if isinstance(per, (int, float)) else None,
         # 表示はカテゴリ文字列 ("極小"〜"特大")。スプシの IFS 式に対応 (issue #177)
         "market_cap": _market_cap_category(market_cap_raw) or "—",
