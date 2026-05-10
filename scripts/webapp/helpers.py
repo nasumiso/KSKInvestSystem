@@ -1729,13 +1729,14 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         styles["profit_growth"] = bg("薄黄")
 
     # --- PER (ルール 16): (利益成長% + 配当%) / PER > 1 → 薄黄 (PEG的指標、割安)
+    # スプシ式 (I+L)/J>1 ではセル空欄は 0 として評価されるため、配当が None でも 0 扱い
     per_raw = row.get("per_raw")
     div_raw = row.get("dividend_raw")
+    div_for_peg = div_raw if isinstance(div_raw, (int, float)) else 0.0
     if (
         isinstance(per_raw, (int, float)) and per_raw > 0
         and isinstance(pg, (int, float))
-        and isinstance(div_raw, (int, float))
-        and (pg + div_raw) / per_raw > 1
+        and (pg + div_for_peg) / per_raw > 1
     ):
         styles["per"] = bg("薄黄")
 

@@ -1057,6 +1057,23 @@ class TestComputeCellStyles:
         )
         assert "per" not in styles
 
+    def test_per_with_no_dividend_treated_as_zero(self):
+        # スプシ式 (I+L)/J>1 はセル空欄を 0 扱いする → 配当 None でも PER 色付け対象
+        # 例: 6366 千代田化工建設 (per=3.3, profit_growth=232, dividend=None) → (232+0)/3.3=70 > 1
+        styles = helpers.compute_cell_styles(
+            {"per_raw": 3.3, "profit_growth_raw": 232, "dividend_raw": None},
+            today=TODAY,
+        )
+        assert styles["per"] == f"background:{C['薄黄']}"
+
+    def test_per_no_dividend_low_growth_no_color(self):
+        # 配当 None (= 0) で利益成長が PER 未満 → 色なし
+        styles = helpers.compute_cell_styles(
+            {"per_raw": 30, "profit_growth_raw": 25, "dividend_raw": None},
+            today=TODAY,
+        )
+        assert "per" not in styles
+
     # --- 理論株価乖離 (ルール 15): > 50 → 薄黄 ---
     def test_theoretical_diff_51_light_yellow(self):
         styles = helpers.compute_cell_styles({"theoretical_diff_raw": 51}, today=TODAY)
