@@ -598,9 +598,29 @@ class TestComputeRsLineChanges:
         assert a is None and b is None
 
     def test_short_only_when_partial_data(self):
-        """rs_line が 6本以上21本未満なら A だけ計算可、B は None"""
+        """rs_line が 6本以上16本未満なら A だけ計算可、B は None (15日前すら届かない)"""
         stock = {"price_log": _make_log(10, base=2000)}
         market_db = {"topix": {"price_log": _make_log(10, base=1000)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is not None and b is None
+
+    def test_fallback_when_16_to_20_bars(self):
+        """rs_line が 16-20本のとき、B は 15-19日前で代替して数値を返す"""
+        # 20本 = index 0..19 → offset 19 で代替可能
+        stock = {"price_log": _make_log(20, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(20, base=1000, step=2)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is not None and b is not None
+        # 16本 = index 0..15 → offset 15 で代替可能
+        stock = {"price_log": _make_log(16, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(16, base=1000, step=2)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is not None and b is not None
+
+    def test_no_fallback_when_15_bars(self):
+        """rs_line が 15本のとき (index 0..14)、offset 15 にも届かないので B は None"""
+        stock = {"price_log": _make_log(15, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(15, base=1000, step=2)}}
         a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is None
 
@@ -666,6 +686,31 @@ class TestGetRsLineChangesExpr:
         parts = s.split("/")
         assert parts[0].startswith("-")
         assert parts[1].startswith("-")
+
+    def test_fallback_marked_with_asterisk(self):
+        """rs_line 16-20本のとき、B 値の末尾に '*' が付く"""
+        stock = {"price_log": _make_log(20, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(20, base=1000, step=2)}}
+        s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
+        parts = s.split("/")
+        assert parts[0].endswith("*"), "フォールバック時は B 値末尾に '*' が付くべき"
+        assert not parts[1].endswith("*"), "A 値には '*' を付けない"
+
+    def test_no_asterisk_when_full_data(self):
+        """rs_line 21本以上 (offset 20 で取れる) のとき、'*' は付かない"""
+        stock = {"price_log": _make_log(25, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=2)}}
+        s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
+        parts = s.split("/")
+        assert not parts[0].endswith("*")
+
+    def test_no_asterisk_when_b_uncomputable(self):
+        """rs_line 15本以下 (B 計算不能) のとき、'-' に '*' は付かない"""
+        stock = {"price_log": _make_log(15, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(15, base=1000, step=2)}}
+        s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
+        parts = s.split("/")
+        assert parts[0] == "-"
 
 
 # ==================================================
