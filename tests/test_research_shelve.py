@@ -444,6 +444,94 @@ class TestSnapshot:
         with pytest.raises(KeyError):
             rs.upsert_snapshot("9999", snap, db_path=db_path)
 
+    # --- マージ: 同日 upsert 時に既存 ir_comment を保持 ---
+    def test_upsert_same_date_preserves_ir_comment(self, prepared_db):
+        rs.upsert_snapshot(
+            "3496",
+            rs.create_snapshot(
+                "26.5.11",
+                ir_quant="[A]10%,10%",
+                ir_comment="ユーザーが手で書いたメモ",
+                data_source="auto",
+            ),
+            db_path=prepared_db,
+        )
+        # cron が auto で同日上書き → ir_comment は保持されるべき
+        rs.upsert_snapshot(
+            "3496",
+            rs.create_snapshot(
+                "26.5.11",
+                ir_quant="[A]20%,20%",
+                quality_indicators="11000億 PER30",
+                rironkabuka_kairi="-30%",
+                data_source="auto",
+            ),
+            db_path=prepared_db,
+        )
+        loaded = rs.get_research_record("3496", db_path=prepared_db)
+        same = [s for s in loaded["snapshots"] if s["date_yy_m"] == "26.5.11"]
+        assert len(same) == 1
+        # 自動生成フィールドは新値で更新
+        assert same[0]["ir_quant"] == "[A]20%,20%"
+        assert same[0]["quality_indicators"] == "11000億 PER30"
+        assert same[0]["rironkabuka_kairi"] == "-30%"
+        # ユーザー編集フィールドは保持
+        assert same[0]["ir_comment"] == "ユーザーが手で書いたメモ"
+
+    # --- マージ: data_source が manual のときは保持 ---
+    def test_upsert_same_date_preserves_manual_source(self, prepared_db):
+        rs.upsert_snapshot(
+            "3496",
+            rs.create_snapshot(
+                "26.5.11",
+                ir_comment="メモ",
+                data_source="manual",
+            ),
+            db_path=prepared_db,
+        )
+        rs.upsert_snapshot(
+            "3496",
+            rs.create_snapshot(
+                "26.5.11",
+                ir_quant="新規",
+                data_source="auto",
+            ),
+            db_path=prepared_db,
+        )
+        loaded = rs.get_research_record("3496", db_path=prepared_db)
+        same = [s for s in loaded["snapshots"] if s["date_yy_m"] == "26.5.11"]
+        assert len(same) == 1
+        # manual を保持
+        assert same[0]["data_source"] == "manual"
+        # ir_comment は既存値が保持される
+        assert same[0]["ir_comment"] == "メモ"
+        # 自動生成フィールドは新値
+        assert same[0]["ir_quant"] == "新規"
+
+    # --- マージ: 既存 ir_comment が空なら新値を採用 ---
+    def test_upsert_same_date_empty_comment_takes_new(self, prepared_db):
+        rs.upsert_snapshot(
+            "3496",
+            rs.create_snapshot("26.5.11", ir_quant="old", data_source="auto"),
+            db_path=prepared_db,
+        )
+        rs.upsert_snapshot(
+            "3496",
+            rs.create_snapshot(
+                "26.5.11",
+                ir_quant="new",
+                ir_comment="あとから付くコメント",
+                data_source="auto",
+            ),
+            db_path=prepared_db,
+        )
+        loaded = rs.get_research_record("3496", db_path=prepared_db)
+        same = [s for s in loaded["snapshots"] if s["date_yy_m"] == "26.5.11"]
+        assert len(same) == 1
+        # 既存が空だったので新値を採用
+        assert same[0]["ir_comment"] == "あとから付くコメント"
+        assert same[0]["ir_quant"] == "new"
+
     # --- ケース21: date_yy_m降順ソート ---
     def test_snapshots_sorted_descending(self, prepared_db):
         # わざとバラバラの順で投入
