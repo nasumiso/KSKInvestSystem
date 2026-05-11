@@ -331,6 +331,13 @@ class TestParseKessanHtml:
         mod_lst, _ = shintakane.parse_kessan_html(html)
         assert len(mod_lst[0]) == 4
 
+    def test_空文字列入力で空リストが返る(self):
+        """HTTP接続失敗等でHTMLが空の場合、両リストとも空で返ること。
+        update_todays_kessan の IndexError 回避はこの挙動に依存する。"""
+        mod_lst, announce_lst = shintakane.parse_kessan_html("")
+        assert mod_lst == []
+        assert announce_lst == []
+
     def test_2つのテーブル両方からパースする(self):
         """株探の決算速報ページは `s_news_list mgbt0` と `s_news_list mgt0`
         の2テーブル構成。後半テーブルの記事も拾える必要がある (regression)"""

@@ -1395,6 +1395,14 @@ def update_todays_kessan():
             # print mod, announce
             modify_lst += mod
             announce_lst += announce
+            if not modify_lst and not announce_lst:
+                # 接続失敗や Kabutan のフォーマット変更で当該ページから何も取れなかった場合、
+                # ループを継続しても次ページ以降も同様に失敗する可能性が高いので打ち切る。
+                # これまで取得済みの内容で後続処理 (CSV 書き込み・DB 反映) に進む。
+                log_warning(
+                    "%dページで決算データを 1 件も取得できなかったため打ち切ります" % page
+                )
+                break
             if len(modify_lst) > 0:
                 current_day = datetime.strptime(modify_lst[-1][1], "%Y/%m/%d").date()
             else:
