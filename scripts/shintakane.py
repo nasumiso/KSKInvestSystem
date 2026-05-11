@@ -1069,10 +1069,8 @@ def get_todays_shintakane(force=False):
     latest_csv, _ = get_latest_shintakane_fname()
     if latest_csv and not force:
         latest_csv_dt = get_file_datetime(latest_csv)
-        tdy = datetime.today()
-        if tdy.hour < 17:
-            tdy = tdy - timedelta(days=1)
-        goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, 17)
+        tdy = get_price_day(datetime.today())
+        goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, PRICE_HOUR)
         if latest_csv_dt > goodissue_dt:
             log_debug(
                 "本日分のcsvは取得済みです",
@@ -1397,6 +1395,16 @@ def update_todays_kessan():
             # print mod, announce
             modify_lst += mod
             announce_lst += announce
+            if not mod and not announce:
+                # 接続失敗や Kabutan のフォーマット変更で当該ページから何も取れなかった場合、
+                # ループを継続しても次ページ以降も同様に失敗する可能性が高いので打ち切る。
+                # 累積 (modify_lst / announce_lst) ではなく今回のページ (mod / announce) を
+                # 見ることで、2 ページ目以降の取得失敗も検出できる。
+                # これまで取得済みの内容で後続処理 (CSV 書き込み・DB 反映) に進む。
+                log_warning(
+                    "%dページで決算データを 1 件も取得できなかったため打ち切ります" % page
+                )
+                break
             if len(modify_lst) > 0:
                 current_day = datetime.strptime(modify_lst[-1][1], "%Y/%m/%d").date()
             else:

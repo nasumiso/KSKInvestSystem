@@ -25,7 +25,7 @@ less is more の方針でコーディングする。出典: [andrej-karpathy-ski
   - ファイルハンドラは通常INFOレベル。`KS_LOG_DEBUG=1` 環境変数でDEBUGレベルに切替可能
   - 新規ログ追加時は上記の基準で `log_print` / `log_debug` を使い分けること
 - DB操作は `update_db_rows()` を経由。バルク操作は `sync=False` で非同期化可能。
-- 日付判定は `ks_util.get_price_day()` を使用（18:00前は前日扱い）。
+- 日付判定は `ks_util.get_price_day()` を使用（17:00前は前日扱い）。
 - `DATA_DIR` のパス解決は `ks_util._resolve_data_dir()` で行う。環境変数 `KS_DATA_DIR` で上書き可能。詳細は [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) の「データパス解決」を参照。
   - 現在の運用環境では `KS_DATA_DIR=/Users/k_sohara/Ext/GoogleDrive/shintakane_data`（`.zshrc` で設定済み）
 

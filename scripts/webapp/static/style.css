@@ -19,6 +19,20 @@
 .rating-D { background: #3498db; }
 .rating-E { background: #95a5a6; }
 
+/* 保有状態バッジ (保有/準保有/監視) */
+.portfolio-badge {
+  display: inline-block;
+  padding: 0.15em 0.55em;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.7em;
+  color: #fff;
+  vertical-align: middle;
+}
+.portfolio-badge-hold { background: #c0392b; }
+.portfolio-badge-semi { background: #d68910; }
+.portfolio-badge-watch { background: #16a085; }
+
 /* スナップショットテーブル */
 table.snapshot-table {
   font-size: 0.85em;

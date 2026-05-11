@@ -943,7 +943,7 @@ def _convert_weekly_df_to_kabutan_format(df):
             前週比/前週比%は指標計算で未使用のため"0"固定
     """
     from datetime import timedelta
-    # get_price_day()は18:00前なら前日扱い。週足判定でも同じ基準日を使う
+    # get_price_day()は17:00前なら前日扱い。週足判定でも同じ基準日を使う
     price_day = get_price_day(datetime.now())
 
     weekly_price_list = []
