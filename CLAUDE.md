@@ -51,7 +51,7 @@ cd scripts && python -m webapp.app                  # 調査WebApp (http://local
 
 ## 実装プラン作成ルール
 
-ユーザーにプランを提示する前に必ず codex レビューを通すこと。詳細は [.claude/rules/codex-plan-review.md](.claude/rules/codex-plan-review.md) を参照。
+プラン作成・レビューのルールは [.claude/rules/codex-plan-review.md](.claude/rules/codex-plan-review.md) を参照。
 
 ## 重要な注意事項
 

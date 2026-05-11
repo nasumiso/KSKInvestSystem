@@ -206,15 +206,19 @@ def compute_rs_line(stock, market_db, topix_map=None):
 def compute_rs_line_changes(stock, market_db, topix_map=None):
     """rs_line の 5日前比 A・20日前比 B 騰落率を%値で計算する。
 
+    20日前データが無い場合は 19,18,17,16,15日前の順に代替 (B は近似値)。
+
     Returns:
         tuple[float|None, float|None]: (短期A%, 中期B%)
             - rs_line が 6本未満 → (None, None)
-            - rs_line が 6本以上21本未満 → (A, None)
+            - rs_line が 6本以上16本未満 → (A, None)
+            - rs_line が 16本以上21本未満 → (A, B_approx) ※15-19日前で代替
             - rs_line が 21本以上 → (A, B)
             past値が0の場合も None
     """
     rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
-    return _rs_line_changes_from_line(rs_line)
+    a, b, _ = _rs_line_changes_from_line(rs_line)
+    return (a, b)
 
 
 def _fmt_rs_change(v):
@@ -229,20 +233,30 @@ def get_rs_line_changes_expr(stock, market_db, topix_map=None, rs_line=None):
     呼ぶ際に共有するため)。
 
     Returns:
-        str: 例 "+12/+5"。両方計算不能なら "" 、片方のみなら "-/+5" 等
+        str: 例 "+12/+5"。20日比が 15-19日前で代替された場合は末尾 * を付ける
+            (例: "+12*/+5")。両方計算不能なら "" 、片方のみなら "-/+5" 等
     """
     if rs_line is None:
         rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
-    a, b = _rs_line_changes_from_line(rs_line)
+    a, b, b_is_approx = _rs_line_changes_from_line(rs_line)
     if a is None and b is None:
         return ""
-    return "%s/%s" % (_fmt_rs_change(b), _fmt_rs_change(a))
+    b_str = _fmt_rs_change(b)
+    if b is not None and b_is_approx:
+        b_str += "*"
+    return "%s/%s" % (b_str, _fmt_rs_change(a))
 
 
 def _rs_line_changes_from_line(rs_line):
-    """rs_line 系列から 5日前比 A・20日前比 B 騰落率を計算する内部関数"""
+    """rs_line 系列から 5日前比 A・20日前比 B 騰落率を計算する内部関数
+
+    Returns:
+        tuple[float|None, float|None, bool]: (A, B, B が代替値か)
+            B は offset 20 で取れなければ 19,18,17,16,15 の順に代替。
+            代替を使った場合 b_is_approx=True。
+    """
     if not rs_line:
-        return (None, None)
+        return (None, None, False)
     current = rs_line[0][1]
 
     def _change(offset):
@@ -253,7 +267,15 @@ def _rs_line_changes_from_line(rs_line):
             return None
         return (current - past) / past * 100
 
-    return (_change(5), _change(20))
+    a = _change(5)
+    b = _change(20)
+    if b is not None:
+        return (a, b, False)
+    for offset in (19, 18, 17, 16, 15):
+        b = _change(offset)
+        if b is not None:
+            return (a, b, True)
+    return (a, None, False)
 
 
 def compute_rs_line_new_high(stock, market_db, topix_map=None, lookback=20, rs_line=None):

@@ -438,7 +438,8 @@ def _calc_daily_indicators(daily_price_list):
     dic["rv_5"] = rv_5
 
     # rs_line 計算で参照される。Kabutan/yfinance 両経路で同じ (date, int終値) 型にする
-    LOG_DAY = 25
+    # 20日前比較に必要な 21件 + バッファ。Kabutan HTML は元々 30 件返す
+    LOG_DAY = 30
     past_prices = []
     for ind in range(min(LOG_DAY, len(daily_price_list))):
         dt = parse_date_str(daily_price_list[ind][0])
@@ -1565,7 +1566,8 @@ def parse_price_text_from_list(price_current, price_list):
     # print breaks
     # ---- 過去価格
     past_prices = []
-    LOG_DAY = 25
+    # 20日前比較に必要な 21件 + バッファ
+    LOG_DAY = 30
     for ind in range(LOG_DAY):
         if ind >= len(price_list):
             continue
