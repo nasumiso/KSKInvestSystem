@@ -22,12 +22,23 @@ detail_bp = Blueprint("detail", __name__)
 
 @detail_bp.route("/stock/<code_s>")
 def stock_detail(code_s: str):
-    """銘柄詳細ビュー。"""
+    """銘柄詳細ビュー。
+
+    ResearchDB に未登録だが stocks_shelve に存在する銘柄は、
+    追加プロンプトを表示してワンクリックで追加できるようにする。
+    """
     record = get_research_detail(code_s)
+    stock = get_stock_data(code_s)
     if record is None:
+        if stock:
+            return render_template(
+                "detail_add_prompt.html",
+                code_s=code_s,
+                stock_name=stock.get("stock_name", ""),
+                overview=stock.get("overview", ""),
+            )
         abort(404)
 
-    stock = get_stock_data(code_s)
     disclosures = get_disclosures(code_s)
     disclosures_has_recent = has_recent_disclosure(disclosures, days=7)
 
@@ -62,7 +73,6 @@ def stock_detail(code_s: str):
         disclosures_has_recent=disclosures_has_recent,
         indicator_snaps=indicator_snaps,
         valid_ratings=sorted(VALID_RATINGS - {""}),
-        portfolio_status=portfolio_status,
         portfolio_status_label=portfolio_status_label,
         portfolio_status_query=portfolio_status_query,
         portfolio_fallback_mode=portfolio_fallback_mode,

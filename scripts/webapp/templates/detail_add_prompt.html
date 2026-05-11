@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}[{{ code_s }}] {{ stock_name or '' }} - ResearchDB 未登録 | Shintakane Research{% endblock %}
+
+{% block content %}
+<div style="max-width:640px;margin:2em auto;padding:1.5em;border:1px solid #ddd;border-radius:6px;background:#fafafa;">
+  <h2 style="margin-top:0;">この銘柄は ResearchDB に未登録です</h2>
+
+  <div style="margin:1em 0;">
+    <div style="font-size:1.1em;margin-bottom:0.3em;">
+      <small style="color:#888;font-size:0.7em;">{{ code_s }}</small>
+      <strong>{{ stock_name or '(銘柄名なし)' }}</strong>
+    </div>
+    {% if overview %}
+    <div style="color:#555;font-size:0.9em;">{{ overview }}</div>
+    {% endif %}
+  </div>
+
+  <p style="color:#555;">
+    ResearchDB に追加すると、業績スナップショットや指標が記録され、評価・メモを残せるようになります。
+  </p>
+
+  <form action="/stock/add" method="POST" style="margin-top:1.5em;">
+    <input type="hidden" name="add_code_s" value="{{ code_s }}">
+    <button type="submit" style="padding:0.5em 1.4em;margin-right:0.6em;">
+      ResearchDB に追加する
+    </button>
+    <a href="/" style="font-size:0.9em;">キャンセル</a>
+  </form>
+</div>
+{% endblock %}

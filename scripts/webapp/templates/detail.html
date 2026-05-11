@@ -11,6 +11,9 @@
       {% endif %}
       <small style="color:#888;font-size:0.5em;">{{ record.code_s }}</small>
       {{ record.stock_name or '' }}
+      {% if portfolio_status_query %}
+      <span class="portfolio-badge portfolio-badge-{{ portfolio_status_query }}">{{ portfolio_status_label }}</span>
+      {% endif %}
     </h1>
     {% if stock.overview %}<div style="color:#555;font-size:0.85em;margin-bottom:0.2em;">{{ stock.overview }}</div>{% endif %}
     <div class="meta">
@@ -21,22 +24,11 @@
         | <a href="https://kabutan.jp/stock/finance?code={{ record.code_s }}" target="_blank" rel="noopener noreferrer">業績</a>
         | <a href="https://finance.yahoo.co.jp/quote/{{ record.code_s }}.T/forum" target="_blank" rel="noopener noreferrer">掲示板</a>
       </div>
+      {% if portfolio_fallback_mode and not portfolio_status_query %}
       <div style="margin-top:0.4em;">
-        {% if portfolio_status %}
-        <span style="color:#666;font-size:0.85em;">保有銘柄: <strong>{{ portfolio_status_label }}</strong></span>
-        <a href="/portfolio?status={{ portfolio_status_query }}" style="font-size:0.85em;">→ ダッシュボードで開く</a>
-        {% elif portfolio_fallback_mode %}
-        <span style="color:#a07000;font-size:0.85em;">portfolio_shelve 未移行モード: 監視追加は移行後に有効化されます</span>
-        {% else %}
-        <form action="/portfolio/add" method="POST" style="display:inline;margin:0;">
-          <input type="hidden" name="code_s" value="{{ record.code_s }}">
-          <button type="submit" class="outline" style="padding:0.2em 0.6em;font-size:0.85em;margin:0;"
-                  onclick="return confirm('{{ record.code_s }} {{ record.stock_name or '' }} を監視に追加しますか?')">
-            + 監視に追加
-          </button>
-        </form>
-        {% endif %}
+        <span style="color:#a07000;font-size:0.85em;">portfolio_shelve 未移行モード</span>
       </div>
+      {% endif %}
     </div>
   </div>
 </div>
