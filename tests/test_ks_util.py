@@ -116,20 +116,20 @@ class TestSumproduct:
 # get_price_day
 # ==================================================
 class TestGetPriceDay:
-    """営業日ベース日付判定のテスト（18:00 境界）"""
+    """営業日ベース日付判定のテスト（17:00 境界）"""
 
     def test_before_cutoff(self):
-        """18:00 前は前日"""
-        dt = datetime(2025, 6, 10, 17, 59)
+        """17:00 前は前日"""
+        dt = datetime(2025, 6, 10, 16, 59)
         assert ks_util.get_price_day(dt) == date(2025, 6, 9)
 
     def test_at_cutoff(self):
-        """18:00 ちょうどは当日"""
-        dt = datetime(2025, 6, 10, 18, 0)
+        """17:00 ちょうどは当日"""
+        dt = datetime(2025, 6, 10, 17, 0)
         assert ks_util.get_price_day(dt) == date(2025, 6, 10)
 
     def test_after_cutoff(self):
-        """18:00 より後は当日"""
+        """17:00 より後は当日"""
         dt = datetime(2025, 6, 10, 20, 0)
         assert ks_util.get_price_day(dt) == date(2025, 6, 10)
 

@@ -1069,10 +1069,8 @@ def get_todays_shintakane(force=False):
     latest_csv, _ = get_latest_shintakane_fname()
     if latest_csv and not force:
         latest_csv_dt = get_file_datetime(latest_csv)
-        tdy = datetime.today()
-        if tdy.hour < 17:
-            tdy = tdy - timedelta(days=1)
-        goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, 17)
+        tdy = get_price_day(datetime.today())
+        goodissue_dt = datetime(tdy.year, tdy.month, tdy.day, PRICE_HOUR)
         if latest_csv_dt > goodissue_dt:
             log_debug(
                 "本日分のcsvは取得済みです",
