@@ -1546,3 +1546,42 @@ class TestProgressQuarterAndDiff:
         label, diff = helpers._progress_quarter_and_diff({"code_s": "0001"})
         assert label == "—"
         assert diff == "—"
+
+
+class TestCollectGyoutaiThemeChoices:
+    """issue #187: portfolio_shelve 全レコードから datalist 候補を集計する。"""
+
+    def test_flatten_and_unique_and_sort(self):
+        records = [
+            {"memo": {"gyoutai_themes": ["半導体", "AI"]}},
+            {"memo": {"gyoutai_themes": ["AI", "ロボット"]}},
+            {"memo": {"gyoutai_themes": ["半導体"]}},
+        ]
+        assert helpers.collect_gyoutai_theme_choices(records) == [
+            "AI",
+            "ロボット",
+            "半導体",
+        ]
+
+    def test_strips_whitespace_and_removes_empty(self):
+        records = [
+            {"memo": {"gyoutai_themes": [" 半導体 ", "", "  ", "AI"]}},
+        ]
+        assert helpers.collect_gyoutai_theme_choices(records) == ["AI", "半導体"]
+
+    def test_missing_gyoutai_themes_returns_empty(self):
+        records = [{"memo": {}}, {"memo": {"gyoutai_themes": None}}]
+        assert helpers.collect_gyoutai_theme_choices(records) == []
+
+    def test_missing_memo_returns_empty(self):
+        assert helpers.collect_gyoutai_theme_choices([{}]) == []
+
+    def test_empty_records_returns_empty(self):
+        assert helpers.collect_gyoutai_theme_choices([]) == []
+
+    def test_ignores_non_str_elements(self):
+        """defensive: 想定外の型 (None, int) が混入してもクラッシュしない"""
+        records = [
+            {"memo": {"gyoutai_themes": ["AI", None, 123, "半導体"]}},
+        ]
+        assert helpers.collect_gyoutai_theme_choices(records) == ["AI", "半導体"]

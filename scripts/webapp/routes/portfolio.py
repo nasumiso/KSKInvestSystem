@@ -16,6 +16,7 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 import portfolio
 import portfolio_shelve as ps
 from webapp.helpers import (
+    collect_gyoutai_theme_choices,
     compute_cell_styles,
     get_stock_data,
     list_portfolio_with_indicators,
@@ -217,14 +218,34 @@ def _extract_memo_fields_from_form(form) -> dict:
 
     抽出した値は textarea の改行 (\\r\\n / \\r) を \\n に正規化し、前後 strip する。
     MEMO_FIELDS 外のキーは無視 (form に紛れ込んでも reject しない)。
+
+    issue #187: gyoutai_themes は `gyoutai_themes_0`, `gyoutai_themes_1` の
+    スロット形式で受信し、空文字スロットを除去した list[str] に集約する。
     """
     fields = {}
     for field in ps.MEMO_FIELDS:
+        if field in ps.MEMO_LIST_FIELDS:
+            continue  # list 系はスロット展開ロジックで別途処理
         if field not in form:
             continue
         raw = form[field] or ""
         normalized = raw.replace("\r\n", "\n").replace("\r", "\n").strip()
         fields[field] = normalized
+
+    # gyoutai_themes_0, gyoutai_themes_1 をスロット展開して list 化 (issue #187)
+    themes_slot_keys = [
+        f"gyoutai_themes_{i}" for i in range(ps.GYOUTAI_THEMES_MAX_SLOTS)
+    ]
+    if any(k in form for k in themes_slot_keys):
+        themes: list = []
+        for k in themes_slot_keys:
+            if k not in form:
+                continue
+            v = (form[k] or "").strip()
+            if v:
+                themes.append(v)
+        fields["gyoutai_themes"] = themes
+
     return fields
 
 
@@ -295,6 +316,7 @@ def update_memo(code_s: str):
                     "last_research_update": (row.get("memo") or {}).get("last_research_update") or "—",
                     "stage": (row.get("memo") or {}).get("stage") or "—",
                     "gyoutai_theme": (row.get("memo") or {}).get("gyoutai_theme") or "",
+                    "gyoutai_themes": list((row.get("memo") or {}).get("gyoutai_themes") or []),
                 }
         return jsonify(body)
     flash(f"{code_s} のメモを保存しました", "info")
@@ -401,6 +423,12 @@ def dashboard():
     # 出さない。shelve が空のため transition / exclude を呼ぶと KeyError になる。
     transitions = [] if fallback_mode else _allowed_transitions_from(active_status)
 
+    # issue #187: datalist 候補は表示タブ/excluded と独立、shelve 内の全レコードから集計
+    if fallback_mode:
+        gyoutai_theme_choices: list = []
+    else:
+        gyoutai_theme_choices = collect_gyoutai_theme_choices(all_records_inc)
+
     return render_template(
         "portfolio_list.html",
         tabs=TABS,
@@ -411,4 +439,6 @@ def dashboard():
         transitions=transitions,
         status_label=STATUS_VALUE_TO_LABEL,
         fallback_mode=fallback_mode,
+        gyoutai_theme_choices=gyoutai_theme_choices,
+        gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
     )

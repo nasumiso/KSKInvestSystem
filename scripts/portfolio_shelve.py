@@ -86,7 +86,8 @@ LEGACY_RECORD_FIELDS = frozenset({"stock_name"})
 
 MEMO_FIELDS = frozenset(
     {
-        "gyoutai_theme",          # 業態・テーマ
+        "gyoutai_theme",          # 旧: 業態・テーマ (str/改行区切り、移行期間中のみ残す。issue #187)
+        "gyoutai_themes",         # 新: 業態・テーマ (list[str]、UI では最大2件)
         "watch_in_reason",        # ウォッチ・IN理由
         "trade_idea",             # 投資売買アイデア
         "inago_origin",           # イナゴ元・きっかけ
@@ -96,6 +97,12 @@ MEMO_FIELDS = frozenset(
         "jukyu_chart",            # 需給チャートメモ (例: "月足低位ブレイク CWH")
     }
 )
+
+# list[str] として扱う memo フィールド (str 系とバリデーションを分ける)
+MEMO_LIST_FIELDS = frozenset({"gyoutai_themes"})
+
+# gyoutai_themes の UI スロット上限 (issue #187)
+GYOUTAI_THEMES_MAX_SLOTS = 2
 
 ACTION_LOG_FIELDS = frozenset(
     {
@@ -265,6 +272,7 @@ def _resolve_db_path(db_path: Optional[str]) -> str:
 def create_memo(
     *,
     gyoutai_theme: str = "",
+    gyoutai_themes: Optional[List[str]] = None,
     watch_in_reason: str = "",
     trade_idea: str = "",
     inago_origin: str = "",
@@ -272,10 +280,11 @@ def create_memo(
     last_research_update: str = "",
     stage: str = "",
     jukyu_chart: str = "",
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """手動メモ dict を生成する。"""
     return {
         "gyoutai_theme": gyoutai_theme,
+        "gyoutai_themes": list(gyoutai_themes) if gyoutai_themes else [],
         "watch_in_reason": watch_in_reason,
         "trade_idea": trade_idea,
         "inago_origin": inago_origin,
@@ -284,6 +293,31 @@ def create_memo(
         "stage": stage,
         "jukyu_chart": jukyu_chart,
     }
+
+
+def _normalize_loaded_memo(memo: Any) -> Dict[str, Any]:
+    """shelve から読み込んだ memo に新フィールドのデフォルトを補完する。
+
+    旧データに `gyoutai_themes` がない場合 `[]` を埋めて、UI/集計ヘルパーが
+    KeyError を踏まないようにする (issue #187 後方互換)。
+    """
+    if not isinstance(memo, dict):
+        return memo
+    result = dict(memo)
+    if "gyoutai_themes" not in result:
+        result["gyoutai_themes"] = []
+    return result
+
+
+def _normalize_loaded_record(record: Any) -> Any:
+    """shelve から読み込んだ record の memo を正規化する (issue #187)。"""
+    if not isinstance(record, dict):
+        return record
+    if "memo" in record:
+        result = dict(record)
+        result["memo"] = _normalize_loaded_memo(result.get("memo"))
+        return result
+    return record
 
 
 def create_record(
@@ -336,7 +370,8 @@ def get_record(
     normalized = normalize_code_s(code_s)
     path = _resolve_db_path(db_path)
     with ShelveDB(path) as db:
-        return db.get(_record_key(normalized))
+        record = db.get(_record_key(normalized))
+    return _normalize_loaded_record(record) if record is not None else None
 
 
 def list_records(
@@ -366,7 +401,7 @@ def list_records(
                 continue
             if not include_excluded and value.get("excluded", False):
                 continue
-            results.append(value)
+            results.append(_normalize_loaded_record(value))
     results.sort(key=lambda r: r.get("code_s", ""))
     return results
 
@@ -771,9 +806,21 @@ def update_memo(
             f"(許容値: {sorted(MEMO_FIELDS)})"
         )
 
-    normalized_fields: Dict[str, str] = {}
+    normalized_fields: Dict[str, Any] = {}
     for k, v in fields.items():
-        if v is None:
+        if k in MEMO_LIST_FIELDS:
+            # list[str] 専用フィールド (issue #187: gyoutai_themes)
+            if not isinstance(v, list):
+                raise TypeError(
+                    f"portfolio_shelve: memo[{k!r}] must be list[str], "
+                    f"got {type(v).__name__}"
+                )
+            if not all(isinstance(e, str) for e in v):
+                raise TypeError(
+                    f"portfolio_shelve: memo[{k!r}] must contain only str"
+                )
+            normalized_fields[k] = list(v)
+        elif v is None:
             normalized_fields[k] = ""
         elif isinstance(v, str):
             normalized_fields[k] = v
@@ -782,6 +829,9 @@ def update_memo(
                 f"portfolio_shelve: memo[{k!r}] must be str or None, "
                 f"got {type(v).__name__}"
             )
+
+    def _current_default(k: str) -> Any:
+        return [] if k in MEMO_LIST_FIELDS else ""
 
     path = _resolve_db_path(db_path)
     with _flock(db_path):
@@ -794,7 +844,7 @@ def update_memo(
             record = db[key]
             current_memo = record.get("memo", {}) or {}
             changed = any(
-                current_memo.get(k, "") != v
+                current_memo.get(k, _current_default(k)) != v
                 for k, v in normalized_fields.items()
             )
             if not changed:

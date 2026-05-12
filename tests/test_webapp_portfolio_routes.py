@@ -456,8 +456,10 @@ class TestFallbackJudgmentWithAllExcluded:
 class TestUpdateMemoPost:
 
     def test_memo_full_eight_fields_persist(self, client, portfolio_db_path):
-        """ブラウザ form と同じく全 8 項目を送ったら全部反映される"""
-        form_data = {field: f"val_{field}" for field in ps.MEMO_FIELDS}
+        """ブラウザ form と同じく str 系の全項目を送ったら全部反映される"""
+        # list 系フィールド (gyoutai_themes) は別 form name (gyoutai_themes_0/1) のため除外
+        str_fields = ps.MEMO_FIELDS - ps.MEMO_LIST_FIELDS
+        form_data = {field: f"val_{field}" for field in str_fields}
         resp = client.post("/portfolio/6324/memo", data=form_data)
         assert resp.status_code == 302
         rec = ps.get_record("6324", db_path=portfolio_db_path)
@@ -628,6 +630,81 @@ class TestUpdateMemoAjax:
         )
         assert resp.status_code == 302
         assert not resp.is_json
+
+
+# ==================================================
+# issue #187: gyoutai_themes スロット POST + dashboard 連動
+# ==================================================
+class TestGyoutaiThemesPost:
+    """gyoutai_themes_0/1 をスロット形式で受信し list に集約して保存される。"""
+
+    def test_post_two_slots_saves_as_list(self, client, portfolio_db_path):
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"gyoutai_themes_0": "半導体", "gyoutai_themes_1": "AI"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["memo"]["gyoutai_themes"] == ["半導体", "AI"]
+        # AJAX レスポンスの display にも list が含まれる
+        assert body["display"]["gyoutai_themes"] == ["半導体", "AI"]
+
+    def test_post_empty_slot_removed_order_preserved(self, client, portfolio_db_path):
+        # スロット 0 が空、1 にのみ値 → 順序維持で 1 件のみ保存
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"gyoutai_themes_0": "", "gyoutai_themes_1": "AI"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["memo"]["gyoutai_themes"] == ["AI"]
+
+    def test_post_both_empty_saves_empty_list(self, client, portfolio_db_path):
+        # 先に値をセットしておく
+        ps.update_memo(
+            "6324", {"gyoutai_themes": ["X"]}, db_path=portfolio_db_path
+        )
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"gyoutai_themes_0": "", "gyoutai_themes_1": ""},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["memo"]["gyoutai_themes"] == []
+
+    def test_post_without_slot_keys_keeps_existing(self, client, portfolio_db_path):
+        # 部分更新セマンティクス: gyoutai_themes_* キーが POST に含まれない → 据え置き
+        ps.update_memo(
+            "6324", {"gyoutai_themes": ["既存"]}, db_path=portfolio_db_path
+        )
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"trade_idea": "X"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["memo"]["gyoutai_themes"] == ["既存"]
+        assert rec["memo"]["trade_idea"] == "X"
+
+    def test_dashboard_renders_datalist(self, client, portfolio_db_path):
+        # 候補集計が dashboard のテンプレに渡って HTML に含まれる
+        ps.update_memo(
+            "6324",
+            {"gyoutai_themes": ["半導体", "AI"]},
+            db_path=portfolio_db_path,
+        )
+        resp = client.get("/portfolio?status=hold")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert 'id="gyoutai-theme-choices"' in html
+        assert "半導体" in html
+        assert "AI" in html
 
 
 # ==================================================
