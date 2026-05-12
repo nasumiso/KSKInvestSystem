@@ -1374,6 +1374,24 @@ def list_portfolio_with_indicators(records: List[Dict[str, Any]]) -> List[Dict[s
     return rows
 
 
+def collect_gyoutai_theme_choices(records: List[Dict[str, Any]]) -> List[str]:
+    """portfolio_shelve 全レコードの memo.gyoutai_themes をフラット化して候補リストを返す (issue #187)。
+
+    空要素除去・ユニーク化・アルファベット/五十音昇順ソート済み。
+    datalist の選択肢として使う想定。
+    """
+    seen = set()
+    for rec in records:
+        memo = rec.get("memo") or {}
+        for theme in (memo.get("gyoutai_themes") or []):
+            if not isinstance(theme, str):
+                continue
+            t = theme.strip()
+            if t:
+                seen.add(t)
+    return sorted(seen)
+
+
 def _format_tags(stock: Dict[str, Any]) -> str:
     """code_rank.csv「タグ」列と同じ表記を返す。
 

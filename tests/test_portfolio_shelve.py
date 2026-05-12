@@ -72,7 +72,12 @@ class TestSchema:
     def test_create_memo_defaults(self):
         memo = ps.create_memo()
         assert set(memo.keys()) == ps.MEMO_FIELDS
-        assert all(v == "" for v in memo.values())
+        # list 系フィールドは [], それ以外は ""
+        for k, v in memo.items():
+            if k in ps.MEMO_LIST_FIELDS:
+                assert v == []
+            else:
+                assert v == ""
 
     def test_create_memo_partial(self):
         memo = ps.create_memo(gyoutai_theme="人材", trade_idea="押し目買い")
@@ -387,7 +392,9 @@ class TestUpdateMemo:
 
     def test_update_all_eight_fields(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
-        all_fields = {f: f"val_{f}" for f in ps.MEMO_FIELDS}
+        # list 系フィールド (gyoutai_themes) は別バリデーション経路なのでこのテストでは除外
+        str_fields = ps.MEMO_FIELDS - ps.MEMO_LIST_FIELDS
+        all_fields = {f: f"val_{f}" for f in str_fields}
         rec = ps.update_memo("4377", all_fields, db_path=db_path)
         for k, v in all_fields.items():
             assert rec["memo"][k] == v
@@ -437,6 +444,98 @@ class TestUpdateMemo:
         rec = ps.update_memo("215a", {"trade_idea": "X"}, db_path=db_path)
         assert rec["code_s"] == "215A"
         assert rec["memo"]["trade_idea"] == "X"
+
+
+class TestGyoutaiThemesField:
+    """issue #187: gyoutai_themes (list[str]) フィールドの読み書き / バリデーション。"""
+
+    def test_create_memo_defaults_empty_list(self):
+        memo = ps.create_memo()
+        assert memo["gyoutai_themes"] == []
+
+    def test_create_memo_with_explicit_list(self):
+        memo = ps.create_memo(gyoutai_themes=["半導体", "AI"])
+        assert memo["gyoutai_themes"] == ["半導体", "AI"]
+
+    def test_update_gyoutai_themes_saves_list(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        rec = ps.update_memo(
+            "4377", {"gyoutai_themes": ["半導体", "AI"]}, db_path=db_path
+        )
+        assert rec["memo"]["gyoutai_themes"] == ["半導体", "AI"]
+
+    def test_update_gyoutai_themes_empty_list_overwrites(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo("4377", {"gyoutai_themes": ["半導体"]}, db_path=db_path)
+        rec = ps.update_memo("4377", {"gyoutai_themes": []}, db_path=db_path)
+        assert rec["memo"]["gyoutai_themes"] == []
+
+    def test_update_gyoutai_themes_partial_keeps_other_fields(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "X"}, db_path=db_path)
+        rec = ps.update_memo(
+            "4377", {"gyoutai_themes": ["AI"]}, db_path=db_path
+        )
+        assert rec["memo"]["gyoutai_themes"] == ["AI"]
+        assert rec["memo"]["trade_idea"] == "X"
+
+    def test_update_gyoutai_themes_rejects_non_list(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(TypeError):
+            ps.update_memo(
+                "4377", {"gyoutai_themes": "半導体\nAI"}, db_path=db_path
+            )
+
+    def test_update_gyoutai_themes_rejects_non_str_element(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(TypeError):
+            ps.update_memo(
+                "4377", {"gyoutai_themes": ["半導体", 123]}, db_path=db_path
+            )
+
+    def test_update_gyoutai_themes_no_diff_is_noop(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo("4377", {"gyoutai_themes": ["AI"]}, db_path=db_path)
+        ps.update_memo("4377", {"gyoutai_themes": ["AI"]}, db_path=db_path)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        memo_logs = [log for log in logs if log["action_type"] == "メモ更新"]
+        # 同じ値の更新は no-op、ログ追記は 1 回のみ
+        assert len(memo_logs) == 1
+
+    def test_legacy_record_without_gyoutai_themes_loads_as_empty_list(
+        self, db_path
+    ):
+        """旧データに gyoutai_themes フィールドがなくても、読み込み時に [] が補完される。"""
+        from db_shelve import ShelveDB
+
+        # 旧スキーマ (gyoutai_themes なし) で直接 shelve に書き込む
+        legacy_record = {
+            "code_s": "4377",
+            "status": "3監",
+            "registered_at": "2024-01-01T00:00:00+09:00",
+            "updated_at": "2024-01-01T00:00:00+09:00",
+            "memo": {
+                "gyoutai_theme": "半導体\nAI",
+                "trade_idea": "",
+                "watch_in_reason": "",
+                "inago_origin": "",
+                "takaichi_sensitivity": "",
+                "last_research_update": "",
+                "stage": "",
+                "jukyu_chart": "",
+            },
+            "excluded": False,
+        }
+        with ShelveDB(db_path) as db:
+            db["record:4377"] = legacy_record
+
+        rec = ps.get_record("4377", db_path=db_path)
+        assert rec["memo"]["gyoutai_themes"] == []
+
+        # list_records 経由でも補完される
+        recs = ps.list_records(db_path=db_path)
+        assert len(recs) == 1
+        assert recs[0]["memo"]["gyoutai_themes"] == []
 
 
 # ==================================================

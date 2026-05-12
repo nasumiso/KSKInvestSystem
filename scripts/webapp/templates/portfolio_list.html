@@ -151,14 +151,19 @@
           style="max-width:10em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
         <a href="/stock/{{ row.code_s }}">{{ row.stock_name }}</a>
       </td>
-      <td title="{{ row.memo.gyoutai_theme }} (クリックで編集)"
-          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="gyoutai_theme" data-multiline="1" data-full="{{ row.memo.gyoutai_theme or '' }}"{% endif %}
-          style="max-width:11em;line-height:1.2;font-size:0.85em;overflow:hidden;{% if not fallback_mode %}cursor:pointer;{% endif %}">
-        {% if row.memo.gyoutai_theme %}
-          {% for theme_line in row.memo.gyoutai_theme.split("\n")[:2] %}
-          <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ theme_line }}</div>
-          {% endfor %}
-        {% else %}—{% endif %}
+      <td class="gyoutai-themes-cell" data-code="{{ row.code_s }}"
+          style="max-width:11em;padding:0 2px;line-height:0;{{ row.styles.gyoutai_themes or '' }}">
+        {% set themes = row.memo.gyoutai_themes or [] %}
+        {% for i in range(gyoutai_themes_max_slots) %}
+        <input type="text"
+               list="gyoutai-theme-choices"
+               name="gyoutai_themes_{{ i }}"
+               value="{{ themes[i] if i < (themes|length) else '' }}"
+               data-slot="{{ i }}"
+               class="gyoutai-input"
+               placeholder="—"
+               {% if fallback_mode %}disabled{% endif %}>
+        {% endfor %}
       </td>
       <td style="{{ row.styles.rank or '' }}">{{ row.rank if row.rank is not none else "—" }}</td>
       <td style="{{ row.styles.sales_growth or '' }}">{{ row.sales_growth }}</td>
@@ -261,6 +266,34 @@
   </tbody>
 </table>
 </div>
+
+<datalist id="gyoutai-theme-choices">
+  {% for choice in gyoutai_theme_choices %}
+  <option value="{{ choice }}">
+  {% endfor %}
+</datalist>
+
+<style>
+.gyoutai-themes-cell { vertical-align: middle; }
+.gyoutai-themes-cell .gyoutai-input {
+  display: block;
+  width: 100%;
+  max-width: 11em;
+  height: 1.1em;
+  font-size: 1em;
+  line-height: 1;
+  padding: 0 2px;
+  margin: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: inherit;
+  box-sizing: content-box;
+}
+.gyoutai-themes-cell .gyoutai-input:hover { border-color: #ddd; background: #fff; }
+.gyoutai-themes-cell .gyoutai-input:focus { outline: 1px solid #4285f4; background: #fff; }
+.gyoutai-themes-cell .gyoutai-input.saving { background: #fff8c4; }
+.gyoutai-themes-cell .gyoutai-input.error { background: #fce4e4; border-color: #d33; }
+</style>
 
 <script>
 // summary クリックで対応する .row-detail を展開
@@ -505,6 +538,58 @@ document.querySelectorAll('table details').forEach(function(d) {
         return;
       }
       startEdit(td);
+    });
+  });
+})();
+
+// ========== 業態・テーマ inline 編集 (issue #187) ==========
+// 既存 .editable とは別系統。input + datalist で常時編集可能、change/blur で POST。
+(function() {
+  function saveCell(td) {
+    var code = td.dataset.code;
+    if (!code) return;
+    var inputs = td.querySelectorAll('.gyoutai-input');
+    if (!inputs.length) return;
+
+    var fd = new FormData();
+    inputs.forEach(function(inp) { fd.append(inp.name, inp.value); });
+
+    inputs.forEach(function(inp) { inp.classList.add('saving'); inp.classList.remove('error'); });
+
+    fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+    }).then(function(r) {
+      return r.json().then(function(json) { return { ok: r.ok, json: json }; });
+    }).then(function(res) {
+      inputs.forEach(function(inp) { inp.classList.remove('saving'); });
+      if (!res.ok || !res.json || res.json.ok !== true) {
+        inputs.forEach(function(inp) { inp.classList.add('error'); });
+        var msg = (res.json && res.json.error) || 'gyoutai_themes 保存に失敗しました';
+        alert(msg);
+        return;
+      }
+      // サーバ返却値で input を再同期 (空スロット除去・順序を反映)
+      var themes = (res.json.display && res.json.display.gyoutai_themes) || [];
+      inputs.forEach(function(inp, i) {
+        inp.value = themes[i] != null ? themes[i] : '';
+      });
+    }).catch(function(err) {
+      inputs.forEach(function(inp) { inp.classList.remove('saving'); inp.classList.add('error'); });
+      alert('通信エラー: ' + err);
+    });
+  }
+
+  document.querySelectorAll('td.gyoutai-themes-cell').forEach(function(td) {
+    var inputs = td.querySelectorAll('.gyoutai-input');
+    inputs.forEach(function(inp) {
+      if (inp.disabled) return;
+      // datalist 選択 (change) / 自由入力後の blur で保存
+      inp.addEventListener('change', function() { saveCell(td); });
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      });
     });
   });
 })();
