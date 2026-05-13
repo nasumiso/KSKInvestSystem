@@ -1724,6 +1724,10 @@ def refresh_pts_reactions():
          (副作用: ウォッチ × 決算ウィンドウ内銘柄に当日の auto スナップショットを上書き保存。
           stocks の kabuka は前段の引け値のままで、PTS 価格は混入しない)
       3. update_pts_reactions(watch_set, today_date) で kessan_comments['pts'] を上書き
+
+    運用前提: 株探PTSナイトランキングは引け後 (17時以降) に形成されるため、本コマンドも
+    17時以降の実行を想定する。17時前は get_price_day() が前営業日扱いとなり、株探PTS CSV
+    側も同じ前営業日のラベルで保存されるため両者は整合する (= 17時前の実行でも壊れない)。
     """
     import shintakane
 
