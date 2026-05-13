@@ -1736,6 +1736,23 @@ def refresh_pts_reactions():
     log_print("[pts] PTS 反応の再取り込みを完了しました")
 
 
+def refresh_stock(code_list):
+    """指定銘柄の master/price/shihyo/gyoseki/rironkabuka を UPD_FORCE で強制再取得する。
+
+    `update CODE` と内部処理は同じ (update_db_rows(code_list, upd=UPD_FORCE)) だが、
+    名前が「最新情報を強制取得」の意図に直結し、引数が必須なので誤実行リスクが低い。
+    決算速報 (kessan_quarter / kessan_mod_date) は別経路 (shintakane.update_todays_kessan)
+    なので、必要なら shintakane.py を別途実行する。
+    """
+    if not code_list:
+        log_warning("[refresh_stock] 銘柄コードが指定されていません")
+        return
+    log_print("=" * 30)
+    log_print(f"[refresh_stock] 強制再取得を開始します: {list(code_list)}")
+    update_db_rows(list(code_list), upd=UPD_FORCE, tables=None)
+    log_print("[refresh_stock] 強制再取得を完了しました")
+
+
 # ==================================================
 # main
 # ==================================================
@@ -1858,6 +1875,11 @@ def main():
         reflesh_db()
     elif command == "refresh_pts":  # PTSランキング再取得 + research_shelve への反映のみ
         refresh_pts_reactions()
+    elif command == "refresh_stock":  # 指定銘柄の master/price/shihyo/gyoseki/rironkabuka を強制再取得
+        if not args.codes:
+            log_warning("refresh_stock: 銘柄コードを 1 つ以上指定してください")
+        else:
+            refresh_stock(list(args.codes))
     elif command == "test":
         test()
 
