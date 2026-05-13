@@ -12,7 +12,13 @@
       <small style="color:#888;font-size:0.5em;">{{ record.code_s }}</small>
       {{ record.stock_name or '' }}
       {% if portfolio_status_query %}
-      <span class="portfolio-badge portfolio-badge-{{ portfolio_status_query }}">{{ portfolio_status_label }}</span>
+        {% if portfolio_fallback_mode %}
+        {# フォールバック中は書き込み不可なので静的バッジ #}
+        <span class="portfolio-badge portfolio-badge-{{ portfolio_status_query }}">{{ portfolio_status_label }}</span>
+        {% else %}
+        <button type="button" class="portfolio-badge portfolio-badge-{{ portfolio_status_query }} portfolio-badge-button"
+                onclick="openPortfolioModal()" aria-label="保有ステータスを変更">{{ portfolio_status_label }}</button>
+        {% endif %}
       {% endif %}
     </h1>
     {% if stock.overview %}<div style="color:#555;font-size:0.85em;margin-bottom:0.2em;">{{ stock.overview }}</div>{% endif %}
@@ -24,6 +30,12 @@
         | <a href="https://kabutan.jp/stock/finance?code={{ record.code_s }}" target="_blank" rel="noopener noreferrer">業績</a>
         | <a href="https://finance.yahoo.co.jp/quote/{{ record.code_s }}.T/forum" target="_blank" rel="noopener noreferrer">掲示板</a>
       </div>
+      {% if not portfolio_status_query and not portfolio_fallback_mode %}
+      <div style="margin-top:0.4em;">
+        <button type="button" class="outline" style="padding:0.2em 0.7em;font-size:0.85em;margin:0;"
+                onclick="openPortfolioModal()">+ 監視に追加</button>
+      </div>
+      {% endif %}
       {% if portfolio_fallback_mode and not portfolio_status_query %}
       <div style="margin-top:0.4em;">
         <span style="color:#a07000;font-size:0.85em;">portfolio_shelve 未移行モード</span>
@@ -299,4 +311,136 @@
     </table>
   {% endif %}
 </div>
+
+{# ===== 保有ステータス変更モーダル (issue #195) ===== #}
+{% if not portfolio_fallback_mode %}
+<div id="portfolio-modal" class="portfolio-modal-overlay" style="display:none;" onclick="closePortfolioModalOnOverlay(event)">
+  <div class="portfolio-modal-content" role="dialog" aria-labelledby="portfolio-modal-title">
+    <div class="portfolio-modal-header">
+      <strong id="portfolio-modal-title">
+        {{ record.code_s }} {{ record.stock_name or '' }}
+      </strong>
+      <button type="button" class="portfolio-modal-close" onclick="closePortfolioModal()" aria-label="閉じる">×</button>
+    </div>
+    {% if portfolio_status_query %}
+    {# 登録済: ステータス遷移フォーム #}
+    <form method="POST" action="{{ url_for('portfolio.transition', code_s=record.code_s) }}" class="portfolio-modal-body">
+      <input type="hidden" name="return_to" value="detail">
+      <p style="margin:0 0 0.6em 0;">現在: <strong>{{ portfolio_status_label }}</strong></p>
+      {% if portfolio_transitions %}
+      <label style="display:block;margin-bottom:0.6em;">
+        変更先:
+        <select name="new_status" required style="margin-left:0.4em;">
+          {% for label, value in portfolio_transitions %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label style="display:block;margin-bottom:0.6em;">
+        理由 (任意):
+        <textarea name="reason" rows="2" style="width:100%;margin-top:0.2em;" placeholder="例: 業績下振れ"></textarea>
+      </label>
+      <div class="portfolio-modal-actions">
+        <button type="button" class="secondary" onclick="closePortfolioModal()">キャンセル</button>
+        <button type="submit">変更する</button>
+      </div>
+      {% else %}
+      <p style="color:#888;">許可された遷移先がありません。</p>
+      <div class="portfolio-modal-actions">
+        <button type="button" class="secondary" onclick="closePortfolioModal()">閉じる</button>
+      </div>
+      {% endif %}
+    </form>
+    {% else %}
+    {# 未登録: 監視追加フォーム #}
+    <form method="POST" action="{{ url_for('portfolio.add') }}" class="portfolio-modal-body">
+      <input type="hidden" name="code_s" value="{{ record.code_s }}">
+      <input type="hidden" name="return_to" value="detail">
+      <p style="margin:0 0 0.6em 0;">この銘柄は未登録です。監視に追加します。</p>
+      <label style="display:block;margin-bottom:0.6em;">
+        理由 (任意):
+        <textarea name="reason" rows="2" style="width:100%;margin-top:0.2em;" placeholder="例: 高値ブレイク候補"></textarea>
+      </label>
+      <div class="portfolio-modal-actions">
+        <button type="button" class="secondary" onclick="closePortfolioModal()">キャンセル</button>
+        <button type="submit">監視に追加</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+.portfolio-badge-button {
+  border: none;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+  padding: 0.1em 0.5em;
+}
+.portfolio-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.portfolio-modal-content {
+  background: #fff;
+  border-radius: 6px;
+  padding: 1em 1.2em;
+  width: min(420px, 90vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+.portfolio-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.8em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid #eee;
+}
+.portfolio-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.4em;
+  cursor: pointer;
+  padding: 0 0.3em;
+  line-height: 1;
+  color: #888;
+}
+.portfolio-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5em;
+  margin-top: 0.5em;
+}
+.portfolio-modal-actions button {
+  margin: 0;
+  padding: 0.4em 1em;
+}
+</style>
+
+<script>
+function openPortfolioModal() {
+  document.getElementById('portfolio-modal').style.display = 'flex';
+}
+function closePortfolioModal() {
+  document.getElementById('portfolio-modal').style.display = 'none';
+}
+function closePortfolioModalOnOverlay(e) {
+  if (e.target.id === 'portfolio-modal') closePortfolioModal();
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    var m = document.getElementById('portfolio-modal');
+    if (m && m.style.display !== 'none') closePortfolioModal();
+  }
+});
+</script>
+{% endif %}
 {% endblock %}

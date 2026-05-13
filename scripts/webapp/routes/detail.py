@@ -14,7 +14,11 @@ from webapp.helpers import (
     get_disclosures,
     has_recent_disclosure,
 )
-from webapp.routes.portfolio import STATUS_VALUE_TO_LABEL, STATUS_VALUE_TO_QUERY
+from webapp.routes.portfolio import (
+    STATUS_VALUE_TO_LABEL,
+    STATUS_VALUE_TO_QUERY,
+    _allowed_transitions_from,
+)
 from research_shelve import VALID_RATINGS
 
 detail_bp = Blueprint("detail", __name__)
@@ -52,7 +56,9 @@ def stock_detail(code_s: str):
     portfolio_status = portfolio_record.get("status") if portfolio_record else None
     # shelve 未移行環境のフォールバック: shelve が空のとき my_watch_list.txt 経由の所属を見る
     # (portfolio.parse_my_portforio は shelve 空時に txt フォールバックする)
-    portfolio_fallback_mode = not ps.list_records()
+    # issue #186: 全レコードが excluded=True の状態を fallback と誤判定しないよう
+    # include_excluded=True で取得する (portfolio.py の _is_fallback_mode と同じ判定)
+    portfolio_fallback_mode = not ps.list_records(include_excluded=True)
     if portfolio_status is None and portfolio_fallback_mode:
         try:
             watch, possess = portfolio.parse_my_portforio()
@@ -64,6 +70,10 @@ def stock_detail(code_s: str):
             portfolio_status = "3監"
     portfolio_status_label = STATUS_VALUE_TO_LABEL.get(portfolio_status) if portfolio_status else None
     portfolio_status_query = STATUS_VALUE_TO_QUERY.get(portfolio_status) if portfolio_status else None
+    # issue #195: モーダル内 select 用の遷移先 [(label, value), ...]。未登録は空リスト。
+    portfolio_transitions = (
+        _allowed_transitions_from(portfolio_status) if portfolio_status else []
+    )
 
     return render_template(
         "detail.html",
@@ -76,4 +86,5 @@ def stock_detail(code_s: str):
         portfolio_status_label=portfolio_status_label,
         portfolio_status_query=portfolio_status_query,
         portfolio_fallback_mode=portfolio_fallback_mode,
+        portfolio_transitions=portfolio_transitions,
     )

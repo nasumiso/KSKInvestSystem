@@ -1056,6 +1056,69 @@ class TestReturnQueryRedirect:
         assert "%0A" not in loc
 
 
+class TestReturnToDetail:
+    """issue #195: 詳細ページからの POST は /stock/<code_s> に戻る"""
+
+    def test_transition_with_return_to_detail_redirects_to_stock_page(self, client):
+        """transition + return_to=detail → /stock/<code_s>"""
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={"new_status": "3監", "return_to": "detail"},
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/stock/3496")
+
+    def test_transition_without_return_to_detail_keeps_dashboard(self, client):
+        """return_to が無いときは従来通り dashboard に戻る (回帰)"""
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={"new_status": "3監", "return_query": "status=hold"},
+        )
+        assert resp.status_code == 302
+        assert "/portfolio" in resp.headers["Location"]
+        assert "/stock/" not in resp.headers["Location"]
+
+    def test_add_with_return_to_detail_redirects_to_stock_page(
+        self, client, stocks_db_path
+    ):
+        """add + return_to=detail → /stock/<normalized code_s>"""
+        with ShelveDB(stocks_db_path) as db:
+            db["8035"] = {"code_s": "8035", "stock_name": "東京エレクトロン"}
+        resp = client.post(
+            "/portfolio/add",
+            data={"code_s": "8035", "return_to": "detail"},
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/stock/8035")
+
+    def test_add_persists_reason_from_form(
+        self, client, portfolio_db_path, stocks_db_path
+    ):
+        """add は form の reason を action_log に保存する (codex 指摘 #3)"""
+        with ShelveDB(stocks_db_path) as db:
+            db["8035"] = {"code_s": "8035", "stock_name": "東京エレクトロン"}
+        client.post(
+            "/portfolio/add",
+            data={"code_s": "8035", "reason": "高値ブレイク候補", "return_to": "detail"},
+        )
+        logs = ps.list_action_logs("8035", db_path=portfolio_db_path)
+        assert any(a.get("reason") == "高値ブレイク候補" for a in logs), (
+            f"reason がログに残らず: logs={logs}"
+        )
+
+    def test_add_falls_back_to_default_reason_when_empty(
+        self, client, portfolio_db_path, stocks_db_path
+    ):
+        """reason 未送信 (= 空文字 or キー無し) は従来通り 'WebApp 追加' で記録"""
+        with ShelveDB(stocks_db_path) as db:
+            db["8035"] = {"code_s": "8035", "stock_name": "東京エレクトロン"}
+        client.post("/portfolio/add", data={"code_s": "8035"})
+        logs = ps.list_action_logs("8035", db_path=portfolio_db_path)
+        assert any(a.get("reason") == "WebApp 追加" for a in logs), (
+            f"デフォルト reason 'WebApp 追加' が記録されていない: logs={logs}"
+        )
+
+
 class TestDeleteCheckboxScope:
     """削除モードのチェックボックスは 2準/3監 行のみに表示される (codex 指摘 P2)"""
 

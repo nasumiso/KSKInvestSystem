@@ -301,8 +301,7 @@
                   {% endfor %}
                 </select>
                 <textarea name="reason" placeholder="理由 (任意)" rows="2" style="font-size:0.85em;padding:0.3em;margin:0;"></textarea>
-                <button type="submit" style="padding:0.3em 0.6em;font-size:0.85em;margin:0;"
-                        onclick="return confirm('{{ row.code_s }} のステータスを変更しますか?')">変更</button>
+                <button type="submit" style="padding:0.3em 0.6em;font-size:0.85em;margin:0;">変更</button>
               </form>
               {% endif %}
               {# 削除はテーブル上部の「削除モード」 (issue #186) で一括処理する #}

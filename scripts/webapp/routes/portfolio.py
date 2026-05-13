@@ -15,6 +15,7 @@ issue #178: タブ構造を撤廃しフィルタ/ソート/ページングに再
 直前のフィルタ状態に戻す。
 """
 
+from typing import Optional
 from urllib.parse import urlencode
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
@@ -156,7 +157,10 @@ def _sync_txt_safely() -> None:
         flash(f"my_watch_list.txt 同期に失敗: {e}", "error")
 
 
-def _redirect_with_return_query(default_status_query: str = DEFAULT_STATUS_QUERY):
+def _redirect_with_return_query(
+    default_status_query: str = DEFAULT_STATUS_QUERY,
+    code_s: Optional[str] = None,
+):
     """POST フォームに埋め込まれた hidden `return_query` を尊重してリダイレクトする (issue #178)。
 
     return_query はクエリ文字列 (例: `status=hold,semi&sort=rank&page=2`) を
@@ -165,7 +169,14 @@ def _redirect_with_return_query(default_status_query: str = DEFAULT_STATUS_QUERY
 
     安全のため return_query から先頭の `?` を取り除き、改行や `#` も弾く
     (URL injection 防止)。
+
+    issue #195: hidden `return_to=detail` かつ呼出側が `code_s` を渡している
+    ときは詳細ページ (`/stock/<code_s>`) にリダイレクトする。`code_s` 未指定
+    経路では従来のダッシュボード復帰にフォールバック (url_for build error 防御)。
     """
+    if code_s and (request.form.get("return_to") or "").strip() == "detail":
+        return redirect(url_for("detail.stock_detail", code_s=code_s))
+
     raw = (request.form.get("return_query") or "").strip()
     if raw.startswith("?"):
         raw = raw[1:]
@@ -272,23 +283,23 @@ def transition(code_s: str):
         ps.validate_code_s(code_s)
     except (ValueError, TypeError) as e:
         flash(f"不正な銘柄コード: {e}", "error")
-        return _redirect_with_return_query()
+        return _redirect_with_return_query(code_s=code_s)
 
     if new_status not in ps.VALID_STATUSES:
         flash(f"不正なステータス: {new_status!r}", "error")
-        return _redirect_with_return_query()
+        return _redirect_with_return_query(code_s=code_s)
 
     try:
         ps.transition_status(code_s, new_status, reason=reason)
     except KeyError as e:
         flash(f"レコード未登録: {e}", "error")
-        return _redirect_with_return_query()
+        return _redirect_with_return_query(code_s=code_s)
     except (ValueError, TypeError) as e:
         flash(str(e), "error")
-        return _redirect_with_return_query()
+        return _redirect_with_return_query(code_s=code_s)
 
     _sync_txt_safely()
-    return _redirect_with_return_query()
+    return _redirect_with_return_query(code_s=code_s)
 
 
 def _extract_memo_fields_from_form(form) -> dict:
@@ -421,6 +432,9 @@ def add():
 
     # 追加直後は監視リストを見たいので、return_query 未指定時のデフォルトは watch。
     code_s = (request.form.get("code_s") or "").strip()
+    # issue #195: 詳細モーダルから理由を受け取れるように引数化。
+    # 未送信フォーム (portfolio ダッシュボード追加) では空文字 → 従来の "WebApp 追加" にフォールバック。
+    reason = (request.form.get("reason") or "").strip() or "WebApp 追加"
     if not code_s:
         flash("銘柄コードが空です", "error")
         return _redirect_with_return_query(default_status_query="watch")
@@ -446,10 +460,10 @@ def add():
             return _redirect_with_return_query(default_status_query="watch")
 
     try:
-        ps.add_to_watch(normalized, reason="WebApp 追加")
+        ps.add_to_watch(normalized, reason=reason)
     except ValueError as e:
         flash(str(e), "error")
-        return _redirect_with_return_query(default_status_query="watch")
+        return _redirect_with_return_query(default_status_query="watch", code_s=normalized)
 
     _sync_txt_safely()
     name_for_flash = resolve_stock_name(normalized)
@@ -457,7 +471,7 @@ def add():
         flash(f"{normalized} {name_for_flash} をユニバースに復活しました".rstrip(), "info")
     else:
         flash(f"{normalized} {name_for_flash} を監視に追加しました".rstrip(), "info")
-    return _redirect_with_return_query(default_status_query="watch")
+    return _redirect_with_return_query(default_status_query="watch", code_s=normalized)
 
 
 def _build_fallback_records() -> list[dict]:
