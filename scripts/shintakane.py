@@ -739,9 +739,14 @@ def convert_kabutan_pts_html(html, max_rows=20):
         # 通常終値は m.group(4)、PTS株価を使用
         kabuka = m.group(5)
         try:
-            zenjitsuhi = re.search(r'<span class="up">(.*)</span>', m.group(6)).group(1)
+            zenjitsuhi = re.search(
+                r'<span class="(?:up|down)">(.*)</span>', m.group(6)
+            ).group(1)
             zenjitsuhi_per = (
-                re.search(r'<span class="up">(.*)</span>', m.group(7)).group(1) + "%"
+                re.search(
+                    r'<span class="(?:up|down)">(.*)</span>', m.group(7)
+                ).group(1)
+                + "%"
             )
         except AttributeError:
             zenjitsuhi = 0
@@ -1183,8 +1188,44 @@ def get_todays_shintakane(force=False):
 #     return False
 
 
+URL_KABUTAN_PTS_UP = "https://kabutan.jp/warning/pts_night_price_increase"
+URL_KABUTAN_PTS_DOWN = "https://kabutan.jp/warning/pts_night_price_decrease"
+
+
+def _fetch_pts_page_html(base_url, page, cache_dir):
+    """株探PTSランキングの指定ページHTMLを取得して返す
+
+    page=1 はクエリパラメータなし、page>=2 は ?page=N を付ける。
+    page=1 のキャッシュ判定だけ既存仕様を踏襲(当日分のキャッシュがあれば使う)。
+    """
+    url = base_url if page == 1 else f"{base_url}?page={page}"
+    use_cache = False
+    try:
+        latest_html = file_read(os.path.join(cache_dir, get_http_cachname(url)))
+        latest_date_m = re.search(
+            r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>',
+            latest_html,
+            re.S,
+        )
+        cach_dt = datetime(
+            int(latest_date_m.group(1)),
+            int(latest_date_m.group(2)),
+            int(latest_date_m.group(3)),
+        )
+        use_cache = cach_dt.date() >= get_price_day(datetime.today()).date()
+        log_debug("株探PTS キャッシュ：", url, cach_dt, use_cache)
+    except (IOError, OSError, AttributeError):
+        use_cache = False
+    return http_get_html(url, use_cache=use_cache, cache_dir=cache_dir)
+
+
 def get_todays_pts(force=False):
-    """本日のPTSナイトランキングを株探から取得し、CSVに保存する"""
+    """本日のPTSナイトランキングを株探から取得し、CSVに保存する
+
+    値上がり page=1, page=2(各 max_rows=30) と値下がり page=1(max_rows=15)
+    を統合した 1 ファイルに保存する。rank は値上がり 1〜N → 値下がり N+1〜M で連番。
+    日付は値上がり page=1 の `<div class="meigara_count">` から取得。
+    """
     log_print("=" * 30)
     log_print("PTSナイトランキングを更新します・・")
     latest_csv, _ = get_latest_pts_fname()
@@ -1204,34 +1245,13 @@ def get_todays_pts(force=False):
             return
 
     log_print("----> 株探からPTSランキングを取得します・・")
-    URL_KABUTAN_PTS = "https://kabutan.jp/warning/pts_night_price_increase"
     cache_dir = os.path.join(DATA_DIR, "today_stocks", "html_cache")
-    # キャッシュ判定
-    try:
-        latest_html = file_read(
-            os.path.join(cache_dir, get_http_cachname(URL_KABUTAN_PTS))
-        )
-        # 更新日付をヘッダーから取得
-        latest_date_m = re.search(
-            r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>',
-            latest_html,
-            re.S,
-        )
-        cach_dt = datetime(
-            int(latest_date_m.group(1)),
-            int(latest_date_m.group(2)),
-            int(latest_date_m.group(3)),
-        )
-        useCache = cach_dt.date() >= get_price_day(datetime.today()).date()
-        log_debug("株探PTS キャッシュ：", cach_dt, useCache)
-    except (IOError, OSError, AttributeError):
-        useCache = False
 
-    html = http_get_html(URL_KABUTAN_PTS, use_cache=useCache, cache_dir=cache_dir)
-    # 更新日付を取得
+    # 値上がり page=1 を取得し、日付ヘッダーを抽出
+    html_up_p1 = _fetch_pts_page_html(URL_KABUTAN_PTS_UP, 1, cache_dir)
     date_m = re.search(
         r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>',
-        html,
+        html_up_p1,
         re.S,
     )
     if not date_m:
@@ -1240,14 +1260,31 @@ def get_todays_pts(force=False):
     date = date_m.group(1)[-2:] + date_m.group(2) + date_m.group(3)
     log_debug("株探PTS更新日：", date)
 
-    rows = convert_kabutan_pts_html(html)
+    # 値上がり page=2 と値下がり page=1 を取得
+    html_up_p2 = _fetch_pts_page_html(URL_KABUTAN_PTS_UP, 2, cache_dir)
+    html_down_p1 = _fetch_pts_page_html(URL_KABUTAN_PTS_DOWN, 1, cache_dir)
 
-    # CSVに保存
+    # パース (値上がり 2 ページ合算で max_rows=30、値下がり 1 ページで max_rows=15)
+    up_rows = convert_kabutan_pts_html(html_up_p1, max_rows=30)
+    remaining_up = max(0, 30 - len(up_rows))
+    if remaining_up > 0:
+        up_rows += convert_kabutan_pts_html(html_up_p2, max_rows=remaining_up)
+    down_rows = convert_kabutan_pts_html(html_down_p1, max_rows=15)
+
+    # rank を値上がり 1..N → 値下がり N+1..M で連番に振り直す
+    merged_rows = []
+    for i, row in enumerate(up_rows + down_rows, start=1):
+        row[0] = str(i)
+        merged_rows.append(row)
+
     csv_fname = os.path.join(DATA_DIR, "today_stocks", "pts_" + date + ".csv")
     with open(csv_fname, "w", encoding="utf-8") as f:
         csv_w = csv.writer(f)
-        csv_w.writerows(rows)
-    log_print("今日のPTSランキングを%sに保存しました" % csv_fname)
+        csv_w.writerows(merged_rows)
+    log_print(
+        "今日のPTSランキングを%sに保存しました (値上がり%d件・値下がり%d件)"
+        % (csv_fname, len(up_rows), len(down_rows))
+    )
     _archive_old_csvs("pts")
     log_print("<---- 取得完了")
 
