@@ -38,6 +38,16 @@ cd scripts && python make_stock_db.py reflesh
 # DBバックアップ
 cd scripts && python make_stock_db.py backup
 
+# PTSランキング再取得 + 当日決算銘柄の kessan_comments['pts'] 上書き
+# (list_all_db を回さず PTS だけ最新化したい時に使う)
+cd scripts && python make_stock_db.py refresh_pts
+
+# 指定銘柄の master/price/shihyo/gyoseki/rironkabuka を強制再取得 + research_shelve スナップショット上書き
+# (株探で上方修正/最新業績が反映されたとき、特定銘柄だけ手早く最新化したい時に使う)
+# 決算速報 (kessan_quarter / kessan_mod_date) は別経路のため、必要なら shintakane.py を別途実行
+cd scripts && python make_stock_db.py refresh_stock 421A
+cd scripts && python make_stock_db.py refresh_stock 421A 6324 3496  # 複数銘柄
+
 # モメンタムポイント動的キャリブレーション (issue #104)
 cd scripts && python make_stock_db.py calibrate_momentum
 ```

@@ -1714,6 +1714,53 @@ def update_pts_reactions(watch_set, today_date, *, stocks=None):
     log_print(f"[pts] PTS 反応を当日決算銘柄 {written} 件に追記")
 
 
+def refresh_pts_reactions():
+    """株探のPTSナイトランキングを最新取得し、当日決算銘柄の kessan_comments に PTS 騰落率を追記する。
+
+    list_all_db や update --snapshot を回さず、PTS の取り直しと反映だけを行う
+    軽量パスとして使う。手順:
+      1. shintakane.get_todays_pts(force=True) で pts_YYMMDD.csv を最新化
+      2. update_research_snapshots() で watch_set を取得
+         (副作用: ウォッチ × 決算ウィンドウ内銘柄に当日の auto スナップショットを上書き保存。
+          stocks の kabuka は前段の引け値のままで、PTS 価格は混入しない)
+      3. update_pts_reactions(watch_set, today_date) で kessan_comments['pts'] を上書き
+
+    運用前提: 株探PTSナイトランキングは引け後 (17時以降) に形成されるため、本コマンドも
+    17時以降の実行を想定する。17時前は get_price_day() が前営業日扱いとなり、株探PTS CSV
+    側も同じ前営業日のラベルで保存されるため両者は整合する (= 17時前の実行でも壊れない)。
+    """
+    import shintakane
+
+    log_print("=" * 30)
+    log_print("[pts] PTS 反応の再取り込みを開始します")
+    shintakane.get_todays_pts(force=True)
+    watch_set = update_research_snapshots()
+    today_date = get_price_day(datetime.today())
+    update_pts_reactions(watch_set or set(), today_date)
+    log_print("[pts] PTS 反応の再取り込みを完了しました")
+
+
+def refresh_stock(code_list):
+    """指定銘柄の master/price/shihyo/gyoseki/rironkabuka を UPD_FORCE で強制再取得し、
+    research_shelve の当日スナップショットも最新値で上書きする。
+
+    `update CODE --snapshot` と内部処理はほぼ同じだが、引数必須で名前が直感的。
+    決算速報 (kessan_quarter / kessan_mod_date) は別経路 (shintakane.update_todays_kessan)
+    なので、必要なら shintakane.py を別途実行する。
+    """
+    if not code_list:
+        log_warning("[refresh_stock] 銘柄コードが指定されていません")
+        return
+    codes = list(code_list)
+    log_print("=" * 30)
+    log_print(f"[refresh_stock] 強制再取得を開始します: {codes}")
+    update_db_rows(codes, upd=UPD_FORCE, tables=None)
+    # stocks DB だけ最新化しても research_shelve のスナップショットは古い ir_quant のまま
+    # なので、決算ウィンドウ内銘柄については snapshot も上書き更新する
+    update_research_snapshots(code_filter=codes)
+    log_print("[refresh_stock] 強制再取得を完了しました")
+
+
 # ==================================================
 # main
 # ==================================================
@@ -1834,6 +1881,13 @@ def main():
     elif command == "reflesh":  # DBをリフレッシュ(上場廃止銘柄を削除)
         backup_db()
         reflesh_db()
+    elif command == "refresh_pts":  # PTSランキング再取得 + research_shelve への反映のみ
+        refresh_pts_reactions()
+    elif command == "refresh_stock":  # 指定銘柄の master/price/shihyo/gyoseki/rironkabuka を強制再取得
+        if not args.codes:
+            log_warning("refresh_stock: 銘柄コードを 1 つ以上指定してください")
+        else:
+            refresh_stock(list(args.codes))
     elif command == "test":
         test()
 

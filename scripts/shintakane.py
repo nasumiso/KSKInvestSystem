@@ -1192,13 +1192,17 @@ URL_KABUTAN_PTS_UP = "https://kabutan.jp/warning/pts_night_price_increase"
 URL_KABUTAN_PTS_DOWN = "https://kabutan.jp/warning/pts_night_price_decrease"
 
 
-def _fetch_pts_page_html(base_url, page, cache_dir):
+def _fetch_pts_page_html(base_url, page, cache_dir, force=False):
     """株探PTSランキングの指定ページHTMLを取得して返す
 
     page=1 はクエリパラメータなし、page>=2 は ?page=N を付ける。
-    page=1 のキャッシュ判定だけ既存仕様を踏襲(当日分のキャッシュがあれば使う)。
+    通常はキャッシュ HTML の日付を見て当日分があれば再利用する (既存仕様)。
+    force=True の場合はキャッシュ判定をスキップして必ず HTTP で再取得する
+    (refresh_pts 経由の「最新PTS反映」用途で使う)。
     """
     url = base_url if page == 1 else f"{base_url}?page={page}"
+    if force:
+        return http_get_html(url, use_cache=False, cache_dir=cache_dir)
     use_cache = False
     try:
         latest_html = file_read(os.path.join(cache_dir, get_http_cachname(url)))
@@ -1248,7 +1252,8 @@ def get_todays_pts(force=False):
     cache_dir = os.path.join(DATA_DIR, "today_stocks", "html_cache")
 
     # 値上がり page=1 を取得し、日付ヘッダーを抽出
-    html_up_p1 = _fetch_pts_page_html(URL_KABUTAN_PTS_UP, 1, cache_dir)
+    # force=True の場合は HTML キャッシュも無効化して必ず HTTP 取得する
+    html_up_p1 = _fetch_pts_page_html(URL_KABUTAN_PTS_UP, 1, cache_dir, force=force)
     date_m = re.search(
         r'<div class="meigara_count">.*(\d\d\d\d)年(\d\d)月(\d\d)日.*?</div>',
         html_up_p1,
@@ -1261,8 +1266,8 @@ def get_todays_pts(force=False):
     log_debug("株探PTS更新日：", date)
 
     # 値上がり page=2 と値下がり page=1 を取得
-    html_up_p2 = _fetch_pts_page_html(URL_KABUTAN_PTS_UP, 2, cache_dir)
-    html_down_p1 = _fetch_pts_page_html(URL_KABUTAN_PTS_DOWN, 1, cache_dir)
+    html_up_p2 = _fetch_pts_page_html(URL_KABUTAN_PTS_UP, 2, cache_dir, force=force)
+    html_down_p1 = _fetch_pts_page_html(URL_KABUTAN_PTS_DOWN, 1, cache_dir, force=force)
 
     # パース (値上がり 2 ページ合算で max_rows=30、値下がり 1 ページで max_rows=15)
     up_rows = convert_kabutan_pts_html(html_up_p1, max_rows=30)

@@ -1664,3 +1664,28 @@ class TestListPortfolioWithIndicators:
         assert by_code["0002"]["status_label"] == "準保有"
         assert by_code["0003"]["status_query"] == "watch"
         assert by_code["0003"]["status_label"] == "監視"
+
+
+class TestMarkdownToHtml:
+    """_markdown_to_html: *太字* / **赤字** 変換"""
+
+    def test_single_asterisk_becomes_bold(self):
+        assert helpers._markdown_to_html("*強調*") == "<b>強調</b>"
+
+    def test_double_asterisk_becomes_red(self):
+        assert (
+            helpers._markdown_to_html("**重要**")
+            == '<span style="color:#ff0000">重要</span>'
+        )
+
+    def test_mixed_in_one_text(self):
+        result = helpers._markdown_to_html("**赤** と *太* を混在")
+        assert '<span style="color:#ff0000">赤</span>' in result
+        assert "<b>太</b>" in result
+
+    def test_empty_returns_empty(self):
+        assert helpers._markdown_to_html("") == ""
+
+    def test_url_still_linkified(self):
+        result = helpers._markdown_to_html("see https://example.com")
+        assert '<a href="https://example.com" target="_blank">' in result

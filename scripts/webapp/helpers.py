@@ -213,10 +213,10 @@ def search_records(
 _MM_DD_PATTERN = re.compile(r"^(\d{1,2})/(\d{1,2})$")
 
 # マークダウン風記法 → HTML 変換パターン
-# **太字** → <b>太字</b>（先に処理、* と区別するため）
-_RE_BOLD = re.compile(r"\*\*(.+?)\*\*")
-# *赤字* → <span style="color:#ff0000">赤字</span>（** 処理後に実行）
-_RE_RED = re.compile(r"\*(.+?)\*")
+# **赤字** → <span style="color:#ff0000">赤字</span>（先に処理、* と区別するため）
+_RE_RED = re.compile(r"\*\*(.+?)\*\*")
+# *太字* → <b>太字</b>（** 処理後に実行）
+_RE_BOLD = re.compile(r"\*(.+?)\*")
 # [テキスト](URL) → <a href="URL" target="_blank">テキスト</a>
 _RE_NAMED_LINK = re.compile(r'\[([^\]]+)\]\((https?://[^\s)]+)\)')
 # URL自動リンク化（既に <a> タグ内でないURLを対象）
@@ -226,15 +226,15 @@ _RE_URL = re.compile(r'(?<!["\'>])(https?://[^\s<>\'"]+)')
 def _markdown_to_html(text: str) -> str:
     """マークダウン風記法を HTML に変換する。
 
-    - **太字** → <b>太字</b>
-    - *赤字* → <span style="color:#ff0000">赤字</span>
+    - **赤字** → <span style="color:#ff0000">赤字</span>
+    - *太字* → <b>太字</b>
     - [テキスト](URL) → <a href="URL" target="_blank">テキスト</a>
     - URL → <a href="URL" target="_blank">URL</a>
     """
     if not text:
         return text
-    text = _RE_BOLD.sub(r"<b>\1</b>", text)
     text = _RE_RED.sub(r'<span style="color:#ff0000">\1</span>', text)
+    text = _RE_BOLD.sub(r"<b>\1</b>", text)
     text = _RE_NAMED_LINK.sub(r'<a href="\2" target="_blank">\1</a>', text)
     text = _RE_URL.sub(r'<a href="\1" target="_blank">\1</a>', text)
     return text

@@ -632,3 +632,67 @@ class TestGetTodaysPts:
         assert len(rows) == 20
         # rank 連番
         assert [r[0] for r in rows] == [str(i) for i in range(1, 21)]
+
+    def test_force_True_は3ページ全てキャッシュをバイパスする(
+        self, tmp_path, monkeypatch
+    ):
+        """force=True なら HTML キャッシュ判定をスキップし、必ず use_cache=False で HTTP 取得する"""
+        up_p1_data = [
+            (f"{i:04d}", f"上1_{i}", "東Ｐ", "1,000", "1,100", "+100", "+10.00", "10,000")
+            for i in range(1000, 1015)
+        ]
+        up_p2_data = [
+            (f"{i:04d}", f"上2_{i}", "東Ｐ", "1,000", "1,100", "+50", "+5.00", "10,000")
+            for i in range(2000, 2002)
+        ]
+        down_p1_data = [
+            (f"{i:04d}", f"下_{i}", "東Ｐ", "1,000", "900", "-100", "-10.00", "10,000")
+            for i in range(3000, 3002)
+        ]
+        html_up_p1 = _make_pts_page_html(*up_p1_data, direction="up")
+        html_up_p2 = _make_pts_page_html(*up_p2_data, direction="up")
+        html_down_p1 = _make_pts_page_html(*down_p1_data, direction="down")
+
+        data_dir = tmp_path
+        cache_dir = data_dir / "today_stocks" / "html_cache"
+        cache_dir.mkdir(parents=True)
+        # 当日付の "古い HTML キャッシュ" を 3 URL 分すべて埋める
+        # (force=False ならこれが使われてしまうが、force=True なら無視される)
+        from shintakane import get_http_cachname
+        stale_html = _make_pts_page_html(
+            ("9999", "古いキャッシュ", "東Ｐ", "0", "0", "+0", "+0.0", "0"),
+            direction="up",
+        )
+        for u in [
+            "https://kabutan.jp/warning/pts_night_price_increase",
+            "https://kabutan.jp/warning/pts_night_price_increase?page=2",
+            "https://kabutan.jp/warning/pts_night_price_decrease",
+        ]:
+            (cache_dir / get_http_cachname(u)).write_text(stale_html, encoding="utf-8")
+
+        monkeypatch.setattr(shintakane, "DATA_DIR", str(data_dir))
+        monkeypatch.setattr(
+            shintakane, "get_latest_pts_fname", lambda: (None, None)
+        )
+        monkeypatch.setattr(shintakane, "_archive_old_csvs", lambda kind: None)
+
+        use_cache_calls = []
+
+        def fake_http_get_html(url, use_cache=False, cache_dir=None):
+            use_cache_calls.append((url, use_cache))
+            if "pts_night_price_increase" in url and "page=2" in url:
+                return html_up_p2
+            if "pts_night_price_increase" in url:
+                return html_up_p1
+            if "pts_night_price_decrease" in url:
+                return html_down_p1
+            raise AssertionError(f"unexpected url: {url}")
+
+        monkeypatch.setattr(shintakane, "http_get_html", fake_http_get_html)
+
+        shintakane.get_todays_pts(force=True)
+
+        # 3 URL すべて use_cache=False で取得されている
+        assert len(use_cache_calls) == 3
+        for url, use_cache in use_cache_calls:
+            assert use_cache is False, f"force=True なのに use_cache=True: {url}"
