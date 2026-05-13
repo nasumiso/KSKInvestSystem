@@ -1,15 +1,21 @@
-"""保有銘柄ダッシュボードルート (Phase 3b / issue #171, issue #175, issue #186)。
+"""保有銘柄ダッシュボードルート (Phase 3b / issue #171, #175, #178, #186)。
 
-GET  /portfolio?status=hold|semi|watch  : 3 タブ式ダッシュボード
-POST /portfolio/add                     : 3監 への新規追加 / 除外済みの復活
-POST /portfolio/<code_s>/transition     : ステータス変更
-POST /portfolio/bulk-exclude            : 3監 銘柄をユニバースから除外 (一括)
-POST /portfolio/<code_s>/memo           : memo 部分更新 (issue #175)
+GET  /portfolio?status=hold,semi&sort=rank&page=2 : フィルタ/ソート/ページング (issue #178)
+POST /portfolio/add                              : 3監 への新規追加 / 除外済みの復活
+POST /portfolio/<code_s>/transition              : ステータス変更
+POST /portfolio/bulk-exclude                     : 2準/3監 銘柄をユニバースから除外 (一括)
+POST /portfolio/<code_s>/memo                    : memo 部分更新 (issue #175)
 
 portfolio_shelve のレコードに stocks_shelve から指標を補完して表示する。
 書き込み API は txt 関連の状態を変えるもの (add/transition/bulk-exclude) のみ
 末尾で sync_to_my_watch_list_txt() を呼ぶ。memo 更新は txt 内容に影響しないため同期不要。
+
+issue #178: タブ構造を撤廃しフィルタ/ソート/ページングに再設計。POST 後の
+リダイレクトは hidden `return_query` (現状の URL クエリ全体) を尊重して
+直前のフィルタ状態に戻す。
 """
+
+from urllib.parse import urlencode
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
@@ -41,21 +47,85 @@ STATUS_VALUE_TO_LABEL = {
     "3監": "監視",
 }
 
-# タブ表示順 (左から右): (query, status_value, label)
-TABS = [
+# フィルタ表示順 (左から右): (query, status_value, label)
+# issue #178: 旧 TABS から名称変更。タブではなくフィルタ checkbox の表示順を規定する。
+STATUS_CHOICES = [
     ("hold", "1保", STATUS_VALUE_TO_LABEL["1保"]),
     ("semi", "2準", STATUS_VALUE_TO_LABEL["2準"]),
     ("watch", "3監", STATUS_VALUE_TO_LABEL["3監"]),
 ]
-DEFAULT_TAB = TABS[0][0]
+DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 引数なし時のデフォルト
+
+# issue #178: ページング設定 (1ページ件数)
+PORTFOLIO_PAGE_SIZE = 50
+
+# issue #178: 受理する sort key
+VALID_SORT_KEYS = ("gyoutai", "rank")
+DEFAULT_SORT_KEY = "gyoutai"
 
 
-def _resolve_status_query(query: str) -> tuple[str, str]:
-    """クエリ文字列を (正規化クエリ, status 値) に変換。不明値は DEFAULT_TAB。"""
-    q = (query or "").strip().lower()
-    if q not in STATUS_QUERY_TO_VALUE:
-        q = DEFAULT_TAB
-    return q, STATUS_QUERY_TO_VALUE[q]
+def _parse_status_filter(args) -> list[str]:
+    """request.args (MultiDict) から status フィルタを内部値リスト (例: ["1保","2準"]) に変換する。
+
+    2 つの送信形式を両方受理:
+      - カンマ区切り単一キー: `?status=hold,semi` (URL 直接指定・既存互換)
+      - 同名複数キー: `?status=hold&status=semi` (HTML form の checkbox 標準送信)
+
+    各値を小文字化・トリムし、STATUS_QUERY_TO_VALUE で内部値に変換。不正値は無視。
+    結果が空 (= 指定なし or 全不正値) は ["1保"] (デフォルト = 保有のみ)。
+    既存 URL `?status=hold` (単一値) は自然に ["1保"] に解決され、互換性維持。
+    """
+    raw_values = args.getlist("status") if hasattr(args, "getlist") else []
+    flat: list[str] = []
+    for v in raw_values:
+        for piece in (v or "").split(","):
+            piece = piece.strip().lower()
+            if piece:
+                flat.append(piece)
+    statuses: list[str] = []
+    for q in flat:
+        st = STATUS_QUERY_TO_VALUE.get(q)
+        if st and st not in statuses:
+            statuses.append(st)
+    if not statuses:
+        statuses = [STATUS_QUERY_TO_VALUE[DEFAULT_STATUS_QUERY]]
+    return statuses
+
+
+def _parse_sort(args) -> str:
+    """sort key を `gyoutai` / `rank` のいずれかに正規化。不正値は DEFAULT_SORT_KEY。"""
+    raw = (args.get("sort") or "").strip().lower()
+    return raw if raw in VALID_SORT_KEYS else DEFAULT_SORT_KEY
+
+
+def _parse_page(args, total_pages: int) -> int:
+    """page 番号を 1..total_pages の整数に正規化。不正値・範囲外は端にクランプ。"""
+    raw = (args.get("page") or "").strip()
+    try:
+        page = int(raw)
+    except (ValueError, TypeError):
+        page = 1
+    if page < 1:
+        page = 1
+    if total_pages >= 1 and page > total_pages:
+        page = total_pages
+    return page
+
+
+def _build_query_string(statuses: list[str], sort_key: str, page: int) -> str:
+    """フィルタ・ソート・ページから URL クエリ文字列を組み立てる。
+
+    status はカンマ区切り単一キー形式 (`status=hold,semi`)、sort/page は単純キー。
+    POST → リダイレクトの戻り先として使う。
+    """
+    queries = [STATUS_VALUE_TO_QUERY[s] for s in statuses if s in STATUS_VALUE_TO_QUERY]
+    params = []
+    if queries:
+        params.append(("status", ",".join(queries)))
+    params.append(("sort", sort_key))
+    if page > 1:
+        params.append(("page", str(page)))
+    return urlencode(params)
 
 
 def _allowed_transitions_from(current: str) -> list[tuple[str, str]]:
@@ -86,14 +156,26 @@ def _sync_txt_safely() -> None:
         flash(f"my_watch_list.txt 同期に失敗: {e}", "error")
 
 
-def _redirect_to_current_tab(code_s: str, fallback_query: str = "watch"):
-    """code_s の現在ステータスのタブにリダイレクトする。
+def _redirect_with_return_query(default_status_query: str = DEFAULT_STATUS_QUERY):
+    """POST フォームに埋め込まれた hidden `return_query` を尊重してリダイレクトする (issue #178)。
 
-    エラー時に元タブに戻すための共通処理。レコードが取れない場合は fallback。
+    return_query はクエリ文字列 (例: `status=hold,semi&sort=rank&page=2`) を
+    そのまま受け取り、URL に付与する。空 or 未指定なら `?status=<default>` に
+    フォールバック。これで POST 後も直前のフィルタ/ソート/ページが復元できる。
+
+    安全のため return_query から先頭の `?` を取り除き、改行や `#` も弾く
+    (URL injection 防止)。
     """
-    current = ps.get_record(code_s) or {}
-    current_query = STATUS_VALUE_TO_QUERY.get(current.get("status"), fallback_query)
-    return redirect(url_for("portfolio.dashboard", status=current_query))
+    raw = (request.form.get("return_query") or "").strip()
+    if raw.startswith("?"):
+        raw = raw[1:]
+    # URL fragment / 改行は弾く (生のフォーム値をそのまま付ける防御)
+    if any(ch in raw for ch in ("\n", "\r", "#", " ")):
+        raw = ""
+    base = url_for("portfolio.dashboard")
+    if raw:
+        return redirect(f"{base}?{raw}")
+    return redirect(f"{base}?status={default_status_query}")
 
 
 def _is_fallback_mode() -> bool:
@@ -110,15 +192,19 @@ def _is_fallback_mode() -> bool:
     return not ps.list_records(include_excluded=True)
 
 
-def _reject_when_fallback(redirect_query: str = "watch"):
-    """フォールバック中なら flash + redirect を返す。そうでなければ None。"""
+def _reject_when_fallback():
+    """フォールバック中なら flash + redirect を返す。そうでなければ None。
+
+    issue #178: redirect_query 引数を廃止し、戻り先は hidden return_query (or デフォルト)
+    に統一する。
+    """
     if _is_fallback_mode():
         flash(
             "portfolio_shelve 未移行モードのため、書き込み操作は無効です。"
             "Phase 3a 移行スクリプト (migrate_my_watch_list_to_shelve.py) を実行してください。",
             "error",
         )
-        return redirect(url_for("portfolio.dashboard", status=redirect_query))
+        return _redirect_with_return_query()
     return None
 
 
@@ -126,23 +212,20 @@ def _reject_when_fallback(redirect_query: str = "watch"):
 def bulk_exclude():
     """2準/3監 銘柄を一括でユニバースから除外する (物理削除はしない)。
 
-    フォーム: codes=<code1>&codes=<code2>... / reason=<任意> / return_to=<hold|semi|watch>
+    フォーム: codes=<code1>&codes=<code2>... / reason=<任意> / return_query=<URLクエリ>
     部分成功許容。1保 が混入していたら該当のみ flash error で報告し、2準/3監 のみ除外を実行する。
-    return_to はリダイレクト先タブ。不正値は watch にフォールバック。
+    issue #178: 旧 return_to=hold|semi|watch を return_query (hidden) に置換。
     """
-    rejected = _reject_when_fallback(redirect_query="watch")
+    rejected = _reject_when_fallback()
     if rejected is not None:
         return rejected
 
     codes = [c.strip() for c in request.form.getlist("codes") if c and c.strip()]
     reason = (request.form.get("reason") or "").strip()
-    return_to = (request.form.get("return_to") or "watch").strip()
-    if return_to not in STATUS_QUERY_TO_VALUE:
-        return_to = "watch"
 
     if not codes:
         flash("除外対象が指定されていません", "error")
-        return redirect(url_for("portfolio.dashboard", status=return_to))
+        return _redirect_with_return_query()
 
     success: list[str] = []
     failures: list[str] = []
@@ -168,7 +251,7 @@ def bulk_exclude():
         flash(f"{len(success)} 件をユニバースから除外しました ({', '.join(success)})", "info")
     if failures:
         flash("除外できなかったコードがあります: " + " / ".join(failures), "error")
-    return redirect(url_for("portfolio.dashboard", status=return_to))
+    return _redirect_with_return_query()
 
 
 @portfolio_bp.route("/portfolio/<code_s>/transition", methods=["POST"])
@@ -189,23 +272,23 @@ def transition(code_s: str):
         ps.validate_code_s(code_s)
     except (ValueError, TypeError) as e:
         flash(f"不正な銘柄コード: {e}", "error")
-        return redirect(url_for("portfolio.dashboard"))
+        return _redirect_with_return_query()
 
     if new_status not in ps.VALID_STATUSES:
         flash(f"不正なステータス: {new_status!r}", "error")
-        return redirect(url_for("portfolio.dashboard"))
+        return _redirect_with_return_query()
 
     try:
         ps.transition_status(code_s, new_status, reason=reason)
     except KeyError as e:
         flash(f"レコード未登録: {e}", "error")
-        return redirect(url_for("portfolio.dashboard"))
+        return _redirect_with_return_query()
     except (ValueError, TypeError) as e:
         flash(str(e), "error")
-        return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
+        return _redirect_with_return_query()
 
     _sync_txt_safely()
-    return redirect(url_for("portfolio.dashboard", status=STATUS_VALUE_TO_QUERY[new_status]))
+    return _redirect_with_return_query()
 
 
 def _extract_memo_fields_from_form(form) -> dict:
@@ -283,7 +366,7 @@ def update_memo(code_s: str):
         if is_ajax:
             return jsonify({"ok": False, "error": f"不正な銘柄コード: {e}"}), 400
         flash(f"不正な銘柄コード: {e}", "error")
-        return redirect(url_for("portfolio.dashboard"))
+        return _redirect_with_return_query()
 
     fields = _extract_memo_fields_from_form(request.form)
 
@@ -294,12 +377,12 @@ def update_memo(code_s: str):
         if is_ajax:
             return jsonify({"ok": False, "error": msg}), 404
         flash(msg, "error")
-        return redirect(url_for("portfolio.dashboard"))
+        return _redirect_with_return_query()
     except (ValueError, TypeError) as e:
         if is_ajax:
             return jsonify({"ok": False, "error": str(e)}), 400
         flash(str(e), "error")
-        return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
+        return _redirect_with_return_query()
 
     if is_ajax:
         # 保存後の row を再構築して、更新済みフィールドと styles を返す
@@ -320,7 +403,7 @@ def update_memo(code_s: str):
                 }
         return jsonify(body)
     flash(f"{code_s} のメモを保存しました", "info")
-    return _redirect_to_current_tab(code_s, fallback_query=DEFAULT_TAB)
+    return _redirect_with_return_query()
 
 
 @portfolio_bp.route("/portfolio/add", methods=["POST"])
@@ -332,20 +415,21 @@ def add():
     - portfolio_shelve に excluded=True で存在 → 復活 (stocks_shelve チェック skip)
     - portfolio_shelve に excluded=False で存在 → 既登録扱い、ValueError flash
     """
-    rejected = _reject_when_fallback(redirect_query="watch")
+    rejected = _reject_when_fallback()
     if rejected is not None:
         return rejected
 
+    # 追加直後は監視リストを見たいので、return_query 未指定時のデフォルトは watch。
     code_s = (request.form.get("code_s") or "").strip()
     if not code_s:
         flash("銘柄コードが空です", "error")
-        return redirect(url_for("portfolio.dashboard"))
+        return _redirect_with_return_query(default_status_query="watch")
 
     try:
         ps.validate_code_s(code_s)
     except (ValueError, TypeError) as e:
         flash(f"不正な銘柄コード: {e}", "error")
-        return redirect(url_for("portfolio.dashboard"))
+        return _redirect_with_return_query(default_status_query="watch")
 
     normalized = ps.normalize_code_s(code_s)
 
@@ -359,13 +443,13 @@ def add():
                 f"{normalized} は stocks_shelve に未登録のコードです。先に銘柄DBへの登録が必要です。",
                 "error",
             )
-            return redirect(url_for("portfolio.dashboard", status="watch"))
+            return _redirect_with_return_query(default_status_query="watch")
 
     try:
         ps.add_to_watch(normalized, reason="WebApp 追加")
     except ValueError as e:
         flash(str(e), "error")
-        return redirect(url_for("portfolio.dashboard", status="watch"))
+        return _redirect_with_return_query(default_status_query="watch")
 
     _sync_txt_safely()
     name_for_flash = resolve_stock_name(normalized)
@@ -373,7 +457,7 @@ def add():
         flash(f"{normalized} {name_for_flash} をユニバースに復活しました".rstrip(), "info")
     else:
         flash(f"{normalized} {name_for_flash} を監視に追加しました".rstrip(), "info")
-    return redirect(url_for("portfolio.dashboard", status="watch"))
+    return _redirect_with_return_query(default_status_query="watch")
 
 
 def _build_fallback_records() -> list[dict]:
@@ -399,8 +483,15 @@ def _build_fallback_records() -> list[dict]:
 
 @portfolio_bp.route("/portfolio")
 def dashboard():
-    """3 タブ式ダッシュボード。"""
-    active_query, active_status = _resolve_status_query(request.args.get("status", DEFAULT_TAB))
+    """フィルタ/ソート/ページング型ダッシュボード (issue #178)。
+
+    URL クエリ:
+      status: hold,semi,watch のカンマ区切り or 同名複数キー (デフォルト=hold)
+      sort:   gyoutai (業態順, デフォルト) / rank (順位順)
+      page:   1始まり (デフォルト=1)、1ページ PORTFOLIO_PAGE_SIZE 件
+    """
+    active_statuses = _parse_status_filter(request.args)
+    active_sort = _parse_sort(request.args)
 
     # issue #186: fallback 判定は除外含む全件で行う (全件除外時の誤判定を避ける)。
     # 表示・件数カウントは除外を弾いた visible_records を使う。
@@ -411,19 +502,45 @@ def dashboard():
     else:
         visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
 
-    counts = {q: 0 for q, _, _ in TABS}
+    # 件数 (フィルタ前): hold/semi/watch ごとに常に出す (UI チェックボックス横の表示用)
+    counts = {q: 0 for q, _, _ in STATUS_CHOICES}
     for r in visible_records:
         st = r.get("status")
         if st in STATUS_VALUE_TO_QUERY:
             counts[STATUS_VALUE_TO_QUERY[st]] += 1
 
-    active_records = [r for r in visible_records if r.get("status") == active_status]
-    rows = list_portfolio_with_indicators(active_records)
-    # フォールバック中は書き込み UI (ステータス変更フォーム / 削除モード) を
-    # 出さない。shelve が空のため transition / exclude を呼ぶと KeyError になる。
-    transitions = [] if fallback_mode else _allowed_transitions_from(active_status)
+    filtered_records = [r for r in visible_records if r.get("status") in active_statuses]
+    rows_all = list_portfolio_with_indicators(filtered_records, sort_key=active_sort)
 
-    # issue #187: datalist 候補は表示タブ/excluded と独立、shelve 内の全レコードから集計
+    total = len(rows_all)
+    total_pages = max(1, (total + PORTFOLIO_PAGE_SIZE - 1) // PORTFOLIO_PAGE_SIZE)
+    page = _parse_page(request.args, total_pages)
+    start = (page - 1) * PORTFOLIO_PAGE_SIZE
+    end = start + PORTFOLIO_PAGE_SIZE
+    rows = rows_all[start:end]
+
+    # 行ごとに transitions を埋める (issue #178: 複数 status 同時表示で、
+    # 各行が個別の遷移先候補を持つ必要があるため)。fallback 中は空。
+    for row in rows:
+        row["transitions"] = (
+            [] if fallback_mode else _allowed_transitions_from(row.get("status", ""))
+        )
+
+    # 削除モードの可否: 2準/3監 がフィルタに含まれる時のみ
+    delete_mode_allowed = (
+        not fallback_mode
+        and any(s in active_statuses for s in ("2準", "3監"))
+        and bool(rows)
+    )
+
+    # POST → リダイレクトの戻り先として使う現状クエリ (status/sort/page 全部)
+    return_query = _build_query_string(active_statuses, active_sort, page)
+    # テンプレートでチェック判定するための、active_statuses の query 形式リスト (例: ["hold","semi"])
+    active_status_queries = [
+        STATUS_VALUE_TO_QUERY[s] for s in active_statuses if s in STATUS_VALUE_TO_QUERY
+    ]
+
+    # issue #187: datalist 候補は表示フィルタ/excluded と独立、shelve 内の全レコードから集計
     if fallback_mode:
         gyoutai_theme_choices: list = []
     else:
@@ -431,12 +548,20 @@ def dashboard():
 
     return render_template(
         "portfolio_list.html",
-        tabs=TABS,
-        active_query=active_query,
-        active_status=active_status,
+        status_choices=STATUS_CHOICES,
+        active_statuses=active_statuses,
+        active_status_queries=active_status_queries,
+        active_sort=active_sort,
         counts=counts,
         rows=rows,
-        transitions=transitions,
+        total=total,
+        page=page,
+        total_pages=total_pages,
+        page_size=PORTFOLIO_PAGE_SIZE,
+        page_start=start + 1 if rows else 0,
+        page_end=start + len(rows),
+        return_query=return_query,
+        delete_mode_allowed=delete_mode_allowed,
         status_label=STATUS_VALUE_TO_LABEL,
         fallback_mode=fallback_mode,
         gyoutai_theme_choices=gyoutai_theme_choices,

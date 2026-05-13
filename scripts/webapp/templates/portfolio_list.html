@@ -24,6 +24,27 @@
   /* 削除モード時のみチェックボックス列を表示 */
   .bulk-col { display: none; }
   body.delete-mode .bulk-col { display: table-cell; }
+  /* issue #178: 業態順表示時の業態境界線 */
+  table.portfolio-list tr.gyoutai-boundary > td { border-top: 2px solid #bbb; }
+  /* issue #178: ステータス badge */
+  .status-badge {
+    display: inline-block; padding: 0.05em 0.4em;
+    border-radius: 3px; font-size: 0.85em; line-height: 1.3;
+    white-space: nowrap;
+  }
+  .status-badge.status-hold  { background: #d4ead4; color: #285028; }
+  .status-badge.status-semi  { background: #fdf0c0; color: #856100; }
+  .status-badge.status-watch { background: #e2e2e2; color: #555; }
+  /* issue #178: ページネーション */
+  nav.pagination {
+    display: flex; gap: 0.6em; align-items: center; justify-content: center;
+    margin: 0.6em 0; font-size: 0.9em;
+  }
+  nav.pagination a, nav.pagination span.disabled {
+    padding: 0.3em 0.7em; border: 1px solid #d8dee6; border-radius: 3px;
+    text-decoration: none;
+  }
+  nav.pagination span.disabled { color: #bbb; background: #f8f8f8; }
   /* 一括削除アクションバー */
   #bulk-delete-bar {
     position: sticky; bottom: 0; z-index: 10;
@@ -70,33 +91,47 @@
 {% endif %}
 {% endwith %}
 
-<nav style="margin-bottom:1em;">
-  <ul style="display:flex;gap:0.5em;list-style:none;padding:0;margin:0;border-bottom:1px solid #ddd;">
-    {% for q, status_val, label in tabs %}
-    <li>
-      <a href="/portfolio?status={{ q }}"
-         style="display:inline-block;padding:0.5em 1em;text-decoration:none;
-                {% if q == active_query %}border-bottom:2px solid #06c;font-weight:bold;{% else %}color:#666;{% endif %}">
-        {{ label }} <span style="color:#999;font-size:0.85em;">{{ counts[q] }}</span>
-      </a>
-    </li>
-    {% endfor %}
-  </ul>
-</nav>
+{# issue #178: タブを撤廃しフィルタ/ソートバーに変更。GET で URL に反映する #}
+<form id="portfolio-filter-form" action="/portfolio" method="GET"
+      style="display:flex;flex-wrap:wrap;gap:1.2em;align-items:center;margin-bottom:0.6em;padding:0.5em 0.6em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;font-size:0.9em;">
+  <span style="color:#666;">フィルタ</span>
+  {% for q, status_val, label in status_choices %}
+  <label style="display:inline-flex;align-items:center;gap:0.25em;margin:0;cursor:pointer;">
+    <input type="checkbox" name="status" value="{{ q }}" style="margin:0;"
+           {% if q in active_status_queries %}checked{% endif %}>
+    {{ label }} <span style="color:#999;font-size:0.85em;">({{ counts[q] }})</span>
+  </label>
+  {% endfor %}
+  <span style="color:#666;margin-left:0.6em;">ソート</span>
+  <label style="display:inline-flex;align-items:center;gap:0.25em;margin:0;cursor:pointer;">
+    <input type="radio" name="sort" value="gyoutai" style="margin:0;"
+           {% if active_sort == 'gyoutai' %}checked{% endif %}>業態順
+  </label>
+  <label style="display:inline-flex;align-items:center;gap:0.25em;margin:0;cursor:pointer;">
+    <input type="radio" name="sort" value="rank" style="margin:0;"
+           {% if active_sort == 'rank' %}checked{% endif %}>順位順
+  </label>
+  {# フィルタ/ソート変更時は page=1 にリセット (page hidden を出さない) #}
+  <button type="submit" style="padding:0.3em 0.8em;font-size:0.85em;margin:0;">絞り込み</button>
+</form>
 
-<p style="font-size:0.85em;color:#666;">{{ rows|length }} 件</p>
+<p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">
+  {% if total > 0 %}{{ total }}件中 {{ page_start }}-{{ page_end }} 件表示
+  {% else %}0 件{% endif %}
+</p>
 
 {% if not fallback_mode %}
 <div id="manage-panel" style="display:none;">
   <form action="/portfolio/add" method="POST" class="portfolio-add-form">
+    <input type="hidden" name="return_query" value="{{ return_query }}">
     <label>コード <input type="text" name="code_s" required pattern="[0-9A-Za-z]+" maxlength="4" style="width:6em;"></label>
     <button type="submit">追加</button>
   </form>
-  {% if active_query in ("watch", "semi") and rows %}
+  {% if delete_mode_allowed %}
   <button type="button" id="toggle-delete-mode">削除モード</button>
   {% endif %}
 </div>
-{% if active_query in ("watch", "semi") and rows %}
+{% if delete_mode_allowed %}
 <div id="bulk-delete-bar" style="display:none;">
   <span><strong id="selected-count">0</strong> 件選択中</span>
   <button type="button" id="bulk-delete-execute" class="contrast">削除 (ユニバース除外)</button>
@@ -110,10 +145,11 @@
 <table class="portfolio-list">
   <thead>
     <tr>
-      {% if active_query in ("watch", "semi") and not fallback_mode %}<th class="bulk-col"></th>{% endif %}
+      {% if delete_mode_allowed %}<th class="bulk-col"></th>{% endif %}
       <th></th>
       <th>コード</th>
       <th>銘柄名</th>
+      <th>状態</th>
       <th>業態・テーマ</th>
       <th>順位</th>
       <th>売上成長(%)</th>
@@ -137,9 +173,11 @@
   </thead>
   <tbody>
     {% for row in rows %}
-    <tr data-code="{{ row.code_s }}">
-      {% if active_query in ("watch", "semi") and not fallback_mode %}
-      <td class="bulk-col"><input type="checkbox" class="bulk-cb" value="{{ row.code_s }}"></td>
+    {# issue #178: 業態順表示時、前行と業態 1 行目が異なる行は境界線を入れる。
+       row.gyoutai_first は helpers.list_portfolio_with_indicators が precompute 済み。 #}
+    <tr data-code="{{ row.code_s }}"{% if active_sort == 'gyoutai' and not loop.first and loop.previtem.gyoutai_first != row.gyoutai_first %} class="gyoutai-boundary"{% endif %}>
+      {% if delete_mode_allowed %}
+      <td class="bulk-col"><input type="checkbox" class="bulk-cb" value="{{ row.code_s }}" data-status="{{ row.status }}"></td>
       {% endif %}
       <td>
         <details>
@@ -151,6 +189,7 @@
           style="max-width:10em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
         <a href="/stock/{{ row.code_s }}">{{ row.stock_name }}</a>
       </td>
+      <td><span class="status-badge status-{{ row.status_query }}">{{ row.status_label }}</span></td>
       <td class="gyoutai-themes-cell" data-code="{{ row.code_s }}"
           style="max-width:11em;padding:0 2px;line-height:0;{{ row.styles.gyoutai_themes or '' }}">
         {% set themes = row.memo.gyoutai_themes or [] %}
@@ -194,7 +233,8 @@
       <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
     </tr>
     <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
-      <td colspan="{% if active_query in ('watch', 'semi') and not fallback_mode %}23{% else %}22{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
+      {# 状態列 1 つ追加 (22→23)、削除モード時はさらに +1 #}
+      <td colspan="{% if delete_mode_allowed %}24{% else %}23{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
         <div style="display:flex;flex-wrap:wrap;gap:0.8em;align-items:flex-start;">
           {% if row.gyoseki.isKonki %}
           <div style="flex:0 0 auto;">
@@ -206,6 +246,7 @@
             {% if not fallback_mode %}
             <form action="/portfolio/{{ row.code_s }}/memo" method="POST"
                   style="display:flex;flex-direction:column;gap:0.4em;margin:0.3em 0 0 0;font-size:0.85em;">
+              <input type="hidden" name="return_query" value="{{ return_query }}">
               {# 業態・テーマ / 更新日 / ステージ は表内 inline 編集に移動 (issue #177) #}
               {% for field, label in [
                   ("watch_in_reason", "IN 理由"),
@@ -243,11 +284,12 @@
           <div style="flex:0 0 240px;">
             <strong style="font-size:0.85em;color:#666;">操作</strong>
             <div style="display:flex;flex-direction:column;gap:0.5em;margin-top:0.3em;font-size:0.85em;">
-              {% if transitions %}
+              {% if row.transitions %}
               <form action="/portfolio/{{ row.code_s }}/transition" method="POST" style="display:flex;flex-direction:column;gap:0.3em;margin:0;">
+                <input type="hidden" name="return_query" value="{{ return_query }}">
                 <label style="font-size:0.85em;color:#666;">ステータス変更</label>
                 <select name="new_status" style="padding:0.3em;font-size:0.85em;margin:0;">
-                  {% for label, value in transitions %}
+                  {% for label, value in row.transitions %}
                   <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
@@ -266,6 +308,25 @@
   </tbody>
 </table>
 </div>
+
+{# issue #178: ページネーション (1ページしかなければ非表示)。
+   page だけ差し替えるため、build_pagination_url マクロで status/sort のみ持つベースを使う。 #}
+{% set pagination_base = 'status=' + (active_status_queries|join(',')) + '&sort=' + active_sort %}
+{% if total_pages > 1 %}
+<nav class="pagination">
+  {% if page > 1 %}
+    <a href="?{{ pagination_base }}{% if page > 2 %}&page={{ page - 1 }}{% endif %}">‹ 前</a>
+  {% else %}
+    <span class="disabled">‹ 前</span>
+  {% endif %}
+  <span>{{ page }} / {{ total_pages }}</span>
+  {% if page < total_pages %}
+    <a href="?{{ pagination_base }}&page={{ page + 1 }}">次 ›</a>
+  {% else %}
+    <span class="disabled">次 ›</span>
+  {% endif %}
+</nav>
+{% endif %}
 
 <datalist id="gyoutai-theme-choices">
   {% for choice in gyoutai_theme_choices %}
@@ -619,13 +680,13 @@ document.querySelectorAll('table details').forEach(function(d) {
 // ========== 削除モード = ユニバース除外一括 ==========
 (function() {
   var toggle = document.getElementById('toggle-delete-mode');
-  if (!toggle) return;  // watch/semi タブ以外では何もしない
+  if (!toggle) return;  // delete_mode_allowed=false のフィルタでは何もしない
   var bar = document.getElementById('bulk-delete-bar');
   var countEl = document.getElementById('selected-count');
   var execBtn = document.getElementById('bulk-delete-execute');
   var cancelBtn = document.getElementById('bulk-delete-cancel');
-  // 現在のタブ (active_query) を Jinja で埋め込んで JS から参照
-  var returnTo = {{ active_query | tojson }};
+  // issue #178: 現状のフィルタ/ソート/ページ全体 (return_query) を Jinja で埋め込んで JS から参照
+  var returnQuery = {{ return_query | tojson }};
 
   function refresh() {
     var checked = document.querySelectorAll('.bulk-cb:checked');
@@ -654,7 +715,7 @@ document.querySelectorAll('table details').forEach(function(d) {
     if (!confirm(codes.length + ' 件をユニバースから除外します。よろしいですか?')) return;
     var fd = new FormData();
     codes.forEach(function(c) { fd.append('codes', c); });
-    fd.append('return_to', returnTo);
+    fd.append('return_query', returnQuery);
     fetch('/portfolio/bulk-exclude', { method: 'POST', body: fd })
       .then(function(r) {
         if (r.redirected) location.href = r.url;
