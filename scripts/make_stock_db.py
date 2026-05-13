@@ -1737,19 +1737,23 @@ def refresh_pts_reactions():
 
 
 def refresh_stock(code_list):
-    """指定銘柄の master/price/shihyo/gyoseki/rironkabuka を UPD_FORCE で強制再取得する。
+    """指定銘柄の master/price/shihyo/gyoseki/rironkabuka を UPD_FORCE で強制再取得し、
+    research_shelve の当日スナップショットも最新値で上書きする。
 
-    `update CODE` と内部処理は同じ (update_db_rows(code_list, upd=UPD_FORCE)) だが、
-    名前が「最新情報を強制取得」の意図に直結し、引数が必須なので誤実行リスクが低い。
+    `update CODE --snapshot` と内部処理はほぼ同じだが、引数必須で名前が直感的。
     決算速報 (kessan_quarter / kessan_mod_date) は別経路 (shintakane.update_todays_kessan)
     なので、必要なら shintakane.py を別途実行する。
     """
     if not code_list:
         log_warning("[refresh_stock] 銘柄コードが指定されていません")
         return
+    codes = list(code_list)
     log_print("=" * 30)
-    log_print(f"[refresh_stock] 強制再取得を開始します: {list(code_list)}")
-    update_db_rows(list(code_list), upd=UPD_FORCE, tables=None)
+    log_print(f"[refresh_stock] 強制再取得を開始します: {codes}")
+    update_db_rows(codes, upd=UPD_FORCE, tables=None)
+    # stocks DB だけ最新化しても research_shelve のスナップショットは古い ir_quant のまま
+    # なので、決算ウィンドウ内銘柄については snapshot も上書き更新する
+    update_research_snapshots(code_filter=codes)
     log_print("[refresh_stock] 強制再取得を完了しました")
 
 
