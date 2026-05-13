@@ -676,3 +676,68 @@ class TestUpdatePtsReactions:
         # 他フィールドは保持
         assert entry["pre_expectation"] == "◎"
         assert entry["pre_outlook"] == "強気"
+
+
+class TestRefreshPtsReactions:
+    """refresh_pts_reactions の薄い統合テスト
+
+    shintakane.get_todays_pts / update_research_snapshots / update_pts_reactions
+    の 3 つを順に呼び、watch_set と today_date を正しく引き継ぐことだけ確認する。
+    """
+
+    def test_呼び出し順序とwatch_setの引き継ぎ(self, monkeypatch):
+        import shintakane
+
+        calls = []
+
+        def fake_get_todays_pts(force=False):
+            calls.append(("get_todays_pts", force))
+
+        def fake_update_research_snapshots():
+            calls.append(("update_research_snapshots",))
+            return {"3496", "6324"}
+
+        def fake_update_pts_reactions(watch_set, today_date, *, stocks=None):
+            calls.append(("update_pts_reactions", watch_set, today_date))
+
+        monkeypatch.setattr(shintakane, "get_todays_pts", fake_get_todays_pts)
+        monkeypatch.setattr(
+            make_stock_db, "update_research_snapshots", fake_update_research_snapshots
+        )
+        monkeypatch.setattr(
+            make_stock_db, "update_pts_reactions", fake_update_pts_reactions
+        )
+
+        make_stock_db.refresh_pts_reactions()
+
+        # 順序: get_todays_pts → update_research_snapshots → update_pts_reactions
+        assert [c[0] for c in calls] == [
+            "get_todays_pts",
+            "update_research_snapshots",
+            "update_pts_reactions",
+        ]
+        # force=True で最新取得
+        assert calls[0][1] is True
+        # watch_set が update_pts_reactions に引き継がれる
+        assert calls[2][1] == {"3496", "6324"}
+
+    def test_watch_setが空でも例外を出さない(self, monkeypatch):
+        """update_research_snapshots が空集合を返しても update_pts_reactions は呼ばれる
+        (呼ばれた中で warning スキップする既存挙動を維持)"""
+        import shintakane
+
+        called_pts = []
+
+        monkeypatch.setattr(shintakane, "get_todays_pts", lambda force=False: None)
+        monkeypatch.setattr(
+            make_stock_db, "update_research_snapshots", lambda: set()
+        )
+        monkeypatch.setattr(
+            make_stock_db,
+            "update_pts_reactions",
+            lambda watch_set, today_date, **kw: called_pts.append(watch_set),
+        )
+
+        make_stock_db.refresh_pts_reactions()
+
+        assert called_pts == [set()]

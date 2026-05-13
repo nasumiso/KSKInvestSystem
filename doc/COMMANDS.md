@@ -38,6 +38,10 @@ cd scripts && python make_stock_db.py reflesh
 # DBバックアップ
 cd scripts && python make_stock_db.py backup
 
+# PTSランキング再取得 + 当日決算銘柄の kessan_comments['pts'] 上書き
+# (list_all_db を回さず PTS だけ最新化したい時に使う)
+cd scripts && python make_stock_db.py refresh_pts
+
 # モメンタムポイント動的キャリブレーション (issue #104)
 cd scripts && python make_stock_db.py calibrate_momentum
 ```

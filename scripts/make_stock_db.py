@@ -1714,6 +1714,28 @@ def update_pts_reactions(watch_set, today_date, *, stocks=None):
     log_print(f"[pts] PTS 反応を当日決算銘柄 {written} 件に追記")
 
 
+def refresh_pts_reactions():
+    """株探のPTSナイトランキングを最新取得し、当日決算銘柄の kessan_comments に PTS 騰落率を追記する。
+
+    list_all_db や update --snapshot を回さず、PTS の取り直しと反映だけを行う
+    軽量パスとして使う。手順:
+      1. shintakane.get_todays_pts(force=True) で pts_YYMMDD.csv を最新化
+      2. update_research_snapshots() で watch_set を取得
+         (副作用: ウォッチ × 決算ウィンドウ内銘柄に当日の auto スナップショットを上書き保存。
+          stocks の kabuka は前段の引け値のままで、PTS 価格は混入しない)
+      3. update_pts_reactions(watch_set, today_date) で kessan_comments['pts'] を上書き
+    """
+    import shintakane
+
+    log_print("=" * 30)
+    log_print("[pts] PTS 反応の再取り込みを開始します")
+    shintakane.get_todays_pts(force=True)
+    watch_set = update_research_snapshots()
+    today_date = get_price_day(datetime.today())
+    update_pts_reactions(watch_set or set(), today_date)
+    log_print("[pts] PTS 反応の再取り込みを完了しました")
+
+
 # ==================================================
 # main
 # ==================================================
@@ -1834,6 +1856,8 @@ def main():
     elif command == "reflesh":  # DBをリフレッシュ(上場廃止銘柄を削除)
         backup_db()
         reflesh_db()
+    elif command == "refresh_pts":  # PTSランキング再取得 + research_shelve への反映のみ
+        refresh_pts_reactions()
     elif command == "test":
         test()
 
