@@ -86,6 +86,6 @@ ETFコードは `data/ETF_code.txt` から読み込み、株式分析対象外�
 - [doc/COMMANDS.md](doc/COMMANDS.md) — 開発コマンドリファレンス（全CLI、移行スクリプト、cron運用詳細）
 - [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) — アーキテクチャ詳細（データフロー、DB構成、キャッシュ戦略、テクニカル指標）
 - [doc/TESTING.md](doc/TESTING.md) — テスト方針（ユニットテスト、統合テスト、HTMLパース変更時の検証）
-- [doc/SYSTEM_OVERVIEW.md](doc/SYSTEM_OVERVIEW.md) — システム概要（非エンジニア向け）
-- [doc/SPEC_REVIEW.md](doc/SPEC_REVIEW.md) — 投資システム評価レビュー
-- [doc/MY_INVESTER_STRATEGY.md](doc/MY_INVESTER_STRATEGY.md) — 投資スタイル分析
+- [doc/システム概要.md](doc/システム概要.md) — システム概要（非エンジニア向け）
+- [doc/review/SPEC_REVIEW.md](doc/review/SPEC_REVIEW.md) — 投資システム評価レビュー
+- [doc/投資戦略.md](doc/投資戦略.md) — 投資スタイル分析
