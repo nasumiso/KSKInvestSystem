@@ -179,7 +179,12 @@
        row.gyoutai_first は helpers.list_portfolio_with_indicators が precompute 済み。 #}
     <tr data-code="{{ row.code_s }}"{% if active_sort == 'gyoutai' and not loop.first and loop.previtem.gyoutai_first != row.gyoutai_first %} class="gyoutai-boundary"{% endif %}>
       {% if delete_mode_allowed %}
-      <td class="bulk-col"><input type="checkbox" class="bulk-cb" value="{{ row.code_s }}" data-status="{{ row.status }}"></td>
+      {# codex 指摘 P2: 1保 は bulk_exclude() で reject されるため checkbox を出さない #}
+      <td class="bulk-col">
+        {% if row.status in ('2準', '3監') %}
+        <input type="checkbox" class="bulk-cb" value="{{ row.code_s }}" data-status="{{ row.status }}">
+        {% endif %}
+      </td>
       {% endif %}
       <td>
         <details>

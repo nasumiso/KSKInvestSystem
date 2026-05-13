@@ -1054,3 +1054,38 @@ class TestReturnQueryRedirect:
         assert "status=hold" in loc
         assert "evil" not in loc
         assert "%0A" not in loc
+
+
+class TestDeleteCheckboxScope:
+    """削除モードのチェックボックスは 2準/3監 行のみに表示される (codex 指摘 P2)"""
+
+    def test_1ho_row_has_no_checkbox_in_mixed_filter(self, client):
+        """status=hold,semi,watch の混在表示で、1保 (3496) 行には checkbox が無く、
+        2準 (7203) と 3監 (6324) 行には checkbox が出る"""
+        import re
+        resp = client.get("/portfolio?status=hold,semi,watch")
+        html = resp.data.decode()
+        # 各銘柄行を抽出 (data-code="XXXX" から次の </tr> まで)
+        for code, has_checkbox in [
+            ("3496", False),  # 1保 → checkbox 無し
+            ("7203", True),   # 2準 → checkbox あり
+            ("6324", True),   # 3監 → checkbox あり
+        ]:
+            m = re.search(
+                rf'<tr data-code="{code}"[^>]*>(.*?)</tr>', html, re.DOTALL
+            )
+            assert m is not None, f"行 {code} が見つからない"
+            row_inner = m.group(1)
+            checkbox_present = 'class="bulk-cb"' in row_inner
+            assert checkbox_present == has_checkbox, (
+                f"行 {code} の checkbox 期待値 {has_checkbox} だが実際は {checkbox_present}"
+            )
+
+    def test_no_checkbox_when_only_hold_filter(self, client):
+        """status=hold のみ (削除可能ステータスなし) なら delete_mode_allowed=False で
+        bulk-col 列自体出ない"""
+        resp = client.get("/portfolio?status=hold")
+        html = resp.data.decode()
+        assert 'class="bulk-cb"' not in html
+        # bulk-col の th も出ない (delete_mode_allowed が False)
+        assert 'class="bulk-col"' not in html
