@@ -1027,6 +1027,21 @@ class TestReturnQueryRedirect:
         assert resp.status_code == 302
         assert "status=watch" in resp.headers["Location"]
 
+    def test_add_form_does_not_emit_return_query_hidden(self, client):
+        """追加フォームは hidden return_query を出さない (codex 指摘 P2)。
+
+        追加された 3監 銘柄を見えなくしないため、現在のフィルタを引き継がず
+        add() の default_status_query='watch' フォールバックを効かせる。
+        """
+        import re
+        resp = client.get("/portfolio?status=hold&sort=gyoutai")
+        html = resp.data.decode()
+        # 追加フォーム部分を抽出 (action="/portfolio/add" の form タグ)
+        m = re.search(r'<form[^>]*action="/portfolio/add"[^>]*>(.*?)</form>', html, re.DOTALL)
+        assert m is not None, "追加フォームが見つからない"
+        form_inner = m.group(1)
+        assert 'name="return_query"' not in form_inner
+
     def test_return_query_with_unsafe_chars_falls_back(self, client):
         """改行や # を含む return_query はフォールバック (URL injection 防止)"""
         resp = client.post(

@@ -122,8 +122,10 @@
 
 {% if not fallback_mode %}
 <div id="manage-panel" style="display:none;">
+  {# 追加フォームには return_query を入れない。
+     現在のフィルタが保有のみだと、追加された 3監 銘柄が見えなくなるため、
+     add() 側の default_status_query="watch" フォールバックを効かせる (codex 指摘 P2)。 #}
   <form action="/portfolio/add" method="POST" class="portfolio-add-form">
-    <input type="hidden" name="return_query" value="{{ return_query }}">
     <label>コード <input type="text" name="code_s" required pattern="[0-9A-Za-z]+" maxlength="4" style="width:6em;"></label>
     <button type="submit">追加</button>
   </form>
