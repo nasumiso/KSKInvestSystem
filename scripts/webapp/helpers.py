@@ -1338,7 +1338,38 @@ def _bulk_resolve_stock_names(code_list: List[str]) -> Dict[str, str]:
     return result
 
 
-def list_portfolio_with_indicators(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+# issue #178: status 内部値 → URL クエリ / 表示ラベルの対応表 (helpers 内部利用のみ)。
+# routes/portfolio.py の同名定数とは独立に保持し、循環 import を避ける。
+_PORTFOLIO_STATUS_QUERY = {
+    "1保": "hold",
+    "2準": "semi",
+    "3監": "watch",
+}
+_PORTFOLIO_STATUS_LABEL = {
+    "1保": "保有",
+    "2準": "準保有",
+    "3監": "監視",
+}
+
+
+def _gyoutai_first_line(row: Dict[str, Any]) -> str:
+    """row の memo.gyoutai_themes の先頭要素を返す (issue #178 業態順ソート用)。
+
+    空 list / 先頭が空文字 / themes 自体が無い場合は "" を返す。
+    """
+    themes = (row.get("memo") or {}).get("gyoutai_themes") or []
+    if not themes:
+        return ""
+    head = themes[0]
+    if not isinstance(head, str):
+        return ""
+    return head.strip()
+
+
+def list_portfolio_with_indicators(
+    records: List[Dict[str, Any]],
+    sort_key: str = "gyoutai",
+) -> List[Dict[str, Any]]:
     """portfolio_shelve のレコード列に stocks_shelve から最新指標を補完する (Phase 3b)。
 
     銘柄名は portfolio_shelve に保存されていないため stocks_shelve / research_shelve から
@@ -1346,13 +1377,16 @@ def list_portfolio_with_indicators(records: List[Dict[str, Any]]) -> List[Dict[s
 
     Args:
         records: portfolio_shelve.list_records の戻り値 (既に status 等で絞り込み済み)
+        sort_key: "gyoutai" (業態 1 行目昇順 → 順位昇順) / "rank" (順位昇順のみ)。
+                  不正値は "gyoutai" にフォールバック (issue #178)。
 
     Returns:
         各 dict: portfolio レコード + {stock_name, rank, kessanbi_md, per, market_cap,
                                      dividend, rs, sales_growth, profit_growth,
                                      quarter, progress_diff, trend_template, tags,
-                                     theoretical_diff, gyoseki, indicators_raw}
-        rank 昇順 (rank が None の銘柄は末尾)。
+                                     theoretical_diff, gyoseki, indicators_raw,
+                                     status_query, status_label}
+        sort_key に応じた並び順 (rank/業態が None/空の銘柄は末尾)。
     """
     if not records:
         return []
@@ -1368,9 +1402,25 @@ def list_portfolio_with_indicators(records: List[Dict[str, Any]]) -> List[Dict[s
         row["stock_name"] = name_map.get(code_s, "") or rec.get("stock_name", "")  # 旧データ互換
         row.update(_extract_indicators_for_portfolio(stock_map.get(code_s, {})))
         row["styles"] = compute_cell_styles(row, today=today)
+        # issue #178: ステータス列 (badge) 表示用の query / label を埋める
+        status = rec.get("status", "")
+        row["status_query"] = _PORTFOLIO_STATUS_QUERY.get(status, "")
+        row["status_label"] = _PORTFOLIO_STATUS_LABEL.get(status, status)
+        # issue #178: 業態境界判定用 (template から再計算しないで済むよう)
+        row["gyoutai_first"] = _gyoutai_first_line(row)
         rows.append(row)
 
-    rows.sort(key=lambda r: (r.get("rank") is None, r.get("rank") or 0, r.get("code_s", "")))
+    if sort_key == "rank":
+        rows.sort(key=lambda r: (r.get("rank") is None, r.get("rank") or 0, r.get("code_s", "")))
+    else:
+        # 業態順: 業態 1 行目 (空は末尾) → 順位昇順 (None は末尾) → コード
+        rows.sort(key=lambda r: (
+            r["gyoutai_first"] == "",
+            r["gyoutai_first"],
+            r.get("rank") is None,
+            r.get("rank") or 0,
+            r.get("code_s", ""),
+        ))
     return rows
 
 

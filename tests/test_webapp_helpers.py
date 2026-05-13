@@ -1585,3 +1585,82 @@ class TestCollectGyoutaiThemeChoices:
             {"memo": {"gyoutai_themes": ["AI", None, 123, "半導体"]}},
         ]
         assert helpers.collect_gyoutai_theme_choices(records) == ["AI", "半導体"]
+
+
+class TestListPortfolioWithIndicators:
+    """list_portfolio_with_indicators の sort_key / status_query / status_label 検証 (issue #178)。
+
+    外部参照 (_bulk_get_stock_data, _bulk_resolve_stock_names, compute_cell_styles) は
+    monkeypatch でスタブし、並び順とフィールド埋めだけを検証する。
+    """
+
+    @pytest.fixture
+    def stub_externals(self, monkeypatch):
+        """rank を rec から直接読めるよう _extract_indicators_for_portfolio もスタブ。"""
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {c: {} for c in codes})
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {c: f"name_{c}" for c in codes})
+        monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
+        # _extract_indicators_for_portfolio は rec の rank を上書きしないよう空 dict を返す
+        monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
+
+    def _make(self, code_s, status, rank=None, themes=None):
+        return {
+            "code_s": code_s,
+            "status": status,
+            "rank": rank,
+            "memo": {"gyoutai_themes": themes or []},
+        }
+
+    def test_sort_by_gyoutai_then_rank(self, stub_externals):
+        records = [
+            self._make("0001", "1保", rank=30, themes=["人材"]),
+            self._make("0002", "1保", rank=10, themes=["半導体"]),
+            self._make("0003", "1保", rank=5, themes=["人材"]),
+        ]
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
+        # 業態順 (人材→半導体) かつ業態内は rank 昇順
+        assert [r["code_s"] for r in rows] == ["0003", "0001", "0002"]
+
+    def test_sort_by_rank_only(self, stub_externals):
+        records = [
+            self._make("0001", "1保", rank=30, themes=["人材"]),
+            self._make("0002", "1保", rank=10, themes=["半導体"]),
+            self._make("0003", "1保", rank=5, themes=["人材"]),
+        ]
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="rank")
+        assert [r["code_s"] for r in rows] == ["0003", "0002", "0001"]
+
+    def test_empty_gyoutai_goes_to_end_under_gyoutai_sort(self, stub_externals):
+        records = [
+            self._make("0001", "1保", rank=10, themes=[]),
+            self._make("0002", "1保", rank=20, themes=["半導体"]),
+            self._make("0003", "1保", rank=5, themes=None),
+        ]
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
+        # 半導体が先頭、空 themes は末尾 (末尾内は rank 昇順)
+        assert [r["code_s"] for r in rows] == ["0002", "0003", "0001"]
+
+    def test_gyoutai_uses_first_line_only(self, stub_externals):
+        """themes[0] のみで判定 (themes[1] 以降は無視)"""
+        records = [
+            self._make("0001", "1保", rank=10, themes=["AI", "人材"]),
+            self._make("0002", "1保", rank=20, themes=["人材", "AI"]),
+        ]
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
+        # 0001 の themes[0]=AI が先、0002 の themes[0]=人材 が後
+        assert [r["code_s"] for r in rows] == ["0001", "0002"]
+
+    def test_status_query_label_filled(self, stub_externals):
+        records = [
+            self._make("0001", "1保"),
+            self._make("0002", "2準"),
+            self._make("0003", "3監"),
+        ]
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="rank")
+        by_code = {r["code_s"]: r for r in rows}
+        assert by_code["0001"]["status_query"] == "hold"
+        assert by_code["0001"]["status_label"] == "保有"
+        assert by_code["0002"]["status_query"] == "semi"
+        assert by_code["0002"]["status_label"] == "準保有"
+        assert by_code["0003"]["status_query"] == "watch"
+        assert by_code["0003"]["status_label"] == "監視"
