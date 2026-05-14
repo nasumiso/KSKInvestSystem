@@ -181,6 +181,46 @@ class TestDetailPortfolioModal:
         assert "portfolio-badge-button" in html
         assert "openPortfolioModal()" in html
 
+    def test_excluded_record_treated_as_unregistered(self, db_path, tmp_path, monkeypatch):
+        """除外済み (excluded=True) は未登録扱い: バッジ/transition モーダルは出さず、
+        「+ 監視に追加」ボタン + /portfolio/add モーダルを出す (codex P2)。
+
+        理由: transition_status() は excluded フラグを下げないため、
+        除外済み銘柄に対して遷移を実行しても portfolio 一覧 / txt 同期から
+        除外されたまま = ユーザーは「変更したつもり」になる事故を防ぐ。
+        復活は /portfolio/add の add_to_watch() 復活パスに任せる。
+        """
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        rec = rs.create_research_record("9999", "除外テスト", overall_rating="C")
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        # 9999 を 3監 として追加 → ユニバース除外する
+        ps.add_to_watch("9999", reason="テスト用", db_path=portfolio_db)
+        ps.exclude_from_universe("9999", reason="テスト用 除外", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        client = app.test_client()
+        resp = client.get("/stock/9999")
+        html = resp.data.decode()
+
+        # 除外済みなのでバッジ button や transition モーダルは出ない
+        # (CSS 定義文字列と区別するため <button タグにマッチさせる)
+        import re
+        assert not re.search(r'<button[^>]*class="[^"]*portfolio-badge', html), (
+            "除外済み銘柄でもバッジ button が描画されている"
+        )
+        assert 'action="/portfolio/9999/transition"' not in html
+        # 代わりに add (復活) モーダルが出る
+        assert "+ 監視に追加" in html
+        assert 'action="/portfolio/add"' in html
+
 
 class TestDetailKessanHistory:
     """GET /stock/<code_s> の決算コメント履歴セクションのテスト (issue #131)"""

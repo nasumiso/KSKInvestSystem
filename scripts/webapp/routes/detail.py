@@ -53,6 +53,11 @@ def stock_detail(code_s: str):
     ]
 
     portfolio_record = ps.get_record(code_s)
+    # issue #195 (codex P2): excluded=True は未登録扱い。
+    # 復活は /portfolio/add の add_to_watch() 復活パスに任せる (transition では excluded フラグが下がらず
+    # 「変更したつもりがユニバースから除外されたまま」になる事故を防ぐ)
+    if portfolio_record and portfolio_record.get("excluded"):
+        portfolio_record = None
     portfolio_status = portfolio_record.get("status") if portfolio_record else None
     # shelve 未移行環境のフォールバック: shelve が空のとき my_watch_list.txt 経由の所属を見る
     # (portfolio.parse_my_portforio は shelve 空時に txt フォールバックする)
