@@ -165,9 +165,9 @@ class TestGetMarketKessanData:
         return setup
 
     def test_today_kessan_goes_to_today_entries(self, kessan_env):
-        """当日決算は today_entries に振り分けられる (recent_past でも future でもない)"""
+        """base_day 当日の決算は today_entries に振り分けられる (recent_past でも future でもない)"""
         from datetime import datetime as _dt
-        today_dt = _dt(2026, 4, 27, 10, 0)  # 4/27 朝
+        today_dt = _dt(2026, 4, 27, 19, 0)  # 17時以降 → base_day=4/27
         pf_dict = {
             "6501": {
                 "code_s": "6501",
@@ -186,9 +186,9 @@ class TestGetMarketKessanData:
         assert "2026/04/27" not in future_keys
 
     def test_yesterday_kessan_in_recent_past(self, kessan_env):
-        """前日決算は従来通り recent_past_entries"""
+        """base_day より前の決算は recent_past_entries"""
         from datetime import datetime as _dt
-        today_dt = _dt(2026, 4, 27, 10, 0)
+        today_dt = _dt(2026, 4, 27, 19, 0)  # 17時以降 → base_day=4/27
         pf_dict = {
             "6501": {
                 "code_s": "6501",
@@ -205,9 +205,9 @@ class TestGetMarketKessanData:
         assert "2026/04/26" not in today_keys
 
     def test_tomorrow_kessan_in_future(self, kessan_env):
-        """翌日以降の決算は future_entries"""
+        """base_day より後の決算は future_entries"""
         from datetime import datetime as _dt
-        today_dt = _dt(2026, 4, 27, 10, 0)
+        today_dt = _dt(2026, 4, 27, 19, 0)  # 17時以降 → base_day=4/27
         pf_dict = {
             "6501": {
                 "code_s": "6501",
@@ -225,24 +225,32 @@ class TestGetMarketKessanData:
         assert "2026/04/28" not in past_keys
         assert "2026/04/28" not in today_keys
 
-    def test_today_kessan_morning_before_18(self, kessan_env):
-        """18 時前 (base_day=前日) でも当日決算は today_entries に入る"""
+    def test_kessan_before_17_uses_previous_day_as_today(self, kessan_env):
+        """17時前は base_day=前日。前日決算カードを当日扱い (today_entries) にする"""
         from datetime import datetime as _dt
-        today_dt = _dt(2026, 4, 27, 9, 0)  # 9 時 = base_day は 4/26
+        today_dt = _dt(2026, 4, 27, 9, 0)  # 9時 = base_day は 4/26
         pf_dict = {
             "6501": {
                 "code_s": "6501",
                 "stock_name": "日立製作所",
-                "kessanbi": "2026/04/27",
+                "kessanbi": "2026/04/26",  # base_day 当日に相当
+                "kessan_quarter": 4,
+            },
+            "9984": {
+                "code_s": "9984",
+                "stock_name": "ソフトバンクG",
+                "kessanbi": "2026/04/27",  # カレンダー上の今日だが base_day より未来
                 "kessan_quarter": 4,
             },
         }
         kessan_env(pf_dict, today_dt)
         result = helpers.get_market_kessan_data()
         today_keys = [k for k, _ in result["today_entries"]]
-        # 18 時前 (base_day=4/26) でも today_cal=4/27 が判定基準なので
-        # 当日決算は today_entries に分類される
-        assert "2026/04/27" in today_keys
+        future_keys = [k for k, _ in result["future_entries"]]
+        # 17時前は base_day=4/26 が「今日」扱い
+        assert "2026/04/26" in today_keys
+        # カレンダー上の今日 (4/27) は base_day より未来なので future
+        assert "2026/04/27" in future_keys
 
     def test_today_kessan_includes_pts_in_post_price_changes(
         self, kessan_env, db_path

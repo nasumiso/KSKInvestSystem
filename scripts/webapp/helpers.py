@@ -1217,18 +1217,17 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 updates,
             ))
 
-        # 表示振り分けはカレンダー上の今日基準で 3 群に分ける:
-        # - past_groups (dt < today_cal): 過去決算 (反応コメ・株価変動率を表示)
-        # - today_groups (dt == today_cal): 当日決算。中身は past 相当で
+        # 表示振り分けは Shintakane 基準時刻 (17時) で 3 群に分ける:
+        # - past_groups (dt < base_day): 過去決算 (反応コメ・株価変動率を表示)
+        # - today_groups (dt == base_day): 当日決算。中身は past 相当で
         #   反応コメ・決算またぎを当日中に編集できるが、表示位置はカード扱いで
         #   future の前に置く。
-        # - future_groups (dt > today_cal): 未来決算 (事前見通しのみ編集)
-        # held_before/after の判定はこれより上の base_day ベースを維持
-        # (当日中の保有は「決算前保有」として扱うため)。
-        today_cal = datetime.today().date()
-        if dt < today_cal:
+        # - future_groups (dt > base_day): 未来決算 (事前見通しのみ編集)
+        # 例: 5/15 0:10 では base_day=5/14 のため 5/14 カードは当日扱い、
+        # 5/15 17:00 以降は base_day=5/15 となり 5/14 カードは過去扱いになる。
+        if dt < base_day:
             past_groups.setdefault(kessanbi, []).append(entry)
-        elif dt == today_cal:
+        elif dt == base_day:
             today_groups.setdefault(kessanbi, []).append(entry)
         else:
             future_groups.setdefault(kessanbi, []).append(entry)
