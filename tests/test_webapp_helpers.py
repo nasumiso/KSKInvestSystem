@@ -1530,7 +1530,7 @@ class TestProgressQuarterAndDiff:
         )
         label, diff = helpers._progress_quarter_and_diff({"code_s": "0001"})
         assert label == "3Q"
-        assert diff == "-2/+18"
+        assert diff == "-2/18"
 
     def test_no_progress_dict_returns_dash(self, monkeypatch):
         """calc_progress_rate がデータ不足で {} を返すときは '—'"""

@@ -1548,7 +1548,7 @@ def _progress_quarter_and_diff(stock: Dict[str, Any]) -> tuple:
         return (quarter_label, "—")
     sales_diff = round(sales - sales_pre)
     profit_diff = round(profit - profit_pre)
-    diff_str = f"{sales_diff:+d}/{profit_diff:+d}"
+    diff_str = f"{sales_diff:d}/{profit_diff:d}"
     return (quarter_label, diff_str)
 
 
@@ -1589,7 +1589,7 @@ def _theoretical_diff_raw(stock: Dict[str, Any]) -> Optional[float]:
 
 
 def _progress_diff_eiri_raw(stock: Dict[str, Any]) -> Optional[float]:
-    """進捗率乖離 (営利) の生値を返す。"+3/+15" の右側 = profit - profit_pre。"""
+    """進捗率乖離 (営利) の生値を返す。"3/15" の右側 = profit - profit_pre。"""
     if not stock:
         return None
     try:
