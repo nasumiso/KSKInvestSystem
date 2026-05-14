@@ -117,6 +117,111 @@ class TestDetailRoute:
         assert resp.status_code == 404
 
 
+class TestDetailPortfolioModal:
+    """issue #195: 詳細ページにポートフォリオステータス変更モーダルを描画する。
+
+    portfolio_shelve を tmp_path に差し替えた fixture で、登録済/未登録両ケースを検証。
+    本テストは module 内の app fixture を共有しつつ、必要な portfolio_shelve も差し替える。
+    """
+
+    @pytest.fixture
+    def portfolio_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        # research_shelve: 3496 (登録済 1保 用) と 1234 (未登録 = portfolio に入れない) を登録
+        rec_3496 = rs.create_research_record("3496", "アズーム", overall_rating="A")
+        rs.upsert_research_record(rec_3496, db_path=db_path)
+        rec_1234 = rs.create_research_record("1234", "テスト未登録", overall_rating="B")
+        rs.upsert_research_record(rec_1234, db_path=db_path)
+
+        # portfolio_shelve: 3496 を 1保 として登録
+        ps.add_to_watch("3496", reason="テスト用", db_path=portfolio_db)
+        ps.transition_status("3496", "1保", reason="テスト用 1保 へ", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app
+
+    @pytest.fixture
+    def portfolio_client(self, portfolio_app):
+        return portfolio_app.test_client()
+
+    def test_registered_stock_renders_modal_form(self, portfolio_client):
+        """登録済銘柄: モーダル DOM (transition POST フォーム + return_to=detail hidden) が出る"""
+        resp = portfolio_client.get("/stock/3496")
+        html = resp.data.decode()
+        assert 'id="portfolio-modal"' in html
+        assert 'action="/portfolio/3496/transition"' in html
+        assert 'name="return_to" value="detail"' in html
+
+    def test_registered_stock_has_transition_options(self, portfolio_client):
+        """登録済銘柄 (1保): _allowed_transitions_from('1保') の遷移先 (2準) が select に含まれる"""
+        resp = portfolio_client.get("/stock/3496")
+        html = resp.data.decode()
+        # 1保 からは 2準 (売却) への遷移が許可されている
+        assert 'value="2準"' in html
+
+    def test_unregistered_stock_shows_add_button(self, portfolio_client):
+        """未登録銘柄 (research_shelve には存在): 「+ 監視に追加」ボタン + add POST モーダルが出る"""
+        resp = portfolio_client.get("/stock/1234")
+        html = resp.data.decode()
+        assert "+ 監視に追加" in html
+        assert 'action="/portfolio/add"' in html
+        assert 'name="return_to" value="detail"' in html
+
+    def test_registered_badge_is_clickable_button(self, portfolio_client):
+        """登録済バッジは button 要素になっている (onclick=openPortfolioModal)"""
+        resp = portfolio_client.get("/stock/3496")
+        html = resp.data.decode()
+        assert "portfolio-badge-button" in html
+        assert "openPortfolioModal()" in html
+
+    def test_excluded_record_treated_as_unregistered(self, db_path, tmp_path, monkeypatch):
+        """除外済み (excluded=True) は未登録扱い: バッジ/transition モーダルは出さず、
+        「+ 監視に追加」ボタン + /portfolio/add モーダルを出す (codex P2)。
+
+        理由: transition_status() は excluded フラグを下げないため、
+        除外済み銘柄に対して遷移を実行しても portfolio 一覧 / txt 同期から
+        除外されたまま = ユーザーは「変更したつもり」になる事故を防ぐ。
+        復活は /portfolio/add の add_to_watch() 復活パスに任せる。
+        """
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        rec = rs.create_research_record("9999", "除外テスト", overall_rating="C")
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        # 9999 を 3監 として追加 → ユニバース除外する
+        ps.add_to_watch("9999", reason="テスト用", db_path=portfolio_db)
+        ps.exclude_from_universe("9999", reason="テスト用 除外", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        client = app.test_client()
+        resp = client.get("/stock/9999")
+        html = resp.data.decode()
+
+        # 除外済みなのでバッジ button や transition モーダルは出ない
+        # (CSS 定義文字列と区別するため <button タグにマッチさせる)
+        import re
+        assert not re.search(r'<button[^>]*class="[^"]*portfolio-badge', html), (
+            "除外済み銘柄でもバッジ button が描画されている"
+        )
+        assert 'action="/portfolio/9999/transition"' not in html
+        # 代わりに add (復活) モーダルが出る
+        assert "+ 監視に追加" in html
+        assert 'action="/portfolio/add"' in html
+
+
 class TestDetailKessanHistory:
     """GET /stock/<code_s> の決算コメント履歴セクションのテスト (issue #131)"""
 
