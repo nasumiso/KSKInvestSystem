@@ -971,6 +971,12 @@ def upsert_kessan_pts_change(
             raise ValueError(f"レコード登録失敗: {normalized}")
 
         comments: List[Dict[str, Any]] = list(record.get("kessan_comments") or [])
+        # マッチング 3 段 (issue #207):
+        # 1) (kessanbi, quarter) 完全一致 → そのエントリ
+        # 2) 完全一致なし & 引数 quarter==0 → 同 kessanbi 内で quarter 最大のエントリ
+        #    (cron 経路で kessan_quarter 取得失敗 → q=0 フォールバックが
+        #     既に手動メモ済みの quarter エントリと別エントリで append される事故防止)
+        # 3) それも無ければ新規 append
         target_idx = None
         for i, entry in enumerate(comments):
             if (
@@ -979,6 +985,19 @@ def upsert_kessan_pts_change(
             ):
                 target_idx = i
                 break
+        if target_idx is None and int(quarter or 0) == 0:
+            # 同 kessanbi 内で quarter が最大のエントリにフォールバックマージ
+            best_idx = None
+            best_q = -1
+            for i, entry in enumerate(comments):
+                if entry.get("kessanbi") != kessanbi:
+                    continue
+                q = int(entry.get("quarter", 0) or 0)
+                if q > best_q:
+                    best_q = q
+                    best_idx = i
+            if best_idx is not None:
+                target_idx = best_idx
 
         if target_idx is not None:
             existing = comments[target_idx]
@@ -1021,6 +1040,26 @@ def get_kessan_comment(code_s: str, kessanbi: str) -> Optional[Dict[str, Any]]:
         if entry.get("kessanbi") == kessanbi:
             return entry
     return None
+
+
+def _select_market_kessan_winner(
+    cur: Dict[str, Any], cand: Dict[str, Any]
+) -> Dict[str, Any]:
+    """同 (code_s, kessanbi) で複数 kessan_comments エントリが来たときの優先順位 (issue #207)。
+
+    1. has_comment=True を優先
+    2. 両方 has_comment が同じなら quarter 大優先
+    3. quarter も同じなら cur (= 既存挙動互換、最初に見たもの)
+    """
+    cur_has = bool(cur.get("has_comment"))
+    cand_has = bool(cand.get("has_comment"))
+    if cur_has != cand_has:
+        return cand if cand_has else cur
+    cur_q = int(cur.get("quarter", 0) or 0)
+    cand_q = int(cand.get("quarter", 0) or 0)
+    if cand_q > cur_q:
+        return cand
+    return cur
 
 
 def get_market_kessan_data() -> Dict[str, Any]:
@@ -1125,13 +1164,13 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 continue
             merged_key = (code_s, kessanbi)
             quarter = entry.get("quarter", 0) or 0
-            base = merged.get(merged_key)
-            stock_name = (base or {}).get("stock_name") or rec.get("stock_name", "")
-            merged[merged_key] = {
+            cur = merged.get(merged_key)
+            stock_name = (cur or {}).get("stock_name") or rec.get("stock_name", "")
+            cand = {
                 "code_s": code_s,
                 "stock_name": stock_name,
                 "kessanbi": kessanbi,
-                "quarter": quarter if quarter else (base or {}).get("quarter", 0),
+                "quarter": quarter if quarter else (cur or {}).get("quarter", 0),
                 "pre_expectation": entry.get("pre_expectation", "") or "",
                 "pre_outlook": entry.get("pre_outlook", "") or "",
                 "post_price_changes": normalize_kessan_post_price_changes(entry),
@@ -1145,6 +1184,20 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 "held_before_kessan": bool(entry.get("held_before_kessan", False)),
                 "held_after_kessan": bool(entry.get("held_after_kessan", False)),
             }
+            # issue #207: 同 (code_s, kessanbi) で複数 quarter エントリが併存する場合、
+            # has_comment 優先 → quarter 大優先で winner を選ぶ。PTS は別チャネルで OR マージ。
+            winner = _select_market_kessan_winner(cur, cand) if cur else cand
+            winner_pts = (winner.get("post_price_changes") or {}).get("pts") or ""
+            if not winner_pts:
+                # winner に PTS が無ければ他のソース (cur / cand) から拾う
+                for src in (cur, cand):
+                    if not src:
+                        continue
+                    src_pts = (src.get("post_price_changes") or {}).get("pts") or ""
+                    if src_pts:
+                        winner.setdefault("post_price_changes", {})["pts"] = src_pts
+                        break
+            merged[merged_key] = winner
 
     # 過去エントリで post_price_changes のいずれかの期間が空のものだけ
     # 一括で price_log を取得し補完計算する
