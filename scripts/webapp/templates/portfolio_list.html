@@ -529,6 +529,23 @@ document.querySelectorAll('table details').forEach(function(d) {
       }
       newValue = (newValue || '').replace(/\r\n/g, '\n').trim();
 
+      // 更新日 (last_research_update) は M/D 形式 + カレンダー上存在する日付に限定
+      if (field === 'last_research_update' && newValue !== '') {
+        var md = newValue.match(/^(\d{1,2})\/(\d{1,2})$/);
+        var ok = false;
+        if (md) {
+          var mm = parseInt(md[1], 10), dd = parseInt(md[2], 10);
+          var y = new Date().getFullYear();
+          var probe = new Date(y, mm - 1, dd);
+          ok = (probe.getMonth() === mm - 1 && probe.getDate() === dd);
+        }
+        if (!ok) {
+          alert('日付として不正です: "' + newValue + '" (M/D 形式で入力してください)');
+          renderPlain(td, currentValue);
+          return;
+        }
+      }
+
       var fields = {};
       fields[field] = newValue;
       // ステージ編集時は更新日も当日に
