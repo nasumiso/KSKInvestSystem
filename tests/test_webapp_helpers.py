@@ -296,6 +296,257 @@ class TestGetMarketKessanData:
         assert found, "6501 のエントリが today_entries に見つからない"
 
 
+class TestGetMarketKessanDataDuplicateEntries:
+    """issue #207: 同 (code_s, kessanbi) で複数 quarter エントリ併存ケース。
+
+    upsert_kessan_pts_change が quarter=0 で append したフォールバック空エントリと、
+    手動メモ入りの quarter=4 エントリが両方残っているとき、メモ側を winner に選ぶ。
+    """
+
+    @pytest.fixture
+    def kessan_env(self, populated_db, monkeypatch):
+        """TestGetMarketKessanData と同じ kessan_env fixture (重複定義避けるため再利用)"""
+        from datetime import datetime as _dt
+
+        def setup(pf_dict, today_dt):
+            import kessan as _k
+            monkeypatch.setattr(_k, "load_pf_kessan_db", lambda: pf_dict)
+            import portfolio as _p
+            monkeypatch.setattr(_p, "parse_my_portforio", lambda: ([], []))
+            monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {})
+
+            class FrozenDateTime(_dt):
+                @classmethod
+                def today(cls):
+                    return today_dt
+                @classmethod
+                def now(cls, tz=None):
+                    return today_dt
+            monkeypatch.setattr(helpers, "datetime", FrozenDateTime)
+        return setup
+
+    def test_memo_entry_not_overwritten_by_empty(self, kessan_env):
+        """7717 想定: q=4 メモあり + q=0 PTS-only の 2 件 → memo が表示される"""
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 5, 12, 19, 0)
+        pf_dict = {
+            "7717": {
+                "code_s": "7717",
+                "stock_name": "ブイ・テクノロジー",
+                "kessanbi": "2026/05/12",
+                "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        rec = rs.create_research_record("7717", "ブイ・テクノロジー")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                "pre_expectation": "◎", "pre_outlook": "通期上振れ期待",
+                "post_comment": "[B] 好決算で反応良好",
+                "post_price_changes": {"pts": "", "1d": "", "5d": ""},
+                "kessan_matagi": False,
+                "held_before_kessan": False, "held_after_kessan": False,
+            },
+            {
+                "kessanbi": "2026/05/12", "quarter": 0,
+                "pre_expectation": "", "pre_outlook": "", "post_comment": "",
+                "post_price_changes": {"pts": "+11.82", "1d": "", "5d": ""},
+                "kessan_matagi": False,
+                "held_before_kessan": False, "held_after_kessan": False,
+            },
+        ]
+        rs.upsert_research_record(rec)
+
+        result = helpers.get_market_kessan_data()
+        for kessanbi, stocks in result["today_entries"]:
+            if kessanbi != "2026/05/12":
+                continue
+            for s in stocks:
+                if s["code_s"] == "7717":
+                    # メモあり側 (q=4) の値が出ている
+                    assert s["pre_outlook"] == "通期上振れ期待"
+                    assert s["post_comment"] == "[B] 好決算で反応良好"
+                    assert s["pre_expectation"] == "◎"
+                    return
+        assert False, "7717 が today_entries に見つからない"
+
+    def test_pts_merged_from_separate_entry(self, kessan_env):
+        """winner (q=4 メモ) に PTS が無くても、別エントリ (q=0) の PTS が引き継がれる"""
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 5, 12, 19, 0)
+        pf_dict = {
+            "7717": {
+                "code_s": "7717", "stock_name": "テスト",
+                "kessanbi": "2026/05/12", "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        rec = rs.create_research_record("7717", "テスト")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                "pre_outlook": "メモあり", "post_comment": "コメあり",
+                "post_price_changes": {"pts": "", "1d": "", "5d": ""},
+            },
+            {
+                "kessanbi": "2026/05/12", "quarter": 0,
+                "pre_outlook": "", "post_comment": "",
+                "post_price_changes": {"pts": "+11.82", "1d": "", "5d": ""},
+            },
+        ]
+        rs.upsert_research_record(rec)
+
+        result = helpers.get_market_kessan_data()
+        for kessanbi, stocks in result["today_entries"]:
+            if kessanbi != "2026/05/12":
+                continue
+            for s in stocks:
+                if s["code_s"] == "7717":
+                    assert s["post_price_changes"].get("pts") == "+11.82"
+                    return
+        assert False, "7717 が today_entries に見つからない"
+
+    def test_higher_quarter_wins_when_both_have_memo(self, kessan_env):
+        """両方メモあり → quarter 大優先 (q=2 と q=4 → q=4 が選ばれる)"""
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 5, 12, 19, 0)
+        pf_dict = {
+            "7717": {
+                "code_s": "7717", "stock_name": "テスト",
+                "kessanbi": "2026/05/12", "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        rec = rs.create_research_record("7717", "テスト")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 2,
+                "pre_outlook": "Q2 メモ", "post_comment": "Q2 コメ",
+            },
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                "pre_outlook": "Q4 メモ", "post_comment": "Q4 コメ",
+            },
+        ]
+        rs.upsert_research_record(rec)
+
+        result = helpers.get_market_kessan_data()
+        for kessanbi, stocks in result["today_entries"]:
+            if kessanbi != "2026/05/12":
+                continue
+            for s in stocks:
+                if s["code_s"] == "7717":
+                    assert s["pre_outlook"] == "Q4 メモ"
+                    assert s["post_comment"] == "Q4 コメ"
+                    return
+        assert False, "7717 が today_entries に見つからない"
+
+    def test_single_entry_unchanged(self, kessan_env):
+        """1 件のみのエントリは従来通り表示される (regression 防御)"""
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 5, 12, 19, 0)
+        pf_dict = {
+            "7717": {
+                "code_s": "7717", "stock_name": "テスト",
+                "kessanbi": "2026/05/12", "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        rec = rs.create_research_record("7717", "テスト")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                "pre_outlook": "単独メモ",
+                "post_price_changes": {"pts": "+1.0", "1d": "", "5d": ""},
+            },
+        ]
+        rs.upsert_research_record(rec)
+
+        result = helpers.get_market_kessan_data()
+        for kessanbi, stocks in result["today_entries"]:
+            if kessanbi != "2026/05/12":
+                continue
+            for s in stocks:
+                if s["code_s"] == "7717":
+                    assert s["pre_outlook"] == "単独メモ"
+                    assert s["post_price_changes"].get("pts") == "+1.0"
+                    return
+        assert False, "7717 が today_entries に見つからない"
+
+    def test_pf_only_replaced_by_memo_entry(self, kessan_env):
+        """pf_dict 由来 base (has_comment=False) は kessan_comments の memo entry で置き換わる"""
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 5, 12, 19, 0)
+        pf_dict = {
+            "7717": {
+                "code_s": "7717", "stock_name": "テスト",
+                "kessanbi": "2026/05/12", "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        rec = rs.create_research_record("7717", "テスト")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                "pre_outlook": "kessan_comments 由来",
+            },
+        ]
+        rs.upsert_research_record(rec)
+
+        result = helpers.get_market_kessan_data()
+        for kessanbi, stocks in result["today_entries"]:
+            if kessanbi != "2026/05/12":
+                continue
+            for s in stocks:
+                if s["code_s"] == "7717":
+                    assert s["pre_outlook"] == "kessan_comments 由来"
+                    assert s["has_comment"] is True
+                    return
+        assert False, "7717 が today_entries に見つからない"
+
+    def test_pf_base_does_not_overwrite_research_held_or_pts(self, kessan_env):
+        """pf-only ベース行が research 側の「メモなしだが held / 反応率あり」エントリを
+        上書きしない (codex P1 review 反映: kessan_matagi / held_* / post_price_changes 保護)。
+        """
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 5, 12, 19, 0)
+        pf_dict = {
+            "7717": {
+                "code_s": "7717", "stock_name": "テスト",
+                "kessanbi": "2026/05/12", "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        rec = rs.create_research_record("7717", "テスト")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                # メモは無いが、kessan_matagi / held_* / 反応率あり (= pf-only プレースホルダではない)
+                "pre_expectation": "", "pre_outlook": "", "post_comment": "",
+                "post_price_changes": {"pts": "", "1d": "+5.5", "5d": ""},
+                "kessan_matagi": True,
+                "held_before_kessan": True,
+                "held_after_kessan": True,
+            },
+        ]
+        rs.upsert_research_record(rec)
+
+        result = helpers.get_market_kessan_data()
+        for kessanbi, stocks in result["today_entries"]:
+            if kessanbi != "2026/05/12":
+                continue
+            for s in stocks:
+                if s["code_s"] == "7717":
+                    # research 側のフラグ・反応率が表示される
+                    assert s["kessan_matagi"] is True
+                    assert s["held_before_kessan"] is True
+                    assert s["held_after_kessan"] is True
+                    assert s["post_price_changes"].get("1d") == "+5.5"
+                    return
+        assert False, "7717 が today_entries に見つからない"
+
+
 class TestSearchRecords:
     """search_records のテスト"""
 
@@ -985,6 +1236,126 @@ class TestUpsertKessanPtsChange:
         assert len(loaded["kessan_comments"]) == 2
         quarters = sorted(int(e["quarter"]) for e in loaded["kessan_comments"])
         assert quarters == [1, 4]
+
+
+class TestUpsertKessanPtsChangeFallback:
+    """issue #207: quarter=0 引数のフォールバックマッチング (本番経路 make_stock_db.py:1708)。
+
+    cron で kessan_quarter 取得失敗 → q=0 で呼ばれたとき、同 kessanbi の
+    最大 quarter エントリにマージし重複 append を防ぐ。
+    """
+
+    @pytest.fixture
+    def setup_db(self, db_path, monkeypatch):
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr(helpers, "RESEARCH_SHELVE", db_path, raising=False)
+        return db_path
+
+    def test_quarter_zero_merges_into_existing_quarter4(self, setup_db):
+        """q=4 メモ既存 → q=0 PTS upsert で同エントリに pts 追記、append されない"""
+        rec = rs.create_research_record("7717", "ブイ・テクノロジー")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                "pre_expectation": "◎", "pre_outlook": "強気",
+                "post_price_changes": {"1d": "", "5d": ""},
+                "post_comment": "[B] 好決算", "kessan_matagi": False,
+                "held_before_kessan": False, "held_after_kessan": False,
+            },
+        ]
+        rs.upsert_research_record(rec)
+        helpers.upsert_kessan_pts_change("7717", "2026/05/12", 0, "+11.82")
+        loaded = rs.get_research_record("7717")
+        assert len(loaded["kessan_comments"]) == 1
+        e = loaded["kessan_comments"][0]
+        assert e["quarter"] == 4  # q=4 のまま
+        assert e["pre_outlook"] == "強気"
+        assert e["post_comment"] == "[B] 好決算"
+        assert e["post_price_changes"]["pts"] == "+11.82"
+
+    def test_pts_only_overwrites_pts_field(self, setup_db):
+        """q=0 フォールバックマージで post_comment 等は変更されない"""
+        rec = rs.create_research_record("7717", "TEST")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                "pre_outlook": "メモ", "post_comment": "コメ",
+                "post_price_changes": {"pts": "+1.0", "1d": "+0.5", "5d": ""},
+            },
+        ]
+        rs.upsert_research_record(rec)
+        helpers.upsert_kessan_pts_change("7717", "2026/05/12", 0, "+11.82")
+        loaded = rs.get_research_record("7717")
+        e = loaded["kessan_comments"][0]
+        assert e["pre_outlook"] == "メモ"
+        assert e["post_comment"] == "コメ"
+        # 1d は保持、pts のみ上書き
+        assert e["post_price_changes"]["1d"] == "+0.5"
+        assert e["post_price_changes"]["pts"] == "+11.82"
+
+    def test_quarter_zero_picks_max_quarter_when_multiple(self, setup_db):
+        """同 kessanbi で q=2 と q=4 がある時 q=4 を選ぶ"""
+        rec = rs.create_research_record("7717", "TEST")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 2,
+                "pre_outlook": "Q2", "post_price_changes": {},
+            },
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                "pre_outlook": "Q4", "post_price_changes": {},
+            },
+        ]
+        rs.upsert_research_record(rec)
+        helpers.upsert_kessan_pts_change("7717", "2026/05/12", 0, "+9.99")
+        loaded = rs.get_research_record("7717")
+        # q=2 と q=4 は維持 (新規 append しない)
+        assert len(loaded["kessan_comments"]) == 2
+        # q=4 に pts が入っている
+        for e in loaded["kessan_comments"]:
+            if int(e["quarter"]) == 4:
+                assert e["post_price_changes"]["pts"] == "+9.99"
+                assert e["pre_outlook"] == "Q4"
+            elif int(e["quarter"]) == 2:
+                assert e["post_price_changes"].get("pts", "") == ""
+
+    def test_quarter_zero_appends_when_no_kessanbi_match(self, setup_db):
+        """該当 kessanbi のエントリなし → 新規 append (従来挙動互換)"""
+        rec = rs.create_research_record("7717", "TEST")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2025/02/14", "quarter": 4,
+                "pre_outlook": "別決算日メモ",
+            },
+        ]
+        rs.upsert_research_record(rec)
+        helpers.upsert_kessan_pts_change("7717", "2026/05/12", 0, "+1.5")
+        loaded = rs.get_research_record("7717")
+        assert len(loaded["kessan_comments"]) == 2
+        # 新規 append された方
+        new_entry = next(
+            e for e in loaded["kessan_comments"] if e["kessanbi"] == "2026/05/12"
+        )
+        assert int(new_entry["quarter"]) == 0
+        assert new_entry["post_price_changes"]["pts"] == "+1.5"
+
+    def test_explicit_quarter_appends_when_no_match(self, setup_db):
+        """quarter=2 引数で完全一致なし → 従来通り新規 append (フォールバックしない)"""
+        rec = rs.create_research_record("7717", "TEST")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                "pre_outlook": "Q4 メモ",
+            },
+        ]
+        rs.upsert_research_record(rec)
+        helpers.upsert_kessan_pts_change("7717", "2026/05/12", 2, "+3.3")
+        loaded = rs.get_research_record("7717")
+        # フォールバックせず q=4 と q=2 の 2 件
+        assert len(loaded["kessan_comments"]) == 2
+        quarters = sorted(int(e["quarter"]) for e in loaded["kessan_comments"])
+        assert quarters == [2, 4]
 
 
 # ==================================================
