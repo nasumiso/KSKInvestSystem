@@ -91,11 +91,28 @@ class TestSearchRoute:
         assert "0 件" in html
 
     def test_index_filter_by_code(self, client):
+        # 1件のみヒットする場合は詳細ページへリダイレクト
         resp = client.get("/?code_s=3496")
-        assert "アズーム" in resp.data.decode()
+        assert resp.status_code == 302
+        assert "/stock/3496" in resp.headers["Location"]
 
         resp = client.get("/?code_s=9999")
         assert "アズーム" not in resp.data.decode()
+
+    def test_index_single_hit_redirects_to_detail(self, client):
+        """汎用検索 q で1件のみヒットしたら詳細ページへ直接ジャンプ"""
+        resp = client.get("/?q=3496")
+        assert resp.status_code == 302
+        assert "/stock/3496" in resp.headers["Location"]
+
+        resp = client.get("/?q=アズーム")
+        assert resp.status_code == 302
+        assert "/stock/3496" in resp.headers["Location"]
+
+    def test_index_multiple_hits_shows_list(self, client):
+        """複数ヒットする検索は一覧ページのまま"""
+        resp = client.get("/?q=テスト")  # "アズーム" の "テストメモ" と "空テスト" 両方にヒット
+        assert resp.status_code == 200
 
 
 class TestDetailRoute:

@@ -41,6 +41,10 @@ def index():
         if code_s:
             records = [r for r in records if code_s.upper() in r.get("code_s", "")]
 
+    # コード/銘柄名検索で1件のみヒットした場合は詳細ページへ直接ジャンプ
+    if (q or code_s) and len(records) == 1:
+        return redirect(url_for("detail.stock_detail", code_s=records[0]["code_s"]))
+
     return render_template(
         "search.html",
         records=records,
