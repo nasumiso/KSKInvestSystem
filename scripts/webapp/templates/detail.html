@@ -25,6 +25,26 @@
     <div class="meta">
       分析日: <input class="editable-field inline-date" type="text" name="analysis_date_raw" value="{{ record.analysis_date_raw or '' }}" data-form="memo" form="memo-form" placeholder="MM/DD" style="width:5em;display:inline;padding:0.1em 0.3em;font-size:0.9em;">
       {% if stock.kessanbi %} | 決算日: {{ stock.kessanbi[2:] }}{% endif %}
+      {# issue #205: 業態・テーマを同じ行に配置。change/blur で AJAX 即時保存 (portfolio_list と同方式) #}
+      {% if portfolio_status_query and not portfolio_fallback_mode %}
+      | <span class="gyoutai-themes-inline" data-code="{{ record.code_s }}">
+        業態・テーマ:
+        {% for i in range(gyoutai_themes_max_slots) %}
+        <input type="text"
+               list="gyoutai-theme-choices"
+               class="gyoutai-input-detail"
+               name="gyoutai_themes_{{ i }}"
+               value="{{ gyoutai_themes[i] if i < (gyoutai_themes|length) else '' }}"
+               placeholder="—"
+               style="font-size:0.9em;padding:0.1em 0.3em;width:8em;margin:0 0.1em;border:1px solid #ddd;">
+        {% endfor %}
+      </span>
+      <datalist id="gyoutai-theme-choices">
+        {% for choice in gyoutai_theme_choices %}
+        <option value="{{ choice }}">
+        {% endfor %}
+      </datalist>
+      {% endif %}
       <div>
         <a href="https://kabutan.jp/stock/chart?code={{ record.code_s }}&time=w" target="_blank" rel="noopener noreferrer">チャート</a>
         | <a href="https://kabutan.jp/stock/finance?code={{ record.code_s }}" target="_blank" rel="noopener noreferrer">業績</a>
@@ -423,6 +443,10 @@
   margin: 0;
   padding: 0.4em 1em;
 }
+/* issue #205: 業態・テーマ inline edit (AJAX 即時保存) の状態表示 */
+.gyoutai-input-detail.saving { background: #fff8c4; }
+.gyoutai-input-detail.error { background: #fce4e4; border-color: #d33; }
+.gyoutai-input-detail:focus { outline: 1px solid #4285f4; }
 </style>
 
 <script>
@@ -441,6 +465,47 @@ document.addEventListener('keydown', function(e) {
     if (m && m.style.display !== 'none') closePortfolioModal();
   }
 });
+
+// issue #205: 業態・テーマの change/blur で AJAX 即時保存 (portfolio_list.html と同方式)
+(function() {
+  var wrap = document.querySelector('.gyoutai-themes-inline');
+  if (!wrap) return;
+  var code = wrap.dataset.code;
+  if (!code) return;
+  var inputs = wrap.querySelectorAll('.gyoutai-input-detail');
+
+  function save() {
+    var fd = new FormData();
+    inputs.forEach(function(inp) { fd.append(inp.name, inp.value); });
+    inputs.forEach(function(inp) { inp.classList.add('saving'); inp.classList.remove('error'); });
+    fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+    }).then(function(r) {
+      return r.json().then(function(json) { return { ok: r.ok, json: json }; });
+    }).then(function(res) {
+      inputs.forEach(function(inp) { inp.classList.remove('saving'); });
+      if (!res.ok || !res.json || res.json.ok !== true) {
+        inputs.forEach(function(inp) { inp.classList.add('error'); });
+        alert((res.json && res.json.error) || '業態・テーマの保存に失敗しました');
+        return;
+      }
+      var themes = (res.json.display && res.json.display.gyoutai_themes) || [];
+      inputs.forEach(function(inp, i) { inp.value = themes[i] != null ? themes[i] : ''; });
+    }).catch(function(err) {
+      inputs.forEach(function(inp) { inp.classList.remove('saving'); inp.classList.add('error'); });
+      alert('通信エラー: ' + err);
+    });
+  }
+
+  inputs.forEach(function(inp) {
+    inp.addEventListener('change', save);
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+    });
+  });
+})();
 </script>
 {% endif %}
 {% endblock %}

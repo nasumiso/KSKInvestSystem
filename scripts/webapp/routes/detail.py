@@ -13,6 +13,7 @@ from webapp.helpers import (
     get_stock_data,
     get_disclosures,
     has_recent_disclosure,
+    collect_gyoutai_theme_choices,
 )
 from webapp.routes.portfolio import (
     STATUS_VALUE_TO_LABEL,
@@ -80,6 +81,18 @@ def stock_detail(code_s: str):
         _allowed_transitions_from(portfolio_status) if portfolio_status else []
     )
 
+    # issue #205: 業態・テーマ inline 編集用の context
+    # memo は None や非 dict (旧データ等) を許容する仕様 (_normalize_loaded_memo)
+    # なので、dict 以外は空 dict として扱う
+    _memo = (portfolio_record or {}).get("memo")
+    if not isinstance(_memo, dict):
+        _memo = {}
+    gyoutai_themes = _memo.get("gyoutai_themes") or []
+    gyoutai_theme_choices = (
+        collect_gyoutai_theme_choices(ps.list_records(include_excluded=True))
+        if not portfolio_fallback_mode else []
+    )
+
     return render_template(
         "detail.html",
         record=record,
@@ -92,4 +105,7 @@ def stock_detail(code_s: str):
         portfolio_status_query=portfolio_status_query,
         portfolio_fallback_mode=portfolio_fallback_mode,
         portfolio_transitions=portfolio_transitions,
+        gyoutai_themes=gyoutai_themes,
+        gyoutai_theme_choices=gyoutai_theme_choices,
+        gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
     )

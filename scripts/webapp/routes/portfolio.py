@@ -377,7 +377,8 @@ def update_memo(code_s: str):
         if is_ajax:
             return jsonify({"ok": False, "error": f"不正な銘柄コード: {e}"}), 400
         flash(f"不正な銘柄コード: {e}", "error")
-        return _redirect_with_return_query()
+        # issue #205: code_s を渡し、return_to=detail なら詳細ページへ戻す
+        return _redirect_with_return_query(code_s=code_s)
 
     fields = _extract_memo_fields_from_form(request.form)
 
@@ -388,12 +389,12 @@ def update_memo(code_s: str):
         if is_ajax:
             return jsonify({"ok": False, "error": msg}), 404
         flash(msg, "error")
-        return _redirect_with_return_query()
+        return _redirect_with_return_query(code_s=code_s)
     except (ValueError, TypeError) as e:
         if is_ajax:
             return jsonify({"ok": False, "error": str(e)}), 400
         flash(str(e), "error")
-        return _redirect_with_return_query()
+        return _redirect_with_return_query(code_s=code_s)
 
     if is_ajax:
         # 保存後の row を再構築して、更新済みフィールドと styles を返す
@@ -414,7 +415,7 @@ def update_memo(code_s: str):
                 }
         return jsonify(body)
     flash(f"{code_s} のメモを保存しました", "info")
-    return _redirect_with_return_query()
+    return _redirect_with_return_query(code_s=code_s)
 
 
 @portfolio_bp.route("/portfolio/add", methods=["POST"])
