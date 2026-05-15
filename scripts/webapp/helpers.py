@@ -1334,11 +1334,15 @@ def get_market_kessan_data() -> Dict[str, Any]:
         reverse=True,
     )
     # 過去7日間は常時表示、それ以前は details で折りたたみ
+    # 30日より前の決算は表示しない (履歴が貯まり続けるとDOM/メモリが肥大化するため)
     recent_cutoff = base_day - timedelta(days=7)
+    older_cutoff = base_day - timedelta(days=30)
     recent_past_entries: List = []
     older_past_entries: List = []
     for kv in past_entries_all:
         dt = _parse_kessanbi(kv[0]) or date.min
+        if dt < older_cutoff:
+            continue
         if dt >= recent_cutoff:
             recent_past_entries.append(kv)
         else:

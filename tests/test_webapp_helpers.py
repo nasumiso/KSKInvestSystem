@@ -225,6 +225,36 @@ class TestGetMarketKessanData:
         assert "2026/04/28" not in past_keys
         assert "2026/04/28" not in today_keys
 
+    def test_kessan_older_than_30_days_is_dropped(self, kessan_env):
+        """30日より前の過去決算は recent_past/older_past いずれにも含まれない
+
+        履歴蓄積による DOM/メモリ肥大化を防ぐためのカットオフ (issue #203 議論)。
+        """
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 4, 27, 19, 0)  # base_day=4/27
+        pf_dict = {
+            # 8日前 (4/19): older_past に入る (recent_cutoff=4/20 より古い)
+            "6501": {
+                "code_s": "6501", "stock_name": "8日前",
+                "kessanbi": "2026/04/19", "kessan_quarter": 4,
+            },
+            # 31日前 (3/27): older_cutoff=3/28 より古いので drop される
+            "9984": {
+                "code_s": "9984", "stock_name": "31日前",
+                "kessanbi": "2026/03/27", "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        result = helpers.get_market_kessan_data()
+        recent_keys = [k for k, _ in result["recent_past_entries"]]
+        older_keys = [k for k, _ in result["older_past_entries"]]
+        # 8日前は older_past
+        assert "2026/04/19" in older_keys
+        assert "2026/04/19" not in recent_keys
+        # 31日前は両方に入らない (drop)
+        assert "2026/03/27" not in recent_keys
+        assert "2026/03/27" not in older_keys
+
     def test_kessan_before_17_uses_previous_day_as_today(self, kessan_env):
         """17時前は base_day=前日。前日決算カードを当日扱い (today_entries) にする"""
         from datetime import datetime as _dt
