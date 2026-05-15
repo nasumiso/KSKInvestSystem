@@ -126,14 +126,19 @@ def _sync_txt_safely() -> None:
 
 
 def _redirect_with_return_query(
-    default_status_query: str = DEFAULT_STATUS_QUERY,
+    default_status_query: Optional[str] = None,
     code_s: Optional[str] = None,
 ):
     """POST フォームに埋め込まれた hidden `return_query` を尊重してリダイレクトする (issue #178, #215)。
 
     return_query はクエリ文字列 (例: `status=hold&gyoutai_theme=半導体`) を
-    そのまま受け取り、URL に付与する。空 or 未指定なら `?status=<default>` に
-    フォールバック。これで POST 後も直前のフィルタが復元できる。
+    そのまま受け取り、URL に付与する。これで POST 後も直前のフィルタが復元できる。
+
+    空 or 未指定時の戻り先 (issue #215):
+      - `default_status_query=None` (デフォルト): 素の `/portfolio` (= 全件表示) に戻す。
+        引数なし /portfolio の全件状態からの POST を復元するためのフォールバック。
+      - `default_status_query="watch"` 等: `?status=<value>` を付与。`add()` から
+        追加直後の銘柄が見えるよう監視フィルタに切り替えたい場合に使う。
 
     安全のため return_query から先頭の `?` を取り除き、改行や `#` も弾く
     (URL injection 防止)。
@@ -154,7 +159,9 @@ def _redirect_with_return_query(
     base = url_for("portfolio.dashboard")
     if raw:
         return redirect(f"{base}?{raw}")
-    return redirect(f"{base}?status={default_status_query}")
+    if default_status_query:
+        return redirect(f"{base}?status={default_status_query}")
+    return redirect(base)
 
 
 def _is_fallback_mode() -> bool:

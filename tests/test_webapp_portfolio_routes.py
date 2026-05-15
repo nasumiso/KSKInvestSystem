@@ -338,14 +338,16 @@ class TestBulkExclude:
         assert "status=semi" in loc
         assert "gyoutai_theme=" in loc
 
-    def test_bulk_exclude_empty_return_query_falls_back_to_default(self, client, portfolio_db_path):
-        """return_query 未指定はデフォルト ?status=hold にリダイレクト (issue #178)"""
+    def test_bulk_exclude_empty_return_query_falls_back_to_all(self, client, portfolio_db_path):
+        """return_query 未指定は素の /portfolio (= 全件表示) にリダイレクト (issue #215)"""
         resp = client.post(
             "/portfolio/bulk-exclude",
             data={"codes": "6324"},
         )
         assert resp.status_code == 302
-        assert "status=hold" in resp.headers["Location"]
+        loc = resp.headers["Location"]
+        # /portfolio に戻る (status= 等のフィルタクエリは付かない)
+        assert loc.endswith("/portfolio")
 
     def test_bulk_exclude_empty_codes_flash_error(self, client, portfolio_db_path):
         resp = client.post("/portfolio/bulk-exclude", data={})
@@ -984,10 +986,11 @@ class TestReturnQueryRedirect:
             data={"new_status": "1保", "return_query": "status=hold\n#evil"},
         )
         assert resp.status_code == 302
-        # return_query が空相当の扱い → デフォルト ?status=hold
+        # return_query が空相当の扱い → 素の /portfolio (= 全件表示、issue #215)
         loc = resp.headers["Location"]
-        assert "status=hold" in loc
+        assert loc.endswith("/portfolio")
         assert "evil" not in loc
+        assert "%0A" not in loc
         assert "%0A" not in loc
 
 
