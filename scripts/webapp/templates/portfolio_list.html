@@ -226,9 +226,9 @@
       <td style="{{ row.styles.progress_diff or '' }}">{{ row.progress_diff }}</td>
       <td data-style-field="kessanbi_md"
           style="{{ row.styles.kessanbi_md or '' }}">{{ row.kessanbi_md }}</td>
-      <td title="クリックで編集 (M/D 形式 or 日付ピッカー)"
+      <td title="クリックで編集 (M/D 形式)"
           data-style-field="last_research_update"
-          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="last_research_update" data-input-type="date"{% endif %}
+          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="last_research_update"{% endif %}
           style="{{ row.styles.last_research_update or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.last_research_update or "—" }}</td>
       <td title="クリックで編集 (ステージ変更時は更新日も自動で当日に) / Ctrl+クリックで株探チャート"
           data-style-field="stage"
