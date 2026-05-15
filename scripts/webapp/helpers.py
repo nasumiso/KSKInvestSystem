@@ -1352,7 +1352,10 @@ def get_market_kessan_data() -> Dict[str, Any]:
         "base_day": base_day,
         "future_entries": future_entries,
         "today_entries": today_entries,
-        "past_entries": past_entries_all,  # 後方互換
+        # 後方互換: 90日カットオフ後の全過去エントリ (空状態判定で使うため
+        # recent + older を合成。past_entries_all をそのまま返すと、90日超
+        # しか無いケースで空状態メッセージが出ず画面が空白になる)
+        "past_entries": recent_past_entries + older_past_entries,
         "recent_past_entries": recent_past_entries,
         "older_past_entries": older_past_entries,
     }

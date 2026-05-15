@@ -255,6 +255,30 @@ class TestGetMarketKessanData:
         assert "2026/01/26" not in recent_keys
         assert "2026/01/26" not in older_keys
 
+    def test_past_entries_excludes_kessan_older_than_90_days(self, kessan_env):
+        """past_entries (空状態判定で使う後方互換キー) も90日カットオフ後の値を返す
+
+        market.html の空状態判定 `not future_entries and not past_entries` が
+        90日超の決算しかないケースで誤って False になり、カードも空状態メッセージも
+        出ない画面破綻を防ぐ。
+        """
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 4, 27, 19, 0)  # base_day=4/27
+        pf_dict = {
+            # 91日前のみ → 90日カットオフで past_entries は空になるべき
+            "9984": {
+                "code_s": "9984", "stock_name": "91日前のみ",
+                "kessanbi": "2026/01/26", "kessan_quarter": 3,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        result = helpers.get_market_kessan_data()
+        # past_entries も past_entries_all ではなく90日カットオフ後 = 空
+        assert result["past_entries"] == []
+        assert result["future_entries"] == []
+        # 空状態メッセージが出る条件 (not future and not past) を満たす
+        assert not result["future_entries"] and not result["past_entries"]
+
     def test_kessan_before_17_uses_previous_day_as_today(self, kessan_env):
         """17時前は base_day=前日。前日決算カードを当日扱い (today_entries) にする"""
         from datetime import datetime as _dt
