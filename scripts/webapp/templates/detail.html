@@ -2,6 +2,13 @@
 {% block title %}[{{ record.code_s }}] {{ record.stock_name or '' }} - 銘柄詳細 | Shintakane Research{% endblock %}
 
 {% block content %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  {% for category, message in messages %}
+  <div style="padding:0.5em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;{% if category == 'error' %}background:#ffeaea;color:#c00;border:1px solid #fcc;{% else %}background:#eaffea;color:#060;border:1px solid #cfc;{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+{% endwith %}
 {# ===== 1. ヘッダー ===== #}
 <div class="stock-header">
   <div class="left">
@@ -45,6 +52,10 @@
         {% endfor %}
       </datalist>
       {% endif %}
+      <form method="POST" action="/stock/{{ record.code_s }}/refresh" style="display:inline;margin-left:0.5em;">
+        <button type="submit" title="業績・指標・株価などの最新データを再取得します"
+                style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">再取得</button>
+      </form>
       <div>
         <a href="https://kabutan.jp/stock/chart?code={{ record.code_s }}&time=w" target="_blank" rel="noopener noreferrer">チャート</a>
         | <a href="https://kabutan.jp/stock/finance?code={{ record.code_s }}" target="_blank" rel="noopener noreferrer">業績</a>
