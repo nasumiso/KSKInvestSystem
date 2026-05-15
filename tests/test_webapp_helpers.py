@@ -505,6 +505,47 @@ class TestGetMarketKessanDataDuplicateEntries:
                     return
         assert False, "7717 が today_entries に見つからない"
 
+    def test_pf_base_does_not_overwrite_research_held_or_pts(self, kessan_env):
+        """pf-only ベース行が research 側の「メモなしだが held / 反応率あり」エントリを
+        上書きしない (codex P1 review 反映: kessan_matagi / held_* / post_price_changes 保護)。
+        """
+        from datetime import datetime as _dt
+        today_dt = _dt(2026, 5, 12, 19, 0)
+        pf_dict = {
+            "7717": {
+                "code_s": "7717", "stock_name": "テスト",
+                "kessanbi": "2026/05/12", "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        rec = rs.create_research_record("7717", "テスト")
+        rec["kessan_comments"] = [
+            {
+                "kessanbi": "2026/05/12", "quarter": 4,
+                # メモは無いが、kessan_matagi / held_* / 反応率あり (= pf-only プレースホルダではない)
+                "pre_expectation": "", "pre_outlook": "", "post_comment": "",
+                "post_price_changes": {"pts": "", "1d": "+5.5", "5d": ""},
+                "kessan_matagi": True,
+                "held_before_kessan": True,
+                "held_after_kessan": True,
+            },
+        ]
+        rs.upsert_research_record(rec)
+
+        result = helpers.get_market_kessan_data()
+        for kessanbi, stocks in result["today_entries"]:
+            if kessanbi != "2026/05/12":
+                continue
+            for s in stocks:
+                if s["code_s"] == "7717":
+                    # research 側のフラグ・反応率が表示される
+                    assert s["kessan_matagi"] is True
+                    assert s["held_before_kessan"] is True
+                    assert s["held_after_kessan"] is True
+                    assert s["post_price_changes"].get("1d") == "+5.5"
+                    return
+        assert False, "7717 が today_entries に見つからない"
+
 
 class TestSearchRecords:
     """search_records のテスト"""

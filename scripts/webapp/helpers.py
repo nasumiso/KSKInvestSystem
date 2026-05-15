@@ -1042,15 +1042,39 @@ def get_kessan_comment(code_s: str, kessanbi: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _is_empty_placeholder(entry: Dict[str, Any]) -> bool:
+    """pf_kessan_shelve 由来の空ベース行 (= 実データを何も持たないプレースホルダ) か判定する。
+
+    pf-only ベースは has_comment=False かつ価格反応も held_* / kessan_matagi も無い。
+    research 側のエントリが「メモなしだが反応率/held フラグあり」のとき、こちらを
+    優先するための補助判定 (issue #207 codex P1 review 反映)。
+    """
+    if entry.get("has_comment"):
+        return False
+    if entry.get("kessan_matagi"):
+        return False
+    if entry.get("held_before_kessan") or entry.get("held_after_kessan"):
+        return False
+    ppc = entry.get("post_price_changes") or {}
+    for v in ppc.values():
+        if (v or "").strip():
+            return False
+    return True
+
+
 def _select_market_kessan_winner(
     cur: Dict[str, Any], cand: Dict[str, Any]
 ) -> Dict[str, Any]:
     """同 (code_s, kessanbi) で複数 kessan_comments エントリが来たときの優先順位 (issue #207)。
 
-    1. has_comment=True を優先
-    2. 両方 has_comment が同じなら quarter 大優先
-    3. quarter も同じなら cur (= 既存挙動互換、最初に見たもの)
+    1. cur が pf-only プレースホルダなら cand を採用 (research 側の実データを優先、
+       codex P1 review: kessan_matagi / held_* / post_price_changes が捨てられないように)
+    2. has_comment=True を優先
+    3. 両方 has_comment が同じなら quarter 大優先
+    4. quarter も同じなら cur (= 既存挙動互換、最初に見たもの)
     """
+    if _is_empty_placeholder(cur):
+        return cand
     cur_has = bool(cur.get("has_comment"))
     cand_has = bool(cand.get("has_comment"))
     if cur_has != cand_has:
