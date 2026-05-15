@@ -573,3 +573,140 @@ class TestMarketRouteKessanCard:
         html = resp.data.decode()
         # data-is-past="1" で past 扱い (反応コメ枠が出る)
         assert 'data-is-past="1"' in html
+
+
+class TestDetailGyoutaiThemes:
+    """issue #205: 銘柄詳細ページの業態・テーマ inline 編集 (AJAX 即時保存)。
+
+    既存 portfolio.update_memo (POST /portfolio/<code_s>/memo) を AJAX で再利用。
+    保存ボタンは無く、change/blur で即送信する portfolio_list.html と同方式。
+    """
+
+    @pytest.fixture
+    def portfolio_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        rec_3496 = rs.create_research_record("3496", "アズーム", overall_rating="A")
+        rs.upsert_research_record(rec_3496, db_path=db_path)
+        rec_1234 = rs.create_research_record("1234", "テスト未登録", overall_rating="B")
+        rs.upsert_research_record(rec_1234, db_path=db_path)
+
+        ps.add_to_watch("3496", reason="テスト用", db_path=portfolio_db)
+        ps.transition_status("3496", "1保", reason="テスト用 1保 へ", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app, portfolio_db
+
+    @pytest.fixture
+    def portfolio_client(self, portfolio_app):
+        app, _ = portfolio_app
+        return app.test_client()
+
+    def test_registered_stock_renders_inline_inputs(self, portfolio_client):
+        """登録済銘柄: 業態・テーマ inline edit (data-code 付き wrapper + 2 input) が出る"""
+        html = portfolio_client.get("/stock/3496").data.decode()
+        assert 'class="gyoutai-themes-inline" data-code="3496"' in html
+        assert 'name="gyoutai_themes_0"' in html
+        assert 'name="gyoutai_themes_1"' in html
+        # AJAX 化したので保存ボタンは無い、form タグも無い
+        assert "action=\"/portfolio/3496/memo\"" not in html
+
+    def test_registered_stock_renders_datalist(self, portfolio_client):
+        """datalist#gyoutai-theme-choices が出る (候補は空でもタグは描画)"""
+        html = portfolio_client.get("/stock/3496").data.decode()
+        assert '<datalist id="gyoutai-theme-choices">' in html
+
+    def test_existing_themes_prefilled(self, portfolio_app):
+        """事前に保存したテーマが input value にプリフィルされる"""
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+        ps.update_memo("3496", {"gyoutai_themes": ["AI", "半導体"]}, db_path=portfolio_db)
+
+        html = app.test_client().get("/stock/3496").data.decode()
+        assert 'value="AI"' in html
+        assert 'value="半導体"' in html
+
+    def test_unregistered_stock_hides_inline_inputs(self, portfolio_client):
+        """未登録銘柄では inline edit (gyoutai_themes_0 input) が出ない"""
+        html = portfolio_client.get("/stock/1234").data.decode()
+        assert 'name="gyoutai_themes_0"' not in html
+        assert 'class="gyoutai-themes-inline"' not in html
+
+    def test_ajax_post_returns_json_with_themes(self, portfolio_app):
+        """X-Requested-With 付き POST → 200 + JSON、display.gyoutai_themes に保存値が返る"""
+        app, _ = portfolio_app
+        client = app.test_client()
+        resp = client.post(
+            "/portfolio/3496/memo",
+            data={"gyoutai_themes_0": "新規テーマ", "gyoutai_themes_1": ""},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["display"]["gyoutai_themes"] == ["新規テーマ"]
+
+    def test_ajax_post_persists(self, portfolio_app):
+        """AJAX POST 後、portfolio_shelve.memo.gyoutai_themes に反映される"""
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+        client = app.test_client()
+        client.post(
+            "/portfolio/3496/memo",
+            data={"gyoutai_themes_0": "新規テーマ", "gyoutai_themes_1": ""},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        rec = ps.get_record("3496", db_path=portfolio_db)
+        assert (rec.get("memo") or {}).get("gyoutai_themes") == ["新規テーマ"]
+
+    def test_ajax_post_clears_when_all_empty(self, portfolio_app):
+        """既存テーマあり → 全スロット空文字 AJAX POST → gyoutai_themes が空 list に"""
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+        ps.update_memo("3496", {"gyoutai_themes": ["AI", "半導体"]}, db_path=portfolio_db)
+
+        client = app.test_client()
+        client.post(
+            "/portfolio/3496/memo",
+            data={"gyoutai_themes_0": "", "gyoutai_themes_1": ""},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        rec = ps.get_record("3496", db_path=portfolio_db)
+        assert (rec.get("memo") or {}).get("gyoutai_themes") == []
+
+    def test_detail_renders_when_memo_is_not_dict(self, portfolio_app, monkeypatch):
+        """memo が None / 非 dict の旧データでも詳細ページが 500 にならない (codex P2)。
+
+        _normalize_loaded_memo は非 dict の memo を素通しするので、
+        portfolio_record["memo"] が None になり得る。`get("memo", {}).get(...)` は
+        memo キーが存在し値が None だと AttributeError を投げるため、
+        詳細ページ側で dict ガードが必要。
+
+        ps.get_record をモンキーパッチして memo=None のレコードを返させる。
+        """
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+
+        original_get = ps.get_record
+
+        def patched_get(code_s, db_path=None):
+            rec = original_get(code_s, db_path=db_path)
+            if rec and code_s == "3496":
+                rec = dict(rec)
+                rec["memo"] = None
+            return rec
+
+        monkeypatch.setattr(ps, "get_record", patched_get)
+
+        # GET /stock/3496 で 500 にならないこと
+        resp = app.test_client().get("/stock/3496")
+        assert resp.status_code == 200
+        # 業態・テーマ inline edit (input) は出る (空値で)
+        html = resp.data.decode()
+        assert 'name="gyoutai_themes_0"' in html
