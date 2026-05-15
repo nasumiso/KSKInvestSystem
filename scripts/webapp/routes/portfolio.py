@@ -1,6 +1,6 @@
-"""保有銘柄ダッシュボードルート (Phase 3b / issue #171, #175, #178, #186)。
+"""保有銘柄ダッシュボードルート (Phase 3b / issue #171, #175, #178, #186, #215)。
 
-GET  /portfolio?status=hold,semi&sort=rank&page=2 : フィルタ/ソート/ページング (issue #178)
+GET  /portfolio?status=hold&gyoutai_theme=半導体 : フィルタ (issue #215)
 POST /portfolio/add                              : 3監 への新規追加 / 除外済みの復活
 POST /portfolio/<code_s>/transition              : ステータス変更
 POST /portfolio/bulk-exclude                     : 2準/3監 銘柄をユニバースから除外 (一括)
@@ -10,9 +10,8 @@ portfolio_shelve のレコードに stocks_shelve から指標を補完して表
 書き込み API は txt 関連の状態を変えるもの (add/transition/bulk-exclude) のみ
 末尾で sync_to_my_watch_list_txt() を呼ぶ。memo 更新は txt 内容に影響しないため同期不要。
 
-issue #178: タブ構造を撤廃しフィルタ/ソート/ページングに再設計。POST 後の
-リダイレクトは hidden `return_query` (現状の URL クエリ全体) を尊重して
-直前のフィルタ状態に戻す。
+issue #215: ページング/ソートを廃止し、status は単一選択化、業態テーマ select を追加。
+業態テーマ指定時は status 無視で全銘柄から該当する業態/テーマだけを抽出する。
 """
 
 from typing import Optional
@@ -49,83 +48,52 @@ STATUS_VALUE_TO_LABEL = {
 }
 
 # フィルタ表示順 (左から右): (query, status_value, label)
-# issue #178: 旧 TABS から名称変更。タブではなくフィルタ checkbox の表示順を規定する。
+# issue #215: select の option 順序を規定する。
 STATUS_CHOICES = [
     ("hold", "1保", STATUS_VALUE_TO_LABEL["1保"]),
     ("semi", "2準", STATUS_VALUE_TO_LABEL["2準"]),
     ("watch", "3監", STATUS_VALUE_TO_LABEL["3監"]),
 ]
-DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 引数なし時のデフォルト
-
-# issue #178: ページング設定 (1ページ件数)
-PORTFOLIO_PAGE_SIZE = 50
-
-# issue #178: 受理する sort key
-VALID_SORT_KEYS = ("gyoutai", "rank")
-DEFAULT_SORT_KEY = "gyoutai"
+DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 書き込み POST 後フォールバック先
 
 
-def _parse_status_filter(args) -> list[str]:
-    """request.args (MultiDict) から status フィルタを内部値リスト (例: ["1保","2準"]) に変換する。
+def _parse_status_filter(args) -> Optional[str]:
+    """request.args から status フィルタを内部値 (例: "1保") に変換する (issue #215)。
 
-    2 つの送信形式を両方受理:
-      - カンマ区切り単一キー: `?status=hold,semi` (URL 直接指定・既存互換)
-      - 同名複数キー: `?status=hold&status=semi` (HTML form の checkbox 標準送信)
-
-    各値を小文字化・トリムし、STATUS_QUERY_TO_VALUE で内部値に変換。不正値は無視。
-    結果が空 (= 指定なし or 全不正値) は ["1保"] (デフォルト = 保有のみ)。
-    既存 URL `?status=hold` (単一値) は自然に ["1保"] に解決され、互換性維持。
+    省略・空文字・「すべて」(value="") は None を返し、ダッシュボード側で
+    「全ステータス表示」として扱う。`?status=hold,semi` のようなカンマ区切り
+    旧 URL は寛容処理し先頭値のみ採用する (issue #215 で複数選択は廃止)。
+    不正値は None (= 全件表示) にフォールバック。
     """
-    raw_values = args.getlist("status") if hasattr(args, "getlist") else []
-    flat: list[str] = []
-    for v in raw_values:
-        for piece in (v or "").split(","):
-            piece = piece.strip().lower()
-            if piece:
-                flat.append(piece)
-    statuses: list[str] = []
-    for q in flat:
-        st = STATUS_QUERY_TO_VALUE.get(q)
-        if st and st not in statuses:
-            statuses.append(st)
-    if not statuses:
-        statuses = [STATUS_QUERY_TO_VALUE[DEFAULT_STATUS_QUERY]]
-    return statuses
+    raw = (args.get("status") or "").strip().lower()
+    if not raw:
+        return None
+    # 旧 URL `?status=hold,semi` 互換: 先頭値だけ採用
+    first = raw.split(",")[0].strip()
+    return STATUS_QUERY_TO_VALUE.get(first)
 
 
-def _parse_sort(args) -> str:
-    """sort key を `gyoutai` / `rank` のいずれかに正規化。不正値は DEFAULT_SORT_KEY。"""
-    raw = (args.get("sort") or "").strip().lower()
-    return raw if raw in VALID_SORT_KEYS else DEFAULT_SORT_KEY
+def _parse_gyoutai_theme(args) -> Optional[str]:
+    """request.args から業態/テーマフィルタを取り出す (issue #215)。
 
-
-def _parse_page(args, total_pages: int) -> int:
-    """page 番号を 1..total_pages の整数に正規化。不正値・範囲外は端にクランプ。"""
-    raw = (args.get("page") or "").strip()
-    try:
-        page = int(raw)
-    except (ValueError, TypeError):
-        page = 1
-    if page < 1:
-        page = 1
-    if total_pages >= 1 and page > total_pages:
-        page = total_pages
-    return page
-
-
-def _build_query_string(statuses: list[str], sort_key: str, page: int) -> str:
-    """フィルタ・ソート・ページから URL クエリ文字列を組み立てる。
-
-    status はカンマ区切り単一キー形式 (`status=hold,semi`)、sort/page は単純キー。
-    POST → リダイレクトの戻り先として使う。
+    空文字・未指定は None を返す。値は前後空白除去のみで、後段で
+    `gyoutai_themes` リストとの完全一致判定に使う。
     """
-    queries = [STATUS_VALUE_TO_QUERY[s] for s in statuses if s in STATUS_VALUE_TO_QUERY]
+    raw = (args.get("gyoutai_theme") or "").strip()
+    return raw or None
+
+
+def _build_query_string(status: Optional[str], gyoutai_theme: Optional[str]) -> str:
+    """フィルタから URL クエリ文字列を組み立てる (issue #215)。
+
+    POST → リダイレクトの戻り先として使う。両方 None なら空文字を返し、
+    呼び出し側 (`_redirect_with_return_query`) でデフォルトに落ちる。
+    """
     params = []
-    if queries:
-        params.append(("status", ",".join(queries)))
-    params.append(("sort", sort_key))
-    if page > 1:
-        params.append(("page", str(page)))
+    if status and status in STATUS_VALUE_TO_QUERY:
+        params.append(("status", STATUS_VALUE_TO_QUERY[status]))
+    if gyoutai_theme:
+        params.append(("gyoutai_theme", gyoutai_theme))
     return urlencode(params)
 
 
@@ -161,11 +129,11 @@ def _redirect_with_return_query(
     default_status_query: str = DEFAULT_STATUS_QUERY,
     code_s: Optional[str] = None,
 ):
-    """POST フォームに埋め込まれた hidden `return_query` を尊重してリダイレクトする (issue #178)。
+    """POST フォームに埋め込まれた hidden `return_query` を尊重してリダイレクトする (issue #178, #215)。
 
-    return_query はクエリ文字列 (例: `status=hold,semi&sort=rank&page=2`) を
+    return_query はクエリ文字列 (例: `status=hold&gyoutai_theme=半導体`) を
     そのまま受け取り、URL に付与する。空 or 未指定なら `?status=<default>` に
-    フォールバック。これで POST 後も直前のフィルタ/ソート/ページが復元できる。
+    フォールバック。これで POST 後も直前のフィルタが復元できる。
 
     安全のため return_query から先頭の `?` を取り除き、改行や `#` も弾く
     (URL injection 防止)。
@@ -497,15 +465,16 @@ def _build_fallback_records() -> list[dict]:
 
 @portfolio_bp.route("/portfolio")
 def dashboard():
-    """フィルタ/ソート/ページング型ダッシュボード (issue #178)。
+    """フィルタ型ダッシュボード (issue #215 でページング/ソートは廃止)。
 
     URL クエリ:
-      status: hold,semi,watch のカンマ区切り or 同名複数キー (デフォルト=hold)
-      sort:   gyoutai (業態順, デフォルト) / rank (順位順)
-      page:   1始まり (デフォルト=1)、1ページ PORTFOLIO_PAGE_SIZE 件
+      status:        hold / semi / watch のいずれか単一 (省略時=全ステータス)
+      gyoutai_theme: 業態/テーマ名の完全一致 (省略時=全業態テーマ)
+                     指定時は status を無視して全銘柄から該当業態/テーマを抽出。
+    並び順は常時業態順。`sort` / `page` パラメータは silent に無視 (旧 URL 互換)。
     """
-    active_statuses = _parse_status_filter(request.args)
-    active_sort = _parse_sort(request.args)
+    active_status = _parse_status_filter(request.args)
+    active_gyoutai_theme = _parse_gyoutai_theme(request.args)
 
     # issue #186: fallback 判定は除外含む全件で行う (全件除外時の誤判定を避ける)。
     # 表示・件数カウントは除外を弾いた visible_records を使う。
@@ -516,43 +485,44 @@ def dashboard():
     else:
         visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
 
-    # 件数 (フィルタ前): hold/semi/watch ごとに常に出す (UI チェックボックス横の表示用)
+    # 件数 (フィルタ前): hold/semi/watch ごとに常に出す (status select の option ラベル用)
     counts = {q: 0 for q, _, _ in STATUS_CHOICES}
     for r in visible_records:
         st = r.get("status")
         if st in STATUS_VALUE_TO_QUERY:
             counts[STATUS_VALUE_TO_QUERY[st]] += 1
 
-    filtered_records = [r for r in visible_records if r.get("status") in active_statuses]
-    rows_all = list_portfolio_with_indicators(filtered_records, sort_key=active_sort)
+    # issue #215: gyoutai_theme 指定時は status 無視で業態/テーマ完全一致のレコードのみ。
+    # 未指定時は status フィルタ (None なら全件)。
+    if active_gyoutai_theme:
+        filtered_records = [
+            r for r in visible_records
+            if active_gyoutai_theme in ((r.get("memo") or {}).get("gyoutai_themes") or [])
+        ]
+    elif active_status is None:
+        filtered_records = visible_records
+    else:
+        filtered_records = [r for r in visible_records if r.get("status") == active_status]
+    rows = list_portfolio_with_indicators(filtered_records)
 
-    total = len(rows_all)
-    total_pages = max(1, (total + PORTFOLIO_PAGE_SIZE - 1) // PORTFOLIO_PAGE_SIZE)
-    page = _parse_page(request.args, total_pages)
-    start = (page - 1) * PORTFOLIO_PAGE_SIZE
-    end = start + PORTFOLIO_PAGE_SIZE
-    rows = rows_all[start:end]
-
-    # 行ごとに transitions を埋める (issue #178: 複数 status 同時表示で、
-    # 各行が個別の遷移先候補を持つ必要があるため)。fallback 中は空。
+    # 行ごとに transitions を埋める。fallback 中は空。
     for row in rows:
         row["transitions"] = (
             [] if fallback_mode else _allowed_transitions_from(row.get("status", ""))
         )
 
-    # 削除モードの可否: 2準/3監 がフィルタに含まれる時のみ
+    # 削除モードの可否: 表示中の rows に 2準/3監 が含まれる時のみ
     delete_mode_allowed = (
         not fallback_mode
-        and any(s in active_statuses for s in ("2準", "3監"))
-        and bool(rows)
+        and any(row.get("status") in ("2準", "3監") for row in rows)
     )
 
-    # POST → リダイレクトの戻り先として使う現状クエリ (status/sort/page 全部)
-    return_query = _build_query_string(active_statuses, active_sort, page)
-    # テンプレートでチェック判定するための、active_statuses の query 形式リスト (例: ["hold","semi"])
-    active_status_queries = [
-        STATUS_VALUE_TO_QUERY[s] for s in active_statuses if s in STATUS_VALUE_TO_QUERY
-    ]
+    # POST → リダイレクトの戻り先として使う現状クエリ (status/gyoutai_theme)
+    return_query = _build_query_string(active_status, active_gyoutai_theme)
+    # テンプレートで select の selected 判定に使う、active_status の query 形式 (例: "hold")
+    active_status_query = (
+        STATUS_VALUE_TO_QUERY[active_status] if active_status in STATUS_VALUE_TO_QUERY else ""
+    )
 
     # issue #187: datalist 候補は表示フィルタ/excluded と独立、shelve 内の全レコードから集計
     if fallback_mode:
@@ -563,17 +533,11 @@ def dashboard():
     return render_template(
         "portfolio_list.html",
         status_choices=STATUS_CHOICES,
-        active_statuses=active_statuses,
-        active_status_queries=active_status_queries,
-        active_sort=active_sort,
+        active_status_query=active_status_query,
+        active_gyoutai_theme=active_gyoutai_theme or "",
         counts=counts,
         rows=rows,
-        total=total,
-        page=page,
-        total_pages=total_pages,
-        page_size=PORTFOLIO_PAGE_SIZE,
-        page_start=start + 1 if rows else 0,
-        page_end=start + len(rows),
+        total=len(rows),
         return_query=return_query,
         delete_mode_allowed=delete_mode_allowed,
         status_label=STATUS_VALUE_TO_LABEL,

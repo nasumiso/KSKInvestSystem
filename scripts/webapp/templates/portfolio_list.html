@@ -40,16 +40,6 @@
   .status-badge.status-hold  { background: #d4ead4; color: #285028; }
   .status-badge.status-semi  { background: #fdf0c0; color: #856100; }
   .status-badge.status-watch { background: #e2e2e2; color: #555; }
-  /* issue #178: ページネーション */
-  nav.pagination {
-    display: flex; gap: 0.6em; align-items: center; justify-content: center;
-    margin: 0.6em 0; font-size: 0.9em;
-  }
-  nav.pagination a, nav.pagination span.disabled {
-    padding: 0.3em 0.7em; border: 1px solid #d8dee6; border-radius: 3px;
-    text-decoration: none;
-  }
-  nav.pagination span.disabled { color: #bbb; background: #f8f8f8; }
   /* 一括削除アクションバー */
   #bulk-delete-bar {
     position: sticky; bottom: 0; z-index: 10;
@@ -96,33 +86,31 @@
 {% endif %}
 {% endwith %}
 
-{# issue #178: タブを撤廃しフィルタ/ソートバーに変更。GET で URL に反映する #}
+{# issue #215: フィルタは status / gyoutai_theme の単一選択 select 2 つ。onchange で即送信。 #}
 <form id="portfolio-filter-form" action="/portfolio" method="GET"
       style="display:flex;flex-wrap:wrap;gap:1.2em;align-items:center;margin-bottom:0.6em;padding:0.5em 0.6em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;font-size:0.9em;">
-  <span style="color:#666;">フィルタ</span>
-  {% for q, status_val, label in status_choices %}
-  <label style="display:inline-flex;align-items:center;gap:0.25em;margin:0;cursor:pointer;">
-    <input type="checkbox" name="status" value="{{ q }}" style="margin:0;"
-           {% if q in active_status_queries %}checked{% endif %}>
-    {{ label }} <span style="color:#999;font-size:0.85em;">({{ counts[q] }})</span>
+  <label style="display:inline-flex;align-items:center;gap:0.4em;margin:0;">
+    <span style="color:#666;">ステータス</span>
+    <select name="status" onchange="this.form.submit()" style="padding:0.2em 0.3em;font-size:0.9em;margin:0;">
+      <option value="">すべて</option>
+      {% for q, _, label in status_choices %}
+      <option value="{{ q }}" {% if q == active_status_query %}selected{% endif %}>{{ label }} ({{ counts[q] }})</option>
+      {% endfor %}
+    </select>
   </label>
-  {% endfor %}
-  <span style="color:#666;margin-left:0.6em;">ソート</span>
-  <label style="display:inline-flex;align-items:center;gap:0.25em;margin:0;cursor:pointer;">
-    <input type="radio" name="sort" value="gyoutai" style="margin:0;"
-           {% if active_sort == 'gyoutai' %}checked{% endif %}>業態順
+  <label style="display:inline-flex;align-items:center;gap:0.4em;margin:0;">
+    <span style="color:#666;">業態・テーマ</span>
+    <select name="gyoutai_theme" onchange="this.form.submit()" style="padding:0.2em 0.3em;font-size:0.9em;margin:0;max-width:18em;">
+      <option value="">すべて</option>
+      {% for choice in gyoutai_theme_choices %}
+      <option value="{{ choice }}" {% if choice == active_gyoutai_theme %}selected{% endif %}>{{ choice }}</option>
+      {% endfor %}
+    </select>
   </label>
-  <label style="display:inline-flex;align-items:center;gap:0.25em;margin:0;cursor:pointer;">
-    <input type="radio" name="sort" value="rank" style="margin:0;"
-           {% if active_sort == 'rank' %}checked{% endif %}>順位順
-  </label>
-  {# フィルタ/ソート変更時は page=1 にリセット (page hidden を出さない) #}
-  <button type="submit" style="padding:0.3em 0.8em;font-size:0.85em;margin:0;">絞り込み</button>
 </form>
 
 <p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">
-  {% if total > 0 %}{{ total }}件中 {{ page_start }}-{{ page_end }} 件表示
-  {% else %}0 件{% endif %}
+  {% if total > 0 %}{{ total }} 件表示{% else %}0 件{% endif %}
 </p>
 
 {% if not fallback_mode %}
@@ -180,9 +168,10 @@
   </thead>
   <tbody>
     {% for row in rows %}
-    {# issue #178: 業態順表示時、前行と業態 1 行目が異なる行は境界線を入れる。
-       row.gyoutai_first は helpers.list_portfolio_with_indicators が precompute 済み。 #}
-    <tr data-code="{{ row.code_s }}"{% if active_sort == 'gyoutai' and not loop.first and loop.previtem.gyoutai_first != row.gyoutai_first %} class="gyoutai-boundary"{% endif %}>
+    {# issue #178: 前行と業態 1 行目が異なる行は境界線を入れる。
+       row.gyoutai_first は helpers.list_portfolio_with_indicators が precompute 済み。
+       issue #215: ソート分岐廃止に伴い常時有効。 #}
+    <tr data-code="{{ row.code_s }}"{% if not loop.first and loop.previtem.gyoutai_first != row.gyoutai_first %} class="gyoutai-boundary"{% endif %}>
       {% if delete_mode_allowed %}
       {# codex 指摘 P2: 1保 は bulk_exclude() で reject されるため checkbox を出さない #}
       <td class="bulk-col">
@@ -319,25 +308,6 @@
   </tbody>
 </table>
 </div>
-
-{# issue #178: ページネーション (1ページしかなければ非表示)。
-   page だけ差し替えるため、build_pagination_url マクロで status/sort のみ持つベースを使う。 #}
-{% set pagination_base = 'status=' + (active_status_queries|join(',')) + '&sort=' + active_sort %}
-{% if total_pages > 1 %}
-<nav class="pagination">
-  {% if page > 1 %}
-    <a href="?{{ pagination_base }}{% if page > 2 %}&page={{ page - 1 }}{% endif %}">‹ 前</a>
-  {% else %}
-    <span class="disabled">‹ 前</span>
-  {% endif %}
-  <span>{{ page }} / {{ total_pages }}</span>
-  {% if page < total_pages %}
-    <a href="?{{ pagination_base }}&page={{ page + 1 }}">次 ›</a>
-  {% else %}
-    <span class="disabled">次 ›</span>
-  {% endif %}
-</nav>
-{% endif %}
 
 <datalist id="gyoutai-theme-choices">
   {% for choice in gyoutai_theme_choices %}

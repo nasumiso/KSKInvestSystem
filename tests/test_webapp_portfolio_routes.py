@@ -92,47 +92,50 @@ def client(app):
 
 
 class TestDashboardGet:
-    """GET /portfolio タブ表示"""
+    """GET /portfolio フィルタ表示 (issue #215: ステータス単一選択 + 全件デフォルト)"""
 
-    def test_dashboard_default_tab_is_hold(self, client):
+    def test_dashboard_default_shows_all(self, client):
+        """引数なし = 全ステータス表示 (issue #215)"""
         resp = client.get("/portfolio")
         assert resp.status_code == 200
         html = resp.data.decode()
-        # 1保 (アズーム) が表示される
-        assert "アズーム" in html
-        # 2準 / 3監 の銘柄は表示されない (タブで絞り込み)
-        assert "ハーモニック" not in html
-        assert "トヨタ" not in html
+        assert "アズーム" in html       # 1保
+        assert "トヨタ" in html         # 2準
+        assert "ハーモニック" in html    # 3監
 
-    def test_dashboard_watch_tab(self, client):
+    def test_dashboard_watch_filter(self, client):
         resp = client.get("/portfolio?status=watch")
         assert resp.status_code == 200
         html = resp.data.decode()
         assert "ハーモニック" in html
         assert "アズーム" not in html
 
-    def test_dashboard_semi_tab(self, client):
+    def test_dashboard_semi_filter(self, client):
         resp = client.get("/portfolio?status=semi")
         assert resp.status_code == 200
         html = resp.data.decode()
         assert "トヨタ" in html
         assert "アズーム" not in html
 
-    def test_dashboard_unknown_status_falls_back_to_hold(self, client):
+    def test_dashboard_unknown_status_falls_back_to_all(self, client):
+        """不正値は None 扱い = 全件表示 (issue #215)"""
         resp = client.get("/portfolio?status=invalid")
         assert resp.status_code == 200
         html = resp.data.decode()
+        # 全件 = 1保/2準/3監 全部表示
         assert "アズーム" in html
+        assert "トヨタ" in html
+        assert "ハーモニック" in html
 
-    def test_dashboard_shows_tab_counts(self, client):
+    def test_dashboard_shows_status_counts(self, client):
+        """status select の option ラベルに件数が出ている"""
         resp = client.get("/portfolio")
         html = resp.data.decode()
-        # 各タブの件数が出ている (3 件登録: 1 / 1 / 1)
-        # タブ表示の数字を全て検証するのは見栄えに依存するので最低限件数行を確認
-        assert "1 件" in html or "(1)" in html or ">1<" in html
+        # select option の "保有 (1)" / "準保有 (1)" / "監視 (1)" のような表示
+        assert "(1)" in html
 
     def test_dashboard_shows_indicators(self, client):
-        """1保 タブで PER / モメンタム / 順位等の指標が表示される"""
+        """保有フィルタで PER / モメンタム / 順位等の指標が表示される"""
         resp = client.get("/portfolio?status=hold")
         html = resp.data.decode()
         # アズームの指標 (PER は二桁なので整数表記: 30)
@@ -325,15 +328,15 @@ class TestBulkExclude:
             assert rec["excluded"] is True
 
     def test_bulk_exclude_redirects_to_return_query(self, client, portfolio_db_path):
-        """return_query=status=hold,semi&sort=rank なら同じクエリにリダイレクト (issue #178)"""
+        """return_query=status=semi&gyoutai_theme=半導体 なら同じクエリにリダイレクト (issue #215)"""
         resp = client.post(
             "/portfolio/bulk-exclude",
-            data={"codes": "7203", "return_query": "status=hold,semi&sort=rank"},
+            data={"codes": "7203", "return_query": "status=semi&gyoutai_theme=半導体"},
         )
         assert resp.status_code == 302
         loc = resp.headers["Location"]
-        assert "status=hold,semi" in loc
-        assert "sort=rank" in loc
+        assert "status=semi" in loc
+        assert "gyoutai_theme=" in loc
 
     def test_bulk_exclude_empty_return_query_falls_back_to_default(self, client, portfolio_db_path):
         """return_query 未指定はデフォルト ?status=hold にリダイレクト (issue #178)"""
@@ -844,153 +847,87 @@ class TestFallbackFromTxt:
 # ==================================================
 # issue #178: フィルタ / ソート / ページング / status badge / return_query
 # ==================================================
-class TestDashboardFilterSortPaging:
-    """GET /portfolio?status=...&sort=...&page=... の検証 (issue #178)"""
+class TestDashboardFilter:
+    """GET /portfolio フィルタ仕様 (issue #215)"""
 
-    def test_default_shows_hold_only(self, client):
-        """引数なし = 保有のみ (1保) を表示"""
+    def test_default_shows_all(self, client):
+        """引数なし = 全ステータス表示"""
         resp = client.get("/portfolio")
-        html = resp.data.decode()
-        assert "アズーム" in html      # 1保
-        assert "ハーモニック" not in html  # 3監
-        assert "トヨタ" not in html      # 2準
-
-    def test_multi_status_filter_csv(self, client):
-        """?status=hold,semi (カンマ区切り) で 1保 + 2準 を表示"""
-        resp = client.get("/portfolio?status=hold,semi")
-        html = resp.data.decode()
-        assert "アズーム" in html
-        assert "トヨタ" in html
-        assert "ハーモニック" not in html
-
-    def test_multi_status_filter_repeated(self, client):
-        """?status=hold&status=semi (HTML form 送信形式) で 1保 + 2準 を表示"""
-        resp = client.get("/portfolio?status=hold&status=semi")
-        html = resp.data.decode()
-        assert "アズーム" in html
-        assert "トヨタ" in html
-        assert "ハーモニック" not in html
-
-    def test_multi_status_filter_mixed(self, client):
-        """カンマ区切りと同名複数キーが混在しても merge される (issue #178 codex 指摘)"""
-        resp = client.get("/portfolio?status=hold,xxx&status=watch")
-        html = resp.data.decode()
-        assert "アズーム" in html      # hold
-        assert "ハーモニック" in html   # watch
-        assert "トヨタ" not in html      # semi は含まれていない
-
-    def test_all_status_filter(self, client):
-        """全件指定で 3 銘柄全部表示"""
-        resp = client.get("/portfolio?status=hold,semi,watch")
         html = resp.data.decode()
         assert "アズーム" in html
         assert "トヨタ" in html
         assert "ハーモニック" in html
 
     def test_legacy_url_status_hold_still_works(self, client):
-        """既存 URL ?status=hold (単一値) が引き続き動作 (issue #178 互換性)"""
+        """既存 URL ?status=hold (単一値) は引き続き保有のみ表示"""
         resp = client.get("/portfolio?status=hold")
         html = resp.data.decode()
         assert "アズーム" in html
         assert "ハーモニック" not in html
 
-    def test_invalid_status_falls_back_to_default(self, client):
-        """不正値だけのフィルタはデフォルト = hold にフォールバック"""
-        resp = client.get("/portfolio?status=invalid")
+    def test_legacy_csv_status_uses_first_value(self, client):
+        """旧 URL ?status=hold,semi は寛容処理で先頭値 hold のみ採用 (issue #215)"""
+        resp = client.get("/portfolio?status=hold,semi")
         html = resp.data.decode()
         assert "アズーム" in html
+        # semi も watch も表示されない (先頭の hold のみ)
+        assert "トヨタ" not in html
+        assert "ハーモニック" not in html
 
-    def test_status_badge_visible_in_all_filter(self, client):
+    def test_legacy_sort_param_silently_ignored(self, client):
+        """旧 URL ?sort=rank&page=2 が混ざっても 200 で全件返る (issue #215 silent 無視)"""
+        resp = client.get("/portfolio?sort=rank&page=2")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "アズーム" in html
+        assert "トヨタ" in html
+        assert "ハーモニック" in html
+
+    def test_invalid_status_falls_back_to_all(self, client):
+        """不正値だけのフィルタは全件表示にフォールバック (None 扱い)"""
+        resp = client.get("/portfolio?status=invalid")
+        html = resp.data.decode()
+        # 全件 = 1保/2準/3監 全部
+        assert "アズーム" in html
+        assert "トヨタ" in html
+        assert "ハーモニック" in html
+
+    def test_status_badge_visible_in_all_view(self, client):
         """全件表示時、ステータス badge (保有/準保有/監視) が HTML に出る"""
-        resp = client.get("/portfolio?status=hold,semi,watch")
+        resp = client.get("/portfolio")
         html = resp.data.decode()
         assert 'class="status-badge status-hold"' in html
         assert 'class="status-badge status-semi"' in html
         assert 'class="status-badge status-watch"' in html
 
-    def test_sort_rank_orders_by_rank(self, client):
-        """?sort=rank で順位昇順 (業態無視)。fixture: 3496=50, 7203=200, 6324=612"""
-        resp = client.get("/portfolio?status=hold,semi,watch&sort=rank")
+    def test_gyoutai_theme_filter_applies(
+        self, client, portfolio_db_path
+    ):
+        """?gyoutai_theme=<value> で memo.gyoutai_themes に該当値を持つ銘柄のみ表示"""
+        # fixture: 3496 (1保) に "ロボット" テーマを付与
+        ps.update_memo("3496", {"gyoutai_themes": ["ロボット"]}, db_path=portfolio_db_path)
+        resp = client.get("/portfolio?gyoutai_theme=ロボット")
         html = resp.data.decode()
-        # 表示位置で並び順を判定 (3496 が 7203 より前、7203 が 6324 より前)
-        i_3496 = html.find('data-code="3496"')
-        i_7203 = html.find('data-code="7203"')
-        i_6324 = html.find('data-code="6324"')
-        assert i_3496 != -1 and i_7203 != -1 and i_6324 != -1
-        assert i_3496 < i_7203 < i_6324
+        assert "アズーム" in html        # 3496 該当
+        assert "トヨタ" not in html       # 7203 非該当
+        assert "ハーモニック" not in html  # 6324 非該当
 
-    def test_sort_gyoutai_default(self, client):
-        """sort 未指定はデフォルト gyoutai (radio が checked になっている)"""
-        import re
-        resp = client.get("/portfolio?status=hold")
+    def test_gyoutai_theme_overrides_status(
+        self, client, portfolio_db_path
+    ):
+        """?status=hold&gyoutai_theme=X 指定時は status 無視で X 該当銘柄全件を表示"""
+        # fixture: 7203 (2準) に "ロボット" テーマを付与 (status=hold とは異なる)
+        ps.update_memo("7203", {"gyoutai_themes": ["ロボット"]}, db_path=portfolio_db_path)
+        resp = client.get("/portfolio?status=hold&gyoutai_theme=ロボット")
         html = resp.data.decode()
-        # gyoutai radio タグ内に checked が含まれ、rank radio タグ内には含まれないこと
-        gyoutai_radio = re.search(r'<input[^>]*name="sort"[^>]*value="gyoutai"[^>]*>', html)
-        rank_radio = re.search(r'<input[^>]*name="sort"[^>]*value="rank"[^>]*>', html)
-        assert gyoutai_radio is not None and "checked" in gyoutai_radio.group(0)
-        assert rank_radio is not None and "checked" not in rank_radio.group(0)
-
-    def test_pagination_disabled_when_under_page_size(self, client):
-        """総件数がページサイズ以内ならページネーション nav は出ない"""
-        resp = client.get("/portfolio?status=hold,semi,watch")
-        html = resp.data.decode()
-        # 全 3 件 <= 50 なので pagination nav は出ない
-        assert 'class="pagination"' not in html
-
-    def test_pagination_invalid_page_falls_back(self, client):
-        """?page=abc は 1 にフォールバック (例外を投げない)"""
-        resp = client.get("/portfolio?status=hold&page=abc")
-        assert resp.status_code == 200
-        assert "アズーム" in resp.data.decode()
-
-    def test_pagination_zero_page_falls_back(self, client):
-        """?page=0 は 1 にフォールバック"""
-        resp = client.get("/portfolio?status=hold&page=0")
-        assert resp.status_code == 200
-
-    def test_pagination_overflow_page_clamped(self, client, monkeypatch):
-        """総ページ数を超えた page 指定は最終ページにクランプ"""
-        # ページサイズを 1 に下げて 3 銘柄を 3 ページに分割
-        from webapp.routes import portfolio as portfolio_routes
-        monkeypatch.setattr(portfolio_routes, "PORTFOLIO_PAGE_SIZE", 1)
-        resp = client.get("/portfolio?status=hold,semi,watch&sort=rank&page=999")
-        html = resp.data.decode()
-        # 最終ページ (page=3) には 6324 (rank=612) のみ
-        assert 'data-code="6324"' in html
-        assert 'data-code="3496"' not in html
-        assert 'data-code="7203"' not in html
-
-    def test_pagination_actually_paginates(self, client, monkeypatch):
-        """ページサイズを下げた状態で 1 ページ目が 1 件、2 ページ目で違う 1 件"""
-        from webapp.routes import portfolio as portfolio_routes
-        monkeypatch.setattr(portfolio_routes, "PORTFOLIO_PAGE_SIZE", 1)
-        # rank 順: 3496 (50) → 7203 (200) → 6324 (612)
-        resp1 = client.get("/portfolio?status=hold,semi,watch&sort=rank&page=1")
-        html1 = resp1.data.decode()
-        assert 'data-code="3496"' in html1
-        assert 'data-code="7203"' not in html1
-
-        resp2 = client.get("/portfolio?status=hold,semi,watch&sort=rank&page=2")
-        html2 = resp2.data.decode()
-        assert 'data-code="7203"' in html2
-        assert 'data-code="3496"' not in html2
-
-        # ページネーション nav が出ている (total_pages=3)
-        assert 'class="pagination"' in html2
-
-    def test_filter_form_does_not_emit_page_hidden(self, client):
-        """フィルタ form 内に page の hidden が無い (= submit 時に page=1 にリセット)"""
-        resp = client.get("/portfolio?status=hold&page=2")
-        html = resp.data.decode()
-        # フィルタ form 部分を抽出して page hidden が無いことを確認
-        form_start = html.find('id="portfolio-filter-form"')
-        form_end = html.find('</form>', form_start)
-        form_html = html[form_start:form_end]
-        assert 'name="page"' not in form_html
+        # status=hold (1保) を指定しているが gyoutai_theme 優先で 7203 (2準) が表示される
+        assert "トヨタ" in html
+        # 1保 のアズーム (ロボット未付与) は出ない
+        assert "アズーム" not in html
 
 
 class TestReturnQueryRedirect:
-    """POST 後の return_query によるリダイレクト先復元 (issue #178)"""
+    """POST 後の return_query によるリダイレクト先復元 (issue #178, #215 で形式変更)"""
 
     def test_transition_redirects_with_return_query(self, client):
         """transition POST 時、return_query が反映される"""
@@ -999,25 +936,23 @@ class TestReturnQueryRedirect:
             data={
                 "new_status": "3監",
                 "reason": "test",
-                "return_query": "status=hold,semi&sort=rank",
+                "return_query": "status=hold&gyoutai_theme=半導体",
             },
         )
         assert resp.status_code == 302
         loc = resp.headers["Location"]
-        assert "status=hold,semi" in loc
-        assert "sort=rank" in loc
+        assert "status=hold" in loc
+        assert "gyoutai_theme=" in loc
 
     def test_memo_redirects_with_return_query(self, client):
         """memo POST 時、return_query が反映される"""
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"trade_idea": "X", "return_query": "status=watch&sort=rank&page=2"},
+            data={"trade_idea": "X", "return_query": "status=watch"},
         )
         assert resp.status_code == 302
         loc = resp.headers["Location"]
         assert "status=watch" in loc
-        assert "sort=rank" in loc
-        assert "page=2" in loc
 
     def test_add_default_status_query_is_watch(self, client, stocks_db_path):
         """add は return_query 未指定時、デフォルトで watch にリダイレクト (追加直後の確認用)"""
@@ -1034,7 +969,7 @@ class TestReturnQueryRedirect:
         add() の default_status_query='watch' フォールバックを効かせる。
         """
         import re
-        resp = client.get("/portfolio?status=hold&sort=gyoutai")
+        resp = client.get("/portfolio?status=hold")
         html = resp.data.decode()
         # 追加フォーム部分を抽出 (action="/portfolio/add" の form タグ)
         m = re.search(r'<form[^>]*action="/portfolio/add"[^>]*>(.*?)</form>', html, re.DOTALL)
@@ -1123,10 +1058,10 @@ class TestDeleteCheckboxScope:
     """削除モードのチェックボックスは 2準/3監 行のみに表示される (codex 指摘 P2)"""
 
     def test_1ho_row_has_no_checkbox_in_mixed_filter(self, client):
-        """status=hold,semi,watch の混在表示で、1保 (3496) 行には checkbox が無く、
-        2準 (7203) と 3監 (6324) 行には checkbox が出る"""
+        """全件表示 (引数なし) で、1保 (3496) 行には checkbox が無く、
+        2準 (7203) と 3監 (6324) 行には checkbox が出る (issue #215 で全件 = 引数なし)"""
         import re
-        resp = client.get("/portfolio?status=hold,semi,watch")
+        resp = client.get("/portfolio")
         html = resp.data.decode()
         # 各銘柄行を抽出 (data-code="XXXX" から次の </tr> まで)
         for code, has_checkbox in [

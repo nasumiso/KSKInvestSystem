@@ -1596,10 +1596,11 @@ class TestCollectGyoutaiThemeChoices:
 
 
 class TestListPortfolioWithIndicators:
-    """list_portfolio_with_indicators の sort_key / status_query / status_label 検証 (issue #178)。
+    """list_portfolio_with_indicators の業態順ソート / status_query / status_label 検証 (issue #178, #215)。
 
     外部参照 (_bulk_get_stock_data, _bulk_resolve_stock_names, compute_cell_styles) は
     monkeypatch でスタブし、並び順とフィールド埋めだけを検証する。
+    issue #215: 順位ソートを廃止し業態順固定。sort_key 引数は撤廃済み。
     """
 
     @pytest.fixture
@@ -1625,26 +1626,17 @@ class TestListPortfolioWithIndicators:
             self._make("0002", "1保", rank=10, themes=["半導体"]),
             self._make("0003", "1保", rank=5, themes=["人材"]),
         ]
-        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
+        rows = helpers.list_portfolio_with_indicators(records)
         # 業態順 (人材→半導体) かつ業態内は rank 昇順
         assert [r["code_s"] for r in rows] == ["0003", "0001", "0002"]
 
-    def test_sort_by_rank_only(self, stub_externals):
-        records = [
-            self._make("0001", "1保", rank=30, themes=["人材"]),
-            self._make("0002", "1保", rank=10, themes=["半導体"]),
-            self._make("0003", "1保", rank=5, themes=["人材"]),
-        ]
-        rows = helpers.list_portfolio_with_indicators(records, sort_key="rank")
-        assert [r["code_s"] for r in rows] == ["0003", "0002", "0001"]
-
-    def test_empty_gyoutai_goes_to_end_under_gyoutai_sort(self, stub_externals):
+    def test_empty_gyoutai_goes_to_end(self, stub_externals):
         records = [
             self._make("0001", "1保", rank=10, themes=[]),
             self._make("0002", "1保", rank=20, themes=["半導体"]),
             self._make("0003", "1保", rank=5, themes=None),
         ]
-        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
+        rows = helpers.list_portfolio_with_indicators(records)
         # 半導体が先頭、空 themes は末尾 (末尾内は rank 昇順)
         assert [r["code_s"] for r in rows] == ["0002", "0003", "0001"]
 
@@ -1654,17 +1646,17 @@ class TestListPortfolioWithIndicators:
             self._make("0001", "1保", rank=10, themes=["AI", "人材"]),
             self._make("0002", "1保", rank=20, themes=["人材", "AI"]),
         ]
-        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
+        rows = helpers.list_portfolio_with_indicators(records)
         # 0001 の themes[0]=AI が先、0002 の themes[0]=人材 が後
         assert [r["code_s"] for r in rows] == ["0001", "0002"]
 
     def test_status_query_label_filled(self, stub_externals):
         records = [
-            self._make("0001", "1保"),
-            self._make("0002", "2準"),
-            self._make("0003", "3監"),
+            self._make("0001", "1保", rank=1, themes=["A"]),
+            self._make("0002", "2準", rank=2, themes=["B"]),
+            self._make("0003", "3監", rank=3, themes=["C"]),
         ]
-        rows = helpers.list_portfolio_with_indicators(records, sort_key="rank")
+        rows = helpers.list_portfolio_with_indicators(records)
         by_code = {r["code_s"]: r for r in rows}
         assert by_code["0001"]["status_query"] == "hold"
         assert by_code["0001"]["status_label"] == "保有"
