@@ -1334,11 +1334,15 @@ def get_market_kessan_data() -> Dict[str, Any]:
         reverse=True,
     )
     # 過去7日間は常時表示、それ以前は details で折りたたみ
+    # 90日 (約1四半期) より前の決算は表示しない (履歴が貯まり続けるとDOM/メモリが肥大化するため)
     recent_cutoff = base_day - timedelta(days=7)
+    older_cutoff = base_day - timedelta(days=90)
     recent_past_entries: List = []
     older_past_entries: List = []
     for kv in past_entries_all:
         dt = _parse_kessanbi(kv[0]) or date.min
+        if dt < older_cutoff:
+            continue
         if dt >= recent_cutoff:
             recent_past_entries.append(kv)
         else:
@@ -1348,7 +1352,10 @@ def get_market_kessan_data() -> Dict[str, Any]:
         "base_day": base_day,
         "future_entries": future_entries,
         "today_entries": today_entries,
-        "past_entries": past_entries_all,  # 後方互換
+        # 後方互換: 90日カットオフ後の全過去エントリ (空状態判定で使うため
+        # recent + older を合成。past_entries_all をそのまま返すと、90日超
+        # しか無いケースで空状態メッセージが出ず画面が空白になる)
+        "past_entries": recent_past_entries + older_past_entries,
         "recent_past_entries": recent_past_entries,
         "older_past_entries": older_past_entries,
     }

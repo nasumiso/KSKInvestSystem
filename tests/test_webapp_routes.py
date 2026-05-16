@@ -363,6 +363,56 @@ class TestIrCommentPostRoutes:
         assert "IR更新済み" in html
 
 
+class TestRefreshPostRoutes:
+    """POST /stock/<code_s>/refresh のテスト (issue #203)
+
+    本体は `from make_stock_db import refresh_stock` を関数内で行うため、
+    sys.modules に make_stock_db スタブを差し込んで実体呼び出しを避ける。
+    """
+
+    def test_refresh_post_redirects_with_info_flash(self, client, monkeypatch):
+        import sys
+        import types
+
+        calls = []
+        stub = types.ModuleType("make_stock_db")
+        stub.refresh_stock = lambda codes: calls.append(list(codes))
+        monkeypatch.setitem(sys.modules, "make_stock_db", stub)
+
+        resp = client.post("/stock/3496/refresh")
+        assert resp.status_code == 302
+        assert "/stock/3496" in resp.headers["Location"]
+        assert calls == [["3496"]]
+
+        # follow redirect で flash 文言を検証 (info: 緑系背景)
+        follow = client.get("/stock/3496")
+        html = follow.data.decode()
+        assert "再取得しました (3496)" in html
+        assert "background:#eaffea" in html
+
+    def test_refresh_post_handles_exception_with_error_flash(self, client, monkeypatch):
+        import sys
+        import types
+
+        def raise_boom(_codes):
+            raise RuntimeError("boom")
+
+        stub = types.ModuleType("make_stock_db")
+        stub.refresh_stock = raise_boom
+        monkeypatch.setitem(sys.modules, "make_stock_db", stub)
+
+        resp = client.post("/stock/3496/refresh")
+        # 500 にならず 302 でリダイレクトされること
+        assert resp.status_code == 302
+        assert "/stock/3496" in resp.headers["Location"]
+
+        follow = client.get("/stock/3496")
+        html = follow.data.decode()
+        assert "再取得に失敗しました (3496)" in html
+        assert "boom" in html
+        assert "background:#ffeaea" in html
+
+
 class TestKessanCommentApiContract:
     """GET/POST /api/kessan_comment のレスポンス契約 (issue #133)
 
