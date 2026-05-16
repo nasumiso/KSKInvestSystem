@@ -84,6 +84,7 @@ RECORD_FIELDS = frozenset(
         "snapshots",
         "analysis_date_raw",
         "kessan_date_raw",
+        "corporate_url_override",
     }
 )
 
@@ -253,6 +254,7 @@ def create_research_record(
     snapshots: Optional[List[Dict[str, Any]]] = None,
     analysis_date_raw: str = "",
     kessan_date_raw: str = "",
+    corporate_url_override: str = "",
 ) -> Dict[str, Any]:
     """銘柄調査レコードのひな型 dict を生成する。
 
@@ -295,6 +297,7 @@ def create_research_record(
         "snapshots": snaps,
         "analysis_date_raw": analysis_date_raw,
         "kessan_date_raw": kessan_date_raw,
+        "corporate_url_override": corporate_url_override,
     }
 
 
@@ -509,6 +512,8 @@ def get_research_record(
                 if key not in entry:
                     entry[key] = False
             entry["post_price_changes"] = normalize_kessan_post_price_changes(entry)
+        if "corporate_url_override" not in record:
+            record["corporate_url_override"] = ""
     return record
 
 
