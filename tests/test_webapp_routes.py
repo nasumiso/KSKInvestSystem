@@ -473,6 +473,24 @@ class TestCorporateUrlPostRoutes:
         # 9999 は detail 取得時に 404 になるためリダイレクト先で flash 確認は省略
         # (flash は session に保存されるので次のリクエストで消費される)
 
+    def test_detail_button_data_current_uses_override_not_display_url(self, client, db_path):
+        """✎ ボタンの data-current は override のみを参照する (既定URLは入れない)
+
+        prompt のデフォルト表示に既定URLが流れ込むと、ユーザーが ✎ を開いて
+        そのまま OK するだけで既定URLが override として固定化されてしまう。
+        data-current は実際の override 値のみを渡す必要がある。
+        """
+        # 上書き無し: data-current は空文字
+        html = client.get("/stock/3496").data.decode()
+        assert 'data-current=""' in html
+
+        # 上書き有り: data-current は override 値
+        rec = rs.get_research_record("3496", db_path=db_path)
+        rec["corporate_url_override"] = "https://example.com/ir"
+        rs.upsert_research_record(rec, db_path=db_path)
+        html = client.get("/stock/3496").data.decode()
+        assert 'data-current="https://example.com/ir"' in html
+
     def test_corporate_url_post_does_not_pin_default_url(self, client, db_path, monkeypatch):
         """既定URLと同じ値を保存しても override に固定化されない (codex review対応)
 
