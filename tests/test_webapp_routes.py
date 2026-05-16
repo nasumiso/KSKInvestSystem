@@ -473,6 +473,33 @@ class TestCorporateUrlPostRoutes:
         # 9999 は detail 取得時に 404 になるためリダイレクト先で flash 確認は省略
         # (flash は session に保存されるので次のリクエストで消費される)
 
+    def test_corporate_url_post_does_not_pin_default_url(self, client, db_path, monkeypatch):
+        """既定URLと同じ値を保存しても override に固定化されない (codex review対応)
+
+        ✎ を開いてそのまま OK しただけで stocks_shelve 側の corporate_url が
+        自動更新で変わっても銘柄詳細に反映されなくなる事故を防ぐ。
+        """
+        # 3496 の stocks_shelve.corporate_url をテスト用に固定
+        from webapp import helpers as _h
+        original = _h.get_stock_data
+        def patched(code_s):
+            data = dict(original(code_s) or {})
+            data["corporate_url"] = "https://example.com/default"
+            return data
+        monkeypatch.setattr(_h, "get_stock_data", patched)
+
+        resp = client.post("/stock/3496/corporate_url", data={
+            "url": "https://example.com/default",  # 既定値と同一
+        })
+        assert resp.status_code == 302
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        # override は空のまま (デフォルト継続)
+        assert loaded["corporate_url_override"] == ""
+
+        follow = client.get("/stock/3496")
+        html = follow.data.decode()
+        assert "会社HPリンクをデフォルトに戻しました (3496)" in html
+
     def test_detail_hides_corporate_link_when_no_url(self, client, db_path, monkeypatch):
         """corporate_url も corporate_url_override も空のときリンク要素自体が出ない"""
         # 3496 の override は空のまま、stock の corporate_url を空に置き換え

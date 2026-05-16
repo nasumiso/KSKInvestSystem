@@ -56,8 +56,10 @@ def post_corporate_url(code_s: str):
         )
         return redirect(url_for("detail.stock_detail", code_s=code_s))
     try:
-        save_corporate_url_override(code_s, url)
-        if url:
+        # save_corporate_url_override は入力値がデフォルトと一致した場合に
+        # 空文字 (= override クリア) として保存し、その実値を返す
+        saved = save_corporate_url_override(code_s, url)
+        if saved:
             flash(f"会社HPリンクを更新しました ({code_s})", "info")
         else:
             flash(f"会社HPリンクをデフォルトに戻しました ({code_s})", "info")
