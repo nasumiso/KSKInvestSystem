@@ -2133,11 +2133,14 @@ def build_price_rs_chart_full(
             f'stroke="#e0e0e0" stroke-width="0.5"/>'
         )
 
-    # 日付ラベル (price_log の日付を参照)。データが少ない場合は実在する最古日を使う
+    # 日付ラベル (price_log の日付を参照)。チャート本体は price_log[:_SPARK_LOOKBACK]
+    # 相当しか描画しないので、左端ラベルも表示窓内の最古日 (= 描画範囲の左端)
+    # に合わせる必要がある。price_log が _SPARK_LOOKBACK を超える場合に
+    # 「全履歴の最古日」が出る回帰を防ぐ。
     try:
         today_label = price_log[0][0].strftime("%m/%d") if price_log else ""
         t5_idx = min(_SPARK_RECENT - 1, len(price_log) - 1) if price_log else -1
-        t20_idx = len(price_log) - 1 if price_log else -1
+        t20_idx = min(_SPARK_LOOKBACK - 1, len(price_log) - 1) if price_log else -1
         t5_label = price_log[t5_idx][0].strftime("%m/%d") if t5_idx >= 0 else ""
         t20_label = price_log[t20_idx][0].strftime("%m/%d") if t20_idx >= 0 else ""
     except Exception:

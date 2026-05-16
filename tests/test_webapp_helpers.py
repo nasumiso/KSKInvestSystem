@@ -2272,6 +2272,26 @@ class TestPriceRsSparkline:
         # 当日 = 5/15 ラベルが出る
         assert "05/15" in svg
 
+    def test_full_chart_t20_label_matches_displayed_window(self):
+        """price_log が _SPARK_LOOKBACK (20) を超える場合、左端ラベルは
+        '表示窓内の最古日 (20日前)' であって '全履歴の最古日' ではない。
+        (codex review 対応: 履歴が長い銘柄で左端ラベルがチャート期間とずれる回帰防止)
+        """
+        from datetime import date as _d, timedelta
+        # 30営業日分の price_log (新しい順)。base_date=5/15
+        base = _d(2026, 5, 15)
+        price_log = [(base - timedelta(days=i), 100 + i) for i in range(30)]
+        rs_line = [(base - timedelta(days=i), 1.0 + i * 0.01) for i in range(30)]
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        # 当日 = 5/15
+        assert "05/15" in svg
+        # 表示左端 = price_log[19] = 5/15 - 19日 = 4/26
+        t20_date = (base - timedelta(days=19)).strftime("%m/%d")
+        assert t20_date in svg
+        # 全履歴最古 = price_log[29] = 5/15 - 29日 = 4/16 は出ないこと (回帰防止)
+        t30_date = (base - timedelta(days=29)).strftime("%m/%d")
+        assert t30_date not in svg
+
     def test_full_chart_blue_dot_renders_blue_circle(self):
         price_log = self._make_log(list(range(120, 100, -1)))
         rs_line = self._make_log([1.20 - i * 0.01 for i in range(20)])
