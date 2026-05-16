@@ -158,10 +158,9 @@
       <th>更新日</th>
       <th>ステージ</th>
       <th>RS</th>
-      <th>RSライン(20,5)</th>
+      <th title="株価(実線, 緑/赤) + RSライン(点線, 青/オレンジ) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸">株価/RS(20,5)</th>
       <th>トレンド</th>
       <th>タグ</th>
-      <th>株価向き(20,5)</th>
       <th>買い集め</th>
       <th>時価総額</th>
     </tr>
@@ -224,18 +223,20 @@
           {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="stage" data-touch-update="1"{% endif %}
           style="{{ row.styles.stage or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.stage or "—" }}</td>
       <td style="{{ row.styles.rs or '' }}">{{ row.rs }}</td>
-      <td style="color:#bbb;">—</td>
+      {# issue #227: 株価 + RSライン 3点ミニチャート (旧 RSライン/株価向き 2列を統合) #}
+      <td title="{{ row.price_rs_chart.tooltip }}" style="padding:0 2px;line-height:0;">
+        {% if row.price_rs_chart.svg %}{{ row.price_rs_chart.svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
+      </td>
       <td title="{{ row.trend_template_tooltip }}"
           style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.trend_template or '' }}">{{ row.trend_template }}</td>
       <td title="{{ row.tags }}"
           style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
-      <td style="color:#bbb;">—</td>
       <td style="{{ row.styles.buy_collection or '' }}">{{ row.buy_collection }}</td>
       <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
     </tr>
     <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
-      {# 状態列 1 つ追加 (22→23)、削除モード時はさらに +1 #}
-      <td colspan="{% if delete_mode_allowed %}24{% else %}23{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
+      {# 状態列 1 つ追加 (22→23)、削除モード時はさらに +1 / issue #227 で旧 RSライン+株価向き 2列を1列に統合 → 1 減 #}
+      <td colspan="{% if delete_mode_allowed %}23{% else %}22{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
         <div style="display:flex;flex-wrap:wrap;gap:0.8em;align-items:flex-start;">
           {% if row.gyoseki.isKonki %}
           <div style="flex:0 0 auto;">

@@ -1506,12 +1506,24 @@ def list_portfolio_with_indicators(
     stock_map = _bulk_get_stock_data(code_list)
     name_map = _bulk_resolve_stock_names(code_list)
     today = date.today()  # 全 row 共通の基準日 (issue #177)
+
+    # issue #227: 株価 + RSライン 統合チャート用に market_db を1回だけロード。
+    # 失敗時は None で進める (株価のみのチャートが描画される)
+    try:
+        from make_market_db import get_market_db  # 遅延 import (循環回避)
+        market_db = get_market_db()
+    except Exception:  # noqa: BLE001
+        market_db = None
+
     rows: List[Dict[str, Any]] = []
     for rec in records:
         code_s = rec.get("code_s", "")
         row = dict(rec)
         row["stock_name"] = name_map.get(code_s, "") or rec.get("stock_name", "")  # 旧データ互換
-        row.update(_extract_indicators_for_portfolio(stock_map.get(code_s, {})))
+        stock = stock_map.get(code_s, {})
+        row.update(_extract_indicators_for_portfolio(stock))
+        # issue #227: 3点ミニチャート (svg + tooltip)
+        row["price_rs_chart"] = build_stock_chart_payload(stock, market_db, mode="mini")
         row["styles"] = compute_cell_styles(row, today=today)
         # issue #178: ステータス列 (badge) 表示用の query / label を埋める
         status = rec.get("status", "")
@@ -1742,6 +1754,547 @@ def _gyoseki_quarity_expr_safe(stock: Dict[str, Any]) -> str:
         return get_gyoseki_quarity_expr(stock) or ""
     except Exception:
         return ""
+
+
+# ==================================================
+# 株価 + RSライン 統合スパークライン (issue #227)
+# ==================================================
+# オニール式 IBD の RS ライン (個別株価/TOPIX 比率) を価格チャートに重ねる。
+# 単位は非表示で「方向だけ見せる」思想に従い、各系列を min-max で 0-1 に
+# 正規化してから同じ viewBox に描画する。
+#
+# - portfolio: 80x24px 3点 (t-20, t-5, t-0) の簡易チャート
+# - detail   : 400x120px 20点フルチャート + 軸ガイド
+
+_SPARK_LOOKBACK = 20  # 分析対象営業日数 (price_log の有効長)
+_SPARK_RECENT = 5     # 末尾強調期間
+# compute_rs_line_new_high は rs_line[1:lookback+1] と比較するため、
+# rs_line の長さ >= lookback+1 を要求する。銘柄の price_log が約19本しかなく
+# TOPIX との日付重なりで rs_line もほぼ19本に揃うため、lookback=18 とすることで
+# 「過去18営業日との比較で最高 = 約1ヶ月で最高」を判定する。
+_SPARK_RS_NEW_HIGH_LOOKBACK = 18
+
+# 配色: 株価 (緑=上昇/赤=下降/灰=横ばい)、RS (青=上昇/オレンジ=下降/灰=横ばい)
+_PRICE_COLORS = {"up": "#2e7d32", "down": "#c62828", "flat": "#999"}
+_PRICE_FADED = {"up": "#a5d6a7", "down": "#ef9a9a", "flat": "#ccc"}
+_RS_COLORS = {"up": "#1976d2", "down": "#ef6c00", "flat": "#999"}
+_RS_FADED = {"up": "#90caf9", "down": "#ffcc80", "flat": "#ccc"}
+_BLUE_DOT = "#1976d2"
+
+_FLAT_THRESHOLD_PERCENT_PER_DAY = 0.05  # 傾き |x| < 0.05%/日 は flat 扱い
+
+
+def compute_slope_per_day(values: List[float]) -> Optional[float]:
+    """末尾 n 点の線形回帰の傾きを末尾値で正規化した %/日 を返す。
+
+    values は時系列の昇順 (古い→新しい) を期待する。
+    n < 2 や末尾値が 0 の場合は None。
+    """
+    if not values or len(values) < 2:
+        return None
+    last = values[-1]
+    if not last:
+        return None
+    n = len(values)
+    xs = list(range(n))
+    mean_x = sum(xs) / n
+    mean_y = sum(values) / n
+    numerator = sum((xs[i] - mean_x) * (values[i] - mean_y) for i in range(n))
+    denominator = sum((xs[i] - mean_x) ** 2 for i in range(n))
+    if denominator == 0:
+        return None
+    slope_abs = numerator / denominator
+    return (slope_abs / last) * 100.0
+
+
+def _slope_direction(slope_pct_per_day: Optional[float]) -> str:
+    """傾き %/日 を up/down/flat に分類する。None は flat 扱い。"""
+    if slope_pct_per_day is None:
+        return "flat"
+    if slope_pct_per_day > _FLAT_THRESHOLD_PERCENT_PER_DAY:
+        return "up"
+    if slope_pct_per_day < -_FLAT_THRESHOLD_PERCENT_PER_DAY:
+        return "down"
+    return "flat"
+
+
+def normalize_minmax(values: List[float], height: float) -> List[float]:
+    """min-max 正規化して SVG y 座標 (0 = top, height = bottom) に変換する。
+
+    定数列 (min == max) は height/2 (中央) 一定で返す。
+    SVG は y が下向きなので、最大値が上に来るよう反転する。
+    """
+    if not values:
+        return []
+    lo = min(values)
+    hi = max(values)
+    if hi == lo:
+        return [height / 2.0] * len(values)
+    span = hi - lo
+    return [height - (v - lo) / span * height for v in values]
+
+
+def to_log_scale(values: List[float]) -> List[float]:
+    """株価を対数軸で表示するため自然対数に変換 (IBD MarketSmith 準拠)。
+
+    対数軸では +X% の動きが価格レンジに関係なく同じ縦距離になるため、
+    急騰急落銘柄でも「率」として正しい形が見える。
+    0 以下の値や空入力は空リストを返す。
+    """
+    import math
+    if not values:
+        return []
+    if any(v <= 0 for v in values):
+        return []
+    return [math.log(v) for v in values]
+
+
+def to_base_index(values: List[float]) -> List[float]:
+    """先頭値を 1.0 とする倍率列に変換する。
+
+    各値を values[0] で割って [1.0, 1.05, 0.98, ...] のような形にする。
+    issue #227: 株価と RSライン を共通スケールで重ねる前段。
+    先頭値が 0 や負、または values が空なら空リストを返す。
+    """
+    if not values or values[0] <= 0:
+        return []
+    base = values[0]
+    return [v / base for v in values]
+
+
+def normalize_shared_y(
+    series_list: List[List[float]], height: float
+) -> List[List[float]]:
+    """複数系列を共通スケールで SVG y 座標に変換する (issue #227)。
+
+    各系列を to_base_index で「先頭=1.0」に揃えた後、全系列の min-max を
+    共通に取って同じ y 範囲に落とす。これにより:
+      - 期間先頭が完全に揃う (両線が同じ位置から始まる)
+      - 期間内の増減幅の差がそのまま線の上下差として見える
+    定数列のみで構成される場合は中央線一定で返す。
+    """
+    indexed = [to_base_index(s) for s in series_list]
+    valid_points: List[float] = []
+    for s in indexed:
+        valid_points.extend(s)
+    if not valid_points:
+        return [[] for _ in series_list]
+    lo = min(valid_points)
+    hi = max(valid_points)
+    if hi == lo:
+        return [[height / 2.0] * len(s) for s in indexed]
+    span = hi - lo
+    return [
+        [height - (v - lo) / span * height for v in s] if s else []
+        for s in indexed
+    ]
+
+
+def _asc_series_from_log(log: List, count: int) -> List[float]:
+    """price_log / rs_line のような (date, value) タプル列 (新しい順) から
+    末尾 count 件を時系列昇順 (古い→新しい) の値だけのリストにする。"""
+    if not log:
+        return []
+    sliced = log[:count]
+    # 入力は新しい順。逆順にして昇順にする
+    return [float(v) for _, v in reversed(sliced) if v is not None]
+
+
+def _format_total_change(values: List[float], window: int) -> str:
+    """末尾 window 点における先頭→末尾の合計騰落率を +X.X% / — に整形。
+
+    例: values=[100, 110, 120] → "+20.0%"
+    データ不足や 0除算の場合は "—"。
+    """
+    if not values or len(values) < 2:
+        return "—"
+    tail = values[-window:] if window > 0 and len(values) > window else values
+    base = tail[0]
+    if base == 0:
+        return "—"
+    pct = (tail[-1] - base) / base * 100
+    return f"{pct:+.1f}%"
+
+
+def _build_chart_tooltip(
+    price_values: List[float],
+    rs_values: List[float],
+    has_blue_dot: bool,
+) -> str:
+    """チャート tooltip (title 属性向け) を生成する。
+
+    20日 / 5日 の合計騰落率を見せる。平均ではなく合計なので、期間内の動きが
+    そのまま % で読める (例: 「20日で +5%, 5日で -26%」のような乖離パターンが分かる)。
+    """
+    lines = [
+        f"株価: 20日 {_format_total_change(price_values, _SPARK_LOOKBACK)}, "
+        f"5日 {_format_total_change(price_values, _SPARK_RECENT)}",
+        f"RSライン: 20日 {_format_total_change(rs_values, _SPARK_LOOKBACK)}, "
+        f"5日 {_format_total_change(rs_values, _SPARK_RECENT)}",
+    ]
+    if has_blue_dot:
+        lines.append("新高値: ●")
+    return "\n".join(lines)
+
+
+def _svg_polyline(points: List[tuple], color: str, width: float, dasharray: Optional[str] = None) -> str:
+    """polyline 1 本を SVG 文字列で返す (points が 2 点未満は空文字)。"""
+    if len(points) < 2:
+        return ""
+    pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
+    dash = f' stroke-dasharray="{dasharray}"' if dasharray else ""
+    return (
+        f'<polyline points="{pts}" fill="none" '
+        f'stroke="{color}" stroke-width="{width}"{dash} '
+        f'stroke-linecap="round" stroke-linejoin="round"/>'
+    )
+
+
+def _svg_circle(cx: float, cy: float, r: float, color: str) -> str:
+    return f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{color}"/>'
+
+
+def _format_price_axis(value: float) -> str:
+    """株価軸ラベル (円)。1000円超は K 表記、それ以下は整数。"""
+    if value >= 10000:
+        return f"{value / 1000:.1f}K"
+    if value >= 1000:
+        return f"{int(round(value))}"
+    return f"{value:.1f}"
+
+
+def _format_pct_axis(pct: float) -> str:
+    """RS変化率ラベル (%)。+/- 付き、絶対値10%未満は小数1桁、それ以上は整数。"""
+    if abs(pct) < 10:
+        return f"{pct:+.1f}%"
+    return f"{pct:+.0f}%"
+
+
+def build_price_rs_chart_mini(
+    price_log: List,
+    rs_line: List,
+    has_blue_dot: bool,
+    width: int = 80,
+    height: int = 24,
+) -> tuple:
+    """portfolio 用 3 点 (t-20, t-5, t-0) 簡易チャート SVG と tooltip を返す。
+
+    Args:
+        price_log: stocks_shelve['price_log'] (新しい順 [(date, close), ...])
+        rs_line  : compute_rs_line() 戻り値 (新しい順 [(date, ratio), ...])
+        has_blue_dot: RSライン新高値ならTrue
+        width / height: SVG サイズ
+
+    Returns:
+        (svg_str, tooltip_str). データ不足 (各系列 2 点未満) なら SVG は "—"。
+    """
+    price_asc = _asc_series_from_log(price_log, _SPARK_LOOKBACK)
+    rs_asc = _asc_series_from_log(rs_line, _SPARK_LOOKBACK)
+
+    if len(price_asc) < 2 and len(rs_asc) < 2:
+        return ("—", "")
+
+    tooltip = _build_chart_tooltip(price_asc, rs_asc, has_blue_dot)
+
+    pad_x = 4
+    pad_y = 3
+    inner_w = width - pad_x * 2
+    inner_h = height - pad_y * 2
+
+    # 3 点: t-20 (= asc[0]), t-5 (= asc[-_SPARK_RECENT] 相当, 末尾から5本目), t-0 (= asc[-1])
+    def _three_points(asc: List[float]) -> Optional[List[float]]:
+        if len(asc) < 2:
+            return None
+        # 末尾 (今日), 5本前 (無ければ asc の中央), 先頭 (=t-20)
+        t0 = asc[-1]
+        t5 = asc[-_SPARK_RECENT] if len(asc) >= _SPARK_RECENT else asc[len(asc) // 2]
+        t20 = asc[0]
+        return [t20, t5, t0]
+
+    price_pts_raw = _three_points(price_asc)
+    rs_pts_raw = _three_points(rs_asc)
+
+    # x 座標は等間隔 3 点
+    xs = [pad_x, pad_x + inner_w / 2, pad_x + inner_w]
+
+    price_slope_full = compute_slope_per_day(price_asc) if len(price_asc) >= 2 else None
+    rs_slope_full = compute_slope_per_day(rs_asc) if len(rs_asc) >= 2 else None
+    price_dir = _slope_direction(price_slope_full)
+    rs_dir = _slope_direction(rs_slope_full)
+
+    # 上下棲み分け: 上 60% = 株価, 下 40% = RS (mini なのでパネルギャップは最小)
+    panel_gap = 1
+    price_panel_h = (inner_h - panel_gap) * 0.6
+    rs_panel_h = (inner_h - panel_gap) * 0.4
+    price_panel_top = pad_y
+    rs_panel_top = pad_y + price_panel_h + panel_gap
+
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">']
+
+    # 株価 (実線, 主役) - 上パネル
+    # 対数軸: +X% の動きが価格レンジに関係なく同じ縦距離になる (IBD準拠)
+    if price_pts_raw is not None:
+        log_price = to_log_scale(price_pts_raw)
+        if log_price:
+            ys = normalize_minmax(log_price, price_panel_h)
+            ys = [y + price_panel_top for y in ys]
+            points = list(zip(xs, ys))
+            parts.append(_svg_polyline(points, _PRICE_COLORS[price_dir], 1.5))
+            # 末尾点マーカー
+            parts.append(_svg_circle(points[-1][0], points[-1][1], 1.6, _PRICE_COLORS[price_dir]))
+
+    # RSライン (点線, 副役) - 下パネル
+    if rs_pts_raw is not None:
+        ys = normalize_minmax(rs_pts_raw, rs_panel_h)
+        ys = [y + rs_panel_top for y in ys]
+        points = list(zip(xs, ys))
+        parts.append(_svg_polyline(points, _RS_COLORS[rs_dir], 1.0, dasharray="2,1"))
+        # 末尾点: Blue Dot or 通常マーカー
+        if has_blue_dot:
+            parts.append(_svg_circle(points[-1][0], points[-1][1], 2.5, _BLUE_DOT))
+        else:
+            parts.append(_svg_circle(points[-1][0], points[-1][1], 1.4, _RS_COLORS[rs_dir]))
+
+    parts.append("</svg>")
+    return ("".join(parts), tooltip)
+
+
+def build_price_rs_chart_full(
+    price_log: List,
+    rs_line: List,
+    has_blue_dot: bool,
+    width: int = 400,
+    height: int = 120,
+) -> tuple:
+    """詳細ページ用 20 点フルチャート SVG と tooltip を返す。
+
+    IBD MarketSmith 風の上下オフセットレイアウト (仕切り線なし):
+      - 株価は上 70% の縦範囲を使って min-max 描画
+      - RSライン は下 30% の縦範囲を使って min-max 描画
+      - 仕切り線は出さず、線が「同パネルに重なって見えるが上下別帯を動く」状態にする
+        → 形の違いがはっきり読める
+    末尾 5 日部分は太く濃色で重ねて強調。
+    軸ガイド (20日前 / 5日前 / 今日) を縦薄線で表示。
+    弱気相場で株価停滞だが RS 新高値 = Blue Dot のシグナルが形のコントラストで見える。
+    """
+    price_asc = _asc_series_from_log(price_log, _SPARK_LOOKBACK)
+    rs_asc = _asc_series_from_log(rs_line, _SPARK_LOOKBACK)
+
+    if len(price_asc) < 2 and len(rs_asc) < 2:
+        return ("", "")
+
+    tooltip = _build_chart_tooltip(price_asc, rs_asc, has_blue_dot)
+
+    # Y軸ラベルのため左右に余白を確保
+    pad_left = 36  # 株価 (円, 緑) ラベル分
+    pad_right = 36  # RS変化率 (%, 青) ラベル分
+    pad_y_top = 14    # 凡例分
+    pad_y_bottom = 14  # 日付ラベル分
+    inner_w = width - pad_left - pad_right
+    inner_h = height - pad_y_top - pad_y_bottom
+    pad_x = pad_left  # 描画原点 (x)
+
+    # 上下分割: 株価 70%, ギャップ, RS 30%
+    panel_gap = 4
+    price_panel_h = (inner_h - panel_gap) * 0.7
+    rs_panel_h = (inner_h - panel_gap) * 0.3
+    price_panel_top = pad_y_top
+    rs_panel_top = pad_y_top + price_panel_h + panel_gap
+
+    # 株価と RS で長さが違うことがあるので、長い方の長さを基準に等間隔 x を作る
+    n = max(len(price_asc), len(rs_asc))
+    if n < 2:
+        return ("", "")
+    step = inner_w / max(n - 1, 1)
+
+    def _xs_for(series: List[float]) -> List[float]:
+        # 末尾揃え: 右端 = 今日, 左へさかのぼる
+        return [pad_x + inner_w - step * (len(series) - 1 - i) for i in range(len(series))]
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" style="display:block;">'
+    ]
+
+    # 背景枠
+    parts.append(
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#fafafa" stroke="#e0e0e0"/>'
+    )
+
+    # 仕切り線は出さない。上下オフセットだけで「同パネル内で別帯を動く」状態にする
+    # (IBD MarketSmith 風: 線が重なって見えるが、上下に分かれているので形の違いが読める)
+
+    # 軸ガイド: 20日前/5日前/今日 の縦線 (両パネルにまたがる)
+    x_today = pad_x + inner_w
+    x_t5 = pad_x + inner_w - step * (_SPARK_RECENT - 1)
+    x_t20 = pad_x
+    for gx in (x_t20, x_t5, x_today):
+        parts.append(
+            f'<line x1="{gx:.1f}" y1="{pad_y_top}" x2="{gx:.1f}" y2="{pad_y_top + inner_h}" '
+            f'stroke="#e0e0e0" stroke-width="0.5"/>'
+        )
+
+    # 日付ラベル (price_log の日付を参照)。データが少ない場合は実在する最古日を使う
+    try:
+        today_label = price_log[0][0].strftime("%m/%d") if price_log else ""
+        t5_idx = min(_SPARK_RECENT - 1, len(price_log) - 1) if price_log else -1
+        t20_idx = len(price_log) - 1 if price_log else -1
+        t5_label = price_log[t5_idx][0].strftime("%m/%d") if t5_idx >= 0 else ""
+        t20_label = price_log[t20_idx][0].strftime("%m/%d") if t20_idx >= 0 else ""
+    except Exception:
+        today_label = t5_label = t20_label = ""
+    label_y = height - 2
+    parts.append(
+        f'<text x="{x_t20:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="start">{t20_label}</text>'
+    )
+    parts.append(
+        f'<text x="{x_t5:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="middle">{t5_label}</text>'
+    )
+    parts.append(
+        f'<text x="{x_today:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="end">{today_label}</text>'
+    )
+
+    # 凡例 (上端)
+    parts.append(
+        '<text x="' + str(pad_x) + '" y="10" font-size="9" fill="#666">'
+        '<tspan fill="#2e7d32">━ 株価 (円)</tspan>'
+        '<tspan dx="6" fill="#1976d2" font-style="italic">┄ RSライン (対TOPIX, 期間変化率)</tspan>'
+        '</text>'
+    )
+
+    # 上下別パネル: それぞれが独自の min-max でフル高さを使う。
+    # 株価と RS が同じ動きでも上下別エリアに描かれるので、形の対比が見やすい。
+
+    # 株価パネル
+    price_slope_full = compute_slope_per_day(price_asc) if len(price_asc) >= 2 else None
+    price_slope_recent = (
+        compute_slope_per_day(price_asc[-_SPARK_RECENT:])
+        if len(price_asc) >= _SPARK_RECENT
+        else None
+    )
+    price_dir_full = _slope_direction(price_slope_full)
+    price_dir_recent = _slope_direction(price_slope_recent)
+
+    # 対数軸: +X% の動きが価格レンジに関係なく同じ縦距離になる (IBD準拠)
+    log_price_asc = to_log_scale(price_asc) if len(price_asc) >= 2 else []
+    if log_price_asc:
+        ys_price = normalize_minmax(log_price_asc, price_panel_h)
+        ys_price = [y + price_panel_top for y in ys_price]
+        xs_price = _xs_for(price_asc)
+        full_points = list(zip(xs_price, ys_price))
+        # 20日全体 (薄)
+        parts.append(_svg_polyline(full_points, _PRICE_FADED[price_dir_full], 1.5))
+        # 末尾5日 (濃)
+        if len(full_points) >= _SPARK_RECENT:
+            recent_points = full_points[-_SPARK_RECENT:]
+            parts.append(_svg_polyline(recent_points, _PRICE_COLORS[price_dir_recent], 2.2))
+        # 末尾マーカー
+        parts.append(_svg_circle(full_points[-1][0], full_points[-1][1], 2.5, _PRICE_COLORS[price_dir_recent]))
+
+        # 左軸 (株価): max を上端、min を下端、現在値を末尾の y 位置に
+        p_max = max(price_asc)
+        p_min = min(price_asc)
+        p_now = price_asc[-1]
+        label_x = pad_left - 2
+        parts.append(
+            f'<text x="{label_x}" y="{price_panel_top + 3:.1f}" font-size="8" '
+            f'fill="#2e7d32" text-anchor="end">{_format_price_axis(p_max)}</text>'
+        )
+        parts.append(
+            f'<text x="{label_x}" y="{price_panel_top + price_panel_h - 1:.1f}" font-size="8" '
+            f'fill="#2e7d32" text-anchor="end">{_format_price_axis(p_min)}</text>'
+        )
+        # 現在値: 末尾点の真横に強調 (濃緑、太字風)
+        now_y = full_points[-1][1]
+        parts.append(
+            f'<text x="{label_x}" y="{now_y + 3:.1f}" font-size="9" '
+            f'fill="#2e7d32" font-weight="bold" text-anchor="end">{_format_price_axis(p_now)}</text>'
+        )
+
+    # RSパネル
+    rs_slope_full = compute_slope_per_day(rs_asc) if len(rs_asc) >= 2 else None
+    rs_slope_recent = (
+        compute_slope_per_day(rs_asc[-_SPARK_RECENT:])
+        if len(rs_asc) >= _SPARK_RECENT
+        else None
+    )
+    rs_dir_full = _slope_direction(rs_slope_full)
+    rs_dir_recent = _slope_direction(rs_slope_recent)
+
+    if len(rs_asc) >= 2:
+        ys_rs = normalize_minmax(rs_asc, rs_panel_h)
+        ys_rs = [y + rs_panel_top for y in ys_rs]
+        xs_rs = _xs_for(rs_asc)
+        full_points = list(zip(xs_rs, ys_rs))
+        # 20日全体 (薄, 点線)
+        parts.append(_svg_polyline(full_points, _RS_FADED[rs_dir_full], 1.0, dasharray="2,2"))
+        # 末尾5日 (濃, 点線)
+        if len(full_points) >= _SPARK_RECENT:
+            recent_points = full_points[-_SPARK_RECENT:]
+            parts.append(
+                _svg_polyline(recent_points, _RS_COLORS[rs_dir_recent], 1.5, dasharray="2,1")
+            )
+        # 末尾マーカー: Blue Dot or 通常
+        if has_blue_dot:
+            parts.append(_svg_circle(full_points[-1][0], full_points[-1][1], 4.0, _BLUE_DOT))
+        else:
+            parts.append(_svg_circle(full_points[-1][0], full_points[-1][1], 2.0, _RS_COLORS[rs_dir_recent]))
+
+        # 右軸 (RS): 初日 (rs_asc[0]) を 0% 基準とした期間内の変化率を表示
+        rs_base = rs_asc[0]
+        if rs_base > 0:
+            rs_pct_max = (max(rs_asc) - rs_base) / rs_base * 100
+            rs_pct_min = (min(rs_asc) - rs_base) / rs_base * 100
+            rs_pct_now = (rs_asc[-1] - rs_base) / rs_base * 100
+            label_x = pad_left + inner_w + 2
+            parts.append(
+                f'<text x="{label_x}" y="{rs_panel_top + 3:.1f}" font-size="8" '
+                f'fill="#1976d2" text-anchor="start">{_format_pct_axis(rs_pct_max)}</text>'
+            )
+            parts.append(
+                f'<text x="{label_x}" y="{rs_panel_top + rs_panel_h - 1:.1f}" font-size="8" '
+                f'fill="#1976d2" text-anchor="start">{_format_pct_axis(rs_pct_min)}</text>'
+            )
+            # 現在値: 末尾点の真横に強調
+            now_y = full_points[-1][1]
+            parts.append(
+                f'<text x="{label_x}" y="{now_y + 3:.1f}" font-size="9" '
+                f'fill="#1976d2" font-weight="bold" text-anchor="start">{_format_pct_axis(rs_pct_now)}</text>'
+            )
+
+    parts.append("</svg>")
+    return ("".join(parts), tooltip)
+
+
+def build_stock_chart_payload(
+    stock: Dict[str, Any],
+    market_db: Optional[Dict[str, Any]],
+    mode: str = "mini",
+) -> Dict[str, Any]:
+    """stock + market_db からチャート用 svg + tooltip + blue_dot 情報を組み立てる。
+
+    mode: "mini" (portfolio 用) or "full" (detail 用)
+    market_db が None の場合は RS ラインが空で描画される (株価のみ)。
+    """
+    from make_stock_db import compute_rs_line, compute_rs_line_new_high  # 遅延 import
+
+    price_log = (stock or {}).get("price_log") or []
+    rs_line: List = []
+    has_blue_dot = False
+    if market_db is not None and stock:
+        try:
+            rs_line = compute_rs_line(stock, market_db)
+            has_blue_dot = compute_rs_line_new_high(
+                stock, market_db, lookback=_SPARK_RS_NEW_HIGH_LOOKBACK, rs_line=rs_line
+            )
+        except Exception:  # noqa: BLE001
+            rs_line = []
+            has_blue_dot = False
+
+    if mode == "full":
+        svg, tooltip = build_price_rs_chart_full(price_log, rs_line, has_blue_dot)
+    else:
+        svg, tooltip = build_price_rs_chart_mini(price_log, rs_line, has_blue_dot)
+    return {"svg": svg, "tooltip": tooltip, "blue_dot": has_blue_dot}
 
 
 def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:

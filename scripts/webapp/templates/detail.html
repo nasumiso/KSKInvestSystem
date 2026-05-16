@@ -98,6 +98,14 @@
       </div>
       {% endif %}
     </div>
+    {# issue #227: 株価 + RSライン 統合チャート (フル版) #}
+    {% if price_rs_chart and price_rs_chart.svg %}
+    <div class="right" style="margin-left:1em;">
+      <div title="{{ price_rs_chart.tooltip }}" style="cursor:help;">
+        {{ price_rs_chart.svg|safe }}
+      </div>
+    </div>
+    {% endif %}
   </div>
 </div>
 
