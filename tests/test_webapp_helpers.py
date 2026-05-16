@@ -2272,6 +2272,26 @@ class TestPriceRsSparkline:
         # 当日 = 5/15 ラベルが出る
         assert "05/15" in svg
 
+    def test_build_payload_with_none_market_db_returns_price_only_chart(self):
+        """build_stock_chart_payload は market_db=None でも株価のみで SVG を返す。
+
+        codex review 対応: detail ルートで market_db 取得失敗時に
+        フォールバックとして「価格のみチャート」を出すための保証。
+        """
+        from datetime import date as _d, timedelta
+        base = _d(2026, 5, 15)
+        stock = {
+            "price_log": [(base - timedelta(days=i), 100 + i) for i in range(20)],
+        }
+        payload = helpers.build_stock_chart_payload(stock, market_db=None, mode="full")
+        assert payload["svg"]  # 空文字でない
+        assert "<svg" in payload["svg"]
+        assert payload["blue_dot"] is False
+        # RS データが無いので、tooltip の RSライン 行は "—" になる
+        assert "RSライン" in payload["tooltip"]
+        # 株価分は正しく出る
+        assert "株価:" in payload["tooltip"]
+
     def test_full_chart_t20_label_matches_displayed_window(self):
         """price_log が _SPARK_LOOKBACK (20) を超える場合、左端ラベルは
         '表示窓内の最古日 (20日前)' であって '全履歴の最古日' ではない。
