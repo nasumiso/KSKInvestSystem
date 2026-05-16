@@ -2193,7 +2193,7 @@ def build_price_rs_chart_full(
         # 末尾マーカー
         parts.append(_svg_circle(full_points[-1][0], full_points[-1][1], 2.5, _PRICE_COLORS[price_dir_recent]))
 
-        # 左軸 (株価): max を上端、min を下端、現在値を末尾の y 位置に
+        # 左軸 (株価): max を上端、min を下端の軸外に配置
         p_max = max(price_asc)
         p_min = min(price_asc)
         p_now = price_asc[-1]
@@ -2206,10 +2206,11 @@ def build_price_rs_chart_full(
             f'<text x="{label_x}" y="{price_panel_top + price_panel_h - 1:.1f}" font-size="8" '
             f'fill="#2e7d32" text-anchor="end">{_format_price_axis(p_min)}</text>'
         )
-        # 現在値: 末尾点の真横に強調 (濃緑、太字風)
+        # 現在値: 末尾点の左隣、グラフ内部に配置 (軸外 max/min と重ならない)
+        now_x = full_points[-1][0]
         now_y = full_points[-1][1]
         parts.append(
-            f'<text x="{label_x}" y="{now_y + 3:.1f}" font-size="9" '
+            f'<text x="{now_x - 4:.1f}" y="{now_y + 3:.1f}" font-size="9" '
             f'fill="#2e7d32" font-weight="bold" text-anchor="end">{_format_price_axis(p_now)}</text>'
         )
 
@@ -2257,11 +2258,14 @@ def build_price_rs_chart_full(
                 f'<text x="{label_x}" y="{rs_panel_top + rs_panel_h - 1:.1f}" font-size="8" '
                 f'fill="#1976d2" text-anchor="start">{_format_pct_axis(rs_pct_min)}</text>'
             )
-            # 現在値: 末尾点の真横に強調
+            # 現在値: 末尾点の左隣、グラフ内部に配置 (軸外 max/min と重ならない)
+            now_x = full_points[-1][0]
             now_y = full_points[-1][1]
+            # Blue Dot 時は青丸(r=4)があるので余白を多めに
+            offset = 8 if has_blue_dot else 4
             parts.append(
-                f'<text x="{label_x}" y="{now_y + 3:.1f}" font-size="9" '
-                f'fill="#1976d2" font-weight="bold" text-anchor="start">{_format_pct_axis(rs_pct_now)}</text>'
+                f'<text x="{now_x - offset:.1f}" y="{now_y + 3:.1f}" font-size="9" '
+                f'fill="#1976d2" font-weight="bold" text-anchor="end">{_format_pct_axis(rs_pct_now)}</text>'
             )
 
     parts.append("</svg>")
