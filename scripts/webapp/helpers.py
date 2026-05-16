@@ -344,6 +344,23 @@ def save_ir_comments(code_s: str, form_data: dict) -> None:
         upsert_research_record(record)
 
 
+def save_corporate_url_override(code_s: str, url: str) -> None:
+    """会社HP URL の手動上書きを保存する (issue #208)。
+
+    空文字を渡すと上書きをクリアする (デフォルトに戻る)。
+    URL は事前にバリデーション済みであることを呼び出し側で保証する。
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+
+    with _flock():
+        record = get_research_record(normalized)
+        if record is None:
+            raise ValueError(f"レコード未登録: {normalized}")
+        record["corporate_url_override"] = url.strip()
+        upsert_research_record(record)
+
+
 # =======================================================
 # 市場データ / 決算カレンダー用ヘルパー (issue #127)
 # =======================================================

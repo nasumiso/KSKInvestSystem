@@ -413,6 +413,90 @@ class TestRefreshPostRoutes:
         assert "background:#ffeaea" in html
 
 
+class TestCorporateUrlPostRoutes:
+    """POST /stock/<code_s>/corporate_url のテスト (issue #208)"""
+
+    def test_corporate_url_post_saves_override(self, client, db_path):
+        """正常 URL を渡すと record.corporate_url_override が更新され info flash が出る"""
+        resp = client.post("/stock/3496/corporate_url", data={
+            "url": "https://example.com/ir",
+        })
+        assert resp.status_code == 302
+        assert "/stock/3496" in resp.headers["Location"]
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert loaded["corporate_url_override"] == "https://example.com/ir"
+
+        follow = client.get("/stock/3496")
+        html = follow.data.decode()
+        assert "会社HPリンクを更新しました (3496)" in html
+        assert "background:#eaffea" in html
+
+    def test_corporate_url_post_empty_clears_override(self, client, db_path):
+        """空文字を渡すと上書きがクリアされ「デフォルトに戻しました」flash が出る"""
+        # 事前に上書きを入れておく
+        rec = rs.get_research_record("3496", db_path=db_path)
+        rec["corporate_url_override"] = "https://old.example.com"
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        resp = client.post("/stock/3496/corporate_url", data={"url": ""})
+        assert resp.status_code == 302
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert loaded["corporate_url_override"] == ""
+
+        follow = client.get("/stock/3496")
+        html = follow.data.decode()
+        assert "会社HPリンクをデフォルトに戻しました (3496)" in html
+
+    def test_corporate_url_post_rejects_invalid_scheme(self, client, db_path):
+        """http/https 以外で始まる URL は error flash で拒否し、record は変更されない"""
+        resp = client.post("/stock/3496/corporate_url", data={
+            "url": "javascript:alert(1)",
+        })
+        assert resp.status_code == 302
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert loaded["corporate_url_override"] == ""  # 変更されない
+
+        follow = client.get("/stock/3496")
+        html = follow.data.decode()
+        assert "会社HPリンクの保存に失敗しました (3496)" in html
+        assert "http://" in html or "https://" in html  # エラーメッセージ本文
+        assert "background:#ffeaea" in html
+
+    def test_corporate_url_post_handles_unregistered_record(self, client):
+        """research_shelve 未登録の銘柄コードでは error flash で 302 リダイレクトする"""
+        # 9999 は populated_db で登録していない
+        resp = client.post("/stock/9999/corporate_url", data={
+            "url": "https://example.com",
+        })
+        assert resp.status_code == 302
+        assert "/stock/9999" in resp.headers["Location"]
+        # 9999 は detail 取得時に 404 になるためリダイレクト先で flash 確認は省略
+        # (flash は session に保存されるので次のリクエストで消費される)
+
+    def test_detail_hides_corporate_link_when_no_url(self, client, db_path, monkeypatch):
+        """corporate_url も corporate_url_override も空のときリンク要素自体が出ない"""
+        # 3496 の override は空のまま、stock の corporate_url を空に置き換え
+        from webapp import helpers as _h
+        original = _h.get_stock_data
+        def patched(code_s):
+            data = dict(original(code_s) or {})
+            data["corporate_url"] = ""
+            return data
+        monkeypatch.setattr(_h, "get_stock_data", patched)
+        # detail.py 側も同じ helpers を import 経由で参照しているか確認のため
+        # routes.detail の名前空間にも patch を当てる
+        from webapp.routes import detail as _d
+        monkeypatch.setattr(_d, "get_stock_data", patched)
+
+        resp = client.get("/stock/3496")
+        html = resp.data.decode()
+        # 「会社HP」ラベルが出ていない (リンク要素ごと非表示)
+        assert ">会社HP<" not in html
+        assert ">会社HP✎<" not in html
+        # ✎ ボタン (上書き入口) は常に表示される
+        assert 'action="/stock/3496/corporate_url"' in html
+
+
 class TestKessanCommentApiContract:
     """GET/POST /api/kessan_comment のレスポンス契約 (issue #133)
 

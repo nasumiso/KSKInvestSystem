@@ -56,11 +56,36 @@
         <button type="submit" title="業績・指標・株価などの最新データを再取得します"
                 style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">再取得</button>
       </form>
+      {# issue #208: 会社HP URL の手動上書き対応。stocks_shelve.corporate_url を既定、record.corporate_url_override で上書き #}
+      {% set _override = record.corporate_url_override or '' %}
+      {% set _default_url = (stock or {}).get('corporate_url') or '' %}
+      {% set _display_url = _override or _default_url %}
+      {% set _is_override = _override != '' %}
       <div>
         <a href="https://kabutan.jp/stock/chart?code={{ record.code_s }}&time=w" target="_blank" rel="noopener noreferrer">チャート</a>
         | <a href="https://kabutan.jp/stock/finance?code={{ record.code_s }}" target="_blank" rel="noopener noreferrer">業績</a>
         | <a href="https://finance.yahoo.co.jp/quote/{{ record.code_s }}.T/forum" target="_blank" rel="noopener noreferrer">掲示板</a>
+        {% if _display_url %}
+        | <a href="{{ _display_url }}" target="_blank" rel="noopener noreferrer">会社HP{% if _is_override %}✎{% endif %}</a>
+        {% endif %}
+        <form method="POST" action="/stock/{{ record.code_s }}/corporate_url" id="corp-url-form-{{ record.code_s }}" style="display:inline;">
+          <input type="hidden" name="url" id="corp-url-input-{{ record.code_s }}">
+          <button type="button" title="会社HPリンクの上書きを編集 (空欄でデフォルトに戻す)"
+                  data-code="{{ record.code_s }}" data-current="{{ _display_url }}"
+                  onclick="editCorpUrl(this)"
+                  style="display:inline-block;width:auto !important;padding:0.05em 0.3em;font-size:0.8em;margin:0 0 0 0.2em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">✎</button>
+        </form>
       </div>
+      <script>
+      function editCorpUrl(btn) {
+        var codeS = btn.dataset.code;
+        var current = btn.dataset.current || "";
+        var input = window.prompt("会社HP URL（空欄でデフォルトに戻す）", current);
+        if (input === null) return;  // Cancel
+        document.getElementById('corp-url-input-' + codeS).value = input;
+        document.getElementById('corp-url-form-' + codeS).submit();
+      }
+      </script>
       {% if not portfolio_status_query and not portfolio_fallback_mode %}
       <div style="margin-top:0.4em;">
         <button type="button" class="outline" style="padding:0.2em 0.7em;font-size:0.85em;margin:0;"

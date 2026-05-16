@@ -901,3 +901,40 @@ class TestDateYyMDayPrecision:
         rs.validate_date_yy_m("25.11")
         assert rs.date_yy_m_sort_key("26.1") == (26, 1, 0)
         assert rs.date_yy_m_sort_key("25.11") == (25, 11, 0)
+
+
+class TestCorporateUrlOverride:
+    """corporate_url_override フィールド (issue #208) のテスト"""
+
+    def test_corporate_url_override_defaults_to_empty(self):
+        """create_research_record の戻り値に空文字で含まれる"""
+        rec = rs.create_research_record("3496", "アズーム")
+        assert rec["corporate_url_override"] == ""
+
+    def test_corporate_url_override_passes_through(self):
+        """create_research_record に渡した値が保持される"""
+        rec = rs.create_research_record(
+            "3496", "アズーム", corporate_url_override="https://example.com/ir",
+        )
+        assert rec["corporate_url_override"] == "https://example.com/ir"
+
+    def test_get_research_record_backfills_corporate_url_override(self, db_path):
+        """旧形式 (corporate_url_override 無) のレコードは読込時に空文字で補完される"""
+        rec = rs.create_research_record("3496", "アズーム")
+        del rec["corporate_url_override"]  # 旧形式を模倣
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert loaded["corporate_url_override"] == ""
+
+    def test_corporate_url_override_roundtrip(self, db_path):
+        """upsert → get で値が往復する"""
+        rec = rs.create_research_record(
+            "3496", "アズーム", corporate_url_override="https://example.com/ir",
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert loaded["corporate_url_override"] == "https://example.com/ir"
+
+    def test_record_fields_includes_corporate_url_override(self):
+        """RECORD_FIELDS に corporate_url_override が含まれる"""
+        assert "corporate_url_override" in rs.RECORD_FIELDS
