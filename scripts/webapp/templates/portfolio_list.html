@@ -287,7 +287,7 @@
             <strong style="font-size:0.85em;color:#666;">操作</strong>
             <div style="display:flex;flex-direction:column;gap:0.5em;margin-top:0.3em;font-size:0.85em;">
               {% if row.transitions %}
-              <form action="/portfolio/{{ row.code_s }}/transition" method="POST" style="display:flex;flex-direction:column;gap:0.3em;margin:0;">
+              <form action="/portfolio/{{ row.code_s }}/transition" method="POST" class="portfolio-transition-form" style="display:flex;flex-direction:column;gap:0.3em;margin:0;">
                 <input type="hidden" name="return_query" value="{{ return_query }}">
                 <label style="font-size:0.85em;color:#666;">ステータス変更</label>
                 <select name="new_status" style="padding:0.3em;font-size:0.85em;margin:0;">
@@ -295,6 +295,8 @@
                   <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
+                <input type="date" name="action_date" value="{{ today_jst }}" max="{{ today_jst }}" required
+                       class="portfolio-action-date" style="font-size:0.85em;padding:0.3em;margin:0;">
                 <textarea name="reason" placeholder="理由 (任意)" rows="2" style="font-size:0.85em;padding:0.3em;margin:0;"></textarea>
                 <button type="submit" style="padding:0.3em 0.6em;font-size:0.85em;margin:0;">変更</button>
               </form>
@@ -723,6 +725,25 @@ document.querySelectorAll('table details').forEach(function(d) {
       .catch(function(err) { alert('除外失敗: ' + err); });
   });
   refresh();
+})();
+
+// issue #220: ステータス変更フォームの action_date 未来日チェック (二重防御)。
+(function() {
+  document.querySelectorAll('form.portfolio-transition-form').forEach(function(form) {
+    form.addEventListener('submit', function(e) {
+      var inp = form.querySelector('input.portfolio-action-date');
+      if (!inp || !inp.value) return;
+      var today = new Date();
+      var yyyy = today.getFullYear();
+      var mm = String(today.getMonth() + 1).padStart(2, '0');
+      var dd = String(today.getDate()).padStart(2, '0');
+      var todayStr = yyyy + '-' + mm + '-' + dd;
+      if (inp.value > todayStr) {
+        e.preventDefault();
+        alert('アクション日付に未来日は指定できません (今日まで): ' + inp.value);
+      }
+    });
+  });
 })();
 </script>
 

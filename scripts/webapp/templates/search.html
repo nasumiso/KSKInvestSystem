@@ -73,5 +73,11 @@
 </div>
 {% else %}
 <p>該当する銘柄がありません。</p>
+{% if can_add %}
+<form method="post" action="/stock/add" style="margin-top:1em;">
+  <input type="hidden" name="add_code_s" value="{{ q_normalized }}">
+  <button type="submit">この銘柄 ({{ q_normalized }}) を ResearchDB に追加</button>
+</form>
+{% endif %}
 {% endif %}
 {% endblock %}

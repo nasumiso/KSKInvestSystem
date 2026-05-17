@@ -6,6 +6,7 @@ GET / : 銘柄コード/名前/評価でフィルタし一覧表示
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 
+from research_shelve import CODE_S_PATTERN
 from webapp.helpers import search_records, add_stock
 
 search_bp = Blueprint("search", __name__)
@@ -45,6 +46,15 @@ def index():
     if (q or code_s) and len(records) == 1:
         return redirect(url_for("detail.stock_detail", code_s=records[0]["code_s"]))
 
+    # issue #216: q がコード形式 (4桁数字 or 3桁数字+大文字) で 0 件ヒット時のみ
+    # 「この銘柄を追加」フォームを出す。銘柄名検索や不正フォーマットでは出さない。
+    q_normalized = q.upper()
+    can_add = (
+        bool(q)
+        and not records
+        and bool(CODE_S_PATTERN.match(q_normalized))
+    )
+
     return render_template(
         "search.html",
         records=records,
@@ -52,6 +62,8 @@ def index():
         filter_keyword=keyword or "",
         filter_code_s=code_s,
         filter_q=q,
+        can_add=can_add,
+        q_normalized=q_normalized,
     )
 
 

@@ -198,6 +198,36 @@ def now_iso() -> str:
     return datetime.now(JST).isoformat()
 
 
+_ACTION_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _parse_action_date_to_iso(action_date: str) -> str:
+    """YYYY-MM-DD を JST 12:00 の ISO 8601 文字列に変換する。
+
+    issue #220: UI 側 <input type="date"> から受け取る日付を action_log の
+    timestamp として保存する。00:00 だと JST 表示時に前日扱いになる縁起問題を
+    避けるため固定 12:00 を当てる。
+
+    未来日 (`datetime.now(JST).date()` 基準) は ValueError。
+    `ks_util.get_price_day()` の業務日は使わない (17:00 前に前日を返すため、
+    実カレンダーの今日入力を誤って弾いてしまう)。
+    """
+    if not isinstance(action_date, str) or not _ACTION_DATE_RE.match(action_date):
+        raise ValueError(
+            f"action_date は YYYY-MM-DD 形式で指定してください: {action_date!r}"
+        )
+    try:
+        parsed = datetime.strptime(action_date, "%Y-%m-%d").date()
+    except ValueError as e:
+        raise ValueError(f"action_date のパースに失敗: {action_date!r} ({e})") from e
+    today = datetime.now(JST).date()
+    if parsed > today:
+        raise ValueError(
+            f"action_date に未来日は指定できません: {action_date} (今日={today.isoformat()})"
+        )
+    return datetime(parsed.year, parsed.month, parsed.day, 12, 0, 0, tzinfo=JST).isoformat()
+
+
 # ===========================================
 # キー組立
 # ===========================================
@@ -510,6 +540,7 @@ def add_to_watch(
     *,
     memo: Optional[Dict[str, str]] = None,
     reason: str = "",
+    action_date: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """銘柄を 3監 として登録、または除外済みレコードをユニバース復活させる。
@@ -522,11 +553,14 @@ def add_to_watch(
       memo / status は既存値を保持。「ユニバース除外」ログを reason="復活" で記録
       (復活時は reason 引数は無視される)
     - 既存レコードあり & excluded=False → ValueError (重複登録防止)
+    - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
+      その日の JST 12:00 に固定する (issue #220)。未指定なら現在時刻
 
     Returns: 追加または復活したレコード
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
+    action_ts = _parse_action_date_to_iso(action_date) if action_date else None
     path = _resolve_db_path(db_path)
     with _flock(db_path):
         with ShelveDB(path) as db:
@@ -554,6 +588,7 @@ def add_to_watch(
                 normalized,
                 "ユニバース除外",
                 reason="復活",
+                timestamp=action_ts,
                 db_path=db_path,
             )
             log_print("portfolio_shelve: ユニバース復活", normalized)
@@ -564,6 +599,7 @@ def add_to_watch(
                 status_from=None,
                 status_to="3監",
                 reason=reason,
+                timestamp=action_ts,
                 db_path=db_path,
             )
             log_print("portfolio_shelve: 3監 追加", normalized)
@@ -614,6 +650,7 @@ def transition_status(
     new_status: str,
     *,
     reason: str = "",
+    action_date: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """既存レコードのステータスを変更する。
@@ -622,6 +659,8 @@ def transition_status(
     - それ以外の遷移は action_type=ステータス変更
     - 遷移バリデーション (ALLOWED_TRANSITIONS) を満たさなければ ValueError
     - レコードが存在しない場合は KeyError
+    - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
+      その日の JST 12:00 に固定する (issue #220)。未指定なら現在時刻
 
     Returns: 更新後のレコード
     """
@@ -630,6 +669,8 @@ def transition_status(
     validate_status(new_status)
     if not isinstance(reason, str):
         raise TypeError(f"reason must be str, got {type(reason).__name__}")
+
+    action_ts = _parse_action_date_to_iso(action_date) if action_date else None
 
     path = _resolve_db_path(db_path)
     with _flock(db_path):
@@ -661,6 +702,7 @@ def transition_status(
             status_from=old_status,
             status_to=new_status,
             reason=reason,
+            timestamp=action_ts,
             db_path=db_path,
         )
     log_print(

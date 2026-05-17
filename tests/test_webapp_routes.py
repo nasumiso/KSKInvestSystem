@@ -114,6 +114,62 @@ class TestSearchRoute:
         resp = client.get("/?q=テスト")  # "アズーム" の "テストメモ" と "空テスト" 両方にヒット
         assert resp.status_code == 200
 
+    def test_index_no_hit_with_code_q_shows_add_button(self, client):
+        """issue #216: ?q=未登録コード 0件時は追加フォームを表示"""
+        resp = client.get("/?q=9999")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "該当する銘柄がありません" in html
+        assert 'name="add_code_s"' in html
+        assert 'value="9999"' in html
+
+    def test_index_no_hit_with_keyword_q_hides_add_button(self, client):
+        """issue #216: 銘柄名検索でヒット0件でも追加フォームは出さない"""
+        resp = client.get("/?q=存在しない銘柄名")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "該当する銘柄がありません" in html
+        assert 'name="add_code_s"' not in html
+
+    def test_index_no_hit_with_invalid_code_hides_add_button(self, client):
+        """issue #216: 5桁などコード形式でない場合は追加フォーム非表示"""
+        resp = client.get("/?q=99999")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "該当する銘柄がありません" in html
+        assert 'name="add_code_s"' not in html
+
+    def test_index_no_hit_with_3digit_plus_letter_shows_add_button(self, client):
+        """issue #216: 215A 形式 (3桁+大文字) も追加対象"""
+        resp = client.get("/?q=215A")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert 'value="215A"' in html
+
+
+class TestStockAddRoute:
+    """POST /stock/add のテスト"""
+
+    def test_add_valid_code_redirects_to_detail(self, client, monkeypatch):
+        """issue #216: 検索0件ページからの追加 → 詳細ページへリダイレクト"""
+        # add_stock は stocks_shelve 参照するためスタブ化
+        monkeypatch.setattr(
+            "webapp.routes.search.add_stock",
+            lambda code: code.upper(),
+        )
+        resp = client.post("/stock/add", data={"add_code_s": "9999"})
+        assert resp.status_code == 302
+        assert "/stock/9999" in resp.headers["Location"]
+
+    def test_add_invalid_code_redirects_to_index(self, client, monkeypatch):
+        """不正コードは flash + index へ"""
+        def _raise(code):
+            raise ValueError("invalid code")
+        monkeypatch.setattr("webapp.routes.search.add_stock", _raise)
+        resp = client.post("/stock/add", data={"add_code_s": "bad"})
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/")
+
 
 class TestDetailRoute:
     """GET /stock/<code_s> のテスト"""
@@ -197,6 +253,57 @@ class TestDetailPortfolioModal:
         html = resp.data.decode()
         assert "portfolio-badge-button" in html
         assert "openPortfolioModal()" in html
+
+    def test_hold_status_no_exclude_button(self, portfolio_client):
+        """issue #221: 1保 銘柄の詳細では「ユニバース除外」ボタンが出ない"""
+        resp = portfolio_client.get("/stock/3496")  # 1保
+        html = resp.data.decode()
+        # JS 関数定義 / CSS クラス定義 / confirm() メッセージは常に含まれるので、
+        # ボタンの onclick="excludeFromUniverse(...)" 呼び出しが無いことで判定
+        assert 'onclick="excludeFromUniverse' not in html
+
+    def test_semi_status_shows_exclude_button(self, db_path, tmp_path, monkeypatch):
+        """issue #221: 2準 銘柄の詳細では「ユニバース除外」ボタンが出る"""
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        rec = rs.create_research_record("3496", "アズーム", overall_rating="A")
+        rs.upsert_research_record(rec, db_path=db_path)
+        # 3監 → 2準 に遷移させる
+        ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)
+        ps.transition_status("3496", "2準", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        client = app.test_client()
+        resp = client.get("/stock/3496")
+        html = resp.data.decode()
+        assert "excludeFromUniverse('3496')" in html
+        assert "ユニバースから除外" in html
+
+    def test_watch_status_shows_exclude_button(self, db_path, tmp_path, monkeypatch):
+        """issue #221: 3監 銘柄の詳細では「ユニバース除外」ボタンが出る"""
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        rec = rs.create_research_record("3496", "アズーム", overall_rating="A")
+        rs.upsert_research_record(rec, db_path=db_path)
+        ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)  # 3監 のまま
+
+        app = create_app()
+        app.config["TESTING"] = True
+        client = app.test_client()
+        resp = client.get("/stock/3496")
+        html = resp.data.decode()
+        assert "excludeFromUniverse('3496')" in html
 
     def test_excluded_record_treated_as_unregistered(self, db_path, tmp_path, monkeypatch):
         """除外済み (excluded=True) は未登録扱い: バッジ/transition モーダルは出さず、

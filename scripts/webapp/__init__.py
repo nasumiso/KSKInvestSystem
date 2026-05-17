@@ -6,8 +6,11 @@ research_shelve のデータをブラウザで閲覧・編集するためのWeb�
 
 import os
 import sys
+from datetime import datetime, timezone, timedelta
 
 from flask import Flask
+
+_JST = timezone(timedelta(hours=9))
 
 # scripts/ を sys.path に追加して research_shelve 等をインポート可能にする
 _SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -35,5 +38,11 @@ def create_app() -> Flask:
     app.register_blueprint(market_bp)
     app.register_blueprint(disclosure_bp)
     app.register_blueprint(portfolio_bp)
+
+    @app.context_processor
+    def _inject_today_jst():
+        # issue #220: action_date input の value/max に使う実カレンダー上の JST 当日。
+        # ks_util.get_price_day() は業務日 (17:00 前は前日) のため使わない。
+        return {"today_jst": datetime.now(_JST).date().strftime("%Y-%m-%d")}
 
     return app

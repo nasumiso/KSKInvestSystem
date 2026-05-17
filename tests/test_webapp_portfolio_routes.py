@@ -259,6 +259,32 @@ class TestTransitionPost:
         # 9999 は登録されていない
         assert ps.get_record("9999", db_path=portfolio_db_path) is None
 
+    def test_transition_with_action_date_form_param(self, client, portfolio_db_path):
+        """issue #220: form の action_date が action_log の timestamp に伝搬する"""
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={
+                "new_status": "2準",
+                "reason": "昨日売却",
+                "action_date": "2026-05-10",
+            },
+        )
+        assert resp.status_code == 302
+        logs = ps.list_action_logs(code_s="3496", db_path=portfolio_db_path)
+        latest = logs[-1]
+        assert latest["timestamp"] == "2026-05-10T12:00:00+09:00"
+        assert latest["action_type"] == "売却"
+
+    def test_transition_future_action_date_flashes_error(self, client, portfolio_db_path):
+        """issue #220: 未来日は flash error でステータス変更されない"""
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={"new_status": "2準", "action_date": "2099-12-31"},
+        )
+        assert resp.status_code == 302
+        rec = ps.get_record("3496", db_path=portfolio_db_path)
+        assert rec["status"] == "1保"  # 変更されていない
+
 
 class TestBulkExclude:
     """POST /portfolio/bulk-exclude (issue #186)"""
