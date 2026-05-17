@@ -97,9 +97,19 @@
         <span style="color:#a07000;font-size:0.85em;">portfolio_shelve 未移行モード</span>
       </div>
       {% endif %}
+    </div>{# /.meta #}
+  </div>{# /.left #}
+  {# issue #227: 株価 + RSライン 統合チャート (フル版)。
+     .stock-header の flex 子要素として .left の兄弟に置くことで、
+     justify-content: space-between により右上スペースに自動配置される。 #}
+  {% if price_rs_chart and price_rs_chart.svg %}
+  <div class="right" style="flex:0 0 auto;">
+    <div title="{{ price_rs_chart.tooltip }}" style="cursor:help;">
+      {{ price_rs_chart.svg|safe }}
     </div>
   </div>
-</div>
+  {% endif %}
+</div>{# /.stock-header #}
 
 {# ===== 適時開示 ===== #}
 {% if disclosures %}

@@ -93,10 +93,26 @@ def stock_detail(code_s: str):
         if not portfolio_fallback_mode else []
     )
 
+    # issue #227: 株価 + RSライン 統合チャート (フル版)
+    # market_db のロード失敗時は RS 無しの株価のみで描画 (500 にしない)
+    from webapp.helpers import build_stock_chart_payload  # 遅延 import
+    _market_db = None
+    try:
+        from make_market_db import get_market_db  # 遅延 import (循環回避)
+        _market_db = get_market_db()
+    except Exception:  # noqa: BLE001
+        _market_db = None  # 株価のみのフォールバック描画に進む
+    try:
+        # market_db が None でも build_stock_chart_payload は株価だけで SVG を返す
+        price_rs_chart = build_stock_chart_payload(stock, _market_db, mode="full")
+    except Exception:  # noqa: BLE001
+        price_rs_chart = {"svg": "", "tooltip": "", "blue_dot": False}
+
     return render_template(
         "detail.html",
         record=record,
         stock=stock,
+        price_rs_chart=price_rs_chart,
         disclosures=disclosures,
         disclosures_has_recent=disclosures_has_recent,
         indicator_snaps=indicator_snaps,

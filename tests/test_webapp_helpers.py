@@ -2114,3 +2114,345 @@ class TestMarkdownToHtml:
     def test_url_still_linkified(self):
         result = helpers._markdown_to_html("see https://example.com")
         assert '<a href="https://example.com" target="_blank">' in result
+
+
+class TestPriceRsSparkline:
+    """株価 + RSライン 統合スパークライン (issue #227)"""
+
+    # --- compute_slope_per_day ---
+
+    def test_slope_positive_linear_series(self):
+        # 等差 100 → 110: 傾き 1/日, 末尾110で正規化 → ≒ 0.91%/日
+        values = list(range(100, 111))  # 11点
+        slope = helpers.compute_slope_per_day(values)
+        assert slope is not None
+        assert 0.85 < slope < 0.95
+
+    def test_slope_negative_linear_series(self):
+        values = list(range(110, 99, -1))  # 110→100
+        slope = helpers.compute_slope_per_day(values)
+        assert slope is not None
+        assert slope < 0
+
+    def test_slope_constant_series_is_zero(self):
+        slope = helpers.compute_slope_per_day([100, 100, 100, 100])
+        assert slope == 0.0
+
+    def test_slope_too_few_points_returns_none(self):
+        assert helpers.compute_slope_per_day([100]) is None
+        assert helpers.compute_slope_per_day([]) is None
+
+    # --- normalize_minmax ---
+
+    def test_normalize_range_is_within_height(self):
+        ys = helpers.normalize_minmax([1.0, 2.0, 3.0, 4.0], height=20)
+        assert min(ys) == 0.0
+        assert max(ys) == 20.0
+        # 昇順入力 → SVG y は降順 (top = 0 が最大値)
+        assert ys[0] > ys[-1]
+
+    def test_normalize_constant_series_centers(self):
+        ys = helpers.normalize_minmax([5.0, 5.0, 5.0], height=20)
+        assert ys == [10.0, 10.0, 10.0]
+
+    def test_normalize_empty_returns_empty(self):
+        assert helpers.normalize_minmax([], height=20) == []
+
+    # --- to_log_scale ---
+
+    def test_log_scale_returns_natural_log(self):
+        import math
+        result = helpers.to_log_scale([100, 200, 400])
+        assert abs(result[0] - math.log(100)) < 1e-9
+        assert abs(result[1] - math.log(200)) < 1e-9
+        assert abs(result[2] - math.log(400)) < 1e-9
+        # 100→200 と 200→400 (どちらも +100%) は log 空間で同じ距離になる
+        assert abs((result[1] - result[0]) - (result[2] - result[1])) < 1e-9
+
+    def test_log_scale_empty_or_nonpositive_returns_empty(self):
+        assert helpers.to_log_scale([]) == []
+        assert helpers.to_log_scale([100, 0, 200]) == []
+        assert helpers.to_log_scale([-1, 100]) == []
+
+    # --- to_base_index ---
+
+    def test_base_index_first_is_one(self):
+        result = helpers.to_base_index([100, 110, 105, 120])
+        assert result[0] == 1.0
+        assert result[1] == 1.1
+        assert abs(result[2] - 1.05) < 1e-9
+        assert result[3] == 1.2
+
+    def test_base_index_empty_or_zero_returns_empty(self):
+        assert helpers.to_base_index([]) == []
+        assert helpers.to_base_index([0, 10, 20]) == []
+        assert helpers.to_base_index([-5, 10]) == []
+
+    # --- normalize_shared_y ---
+
+    def test_shared_y_aligns_start_points(self):
+        # 株価: +20% 上昇, RS: +5% 上昇 → 同じ起点から終点が大きく乖離
+        price = [100.0, 110.0, 120.0]
+        rs = [1.0, 1.025, 1.05]
+        ys = helpers.normalize_shared_y([price, rs], height=20)
+        # 起点 (index=0) は両者とも先頭=1.0 に揃うので、共通スケール上で同じ y 座標
+        assert ys[0][0] == ys[1][0]
+        # 終点は乖離する (株価が 1.20、RSが 1.05)
+        assert ys[0][-1] != ys[1][-1]
+        # 株価の方が大きく上昇 → SVG y が小さい (上に伸びる)
+        assert ys[0][-1] < ys[1][-1]
+
+    def test_shared_y_constant_series_returns_center(self):
+        ys = helpers.normalize_shared_y([[100, 100, 100], [1.0, 1.0, 1.0]], height=20)
+        assert ys[0] == [10.0, 10.0, 10.0]
+        assert ys[1] == [10.0, 10.0, 10.0]
+
+    def test_shared_y_empty_input_returns_empty_each(self):
+        ys = helpers.normalize_shared_y([[], []], height=20)
+        assert ys == [[], []]
+
+    # --- build_price_rs_chart_mini ---
+
+    def _make_log(self, values, base_date=None):
+        """新しい順の (date, value) タプル列を組み立てる (テスト用)"""
+        from datetime import date as _d, timedelta
+        if base_date is None:
+            base_date = _d(2026, 5, 15)
+        return [(base_date - timedelta(days=i), v) for i, v in enumerate(values)]
+
+    def test_mini_chart_returns_svg_for_sufficient_data(self):
+        price_log = self._make_log([110, 108, 106, 104, 102, 100])  # 新しい順
+        rs_line = self._make_log([1.10, 1.08, 1.06, 1.04, 1.02, 1.00])
+        svg, tooltip = helpers.build_price_rs_chart_mini(price_log, rs_line, has_blue_dot=False)
+        assert "<svg" in svg
+        assert "</svg>" in svg
+        assert "polyline" in svg
+        assert "株価:" in tooltip
+        assert "RSライン:" in tooltip
+
+    def test_mini_chart_insufficient_data_returns_dash(self):
+        svg, _ = helpers.build_price_rs_chart_mini([], [], has_blue_dot=False)
+        assert svg == "—"
+
+    def test_mini_chart_blue_dot_uses_larger_circle(self):
+        price_log = self._make_log([110, 108, 106, 104, 102, 100])
+        rs_line = self._make_log([1.10, 1.08, 1.06, 1.04, 1.02, 1.00])
+        svg_with, _ = helpers.build_price_rs_chart_mini(price_log, rs_line, has_blue_dot=True)
+        svg_without, _ = helpers.build_price_rs_chart_mini(price_log, rs_line, has_blue_dot=False)
+        # Blue Dot は #1976d2 (青) の大きい circle
+        assert '#1976d2' in svg_with
+        assert 'r="2.5"' in svg_with
+        assert 'r="2.5"' not in svg_without
+
+    def test_mini_chart_tooltip_includes_blue_dot_when_present(self):
+        price_log = self._make_log([110, 108, 106, 104, 102, 100])
+        rs_line = self._make_log([1.10, 1.08, 1.06, 1.04, 1.02, 1.00])
+        _, tooltip = helpers.build_price_rs_chart_mini(price_log, rs_line, has_blue_dot=True)
+        assert "新高値" in tooltip
+        _, tooltip2 = helpers.build_price_rs_chart_mini(price_log, rs_line, has_blue_dot=False)
+        assert "新高値" not in tooltip2
+
+    # --- build_price_rs_chart_full ---
+
+    def test_full_chart_renders_two_polylines(self):
+        price_log = self._make_log(list(range(120, 100, -1)))  # 20点 (新しい順 = 降順)
+        rs_line = self._make_log([1.20 - i * 0.01 for i in range(20)])
+        svg, tooltip = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        assert "<svg" in svg
+        # 株価実線 + 末尾5日重ね描き + RS点線 + 末尾5日重ね描き = polyline は 4 本以上
+        assert svg.count("<polyline") >= 4
+        assert "stroke-dasharray" in svg  # RSライン点線
+        assert "株価:" in tooltip
+        assert "RSライン:" in tooltip
+
+    def test_full_chart_includes_date_labels(self):
+        price_log = self._make_log(list(range(120, 100, -1)))
+        rs_line = self._make_log([1.20 - i * 0.01 for i in range(20)])
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        # 当日 = 5/15 ラベルが出る
+        assert "05/15" in svg
+
+    def test_build_payload_with_none_market_db_returns_price_only_chart(self):
+        """build_stock_chart_payload は market_db=None でも株価のみで SVG を返す。
+
+        codex review 対応: detail ルートで market_db 取得失敗時に
+        フォールバックとして「価格のみチャート」を出すための保証。
+        """
+        from datetime import date as _d, timedelta
+        base = _d(2026, 5, 15)
+        stock = {
+            "price_log": [(base - timedelta(days=i), 100 + i) for i in range(20)],
+        }
+        payload = helpers.build_stock_chart_payload(stock, market_db=None, mode="full")
+        assert payload["svg"]  # 空文字でない
+        assert "<svg" in payload["svg"]
+        assert payload["blue_dot"] is False
+        # RS データが無いので、tooltip の RSライン 行は "—" になる
+        assert "RSライン" in payload["tooltip"]
+        # 株価分は正しく出る
+        assert "株価:" in payload["tooltip"]
+
+    def test_full_chart_t20_label_matches_displayed_window(self):
+        """price_log が _SPARK_LOOKBACK (20) を超える場合、左端ラベルは
+        '表示窓内の最古日 (20日前)' であって '全履歴の最古日' ではない。
+        (codex review 対応: 履歴が長い銘柄で左端ラベルがチャート期間とずれる回帰防止)
+        """
+        from datetime import date as _d, timedelta
+        # 30営業日分の price_log (新しい順)。base_date=5/15
+        base = _d(2026, 5, 15)
+        price_log = [(base - timedelta(days=i), 100 + i) for i in range(30)]
+        rs_line = [(base - timedelta(days=i), 1.0 + i * 0.01) for i in range(30)]
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        # 当日 = 5/15
+        assert "05/15" in svg
+        # 表示左端 = price_log[19] = 5/15 - 19日 = 4/26
+        t20_date = (base - timedelta(days=19)).strftime("%m/%d")
+        assert t20_date in svg
+        # 全履歴最古 = price_log[29] = 5/15 - 29日 = 4/16 は出ないこと (回帰防止)
+        t30_date = (base - timedelta(days=29)).strftime("%m/%d")
+        assert t30_date not in svg
+
+    def test_full_chart_blue_dot_renders_blue_circle(self):
+        price_log = self._make_log(list(range(120, 100, -1)))
+        rs_line = self._make_log([1.20 - i * 0.01 for i in range(20)])
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=True)
+        # Blue Dot は r=4 の青円
+        assert 'r="4.0"' in svg and '#1976d2' in svg
+
+    def test_full_chart_empty_input_returns_empty(self):
+        svg, tooltip = helpers.build_price_rs_chart_full([], [], has_blue_dot=False)
+        assert svg == ""
+        assert tooltip == ""
+
+    def test_full_chart_renders_axis_labels(self):
+        """Y軸ラベル: 株価=絶対値 (緑), RS=初日比変化率% (青) を表示する"""
+        price_log = self._make_log(list(range(120, 100, -1)))  # 20点: 101..120
+        # rs_line も初日比で見やすい値に
+        rs_line = self._make_log([1.20 - i * 0.01 for i in range(20)])  # 1.01..1.20
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        # 株価最大値 120 (緑 #2e7d32) が左軸に出る
+        assert "120" in svg
+        assert "#2e7d32" in svg
+        # RS の % 表記が右軸に出る (初日比で +X% or -X%)
+        assert "%" in svg
+        assert "#1976d2" in svg
+
+    # --- codex review 対応: 5日基準のずれ / 短期履歴ガイドはみ出し ---
+
+    def test_total_change_5day_matches_six_point_window(self):
+        """_format_total_change(values, 5) は「5営業日前→今日」の変化を返す。
+
+        既存の (20,5) 指標 (offset=5) と一致するよう、6点窓 (tail[0]→tail[-1]) で算出する。
+        従来は 5点窓 = 4営業日変化になっていた回帰の防止。
+        """
+        # 7 点: 末尾から 6 本目 (index=1) → 今日 (index=6) で +6.0%
+        values = [100.0, 100.0, 101.0, 102.0, 103.0, 104.0, 106.0]
+        result = helpers._format_total_change(values, 5)
+        assert result == "+6.0%"
+
+    def test_total_change_20day_uses_21_point_window_when_available(self):
+        """_format_total_change(values, 20) は 20営業日変化として 21点窓を取る。
+
+        20点しか無い場合は全 20点で計算する (= 19営業日変化, 既存実装維持)。
+        """
+        # 21 点ちょうど: index=0 → index=20 で +20.0%
+        values = [100.0 + i for i in range(21)]
+        result = helpers._format_total_change(values, 20)
+        assert result == "+20.0%"
+
+    def test_mini_chart_t5_point_uses_5_business_days_ago(self):
+        """mini チャートの t-5 点は 5営業日前 (= asc[-6]) を参照する。
+
+        従来は asc[-5] (= 4営業日前) を取っていた回帰の防止。
+        中間 y 座標が「5営業日前の値」に対応していることを確認する。
+        """
+        # 7 点入力 (新しい順): t-0=106, t-1=104, ... , t-5=100, t-6=99
+        # asc は古い順 = [99, 100, 101, 102, 103, 104, 106]
+        # t5 = asc[-6] = 100 (= 5営業日前)。 asc[-5]=101 (= 4営業日前) ではない。
+        price_log = self._make_log([106, 104, 103, 102, 101, 100, 99])
+        rs_line = self._make_log([1.06, 1.04, 1.03, 1.02, 1.01, 1.00, 0.99])
+        svg, _ = helpers.build_price_rs_chart_mini(price_log, rs_line, has_blue_dot=False)
+        # polyline が描画されている = 3点取得が成功
+        assert "polyline" in svg
+        # 中間点の y 座標を検証: log(99)=4.595, log(100)=4.605, log(101)=4.615, log(106)=4.663
+        # 5営業日前=100 を採用すれば log 空間で「下から 2 番目」相当 (asc-internal 0-1 で 0.147)
+        # 4営業日前=101 を採用すれば 0.293
+        # mini パネルは 60% inner_h = (24-6)*0.6 = 10.8 高さ
+        # 違いは小さいので、ここでは t-5 点で計算した値と直接比較する
+        import math
+        log_price = [math.log(v) for v in [99, 100, 101, 102, 103, 104, 106]]
+        t5_expected = log_price[-6]  # = log(100)
+        t5_wrong = log_price[-5]     # = log(101)
+        # 正規化後の y を再現
+        lo, hi = min(log_price), max(log_price)
+        # mini の panel: inner_h = 24-6 = 18, price_panel_h = (18-1)*0.6 = 10.2
+        panel_h = (18 - 1) * 0.6
+        pad_y = 3
+        y_t5_expected = pad_y + panel_h * (hi - t5_expected) / (hi - lo)
+        y_t5_wrong = pad_y + panel_h * (hi - t5_wrong) / (hi - lo)
+        # SVG に「中間点」の y 座標が含まれることを polyline points から抽出
+        # points="X1,Y1 X2,Y2 X3,Y3" の真ん中 Y2 が y_t5_expected に近いことを確認
+        import re
+        m = re.search(r'<polyline points="([^"]+)" fill="none"\s+stroke="#[0-9a-f]+" stroke-width="1.5"', svg)
+        assert m is not None, f"price polyline not found: {svg[:300]}"
+        pts = m.group(1).split()
+        assert len(pts) == 3
+        _, y2_str = pts[1].split(",")
+        y2 = float(y2_str)
+        # 正解側 (5営業日前=100) との差は小さく、誤り側 (4営業日前=101) より近い
+        assert abs(y2 - y_t5_expected) < abs(y2 - y_t5_wrong), (
+            f"中間点 y={y2} が 5営業日前 (期待 {y_t5_expected:.2f}) ではなく "
+            f"4営業日前 ({y_t5_wrong:.2f}) に近い"
+        )
+
+    def test_full_chart_t5_guide_omitted_for_short_history(self):
+        """短期履歴 (2 本) の銘柄でも 5日ガイドが viewBox 外に飛び出さない。
+
+        従来は x_t5 = pad_x - 3*inner_w 等 SVG 左外側に出てレイアウトを壊していた。
+        本数が _SPARK_RECENT+1 に満たない場合は 5日ガイドを省略し、
+        本体チャートだけは描画する。
+        """
+        from datetime import date as _d, timedelta
+        base = _d(2026, 5, 15)
+        # たった 2 点 (新しい順)
+        price_log = [(base, 100), (base - timedelta(days=1), 95)]
+        rs_line = [(base, 1.0), (base - timedelta(days=1), 0.95)]
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        # 本体ポリラインは描画されている
+        assert "<polyline" in svg
+        # ガイド線の x1 がすべて pad_x (= 36, 左端) 以上、x_today (= 36+inner_w) 以下に収まる
+        import re
+        # viewBox 0 0 400 120 / pad_left=36 / pad_right=36 / inner_w = 400-72 = 328
+        pad_left = 36
+        inner_w = 400 - 72
+        x_today = pad_left + inner_w  # = 364
+        guides = re.findall(r'<line x1="([-0-9.]+)" y1="[0-9.]+" x2="[-0-9.]+" y2="[0-9.]+"\s+stroke="#e0e0e0"', svg)
+        assert len(guides) >= 2  # 少なくとも t20 と today のガイド
+        for gx in guides:
+            x = float(gx)
+            assert pad_left - 0.5 <= x <= x_today + 0.5, f"ガイド線が viewBox 外: x={x}"
+
+    def test_full_chart_t5_label_omitted_for_short_history(self):
+        """短期履歴 (3本) で 5日ラベルも省略される (t20 と重なる位置に出ない)。"""
+        from datetime import date as _d, timedelta
+        base = _d(2026, 5, 15)
+        # 3 本 = 2 営業日変化
+        price_log = [(base - timedelta(days=i), 100 + i) for i in range(3)]
+        rs_line = [(base - timedelta(days=i), 1.0 + i * 0.01) for i in range(3)]
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        # 5/15 (today) ラベルは出る
+        assert "05/15" in svg
+        # 左端 = price_log[2] = 5/13
+        assert "05/13" in svg
+
+    def test_full_chart_t5_guide_present_for_normal_history(self):
+        """通常 20 本データでは 5日ガイド (t5) が描画される。"""
+        price_log = self._make_log(list(range(120, 100, -1)))  # 20点
+        rs_line = self._make_log([1.20 - i * 0.01 for i in range(20)])
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        # ガイド線 3 本 (t20, t5, today) 描画されること
+        import re
+        guides = re.findall(r'stroke="#e0e0e0" stroke-width="0.5"', svg)
+        assert len(guides) == 3
+        # t-5 営業日前のラベル: 5/15 - 5 = 5/10
+        assert "05/10" in svg
