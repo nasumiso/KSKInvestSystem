@@ -1184,6 +1184,7 @@ def get_market_kessan_data() -> Dict[str, Any]:
         merged[merged_key] = {
             "code_s": code_s,
             "stock_name": v.get("stock_name", ""),
+            "stock_name_prev": None,  # stocks_shelve 由来は旧名情報を持たない
             "kessanbi": kessanbi,
             "quarter": v.get("kessan_quarter", 0) or 0,
             "pre_expectation": "",
@@ -1221,9 +1222,13 @@ def get_market_kessan_data() -> Dict[str, Any]:
             quarter = entry.get("quarter", 0) or 0
             cur = merged.get(merged_key)
             stock_name = (cur or {}).get("stock_name") or rec.get("stock_name", "")
+            # research_shelve 側の旧名 (issue #183)。stocks_shelve 由来の cur に
+            # 上書きされた場合でも rec の prev を併記表示できるよう保持する。
+            stock_name_prev = (cur or {}).get("stock_name_prev") or rec.get("stock_name_prev")
             cand = {
                 "code_s": code_s,
                 "stock_name": stock_name,
+                "stock_name_prev": stock_name_prev,
                 "kessanbi": kessanbi,
                 "quarter": quarter if quarter else (cur or {}).get("quarter", 0),
                 "pre_expectation": entry.get("pre_expectation", "") or "",
@@ -1452,6 +1457,27 @@ def _bulk_resolve_stock_names(code_list: List[str]) -> Dict[str, str]:
     return result
 
 
+def _bulk_resolve_stock_name_prevs(code_list: List[str]) -> Dict[str, Optional[str]]:
+    """複数 code_s 分の旧銘柄名 (research_shelve.stock_name_prev) をバルク取得する (issue #183)。
+
+    旧名がないか research_shelve に未登録の銘柄は None。
+    """
+    from db_shelve import RESEARCH_SHELVE  # 遅延 import (循環回避)
+
+    result: Dict[str, Optional[str]] = {c: None for c in code_list if c}
+    if not result:
+        return result
+
+    with ShelveDB(RESEARCH_SHELVE) as db:
+        for c in list(result.keys()):
+            rec = db.get(normalize_code_s(c))
+            if rec:
+                prev = rec.get("stock_name_prev")
+                if isinstance(prev, str) and prev:
+                    result[c] = prev
+    return result
+
+
 # issue #178: status 内部値 → URL クエリ / 表示ラベルの対応表 (helpers 内部利用のみ)。
 # routes/portfolio.py の同名定数とは独立に保持し、循環 import を避ける。
 _PORTFOLIO_STATUS_QUERY = {
@@ -1505,6 +1531,7 @@ def list_portfolio_with_indicators(
     code_list = [r.get("code_s", "") for r in records]
     stock_map = _bulk_get_stock_data(code_list)
     name_map = _bulk_resolve_stock_names(code_list)
+    name_prev_map = _bulk_resolve_stock_name_prevs(code_list)  # issue #183
     today = date.today()  # 全 row 共通の基準日 (issue #177)
 
     # issue #227: 株価 + RSライン 統合チャート用に market_db を1回だけロード。
@@ -1520,6 +1547,7 @@ def list_portfolio_with_indicators(
         code_s = rec.get("code_s", "")
         row = dict(rec)
         row["stock_name"] = name_map.get(code_s, "") or rec.get("stock_name", "")  # 旧データ互換
+        row["stock_name_prev"] = name_prev_map.get(code_s)  # issue #183
         stock = stock_map.get(code_s, {})
         row.update(_extract_indicators_for_portfolio(stock))
         # issue #227: 3点ミニチャート (svg + tooltip)

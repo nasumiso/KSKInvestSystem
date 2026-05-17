@@ -134,6 +134,26 @@ class TestDetailRoute:
         assert resp.status_code == 404
 
 
+class TestDetailStockNamePrev:
+    """issue #183: stock_name_prev の併記表示"""
+
+    def test_detail_displays_stock_name_prev(self, client, db_path):
+        """stock_name_prev が入っていれば「新名 (旧○○)」併記される"""
+        # 既存テストデータの 3496 に旧名を入れる
+        rs.sync_stock_name("3496", "アズームニューネーム", db_path=db_path)
+        resp = client.get("/stock/3496")
+        html = resp.data.decode()
+        assert "アズームニューネーム" in html
+        assert "(旧アズーム)" in html
+
+    def test_detail_no_paren_when_stock_name_prev_none(self, client, db_path):
+        """stock_name_prev が None なら旧名併記なし (デフォルト状態)"""
+        resp = client.get("/stock/3496")
+        html = resp.data.decode()
+        assert "アズーム" in html
+        assert "(旧" not in html
+
+
 class TestDetailPortfolioModal:
     """issue #195: 詳細ページにポートフォリオステータス変更モーダルを描画する。
 

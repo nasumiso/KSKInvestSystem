@@ -110,9 +110,18 @@ stocks_shelve（日次更新の揮発性キャッシュ）とは別に、銘柄�
 
 `code_s` をキーに、3ブロックで構成:
 
-- **識別・評価**: 銘柄名、総合評価（S〜E）、企業概要、機関投資家コメント
+- **識別・評価**: 銘柄名、旧銘柄名（`stock_name_prev`, issue #183）、総合評価（S〜E）、企業概要、機関投資家コメント
 - **手動メモ**: OpenWork、ジムクレイマー、四季報コメント、メモ・総括
 - **スナップショット** (list): 決算タイミングごとの IR定量データ・クォリティ指標・理論株価乖離（`date_yy_m` 降順）
+
+### 銘柄名変更の追従（issue #183）
+
+`make_stock_db.py` の `_update_db_code()` で master を取得した直後、stocks_shelve の旧 `stock_name` と新値を比較し、差異があれば `research_shelve.sync_stock_name()` を呼んで旧名を `stock_name_prev` に退避する。
+
+- 排他制御: `sync_stock_name` 内部の flock 区間で read-modify-write を完結させ、UI 側の `upsert_research_record` と直列化。memo/rating などの手動資産が lost update で消えないことを保証
+- 平常時のオーバーヘッド: 文字列比較のみ。変更なしなら research_shelve への書き込みは発生しない
+- 表示: WebApp の各画面で「新名 (旧○○)」形式で併記 (`templates/_macros.html` の `stock_name_with_prev` マクロ)
+- 既存ズレ補正: `python sync_research_stock_names.py [--apply]` (dry-run デフォルト) で一括補正
 
 ### 決算スナップショットの自動追記
 

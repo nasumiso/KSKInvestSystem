@@ -1,0 +1,9 @@
+{# 共通テンプレートマクロ #}
+
+{# 銘柄名と旧名 (issue #183)
+   record は dict like で stock_name / stock_name_prev を持つ。
+   旧名があれば「新名 (旧○○)」形式で出す。
+#}
+{% macro stock_name_with_prev(record) -%}
+{{ record.stock_name or '' }}{% if record.stock_name_prev %} (旧{{ record.stock_name_prev }}){% endif %}
+{%- endmacro %}

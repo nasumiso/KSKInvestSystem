@@ -693,12 +693,45 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
         return stocks_db.export_to_dict()
 
 
+def _sync_research_stock_name(code_s, *, new_name):
+    """research_shelve の stock_name を排他更新する。
+
+    research_shelve.sync_stock_name に委譲し、lost update リスクを
+    research_shelve 側の flock 区間内に閉じ込める (issue #183)。
+    例外は warning に握る — stock_name 同期失敗で銘柄更新全体を止めない。
+    """
+    import research_shelve
+    try:
+        returned_old = research_shelve.sync_stock_name(code_s, new_name)
+    except Exception as e:
+        log_warning("[stock_name_sync] %s: 同期失敗: %s" % (code_s, e))
+        return
+    if returned_old:
+        log_print(
+            "[stock_name_sync] %s: %s → %s (research_shelve 旧名退避)"
+            % (code_s, returned_old, new_name)
+        )
+
+
 def _update_db_code(c_s, upd, tables, stocks, latest, force):
     """同期非同期共通のDB更新関数"""
     stock_data = {}
     if not tables or "master" in tables:
         if not has_stock_data(stocks, c_s, latest) or force:
-            stock_data.update(get_stock_master_data(stocks, c_s, upd))
+            # 旧名を取得 (master更新で上書きされる前の値)
+            try:
+                old_name = (stocks[c_s] or {}).get("stock_name", "") if c_s in stocks else ""
+            except (KeyError, TypeError):
+                old_name = ""
+            master_data = get_stock_master_data(stocks, c_s, upd)
+            stock_data.update(master_data)
+            new_name = (master_data or {}).get("stock_name", "")
+            if (
+                isinstance(new_name, str) and isinstance(old_name, str)
+                and new_name.strip() and old_name.strip()
+                and new_name.strip() != old_name.strip()
+            ):
+                _sync_research_stock_name(c_s, new_name=new_name.strip())
     if not tables or "price" in tables:
         if not has_price_data(stocks, c_s, latest) or force:
             stock_data.update(get_price_data(stocks, c_s, upd))

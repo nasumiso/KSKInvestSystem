@@ -938,3 +938,91 @@ class TestCorporateUrlOverride:
     def test_record_fields_includes_corporate_url_override(self):
         """RECORD_FIELDS に corporate_url_override が含まれる"""
         assert "corporate_url_override" in rs.RECORD_FIELDS
+
+
+# ==================================================
+# 銘柄名変更追従 (issue #183)
+# ==================================================
+class TestStockNamePrev:
+    """stock_name_prev フィールドと sync_stock_name API のテスト"""
+
+    def test_create_research_record_default_stock_name_prev_none(self):
+        """stock_name_prev はデフォルト None"""
+        rec = rs.create_research_record("3496", "アズーム")
+        assert rec["stock_name_prev"] is None
+
+    def test_create_research_record_with_stock_name_prev(self):
+        """stock_name_prev を明示的に渡せる"""
+        rec = rs.create_research_record(
+            "1436", "グリーンエナジー&カンパニー", stock_name_prev="フィット"
+        )
+        assert rec["stock_name_prev"] == "フィット"
+
+    def test_get_research_record_backfills_stock_name_prev(self, db_path):
+        """旧形式 (stock_name_prev 無) のレコードは読込時に None で補完される"""
+        rec = rs.create_research_record("3496", "アズーム")
+        del rec["stock_name_prev"]  # 旧形式を模倣
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert loaded["stock_name_prev"] is None
+
+    def test_record_fields_includes_stock_name_prev(self):
+        """RECORD_FIELDS に stock_name_prev が含まれる"""
+        assert "stock_name_prev" in rs.RECORD_FIELDS
+
+    def test_sync_stock_name_updates_and_saves_prev(self, db_path):
+        """新名と異なる場合: 新名で更新+旧名が prev に退避、戻り値は旧名"""
+        rec = rs.create_research_record("1436", "フィット")
+        rs.upsert_research_record(rec, db_path=db_path)
+        returned = rs.sync_stock_name(
+            "1436", "グリーンエナジー&カンパニー", db_path=db_path
+        )
+        assert returned == "フィット"
+        loaded = rs.get_research_record("1436", db_path=db_path)
+        assert loaded["stock_name"] == "グリーンエナジー&カンパニー"
+        assert loaded["stock_name_prev"] == "フィット"
+
+    def test_sync_stock_name_noop_when_same(self, db_path):
+        """同名なら何もせず戻り値 None"""
+        rec = rs.create_research_record("1436", "フィット")
+        rs.upsert_research_record(rec, db_path=db_path)
+        returned = rs.sync_stock_name("1436", "フィット", db_path=db_path)
+        assert returned is None
+        loaded = rs.get_research_record("1436", db_path=db_path)
+        assert loaded["stock_name"] == "フィット"
+        assert loaded["stock_name_prev"] is None  # 旧名退避が起きていない
+
+    def test_sync_stock_name_noop_when_record_missing(self, db_path):
+        """未登録銘柄は何もせず戻り値 None"""
+        returned = rs.sync_stock_name("9999", "未登録銘柄", db_path=db_path)
+        assert returned is None
+        # 登録もされていない
+        assert rs.get_research_record("9999", db_path=db_path) is None
+
+    def test_sync_stock_name_preserves_other_fields(self, db_path):
+        """memo/rating/snapshots など他フィールドが保持される (lost update protection)"""
+        snap = rs.create_snapshot("26.1", ir_quant="[A]26%,21%")
+        rec = rs.create_research_record(
+            "1436",
+            "フィット",
+            overall_rating="S",
+            memo="重要なメモ",
+            openwork="3.72",
+            snapshots=[snap],
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        rs.sync_stock_name("1436", "グリーンエナジー&カンパニー", db_path=db_path)
+        loaded = rs.get_research_record("1436", db_path=db_path)
+        # 他フィールドが消えていない
+        assert loaded["overall_rating"] == "S"
+        assert loaded["memo"] == "重要なメモ"
+        assert loaded["openwork"] == "3.72"
+        assert len(loaded["snapshots"]) == 1
+        assert loaded["snapshots"][0]["ir_quant"] == "[A]26%,21%"
+
+    def test_sync_stock_name_strips_whitespace(self, db_path):
+        """前後空白で同名扱いとなる (no-op)"""
+        rec = rs.create_research_record("1436", "フィット")
+        rs.upsert_research_record(rec, db_path=db_path)
+        returned = rs.sync_stock_name("1436", "  フィット  ", db_path=db_path)
+        assert returned is None

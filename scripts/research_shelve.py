@@ -73,6 +73,7 @@ RECORD_FIELDS = frozenset(
     {
         "code_s",
         "stock_name",
+        "stock_name_prev",
         "overview",
         "overall_rating",
         "institutional_comment",
@@ -243,6 +244,7 @@ def create_research_record(
     code_s: str,
     stock_name: str,
     *,
+    stock_name_prev: Optional[str] = None,
     overview: str = "",
     overall_rating: str = "",
     institutional_comment: str = "",
@@ -269,6 +271,10 @@ def create_research_record(
     normalized_code = normalize_code_s(code_s)
     if not isinstance(stock_name, str):
         raise TypeError(f"stock_name must be str, got {type(stock_name).__name__}")
+    if stock_name_prev is not None and not isinstance(stock_name_prev, str):
+        raise TypeError(
+            f"stock_name_prev must be str or None, got {type(stock_name_prev).__name__}"
+        )
     validate_rating(overall_rating)
     if not isinstance(analysis_date_raw, str):
         raise TypeError(
@@ -286,6 +292,7 @@ def create_research_record(
     return {
         "code_s": normalized_code,
         "stock_name": stock_name,
+        "stock_name_prev": stock_name_prev,
         "overview": overview,
         "overall_rating": overall_rating,
         "institutional_comment": institutional_comment,
@@ -514,6 +521,8 @@ def get_research_record(
             entry["post_price_changes"] = normalize_kessan_post_price_changes(entry)
         if "corporate_url_override" not in record:
             record["corporate_url_override"] = ""
+        if "stock_name_prev" not in record:
+            record["stock_name_prev"] = None
     return record
 
 
@@ -542,6 +551,53 @@ def upsert_research_record(
         log_print("research_shelve: レコード更新", normalized)
     else:
         log_print("research_shelve: レコード追加", normalized)
+
+
+def sync_stock_name(
+    code_s: str,
+    new_name: str,
+    *,
+    db_path: Optional[str] = None,
+) -> Optional[str]:
+    """stock_name と stock_name_prev のみを排他的に書き換える。
+
+    flock 取得中に最新レコードを読み、stock_name が new_name と異なる場合のみ
+    更新し、旧名を stock_name_prev に保存する。他フィールド (memo/rating/snapshots 等)
+    は書き戻し直前の最新値を使うため、flock 区間中に他プロセスが介入しなければ
+    lost update は起きない。flock は UI 側 upsert_research_record と共通なので
+    その間はシリアライズされる。
+
+    Args:
+        code_s: 銘柄コード (正規化される)
+        new_name: 新しい銘柄名 (前後空白は strip)
+        db_path: テスト用パス上書き
+
+    Returns:
+        str | None: 同期した旧名 (実際に更新が走ったとき)、未更新時は None。
+        record が未登録の場合も None。
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    new_name_s = (new_name or "").strip()
+    if not new_name_s:
+        return None
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            if normalized not in db:
+                return None
+            record = db[normalized]
+            current = (record.get("stock_name") or "").strip()
+            if current == new_name_s:
+                return None
+            old_name = current
+            record["stock_name_prev"] = current or None
+            record["stock_name"] = new_name_s
+            db[normalized] = record
+    log_print(
+        "research_shelve: stock_name 同期", normalized, old_name, "→", new_name_s
+    )
+    return old_name
 
 
 def delete_research_record(
