@@ -908,6 +908,78 @@ class TestParsePriceTextFromList:
 
 
 # ==================================================
+# get_momentum_calib (issue #104)
+# ==================================================
+from datetime import datetime, timedelta
+
+
+class TestGetMomentumCalib:
+    """モメンタム calib 取得とフォールバック判定のテスト"""
+
+    def test_returns_default_when_no_calib(self):
+        """momentum_calib が無ければデフォルト値"""
+        loc, scale, source = price.get_momentum_calib(market_db={})
+        assert loc == price.MOMENTUM_CALIB_DEFAULT_LOC
+        assert scale == price.MOMENTUM_CALIB_DEFAULT_SCALE
+        assert source == "fallback"
+
+    def test_returns_calib_when_valid(self):
+        """sample_count・updated_at が有効ならキャリブ値を返す"""
+        market_db = {
+            "momentum_calib": {
+                "loc": -0.10,
+                "scale": 0.25,
+                "sample_count": 1000,
+                "updated_at": datetime.now() - timedelta(days=1),
+            }
+        }
+        loc, scale, source = price.get_momentum_calib(market_db=market_db)
+        assert loc == -0.10
+        assert scale == 0.25
+        assert source == "calib"
+
+    def test_fallback_when_sample_count_too_low(self):
+        """sample_count が下限未満ならフォールバック"""
+        market_db = {
+            "momentum_calib": {
+                "loc": -0.10,
+                "scale": 0.25,
+                "sample_count": 100,  # 下限500未満
+                "updated_at": datetime.now(),
+            }
+        }
+        loc, scale, source = price.get_momentum_calib(market_db=market_db)
+        assert loc == price.MOMENTUM_CALIB_DEFAULT_LOC
+        assert scale == price.MOMENTUM_CALIB_DEFAULT_SCALE
+        assert source == "fallback"
+
+    def test_fallback_when_too_old(self):
+        """updated_at が古すぎたらフォールバック"""
+        market_db = {
+            "momentum_calib": {
+                "loc": -0.10,
+                "scale": 0.25,
+                "sample_count": 1000,
+                "updated_at": datetime.now() - timedelta(days=60),
+            }
+        }
+        loc, scale, source = price.get_momentum_calib(market_db=market_db)
+        assert source == "fallback"
+
+    def test_fallback_when_updated_at_missing(self):
+        """updated_at が無ければフォールバック"""
+        market_db = {
+            "momentum_calib": {
+                "loc": -0.10,
+                "scale": 0.25,
+                "sample_count": 1000,
+            }
+        }
+        loc, scale, source = price.get_momentum_calib(market_db=market_db)
+        assert source == "fallback"
+
+
+# ==================================================
 # Stalling Day 判定 (issue #117 Part B)
 # ==================================================
 class TestStallingDay:

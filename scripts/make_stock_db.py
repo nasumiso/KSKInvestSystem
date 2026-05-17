@@ -1066,6 +1066,119 @@ def get_signal_tags_prevrank_expr(stock_data, market_db=None, topix_map=None, rs
 
 
 # ==================================================
+# モメンタムポイント手動キャリブレーション (issue #104)
+# ==================================================
+# 運用方針: 自動 (週次) 実行は採用しない。
+# loc/scale が頻繁に動くと、同じ rs_raw でも momentum_pt が変わって code_rank が
+# 揺れるため、基準ぶれによる評価の不安定化を避ける。相場局面が大きく変わったとき
+# や Phase 2 切替時の再校正は、`python make_stock_db.py calibrate_momentum` を
+# 手動実行する。
+
+# 直近 N 日以内に rs_raw が更新された銘柄のみキャリブレーション対象とする。
+# 短すぎるとサンプル不足、長すぎると相場環境の変化に追従できない。
+MOMENTUM_CALIB_N_DAYS = 14
+# 統計的に意味のある loc/scale を出すための最小サンプル数。
+# 現状DBは 3,800 銘柄程度。500未満になる場合はデータ取得が壊れているサインとして扱う。
+MOMENTUM_CALIB_MIN_SAMPLES = 500
+
+
+def calibrate_momentum_pt(stocks=None, market_db=None, save=True):
+    """モメンタムポイントの分布パラメータ (loc/scale) を実測してmarket_dbに保存する。
+
+    log(rs_rel) = log(銘柄rs_raw / TOPIX rs_raw) の平均と標準偏差を、
+    直近 MOMENTUM_CALIB_N_DAYS 日以内に rs_raw が更新された銘柄から実測する。
+
+    Args:
+        stocks (dict): 銘柄DB (code_s -> stock_data)。Noneならload_stock_db()。
+        market_db (dict): マーケットDB。Noneならget_market_db()。
+        save (bool): 結果をmarket_db['momentum_calib']に保存するか。
+
+    Returns:
+        dict | None: キャリブレーション結果 (loc/scale/sample_count/updated_at/n_days)。
+                     最小サンプル数を満たさない場合はNone。
+    """
+    import math
+    import statistics
+
+    if stocks is None:
+        stocks = load_stock_db()
+    if market_db is None:
+        market_db = make_market_db.get_market_db()
+
+    topix = market_db.get("topix", {})
+    topix_rs_raw = topix.get("rs_raw", 0)
+    if not topix_rs_raw or topix_rs_raw <= 0:
+        log_warning(
+            "[momentum_calib] TOPIX rs_raw が取得できないためキャリブレーション中止"
+        )
+        return None
+
+    # 直近 N 日の閾値 (rs_raw は週次価格更新時に書き込まれるため access_date_price をプロキシとする)
+    today_dt = get_price_day(datetime.today())
+    threshold = today_dt - timedelta(days=MOMENTUM_CALIB_N_DAYS)
+
+    log_rels = []
+    for stock in stocks.values():
+        rs_raw = stock.get("rs_raw", 0)
+        if not rs_raw or rs_raw <= 0:
+            continue
+        access_date = stock.get("access_date_price")
+        if access_date is None:
+            continue
+        if get_price_day(access_date) < threshold:
+            continue  # 古いrs_rawは除外
+        rs_rel = rs_raw / topix_rs_raw
+        if rs_rel <= 0:
+            continue
+        log_rels.append(math.log(rs_rel))
+
+    sample_count = len(log_rels)
+    log_print(
+        "[momentum_calib] 対象銘柄: %d (直近%d日以内, TOPIX rs_raw=%.4f)"
+        % (sample_count, MOMENTUM_CALIB_N_DAYS, topix_rs_raw)
+    )
+
+    if sample_count < MOMENTUM_CALIB_MIN_SAMPLES:
+        log_warning(
+            "[momentum_calib] サンプル数 %d < 最小要件 %d のためキャリブレーションを保存しません"
+            % (sample_count, MOMENTUM_CALIB_MIN_SAMPLES)
+        )
+        return None
+
+    loc_raw = statistics.mean(log_rels)
+    scale_raw = statistics.stdev(log_rels)
+    # scale 調整方針: 「実測値そのまま」 (issue #104 要件 §4)。
+    # 将来 倍率調整 / 下限保証 に切り替える場合はここを差し替える。
+    scale_final = _adjust_momentum_scale(scale_raw)
+
+    calib = {
+        "loc": loc_raw,
+        "scale": scale_final,
+        "sample_count": sample_count,
+        "updated_at": datetime.now(),
+        "n_days": MOMENTUM_CALIB_N_DAYS,
+    }
+    log_print(
+        "[momentum_calib] loc=%.4f, scale=%.4f, n=%d"
+        % (calib["loc"], calib["scale"], calib["sample_count"])
+    )
+
+    if save:
+        market_db["momentum_calib"] = calib
+        make_market_db._save_market_db(market_db)
+        log_print("[momentum_calib] market_db['momentum_calib'] に保存しました")
+    return calib
+
+
+def _adjust_momentum_scale(scale_raw):
+    """scale 調整関数。
+    Phase 1 では実測値そのまま。将来、倍率調整 (scale_raw * α) や
+    下限保証 (max(scale_raw, 下限値)) に切り替える場合はここを差し替える。
+    """
+    return scale_raw
+
+
+# ==================================================
 # DB一覧表示
 # ==================================================
 
@@ -1316,6 +1429,10 @@ def list_all_db(upload_csv=True, update_portforio=True):
 
     # テーマ騰落率入りのmarket_data.csvを再生成
     make_market_db.create_market_csv()
+
+    # モメンタムポイントキャリブレーションは list_all_db では自動実行しない
+    # (issue #104)。基準ぶれによる code_rank の不安定化を避けるため、
+    # 必要時に `python make_stock_db.py calibrate_momentum` を手動実行する。
 
 
 def get_market_code(stock_data):
@@ -1881,6 +1998,11 @@ def main():
     elif command == "reflesh":  # DBをリフレッシュ(上場廃止銘柄を削除)
         backup_db()
         reflesh_db()
+    elif command == "calibrate_momentum":
+        # モメンタムポイント分布パラメータのキャリブレーション (issue #104)。
+        # 手動運用: 相場環境が大きく変わった場合や Phase 2 切替時の再校正に使う。
+        # 自動的な週次更新は行わない (基準ぶれによる評価ジャンプを避けるため)。
+        calibrate_momentum_pt()
     elif command == "refresh_pts":  # PTSランキング再取得 + research_shelve への反映のみ
         refresh_pts_reactions()
     elif command == "refresh_stock":  # 指定銘柄の master/price/shihyo/gyoseki/rironkabuka を強制再取得

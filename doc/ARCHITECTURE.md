@@ -69,6 +69,7 @@
 | `theme_momentum` | dict[str, tuple] | テーマ別騰落率 `(平均%, 銘柄数)` |
 | `access_date_theme_rank` | datetime | テーマランク最終取得日時 |
 | `topix`, `mothers`, `nikkei225`, `nasdaq`, `sp500` | dict | 各指数のprice/RS/トレンド/State Machine データ |
+| `momentum_calib` | dict | モメンタムポイント分布パラメータ `{loc, scale, sample_count, updated_at, n_days}`。`python make_stock_db.py calibrate_momentum` で手動更新（自動更新なし）。詳細は [doc/requirements/momentum_pt_requirements.md](requirements/momentum_pt_requirements.md) |
 
 各指数 dict が持つ主要キー (issue #117 Part A/B):
 
@@ -212,7 +213,7 @@ python research_shelve.py backup                                 # DBバック�
 ## 主要テクニカル指標 (`price.py`)
 
 - **RS（相対力指数）**: 13/26/39/52週株価の加重比較
-- **モメンタムポイント**: TOPIX RSに対して正規分布で正規化
+- **モメンタムポイント**: TOPIX RSに対する銘柄RSの相対比 `rs_rel = rs_raw / topix_rs_raw` をパーセンタイル化。分布パラメータは `list_all_db` の週次トリガーで `market_db['momentum_calib']` に実測キャッシュされる（issue #104 Phase 1）。`calc_momentum_pt()` 自体の対数正規分布モデルへの切替は Phase 2 で実施予定で、現状は正規分布(scale=0.3)を継続使用。Phase 2 ではキャッシュが無い・古い・サンプル不足の場合に `price.MOMENTUM_CALIB_DEFAULT_*` にフォールバックする。
 - **トレンドテンプレート**: MA関係・52週ポジション・RSしきい値の7点チェック
 - **ポケットピボット**: MA付近で下げ日出来高を上回る高出来高上昇日
 
