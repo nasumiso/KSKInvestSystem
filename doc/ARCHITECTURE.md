@@ -213,7 +213,7 @@ python research_shelve.py backup                                 # DBバック�
 ## 主要テクニカル指標 (`price.py`)
 
 - **RS（相対力指数）**: 13/26/39/52週株価の加重比較
-- **モメンタムポイント**: TOPIX RSに対する銘柄RSの相対比 `rs_rel = rs_raw / topix_rs_raw` をパーセンタイル化。分布パラメータは `list_all_db` の週次トリガーで `market_db['momentum_calib']` に実測キャッシュされる（issue #104 Phase 1）。`calc_momentum_pt()` 自体の対数正規分布モデルへの切替は Phase 2 で実施予定で、現状は正規分布(scale=0.3)を継続使用。Phase 2 ではキャッシュが無い・古い・サンプル不足の場合に `price.MOMENTUM_CALIB_DEFAULT_*` にフォールバックする。
+- **モメンタムポイント**: TOPIX RSに対する銘柄RSの相対比 `rs_rel = rs_raw / topix_rs_raw` を対数正規分布CDFでパーセンタイル化する (issue #104 Phase 2)。`momentum_pt = int(100 × CDF(log(rs_rel); loc, scale))`。loc/scale は `market_db['momentum_calib']` の実測値を使い、キャッシュが無い・サンプル不足・180日以上経過の場合は `price.MOMENTUM_CALIB_DEFAULT_LOC=-0.058 / SCALE=0.275` (issue #104 検証時実測値) にフォールバックする。キャッシュ更新は手動: `python make_stock_db.py calibrate_momentum`。
 - **トレンドテンプレート**: MA関係・52週ポジション・RSしきい値の7点チェック
 - **ポケットピボット**: MA付近で下げ日出来高を上回る高出来高上昇日
 
