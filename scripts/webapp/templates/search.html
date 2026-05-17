@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}検索 | Shintakane Research{% endblock %}
 
 {% block content %}
@@ -63,7 +64,7 @@
         <span class="rating-badge rating-{{ rec.overall_rating }}">{{ rec.overall_rating }}</span>
         {% else %}-{% endif %}
       </td>
-      <td><a href="/stock/{{ rec.code_s }}">{{ rec.stock_name or '-' }}</a></td>
+      <td><a href="/stock/{{ rec.code_s }}">{% if rec.stock_name %}{{ macros.stock_name_with_prev(rec) }}{% else %}-{% endif %}</a></td>
       <td>{{ (rec.snapshots or [])|length }}</td>
       <td>{{ (rec.overview or '')[:40] }}{% if (rec.overview or '')|length > 40 %}...{% endif %}</td>
     </tr>

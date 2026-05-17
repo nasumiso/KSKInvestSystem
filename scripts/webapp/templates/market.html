@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% block title %}市場データ - Shintakane Research{% endblock %}
 {% block content %}
 
@@ -72,7 +73,7 @@
       {% if s.is_possess %}<span class="kessan-possess-mark" title="保有銘柄">☆</span>{% endif %}
       {% if s.kessan_matagi %}<span class="kessan-matagi-mark" title="決算またぎ保有">◆</span>{% endif %}
       <a href="https://kabutan.jp/stock/chart?code={{ s.code_s }}" target="_blank">{{ s.code_s }}</a>
-      <a href="/stock/{{ s.code_s }}">{{ s.stock_name or '-' }}</a>
+      <a href="/stock/{{ s.code_s }}">{% if s.stock_name %}{{ macros.stock_name_with_prev(s) }}{% else %}-{% endif %}</a>
       {% if s.quarter %}<span class="kessan-q-label">[{{ s.quarter }}Q]</span>{% endif %}
       {% if s.pre_expectation %}<span class="kessan-expectation-badge exp-{{ s.pre_expectation }}">{{ s.pre_expectation }}</span>{% endif %}
       {% if is_past and (s.post_price_changes['pts'] or s.post_price_changes['1d'] or s.post_price_changes['5d']) %}

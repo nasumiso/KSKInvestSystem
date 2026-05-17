@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}[{{ record.code_s }}] {{ record.stock_name or '' }} - 銘柄詳細 | Shintakane Research{% endblock %}
+{% import "_macros.html" as macros %}
+{% block title %}[{{ record.code_s }}] {{ macros.stock_name_with_prev(record) }} - 銘柄詳細 | Shintakane Research{% endblock %}
 
 {% block content %}
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -17,7 +18,7 @@
       <span class="rating-badge rating-{{ record.overall_rating }}">{{ record.overall_rating }}</span>
       {% endif %}
       <small style="color:#888;font-size:0.5em;">{{ record.code_s }}</small>
-      {{ record.stock_name or '' }}
+      {{ macros.stock_name_with_prev(record) }}
       {% if portfolio_status_query %}
         {% if portfolio_fallback_mode %}
         {# フォールバック中は書き込み不可なので静的バッジ #}
@@ -384,7 +385,7 @@
   <div class="portfolio-modal-content" role="dialog" aria-labelledby="portfolio-modal-title">
     <div class="portfolio-modal-header">
       <strong id="portfolio-modal-title">
-        {{ record.code_s }} {{ record.stock_name or '' }}
+        {{ record.code_s }} {{ macros.stock_name_with_prev(record) }}
       </strong>
       <button type="button" class="portfolio-modal-close" onclick="closePortfolioModal()" aria-label="閉じる">×</button>
     </div>

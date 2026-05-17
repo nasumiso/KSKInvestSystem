@@ -1013,3 +1013,47 @@ class TestMakeSignalRsLine:
         }
         _, tags = make_stock_db.make_signal(stock, market_db=market_db)
         assert "R高" in tags
+
+
+# ==================================================
+# 銘柄名変更追従 (issue #183)
+# ==================================================
+class TestSyncResearchStockName:
+    """_sync_research_stock_name の呼び出し制御テスト"""
+
+    def test_calls_sync_api_with_new_name(self, monkeypatch):
+        """名前変更時に research_shelve.sync_stock_name が呼ばれる"""
+        import research_shelve
+        called = {}
+
+        def fake_sync(code_s, new_name, **kwargs):
+            called["code_s"] = code_s
+            called["new_name"] = new_name
+            return "旧名"
+
+        monkeypatch.setattr(research_shelve, "sync_stock_name", fake_sync)
+        make_stock_db._sync_research_stock_name("1436", new_name="新名")
+        assert called["code_s"] == "1436"
+        assert called["new_name"] == "新名"
+
+    def test_handles_api_exception(self, monkeypatch):
+        """API が例外を投げても呼び出し側で握って戻る"""
+        import research_shelve
+
+        def fake_sync(code_s, new_name, **kwargs):
+            raise RuntimeError("DB lock failed")
+
+        monkeypatch.setattr(research_shelve, "sync_stock_name", fake_sync)
+        # 例外を吐かずに正常終了すること
+        make_stock_db._sync_research_stock_name("1436", new_name="新名")
+
+    def test_silent_when_sync_api_returns_none(self, monkeypatch):
+        """API が None を返した場合 (no-op or 未登録) はログのみで戻る"""
+        import research_shelve
+
+        def fake_sync(code_s, new_name, **kwargs):
+            return None  # 未登録 or 同名 no-op
+
+        monkeypatch.setattr(research_shelve, "sync_stock_name", fake_sync)
+        # 例外を吐かずに正常終了
+        make_stock_db._sync_research_stock_name("1436", new_name="新名")
