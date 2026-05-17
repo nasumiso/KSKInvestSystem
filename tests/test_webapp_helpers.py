@@ -2336,3 +2336,123 @@ class TestPriceRsSparkline:
         # RS の % 表記が右軸に出る (初日比で +X% or -X%)
         assert "%" in svg
         assert "#1976d2" in svg
+
+    # --- codex review 対応: 5日基準のずれ / 短期履歴ガイドはみ出し ---
+
+    def test_total_change_5day_matches_six_point_window(self):
+        """_format_total_change(values, 5) は「5営業日前→今日」の変化を返す。
+
+        既存の (20,5) 指標 (offset=5) と一致するよう、6点窓 (tail[0]→tail[-1]) で算出する。
+        従来は 5点窓 = 4営業日変化になっていた回帰の防止。
+        """
+        # 7 点: 末尾から 6 本目 (index=1) → 今日 (index=6) で +6.0%
+        values = [100.0, 100.0, 101.0, 102.0, 103.0, 104.0, 106.0]
+        result = helpers._format_total_change(values, 5)
+        assert result == "+6.0%"
+
+    def test_total_change_20day_uses_21_point_window_when_available(self):
+        """_format_total_change(values, 20) は 20営業日変化として 21点窓を取る。
+
+        20点しか無い場合は全 20点で計算する (= 19営業日変化, 既存実装維持)。
+        """
+        # 21 点ちょうど: index=0 → index=20 で +20.0%
+        values = [100.0 + i for i in range(21)]
+        result = helpers._format_total_change(values, 20)
+        assert result == "+20.0%"
+
+    def test_mini_chart_t5_point_uses_5_business_days_ago(self):
+        """mini チャートの t-5 点は 5営業日前 (= asc[-6]) を参照する。
+
+        従来は asc[-5] (= 4営業日前) を取っていた回帰の防止。
+        中間 y 座標が「5営業日前の値」に対応していることを確認する。
+        """
+        # 7 点入力 (新しい順): t-0=106, t-1=104, ... , t-5=100, t-6=99
+        # asc は古い順 = [99, 100, 101, 102, 103, 104, 106]
+        # t5 = asc[-6] = 100 (= 5営業日前)。 asc[-5]=101 (= 4営業日前) ではない。
+        price_log = self._make_log([106, 104, 103, 102, 101, 100, 99])
+        rs_line = self._make_log([1.06, 1.04, 1.03, 1.02, 1.01, 1.00, 0.99])
+        svg, _ = helpers.build_price_rs_chart_mini(price_log, rs_line, has_blue_dot=False)
+        # polyline が描画されている = 3点取得が成功
+        assert "polyline" in svg
+        # 中間点の y 座標を検証: log(99)=4.595, log(100)=4.605, log(101)=4.615, log(106)=4.663
+        # 5営業日前=100 を採用すれば log 空間で「下から 2 番目」相当 (asc-internal 0-1 で 0.147)
+        # 4営業日前=101 を採用すれば 0.293
+        # mini パネルは 60% inner_h = (24-6)*0.6 = 10.8 高さ
+        # 違いは小さいので、ここでは t-5 点で計算した値と直接比較する
+        import math
+        log_price = [math.log(v) for v in [99, 100, 101, 102, 103, 104, 106]]
+        t5_expected = log_price[-6]  # = log(100)
+        t5_wrong = log_price[-5]     # = log(101)
+        # 正規化後の y を再現
+        lo, hi = min(log_price), max(log_price)
+        # mini の panel: inner_h = 24-6 = 18, price_panel_h = (18-1)*0.6 = 10.2
+        panel_h = (18 - 1) * 0.6
+        pad_y = 3
+        y_t5_expected = pad_y + panel_h * (hi - t5_expected) / (hi - lo)
+        y_t5_wrong = pad_y + panel_h * (hi - t5_wrong) / (hi - lo)
+        # SVG に「中間点」の y 座標が含まれることを polyline points から抽出
+        # points="X1,Y1 X2,Y2 X3,Y3" の真ん中 Y2 が y_t5_expected に近いことを確認
+        import re
+        m = re.search(r'<polyline points="([^"]+)" fill="none"\s+stroke="#[0-9a-f]+" stroke-width="1.5"', svg)
+        assert m is not None, f"price polyline not found: {svg[:300]}"
+        pts = m.group(1).split()
+        assert len(pts) == 3
+        _, y2_str = pts[1].split(",")
+        y2 = float(y2_str)
+        # 正解側 (5営業日前=100) との差は小さく、誤り側 (4営業日前=101) より近い
+        assert abs(y2 - y_t5_expected) < abs(y2 - y_t5_wrong), (
+            f"中間点 y={y2} が 5営業日前 (期待 {y_t5_expected:.2f}) ではなく "
+            f"4営業日前 ({y_t5_wrong:.2f}) に近い"
+        )
+
+    def test_full_chart_t5_guide_omitted_for_short_history(self):
+        """短期履歴 (2 本) の銘柄でも 5日ガイドが viewBox 外に飛び出さない。
+
+        従来は x_t5 = pad_x - 3*inner_w 等 SVG 左外側に出てレイアウトを壊していた。
+        本数が _SPARK_RECENT+1 に満たない場合は 5日ガイドを省略し、
+        本体チャートだけは描画する。
+        """
+        from datetime import date as _d, timedelta
+        base = _d(2026, 5, 15)
+        # たった 2 点 (新しい順)
+        price_log = [(base, 100), (base - timedelta(days=1), 95)]
+        rs_line = [(base, 1.0), (base - timedelta(days=1), 0.95)]
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        # 本体ポリラインは描画されている
+        assert "<polyline" in svg
+        # ガイド線の x1 がすべて pad_x (= 36, 左端) 以上、x_today (= 36+inner_w) 以下に収まる
+        import re
+        # viewBox 0 0 400 120 / pad_left=36 / pad_right=36 / inner_w = 400-72 = 328
+        pad_left = 36
+        inner_w = 400 - 72
+        x_today = pad_left + inner_w  # = 364
+        guides = re.findall(r'<line x1="([-0-9.]+)" y1="[0-9.]+" x2="[-0-9.]+" y2="[0-9.]+"\s+stroke="#e0e0e0"', svg)
+        assert len(guides) >= 2  # 少なくとも t20 と today のガイド
+        for gx in guides:
+            x = float(gx)
+            assert pad_left - 0.5 <= x <= x_today + 0.5, f"ガイド線が viewBox 外: x={x}"
+
+    def test_full_chart_t5_label_omitted_for_short_history(self):
+        """短期履歴 (3本) で 5日ラベルも省略される (t20 と重なる位置に出ない)。"""
+        from datetime import date as _d, timedelta
+        base = _d(2026, 5, 15)
+        # 3 本 = 2 営業日変化
+        price_log = [(base - timedelta(days=i), 100 + i) for i in range(3)]
+        rs_line = [(base - timedelta(days=i), 1.0 + i * 0.01) for i in range(3)]
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        # 5/15 (today) ラベルは出る
+        assert "05/15" in svg
+        # 左端 = price_log[2] = 5/13
+        assert "05/13" in svg
+
+    def test_full_chart_t5_guide_present_for_normal_history(self):
+        """通常 20 本データでは 5日ガイド (t5) が描画される。"""
+        price_log = self._make_log(list(range(120, 100, -1)))  # 20点
+        rs_line = self._make_log([1.20 - i * 0.01 for i in range(20)])
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        # ガイド線 3 本 (t20, t5, today) 描画されること
+        import re
+        guides = re.findall(r'stroke="#e0e0e0" stroke-width="0.5"', svg)
+        assert len(guides) == 3
+        # t-5 営業日前のラベル: 5/15 - 5 = 5/10
+        assert "05/10" in svg

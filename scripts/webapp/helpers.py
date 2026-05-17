@@ -1901,14 +1901,17 @@ def _asc_series_from_log(log: List, count: int) -> List[float]:
 
 
 def _format_total_change(values: List[float], window: int) -> str:
-    """末尾 window 点における先頭→末尾の合計騰落率を +X.X% / — に整形。
+    """末尾 window 営業日 (offset) における合計騰落率を +X.X% / — に整形。
 
-    例: values=[100, 110, 120] → "+20.0%"
+    window=5 なら「5営業日前→今日」の変化なので、内部では window+1 点を取り
+    tail[0]→tail[-1] を計算する。既存の (20,5) 指標 (offset=5) と一致させる。
+    データ不足時は取得できるだけ取って計算する (例: 3点しかなくて window=5 → 全3点)。
     データ不足や 0除算の場合は "—"。
     """
-    if not values or len(values) < 2:
+    if not values or len(values) < 2 or window <= 0:
         return "—"
-    tail = values[-window:] if window > 0 and len(values) > window else values
+    needed = window + 1
+    tail = values[-needed:] if len(values) > needed else values
     base = tail[0]
     if base == 0:
         return "—"
@@ -2001,13 +2004,17 @@ def build_price_rs_chart_mini(
     inner_w = width - pad_x * 2
     inner_h = height - pad_y * 2
 
-    # 3 点: t-20 (= asc[0]), t-5 (= asc[-_SPARK_RECENT] 相当, 末尾から5本目), t-0 (= asc[-1])
+    # 3 点: t-20 (= asc[0]), t-5 (= 5 営業日前, asc[-(_SPARK_RECENT+1)]), t-0 (= asc[-1])
+    # _SPARK_RECENT=5 は「営業日数(offset)」の意味なので、点としては末尾から 6 本目を指す。
     def _three_points(asc: List[float]) -> Optional[List[float]]:
         if len(asc) < 2:
             return None
-        # 末尾 (今日), 5本前 (無ければ asc の中央), 先頭 (=t-20)
+        # 末尾 (今日), 5営業日前 (無ければ asc の中央), 先頭 (=t-20)
         t0 = asc[-1]
-        t5 = asc[-_SPARK_RECENT] if len(asc) >= _SPARK_RECENT else asc[len(asc) // 2]
+        if len(asc) >= _SPARK_RECENT + 1:
+            t5 = asc[-(_SPARK_RECENT + 1)]
+        else:
+            t5 = asc[len(asc) // 2]
         t20 = asc[0]
         return [t20, t5, t0]
 
@@ -2124,10 +2131,18 @@ def build_price_rs_chart_full(
     # (IBD MarketSmith 風: 線が重なって見えるが、上下に分かれているので形の違いが読める)
 
     # 軸ガイド: 20日前/5日前/今日 の縦線 (両パネルにまたがる)
+    # _SPARK_RECENT=5 は「5営業日前」= 末尾から 6 点目なので step*5 引く。
+    # 短期履歴 (5営業日分も無い銘柄) では 5日ガイドが viewBox 左に飛び出すため、
+    # x_t5 を pad_x 以上にクランプし、t20 と重なるならガイド線を省略する。
     x_today = pad_x + inner_w
-    x_t5 = pad_x + inner_w - step * (_SPARK_RECENT - 1)
     x_t20 = pad_x
-    for gx in (x_t20, x_t5, x_today):
+    x_t5_raw = pad_x + inner_w - step * _SPARK_RECENT
+    x_t5 = max(x_t5_raw, pad_x)
+    show_t5_guide = x_t5_raw >= pad_x + 1  # t20 とほぼ重なる場合は省略
+    guide_xs = [x_t20, x_today]
+    if show_t5_guide:
+        guide_xs.insert(1, x_t5)
+    for gx in guide_xs:
         parts.append(
             f'<line x1="{gx:.1f}" y1="{pad_y_top}" x2="{gx:.1f}" y2="{pad_y_top + inner_h}" '
             f'stroke="#e0e0e0" stroke-width="0.5"/>'
@@ -2137,9 +2152,10 @@ def build_price_rs_chart_full(
     # 相当しか描画しないので、左端ラベルも表示窓内の最古日 (= 描画範囲の左端)
     # に合わせる必要がある。price_log が _SPARK_LOOKBACK を超える場合に
     # 「全履歴の最古日」が出る回帰を防ぐ。
+    # _SPARK_RECENT=5 営業日前なので price_log[5] (= 6本目) を参照する。
     try:
         today_label = price_log[0][0].strftime("%m/%d") if price_log else ""
-        t5_idx = min(_SPARK_RECENT - 1, len(price_log) - 1) if price_log else -1
+        t5_idx = min(_SPARK_RECENT, len(price_log) - 1) if price_log else -1
         t20_idx = min(_SPARK_LOOKBACK - 1, len(price_log) - 1) if price_log else -1
         t5_label = price_log[t5_idx][0].strftime("%m/%d") if t5_idx >= 0 else ""
         t20_label = price_log[t20_idx][0].strftime("%m/%d") if t20_idx >= 0 else ""
@@ -2149,9 +2165,10 @@ def build_price_rs_chart_full(
     parts.append(
         f'<text x="{x_t20:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="start">{t20_label}</text>'
     )
-    parts.append(
-        f'<text x="{x_t5:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="middle">{t5_label}</text>'
-    )
+    if show_t5_guide and t5_label:
+        parts.append(
+            f'<text x="{x_t5:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="middle">{t5_label}</text>'
+        )
     parts.append(
         f'<text x="{x_today:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="end">{today_label}</text>'
     )
@@ -2168,10 +2185,12 @@ def build_price_rs_chart_full(
     # 株価と RS が同じ動きでも上下別エリアに描かれるので、形の対比が見やすい。
 
     # 株価パネル
+    # _SPARK_RECENT=5 は「直近5営業日 (offset 5)」なので、点としては 6 点窓を取る
+    _recent_pts = _SPARK_RECENT + 1
     price_slope_full = compute_slope_per_day(price_asc) if len(price_asc) >= 2 else None
     price_slope_recent = (
-        compute_slope_per_day(price_asc[-_SPARK_RECENT:])
-        if len(price_asc) >= _SPARK_RECENT
+        compute_slope_per_day(price_asc[-_recent_pts:])
+        if len(price_asc) >= _recent_pts
         else None
     )
     price_dir_full = _slope_direction(price_slope_full)
@@ -2186,9 +2205,9 @@ def build_price_rs_chart_full(
         full_points = list(zip(xs_price, ys_price))
         # 20日全体 (薄)
         parts.append(_svg_polyline(full_points, _PRICE_FADED[price_dir_full], 1.5))
-        # 末尾5日 (濃)
-        if len(full_points) >= _SPARK_RECENT:
-            recent_points = full_points[-_SPARK_RECENT:]
+        # 直近5営業日 (濃, 6点窓)
+        if len(full_points) >= _recent_pts:
+            recent_points = full_points[-_recent_pts:]
             parts.append(_svg_polyline(recent_points, _PRICE_COLORS[price_dir_recent], 2.2))
         # 末尾マーカー
         parts.append(_svg_circle(full_points[-1][0], full_points[-1][1], 2.5, _PRICE_COLORS[price_dir_recent]))
@@ -2217,8 +2236,8 @@ def build_price_rs_chart_full(
     # RSパネル
     rs_slope_full = compute_slope_per_day(rs_asc) if len(rs_asc) >= 2 else None
     rs_slope_recent = (
-        compute_slope_per_day(rs_asc[-_SPARK_RECENT:])
-        if len(rs_asc) >= _SPARK_RECENT
+        compute_slope_per_day(rs_asc[-_recent_pts:])
+        if len(rs_asc) >= _recent_pts
         else None
     )
     rs_dir_full = _slope_direction(rs_slope_full)
@@ -2231,9 +2250,9 @@ def build_price_rs_chart_full(
         full_points = list(zip(xs_rs, ys_rs))
         # 20日全体 (薄, 点線)
         parts.append(_svg_polyline(full_points, _RS_FADED[rs_dir_full], 1.0, dasharray="2,2"))
-        # 末尾5日 (濃, 点線)
-        if len(full_points) >= _SPARK_RECENT:
-            recent_points = full_points[-_SPARK_RECENT:]
+        # 直近5営業日 (濃, 点線, 6点窓)
+        if len(full_points) >= _recent_pts:
+            recent_points = full_points[-_recent_pts:]
             parts.append(
                 _svg_polyline(recent_points, _RS_COLORS[rs_dir_recent], 1.5, dasharray="2,1")
             )
