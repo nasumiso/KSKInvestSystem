@@ -728,17 +728,15 @@ document.querySelectorAll('table details').forEach(function(d) {
 })();
 
 // issue #220: ステータス変更フォームの action_date 未来日チェック (二重防御)。
+// クライアント端末の TZ が JST 以外でも基準ズレが起きないよう、サーバから注入された
+// today_jst (= max 属性の値) と直接文字列比較する。
 (function() {
   document.querySelectorAll('form.portfolio-transition-form').forEach(function(form) {
     form.addEventListener('submit', function(e) {
       var inp = form.querySelector('input.portfolio-action-date');
       if (!inp || !inp.value) return;
-      var today = new Date();
-      var yyyy = today.getFullYear();
-      var mm = String(today.getMonth() + 1).padStart(2, '0');
-      var dd = String(today.getDate()).padStart(2, '0');
-      var todayStr = yyyy + '-' + mm + '-' + dd;
-      if (inp.value > todayStr) {
+      var todayStr = inp.max || '';
+      if (todayStr && inp.value > todayStr) {
         e.preventDefault();
         alert('アクション日付に未来日は指定できません (今日まで): ' + inp.value);
       }

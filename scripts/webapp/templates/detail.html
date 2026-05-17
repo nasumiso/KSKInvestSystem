@@ -540,6 +540,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 // issue #221: ユニバース除外。モーダル内 reason textarea の値を一緒に POST する。
+// 詳細からの除外 = 単一銘柄なので、return_to=detail を付けて bulk_exclude 側に詳細復帰を伝える。
 function excludeFromUniverse(codeS) {
   if (!confirm('ユニバースから除外しますか？')) return;
   var modal = document.getElementById('portfolio-modal');
@@ -549,22 +550,25 @@ function excludeFromUniverse(codeS) {
   form.method = 'POST';
   form.action = '/portfolio/bulk-exclude';
   // DOM API で hidden を組み立てる (innerHTML 連結は reason 経由で XSS の余地ができるため使わない)
-  var codeInput = document.createElement('input');
-  codeInput.type = 'hidden';
-  codeInput.name = 'codes';
-  codeInput.value = codeS;
-  var reasonInput = document.createElement('input');
-  reasonInput.type = 'hidden';
-  reasonInput.name = 'reason';
-  reasonInput.value = reason;
-  form.appendChild(codeInput);
-  form.appendChild(reasonInput);
+  function addHidden(name, value) {
+    var inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = name;
+    inp.value = value;
+    form.appendChild(inp);
+  }
+  addHidden('codes', codeS);
+  addHidden('reason', reason);
+  addHidden('return_to', 'detail');
+  addHidden('return_code_s', codeS);
   document.body.appendChild(form);
   form.submit();
 }
 
 // issue #220: action_date input がある portfolio モーダルのフォーム submit 時、
 // 未来日が入っていたら alert で送信中止。サーバ側でも同じ判定を行う二重防御。
+// クライアント端末の TZ が JST 以外でも基準ズレが起きないよう、サーバから注入された
+// today_jst (= max 属性の値) と直接文字列比較する。
 (function() {
   var modal = document.getElementById('portfolio-modal');
   if (!modal) return;
@@ -572,12 +576,8 @@ function excludeFromUniverse(codeS) {
     form.addEventListener('submit', function(e) {
       var inp = form.querySelector('input.portfolio-action-date');
       if (!inp || !inp.value) return;
-      var today = new Date();
-      var yyyy = today.getFullYear();
-      var mm = String(today.getMonth() + 1).padStart(2, '0');
-      var dd = String(today.getDate()).padStart(2, '0');
-      var todayStr = yyyy + '-' + mm + '-' + dd;
-      if (inp.value > todayStr) {
+      var todayStr = inp.max || '';
+      if (todayStr && inp.value > todayStr) {
         e.preventDefault();
         alert('アクション日付に未来日は指定できません (今日まで): ' + inp.value);
       }

@@ -237,7 +237,10 @@ def bulk_exclude():
         flash(f"{len(success)} 件をユニバースから除外しました ({', '.join(success)})", "info")
     if failures:
         flash("除外できなかったコードがあります: " + " / ".join(failures), "error")
-    return _redirect_with_return_query()
+    # issue #221: 詳細モーダルからの単一除外 (return_to=detail + return_code_s) は
+    # 同じ詳細ページに戻す。除外後は未登録扱いで表示されるため、操作結果が画面に反映される。
+    return_code = (request.form.get("return_code_s") or "").strip()
+    return _redirect_with_return_query(code_s=return_code or None)
 
 
 @portfolio_bp.route("/portfolio/<code_s>/transition", methods=["POST"])

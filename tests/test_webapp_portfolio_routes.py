@@ -375,6 +375,29 @@ class TestBulkExclude:
         # /portfolio に戻る (status= 等のフィルタクエリは付かない)
         assert loc.endswith("/portfolio")
 
+    def test_bulk_exclude_from_detail_returns_to_detail(self, client, portfolio_db_path):
+        """issue #221: 詳細モーダルからの単一除外 (return_to=detail + return_code_s) は
+        同じ銘柄の詳細ページに戻す"""
+        resp = client.post(
+            "/portfolio/bulk-exclude",
+            data={
+                "codes": "6324",
+                "return_to": "detail",
+                "return_code_s": "6324",
+            },
+        )
+        assert resp.status_code == 302
+        assert "/stock/6324" in resp.headers["Location"]
+
+    def test_bulk_exclude_without_return_code_falls_back(self, client, portfolio_db_path):
+        """return_to=detail でも return_code_s が無ければ通常の /portfolio に戻る"""
+        resp = client.post(
+            "/portfolio/bulk-exclude",
+            data={"codes": "6324", "return_to": "detail"},
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/portfolio")
+
     def test_bulk_exclude_empty_codes_flash_error(self, client, portfolio_db_path):
         resp = client.post("/portfolio/bulk-exclude", data={})
         assert resp.status_code == 302
