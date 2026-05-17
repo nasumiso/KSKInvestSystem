@@ -60,25 +60,31 @@ class TestHasGyosekiData:
 # get_trend_template_expr
 # ==================================================
 class TestGetTrendTemplateExpr:
-    """トレンドテンプレート表示のテスト。ミス数 → 記号のテーブルを parametrize で網羅。"""
+    """トレンドテンプレート表示のテスト。ミス数 → 記号のテーブルを parametrize で網羅。
+
+    1-2 ミス (◯) のケースは記号だけでなく不通過項目名 (例: "MA50") も結果に含まれるのが
+    契約 (個別銘柄一覧で「何を外したか」を表示するため)。
+    """
 
     @pytest.mark.parametrize(
-        "stock, expected_prefix",
+        "stock, expected",
         [
-            ({}, "-"),                                                  # キーなし
-            ({"trend_template": []}, "◎"),                              # 全通過
-            ({"trend_template": ["MA50"]}, "◯"),                        # 1-2 ミス
-            ({"trend_template": ["a", "b", "c"]}, "▲"),                 # 3-4 ミス
-            ({"trend_template": ["a", "b", "c", "d", "e"]}, "△"),       # 5-6 ミス
-            ({"trend_template": ["a", "b", "c", "d", "e", "f", "g"]}, ""),  # 7+ ミス
+            ({}, "-"),                                                       # キーなし
+            ({"trend_template": []}, "◎"),                                   # 全通過
+            ({"trend_template": ["a", "b", "c"]}, "▲"),                      # 3-4 ミス
+            ({"trend_template": ["a", "b", "c", "d", "e"]}, "△"),            # 5-6 ミス
+            ({"trend_template": ["a", "b", "c", "d", "e", "f", "g"]}, ""),   # 7+ ミス
         ],
     )
-    def test_classification(self, stock, expected_prefix):
-        result = make_stock_db.get_trend_template_expr(stock)
-        if expected_prefix in ("-", "◎", "▲", "△", ""):
-            assert result == expected_prefix
-        else:  # 1-2 ミスは記号 + 詳細
-            assert result.startswith(expected_prefix)
+    def test_classification_exact(self, stock, expected):
+        """完全一致系: 記号のみで詳細を含まない分岐"""
+        assert make_stock_db.get_trend_template_expr(stock) == expected
+
+    def test_classification_minor_miss_includes_detail(self):
+        """1-2 ミス: ◯ 記号 + 不通過項目名 (詳細文字列) を返す契約"""
+        result = make_stock_db.get_trend_template_expr({"trend_template": ["MA50"]})
+        assert result.startswith("◯")
+        assert "MA50" in result  # 何を外したかの情報が消えていない
 
 
 # ==================================================

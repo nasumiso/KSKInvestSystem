@@ -1541,11 +1541,14 @@ class TestComputeCellStyles:
             assert styles["tags"] == expected
 
     # ----- 買い集め (合計 >=8 濃黄 / <=4 水色 / 5-7 色なし) -----
+    # 手入力データで空白混入が多いため "A, B" のような空白付き入力が
+    # _buy_collection_score_sum 内部で strip されて正常評価されることも確認する。
     @pytest.mark.parametrize(
         "value, expected",
         [
             ("A,A", f"background:{C['濃黄']}"),   # 10 >=8
             ("A,B", f"background:{C['濃黄']}"),   # 9 >=8 (境界)
+            ("A, B", f"background:{C['濃黄']}"), # 空白付き入力 (strip 処理の退行検知)
             ("B,C", None),                         # 7 5-7範囲
             ("D,D", f"background:{C['水色']}"),   # 4 <=4 (境界)
             ("E,E", f"background:{C['水色']}"),   # 2 <=4
