@@ -960,7 +960,9 @@ class TestGetMomentumCalib:
                 "loc": -0.10,
                 "scale": 0.25,
                 "sample_count": 1000,
-                "updated_at": datetime.now() - timedelta(days=60),
+                "updated_at": datetime.now() - timedelta(
+                    days=price.MOMENTUM_CALIB_MAX_AGE_DAYS + 1
+                ),
             }
         }
         loc, scale, source = price.get_momentum_calib(market_db=market_db)
@@ -977,6 +979,88 @@ class TestGetMomentumCalib:
         }
         loc, scale, source = price.get_momentum_calib(market_db=market_db)
         assert source == "fallback"
+
+
+# ==================================================
+# calc_momentum_pt_value (issue #104 Phase 2)
+# ==================================================
+class TestCalcMomentumPtLognormal:
+    """対数正規分布モデルで momentum_pt を算出する純粋関数のテスト"""
+
+    def _market_db_with_calib(self, loc, scale):
+        """有効な calib 値を持つ market_db を組み立てる"""
+        return {
+            "topix": {"rs_raw": 1.0},
+            "momentum_calib": {
+                "loc": loc,
+                "scale": scale,
+                "sample_count": 1000,
+                "updated_at": datetime.now() - timedelta(days=1),
+            },
+        }
+
+    def test_returns_zero_when_topix_rs_raw_zero(self):
+        """TOPIX rs_raw = 0 のとき 0"""
+        market_db = {"topix": {"rs_raw": 0}}
+        assert price.calc_momentum_pt_value(rs_raw=1.2, market_db=market_db) == 0
+
+    def test_returns_zero_when_topix_missing(self):
+        """TOPIX キーがないとき 0"""
+        market_db = {}
+        assert price.calc_momentum_pt_value(rs_raw=1.2, market_db=market_db) == 0
+
+    def test_returns_zero_when_rs_raw_non_positive(self):
+        """rs_raw <= 0 (異常値) のとき 0"""
+        market_db = self._market_db_with_calib(loc=0.0, scale=0.3)
+        assert price.calc_momentum_pt_value(rs_raw=0, market_db=market_db) == 0
+        assert price.calc_momentum_pt_value(rs_raw=-1.0, market_db=market_db) == 0
+
+    def test_rs_rel_at_mode_gives_50(self):
+        """rs_rel = exp(loc) (対数正規分布の中央値) で momentum_pt ~ 50"""
+        import math
+        loc, scale = -0.05, 0.3
+        market_db = self._market_db_with_calib(loc=loc, scale=scale)
+        # TOPIX rs_raw=1.0 なので rs_rel == rs_raw
+        rs_raw = math.exp(loc)
+        result = price.calc_momentum_pt_value(rs_raw=rs_raw, market_db=market_db)
+        assert 49 <= result <= 51
+
+    def test_rs_rel_at_plus_one_sigma_gives_84(self):
+        """rs_rel = exp(loc + scale) で momentum_pt ~ 84 (+1σ)"""
+        import math
+        loc, scale = -0.05, 0.3
+        market_db = self._market_db_with_calib(loc=loc, scale=scale)
+        rs_raw = math.exp(loc + scale)
+        result = price.calc_momentum_pt_value(rs_raw=rs_raw, market_db=market_db)
+        assert 83 <= result <= 85
+
+    def test_rs_rel_at_minus_one_sigma_gives_16(self):
+        """rs_rel = exp(loc - scale) で momentum_pt ~ 16 (-1σ)"""
+        import math
+        loc, scale = -0.05, 0.3
+        market_db = self._market_db_with_calib(loc=loc, scale=scale)
+        rs_raw = math.exp(loc - scale)
+        result = price.calc_momentum_pt_value(rs_raw=rs_raw, market_db=market_db)
+        assert 15 <= result <= 17
+
+    def test_calib_vs_fallback_diverges(self):
+        """キャリブ値とフォールバック値で結果が変わる"""
+        # キャリブ: loc=0.0, scale=0.1 (scaleが狭い) → +0.1の rs_rel は +1σ → ~84
+        # フォールバック: loc=-0.058, scale=0.275 → log(1.105)=0.0998, z=(0.0998+0.058)/0.275=0.575 → ~72
+        import math
+        market_db_calib = self._market_db_with_calib(loc=0.0, scale=0.1)
+        rs_raw_at_plus_sigma = math.exp(0.1)
+        result_calib = price.calc_momentum_pt_value(
+            rs_raw=rs_raw_at_plus_sigma, market_db=market_db_calib
+        )
+        # フォールバック (calib なし)
+        market_db_fb = {"topix": {"rs_raw": 1.0}}
+        result_fb = price.calc_momentum_pt_value(
+            rs_raw=rs_raw_at_plus_sigma, market_db=market_db_fb
+        )
+        assert result_calib != result_fb
+        # キャリブ側は +1σ なので 80超
+        assert result_calib >= 80
 
 
 # ==================================================

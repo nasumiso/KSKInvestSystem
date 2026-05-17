@@ -35,7 +35,10 @@ MOMENTUM_CALIB_DEFAULT_LOC = -0.058
 MOMENTUM_CALIB_DEFAULT_SCALE = 0.275
 # フォールバック発動条件: サンプル数が下限未満、または updated_at がこの日数より前。
 MOMENTUM_CALIB_MIN_SAMPLES = 500
-MOMENTUM_CALIB_MAX_AGE_DAYS = 30
+# キャリブレーションは手動運用 (issue #104 Phase 1)。半年再校正なしで残っている
+# 場合は流石に古いとみなしフォールバックする。loc/scale は週単位では動かず
+# 月〜四半期スケールで変化する指標なので、半年が概ね妥当。
+MOMENTUM_CALIB_MAX_AGE_DAYS = 180
 
 
 def get_momentum_calib(market_db=None):
@@ -77,6 +80,31 @@ def get_momentum_calib(market_db=None):
         return MOMENTUM_CALIB_DEFAULT_LOC, MOMENTUM_CALIB_DEFAULT_SCALE, "fallback"
 
     return calib["loc"], calib["scale"], "calib"
+
+
+def calc_momentum_pt_value(rs_raw, market_db):
+    """対数正規分布モデルで momentum_pt (0〜100) を算出する純粋関数。
+
+    log(rs_rel) = log(rs_raw / topix_rs_raw) が正規分布 N(loc, scale^2) に
+    従うと仮定し、その上側累積確率の補数を 0〜100 で返す。
+    loc/scale は market_db['momentum_calib'] からの実測値 (無ければデフォルト)。
+
+    Returns:
+        int: momentum_pt (0〜100)。算出不能時は 0。
+    """
+    import math
+    topix_rs_raw = market_db.get("topix", {}).get("rs_raw", 0)
+    if topix_rs_raw <= 0:
+        return 0
+    rs_rel = rs_raw / topix_rs_raw
+    if rs_rel <= 0:
+        return 0
+    loc, scale, _ = get_momentum_calib(market_db)
+    if scale <= 0:
+        return 0
+    log_rs_rel = math.log(rs_rel)
+    from scipy.stats import norm
+    return int(100 * (1 - norm.sf(x=log_rs_rel, loc=loc, scale=scale)))
 
 
 def get_daily_html_kabutan(code_s, cache=True):
@@ -609,29 +637,19 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
     rs_raw, p_cur = calc_rs()
     price_dict["rs_raw"] = rs_raw
 
-    # ---- TOPIXとの比較でモメンタムポイントを計算
+    # ---- TOPIXとの比較でモメンタムポイントを計算 (対数正規分布モデル, issue #104 Phase 2)
     def calc_momentum_pt():
         import make_market_db
 
         market_db = make_market_db.get_market_db()
-        if "rs_raw" in market_db["topix"]:
-            topix_rs_raw = market_db["topix"]["rs_raw"]
-            if topix_rs_raw == 0:
-                log_warning(" TOPIXのRSが0のためモメンタムポイント計算できません")
-                rs_rank = 0
-            else:
-                # TOPIXのRSと比較してモメンタムポイントを計算
-                rs_rel = rs_raw / topix_rs_raw
-                # print "rs_rel:", rs_rel, topix_rs_raw
-                from scipy.stats import norm
-
-                scale = 0.3  # code_rank実測のrs_raw標準偏差
-                # 平均1.0、標準偏差0.3の上側確率
-                rs_rank = int(100 * (1 - norm.sf(x=rs_rel, loc=1.0, scale=scale)))
-                log_debug("rs_rank:", rs_rank)
-        else:
-            rs_rank = 0
+        topix = market_db.get("topix", {})
+        if "rs_raw" not in topix:
             log_warning(" TOPIXのモメンタムポイント存在せず、計算できず")
+            return 0
+        rs_rank = calc_momentum_pt_value(rs_raw, market_db)
+        if rs_rank <= 0:
+            log_warning(" TOPIX/銘柄の rs_raw が不正のためモメンタムポイント計算できません")
+        log_debug("rs_rank: %d" % rs_rank)
         return rs_rank
 
     rs_rank = calc_momentum_pt()
