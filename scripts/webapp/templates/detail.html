@@ -404,17 +404,31 @@
         </select>
       </label>
       <label style="display:block;margin-bottom:0.6em;">
+        アクション日付:
+        <input type="date" name="action_date" value="{{ today_jst }}" max="{{ today_jst }}" required
+               class="portfolio-action-date" style="margin-left:0.4em;">
+      </label>
+      <label style="display:block;margin-bottom:0.6em;">
         理由 (任意):
         <textarea name="reason" rows="2" style="width:100%;margin-top:0.2em;" placeholder="例: 業績下振れ"></textarea>
       </label>
       <div class="portfolio-modal-actions">
         <button type="button" class="secondary" onclick="closePortfolioModal()">キャンセル</button>
         <button type="submit">変更する</button>
+        {% if portfolio_status_query in ("semi", "watch") %}
+        {# issue #221: 2準/3監 のみユニバース除外可能 (1保 は exclude_from_universe 側で拒否) #}
+        <button type="button" class="portfolio-exclude-button"
+                onclick="excludeFromUniverse('{{ record.code_s }}')">ユニバースから除外</button>
+        {% endif %}
       </div>
       {% else %}
       <p style="color:#888;">許可された遷移先がありません。</p>
       <div class="portfolio-modal-actions">
         <button type="button" class="secondary" onclick="closePortfolioModal()">閉じる</button>
+        {% if portfolio_status_query in ("semi", "watch") %}
+        <button type="button" class="portfolio-exclude-button"
+                onclick="excludeFromUniverse('{{ record.code_s }}')">ユニバースから除外</button>
+        {% endif %}
       </div>
       {% endif %}
     </form>
@@ -424,6 +438,11 @@
       <input type="hidden" name="code_s" value="{{ record.code_s }}">
       <input type="hidden" name="return_to" value="detail">
       <p style="margin:0 0 0.6em 0;">この銘柄は未登録です。監視に追加します。</p>
+      <label style="display:block;margin-bottom:0.6em;">
+        アクション日付:
+        <input type="date" name="action_date" value="{{ today_jst }}" max="{{ today_jst }}" required
+               class="portfolio-action-date" style="margin-left:0.4em;">
+      </label>
       <label style="display:block;margin-bottom:0.6em;">
         理由 (任意):
         <textarea name="reason" rows="2" style="width:100%;margin-top:0.2em;" placeholder="例: 高値ブレイク候補"></textarea>
@@ -494,6 +513,14 @@
 .gyoutai-input-detail.saving { background: #fff8c4; }
 .gyoutai-input-detail.error { background: #fce4e4; border-color: #d33; }
 .gyoutai-input-detail:focus { outline: 1px solid #4285f4; }
+
+/* issue #221: ユニバース除外ボタン (危険操作なので赤系で識別) */
+.portfolio-exclude-button {
+  background: #c0392b;
+  color: #fff;
+  border: 1px solid #c0392b;
+}
+.portfolio-exclude-button:hover { background: #a93226; border-color: #a93226; }
 </style>
 
 <script>
@@ -512,6 +539,52 @@ document.addEventListener('keydown', function(e) {
     if (m && m.style.display !== 'none') closePortfolioModal();
   }
 });
+
+// issue #221: ユニバース除外。モーダル内 reason textarea の値を一緒に POST する。
+// 詳細からの除外 = 単一銘柄なので、return_to=detail を付けて bulk_exclude 側に詳細復帰を伝える。
+function excludeFromUniverse(codeS) {
+  if (!confirm('ユニバースから除外しますか？')) return;
+  var modal = document.getElementById('portfolio-modal');
+  var reasonEl = modal ? modal.querySelector('textarea[name="reason"]') : null;
+  var reason = reasonEl ? reasonEl.value : '';
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/portfolio/bulk-exclude';
+  // DOM API で hidden を組み立てる (innerHTML 連結は reason 経由で XSS の余地ができるため使わない)
+  function addHidden(name, value) {
+    var inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = name;
+    inp.value = value;
+    form.appendChild(inp);
+  }
+  addHidden('codes', codeS);
+  addHidden('reason', reason);
+  addHidden('return_to', 'detail');
+  addHidden('return_code_s', codeS);
+  document.body.appendChild(form);
+  form.submit();
+}
+
+// issue #220: action_date input がある portfolio モーダルのフォーム submit 時、
+// 未来日が入っていたら alert で送信中止。サーバ側でも同じ判定を行う二重防御。
+// クライアント端末の TZ が JST 以外でも基準ズレが起きないよう、サーバから注入された
+// today_jst (= max 属性の値) と直接文字列比較する。
+(function() {
+  var modal = document.getElementById('portfolio-modal');
+  if (!modal) return;
+  modal.querySelectorAll('form').forEach(function(form) {
+    form.addEventListener('submit', function(e) {
+      var inp = form.querySelector('input.portfolio-action-date');
+      if (!inp || !inp.value) return;
+      var todayStr = inp.max || '';
+      if (todayStr && inp.value > todayStr) {
+        e.preventDefault();
+        alert('アクション日付に未来日は指定できません (今日まで): ' + inp.value);
+      }
+    });
+  });
+})();
 
 // issue #205: 業態・テーマの change/blur で AJAX 即時保存 (portfolio_list.html と同方式)
 (function() {

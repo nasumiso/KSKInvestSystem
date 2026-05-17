@@ -259,6 +259,32 @@ class TestTransitionPost:
         # 9999 は登録されていない
         assert ps.get_record("9999", db_path=portfolio_db_path) is None
 
+    def test_transition_with_action_date_form_param(self, client, portfolio_db_path):
+        """issue #220: form の action_date が action_log の timestamp に伝搬する"""
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={
+                "new_status": "2準",
+                "reason": "昨日売却",
+                "action_date": "2026-05-10",
+            },
+        )
+        assert resp.status_code == 302
+        logs = ps.list_action_logs(code_s="3496", db_path=portfolio_db_path)
+        latest = logs[-1]
+        assert latest["timestamp"] == "2026-05-10T12:00:00+09:00"
+        assert latest["action_type"] == "売却"
+
+    def test_transition_future_action_date_flashes_error(self, client, portfolio_db_path):
+        """issue #220: 未来日は flash error でステータス変更されない"""
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={"new_status": "2準", "action_date": "2099-12-31"},
+        )
+        assert resp.status_code == 302
+        rec = ps.get_record("3496", db_path=portfolio_db_path)
+        assert rec["status"] == "1保"  # 変更されていない
+
 
 class TestBulkExclude:
     """POST /portfolio/bulk-exclude (issue #186)"""
@@ -348,6 +374,29 @@ class TestBulkExclude:
         loc = resp.headers["Location"]
         # /portfolio に戻る (status= 等のフィルタクエリは付かない)
         assert loc.endswith("/portfolio")
+
+    def test_bulk_exclude_from_detail_returns_to_detail(self, client, portfolio_db_path):
+        """issue #221: 詳細モーダルからの単一除外 (return_to=detail + return_code_s) は
+        同じ銘柄の詳細ページに戻す"""
+        resp = client.post(
+            "/portfolio/bulk-exclude",
+            data={
+                "codes": "6324",
+                "return_to": "detail",
+                "return_code_s": "6324",
+            },
+        )
+        assert resp.status_code == 302
+        assert "/stock/6324" in resp.headers["Location"]
+
+    def test_bulk_exclude_without_return_code_falls_back(self, client, portfolio_db_path):
+        """return_to=detail でも return_code_s が無ければ通常の /portfolio に戻る"""
+        resp = client.post(
+            "/portfolio/bulk-exclude",
+            data={"codes": "6324", "return_to": "detail"},
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/portfolio")
 
     def test_bulk_exclude_empty_codes_flash_error(self, client, portfolio_db_path):
         resp = client.post("/portfolio/bulk-exclude", data={})

@@ -193,6 +193,56 @@ class TestTransitionStatus:
         logs = ps.list_action_logs("4377", db_path=db_path)
         assert len(logs) == 1  # 初回登録だけ、ステータス変更ログは出ない
 
+    def test_transition_with_past_action_date(self, db_path):
+        """issue #220: action_date 指定で action_log の timestamp が JST 12:00 で固定される"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status(
+            "4377", "2準",
+            reason="3日前に売却",
+            action_date="2026-05-10",
+            db_path=db_path,
+        )
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert logs[1]["timestamp"] == "2026-05-10T12:00:00+09:00"
+
+    def test_transition_with_future_action_date_raises(self, db_path):
+        """issue #220: 未来日は ValueError"""
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(ValueError, match="未来日"):
+            ps.transition_status(
+                "4377", "2準",
+                action_date="2099-12-31",
+                db_path=db_path,
+            )
+
+    def test_transition_with_invalid_action_date_format_raises(self, db_path):
+        """issue #220: YYYY-MM-DD 以外のフォーマットは ValueError"""
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            ps.transition_status(
+                "4377", "2準",
+                action_date="2026/05/10",
+                db_path=db_path,
+            )
+        with pytest.raises(ValueError):
+            ps.transition_status(
+                "4377", "2準",
+                action_date="2026-13-99",
+                db_path=db_path,
+            )
+
+    def test_add_to_watch_with_past_action_date(self, db_path):
+        """issue #220: add_to_watch でも action_date が初回登録ログに反映される"""
+        ps.add_to_watch(
+            "4377",
+            reason="昨日メモった銘柄",
+            action_date="2026-05-10",
+            db_path=db_path,
+        )
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len(logs) == 1
+        assert logs[0]["timestamp"] == "2026-05-10T12:00:00+09:00"
+
 
 # ==================================================
 # 高レベル操作: delete_record

@@ -237,7 +237,10 @@ def bulk_exclude():
         flash(f"{len(success)} 件をユニバースから除外しました ({', '.join(success)})", "info")
     if failures:
         flash("除外できなかったコードがあります: " + " / ".join(failures), "error")
-    return _redirect_with_return_query()
+    # issue #221: 詳細モーダルからの単一除外 (return_to=detail + return_code_s) は
+    # 同じ詳細ページに戻す。除外後は未登録扱いで表示されるため、操作結果が画面に反映される。
+    return_code = (request.form.get("return_code_s") or "").strip()
+    return _redirect_with_return_query(code_s=return_code or None)
 
 
 @portfolio_bp.route("/portfolio/<code_s>/transition", methods=["POST"])
@@ -253,6 +256,7 @@ def transition(code_s: str):
 
     new_status = (request.form.get("new_status") or "").strip()
     reason = (request.form.get("reason") or "").strip()
+    action_date = (request.form.get("action_date") or "").strip() or None
 
     try:
         ps.validate_code_s(code_s)
@@ -265,7 +269,7 @@ def transition(code_s: str):
         return _redirect_with_return_query(code_s=code_s)
 
     try:
-        ps.transition_status(code_s, new_status, reason=reason)
+        ps.transition_status(code_s, new_status, reason=reason, action_date=action_date)
     except KeyError as e:
         flash(f"レコード未登録: {e}", "error")
         return _redirect_with_return_query(code_s=code_s)
@@ -411,6 +415,8 @@ def add():
     # issue #195: 詳細モーダルから理由を受け取れるように引数化。
     # 未送信フォーム (portfolio ダッシュボード追加) では空文字 → 従来の "WebApp 追加" にフォールバック。
     reason = (request.form.get("reason") or "").strip() or "WebApp 追加"
+    # issue #220: アクション日付 (YYYY-MM-DD)。未指定なら現在時刻。
+    action_date = (request.form.get("action_date") or "").strip() or None
     if not code_s:
         flash("銘柄コードが空です", "error")
         return _redirect_with_return_query(default_status_query="watch")
@@ -436,7 +442,7 @@ def add():
             return _redirect_with_return_query(default_status_query="watch")
 
     try:
-        ps.add_to_watch(normalized, reason=reason)
+        ps.add_to_watch(normalized, reason=reason, action_date=action_date)
     except ValueError as e:
         flash(str(e), "error")
         return _redirect_with_return_query(default_status_query="watch", code_s=normalized)
