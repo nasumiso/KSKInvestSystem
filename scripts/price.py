@@ -79,7 +79,19 @@ def get_momentum_calib(market_db=None):
         )
         return MOMENTUM_CALIB_DEFAULT_LOC, MOMENTUM_CALIB_DEFAULT_SCALE, "fallback"
 
-    return calib["loc"], calib["scale"], "calib"
+    # loc/scale が欠落・非数値・scale<=0 の壊れたキャッシュにも備える。
+    # 正規の calibrate_momentum_pt 経路では起きないが、スキーマ移行ミスや
+    # 部分書き込みで一部キーだけ残った場合に KeyError で更新が止まらないよう保険。
+    loc = calib.get("loc")
+    scale = calib.get("scale")
+    if not isinstance(loc, (int, float)) or not isinstance(scale, (int, float)) or scale <= 0:
+        log_warning(
+            "[momentum_calib] loc/scale が不正 (loc=%r, scale=%r) のためフォールバック"
+            % (loc, scale)
+        )
+        return MOMENTUM_CALIB_DEFAULT_LOC, MOMENTUM_CALIB_DEFAULT_SCALE, "fallback"
+
+    return loc, scale, "calib"
 
 
 def calc_momentum_pt_value(rs_raw, market_db):

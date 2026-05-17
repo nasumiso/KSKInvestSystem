@@ -980,6 +980,34 @@ class TestGetMomentumCalib:
         loc, scale, source = price.get_momentum_calib(market_db=market_db)
         assert source == "fallback"
 
+    def test_fallback_when_loc_missing(self):
+        """loc が欠落していてもKeyErrorを出さずフォールバック"""
+        market_db = {
+            "momentum_calib": {
+                # loc が無い (不完全なキャッシュ)
+                "scale": 0.25,
+                "sample_count": 1000,
+                "updated_at": datetime.now() - timedelta(days=1),
+            }
+        }
+        loc, scale, source = price.get_momentum_calib(market_db=market_db)
+        assert source == "fallback"
+        assert loc == price.MOMENTUM_CALIB_DEFAULT_LOC
+        assert scale == price.MOMENTUM_CALIB_DEFAULT_SCALE
+
+    def test_fallback_when_scale_invalid(self):
+        """scale が非数値/非正でもフォールバック"""
+        market_db = {
+            "momentum_calib": {
+                "loc": -0.10,
+                "scale": 0,  # 0 は分布として無効
+                "sample_count": 1000,
+                "updated_at": datetime.now() - timedelta(days=1),
+            }
+        }
+        loc, scale, source = price.get_momentum_calib(market_db=market_db)
+        assert source == "fallback"
+
 
 # ==================================================
 # calc_momentum_pt_value (issue #104 Phase 2)
