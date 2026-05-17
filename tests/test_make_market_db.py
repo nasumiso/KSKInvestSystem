@@ -350,14 +350,27 @@ class TestHtmlMarket:
     """市場指標HTML生成テスト"""
 
     def _make_market_db(self):
-        """テスト用market_db"""
+        """テスト用market_db (Part B: state_meta / state_history を保持)"""
         return {
             "topix": {
                 "rs_raw": 1.18,
                 "trend_template": [],  # 空リスト=◎
+                "market_state": "uptrend_under_pressure",
+                "state_meta": {
+                    "distribution_days_with_close": [
+                        ("26/02/13", 2700.0),
+                        ("26/02/20", 2680.0),
+                    ],
+                    "last_ftd_date": None,
+                },
+                "state_history": [
+                    ("26/03/13", "uptrend_under_pressure", "dd>=4"),
+                    ("26/03/12", "confirmed_uptrend", "stay"),
+                ],
+                # 後方互換フィールド (price.py が今も埋める)
                 "distribution_days": ["260213", "260220"],
                 "followthrough_days": ["260305"],
-                "direction_signal": "sell 26/03/13",
+                "direction_signal": "uptrend_under_pressure,26/03/13",
                 "spr_buygagher": 49,
                 "spr_20": 47,
                 "spr_5": 45,
@@ -367,9 +380,18 @@ class TestHtmlMarket:
             "mothers": {
                 "rs_raw": 1.09,
                 "trend_template": ["ma30>ma40", "RS"],
+                "market_state": "confirmed_uptrend",
+                "state_meta": {
+                    "distribution_days_with_close": [],
+                    "last_ftd_date": "26/03/10",
+                },
+                "state_history": [
+                    ("26/03/10", "confirmed_uptrend", "ftd"),
+                    ("26/03/09", "market_in_correction", "stay"),
+                ],
                 "distribution_days": [],
                 "followthrough_days": [],
-                "direction_signal": "buy 26/03/10",
+                "direction_signal": "confirmed_uptrend,26/03/10",
                 "spr_buygagher": 55,
                 "spr_20": 52,
                 "spr_5": 50,
@@ -379,9 +401,17 @@ class TestHtmlMarket:
             "nasdaq": {
                 "rs_raw": 1.05,
                 "trend_template": [],
+                "market_state": "confirmed_uptrend",
+                "state_meta": {
+                    "distribution_days_with_close": [("26/03/01", 18000.0)],
+                    "last_ftd_date": None,
+                },
+                "state_history": [
+                    ("26/03/13", "confirmed_uptrend", "stay"),
+                ],
                 "distribution_days": ["260301"],
                 "followthrough_days": [],
-                "direction_signal": "neutral 26/03/13",
+                "direction_signal": "confirmed_uptrend,26/03/13",
                 "spr_buygagher": 50,
                 "spr_20": 48,
                 "spr_5": 47,
@@ -391,9 +421,18 @@ class TestHtmlMarket:
             "sp500": {
                 "rs_raw": 1.02,
                 "trend_template": [],
+                "market_state": "confirmed_uptrend",
+                "state_meta": {
+                    "distribution_days_with_close": [],
+                    "last_ftd_date": "26/03/08",
+                },
+                "state_history": [
+                    ("26/03/13", "confirmed_uptrend", "stay"),
+                    ("26/03/08", "confirmed_uptrend", "ftd"),
+                ],
                 "distribution_days": [],
                 "followthrough_days": ["260308"],
-                "direction_signal": "neutral 26/03/13",
+                "direction_signal": "confirmed_uptrend,26/03/13",
                 "spr_buygagher": 51,
                 "spr_20": 50,
                 "spr_5": 49,
@@ -402,15 +441,24 @@ class TestHtmlMarket:
             },
         }
 
-    def test_signal_sell_class(self):
-        """sellシグナルにsignal-sellクラスが付く"""
-        result = make_market_db._html_market(self._make_market_db())
-        assert 'signal-sell' in result
+    def test_state_correction_class(self):
+        """market_state が market_in_correction なら state-correction クラス"""
+        db = self._make_market_db()
+        db["topix"]["market_state"] = "market_in_correction"
+        result = make_market_db._html_market(db)
+        assert 'state-correction' in result
 
-    def test_signal_buy_class(self):
-        """buyシグナルにsignal-buyクラスが付く"""
+    def test_state_pressure_class(self):
+        """market_state が uptrend_under_pressure なら state-pressure クラス"""
         result = make_market_db._html_market(self._make_market_db())
-        assert 'signal-buy' in result
+        assert 'state-pressure' in result
+
+    def test_state_confirmed_class(self):
+        """market_state が confirmed_uptrend なら state-confirmed クラス"""
+        db = self._make_market_db()
+        db["topix"]["market_state"] = "confirmed_uptrend"
+        result = make_market_db._html_market(db)
+        assert 'state-confirmed' in result
 
     def test_trend_good_class(self):
         """良好トレンド（◎/◯）にtrend-goodクラスが付く"""
@@ -418,10 +466,166 @@ class TestHtmlMarket:
         assert 'trend-good' in result
 
     def test_market_table_header(self):
-        """テーブルヘッダーが含まれる"""
+        """テーブルヘッダーが含まれる (Part B: DD/FTD 列名改修)"""
         result = make_market_db._html_market(self._make_market_db())
         assert 'market-table' in result
-        assert 'ディストリビューション' in result
+        assert '<th>DD</th>' in result
+        assert '<th>FTD/ラリー</th>' in result
+
+    # ===== Part B: 表示文言・列構成テスト =====
+    def test_market_state_header_label(self):
+        """列ヘッダが「市場状態」になっている"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert '市場状態' in result
+        assert '<th>シグナル</th>' not in result
+
+    def test_state_label_japanese(self):
+        """state が日本語で表示される"""
+        result = make_market_db._html_market(self._make_market_db())
+        # topix=pressure, mothers=confirmed が含まれるテストデータ
+        assert '上昇トレンド' in result
+        assert '圧力下' in result
+
+    def test_state_with_transition_date(self):
+        """遷移日が (M/D〜) で併記される"""
+        result = make_market_db._html_market(self._make_market_db())
+        # topix の history で uptrend_under_pressure 遷移日は 26/03/13 → 表示は (03/13〜)
+        assert '(03/13〜)' in result
+
+    def test_buygagher_eval_removed(self):
+        """売り圧力レシオ列から A-E 評価が削除されている"""
+        result = make_market_db._html_market(self._make_market_db())
+        # 旧形式: <td>%d, %d, <strong>A</strong></td>
+        for grade in ['<strong>A</strong>', '<strong>B</strong>', '<strong>C</strong>',
+                      '<strong>D</strong>', '<strong>E</strong>']:
+            assert grade not in result
+
+    def test_dd_count_format(self):
+        """DD列が `数 / 6` 形式で表示される (案B)"""
+        result = make_market_db._html_market(self._make_market_db())
+        # TOPIX は dd_with_close が2件 → "2 / 6"
+        assert "2 / 6" in result
+        # mothers は dd_with_close が0件 → "0 / 6"
+        assert "0 / 6" in result
+
+    def test_dd_correction_format_when_at_threshold(self):
+        """DD ≥ 6 のとき "6+ / 6" 表示 + dd-correction クラス"""
+        db = {
+            "topix": {
+                "rs_raw": 1.0, "trend_template": [],
+                "market_state": "market_in_correction",
+                "state_meta": {
+                    "distribution_days_with_close": [
+                        ("26/04/%02d" % d, 100.0) for d in range(1, 8)  # 7件
+                    ],
+                    "last_ftd_date": None,
+                },
+                "state_history": [("26/04/30", "market_in_correction", "dd>=6")],
+                "spr_20": 50, "spr_5": 50, "rv_20": 1.0, "rv_5": 1.0,
+            }
+        }
+        result = make_market_db._html_market(db)
+        assert "6+ / 6" in result
+        assert "dd-correction" in result
+
+    def test_dd_pressure_class_when_4_to_5(self):
+        """4 ≤ DD < 6 のとき dd-pressure クラス"""
+        db = {
+            "topix": {
+                "rs_raw": 1.0, "trend_template": [],
+                "market_state": "uptrend_under_pressure",
+                "state_meta": {
+                    "distribution_days_with_close": [
+                        ("26/04/%02d" % d, 100.0) for d in range(1, 5)  # 4件
+                    ],
+                    "last_ftd_date": None,
+                },
+                "state_history": [("26/04/30", "uptrend_under_pressure", "dd>=4")],
+                "spr_20": 50, "spr_5": 50, "rv_20": 1.0, "rv_5": 1.0,
+            }
+        }
+        result = make_market_db._html_market(db)
+        assert "4 / 6" in result
+        assert "dd-pressure" in result
+
+    def test_dd_dates_in_title_attribute(self):
+        """DD詳細日付は title 属性 (ホバー) で確認できる"""
+        result = make_market_db._html_market(self._make_market_db())
+        # TOPIX の dd_with_close は 02/13, 02/20 → title="02/13, 02/20"
+        assert 'title="02/13, 02/20"' in result
+
+    def test_ftd_shows_last_ftd_date_when_not_correction(self):
+        """confirmed/pressure 状態では FTD列に last_ftd_date を表示"""
+        result = make_market_db._html_market(self._make_market_db())
+        # mothers: confirmed, last_ftd_date=26/03/10 → "03/10"
+        assert "03/10" in result
+        # sp500: confirmed, last_ftd_date=26/03/08 → "03/08"
+        assert "03/08" in result
+
+    def test_ftd_em_dash_when_no_ftd(self):
+        """FTD なしのときは "—" 表示"""
+        db = {
+            "topix": {
+                "rs_raw": 1.0, "trend_template": [],
+                "market_state": "confirmed_uptrend",
+                "state_meta": {
+                    "distribution_days_with_close": [],
+                    "last_ftd_date": None,
+                },
+                "state_history": [("26/04/30", "confirmed_uptrend", "stay")],
+                "spr_20": 50, "spr_5": 50, "rv_20": 1.0, "rv_5": 1.0,
+            }
+        }
+        result = make_market_db._html_market(db)
+        # FTD/ラリー 列に — が出ること
+        assert "—" in result
+
+    def test_rally_day_in_correction(self):
+        """correction 状態ではラリー Day N が表示される"""
+        db = {
+            "topix": {
+                "rs_raw": 1.0, "trend_template": [],
+                "market_state": "market_in_correction",
+                "state_meta": {
+                    "distribution_days_with_close": [],
+                    "last_ftd_date": None,
+                    "rally_attempt_start_date": "26/04/28",
+                    "rally_attempt_start_low": 100.0,
+                },
+                "state_history": [("26/04/30", "market_in_correction", "stay")],
+                "daily_history": ["26/04/30", "26/04/29", "26/04/28"],  # Day 3
+                "spr_20": 50, "spr_5": 50, "rv_20": 1.0, "rv_5": 1.0,
+            }
+        }
+        result = make_market_db._html_market(db)
+        assert "ラリー Day 3" in result
+
+    def test_rally_em_dash_when_no_attempt(self):
+        """correction でラリー未開始なら — 表示"""
+        db = {
+            "topix": {
+                "rs_raw": 1.0, "trend_template": [],
+                "market_state": "market_in_correction",
+                "state_meta": {
+                    "distribution_days_with_close": [],
+                    "last_ftd_date": None,
+                    "rally_attempt_start_date": None,
+                },
+                "state_history": [("26/04/30", "market_in_correction", "stay")],
+                "daily_history": ["26/04/30"],
+                "spr_20": 50, "spr_5": 50, "rv_20": 1.0, "rv_5": 1.0,
+            }
+        }
+        result = make_market_db._html_market(db)
+        # correction なので FTD 列ではなくラリー位置、ラリー未開始なら —
+        assert "—" in result
+        assert "ラリー Day" not in result
+
+    def test_growth250_label(self):
+        """マザーズ行が「グロース250」で表示される"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert "グロース250" in result
+        assert "マザーズ" not in result
 
     def test_empty_market_db(self):
         """市場データがない場合は空文字列"""
@@ -448,6 +652,110 @@ class TestHtmlMarket:
         assert "<td><strong>TOPIX</strong></td>" in result
         assert "NASDAQ" not in result
         assert "S&amp;P 500" not in result
+
+    def test_rs_strong_class_when_rs_raw_above_one(self):
+        """rs_raw > 1.0 で rs-strong クラスが付く (issue #148 Part 1)"""
+        result = make_market_db._html_market(self._make_market_db())
+        assert 'rs-strong' in result
+
+    def test_rs_weak_class_when_rs_raw_below_one(self):
+        """rs_raw < 1.0 で rs-weak クラスが付く (issue #148 Part 1)"""
+        db = self._make_market_db()
+        db["topix"]["rs_raw"] = 0.92
+        result = make_market_db._html_market(db)
+        assert 'rs-weak' in result
+
+    def test_rs_no_class_when_rs_raw_equals_one(self):
+        """rs_raw == 1.0 ではクラス付かない (デフォルト灰)"""
+        db = {
+            "topix": dict(self._make_market_db()["topix"], rs_raw=1.0)
+        }
+        result = make_market_db._html_market(db)
+        assert 'rs-strong' not in result
+        assert 'rs-weak' not in result
+
+    def test_index_rs_threshold_removes_RS_from_trend(self):
+        """rs_raw > 1.05 なら trend_template の "RS" 未達が除外される (issue #148 Part 1)"""
+        db = {
+            "mothers": dict(
+                self._make_market_db()["mothers"],
+                rs_raw=1.09,
+                trend_template=["ma30>ma40", "RS"],
+            )
+        }
+        result = make_market_db._html_market(db)
+        # "RS" が除外されたので残りは ma30>ma40 のみ → trend_template_expr は "◯ma30>ma40"
+        # "RS" だけの未達文字列が表示文字列に出てないことを確認
+        # (ma30>ma40 はタグとして残るので含まれる)
+        assert ',RS' not in result and 'RS,' not in result
+
+    def test_index_rs_threshold_below_does_not_remove_RS(self):
+        """rs_raw <= 1.05 なら "RS" 未達は除外されない"""
+        db = {
+            "mothers": dict(
+                self._make_market_db()["mothers"],
+                rs_raw=1.04,
+                trend_template=["ma30>ma40", "RS"],
+            )
+        }
+        result = make_market_db._html_market(db)
+        # 未達リストに "RS" が含まれて表示される (◯ma30>ma40,RS のような形)
+        assert 'RS' in result
+
+
+class TestAdjustIndexTrendTemplate:
+    """指数向け trend_template 補正のテスト (issue #148 Part 1)"""
+
+    def test_removes_RS_when_above_threshold(self):
+        """rs_raw > 1.05 で "RS" が除外される"""
+        db = {"rs_raw": 1.10, "trend_template": ["ma30>ma40", "RS"]}
+        result = make_market_db._adjust_index_trend_template(db)
+        assert "RS" not in result["trend_template"]
+        assert "ma30>ma40" in result["trend_template"]
+
+    def test_keeps_RS_at_threshold(self):
+        """rs_raw == 1.05 (境界値、strict >) では除外されない"""
+        db = {"rs_raw": 1.05, "trend_template": ["RS"]}
+        result = make_market_db._adjust_index_trend_template(db)
+        assert "RS" in result["trend_template"]
+
+    def test_keeps_RS_when_below_threshold(self):
+        """rs_raw < 1.05 では "RS" は除外されない"""
+        db = {"rs_raw": 1.02, "trend_template": ["RS"]}
+        result = make_market_db._adjust_index_trend_template(db)
+        assert "RS" in result["trend_template"]
+
+    def test_no_op_when_RS_not_in_misses(self):
+        """trend_template に "RS" がなければ何もしない"""
+        db = {"rs_raw": 1.20, "trend_template": ["ma30>ma40"]}
+        result = make_market_db._adjust_index_trend_template(db)
+        assert result["trend_template"] == ["ma30>ma40"]
+
+    def test_does_not_mutate_original(self):
+        """元のdictを破壊しない"""
+        original = {"rs_raw": 1.20, "trend_template": ["RS"]}
+        original_misses = list(original["trend_template"])
+        make_market_db._adjust_index_trend_template(original)
+        assert original["trend_template"] == original_misses
+
+
+class TestRsClass:
+    """rs_raw 値からCSSクラスを返すテスト (issue #148 Part 1)"""
+
+    def test_strong_when_above_one(self):
+        assert make_market_db._rs_class(1.15) == ' class="rs-strong"'
+
+    def test_weak_when_below_one(self):
+        assert make_market_db._rs_class(0.92) == ' class="rs-weak"'
+
+    def test_no_class_when_equal_one(self):
+        assert make_market_db._rs_class(1.0) == ""
+
+    def test_no_class_when_zero(self):
+        assert make_market_db._rs_class(0) == ""
+
+    def test_no_class_when_empty_string(self):
+        assert make_market_db._rs_class("") == ""
 
 
 class TestHtmlKessan:
@@ -847,3 +1155,170 @@ class TestGetMarketDbThreadSafety:
             # クリーンアップ
             make_market_db._market_db_cache = None
             db_shelve._market_db = original_get
+
+
+# ==================================================
+# _html_disclosure
+# ==================================================
+class TestHtmlDisclosure:
+    """_html_disclosure の英語版IR重複除外テスト"""
+
+    def _row(self, heading, code="3496", name="アズーム"):
+        from datetime import datetime
+        today = datetime.today().strftime("%Y%m%d")
+        return [
+            today,
+            '=HYPERLINK("https://kabutan.jp/stock/chart?code=%s","%s")' % (code, code),
+            name,
+            "開示",
+            '=HYPERLINK("https://example.com/x","%s")' % heading,
+        ]
+
+    def test_日本語見出しはHTMLに含まれる(self):
+        rows = [self._row("業績予想の修正に関するお知らせ")]
+        html = make_market_db._html_disclosure(rows)
+        assert "業績予想の修正に関するお知らせ" in html
+
+    def test_ASCIIのみの見出しは除外される(self):
+        rows = [self._row("Notice Concerning Status of Treasury Stock Acquisition")]
+        html = make_market_db._html_disclosure(rows)
+        assert "Notice Concerning" not in html
+
+    def test_日本語と英語混在で日本語のみ残る(self):
+        rows = [
+            self._row("決算短信"),
+            self._row("[Summary]Consolidated Financial Results"),
+            self._row("自己株式の取得状況に関するお知らせ"),
+        ]
+        html = make_market_db._html_disclosure(rows)
+        assert "決算短信" in html
+        assert "自己株式の取得状況に関するお知らせ" in html
+        assert "Summary" not in html
+        assert "Consolidated" not in html
+
+
+# ==================================================
+# _is_index_fetch_valid + update_market_db 取得失敗時の保護 (issue #179)
+# ==================================================
+class TestIndexFetchValid:
+    """_is_index_fetch_valid のユニットテスト"""
+
+    def test_empty_dict_is_invalid(self):
+        assert make_market_db._is_index_fetch_valid({}) is False
+
+    def test_none_is_invalid(self):
+        assert make_market_db._is_index_fetch_valid(None) is False
+
+    def test_missing_price_log_is_invalid(self):
+        # 週足だけ部分的に成功した dict (rs_raw 等あるが price_log 無し)
+        partial = {"rs_raw": 0, "trend_template": "0/7"}
+        assert make_market_db._is_index_fetch_valid(partial) is False
+
+    def test_empty_price_log_is_invalid(self):
+        assert make_market_db._is_index_fetch_valid({"price_log": []}) is False
+
+    def test_non_empty_price_log_is_valid(self):
+        valid = {"price_log": [(datetime(2026, 5, 1).date(), 3728)]}
+        assert make_market_db._is_index_fetch_valid(valid) is True
+
+
+class TestUpdateMarketDbSkipsOnFetchFailure:
+    """update_market_db: 指数取得失敗時に前日データが上書きされないこと (issue #179)"""
+
+    @staticmethod
+    def _good_index_dict(rs=1.17):
+        """price_log を持つ "成功" dict のひな形"""
+        return {
+            "price": 3728,
+            "price_log": [(datetime(2026, 5, 1).date(), 3728)],
+            "daily_history": ["26/05/01"],
+            "rs_raw": rs,
+            "spr_20": 50,
+            "spr_5": 52,
+            "rv_20": 2.22,
+            "rv_5": 2.3,
+            "distribution_days_with_close": [],
+        }
+
+    def _patch_common(self, prev_db):
+        """get_market_db / _save_market_db / make_theme_data をパッチする contextmanager 集合"""
+        from unittest.mock import patch
+        captured = {}
+
+        def fake_save(db):
+            captured["saved"] = dict(db)
+
+        return (
+            captured,
+            patch.object(make_market_db, "get_market_db", return_value=dict(prev_db)),
+            patch.object(make_market_db, "_save_market_db", side_effect=fake_save),
+            patch.object(
+                make_market_db, "make_theme_data", return_value={"theme_rank": []}
+            ),
+        )
+
+    def test_前日DBが取得失敗時に保持される(self):
+        """前日に正常取得した topix が、当日の取得失敗で上書きされない"""
+        prev_topix = self._good_index_dict(rs=1.17)
+        prev_db = {"topix": prev_topix, "theme_rank": []}
+        captured, p_get, p_save, p_theme = self._patch_common(prev_db)
+
+        empty_maker = lambda: {"topix": {}}
+        good_mothers = lambda: {"mothers": self._good_index_dict(rs=1.08)}
+        good_nikkei = lambda: {"nikkei225": self._good_index_dict(rs=1.29)}
+        good_nasdaq = lambda: {"nasdaq": self._good_index_dict(rs=1.17)}
+        good_sp500 = lambda: {"sp500": self._good_index_dict(rs=1.11)}
+
+        with p_get, p_save, p_theme, \
+                patch.object(make_market_db, "make_topix_db", side_effect=empty_maker), \
+                patch.object(make_market_db, "make_mothers_db", side_effect=good_mothers), \
+                patch.object(make_market_db, "make_nikkei_db", side_effect=good_nikkei), \
+                patch.object(make_market_db, "make_nasdaq_db", side_effect=good_nasdaq), \
+                patch.object(make_market_db, "make_sp500_db", side_effect=good_sp500):
+            make_market_db.update_market_db()
+
+        saved_topix = captured["saved"]["topix"]
+        assert saved_topix == prev_topix, "前日 topix dict がそのまま保持されるべき"
+        # 他指数は更新されていること
+        assert captured["saved"]["mothers"]["rs_raw"] == 1.08
+
+    def test_週足のみ成功でも前日DB保持(self):
+        """週足だけ部分的に成功 (rs_raw=0, price_log 無し) でも上書きされない"""
+        prev_topix = self._good_index_dict(rs=1.17)
+        prev_db = {"topix": prev_topix, "theme_rank": []}
+        captured, p_get, p_save, p_theme = self._patch_common(prev_db)
+
+        partial_maker = lambda: {
+            "topix": {"rs_raw": 0, "trend_template": "0/7", "pullback_20": 0}
+        }
+        good = lambda key, rs: (lambda: {key: self._good_index_dict(rs=rs)})
+
+        with p_get, p_save, p_theme, \
+                patch.object(make_market_db, "make_topix_db", side_effect=partial_maker), \
+                patch.object(make_market_db, "make_mothers_db", side_effect=good("mothers", 1.08)), \
+                patch.object(make_market_db, "make_nikkei_db", side_effect=good("nikkei225", 1.29)), \
+                patch.object(make_market_db, "make_nasdaq_db", side_effect=good("nasdaq", 1.17)), \
+                patch.object(make_market_db, "make_sp500_db", side_effect=good("sp500", 1.11)):
+            make_market_db.update_market_db()
+
+        assert captured["saved"]["topix"] == prev_topix
+
+    def test_初回起動で取得失敗時はキー確保(self):
+        """既存DBに topix が無い状態で取得失敗 → 空 dict をセットして
+        下流の market_db['topix'] 参照が KeyError にならないようにする"""
+        prev_db = {"theme_rank": []}  # topix キー無し
+        captured, p_get, p_save, p_theme = self._patch_common(prev_db)
+
+        empty_maker = lambda: {"topix": {}}
+        good = lambda key, rs: (lambda: {key: self._good_index_dict(rs=rs)})
+
+        with p_get, p_save, p_theme, \
+                patch.object(make_market_db, "make_topix_db", side_effect=empty_maker), \
+                patch.object(make_market_db, "make_mothers_db", side_effect=good("mothers", 1.08)), \
+                patch.object(make_market_db, "make_nikkei_db", side_effect=good("nikkei225", 1.29)), \
+                patch.object(make_market_db, "make_nasdaq_db", side_effect=good("nasdaq", 1.17)), \
+                patch.object(make_market_db, "make_sp500_db", side_effect=good("sp500", 1.11)):
+            make_market_db.update_market_db()
+
+        assert "topix" in captured["saved"]
+        assert captured["saved"]["topix"] == {}

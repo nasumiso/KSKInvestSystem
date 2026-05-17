@@ -6,6 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 日本株式市場の成長株分析システム。株探・Yahoo Finance Japanからデータをスクレイピングし、ファンダメンタルズ・モメンタム・テクニカル指標で銘柄をスコアリング・ランキングする。
 
+## 行動原則 (Karpathy 4原則)
+
+less is more の方針でコーディングする。出典: [andrej-karpathy-skills/CLAUDE.md](https://github.com/forrestchang/andrej-karpathy-skills/blob/main/CLAUDE.md)
+
+1. **Think Before Coding**: 仮定は明示する。複数解釈があれば提示し、勝手に選ばない。シンプルな代案があれば述べる。不明点は実装前に質問する。
+2. **Simplicity First**: 要求された問題を解く最小コードのみ書く。投機的な抽象化・configurability・ありえないシナリオへのエラー処理は不要。「シニアが overcomplicated と言うか?」を自問する。
+3. **Surgical Changes**: 必要な箇所だけ触る。隣接コードの "改善"・既存スタイルからの逸脱・既存のdead code削除はしない。各変更行が user の依頼に直接トレースできること。
+4. **Goal-Driven Execution**: タスクを検証可能なゴールに変換する。「バリデーション追加」→「不正入力のテストを書いて通す」のように。複数ステップなら計画と検証ポイントを述べる。
+
 ## コーディング規約
 
 - **コメント・docstringは日本語で記述**。技術用語・関数名・外部ライブラリ名は英語のまま。
@@ -16,7 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - ファイルハンドラは通常INFOレベル。`KS_LOG_DEBUG=1` 環境変数でDEBUGレベルに切替可能
   - 新規ログ追加時は上記の基準で `log_print` / `log_debug` を使い分けること
 - DB操作は `update_db_rows()` を経由。バルク操作は `sync=False` で非同期化可能。
-- 日付判定は `ks_util.get_price_day()` を使用（18:00前は前日扱い）。
+- 日付判定は `ks_util.get_price_day()` を使用（17:00前は前日扱い）。
 - `DATA_DIR` のパス解決は `ks_util._resolve_data_dir()` で行う。環境変数 `KS_DATA_DIR` で上書き可能。詳細は [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) の「データパス解決」を参照。
   - 現在の運用環境では `KS_DATA_DIR=/Users/k_sohara/Ext/GoogleDrive/shintakane_data`（`.zshrc` で設定済み）
 
@@ -26,88 +35,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 開発コマンド
 
-すべてのスクリプトは `scripts/` ディレクトリから実行:
+すべて `scripts/` から実行。`source .venv/bin/activate` でvenv有効化。
+
+よく使うもの:
 
 ```bash
-# 環境セットアップ
-source .venv/bin/activate
-
-# メイン分析（スクレイピング + 分析 + ランキング）
-cd scripts && python shintakane.py
-
-# スクレイピングなしで既存データのみ分析
-cd scripts && python shintakane.py analyze
-
-# DB全銘柄のランキング更新 + CSV出力
-cd scripts && python make_stock_db.py list_all_db
-
-# 特定銘柄の更新 (引数で指定可。未指定時はソース内デフォルト)
-cd scripts && python make_stock_db.py update 6324             # 単一銘柄
-cd scripts && python make_stock_db.py update 6324 7203 215A   # 複数銘柄
-cd scripts && python make_stock_db.py update 6324 --snapshot  # 更新後にスナップショットも自動追記
-
-# 特定銘柄データの表示 (引数で指定可)
-cd scripts && python make_stock_db.py list 6324
-
-# 上場廃止銘柄のクリーンアップ
-cd scripts && python make_stock_db.py reflesh
-
-# DBバックアップ
-cd scripts && python make_stock_db.py backup
-
-# 市場データ更新
-cd scripts && python make_market_db.py
-
-# 銘柄調査DB(research_shelve)の表示・バックアップ
-cd scripts && python research_shelve.py show 3496
-cd scripts && python research_shelve.py list --rating S,A --keyword 駐車場
-cd scripts && python research_shelve.py backup
-
-# Shintakane Research（銘柄調査WebApp）
-cd scripts && python -m webapp.app    # http://localhost:5001 で起動
-
-# スプシCSV → research_shelve 移行(issue #92)
-cd scripts && python migrate_research_from_csv.py "<csv_path>" --dry-run                                   # DB を触らず検証
-cd scripts && python migrate_research_from_csv.py "<csv_path>" --db-path /tmp/verify --show 3496,247A,6920 # 一時DBで目視確認
-cd scripts && python migrate_research_from_csv.py "<csv_path>"                                             # 本番移行
-
-# 過去決算メモ log → research_shelve.kessan_comments 移行(issue #131)
-cd scripts && python migrate_kessan_comments_from_log.py ../data/kessan_comments_log.txt --dry-run                                   # パースのみ検証
-cd scripts && python migrate_kessan_comments_from_log.py ../data/kessan_comments_log.txt --db-path /tmp/verify_kessan --show 5032,9556 # 一時DBで目視確認
-cd scripts && python migrate_kessan_comments_from_log.py ../data/kessan_comments_log.txt                                             # 本番移行
+cd scripts && python shintakane.py                  # メイン分析(スクレイピング + 分析)
+cd scripts && python shintakane.py analyze          # 既存データのみ分析
+cd scripts && python make_stock_db.py list_all_db   # 全銘柄ランキング更新
+cd scripts && python make_stock_db.py update 6324   # 特定銘柄の更新
+cd scripts && python -m webapp.app                  # 調査WebApp (http://localhost:5001)
 ```
 
-### 自動実行
-
-`shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で定期実行。
-
-### テスト
-
-テスト方針・テストファイル一覧・統合テスト手順は [doc/TESTING.md](doc/TESTING.md) を参照。
+全コマンド一覧 (update/list/reflesh/backup/calibrate_momentum, 移行スクリプト, cron運用詳細など) は [doc/COMMANDS.md](doc/COMMANDS.md) を参照。テストは [doc/TESTING.md](doc/TESTING.md) を参照。
 
 ## 実装プラン作成ルール
 
-ユーザーにプランを提示する前に、必ず `codex` でレビューし、**指摘がなくなるまで修正→レビューのサイクルを繰り返すこと。**
-
-プロンプトには必ず次の指示を含める: *「些細な指摘は不要。重大な問題のみ指摘してください。」*
-
-### コマンド
-
-#### 初回レビュー
-
-※ モデルは `-m` で必ず指定（gpt-5.3-codex 推奨）
-
-```bash
-codex exec -m gpt-5.3-codex "Review this plan. Don't nitpick trivial things. Only point out critical issues: {plan_full_path} (ref: {CLAUDE.md full_path})"
-```
-
-#### 修正後の再レビュー
-
-※ 初回レビューのコンテキストを保持するため `resume --last` が必須
-
-```bash
-codex exec resume --last -m gpt-5.3-codex "I've updated the plan, please review again. Don't nitpick trivial things. Only point out critical issues: {plan_full_path} (ref: {CLAUDE.md full_path})"
-```
+プラン作成・レビューのルールは [.claude/rules/codex-plan-review.md](.claude/rules/codex-plan-review.md) を参照。
 
 ## 重要な注意事項
 
@@ -139,8 +83,9 @@ ETFコードは `data/ETF_code.txt` から読み込み、株式分析対象外�
 
 ## 関連ドキュメント
 
+- [doc/COMMANDS.md](doc/COMMANDS.md) — 開発コマンドリファレンス（全CLI、移行スクリプト、cron運用詳細）
 - [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) — アーキテクチャ詳細（データフロー、DB構成、キャッシュ戦略、テクニカル指標）
 - [doc/TESTING.md](doc/TESTING.md) — テスト方針（ユニットテスト、統合テスト、HTMLパース変更時の検証）
-- [doc/SYSTEM_OVERVIEW.md](doc/SYSTEM_OVERVIEW.md) — システム概要（非エンジニア向け）
-- [doc/SPEC_REVIEW.md](doc/SPEC_REVIEW.md) — 投資システム評価レビュー
-- [doc/MY_INVESTER_STRATEGY.md](doc/MY_INVESTER_STRATEGY.md) — 投資スタイル分析
+- [doc/システム概要.md](doc/システム概要.md) — システム概要（非エンジニア向け）
+- [doc/review/SPEC_REVIEW.md](doc/review/SPEC_REVIEW.md) — 投資システム評価レビュー
+- [doc/投資戦略.md](doc/投資戦略.md) — 投資スタイル分析

@@ -57,6 +57,73 @@ def _make_todays_csv(path, rows):
             w.writerow(row)
 
 
+def _make_disclosure_db_csv(path, rows):
+    """テスト用の disclosure_db.csv を作成するヘルパー"""
+    import csv
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["日付", "銘柄コード", "銘柄名", "種類", "本文"])
+        for row in rows:
+            w.writerow(row)
+
+
+class TestLoadDisclosureForCode:
+    """load_disclosure_for_code のテスト (英語版IR重複の除外も含む)"""
+
+    def _today_yyyymmdd(self):
+        from ks_util import get_price_day
+        return get_price_day(datetime.today()).strftime("%Y%m%d")
+
+    def test_日本語見出しは取得される(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, "disclosure_db.csv")
+            _make_disclosure_db_csv(csv_path, [[
+                self._today_yyyymmdd(),
+                '=HYPERLINK("https://kabutan.jp/stock/chart?code=3496","3496")',
+                "アズーム",
+                "開示",
+                '=HYPERLINK("https://kabutan.jp/disclosures/pdf/x","自己株式の取得状況に関するお知らせ")',
+            ]])
+            with patch.object(disclosure, "DISCLOSURE_CSV", csv_path):
+                result = disclosure.load_disclosure_for_code("3496")
+            assert len(result) == 1
+            assert result[0][2] == "自己株式の取得状況に関するお知らせ"
+
+    def test_ASCIIのみの見出しは英語版IRとして除外される(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, "disclosure_db.csv")
+            _make_disclosure_db_csv(csv_path, [[
+                self._today_yyyymmdd(),
+                '=HYPERLINK("https://kabutan.jp/stock/chart?code=3496","3496")',
+                "アズーム",
+                "開示",
+                '=HYPERLINK("https://kabutan.jp/disclosures/pdf/x","Notice Concerning Status of Treasury Stock Acquisition")',
+            ]])
+            with patch.object(disclosure, "DISCLOSURE_CSV", csv_path):
+                result = disclosure.load_disclosure_for_code("3496")
+            assert result == []
+
+    def test_日本語と英語が混在しても日本語側のみ残る(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, "disclosure_db.csv")
+            today = self._today_yyyymmdd()
+            _make_disclosure_db_csv(csv_path, [
+                [today, '=HYPERLINK("u","3496")', "アズーム", "開示",
+                 '=HYPERLINK("u","決算短信")'],
+                [today, '=HYPERLINK("u","3496")', "アズーム", "開示",
+                 '=HYPERLINK("u","[Summary]Consolidated Financial Results")'],
+                [today, '=HYPERLINK("u","3496")', "アズーム", "開示",
+                 '=HYPERLINK("u","業績予想の修正に関するお知らせ")'],
+            ])
+            with patch.object(disclosure, "DISCLOSURE_CSV", csv_path):
+                result = disclosure.load_disclosure_for_code("3496")
+            headings = [r[2] for r in result]
+            assert "決算短信" in headings
+            assert "業績予想の修正に関するお知らせ" in headings
+            assert all("Summary" not in h for h in headings)
+
+
 class TestLoadTodaysNews:
     """load_todays_news のテスト"""
 

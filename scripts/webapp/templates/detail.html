@@ -2,6 +2,13 @@
 {% block title %}[{{ record.code_s }}] {{ record.stock_name or '' }} - 銘柄詳細 | Shintakane Research{% endblock %}
 
 {% block content %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  {% for category, message in messages %}
+  <div style="padding:0.5em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;{% if category == 'error' %}background:#ffeaea;color:#c00;border:1px solid #fcc;{% else %}background:#eaffea;color:#060;border:1px solid #cfc;{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+{% endwith %}
 {# ===== 1. ヘッダー ===== #}
 <div class="stock-header">
   <div class="left">
@@ -11,16 +18,85 @@
       {% endif %}
       <small style="color:#888;font-size:0.5em;">{{ record.code_s }}</small>
       {{ record.stock_name or '' }}
+      {% if portfolio_status_query %}
+        {% if portfolio_fallback_mode %}
+        {# フォールバック中は書き込み不可なので静的バッジ #}
+        <span class="portfolio-badge portfolio-badge-{{ portfolio_status_query }}">{{ portfolio_status_label }}</span>
+        {% else %}
+        <button type="button" class="portfolio-badge portfolio-badge-{{ portfolio_status_query }} portfolio-badge-button"
+                onclick="openPortfolioModal()" aria-label="保有ステータスを変更">{{ portfolio_status_label }}</button>
+        {% endif %}
+      {% endif %}
     </h1>
     {% if stock.overview %}<div style="color:#555;font-size:0.85em;margin-bottom:0.2em;">{{ stock.overview }}</div>{% endif %}
     <div class="meta">
       分析日: <input class="editable-field inline-date" type="text" name="analysis_date_raw" value="{{ record.analysis_date_raw or '' }}" data-form="memo" form="memo-form" placeholder="MM/DD" style="width:5em;display:inline;padding:0.1em 0.3em;font-size:0.9em;">
       {% if stock.kessanbi %} | 決算日: {{ stock.kessanbi[2:] }}{% endif %}
+      {# issue #205: 業態・テーマを同じ行に配置。change/blur で AJAX 即時保存 (portfolio_list と同方式) #}
+      {% if portfolio_status_query and not portfolio_fallback_mode %}
+      | <span class="gyoutai-themes-inline" data-code="{{ record.code_s }}">
+        業態・テーマ:
+        {% for i in range(gyoutai_themes_max_slots) %}
+        <input type="text"
+               list="gyoutai-theme-choices"
+               class="gyoutai-input-detail"
+               name="gyoutai_themes_{{ i }}"
+               value="{{ gyoutai_themes[i] if i < (gyoutai_themes|length) else '' }}"
+               placeholder="—"
+               style="font-size:0.9em;padding:0.1em 0.3em;width:8em;margin:0 0.1em;border:1px solid #ddd;">
+        {% endfor %}
+      </span>
+      <datalist id="gyoutai-theme-choices">
+        {% for choice in gyoutai_theme_choices %}
+        <option value="{{ choice }}">
+        {% endfor %}
+      </datalist>
+      {% endif %}
+      <form method="POST" action="/stock/{{ record.code_s }}/refresh" style="display:inline;margin-left:0.5em;">
+        <button type="submit" title="業績・指標・株価などの最新データを再取得します"
+                style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">再取得</button>
+      </form>
+      {# issue #208: 会社HP URL の手動上書き対応。stocks_shelve.corporate_url を既定、record.corporate_url_override で上書き #}
+      {% set _override = record.corporate_url_override or '' %}
+      {% set _default_url = (stock or {}).get('corporate_url') or '' %}
+      {% set _display_url = _override or _default_url %}
+      {% set _is_override = _override != '' %}
       <div>
         <a href="https://kabutan.jp/stock/chart?code={{ record.code_s }}&time=w" target="_blank" rel="noopener noreferrer">チャート</a>
         | <a href="https://kabutan.jp/stock/finance?code={{ record.code_s }}" target="_blank" rel="noopener noreferrer">業績</a>
         | <a href="https://finance.yahoo.co.jp/quote/{{ record.code_s }}.T/forum" target="_blank" rel="noopener noreferrer">掲示板</a>
+        {% if _display_url %}
+        | <a href="{{ _display_url }}" target="_blank" rel="noopener noreferrer">会社HP{% if _is_override %}✎{% endif %}</a>
+        {% endif %}
+        <form method="POST" action="/stock/{{ record.code_s }}/corporate_url" id="corp-url-form-{{ record.code_s }}" style="display:inline;">
+          <input type="hidden" name="url" id="corp-url-input-{{ record.code_s }}">
+          <button type="button" title="会社HPリンクの上書きを編集 (空欄でデフォルトに戻す)"
+                  data-code="{{ record.code_s }}" data-current="{{ _override }}"
+                  onclick="editCorpUrl(this)"
+                  style="display:inline-block;width:auto !important;padding:0.05em 0.3em;font-size:0.8em;margin:0 0 0 0.2em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">✎</button>
+        </form>
       </div>
+      <script>
+      function editCorpUrl(btn) {
+        var codeS = btn.dataset.code;
+        var current = btn.dataset.current || "";
+        var input = window.prompt("会社HP URL（空欄でデフォルトに戻す）", current);
+        if (input === null) return;  // Cancel
+        document.getElementById('corp-url-input-' + codeS).value = input;
+        document.getElementById('corp-url-form-' + codeS).submit();
+      }
+      </script>
+      {% if not portfolio_status_query and not portfolio_fallback_mode %}
+      <div style="margin-top:0.4em;">
+        <button type="button" class="outline" style="padding:0.2em 0.7em;font-size:0.85em;margin:0;"
+                onclick="openPortfolioModal()">+ 監視に追加</button>
+      </div>
+      {% endif %}
+      {% if portfolio_fallback_mode and not portfolio_status_query %}
+      <div style="margin-top:0.4em;">
+        <span style="color:#a07000;font-size:0.85em;">portfolio_shelve 未移行モード</span>
+      </div>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -75,20 +151,20 @@
   <summary><strong>業績スナップショット時系列</strong> ({{ snapshots|length }}件)</summary>
   <form id="ir-comment-form" action="/stock/{{ record.code_s }}/ir_comment" method="post">
   <div style="overflow-x:auto;">
-    <table class="snapshot-table">
+    <table class="snapshot-table ir-snapshot-table">
       <thead>
         <tr>
           <th>日付</th>
           <th>IR分析定量</th>
-          <th style="min-width:220px;">IR分析コメント</th>
+          <th>IR分析コメント</th>
         </tr>
       </thead>
       <tbody>
-        {% for snap in snapshots %}
+        {% for snap in snapshots[:5] %}
         <tr>
           <td><strong>{{ snap.date_yy_m }}</strong></td>
-          <td style="white-space:pre-wrap;">{{ snap.ir_quant or '' }}</td>
-          <td>
+          <td class="ir-quant-cell">{{ snap.ir_quant or '' }}</td>
+          <td class="ir-comment-cell">
             <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
             <textarea class="editable-field rich-edit" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir" style="display:none;">{{ snap.ir_comment or '' }}</textarea>
           </td>
@@ -96,17 +172,34 @@
         {% endfor %}
       </tbody>
     </table>
+    {% if snapshots|length > 5 %}
+    <details class="more" style="margin-top:0.3em;">
+      <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ snapshots|length - 5 }} 件を表示</summary>
+      <table class="snapshot-table ir-snapshot-table">
+        <tbody>
+          {% for snap in snapshots[5:] %}
+          <tr>
+            <td><strong>{{ snap.date_yy_m }}</strong></td>
+            <td class="ir-quant-cell">{{ snap.ir_quant or '' }}</td>
+            <td class="ir-comment-cell">
+              <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
+              <textarea class="editable-field rich-edit" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir" style="display:none;">{{ snap.ir_comment or '' }}</textarea>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
   </div>
   </form>
 </details>
 {% endif %}
 
 {# ===== 3. 指標スナップショット時系列 ===== #}
-{% set has_quality = snapshots|selectattr('quality_indicators')|list %}
-{% set has_kairi = snapshots|selectattr('rironkabuka_kairi')|list %}
-{% if has_quality or has_kairi %}
+{% if indicator_snaps %}
 <details open>
-  <summary><strong>指標スナップショット時系列</strong></summary>
+  <summary><strong>指標スナップショット時系列</strong> ({{ indicator_snaps|length }}件)</summary>
   <div style="overflow-x:auto;">
     <table class="snapshot-table">
       <thead>
@@ -117,17 +210,31 @@
         </tr>
       </thead>
       <tbody>
-        {% for snap in snapshots %}
-        {% if snap.quality_indicators or snap.rironkabuka_kairi %}
+        {% for snap in indicator_snaps[:5] %}
         <tr>
           <td>{{ snap.date_yy_m }}</td>
           <td>{{ snap.quality_indicators|replace('\n', ' ') if snap.quality_indicators else '' }}</td>
           <td>{{ snap.rironkabuka_kairi if snap.rironkabuka_kairi else '' }}</td>
         </tr>
-        {% endif %}
         {% endfor %}
       </tbody>
     </table>
+    {% if indicator_snaps|length > 5 %}
+    <details class="more" style="margin-top:0.3em;">
+      <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ indicator_snaps|length - 5 }} 件を表示</summary>
+      <table class="snapshot-table">
+        <tbody>
+          {% for snap in indicator_snaps[5:] %}
+          <tr>
+            <td>{{ snap.date_yy_m }}</td>
+            <td>{{ snap.quality_indicators|replace('\n', ' ') if snap.quality_indicators else '' }}</td>
+            <td>{{ snap.rironkabuka_kairi if snap.rironkabuka_kairi else '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
   </div>
 </details>
 {% endif %}
@@ -148,14 +255,15 @@
     </div>
 
     <div class="memo-field">
-      <label>機関投資家コメント</label>
-      <textarea class="editable-field" name="institutional_comment" rows="3" data-form="memo">{{ record.institutional_comment or '' }}</textarea>
+      <label>メモ・総括</label>
+      <div class="rich-display" onclick="switchToEdit(this)" style="min-height:9em;">{{ (record.memo or '')|safe }}</div>
+      <textarea class="editable-field rich-edit" name="memo" rows="6" data-form="memo" style="display:none;">{{ record.memo or '' }}</textarea>
     </div>
 
     <div class="memo-field">
-      <label>メモ・総括</label>
-      <div class="rich-display" onclick="switchToEdit(this)">{{ (record.memo or '')|safe }}</div>
-      <textarea class="editable-field rich-edit" name="memo" rows="6" data-form="memo" style="display:none;">{{ record.memo or '' }}</textarea>
+      <label>機関投資家</label>
+      <div class="rich-display" onclick="switchToEdit(this)" style="min-height:3em;">{{ record.institutional_comment or '' }}</div>
+      <textarea class="editable-field rich-edit" name="institutional_comment" rows="2" data-form="memo" style="display:none;">{{ record.institutional_comment or '' }}</textarea>
     </div>
 
     <div class="memo-field">
@@ -259,4 +367,181 @@
     </table>
   {% endif %}
 </div>
+
+{# ===== 保有ステータス変更モーダル (issue #195) ===== #}
+{% if not portfolio_fallback_mode %}
+<div id="portfolio-modal" class="portfolio-modal-overlay" style="display:none;" onclick="closePortfolioModalOnOverlay(event)">
+  <div class="portfolio-modal-content" role="dialog" aria-labelledby="portfolio-modal-title">
+    <div class="portfolio-modal-header">
+      <strong id="portfolio-modal-title">
+        {{ record.code_s }} {{ record.stock_name or '' }}
+      </strong>
+      <button type="button" class="portfolio-modal-close" onclick="closePortfolioModal()" aria-label="閉じる">×</button>
+    </div>
+    {% if portfolio_status_query %}
+    {# 登録済: ステータス遷移フォーム #}
+    <form method="POST" action="{{ url_for('portfolio.transition', code_s=record.code_s) }}" class="portfolio-modal-body">
+      <input type="hidden" name="return_to" value="detail">
+      <p style="margin:0 0 0.6em 0;">現在: <strong>{{ portfolio_status_label }}</strong></p>
+      {% if portfolio_transitions %}
+      <label style="display:block;margin-bottom:0.6em;">
+        変更先:
+        <select name="new_status" required style="margin-left:0.4em;">
+          {% for label, value in portfolio_transitions %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label style="display:block;margin-bottom:0.6em;">
+        理由 (任意):
+        <textarea name="reason" rows="2" style="width:100%;margin-top:0.2em;" placeholder="例: 業績下振れ"></textarea>
+      </label>
+      <div class="portfolio-modal-actions">
+        <button type="button" class="secondary" onclick="closePortfolioModal()">キャンセル</button>
+        <button type="submit">変更する</button>
+      </div>
+      {% else %}
+      <p style="color:#888;">許可された遷移先がありません。</p>
+      <div class="portfolio-modal-actions">
+        <button type="button" class="secondary" onclick="closePortfolioModal()">閉じる</button>
+      </div>
+      {% endif %}
+    </form>
+    {% else %}
+    {# 未登録: 監視追加フォーム #}
+    <form method="POST" action="{{ url_for('portfolio.add') }}" class="portfolio-modal-body">
+      <input type="hidden" name="code_s" value="{{ record.code_s }}">
+      <input type="hidden" name="return_to" value="detail">
+      <p style="margin:0 0 0.6em 0;">この銘柄は未登録です。監視に追加します。</p>
+      <label style="display:block;margin-bottom:0.6em;">
+        理由 (任意):
+        <textarea name="reason" rows="2" style="width:100%;margin-top:0.2em;" placeholder="例: 高値ブレイク候補"></textarea>
+      </label>
+      <div class="portfolio-modal-actions">
+        <button type="button" class="secondary" onclick="closePortfolioModal()">キャンセル</button>
+        <button type="submit">監視に追加</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+.portfolio-badge-button {
+  border: none;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+  padding: 0.1em 0.5em;
+}
+.portfolio-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.portfolio-modal-content {
+  background: #fff;
+  border-radius: 6px;
+  padding: 1em 1.2em;
+  width: min(420px, 90vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+.portfolio-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.8em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid #eee;
+}
+.portfolio-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.4em;
+  cursor: pointer;
+  padding: 0 0.3em;
+  line-height: 1;
+  color: #888;
+}
+.portfolio-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5em;
+  margin-top: 0.5em;
+}
+.portfolio-modal-actions button {
+  margin: 0;
+  padding: 0.4em 1em;
+}
+/* issue #205: 業態・テーマ inline edit (AJAX 即時保存) の状態表示 */
+.gyoutai-input-detail.saving { background: #fff8c4; }
+.gyoutai-input-detail.error { background: #fce4e4; border-color: #d33; }
+.gyoutai-input-detail:focus { outline: 1px solid #4285f4; }
+</style>
+
+<script>
+function openPortfolioModal() {
+  document.getElementById('portfolio-modal').style.display = 'flex';
+}
+function closePortfolioModal() {
+  document.getElementById('portfolio-modal').style.display = 'none';
+}
+function closePortfolioModalOnOverlay(e) {
+  if (e.target.id === 'portfolio-modal') closePortfolioModal();
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    var m = document.getElementById('portfolio-modal');
+    if (m && m.style.display !== 'none') closePortfolioModal();
+  }
+});
+
+// issue #205: 業態・テーマの change/blur で AJAX 即時保存 (portfolio_list.html と同方式)
+(function() {
+  var wrap = document.querySelector('.gyoutai-themes-inline');
+  if (!wrap) return;
+  var code = wrap.dataset.code;
+  if (!code) return;
+  var inputs = wrap.querySelectorAll('.gyoutai-input-detail');
+
+  function save() {
+    var fd = new FormData();
+    inputs.forEach(function(inp) { fd.append(inp.name, inp.value); });
+    inputs.forEach(function(inp) { inp.classList.add('saving'); inp.classList.remove('error'); });
+    fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+    }).then(function(r) {
+      return r.json().then(function(json) { return { ok: r.ok, json: json }; });
+    }).then(function(res) {
+      inputs.forEach(function(inp) { inp.classList.remove('saving'); });
+      if (!res.ok || !res.json || res.json.ok !== true) {
+        inputs.forEach(function(inp) { inp.classList.add('error'); });
+        alert((res.json && res.json.error) || '業態・テーマの保存に失敗しました');
+        return;
+      }
+      var themes = (res.json.display && res.json.display.gyoutai_themes) || [];
+      inputs.forEach(function(inp, i) { inp.value = themes[i] != null ? themes[i] : ''; });
+    }).catch(function(err) {
+      inputs.forEach(function(inp) { inp.classList.remove('saving'); inp.classList.add('error'); });
+      alert('通信エラー: ' + err);
+    });
+  }
+
+  inputs.forEach(function(inp) {
+    inp.addEventListener('change', save);
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+    });
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -440,7 +440,8 @@ class TestCalcDailyIndicators:
         rows = self._make_price_list(25)
         result = price._calc_daily_indicators(rows)
         for key in (
-            "distribution_days", "followthrough_days", "direction_signal",
+            "distribution_days", "distribution_days_with_close", "followthrough_days",
+            "daily_history", "direction_signal",
             "spr_20", "spr_5", "spr_buygagher", "rv_20", "rv_5",
         ):
             assert key in result
@@ -449,13 +450,32 @@ class TestCalcDailyIndicators:
         result = price._calc_daily_indicators([])
         assert result == {}
 
-    def test_direction_signal_format(self):
-        """direction_signal は '<sig>,<日付>' 形式"""
+    def test_direction_signal_default_empty(self):
+        """direction_signal は _calc_daily_indicators の段階では空文字。
+        最終値は make_market_db.py の State Machine 計算で上書きされる
+        (issue #117 Part A)"""
         rows = self._make_price_list(25)
         result = price._calc_daily_indicators(rows)
-        assert "," in result["direction_signal"]
-        sig, day = result["direction_signal"].split(",", 1)
-        assert sig in ("neutral", "sell")
+        assert result["direction_signal"] == ""
+
+    def test_distribution_days_with_close_format(self):
+        """distribution_days_with_close は (date, close) タプルのリスト"""
+        rows = self._make_price_list(25)
+        result = price._calc_daily_indicators(rows)
+        for entry in result["distribution_days_with_close"]:
+            assert len(entry) == 2
+            date, close = entry
+            assert isinstance(date, str)
+            assert isinstance(close, float)
+
+    def test_daily_history_newest_first(self):
+        """daily_history は新しい日付が先頭"""
+        rows = self._make_price_list(25)
+        result = price._calc_daily_indicators(rows)
+        history = result["daily_history"]
+        assert len(history) > 0
+        # rows[0] が最新日付なので history[0] と一致
+        assert history[0] == rows[0][0]
 
     def test_zero_range_day_does_not_crash(self):
         """高値=安値の日があってもZeroDivisionErrorにならない"""
@@ -500,11 +520,11 @@ class TestCalcDailyIndicators:
         assert "price_log" in result
         assert isinstance(result["price_log"], list)
 
-    def test_price_log_capped_at_25(self):
-        """price_log は最大 25 件"""
-        rows = self._make_price_list_with_real_dates(30)
+    def test_price_log_capped_at_30(self):
+        """price_log は最大 30 件"""
+        rows = self._make_price_list_with_real_dates(35)
         result = price._calc_daily_indicators(rows)
-        assert len(result["price_log"]) == 25
+        assert len(result["price_log"]) == 30
 
     def test_price_log_tuple_format(self):
         """price_log の各要素は (date, int) タプル"""
@@ -530,20 +550,20 @@ class TestCalcDailyIndicators:
         assert result["price_log"][0][1] == expected_close
 
     def test_price_log_short_input(self):
-        """入力が25件未満なら全件保存"""
+        """入力が30件未満なら全件保存"""
         rows = self._make_price_list_with_real_dates(10)
         result = price._calc_daily_indicators(rows)
         assert len(result["price_log"]) == 10
 
     def test_price_log_skips_invalid_date(self):
         """日付パース不能行は skip し、他の行は保存される"""
-        rows = self._make_price_list_with_real_dates(25)
+        rows = self._make_price_list_with_real_dates(30)
         # 中央付近の日付を不正にする
         d, o, h, l, c, r5, r6, v = rows[10]
         rows[10] = ("INVALID_DATE", o, h, l, c, r5, r6, v)
         result = price._calc_daily_indicators(rows)
-        # 不正行を除いた24件が保存される
-        assert len(result["price_log"]) == 24
+        # 不正行を除いた29件が保存される
+        assert len(result["price_log"]) == 29
 
 
 # ==================================================
@@ -819,11 +839,13 @@ class TestParsePriceTextFromList:
         各要素: [日付, 始値, 高値, 安値, 終値, 出来高, 調整後終値]
         日付若い順（最新が先頭）
         """
+        from datetime import date as _date, timedelta
         base_price = 1000
         price_list = []
+        d0 = _date(2025, 12, 31)
         for i in range(count):
-            day_num = count - i
-            date_str = "2025年1月%d日" % day_num
+            dt = d0 - timedelta(days=i)
+            date_str = "%d年%d月%d日" % (dt.year, dt.month, dt.day)
             open_p = base_price + i * 2
             high_p = open_p + 20
             low_p = open_p - 10
@@ -870,12 +892,12 @@ class TestParsePriceTextFromList:
         _, cur_prices = price.parse_price_text_from_list(1050, price_list)
         assert len(cur_prices) == 3
 
-    def test_price_log_capped_at_25(self):
-        """price_log は LOG_DAY=25 に揃う"""
-        # 30 件入力 → 上限 25 件のみ保持
-        price_list = self._make_price_list_7col(count=30)
+    def test_price_log_capped_at_30(self):
+        """price_log は LOG_DAY=30 に揃う"""
+        # 35 件入力 → 上限 30 件のみ保持
+        price_list = self._make_price_list_7col(count=35)
         result_dict, _ = price.parse_price_text_from_list(1050, price_list)
-        assert len(result_dict["price_log"]) == 25
+        assert len(result_dict["price_log"]) == 30
 
     def test_price_log_handles_short_input(self):
         """LOG_DAY より少ない入力でも安全に処理される (range の length ガード)"""
@@ -955,3 +977,113 @@ class TestGetMomentumCalib:
         }
         loc, scale, source = price.get_momentum_calib(market_db=market_db)
         assert source == "fallback"
+
+
+# ==================================================
+# Stalling Day 判定 (issue #117 Part B)
+# ==================================================
+class TestStallingDay:
+    """Stalling Day (停滞日) 判定"""
+
+    def _row(self, date, open_p, high, low, close, ratio_pct, volume):
+        """8要素タプルを作る"""
+        return (
+            date,
+            "{:,}".format(open_p),
+            "{:,}".format(high),
+            "{:,}".format(low),
+            "{:,}".format(close),
+            "0",
+            "{:.2f}".format(ratio_pct),
+            "{:,}".format(volume),
+        )
+
+    def test_is_stalling_day_basic(self):
+        """52週高値圏 + 微増 + 出来高増 + 下半分引け → True"""
+        # 52週高値=1000、当日 close=975 (97.5% > 97%)、ratio=+0.2%、出来高増、下半分
+        d = self._row("260501", 970, 985, 970, 975, 0.2, 12000)
+        # 下半分: dl=970, dh=985, half=977.5、close=975 ≤ 977.5
+        pd = self._row("260430", 968, 980, 965, 970, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is True
+
+    def test_is_stalling_day_skipped_below_high(self):
+        """52週高値の97%未満なら False"""
+        # close=900、52週高値=1000 → 90%
+        d = self._row("260501", 895, 905, 890, 900, 0.2, 12000)
+        pd = self._row("260430", 895, 905, 890, 898, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is False
+
+    def test_is_stalling_day_skipped_too_high_ratio(self):
+        """前日比 +0.4% 以上なら False (FTD候補に近い)"""
+        d = self._row("260501", 970, 985, 970, 985, 0.5, 12000)
+        pd = self._row("260430", 968, 980, 965, 980, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is False
+
+    def test_is_stalling_day_skipped_negative_ratio(self):
+        """前日比マイナスなら False (通常DDの領域)"""
+        d = self._row("260501", 970, 985, 970, 975, -0.1, 12000)
+        pd = self._row("260430", 968, 980, 965, 980, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is False
+
+    def test_is_stalling_day_skipped_no_volume_increase(self):
+        """出来高増していなければ False"""
+        d = self._row("260501", 970, 985, 970, 975, 0.2, 10000)
+        pd = self._row("260430", 968, 980, 965, 970, 0.0, 12000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is False
+
+    def test_is_stalling_day_skipped_upper_close(self):
+        """終値が日足の上半分なら False (下半分引けが条件)"""
+        # close=982、low=970, high=985、half=977.5 → 上半分
+        d = self._row("260501", 970, 985, 970, 982, 0.2, 12000)
+        pd = self._row("260430", 968, 980, 965, 980, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=1000) is False
+
+    def test_is_stalling_day_skipped_no_high52(self):
+        """high52_weekly が無ければ False"""
+        d = self._row("260501", 970, 985, 970, 975, 0.2, 12000)
+        pd = self._row("260430", 968, 980, 965, 970, 0.0, 10000)
+        assert price._is_stalling_day(d, pd, high52_weekly=None) is False
+        assert price._is_stalling_day(d, pd, high52_weekly=0) is False
+
+    def test_add_stalling_days_appends(self):
+        """add_stalling_days で既存DD に Stalling Day が追加される"""
+        # 既に通常DDが1つあり、別の日が Stalling Day 候補
+        daily_price_list = [
+            self._row("260501", 970, 985, 970, 975, 0.2, 12000),  # Stalling 候補
+            self._row("260430", 968, 980, 965, 970, 0.0, 10000),  # 前日
+            self._row("260429", 980, 990, 970, 970, -0.5, 11000),  # 通常DD
+            self._row("260428", 980, 990, 970, 975, 0.0, 9000),
+        ]
+        dic = {
+            "distribution_days": ["260429"],
+            "distribution_days_with_close": [("260429", 970.0)],
+        }
+        price.add_stalling_days(dic, daily_price_list, high52_weekly=1000)
+        assert "260501" in dic["distribution_days"]
+        assert ("260501", 975.0) in dic["distribution_days_with_close"]
+        # 既存の通常DDは保持
+        assert "260429" in dic["distribution_days"]
+
+    def test_add_stalling_days_no_duplicate(self):
+        """既に通常DDとして計上されている日は重複追加しない"""
+        daily_price_list = [
+            self._row("260501", 970, 985, 970, 975, 0.2, 12000),
+            self._row("260430", 968, 980, 965, 970, 0.0, 10000),
+        ]
+        dic = {
+            "distribution_days": ["260501"],
+            "distribution_days_with_close": [("260501", 975.0)],
+        }
+        price.add_stalling_days(dic, daily_price_list, high52_weekly=1000)
+        # 同じ日付が2回追加されていないこと
+        assert dic["distribution_days"].count("260501") == 1
+        assert len(dic["distribution_days_with_close"]) == 1
+
+    def test_add_stalling_days_skipped_no_high52(self):
+        """high52_weekly が無い場合は何もしない"""
+        daily_price_list = [
+            self._row("260501", 970, 985, 970, 975, 0.2, 12000),
+        ]
+        dic = {"distribution_days": [], "distribution_days_with_close": []}
+        price.add_stalling_days(dic, daily_price_list, high52_weekly=None)
+        assert dic["distribution_days"] == []

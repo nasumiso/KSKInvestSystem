@@ -3,6 +3,14 @@
 # スクリプトのあるディレクトリに移動（どこから実行してもOK）
 cd "$(dirname "$0")" || exit 1
 mkdir -p logs
+
+# launchd 経由の起動 (TTYなし) のみ「19時前ならスキップ」を適用。
+# 朝マシンを開いた時に RunAtLoad=true で発火しても、株価終値が揃ってない時間帯では
+# 走らせたくない。一方、手動で `bash shintakane_cron.sh` を打った時は時刻問わず実行する。
+if [ ! -t 1 ] && [ "$(date +%-H)" -lt 19 ]; then
+  exit 0
+fi
+
 cd scripts
 
 # KS_DATA_DIR が未設定の場合はデフォルト値を設定

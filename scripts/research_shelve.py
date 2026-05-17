@@ -84,6 +84,7 @@ RECORD_FIELDS = frozenset(
         "snapshots",
         "analysis_date_raw",
         "kessan_date_raw",
+        "corporate_url_override",
     }
 )
 
@@ -115,6 +116,7 @@ def normalize_kessan_post_price_changes(entry: Dict[str, Any]) -> Dict[str, str]
     """決算コメントエントリの post_price_changes を正規化する。
 
     - 新形式 dict があれば各期間キーを str に正規化して返す
+    - dict に "pts" キー (PTS ナイトセッション前日比) があれば保持する
     - 無ければ旧 post_price_change を {"1d": <値>, "5d": ""} に補完
     - どちらも無ければ全期間 "" を返す
     """
@@ -124,6 +126,10 @@ def normalize_kessan_post_price_changes(entry: Dict[str, Any]) -> Dict[str, str]
         for key, _ in KESSAN_REACTION_PERIODS:
             v = raw.get(key, "")
             result[key] = str(v) if v else ""
+        # PTS は KESSAN_REACTION_PERIODS とは別系統 (時間軸が違う) なので個別に扱う
+        pts_v = raw.get("pts", "")
+        if pts_v:
+            result["pts"] = str(pts_v)
         return result
     legacy = entry.get("post_price_change", "") or ""
     if legacy:
@@ -248,6 +254,7 @@ def create_research_record(
     snapshots: Optional[List[Dict[str, Any]]] = None,
     analysis_date_raw: str = "",
     kessan_date_raw: str = "",
+    corporate_url_override: str = "",
 ) -> Dict[str, Any]:
     """銘柄調査レコードのひな型 dict を生成する。
 
@@ -290,6 +297,7 @@ def create_research_record(
         "snapshots": snaps,
         "analysis_date_raw": analysis_date_raw,
         "kessan_date_raw": kessan_date_raw,
+        "corporate_url_override": corporate_url_override,
     }
 
 
@@ -504,6 +512,8 @@ def get_research_record(
                 if key not in entry:
                     entry[key] = False
             entry["post_price_changes"] = normalize_kessan_post_price_changes(entry)
+        if "corporate_url_override" not in record:
+            record["corporate_url_override"] = ""
     return record
 
 
@@ -578,6 +588,29 @@ def _validate_snapshot_for_upsert(snapshot: Dict[str, Any]) -> None:
         )
 
 
+def _merge_snapshot(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    """同日の既存スナップショットと新規 snapshot をマージする。
+
+    ユーザーが手で書いたフィールド (ir_comment) や、明示的にラベリング
+    された data_source (manual/migration 等) を保持しつつ、自動生成
+    フィールド (ir_quant, quality_indicators, rironkabuka_kairi) は
+    新値で上書きする。
+
+    マージポリシー:
+    - ir_comment: 既存が空でなければ既存を保持。空なら新値を採用
+    - data_source: 既存が "auto" 以外なら既存を保持
+    - 他フィールド: 新値で上書き
+    """
+    merged = dict(incoming)
+    existing_comment = existing.get("ir_comment", "")
+    if existing_comment:
+        merged["ir_comment"] = existing_comment
+    existing_source = existing.get("data_source", "")
+    if existing_source and existing_source != "auto":
+        merged["data_source"] = existing_source
+    return merged
+
+
 def upsert_snapshot(
     code_s: str,
     snapshot: Dict[str, Any],
@@ -588,7 +621,8 @@ def upsert_snapshot(
     """指定銘柄のスナップショット配列に1件追加または上書きする。
 
     - overwrite_same_date=True (デフォルト): 同一 date_yy_m のエントリが既に
-      存在する場合は冪等上書き
+      存在する場合は **マージ** (ir_comment と非auto data_source は保持、
+      自動生成フィールドは新値で更新)
     - overwrite_same_date=False: 同一 date_yy_m でも2件目として許容する
       (移行時の複数スナップショット同日発生への安全弁)
     - レコード自体が存在しなければ KeyError (自動作成はしない)
@@ -615,9 +649,16 @@ def upsert_snapshot(
             snapshots = list(record.get("snapshots") or [])
 
             if overwrite_same_date:
+                same_date = [s for s in snapshots if s.get("date_yy_m") == new_date]
                 snapshots = [s for s in snapshots if s.get("date_yy_m") != new_date]
-
-            snapshots.append(dict(snapshot))
+                if same_date:
+                    # 既存があればマージ。複数件あれば最新 (リスト末尾) を採用
+                    merged = _merge_snapshot(same_date[-1], snapshot)
+                    snapshots.append(merged)
+                else:
+                    snapshots.append(dict(snapshot))
+            else:
+                snapshots.append(dict(snapshot))
             snapshots.sort(
                 key=lambda s: date_yy_m_sort_key(s["date_yy_m"]),
                 reverse=True,

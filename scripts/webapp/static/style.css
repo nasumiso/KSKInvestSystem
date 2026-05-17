@@ -19,6 +19,20 @@
 .rating-D { background: #3498db; }
 .rating-E { background: #95a5a6; }
 
+/* 保有状態バッジ (保有/準保有/監視) */
+.portfolio-badge {
+  display: inline-block;
+  padding: 0.15em 0.55em;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.7em;
+  color: #fff;
+  vertical-align: middle;
+}
+.portfolio-badge-hold { background: #c0392b; }
+.portfolio-badge-semi { background: #d68910; }
+.portfolio-badge-watch { background: #16a085; }
+
 /* スナップショットテーブル */
 table.snapshot-table {
   font-size: 0.85em;
@@ -32,6 +46,10 @@ table.snapshot-table th {
 table.snapshot-table td {
   vertical-align: top;
 }
+/* 業績スナップショット時系列: IR分析定量を1行表示、コメント列に残り全幅を割り当て */
+table.ir-snapshot-table { width: 100%; }
+table.ir-snapshot-table td.ir-quant-cell { white-space: nowrap; width: 1%; }
+table.ir-snapshot-table td.ir-comment-cell { width: 100%; word-break: break-word; }
 .source-auto { color: #888; font-size: 0.8em; }
 .source-manual { color: #2ecc71; font-size: 0.8em; font-weight: bold; }
 .source-migration { color: #3498db; font-size: 0.8em; }
@@ -229,6 +247,16 @@ nav .quick-search {
   font-weight: bold;
   margin-left: 4px;
 }
+.kessan-pts-label {
+  display: inline-block;
+  background: #34495e;
+  color: #fff;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 0.75em;
+  font-weight: bold;
+  margin-right: 3px;
+}
 .kessan-expectation-badge {
   display: inline-block;
   padding: 0 5px;
@@ -251,7 +279,7 @@ nav .quick-search {
   padding: 6px 8px;
   border-left: 2px solid #bbb;
   background: #fafafa;
-  font-size: 0.85em;
+  font-size: 1em;
 }
 .kessan-editor-row {
   display: flex;

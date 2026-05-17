@@ -579,7 +579,7 @@ class TestGetShihyoExpr:
         assert "PSR2.5" in result
         assert "配当3.2" in result
         assert "ROE12" in result
-        assert "利益率8%" in result  # int
+        assert "利益率8.5%" in result  # 1桁台は小数1桁
         assert "負債0.35" in result
         assert "自己55%" in result  # int
 
@@ -631,3 +631,41 @@ class TestGetShihyoExpr:
         }
         result = shihyou.get_shihyo_expr(stock_data)
         assert "EVR-0.3" in result
+
+    def test_profit_margin_two_digits_int(self):
+        """利益率の整数部が2桁以上は整数表示 (例: 12.7 → 12%)"""
+        stock_data = {
+            "market_cap": 500,
+            "shihyo": {"MPER": 15, "PBR": 1.2, "profit_margin": 12.7},
+        }
+        result = shihyou.get_shihyo_expr(stock_data)
+        assert "利益率12%" in result
+        assert "12.7" not in result
+
+    def test_profit_margin_one_digit_decimal(self):
+        """利益率の整数部が1桁は小数1桁表示 (例: 2.5 → 2.5%)"""
+        stock_data = {
+            "market_cap": 500,
+            "shihyo": {"MPER": 15, "PBR": 1.2, "profit_margin": 2.5},
+        }
+        result = shihyou.get_shihyo_expr(stock_data)
+        assert "利益率2.5%" in result
+
+    def test_profit_margin_negative_one_digit(self):
+        """利益率が負値で1桁台 (例: -3.4 → -3.4%)"""
+        stock_data = {
+            "market_cap": 500,
+            "shihyo": {"MPER": 15, "PBR": 1.2, "profit_margin": -3.4},
+        }
+        result = shihyou.get_shihyo_expr(stock_data)
+        assert "利益率-3.4%" in result
+
+    def test_profit_margin_negative_two_digits(self):
+        """利益率が負値で2桁以上 (例: -15.6 → -15%)"""
+        stock_data = {
+            "market_cap": 500,
+            "shihyo": {"MPER": 15, "PBR": 1.2, "profit_margin": -15.6},
+        }
+        result = shihyou.get_shihyo_expr(stock_data)
+        assert "利益率-15%" in result
+        assert "-15.6" not in result

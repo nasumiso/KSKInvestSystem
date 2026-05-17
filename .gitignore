@@ -27,3 +27,11 @@ data_old/
 
 # theme-newsスキルの調査履歴（ローカル専用）
 .claude/skills/theme-news/history/
+
+# Claude Code 作業ファイル（ローカル専用）
+.claude/plans/
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+
+# Playwright MCP の自動生成ログ・スナップショット
+.playwright-mcp/

@@ -1,0 +1,776 @@
+"""portfolio_shelve.py のテスト (tmp_path で一時DBを作成)"""
+
+import pytest
+
+import portfolio_shelve as ps
+
+
+@pytest.fixture
+def db_path(tmp_path):
+    """テスト用一時DBパスを返す"""
+    return str(tmp_path / "test_portfolio_shelve")
+
+
+# ==================================================
+# スキーマ層: 正規化・バリデーション・ファクトリ
+# ==================================================
+class TestSchema:
+    """スキーマ層のユニットテスト"""
+
+    def test_normalize_code_s_strips_and_uppercases(self):
+        assert ps.normalize_code_s(" 6324 ") == "6324"
+        assert ps.normalize_code_s("215a") == "215A"
+
+    def test_normalize_code_s_rejects_non_str(self):
+        with pytest.raises(TypeError):
+            ps.normalize_code_s(6324)
+
+    def test_validate_code_s_accepts_valid(self):
+        ps.validate_code_s("6324")
+        ps.validate_code_s("215A")
+        ps.validate_code_s("0001")
+
+    def test_validate_code_s_rejects_invalid(self):
+        with pytest.raises(ValueError):
+            ps.validate_code_s("63")
+        with pytest.raises(ValueError):
+            ps.validate_code_s("12345")
+
+    def test_validate_status_accepts_valid(self):
+        for s in ("1保", "2準", "3監"):
+            ps.validate_status(s)
+
+    def test_validate_status_rejects_invalid(self):
+        with pytest.raises(ValueError):
+            ps.validate_status("4売")
+        with pytest.raises(ValueError):
+            ps.validate_status("hold")
+
+    def test_validate_action_type_accepts_valid(self):
+        for t in ("初回登録", "ステータス変更", "売却", "削除"):
+            ps.validate_action_type(t)
+
+    def test_validate_action_type_rejects_invalid(self):
+        with pytest.raises(ValueError):
+            ps.validate_action_type("追加")
+
+    def test_validate_transition_allowed(self):
+        ps.validate_transition(None, "3監")          # 新規追加
+        ps.validate_transition("3監", "2準")          # 格上げ
+        ps.validate_transition("2準", "1保")          # 買い
+        ps.validate_transition("1保", "2準")          # 売却
+        ps.validate_transition("2準", "3監")          # 格下げ
+        ps.validate_transition("3監", "1保")          # 直接保有
+
+    def test_validate_transition_forbidden(self):
+        # 1保/2準 への直接登録は禁止
+        with pytest.raises(ValueError):
+            ps.validate_transition(None, "1保")
+        with pytest.raises(ValueError):
+            ps.validate_transition(None, "2準")
+
+    def test_create_memo_defaults(self):
+        memo = ps.create_memo()
+        assert set(memo.keys()) == ps.MEMO_FIELDS
+        # list 系フィールドは [], それ以外は ""
+        for k, v in memo.items():
+            if k in ps.MEMO_LIST_FIELDS:
+                assert v == []
+            else:
+                assert v == ""
+
+    def test_create_memo_partial(self):
+        memo = ps.create_memo(gyoutai_theme="人材", trade_idea="押し目買い")
+        assert memo["gyoutai_theme"] == "人材"
+        assert memo["trade_idea"] == "押し目買い"
+        assert memo["watch_in_reason"] == ""
+
+    def test_create_record_minimal(self):
+        rec = ps.create_record("4377")
+        assert rec["code_s"] == "4377"
+        assert "stock_name" not in rec  # 新スキーマでは銘柄名を持たない
+        assert rec["status"] == "3監"
+        assert rec["registered_at"]
+        assert rec["updated_at"] == rec["registered_at"]
+        assert set(rec["memo"].keys()) == ps.MEMO_FIELDS
+
+    def test_create_record_with_explicit_status(self):
+        rec = ps.create_record("4377", status="1保")
+        assert rec["status"] == "1保"
+
+    def test_create_record_invalid_status(self):
+        with pytest.raises(ValueError):
+            ps.create_record("4377", status="未定")
+
+
+# ==================================================
+# 高レベル操作: add_to_watch
+# ==================================================
+class TestAddToWatch:
+
+    def test_add_to_watch_creates_record(self, db_path):
+        rec = ps.add_to_watch("4377", db_path=db_path)
+        assert rec["code_s"] == "4377"
+        assert rec["status"] == "3監"
+        assert "stock_name" not in rec  # 新スキーマでは銘柄名を持たない
+
+        loaded = ps.get_record("4377", db_path=db_path)
+        assert loaded is not None
+        assert "stock_name" not in loaded
+
+    def test_add_to_watch_records_initial_log(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path, reason="新規登録")
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len(logs) == 1
+        assert logs[0]["action_type"] == "初回登録"
+        assert logs[0]["status_from"] is None
+        assert logs[0]["status_to"] == "3監"
+        assert logs[0]["reason"] == "新規登録"
+        assert logs[0]["seq"] == 1
+
+    def test_add_to_watch_duplicate_raises(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(ValueError):
+            ps.add_to_watch("4377", db_path=db_path)
+
+    def test_add_to_watch_normalizes_code_s(self, db_path):
+        ps.add_to_watch("215a", db_path=db_path)
+        loaded = ps.get_record("215A", db_path=db_path)
+        assert loaded is not None
+        assert loaded["code_s"] == "215A"
+
+
+# ==================================================
+# 高レベル操作: transition_status
+# ==================================================
+class TestTransitionStatus:
+
+    def test_transition_3kan_to_2jun(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        rec = ps.transition_status(
+            "4377", "2準", reason="そろそろ買う", db_path=db_path
+        )
+        assert rec["status"] == "2準"
+
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len(logs) == 2  # 初回登録 + ステータス変更
+        assert logs[1]["action_type"] == "ステータス変更"
+        assert logs[1]["status_from"] == "3監"
+        assert logs[1]["status_to"] == "2準"
+
+    def test_transition_1ho_to_2jun_records_uri_kyaku(self, db_path):
+        """1保 -> 2準 は売却として記録される"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        ps.transition_status("4377", "2準", reason="決算後売り", db_path=db_path)
+
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        # 初回登録 + 3監->1保 + 1保->2準 = 3件
+        assert len(logs) == 3
+        assert logs[2]["action_type"] == "売却"
+        assert logs[2]["status_from"] == "1保"
+        assert logs[2]["status_to"] == "2準"
+
+    def test_transition_to_1ho_directly_from_3kan(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        rec = ps.transition_status("4377", "1保", db_path=db_path)
+        assert rec["status"] == "1保"
+
+    def test_transition_invalid_path_rejected(self, db_path):
+        """禁止遷移は ValueError"""
+        ps.add_to_watch("4377", db_path=db_path)
+        # 3監 -> 3監 は同一遷移として ALLOWED に入っていないので禁止
+        # ただし transition_status は同一ステータスなら no-op としているため
+        # ここでは別の禁止パターンを試す。実装の ALLOWED_TRANSITIONS 上、
+        # すべての非同一遷移は許可されているので、不正遷移は同一以外発生しない。
+        # 同一遷移は no-op で通過するので、代わりに未登録銘柄のチェック。
+        with pytest.raises(KeyError):
+            ps.transition_status("9999", "2準", db_path=db_path)
+
+    def test_transition_same_status_is_noop(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "3監", db_path=db_path)  # no-op
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len(logs) == 1  # 初回登録だけ、ステータス変更ログは出ない
+
+
+# ==================================================
+# 高レベル操作: delete_record
+# ==================================================
+class TestDeleteRecord:
+
+    def test_delete_3kan_succeeds(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ok = ps.delete_record("4377", reason="興味なくなった", db_path=db_path)
+        assert ok is True
+        assert ps.get_record("4377", db_path=db_path) is None
+
+    def test_delete_records_log_after_record_gone(self, db_path):
+        """削除しても action_log は残る"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.delete_record("4377", reason="不要", db_path=db_path)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        # 初回登録 + 削除 = 2件
+        assert len(logs) == 2
+        assert logs[1]["action_type"] == "削除"
+        assert logs[1]["reason"] == "不要"
+
+    def test_delete_1ho_rejected(self, db_path):
+        """1保 から直接削除は禁止"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        with pytest.raises(ValueError):
+            ps.delete_record("4377", db_path=db_path)
+        # レコードは残っている
+        assert ps.get_record("4377", db_path=db_path) is not None
+
+    def test_delete_2jun_rejected(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "2準", db_path=db_path)
+        with pytest.raises(ValueError):
+            ps.delete_record("4377", db_path=db_path)
+
+    def test_delete_nonexistent_returns_false(self, db_path):
+        ok = ps.delete_record("4377", db_path=db_path)
+        assert ok is False
+
+
+# ==================================================
+# list_records / list_action_logs
+# ==================================================
+class TestListing:
+
+    def test_list_records_filters_by_status(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
+        ps.transition_status("7089", "1保", db_path=db_path)
+
+        watch = ps.list_records(status="3監", db_path=db_path)
+        hold = ps.list_records(status="1保", db_path=db_path)
+        all_recs = ps.list_records(db_path=db_path)
+
+        assert [r["code_s"] for r in watch] == ["4377"]
+        assert [r["code_s"] for r in hold] == ["7089"]
+        assert [r["code_s"] for r in all_recs] == ["4377", "7089"]
+
+    def test_list_records_sorted_by_code_s(self, db_path):
+        ps.add_to_watch("7089", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("215A", db_path=db_path)
+
+        recs = ps.list_records(db_path=db_path)
+        assert [r["code_s"] for r in recs] == ["215A", "4377", "7089"]
+
+    def test_list_action_logs_per_code(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
+        ps.transition_status("4377", "2準", db_path=db_path)
+
+        logs_4377 = ps.list_action_logs("4377", db_path=db_path)
+        logs_7089 = ps.list_action_logs("7089", db_path=db_path)
+        all_logs = ps.list_action_logs(db_path=db_path)
+
+        assert len(logs_4377) == 2
+        assert len(logs_7089) == 1
+        assert len(all_logs) == 3
+
+    def test_list_action_logs_sorted_by_seq(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        # seq が二桁・三桁で正しく順序が保たれることを確認するため複数遷移
+        for next_status in ["2準", "1保", "2準", "1保", "2準", "3監", "2準"]:
+            ps.transition_status("4377", next_status, db_path=db_path)
+
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        seqs = [log["seq"] for log in logs]
+        assert seqs == sorted(seqs)
+
+
+# ==================================================
+# upsert_record (移行スクリプト用)
+# ==================================================
+class TestUpsertRecord:
+
+    def test_upsert_record_creates_without_log(self, db_path):
+        rec = ps.create_record("4377")
+        ps.upsert_record(rec, db_path=db_path)
+        loaded = ps.get_record("4377", db_path=db_path)
+        assert loaded is not None
+        # upsert は ログを残さない (移行用)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert logs == []
+
+    def test_upsert_record_overwrites(self, db_path):
+        rec1 = ps.create_record("4377", status="3監")
+        ps.upsert_record(rec1, db_path=db_path)
+        rec2 = ps.create_record("4377", status="1保")
+        ps.upsert_record(rec2, db_path=db_path)
+
+        loaded = ps.get_record("4377", db_path=db_path)
+        assert loaded["status"] == "1保"
+
+    def test_upsert_record_requires_code_s(self, db_path):
+        with pytest.raises(ValueError):
+            ps.upsert_record({"status": "3監"}, db_path=db_path)
+
+
+# ==================================================
+# キー名前空間の独立性
+# ==================================================
+class TestKeyNamespaceIsolation:
+
+    def test_action_log_persists_after_delete(self, db_path):
+        """レコード削除後も action_log は残るかつ他キーに影響しない"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
+        ps.delete_record("4377", db_path=db_path)
+
+        # 4377 のレコードはなくなる
+        assert ps.get_record("4377", db_path=db_path) is None
+        # 4377 のログは残る (初回登録 + 削除)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len(logs) == 2
+        # 7089 は無事
+        assert ps.get_record("7089", db_path=db_path) is not None
+
+    def test_seq_counter_isolated_per_code(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
+        ps.transition_status("4377", "2準", db_path=db_path)
+        ps.transition_status("7089", "2準", db_path=db_path)
+
+        logs_4377 = ps.list_action_logs("4377", db_path=db_path)
+        logs_7089 = ps.list_action_logs("7089", db_path=db_path)
+        # seq は銘柄ごとに独立 (両方 1, 2 になる)
+        assert [log["seq"] for log in logs_4377] == [1, 2]
+        assert [log["seq"] for log in logs_7089] == [1, 2]
+
+
+# ==================================================
+# 高レベル操作: update_memo (部分更新)
+# ==================================================
+class TestUpdateMemo:
+
+    def test_update_single_field(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        rec = ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == "上値追い"
+        # action_log に "メモ更新" 1 件 (初回登録 1 件 + メモ更新 1 件 = 計 2 件)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len(logs) == 2
+        assert logs[1]["action_type"] == "メモ更新"
+        assert logs[1]["status_from"] is None
+        assert logs[1]["status_to"] is None
+
+    def test_update_partial_keeps_other_fields(self, db_path):
+        """部分更新: fields に含まれないキーは現行値据え置き (codex P1 対応)"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo(
+            "4377",
+            {"trade_idea": "A", "watch_in_reason": "B", "stage": "1S"},
+            db_path=db_path,
+        )
+        # 1 項目だけ送信、残りは据え置きされるべき
+        rec = ps.update_memo("4377", {"trade_idea": "X"}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == "X"
+        assert rec["memo"]["watch_in_reason"] == "B"  # 据え置き
+        assert rec["memo"]["stage"] == "1S"           # 据え置き
+
+    def test_update_with_empty_string_overwrites(self, db_path):
+        """空文字を明示的に渡したらメモ削除として "" に上書き"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        rec = ps.update_memo("4377", {"trade_idea": ""}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == ""
+        # action_log: 初回登録 + メモ更新×2 = 3 件
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len(logs) == 3
+
+    def test_update_with_none_normalizes_to_empty_string(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        rec = ps.update_memo("4377", {"trade_idea": None}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == ""
+
+    def test_update_all_eight_fields(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        # list 系フィールド (gyoutai_themes) は別バリデーション経路なのでこのテストでは除外
+        str_fields = ps.MEMO_FIELDS - ps.MEMO_LIST_FIELDS
+        all_fields = {f: f"val_{f}" for f in str_fields}
+        rec = ps.update_memo("4377", all_fields, db_path=db_path)
+        for k, v in all_fields.items():
+            assert rec["memo"][k] == v
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 1
+
+    def test_update_no_diff_is_noop(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        rec_before = ps.get_record("4377", db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        rec_after = ps.get_record("4377", db_path=db_path)
+        # updated_at が変わらない (no-op)
+        assert rec_before["updated_at"] == rec_after["updated_at"]
+        # action_log: 初回登録 + メモ更新×1 のみ (no-op で増えない)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 1
+
+    def test_update_empty_dict_is_noop(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        rec = ps.update_memo("4377", {}, db_path=db_path)
+        # KeyError なし、no-op として現行 record を返す
+        assert rec["code_s"] == "4377"
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 0
+
+    def test_update_unknown_field_raises(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(ValueError):
+            ps.update_memo("4377", {"unknown_field": "x"}, db_path=db_path)
+
+    def test_update_non_str_value_raises(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(TypeError):
+            ps.update_memo("4377", {"trade_idea": 123}, db_path=db_path)
+
+    def test_update_unregistered_record_raises(self, db_path):
+        with pytest.raises(KeyError):
+            ps.update_memo("9999", {"trade_idea": "X"}, db_path=db_path)
+
+    def test_update_invalid_code_s_raises(self, db_path):
+        with pytest.raises(ValueError):
+            ps.update_memo("abc", {"trade_idea": "X"}, db_path=db_path)
+
+    def test_update_normalizes_code_s(self, db_path):
+        ps.add_to_watch("215A", db_path=db_path)
+        rec = ps.update_memo("215a", {"trade_idea": "X"}, db_path=db_path)
+        assert rec["code_s"] == "215A"
+        assert rec["memo"]["trade_idea"] == "X"
+
+
+class TestGyoutaiThemesField:
+    """issue #187: gyoutai_themes (list[str]) フィールドの読み書き / バリデーション。"""
+
+    def test_create_memo_defaults_empty_list(self):
+        memo = ps.create_memo()
+        assert memo["gyoutai_themes"] == []
+
+    def test_create_memo_with_explicit_list(self):
+        memo = ps.create_memo(gyoutai_themes=["半導体", "AI"])
+        assert memo["gyoutai_themes"] == ["半導体", "AI"]
+
+    def test_update_gyoutai_themes_saves_list(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        rec = ps.update_memo(
+            "4377", {"gyoutai_themes": ["半導体", "AI"]}, db_path=db_path
+        )
+        assert rec["memo"]["gyoutai_themes"] == ["半導体", "AI"]
+
+    def test_update_gyoutai_themes_empty_list_overwrites(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo("4377", {"gyoutai_themes": ["半導体"]}, db_path=db_path)
+        rec = ps.update_memo("4377", {"gyoutai_themes": []}, db_path=db_path)
+        assert rec["memo"]["gyoutai_themes"] == []
+
+    def test_update_gyoutai_themes_partial_keeps_other_fields(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "X"}, db_path=db_path)
+        rec = ps.update_memo(
+            "4377", {"gyoutai_themes": ["AI"]}, db_path=db_path
+        )
+        assert rec["memo"]["gyoutai_themes"] == ["AI"]
+        assert rec["memo"]["trade_idea"] == "X"
+
+    def test_update_gyoutai_themes_rejects_non_list(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(TypeError):
+            ps.update_memo(
+                "4377", {"gyoutai_themes": "半導体\nAI"}, db_path=db_path
+            )
+
+    def test_update_gyoutai_themes_rejects_non_str_element(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(TypeError):
+            ps.update_memo(
+                "4377", {"gyoutai_themes": ["半導体", 123]}, db_path=db_path
+            )
+
+    def test_update_gyoutai_themes_no_diff_is_noop(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.update_memo("4377", {"gyoutai_themes": ["AI"]}, db_path=db_path)
+        ps.update_memo("4377", {"gyoutai_themes": ["AI"]}, db_path=db_path)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        memo_logs = [log for log in logs if log["action_type"] == "メモ更新"]
+        # 同じ値の更新は no-op、ログ追記は 1 回のみ
+        assert len(memo_logs) == 1
+
+    def test_legacy_record_without_gyoutai_themes_loads_as_empty_list(
+        self, db_path
+    ):
+        """旧データに gyoutai_themes フィールドがなくても、読み込み時に [] が補完される。"""
+        from db_shelve import ShelveDB
+
+        # 旧スキーマ (gyoutai_themes なし) で直接 shelve に書き込む
+        legacy_record = {
+            "code_s": "4377",
+            "status": "3監",
+            "registered_at": "2024-01-01T00:00:00+09:00",
+            "updated_at": "2024-01-01T00:00:00+09:00",
+            "memo": {
+                "gyoutai_theme": "半導体\nAI",
+                "trade_idea": "",
+                "watch_in_reason": "",
+                "inago_origin": "",
+                "takaichi_sensitivity": "",
+                "last_research_update": "",
+                "stage": "",
+                "jukyu_chart": "",
+            },
+            "excluded": False,
+        }
+        with ShelveDB(db_path) as db:
+            db["record:4377"] = legacy_record
+
+        rec = ps.get_record("4377", db_path=db_path)
+        assert rec["memo"]["gyoutai_themes"] == []
+
+        # list_records 経由でも補完される
+        recs = ps.list_records(db_path=db_path)
+        assert len(recs) == 1
+        assert recs[0]["memo"]["gyoutai_themes"] == []
+
+
+# ==================================================
+# my_watch_list.txt 一方向同期
+# ==================================================
+@pytest.fixture
+def stocks_db_for_sync(tmp_path, monkeypatch):
+    """sync_to_my_watch_list_txt が銘柄名を引くための stocks_shelve を差し替え。
+
+    銘柄名は portfolio_shelve には保存されないため、sync は stocks_shelve / research_shelve
+    から都度取得する。テストでは tmp_path の stocks_shelve を用意して期待値を入れておく。
+    """
+    from db_shelve import ShelveDB
+
+    stocks_path = str(tmp_path / "test_stocks_shelve")
+    research_path = str(tmp_path / "test_research_shelve")
+    monkeypatch.setattr("db_shelve.STOCKS_SHELVE", stocks_path)
+    monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", research_path)
+
+    name_map = {
+        "4377": "ワンキャリア",
+        "7089": "フォースタートアップス",
+        "5032": "AnyColor",
+        "6232": "ACSL",
+    }
+    with ShelveDB(stocks_path) as db:
+        for code, name in name_map.items():
+            db[code] = {"code_s": code, "stock_name": name}
+    return stocks_path
+
+
+class TestSyncToTxt:
+
+    def test_sync_writes_holds_with_h_prefix(self, db_path, tmp_path, stocks_db_for_sync):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        ps.add_to_watch("7089", db_path=db_path)
+        ps.transition_status("7089", "1保", db_path=db_path)
+
+        txt_path = str(tmp_path / "my_watch_list.txt")
+        ps.sync_to_my_watch_list_txt(txt_path=txt_path, db_path=db_path)
+
+        with open(txt_path, encoding="utf-8") as f:
+            content = f.read()
+        # 1保 が H 接頭辞付きで code_s 昇順に並ぶ。銘柄名は stocks_shelve から引かれる。
+        assert "H4377ワンキャリア" in content
+        assert "H7089フォースタートアップス" in content
+        # 4377 が 7089 より先に来る
+        assert content.index("H4377") < content.index("H7089")
+
+    def test_sync_writes_watch_without_prefix(self, db_path, tmp_path, stocks_db_for_sync):
+        ps.add_to_watch("5032", db_path=db_path)
+        ps.add_to_watch("6232", db_path=db_path)
+
+        txt_path = str(tmp_path / "my_watch_list.txt")
+        ps.sync_to_my_watch_list_txt(txt_path=txt_path, db_path=db_path)
+
+        with open(txt_path, encoding="utf-8") as f:
+            content = f.read()
+        assert "5032AnyColor" in content
+        assert "6232ACSL" in content
+        # H 接頭辞は付かない
+        assert "H5032" not in content
+
+    def test_sync_separates_holds_from_others(self, db_path, tmp_path, stocks_db_for_sync):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        ps.add_to_watch("5032", db_path=db_path)
+
+        txt_path = str(tmp_path / "my_watch_list.txt")
+        ps.sync_to_my_watch_list_txt(txt_path=txt_path, db_path=db_path)
+
+        with open(txt_path, encoding="utf-8") as f:
+            content = f.read()
+        # 1保 → 空行 → 3監 の順 (現行 my_watch_list.txt の見た目互換)
+        h_pos = content.index("H4377")
+        w_pos = content.index("5032AnyColor")
+        assert h_pos < w_pos
+        # 間に空行あり
+        between = content[h_pos:w_pos]
+        assert "\n\n" in between
+
+    def test_sync_treats_2jun_as_watch(self, db_path, tmp_path, stocks_db_for_sync):
+        """2準 は H 接頭辞なしで書き出される (txt は 2 値)"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "2準", db_path=db_path)
+
+        txt_path = str(tmp_path / "my_watch_list.txt")
+        ps.sync_to_my_watch_list_txt(txt_path=txt_path, db_path=db_path)
+
+        with open(txt_path, encoding="utf-8") as f:
+            content = f.read()
+        # H 接頭辞なし
+        assert "4377ワンキャリア" in content
+        assert "H4377" not in content
+
+    def test_sync_empty_db_writes_empty_file(self, db_path, tmp_path):
+        txt_path = str(tmp_path / "my_watch_list.txt")
+        ps.sync_to_my_watch_list_txt(txt_path=txt_path, db_path=db_path)
+        with open(txt_path, encoding="utf-8") as f:
+            assert f.read() == ""
+
+    def test_sync_skips_excluded(self, db_path, tmp_path, stocks_db_for_sync):
+        """excluded=True のレコードは txt 出力に含まれない"""
+        ps.add_to_watch("5032", db_path=db_path)
+        ps.add_to_watch("6232", db_path=db_path)
+        ps.exclude_from_universe("6232", db_path=db_path)
+
+        txt_path = str(tmp_path / "my_watch_list.txt")
+        ps.sync_to_my_watch_list_txt(txt_path=txt_path, db_path=db_path)
+
+        with open(txt_path, encoding="utf-8") as f:
+            content = f.read()
+        assert "5032AnyColor" in content
+        assert "6232" not in content
+
+
+# ==================================================
+# ユニバース除外 (issue #186)
+# ==================================================
+class TestExcludeFromUniverse:
+
+    def test_exclude_3kan_record(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        result = ps.exclude_from_universe("4377", reason="不要", db_path=db_path)
+        assert result is True
+        record = ps.get_record("4377", db_path=db_path)
+        assert record["excluded"] is True
+
+    def test_exclude_logs_action(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.exclude_from_universe("4377", reason="ノイズ", db_path=db_path)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        # [初回登録, ユニバース除外]
+        assert logs[-1]["action_type"] == "ユニバース除外"
+        assert logs[-1]["reason"] == "ノイズ"
+
+    def test_exclude_already_excluded_returns_false(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.exclude_from_universe("4377", db_path=db_path)
+        result = ps.exclude_from_universe("4377", db_path=db_path)
+        assert result is False
+
+    def test_exclude_1ho_rejected(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        with pytest.raises(ValueError, match="2準/3監"):
+            ps.exclude_from_universe("4377", db_path=db_path)
+
+    def test_exclude_2jun_allowed(self, db_path):
+        """2準 銘柄もユニバース除外可能 (1保 は禁止のまま)"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "2準", db_path=db_path)
+        result = ps.exclude_from_universe("4377", reason="準保有から除外", db_path=db_path)
+        assert result is True
+        rec = ps.get_record("4377", db_path=db_path)
+        assert rec is not None
+        assert rec["excluded"] is True
+        assert rec["status"] == "2準"  # status は変えない、excluded フラグのみ
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert any(l["action_type"] == "ユニバース除外" for l in logs)
+
+    def test_exclude_unregistered_returns_false(self, db_path):
+        result = ps.exclude_from_universe("4377", db_path=db_path)
+        assert result is False
+
+    def test_exclude_empty_reason_ok(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        result = ps.exclude_from_universe("4377", db_path=db_path)
+        assert result is True
+
+
+class TestAddToWatchRevive:
+
+    def test_revive_excluded_record(self, db_path):
+        ps.add_to_watch("4377", memo=ps.create_memo(stage="3S"), db_path=db_path)
+        ps.exclude_from_universe("4377", db_path=db_path)
+        record = ps.add_to_watch("4377", db_path=db_path)
+        assert record["excluded"] is False
+        # メモは保持される
+        assert record["memo"]["stage"] == "3S"
+
+    def test_revive_logs_universe_exclusion_with_revive_reason(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.exclude_from_universe("4377", reason="ノイズ", db_path=db_path)
+        ps.add_to_watch("4377", db_path=db_path)
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        # 末尾は復活ログ (action_type=ユニバース除外, reason=復活)
+        assert logs[-1]["action_type"] == "ユニバース除外"
+        assert logs[-1]["reason"] == "復活"
+
+    def test_add_to_watch_active_record_still_raises(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        with pytest.raises(ValueError, match="既に登録済み"):
+            ps.add_to_watch("4377", db_path=db_path)
+
+
+class TestPortfolioRecordBackwardCompat:
+
+    def test_legacy_record_without_excluded_loads_as_false(self, db_path):
+        """旧スキーマのレコード (excluded キーなし) を直接書き込み、list_records で読める"""
+        from db_shelve import ShelveDB
+
+        legacy_record = {
+            "code_s": "4377",
+            "status": "3監",
+            "registered_at": "2024-01-01T00:00:00+09:00",
+            "updated_at": "2024-01-01T00:00:00+09:00",
+            "memo": ps.create_memo(),
+        }
+        with ShelveDB(db_path) as db:
+            db["record:4377"] = legacy_record
+
+        records = ps.list_records(db_path=db_path)
+        assert len(records) == 1
+        # excluded キーが無くても表示される (デフォルト False 扱い)
+        assert records[0]["code_s"] == "4377"
+
+
+class TestListRecordsFilterExcluded:
+
+    def test_default_filters_excluded(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("5032", db_path=db_path)
+        ps.exclude_from_universe("4377", db_path=db_path)
+
+        records = ps.list_records(db_path=db_path)
+        codes = [r["code_s"] for r in records]
+        assert codes == ["5032"]
+
+    def test_include_excluded_returns_all(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.add_to_watch("5032", db_path=db_path)
+        ps.exclude_from_universe("4377", db_path=db_path)
+
+        records = ps.list_records(include_excluded=True, db_path=db_path)
+        codes = [r["code_s"] for r in records]
+        assert codes == ["4377", "5032"]

@@ -670,7 +670,19 @@ def get_shihyo_expr(stock_data):
         ind_value_label = "PSR"
         ind_value = get_indicator_exp("PSR", 1)
     ind_roe = "%s" % get_indicator_exp("ROE")
-    ind_margin = "%s%%" % get_indicator_exp("profit_margin")
+    # 利益率は整数部1桁なら小数点1桁、2桁以上なら整数で表示
+    margin_val = stock_data.get("shihyo", {}).get("profit_margin")
+    if margin_val is None or margin_val == "":
+        ind_margin = "%"
+    else:
+        try:
+            margin_f = float(margin_val)
+            if abs(margin_f) < 10:
+                ind_margin = "%.1f%%" % margin_f
+            else:
+                ind_margin = "%d%%" % int(margin_f)
+        except (TypeError, ValueError):
+            ind_margin = "Error:%s%%" % margin_val
     ind_debt = "%s" % get_indicator_exp("debt_ratio", 2)
     ind_capital = "%s%%" % get_indicator_exp("capital_ratio")
     # ind_credit = "%s"%get_indicator_exp("credit_ratio", 2)

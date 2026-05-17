@@ -1,0 +1,732 @@
+{% extends "base.html" %}
+{% block title %}保有銘柄 | Shintakane Research{% endblock %}
+
+{% block content %}
+{# 一覧の列数を多く表示するため、main.container のデフォルト max-width を上書きして全幅化 #}
+<style>
+  main.container { max-width: 100% !important; padding-left: 0.8em !important; padding-right: 0.8em !important; }
+  /* 22 列をできるだけ表示するための列幅微調整 (issue #177)。
+     全体 font-size ダウン + セル padding 圧縮 + ヘッダ折り返し許可。 */
+  table.portfolio-list { font-size: 0.78em; }
+  table.portfolio-list th, table.portfolio-list td {
+    padding: 0.3em 0.4em;
+    white-space: normal;  /* ヘッダの折り返しを許可してセル幅を縮める */
+  }
+  /* 長いヘッダラベル ("RSライン(20,5)" 等) が列幅を引っ張らないよう、
+     ヘッダ側に max-width を設けて強制改行させる。データセル幅優先。 */
+  table.portfolio-list thead th {
+    max-width: 4em;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--pico-background-color);
+    box-shadow: 0 1px 0 #d8dee6;
+  }
+  /* 数値・短文列は明示的に狭くする */
+  table.portfolio-list td.num { text-align: right; }
+  /* 削除モード時のみチェックボックス列を表示 */
+  .bulk-col { display: none; }
+  body.delete-mode .bulk-col { display: table-cell; }
+  /* issue #178: 業態順表示時の業態境界線 */
+  table.portfolio-list tr.gyoutai-boundary > td { border-top: 2px solid #bbb; }
+  /* issue #178: ステータス badge */
+  .status-badge {
+    display: inline-block; padding: 0.05em 0.4em;
+    border-radius: 3px; font-size: 0.85em; line-height: 1.3;
+    white-space: nowrap;
+  }
+  .status-badge.status-hold  { background: #d4ead4; color: #285028; }
+  .status-badge.status-semi  { background: #fdf0c0; color: #856100; }
+  .status-badge.status-watch { background: #e2e2e2; color: #555; }
+  /* 一括削除アクションバー */
+  #bulk-delete-bar {
+    position: sticky; bottom: 0; z-index: 10;
+    background: #fff; border-top: 2px solid #c00;
+    padding: 0.5em 1em; margin-top: 0.5em;
+    display: flex; gap: 0.8em; align-items: center;
+  }
+  .portfolio-add-form {
+    display: flex; gap: 0.5em; align-items: center;
+    margin: 0; font-size: 0.85em;
+  }
+  .portfolio-add-form input[type="text"] { padding: 0.25em 0.4em; margin: 0; }
+  .portfolio-add-form button { padding: 0.3em 0.8em; margin: 0; }
+  .portfolio-add-form .hint { color: #999; font-size: 0.85em; }
+  /* 管理ボタン + 展開パネル */
+  .dashboard-header { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; }
+  #toggle-manage-mode { padding: 0.3em 0.8em; font-size: 0.85em; margin: 0; }
+  #manage-panel {
+    padding: 0.6em 0.8em; margin: 0.4em 0 0.6em 0;
+    background: #f5f7fa; border: 1px solid #d8dee6; border-radius: 4px;
+    display: flex; flex-wrap: wrap; gap: 0.8em; align-items: center;
+  }
+  #toggle-delete-mode { padding: 0.3em 0.8em; font-size: 0.85em; margin: 0; }
+</style>
+<div class="dashboard-header">
+  <h2 style="margin:0;">保有銘柄ダッシュボード</h2>
+  {% if not fallback_mode %}
+  <button type="button" id="toggle-manage-mode">管理</button>
+  {% endif %}
+</div>
+
+{% if fallback_mode %}
+<div style="padding:0.6em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;background:#fff8e0;color:#a07000;border:1px solid #ecd07a;">
+  <strong>portfolio_shelve 未移行モード</strong>: 表示は <code>my_watch_list.txt</code> から復元しています。
+  ステータス変更・追加・削除などの書き込み操作は、Phase 3a 移行スクリプトを実行するまで無効です。
+</div>
+{% endif %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  {% for category, message in messages %}
+  <div style="padding:0.5em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;{% if category == 'error' %}background:#ffeaea;color:#c00;border:1px solid #fcc;{% else %}background:#eaffea;color:#060;border:1px solid #cfc;{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+{% endwith %}
+
+{# issue #215: フィルタは status / gyoutai_theme の単一選択 select 2 つ。onchange で即送信。 #}
+<form id="portfolio-filter-form" action="/portfolio" method="GET"
+      style="display:flex;flex-wrap:wrap;gap:1.2em;align-items:center;margin-bottom:0.6em;padding:0.5em 0.6em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;font-size:0.9em;">
+  <label style="display:inline-flex;align-items:center;gap:0.4em;margin:0;">
+    <span style="color:#666;">ステータス</span>
+    <select name="status" onchange="this.form.submit()" style="padding:0.2em 0.3em;font-size:0.9em;margin:0;">
+      <option value="">すべて</option>
+      {% for q, _, label in status_choices %}
+      <option value="{{ q }}" {% if q == active_status_query %}selected{% endif %}>{{ label }} ({{ counts[q] }})</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label style="display:inline-flex;align-items:center;gap:0.4em;margin:0;">
+    <span style="color:#666;">業態・テーマ</span>
+    <select name="gyoutai_theme" onchange="this.form.submit()" style="padding:0.2em 0.3em;font-size:0.9em;margin:0;max-width:18em;">
+      <option value="">すべて</option>
+      {% for choice in gyoutai_theme_choices %}
+      <option value="{{ choice }}" {% if choice == active_gyoutai_theme %}selected{% endif %}>{{ choice }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</form>
+
+<p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">
+  {% if total > 0 %}{{ total }} 件表示{% else %}0 件{% endif %}
+</p>
+
+{% if not fallback_mode %}
+<div id="manage-panel" style="display:none;">
+  {# 追加フォームには return_query を入れない。
+     現在のフィルタが保有のみだと、追加された 3監 銘柄が見えなくなるため、
+     add() 側の default_status_query="watch" フォールバックを効かせる (codex 指摘 P2)。 #}
+  <form action="/portfolio/add" method="POST" class="portfolio-add-form">
+    <label>コード <input type="text" name="code_s" required pattern="[0-9A-Za-z]+" maxlength="4" style="width:6em;"></label>
+    <button type="submit">追加</button>
+  </form>
+  {% if delete_mode_allowed %}
+  <button type="button" id="toggle-delete-mode">削除モード</button>
+  {% endif %}
+</div>
+{% if delete_mode_allowed %}
+<div id="bulk-delete-bar" style="display:none;">
+  <span><strong id="selected-count">0</strong> 件選択中</span>
+  <button type="button" id="bulk-delete-execute" class="contrast">削除 (ユニバース除外)</button>
+  <button type="button" id="bulk-delete-cancel">キャンセル</button>
+</div>
+{% endif %}
+{% endif %}
+
+{% if rows %}
+<div style="overflow:auto;max-height:80vh;">
+<table class="portfolio-list">
+  <thead>
+    <tr>
+      {% if delete_mode_allowed %}<th class="bulk-col"></th>{% endif %}
+      <th></th>
+      <th>コード</th>
+      <th>銘柄名</th>
+      <th>状態</th>
+      <th>業態・テーマ</th>
+      <th>順位</th>
+      <th>売上成長(%)</th>
+      <th>利益成長(%)</th>
+      <th>PER</th>
+      <th>理論株価乖離(%)</th>
+      <th>配当(%)</th>
+      <th title="決算Q (進行中の四半期)">決算Q</th>
+      <th title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
+      <th>決算日</th>
+      <th>更新日</th>
+      <th>ステージ</th>
+      <th>RS</th>
+      <th>RSライン(20,5)</th>
+      <th>トレンド</th>
+      <th>タグ</th>
+      <th>株価向き(20,5)</th>
+      <th>買い集め</th>
+      <th>時価総額</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {# issue #178: 前行と業態 1 行目が異なる行は境界線を入れる。
+       row.gyoutai_first は helpers.list_portfolio_with_indicators が precompute 済み。
+       issue #215: ソート分岐廃止に伴い常時有効。 #}
+    <tr data-code="{{ row.code_s }}"{% if not loop.first and loop.previtem.gyoutai_first != row.gyoutai_first %} class="gyoutai-boundary"{% endif %}>
+      {% if delete_mode_allowed %}
+      {# codex 指摘 P2: 1保 は bulk_exclude() で reject されるため checkbox を出さない #}
+      <td class="bulk-col">
+        {% if row.status in ('2準', '3監') %}
+        <input type="checkbox" class="bulk-cb" value="{{ row.code_s }}" data-status="{{ row.status }}">
+        {% endif %}
+      </td>
+      {% endif %}
+      <td>
+        <details>
+          <summary style="cursor:pointer;list-style:none;">▸</summary>
+        </details>
+      </td>
+      <td><a href="https://kabutan.jp/stock/chart?code={{ row.code_s }}" target="_blank" rel="noopener noreferrer">{{ row.code_s }}</a></td>
+      <td title="{{ row.stock_name }}"
+          style="max-width:10em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+        <a href="/stock/{{ row.code_s }}">{{ row.stock_name }}</a>
+      </td>
+      <td><span class="status-badge status-{{ row.status_query }}">{{ row.status_label }}</span></td>
+      <td class="gyoutai-themes-cell" data-code="{{ row.code_s }}"
+          style="max-width:11em;padding:0 2px;line-height:0;{{ row.styles.gyoutai_themes or '' }}">
+        {% set themes = row.memo.gyoutai_themes or [] %}
+        {% for i in range(gyoutai_themes_max_slots) %}
+        <input type="text"
+               list="gyoutai-theme-choices"
+               name="gyoutai_themes_{{ i }}"
+               value="{{ themes[i] if i < (themes|length) else '' }}"
+               data-slot="{{ i }}"
+               class="gyoutai-input"
+               placeholder="—"
+               {% if fallback_mode %}disabled{% endif %}>
+        {% endfor %}
+      </td>
+      <td style="{{ row.styles.rank or '' }}">{{ row.rank if row.rank is not none else "—" }}</td>
+      <td style="{{ row.styles.sales_growth or '' }}">{{ row.sales_growth }}</td>
+      <td style="{{ row.styles.profit_growth or '' }}">{{ row.profit_growth }}</td>
+      <td style="{{ row.styles.per or '' }}">{{ row.per }}</td>
+      <td style="{{ row.styles.theoretical_diff or '' }}">{{ row.theoretical_diff }}</td>
+      <td style="{{ row.styles.dividend or '' }}">{{ row.dividend }}</td>
+      <td>{{ row.quarter }}</td>
+      <td style="{{ row.styles.progress_diff or '' }}">{{ row.progress_diff }}</td>
+      <td data-style-field="kessanbi_md"
+          style="{{ row.styles.kessanbi_md or '' }}">{{ row.kessanbi_md }}</td>
+      <td title="クリックで編集 (M/D 形式)"
+          data-style-field="last_research_update"
+          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="last_research_update"{% endif %}
+          style="{{ row.styles.last_research_update or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.last_research_update or "—" }}</td>
+      <td title="クリックで編集 (ステージ変更時は更新日も自動で当日に) / Ctrl+クリックで株探チャート"
+          data-style-field="stage"
+          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="stage" data-touch-update="1"{% endif %}
+          style="{{ row.styles.stage or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.stage or "—" }}</td>
+      <td style="{{ row.styles.rs or '' }}">{{ row.rs }}</td>
+      <td style="color:#bbb;">—</td>
+      <td title="{{ row.trend_template_tooltip }}"
+          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.trend_template or '' }}">{{ row.trend_template }}</td>
+      <td title="{{ row.tags }}"
+          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
+      <td style="color:#bbb;">—</td>
+      <td style="{{ row.styles.buy_collection or '' }}">{{ row.buy_collection }}</td>
+      <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
+    </tr>
+    <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
+      {# 状態列 1 つ追加 (22→23)、削除モード時はさらに +1 #}
+      <td colspan="{% if delete_mode_allowed %}24{% else %}23{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
+        <div style="display:flex;flex-wrap:wrap;gap:0.8em;align-items:flex-start;">
+          {% if row.gyoseki.isKonki %}
+          <div style="flex:0 0 auto;">
+            <strong style="font-size:0.85em;color:#666;">今期</strong>
+          </div>
+          {% endif %}
+          <div style="flex:0 1 auto;min-width:300px;max-width:50em;">
+            <strong style="font-size:0.85em;color:#666;">手動メモ</strong>
+            {% if not fallback_mode %}
+            <form action="/portfolio/{{ row.code_s }}/memo" method="POST"
+                  style="display:flex;flex-direction:column;gap:0.4em;margin:0.3em 0 0 0;font-size:0.85em;">
+              <input type="hidden" name="return_query" value="{{ return_query }}">
+              {# 業態・テーマ / 更新日 / ステージ は表内 inline 編集に移動 (issue #177) #}
+              {% for field, label in [
+                  ("watch_in_reason", "IN 理由"),
+                  ("trade_idea", "売買アイデア"),
+                  ("inago_origin", "イナゴ元"),
+                  ("takaichi_sensitivity", "高市感応度"),
+                  ("jukyu_chart", "需給チャート"),
+              ] %}
+              <label style="display:flex;flex-direction:column;gap:0.1em;margin:0;">
+                <span style="color:#666;">{{ label }}</span>
+                <textarea name="{{ field }}" rows="2"
+                          style="font-size:0.85em;padding:0.3em;margin:0;font-family:inherit;"
+                          >{{ row.memo[field] or "" }}</textarea>
+              </label>
+              {% endfor %}
+              <button type="submit"
+                      style="padding:0.3em 0.6em;font-size:0.85em;margin:0.2em 0 0 0;align-self:flex-start;">
+                メモを保存
+              </button>
+            </form>
+            {% else %}
+            {# フォールバックモード時は読み取り専用表示を維持 #}
+            {% if row.memo.last_research_update %}
+            <span style="font-size:0.85em;color:#999;margin-left:0.5em;">調査更新日: {{ row.memo.last_research_update }}</span>
+            {% endif %}
+            <ul style="font-size:0.85em;margin:0.3em 0 0 1em;padding:0;">
+              <li><strong>IN 理由:</strong> {{ row.memo.watch_in_reason or "—" }}</li>
+              <li><strong>売買アイデア:</strong> {{ row.memo.trade_idea or "—" }}</li>
+              <li><strong>イナゴ元:</strong> {{ row.memo.inago_origin or "—" }}</li>
+              <li><strong>高市感応度:</strong> {{ row.memo.takaichi_sensitivity or "—" }}</li>
+              <li><strong>需給チャート:</strong> {{ row.memo.jukyu_chart or "—" }}</li>
+            </ul>
+            {% endif %}
+          </div>
+          <div style="flex:0 0 240px;">
+            <strong style="font-size:0.85em;color:#666;">操作</strong>
+            <div style="display:flex;flex-direction:column;gap:0.5em;margin-top:0.3em;font-size:0.85em;">
+              {% if row.transitions %}
+              <form action="/portfolio/{{ row.code_s }}/transition" method="POST" style="display:flex;flex-direction:column;gap:0.3em;margin:0;">
+                <input type="hidden" name="return_query" value="{{ return_query }}">
+                <label style="font-size:0.85em;color:#666;">ステータス変更</label>
+                <select name="new_status" style="padding:0.3em;font-size:0.85em;margin:0;">
+                  {% for label, value in row.transitions %}
+                  <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <textarea name="reason" placeholder="理由 (任意)" rows="2" style="font-size:0.85em;padding:0.3em;margin:0;"></textarea>
+                <button type="submit" style="padding:0.3em 0.6em;font-size:0.85em;margin:0;">変更</button>
+              </form>
+              {% endif %}
+              {# 削除はテーブル上部の「削除モード」 (issue #186) で一括処理する #}
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<datalist id="gyoutai-theme-choices">
+  {% for choice in gyoutai_theme_choices %}
+  <option value="{{ choice }}">
+  {% endfor %}
+</datalist>
+
+<style>
+.gyoutai-themes-cell { vertical-align: middle; }
+.gyoutai-themes-cell .gyoutai-input {
+  display: block;
+  width: 100%;
+  max-width: 11em;
+  height: 1.1em;
+  font-size: 1em;
+  line-height: 1;
+  padding: 0 2px;
+  margin: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: inherit;
+  box-sizing: content-box;
+}
+.gyoutai-themes-cell .gyoutai-input:hover { border-color: #ddd; background: #fff; }
+.gyoutai-themes-cell .gyoutai-input:focus { outline: 1px solid #4285f4; background: #fff; }
+.gyoutai-themes-cell .gyoutai-input.saving { background: #fff8c4; }
+.gyoutai-themes-cell .gyoutai-input.error { background: #fce4e4; border-color: #d33; }
+</style>
+
+<script>
+// summary クリックで対応する .row-detail を展開
+document.querySelectorAll('table details').forEach(function(d) {
+  d.addEventListener('toggle', function() {
+    var row = d.closest('tr');
+    var nextRow = row.nextElementSibling;
+    if (nextRow && nextRow.classList.contains('row-detail')) {
+      nextRow.style.display = d.open ? '' : 'none';
+    }
+    var summary = d.querySelector('summary');
+    if (summary) summary.textContent = d.open ? '▾' : '▸';
+  });
+});
+
+// ========== inline 編集 (issue #177) ==========
+// .editable セルをクリック → input/textarea に置換 → blur で fetch POST → DOM 書き戻し
+// ステージ列 (data-touch-update="1") の編集時は更新日も自動的に当日 M/D に更新する。
+(function() {
+  function todayMD() {
+    var d = new Date();
+    return (d.getMonth() + 1) + '/' + d.getDate();  // M/D 形式
+  }
+
+  function renderGyoutaiTheme(td, value) {
+    // 改行で 2 行まで表示する既存ルールを再現
+    td.innerHTML = '';
+    // 全文は data-full に保持 (3 行目以降を保護、codex P1 対応)
+    td.dataset.full = value || '';
+    td.title = (value || '') + ' (クリックで編集)';
+    if (!value) {
+      td.appendChild(document.createTextNode('—'));
+      return;
+    }
+    var lines = value.split('\n').slice(0, 2);
+    lines.forEach(function(line) {
+      var div = document.createElement('div');
+      div.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      div.textContent = line;
+      td.appendChild(div);
+    });
+  }
+
+  function renderPlain(td, value) {
+    td.textContent = value || '—';
+  }
+
+  // PORTFOLIO_COLORS のうち背景色に使われる HEX (compute_cell_styles の bg() / bg_with_white() 出力)。
+  // 既存セルの背景色をクリアする際にこの集合を使って判定する。
+  var PORTFOLIO_BG_COLORS = [
+    '#fce8b2', '#fbbc04', '#f4c7c3',
+    '#4285f4', '#ea4335',
+    '#cccccc', '#999999', '#6fa8dc',
+  ];
+
+  // セルの style 属性のうち、background:/color: 部分のみ差し替える。
+  // base style (max-width 等) は温存。
+  function setCellColorStyle(td, colorStyle) {
+    if (!td) return;
+    var existing = td.getAttribute('style') || '';
+    // 既存の background: / color: ルールを除去 (色付けに関するもののみ)
+    var cleaned = existing
+      .split(';')
+      .map(function(s) { return s.trim(); })
+      .filter(function(s) {
+        if (!s) return false;
+        var lower = s.toLowerCase();
+        // background:#xxx は色付け由来なので除去対象。color:#xxx は signal 列の文字色用なので
+        // 既知の portfolio 色 HEX が含まれる場合のみ除去 (誤って #bbb 等を消さないため)
+        if (lower.startsWith('background:') || lower.startsWith('background-color:')) return false;
+        if (lower.startsWith('color:')) {
+          for (var i = 0; i < PORTFOLIO_BG_COLORS.length; i++) {
+            if (lower.indexOf(PORTFOLIO_BG_COLORS[i].toLowerCase()) !== -1) return false;
+          }
+        }
+        return true;
+      })
+      .join(';');
+    var newStyle = cleaned;
+    if (colorStyle) {
+      newStyle = (newStyle ? newStyle + ';' : '') + colorStyle;
+    }
+    td.setAttribute('style', newStyle);
+  }
+
+  // サーバから受け取った styles を該当セルに反映する。
+  // セル特定は data-style-field 属性から (= 色付け対象列に埋めたマーカー)。
+  // 受け取った styles に該当キーがなければ「色なし」として既存色をクリアする。
+  var STYLE_FIELDS_TO_SYNC = [
+    'kessanbi_md', 'last_research_update', 'stage',
+    // 色付け対象だが inline 編集で間接的にも影響しない列はここに含めなくて良い。
+    // ただし将来 stage / 更新日変更で他列に波及するロジックが入ったら追加する。
+  ];
+  function applyStylesToRow(tr, styles) {
+    if (!tr) return;
+    STYLE_FIELDS_TO_SYNC.forEach(function(field) {
+      var td = tr.querySelector('td[data-style-field="' + field + '"]');
+      if (!td) return;
+      setCellColorStyle(td, styles[field] || '');
+    });
+  }
+
+  function startEdit(td) {
+    if (td.dataset.editing === '1') return;
+    td.dataset.editing = '1';
+
+    var field = td.dataset.field;
+    // gyoutai_theme は表示が 2 行までに切り詰められているため、編集元値は data-full
+    // (全文) から取る。表示テキストから復元すると 3 行目以降が消える (codex P1 対応)。
+    var currentValue;
+    if (td.dataset.full !== undefined) {
+      currentValue = td.dataset.full;
+    } else {
+      currentValue = td.textContent.trim();
+      if (currentValue === '—') currentValue = '';
+    }
+
+    var input;
+    if (td.dataset.multiline === '1') {
+      input = document.createElement('textarea');
+      input.rows = 2;
+      input.style.cssText = 'width:11em;font-size:0.85em;padding:0.2em;font-family:inherit;';
+    } else if (td.dataset.inputType === 'date') {
+      input = document.createElement('input');
+      input.type = 'date';
+      input.style.cssText = 'font-size:0.85em;padding:0.2em;width:9em;';
+      // M/D を YYYY-MM-DD に変換 (year は当年補完、未来日なら前年)
+      if (currentValue && /^\d{1,2}\/\d{1,2}$/.test(currentValue)) {
+        var parts = currentValue.split('/');
+        var y = new Date().getFullYear();
+        var m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
+        var cand = new Date(y, m - 1, d);
+        if (cand > new Date()) y -= 1;
+        input.value = y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+      }
+    } else {
+      input = document.createElement('input');
+      input.type = 'text';
+      input.style.cssText = 'font-size:0.85em;padding:0.2em;width:6em;';
+    }
+    if (input.tagName === 'TEXTAREA' || input.type === 'text') {
+      input.value = currentValue;
+    }
+
+    td.innerHTML = '';
+    td.appendChild(input);
+    input.focus();
+    if (input.type === 'text' || input.tagName === 'TEXTAREA') input.select();
+
+    var finished = false;
+    function commit() {
+      if (finished) return;
+      finished = true;
+      td.dataset.editing = '';
+
+      var newValue = input.value;
+      // <input type="date"> の YYYY-MM-DD → M/D
+      if (input.type === 'date' && newValue) {
+        var p = newValue.split('-');
+        newValue = parseInt(p[1], 10) + '/' + parseInt(p[2], 10);
+      }
+      newValue = (newValue || '').replace(/\r\n/g, '\n').trim();
+
+      // 更新日 (last_research_update) は M/D 形式 + カレンダー上存在する日付に限定
+      if (field === 'last_research_update' && newValue !== '') {
+        var md = newValue.match(/^(\d{1,2})\/(\d{1,2})$/);
+        var ok = false;
+        if (md) {
+          var mm = parseInt(md[1], 10), dd = parseInt(md[2], 10);
+          var y = new Date().getFullYear();
+          var probe = new Date(y, mm - 1, dd);
+          ok = (probe.getMonth() === mm - 1 && probe.getDate() === dd);
+        }
+        if (!ok) {
+          alert('日付として不正です: "' + newValue + '" (M/D 形式で入力してください)');
+          renderPlain(td, currentValue);
+          return;
+        }
+      }
+
+      var fields = {};
+      fields[field] = newValue;
+      // ステージ編集時は更新日も当日に
+      var touchUpdate = (td.dataset.touchUpdate === '1');
+      if (touchUpdate) {
+        fields['last_research_update'] = todayMD();
+      }
+
+      var formData = new FormData();
+      Object.keys(fields).forEach(function(k) { formData.append(k, fields[k]); });
+      var code = td.dataset.code;
+      fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData,
+      }).then(function(resp) {
+        return resp.json().then(function(body) { return { ok: resp.ok, body: body }; });
+      }).then(function(res) {
+        if (!res.ok || !res.body.ok) {
+          alert('保存失敗: ' + (res.body && res.body.error || 'unknown'));
+          // 元値で再描画
+          if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
+          else renderPlain(td, currentValue);
+          return;
+        }
+        // 自セル更新 (display 値があれば使う、なければ送信値)
+        var disp = (res.body.display) || {};
+        var displayValue = (disp[field] !== undefined) ? disp[field] : newValue;
+        if (field === 'gyoutai_theme') renderGyoutaiTheme(td, displayValue);
+        else renderPlain(td, displayValue);
+
+        // ステージ編集時は同じ行の last_research_update セルも更新
+        var tr = td.closest('tr');
+        if (touchUpdate) {
+          var dateTd = tr && tr.querySelector('td.editable[data-field="last_research_update"]');
+          if (dateTd) {
+            var dateDisp = (disp.last_research_update !== undefined) ? disp.last_research_update : fields['last_research_update'];
+            renderPlain(dateTd, dateDisp);
+          }
+        }
+
+        // サーバから新しい styles が返ったらセルの style 属性も同期更新
+        // (codex P2 対応: inline 編集後の色のズレを防ぐ)
+        var newStyles = res.body.styles || {};
+        applyStylesToRow(tr, newStyles);
+      }).catch(function(err) {
+        alert('保存失敗: ' + err);
+        if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
+        else renderPlain(td, currentValue);
+      });
+    }
+
+    function cancel() {
+      if (finished) return;
+      finished = true;
+      td.dataset.editing = '';
+      if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
+      else renderPlain(td, currentValue);
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      if (e.key === 'Enter' && input.tagName !== 'TEXTAREA') { e.preventDefault(); input.blur(); }
+    });
+  }
+
+  document.querySelectorAll('td.editable').forEach(function(td) {
+    td.addEventListener('click', function(e) {
+      // セル内のリンク (銘柄詳細など) クリックは編集モードに入らない
+      if (e.target.tagName === 'A') return;
+      // ステージセルで Ctrl/Cmd+クリックなら株探チャートを別タブで開く (編集はしない)
+      if (td.dataset.field === 'stage' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        var code = td.dataset.code;
+        if (code) {
+          window.open('https://kabutan.jp/stock/chart?code=' + encodeURIComponent(code), '_blank', 'noopener');
+        }
+        return;
+      }
+      startEdit(td);
+    });
+  });
+})();
+
+// ========== 業態・テーマ inline 編集 (issue #187) ==========
+// 既存 .editable とは別系統。input + datalist で常時編集可能、change/blur で POST。
+(function() {
+  function saveCell(td) {
+    var code = td.dataset.code;
+    if (!code) return;
+    var inputs = td.querySelectorAll('.gyoutai-input');
+    if (!inputs.length) return;
+
+    var fd = new FormData();
+    inputs.forEach(function(inp) { fd.append(inp.name, inp.value); });
+
+    inputs.forEach(function(inp) { inp.classList.add('saving'); inp.classList.remove('error'); });
+
+    fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+    }).then(function(r) {
+      return r.json().then(function(json) { return { ok: r.ok, json: json }; });
+    }).then(function(res) {
+      inputs.forEach(function(inp) { inp.classList.remove('saving'); });
+      if (!res.ok || !res.json || res.json.ok !== true) {
+        inputs.forEach(function(inp) { inp.classList.add('error'); });
+        var msg = (res.json && res.json.error) || 'gyoutai_themes 保存に失敗しました';
+        alert(msg);
+        return;
+      }
+      // サーバ返却値で input を再同期 (空スロット除去・順序を反映)
+      var themes = (res.json.display && res.json.display.gyoutai_themes) || [];
+      inputs.forEach(function(inp, i) {
+        inp.value = themes[i] != null ? themes[i] : '';
+      });
+    }).catch(function(err) {
+      inputs.forEach(function(inp) { inp.classList.remove('saving'); inp.classList.add('error'); });
+      alert('通信エラー: ' + err);
+    });
+  }
+
+  document.querySelectorAll('td.gyoutai-themes-cell').forEach(function(td) {
+    var inputs = td.querySelectorAll('.gyoutai-input');
+    inputs.forEach(function(inp) {
+      if (inp.disabled) return;
+      // datalist 選択 (change) / 自由入力後の blur で保存
+      inp.addEventListener('change', function() { saveCell(td); });
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      });
+    });
+  });
+})();
+
+// ========== 管理パネル開閉 ==========
+(function() {
+  var manageToggle = document.getElementById('toggle-manage-mode');
+  var panel = document.getElementById('manage-panel');
+  if (!manageToggle || !panel) return;
+  manageToggle.addEventListener('click', function() {
+    var open = panel.style.display !== 'none';
+    if (open) {
+      // 閉じる際は削除モードもクリア
+      panel.style.display = 'none';
+      document.body.classList.remove('delete-mode');
+      document.querySelectorAll('.bulk-cb').forEach(function(c) { c.checked = false; });
+      var bar = document.getElementById('bulk-delete-bar');
+      if (bar) bar.style.display = 'none';
+      var cnt = document.getElementById('selected-count');
+      if (cnt) cnt.textContent = '0';
+    } else {
+      panel.style.display = '';
+    }
+  });
+})();
+
+// ========== 削除モード = ユニバース除外一括 ==========
+(function() {
+  var toggle = document.getElementById('toggle-delete-mode');
+  if (!toggle) return;  // delete_mode_allowed=false のフィルタでは何もしない
+  var bar = document.getElementById('bulk-delete-bar');
+  var countEl = document.getElementById('selected-count');
+  var execBtn = document.getElementById('bulk-delete-execute');
+  var cancelBtn = document.getElementById('bulk-delete-cancel');
+  // issue #178: 現状のフィルタ/ソート/ページ全体 (return_query) を Jinja で埋め込んで JS から参照
+  var returnQuery = {{ return_query | tojson }};
+
+  function refresh() {
+    var checked = document.querySelectorAll('.bulk-cb:checked');
+    if (countEl) countEl.textContent = checked.length;
+    if (bar) bar.style.display = document.body.classList.contains('delete-mode') ? '' : 'none';
+  }
+  function clearChecks() {
+    document.querySelectorAll('.bulk-cb').forEach(function(c) { c.checked = false; });
+  }
+  toggle.addEventListener('click', function() {
+    document.body.classList.toggle('delete-mode');
+    if (!document.body.classList.contains('delete-mode')) clearChecks();
+    refresh();
+  });
+  if (cancelBtn) cancelBtn.addEventListener('click', function() {
+    document.body.classList.remove('delete-mode');
+    clearChecks();
+    refresh();
+  });
+  document.addEventListener('change', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('bulk-cb')) refresh();
+  });
+  if (execBtn) execBtn.addEventListener('click', function() {
+    var codes = Array.prototype.slice.call(document.querySelectorAll('.bulk-cb:checked')).map(function(c) { return c.value; });
+    if (!codes.length) return;
+    if (!confirm(codes.length + ' 件をユニバースから除外します。よろしいですか?')) return;
+    var fd = new FormData();
+    codes.forEach(function(c) { fd.append('codes', c); });
+    fd.append('return_query', returnQuery);
+    fetch('/portfolio/bulk-exclude', { method: 'POST', body: fd })
+      .then(function(r) {
+        if (r.redirected) location.href = r.url;
+        else location.reload();
+      })
+      .catch(function(err) { alert('除外失敗: ' + err); });
+  });
+  refresh();
+})();
+</script>
+
+{% else %}
+<p style="color:#888;">該当銘柄なし</p>
+{% endif %}
+
+{% endblock %}

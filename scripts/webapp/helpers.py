@@ -213,10 +213,10 @@ def search_records(
 _MM_DD_PATTERN = re.compile(r"^(\d{1,2})/(\d{1,2})$")
 
 # マークダウン風記法 → HTML 変換パターン
-# **太字** → <b>太字</b>（先に処理、* と区別するため）
-_RE_BOLD = re.compile(r"\*\*(.+?)\*\*")
-# *赤字* → <span style="color:#ff0000">赤字</span>（** 処理後に実行）
-_RE_RED = re.compile(r"\*(.+?)\*")
+# **赤字** → <span style="color:#ff0000">赤字</span>（先に処理、* と区別するため）
+_RE_RED = re.compile(r"\*\*(.+?)\*\*")
+# *太字* → <b>太字</b>（** 処理後に実行）
+_RE_BOLD = re.compile(r"\*(.+?)\*")
 # [テキスト](URL) → <a href="URL" target="_blank">テキスト</a>
 _RE_NAMED_LINK = re.compile(r'\[([^\]]+)\]\((https?://[^\s)]+)\)')
 # URL自動リンク化（既に <a> タグ内でないURLを対象）
@@ -226,15 +226,15 @@ _RE_URL = re.compile(r'(?<!["\'>])(https?://[^\s<>\'"]+)')
 def _markdown_to_html(text: str) -> str:
     """マークダウン風記法を HTML に変換する。
 
-    - **太字** → <b>太字</b>
-    - *赤字* → <span style="color:#ff0000">赤字</span>
+    - **赤字** → <span style="color:#ff0000">赤字</span>
+    - *太字* → <b>太字</b>
     - [テキスト](URL) → <a href="URL" target="_blank">テキスト</a>
     - URL → <a href="URL" target="_blank">URL</a>
     """
     if not text:
         return text
-    text = _RE_BOLD.sub(r"<b>\1</b>", text)
     text = _RE_RED.sub(r'<span style="color:#ff0000">\1</span>', text)
+    text = _RE_BOLD.sub(r"<b>\1</b>", text)
     text = _RE_NAMED_LINK.sub(r'<a href="\2" target="_blank">\1</a>', text)
     text = _RE_URL.sub(r'<a href="\1" target="_blank">\1</a>', text)
     return text
@@ -342,6 +342,37 @@ def save_ir_comments(code_s: str, form_data: dict) -> None:
 
         record["snapshots"] = snapshots
         upsert_research_record(record)
+
+
+def save_corporate_url_override(code_s: str, url: str) -> str:
+    """会社HP URL の手動上書きを保存する (issue #208)。
+
+    空文字を渡すと上書きをクリアする (デフォルトに戻る)。
+    入力値が stocks_shelve.corporate_url と同一の場合も、上書きとして固定すると
+    今後の corporate_url 自動更新を遮断してしまうため、空文字扱い (= デフォルト
+    継続) として保存する。
+    URL は事前にバリデーション済みであることを呼び出し側で保証する。
+
+    Returns:
+        実際に保存された値 (空文字なら override クリア、それ以外なら上書き値)。
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+
+    cleaned = url.strip()
+    if cleaned:
+        stock = get_stock_data(normalized) or {}
+        default_url = (stock.get("corporate_url") or "").strip()
+        if default_url and cleaned == default_url:
+            cleaned = ""
+
+    with _flock():
+        record = get_research_record(normalized)
+        if record is None:
+            raise ValueError(f"レコード未登録: {normalized}")
+        record["corporate_url_override"] = cleaned
+        upsert_research_record(record)
+    return cleaned
 
 
 # =======================================================
@@ -906,7 +937,9 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
             # （旧 post_price_change のみ持つレコードでも 1d 値を引き継ぐ）
             existing = comments[target_idx]
             existing_changes = normalize_kessan_post_price_changes(existing)
-            merged_changes: Dict[str, str] = {}
+            # 未知キー (例: "pts" — 別経路で書き込まれる) を保持するため
+            # 既存 dict をベースに 1d/5d だけ上書きマージする
+            merged_changes: Dict[str, str] = dict(existing_changes)
             for key, _ in KESSAN_REACTION_PERIODS:
                 new_v = post_price_changes.get(key, "")
                 old_v = existing_changes.get(key, "")
@@ -917,6 +950,106 @@ def save_kessan_comment(code_s: str, form_data: dict) -> Dict[str, Any]:
             comments.append(new_entry)
 
         # 昇順ソート + 12件超の最古を削除
+        comments = _sort_kessan_comments(comments)
+        if len(comments) > MAX_KESSAN_COMMENTS:
+            comments = comments[-MAX_KESSAN_COMMENTS:]
+
+        record["kessan_comments"] = comments
+        upsert_research_record(record)
+
+    return new_entry
+
+
+def upsert_kessan_pts_change(
+    code_s: str,
+    kessanbi: str,
+    quarter: int,
+    pts_value: str,
+) -> Dict[str, Any]:
+    """当日決算銘柄の kessan_comments に PTS 騰落率を upsert する。
+
+    - 既存 (kessanbi, quarter) エントリがあれば post_price_changes['pts'] のみ更新
+    - 無ければ最小限のエントリを新規作成
+    - レコード自体が無ければ add_stock() で先行登録
+    - quarter は make_stock_db 側で stock['kessan_quarter'] から渡される
+
+    Args:
+        code_s: 銘柄コード
+        kessanbi: YYYY/MM/DD 形式
+        quarter: 1〜4 (0 は未取得扱い)
+        pts_value: "+2.5" 形式 (% 記号は除去済み、符号は保持)
+
+    Returns:
+        upsert したエントリ dict
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    if _parse_kessanbi(kessanbi) is None:
+        raise ValueError(f"kessanbi は YYYY/MM/DD 形式: got {kessanbi!r}")
+    pts_str = str(pts_value) if pts_value is not None else ""
+
+    # add_stock は内部で _flock を取るため _flock 外で呼ぶ
+    if get_research_record(normalized) is None:
+        try:
+            add_stock(normalized)
+        except ValueError:
+            # 競合で先に登録されたケースは続行 (再取得時に拾える)
+            pass
+
+    with _flock():
+        record = get_research_record(normalized)
+        if record is None:
+            raise ValueError(f"レコード登録失敗: {normalized}")
+
+        comments: List[Dict[str, Any]] = list(record.get("kessan_comments") or [])
+        # マッチング 3 段 (issue #207):
+        # 1) (kessanbi, quarter) 完全一致 → そのエントリ
+        # 2) 完全一致なし & 引数 quarter==0 → 同 kessanbi 内で quarter 最大のエントリ
+        #    (cron 経路で kessan_quarter 取得失敗 → q=0 フォールバックが
+        #     既に手動メモ済みの quarter エントリと別エントリで append される事故防止)
+        # 3) それも無ければ新規 append
+        target_idx = None
+        for i, entry in enumerate(comments):
+            if (
+                entry.get("kessanbi") == kessanbi
+                and int(entry.get("quarter", 0) or 0) == int(quarter or 0)
+            ):
+                target_idx = i
+                break
+        if target_idx is None and int(quarter or 0) == 0:
+            # 同 kessanbi 内で quarter が最大のエントリにフォールバックマージ
+            best_idx = None
+            best_q = -1
+            for i, entry in enumerate(comments):
+                if entry.get("kessanbi") != kessanbi:
+                    continue
+                q = int(entry.get("quarter", 0) or 0)
+                if q > best_q:
+                    best_q = q
+                    best_idx = i
+            if best_idx is not None:
+                target_idx = best_idx
+
+        if target_idx is not None:
+            existing = comments[target_idx]
+            ppc = dict(existing.get("post_price_changes") or {})
+            ppc["pts"] = pts_str
+            existing["post_price_changes"] = ppc
+            new_entry = existing
+        else:
+            new_entry = {
+                "kessanbi": kessanbi,
+                "quarter": int(quarter or 0),
+                "pre_expectation": "",
+                "pre_outlook": "",
+                "post_price_changes": {"pts": pts_str},
+                "post_comment": "",
+                "kessan_matagi": False,
+                "held_before_kessan": False,
+                "held_after_kessan": False,
+            }
+            comments.append(new_entry)
+
         comments = _sort_kessan_comments(comments)
         if len(comments) > MAX_KESSAN_COMMENTS:
             comments = comments[-MAX_KESSAN_COMMENTS:]
@@ -938,6 +1071,50 @@ def get_kessan_comment(code_s: str, kessanbi: str) -> Optional[Dict[str, Any]]:
         if entry.get("kessanbi") == kessanbi:
             return entry
     return None
+
+
+def _is_empty_placeholder(entry: Dict[str, Any]) -> bool:
+    """pf_kessan_shelve 由来の空ベース行 (= 実データを何も持たないプレースホルダ) か判定する。
+
+    pf-only ベースは has_comment=False かつ価格反応も held_* / kessan_matagi も無い。
+    research 側のエントリが「メモなしだが反応率/held フラグあり」のとき、こちらを
+    優先するための補助判定 (issue #207 codex P1 review 反映)。
+    """
+    if entry.get("has_comment"):
+        return False
+    if entry.get("kessan_matagi"):
+        return False
+    if entry.get("held_before_kessan") or entry.get("held_after_kessan"):
+        return False
+    ppc = entry.get("post_price_changes") or {}
+    for v in ppc.values():
+        if (v or "").strip():
+            return False
+    return True
+
+
+def _select_market_kessan_winner(
+    cur: Dict[str, Any], cand: Dict[str, Any]
+) -> Dict[str, Any]:
+    """同 (code_s, kessanbi) で複数 kessan_comments エントリが来たときの優先順位 (issue #207)。
+
+    1. cur が pf-only プレースホルダなら cand を採用 (research 側の実データを優先、
+       codex P1 review: kessan_matagi / held_* / post_price_changes が捨てられないように)
+    2. has_comment=True を優先
+    3. 両方 has_comment が同じなら quarter 大優先
+    4. quarter も同じなら cur (= 既存挙動互換、最初に見たもの)
+    """
+    if _is_empty_placeholder(cur):
+        return cand
+    cur_has = bool(cur.get("has_comment"))
+    cand_has = bool(cand.get("has_comment"))
+    if cur_has != cand_has:
+        return cand if cand_has else cur
+    cur_q = int(cur.get("quarter", 0) or 0)
+    cand_q = int(cand.get("quarter", 0) or 0)
+    if cand_q > cur_q:
+        return cand
+    return cur
 
 
 def get_market_kessan_data() -> Dict[str, Any]:
@@ -1042,13 +1219,13 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 continue
             merged_key = (code_s, kessanbi)
             quarter = entry.get("quarter", 0) or 0
-            base = merged.get(merged_key)
-            stock_name = (base or {}).get("stock_name") or rec.get("stock_name", "")
-            merged[merged_key] = {
+            cur = merged.get(merged_key)
+            stock_name = (cur or {}).get("stock_name") or rec.get("stock_name", "")
+            cand = {
                 "code_s": code_s,
                 "stock_name": stock_name,
                 "kessanbi": kessanbi,
-                "quarter": quarter if quarter else (base or {}).get("quarter", 0),
+                "quarter": quarter if quarter else (cur or {}).get("quarter", 0),
                 "pre_expectation": entry.get("pre_expectation", "") or "",
                 "pre_outlook": entry.get("pre_outlook", "") or "",
                 "post_price_changes": normalize_kessan_post_price_changes(entry),
@@ -1062,6 +1239,20 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 "held_before_kessan": bool(entry.get("held_before_kessan", False)),
                 "held_after_kessan": bool(entry.get("held_after_kessan", False)),
             }
+            # issue #207: 同 (code_s, kessanbi) で複数 quarter エントリが併存する場合、
+            # has_comment 優先 → quarter 大優先で winner を選ぶ。PTS は別チャネルで OR マージ。
+            winner = _select_market_kessan_winner(cur, cand) if cur else cand
+            winner_pts = (winner.get("post_price_changes") or {}).get("pts") or ""
+            if not winner_pts:
+                # winner に PTS が無ければ他のソース (cur / cand) から拾う
+                for src in (cur, cand):
+                    if not src:
+                        continue
+                    src_pts = (src.get("post_price_changes") or {}).get("pts") or ""
+                    if src_pts:
+                        winner.setdefault("post_price_changes", {})["pts"] = src_pts
+                        break
+            merged[merged_key] = winner
 
     # 過去エントリで post_price_changes のいずれかの期間が空のものだけ
     # 一括で price_log を取得し補完計算する
@@ -1134,18 +1325,17 @@ def get_market_kessan_data() -> Dict[str, Any]:
                 updates,
             ))
 
-        # 表示振り分けはカレンダー上の今日基準で 3 群に分ける:
-        # - past_groups (dt < today_cal): 過去決算 (反応コメ・株価変動率を表示)
-        # - today_groups (dt == today_cal): 当日決算。中身は past 相当で
+        # 表示振り分けは Shintakane 基準時刻 (17時) で 3 群に分ける:
+        # - past_groups (dt < base_day): 過去決算 (反応コメ・株価変動率を表示)
+        # - today_groups (dt == base_day): 当日決算。中身は past 相当で
         #   反応コメ・決算またぎを当日中に編集できるが、表示位置はカード扱いで
         #   future の前に置く。
-        # - future_groups (dt > today_cal): 未来決算 (事前見通しのみ編集)
-        # held_before/after の判定はこれより上の base_day ベースを維持
-        # (当日中の保有は「決算前保有」として扱うため)。
-        today_cal = datetime.today().date()
-        if dt < today_cal:
+        # - future_groups (dt > base_day): 未来決算 (事前見通しのみ編集)
+        # 例: 5/15 0:10 では base_day=5/14 のため 5/14 カードは当日扱い、
+        # 5/15 17:00 以降は base_day=5/15 となり 5/14 カードは過去扱いになる。
+        if dt < base_day:
             past_groups.setdefault(kessanbi, []).append(entry)
-        elif dt == today_cal:
+        elif dt == base_day:
             today_groups.setdefault(kessanbi, []).append(entry)
         else:
             future_groups.setdefault(kessanbi, []).append(entry)
@@ -1175,11 +1365,15 @@ def get_market_kessan_data() -> Dict[str, Any]:
         reverse=True,
     )
     # 過去7日間は常時表示、それ以前は details で折りたたみ
+    # 90日 (約1四半期) より前の決算は表示しない (履歴が貯まり続けるとDOM/メモリが肥大化するため)
     recent_cutoff = base_day - timedelta(days=7)
+    older_cutoff = base_day - timedelta(days=90)
     recent_past_entries: List = []
     older_past_entries: List = []
     for kv in past_entries_all:
         dt = _parse_kessanbi(kv[0]) or date.min
+        if dt < older_cutoff:
+            continue
         if dt >= recent_cutoff:
             recent_past_entries.append(kv)
         else:
@@ -1189,7 +1383,646 @@ def get_market_kessan_data() -> Dict[str, Any]:
         "base_day": base_day,
         "future_entries": future_entries,
         "today_entries": today_entries,
-        "past_entries": past_entries_all,  # 後方互換
+        # 後方互換: 90日カットオフ後の全過去エントリ (空状態判定で使うため
+        # recent + older を合成。past_entries_all をそのまま返すと、90日超
+        # しか無いケースで空状態メッセージが出ず画面が空白になる)
+        "past_entries": recent_past_entries + older_past_entries,
         "recent_past_entries": recent_past_entries,
         "older_past_entries": older_past_entries,
     }
+
+
+def _bulk_get_stock_data(code_list: List[str]) -> Dict[str, Dict[str, Any]]:
+    """stocks_shelve を 1 度だけ open して複数銘柄をまとめて取得する。
+
+    `get_stock_data` を N 回呼ぶと N 回 open/close するため、一覧画面用のバルク版。
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    with ShelveDB(STOCKS_SHELVE) as db:
+        for code_s in code_list:
+            if not code_s:
+                continue
+            normalized = normalize_code_s(code_s)
+            result[code_s] = db.get(normalized) or {}
+    return result
+
+
+def resolve_stock_name(code_s: str) -> str:
+    """銘柄名を stocks_shelve → research_shelve → "" の優先順で取得する。
+
+    portfolio_shelve は銘柄名を持たないため、表示時はこの関数経由で都度取得する。
+    """
+    from db_shelve import RESEARCH_SHELVE  # 遅延 import (循環回避)
+
+    if not code_s:
+        return ""
+    normalized = normalize_code_s(code_s)
+    with ShelveDB(STOCKS_SHELVE) as db:
+        rec = db.get(normalized)
+        if rec and rec.get("stock_name"):
+            return rec["stock_name"]
+    with ShelveDB(RESEARCH_SHELVE) as db:
+        rec = db.get(normalized)
+        if rec and rec.get("stock_name"):
+            return rec["stock_name"]
+    return ""
+
+
+def _bulk_resolve_stock_names(code_list: List[str]) -> Dict[str, str]:
+    """複数 code_s 分の銘柄名をバルク取得する (一覧画面用)。"""
+    from db_shelve import RESEARCH_SHELVE  # 遅延 import (循環回避)
+
+    result: Dict[str, str] = {c: "" for c in code_list if c}
+    if not result:
+        return result
+
+    with ShelveDB(STOCKS_SHELVE) as db:
+        for c in list(result.keys()):
+            rec = db.get(normalize_code_s(c))
+            if rec and rec.get("stock_name"):
+                result[c] = rec["stock_name"]
+
+    missing = [c for c, n in result.items() if not n]
+    if missing:
+        with ShelveDB(RESEARCH_SHELVE) as db:
+            for c in missing:
+                rec = db.get(normalize_code_s(c))
+                if rec and rec.get("stock_name"):
+                    result[c] = rec["stock_name"]
+    return result
+
+
+# issue #178: status 内部値 → URL クエリ / 表示ラベルの対応表 (helpers 内部利用のみ)。
+# routes/portfolio.py の同名定数とは独立に保持し、循環 import を避ける。
+_PORTFOLIO_STATUS_QUERY = {
+    "1保": "hold",
+    "2準": "semi",
+    "3監": "watch",
+}
+_PORTFOLIO_STATUS_LABEL = {
+    "1保": "保有",
+    "2準": "準保有",
+    "3監": "監視",
+}
+
+
+def _gyoutai_first_line(row: Dict[str, Any]) -> str:
+    """row の memo.gyoutai_themes の先頭要素を返す (issue #178 業態順ソート用)。
+
+    空 list / 先頭が空文字 / themes 自体が無い場合は "" を返す。
+    """
+    themes = (row.get("memo") or {}).get("gyoutai_themes") or []
+    if not themes:
+        return ""
+    head = themes[0]
+    if not isinstance(head, str):
+        return ""
+    return head.strip()
+
+
+def list_portfolio_with_indicators(
+    records: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """portfolio_shelve のレコード列に stocks_shelve から最新指標を補完する (Phase 3b)。
+
+    銘柄名は portfolio_shelve に保存されていないため stocks_shelve / research_shelve から
+    都度取得してマージする (要件 §4 の延長)。
+
+    Args:
+        records: portfolio_shelve.list_records の戻り値 (既に status 等で絞り込み済み)
+
+    Returns:
+        各 dict: portfolio レコード + {stock_name, rank, kessanbi_md, per, market_cap,
+                                     dividend, rs, sales_growth, profit_growth,
+                                     quarter, progress_diff, trend_template, tags,
+                                     theoretical_diff, gyoseki, indicators_raw,
+                                     status_query, status_label}
+        並び順は業態 1 行目昇順 → 順位昇順 → コード (issue #215: 順位ソート廃止、空業態/None順位は末尾)。
+    """
+    if not records:
+        return []
+
+    code_list = [r.get("code_s", "") for r in records]
+    stock_map = _bulk_get_stock_data(code_list)
+    name_map = _bulk_resolve_stock_names(code_list)
+    today = date.today()  # 全 row 共通の基準日 (issue #177)
+    rows: List[Dict[str, Any]] = []
+    for rec in records:
+        code_s = rec.get("code_s", "")
+        row = dict(rec)
+        row["stock_name"] = name_map.get(code_s, "") or rec.get("stock_name", "")  # 旧データ互換
+        row.update(_extract_indicators_for_portfolio(stock_map.get(code_s, {})))
+        row["styles"] = compute_cell_styles(row, today=today)
+        # issue #178: ステータス列 (badge) 表示用の query / label を埋める
+        status = rec.get("status", "")
+        row["status_query"] = _PORTFOLIO_STATUS_QUERY.get(status, "")
+        row["status_label"] = _PORTFOLIO_STATUS_LABEL.get(status, status)
+        # issue #178: 業態境界判定用 (template から再計算しないで済むよう)
+        row["gyoutai_first"] = _gyoutai_first_line(row)
+        rows.append(row)
+
+    # 業態順: 業態 1 行目 (空は末尾) → 順位昇順 (None は末尾) → コード
+    rows.sort(key=lambda r: (
+        r["gyoutai_first"] == "",
+        r["gyoutai_first"],
+        r.get("rank") is None,
+        r.get("rank") or 0,
+        r.get("code_s", ""),
+    ))
+    return rows
+
+
+def collect_gyoutai_theme_choices(records: List[Dict[str, Any]]) -> List[str]:
+    """portfolio_shelve 全レコードの memo.gyoutai_themes をフラット化して候補リストを返す (issue #187)。
+
+    空要素除去・ユニーク化・アルファベット/五十音昇順ソート済み。
+    datalist の選択肢として使う想定。
+    """
+    seen = set()
+    for rec in records:
+        memo = rec.get("memo") or {}
+        for theme in (memo.get("gyoutai_themes") or []):
+            if not isinstance(theme, str):
+                continue
+            t = theme.strip()
+            if t:
+                seen.add(t)
+    return sorted(seen)
+
+
+def _format_tags(stock: Dict[str, Any]) -> str:
+    """code_rank.csv「タグ」列と同じ表記を返す。
+
+    make_stock_db.make_signal() の tags リストを "/" join する。
+    market_db を渡さないので R高/強乖/弱乖 タグは出ない (Phase 4 送り)。
+    """
+    if not stock:
+        return "—"
+    try:
+        from make_stock_db import make_signal  # 遅延 import
+        _signal, tags = make_signal(stock)
+    except Exception:
+        return "—"
+    return "/".join(tags) if tags else "—"
+
+
+def _format_theoretical_diff(stock: Dict[str, Any]) -> str:
+    """理論株価乖離率の表示 (code_rank.csv「理論株価(乖離率|上限,下限))」列の最初の値)。
+
+    rironkabuka.get_rironkabuka_kairi(stock) を再利用して同じ計算ロジックを使う。
+    返り値の tuple の先頭が乖離率 (= `(理論株価 - 株価) / 株価 * 100`)。
+    """
+    if not stock:
+        return "—"
+    try:
+        from rironkabuka import get_rironkabuka_kairi  # 遅延 import
+        kairi, _up, _down, _preceding = get_rironkabuka_kairi(stock)
+    except Exception:
+        return "—"
+    if not stock.get("price") or not stock.get("rironkabuka"):
+        return "—"
+    # "%" 表記は列ヘッダ側 ("理論株価乖離(%)") に集約 (issue #177)、値は数値のみ
+    return f"{int(kairi)}"
+
+
+def _annual_growth(stock: Dict[str, Any]) -> tuple:
+    """gyoseki.calc_annual_growth を遅延 import で呼んで (sales%, profit%) を返す。
+
+    code_rank.csv の業績列 [A]X%,Y% の X, Y。取れなければ (None, None)。
+    """
+    if not stock:
+        return (None, None)
+    try:
+        from gyoseki import calc_annual_growth  # 遅延 import (循環回避)
+        result = calc_annual_growth(stock)
+    except Exception:
+        return (None, None)
+    if not result:
+        return (None, None)
+    # result = (年度, 売上%, 営利%)
+    return result[1], result[2]
+
+
+def _format_buy_collection(stock: Dict[str, Any]) -> str:
+    """買い集めの週/日アルファベット評価を "週,日" の形式で返す (例: "D,E")。
+
+    code_rank.csv SRR 列の "47,32,D,E,-6" のうち最後 (50DMA乖離率を除く)
+    アルファベット 2 文字に相当する。price.get_spr_expr のロジックを再利用。
+    """
+    if not stock:
+        return "—"
+    sprs = stock.get("sell_pressure_ratio") or []
+    sprs_w = stock.get("sell_pressure_ratio_w") or []
+    if not sprs:
+        return "—"
+    try:
+        from price import get_spr_expr  # 遅延 import (循環回避)
+        full = get_spr_expr(sprs, sprs_w)
+    except Exception:
+        return "—"
+    # full は "47,32,D,E" や "47,32,D" 等。アルファベット部分のみ抽出
+    parts = full.split(",")
+    letters = [p for p in parts if p and not p.lstrip("+-").isdigit()]
+    return ",".join(letters) if letters else "—"
+
+
+def _progress_quarter_and_diff(stock: Dict[str, Any]) -> tuple:
+    """gyoseki.calc_progress_rate から (quarter_label, diff_str) を返す。
+
+    code_rank.csv 進捗率列 [P]3Q70%(72%),62%(44%) を分解:
+    - quarter_label: "3Q" などの文字列。
+        - quarter=0 (1Q 未発表 / 新年度開始直後) は "0Q" として明示
+        - calc_progress_rate が値を返さない (データ不足) ときは "—"
+    - diff_str: "(sales-sales_pre)/(profit-profit_pre)" を整数化 (例: "-2/+18")
+                取れなければ "—"
+    """
+    if not stock:
+        return ("—", "—")
+    try:
+        from gyoseki import calc_progress_rate  # 遅延 import (循環回避)
+        progress = calc_progress_rate(stock)
+    except Exception:
+        return ("—", "—")
+    if not isinstance(progress, dict) or "quarter" not in progress:
+        return ("—", "—")
+    quarter = progress.get("quarter", 0)
+    if not isinstance(quarter, int) or quarter < 0:
+        return ("—", "—")
+    quarter_label = f"{quarter}Q"
+    sales = progress.get("sales")
+    sales_pre = progress.get("sales_pre")
+    profit = progress.get("profit")
+    profit_pre = progress.get("profit_pre")
+    if not all(isinstance(v, (int, float)) for v in (sales, sales_pre, profit, profit_pre)):
+        return (quarter_label, "—")
+    sales_diff = round(sales - sales_pre)
+    profit_diff = round(profit - profit_pre)
+    diff_str = f"{sales_diff:d}/{profit_diff:d}"
+    return (quarter_label, diff_str)
+
+
+def _format_kessanbi_md(kessanbi: Any) -> str:
+    """kessanbi (YYYY/MM/DD) を MM/DD 形式に整形して返す。空なら "—"。"""
+    if not kessanbi or not isinstance(kessanbi, str):
+        return "—"
+    parts = kessanbi.split("/")
+    if len(parts) >= 3:
+        return f"{parts[1]}/{parts[2]}"
+    return kessanbi
+
+
+def _format_per(per: Any) -> str:
+    """PER を表示用文字列に整形する。
+
+    - 二桁以上 (>= 10): 整数表記 (例: 25, 30)
+    - 一桁 (< 10): 小数1桁 (例: 5.3, 3.0)
+    - 数値でない: "—"
+    """
+    if not isinstance(per, (int, float)):
+        return "—"
+    if per >= 10:
+        return f"{per:.0f}"
+    return f"{per:.1f}"
+
+
+def _theoretical_diff_raw(stock: Dict[str, Any]) -> Optional[float]:
+    """理論株価乖離率の生値 (整数化前) を返す。取れなければ None。"""
+    if not stock or not stock.get("price") or not stock.get("rironkabuka"):
+        return None
+    try:
+        from rironkabuka import get_rironkabuka_kairi  # 遅延 import
+        kairi, _up, _down, _preceding = get_rironkabuka_kairi(stock)
+    except Exception:
+        return None
+    return kairi if isinstance(kairi, (int, float)) else None
+
+
+def _progress_diff_eiri_raw(stock: Dict[str, Any]) -> Optional[float]:
+    """進捗率乖離 (営利) の生値を返す。"3/15" の右側 = profit - profit_pre。"""
+    if not stock:
+        return None
+    try:
+        from gyoseki import calc_progress_rate  # 遅延 import
+        progress = calc_progress_rate(stock)
+    except Exception:
+        return None
+    if not isinstance(progress, dict):
+        return None
+    profit = progress.get("profit")
+    profit_pre = progress.get("profit_pre")
+    if not all(isinstance(v, (int, float)) for v in (profit, profit_pre)):
+        return None
+    return profit - profit_pre
+
+
+def _market_cap_category(billion_yen: Optional[float]) -> Optional[str]:
+    """時価総額 (億円) からカテゴリ名を返す。スプシの IFS と同じ閾値。"""
+    if not isinstance(billion_yen, (int, float)):
+        return None
+    if billion_yen < 100:
+        return "極小"
+    if billion_yen < 400:
+        return "小"
+    if billion_yen < 1000:
+        return "中"
+    if billion_yen < 3000:
+        return "大"
+    return "特大"
+
+
+def _gyoseki_quarity_expr_safe(stock: Dict[str, Any]) -> str:
+    """gyoseki.get_gyoseki_quarity_expr を安全に呼ぶ (例外時は空文字)。
+
+    末尾に "<C3>" タグが付いていれば 3Q 連続利益率向上の意味。
+    """
+    if not stock:
+        return ""
+    try:
+        from gyoseki import get_gyoseki_quarity_expr  # 遅延 import
+        return get_gyoseki_quarity_expr(stock) or ""
+    except Exception:
+        return ""
+
+
+def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
+    """stocks_shelve の dict から portfolio 一覧表示用の指標を抽出する。
+
+    表示用文字列 (なければ "—") に加え、色判定用の生値 *_raw と派生フィールドも
+    同時に返す (issue #177 条件付き書式移植のため)。
+    """
+    if not stock:
+        return {
+            "rank": None,
+            "kessanbi_md": "—",
+            "kessanbi_raw": None,
+            "per": "—",
+            "per_raw": None,
+            "market_cap": "—",
+            "market_cap_raw": None,
+            "market_cap_category": None,
+            "dividend": "—",
+            "dividend_raw": None,
+            "rs": "—",
+            "rs_raw": None,
+            "sales_growth": "—",
+            "sales_growth_raw": None,
+            "profit_growth": "—",
+            "profit_growth_raw": None,
+            "quarter": "—",
+            "progress_diff": "—",
+            "progress_diff_eiri_raw": None,
+            "trend_template": "—",
+            "trend_template_tooltip": "—",
+            "tags": "—",
+            "buy_collection": "—",
+            "theoretical_diff": "—",
+            "theoretical_diff_raw": None,
+            "gyoseki_quarity_expr": "",
+            "gyoseki": {},
+            "indicators_raw": {},
+        }
+
+    shihyo = stock.get("shihyo") or {}
+
+    # 順位は stock_rank_log の最新値 (= 直近更新時点での順位)
+    rank_log = stock.get("stock_rank_log") or []
+    rank = rank_log[0][1] if rank_log else None
+
+    per = shihyo.get("PER")
+    market_cap = stock.get("market_cap") or shihyo.get("jikasogaku")
+    dividend_yield = shihyo.get("dividend_yield")
+    # RS 列は code_rank.csv の「モメンタム(現在.20日比/5日比)」列の先頭値 (0〜100 の momentum_pt)
+    momentum_pt = stock.get("momentum_pt")
+    sales_growth, profit_growth = _annual_growth(stock)
+    quarter_label, progress_diff = _progress_quarter_and_diff(stock)
+
+    from make_stock_db import get_trend_template_expr  # 遅延 import (循環回避)
+
+    trend_expr = get_trend_template_expr(stock)
+    trend_misses = stock.get("trend_template") if isinstance(stock.get("trend_template"), list) else []
+    # tooltip 用: 不通過項目の全件 (テーブル列で見切れた時にホバーで参照)
+    trend_tooltip = ",".join(trend_misses) if trend_misses else trend_expr
+
+    market_cap_raw = market_cap if isinstance(market_cap, (int, float)) else None
+
+    return {
+        "rank": rank if isinstance(rank, int) else None,
+        "kessanbi_md": _format_kessanbi_md(stock.get("kessanbi")),
+        "kessanbi_raw": _parse_kessanbi(stock.get("kessanbi", "")),
+        "per": _format_per(per),
+        "per_raw": per if isinstance(per, (int, float)) else None,
+        # 表示はカテゴリ文字列 ("極小"〜"特大")。スプシの IFS 式に対応 (issue #177)
+        "market_cap": _market_cap_category(market_cap_raw) or "—",
+        "market_cap_raw": market_cap_raw,
+        "market_cap_category": _market_cap_category(market_cap_raw),
+        # "%" 表記は列ヘッダ側 ("配当(%)") に集約 (issue #177)、値は数値のみ (小数1桁)
+        "dividend": f"{dividend_yield:.1f}" if isinstance(dividend_yield, (int, float)) else "—",
+        "dividend_raw": dividend_yield if isinstance(dividend_yield, (int, float)) else None,
+        "rs": f"{int(momentum_pt)}" if isinstance(momentum_pt, (int, float)) else "—",
+        "rs_raw": int(momentum_pt) if isinstance(momentum_pt, (int, float)) else None,
+        "sales_growth": f"{int(sales_growth)}" if isinstance(sales_growth, (int, float)) else "—",
+        "sales_growth_raw": sales_growth if isinstance(sales_growth, (int, float)) else None,
+        "profit_growth": f"{int(profit_growth)}" if isinstance(profit_growth, (int, float)) else "—",
+        "profit_growth_raw": profit_growth if isinstance(profit_growth, (int, float)) else None,
+        "quarter": quarter_label,
+        "progress_diff": progress_diff,
+        "progress_diff_eiri_raw": _progress_diff_eiri_raw(stock),
+        "trend_template": trend_expr,
+        "trend_template_tooltip": trend_tooltip,
+        "tags": _format_tags(stock),
+        "buy_collection": _format_buy_collection(stock),
+        "theoretical_diff": _format_theoretical_diff(stock),
+        "theoretical_diff_raw": _theoretical_diff_raw(stock),
+        "gyoseki_quarity_expr": _gyoseki_quarity_expr_safe(stock),
+        "gyoseki": {
+            "isKonki": stock.get("isKonki"),
+        },
+        "indicators_raw": stock,
+    }
+
+
+# ==================================================
+# 条件付き書式 (issue #177): スプシ「保有銘柄」シートの色分けを移植
+# 詳細は doc/PORTFOLIO_COLOR_RULES.md を参照
+# ==================================================
+
+PORTFOLIO_COLORS = {
+    "薄黄": "#fce8b2",   # 良 (PER低い、配当>3、RS≧70 等)
+    "濃黄": "#fbbc04",   # 強良 (順位<300、配当≧5、RS>80 等)
+    "薄赤": "#f4c7c3",   # 警告 (ステージ2S、3Q連続向上タグ)
+    "青":   "#4285f4",   # 警告シグナル (警/売)
+    "赤":   "#ea4335",   # 強警告シグナル (ポ/ブ/最)
+    "薄灰": "#cccccc",   # データ古い (14日以上)
+    "濃灰": "#999999",   # データ古い (1ヶ月以上)
+    "水色": "#6fa8dc",   # データなし/低スコア (買い集めDD以下、トレンド空)
+}
+
+# 買い集めスコア (A=5, B=4, ..., E=1)。スプシの CHOOSE(CODE-64,5,4,3,2,1) に対応
+_BUY_COLLECTION_SCORE = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1}
+
+
+def _parse_research_update_md(md_str: Optional[str], today: date) -> Optional[date]:
+    """'4/27' を date オブジェクトにする。today より未来なら去年扱い。"""
+    if not md_str or md_str == "—":
+        return None
+    try:
+        m, d = md_str.split("/")
+        candidate = date(today.year, int(m), int(d))
+        if candidate > today:
+            candidate = date(today.year - 1, int(m), int(d))
+        return candidate
+    except (ValueError, AttributeError):
+        return None
+
+
+def _buy_collection_score_sum(s: Optional[str]) -> Optional[int]:
+    """'C,C' → 各文字スコアの合計 (A=5..E=1)。フォーマット不正なら None。"""
+    if not s or "," not in s:
+        return None
+    parts = s.split(",")
+    if len(parts) < 2:
+        return None
+    left = parts[0].strip()
+    right = parts[1].strip()
+    if left not in _BUY_COLLECTION_SCORE or right not in _BUY_COLLECTION_SCORE:
+        return None
+    return _BUY_COLLECTION_SCORE[left] + _BUY_COLLECTION_SCORE[right]
+
+
+def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Dict[str, str]:
+    """row の生値から各セルの inline style 文字列を返す (issue #177)。
+
+    Args:
+        row: list_portfolio_with_indicators が組み立てた表示用 dict (raw フィールド含む)
+        today: 基準日 (省略時は date.today())。
+            ※ CLAUDE.md L28 は日付判定に get_price_day() を規約化しているが、
+            色付けは UI 補助で日単位粒度で十分なため本機能のみ date.today() を許可
+            (ユーザーと合意済み)。詳細は .claude/plans/issue-177-portfolio-color-rules.md §4-1。
+
+    Returns:
+        dict[列名, style 文字列]。色なしの列は dict に含めない。
+        例: {"per": "background:#fce8b2", "rs": "background:#fbbc04",
+             "tags": "background:#ea4335;color:#fff"}
+    """
+    if today is None:
+        today = date.today()
+    styles: Dict[str, str] = {}
+    bg = lambda color: f"background:{PORTFOLIO_COLORS[color]}"  # noqa: E731
+    bg_with_white = lambda color: f"background:{PORTFOLIO_COLORS[color]};color:#fff"  # noqa: E731
+
+    # --- 順位 (ルール 14, 31): rank < 300 → 濃黄
+    rank = row.get("rank")
+    if isinstance(rank, int) and rank < 300:
+        styles["rank"] = bg("濃黄")
+
+    # --- 売上成長 (ルール 17): >= 30 → 薄黄
+    sg = row.get("sales_growth_raw")
+    if isinstance(sg, (int, float)) and sg >= 30:
+        styles["sales_growth"] = bg("薄黄")
+
+    # --- 利益成長 (ルール 17): >= 30 → 薄黄
+    pg = row.get("profit_growth_raw")
+    if isinstance(pg, (int, float)) and pg >= 30:
+        styles["profit_growth"] = bg("薄黄")
+
+    # --- PER (ルール 16): (利益成長% + 配当%) / PER > 1 → 薄黄 (PEG的指標、割安)
+    # スプシ式 (I+L)/J>1 ではセル空欄は 0 として評価されるため、配当が None でも 0 扱い
+    per_raw = row.get("per_raw")
+    div_raw = row.get("dividend_raw")
+    div_for_peg = div_raw if isinstance(div_raw, (int, float)) else 0.0
+    if (
+        isinstance(per_raw, (int, float)) and per_raw > 0
+        and isinstance(pg, (int, float))
+        and (pg + div_for_peg) / per_raw > 1
+    ):
+        styles["per"] = bg("薄黄")
+
+    # --- 理論株価乖離 (ルール 15): > 50 → 薄黄
+    theo = row.get("theoretical_diff_raw")
+    if isinstance(theo, (int, float)) and theo > 50:
+        styles["theoretical_diff"] = bg("薄黄")
+
+    # --- 配当 (ルール 32, 33): >= 5 濃黄 / > 3 薄黄
+    if isinstance(div_raw, (int, float)):
+        if div_raw >= 5:
+            styles["dividend"] = bg("濃黄")
+        elif div_raw > 3:
+            styles["dividend"] = bg("薄黄")
+
+    # --- 進捗率乖離 (ルール 9, 10): <C3>タグ 薄赤 / 営利乖離≧20 濃黄
+    quarity = row.get("gyoseki_quarity_expr") or ""
+    eiri_raw = row.get("progress_diff_eiri_raw")
+    if "<C3>" in quarity:
+        styles["progress_diff"] = bg("薄赤")
+    elif isinstance(eiri_raw, (int, float)) and eiri_raw >= 20:
+        styles["progress_diff"] = bg("濃黄")
+
+    # --- 決算日 (ルール 22, 23): 更新日±1ヶ月+3Q 濃黄 / ±1ヶ月のみ 薄黄
+    # 翻訳表の業務的意味は「更新日 ±1ヶ月以内」なので絶対日数差で両側判定 (codex P2 対応)
+    kessanbi_raw = row.get("kessanbi_raw")
+    last_update_md = (row.get("memo") or {}).get("last_research_update")
+    last_update_dt = _parse_research_update_md(last_update_md, today)
+    quarter = row.get("quarter") or ""
+    if (
+        isinstance(kessanbi_raw, date)
+        and isinstance(last_update_dt, date)
+        and abs((kessanbi_raw - last_update_dt).days) <= 31
+    ):
+        if quarter == "3Q":
+            styles["kessanbi_md"] = bg("濃黄")
+        else:
+            styles["kessanbi_md"] = bg("薄黄")
+
+    # --- 更新日 (ルール 1, 8): 1ヶ月以上前 濃灰 (>=30日) / 14日以上前 薄灰
+    if isinstance(last_update_dt, date):
+        diff_days = (today - last_update_dt).days
+        if diff_days >= 30:
+            styles["last_research_update"] = bg("濃灰")
+        elif diff_days >= 14:
+            styles["last_research_update"] = bg("薄灰")
+
+    # --- ステージ (ルール 13): "2S" 含む → 薄赤
+    stage = (row.get("memo") or {}).get("stage") or ""
+    if "2S" in stage:
+        styles["stage"] = bg("薄赤")
+
+    # --- RS (ルール 27, 28): > 80 濃黄 / >= 70 薄黄
+    rs_raw = row.get("rs_raw")
+    if isinstance(rs_raw, (int, float)):
+        if rs_raw > 80:
+            styles["rs"] = bg("濃黄")
+        elif rs_raw >= 70:
+            styles["rs"] = bg("薄黄")
+
+    # --- トレンド (ルール 24, 25, 26): "◎" 濃黄 / "◯" 薄黄 / 空欄("—") 水色
+    trend = row.get("trend_template") or ""
+    if "◎" in trend:
+        styles["trend_template"] = bg("濃黄")
+    elif "◯" in trend:
+        styles["trend_template"] = bg("薄黄")
+    elif not trend or trend == "—":
+        styles["trend_template"] = bg("水色")
+
+    # --- シグナル (ルール 2-7): 強い色から順に評価
+    tags = row.get("tags") or ""
+    if any(c in tags for c in ("ポ", "ブ", "最")):
+        styles["tags"] = bg_with_white("赤")
+    elif any(c in tags for c in ("警", "売")):
+        styles["tags"] = bg_with_white("青")
+    elif "押" in tags:
+        styles["tags"] = f"color:{PORTFOLIO_COLORS['青']}"
+
+    # --- 買い集め (ルール 20, 21): スコア合計 ≧ 8 濃黄 / ≦ 4 水色
+    score = _buy_collection_score_sum(row.get("buy_collection"))
+    if isinstance(score, int):
+        if score >= 8:
+            styles["buy_collection"] = bg("濃黄")
+        elif score <= 4:
+            styles["buy_collection"] = bg("水色")
+
+    # --- 時価総額 (ルール 29, 30): カテゴリ "中" / "大" → 薄黄 (極小/小/特大は色なし)
+    cat = row.get("market_cap_category")
+    if cat in ("中", "大"):
+        styles["market_cap"] = bg("薄黄")
+
+    return styles

@@ -14,13 +14,14 @@
   <ul>
     <li><a href="/" class="brand">Shintakane Research</a></li>
     <li><a href="/market" class="nav-link">市場データ</a></li>
+    <li><a href="/portfolio" class="nav-link">保有銘柄</a></li>
     <li><a href="/disclosure" class="nav-link">適宜開示</a></li>
   </ul>
   <ul>
     <li class="quick-search">
       <form action="/" method="get" style="display:flex;align-items:center;gap:0.4em;margin:0;">
-        <input id="nav-code" type="text" name="code_s" placeholder="銘柄コード" aria-label="銘柄コード検索"
-               style="width:8em;padding:0.3em 0.5em;margin:0;font-size:0.9em;height:auto;">
+        <input id="nav-code" type="text" name="q" placeholder="コード/銘柄名" aria-label="コード/銘柄名検索"
+               style="width:9em;padding:0.3em 0.5em;margin:0;font-size:0.9em;height:auto;">
         <button type="submit" class="outline" style="padding:0.3em 0.7em;margin:0;font-size:0.9em;">Go</button>
         <button type="button" class="outline" style="padding:0.3em 0.7em;margin:0;font-size:0.9em;white-space:nowrap;" onclick="navAddStock()">+ 追加</button>
       </form>
@@ -31,6 +32,10 @@
       function navAddStock() {
         var code = document.getElementById('nav-code').value.trim();
         if (!code) { alert('銘柄コードを入力してください'); return; }
+        if (!/^[0-9A-Za-z]{4}$/.test(code)) {
+          alert('追加は4桁の銘柄コード (例: 3496, 135A) を入力してください');
+          return;
+        }
         document.getElementById('nav-add-code').value = code;
         document.getElementById('nav-add-form').submit();
       }

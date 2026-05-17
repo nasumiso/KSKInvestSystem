@@ -331,6 +331,13 @@ class TestParseKessanHtml:
         mod_lst, _ = shintakane.parse_kessan_html(html)
         assert len(mod_lst[0]) == 4
 
+    def test_空文字列入力で空リストが返る(self):
+        """HTTP接続失敗等でHTMLが空の場合、両リストとも空で返ること。
+        update_todays_kessan の IndexError 回避はこの挙動に依存する。"""
+        mod_lst, announce_lst = shintakane.parse_kessan_html("")
+        assert mod_lst == []
+        assert announce_lst == []
+
     def test_2つのテーブル両方からパースする(self):
         """株探の決算速報ページは `s_news_list mgbt0` と `s_news_list mgt0`
         の2テーブル構成。後半テーブルの記事も拾える必要がある (regression)"""
@@ -354,11 +361,13 @@ class TestParseKessanHtml:
 # convert_kabutan_pts_html（株探・PTSナイトランキング）
 # ==================================================
 
-def _make_kabutan_pts_table(*rows_data):
+def _make_kabutan_pts_table(*rows_data, direction="up"):
     """株探・PTSランキングHTMLのテーブルを生成する
 
     rows_data: (code, name, market, trade_close, pts_price, zenjitsuhi, zenjitsuhi_per, volume) のタプル
+    direction: "up" (値上がりページ) または "down" (値下がりページ) で span class を切替
     """
+    span_cls = direction
     rows_html = ""
     for code, name, market, trade_close, pts_price, zenjitsuhi, zenjitsuhi_per, volume in rows_data:
         rows_html += (
@@ -370,8 +379,8 @@ def _make_kabutan_pts_table(*rows_data):
             f'<td class="chart_icon"><a href="/stock/chart?code={code}"></a></td>\n'
             f'<td>{trade_close}</td>\n'
             f'<td>{pts_price}</td>\n'
-            f'<td class="w61"><span class="up">{zenjitsuhi}</span></td>\n'
-            f'<td class="w50"><span class="up">{zenjitsuhi_per}</span>%</td>\n'
+            f'<td class="w61"><span class="{span_cls}">{zenjitsuhi}</span></td>\n'
+            f'<td class="w50"><span class="{span_cls}">{zenjitsuhi_per}</span>%</td>\n'
             f'<td>{volume}</td>\n'
             f'<td>16.5</td>\n'
             f'<td>6.42</td>\n'
@@ -421,31 +430,16 @@ class TestConvertKabutanPtsHtml:
         assert len(rows) == 1
         assert "446A" in rows[0][1]
 
-    def test_下落銘柄はスキップされる(self):
-        """spanにupクラスがない場合、zenjitsuhi=0になる"""
-        html = (
-            '<table class="stock_table st_market">'
-            '<tr>\n'
-            '<td class="tac"><a href="/stock/?code=1234">1234</a></td>\n'
-            '<th scope="row" class="tal">テスト銘柄</th>\n'
-            '<td class="tac">東Ｐ</td>\n'
-            '<td class="gaiyou_icon"><a href="/stock/?code=1234"></a></td>\n'
-            '<td class="chart_icon"><a href="/stock/chart?code=1234"></a></td>\n'
-            '<td>1,000</td>\n'
-            '<td>950</td>\n'
-            '<td class="w61"><span class="down">-50</span></td>\n'
-            '<td class="w50"><span class="down">-5.00</span>%</td>\n'
-            '<td>100,000</td>\n'
-            '<td>10.0</td>\n'
-            '<td>1.00</td>\n'
-            '<td>3.00</td>\n'
-            '</tr>\n'
-            '</table>'
+    def test_下落銘柄もパースされる(self):
+        """値下がりページの span class="down" でもマイナス符号付きで抽出される"""
+        html = _make_kabutan_pts_table(
+            ("1234", "テスト銘柄", "東Ｐ", "1,000", "950", "-50", "-5.00", "100,000"),
+            direction="down",
         )
         rows = shintakane.convert_kabutan_pts_html(html)
         assert len(rows) == 1
-        assert rows[0][5] == 0  # zenjitsuhi
-        assert rows[0][6] == 0  # zenjitsuhi_per
+        assert rows[0][5] == "-50"  # zenjitsuhi (マイナス符号付き)
+        assert rows[0][6] == "-5.00%"  # zenjitsuhi_per (マイナス符号付き)
 
     def test_空テーブル(self):
         html = '<table class="stock_table st_market"></table>'
@@ -490,3 +484,215 @@ class TestSearchFromcsvPts:
         """存在しないファイルは空リストを返す"""
         result = shintakane.search_fromcsv_pts("/nonexistent/file.csv")
         assert result == []
+
+
+# ==================================================
+# get_todays_pts 統合テスト
+# ==================================================
+def _make_pts_page_html(*rows_data, direction="up", date_str="2026年05月13日"):
+    """日付ヘッダー付きの PTS ページ HTML を組み立てる"""
+    table = _make_kabutan_pts_table(*rows_data, direction=direction)
+    header = f'<div class="meigara_count">{date_str} 23:30現在 100銘柄</div>'
+    return header + table
+
+
+class TestGetTodaysPts:
+    """get_todays_pts の統合テスト(複数ページ取得 + 値下がり統合 + rank連番)"""
+
+    def test_値上がり2ページと値下がり1ページを統合してCSVに保存する(
+        self, tmp_path, monkeypatch
+    ):
+        # 値上がり page=1 (15 銘柄)
+        up_p1_data = [
+            (f"{i:04d}", f"上1_{i}", "東Ｐ", "1,000", "1,100", "+100", "+10.00", "10,000")
+            for i in range(1000, 1015)
+        ]
+        # 値上がり page=2 (15 銘柄)
+        up_p2_data = [
+            (f"{i:04d}", f"上2_{i}", "東Ｐ", "1,000", "1,100", "+50", "+5.00", "10,000")
+            for i in range(2000, 2015)
+        ]
+        # 値下がり page=1 (10 銘柄、出来高 1000 以上で全件残る想定)
+        down_p1_data = [
+            (f"{i:04d}", f"下_{i}", "東Ｐ", "1,000", "900", "-100", "-10.00", "10,000")
+            for i in range(3000, 3010)
+        ]
+
+        html_up_p1 = _make_pts_page_html(*up_p1_data, direction="up")
+        html_up_p2 = _make_pts_page_html(*up_p2_data, direction="up")
+        html_down_p1 = _make_pts_page_html(*down_p1_data, direction="down")
+
+        # DATA_DIR を tmp_path に差し替え、today_stocks/html_cache を準備
+        data_dir = tmp_path
+        (data_dir / "today_stocks" / "html_cache").mkdir(parents=True)
+        monkeypatch.setattr(shintakane, "DATA_DIR", str(data_dir))
+
+        # キャッシュ判定スキップ用に latest_pts_fname を None にする
+        monkeypatch.setattr(
+            shintakane, "get_latest_pts_fname", lambda: (None, None)
+        )
+        # アーカイブ処理は対象外
+        monkeypatch.setattr(shintakane, "_archive_old_csvs", lambda kind: None)
+
+        # http_get_html を URL ごとに振り分けるモックに差し替え
+        calls = []
+
+        def fake_http_get_html(url, use_cache=False, cache_dir=None):
+            calls.append(url)
+            if "pts_night_price_increase" in url and "page=2" in url:
+                return html_up_p2
+            if "pts_night_price_increase" in url:
+                return html_up_p1
+            if "pts_night_price_decrease" in url:
+                return html_down_p1
+            raise AssertionError(f"unexpected url: {url}")
+
+        monkeypatch.setattr(shintakane, "http_get_html", fake_http_get_html)
+
+        shintakane.get_todays_pts(force=True)
+
+        # 3 URL すべて取得されている
+        assert any("pts_night_price_increase" in u and "page" not in u for u in calls)
+        assert any("pts_night_price_increase" in u and "page=2" in u for u in calls)
+        assert any("pts_night_price_decrease" in u for u in calls)
+
+        # 出力 CSV を読み戻して検証
+        csv_path = data_dir / "today_stocks" / "pts_260513.csv"
+        assert csv_path.exists()
+        import csv as _csv
+
+        with open(csv_path, encoding="utf-8") as f:
+            rows = list(_csv.reader(f))
+
+        # 値上がり 30 + 値下がり 10 = 40 行
+        assert len(rows) == 40
+
+        # rank が 1..40 の連番
+        assert [r[0] for r in rows] == [str(i) for i in range(1, 41)]
+
+        # 値下がり行(rank 31..40)は zenjitsuhi_per がマイナス符号付き
+        for r in rows[30:]:
+            assert r[6].startswith("-"), f"値下がり行のはず: {r}"
+
+        # 値上がり行(rank 1..30)は zenjitsuhi_per がプラス符号
+        for r in rows[:30]:
+            assert r[6].startswith("+"), f"値上がり行のはず: {r}"
+
+    def test_値上がりpage1が薄商いで埋まらない場合page2で補完する(
+        self, tmp_path, monkeypatch
+    ):
+        # page1: 15 件中 5 件のみ出来高 1000 以上、残り 10 件は薄商いで除外
+        up_p1_data = [
+            (f"{i:04d}", f"上1_{i}", "東Ｐ", "1,000", "1,100", "+100", "+10.00", "10,000")
+            for i in range(1000, 1005)
+        ] + [
+            (f"{i:04d}", f"薄_{i}", "東Ｐ", "1,000", "1,100", "+100", "+10.00", "500")
+            for i in range(1100, 1110)
+        ]
+        # page2: 全件出来高 1000 以上
+        up_p2_data = [
+            (f"{i:04d}", f"上2_{i}", "東Ｐ", "1,000", "1,100", "+50", "+5.00", "10,000")
+            for i in range(2000, 2015)
+        ]
+        # 値下がりは空(値上がり補完シナリオに集中)
+        down_p1_data = []
+
+        html_up_p1 = _make_pts_page_html(*up_p1_data, direction="up")
+        html_up_p2 = _make_pts_page_html(*up_p2_data, direction="up")
+        html_down_p1 = _make_pts_page_html(*down_p1_data, direction="down")
+
+        data_dir = tmp_path
+        (data_dir / "today_stocks" / "html_cache").mkdir(parents=True)
+        monkeypatch.setattr(shintakane, "DATA_DIR", str(data_dir))
+        monkeypatch.setattr(
+            shintakane, "get_latest_pts_fname", lambda: (None, None)
+        )
+        monkeypatch.setattr(shintakane, "_archive_old_csvs", lambda kind: None)
+
+        def fake_http_get_html(url, use_cache=False, cache_dir=None):
+            if "pts_night_price_increase" in url and "page=2" in url:
+                return html_up_p2
+            if "pts_night_price_increase" in url:
+                return html_up_p1
+            if "pts_night_price_decrease" in url:
+                return html_down_p1
+            raise AssertionError(f"unexpected url: {url}")
+
+        monkeypatch.setattr(shintakane, "http_get_html", fake_http_get_html)
+
+        shintakane.get_todays_pts(force=True)
+
+        import csv as _csv
+
+        csv_path = data_dir / "today_stocks" / "pts_260513.csv"
+        with open(csv_path, encoding="utf-8") as f:
+            rows = list(_csv.reader(f))
+
+        # 値上がり: page1 から 5 + page2 から 15 = 20 件
+        assert len(rows) == 20
+        # rank 連番
+        assert [r[0] for r in rows] == [str(i) for i in range(1, 21)]
+
+    def test_force_True_は3ページ全てキャッシュをバイパスする(
+        self, tmp_path, monkeypatch
+    ):
+        """force=True なら HTML キャッシュ判定をスキップし、必ず use_cache=False で HTTP 取得する"""
+        up_p1_data = [
+            (f"{i:04d}", f"上1_{i}", "東Ｐ", "1,000", "1,100", "+100", "+10.00", "10,000")
+            for i in range(1000, 1015)
+        ]
+        up_p2_data = [
+            (f"{i:04d}", f"上2_{i}", "東Ｐ", "1,000", "1,100", "+50", "+5.00", "10,000")
+            for i in range(2000, 2002)
+        ]
+        down_p1_data = [
+            (f"{i:04d}", f"下_{i}", "東Ｐ", "1,000", "900", "-100", "-10.00", "10,000")
+            for i in range(3000, 3002)
+        ]
+        html_up_p1 = _make_pts_page_html(*up_p1_data, direction="up")
+        html_up_p2 = _make_pts_page_html(*up_p2_data, direction="up")
+        html_down_p1 = _make_pts_page_html(*down_p1_data, direction="down")
+
+        data_dir = tmp_path
+        cache_dir = data_dir / "today_stocks" / "html_cache"
+        cache_dir.mkdir(parents=True)
+        # 当日付の "古い HTML キャッシュ" を 3 URL 分すべて埋める
+        # (force=False ならこれが使われてしまうが、force=True なら無視される)
+        from shintakane import get_http_cachname
+        stale_html = _make_pts_page_html(
+            ("9999", "古いキャッシュ", "東Ｐ", "0", "0", "+0", "+0.0", "0"),
+            direction="up",
+        )
+        for u in [
+            "https://kabutan.jp/warning/pts_night_price_increase",
+            "https://kabutan.jp/warning/pts_night_price_increase?page=2",
+            "https://kabutan.jp/warning/pts_night_price_decrease",
+        ]:
+            (cache_dir / get_http_cachname(u)).write_text(stale_html, encoding="utf-8")
+
+        monkeypatch.setattr(shintakane, "DATA_DIR", str(data_dir))
+        monkeypatch.setattr(
+            shintakane, "get_latest_pts_fname", lambda: (None, None)
+        )
+        monkeypatch.setattr(shintakane, "_archive_old_csvs", lambda kind: None)
+
+        use_cache_calls = []
+
+        def fake_http_get_html(url, use_cache=False, cache_dir=None):
+            use_cache_calls.append((url, use_cache))
+            if "pts_night_price_increase" in url and "page=2" in url:
+                return html_up_p2
+            if "pts_night_price_increase" in url:
+                return html_up_p1
+            if "pts_night_price_decrease" in url:
+                return html_down_p1
+            raise AssertionError(f"unexpected url: {url}")
+
+        monkeypatch.setattr(shintakane, "http_get_html", fake_http_get_html)
+
+        shintakane.get_todays_pts(force=True)
+
+        # 3 URL すべて use_cache=False で取得されている
+        assert len(use_cache_calls) == 3
+        for url, use_cache in use_cache_calls:
+            assert use_cache is False, f"force=True なのに use_cache=True: {url}"

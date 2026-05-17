@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
- <!-- これを~/Library/LaunchAgents/ に配置 
- launchctl start com.k_sohara.shintakane.cronで実行 
- 編集したら、startをunload/loadして反映 -->
+ <!-- これを~/Library/LaunchAgents/ に配置
+ launchctl load ~/Library/LaunchAgents/com.k_sohara.shintakane.cron.plist で反映
+ 編集したら、unload してから load し直すこと (launchctl print で実状態を確認)
+
+ 設計方針:
+   平日19:00 の StartCalendarInterval が定刻実行。
+   スリープ復帰の補完は RunAtLoad=true (ログイン/再起動/launchctl load 時に1回)
+   に任せる。スリープ頻度が低い前提なら、これで十分。
+   shintakane_cron.sh 側の TTY 検知ガードで、launchd 経由かつ19時前の起動
+   (例: 朝マシンを開いた時の RunAtLoad 発火) のみサイレントスキップする。 -->
 <plist version="1.0">
   <dict>
     <key>Label</key>
@@ -14,45 +21,45 @@
       <string>/Users/k_sohara/Library/CloudStorage/Dropbox/document/shintakane/shintakane_cron.sh</string>
     </array>
 
-    <!-- 平日（月〜金）18:00 に実行 -->
+    <!-- 平日(月〜金)19:00 に定刻実行 -->
     <key>StartCalendarInterval</key>
     <array>
       <dict>
         <key>Weekday</key><integer>1</integer>
-        <key>Hour</key><integer>18</integer>
+        <key>Hour</key><integer>19</integer>
         <key>Minute</key><integer>0</integer>
       </dict>
       <dict>
         <key>Weekday</key><integer>2</integer>
-        <key>Hour</key><integer>18</integer>
+        <key>Hour</key><integer>19</integer>
         <key>Minute</key><integer>0</integer>
       </dict>
       <dict>
         <key>Weekday</key><integer>3</integer>
-        <key>Hour</key><integer>18</integer>
+        <key>Hour</key><integer>19</integer>
         <key>Minute</key><integer>0</integer>
       </dict>
       <dict>
         <key>Weekday</key><integer>4</integer>
-        <key>Hour</key><integer>18</integer>
+        <key>Hour</key><integer>19</integer>
         <key>Minute</key><integer>0</integer>
       </dict>
       <dict>
         <key>Weekday</key><integer>5</integer>
-        <key>Hour</key><integer>18</integer>
+        <key>Hour</key><integer>19</integer>
         <key>Minute</key><integer>0</integer>
       </dict>
     </array>
+
+    <!-- ログイン/再起動/launchctl load 時にも 1 回起動 (19時前なら shintakane_cron.sh のガードでスキップ) -->
+    <key>RunAtLoad</key>
+    <true/>
 
     <!-- ログ出力 -->
     <key>StandardOutPath</key>
     <string>/tmp/shintakane_launchd_stdout.log</string>
     <key>StandardErrorPath</key>
     <string>/tmp/shintakane_launchd_stderr.log</string>
-
-    <!-- スリープから復帰後に実行 -->
-    <key>StartOnMount</key>
-    <true/>
 
     <!-- 環境変数の継承 -->
     <key>EnvironmentVariables</key>

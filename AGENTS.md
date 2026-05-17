@@ -25,5 +25,8 @@ Recent commit messages are short and direct, often in Japanese (e.g., “フォ�
 - Steps to reproduce or verify (commands and inputs).
 - Screenshots or sample rows if output formats changed.
 
+## Review Guidelines
+Write review comments in Japanese. Keep findings concise and actionable, with file/line references when possible.
+
 ## Data, Cache, and Logs
 Primary DB: `data/stock_data/stocks.pickle`. HTTP cache: `data/today_stocks/html_cache/`. Outputs are written to `data/shintakane_result_data/` and `data/code_rank_data/`. Logs rotate in `logs/`; check them when scraping or parsing fails.

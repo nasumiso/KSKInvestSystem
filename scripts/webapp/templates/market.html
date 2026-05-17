@@ -75,13 +75,17 @@
       <a href="/stock/{{ s.code_s }}">{{ s.stock_name or '-' }}</a>
       {% if s.quarter %}<span class="kessan-q-label">[{{ s.quarter }}Q]</span>{% endif %}
       {% if s.pre_expectation %}<span class="kessan-expectation-badge exp-{{ s.pre_expectation }}">{{ s.pre_expectation }}</span>{% endif %}
-      {% if is_past and (s.post_price_changes['1d'] or s.post_price_changes['5d']) %}
+      {% if is_past and (s.post_price_changes['pts'] or s.post_price_changes['1d'] or s.post_price_changes['5d']) %}
+        {% set pcp = s.post_price_changes['pts'] %}
         {% set pc1 = s.post_price_changes['1d'] %}
         {% set pc5 = s.post_price_changes['5d'] %}
         <span class="kessan-price-change">
-          {% if pc1 %}<span class="{% if pc1.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc1 }}%</span>{% else %}<span>-</span>{% endif %}
-          /
-          {% if pc5 %}<span class="{% if pc5.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc5 }}%</span>{% else %}<span>-</span>{% endif %}
+          {% if pcp %}<span class="kessan-pts-label">PTS</span><span class="{% if pcp.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pcp }}%</span>{% endif %}
+          {% if pc1 or pc5 %}
+            {% if pc1 %}<span class="{% if pc1.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc1 }}%</span>{% else %}<span>-</span>{% endif %}
+            /
+            {% if pc5 %}<span class="{% if pc5.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc5 }}%</span>{% else %}<span>-</span>{% endif %}
+          {% endif %}
         </span>
       {% endif %}
       {% if s.pre_outlook or s.post_comment %}

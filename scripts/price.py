@@ -311,95 +311,156 @@ def parse_price_d_html_kabutan(html):
     ):
         daily_price_list.append(m.groups())
 
-    return _calc_daily_indicators(daily_price_list)
+    dic = _calc_daily_indicators(daily_price_list)
+    # Stalling Day を後付け検出するため raw データを内部的に保持
+    if dic:
+        dic["_daily_price_list_raw"] = daily_price_list
+    return dic
+
+
+def _is_stalling_day(d, pd, high52_weekly):
+    """Stalling Day (停滞日) 判定 (O'Neil 原典準拠)
+
+    条件 (すべて満たす):
+    - 52週高値の97%以上 (高値圏)
+    - 前日比が 0% 超 ~ +0.4% 未満 (微増)
+    - 出来高が前日より増加
+    - 終値が日足の下半分 (高値から引けが離れた)
+
+    Args:
+        d: 当日 8要素タプル (日付, 始値, 高値, 安値, 終値, 前日比, 前日比%, 売買高)
+        pd: 前日 8要素タプル
+        high52_weekly: 52週高値 (週足から計算済)
+    Returns:
+        bool: Stalling Day なら True
+    """
+    if not high52_weekly or high52_weekly <= 0:
+        return False
+    try:
+        dh = float(d[2].replace(",", ""))
+        dl = float(d[3].replace(",", ""))
+        dp = float(d[4].replace(",", ""))
+        dv = int(d[7].replace(",", ""))
+        pdv = int(pd[7].replace(",", ""))
+        dr = float(d[6].replace(",", ""))
+    except (ValueError, IndexError):
+        return False
+    if dp < high52_weekly * 0.97:
+        return False
+    if not (0 < dr < 0.4):
+        return False
+    if dv <= pdv:
+        return False
+    if dh <= dl:
+        return False
+    return dp <= dl + (dh - dl) / 2
+
+
+def add_stalling_days(dic, daily_price_list, high52_weekly):
+    """既存の日次指標 dict に Stalling Day を追加検出する。
+
+    `_calc_daily_indicators` で計算した distribution_days* の結果に、
+    Stalling Day を後付けで追加する。通常DDと重複しない日のみ追加。
+    日付順序は古い→新しい (元々の append 順) を保つ。
+
+    Args:
+        dic: _calc_daily_indicators の戻り値 dict
+        daily_price_list: 元の日次価格リスト (新しい日が先頭)
+        high52_weekly: 52週高値 (週足計算後に取得可能になる)
+    Returns:
+        dict: 同じ dict (in-place 更新)
+    """
+    if not high52_weekly or not daily_price_list or not dic:
+        return dic
+    count_day = 20
+    target_days = list(reversed(daily_price_list[: count_day + 1]))
+    if len(target_days) < 2:
+        return dic
+    existing_dd = set(dic.get("distribution_days", []))
+    new_dd_dates = list(dic.get("distribution_days", []))
+    new_dd_with_close = list(dic.get("distribution_days_with_close", []))
+    for d, pd in zip(target_days[1:], target_days[:-1]):
+        if d[0] in existing_dd:
+            continue  # 既に通常DDとして計上されている
+        if _is_stalling_day(d, pd, high52_weekly):
+            try:
+                dp = float(d[4].replace(",", ""))
+            except ValueError:
+                continue
+            new_dd_dates.append(d[0])
+            new_dd_with_close.append((d[0], dp))
+            existing_dd.add(d[0])
+            log_debug("Stalling Day:", d[0])
+    dic["distribution_days"] = new_dd_dates
+    dic["distribution_days_with_close"] = new_dd_with_close
+    return dic
 
 
 def _calc_daily_indicators(daily_price_list):
     """daily_price_listから日次指標を計算する
     parse_price_d_html_kabutanから指標計算部分を分離。
     Kabutan HTML パスと yfinance パス共通で使用する。
+
+    DD/FTD 判定は O'Neil 原典準拠:
+    - 通常DD: 前日比 -0.2% 以下 + 出来高が前日より増加
+    - FTD候補: 前日比 +1.0% 以上 + 出来高が前日より増加
+      (ラリーアテンプト Day 4 以降の判定は market_state.py 側で行うため、ここでは候補日のみ拾う)
+
+    Stalling Day は週足の high52_weekly が必要なため、本関数では検出せず
+    `add_stalling_days()` を呼び出し側で別途実行する。
+
+    direction_signal の最終値は make_market_db.py が market_state を計算してから上書きする。
+    本関数では空文字をデフォルトとして入れておく (フィールド自体は後方互換で維持)。
+
     Args:
         daily_price_list: 8要素タプル(文字列)のリスト
             [0]日付, [1]始値, [2]高値, [3]安値, [4]終値, [5]前日比, [6]前日比%, [7]売買高
             カンマ区切り数値文字列、新しい日付が先頭
     Returns:
-        dict: distribution_days / followthrough_days / direction_signal /
-              spr_20 / spr_5 / spr_buygagher / rv_20 / rv_5
+        dict: distribution_days / distribution_days_with_close / followthrough_days /
+              daily_history / direction_signal / spr_20 / spr_5 / spr_buygagher / rv_20 / rv_5
     """
-    # ---- ディストリビューション
-    distribution_day = []  # 日付のリスト
+    # ---- ディストリビューション / フォロースルー候補
+    distribution_day = []  # 日付のリスト (後方互換)
+    distribution_day_with_close = []  # (date, close) タプルのリスト (新規、State Machine 用)
     followthrough_day = []
-    # 前日より安く、出来高が増える日
-    # 　前日より0.1%以下で上半分で引ける場合はカウントしない[モラレス]
-    # 前日よりわずかに高くても下で引けていけばカウント[モラレス]
-    # 　例：0.1%上昇で25%以下で引ける
     count_day = 20
     target_days = list(
         reversed(daily_price_list[: count_day + 1])
     )  # インデックスが若いほど前の日にする
-    # 平均出来高
-    avg_vol = 0
-    avg_len = 0
-    for d in target_days:
-        try:
-            dv = int(d[7].replace(",", ""))  # 売買高
-            avg_vol += dv
-            avg_len += 1
-        except ValueError:
-            pass
-    if avg_len == 0:
+    if len(target_days) < 2:
         log_warning(" デイリー価格解析できず")
         return {}
-    avg_vol = avg_vol / avg_len
     current_day = target_days[-1][0]
     log_debug(current_day, "のディストリビューションカウント")
     for d, pd in zip(target_days[1:], target_days[:-1]):
         try:
             dp = float(d[4].replace(",", ""))  # 終値
-            pdp = float(pd[4].replace(",", ""))
             dv = int(d[7].replace(",", ""))  # 売買高
             pdv = int(pd[7].replace(",", ""))
-            dph = float(d[2].replace(",", ""))  # 高値
-            dpl = float(d[3].replace(",", ""))  # 安値
             dr = float(d[6].replace(",", ""))  # 前日比パーセント
         except ValueError:
             log_debug("%sはデータ取得できず" % d[0])
             continue
-        if dph == dpl:
-            # 高値=安値で値幅ゼロのケース (休場日や寄らずなど) は除外
-            continue
-        pr_pos = (dp - dpl) / (dph - dpl)
-        if dp < pdp:  # 前日より安く出来高が増える
-            if dv > pdv:
-                if dr >= -0.1 and pr_pos >= 0.5:
-                    log_debug("前日より0.1%以下で上半分で引ける場合はカウントしない", d[0])
-                else:
-                    distribution_day.append(d[0])
-        else:
-            if dv > pdv:
-                log_debug("dr", dr, "pr_pos", pr_pos)
-                if dr <= 0.1 and pr_pos <= 0.25:
-                    log_debug("前日よりわずかに高くても下で引けていけばカウント", d[0])
-                    distribution_day.append(d[0])
-        # フォロースルー: 反転から4~7日目で(ここは判定していない)
-        # 平均以上の出来高で1.7%以上の上昇
-        # 本当はその時から過去20日の出来高にしないといけないが取得できない・・
-        if dr >= 1.7 and dv >= avg_vol:
+        # 通常 DD (原典準拠)
+        if dr <= -0.2 and dv > pdv:
+            distribution_day.append(d[0])
+            distribution_day_with_close.append((d[0], dp))
+        # FTD候補 (ラリーアテンプト判定は market_state.py 側で行う)
+        if dr >= 1.0 and dv > pdv:
             followthrough_day.append(d[0])
     dic = {}
     dic["distribution_days"] = distribution_day
+    dic["distribution_days_with_close"] = distribution_day_with_close
     dic["followthrough_days"] = followthrough_day
+    # daily_history (新しい日が先頭) を State Machine の DD 失効判定で使う
+    dic["daily_history"] = [d[0] for d in daily_price_list[:count_day + 1]]
     log_debug("ディストリビューション:", distribution_day)
-    log_debug("フォロースルー:", followthrough_day)
+    log_debug("フォロースルー候補:", followthrough_day)
 
-    # ---- シグナル
-    signal = "neutral"
-    # TODO: とりあえず簡易
-    if len(distribution_day) >= 5:
-        signal = "sell"
-
-    dic["direction_signal"] = signal + "," + current_day
-    log_debug("シグナル:", dic["direction_signal"])
+    # direction_signal は make_market_db.py が market_state を計算してから上書きする。
+    # 計算前のデフォルト値として空文字を入れておく (後方互換のためフィールド自体は維持)。
+    dic["direction_signal"] = ""
 
     # ---- 売り圧力レシオ
     def to_numeric(str):
@@ -428,7 +489,8 @@ def _calc_daily_indicators(daily_price_list):
     dic["rv_5"] = rv_5
 
     # rs_line 計算で参照される。Kabutan/yfinance 両経路で同じ (date, int終値) 型にする
-    LOG_DAY = 25
+    # 20日前比較に必要な 21件 + バッファ。Kabutan HTML は元々 30 件返す
+    LOG_DAY = 30
     past_prices = []
     for ind in range(min(LOG_DAY, len(daily_price_list))):
         dt = parse_date_str(daily_price_list[ind][0])
@@ -575,6 +637,14 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
     rs_rank = calc_momentum_pt()
     if rs_rank > 0:  # 0はエラーのため更新しない
         price_dict["momentum_pt"] = rs_rank
+
+    # ---- 52週高値/安値 (Stalling Day 判定で日足側からも参照する)
+    try:
+        if highs and lows:
+            price_dict["high52_weekly"] = max(highs[0:52])
+            price_dict["low52_weekly"] = min(lows[0:52])
+    except (ValueError, IndexError):
+        pass
 
     # ---- トレンドテンプレート
     def calc_trend_template():
@@ -924,7 +994,7 @@ def _convert_weekly_df_to_kabutan_format(df):
             前週比/前週比%は指標計算で未使用のため"0"固定
     """
     from datetime import timedelta
-    # get_price_day()は18:00前なら前日扱い。週足判定でも同じ基準日を使う
+    # get_price_day()は17:00前なら前日扱い。週足判定でも同じ基準日を使う
     price_day = get_price_day(datetime.now())
 
     weekly_price_list = []
@@ -1024,6 +1094,7 @@ def get_us_index_daily(code_s, ticker_symbol, upd=UPD_INTERVAL):
                     dic["access_date_price"] = datetime.fromtimestamp(
                         os.stat(cache_fname).st_mtime
                     )
+                    dic["_daily_price_list_raw"] = daily_price_list
                 return dic
 
     log_print("----> %sの日次価格情報をyfinance(%s)から取得します" % (code_s, ticker_symbol))
@@ -1063,6 +1134,7 @@ def get_us_index_daily(code_s, ticker_symbol, upd=UPD_INTERVAL):
         latest_close = 0
     dic["price"] = latest_close
     dic["access_date_price"] = datetime.now()
+    dic["_daily_price_list_raw"] = daily_price_list
 
     # キャッシュに保存
     _save_yfinance_cache(cache_fname, latest_close, daily_price_list)
@@ -1545,7 +1617,8 @@ def parse_price_text_from_list(price_current, price_list):
     # print breaks
     # ---- 過去価格
     past_prices = []
-    LOG_DAY = 25
+    # 20日前比較に必要な 21件 + バッファ
+    LOG_DAY = 30
     for ind in range(LOG_DAY):
         if ind >= len(price_list):
             continue

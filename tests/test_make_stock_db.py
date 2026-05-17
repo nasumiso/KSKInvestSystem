@@ -99,6 +99,50 @@ class TestGetTrendTemplateExpr:
 
 
 # ==================================================
+# get_index_trend_template_expr (issue #117 Part B)
+# ==================================================
+class TestGetIndexTrendTemplateExpr:
+    """指数向けトレンドテンプレート簡略表記"""
+
+    def test_no_key(self):
+        assert make_stock_db.get_index_trend_template_expr({}) == ("-", "")
+
+    def test_perfect(self):
+        """全通過 → ◎ 7/7、ホバー文字列は空"""
+        assert make_stock_db.get_index_trend_template_expr({"trend_template": []}) == ("◎ 7/7", "")
+
+    def test_minor_miss(self):
+        """1-2 不通過 → ◯ N/7、ホバーに不通過項目"""
+        display, miss = make_stock_db.get_index_trend_template_expr(
+            {"trend_template": ["ma30>ma40", "RS"]}
+        )
+        assert display == "◯ 5/7"
+        assert miss == "ma30>ma40,RS"
+
+    def test_moderate_miss(self):
+        """3-4 不通過 → ▲ N/7"""
+        display, miss = make_stock_db.get_index_trend_template_expr(
+            {"trend_template": ["a", "b", "c", "d"]}
+        )
+        assert display == "▲ 3/7"
+        assert miss == "a,b,c,d"
+
+    def test_many_miss(self):
+        """5-7 不通過 → △ N/7"""
+        display, miss = make_stock_db.get_index_trend_template_expr(
+            {"trend_template": ["a", "b", "c", "d", "e"]}
+        )
+        assert display == "△ 2/7"
+        assert miss == "a,b,c,d,e"
+
+    def test_all_miss(self):
+        display, miss = make_stock_db.get_index_trend_template_expr(
+            {"trend_template": ["a", "b", "c", "d", "e", "f", "g"]}
+        )
+        assert display == "△ 0/7"
+
+
+# ==================================================
 # make_signal
 # ==================================================
 class TestMakeSignal:
@@ -456,6 +500,22 @@ def _make_log(n, base=1000, step=5, d0=date(2026, 4, 28)):
     return [(d0 - timedelta(days=i), base + step * (n - i)) for i in range(n)]
 
 
+def _make_div_logs(stock_now, stock_past, topix_now, topix_past, n=25,
+                   d0=date(2026, 4, 28)):
+    """offset=20 でちょうど stock_now/past, topix_now/past となる日付降順タプル列を生成。
+
+    index 0 = 今日 (stock_now / topix_now), index 20 = 20日前 (stock_past / topix_past)。
+    """
+    stock_log, topix_log = [], []
+    for i in range(n):
+        t = i / 20.0
+        stock_log.append((d0 - timedelta(days=i),
+                          int(stock_now + (stock_past - stock_now) * t)))
+        topix_log.append((d0 - timedelta(days=i),
+                          int(topix_now + (topix_past - topix_now) * t)))
+    return stock_log, topix_log
+
+
 class TestComputeRsLine:
     """rs_line (銘柄終値/TOPIX終値) 計算の単体テスト"""
 
@@ -538,9 +598,29 @@ class TestComputeRsLineChanges:
         assert a is None and b is None
 
     def test_short_only_when_partial_data(self):
-        """rs_line が 6本以上21本未満なら A だけ計算可、B は None"""
+        """rs_line が 6本以上16本未満なら A だけ計算可、B は None (15日前すら届かない)"""
         stock = {"price_log": _make_log(10, base=2000)}
         market_db = {"topix": {"price_log": _make_log(10, base=1000)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is not None and b is None
+
+    def test_fallback_when_16_to_20_bars(self):
+        """rs_line が 16-20本のとき、B は 15-19日前で代替して数値を返す"""
+        # 20本 = index 0..19 → offset 19 で代替可能
+        stock = {"price_log": _make_log(20, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(20, base=1000, step=2)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is not None and b is not None
+        # 16本 = index 0..15 → offset 15 で代替可能
+        stock = {"price_log": _make_log(16, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(16, base=1000, step=2)}}
+        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is not None and b is not None
+
+    def test_no_fallback_when_15_bars(self):
+        """rs_line が 15本のとき (index 0..14)、offset 15 にも届かないので B は None"""
+        stock = {"price_log": _make_log(15, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(15, base=1000, step=2)}}
         a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is None
 
@@ -612,7 +692,7 @@ class TestGetRsLineChangesExpr:
 # calibrate_momentum_pt (issue #104)
 # ==================================================
 class TestCalibrateMomentumPt:
-    """モメンタムポイント動的キャリブレーションのテスト"""
+    """モメンタムポイント手動キャリブレーションのテスト"""
 
     def _make_stocks(self, n, rs_raw_values=None, days_ago=0):
         """rs_raw を持つ銘柄を n 件生成 (access_date_price は今日 - days_ago)"""
@@ -714,39 +794,222 @@ class TestCalibrateMomentumPt:
         assert 0.1 < calib["scale"] < 0.5
 
 
+    def test_fallback_marked_with_asterisk(self):
+        """rs_line 16-20本のとき、B 値の末尾に '*' が付く"""
+        stock = {"price_log": _make_log(20, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(20, base=1000, step=2)}}
+        s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
+        parts = s.split("/")
+        assert parts[0].endswith("*"), "フォールバック時は B 値末尾に '*' が付くべき"
+        assert not parts[1].endswith("*"), "A 値には '*' を付けない"
+
+    def test_no_asterisk_when_full_data(self):
+        """rs_line 21本以上 (offset 20 で取れる) のとき、'*' は付かない"""
+        stock = {"price_log": _make_log(25, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=2)}}
+        s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
+        parts = s.split("/")
+        assert not parts[0].endswith("*")
+
+    def test_no_asterisk_when_b_uncomputable(self):
+        """rs_line 15本以下 (B 計算不能) のとき、'-' に '*' は付かない"""
+        stock = {"price_log": _make_log(15, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(15, base=1000, step=2)}}
+        s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
+        parts = s.split("/")
+        assert parts[0] == "-"
+
+
 # ==================================================
-# should_run_momentum_calibration (issue #104)
+# compute_rs_line_new_high
 # ==================================================
-class TestShouldRunMomentumCalibration:
-    """週次トリガー判定のテスト"""
+class TestComputeRsLineNewHigh:
+    """rs_line 新高値判定の単体テスト"""
 
-    def test_no_calib_returns_true(self):
-        """momentum_calib が無ければ実行する"""
-        market_db = {}
-        assert make_stock_db.should_run_momentum_calibration(market_db) is True
+    def test_returns_false_when_empty(self):
+        assert make_stock_db.compute_rs_line_new_high({}, {"topix": {}}) is False
 
-    def test_no_updated_at_returns_true(self):
-        """updated_at が無ければ実行する"""
-        market_db = {"momentum_calib": {"loc": 0, "scale": 0.3}}
-        assert make_stock_db.should_run_momentum_calibration(market_db) is True
+    def test_returns_false_when_short(self):
+        """rs_line が lookback+1 本未満なら False"""
+        stock = {"price_log": _make_log(10, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(10, base=1000)}}
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db, lookback=20) is False
 
-    def test_stale_returns_true(self):
-        """前回から MOMENTUM_CALIB_STALE_DAYS 以上経過していたら実行"""
-        old = datetime.now() - timedelta(
-            days=make_stock_db.MOMENTUM_CALIB_STALE_DAYS + 1
-        )
-        market_db = {"momentum_calib": {"updated_at": old}}
-        assert make_stock_db.should_run_momentum_calibration(market_db) is True
+    def test_returns_true_when_strict_high(self):
+        """rs_line[0] が直近20日の最高値より厳密に大きい → True"""
+        stock = {"price_log": _make_log(25, base=2000, step=10)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=0)}}
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db) is True
 
-    def test_recent_non_target_weekday_returns_false(self):
-        """最近実行済みかつ今日がトリガー曜日でなければ実行しない"""
-        # 「最近」: 1日前
-        # 今日が トリガー曜日と同じ場合はパス: 月曜なら火曜に変える、など
-        recent = datetime.now() - timedelta(days=1)
-        market_db = {"momentum_calib": {"updated_at": recent}}
-        result = make_stock_db.should_run_momentum_calibration(market_db)
-        # 今日の曜日で結果が変わるので、両方の可能性を許容
-        if datetime.today().weekday() == make_stock_db.MOMENTUM_CALIB_WEEKDAY:
-            assert result is True
-        else:
-            assert result is False
+    def test_returns_false_when_not_high(self):
+        """rs_line[0] が過去より小さい → False"""
+        d0 = date(2026, 4, 28)
+        # 古い日付ほど高い値、今日ほど低い値
+        price_log = [(d0 - timedelta(days=i), 2000 + i * 10) for i in range(25)]
+        stock = {"price_log": price_log}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=0)}}
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db) is False
+
+    def test_returns_false_when_equal(self):
+        """同値（横ばい）は False — Q3「当日発生」のため厳密比較 >"""
+        d0 = date(2026, 4, 28)
+        price_log = [(d0 - timedelta(days=i), 2000) for i in range(25)]
+        stock = {"price_log": price_log}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=0)}}
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db) is False
+
+    def test_lookback_parameter(self):
+        """lookback を変えて短期判定として使えること"""
+        d0 = date(2026, 4, 28)
+        # 直近6日: 2050, 2040, 2030, 2020, 2010, 2000 (新→古)
+        # それ以前: 2200+ (高い値)
+        price_log = []
+        for i in range(6):
+            price_log.append((d0 - timedelta(days=i), 2050 - i * 10))
+        for i in range(6, 25):
+            price_log.append((d0 - timedelta(days=i), 2200 + i))
+        stock = {"price_log": price_log}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=0)}}
+        # lookback=5: 直近5日の最高値 (2040) を 2050 が更新 → True
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db, lookback=5) is True
+        # lookback=20: 過去20日に 2200+ がある → False
+        assert make_stock_db.compute_rs_line_new_high(stock, market_db, lookback=20) is False
+
+
+# ==================================================
+# compute_rs_line_divergence
+# ==================================================
+class TestComputeRsLineDivergence:
+    """株価×rs_line ダイバージェンス判定の単体テスト"""
+
+    def test_returns_empty_when_no_data(self):
+        assert make_stock_db.compute_rs_line_divergence({}, {"topix": {}}) == ""
+
+    def test_returns_empty_when_short(self):
+        """rs_line が offset+1 本未満なら ''"""
+        stock = {"price_log": _make_log(10, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(10, base=1000)}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db, offset=20) == ""
+
+    def test_bullish_divergence(self):
+        """株価↓ かつ rs_line↑ → 'bullish'
+        銘柄 1900/2000 (-5%), TOPIX 900/1000 (-10%) → rs +5.5%
+        """
+        stock_log, topix_log = _make_div_logs(1900, 2000, 900, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db) == "bullish"
+
+    def test_bearish_divergence(self):
+        """株価↑ かつ rs_line↓ → 'bearish'
+        銘柄 2100/2000 (+5%), TOPIX 1100/1000 (+10%) → rs -4.5%
+        """
+        stock_log, topix_log = _make_div_logs(2100, 2000, 1100, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db) == "bearish"
+
+    def test_no_divergence_same_direction(self):
+        """株価・rs_line が同方向（両方プラス）→ ''"""
+        stock = {"price_log": _make_log(25, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(25, base=1000, step=2)}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db) == ""
+
+    def test_below_threshold(self):
+        """株価変化が閾値未満なら ''
+        銘柄 1980/2000 (-1%, 閾値3%未満)
+        """
+        stock_log, topix_log = _make_div_logs(1980, 2000, 900, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db) == ""
+
+    def test_threshold_parameter(self):
+        """threshold を変えれば判定が変わる
+        銘柄-2%, TOPIX-4% → rs +2.08%
+        threshold=3% で発火しない、threshold=1% で bullish
+        """
+        stock_log, topix_log = _make_div_logs(1960, 2000, 960, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db, threshold=3.0) == ""
+        assert make_stock_db.compute_rs_line_divergence(stock, market_db, threshold=1.0) == "bullish"
+
+
+# ==================================================
+# make_signal — RSライン拡張
+# ==================================================
+class TestMakeSignalRsLine:
+    """make_signal で market_db を渡したときの rs_line 系タグ付与テスト"""
+
+    def test_market_db_none_skips_rs_line_tags(self):
+        """market_db=None で呼ばれた場合、RSライン系タグは付かない（後方互換）"""
+        d0 = date(2026, 4, 28)
+        stock = {
+            "price_log": [(d0 - timedelta(days=i), 2000 + (25 - i) * 10) for i in range(25)],
+        }
+        _, tags = make_stock_db.make_signal(stock)
+        assert "R高" not in tags
+        assert "強乖" not in tags
+        assert "弱乖" not in tags
+
+    def test_rs_line_new_high_tag(self):
+        """rs_line 新高値発生時に R高 タグが付く"""
+        d0 = date(2026, 4, 28)
+        stock = {
+            "price_log": [(d0 - timedelta(days=i), 2000 + (25 - i) * 10) for i in range(25)],
+        }
+        market_db = {
+            "topix": {"price_log": [(d0 - timedelta(days=i), 1000) for i in range(25)]},
+        }
+        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
+        assert "R高" in tags
+
+    def test_rs_line_bullish_divergence_tag(self):
+        """強気ダイバージェンス発生時に 強乖 タグが付く"""
+        stock_log, topix_log = _make_div_logs(1900, 2000, 900, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
+        assert "強乖" in tags
+
+    def test_rs_line_bearish_divergence_tag(self):
+        """弱気ダイバージェンス発生時に 弱乖 タグが付く"""
+        stock_log, topix_log = _make_div_logs(2100, 2000, 1100, 1000)
+        stock = {"price_log": stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
+        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
+        assert "弱乖" in tags
+
+    def test_rs_line_tags_skipped_for_stale_stock(self):
+        """銘柄 price_log が当日でない (古いキャッシュ) ならRS系タグは付かない。
+
+        list_all_db は更新対象外の銘柄もCSVに出すため、price_log が数週間
+        古い銘柄が混じる。連日同じシグナルが残らないように当日限定にする必要がある。
+        """
+        d0 = date(2026, 4, 28)
+        # 銘柄 price_log は1週間前まで (新高値が立つ条件のデータ)
+        stock = {
+            "price_log": [(d0 - timedelta(days=7 + i), 2000 + (25 - i) * 10) for i in range(25)],
+        }
+        # TOPIX は当日 (d0) まで
+        market_db = {
+            "topix": {"price_log": [(d0 - timedelta(days=i), 1000) for i in range(32)]},
+        }
+        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
+        # rs_line[0] は1週間前の日付なので当日扱いにならず、タグは付かない
+        assert "R高" not in tags
+        assert "強乖" not in tags
+        assert "弱乖" not in tags
+
+    def test_rs_line_tags_emit_when_latest_date_matches(self):
+        """銘柄 price_log[0] の日付が TOPIX price_log[0] と一致する場合はタグが立つ"""
+        d0 = date(2026, 4, 28)
+        stock = {
+            "price_log": [(d0 - timedelta(days=i), 2000 + (25 - i) * 10) for i in range(25)],
+        }
+        market_db = {
+            "topix": {"price_log": [(d0 - timedelta(days=i), 1000) for i in range(25)]},
+        }
+        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
+        assert "R高" in tags
