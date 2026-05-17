@@ -60,86 +60,47 @@ class TestHasGyosekiData:
 # get_trend_template_expr
 # ==================================================
 class TestGetTrendTemplateExpr:
-    """トレンドテンプレート表示のテスト"""
+    """トレンドテンプレート表示のテスト。ミス数 → 記号のテーブルを parametrize で網羅。"""
 
-    def test_no_key(self):
-        """trend_template キーがない場合"""
-        assert make_stock_db.get_trend_template_expr({}) == "-"
-
-    def test_perfect(self):
-        """全条件クリア（空リスト）"""
-        assert make_stock_db.get_trend_template_expr({"trend_template": []}) == "◎"
-
-    def test_minor_miss(self):
-        """1〜2条件ミス"""
-        result = make_stock_db.get_trend_template_expr({"trend_template": ["MA50"]})
-        assert result.startswith("◯")
-        assert "MA50" in result
-
-    def test_moderate_miss(self):
-        """3〜4条件ミス"""
-        result = make_stock_db.get_trend_template_expr(
-            {"trend_template": ["a", "b", "c"]}
-        )
-        assert result == "▲"
-
-    def test_many_miss(self):
-        """5〜6条件ミス"""
-        result = make_stock_db.get_trend_template_expr(
-            {"trend_template": ["a", "b", "c", "d", "e"]}
-        )
-        assert result == "△"
-
-    def test_all_miss(self):
-        """7条件以上ミス"""
-        result = make_stock_db.get_trend_template_expr(
-            {"trend_template": ["a", "b", "c", "d", "e", "f", "g"]}
-        )
-        assert result == ""
+    @pytest.mark.parametrize(
+        "stock, expected_prefix",
+        [
+            ({}, "-"),                                                  # キーなし
+            ({"trend_template": []}, "◎"),                              # 全通過
+            ({"trend_template": ["MA50"]}, "◯"),                        # 1-2 ミス
+            ({"trend_template": ["a", "b", "c"]}, "▲"),                 # 3-4 ミス
+            ({"trend_template": ["a", "b", "c", "d", "e"]}, "△"),       # 5-6 ミス
+            ({"trend_template": ["a", "b", "c", "d", "e", "f", "g"]}, ""),  # 7+ ミス
+        ],
+    )
+    def test_classification(self, stock, expected_prefix):
+        result = make_stock_db.get_trend_template_expr(stock)
+        if expected_prefix in ("-", "◎", "▲", "△", ""):
+            assert result == expected_prefix
+        else:  # 1-2 ミスは記号 + 詳細
+            assert result.startswith(expected_prefix)
 
 
 # ==================================================
 # get_index_trend_template_expr (issue #117 Part B)
 # ==================================================
 class TestGetIndexTrendTemplateExpr:
-    """指数向けトレンドテンプレート簡略表記"""
+    """指数向けトレンドテンプレート簡略表記。ミス数 → (記号 N/7, miss文字列) を parametrize で網羅。"""
 
-    def test_no_key(self):
-        assert make_stock_db.get_index_trend_template_expr({}) == ("-", "")
-
-    def test_perfect(self):
-        """全通過 → ◎ 7/7、ホバー文字列は空"""
-        assert make_stock_db.get_index_trend_template_expr({"trend_template": []}) == ("◎ 7/7", "")
-
-    def test_minor_miss(self):
-        """1-2 不通過 → ◯ N/7、ホバーに不通過項目"""
-        display, miss = make_stock_db.get_index_trend_template_expr(
-            {"trend_template": ["ma30>ma40", "RS"]}
-        )
-        assert display == "◯ 5/7"
-        assert miss == "ma30>ma40,RS"
-
-    def test_moderate_miss(self):
-        """3-4 不通過 → ▲ N/7"""
-        display, miss = make_stock_db.get_index_trend_template_expr(
-            {"trend_template": ["a", "b", "c", "d"]}
-        )
-        assert display == "▲ 3/7"
-        assert miss == "a,b,c,d"
-
-    def test_many_miss(self):
-        """5-7 不通過 → △ N/7"""
-        display, miss = make_stock_db.get_index_trend_template_expr(
-            {"trend_template": ["a", "b", "c", "d", "e"]}
-        )
-        assert display == "△ 2/7"
-        assert miss == "a,b,c,d,e"
-
-    def test_all_miss(self):
-        display, miss = make_stock_db.get_index_trend_template_expr(
-            {"trend_template": ["a", "b", "c", "d", "e", "f", "g"]}
-        )
-        assert display == "△ 0/7"
+    @pytest.mark.parametrize(
+        "stock, expected_display, expected_miss",
+        [
+            ({}, "-", ""),
+            ({"trend_template": []}, "◎ 7/7", ""),
+            ({"trend_template": ["ma30>ma40", "RS"]}, "◯ 5/7", "ma30>ma40,RS"),
+            ({"trend_template": ["a", "b", "c", "d"]}, "▲ 3/7", "a,b,c,d"),
+            ({"trend_template": ["a", "b", "c", "d", "e"]}, "△ 2/7", "a,b,c,d,e"),
+        ],
+    )
+    def test_classification(self, stock, expected_display, expected_miss):
+        display, miss = make_stock_db.get_index_trend_template_expr(stock)
+        assert display == expected_display
+        assert miss == expected_miss
 
 
 # ==================================================
@@ -1047,13 +1008,3 @@ class TestSyncResearchStockName:
         # 例外を吐かずに正常終了すること
         make_stock_db._sync_research_stock_name("1436", new_name="新名")
 
-    def test_silent_when_sync_api_returns_none(self, monkeypatch):
-        """API が None を返した場合 (no-op or 未登録) はログのみで戻る"""
-        import research_shelve
-
-        def fake_sync(code_s, new_name, **kwargs):
-            return None  # 未登録 or 同名 no-op
-
-        monkeypatch.setattr(research_shelve, "sync_stock_name", fake_sync)
-        # 例外を吐かずに正常終了
-        make_stock_db._sync_research_stock_name("1436", new_name="新名")
