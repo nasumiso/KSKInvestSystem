@@ -158,3 +158,71 @@ python make_stock_db.py list_all_db
 - **ログ**: `logs/make_stock_db.log`（処理経過・エラー）
 - **ランキングCSV**: `data/code_rank_data/code_rank.csv`（最終結果）
 - 正常終了時はGoogle Driveへの自動アップロードも実行される（`Upload Complete` ログで確認）
+
+## テスト量・粒度の方針
+
+テストは「**書けば書くほど良い**」ものではない。1テスト = 1つの保守単位 (メソッド名・docstring・assertion・将来のリファクタ追従) を抱えるため、増やすほどコストがかかる。書く前に「このテストは将来バグを捕まえるか?」「同じ動作を別のテストで既に担保していないか?」を自問すること。
+
+### 数量の目安
+
+| 指標 | 目安 | 判断ポイント |
+|---|---|---|
+| テスト/実装 行数比率 | **30〜50%程度** | 70% を超えたら「単純すぎるテスト」が紛れていないか棚卸し |
+| 1 PR で追加するテスト数 | **5本以下** が目安 | issue 要件1つにつき 1〜3本が自然。10本を超えるなら parametrize でまとめられないか検討 |
+| 1 関数あたりのテスト数 | **3〜5本** で十分 | 入力空間の網羅は parametrize で1関数に集約 |
+
+### 「書く価値があるテスト」
+
+- **バグ修正の回帰テスト**: 過去に発生したバグの再発防止 (issue 番号紐づけ推奨)
+- **複雑なロジックの境界値**: モメンタムポイントの ±1σ、決算日跨ぎ判定など、計算式の境界が曖昧で誤りやすい部分
+- **排他制御・並行性**: lost update protection (`research_shelve.sync_stock_name` 等)、flock の動作
+- **後方互換性**: shelve スキーマ拡張時の旧データ読み込み (`get_xxx_record` の backfill)
+- **外部I/Oの正規化**: HTML パース、CSV パース、API レスポンスの解釈
+- **契約テスト**: API レスポンスの JSON 形式 (キー存在・型) など、フロント/外部と約束した形式
+
+### 「書かない方が良い (削減候補) テスト」
+
+- **自明な動作のテスト**: `dict["key"] = value` で値が `value` であることなど Python の基本動作の再確認
+- **getter/setter の素通し**: 値を入れて出して同じことだけを確認
+- **ファクトリ関数の各フィールドが入るかの個別確認**: 1つの「フル引数 roundtrip」で済むものを分割しない
+- **parametrize 過剰**: 「無効な値の例」を10種類列挙して個別 ValueError 確認 → 代表3つで十分
+- **上位テストで自動カバーされる下位再テスト**: `compute_cell_styles` でカバーされる private 関数の個別テストなど
+- **モック過多でロジック実体を検証していないテスト**: 何を確かめたいのか不明瞭になる
+- **テンプレ文字列の `in` チェック**: レイアウト変更で誤検知しやすく機能のバグでは落ちにくい
+- **後方互換 backfill だけのテスト乱発**: スキーマごとに「無 → デフォルト」「有 → そのまま」を毎回2本ずつ書く → roundtrip 1本 + backfill 1本で十分
+
+### parametrize で集約するパターン
+
+「入力 → 期待出力の表」になっている検証は parametrize でまとめる。テスト関数数は減るが網羅性は維持できる。
+
+```python
+# Bad: 1ルール = 1テスト関数
+def test_rank_lt_300_strong_yellow(self):
+    assert compute_cell_styles({"rank": 299})["rank"] == "background:濃黄"
+def test_rank_300_no_color(self):
+    assert "rank" not in compute_cell_styles({"rank": 300})
+def test_rank_none_no_color(self):
+    assert "rank" not in compute_cell_styles({"rank": None})
+# ... (60 個続く)
+
+# Good: テーブル駆動
+@pytest.mark.parametrize(
+    "row, field, expected",
+    [
+        ({"rank": 299}, "rank", "background:濃黄"),
+        ({"rank": 300}, "rank", None),
+        ({"rank": None}, "rank", None),
+        # ... 他のルールも同じ表に並べる
+    ],
+)
+def test_simple_threshold_rules(self, row, field, expected):
+    styles = compute_cell_styles(row, today=TODAY)
+    if expected is None:
+        assert field not in styles
+    else:
+        assert styles[field] == expected
+```
+
+### 棚卸しのタイミング
+
+PR レビューや実装作業中に「**このテストは何を守っているのか?**」が即答できないものを見つけたら削減候補。比率が 70% を超えた時点で全体棚卸しを検討する。

@@ -914,17 +914,13 @@ from datetime import datetime, timedelta
 
 
 class TestGetMomentumCalib:
-    """モメンタム calib 取得とフォールバック判定のテスト"""
+    """モメンタム calib 取得とフォールバック判定のテスト
 
-    def test_returns_default_when_no_calib(self):
-        """momentum_calib が無ければデフォルト値"""
-        loc, scale, source = price.get_momentum_calib(market_db={})
-        assert loc == price.MOMENTUM_CALIB_DEFAULT_LOC
-        assert scale == price.MOMENTUM_CALIB_DEFAULT_SCALE
-        assert source == "fallback"
+    正常系1本 + 「壊れた calib は fallback」を parametrize で集約。
+    """
 
     def test_returns_calib_when_valid(self):
-        """sample_count・updated_at が有効ならキャリブ値を返す"""
+        """有効な calib は値を返す (source=calib)"""
         market_db = {
             "momentum_calib": {
                 "loc": -0.10,
@@ -934,79 +930,46 @@ class TestGetMomentumCalib:
             }
         }
         loc, scale, source = price.get_momentum_calib(market_db=market_db)
-        assert loc == -0.10
-        assert scale == 0.25
-        assert source == "calib"
+        assert (loc, scale, source) == (-0.10, 0.25, "calib")
 
-    def test_fallback_when_sample_count_too_low(self):
-        """sample_count が下限未満ならフォールバック"""
-        market_db = {
-            "momentum_calib": {
-                "loc": -0.10,
-                "scale": 0.25,
-                "sample_count": 100,  # 下限500未満
-                "updated_at": datetime.now(),
-            }
-        }
+    @pytest.mark.parametrize(
+        "calib, reason",
+        [
+            (None, "no_calib"),  # calib 自体無し → market_db = {}
+            (
+                {"loc": -0.10, "scale": 0.25, "sample_count": 100,
+                 "updated_at": datetime.now()},
+                "sample_count_too_low",
+            ),
+            (
+                {"loc": -0.10, "scale": 0.25, "sample_count": 1000},
+                "updated_at_missing",
+            ),
+            (
+                {"loc": -0.10, "scale": 0.25, "sample_count": 1000,
+                 "updated_at": datetime.now() - timedelta(
+                     days=price.MOMENTUM_CALIB_MAX_AGE_DAYS + 1)},
+                "too_old",
+            ),
+            (
+                {"scale": 0.25, "sample_count": 1000,
+                 "updated_at": datetime.now() - timedelta(days=1)},
+                "loc_missing",
+            ),
+            (
+                {"loc": -0.10, "scale": 0, "sample_count": 1000,
+                 "updated_at": datetime.now() - timedelta(days=1)},
+                "scale_invalid",
+            ),
+        ],
+    )
+    def test_falls_back_when_calib_broken(self, calib, reason):
+        """壊れた calib (各種パターン) はデフォルト値にフォールバック"""
+        market_db = {"momentum_calib": calib} if calib is not None else {}
         loc, scale, source = price.get_momentum_calib(market_db=market_db)
+        assert source == "fallback", f"reason={reason}"
         assert loc == price.MOMENTUM_CALIB_DEFAULT_LOC
         assert scale == price.MOMENTUM_CALIB_DEFAULT_SCALE
-        assert source == "fallback"
-
-    def test_fallback_when_too_old(self):
-        """updated_at が古すぎたらフォールバック"""
-        market_db = {
-            "momentum_calib": {
-                "loc": -0.10,
-                "scale": 0.25,
-                "sample_count": 1000,
-                "updated_at": datetime.now() - timedelta(
-                    days=price.MOMENTUM_CALIB_MAX_AGE_DAYS + 1
-                ),
-            }
-        }
-        loc, scale, source = price.get_momentum_calib(market_db=market_db)
-        assert source == "fallback"
-
-    def test_fallback_when_updated_at_missing(self):
-        """updated_at が無ければフォールバック"""
-        market_db = {
-            "momentum_calib": {
-                "loc": -0.10,
-                "scale": 0.25,
-                "sample_count": 1000,
-            }
-        }
-        loc, scale, source = price.get_momentum_calib(market_db=market_db)
-        assert source == "fallback"
-
-    def test_fallback_when_loc_missing(self):
-        """loc が欠落していてもKeyErrorを出さずフォールバック"""
-        market_db = {
-            "momentum_calib": {
-                # loc が無い (不完全なキャッシュ)
-                "scale": 0.25,
-                "sample_count": 1000,
-                "updated_at": datetime.now() - timedelta(days=1),
-            }
-        }
-        loc, scale, source = price.get_momentum_calib(market_db=market_db)
-        assert source == "fallback"
-        assert loc == price.MOMENTUM_CALIB_DEFAULT_LOC
-        assert scale == price.MOMENTUM_CALIB_DEFAULT_SCALE
-
-    def test_fallback_when_scale_invalid(self):
-        """scale が非数値/非正でもフォールバック"""
-        market_db = {
-            "momentum_calib": {
-                "loc": -0.10,
-                "scale": 0,  # 0 は分布として無効
-                "sample_count": 1000,
-                "updated_at": datetime.now() - timedelta(days=1),
-            }
-        }
-        loc, scale, source = price.get_momentum_calib(market_db=market_db)
-        assert source == "fallback"
 
 
 # ==================================================

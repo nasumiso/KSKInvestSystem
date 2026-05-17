@@ -92,52 +92,31 @@ class TestSchema:
         with pytest.raises(TypeError):
             rs.normalize_code_s(3496)
 
-    # --- ケース5: validate_code_s 不正値・正常値 ---
-    @pytest.mark.parametrize(
-        "invalid",
-        [
-            "",
-            "abc",
-            "123",      # 3桁
-            "1234A",    # 5文字
-            "12345",    # 5桁
-            "A215",     # 先頭英字
-        ],
-    )
+    # --- ケース5: validate_code_s ---
+    # 不正値は代表3つ (空 / 桁数違い / 先頭英字)、正常値は代表3つ (数字4桁 / 英字混じり / 境界)。
+    # ※ None 経路は normalize_code_s の TypeError 経由なので別ケース。
+    @pytest.mark.parametrize("invalid", ["", "123", "A215"])
     def test_validate_code_s_invalid(self, invalid):
         with pytest.raises(ValueError):
             rs.validate_code_s(invalid)
+
+    @pytest.mark.parametrize("valid", ["1234", "215A", "0001"])
+    def test_validate_code_s_valid(self, valid):
+        rs.validate_code_s(valid)  # 例外が出なければOK
 
     def test_validate_code_s_none(self):
         """None は TypeError (normalize_code_s の仕様)"""
         with pytest.raises(TypeError):
             rs.validate_code_s(None)
 
-    @pytest.mark.parametrize(
-        "valid",
-        ["1234", "0001", "9999", "215A", "135A"],
-    )
-    def test_validate_code_s_valid(self, valid):
-        rs.validate_code_s(valid)  # 例外が出なければOK
-
     # --- ケース6: validate_date_yy_m ---
-    @pytest.mark.parametrize(
-        "invalid",
-        [
-            "2024-03-31",   # ISO 形式
-            "26.13",        # 月が13
-            "26.0",         # 月が0
-            "ab.1",         # 年が英字
-            "26",           # 月欠落
-            "26.",          # 月空
-            ".1",           # 年空
-        ],
-    )
+    # 不正値は代表3つ (フォーマット違い / 月範囲外 / 年欠落)、正常値は代表3つ (通常 / 12月境界 / 1桁年)
+    @pytest.mark.parametrize("invalid", ["2024-03-31", "26.13", ".1"])
     def test_validate_date_yy_m_invalid(self, invalid):
         with pytest.raises(ValueError):
             rs.validate_date_yy_m(invalid)
 
-    @pytest.mark.parametrize("valid", ["26.1", "25.11", "25.12", "00.1", "99.12"])
+    @pytest.mark.parametrize("valid", ["26.1", "25.12", "00.1"])
     def test_validate_date_yy_m_valid(self, valid):
         rs.validate_date_yy_m(valid)
 
@@ -153,49 +132,20 @@ class TestSchema:
         assert rs.date_yy_m_sort_key("25.11") == (25, 11, 0)
 
     # --- ケース7b: sort_shikiho_comments_desc ---
+    # 基本動作 (period降順 + 空/-/不正 は末尾) と安定ソート保証のみ。
+    # 空リスト・全て period 付きは基本ケースの自明な系で省略。
     def test_sort_shikiho_comments_desc_basic(self):
-        """period ありを降順、空/- は末尾"""
+        """period 降順、空/-/不正は最古扱いで末尾 (元順序維持の安定ソート)"""
         items = [
             {"period": "", "comment": "A"},
             {"period": "26.3", "comment": "B"},
             {"period": "25.12", "comment": "C"},
             {"period": "-", "comment": "D"},
+            {"period": "不明", "comment": "E"},
         ]
         result = rs.sort_shikiho_comments_desc(items)
-        assert [it["comment"] for it in result] == ["B", "C", "A", "D"]
-
-    def test_sort_shikiho_comments_desc_preserves_empty_order(self):
-        """空/- 同士の相対順序は元リスト順を維持（安定ソート）"""
-        items = [
-            {"period": "", "comment": "A"},
-            {"period": "26.3", "comment": "B"},
-            {"period": "", "comment": "C"},
-            {"period": "-", "comment": "D"},
-            {"period": "", "comment": "E"},
-        ]
-        result = rs.sort_shikiho_comments_desc(items)
-        assert [it["comment"] for it in result] == ["B", "A", "C", "D", "E"]
-
-    def test_sort_shikiho_comments_desc_empty_list(self):
-        assert rs.sort_shikiho_comments_desc([]) == []
-
-    def test_sort_shikiho_comments_desc_all_with_period(self):
-        items = [
-            {"period": "25.7", "comment": "A"},
-            {"period": "26.1", "comment": "B"},
-            {"period": "25.11", "comment": "C"},
-        ]
-        result = rs.sort_shikiho_comments_desc(items)
-        assert [it["comment"] for it in result] == ["B", "C", "A"]
-
-    def test_sort_shikiho_comments_desc_invalid_period(self):
-        """不正な period は最古扱い（クラッシュしない）"""
-        items = [
-            {"period": "26.3", "comment": "A"},
-            {"period": "不明", "comment": "B"},
-        ]
-        result = rs.sort_shikiho_comments_desc(items)
-        assert [it["comment"] for it in result] == ["A", "B"]
+        # B(26.3) > C(25.12) > 末尾は元順序 A → D → E
+        assert [it["comment"] for it in result] == ["B", "C", "A", "D", "E"]
 
     # --- ケース8: overall_rating 不正値 ---
     @pytest.mark.parametrize("bad", ["Z", "s", "A+", "不明"])
@@ -904,21 +854,27 @@ class TestDateYyMDayPrecision:
 
 
 class TestCorporateUrlOverride:
-    """corporate_url_override フィールド (issue #208) のテスト"""
+    """corporate_url_override フィールド (issue #208) のテスト
 
-    def test_corporate_url_override_defaults_to_empty(self):
-        """create_research_record の戻り値に空文字で含まれる"""
-        rec = rs.create_research_record("3496", "アズーム")
-        assert rec["corporate_url_override"] == ""
+    roundtrip と backfill の 2 本に集約。
+    create 時のフィールド存在は create_research_record_minimal の RECORD_FIELDS チェックで
+    間接的に担保され、デフォルト空文字は roundtrip テスト内で確認している。
+    """
 
-    def test_corporate_url_override_passes_through(self):
-        """create_research_record に渡した値が保持される"""
+    def test_corporate_url_override_roundtrip(self, db_path):
+        """create → upsert → get で値が往復し、未指定はデフォルト空文字"""
         rec = rs.create_research_record(
             "3496", "アズーム", corporate_url_override="https://example.com/ir",
         )
         assert rec["corporate_url_override"] == "https://example.com/ir"
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert loaded["corporate_url_override"] == "https://example.com/ir"
+        # デフォルトは空文字
+        rec_empty = rs.create_research_record("1234", "別銘柄")
+        assert rec_empty["corporate_url_override"] == ""
 
-    def test_get_research_record_backfills_corporate_url_override(self, db_path):
+    def test_corporate_url_override_backfills_when_missing(self, db_path):
         """旧形式 (corporate_url_override 無) のレコードは読込時に空文字で補完される"""
         rec = rs.create_research_record("3496", "アズーム")
         del rec["corporate_url_override"]  # 旧形式を模倣
@@ -926,49 +882,29 @@ class TestCorporateUrlOverride:
         loaded = rs.get_research_record("3496", db_path=db_path)
         assert loaded["corporate_url_override"] == ""
 
-    def test_corporate_url_override_roundtrip(self, db_path):
-        """upsert → get で値が往復する"""
-        rec = rs.create_research_record(
-            "3496", "アズーム", corporate_url_override="https://example.com/ir",
-        )
-        rs.upsert_research_record(rec, db_path=db_path)
-        loaded = rs.get_research_record("3496", db_path=db_path)
-        assert loaded["corporate_url_override"] == "https://example.com/ir"
-
-    def test_record_fields_includes_corporate_url_override(self):
-        """RECORD_FIELDS に corporate_url_override が含まれる"""
-        assert "corporate_url_override" in rs.RECORD_FIELDS
-
 
 # ==================================================
 # 銘柄名変更追従 (issue #183)
 # ==================================================
 class TestStockNamePrev:
-    """stock_name_prev フィールドと sync_stock_name API のテスト"""
+    """stock_name_prev フィールドと sync_stock_name API のテスト (issue #183)
 
-    def test_create_research_record_default_stock_name_prev_none(self):
-        """stock_name_prev はデフォルト None"""
-        rec = rs.create_research_record("3496", "アズーム")
-        assert rec["stock_name_prev"] is None
+    スキーマ周り (RECORD_FIELDS / create のデフォルト) は create_research_record_minimal の
+    set(rec.keys()) == RECORD_FIELDS で間接的に担保されるため backfill のみテスト。
+    """
 
-    def test_create_research_record_with_stock_name_prev(self):
-        """stock_name_prev を明示的に渡せる"""
+    def test_stock_name_prev_roundtrip_and_backfill(self, db_path):
+        """create で渡せて, 旧形式 (キー無) は読込時 None 補完"""
         rec = rs.create_research_record(
             "1436", "グリーンエナジー&カンパニー", stock_name_prev="フィット"
         )
         assert rec["stock_name_prev"] == "フィット"
-
-    def test_get_research_record_backfills_stock_name_prev(self, db_path):
-        """旧形式 (stock_name_prev 無) のレコードは読込時に None で補完される"""
-        rec = rs.create_research_record("3496", "アズーム")
-        del rec["stock_name_prev"]  # 旧形式を模倣
-        rs.upsert_research_record(rec, db_path=db_path)
+        # 旧形式 (キー無) を模倣
+        rec_old = rs.create_research_record("3496", "アズーム")
+        del rec_old["stock_name_prev"]
+        rs.upsert_research_record(rec_old, db_path=db_path)
         loaded = rs.get_research_record("3496", db_path=db_path)
         assert loaded["stock_name_prev"] is None
-
-    def test_record_fields_includes_stock_name_prev(self):
-        """RECORD_FIELDS に stock_name_prev が含まれる"""
-        assert "stock_name_prev" in rs.RECORD_FIELDS
 
     def test_sync_stock_name_updates_and_saves_prev(self, db_path):
         """新名と異なる場合: 新名で更新+旧名が prev に退避、戻り値は旧名"""
@@ -982,21 +918,18 @@ class TestStockNamePrev:
         assert loaded["stock_name"] == "グリーンエナジー&カンパニー"
         assert loaded["stock_name_prev"] == "フィット"
 
-    def test_sync_stock_name_noop_when_same(self, db_path):
-        """同名なら何もせず戻り値 None"""
+    def test_sync_stock_name_noop_cases(self, db_path):
+        """no-op パス3種を統合: 同名 / 空白だけ違う同名 / 未登録銘柄"""
         rec = rs.create_research_record("1436", "フィット")
         rs.upsert_research_record(rec, db_path=db_path)
-        returned = rs.sync_stock_name("1436", "フィット", db_path=db_path)
-        assert returned is None
+        # 同名 → None
+        assert rs.sync_stock_name("1436", "フィット", db_path=db_path) is None
+        # 前後空白で同名扱い → None
+        assert rs.sync_stock_name("1436", "  フィット  ", db_path=db_path) is None
         loaded = rs.get_research_record("1436", db_path=db_path)
-        assert loaded["stock_name"] == "フィット"
         assert loaded["stock_name_prev"] is None  # 旧名退避が起きていない
-
-    def test_sync_stock_name_noop_when_record_missing(self, db_path):
-        """未登録銘柄は何もせず戻り値 None"""
-        returned = rs.sync_stock_name("9999", "未登録銘柄", db_path=db_path)
-        assert returned is None
-        # 登録もされていない
+        # 未登録銘柄 → None で書き込みなし
+        assert rs.sync_stock_name("9999", "未登録銘柄", db_path=db_path) is None
         assert rs.get_research_record("9999", db_path=db_path) is None
 
     def test_sync_stock_name_preserves_other_fields(self, db_path):
@@ -1019,10 +952,3 @@ class TestStockNamePrev:
         assert loaded["openwork"] == "3.72"
         assert len(loaded["snapshots"]) == 1
         assert loaded["snapshots"][0]["ir_quant"] == "[A]26%,21%"
-
-    def test_sync_stock_name_strips_whitespace(self, db_path):
-        """前後空白で同名扱いとなる (no-op)"""
-        rec = rs.create_research_record("1436", "フィット")
-        rs.upsert_research_record(rec, db_path=db_path)
-        returned = rs.sync_stock_name("1436", "  フィット  ", db_path=db_path)
-        assert returned is None

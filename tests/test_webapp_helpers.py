@@ -1422,512 +1422,264 @@ TODAY = date(2026, 5, 10)    # テスト用固定基準日
 
 
 class TestComputeCellStyles:
-    """compute_cell_styles のユニットテスト (issue #177)"""
+    """compute_cell_styles のユニットテスト (issue #177)
 
-    # --- 順位 (ルール 14, 31) ---
-    def test_rank_lt_300_strong_yellow(self):
-        styles = helpers.compute_cell_styles({"rank": 299}, today=TODAY)
-        assert styles["rank"] == f"background:{C['濃黄']}"
+    各ルールの「色が付く代表値」「色が付かない境界値」を parametrize テーブルで集約。
+    複雑な特殊ケース (優先順位、空欄処理、未来日処理など) は別関数で個別検証。
+    """
 
-    def test_rank_300_no_color(self):
-        styles = helpers.compute_cell_styles({"rank": 300}, today=TODAY)
-        assert "rank" not in styles
+    # ----- 数値しきい値系: 1ルール = (色付く代表, 色つかない境界) -----
+    @pytest.mark.parametrize(
+        "row, field, expected",
+        [
+            # 順位 (rank<300 で 濃黄、=300 で色なし)
+            ({"rank": 299}, "rank", f"background:{C['濃黄']}"),
+            ({"rank": 300}, "rank", None),
+            ({"rank": None}, "rank", None),
+            # 売上成長 (>=30 で 薄黄)
+            ({"sales_growth_raw": 30}, "sales_growth", f"background:{C['薄黄']}"),
+            ({"sales_growth_raw": 29}, "sales_growth", None),
+            # 利益成長 (>=30 で 薄黄)
+            ({"profit_growth_raw": 30}, "profit_growth", f"background:{C['薄黄']}"),
+            ({"profit_growth_raw": 29}, "profit_growth", None),
+            # 理論株価乖離 (>50)
+            ({"theoretical_diff_raw": 51}, "theoretical_diff", f"background:{C['薄黄']}"),
+            ({"theoretical_diff_raw": 50}, "theoretical_diff", None),
+            # 配当 (>=5 濃黄 / >3 薄黄 / =3 色なし)
+            ({"dividend_raw": 5.0}, "dividend", f"background:{C['濃黄']}"),
+            ({"dividend_raw": 4.0}, "dividend", f"background:{C['薄黄']}"),
+            ({"dividend_raw": 3.0}, "dividend", None),
+            # RS (>80 濃黄 / >=70 薄黄 / 80 ちょうどは薄黄)
+            ({"rs_raw": 81}, "rs", f"background:{C['濃黄']}"),
+            ({"rs_raw": 80}, "rs", f"background:{C['薄黄']}"),
+            ({"rs_raw": 70}, "rs", f"background:{C['薄黄']}"),
+            ({"rs_raw": 69}, "rs", None),
+            # 進捗率乖離 (営利>=20 で 濃黄、<20 で色なし)
+            ({"progress_diff_eiri_raw": 20, "gyoseki_quarity_expr": ""}, "progress_diff",
+             f"background:{C['濃黄']}"),
+            ({"progress_diff_eiri_raw": 19, "gyoseki_quarity_expr": ""}, "progress_diff", None),
+            # ステージ ("2S" を含む → 薄赤)
+            ({"memo": {"stage": "2S(3T)"}}, "stage", f"background:{C['薄赤']}"),
+            ({"memo": {"stage": "3S"}}, "stage", None),
+            # 時価総額 (カテゴリ "中"/"大" → 薄黄、それ以外なし)
+            ({"market_cap_category": "中"}, "market_cap", f"background:{C['薄黄']}"),
+            ({"market_cap_category": "大"}, "market_cap", f"background:{C['薄黄']}"),
+            ({"market_cap_category": "極小"}, "market_cap", None),
+            ({"market_cap_category": "特大"}, "market_cap", None),  # "大" 完全一致のみ
+            ({"market_cap_category": None}, "market_cap", None),
+        ],
+    )
+    def test_simple_threshold_rules(self, row, field, expected):
+        """単純な数値しきい値・カテゴリマッチング系のルール。"""
+        styles = helpers.compute_cell_styles(row, today=TODAY)
+        if expected is None:
+            assert field not in styles
+        else:
+            assert styles[field] == expected
 
-    def test_rank_none_no_color(self):
-        styles = helpers.compute_cell_styles({"rank": None}, today=TODAY)
-        assert "rank" not in styles
-
-    # --- 売上成長 (ルール 17) ---
-    def test_sales_growth_30_or_more_light_yellow(self):
-        styles = helpers.compute_cell_styles({"sales_growth_raw": 30}, today=TODAY)
-        assert styles["sales_growth"] == f"background:{C['薄黄']}"
-
-    def test_sales_growth_29_no_color(self):
-        styles = helpers.compute_cell_styles({"sales_growth_raw": 29}, today=TODAY)
-        assert "sales_growth" not in styles
-
-    def test_sales_growth_none_no_color(self):
-        styles = helpers.compute_cell_styles({"sales_growth_raw": None}, today=TODAY)
-        assert "sales_growth" not in styles
-
-    # --- 利益成長 (ルール 17) ---
-    def test_profit_growth_30_or_more_light_yellow(self):
-        styles = helpers.compute_cell_styles({"profit_growth_raw": 30}, today=TODAY)
-        assert styles["profit_growth"] == f"background:{C['薄黄']}"
-
-    def test_profit_growth_29_no_color(self):
-        styles = helpers.compute_cell_styles({"profit_growth_raw": 29}, today=TODAY)
-        assert "profit_growth" not in styles
-
-    # --- PER (ルール 16): PEG 的指標 (利益成長% + 配当%) / PER > 1 ---
-    def test_per_peg_above_1_light_yellow(self):
-        # (30 + 1) / 20 = 1.55 > 1
+    # ----- PER の PEG 的指標 (利益成長 + 配当)/PER > 1 → 薄黄 -----
+    @pytest.mark.parametrize(
+        "per, growth, dividend, expected_color",
+        [
+            (20, 30, 1.0, f"background:{C['薄黄']}"),    # (30+1)/20 = 1.55 > 1
+            (20, 20, 0.0, None),                          # (20+0)/20 = 1.0 (> なので no color)
+            (0, 30, 1.0, None),                           # PER 0 → no color
+            (20, None, 1.0, None),                        # 成長 None → no color
+            (3.3, 232, None, f"background:{C['薄黄']}"),  # 配当 None は 0 扱い: (232+0)/3.3 > 1
+            (30, 25, None, None),                         # 配当 None × 低成長 → 色なし
+        ],
+    )
+    def test_per_peg_rule(self, per, growth, dividend, expected_color):
         styles = helpers.compute_cell_styles(
-            {"per_raw": 20, "profit_growth_raw": 30, "dividend_raw": 1.0},
+            {"per_raw": per, "profit_growth_raw": growth, "dividend_raw": dividend},
             today=TODAY,
         )
-        assert styles["per"] == f"background:{C['薄黄']}"
+        if expected_color is None:
+            assert "per" not in styles
+        else:
+            assert styles["per"] == expected_color
 
-    def test_per_peg_exact_1_no_color(self):
-        # (20 + 0) / 20 = 1.0 (>= ではなく > なので no color)
+    # ----- トレンド (◎ 濃黄 / ◯ 薄黄 / —, 空欄 水色 / ◎◯ で ◎優先) -----
+    @pytest.mark.parametrize(
+        "trend, expected",
+        [
+            ("◎pr>ma10", f"background:{C['濃黄']}"),
+            ("◯RS", f"background:{C['薄黄']}"),
+            ("—", f"background:{C['水色']}"),
+            ("", f"background:{C['水色']}"),
+            ("◎◯", f"background:{C['濃黄']}"),  # ◎優先
+            ("▲", None),                          # 対象外記号
+        ],
+    )
+    def test_trend_template_rule(self, trend, expected):
+        styles = helpers.compute_cell_styles({"trend_template": trend}, today=TODAY)
+        if expected is None:
+            assert "trend_template" not in styles
+        else:
+            assert styles["trend_template"] == expected
+
+    # ----- シグナル (赤 > 青背景 > 青文字色 の優先順位) -----
+    @pytest.mark.parametrize(
+        "tags, expected",
+        [
+            ("ポ", f"background:{C['赤']};color:#fff"),
+            ("ブ", f"background:{C['赤']};color:#fff"),
+            ("最", f"background:{C['赤']};color:#fff"),
+            ("警", f"background:{C['青']};color:#fff"),
+            ("売", f"background:{C['青']};color:#fff"),
+            ("押", f"color:{C['青']}"),
+            ("警/ポ", f"background:{C['赤']};color:#fff"),     # 赤 > 青
+            ("警/押", f"background:{C['青']};color:#fff"),     # 青背景 > 青文字
+            ("", None),
+        ],
+    )
+    def test_signal_priority(self, tags, expected):
+        styles = helpers.compute_cell_styles({"tags": tags}, today=TODAY)
+        if expected is None:
+            assert "tags" not in styles
+        else:
+            assert styles["tags"] == expected
+
+    # ----- 買い集め (合計 >=8 濃黄 / <=4 水色 / 5-7 色なし) -----
+    # 手入力データで空白混入が多いため "A, B" のような空白付き入力が
+    # _buy_collection_score_sum 内部で strip されて正常評価されることも確認する。
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("A,A", f"background:{C['濃黄']}"),   # 10 >=8
+            ("A,B", f"background:{C['濃黄']}"),   # 9 >=8 (境界)
+            ("A, B", f"background:{C['濃黄']}"), # 空白付き入力 (strip 処理の退行検知)
+            ("B,C", None),                         # 7 5-7範囲
+            ("D,D", f"background:{C['水色']}"),   # 4 <=4 (境界)
+            ("E,E", f"background:{C['水色']}"),   # 2 <=4
+            ("—", None),                           # 不正値
+        ],
+    )
+    def test_buy_collection_rule(self, value, expected):
+        styles = helpers.compute_cell_styles({"buy_collection": value}, today=TODAY)
+        if expected is None:
+            assert "buy_collection" not in styles
+        else:
+            assert styles["buy_collection"] == expected
+
+    # ----- 進捗率乖離: <C3>タグ優先 -----
+    def test_progress_diff_c3_priority_over_eiri(self):
+        """<C3> タグは薄赤で営利>=20 の濃黄より優先 (タグありなしで両方確認)"""
+        # <C3> あり: 営利の値に関わらず薄赤
         styles = helpers.compute_cell_styles(
-            {"per_raw": 20, "profit_growth_raw": 20, "dividend_raw": 0.0},
-            today=TODAY,
-        )
-        assert "per" not in styles
-
-    def test_per_zero_no_color(self):
-        styles = helpers.compute_cell_styles(
-            {"per_raw": 0, "profit_growth_raw": 30, "dividend_raw": 1.0},
-            today=TODAY,
-        )
-        assert "per" not in styles
-
-    def test_per_with_no_growth_no_color(self):
-        styles = helpers.compute_cell_styles(
-            {"per_raw": 20, "profit_growth_raw": None, "dividend_raw": 1.0},
-            today=TODAY,
-        )
-        assert "per" not in styles
-
-    def test_per_with_no_dividend_treated_as_zero(self):
-        # スプシ式 (I+L)/J>1 はセル空欄を 0 扱いする → 配当 None でも PER 色付け対象
-        # 例: 6366 千代田化工建設 (per=3.3, profit_growth=232, dividend=None) → (232+0)/3.3=70 > 1
-        styles = helpers.compute_cell_styles(
-            {"per_raw": 3.3, "profit_growth_raw": 232, "dividend_raw": None},
-            today=TODAY,
-        )
-        assert styles["per"] == f"background:{C['薄黄']}"
-
-    def test_per_no_dividend_low_growth_no_color(self):
-        # 配当 None (= 0) で利益成長が PER 未満 → 色なし
-        styles = helpers.compute_cell_styles(
-            {"per_raw": 30, "profit_growth_raw": 25, "dividend_raw": None},
-            today=TODAY,
-        )
-        assert "per" not in styles
-
-    # --- 理論株価乖離 (ルール 15): > 50 → 薄黄 ---
-    def test_theoretical_diff_51_light_yellow(self):
-        styles = helpers.compute_cell_styles({"theoretical_diff_raw": 51}, today=TODAY)
-        assert styles["theoretical_diff"] == f"background:{C['薄黄']}"
-
-    def test_theoretical_diff_50_no_color(self):
-        styles = helpers.compute_cell_styles({"theoretical_diff_raw": 50}, today=TODAY)
-        assert "theoretical_diff" not in styles
-
-    # --- 配当 (ルール 32, 33): >=5 濃黄 / >3 薄黄 ---
-    def test_dividend_5_strong_yellow(self):
-        styles = helpers.compute_cell_styles({"dividend_raw": 5.0}, today=TODAY)
-        assert styles["dividend"] == f"background:{C['濃黄']}"
-
-    def test_dividend_4_light_yellow(self):
-        styles = helpers.compute_cell_styles({"dividend_raw": 4.0}, today=TODAY)
-        assert styles["dividend"] == f"background:{C['薄黄']}"
-
-    def test_dividend_3_no_color(self):
-        styles = helpers.compute_cell_styles({"dividend_raw": 3.0}, today=TODAY)
-        assert "dividend" not in styles
-
-    def test_dividend_above_3_strict(self):
-        # 3.01 → 薄黄 (3 ちょうどではない)
-        styles = helpers.compute_cell_styles({"dividend_raw": 3.01}, today=TODAY)
-        assert styles["dividend"] == f"background:{C['薄黄']}"
-
-    # --- 進捗率乖離 (ルール 9, 10): <C3>タグ 薄赤 / 営利乖離≧20 濃黄 ---
-    def test_progress_diff_c3_tag_light_red(self):
-        styles = helpers.compute_cell_styles(
-            {"gyoseki_quarity_expr": "[A]20%,30%[Q]15%,25%<C3>"},
+            {"progress_diff_eiri_raw": 30, "gyoseki_quarity_expr": "[A]20%<C3>"},
             today=TODAY,
         )
         assert styles["progress_diff"] == f"background:{C['薄赤']}"
 
-    def test_progress_diff_eiri_20_strong_yellow(self):
+    # ----- 決算日 ±1ヶ月 + 3Q → 濃黄、それ以外 → 薄黄/色なし -----
+    @pytest.mark.parametrize(
+        "kessanbi, today, quarter, expected",
+        [
+            # 内: 更新日 4/26 ± 1ヶ月以内 (5/14)
+            (date(2026, 5, 14), TODAY, "3Q", f"background:{C['濃黄']}"),  # 3Q → 濃黄
+            (date(2026, 5, 14), TODAY, "1Q", f"background:{C['薄黄']}"),  # 1Q → 薄黄
+            # 内: 決算日が更新日より前 (5/20 - 5/10 = 10日)
+            (date(2026, 5, 10), date(2026, 6, 15), "1Q", f"background:{C['薄黄']}"),
+            # 外: 1ヶ月超
+            (date(2026, 6, 30), TODAY, "3Q", None),
+            (date(2026, 4, 10), date(2026, 6, 15), "1Q", None),  # 40日前
+            # データなし
+            (None, TODAY, "3Q", None),
+        ],
+    )
+    def test_kessanbi_rule(self, kessanbi, today, quarter, expected):
+        update_md = "4/26" if today == TODAY else "5/20"
+        row = {
+            "kessanbi_raw": kessanbi,
+            "memo": {"last_research_update": update_md},
+            "quarter": quarter,
+        }
+        styles = helpers.compute_cell_styles(row, today=today)
+        if expected is None:
+            assert "kessanbi_md" not in styles
+        else:
+            assert styles["kessanbi_md"] == expected
+
+    # ----- 更新日 (14日前 薄灰 / 30日前 濃灰 / 未来日は前年扱い) -----
+    @pytest.mark.parametrize(
+        "md, expected",
+        [
+            ("4/26", f"background:{C['薄灰']}"),   # 14日前
+            ("4/10", f"background:{C['濃灰']}"),   # 30日前
+            ("5/5", None),                          # 5日前 → 色なし
+            ("6/1", f"background:{C['濃灰']}"),    # 未来日 → 前年扱い (約11ヶ月前)
+            ("—", None),
+        ],
+    )
+    def test_last_research_update_rule(self, md, expected):
         styles = helpers.compute_cell_styles(
-            {"progress_diff_eiri_raw": 20, "gyoseki_quarity_expr": ""},
-            today=TODAY,
+            {"memo": {"last_research_update": md}}, today=TODAY,
         )
-        assert styles["progress_diff"] == f"background:{C['濃黄']}"
+        if expected is None:
+            assert "last_research_update" not in styles
+        else:
+            assert styles["last_research_update"] == expected
 
-    def test_progress_diff_c3_takes_priority_over_eiri(self):
-        # 両方マッチしても <C3> 薄赤が優先
-        styles = helpers.compute_cell_styles(
-            {"progress_diff_eiri_raw": 30, "gyoseki_quarity_expr": "...<C3>"},
-            today=TODAY,
-        )
-        assert styles["progress_diff"] == f"background:{C['薄赤']}"
-
-    def test_progress_diff_eiri_19_no_color(self):
-        styles = helpers.compute_cell_styles(
-            {"progress_diff_eiri_raw": 19, "gyoseki_quarity_expr": ""},
-            today=TODAY,
-        )
-        assert "progress_diff" not in styles
-
-    # --- 決算日 (ルール 22, 23): 更新日±1ヶ月+3Q 濃黄 / ±1ヶ月のみ 薄黄 ---
-    def test_kessanbi_within_month_3q_strong_yellow(self):
-        styles = helpers.compute_cell_styles(
-            {
-                "kessanbi_raw": date(2026, 5, 14),
-                "memo": {"last_research_update": "4/26"},
-                "quarter": "3Q",
-            },
-            today=TODAY,
-        )
-        assert styles["kessanbi_md"] == f"background:{C['濃黄']}"
-
-    def test_kessanbi_within_month_not_3q_light_yellow(self):
-        styles = helpers.compute_cell_styles(
-            {
-                "kessanbi_raw": date(2026, 5, 14),
-                "memo": {"last_research_update": "4/26"},
-                "quarter": "1Q",
-            },
-            today=TODAY,
-        )
-        assert styles["kessanbi_md"] == f"background:{C['薄黄']}"
-
-    def test_kessanbi_before_update_within_month_light_yellow(self):
-        # 決算日が更新日より前でも ±1ヶ月以内なら色付け (codex P2 対応: 絶対日数差判定)
-        # 例: today=6/15、更新日 5/20、決算日 5/10 (更新日の 10 日前) → 薄黄
-        styles = helpers.compute_cell_styles(
-            {
-                "kessanbi_raw": date(2026, 5, 10),
-                "memo": {"last_research_update": "5/20"},
-                "quarter": "1Q",
-            },
-            today=date(2026, 6, 15),
-        )
-        assert styles["kessanbi_md"] == f"background:{C['薄黄']}"
-
-    def test_kessanbi_outside_month_no_color(self):
-        styles = helpers.compute_cell_styles(
-            {
-                "kessanbi_raw": date(2026, 6, 30),  # 4/26 + 1ヶ月超
-                "memo": {"last_research_update": "4/26"},
-                "quarter": "3Q",
-            },
-            today=TODAY,
-        )
-        assert "kessanbi_md" not in styles
-
-    def test_kessanbi_before_update_outside_month_no_color(self):
-        # 決算日が更新日より前で 1 ヶ月超なら色なし
-        # 例: today=6/15、更新日 5/20、決算日 4/10 (更新日の 40 日前) → 色なし
-        styles = helpers.compute_cell_styles(
-            {
-                "kessanbi_raw": date(2026, 4, 10),
-                "memo": {"last_research_update": "5/20"},
-                "quarter": "1Q",
-            },
-            today=date(2026, 6, 15),
-        )
-        assert "kessanbi_md" not in styles
-
-    def test_kessanbi_no_data_no_color(self):
-        styles = helpers.compute_cell_styles(
-            {"kessanbi_raw": None, "memo": {"last_research_update": "4/26"}},
-            today=TODAY,
-        )
-        assert "kessanbi_md" not in styles
-
-    # --- 更新日 (ルール 1, 8): 14日以上前 薄灰 / 30日以上前 濃灰 ---
-    def test_last_research_update_14_days_ago_light_gray(self):
-        # TODAY = 2026/5/10、14日前 = 4/26
-        styles = helpers.compute_cell_styles(
-            {"memo": {"last_research_update": "4/26"}},
-            today=TODAY,
-        )
-        assert styles["last_research_update"] == f"background:{C['薄灰']}"
-
-    def test_last_research_update_30_days_ago_dark_gray(self):
-        # TODAY = 2026/5/10、30日前 = 4/10
-        styles = helpers.compute_cell_styles(
-            {"memo": {"last_research_update": "4/10"}},
-            today=TODAY,
-        )
-        assert styles["last_research_update"] == f"background:{C['濃灰']}"
-
-    def test_last_research_update_recent_no_color(self):
-        # TODAY = 2026/5/10、5日前 = 5/5
-        styles = helpers.compute_cell_styles(
-            {"memo": {"last_research_update": "5/5"}},
-            today=TODAY,
-        )
-        assert "last_research_update" not in styles
-
-    def test_last_research_update_future_md_treated_as_last_year(self):
-        # TODAY = 2026/5/10、"6/1" は未来 → 2025/6/1 扱い (約11ヶ月前) → 濃灰
-        styles = helpers.compute_cell_styles(
-            {"memo": {"last_research_update": "6/1"}},
-            today=TODAY,
-        )
-        assert styles["last_research_update"] == f"background:{C['濃灰']}"
-
-    def test_last_research_update_dash_no_color(self):
-        styles = helpers.compute_cell_styles(
-            {"memo": {"last_research_update": "—"}},
-            today=TODAY,
-        )
-        assert "last_research_update" not in styles
-
-    # --- ステージ (ルール 13): "2S" 含む → 薄赤 ---
-    def test_stage_2s_light_red(self):
-        styles = helpers.compute_cell_styles(
-            {"memo": {"stage": "2S(3T)"}},
-            today=TODAY,
-        )
-        assert styles["stage"] == f"background:{C['薄赤']}"
-
-    def test_stage_3s_no_color(self):
-        styles = helpers.compute_cell_styles(
-            {"memo": {"stage": "3S"}},
-            today=TODAY,
-        )
-        assert "stage" not in styles
-
-    # --- RS (ルール 27, 28): >80 濃黄 / >=70 薄黄 ---
-    def test_rs_above_80_strong_yellow(self):
-        styles = helpers.compute_cell_styles({"rs_raw": 81}, today=TODAY)
-        assert styles["rs"] == f"background:{C['濃黄']}"
-
-    def test_rs_80_light_yellow(self):
-        # 80 ちょうどは ">80" にマッチしない、">=70" にマッチ
-        styles = helpers.compute_cell_styles({"rs_raw": 80}, today=TODAY)
-        assert styles["rs"] == f"background:{C['薄黄']}"
-
-    def test_rs_70_light_yellow(self):
-        styles = helpers.compute_cell_styles({"rs_raw": 70}, today=TODAY)
-        assert styles["rs"] == f"background:{C['薄黄']}"
-
-    def test_rs_69_no_color(self):
-        styles = helpers.compute_cell_styles({"rs_raw": 69}, today=TODAY)
-        assert "rs" not in styles
-
-    # --- トレンド (ルール 24, 25, 26): "◎" 濃黄 / "◯" 薄黄 / 空欄 水色 ---
-    def test_trend_circle_double_strong_yellow(self):
-        styles = helpers.compute_cell_styles({"trend_template": "◎pr>ma10"}, today=TODAY)
-        assert styles["trend_template"] == f"background:{C['濃黄']}"
-
-    def test_trend_circle_light_yellow(self):
-        styles = helpers.compute_cell_styles({"trend_template": "◯RS"}, today=TODAY)
-        assert styles["trend_template"] == f"background:{C['薄黄']}"
-
-    def test_trend_dash_water_blue(self):
-        styles = helpers.compute_cell_styles({"trend_template": "—"}, today=TODAY)
-        assert styles["trend_template"] == f"background:{C['水色']}"
-
-    def test_trend_empty_water_blue(self):
-        styles = helpers.compute_cell_styles({"trend_template": ""}, today=TODAY)
-        assert styles["trend_template"] == f"background:{C['水色']}"
-
-    def test_trend_double_takes_priority_over_single(self):
-        # "◎◯" → ◎ 優先 (実運用ではこうはならないが、評価順を担保)
-        styles = helpers.compute_cell_styles({"trend_template": "◎◯"}, today=TODAY)
-        assert styles["trend_template"] == f"background:{C['濃黄']}"
-
-    def test_trend_other_text_no_color(self):
-        # ▲ や ▽ など色付け対象外の表記は色なし
-        styles = helpers.compute_cell_styles({"trend_template": "▲"}, today=TODAY)
-        assert "trend_template" not in styles
-
-    # --- シグナル (ルール 2-7): 赤 > 青背景 > 青文字色 ---
-    def test_signal_red_for_po(self):
-        styles = helpers.compute_cell_styles({"tags": "ポ"}, today=TODAY)
-        assert styles["tags"] == f"background:{C['赤']};color:#fff"
-
-    def test_signal_red_for_bu(self):
-        styles = helpers.compute_cell_styles({"tags": "ブ"}, today=TODAY)
-        assert styles["tags"] == f"background:{C['赤']};color:#fff"
-
-    def test_signal_red_for_sai(self):
-        styles = helpers.compute_cell_styles({"tags": "最"}, today=TODAY)
-        assert styles["tags"] == f"background:{C['赤']};color:#fff"
-
-    def test_signal_blue_bg_for_kei(self):
-        styles = helpers.compute_cell_styles({"tags": "警"}, today=TODAY)
-        assert styles["tags"] == f"background:{C['青']};color:#fff"
-
-    def test_signal_blue_bg_for_uri(self):
-        styles = helpers.compute_cell_styles({"tags": "売"}, today=TODAY)
-        assert styles["tags"] == f"background:{C['青']};color:#fff"
-
-    def test_signal_blue_text_for_oshi(self):
-        styles = helpers.compute_cell_styles({"tags": "押"}, today=TODAY)
-        assert styles["tags"] == f"color:{C['青']}"
-
-    def test_signal_red_priority_over_blue(self):
-        styles = helpers.compute_cell_styles({"tags": "警/ポ"}, today=TODAY)
-        assert styles["tags"] == f"background:{C['赤']};color:#fff"
-
-    def test_signal_blue_bg_priority_over_oshi(self):
-        styles = helpers.compute_cell_styles({"tags": "警/押"}, today=TODAY)
-        assert styles["tags"] == f"background:{C['青']};color:#fff"
-
-    def test_signal_no_match_no_color(self):
-        styles = helpers.compute_cell_styles({"tags": ""}, today=TODAY)
-        assert "tags" not in styles
-
-    # --- 買い集め (ルール 20, 21): スコア合計 ≧ 8 濃黄 / ≦ 4 水色 ---
-    def test_buy_collection_aa_strong_yellow(self):
-        # A=5, A=5, sum=10 >= 8
-        styles = helpers.compute_cell_styles({"buy_collection": "A,A"}, today=TODAY)
-        assert styles["buy_collection"] == f"background:{C['濃黄']}"
-
-    def test_buy_collection_ab_strong_yellow(self):
-        # A=5, B=4, sum=9 >= 8
-        styles = helpers.compute_cell_styles({"buy_collection": "A,B"}, today=TODAY)
-        assert styles["buy_collection"] == f"background:{C['濃黄']}"
-
-    def test_buy_collection_bc_no_color(self):
-        # B=4, C=3, sum=7
-        styles = helpers.compute_cell_styles({"buy_collection": "B,C"}, today=TODAY)
-        assert "buy_collection" not in styles
-
-    def test_buy_collection_dd_water_blue(self):
-        # D=2, D=2, sum=4 <= 4
-        styles = helpers.compute_cell_styles({"buy_collection": "D,D"}, today=TODAY)
-        assert styles["buy_collection"] == f"background:{C['水色']}"
-
-    def test_buy_collection_ee_water_blue(self):
-        styles = helpers.compute_cell_styles({"buy_collection": "E,E"}, today=TODAY)
-        assert styles["buy_collection"] == f"background:{C['水色']}"
-
-    def test_buy_collection_invalid_no_color(self):
-        styles = helpers.compute_cell_styles({"buy_collection": "—"}, today=TODAY)
-        assert "buy_collection" not in styles
-
-    # --- 時価総額 (ルール 29, 30): カテゴリ "中" / "大" → 薄黄 ---
-    def test_market_cap_chu_light_yellow(self):
-        styles = helpers.compute_cell_styles({"market_cap_category": "中"}, today=TODAY)
-        assert styles["market_cap"] == f"background:{C['薄黄']}"
-
-    def test_market_cap_dai_light_yellow(self):
-        styles = helpers.compute_cell_styles({"market_cap_category": "大"}, today=TODAY)
-        assert styles["market_cap"] == f"background:{C['薄黄']}"
-
-    def test_market_cap_kyokusho_no_color(self):
-        styles = helpers.compute_cell_styles({"market_cap_category": "極小"}, today=TODAY)
-        assert "market_cap" not in styles
-
-    def test_market_cap_tokudai_no_color(self):
-        # "大" 完全一致なので "特大" は対象外
-        styles = helpers.compute_cell_styles({"market_cap_category": "特大"}, today=TODAY)
-        assert "market_cap" not in styles
-
-    def test_market_cap_none_no_color(self):
-        styles = helpers.compute_cell_styles({"market_cap_category": None}, today=TODAY)
-        assert "market_cap" not in styles
-
-    # --- 統合: 空 row でも例外なし ---
+    # ----- 統合: 空 row / today デフォルト -----
     def test_empty_row_only_trend_water_blue(self):
-        # 空 row では trend_template が空欄扱いで水色のみ付く (他はすべて無)
+        """空 row では trend_template が空欄扱いで水色のみ付く"""
         styles = helpers.compute_cell_styles({}, today=TODAY)
         assert styles == {"trend_template": f"background:{C['水色']}"}
 
     def test_default_today_uses_date_today(self):
-        # today 省略時は date.today() を使う (落ちないことの確認)
+        """today 省略時は date.today() を使う (落ちないことの確認)"""
         styles = helpers.compute_cell_styles({"rank": 100})
         assert styles["rank"] == f"background:{C['濃黄']}"
 
 
 class TestMarketCapCategory:
-    """_market_cap_category のユニットテスト"""
+    """_market_cap_category のユニットテスト
 
-    def test_kyokusho(self):
-        assert helpers._market_cap_category(99) == "極小"
+    境界値 (99/100/399/400/999/1000/2999/3000) と異常値を parametrize で集約。
+    """
 
-    def test_sho(self):
-        assert helpers._market_cap_category(100) == "小"
-        assert helpers._market_cap_category(399) == "小"
-
-    def test_chu(self):
-        assert helpers._market_cap_category(400) == "中"
-        assert helpers._market_cap_category(999) == "中"
-
-    def test_dai(self):
-        assert helpers._market_cap_category(1000) == "大"
-        assert helpers._market_cap_category(2999) == "大"
-
-    def test_tokudai(self):
-        assert helpers._market_cap_category(3000) == "特大"
-        assert helpers._market_cap_category(99999) == "特大"
-
-    def test_none(self):
-        assert helpers._market_cap_category(None) is None
-
-    def test_non_numeric(self):
-        assert helpers._market_cap_category("abc") is None
-
-
-class TestBuyCollectionScore:
-    """_buy_collection_score_sum のユニットテスト"""
-
-    def test_aa(self):
-        assert helpers._buy_collection_score_sum("A,A") == 10
-
-    def test_ab(self):
-        assert helpers._buy_collection_score_sum("A,B") == 9
-
-    def test_cc(self):
-        assert helpers._buy_collection_score_sum("C,C") == 6
-
-    def test_ee(self):
-        assert helpers._buy_collection_score_sum("E,E") == 2
-
-    def test_invalid_format(self):
-        assert helpers._buy_collection_score_sum("—") is None
-        assert helpers._buy_collection_score_sum("") is None
-        assert helpers._buy_collection_score_sum(None) is None
-
-    def test_unknown_letter(self):
-        assert helpers._buy_collection_score_sum("A,Z") is None
-
-    def test_with_spaces(self):
-        # "A, B" のようなスペース付きでも動く
-        assert helpers._buy_collection_score_sum("A, B") == 9
+    @pytest.mark.parametrize(
+        "billion_yen, expected",
+        [
+            (99, "極小"),       # 100 未満
+            (100, "小"),         # 境界
+            (399, "小"),
+            (400, "中"),         # 境界
+            (999, "中"),
+            (1000, "大"),        # 境界
+            (2999, "大"),
+            (3000, "特大"),      # 境界
+            (None, None),
+            ("abc", None),       # 非数値
+        ],
+    )
+    def test_category(self, billion_yen, expected):
+        assert helpers._market_cap_category(billion_yen) == expected
 
 
 class TestFormatPer:
-    """_format_per のユニットテスト (二桁以上は整数、一桁は小数1桁)"""
+    """_format_per のユニットテスト (二桁以上は整数、一桁は小数1桁)
 
-    def test_two_digit_int(self):
-        assert helpers._format_per(25) == "25"
+    境界 10 / 一桁 / 二桁 / 不正値 を parametrize で集約。
+    """
 
-    def test_two_digit_float(self):
-        assert helpers._format_per(30.0) == "30"
-
-    def test_two_digit_float_rounds(self):
-        # 二桁以上は整数化 (四捨五入)
-        assert helpers._format_per(25.4) == "25"
-        assert helpers._format_per(25.6) == "26"
-
-    def test_single_digit_float(self):
-        assert helpers._format_per(5.3) == "5.3"
-
-    def test_single_digit_int(self):
-        assert helpers._format_per(3) == "3.0"
-
-    def test_zero(self):
-        assert helpers._format_per(0) == "0.0"
-
-    def test_boundary_ten(self):
-        # ちょうど 10 は整数表記
-        assert helpers._format_per(10) == "10"
-        assert helpers._format_per(10.0) == "10"
-
-    def test_boundary_just_below_ten(self):
-        assert helpers._format_per(9.9) == "9.9"
-
-    def test_negative_under_ten(self):
-        # 負の PER (赤字) は一桁扱い
-        assert helpers._format_per(-3.5) == "-3.5"
-
-    def test_none(self):
-        assert helpers._format_per(None) == "—"
-
-    def test_string(self):
-        assert helpers._format_per("25") == "—"
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            (10, "10"),       # 境界 (二桁扱い)
+            (10.0, "10"),
+            (25.6, "26"),     # 四捨五入
+            (9.9, "9.9"),     # 一桁
+            (3, "3.0"),       # 整数でも一桁は小数表記
+            (0, "0.0"),
+            (-3.5, "-3.5"),   # 負値
+            (None, "—"),
+            ("25", "—"),      # 不正値
+        ],
+    )
+    def test_format(self, value, expected):
+        assert helpers._format_per(value) == expected
 
 
 class TestProgressQuarterAndDiff:
@@ -1982,42 +1734,33 @@ class TestProgressQuarterAndDiff:
 
 
 class TestCollectGyoutaiThemeChoices:
-    """issue #187: portfolio_shelve 全レコードから datalist 候補を集計する。"""
+    """issue #187: portfolio_shelve 全レコードから datalist 候補を集計する。
 
-    def test_flatten_and_unique_and_sort(self):
+    主機能 (flatten + unique + sort + strip) と防御的な missing/empty 系を統合。
+    """
+
+    def test_flatten_unique_sort_with_strip(self):
+        """重複除去 + 五十音/アルファベット昇順ソート + 空白 strip + 空要素除去"""
         records = [
             {"memo": {"gyoutai_themes": ["半導体", "AI"]}},
-            {"memo": {"gyoutai_themes": ["AI", "ロボット"]}},
-            {"memo": {"gyoutai_themes": ["半導体"]}},
+            {"memo": {"gyoutai_themes": [" AI ", "ロボット", "", "  "]}},  # strip + 空除去
+            {"memo": {"gyoutai_themes": ["半導体"]}},  # 重複
         ]
         assert helpers.collect_gyoutai_theme_choices(records) == [
-            "AI",
-            "ロボット",
-            "半導体",
+            "AI", "ロボット", "半導体",
         ]
 
-    def test_strips_whitespace_and_removes_empty(self):
-        records = [
-            {"memo": {"gyoutai_themes": [" 半導体 ", "", "  ", "AI"]}},
-        ]
-        assert helpers.collect_gyoutai_theme_choices(records) == ["AI", "半導体"]
-
-    def test_missing_gyoutai_themes_returns_empty(self):
-        records = [{"memo": {}}, {"memo": {"gyoutai_themes": None}}]
-        assert helpers.collect_gyoutai_theme_choices(records) == []
-
-    def test_missing_memo_returns_empty(self):
-        assert helpers.collect_gyoutai_theme_choices([{}]) == []
-
-    def test_empty_records_returns_empty(self):
+    def test_missing_or_invalid_returns_empty(self):
+        """memo 無 / gyoutai_themes None / 空 records / 非str 要素 を防御"""
         assert helpers.collect_gyoutai_theme_choices([]) == []
-
-    def test_ignores_non_str_elements(self):
-        """defensive: 想定外の型 (None, int) が混入してもクラッシュしない"""
-        records = [
-            {"memo": {"gyoutai_themes": ["AI", None, 123, "半導体"]}},
-        ]
-        assert helpers.collect_gyoutai_theme_choices(records) == ["AI", "半導体"]
+        assert helpers.collect_gyoutai_theme_choices([{}]) == []
+        assert helpers.collect_gyoutai_theme_choices(
+            [{"memo": {"gyoutai_themes": None}}]
+        ) == []
+        # 非str 要素 (None, int) が混入してもクラッシュしない
+        assert helpers.collect_gyoutai_theme_choices(
+            [{"memo": {"gyoutai_themes": ["AI", None, 123, "半導体"]}}]
+        ) == ["AI", "半導体"]
 
 
 class TestListPortfolioWithIndicators:
