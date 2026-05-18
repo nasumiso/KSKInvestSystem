@@ -291,6 +291,26 @@ def save_memo(code_s: str, form_data: dict) -> None:
         upsert_research_record(record)
 
 
+def save_stock_name_prev(code_s: str, value: str) -> None:
+    """detail ページの inline 編集から呼ばれる stock_name_prev 単体更新 (issue #236)。
+
+    - 空文字 (前後 strip 後) なら None にリセット (= 手動エイリアス解除、次回 sync_stock_name で
+      自動退避が再び有効になる)
+    - 未登録 code_s は KeyError
+    - 他フィールドは _flock 区間内で最新値を保持
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    cleaned = (value or "").strip() or None
+
+    with _flock():
+        record = get_research_record(normalized)
+        if record is None:
+            raise KeyError(f"research_shelve: {normalized} は未登録です")
+        record["stock_name_prev"] = cleaned
+        upsert_research_record(record)
+
+
 def save_shikiho(code_s: str, form_data: dict) -> None:
     """四季報フィールドを更新する。
 

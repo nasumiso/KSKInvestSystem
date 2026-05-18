@@ -210,6 +210,36 @@ class TestDetailStockNamePrev:
         assert "(旧" not in html
 
 
+class TestStockNamePrevRoute:
+    """issue #236: stock_name_prev の手動編集 + エイリアス検索"""
+
+    def test_save_and_search_alias(self, client, db_path):
+        """POST で旧名/エイリアスを保存 → 検索でヒット → 単一ヒット時は detail へリダイレクト"""
+        resp = client.post(
+            "/stock/3496/stock_name_prev",
+            data={"stock_name_prev": "テストエイリアス"},
+        )
+        assert resp.status_code == 204
+        # research_shelve に反映確認
+        rec = rs.get_research_record("3496", db_path=db_path)
+        assert rec["stock_name_prev"] == "テストエイリアス"
+        # 検索でヒット → 単一ヒットなので /stock/3496 へリダイレクト
+        resp_search = client.get("/?q=テストエイリアス")
+        assert resp_search.status_code == 302
+        assert "/stock/3496" in resp_search.headers["Location"]
+
+    def test_clear_prev_with_empty_string(self, client, db_path):
+        """空文字保存で stock_name_prev を None にリセット"""
+        client.post("/stock/3496/stock_name_prev", data={"stock_name_prev": "tmp"})
+        rec = rs.get_research_record("3496", db_path=db_path)
+        assert rec["stock_name_prev"] == "tmp"
+        # 空文字で再保存 → None
+        resp = client.post("/stock/3496/stock_name_prev", data={"stock_name_prev": ""})
+        assert resp.status_code == 204
+        rec = rs.get_research_record("3496", db_path=db_path)
+        assert rec["stock_name_prev"] is None
+
+
 class TestDetailPortfolioModal:
     """issue #195: 詳細ページにポートフォリオステータス変更モーダルを描画する。
 

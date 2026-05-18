@@ -18,7 +18,23 @@
       <span class="rating-badge rating-{{ record.overall_rating }}">{{ record.overall_rating }}</span>
       {% endif %}
       <small style="color:#888;font-size:0.5em;">{{ record.code_s }}</small>
-      {{ macros.stock_name_with_prev(record) }}
+      {{ record.stock_name or '' }}
+      {# issue #236: stock_name_prev を inline 編集化。旧名 / エイリアス (俗称・旧表記) #}
+      {% if record.stock_name_prev %}
+      <span class="stock-name-prev-edit"
+            title="クリックで編集 (空欄で削除)"
+            data-code="{{ record.code_s }}"
+            data-current="{{ record.stock_name_prev }}"
+            onclick="editStockNamePrev(this)">
+        (旧{{ record.stock_name_prev }})
+      </span>
+      {% else %}
+      <button type="button" class="stock-name-prev-add"
+              title="旧名・俗称などのエイリアスを追加すると検索でヒットするようになります"
+              data-code="{{ record.code_s }}"
+              data-current=""
+              onclick="editStockNamePrev(this)">+ 旧名/エイリアス</button>
+      {% endif %}
       {% if portfolio_status_query %}
         {% if portfolio_fallback_mode %}
         {# フォールバック中は書き込み不可なので静的バッジ #}
@@ -85,6 +101,34 @@
         if (input === null) return;  // Cancel
         document.getElementById('corp-url-input-' + codeS).value = input;
         document.getElementById('corp-url-form-' + codeS).submit();
+      }
+
+      // issue #236: 旧名/エイリアスの prompt() 編集。空欄で保存すると None にリセット。
+      // data-code / data-current は HTML 属性経由で受け取る (editCorpUrl と同パターン)。
+      function editStockNamePrev(el) {
+        var codeS = el.dataset.code;
+        var currentValue = el.dataset.current || "";
+        var input = window.prompt(
+          "旧名・エイリアスを入力してください\n(検索で引っかけたい俗称や旧表記。空欄で削除)",
+          currentValue
+        );
+        if (input === null) return;  // Cancel
+        var fd = new FormData();
+        fd.append("stock_name_prev", input);
+        fetch("/stock/" + encodeURIComponent(codeS) + "/stock_name_prev", {
+          method: "POST",
+          headers: {"X-Requested-With": "XMLHttpRequest"},
+          body: fd,
+        }).then(function(r) {
+          if (!r.ok) {
+            return r.json().then(function(j) {
+              alert("保存失敗: " + (j.error || r.status));
+            });
+          }
+          window.location.reload();
+        }).catch(function(err) {
+          alert("通信エラー: " + err);
+        });
       }
       </script>
       {% if not portfolio_status_query and not portfolio_fallback_mode %}
@@ -457,6 +501,27 @@
 </div>
 
 <style>
+/* issue #236: 旧名/エイリアス inline 編集 */
+.stock-name-prev-edit {
+  font-size: 0.5em;
+  color: #888;
+  cursor: pointer;
+  margin-left: 0.3em;
+}
+.stock-name-prev-edit:hover { color: #4285f4; text-decoration: underline; }
+.stock-name-prev-add {
+  font-size: 0.5em;
+  padding: 0.15em 0.5em;
+  margin-left: 0.5em;
+  border: 1px dotted #aaa;
+  background: none;
+  color: #888;
+  cursor: pointer;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+.stock-name-prev-add:hover { color: #4285f4; border-color: #4285f4; }
+
 .portfolio-badge-button {
   border: none;
   cursor: pointer;
