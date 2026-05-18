@@ -2316,13 +2316,15 @@ def build_price_rs_chart_full(
                 f'fill="#1976d2" text-anchor="end">{rs_ratio_min:.3f}</text>'
             )
             # 現在値: 末尾点の左隣、グラフ内部に配置 (軸外 max/min と重ならない)
+            # 株価現在値ラベル (+5.3% 等) と並べて読めるよう、% 表記に揃える。
             now_x = full_points[-1][0]
             now_y = full_points[-1][1]
+            rs_pct_now = (rs_ratio_now - 1.0) * 100
             # Blue Dot 時は青丸(r=4)があるので余白を多めに
             offset = 8 if has_blue_dot else 4
             parts.append(
                 f'<text x="{now_x - offset:.1f}" y="{now_y + 3:.1f}" font-size="9" '
-                f'fill="#1976d2" font-weight="bold" text-anchor="end">{rs_ratio_now:.3f}</text>'
+                f'fill="#1976d2" font-weight="bold" text-anchor="end">{_format_pct_axis(rs_pct_now)}</text>'
             )
 
     parts.append("</svg>")
