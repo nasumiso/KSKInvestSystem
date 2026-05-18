@@ -32,6 +32,14 @@
 .portfolio-badge-hold { background: #c0392b; }
 .portfolio-badge-semi { background: #d68910; }
 .portfolio-badge-watch { background: #16a085; }
+/* 未登録時の「+ 監視に追加」(outline、ホバーで watch 色) */
+.portfolio-badge-add {
+  background: transparent;
+  color: #888;
+  border: 1px dashed #aaa;
+  font-weight: normal;
+}
+.portfolio-badge-add:hover { background: #16a085; color: #fff; border-color: #16a085; }
 
 /* スナップショットテーブル */
 table.snapshot-table {

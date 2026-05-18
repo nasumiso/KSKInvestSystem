@@ -43,6 +43,10 @@
         <button type="button" class="portfolio-badge portfolio-badge-{{ portfolio_status_query }} portfolio-badge-button"
                 onclick="openPortfolioModal()" aria-label="保有ステータスを変更">{{ portfolio_status_label }}</button>
         {% endif %}
+      {% elif not portfolio_fallback_mode %}
+        {# issue: portfolio 未登録時は同じ位置に「+ 監視に追加」ボタンを表示 #}
+        <button type="button" class="portfolio-badge portfolio-badge-add portfolio-badge-button"
+                onclick="openPortfolioModal()" aria-label="監視に追加">+ 監視に追加</button>
       {% endif %}
     </h1>
     {% if stock.overview %}<div style="color:#555;font-size:0.85em;margin-bottom:0.2em;">{{ stock.overview }}</div>{% endif %}
@@ -132,12 +136,6 @@
         });
       }
       </script>
-      {% if not portfolio_status_query and not portfolio_fallback_mode %}
-      <div style="margin-top:0.4em;">
-        <button type="button" class="outline" style="padding:0.2em 0.7em;font-size:0.85em;margin:0;"
-                onclick="openPortfolioModal()">+ 監視に追加</button>
-      </div>
-      {% endif %}
       {% if portfolio_fallback_mode and not portfolio_status_query %}
       <div style="margin-top:0.4em;">
         <span style="color:#a07000;font-size:0.85em;">portfolio_shelve 未移行モード</span>
