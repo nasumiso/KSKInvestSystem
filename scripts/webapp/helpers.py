@@ -2346,37 +2346,37 @@ def build_stock_chart_payload(
     片肺 (Case B) は週足 20 本のみ、両週足空 (Case C, 移行期間) は空 SVG。
     """
     from make_stock_db import (
-        compute_rs_line, compute_rs_line_new_high, compute_rs_line_weekly,
+        compute_rs_line, compute_rs_line_weekly,
+        compute_rs_line_weekly_new_high_5d,
     )  # 遅延 import
+
+    # Blue Dot は full/mini 共通で週足ベース新高値判定 (issue #239):
+    # 直近5日の日足RS最高値 > 過去20週の週足RS最高値
+    has_blue_dot = False
+    if market_db is not None and stock:
+        try:
+            has_blue_dot = compute_rs_line_weekly_new_high_5d(stock, market_db)
+        except Exception:  # noqa: BLE001
+            has_blue_dot = False
 
     if mode == "full":
         price_log = _build_full_week_series(stock, market_db)
         rs_line: List = []
-        has_blue_dot = False
         if market_db is not None and stock:
             try:
                 rs_line = compute_rs_line_weekly(stock, market_db)
                 rs_line = _append_provisional_rs(rs_line, stock, market_db)
-                has_blue_dot = compute_rs_line_new_high(
-                    stock, market_db, rs_line=rs_line
-                )
             except Exception:  # noqa: BLE001
                 rs_line = []
-                has_blue_dot = False
         svg, tooltip = build_price_rs_chart_full(price_log, rs_line, has_blue_dot)
     else:
         price_log = (stock or {}).get("price_log") or []
         rs_line = []
-        has_blue_dot = False
         if market_db is not None and stock:
             try:
                 rs_line = compute_rs_line(stock, market_db)
-                has_blue_dot = compute_rs_line_new_high(
-                    stock, market_db, rs_line=rs_line
-                )
             except Exception:  # noqa: BLE001
                 rs_line = []
-                has_blue_dot = False
         svg, tooltip = build_price_rs_chart_mini(price_log, rs_line, has_blue_dot)
     return {"svg": svg, "tooltip": tooltip, "blue_dot": has_blue_dot}
 

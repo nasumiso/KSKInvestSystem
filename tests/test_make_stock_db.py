@@ -585,6 +585,74 @@ class TestComputeRsLineWeekly:
 
 
 # ==================================================
+# compute_rs_line_weekly_new_high_5d (issue #239 Blue Dot 週足化)
+# ==================================================
+class TestComputeRsLineWeeklyNewHigh5d:
+    """Blue Dot 判定: 直近5日の日足RS最高値 > 過去20週の週足RS最高値"""
+
+    def _setup(self, recent_5d_rs_max, past_20w_rs_max):
+        """recent_5d_rs_max が直近5日の日足RSのピーク、
+        past_20w_rs_max が過去20週の週足RSのピークになるよう stock/market を構築する。
+        週足は 21週分 (lookback=20 + 今週分)、日足は 10日分。
+        TOPIX 日足/週足は一定値にして、銘柄の close を逆算する。
+        """
+        # 週足 21 本: stock 終値が rs * topix で「過去20週のピーク = past_20w_rs_max」
+        topix_w_close = 1000.0
+        topix_d_close = 1000.0
+        stock_week = []
+        base_friday = date(2026, 5, 8)
+        # week 0 (= 今週分、_weekly_rs[0]) はピークより低くしておく (past には含まれない)
+        # week 1..20 のどこかに past_20w_rs_max を入れる
+        for i in range(21):
+            if i == 1:
+                close = past_20w_rs_max * topix_w_close  # 過去のピーク
+            elif i == 0:
+                close = 0.9 * past_20w_rs_max * topix_w_close  # 今週分は低め
+            else:
+                close = 0.8 * past_20w_rs_max * topix_w_close
+            stock_week.append((base_friday - timedelta(days=i * 7), close))
+
+        # 日足 10 本: 直近5日 (index 0..4) のどこかに recent_5d_rs_max が来るように設定
+        stock_day = []
+        base_day = date(2026, 5, 14)
+        for i in range(10):
+            if i == 2:  # 中央ピーク
+                close = recent_5d_rs_max * topix_d_close
+            else:
+                close = 0.5 * recent_5d_rs_max * topix_d_close
+            stock_day.append((base_day - timedelta(days=i), close))
+
+        topix_week = [(base_friday - timedelta(days=i * 7), topix_w_close) for i in range(21)]
+        topix_day = [(base_day - timedelta(days=i), topix_d_close) for i in range(10)]
+
+        stock = {"price_week_log": stock_week, "price_log": stock_day}
+        market_db = {"topix": {"price_week_log": topix_week, "price_log": topix_day}}
+        return stock, market_db
+
+    @pytest.mark.parametrize("recent_5d,past_20w,expected", [
+        (1.50, 1.20, True),   # 直近5日ピーク > 過去20週ピーク → 新高値
+        (1.10, 1.20, False),  # 直近5日ピーク < 過去20週ピーク → False
+        (1.20, 1.20, False),  # 同値 → False (横ばいは新高値ではない)
+    ])
+    def test_blue_dot_judgment(self, recent_5d, past_20w, expected):
+        stock, market_db = self._setup(recent_5d, past_20w)
+        result = make_stock_db.compute_rs_line_weekly_new_high_5d(stock, market_db)
+        assert result is expected
+
+    def test_returns_false_when_weekly_too_short(self):
+        """週足が lookback+1 本未満なら False (データ不足)"""
+        stock = {
+            "price_week_log": [(date(2026, 5, 8), 100.0)],  # 1 本
+            "price_log": [(date(2026, 5, 14), 100.0)],
+        }
+        market_db = {"topix": {
+            "price_week_log": [(date(2026, 5, 8), 1000.0)],
+            "price_log": [(date(2026, 5, 14), 1000.0)],
+        }}
+        assert make_stock_db.compute_rs_line_weekly_new_high_5d(stock, market_db) is False
+
+
+# ==================================================
 # compute_rs_line_changes
 # ==================================================
 class TestComputeRsLineChanges:

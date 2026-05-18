@@ -223,6 +223,37 @@ def compute_rs_line_weekly(stock, market_db):
     return rs_line
 
 
+def compute_rs_line_weekly_new_high_5d(stock, market_db, lookback=20):
+    """Blue Dot 判定: 直近5日の日足RSの最高値が、過去 lookback 週の週足RS最高値を超えるか。
+
+    issue #239 仕様。週途中の銘柄でも「今週のピークが週足新高値圏に達したか」を
+    日足の解像度で先取りできる判定。
+      - 直近5日の日足RS = 日足 price_log[:5] と TOPIX 日足 price_log の日付一致比率
+      - 過去 lookback 週の週足RS = compute_rs_line_weekly() の [1:lookback+1] 区間
+        (= 「今週」を含めない過去の週足ピーク)
+
+    Args:
+        stock (dict): 銘柄DB 1件 (price_log + price_week_log)
+        market_db (dict): get_market_db() の戻り値 (topix.price_log + price_week_log)
+        lookback (int): 過去比較する週数 (デフォルト 20)
+
+    Returns:
+        bool: max(直近5日の日足RS) > max(過去 lookback 週の週足RS) なら True。
+            データ不足 (週足RS が lookback 本未満 or 日足RS が空) は False。
+    """
+    weekly_rs = compute_rs_line_weekly(stock, market_db)
+    if len(weekly_rs) < lookback + 1:
+        return False
+    past_max = max(v for _, v in weekly_rs[1:lookback + 1])
+
+    # 直近5日の日足 RS を計算 (日足 price_log と TOPIX 日足を日付一致で割る)
+    daily_rs = compute_rs_line(stock, market_db)
+    if not daily_rs:
+        return False
+    recent_max = max(v for _, v in daily_rs[:5])
+    return recent_max > past_max
+
+
 def compute_rs_line(stock, market_db, topix_map=None):
     """銘柄とTOPIXの日次終値系列から rs_line（生比率）を計算する純粋関数。
 
