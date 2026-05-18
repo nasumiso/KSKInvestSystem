@@ -1814,13 +1814,8 @@ def _gyoseki_quarity_expr_safe(stock: Dict[str, Any]) -> str:
 # - portfolio: 80x24px 3点 (t-20, t-5, t-0) の簡易チャート
 # - detail   : 400x120px 20点フルチャート + 軸ガイド
 
-_SPARK_LOOKBACK = 20  # 分析対象営業日数 (price_log の有効長)
-_SPARK_RECENT = 5     # 末尾強調期間
-# compute_rs_line_new_high は rs_line[1:lookback+1] と比較するため、
-# rs_line の長さ >= lookback+1 を要求する。銘柄の price_log が約19本しかなく
-# TOPIX との日付重なりで rs_line もほぼ19本に揃うため、lookback=18 とすることで
-# 「過去18営業日との比較で最高 = 約1ヶ月で最高」を判定する。
-_SPARK_RS_NEW_HIGH_LOOKBACK = 18
+_SPARK_LOOKBACK = 20  # 分析対象本数 (price_log/price_week_log の有効長)。mode により日足/週足
+_SPARK_RECENT = 5     # 末尾強調期間 (mode により直近5営業日/5週)
 
 # 配色: 株価 (緑=上昇/赤=下降/灰=横ばい)、RS (青=上昇/オレンジ=下降/灰=横ばい)
 _PRICE_COLORS = {"up": "#2e7d32", "down": "#c62828", "flat": "#999"}
@@ -1971,17 +1966,19 @@ def _build_chart_tooltip(
     price_values: List[float],
     rs_values: List[float],
     has_blue_dot: bool,
+    unit_label: str = "日",
 ) -> str:
     """チャート tooltip (title 属性向け) を生成する。
 
-    20日 / 5日 の合計騰落率を見せる。平均ではなく合計なので、期間内の動きが
-    そのまま % で読める (例: 「20日で +5%, 5日で -26%」のような乖離パターンが分かる)。
+    20本 / 5本 の合計騰落率を見せる。平均ではなく合計なので、期間内の動きが
+    そのまま % で読める (例: 「20で +5%, 5で -26%」のような乖離パターンが分かる)。
+    unit_label は "日" (日足 mini) / "週" (週足 full) を切り替える。
     """
     lines = [
-        f"株価: 20日 {_format_total_change(price_values, _SPARK_LOOKBACK)}, "
-        f"5日 {_format_total_change(price_values, _SPARK_RECENT)}",
-        f"RSライン: 20日 {_format_total_change(rs_values, _SPARK_LOOKBACK)}, "
-        f"5日 {_format_total_change(rs_values, _SPARK_RECENT)}",
+        f"株価: 20{unit_label} {_format_total_change(price_values, _SPARK_LOOKBACK)}, "
+        f"5{unit_label} {_format_total_change(price_values, _SPARK_RECENT)}",
+        f"RSライン: 20{unit_label} {_format_total_change(rs_values, _SPARK_LOOKBACK)}, "
+        f"5{unit_label} {_format_total_change(rs_values, _SPARK_RECENT)}",
     ]
     if has_blue_dot:
         lines.append("新高値: ●")
@@ -2103,16 +2100,17 @@ def build_price_rs_chart_full(
     width: int = 400,
     height: int = 120,
 ) -> tuple:
-    """詳細ページ用 20 点フルチャート SVG と tooltip を返す。
+    """詳細ページ用 20 点フルチャート SVG と tooltip を返す (週足 20 本ベース, issue #239)。
 
     IBD MarketSmith 風の上下オフセットレイアウト (仕切り線なし):
       - 株価は上 70% の縦範囲を使って min-max 描画
       - RSライン は下 30% の縦範囲を使って min-max 描画
       - 仕切り線は出さず、線が「同パネルに重なって見えるが上下別帯を動く」状態にする
         → 形の違いがはっきり読める
-    末尾 5 日部分は太く濃色で重ねて強調。
-    軸ガイド (20日前 / 5日前 / 今日) を縦薄線で表示。
+    末尾 5 週部分は太く濃色で重ねて強調。
+    軸ガイド (20週前 / 5週前 / 今日) を縦薄線で表示。
     弱気相場で株価停滞だが RS 新高値 = Blue Dot のシグナルが形のコントラストで見える。
+    末尾 1 本は Case A (両週足あり + 日足が両週足より新しい) のみ今週仮終値 (= 最新日足) になる。
     """
     price_asc = _asc_series_from_log(price_log, _SPARK_LOOKBACK)
     rs_asc = _asc_series_from_log(rs_line, _SPARK_LOOKBACK)
@@ -2120,7 +2118,7 @@ def build_price_rs_chart_full(
     if len(price_asc) < 2 and len(rs_asc) < 2:
         return ("", "")
 
-    tooltip = _build_chart_tooltip(price_asc, rs_asc, has_blue_dot)
+    tooltip = _build_chart_tooltip(price_asc, rs_asc, has_blue_dot, unit_label="週")
 
     # Y軸ラベルのため左右に余白を確保
     pad_left = 36  # 株価 (円, 緑) ラベル分
@@ -2207,7 +2205,7 @@ def build_price_rs_chart_full(
     parts.append(
         '<text x="' + str(pad_x) + '" y="10" font-size="9" fill="#666">'
         '<tspan fill="#2e7d32">━ 株価 (円)</tspan>'
-        '<tspan dx="6" fill="#1976d2" font-style="italic">┄ RSライン (対TOPIX, 20日前=1.000)</tspan>'
+        '<tspan dx="6" fill="#1976d2" font-style="italic">┄ RSライン (対TOPIX, 20週前=1.000)</tspan>'
         '</text>'
     )
 
@@ -2256,7 +2254,7 @@ def build_price_rs_chart_full(
             f'fill="#2e7d32" text-anchor="end">{_format_price_axis(p_min)}</text>'
         )
         # 現在値: 末尾点の左隣、グラフ内部に配置 (軸外 max/min と重ならない)
-        # RSライン と比較しやすいよう、現在値だけ 20日前比 (%) で表示する。
+        # RSライン と比較しやすいよう、現在値だけ 20週前比 (%) で表示する。
         # 左軸の max/min は円のまま据え置き (絶対水準の参照用)。
         now_x = full_points[-1][0]
         now_y = full_points[-1][1]
@@ -2340,29 +2338,121 @@ def build_stock_chart_payload(
 ) -> Dict[str, Any]:
     """stock + market_db からチャート用 svg + tooltip + blue_dot 情報を組み立てる。
 
-    mode: "mini" (portfolio 用) or "full" (detail 用)
+    mode: "mini" (portfolio 用、日足ベース) or "full" (detail 用、週足ベース issue #239)
     market_db が None の場合は RS ラインが空で描画される (株価のみ)。
-    """
-    from make_stock_db import compute_rs_line, compute_rs_line_new_high  # 遅延 import
 
-    price_log = (stock or {}).get("price_log") or []
-    rs_line: List = []
+    mode="full" では price_week_log を入力に使い、銘柄/TOPIX 両週足と両日足が
+    揃った Case A のみ末尾に「今週仮終値」(= 最新日足) を 1 本追加する。
+    片肺 (Case B) は週足 20 本のみ、両週足空 (Case C, 移行期間) は空 SVG。
+    """
+    from make_stock_db import (
+        compute_rs_line, compute_rs_line_weekly,
+        compute_rs_line_weekly_new_high_5d,
+    )  # 遅延 import
+
+    # Blue Dot は full/mini 共通で週足ベース新高値判定 (issue #239):
+    # 直近5日の日足RS最高値 > 過去20週の週足RS最高値
     has_blue_dot = False
     if market_db is not None and stock:
         try:
-            rs_line = compute_rs_line(stock, market_db)
-            has_blue_dot = compute_rs_line_new_high(
-                stock, market_db, lookback=_SPARK_RS_NEW_HIGH_LOOKBACK, rs_line=rs_line
-            )
+            has_blue_dot = compute_rs_line_weekly_new_high_5d(stock, market_db)
         except Exception:  # noqa: BLE001
-            rs_line = []
             has_blue_dot = False
 
     if mode == "full":
+        price_log = _build_full_week_series(stock, market_db)
+        rs_line: List = []
+        if market_db is not None and stock:
+            try:
+                rs_line = compute_rs_line_weekly(stock, market_db)
+                rs_line = _append_provisional_rs(rs_line, stock, market_db)
+            except Exception:  # noqa: BLE001
+                rs_line = []
         svg, tooltip = build_price_rs_chart_full(price_log, rs_line, has_blue_dot)
     else:
+        price_log = (stock or {}).get("price_log") or []
+        rs_line = []
+        if market_db is not None and stock:
+            try:
+                rs_line = compute_rs_line(stock, market_db)
+            except Exception:  # noqa: BLE001
+                rs_line = []
         svg, tooltip = build_price_rs_chart_mini(price_log, rs_line, has_blue_dot)
     return {"svg": svg, "tooltip": tooltip, "blue_dot": has_blue_dot}
+
+
+def _latest_weekly_iso(stock_week, topix_week):
+    """銘柄/TOPIX 週足から「最新の ISO 週キー (年, 週番号)」を返す。
+
+    yfinance=月曜ラベル / Kabutan=金曜ラベルの曜日差を吸収するため
+    日付直接比較ではなく ISO 週で比較する。両方空なら None。
+    """
+    candidates = []
+    if stock_week:
+        candidates.append(stock_week[0][0].isocalendar()[:2])
+    if topix_week:
+        candidates.append(topix_week[0][0].isocalendar()[:2])
+    return max(candidates) if candidates else None
+
+
+def _is_provisional_eligible(stock, market_db):
+    """今週仮終値を追加すべきかと、追加用の (date, stock_close, topix_close) を返す。
+
+    Case A/B: 銘柄/TOPIX 両日足が両週足の最新 ISO 週より新しい → 追加可
+    Case C: 両週足が空 → 追加しない (build_price_rs_chart_full の早期 return で空 SVG)
+    """
+    if not stock:
+        return None
+    stock_week = stock.get("price_week_log") or []
+    daily_stock = stock.get("price_log") or []
+    topix = (market_db or {}).get("topix") or {}
+    topix_week = topix.get("price_week_log") or []
+    daily_topix = topix.get("price_log") or []
+    if not stock_week and not topix_week:
+        return None  # Case C
+    if not daily_stock or not daily_topix:
+        return None
+    latest_iso = _latest_weekly_iso(stock_week, topix_week)
+    if latest_iso is None:
+        return None
+    if not (daily_stock[0][0].isocalendar()[:2] > latest_iso
+            and daily_topix[0][0].isocalendar()[:2] > latest_iso):
+        return None
+    return (daily_stock[0][0], float(daily_stock[0][1]), float(daily_topix[0][1]))
+
+
+def _build_full_week_series(stock, market_db):
+    """detail full チャート用の株価系列 (週足 + Case A/B 時のみ今週仮終値) を返す。
+
+    issue #239: 週足台帳に最新日足を「今週仮終値」として末尾追加する。
+    銘柄/TOPIX の週足最新 ISO 週と日足の ISO 週を比較し、両日足が両週足より新しい
+    ISO 週にあるときだけ追加する (RS の片肺回避)。両週足が空 (Case C, 移行期間) なら
+    週足のみを返し、build_price_rs_chart_full の 2 点未満早期 return で空 SVG になる。
+    """
+    if not stock:
+        return []
+    series = list(stock.get("price_week_log") or [])
+    eligible = _is_provisional_eligible(stock, market_db)
+    if eligible is None:
+        return series
+    dt, stock_close, _ = eligible
+    return [(dt, stock_close)] + series
+
+
+def _append_provisional_rs(rs_line, stock, market_db):
+    """rs_line の末尾 (= 先頭, 日付降順) に今週仮終値分の rs 点を追加する。
+
+    _build_full_week_series と同じ判定条件 (両週足と両日足の ISO 週比較) を踏む。
+    """
+    eligible = _is_provisional_eligible(stock, market_db)
+    if eligible is None:
+        return rs_line
+    dt, stock_close, topix_close = eligible
+    try:
+        rs_val = stock_close / topix_close
+    except ZeroDivisionError:
+        return rs_line
+    return [(dt, rs_val)] + list(rs_line)
 
 
 def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:

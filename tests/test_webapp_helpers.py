@@ -2043,11 +2043,13 @@ class TestPriceRsSparkline:
 
         codex review 対応: detail ルートで market_db 取得失敗時に
         フォールバックとして「価格のみチャート」を出すための保証。
+        issue #239 以降は mode='full' が週足ベースなので price_week_log を入力に使う。
         """
         from datetime import date as _d, timedelta
         base = _d(2026, 5, 15)
         stock = {
             "price_log": [(base - timedelta(days=i), 100 + i) for i in range(20)],
+            "price_week_log": [(base - timedelta(days=i * 7), 100 + i) for i in range(20)],
         }
         payload = helpers.build_stock_chart_payload(stock, market_db=None, mode="full")
         assert payload["svg"]  # 空文字でない
@@ -2222,3 +2224,77 @@ class TestPriceRsSparkline:
         assert len(guides) == 3
         # t-5 営業日前のラベル: 5/15 - 5 = 5/10
         assert "05/10" in svg
+
+    # ==================================================
+    # 週足チャート (issue #239) 用テスト
+    # ==================================================
+    def _make_week_log(self, values, base_friday=None, week_step=7):
+        """新しい順の (date, value) タプル列を週足金曜日付で組み立てる"""
+        from datetime import date as _d, timedelta
+        if base_friday is None:
+            base_friday = _d(2026, 5, 15)  # 金曜
+        return [(base_friday - timedelta(days=i * week_step), float(v))
+                for i, v in enumerate(values)]
+
+    @pytest.mark.parametrize("case_id,has_new_daily_stock,has_new_daily_topix,empty_weekly,expect_provisional,expect_empty_svg", [
+        ("a_caseA_provisional", True, True, False, True, False),
+        ("b_topix_daily_stale", True, False, False, False, False),
+        ("c_both_daily_same_week", False, False, False, False, False),
+        ("d_caseC_no_weekly", True, True, True, False, True),
+    ])
+    def test_full_chart_payload_provisional_requires_both_daily_logs(
+        self, case_id, has_new_daily_stock, has_new_daily_topix, empty_weekly,
+        expect_provisional, expect_empty_svg,
+    ):
+        """build_stock_chart_payload の mode='full': 仮終値追加は両日足が両週足より新しいときのみ。
+
+        Case C (両週足空) は空 SVG を返す (build_price_rs_chart_full の 2 点未満
+        早期 return 仕様と整合、初回更新サイクル後に Case A/B 経路で自動復帰)。
+        """
+        from datetime import date as _d, timedelta
+        # 20 週分の週足 (週足金曜日付、降順、5/15 が最新)
+        weekly_values = [100 + i * 1.0 for i in range(20)]
+        topix_weekly_values = [1000 + i * 5.0 for i in range(20)]
+        stock_week = [] if empty_weekly else self._make_week_log(weekly_values)
+        topix_week = [] if empty_weekly else self._make_week_log(topix_weekly_values)
+        # 日足: stock は新日付 / topix は条件次第
+        latest_friday = _d(2026, 5, 15)
+        new_day = latest_friday + timedelta(days=4)  # 翌週火曜 (= 仮終値想定)
+        daily_stock = [(new_day, 200.0)] if has_new_daily_stock else [(latest_friday, 120.0)]
+        daily_topix = [(new_day, 1100.0)] if has_new_daily_topix else [(latest_friday, 1095.0)]
+
+        stock = {"price_week_log": stock_week, "price_log": daily_stock}
+        market_db = {"topix": {"price_week_log": topix_week, "price_log": daily_topix}}
+
+        payload = helpers.build_stock_chart_payload(stock, market_db, mode="full")
+
+        if expect_empty_svg:
+            assert payload["svg"] == ""
+            assert payload["tooltip"] == ""
+            return
+        assert payload["svg"] != ""
+        assert "<svg" in payload["svg"]
+        assert "週" in payload["tooltip"]  # 週足表記
+        if expect_provisional:
+            # 末尾日付ラベルが日足 new_day (5/19) の表記
+            assert new_day.strftime("%m/%d") in payload["svg"]
+        else:
+            # 仮終値追加なし → 末尾日付ラベルは週足末尾 (5/15)
+            assert latest_friday.strftime("%m/%d") in payload["svg"]
+
+    @pytest.mark.parametrize("rs_values,expect_blue_dot", [
+        # 末尾が過去 20 週中最大 (21 本、先頭が最大)
+        ([1.50] + [1.40 - i * 0.01 for i in range(20)], True),
+        # 末尾が最大ではない (先頭 < 過去のどれか)
+        ([1.20] + [1.40 - i * 0.01 for i in range(20)], False),
+    ])
+    def test_full_chart_blue_dot_weekly_lookback_20(self, rs_values, expect_blue_dot):
+        """Blue Dot は週足 21 本入力で「先頭 > max(過去 20 週)」のみ True"""
+        price_log = self._make_week_log([100 + i for i in range(21)])
+        rs_line = self._make_week_log(rs_values)
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=expect_blue_dot)
+        # Blue Dot は r=4.0 の青円で描画される (helpers.py:_BLUE_DOT)
+        if expect_blue_dot:
+            assert 'r="4.0"' in svg
+        else:
+            assert 'r="4.0"' not in svg
