@@ -604,6 +604,36 @@ def sync_stock_name(
     return old_name
 
 
+def clear_stock_name_prev_field(
+    code_s: str,
+    *,
+    db_path: Optional[str] = None,
+) -> bool:
+    """指定銘柄の stock_name_prev を None にリセットする (issue #236)。
+
+    one-shot クリーンアップスクリプトから呼ぶ想定。
+    _flock 区間内で read-modify-write を完結させ、Web UI / 他バッチが
+    同レコードの他フィールド (memo 等) を同時更新していても lost update を起こさない。
+
+    Returns:
+        bool: 実際にクリアした場合 True、レコード未登録 or 既に None なら False
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            if normalized not in db:
+                return False
+            record = db[normalized]
+            if not isinstance(record, dict) or not record.get("stock_name_prev"):
+                return False
+            record["stock_name_prev"] = None
+            db[normalized] = record
+    log_print("research_shelve: stock_name_prev クリア", normalized)
+    return True
+
+
 def delete_research_record(
     code_s: str,
     *,

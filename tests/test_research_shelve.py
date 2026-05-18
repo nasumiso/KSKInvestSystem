@@ -984,3 +984,21 @@ class TestStockNamePrev:
         assert loaded["stock_name"] == "グリーンエナジー&カンパニー"
         # prev は手動入力が保持されたまま、「フィット」で上書きされていない
         assert loaded["stock_name_prev"] == "手動エイリアス"
+
+    def test_clear_stock_name_prev_field(self, db_path):
+        """issue #236: clear_stock_name_prev_field は _flock 内 R-M-W で prev のみクリア"""
+        rec = rs.create_research_record(
+            "1436", "フィット", overall_rating="A", memo="重要", stock_name_prev="旧名"
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        # 値あり → True
+        assert rs.clear_stock_name_prev_field("1436", db_path=db_path) is True
+        loaded = rs.get_research_record("1436", db_path=db_path)
+        assert loaded["stock_name_prev"] is None
+        # 他フィールドは保持されている
+        assert loaded["overall_rating"] == "A"
+        assert loaded["memo"] == "重要"
+        # 既に None → False (no-op)
+        assert rs.clear_stock_name_prev_field("1436", db_path=db_path) is False
+        # 未登録 → False
+        assert rs.clear_stock_name_prev_field("9999", db_path=db_path) is False
