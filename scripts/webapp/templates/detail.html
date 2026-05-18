@@ -30,10 +30,10 @@
       </span>
       {% else %}
       <button type="button" class="stock-name-prev-add"
-              title="旧名・俗称などのエイリアスを追加すると検索でヒットするようになります"
+              title="旧名・俗称などのエイリアスを追加 (検索でヒットするようになります)"
               data-code="{{ record.code_s }}"
               data-current=""
-              onclick="editStockNamePrev(this)">+ 旧名/エイリアス</button>
+              onclick="editStockNamePrev(this)">✎</button>
       {% endif %}
       {% if portfolio_status_query %}
         {% if portfolio_fallback_mode %}
@@ -511,12 +511,14 @@
 }
 .stock-name-prev-edit:hover { color: #4285f4; text-decoration: underline; }
 .stock-name-prev-add {
+  display: inline-block;
+  width: auto !important;
   font-size: 0.5em;
-  padding: 0.15em 0.5em;
-  margin-left: 0.5em;
-  border: 1px dotted #aaa;
-  background: none;
-  color: #888;
+  padding: 0.05em 0.3em;
+  margin: 0 0 0 0.3em;
+  border: 1px solid #ccc;
+  background: transparent;
+  color: #666;
   cursor: pointer;
   border-radius: 3px;
   vertical-align: middle;
