@@ -54,13 +54,20 @@
       | <span class="gyoutai-themes-inline" data-code="{{ record.code_s }}">
         業態・テーマ:
         {% for i in range(gyoutai_themes_max_slots) %}
+        {% set _theme_val = gyoutai_themes[i] if i < (gyoutai_themes|length) else '' %}
         <input type="text"
                list="gyoutai-theme-choices"
                class="gyoutai-input-detail"
                name="gyoutai_themes_{{ i }}"
-               value="{{ gyoutai_themes[i] if i < (gyoutai_themes|length) else '' }}"
+               value="{{ _theme_val }}"
                placeholder="—"
                style="font-size:0.9em;padding:0.1em 0.3em;width:8em;margin:0 0.1em;border:1px solid #ddd;">
+        {# issue #230: この業態・テーマで絞り込んだ portfolio 一覧へのリンク (空欄時は非表示) #}
+        <a class="gyoutai-theme-link"
+           data-slot="{{ i }}"
+           href="/portfolio?gyoutai_theme={{ _theme_val|urlencode }}"
+           title="この業態・テーマで絞り込んだポートフォリオ一覧を開く"
+           style="font-size:0.9em;margin-right:0.3em;text-decoration:none;{% if not _theme_val %}display:none;{% endif %}">🔗</a>
         {% endfor %}
       </span>
       <datalist id="gyoutai-theme-choices">
@@ -658,6 +665,8 @@ function excludeFromUniverse(codeS) {
   var code = wrap.dataset.code;
   if (!code) return;
   var inputs = wrap.querySelectorAll('.gyoutai-input-detail');
+  // issue #230: 業態・テーマ→portfolio絞り込みリンク。保存成功後に href/表示を同期する。
+  var links = wrap.querySelectorAll('a.gyoutai-theme-link');
 
   function save() {
     var fd = new FormData();
@@ -678,6 +687,15 @@ function excludeFromUniverse(codeS) {
       }
       var themes = (res.json.display && res.json.display.gyoutai_themes) || [];
       inputs.forEach(function(inp, i) { inp.value = themes[i] != null ? themes[i] : ''; });
+      links.forEach(function(a, i) {
+        var v = (themes[i] != null) ? themes[i] : '';
+        if (v) {
+          a.href = '/portfolio?gyoutai_theme=' + encodeURIComponent(v);
+          a.style.display = '';
+        } else {
+          a.style.display = 'none';
+        }
+      });
     }).catch(function(err) {
       inputs.forEach(function(inp) { inp.classList.remove('saving'); inp.classList.add('error'); });
       alert('通信エラー: ' + err);
