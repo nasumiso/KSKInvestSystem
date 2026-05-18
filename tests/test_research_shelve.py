@@ -578,6 +578,23 @@ class TestListFilter:
         assert len(results) == 1
         assert results[0]["code_s"] == "9999"
 
+    # --- issue #236: stock_name_prev も検索対象 (エイリアス) ---
+    def test_filter_keyword_stock_name_prev(self, db_path):
+        rec = rs.create_research_record(
+            "1436", "グリーンエナジー&カンパニー", stock_name_prev="フィット"
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        # 旧名でヒット
+        hits = rs.list_research_records(keyword="フィット", db_path=db_path)
+        assert [r["code_s"] for r in hits] == ["1436"]
+        # case-insensitive (英字エイリアスのケース)
+        rec2 = rs.create_research_record(
+            "9501", "東京電力ホールディングス", stock_name_prev="TEPCO"
+        )
+        rs.upsert_research_record(rec2, db_path=db_path)
+        hits2 = rs.list_research_records(keyword="tepco", db_path=db_path)
+        assert [r["code_s"] for r in hits2] == ["9501"]
+
     # --- ケース28: rating と keyword の AND ---
     def test_filter_rating_and_keyword(self, populated_db):
         results = rs.list_research_records(
@@ -952,3 +969,18 @@ class TestStockNamePrev:
         assert loaded["openwork"] == "3.72"
         assert len(loaded["snapshots"]) == 1
         assert loaded["snapshots"][0]["ir_quant"] == "[A]26%,21%"
+
+    def test_sync_stock_name_does_not_overwrite_existing_prev(self, db_path):
+        """issue #236: prev に手動エイリアスが入っていれば自動退避は skip、stock_name のみ更新"""
+        rec = rs.create_research_record(
+            "1436", "フィット", stock_name_prev="手動エイリアス"
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        returned = rs.sync_stock_name(
+            "1436", "グリーンエナジー&カンパニー", db_path=db_path
+        )
+        assert returned == "フィット"  # 戻り値は旧 stock_name (現状実装維持)
+        loaded = rs.get_research_record("1436", db_path=db_path)
+        assert loaded["stock_name"] == "グリーンエナジー&カンパニー"
+        # prev は手動入力が保持されたまま、「フィット」で上書きされていない
+        assert loaded["stock_name_prev"] == "手動エイリアス"

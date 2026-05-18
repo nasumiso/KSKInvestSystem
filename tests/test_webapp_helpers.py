@@ -661,6 +661,29 @@ class TestSaveMemo:
         assert len(rec["snapshots"]) == 2
 
 
+class TestSaveStockNamePrev:
+    """issue #236: save_stock_name_prev のテスト"""
+
+    @pytest.mark.parametrize(
+        "input_value, expected",
+        [
+            ("南海電鉄", "南海電鉄"),       # 通常文字列はそのまま保存
+            ("", None),                     # 空文字 → None リセット
+            ("   ", None),                  # 前後空白だけ → None リセット
+            ("  TEPCO  ", "TEPCO"),         # 前後空白を strip して保存
+        ],
+    )
+    def test_save_stock_name_prev_variants(self, populated_db, input_value, expected):
+        helpers.save_stock_name_prev("3496", input_value)
+        rec = helpers.get_research_detail("3496")
+        assert rec["stock_name_prev"] == expected
+
+    def test_save_stock_name_prev_unknown_code_raises(self, populated_db):
+        import pytest as _pytest
+        with _pytest.raises(KeyError):
+            helpers.save_stock_name_prev("9999", "any")
+
+
 class TestSaveShikiho:
     """save_shikiho のテスト"""
 

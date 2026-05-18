@@ -1,19 +1,21 @@
 """
 メモ保存ルート。
 
-POST /stock/<code_s>/memo           : 手動メモ保存
-POST /stock/<code_s>/shikiho        : 四季報保存
-POST /stock/<code_s>/ir_comment     : IR分析コメント一括保存
-POST /stock/<code_s>/corporate_url  : 会社HP URL 上書き保存/クリア (issue #208)
+POST /stock/<code_s>/memo             : 手動メモ保存
+POST /stock/<code_s>/shikiho          : 四季報保存
+POST /stock/<code_s>/ir_comment       : IR分析コメント一括保存
+POST /stock/<code_s>/corporate_url    : 会社HP URL 上書き保存/クリア (issue #208)
+POST /stock/<code_s>/stock_name_prev  : 旧名/エイリアス 保存/クリア (issue #236, AJAX)
 """
 
-from flask import Blueprint, flash, request, redirect, url_for
+from flask import Blueprint, flash, jsonify, request, redirect, url_for
 
 from webapp.helpers import (
     save_memo,
     save_shikiho,
     save_ir_comments,
     save_corporate_url_override,
+    save_stock_name_prev,
 )
 
 memo_bp = Blueprint("memo", __name__)
@@ -66,3 +68,20 @@ def post_corporate_url(code_s: str):
     except Exception as e:  # noqa: BLE001
         flash(f"会社HPリンクの保存に失敗しました ({code_s}): {e}", "error")
     return redirect(url_for("detail.stock_detail", code_s=code_s))
+
+
+@memo_bp.route("/stock/<code_s>/stock_name_prev", methods=["POST"])
+def post_stock_name_prev(code_s: str):
+    """旧名/エイリアスの手動編集 -> 204/JSON (issue #236, AJAX 想定)。
+
+    空文字保存で stock_name_prev を None にリセット (= 手動エイリアス解除)。
+    成功は 204 No Content、未登録は 404、不正値は 400 (いずれも JSON エラー本文)。
+    """
+    value = request.form.get("stock_name_prev", "")
+    try:
+        save_stock_name_prev(code_s, value)
+    except KeyError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    except (ValueError, TypeError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return ("", 204)

@@ -591,7 +591,11 @@ def sync_stock_name(
             if current == new_name_s:
                 return None
             old_name = current
-            record["stock_name_prev"] = current or None
+            # issue #236: stock_name_prev は手動エイリアス (俗称/旧表記での検索) として
+            # 使えるため、既に値が入っている場合は自動上書きしない。空に戻したい場合は
+            # UI から明示的に空文字保存してもらう。
+            if not record.get("stock_name_prev"):
+                record["stock_name_prev"] = current or None
             record["stock_name"] = new_name_s
             db[normalized] = record
     log_print(
@@ -736,8 +740,10 @@ def upsert_snapshot(
 # ===========================================
 
 # keyword 部分一致の対象フィールド
+# issue #236: stock_name_prev も検索エイリアス (俗称/旧表記) として活用する
 KEYWORD_SEARCH_FIELDS = (
     "stock_name",
+    "stock_name_prev",
     "overview",
     "memo",
     "openwork",
