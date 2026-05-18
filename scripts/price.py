@@ -811,6 +811,20 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
 
     price_dict["new_high"] = calc_new_highs()
 
+    # ---- 週足の生系列 (直近25週、(date, close) タプルの日付降順) を保存
+    # 詳細ページの株価+RS週足チャート用 (issue #239)
+    price_week_log = []
+    for p in weekly_price_list[:25]:
+        dt = parse_date_str(p[0])
+        if dt is None:
+            continue
+        try:
+            close = float(p[4].replace(",", ""))
+        except (ValueError, IndexError):
+            continue
+        price_week_log.append((dt, close))
+    price_dict["price_week_log"] = price_week_log
+
     return price_dict
 
 

@@ -548,6 +548,43 @@ class TestComputeRsLine:
 
 
 # ==================================================
+# compute_rs_line_weekly (issue #239)
+# ==================================================
+class TestComputeRsLineWeekly:
+    """週次 rs_line 計算の単体テスト (ISO週マッチング: yfinance=月曜 / Kabutan=金曜 を吸収)"""
+
+    def _make_week_log(self, n, base, step, base_friday=date(2026, 5, 8), day_offset=0):
+        """週足ログ ((date, value) 日付降順, 7日刻み) を生成。
+        day_offset で曜日をずらしてソース差 (月曜/金曜) を再現できる。
+        """
+        return [
+            (base_friday - timedelta(days=i * 7 + day_offset), base + step * (n - i))
+            for i in range(n)
+        ]
+
+    def test_iso_week_match_full(self):
+        """同じISO週なら曜日が違っても突合できる (yfinance 月曜 vs Kabutan 金曜)"""
+        stock = {"price_week_log": self._make_week_log(10, base=2000, step=10, day_offset=0)}  # 金曜ラベル
+        market_db = {"topix": {"price_week_log":
+            self._make_week_log(10, base=1000, step=2, day_offset=3)  # 月曜ラベル (金-3日)
+        }}
+        result = make_stock_db.compute_rs_line_weekly(stock, market_db)
+        assert len(result) == 10  # 曜日差 3 日でも ISO 週は同じで全マッチ
+        dates = [d for d, _ in result]
+        assert dates == sorted(dates, reverse=True)
+        # 先頭値 = stock 先頭(2000+100=2100) / topix 先頭(1000+20=1020)
+        assert abs(result[0][1] - 2100 / 1020) < 1e-6
+
+    def test_iso_week_partial_overlap(self):
+        """topix 側が短いと未カバー ISO 週は除外される"""
+        stock = {"price_week_log": self._make_week_log(10, base=2000, step=10)}
+        market_db = {"topix": {"price_week_log": self._make_week_log(5, base=1000, step=2)}}
+        result = make_stock_db.compute_rs_line_weekly(stock, market_db)
+        # topix 5 週 = ISO 週 5 つ分しかないので 5 週分だけ残る
+        assert len(result) == 5
+
+
+# ==================================================
 # compute_rs_line_changes
 # ==================================================
 class TestComputeRsLineChanges:

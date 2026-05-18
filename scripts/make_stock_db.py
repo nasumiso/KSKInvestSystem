@@ -172,6 +172,57 @@ def _topix_close_map(market_db):
     return _build_close_map(topix_log)
 
 
+def _topix_week_close_map(market_db):
+    """TOPIX の price_week_log から ISO週キー → 終値の dict を生成する (週足版)。
+
+    yfinance 週足は月曜ラベル、Kabutan 週足は金曜ラベル (週確定後) で曜日が
+    揃わないため、日付完全一致ではなく ISO週 (年, 週番号) で正規化する。
+    同じ週内に複数エントリがあれば「より新しい日付の終値」が勝つ (= 月曜より金曜)。
+    """
+    topix_log = market_db.get("topix", {}).get("price_week_log", []) if market_db else []
+    week_map = {}
+    for dt, close in topix_log:
+        if not close:
+            continue
+        key = dt.isocalendar()[:2]
+        # 日付降順入力で先に最新が入るため、新しい日付ほど上書きを避ける
+        if key not in week_map:
+            week_map[key] = close
+    return week_map
+
+
+def compute_rs_line_weekly(stock, market_db):
+    """銘柄とTOPIXの週次終値系列から rs_line（生比率）を計算する純粋関数。
+
+    詳細ページの株価+RS週足チャート専用 (issue #239)。
+    日足版 compute_rs_line() と同じスキーマ (日付降順) を返す。
+    日付完全一致ではなく ISO週 (年, 週番号) で銘柄/TOPIX を突合する
+    (yfinance=月曜ラベル / Kabutan=金曜ラベルの曜日差を吸収)。
+
+    Args:
+        stock (dict): 銘柄DBの1銘柄分dict (price_week_log を持つ)
+        market_db (dict): get_market_db() の戻り値 (topix.price_week_log を持つ)
+
+    Returns:
+        list[tuple[date, float]]: 週次 rs_line系列（日付降順）。
+            銘柄系列の日付をそのまま使う (TOPIX 側は同じ ISO 週の終値で除算)。
+            終値0や TOPIX 週欠落の週は除外。データ不足時は空リスト。
+    """
+    stock_log = stock.get("price_week_log", [])
+    if not stock_log:
+        return []
+    topix_map = _topix_week_close_map(market_db)
+    if not topix_map:
+        return []
+    rs_line = []
+    for dt, stock_close in stock_log:
+        topix_close = topix_map.get(dt.isocalendar()[:2])
+        if not topix_close or not stock_close:
+            continue
+        rs_line.append((dt, float(stock_close) / float(topix_close)))
+    return rs_line
+
+
 def compute_rs_line(stock, market_db, topix_map=None):
     """銘柄とTOPIXの日次終値系列から rs_line（生比率）を計算する純粋関数。
 
@@ -600,7 +651,7 @@ def update_db(stocks, stock_data):
     _PROTECTED_LIST_KEYS = {
         "gyoseki_current", "gyoseki_quarter",
         "stddev_volatility", "sell_pressure_ratio", "sell_pressure_ratio_w",
-        "price_log",
+        "price_log", "price_week_log",
     }
     # 0値での上書きを防止するキー（計算失敗時に0が返される）
     _PROTECTED_ZERO_KEYS = {

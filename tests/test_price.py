@@ -781,6 +781,26 @@ class TestCalcWeeklyIndicators:
         result_high = price._calc_weekly_indicators(wpl, cur_prices=[9999, 9999, 9999])
         assert result_high["rs_raw"] > result_default["rs_raw"]
 
+    @pytest.mark.parametrize("input_weeks,expected_len", [
+        (20, 20),  # ≤25 で全件保持
+        (30, 25),  # 25 で切り詰め (issue #239 仕様)
+    ])
+    def test_price_week_log_built(self, input_weeks, expected_len):
+        """price_week_log が直近 25 週分を (date, float) タプル日付降順で保存する"""
+        from datetime import date as _date
+        wpl = self._make_weekly_price_list(input_weeks)
+        result = price._calc_weekly_indicators(wpl)
+        assert "price_week_log" in result
+        log = result["price_week_log"]
+        assert len(log) == expected_len
+        # 各要素は (date, float)
+        for dt, close in log:
+            assert isinstance(dt, _date)
+            assert isinstance(close, float)
+        # 日付降順 (新しいものが先頭)
+        dates = [dt for dt, _ in log]
+        assert dates == sorted(dates, reverse=True)
+
 
 # ==================================================
 # yfinance週足キャッシュのラウンドトリップ
