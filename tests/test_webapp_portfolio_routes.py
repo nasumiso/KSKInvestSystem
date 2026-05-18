@@ -94,14 +94,23 @@ def client(app):
 class TestDashboardGet:
     """GET /portfolio フィルタ表示 (issue #215: ステータス単一選択 + 全件デフォルト)"""
 
-    def test_dashboard_default_shows_all(self, client):
-        """引数なし = 全ステータス表示 (issue #215)"""
+    def test_dashboard_default_shows_hold_only(self, client):
+        """引数なし = 保有 (1保) フィルタ。`?status=` 明示空文字のみ全件 (issue #178 後継)"""
         resp = client.get("/portfolio")
         assert resp.status_code == 200
         html = resp.data.decode()
-        assert "アズーム" in html       # 1保
-        assert "トヨタ" in html         # 2準
-        assert "ハーモニック" in html    # 3監
+        assert "アズーム" in html       # 1保 表示
+        assert "トヨタ" not in html     # 2準 は非表示
+        assert "ハーモニック" not in html  # 3監 は非表示
+
+    def test_dashboard_explicit_empty_status_shows_all(self, client):
+        """?status= は「すべて」明示選択 = 全ステータス表示"""
+        resp = client.get("/portfolio?status=")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "アズーム" in html
+        assert "トヨタ" in html
+        assert "ハーモニック" in html
 
     def test_dashboard_watch_filter(self, client):
         resp = client.get("/portfolio?status=watch")
@@ -901,13 +910,13 @@ class TestFallbackFromTxt:
 class TestDashboardFilter:
     """GET /portfolio フィルタ仕様 (issue #215)"""
 
-    def test_default_shows_all(self, client):
-        """引数なし = 全ステータス表示"""
+    def test_default_shows_hold_only(self, client):
+        """引数なし = 保有 (1保) フィルタがデフォルト"""
         resp = client.get("/portfolio")
         html = resp.data.decode()
         assert "アズーム" in html
-        assert "トヨタ" in html
-        assert "ハーモニック" in html
+        assert "トヨタ" not in html
+        assert "ハーモニック" not in html
 
     def test_legacy_url_status_hold_still_works(self, client):
         """既存 URL ?status=hold (単一値) は引き続き保有のみ表示"""
@@ -926,13 +935,14 @@ class TestDashboardFilter:
         assert "ハーモニック" not in html
 
     def test_legacy_sort_param_silently_ignored(self, client):
-        """旧 URL ?sort=rank&page=2 が混ざっても 200 で全件返る (issue #215 silent 無視)"""
+        """旧 URL ?sort=rank&page=2 が混ざっても 200 で返る (issue #215 silent 無視)。
+        status 未指定なので デフォルト hold フィルタが効く。"""
         resp = client.get("/portfolio?sort=rank&page=2")
         assert resp.status_code == 200
         html = resp.data.decode()
         assert "アズーム" in html
-        assert "トヨタ" in html
-        assert "ハーモニック" in html
+        assert "トヨタ" not in html
+        assert "ハーモニック" not in html
 
     def test_invalid_status_falls_back_to_all(self, client):
         """不正値だけのフィルタは全件表示にフォールバック (None 扱い)"""
@@ -944,8 +954,8 @@ class TestDashboardFilter:
         assert "ハーモニック" in html
 
     def test_status_badge_visible_in_all_view(self, client):
-        """全件表示時、ステータス badge (保有/準保有/監視) が HTML に出る"""
-        resp = client.get("/portfolio")
+        """全件表示時 (?status=)、ステータス badge (保有/準保有/監視) が HTML に出る"""
+        resp = client.get("/portfolio?status=")
         html = resp.data.decode()
         assert 'class="status-badge status-hold"' in html
         assert 'class="status-badge status-semi"' in html
@@ -1110,10 +1120,10 @@ class TestDeleteCheckboxScope:
     """削除モードのチェックボックスは 2準/3監 行のみに表示される (codex 指摘 P2)"""
 
     def test_1ho_row_has_no_checkbox_in_mixed_filter(self, client):
-        """全件表示 (引数なし) で、1保 (3496) 行には checkbox が無く、
-        2準 (7203) と 3監 (6324) 行には checkbox が出る (issue #215 で全件 = 引数なし)"""
+        """全件表示 (?status=) で、1保 (3496) 行には checkbox が無く、
+        2準 (7203) と 3監 (6324) 行には checkbox が出る"""
         import re
-        resp = client.get("/portfolio")
+        resp = client.get("/portfolio?status=")
         html = resp.data.decode()
         # 各銘柄行を抽出 (data-code="XXXX" から次の </tr> まで)
         for code, has_checkbox in [

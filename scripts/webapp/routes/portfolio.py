@@ -60,11 +60,14 @@ DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 書き込み POST 後�
 def _parse_status_filter(args) -> Optional[str]:
     """request.args から status フィルタを内部値 (例: "1保") に変換する (issue #215)。
 
-    省略・空文字・「すべて」(value="") は None を返し、ダッシュボード側で
-    「全ステータス表示」として扱う。`?status=hold,semi` のようなカンマ区切り
-    旧 URL は寛容処理し先頭値のみ採用する (issue #215 で複数選択は廃止)。
-    不正値は None (= 全件表示) にフォールバック。
+    `?status=` (key あり・値空) は「すべて」を明示選択した状態として None。
+    `status` key 自体が無い (= 素の /portfolio) ときは保有 ("1保") をデフォルト。
+    `?status=hold,semi` のようなカンマ区切り旧 URL は寛容処理し先頭値のみ採用する
+    (issue #215 で複数選択は廃止)。不正値は None (= 全件表示) にフォールバック。
     """
+    if "status" not in args:
+        # 素の /portfolio: 保有銘柄に絞り込むのが運用上の主な使い方
+        return "1保"
     raw = (args.get("status") or "").strip().lower()
     if not raw:
         return None
