@@ -34,13 +34,17 @@
 .portfolio-badge-watch { background: #16a085; }
 /* 未登録時の「+」アイコン (.stock-name-prev-add の ✎ ボタンとサイズ・配色を揃える) */
 .portfolio-badge.portfolio-badge-add {
+  display: inline-block;
   background: transparent;
   color: #666;
   border: 1px solid #ccc;
   font-weight: normal;
   font-size: 0.5em;
+  line-height: 1.125;
   padding: 0.05em 0.3em;
+  margin: 0 0 0 0.3em;
   border-radius: 3px;
+  vertical-align: middle;
 }
 .portfolio-badge.portfolio-badge-add:hover { color: #4285f4; border-color: #4285f4; }
 
