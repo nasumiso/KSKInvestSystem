@@ -2254,11 +2254,19 @@ def build_price_rs_chart_full(
             f'fill="#2e7d32" text-anchor="end">{_format_price_axis(p_min)}</text>'
         )
         # 現在値: 末尾点の左隣、グラフ内部に配置 (軸外 max/min と重ならない)
+        # RSライン と比較しやすいよう、現在値だけ 20日前比 (%) で表示する。
+        # 左軸の max/min は円のまま据え置き (絶対水準の参照用)。
         now_x = full_points[-1][0]
         now_y = full_points[-1][1]
+        p_base = price_asc[0]
+        if p_base > 0:
+            p_pct_now = (p_now - p_base) / p_base * 100
+            p_now_label = _format_pct_axis(p_pct_now)
+        else:
+            p_now_label = _format_price_axis(p_now)
         parts.append(
             f'<text x="{now_x - 4:.1f}" y="{now_y + 3:.1f}" font-size="9" '
-            f'fill="#2e7d32" font-weight="bold" text-anchor="end">{_format_price_axis(p_now)}</text>'
+            f'fill="#2e7d32" font-weight="bold" text-anchor="end">{p_now_label}</text>'
         )
 
     # RSパネル
