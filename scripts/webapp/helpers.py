@@ -2381,42 +2381,28 @@ def build_stock_chart_payload(
     return {"svg": svg, "tooltip": tooltip, "blue_dot": has_blue_dot}
 
 
-def _latest_weekly_iso(stock_week, topix_week):
-    """銘柄/TOPIX 週足から「最新の ISO 週キー (年, 週番号)」を返す。
-
-    yfinance=月曜ラベル / Kabutan=金曜ラベルの曜日差を吸収するため
-    日付直接比較ではなく ISO 週で比較する。両方空なら None。
-    """
-    candidates = []
-    if stock_week:
-        candidates.append(stock_week[0][0].isocalendar()[:2])
-    if topix_week:
-        candidates.append(topix_week[0][0].isocalendar()[:2])
-    return max(candidates) if candidates else None
-
-
 def _is_provisional_eligible(stock, market_db):
     """今週仮終値を追加すべきかと、追加用の (date, stock_close, topix_close) を返す。
 
-    Case A/B: 銘柄/TOPIX 両日足が両週足の最新 ISO 週より新しい → 追加可
-    Case C: 両週足が空 → 追加しない (build_price_rs_chart_full の早期 return で空 SVG)
+    銘柄週足の最新 ISO 週より日足 (銘柄/TOPIX) が新しい週なら provisional 追加可。
+    TOPIX 週足が当日分まで進んでいる非対称ケース (週初に make_market_db が
+    先行して当日分を週足末尾に積むケース) でも、銘柄週足を基準にすれば
+    日足側の今週分を仮終値として安全に追加できる。
+    銘柄週足が空 (Case C) は追加しない (build_price_rs_chart_full の早期 return で空 SVG)。
     """
     if not stock:
         return None
     stock_week = stock.get("price_week_log") or []
+    if not stock_week:
+        return None  # Case C
     daily_stock = stock.get("price_log") or []
     topix = (market_db or {}).get("topix") or {}
-    topix_week = topix.get("price_week_log") or []
     daily_topix = topix.get("price_log") or []
-    if not stock_week and not topix_week:
-        return None  # Case C
     if not daily_stock or not daily_topix:
         return None
-    latest_iso = _latest_weekly_iso(stock_week, topix_week)
-    if latest_iso is None:
-        return None
-    if not (daily_stock[0][0].isocalendar()[:2] > latest_iso
-            and daily_topix[0][0].isocalendar()[:2] > latest_iso):
+    stock_week_iso = stock_week[0][0].isocalendar()[:2]
+    if not (daily_stock[0][0].isocalendar()[:2] > stock_week_iso
+            and daily_topix[0][0].isocalendar()[:2] > stock_week_iso):
         return None
     return (daily_stock[0][0], float(daily_stock[0][1]), float(daily_topix[0][1]))
 
