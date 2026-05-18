@@ -202,6 +202,7 @@
                data-slot="{{ i }}"
                class="gyoutai-input"
                placeholder="—"
+               title="Ctrl/Cmd+クリックでこのテーマで絞り込み (新タブ)"
                {% if fallback_mode %}disabled{% endif %}>
         {% endfor %}
       </td>
@@ -652,6 +653,15 @@ document.querySelectorAll('table details').forEach(function(d) {
       inp.addEventListener('change', function() { saveCell(td); });
       inp.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      });
+      // issue #230: Ctrl/Cmd+左クリックでこのテーマで portfolio 絞り込みを新タブで開く
+      inp.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        if (!(e.ctrlKey || e.metaKey)) return;
+        var v = inp.value && inp.value.trim();
+        if (!v) return;
+        e.preventDefault();
+        window.open('/portfolio?gyoutai_theme=' + encodeURIComponent(v), '_blank', 'noopener');
       });
     });
   });

@@ -60,6 +60,7 @@
                name="gyoutai_themes_{{ i }}"
                value="{{ gyoutai_themes[i] if i < (gyoutai_themes|length) else '' }}"
                placeholder="—"
+               title="Ctrl/Cmd+クリックでこのテーマで portfolio 絞り込み (新タブ)"
                style="font-size:0.9em;padding:0.1em 0.3em;width:8em;margin:0 0.1em;border:1px solid #ddd;">
         {% endfor %}
       </span>
@@ -688,6 +689,15 @@ function excludeFromUniverse(codeS) {
     inp.addEventListener('change', save);
     inp.addEventListener('keydown', function(e) {
       if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+    });
+    // issue #230: Ctrl/Cmd+左クリックでこのテーマで portfolio 絞り込みを新タブで開く
+    inp.addEventListener('mousedown', function(e) {
+      if (e.button !== 0) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      var v = inp.value && inp.value.trim();
+      if (!v) return;
+      e.preventDefault();
+      window.open('/portfolio?gyoutai_theme=' + encodeURIComponent(v), '_blank', 'noopener');
     });
   });
 })();
