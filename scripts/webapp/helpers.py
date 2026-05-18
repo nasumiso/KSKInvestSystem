@@ -2010,6 +2010,10 @@ def build_price_rs_chart_mini(
 ) -> tuple:
     """portfolio 用 3 点 (t-20, t-5, t-0) 簡易チャート SVG と tooltip を返す。
 
+    RSライン (対TOPIX) のみを縦帯フルに使って描画する。株価の絶対方向は
+    一覧の別列 (RS / 騰落率) で読めるため、ミニチャートは「対TOPIXの形」
+    だけを大きく見せる方針 (情報絞り)。tooltip には引き続き株価情報も含める。
+
     Args:
         price_log: stocks_shelve['price_log'] (新しい順 [(date, close), ...])
         rs_line  : compute_rs_line() 戻り値 (新しい順 [(date, ratio), ...])
@@ -2017,12 +2021,12 @@ def build_price_rs_chart_mini(
         width / height: SVG サイズ
 
     Returns:
-        (svg_str, tooltip_str). データ不足 (各系列 2 点未満) なら SVG は "—"。
+        (svg_str, tooltip_str). データ不足 (RS 2 点未満) なら SVG は "—"。
     """
     price_asc = _asc_series_from_log(price_log, _SPARK_LOOKBACK)
     rs_asc = _asc_series_from_log(rs_line, _SPARK_LOOKBACK)
 
-    if len(price_asc) < 2 and len(rs_asc) < 2:
+    if len(rs_asc) < 2:
         return ("—", "")
 
     tooltip = _build_chart_tooltip(price_asc, rs_asc, has_blue_dot)
@@ -2037,7 +2041,6 @@ def build_price_rs_chart_mini(
     def _three_points(asc: List[float]) -> Optional[List[float]]:
         if len(asc) < 2:
             return None
-        # 末尾 (今日), 5営業日前 (無ければ asc の中央), 先頭 (=t-20)
         t0 = asc[-1]
         if len(asc) >= _SPARK_RECENT + 1:
             t5 = asc[-(_SPARK_RECENT + 1)]
@@ -2046,49 +2049,28 @@ def build_price_rs_chart_mini(
         t20 = asc[0]
         return [t20, t5, t0]
 
-    price_pts_raw = _three_points(price_asc)
     rs_pts_raw = _three_points(rs_asc)
+    if rs_pts_raw is None:
+        return ("—", "")
 
     # x 座標は等間隔 3 点
     xs = [pad_x, pad_x + inner_w / 2, pad_x + inner_w]
 
-    price_slope_full = compute_slope_per_day(price_asc) if len(price_asc) >= 2 else None
     rs_slope_full = compute_slope_per_day(rs_asc) if len(rs_asc) >= 2 else None
-    price_dir = _slope_direction(price_slope_full)
     rs_dir = _slope_direction(rs_slope_full)
-
-    # 上下棲み分け: 上 60% = 株価, 下 40% = RS (mini なのでパネルギャップは最小)
-    panel_gap = 1
-    price_panel_h = (inner_h - panel_gap) * 0.6
-    rs_panel_h = (inner_h - panel_gap) * 0.4
-    price_panel_top = pad_y
-    rs_panel_top = pad_y + price_panel_h + panel_gap
 
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">']
 
-    # 株価 (実線, 主役) - 上パネル
-    # 対数軸: +X% の動きが価格レンジに関係なく同じ縦距離になる (IBD準拠)
-    if price_pts_raw is not None:
-        log_price = to_log_scale(price_pts_raw)
-        if log_price:
-            ys = normalize_minmax(log_price, price_panel_h)
-            ys = [y + price_panel_top for y in ys]
-            points = list(zip(xs, ys))
-            parts.append(_svg_polyline(points, _PRICE_COLORS[price_dir], 1.5))
-            # 末尾点マーカー
-            parts.append(_svg_circle(points[-1][0], points[-1][1], 1.6, _PRICE_COLORS[price_dir]))
-
-    # RSライン (点線, 副役) - 下パネル
-    if rs_pts_raw is not None:
-        ys = normalize_minmax(rs_pts_raw, rs_panel_h)
-        ys = [y + rs_panel_top for y in ys]
-        points = list(zip(xs, ys))
-        parts.append(_svg_polyline(points, _RS_COLORS[rs_dir], 1.0, dasharray="2,1"))
-        # 末尾点: Blue Dot or 通常マーカー
-        if has_blue_dot:
-            parts.append(_svg_circle(points[-1][0], points[-1][1], 2.5, _BLUE_DOT))
-        else:
-            parts.append(_svg_circle(points[-1][0], points[-1][1], 1.4, _RS_COLORS[rs_dir]))
+    # RSライン (実線, 主役) - 縦帯フル
+    ys = normalize_minmax(rs_pts_raw, inner_h)
+    ys = [y + pad_y for y in ys]
+    points = list(zip(xs, ys))
+    parts.append(_svg_polyline(points, _RS_COLORS[rs_dir], 1.5))
+    # 末尾点: Blue Dot or 通常マーカー
+    if has_blue_dot:
+        parts.append(_svg_circle(points[-1][0], points[-1][1], 2.5, _BLUE_DOT))
+    else:
+        parts.append(_svg_circle(points[-1][0], points[-1][1], 1.6, _RS_COLORS[rs_dir]))
 
     parts.append("</svg>")
     return ("".join(parts), tooltip)
