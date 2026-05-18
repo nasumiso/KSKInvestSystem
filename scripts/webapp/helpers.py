@@ -2205,7 +2205,7 @@ def build_price_rs_chart_full(
     parts.append(
         '<text x="' + str(pad_x) + '" y="10" font-size="9" fill="#666">'
         '<tspan fill="#2e7d32">━ 株価 (円)</tspan>'
-        '<tspan dx="6" fill="#1976d2" font-style="italic">┄ RSライン (対TOPIX, 期間変化率)</tspan>'
+        '<tspan dx="6" fill="#1976d2" font-style="italic">┄ RSライン (対TOPIX, 20日前=1.000)</tspan>'
         '</text>'
     )
 
@@ -2298,20 +2298,22 @@ def build_price_rs_chart_full(
         else:
             parts.append(_svg_circle(full_points[-1][0], full_points[-1][1], 2.0, _RS_COLORS[rs_dir_recent]))
 
-        # 右軸 (RS): 初日 (rs_asc[0]) を 0% 基準とした期間内の変化率を表示
+        # 左軸 (RS): 初日 (rs_asc[0]) を 1.0 基準とした期間内の倍率を表示。
+        # 2銘柄比較チャートの定番表現。株価パネルの円表示と並ぶことで「相対指数」
+        # の見方を視覚的に揃える。
         rs_base = rs_asc[0]
         if rs_base > 0:
-            rs_pct_max = (max(rs_asc) - rs_base) / rs_base * 100
-            rs_pct_min = (min(rs_asc) - rs_base) / rs_base * 100
-            rs_pct_now = (rs_asc[-1] - rs_base) / rs_base * 100
-            label_x = pad_left + inner_w + 2
+            rs_ratio_max = max(rs_asc) / rs_base
+            rs_ratio_min = min(rs_asc) / rs_base
+            rs_ratio_now = rs_asc[-1] / rs_base
+            label_x = pad_left - 2
             parts.append(
                 f'<text x="{label_x}" y="{rs_panel_top + 3:.1f}" font-size="8" '
-                f'fill="#1976d2" text-anchor="start">{_format_pct_axis(rs_pct_max)}</text>'
+                f'fill="#1976d2" text-anchor="end">{rs_ratio_max:.3f}</text>'
             )
             parts.append(
                 f'<text x="{label_x}" y="{rs_panel_top + rs_panel_h - 1:.1f}" font-size="8" '
-                f'fill="#1976d2" text-anchor="start">{_format_pct_axis(rs_pct_min)}</text>'
+                f'fill="#1976d2" text-anchor="end">{rs_ratio_min:.3f}</text>'
             )
             # 現在値: 末尾点の左隣、グラフ内部に配置 (軸外 max/min と重ならない)
             now_x = full_points[-1][0]
@@ -2320,7 +2322,7 @@ def build_price_rs_chart_full(
             offset = 8 if has_blue_dot else 4
             parts.append(
                 f'<text x="{now_x - offset:.1f}" y="{now_y + 3:.1f}" font-size="9" '
-                f'fill="#1976d2" font-weight="bold" text-anchor="end">{_format_pct_axis(rs_pct_now)}</text>'
+                f'fill="#1976d2" font-weight="bold" text-anchor="end">{rs_ratio_now:.3f}</text>'
             )
 
     parts.append("</svg>")
