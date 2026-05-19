@@ -53,12 +53,6 @@
     <div class="meta">
       分析日: <input class="editable-field inline-date" type="text" name="analysis_date_raw" value="{{ record.analysis_date_raw or '' }}" data-form="memo" form="memo-form" placeholder="MM/DD" style="width:5em;display:inline;padding:0.1em 0.3em;font-size:0.9em;">
       {% if stock.kessanbi %} | 決算日: {{ stock.kessanbi[2:] }}{% endif %}
-      {# issue #248: トレンドテンプレ + 10WMA乖離率。portfolio_list と同じ仕様 #}
-      {% if trend_info %}
-       | トレンド: <span title="{{ trend_info.tooltip }}"
-                     {% if trend_info.bg_class %}class="{{ trend_info.bg_class }}"{% endif %}
-                     style="padding:0 0.3em;border-radius:2px;">{{ trend_info.expr }}</span>{% if trend_info.kairi_str %} <span class="kairi-num {{ trend_info.kairi_zone }}">{{ trend_info.kairi_str }}</span>{% endif %}
-      {% endif %}
       {# issue #205: 業態・テーマを同じ行に配置。change/blur で AJAX 即時保存 (portfolio_list と同方式) #}
       {% if portfolio_status_query and not portfolio_fallback_mode %}
       | <span class="gyoutai-themes-inline" data-code="{{ record.code_s }}">
