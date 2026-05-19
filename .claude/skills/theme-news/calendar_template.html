@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>株カレンダー</title>
+<meta name="generator" content="theme-news skill (render_calendar.py)">
+<meta name="last-updated" content="{{LAST_UPDATED}}">
+<meta name="today" content="{{TODAY}}">
+<style>
+  :root {
+    --imp-high-bg: #fce4e4;
+    --imp-high-fg: #c0392b;
+    --imp-mid-bg:  #fff3cd;
+    --imp-mid-fg:  #b27500;
+    --imp-low-bg:  #eef0f3;
+    --imp-low-fg:  #555;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif; max-width: 1400px; margin: 1.5em auto; padding: 0 1em; color: #222; line-height: 1.5; }
+  h1 { font-size: 1.4em; margin: 0 0 0.3em; }
+  .meta { color: #888; font-size: 0.85em; margin-bottom: 0.6em; }
+  .legend { font-size: 0.8em; color: #555; margin: 0.4em 0 1em; display: flex; gap: 1em; align-items: center; flex-wrap: wrap; }
+  .legend .swatch { display: inline-block; width: 0.9em; height: 0.9em; vertical-align: middle; border-radius: 2px; margin-right: 0.2em; }
+
+  /* レイアウト */
+  .layout { display: flex; gap: 1em; align-items: flex-start; }
+  .main { flex: 1 1 auto; min-width: 0; }
+  .side { flex: 0 0 340px; position: sticky; top: 1em; max-height: calc(100vh - 2em); overflow-y: auto; background: #fafbfc; border: 1px solid #e5e5e5; border-radius: 6px; padding: 0.9em 1em; }
+
+  /* 月切り替えツールバー */
+  .toolbar { display: flex; align-items: center; gap: 0.6em; margin-bottom: 0.8em; }
+  .toolbar h2 { font-size: 1.15em; margin: 0; flex: 0 0 auto; }
+  .toolbar button { font-size: 0.9em; padding: 0.3em 0.7em; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; }
+  .toolbar button:hover { background: #f0f0f0; }
+  .toolbar button.today-btn { background: #fffbe6; border-color: #f0b400; color: #6f5300; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .peek { font-size: 0.8em; color: #777; }
+  .toolbar .peek .peek-pill { display: inline-block; background: #eef0f3; color: #555; border-radius: 11px; padding: 1px 8px; margin: 0 2px; cursor: pointer; font-size: 0.95em; }
+  .toolbar .peek .peek-pill:hover { background: #dde3eb; color: #222; }
+
+  /* グリッド */
+  table.calendar { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.calendar th { font-size: 0.82em; padding: 5px; background: #f7f7f7; border: 1px solid #e5e5e5; color: #555; font-weight: 600; }
+  table.calendar th.sun { color: #c0392b; }
+  table.calendar th.sat { color: #2980b9; }
+  table.calendar td { vertical-align: top; border: 1px solid #e5e5e5; height: 120px; padding: 3px 4px; font-size: 0.78em; position: relative; background: #fff; }
+  table.calendar td.other-month { background: #fafafa; color: #ccc; }
+  table.calendar td.today { background: #fffbe6; box-shadow: inset 0 0 0 2px #f0b400; }
+  table.calendar td.past { background: #f7f9fb; }
+  td .day-num { display: block; font-weight: 600; font-size: 1.0em; color: #444; text-align: right; margin-bottom: 1px; }
+  td.sun .day-num { color: #c0392b; }
+  td.sat .day-num { color: #2980b9; }
+  td.today .day-num::after { content: " ★"; color: #f0b400; font-size: 0.8em; }
+
+  .ev { display: block; padding: 2px 5px; margin: 2px 0; border-radius: 2px; font-size: 1.0em; line-height: 1.3; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev.imp-high { background: var(--imp-high-bg); color: var(--imp-high-fg); border-left: 3px solid var(--imp-high-fg); }
+  .ev.imp-mid  { background: var(--imp-mid-bg);  color: var(--imp-mid-fg);  border-left: 3px solid var(--imp-mid-fg); }
+  .ev.imp-low  { background: var(--imp-low-bg);  color: var(--imp-low-fg);  border-left: 3px solid var(--imp-low-fg); }
+  .ev.range-start { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .ev.range-mid   { border-radius: 0; border-left: none; padding-left: 5px; }
+  .ev.range-end   { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
+  .ev:hover { filter: brightness(0.95); }
+  .ev.selected { outline: 2px solid #2980b9; outline-offset: -1px; filter: brightness(0.97); }
+  .ev.tentative { border: 1px dashed currentColor; font-style: italic; background: transparent; }
+  .ev.tentative::after { content: "?"; font-weight: 700; margin-left: 2px; }
+
+  /* サイドパネル */
+  .side h3 { margin: 0 0 0.4em; font-size: 1.0em; color: #333; }
+  .side .empty { color: #999; font-style: italic; font-size: 0.85em; }
+  .side .panel-date { font-size: 0.85em; color: #666; }
+  .side .panel-title { font-size: 1.1em; font-weight: 700; margin: 0.3em 0 0.4em; }
+  .side .panel-meta { margin: 0.4em 0; }
+  .side .panel-body { font-size: 0.9em; line-height: 1.55; color: #333; margin: 0.6em 0; }
+  .imp { display: inline-block; padding: 0.1em 0.5em; border-radius: 3px; font-size: 0.8em; font-weight: 600; }
+  .imp-high { background: var(--imp-high-bg); color: var(--imp-high-fg); }
+  .imp-mid  { background: var(--imp-mid-bg);  color: var(--imp-mid-fg); }
+  .imp-low  { background: var(--imp-low-bg);  color: var(--imp-low-fg); }
+  .theme-tag { display: inline-block; background: #eef5fb; color: #2c5f8a; border-radius: 3px; padding: 0.1em 0.4em; margin: 0.1em 0.2em 0.1em 0; font-size: 0.78em; }
+  .badge-tentative { display: inline-block; background: #fff; border: 1px dashed #888; color: #555; border-radius: 3px; padding: 0.05em 0.4em; font-size: 0.75em; font-style: italic; }
+
+  /* 詳細テーブル (折りたたみ・grep/編集用) */
+  details.detail { margin-top: 1.6em; }
+  details.detail summary { cursor: pointer; font-weight: 600; color: #555; font-size: 0.9em; padding: 0.3em 0; }
+  table.calendar-table { width: 100%; border-collapse: collapse; font-size: 0.86em; table-layout: fixed; margin-top: 0.4em; }
+  table.calendar-table th, table.calendar-table td { padding: 5px 7px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; word-break: break-word; }
+  table.calendar-table th { background: #f7f7f7; font-weight: 600; white-space: nowrap; }
+  table.calendar-table col.col-date  { width: 13%; }
+  table.calendar-table col.col-title { width: 17%; }
+  table.calendar-table col.col-body  { width: 47%; }
+  table.calendar-table col.col-imp   { width: 7%; }
+  table.calendar-table col.col-theme { width: 16%; }
+  td.cal-date { white-space: nowrap; color: #555; font-variant-numeric: tabular-nums; }
+  td.cal-title { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>株カレンダー</h1>
+<p class="meta">最終更新: {{LAST_UPDATED}} (theme-news による) ／ 今日: {{TODAY}}</p>
+<div class="legend">
+  <span><span class="swatch" style="background:var(--imp-high-bg);border:1px solid var(--imp-high-fg);"></span>高</span>
+  <span><span class="swatch" style="background:var(--imp-mid-bg);border:1px solid var(--imp-mid-fg);"></span>中</span>
+  <span><span class="swatch" style="background:var(--imp-low-bg);border:1px solid var(--imp-low-fg);"></span>低</span>
+  <span>★ = 今日</span>
+  <span>期間イベントは複数マスにまたがる横バー</span>
+  <span><span class="ev tentative imp-high" style="display:inline-block;padding:0 4px;border-left:1px dashed currentColor;">仮配置</span> = 日付未確定</span>
+</div>
+
+<!-- ===========================
+     イベントデータ (render_calendar.py が events.json から埋め込む)
+     直接編集禁止: events.json を編集して render_calendar.py を再実行する
+     =========================== -->
+<script type="application/json" id="events-data">
+{{EVENTS_JSON}}
+</script>
+
+<div class="layout">
+  <div class="main">
+    <div class="toolbar">
+      <button id="prev-btn" aria-label="前の月">←</button>
+      <h2 id="month-label">2026年5月</h2>
+      <button id="next-btn" aria-label="次の月">→</button>
+      <button id="today-btn" class="today-btn">今日</button>
+      <span class="spacer"></span>
+      <span class="peek" id="peek"></span>
+    </div>
+    <table class="calendar" id="grid">
+      <thead>
+        <tr><th class="sun">日</th><th>月</th><th>火</th><th>水</th><th>木</th><th>金</th><th class="sat">土</th></tr>
+      </thead>
+      <tbody id="grid-body"></tbody>
+    </table>
+  </div>
+
+  <aside class="side" id="side">
+    <h3>イベント詳細</h3>
+    <div id="side-body"><p class="empty">カレンダー上のイベントをクリックすると、ここに詳細が表示されます。</p></div>
+  </aside>
+</div>
+
+<details class="detail">
+  <summary>全イベント一覧（grep / 編集用テーブル）</summary>
+  <table class="calendar-table" id="full-list">
+    <colgroup>
+      <col class="col-date"><col class="col-title"><col class="col-body"><col class="col-imp"><col class="col-theme">
+    </colgroup>
+    <thead>
+      <tr><th>日付</th><th>タイトル</th><th>内容</th><th>重要度</th><th>関連テーマ</th></tr>
+    </thead>
+    <tbody id="full-list-body"></tbody>
+  </table>
+</details>
+
+<script>
+(function() {
+  const EVENTS = JSON.parse(document.getElementById('events-data').textContent);
+  const TODAY = document.querySelector('meta[name="today"]').content; // YYYY-MM-DD
+
+  // 状態
+  let viewYear, viewMonth; // 1-indexed month
+  let selectedId = null;
+
+  // ユーティリティ
+  function parseDate(s) {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d));
+  }
+  function fmtDate(d) {
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  function fmtMD(s) {
+    const [y, m, d] = s.split('-');
+    return `${parseInt(m, 10)}/${parseInt(d, 10)}`;
+  }
+  function impLabel(k) { return {high:'高', mid:'中', low:'低'}[k] || k; }
+  function eachDate(startStr, endStr, fn) {
+    const start = parseDate(startStr);
+    const end = parseDate(endStr);
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      fn(fmtDate(d));
+    }
+  }
+  function getEventsOnDate(dateStr) {
+    return EVENTS.filter(ev => ev.start <= dateStr && dateStr <= ev.end);
+  }
+
+  function renderGrid(year, month) {
+    document.getElementById('month-label').textContent = `${year}年${month}月`;
+
+    const firstDay = new Date(Date.UTC(year, month - 1, 1));
+    const lastDay  = new Date(Date.UTC(year, month, 0));
+    const firstDow = firstDay.getUTCDay();
+    const daysInMonth = lastDay.getUTCDate();
+
+    const body = document.getElementById('grid-body');
+    body.innerHTML = '';
+
+    let row = document.createElement('tr');
+    for (let i = 0; i < firstDow; i++) {
+      const td = document.createElement('td');
+      td.className = 'other-month';
+      row.appendChild(td);
+    }
+    let dow = firstDow;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const td = document.createElement('td');
+      const classes = [];
+      if (dow === 0) classes.push('sun');
+      if (dow === 6) classes.push('sat');
+      if (dateStr === TODAY) classes.push('today');
+      else if (dateStr < TODAY) classes.push('past');
+      td.className = classes.join(' ');
+
+      const numSpan = document.createElement('span');
+      numSpan.className = 'day-num';
+      numSpan.textContent = day;
+      td.appendChild(numSpan);
+
+      const evs = getEventsOnDate(dateStr);
+      for (const ev of evs) {
+        const span = document.createElement('span');
+        const evClasses = ['ev', `imp-${ev.importance}`];
+        if (ev.start !== ev.end) {
+          if (dateStr === ev.start) evClasses.push('range-start');
+          else if (dateStr === ev.end) evClasses.push('range-end');
+          else evClasses.push('range-mid');
+        }
+        if (ev.tentative) evClasses.push('tentative');
+        if (ev.id === selectedId) evClasses.push('selected');
+        span.className = evClasses.join(' ');
+        span.textContent = ev.title;
+        span.title = (ev.tentative ? `[日付未確定・${ev.tentativeNote || '仮配置'}] ` : '') + ev.title + ': ' + ev.body;
+        span.dataset.id = ev.id;
+        span.addEventListener('click', () => selectEvent(ev.id));
+        td.appendChild(span);
+      }
+      row.appendChild(td);
+
+      dow = (dow + 1) % 7;
+      if (dow === 0 && day < daysInMonth) {
+        body.appendChild(row);
+        row = document.createElement('tr');
+      }
+    }
+    while (dow !== 0 && dow < 7) {
+      const td = document.createElement('td');
+      td.className = 'other-month';
+      row.appendChild(td);
+      dow++;
+      if (dow >= 7) break;
+    }
+    body.appendChild(row);
+
+    renderPeek(year, month);
+  }
+
+  function renderPeek(year, month) {
+    const peek = document.getElementById('peek');
+    peek.innerHTML = '';
+
+    function monthRange(y, m) {
+      const start = `${y}-${String(m).padStart(2,'0')}-01`;
+      const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const end   = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+      return [start, end];
+    }
+    function countInMonth(y, m) {
+      const [s, e] = monthRange(y, m);
+      return EVENTS.filter(ev => !(ev.end < s || ev.start > e)).length;
+    }
+
+    const prev = { y: year, m: month - 1 };
+    if (prev.m === 0) { prev.m = 12; prev.y--; }
+    const next = { y: year, m: month + 1 };
+    if (next.m === 13) { next.m = 1; next.y++; }
+
+    const prevN = countInMonth(prev.y, prev.m);
+    const nextN = countInMonth(next.y, next.m);
+
+    if (prevN > 0) {
+      const a = document.createElement('span');
+      a.className = 'peek-pill';
+      a.textContent = `← ${prev.m}月 ${prevN}件`;
+      a.addEventListener('click', () => { viewYear = prev.y; viewMonth = prev.m; renderGrid(viewYear, viewMonth); });
+      peek.appendChild(a);
+    }
+    if (nextN > 0) {
+      const a = document.createElement('span');
+      a.className = 'peek-pill';
+      a.textContent = `${next.m}月 ${nextN}件 →`;
+      a.addEventListener('click', () => { viewYear = next.y; viewMonth = next.m; renderGrid(viewYear, viewMonth); });
+      peek.appendChild(a);
+    }
+  }
+
+  function selectEvent(id) {
+    selectedId = id;
+    document.querySelectorAll('.ev').forEach(el => el.classList.toggle('selected', el.dataset.id === id));
+    const ev = EVENTS.find(e => e.id === id);
+    const side = document.getElementById('side-body');
+    if (!ev) { side.innerHTML = '<p class="empty">イベントが見つかりません。</p>'; return; }
+
+    const dateStr = ev.start === ev.end ? fmtMD(ev.start) : `${fmtMD(ev.start)} 〜 ${fmtMD(ev.end)}`;
+    const fullDateStr = ev.start === ev.end ? ev.start : `${ev.start} 〜 ${ev.end}`;
+    const themes = ev.themes.map(t => `<span class="theme-tag">${escapeHtml(t)}</span>`).join('');
+    const tentativeBadge = ev.tentative ? `<span class="badge-tentative">仮配置: ${escapeHtml(ev.tentativeNote || '日付未確定')}</span>` : '';
+
+    side.innerHTML = `
+      <div class="panel-date">${escapeHtml(fullDateStr)} <span style="color:#aaa;">(${escapeHtml(dateStr)})</span></div>
+      <div class="panel-title">${escapeHtml(ev.title)}</div>
+      <div class="panel-meta">
+        <span class="imp imp-${ev.importance}">重要度: ${impLabel(ev.importance)}</span>
+        ${tentativeBadge}
+      </div>
+      <div class="panel-meta">${themes}</div>
+      <div class="panel-body">${escapeHtml(ev.body)}</div>
+    `;
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderFullList() {
+    const tbody = document.getElementById('full-list-body');
+    tbody.innerHTML = '';
+    const sorted = [...EVENTS].sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title));
+    for (const ev of sorted) {
+      const tr = document.createElement('tr');
+      const dateCell = ev.start === ev.end ? ev.start : `${ev.start} 〜 ${ev.end}`;
+      const tentativeNote = ev.tentative ? ` <em style="color:#888;font-size:0.85em;">(仮: ${escapeHtml(fmtMD(ev.start))})</em>` : '';
+      const themes = ev.themes.map(t => `<span class="theme-tag">${escapeHtml(t)}</span>`).join('');
+      tr.innerHTML = `
+        <td class="cal-date">${escapeHtml(dateCell)}${tentativeNote}</td>
+        <td class="cal-title">${escapeHtml(ev.title)}</td>
+        <td>${escapeHtml(ev.body)}${ev.tentative ? ` <em>※ 日付未確定・${escapeHtml(ev.tentativeNote || '')}</em>` : ''}</td>
+        <td><span class="imp imp-${ev.importance}">${impLabel(ev.importance)}</span></td>
+        <td>${themes}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function init() {
+    const [ty, tm] = TODAY.split('-').map(Number);
+    viewYear = ty;
+    viewMonth = tm;
+    renderGrid(viewYear, viewMonth);
+    renderFullList();
+
+    document.getElementById('prev-btn').addEventListener('click', () => {
+      viewMonth--;
+      if (viewMonth < 1) { viewMonth = 12; viewYear--; }
+      renderGrid(viewYear, viewMonth);
+    });
+    document.getElementById('next-btn').addEventListener('click', () => {
+      viewMonth++;
+      if (viewMonth > 12) { viewMonth = 1; viewYear++; }
+      renderGrid(viewYear, viewMonth);
+    });
+    document.getElementById('today-btn').addEventListener('click', () => {
+      viewYear = ty;
+      viewMonth = tm;
+      renderGrid(viewYear, viewMonth);
+    });
+
+    const todayEvs = getEventsOnDate(TODAY);
+    if (todayEvs.length > 0) selectEvent(todayEvs[0].id);
+  }
+
+  init();
+})();
+</script>
+
+</body>
+</html>
