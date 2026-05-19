@@ -2446,7 +2446,7 @@ def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
 
     返り値の各キー:
         expr: ◎ / ◯ / ▲ / △ / — の単一記号
-        tooltip: 不通過項目をカンマ区切りで連結 (◎ で項目なしのときは "")
+        tooltip: 不通過項目をカンマ区切りで連結 (◯ のときのみ、それ以外は "")
         bg_class: ◎=trend-bg-strong / ◯=trend-bg-good / —=trend-bg-none / その他=""
         kairi_raw: price_kairi_wma10 の生値 (None/非数値は None)
         kairi_str: "+12%" 形式の整形済み文字列
@@ -2460,7 +2460,9 @@ def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
     # 非 list を [] に変換せず、未評価として trend_symbol_from_misses に渡して "—" を返す。
     misses = (stock or {}).get("trend_template")
     expr = trend_symbol_from_misses(misses) if stock else "—"
-    tooltip_src = misses if isinstance(misses, list) else []
+    # 不通過項目の tooltip は ◯ (1-2件不通過) のときだけ意味があるので、それ以外は空にする。
+    # ◎=全通過で項目なし、▲/△=不通過項目が多くノイズ、—=未評価。
+    tooltip_src = misses if (expr == "◯" and isinstance(misses, list)) else []
     kairi_raw = (stock or {}).get("price_kairi_wma10")
     return {
         "expr": expr,
