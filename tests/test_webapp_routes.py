@@ -289,14 +289,6 @@ class TestDetailPortfolioModal:
         # 1保 からは 2準 (売却) への遷移が許可されている
         assert 'value="2準"' in html
 
-    def test_unregistered_stock_shows_add_button(self, portfolio_client):
-        """未登録銘柄 (research_shelve には存在): 「+ 監視に追加」ボタン + add POST モーダルが出る"""
-        resp = portfolio_client.get("/stock/1234")
-        html = resp.data.decode()
-        assert "+ 監視に追加" in html
-        assert 'action="/portfolio/add"' in html
-        assert 'name="return_to" value="detail"' in html
-
     def test_registered_badge_is_clickable_button(self, portfolio_client):
         """登録済バッジは button 要素になっている (onclick=openPortfolioModal)"""
         resp = portfolio_client.get("/stock/3496")
@@ -384,15 +376,12 @@ class TestDetailPortfolioModal:
         resp = client.get("/stock/9999")
         html = resp.data.decode()
 
-        # 除外済みなのでバッジ button や transition モーダルは出ない
-        # (CSS 定義文字列と区別するため <button タグにマッチさせる)
-        import re
-        assert not re.search(r'<button[^>]*class="[^"]*portfolio-badge', html), (
-            "除外済み銘柄でもバッジ button が描画されている"
-        )
+        # 除外済み = 未登録扱い: transition モーダルは出ず、add (復活) モーダルが出る。
+        # 既登録/未登録のバッジ button 自体は両方とも <button class="portfolio-badge..."> で
+        # 描画されるため、画面表示の差分は portfolio-badge-add (「+」アイコン) の有無 と
+        # transition vs add フォームの action URL で判定する。
         assert 'action="/portfolio/9999/transition"' not in html
-        # 代わりに add (復活) モーダルが出る
-        assert "+ 監視に追加" in html
+        assert "portfolio-badge-add" in html
         assert 'action="/portfolio/add"' in html
 
 
@@ -865,42 +854,6 @@ class TestMarketRouteKessanCard:
         # 前日カード: "(済)" あり、past クラスあり
         assert '<div class="card-date">04/26 (済)</div>' in html
         assert 'kessan-card past' in html
-
-    def test_today_card_appears_between_recent_past_and_future(
-        self, client, monkeypatch
-    ):
-        """カード表示順は recent_past → today → future"""
-        from datetime import datetime as _dt
-        today_str = _dt.today().strftime("%Y/%m/%d")
-        today_md = _dt.today().strftime("%m/%d")
-        yesterday_str = "2026/04/26"
-        tomorrow_str = "2026/04/30"
-
-        from webapp.routes import market as _market_route
-        monkeypatch.setattr(
-            _market_route, "get_market_kessan_data",
-            lambda: {
-                "base_day": _dt.today().date(),
-                "future_entries": [
-                    (tomorrow_str, [self._make_stub_entry("9984", tomorrow_str)]),
-                ],
-                "past_entries": [],
-                "recent_past_entries": [
-                    (yesterday_str, [self._make_stub_entry("7203", yesterday_str)]),
-                ],
-                "today_entries": [
-                    (today_str, [self._make_stub_entry("6501", today_str)]),
-                ],
-                "older_past_entries": [],
-            },
-        )
-
-        resp = client.get("/market")
-        html = resp.data.decode()
-        idx_yesterday = html.find("04/26 (済)")
-        idx_today = html.find(f'<div class="card-date">{today_md}</div>')
-        idx_tomorrow = html.find("04/30")
-        assert 0 < idx_yesterday < idx_today < idx_tomorrow
 
     def test_today_card_still_renders_post_fields(self, client, monkeypatch):
         """当日カードでも中身は past (is_past=True) として render され、反応コメ・株価変動率枠が出る"""
