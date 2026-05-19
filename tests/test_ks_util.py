@@ -324,3 +324,49 @@ class TestUseRequestsSessionThreadIsolation:
         # 並列度 5 で実行しているので、少なくとも 5 種類の Session id が
         # 生成されていれば「単一 Session 共有」ではないことが言える。
         assert len(set(results)) >= 5
+
+
+class TestFileWriteAtomic:
+    """issue #56: file_write がアトミックに差し替わることを確認。
+    旧実装は open('w') で即時 truncate するため、並行 read で空文字列が
+    観測される可能性があった。tmp ファイル + os.replace で常に完全な
+    内容が読み取れることを保証する。
+    """
+
+    def test_concurrent_read_never_sees_empty(self, tmp_path):
+        from concurrent.futures import ThreadPoolExecutor
+        import time
+
+        target = tmp_path / "cache.html"
+        full_content = "x" * 100000  # 1 回の write が瞬時に終わらない程度のサイズ
+        ks_util.file_write(str(target), full_content)
+
+        observed_lengths = []
+        stop = False
+
+        def reader():
+            while not stop:
+                try:
+                    with open(str(target)) as f:
+                        observed_lengths.append(len(f.read()))
+                except FileNotFoundError:
+                    pass
+
+        def writer():
+            for _ in range(50):
+                ks_util.file_write(str(target), full_content)
+
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            r_futures = [ex.submit(reader) for _ in range(3)]
+            w_future = ex.submit(writer)
+            w_future.result()
+            stop = True
+            for f in r_futures:
+                f.result()
+
+        # 観測された読み取りはすべて完全な長さ (空・部分書きが 1 件もないこと)
+        assert observed_lengths, "reader が一度も読まなかった"
+        assert all(n == len(full_content) for n in observed_lengths), (
+            "並行 read で空 or 部分内容が観測された: lengths sample=%s"
+            % observed_lengths[:10]
+        )

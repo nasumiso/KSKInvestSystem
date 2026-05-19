@@ -317,9 +317,15 @@ def backup_file(fname, day=0):
 
 
 def file_write(fname, content):
-    f = open(fname, "w")  # python3では'b'をつけバイナリのまま保存?
-    f.write(content)
-    f.close()
+    # issue #56: アトミック書き込み。
+    # ThreadPoolExecutor 配下で同じキャッシュファイルが並行 read される可能性があり、
+    # open("w") の即時 truncate と書き込み完了の間に読まれると空文字列が返るため、
+    # 一時ファイルに書いてから os.replace でアトミックに差し替える。
+    # 同 PID 内の並行スレッドで衝突しないよう thread id も含める。
+    tmp_path = "%s.tmp.%d.%d" % (fname, os.getpid(), threading.get_ident())
+    with open(tmp_path, "w") as f:
+        f.write(content)
+    os.replace(tmp_path, fname)
 
 
 def file_read(fname):
