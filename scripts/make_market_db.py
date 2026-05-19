@@ -762,6 +762,8 @@ tr:hover { background: #f5f5f5; }
 .signal-sell { background: #fdedec; color: #c0392b; font-weight: bold; }
 .signal-buy { background: #eafaf1; color: #27ae60; font-weight: bold; }
 .trend-good { color: #27ae60; font-weight: bold; }
+.market-table td .trend-mark { vertical-align: middle; margin-right: 2px; }
+.market-table td .kairi-bar { vertical-align: middle; }
 .rs-strong { color: #27ae60; font-weight: bold; }
 .rs-weak { color: #c0392b; font-weight: bold; }
 /* market_state */
@@ -952,6 +954,71 @@ def _rs_class(rs_raw):
     return ""
 
 
+def _build_kairi_wma10_bar_svg(kairi):
+    """10WMA乖離率(%)を縦バーSVGで返す。中央水平線=10WMA、±50%にクリップ。
+
+    issue #248: 上方乖離は中央線から上に、下方乖離は下に伸びる。
+    色は5段階 (利確警戒 / 健全 / 押し目 / 小割れ / 崩れ)。
+    クリップ範囲外は ▲ (上端) / ▼ (下端) を付与。
+    """
+    if kairi is None:
+        return ""
+    try:
+        k = float(kairi)
+    except (TypeError, ValueError):
+        return ""
+
+    CLIP = 50.0
+    W, H = 8, 32
+    MID = H / 2  # 16
+
+    over_top = k > CLIP
+    over_bot = k < -CLIP
+    k_clip = max(-CLIP, min(CLIP, k))
+
+    if k >= 25:
+        color = "#e67e22"
+    elif k >= 10:
+        color = "#27ae60"
+    elif k >= 0:
+        color = "#a8d8b9"
+    elif k > -5:
+        color = "#f5b7b1"
+    else:
+        color = "#c0392b"
+
+    bar_h = abs(k_clip) / CLIP * MID  # 0〜MID
+    if k_clip >= 0:
+        y = MID - bar_h
+    else:
+        y = MID
+
+    parts = [
+        '<svg xmlns="http://www.w3.org/2000/svg" class="kairi-bar" '
+        'viewBox="0 0 %d %d" width="%d" height="%d">' % (W, H, W, H),
+        '<line x1="0" y1="%d" x2="%d" y2="%d" stroke="#888" stroke-width="0.5"/>' % (
+            MID, W, MID,
+        ),
+        '<rect x="1" y="%.1f" width="%d" height="%.1f" fill="%s"/>' % (
+            y, W - 2, bar_h, color,
+        ),
+    ]
+    if over_top:
+        parts.append(
+            '<text x="%.1f" y="6" font-size="6" text-anchor="middle" fill="%s">▲</text>' % (
+                W / 2, color,
+            )
+        )
+    if over_bot:
+        parts.append(
+            '<text x="%.1f" y="%d" font-size="6" text-anchor="middle" fill="%s">▼</text>' % (
+                W / 2, H - 1, color,
+            )
+        )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 def _html_market(market_db):
     """市場指標セクションのHTMLを生成する
 
@@ -1035,12 +1102,28 @@ def _html_market(market_db):
             state_css = market_state.STATE_CSS_CLASS.get(state, "")
             state_class = ' class="%s"' % state_css if state_css else ""
 
-            # トレンドのCSSクラス + 不通過項目を title 属性 (ホバー詳細)
+            # トレンドのCSSクラス + 不通過項目 + 10WMA乖離率を title 属性 (ホバー詳細)
             trend_class = ""
             if trend_expr.startswith("◯") or trend_expr.startswith("◎"):
                 trend_class = ' class="trend-good"'
-            trend_title = (' title="不通過: %s"' % html_mod.escape(trend_misses)
-                           if trend_misses else "")
+            kairi = db.get("price_kairi_wma10")
+            kairi_svg = _build_kairi_wma10_bar_svg(kairi)
+            trend_tooltip_parts = []
+            if trend_misses:
+                trend_tooltip_parts.append("不通過: %s" % trend_misses)
+            if kairi is not None:
+                try:
+                    trend_tooltip_parts.append(
+                        "10WMA乖離: %+d%%" % int(round(float(kairi)))
+                    )
+                except (TypeError, ValueError):
+                    pass
+            trend_title = (' title="%s"' % html_mod.escape(" / ".join(trend_tooltip_parts))
+                           if trend_tooltip_parts else "")
+            # 既存記号と SVG 縦バーを併記 (SVG は escape しない)
+            trend_cell_inner = '<span class="trend-mark">%s</span>%s' % (
+                html_mod.escape(str(trend_expr)), kairi_svg,
+            )
 
             rs_raw = db.get("rs_raw", "")
             rs_class = _rs_class(rs_raw)
@@ -1075,7 +1158,7 @@ def _html_market(market_db):
                 '</tr>' % (
                     html_mod.escape(market_name),
                     rs_class, rs_raw,
-                    trend_class, trend_title, html_mod.escape(str(trend_expr)),
+                    trend_class, trend_title, trend_cell_inner,
                     dd_class, dd_title, html_mod.escape(dd_display),
                     html_mod.escape(ftd_rally_display),
                     state_class, html_mod.escape(state_display),
