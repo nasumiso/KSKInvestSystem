@@ -460,10 +460,10 @@ class TestHtmlMarket:
         result = make_market_db._html_market(db)
         assert 'state-confirmed' in result
 
-    def test_trend_good_class(self):
-        """良好トレンド（◎/◯）にtrend-goodクラスが付く"""
+    def test_trend_bg_class(self):
+        """良好トレンド (◎/◯) に背景色クラスが付く (issue #248: portfolio_list と仕様統一)"""
         result = make_market_db._html_market(self._make_market_db())
-        assert 'trend-good' in result
+        assert 'trend-bg-strong' in result or 'trend-bg-good' in result
 
     def test_market_table_header(self):
         """テーブルヘッダーが含まれる (Part B: DD/FTD 列名改修)"""

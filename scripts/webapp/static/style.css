@@ -436,3 +436,19 @@ nav .quick-search {
   font-style: italic;
   padding: 8px 0;
 }
+
+/* トレンド表示の背景色 (issue #248)
+   portfolio_list は inline style、detail.html はクラスで適用。仕様統一: ◎=濃黄/◯=薄黄/—=水色 */
+.trend-bg-strong { background: #fbbc04; }
+.trend-bg-good   { background: #fce8b2; }
+.trend-bg-none   { background: #6fa8dc; }
+
+/* 10WMA乖離率の数値表示 (issue #248)
+   portfolio_list ではトレンド列の背景が ◎/◯/— に占有されるため、
+   ゾーンは文字色で表現する。 */
+.kairi-num { margin-left: 2px; }
+.kairi-num.kairi-zone-overheat   { color: #e67e22; }  /* ≥+25% 利確警戒 */
+.kairi-num.kairi-zone-healthy    { color: #27ae60; }  /* +10〜+25% 健全 */
+.kairi-num.kairi-zone-pullback   { color: #2ecc71; }  /* 0〜+10% 押し目 */
+.kairi-num.kairi-zone-near-break { color: #e74c3c; }  /* -5〜0% 小割れ */
+.kairi-num.kairi-zone-break      { color: #c0392b; }  /* ≤-5% 崩れ */

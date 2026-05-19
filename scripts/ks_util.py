@@ -686,3 +686,64 @@ def get_db_code(rec: dict) -> str:
             log_warning("コード取得できない", rec)
             return ""
     return rec["code_s"]
+
+
+_TREND_BG_CLASS = {"◎": "trend-bg-strong", "◯": "trend-bg-good", "—": "trend-bg-none"}
+
+
+def trend_symbol_from_misses(misses):
+    """trend_template (不通過項目 list) から表示用の記号一文字を返す。
+
+    make_stock_db.get_trend_template_expr() と判定基準を揃える (◎/◯/▲/△ + 7件以上は空)。
+    None や非 list は "—" を返す。
+    """
+    if not isinstance(misses, list):
+        return "—"
+    n = len(misses)
+    if n == 0:
+        return "◎"
+    if n <= 2:
+        return "◯"
+    if n <= 4:
+        return "▲"
+    if n <= 6:
+        return "△"
+    return "—"
+
+
+def trend_bg_class(symbol):
+    """トレンド記号 (◎/◯/—) から背景色 CSS クラス名を返す。▲/△/その他は ""。"""
+    return _TREND_BG_CLASS.get(symbol, "")
+
+
+def kairi_wma10_zone_class(kairi):
+    """10WMA乖離率(%)から 5 段階のゾーン CSS クラス名を返す。
+
+    issue #248: 利確警戒 / 健全 / 押し目 / 小割れ / 崩れ の 5 段階。
+    None や数値化不能なら "" を返す。
+    """
+    if kairi is None:
+        return ""
+    try:
+        k = float(kairi)
+    except (TypeError, ValueError):
+        return ""
+    if k >= 25:
+        return "kairi-zone-overheat"
+    if k >= 10:
+        return "kairi-zone-healthy"
+    if k >= 0:
+        return "kairi-zone-pullback"
+    if k > -5:
+        return "kairi-zone-near-break"
+    return "kairi-zone-break"
+
+
+def format_kairi_wma10(kairi):
+    """10WMA乖離率 (%) を "+12%" / "-3%" 形式で整形。None や数値化不能なら "" を返す。"""
+    if kairi is None:
+        return ""
+    try:
+        return "%+d%%" % int(round(float(kairi)))
+    except (TypeError, ValueError):
+        return ""

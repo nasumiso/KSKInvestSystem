@@ -761,7 +761,18 @@ tr:hover { background: #f5f5f5; }
 .market-table th { background: #2c3e50; color: #fff; }
 .signal-sell { background: #fdedec; color: #c0392b; font-weight: bold; }
 .signal-buy { background: #eafaf1; color: #27ae60; font-weight: bold; }
-.trend-good { color: #27ae60; font-weight: bold; }
+/* トレンド列の背景色 (portfolio_list と仕様統一: ◎=濃黄 / ◯=薄黄 / —=水色) */
+.trend-bg-strong { background: #fbbc04; }  /* ◎ */
+.trend-bg-good   { background: #fce8b2; }  /* ◯ */
+.trend-bg-none   { background: #6fa8dc; }  /* — / 空 */
+/* 10WMA乖離率の数値表示 (issue #248)
+   ゾーンを文字色で表現 (portfolio 側でトレンド列背景がすでに使われているため統一)。 */
+.kairi-num { margin-left: 2px; }
+.kairi-num.kairi-zone-overheat   { color: #e67e22; }  /* ≥+25% 利確警戒 */
+.kairi-num.kairi-zone-healthy    { color: #27ae60; }  /* +10〜+25% 健全 */
+.kairi-num.kairi-zone-pullback   { color: #2ecc71; }  /* 0〜+10% 押し目 */
+.kairi-num.kairi-zone-near-break { color: #e74c3c; }  /* -5〜0% 小割れ */
+.kairi-num.kairi-zone-break      { color: #c0392b; }  /* ≤-5% 崩れ */
 .rs-strong { color: #27ae60; font-weight: bold; }
 .rs-weak { color: #c0392b; font-weight: bold; }
 /* market_state */
@@ -978,20 +989,9 @@ def _html_market(market_db):
             db = market_db[db_name]
             # 指数向けに trend_template の RS 基準を補正してから表示文字列を作る (issue #148 Part 1)
             adjusted_db = _adjust_index_trend_template(db)
-            # 個別銘柄側 (◎/◯/▲/△ 単体記号 + tooltip に不通過項目) と表記を揃える
             trend_misses_list = adjusted_db.get("trend_template", [])
-            miss_count = len(trend_misses_list) if isinstance(trend_misses_list, list) else None
-            if miss_count is None:
-                trend_expr = "-"
-            elif miss_count == 0:
-                trend_expr = "◎"
-            elif miss_count <= 2:
-                trend_expr = "◯"
-            elif miss_count <= 4:
-                trend_expr = "▲"
-            else:
-                trend_expr = "△"
-            trend_misses = ",".join(trend_misses_list) if trend_misses_list else ""
+            trend_expr = trend_symbol_from_misses(trend_misses_list)
+            trend_misses = ",".join(trend_misses_list) if isinstance(trend_misses_list, list) else ""
 
             # State Machine と整合した DD/FTD/状態表示
             state_meta = db.get("state_meta", {}) or {}
@@ -1035,12 +1035,18 @@ def _html_market(market_db):
             state_css = market_state.STATE_CSS_CLASS.get(state, "")
             state_class = ' class="%s"' % state_css if state_css else ""
 
-            # トレンドのCSSクラス + 不通過項目を title 属性 (ホバー詳細)
-            trend_class = ""
-            if trend_expr.startswith("◯") or trend_expr.startswith("◎"):
-                trend_class = ' class="trend-good"'
-            trend_title = (' title="不通過: %s"' % html_mod.escape(trend_misses)
-                           if trend_misses else "")
+            kairi = db.get("price_kairi_wma10")
+            bg_cls = trend_bg_class(trend_expr)
+            trend_class = ' class="%s"' % bg_cls if bg_cls else ""
+            trend_title = ' title="不通過: %s"' % html_mod.escape(trend_misses) if trend_misses else ""
+            kairi_str = format_kairi_wma10(kairi)
+            if kairi_str:
+                span_class = ("kairi-num %s" % kairi_wma10_zone_class(kairi)).strip()
+                trend_cell_inner = '%s <span class="%s">%s</span>' % (
+                    html_mod.escape(trend_expr), span_class, kairi_str,
+                )
+            else:
+                trend_cell_inner = html_mod.escape(trend_expr)
 
             rs_raw = db.get("rs_raw", "")
             rs_class = _rs_class(rs_raw)
@@ -1075,7 +1081,7 @@ def _html_market(market_db):
                 '</tr>' % (
                     html_mod.escape(market_name),
                     rs_class, rs_raw,
-                    trend_class, trend_title, html_mod.escape(str(trend_expr)),
+                    trend_class, trend_title, trend_cell_inner,
                     dd_class, dd_title, html_mod.escape(dd_display),
                     html_mod.escape(ftd_rally_display),
                     state_class, html_mod.escape(state_display),
