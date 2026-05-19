@@ -989,20 +989,9 @@ def _html_market(market_db):
             db = market_db[db_name]
             # 指数向けに trend_template の RS 基準を補正してから表示文字列を作る (issue #148 Part 1)
             adjusted_db = _adjust_index_trend_template(db)
-            # 個別銘柄側 (◎/◯/▲/△ 単体記号 + tooltip に不通過項目) と表記を揃える
             trend_misses_list = adjusted_db.get("trend_template", [])
-            miss_count = len(trend_misses_list) if isinstance(trend_misses_list, list) else None
-            if miss_count is None:
-                trend_expr = "-"
-            elif miss_count == 0:
-                trend_expr = "◎"
-            elif miss_count <= 2:
-                trend_expr = "◯"
-            elif miss_count <= 4:
-                trend_expr = "▲"
-            else:
-                trend_expr = "△"
-            trend_misses = ",".join(trend_misses_list) if trend_misses_list else ""
+            trend_expr = trend_symbol_from_misses(trend_misses_list)
+            trend_misses = ",".join(trend_misses_list) if isinstance(trend_misses_list, list) else ""
 
             # State Machine と整合した DD/FTD/状態表示
             state_meta = db.get("state_meta", {}) or {}
@@ -1046,33 +1035,18 @@ def _html_market(market_db):
             state_css = market_state.STATE_CSS_CLASS.get(state, "")
             state_class = ' class="%s"' % state_css if state_css else ""
 
-            # トレンドのCSSクラス + 10WMA乖離率の数値+ゾーン文字色、tooltip に不通過項目
             kairi = db.get("price_kairi_wma10")
-            zone_class = kairi_wma10_zone_class(kairi)
-            # portfolio_list と仕様統一: ◎=濃黄 / ◯=薄黄 / —/空=水色
-            trend_classes = []
-            if trend_expr.startswith("◎"):
-                trend_classes.append("trend-bg-strong")
-            elif trend_expr.startswith("◯"):
-                trend_classes.append("trend-bg-good")
-            elif (not trend_expr) or trend_expr == "—" or trend_expr == "-":
-                trend_classes.append("trend-bg-none")
-            trend_class = (' class="%s"' % " ".join(trend_classes)) if trend_classes else ""
-            trend_title_parts = []
-            if trend_misses:
-                trend_title_parts.append("不通過: %s" % trend_misses)
-            # 既存記号 + 10WMA乖離率の数値を併記 (数値が主役、記号は補助)
-            # ゾーンは span 側に文字色クラスとして付与 (portfolio_list と仕様統一)
+            bg_cls = trend_bg_class(trend_expr)
+            trend_class = ' class="%s"' % bg_cls if bg_cls else ""
+            trend_title = ' title="不通過: %s"' % html_mod.escape(trend_misses) if trend_misses else ""
             kairi_str = format_kairi_wma10(kairi)
             if kairi_str:
-                span_class = ("kairi-num %s" % zone_class).strip()
+                span_class = ("kairi-num %s" % kairi_wma10_zone_class(kairi)).strip()
                 trend_cell_inner = '%s <span class="%s">%s</span>' % (
-                    html_mod.escape(str(trend_expr)), span_class, kairi_str,
+                    html_mod.escape(trend_expr), span_class, kairi_str,
                 )
             else:
-                trend_cell_inner = html_mod.escape(str(trend_expr))
-            trend_title = (' title="%s"' % html_mod.escape(" / ".join(trend_title_parts))
-                           if trend_title_parts else "")
+                trend_cell_inner = html_mod.escape(trend_expr)
 
             rs_raw = db.get("rs_raw", "")
             rs_class = _rs_class(rs_raw)

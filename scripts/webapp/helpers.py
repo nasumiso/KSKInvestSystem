@@ -2442,55 +2442,31 @@ def _append_provisional_rs(rs_line, stock, market_db):
 
 
 def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
-    """portfolio_list / detail.html 共通のトレンド表示情報を組み立てる (issue #248)。
+    """portfolio_list / detail.html / 市場セクション共通のトレンド表示情報を組み立てる。
 
-    返り値:
+    返り値の各キー:
         expr: ◎ / ◯ / ▲ / △ / — の単一記号
-        tooltip: 不通過項目の連結文字列 (なければ expr)
+        tooltip: 不通過項目をカンマ区切りで連結 (◎ で項目なしのときは "")
         bg_class: ◎=trend-bg-strong / ◯=trend-bg-good / —=trend-bg-none / その他=""
-        kairi_str: "+12%" 形式の 10WMA乖離率 (なければ "")
-        kairi_zone: ゾーンCSSクラス (kairi-zone-overheat 等、なければ "")
+        kairi_raw: price_kairi_wma10 の生値 (None/非数値は None)
+        kairi_str: "+12%" 形式の整形済み文字列
+        kairi_zone: kairi-zone-* の CSS クラス名
     """
-    if not stock:
-        return {"expr": "—", "tooltip": "—", "bg_class": "trend-bg-none",
-                "kairi_str": "", "kairi_zone": ""}
-    from make_stock_db import get_trend_template_expr  # 遅延 import (循環回避)
-    raw_expr = get_trend_template_expr(stock)
-    trend_misses = stock.get("trend_template") if isinstance(stock.get("trend_template"), list) else []
-    # get_trend_template_expr は ◯ のとき "◯ma10>ma30,RS" 等を返すため、市場側と仕様を揃えて
-    # セル表示は記号一文字に正規化する。不通過項目は tooltip に逃がす。
-    if raw_expr.startswith("◎"):
-        trend_expr = "◎"
-        bg_class = "trend-bg-strong"
-    elif raw_expr.startswith("◯"):
-        trend_expr = "◯"
-        bg_class = "trend-bg-good"
-    elif raw_expr.startswith("▲"):
-        trend_expr = "▲"
-        bg_class = ""
-    elif raw_expr.startswith("△"):
-        trend_expr = "△"
-        bg_class = ""
-    elif (not raw_expr) or raw_expr == "—" or raw_expr == "-":
-        trend_expr = raw_expr or "—"
-        bg_class = "trend-bg-none"
-    else:
-        trend_expr = raw_expr
-        bg_class = ""
-    # 不通過項目がないとき (◎) は tooltip を空にする (市場側と仕様統一: ◎ 行は title 属性なし)
-    tooltip_base = ",".join(trend_misses) if trend_misses else ""
-
-    from ks_util import kairi_wma10_zone_class, format_kairi_wma10
-    kairi_raw = stock.get("price_kairi_wma10")
-    kairi_str = format_kairi_wma10(kairi_raw)
-    kairi_zone = kairi_wma10_zone_class(kairi_raw)
-
+    from ks_util import (
+        trend_symbol_from_misses, trend_bg_class,
+        kairi_wma10_zone_class, format_kairi_wma10,
+    )
+    misses = (stock or {}).get("trend_template")
+    misses = misses if isinstance(misses, list) else []
+    expr = trend_symbol_from_misses(misses) if stock else "—"
+    kairi_raw = (stock or {}).get("price_kairi_wma10")
     return {
-        "expr": trend_expr,
-        "tooltip": tooltip_base,
-        "bg_class": bg_class,
-        "kairi_str": kairi_str,
-        "kairi_zone": kairi_zone,
+        "expr": expr,
+        "tooltip": ",".join(misses),
+        "bg_class": trend_bg_class(expr),
+        "kairi_raw": kairi_raw if isinstance(kairi_raw, (int, float)) else None,
+        "kairi_str": format_kairi_wma10(kairi_raw),
+        "kairi_zone": kairi_wma10_zone_class(kairi_raw),
     }
 
 
@@ -2550,8 +2526,6 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     quarter_label, progress_diff = _progress_quarter_and_diff(stock)
 
     trend_info = build_trend_info(stock)
-    trend_expr = trend_info["expr"]
-    kairi_raw = stock.get("price_kairi_wma10")
 
     market_cap_raw = market_cap if isinstance(market_cap, (int, float)) else None
 
@@ -2577,9 +2551,9 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "quarter": quarter_label,
         "progress_diff": progress_diff,
         "progress_diff_eiri_raw": _progress_diff_eiri_raw(stock),
-        "trend_template": trend_expr,
+        "trend_template": trend_info["expr"],
         "trend_template_tooltip": trend_info["tooltip"],
-        "price_kairi_wma10_raw": kairi_raw if isinstance(kairi_raw, (int, float)) else None,
+        "price_kairi_wma10_raw": trend_info["kairi_raw"],
         "price_kairi_wma10_str": trend_info["kairi_str"],
         "price_kairi_wma10_zone": trend_info["kairi_zone"],
         "tags": _format_tags(stock),
