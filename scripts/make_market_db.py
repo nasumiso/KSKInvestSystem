@@ -1052,12 +1052,14 @@ def _html_market(market_db):
             spr_levels = [-10, -5, 0, 5, 10]
             spr_labels = ["E", "D", "C", "B", "A"]
             spr_parts = ["%d" % db.get("spr_20", 0), "%d" % db.get("spr_5", 0)]
-            sprw = db.get("sell_pressure_ratio_w") or []
-            if len(sprw) >= 3 and sprw[0]:
+            # データ有無は None / 長さで判定 (0 は calc_ratio が返す有効値なので除外しない)
+            sprw = db.get("sell_pressure_ratio_w")
+            if isinstance(sprw, list) and len(sprw) >= 3:
                 spr_parts.append(step_func(sprw[2] - sprw[0], spr_levels, spr_labels))
-            if db.get("spr_20") and db.get("spr_buygagher") is not None:
-                spr_parts.append(step_func(db.get("spr_buygagher", 0) - db.get("spr_20", 0),
-                                           spr_levels, spr_labels))
+            spr_20 = db.get("spr_20")
+            spr_bg = db.get("spr_buygagher")
+            if spr_20 is not None and spr_bg is not None:
+                spr_parts.append(step_func(spr_bg - spr_20, spr_levels, spr_labels))
             spr_display = ", ".join(spr_parts)
 
             rows_html.append(
