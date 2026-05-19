@@ -1045,6 +1045,23 @@ def _html_market(market_db):
             rs_raw = db.get("rs_raw", "")
             rs_class = _rs_class(rs_raw)
 
+            # 売り圧力レシオ + 買い集め評価 (週,日)
+            # 個別銘柄は price.get_spr_expr で評価しているが、指数は sell_pressure_ratio が空のため
+            # spr_20 / spr_buygagher (日次) と sell_pressure_ratio_w (週次) から直接計算する。
+            from price import step_func
+            spr_levels = [-10, -5, 0, 5, 10]
+            spr_labels = ["E", "D", "C", "B", "A"]
+            spr_parts = ["%d" % db.get("spr_20", 0), "%d" % db.get("spr_5", 0)]
+            # データ有無は None / 長さで判定 (0 は calc_ratio が返す有効値なので除外しない)
+            sprw = db.get("sell_pressure_ratio_w")
+            if isinstance(sprw, list) and len(sprw) >= 3:
+                spr_parts.append(step_func(sprw[2] - sprw[0], spr_levels, spr_labels))
+            spr_20 = db.get("spr_20")
+            spr_bg = db.get("spr_buygagher")
+            if spr_20 is not None and spr_bg is not None:
+                spr_parts.append(step_func(spr_bg - spr_20, spr_levels, spr_labels))
+            spr_display = ", ".join(spr_parts)
+
             rows_html.append(
                 '<tr>\n'
                 '  <td><strong>%s</strong></td>\n'
@@ -1053,7 +1070,7 @@ def _html_market(market_db):
                 '  <td%s%s>%s</td>\n'
                 '  <td>%s</td>\n'
                 '  <td%s>%s</td>\n'
-                '  <td>%d, %d</td>\n'
+                '  <td>%s</td>\n'
                 '  <td>%.1f, %.1f</td>\n'
                 '</tr>' % (
                     html_mod.escape(market_name),
@@ -1062,7 +1079,7 @@ def _html_market(market_db):
                     dd_class, dd_title, html_mod.escape(dd_display),
                     html_mod.escape(ftd_rally_display),
                     state_class, html_mod.escape(state_display),
-                    db.get("spr_20", 0), db.get("spr_5", 0),
+                    html_mod.escape(spr_display),
                     db.get("rv_20", 0.0), db.get("rv_5", 0.0),
                 )
             )
@@ -1078,7 +1095,7 @@ def _html_market(market_db):
         '<thead><tr>\n'
         '  <th>市場名</th><th>RS</th><th>トレンド</th>\n'
         '  <th>DD</th><th>FTD/ラリー</th>\n'
-        '  <th>市場状態</th><th>売り圧力レシオ (20,5)</th><th>ボラティリティ (20,5)</th>\n'
+        '  <th>市場状態</th><th>売り圧力レシオ (20,5,買い集め週,日)</th><th>ボラティリティ (20,5)</th>\n'
         '</tr></thead>\n'
         '<tbody>'
     )
