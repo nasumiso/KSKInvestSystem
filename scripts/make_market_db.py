@@ -969,7 +969,7 @@ def _build_kairi_wma10_bar_svg(kairi):
         return ""
 
     CLIP = 50.0
-    W, H = 8, 32
+    W, H = 32, 32
     MID = H / 2  # 16
 
     over_top = k > CLIP
