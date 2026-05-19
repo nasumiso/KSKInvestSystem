@@ -230,7 +230,7 @@
         {% if row.price_rs_chart.svg %}{{ row.price_rs_chart.svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
       </td>
       <td title="{{ row.trend_template_tooltip }}"
-          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.trend_template or '' }}">{{ row.trend_template }}</td>
+          style="max-width:7em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.trend_template or '' }}">{{ row.trend_template }}{% if row.price_kairi_wma10_str %} <span class="kairi-num {{ row.price_kairi_wma10_zone }}">{{ row.price_kairi_wma10_str }}</span>{% endif %}</td>
       <td title="{{ row.tags }}"
           style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
       <td style="{{ row.styles.buy_collection or '' }}">{{ row.buy_collection }}</td>

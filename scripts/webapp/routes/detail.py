@@ -93,6 +93,14 @@ def stock_detail(code_s: str):
         if not portfolio_fallback_mode else []
     )
 
+    # トレンドテンプレ + 10WMA乖離率 (issue #248): portfolio_list と共通関数で生成。
+    # テストが make_stock_db をスタブ化するケースでは ImportError になるので握り潰す。
+    from webapp.helpers import build_trend_info  # 遅延 import
+    try:
+        trend_info = build_trend_info(stock)
+    except ImportError:
+        trend_info = None
+
     # issue #227: 株価 + RSライン 統合チャート (フル版)
     # market_db のロード失敗時は RS 無しの株価のみで描画 (500 にしない)
     from webapp.helpers import build_stock_chart_payload  # 遅延 import
@@ -124,4 +132,5 @@ def stock_detail(code_s: str):
         gyoutai_themes=gyoutai_themes,
         gyoutai_theme_choices=gyoutai_theme_choices,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
+        trend_info=trend_info,
     )

@@ -761,14 +761,18 @@ tr:hover { background: #f5f5f5; }
 .market-table th { background: #2c3e50; color: #fff; }
 .signal-sell { background: #fdedec; color: #c0392b; font-weight: bold; }
 .signal-buy { background: #eafaf1; color: #27ae60; font-weight: bold; }
-.trend-good { color: #27ae60; font-weight: bold; }
-.market-table td .kairi-num { font-weight: bold; margin-left: 2px; }
-/* 10WMA乖離率 5段階ゾーン背景色 (利確警戒/健全/押し目/小割れ/崩れ) */
-.kairi-zone-overheat   { background: #fdebd0; }  /* ≥+25% 利確警戒 */
-.kairi-zone-healthy    { background: #d5f5e3; }  /* +10〜+25% 健全 */
-.kairi-zone-pullback   { background: #eafaf1; }  /* 0〜+10% 押し目 */
-.kairi-zone-near-break { background: #fdedec; }  /* -5〜0% 小割れ */
-.kairi-zone-break      { background: #f5b7b1; }  /* ≤-5% 崩れ */
+/* トレンド列の背景色 (portfolio_list と仕様統一: ◎=濃黄 / ◯=薄黄 / —=水色) */
+.trend-bg-strong { background: #fbbc04; }  /* ◎ */
+.trend-bg-good   { background: #fce8b2; }  /* ◯ */
+.trend-bg-none   { background: #6fa8dc; }  /* — / 空 */
+/* 10WMA乖離率の数値表示 (issue #248)
+   ゾーンを文字色で表現 (portfolio 側でトレンド列背景がすでに使われているため統一)。 */
+.kairi-num { font-weight: bold; margin-left: 2px; }
+.kairi-num.kairi-zone-overheat   { color: #e67e22; }  /* ≥+25% 利確警戒 */
+.kairi-num.kairi-zone-healthy    { color: #27ae60; }  /* +10〜+25% 健全 */
+.kairi-num.kairi-zone-pullback   { color: #2ecc71; }  /* 0〜+10% 押し目 */
+.kairi-num.kairi-zone-near-break { color: #e74c3c; }  /* -5〜0% 小割れ */
+.kairi-num.kairi-zone-break      { color: #c0392b; }  /* ≤-5% 崩れ */
 .rs-strong { color: #27ae60; font-weight: bold; }
 .rs-weak { color: #c0392b; font-weight: bold; }
 /* market_state */
@@ -959,29 +963,6 @@ def _rs_class(rs_raw):
     return ""
 
 
-def _kairi_wma10_zone_class(kairi):
-    """10WMA乖離率(%)から 5 段階のゾーン CSS クラス名を返す。
-
-    issue #248: 利確警戒 / 健全 / 押し目 / 小割れ / 崩れ の 5 段階。
-    None や数値化不能なら "" を返す。
-    """
-    if kairi is None:
-        return ""
-    try:
-        k = float(kairi)
-    except (TypeError, ValueError):
-        return ""
-    if k >= 25:
-        return "kairi-zone-overheat"
-    if k >= 10:
-        return "kairi-zone-healthy"
-    if k >= 0:
-        return "kairi-zone-pullback"
-    if k > -5:
-        return "kairi-zone-near-break"
-    return "kairi-zone-break"
-
-
 def _html_market(market_db):
     """市場指標セクションのHTMLを生成する
 
@@ -1065,31 +1046,34 @@ def _html_market(market_db):
             state_css = market_state.STATE_CSS_CLASS.get(state, "")
             state_class = ' class="%s"' % state_css if state_css else ""
 
-            # トレンドのCSSクラス + 10WMA乖離率ゾーン背景色、tooltip に不通過項目
+            # トレンドのCSSクラス + 10WMA乖離率の数値+ゾーン文字色、tooltip に不通過項目
             kairi = db.get("price_kairi_wma10")
-            zone_class = _kairi_wma10_zone_class(kairi)
+            zone_class = kairi_wma10_zone_class(kairi)
+            # portfolio_list と仕様統一: ◎=濃黄 / ◯=薄黄 / —/空=水色
             trend_classes = []
-            if trend_expr.startswith("◯") or trend_expr.startswith("◎"):
-                trend_classes.append("trend-good")
-            if zone_class:
-                trend_classes.append(zone_class)
+            if trend_expr.startswith("◎"):
+                trend_classes.append("trend-bg-strong")
+            elif trend_expr.startswith("◯"):
+                trend_classes.append("trend-bg-good")
+            elif (not trend_expr) or trend_expr == "—" or trend_expr == "-":
+                trend_classes.append("trend-bg-none")
             trend_class = (' class="%s"' % " ".join(trend_classes)) if trend_classes else ""
-            trend_title = (' title="不通過: %s"' % html_mod.escape(trend_misses)
-                           if trend_misses else "")
+            trend_title_parts = []
+            if trend_misses:
+                trend_title_parts.append("不通過: %s" % trend_misses)
             # 既存記号 + 10WMA乖離率の数値を併記 (数値が主役、記号は補助)
-            if kairi is not None:
-                try:
-                    kairi_str = "%+d%%" % int(round(float(kairi)))
-                except (TypeError, ValueError):
-                    kairi_str = ""
-            else:
-                kairi_str = ""
+            # ゾーンは span 側に文字色クラスとして付与 (portfolio_list と仕様統一)
+            kairi_str = format_kairi_wma10(kairi)
             if kairi_str:
-                trend_cell_inner = '%s <span class="kairi-num">%s</span>' % (
-                    html_mod.escape(str(trend_expr)), kairi_str,
+                trend_title_parts.append("10WMA乖離: %s" % kairi_str)
+                span_class = ("kairi-num %s" % zone_class).strip()
+                trend_cell_inner = '%s <span class="%s">%s</span>' % (
+                    html_mod.escape(str(trend_expr)), span_class, kairi_str,
                 )
             else:
                 trend_cell_inner = html_mod.escape(str(trend_expr))
+            trend_title = (' title="%s"' % html_mod.escape(" / ".join(trend_title_parts))
+                           if trend_title_parts else "")
 
             rs_raw = db.get("rs_raw", "")
             rs_class = _rs_class(rs_raw)

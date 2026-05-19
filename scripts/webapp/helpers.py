@@ -2441,6 +2441,50 @@ def _append_provisional_rs(rs_line, stock, market_db):
     return [(dt, rs_val)] + list(rs_line)
 
 
+def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
+    """portfolio_list / detail.html 共通のトレンド表示情報を組み立てる (issue #248)。
+
+    返り値:
+        expr: ◎ / ◯ / ▲ / △ / — の単一記号
+        tooltip: 不通過項目の連結文字列 (なければ expr)
+        bg_class: ◎=trend-bg-strong / ◯=trend-bg-good / —=trend-bg-none / その他=""
+        kairi_str: "+12%" 形式の 10WMA乖離率 (なければ "")
+        kairi_zone: ゾーンCSSクラス (kairi-zone-overheat 等、なければ "")
+    """
+    if not stock:
+        return {"expr": "—", "tooltip": "—", "bg_class": "trend-bg-none",
+                "kairi_str": "", "kairi_zone": ""}
+    from make_stock_db import get_trend_template_expr  # 遅延 import (循環回避)
+    trend_expr = get_trend_template_expr(stock)
+    trend_misses = stock.get("trend_template") if isinstance(stock.get("trend_template"), list) else []
+    tooltip_base = ",".join(trend_misses) if trend_misses else trend_expr
+
+    if trend_expr.startswith("◎"):
+        bg_class = "trend-bg-strong"
+    elif trend_expr.startswith("◯"):
+        bg_class = "trend-bg-good"
+    elif (not trend_expr) or trend_expr == "—":
+        bg_class = "trend-bg-none"
+    else:
+        bg_class = ""
+
+    from ks_util import kairi_wma10_zone_class, format_kairi_wma10
+    kairi_raw = stock.get("price_kairi_wma10")
+    kairi_str = format_kairi_wma10(kairi_raw)
+    kairi_zone = kairi_wma10_zone_class(kairi_raw)
+    tooltip = tooltip_base
+    if kairi_str:
+        tooltip = "%s / 10WMA乖離: %s" % (tooltip_base, kairi_str)
+
+    return {
+        "expr": trend_expr,
+        "tooltip": tooltip,
+        "bg_class": bg_class,
+        "kairi_str": kairi_str,
+        "kairi_zone": kairi_zone,
+    }
+
+
 def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     """stocks_shelve の dict から portfolio 一覧表示用の指標を抽出する。
 
@@ -2470,6 +2514,9 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "progress_diff_eiri_raw": None,
             "trend_template": "—",
             "trend_template_tooltip": "—",
+            "price_kairi_wma10_raw": None,
+            "price_kairi_wma10_str": "",
+            "price_kairi_wma10_zone": "",
             "tags": "—",
             "buy_collection": "—",
             "theoretical_diff": "—",
@@ -2493,12 +2540,9 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     sales_growth, profit_growth = _annual_growth(stock)
     quarter_label, progress_diff = _progress_quarter_and_diff(stock)
 
-    from make_stock_db import get_trend_template_expr  # 遅延 import (循環回避)
-
-    trend_expr = get_trend_template_expr(stock)
-    trend_misses = stock.get("trend_template") if isinstance(stock.get("trend_template"), list) else []
-    # tooltip 用: 不通過項目の全件 (テーブル列で見切れた時にホバーで参照)
-    trend_tooltip = ",".join(trend_misses) if trend_misses else trend_expr
+    trend_info = build_trend_info(stock)
+    trend_expr = trend_info["expr"]
+    kairi_raw = stock.get("price_kairi_wma10")
 
     market_cap_raw = market_cap if isinstance(market_cap, (int, float)) else None
 
@@ -2525,7 +2569,10 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "progress_diff": progress_diff,
         "progress_diff_eiri_raw": _progress_diff_eiri_raw(stock),
         "trend_template": trend_expr,
-        "trend_template_tooltip": trend_tooltip,
+        "trend_template_tooltip": trend_info["tooltip"],
+        "price_kairi_wma10_raw": kairi_raw if isinstance(kairi_raw, (int, float)) else None,
+        "price_kairi_wma10_str": trend_info["kairi_str"],
+        "price_kairi_wma10_zone": trend_info["kairi_zone"],
         "tags": _format_tags(stock),
         "buy_collection": _format_buy_collection(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
