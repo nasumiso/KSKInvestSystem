@@ -635,13 +635,13 @@ class TestHtmlMarket:
     def test_nasdaq_row_rendered(self):
         """NASDAQ行が市場テーブルに表示される (issue #148)"""
         result = make_market_db._html_market(self._make_market_db())
-        assert "<td><strong>NASDAQ</strong></td>" in result
+        assert ">NASDAQ</a></strong></td>" in result
 
     def test_sp500_row_rendered(self):
         """S&P 500行が市場テーブルに表示される (issue #148)。
         market_nameはhtml.escapeを通るため、& → &amp; となる。"""
         result = make_market_db._html_market(self._make_market_db())
-        assert "<td><strong>S&amp;P 500</strong></td>" in result
+        assert ">S&amp;P 500</a></strong></td>" in result
 
     def test_us_indices_skipped_when_missing(self):
         """nasdaq/sp500 キー欠落時は該当行が出ず、既存の TOPIX/マザーズは出る"""
@@ -649,7 +649,7 @@ class TestHtmlMarket:
             k: v for k, v in self._make_market_db().items() if k in ("topix", "mothers")
         }
         result = make_market_db._html_market(partial_db)
-        assert "<td><strong>TOPIX</strong></td>" in result
+        assert ">TOPIX</a></strong></td>" in result
         assert "NASDAQ" not in result
         assert "S&amp;P 500" not in result
 

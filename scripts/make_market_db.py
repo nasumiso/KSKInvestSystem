@@ -962,16 +962,18 @@ def _html_market(market_db):
     """
     import market_state
 
+    # (DBキー, 表示名, チャートURL)
+    # 日本指数は Kabutan、米国指数は Yahoo Finance US のチャートにリンク。
     markets = [
-        ("topix", "TOPIX"),
-        ("mothers", "グロース250"),
-        ("nikkei225", "日経225"),
-        ("nasdaq", "NASDAQ"),
-        ("sp500", "S&P 500"),
+        ("topix", "TOPIX", "https://kabutan.jp/stock/chart?code=0010"),
+        ("mothers", "グロース250", "https://kabutan.jp/stock/chart?code=0012"),
+        ("nikkei225", "日経225", "https://kabutan.jp/stock/chart?code=0000"),
+        ("nasdaq", "NASDAQ", "https://finance.yahoo.com/chart/%5EIXIC"),
+        ("sp500", "S&P 500", "https://finance.yahoo.com/chart/%5EGSPC"),
     ]
 
     rows_html = []
-    for db_name, market_name in markets:
+    for db_name, market_name, chart_url in markets:
         if db_name not in market_db:
             continue
         try:
@@ -1064,7 +1066,7 @@ def _html_market(market_db):
 
             rows_html.append(
                 '<tr>\n'
-                '  <td><strong>%s</strong></td>\n'
+                '  <td><strong><a href="%s" target="_blank" rel="noopener">%s</a></strong></td>\n'
                 '  <td%s>%s</td>\n'
                 '  <td%s%s>%s</td>\n'
                 '  <td%s%s>%s</td>\n'
@@ -1073,7 +1075,7 @@ def _html_market(market_db):
                 '  <td>%s</td>\n'
                 '  <td>%.1f, %.1f</td>\n'
                 '</tr>' % (
-                    html_mod.escape(market_name),
+                    html_mod.escape(chart_url), html_mod.escape(market_name),
                     rs_class, rs_raw,
                     trend_class, trend_title, html_mod.escape(str(trend_expr)),
                     dd_class, dd_title, html_mod.escape(dd_display),
