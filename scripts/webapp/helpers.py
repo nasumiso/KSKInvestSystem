@@ -2441,6 +2441,37 @@ def _append_provisional_rs(rs_line, stock, market_db):
     return [(dt, rs_val)] + list(rs_line)
 
 
+def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
+    """portfolio_list / detail.html / 市場セクション共通のトレンド表示情報を組み立てる。
+
+    返り値の各キー:
+        expr: ◎ / ◯ / ▲ / △ / — の単一記号
+        tooltip: 不通過項目をカンマ区切りで連結 (◎ で項目なしのときは "")
+        bg_class: ◎=trend-bg-strong / ◯=trend-bg-good / —=trend-bg-none / その他=""
+        kairi_raw: price_kairi_wma10 の生値 (None/非数値は None)
+        kairi_str: "+12%" 形式の整形済み文字列
+        kairi_zone: kairi-zone-* の CSS クラス名
+    """
+    from ks_util import (
+        trend_symbol_from_misses, trend_bg_class,
+        kairi_wma10_zone_class, format_kairi_wma10,
+    )
+    # trend_template が未生成 / 欠損している銘柄を「◎ (完全通過)」と誤表示しないよう、
+    # 非 list を [] に変換せず、未評価として trend_symbol_from_misses に渡して "—" を返す。
+    misses = (stock or {}).get("trend_template")
+    expr = trend_symbol_from_misses(misses) if stock else "—"
+    tooltip_src = misses if isinstance(misses, list) else []
+    kairi_raw = (stock or {}).get("price_kairi_wma10")
+    return {
+        "expr": expr,
+        "tooltip": ",".join(tooltip_src),
+        "bg_class": trend_bg_class(expr),
+        "kairi_raw": kairi_raw if isinstance(kairi_raw, (int, float)) else None,
+        "kairi_str": format_kairi_wma10(kairi_raw),
+        "kairi_zone": kairi_wma10_zone_class(kairi_raw),
+    }
+
+
 def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     """stocks_shelve の dict から portfolio 一覧表示用の指標を抽出する。
 
@@ -2470,6 +2501,9 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "progress_diff_eiri_raw": None,
             "trend_template": "—",
             "trend_template_tooltip": "—",
+            "price_kairi_wma10_raw": None,
+            "price_kairi_wma10_str": "",
+            "price_kairi_wma10_zone": "",
             "tags": "—",
             "buy_collection": "—",
             "theoretical_diff": "—",
@@ -2493,12 +2527,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     sales_growth, profit_growth = _annual_growth(stock)
     quarter_label, progress_diff = _progress_quarter_and_diff(stock)
 
-    from make_stock_db import get_trend_template_expr  # 遅延 import (循環回避)
-
-    trend_expr = get_trend_template_expr(stock)
-    trend_misses = stock.get("trend_template") if isinstance(stock.get("trend_template"), list) else []
-    # tooltip 用: 不通過項目の全件 (テーブル列で見切れた時にホバーで参照)
-    trend_tooltip = ",".join(trend_misses) if trend_misses else trend_expr
+    trend_info = build_trend_info(stock)
 
     market_cap_raw = market_cap if isinstance(market_cap, (int, float)) else None
 
@@ -2524,8 +2553,11 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "quarter": quarter_label,
         "progress_diff": progress_diff,
         "progress_diff_eiri_raw": _progress_diff_eiri_raw(stock),
-        "trend_template": trend_expr,
-        "trend_template_tooltip": trend_tooltip,
+        "trend_template": trend_info["expr"],
+        "trend_template_tooltip": trend_info["tooltip"],
+        "price_kairi_wma10_raw": trend_info["kairi_raw"],
+        "price_kairi_wma10_str": trend_info["kairi_str"],
+        "price_kairi_wma10_zone": trend_info["kairi_zone"],
         "tags": _format_tags(stock),
         "buy_collection": _format_buy_collection(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
