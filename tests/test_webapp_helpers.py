@@ -2308,3 +2308,23 @@ class TestPriceRsSparkline:
             assert 'r="4.0"' in svg
         else:
             assert 'r="4.0"' not in svg
+
+
+class TestBuildTrendInfoMissing:
+    """trend_template が欠損している銘柄を「完全通過 (◎)」と誤表示しないこと"""
+
+    @pytest.mark.parametrize("stock,expected_expr", [
+        # キー欠損 (DB に trend_template が無い既存銘柄)
+        ({"price": 1000}, "—"),
+        # 値が None (取得失敗で None が入っている)
+        ({"trend_template": None}, "—"),
+        # 旧フォーマットの文字列 "-" (移行残存)
+        ({"trend_template": "-"}, "—"),
+        # 正常: 空 list (= 不通過 0 件) は ◎ のまま
+        ({"trend_template": []}, "◎"),
+        # 正常: 1 件不通過は ◯
+        ({"trend_template": ["RS"]}, "◯"),
+    ])
+    def test_missing_trend_returns_em_dash_not_circle(self, stock, expected_expr):
+        info = helpers.build_trend_info(stock)
+        assert info["expr"] == expected_expr

@@ -2456,13 +2456,15 @@ def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
         trend_symbol_from_misses, trend_bg_class,
         kairi_wma10_zone_class, format_kairi_wma10,
     )
+    # trend_template が未生成 / 欠損している銘柄を「◎ (完全通過)」と誤表示しないよう、
+    # 非 list を [] に変換せず、未評価として trend_symbol_from_misses に渡して "—" を返す。
     misses = (stock or {}).get("trend_template")
-    misses = misses if isinstance(misses, list) else []
     expr = trend_symbol_from_misses(misses) if stock else "—"
+    tooltip_src = misses if isinstance(misses, list) else []
     kairi_raw = (stock or {}).get("price_kairi_wma10")
     return {
         "expr": expr,
-        "tooltip": ",".join(misses),
+        "tooltip": ",".join(tooltip_src),
         "bg_class": trend_bg_class(expr),
         "kairi_raw": kairi_raw if isinstance(kairi_raw, (int, float)) else None,
         "kairi_str": format_kairi_wma10(kairi_raw),
