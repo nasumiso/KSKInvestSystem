@@ -978,7 +978,20 @@ def _html_market(market_db):
             db = market_db[db_name]
             # 指数向けに trend_template の RS 基準を補正してから表示文字列を作る (issue #148 Part 1)
             adjusted_db = _adjust_index_trend_template(db)
-            trend_expr, trend_misses = make_stock_db.get_index_trend_template_expr(adjusted_db)
+            # 個別銘柄側 (◎/◯/▲/△ 単体記号 + tooltip に不通過項目) と表記を揃える
+            trend_misses_list = adjusted_db.get("trend_template", [])
+            miss_count = len(trend_misses_list) if isinstance(trend_misses_list, list) else None
+            if miss_count is None:
+                trend_expr = "-"
+            elif miss_count == 0:
+                trend_expr = "◎"
+            elif miss_count <= 2:
+                trend_expr = "◯"
+            elif miss_count <= 4:
+                trend_expr = "▲"
+            else:
+                trend_expr = "△"
+            trend_misses = ",".join(trend_misses_list) if trend_misses_list else ""
 
             # State Machine と整合した DD/FTD/状態表示
             state_meta = db.get("state_meta", {}) or {}
