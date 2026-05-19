@@ -46,13 +46,12 @@ def is_cache_latest(url, interval_day, cache_dir=None):
     if not os.path.exists(cach_path):
         log_debug("キャッシュがない:", cach_path)
         return False
+    # issue #56: price.is_file_timestamp と境界を揃える (get_price_day ベース)。
+    # 素の datetime 差分だと 17:00 直前/直後で判定が割れる。
     cach_date = get_file_datetime(cach_path)
-    timedelta = datetime.today() - cach_date
+    delta = (get_price_day(datetime.today()) - get_price_day(cach_date)).days
     log_debug("  キャッシュ:", cach_date)
-    if timedelta.days < interval_day:
-        return True
-    else:
-        return False
+    return delta < interval_day
 
 
 KABUTAN_CACHE_DIR_BASE = os.path.join(DATA_DIR, "stock_data", "kabutan", "base")

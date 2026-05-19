@@ -162,7 +162,11 @@ def parse_disclosure_html(html):
     return record_list
 
 
-def update_disclosure(code_s, disc_db=[], upd=UPD_INTERVAL):
+def update_disclosure(code_s, disc_db=None, upd=UPD_INTERVAL):
+    # issue #56: ミュータブルデフォルト引数 (disc_db=[]) を None ガードに修正。
+    # 既存呼び出し元は常に明示的に渡しているため発火していなかったが、将来のリスク回避。
+    if disc_db is None:
+        disc_db = []
     use_cache = True
     if upd == UPD_CACHE:
         use_cache = True
