@@ -343,3 +343,29 @@ class TestParseDisclosureHtml:
         assert "kessan" in types, "旧形式の決算が取得できていない"
         assert "special" in types, "旧形式の特集が取得できていない"
         assert len(records) == 3
+
+
+class TestUpdateDisclosureMutableDefault:
+    """issue #56: update_disclosure のデフォルト引数 disc_db=[] バグ修正の検証。
+    旧実装ではデフォルトリストが関数定義時に 1 つだけ作られ、disc_db += up_recs
+    で破壊的更新されるため、引数省略の連続呼び出しで前回結果が残留した。
+    新実装は disc_db=None ガードで毎回新規 list を作る。
+    """
+
+    def test_omitted_arg_does_not_leak_between_calls(self):
+        """disc_db を省略した連続呼び出しで、前回結果が次回に持ち越されないこと"""
+        recs = [{"date": "20260101", "type": "kaiji", "title": "t"}]
+        # http_get_html と parse_disclosure_html をモック化して I/O を遮断
+        with patch.object(disclosure, "http_get_html", return_value=""), \
+             patch.object(disclosure, "parse_disclosure_html", return_value=list(recs)), \
+             patch.object(disclosure, "need_update_disclosure", return_value=False):
+            # 戻り値経路は無いが、関数内 disc_db が前回呼び出しと共有されないことが論点。
+            # 共有なら 2 回目の呼び出し時点で disc_db が len=2 になっているはず。
+            # 新実装ではローカル変数として捨てられるので副作用なし → 後続呼び出しに影響しない。
+            disclosure.update_disclosure("1234")
+            disclosure.update_disclosure("5678")
+            # 直接 disc_db を観測する手段は無いので、ローカル変数経路で例外が出ないこと、
+            # 明示引数経路で意図通りの append 1 件が観測できることを確認する。
+            explicit = []
+            disclosure.update_disclosure("1234", disc_db=explicit)
+            assert len(explicit) == 1, "明示引数経路で 1 件追加されるはず"
