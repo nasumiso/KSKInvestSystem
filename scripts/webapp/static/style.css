@@ -446,7 +446,7 @@ nav .quick-search {
 /* 10WMA乖離率の数値表示 (issue #248)
    portfolio_list ではトレンド列の背景が ◎/◯/— に占有されるため、
    ゾーンは文字色で表現する。 */
-.kairi-num { font-weight: bold; margin-left: 2px; }
+.kairi-num { margin-left: 2px; }
 .kairi-num.kairi-zone-overheat   { color: #e67e22; }  /* ≥+25% 利確警戒 */
 .kairi-num.kairi-zone-healthy    { color: #27ae60; }  /* +10〜+25% 健全 */
 .kairi-num.kairi-zone-pullback   { color: #2ecc71; }  /* 0〜+10% 押し目 */

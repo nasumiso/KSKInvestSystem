@@ -2455,30 +2455,39 @@ def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
         return {"expr": "—", "tooltip": "—", "bg_class": "trend-bg-none",
                 "kairi_str": "", "kairi_zone": ""}
     from make_stock_db import get_trend_template_expr  # 遅延 import (循環回避)
-    trend_expr = get_trend_template_expr(stock)
+    raw_expr = get_trend_template_expr(stock)
     trend_misses = stock.get("trend_template") if isinstance(stock.get("trend_template"), list) else []
-    tooltip_base = ",".join(trend_misses) if trend_misses else trend_expr
-
-    if trend_expr.startswith("◎"):
+    # get_trend_template_expr は ◯ のとき "◯ma10>ma30,RS" 等を返すため、市場側と仕様を揃えて
+    # セル表示は記号一文字に正規化する。不通過項目は tooltip に逃がす。
+    if raw_expr.startswith("◎"):
+        trend_expr = "◎"
         bg_class = "trend-bg-strong"
-    elif trend_expr.startswith("◯"):
+    elif raw_expr.startswith("◯"):
+        trend_expr = "◯"
         bg_class = "trend-bg-good"
-    elif (not trend_expr) or trend_expr == "—":
+    elif raw_expr.startswith("▲"):
+        trend_expr = "▲"
+        bg_class = ""
+    elif raw_expr.startswith("△"):
+        trend_expr = "△"
+        bg_class = ""
+    elif (not raw_expr) or raw_expr == "—" or raw_expr == "-":
+        trend_expr = raw_expr or "—"
         bg_class = "trend-bg-none"
     else:
+        trend_expr = raw_expr
         bg_class = ""
+    # 不通過項目がないとき (◎) は tooltip を空にする (市場側と仕様統一: ◎ 行は title 属性なし)
+    tooltip_base = ",".join(trend_misses) if trend_misses else ""
 
     from ks_util import kairi_wma10_zone_class, format_kairi_wma10
     kairi_raw = stock.get("price_kairi_wma10")
     kairi_str = format_kairi_wma10(kairi_raw)
     kairi_zone = kairi_wma10_zone_class(kairi_raw)
-    tooltip = tooltip_base
-    if kairi_str:
-        tooltip = "%s / 10WMA乖離: %s" % (tooltip_base, kairi_str)
 
     return {
         "expr": trend_expr,
-        "tooltip": tooltip,
+        "tooltip": tooltip_base,
         "bg_class": bg_class,
         "kairi_str": kairi_str,
         "kairi_zone": kairi_zone,

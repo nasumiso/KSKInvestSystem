@@ -767,7 +767,7 @@ tr:hover { background: #f5f5f5; }
 .trend-bg-none   { background: #6fa8dc; }  /* — / 空 */
 /* 10WMA乖離率の数値表示 (issue #248)
    ゾーンを文字色で表現 (portfolio 側でトレンド列背景がすでに使われているため統一)。 */
-.kairi-num { font-weight: bold; margin-left: 2px; }
+.kairi-num { margin-left: 2px; }
 .kairi-num.kairi-zone-overheat   { color: #e67e22; }  /* ≥+25% 利確警戒 */
 .kairi-num.kairi-zone-healthy    { color: #27ae60; }  /* +10〜+25% 健全 */
 .kairi-num.kairi-zone-pullback   { color: #2ecc71; }  /* 0〜+10% 押し目 */
@@ -1065,7 +1065,6 @@ def _html_market(market_db):
             # ゾーンは span 側に文字色クラスとして付与 (portfolio_list と仕様統一)
             kairi_str = format_kairi_wma10(kairi)
             if kairi_str:
-                trend_title_parts.append("10WMA乖離: %s" % kairi_str)
                 span_class = ("kairi-num %s" % zone_class).strip()
                 trend_cell_inner = '%s <span class="%s">%s</span>' % (
                     html_mod.escape(str(trend_expr)), span_class, kairi_str,
