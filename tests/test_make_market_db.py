@@ -712,6 +712,7 @@ class TestSprGaugeSvg:
         assert svg.startswith("<svg")
         # 各バー: 背景 rect 2枚 (左緑 + 右赤) × 2本 = 4枚
         assert svg.count('<rect') == 4
+        # ラベル未指定なので緑バーは C 相当 (#d4f4d4) ×2、赤バーは固定色 (#f4d4d4) ×2
         assert svg.count('#d4f4d4') == 2
         assert svg.count('#f4d4d4') == 2
         # ティック (stroke-width=2) と ヒゲ (stroke-width=1) それぞれ 2 本ずつ
@@ -753,6 +754,32 @@ class TestSprGaugeSvg:
         # ティックの x 座標が 100 と 0 (それぞれ x1="100" / x1="0") に固定
         assert 'x1="100" y1="0"' in svg or 'x1="100"' in svg
         assert 'x1="0"' in svg
+
+    @pytest.mark.parametrize("sprw,expected_green_20", [
+        ("A", "#5cc85c"),     # 最濃
+        ("C", "#d4f4d4"),     # 現状色 (中間)
+        ("E", "#f8fef8"),     # 最薄
+        (None, "#d4f4d4"),    # ラベル欠損 → C 相当にフォールバック
+    ])
+    def test_buy_collection_label_drives_green_bar_density(self, sprw, expected_green_20):
+        """週評価 → 20日バー / 日評価 → 5日バー で緑バーの濃淡をコントロールする。
+        赤バーは固定色 (#f4d4d4)、ラベル欠損は C 相当にフォールバック。"""
+        svg = make_market_db.build_spr_gauge_svg(50, 2.0, 60, 3.0, sprw, None)
+        # 緑バー (20日) は期待濃度
+        assert expected_green_20 in svg
+        # 赤バーは sprw / sprbg に関わらず固定色のみ (両バーぶん 2 回)
+        assert svg.count("#f4d4d4") == 2
+
+    def test_bar_title_includes_buy_collection_label(self):
+        """バー単体 <title> に '買い集めX' が併記される (ホバー時に SVG <title> が勝つため)"""
+        svg = make_market_db.build_spr_gauge_svg(50, 2.0, 60, 3.0, "B", "A")
+        assert "SPR 50 ±2.0 (20日) 買い集めB" in svg
+        assert "SPR 60 ±3.0 (5日) 買い集めA" in svg
+
+    def test_bar_title_omits_buy_collection_when_label_missing(self):
+        """ラベル None のバーは <title> に買い集めを出さない"""
+        svg = make_market_db.build_spr_gauge_svg(50, 2.0, 60, 3.0, None, None)
+        assert "買い集め" not in svg
 
 
 class TestSprGaugeTooltip:
