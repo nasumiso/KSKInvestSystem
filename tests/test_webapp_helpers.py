@@ -2308,6 +2308,55 @@ class TestBuildTrendInfoMissing:
         assert info["expr"] == expected_expr
 
 
+class TestBuildTrendInfoGauge:
+    """build_trend_info() の kairi_gauge_svg と tooltip 結合を検証する (issue portfolio-trend-gauge)"""
+
+    @pytest.mark.parametrize(
+        "kairi, misses, expect_marker, expect_overheat_marker, expect_unpass_tooltip",
+        [
+            # 健全帯 +12: マーカー有り / 橙ではない / 不通過0件なので「不通過:」行なし (◎扱い)
+            (12, [], True, False, False),
+            # 小割れ -3: マーカー有り / 不通過1件あるので「不通過:」行あり (◯扱い)
+            (-3, ["RS"], True, False, True),
+            # +25 ちょうど: overheat 境界、橙マーカー
+            (25, [], True, True, False),
+            # 範囲外 +30: クランプ + 橙マーカー
+            (30, [], True, True, False),
+            # データ無し: kairi=None、マーカーなし、記号のみ
+            (None, [], False, False, False),
+        ],
+    )
+    def test_gauge_svg_and_tooltip(
+        self, kairi, misses, expect_marker, expect_overheat_marker, expect_unpass_tooltip,
+    ):
+        stock = {"price_kairi_wma10": kairi, "trend_template": misses}
+        info = helpers.build_trend_info(stock)
+        svg = info["kairi_gauge_svg"]
+        # 必ず SVG が返る (kairi=None でも記号のみ表示)
+        assert svg.startswith("<svg")
+        # 記号は <text> として含まれる
+        assert "<text" in svg
+        # マーカー (現在値) の有無
+        # SVG line 内訳: マーカー有りなら 2 本 (白縁 + 本体)、無しなら 0 本
+        line_count = svg.count("<line")
+        if expect_marker:
+            assert line_count == 2
+        else:
+            assert line_count == 0
+        # overheat マーカー色 (kairi >= +25 のみ橙)
+        if expect_overheat_marker:
+            assert "#e67e22" in svg
+        else:
+            assert "#e67e22" not in svg
+        # tooltip は常に「10WMA乖離: ...」行を含む
+        assert "10WMA乖離:" in info["tooltip"]
+        # 不通過項目は ◯ のときのみ含まれる
+        if expect_unpass_tooltip:
+            assert "不通過:" in info["tooltip"]
+        else:
+            assert "不通過:" not in info["tooltip"]
+
+
 class TestBuildSprGaugeForStock:
     """個別銘柄 (price 形式の sell_pressure_ratio / stddev_volatility) から
     需給バランスゲージを組み立てるテスト (issue #247 portfolio_list 展開)"""

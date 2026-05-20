@@ -454,5 +454,5 @@ nav .quick-search {
 .kairi-num.kairi-zone-break      { color: #c0392b; }  /* ≤-5% 崩れ */
 
 /* 需給バランスセル (issue #247): SPR/rv の横バー 2 本縦積み */
-.spr-gauge-cell { padding: 4px; vertical-align: middle; white-space: nowrap; }
-.spr-gauge-cell svg { display: block; }
+.spr-gauge-cell { padding: 4px; vertical-align: middle; white-space: nowrap; width: 80px; }
+.spr-gauge-cell svg { display: block; width: 80px; height: auto; }

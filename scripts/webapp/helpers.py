@@ -2474,15 +2474,11 @@ def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
 
     返り値の各キー:
         expr: ◎ / ◯ / ▲ / △ / — の単一記号
-        tooltip: 不通過項目をカンマ区切りで連結 (◯ のときのみ、それ以外は "")
-        bg_class: ◎=trend-bg-strong / ◯=trend-bg-good / —=trend-bg-none / その他=""
-        kairi_raw: price_kairi_wma10 の生値 (None/非数値は None)
-        kairi_str: "+12%" 形式の整形済み文字列
-        kairi_zone: kairi-zone-* の CSS クラス名
+        tooltip: 不通過項目 (◯のときのみ) + 10WMA乖離率を改行で結合した文字列
+        kairi_gauge_svg: -25%〜+25% のバーゲージ + 中央記号オーバーレイ SVG
     """
     from ks_util import (
-        trend_symbol_from_misses, trend_bg_class,
-        kairi_wma10_zone_class, format_kairi_wma10,
+        trend_symbol_from_misses, format_kairi_wma10, kairi_gauge_svg,
     )
     # trend_template が未生成 / 欠損している銘柄を「◎ (完全通過)」と誤表示しないよう、
     # 非 list を [] に変換せず、未評価として trend_symbol_from_misses に渡して "—" を返す。
@@ -2491,14 +2487,17 @@ def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
     # 不通過項目の tooltip は ◯ (1-2件不通過) のときだけ意味があるので、それ以外は空にする。
     # ◎=全通過で項目なし、▲/△=不通過項目が多くノイズ、—=未評価。
     tooltip_src = misses if (expr == "◯" and isinstance(misses, list)) else []
-    kairi_raw = (stock or {}).get("price_kairi_wma10")
+    raw = (stock or {}).get("price_kairi_wma10")
+    kairi_raw = raw if isinstance(raw, (int, float)) else None
+    kairi_str = format_kairi_wma10(kairi_raw) or "—"
+    tooltip_lines = []
+    if tooltip_src:
+        tooltip_lines.append("不通過: " + ",".join(tooltip_src))
+    tooltip_lines.append("10WMA乖離: " + kairi_str)
     return {
         "expr": expr,
-        "tooltip": ",".join(tooltip_src),
-        "bg_class": trend_bg_class(expr),
-        "kairi_raw": kairi_raw if isinstance(kairi_raw, (int, float)) else None,
-        "kairi_str": format_kairi_wma10(kairi_raw),
-        "kairi_zone": kairi_wma10_zone_class(kairi_raw),
+        "tooltip": "\n".join(tooltip_lines),
+        "kairi_gauge_svg": kairi_gauge_svg(kairi_raw, expr),
     }
 
 
@@ -2531,9 +2530,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "progress_diff_eiri_raw": None,
             "trend_template": "—",
             "trend_template_tooltip": "—",
-            "price_kairi_wma10_raw": None,
-            "price_kairi_wma10_str": "",
-            "price_kairi_wma10_zone": "",
+            "kairi_gauge_svg": "",
             "tags": "—",
             "spr_gauge": {"svg": "—", "tooltip": ""},
             "theoretical_diff": "—",
@@ -2585,9 +2582,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "progress_diff_eiri_raw": _progress_diff_eiri_raw(stock),
         "trend_template": trend_info["expr"],
         "trend_template_tooltip": trend_info["tooltip"],
-        "price_kairi_wma10_raw": trend_info["kairi_raw"],
-        "price_kairi_wma10_str": trend_info["kairi_str"],
-        "price_kairi_wma10_zone": trend_info["kairi_zone"],
+        "kairi_gauge_svg": trend_info["kairi_gauge_svg"],
         "tags": _format_tags(stock),
         "spr_gauge": _build_spr_gauge_for_stock(stock),
         "theoretical_diff": _format_theoretical_diff(stock),

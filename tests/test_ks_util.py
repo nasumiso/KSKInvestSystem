@@ -370,3 +370,45 @@ class TestFileWriteAtomic:
             "並行 read で空 or 部分内容が観測された: lengths sample=%s"
             % observed_lengths[:10]
         )
+
+
+class TestKairiGaugeSvg:
+    """kairi_gauge_svg(): 10WMA乖離率の SVG バーゲージ生成 (issue portfolio-trend-gauge)"""
+
+    @pytest.mark.parametrize(
+        "kairi, symbol, expect_svg, expect_marker, expect_overheat",
+        [
+            # 健全帯 +12: SVG + マーカーあり + 橙ではない
+            (12, "◎", True, True, False),
+            # 小割れ -3: SVG + マーカーあり + 橙ではない
+            (-3, "◯", True, True, False),
+            # +25 境界: マーカーは右端、橙
+            (25, "◎", True, True, True),
+            # 範囲外 +30: クランプ + 橙
+            (30, "◎", True, True, True),
+            # データ無し + 記号あり: SVG (記号のみ)、マーカーなし
+            (None, "—", True, False, False),
+            # データ無し + 記号も空: 空文字
+            (None, "", False, False, False),
+        ],
+    )
+    def test_gauge_shape(self, kairi, symbol, expect_svg, expect_marker, expect_overheat):
+        svg = ks_util.kairi_gauge_svg(kairi, symbol)
+        if not expect_svg:
+            assert svg == ""
+            return
+        assert svg.startswith("<svg")
+        # マーカー (現在値) の有無: マーカー有りなら 2 本 (白縁 + 本体)、無しなら 0 本
+        line_count = svg.count("<line")
+        if expect_marker:
+            assert line_count == 2
+        else:
+            assert line_count == 0
+        # overheat マーカー色は kairi >= +25 のみ
+        if expect_overheat:
+            assert "#e67e22" in svg
+        else:
+            assert "#e67e22" not in svg
+        # 記号が SVG に埋め込まれる
+        if symbol:
+            assert symbol in svg
