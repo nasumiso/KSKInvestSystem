@@ -758,8 +758,11 @@ tr:hover { background: #f5f5f5; }
 .theme-heat2  { background: #66bb6a; border-color: #4caf50; }
 
 /* 市場テーブル */
+/* table のデフォルト width:100% を解除し、列幅の合計だけのコンパクトな表にする */
+.market-table { width: auto; }
 .market-table th { background: #2c3e50; color: #fff; }
-/* 列幅: 市場名と市場状態は可変、それ以外は固定 (需給バランスを広げ、FTDを狭める) */
+/* 列幅: 市場名と市場状態は内容に合わせ最小幅、それ以外は固定 (需給バランスを広げ、FTDを狭める) */
+.market-table th, .market-table td { white-space: nowrap; }
 .market-table th.col-rs,    .market-table td.col-rs    { width: 60px; text-align: center; }
 .market-table th.col-trend, .market-table td.col-trend { width: 50px; text-align: center; padding: 0; }
 .market-table th.col-dd,    .market-table td.col-dd    { width: 80px; text-align: center; }
@@ -1204,7 +1207,11 @@ def _html_market(market_db):
                 tooltip_lines.append("不通過: " + trend_misses)
             tooltip_lines.append("10WMA乖離: " + kairi_str)
             trend_title = ' title="%s"' % html_mod.escape("\n".join(tooltip_lines))
-            trend_cell_inner = kairi_gauge_svg(kairi_for_gauge, trend_expr)
+            # 市場指数は個別銘柄より日次ボラが小さいので、ゲージのレンジと濃淡閾値を縮める
+            trend_cell_inner = kairi_gauge_svg(
+                kairi_for_gauge, trend_expr,
+                range_pct=15.0, faint_threshold=5.0, strong_threshold=10.0,
+            )
 
             rs_raw = db.get("rs_raw", "")
             rs_style = _rs_style(rs_raw)
@@ -1237,7 +1244,8 @@ def _html_market(market_db):
             )
             gauge_title_attr = ' title="%s"' % html_mod.escape(gauge_tooltip) if gauge_tooltip else ""
 
-            state_attr = ' class="%s"' % state_css if state_css else ""
+            state_class = "col-state" + (" " + state_css if state_css else "")
+            state_attr = ' class="%s"' % state_class
             rows_html.append(
                 '<tr>\n'
                 '  <td><strong><a href="%s" target="_blank" rel="noopener">%s</a></strong></td>\n'
@@ -1269,7 +1277,7 @@ def _html_market(market_db):
         '<thead><tr>\n'
         '  <th>市場名</th><th class="col-rs">RS</th><th class="col-trend">トレンド</th>\n'
         '  <th class="col-dd">DD</th><th class="col-ftd">FTD/ラリー</th>\n'
-        '  <th>市場状態</th><th class="col-spr">需給バランス</th>\n'
+        '  <th class="col-state">市場状態</th><th class="col-spr">需給バランス</th>\n'
         '</tr></thead>\n'
         '<tbody>'
     )

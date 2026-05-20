@@ -414,3 +414,25 @@ class TestKairiGaugeSvg:
         # 記号が SVG に埋め込まれる
         if symbol:
             assert symbol in svg
+
+    @pytest.mark.parametrize(
+        "kairi, expect_color",
+        [
+            # 縮小レンジ (range=15, faint=5, strong=10) での色境界
+            (4, "#000"),         # |k| < 5: 中立
+            (-4, "#000"),
+            (7, "#9be29b"),      # 5 <= k < 10: プラス淡
+            (-7, "#f4c7c3"),     # -10 < k <= -5: マイナス淡
+            (12, "#2e7d32"),     # k >= 10: プラス濃
+            (-12, "#c62828"),    # k <= -10: マイナス濃
+            (20, "#2e7d32"),     # range=15 を超える値もクランプして濃色
+        ],
+    )
+    def test_market_scale(self, kairi, expect_color):
+        """市場用 (range=15, faint=5, strong=10) の色境界が正しく切り替わる。"""
+        svg = ks_util.kairi_gauge_svg(
+            kairi, "◎",
+            range_pct=15.0, faint_threshold=5.0, strong_threshold=10.0,
+        )
+        assert svg.startswith("<svg")
+        assert expect_color in svg
