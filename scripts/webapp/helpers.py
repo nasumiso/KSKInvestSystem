@@ -2131,6 +2131,9 @@ def build_price_rs_chart_mini(
 
     # 線色は 20日株価騰落率ベース (|r20| < 10% 灰 / < 20% 淡 / ≥ 20% 濃)
     line_color = _mini_line_color_by_return(price_asc)
+    # 緑系 (株価プラス) は淡色で細く見えるため少し太くする
+    is_green = line_color in (_MINI_LINE_POS_FAINT, _MINI_LINE_POS_STRONG)
+    line_w = 2.0 if is_green else 1.5
 
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">']
 
@@ -2138,7 +2141,7 @@ def build_price_rs_chart_mini(
     ys = normalize_minmax(rs_pts_raw, inner_h)
     ys = [y + pad_y for y in ys]
     points = list(zip(xs, ys))
-    parts.append(_svg_polyline(points, line_color, 1.5))
+    parts.append(_svg_polyline(points, line_color, line_w))
     # 末尾点: Blue Dot or 通常マーカー (通常マーカーは線色連動)
     if has_blue_dot:
         parts.append(_svg_circle(points[-1][0], points[-1][1], 2.5, _BLUE_DOT))

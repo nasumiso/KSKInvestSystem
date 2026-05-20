@@ -794,8 +794,12 @@ def kairi_gauge_svg(kairi, symbol):
             # 端でクリップされてマーカーが半分の太さに見えないよう、両端は 1px 内側に寄せる
             mx = max(1.0, min(width - 1.0, mx))
             marker_color = _kairi_gauge_marker_color(k)
-            parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="3"/>' % (mx, mx, height))
-            parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="%s" stroke-width="2"/>' % (mx, mx, height, marker_color))
+            # 緑系 (株価プラス) は淡色で細く見えるため少し太くする
+            is_green = marker_color in (_KAIRI_GAUGE_POS_FAINT, _KAIRI_GAUGE_POS_STRONG)
+            marker_w = 3 if is_green else 2
+            halo_w = marker_w + 1
+            parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="%d"/>' % (mx, mx, height, halo_w))
+            parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="%s" stroke-width="%d"/>' % (mx, mx, height, marker_color, marker_w))
 
     if symbol:
         parts.append('<text x="50%%" y="50%%" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="bold" fill="#000" stroke="white" stroke-width="3" paint-order="stroke">%s</text>' % symbol)
