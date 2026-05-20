@@ -1042,7 +1042,7 @@ def _build_spr_gauge_bar_svg(spr, rv, y, period_label):
     return '<g>%s</g>' % "".join(parts)
 
 
-def _build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5):
+def build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5):
     """SPR/rv の横バーゲージ (2 本縦積み、上=20日 / 下=5日) を SVG 文字列で返す。
 
     20日バー / 5日バーは独立に欠損判定する:
@@ -1066,11 +1066,13 @@ def _build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5):
     ) % (_SPR_GAUGE_WIDTH, h, _SPR_GAUGE_WIDTH, h, "".join(bars))
 
 
-def _build_spr_gauge_tooltip(spr_20, rv_20, spr_5, rv_5, sprw_label, sprbg_label):
+def build_spr_gauge_tooltip(spr_20, rv_20, spr_5, rv_5, sprw_label=None, sprbg_label=None):
     """需給バランスセルの title 属性文字列を組み立てる。
 
     1 行目: SPR ± rv (20日/5日) — 片側欠損なら欠損側を省略
     2 行目: 買い集め 週X 日Y — sprw_label / sprbg_label が None なら該当を省略、両方 None なら 2 行目自体を省略
+    sprw_label / sprbg_label は呼び出し側で評価有無を決められる任意フィールド
+    (個別銘柄の portfolio 一覧では「買い集め」列が別途あるため省略する)。
     """
     def _fmt(spr, rv, label):
         spr_f = _to_finite_number(spr)
@@ -1201,8 +1203,8 @@ def _html_market(market_db):
             sprbg_label = None
             if spr_20 is not None and spr_bg is not None:
                 sprbg_label = step_func(spr_bg - spr_20, spr_levels, spr_labels)
-            gauge_svg = _build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5)
-            gauge_tooltip = _build_spr_gauge_tooltip(
+            gauge_svg = build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5)
+            gauge_tooltip = build_spr_gauge_tooltip(
                 spr_20, rv_20, spr_5, rv_5, sprw_label, sprbg_label,
             )
             gauge_title_attr = ' title="%s"' % html_mod.escape(gauge_tooltip) if gauge_tooltip else ""

@@ -1663,6 +1663,29 @@ def _annual_growth(stock: Dict[str, Any]) -> tuple:
     return result[1], result[2]
 
 
+def _build_spr_gauge_for_stock(stock: Dict[str, Any]) -> Dict[str, str]:
+    """個別銘柄の sell_pressure_ratio / stddev_volatility から需給バランスゲージを組み立てる。
+
+    個別銘柄の price 指標は:
+      sell_pressure_ratio = [spr_20, spr_5, buygather]  (price.py 参照)
+      stddev_volatility   = [rv_20, rv_5]
+    市場指数 (make_market_db) の spr_20 / spr_5 / rv_20 / rv_5 と形式が違うため、
+    ここで取り出して build_spr_gauge_svg / build_spr_gauge_tooltip に渡す。
+    買い集め評価は portfolio 一覧では別列に出すので tooltip 側からは省略。
+    """
+    from make_market_db import build_spr_gauge_svg, build_spr_gauge_tooltip  # 遅延 import (循環回避)
+    sprs = stock.get("sell_pressure_ratio") or []
+    vols = stock.get("stddev_volatility") or []
+    spr_20 = sprs[0] if len(sprs) > 0 else None
+    spr_5 = sprs[1] if len(sprs) > 1 else None
+    rv_20 = vols[0] if len(vols) > 0 else None
+    rv_5 = vols[1] if len(vols) > 1 else None
+    return {
+        "svg": build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5),
+        "tooltip": build_spr_gauge_tooltip(spr_20, rv_20, spr_5, rv_5),
+    }
+
+
 def _format_buy_collection(stock: Dict[str, Any]) -> str:
     """買い集めの週/日アルファベット評価を "週,日" の形式で返す (例: "D,E")。
 
@@ -2508,6 +2531,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "price_kairi_wma10_zone": "",
             "tags": "—",
             "buy_collection": "—",
+            "spr_gauge": {"svg": "—", "tooltip": ""},
             "theoretical_diff": "—",
             "theoretical_diff_raw": None,
             "gyoseki_quarity_expr": "",
@@ -2562,6 +2586,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "price_kairi_wma10_zone": trend_info["kairi_zone"],
         "tags": _format_tags(stock),
         "buy_collection": _format_buy_collection(stock),
+        "spr_gauge": _build_spr_gauge_for_stock(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
         "theoretical_diff_raw": _theoretical_diff_raw(stock),
         "gyoseki_quarity_expr": _gyoseki_quarity_expr_safe(stock),
