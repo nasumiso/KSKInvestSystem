@@ -957,9 +957,27 @@ class TestDashboardFilter:
         """全件表示時 (?status=)、ステータス badge (保有/準保有/監視) が HTML に出る"""
         resp = client.get("/portfolio?status=")
         html = resp.data.decode()
-        assert 'class="status-badge status-hold"' in html
-        assert 'class="status-badge status-semi"' in html
-        assert 'class="status-badge status-watch"' in html
+        assert "status-badge status-hold status-badge-button" in html
+        assert "status-badge status-semi status-badge-button" in html
+        assert "status-badge status-watch status-badge-button" in html
+
+    def test_status_badge_opens_transition_modal(self, client):
+        """通常モードでは状態バッジクリックで detail と同仕様の遷移モーダルを使う"""
+        resp = client.get("/portfolio?status=")
+        html = resp.data.decode()
+        assert "openPortfolioModalFromBadge(this)" in html
+        assert 'id="portfolio-modal"' in html
+        assert 'id="portfolio-modal-new-status"' in html
+        assert 'name="action_date"' in html
+        assert 'name="reason"' in html
+        assert "ユニバースから除外" in html
+
+    def test_expanded_row_no_longer_has_transition_form(self, client):
+        """折りたたみ展開内の操作セクションからステータス変更フォームをなくす"""
+        resp = client.get("/portfolio?status=")
+        html = resp.data.decode()
+        assert "portfolio-transition-form" not in html
+        assert ">変更<" not in html
 
     def test_gyoutai_theme_filter_applies(
         self, client, portfolio_db_path
