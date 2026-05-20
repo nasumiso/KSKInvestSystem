@@ -2328,3 +2328,27 @@ class TestBuildTrendInfoMissing:
     def test_missing_trend_returns_em_dash_not_circle(self, stock, expected_expr):
         info = helpers.build_trend_info(stock)
         assert info["expr"] == expected_expr
+
+
+class TestBuildSprGaugeForStock:
+    """個別銘柄 (price 形式の sell_pressure_ratio / stddev_volatility) から
+    需給バランスゲージを組み立てるテスト (issue #247 portfolio_list 展開)"""
+
+    def test_normal_renders_svg_and_tooltip(self):
+        """正常: sprs/vols が揃っている → svg は <svg> 開始、tooltip に SPR ±rv を含む"""
+        stock = {
+            "sell_pressure_ratio": [48, 45, 0],
+            "stddev_volatility": [2.4, 2.6],
+        }
+        gauge = helpers._build_spr_gauge_for_stock(stock)
+        assert gauge["svg"].startswith("<svg")
+        assert "SPR 48 ±2.4 (20日)" in gauge["tooltip"]
+        assert "SPR 45 ±2.6 (5日)" in gauge["tooltip"]
+        # 個別銘柄では「買い集め」列が別途あるため tooltip 2 行目は出さない
+        assert "買い集め" not in gauge["tooltip"]
+
+    def test_missing_data_returns_em_dash(self):
+        """sprs/vols 欠損: svg は '—'、tooltip は空"""
+        gauge = helpers._build_spr_gauge_for_stock({})
+        assert gauge["svg"] == "—"
+        assert gauge["tooltip"] == ""

@@ -703,6 +703,75 @@ class TestHtmlMarket:
         assert 'RS' in result
 
 
+class TestSprGaugeSvg:
+    """build_spr_gauge_svg の欠損フォールバック・クリップ挙動テスト (issue #247)"""
+
+    def test_both_bars_rendered_when_all_present(self):
+        """4 引数すべて有効: rect 4枚 + ティック line 2本 + ヒゲ line 2本"""
+        svg = make_market_db.build_spr_gauge_svg(50, 2.0, 60, 3.0)
+        assert svg.startswith("<svg")
+        # 各バー: 背景 rect 2枚 (左緑 + 右赤) × 2本 = 4枚
+        assert svg.count('<rect') == 4
+        assert svg.count('#d4f4d4') == 2
+        assert svg.count('#f4d4d4') == 2
+        # ティック (stroke-width=2) と ヒゲ (stroke-width=1) それぞれ 2 本ずつ
+        assert svg.count('stroke-width="2"') == 2
+        assert svg.count('stroke-width="1"') == 2
+
+    @pytest.mark.parametrize("spr_20,spr_5,expected_label", [
+        (50, None, "20日"),   # 5日欠損 → 20日のみ
+        (None, 60, "5日"),    # 20日欠損 → 5日のみ
+    ])
+    def test_one_side_missing_renders_only_other(self, spr_20, spr_5, expected_label):
+        """spr 片側欠損: 欠損していない方だけが描画される (両側非表示の回帰防止)"""
+        svg = make_market_db.build_spr_gauge_svg(spr_20, 2.0, spr_5, 3.0)
+        assert svg.startswith("<svg")
+        # 描画されたバー 1 本ぶん: 背景 rect 2枚 + ティック 1本 + ヒゲ 1本
+        assert svg.count('<rect') == 2
+        assert svg.count('stroke-width="2"') == 1
+        assert svg.count('stroke-width="1"') == 1
+        # 残ったバーの <title> に期待した期間ラベルが入っている
+        assert "(%s)" % expected_label in svg
+
+    def test_em_dash_when_both_spr_missing(self):
+        """spr_20 / spr_5 両方欠損 → "—" を返す (rv は無視)"""
+        svg = make_market_db.build_spr_gauge_svg(None, 2.0, None, 3.0)
+        assert svg == "—"
+
+    def test_no_whisker_when_rv_missing(self):
+        """rv 欠損時: 該当バーはティック + 背景のみ (ヒゲ無し)"""
+        svg = make_market_db.build_spr_gauge_svg(50, None, 60, 3.0)
+        assert svg.startswith("<svg")
+        # ヒゲは 5 日ぶんだけ (rv_5=3.0), 20日バーはヒゲ無し → stroke-width=1 が 1 本
+        assert svg.count('stroke-width="1"') == 1
+        # ティックは両バーぶん
+        assert svg.count('stroke-width="2"') == 2
+
+    def test_spr_clipped_to_0_100(self):
+        """SPR が範囲外 (120) でも 100 にクリップしてティック描画される"""
+        svg = make_market_db.build_spr_gauge_svg(120, 2.0, -10, 1.0)
+        # ティックの x 座標が 100 と 0 (それぞれ x1="100" / x1="0") に固定
+        assert 'x1="100" y1="0"' in svg or 'x1="100"' in svg
+        assert 'x1="0"' in svg
+
+
+class TestSprGaugeTooltip:
+    """build_spr_gauge_tooltip の表示組み立てテスト (issue #247)"""
+
+    def test_full_tooltip(self):
+        text = make_market_db.build_spr_gauge_tooltip(49, 2.3, 46, 2.5, "D", "C")
+        assert "SPR 49 ±2.3 (20日)" in text
+        assert "SPR 46 ±2.5 (5日)" in text
+        assert "買い集め 週D 日C" in text
+
+    def test_omits_missing_spr_and_buygather(self):
+        """spr 片側欠損 + 買い集め評価両欠損: 欠損部分が出ない"""
+        text = make_market_db.build_spr_gauge_tooltip(49, 2.3, None, None, None, None)
+        assert "(20日)" in text
+        assert "(5日)" not in text
+        assert "買い集め" not in text
+
+
 class TestAdjustIndexTrendTemplate:
     """指数向け trend_template 補正のテスト (issue #148 Part 1)"""
 
