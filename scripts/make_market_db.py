@@ -970,6 +970,18 @@ _SPR_GAUGE_WIDTH = 100      # バー本体の幅 (= SPR 0〜100 のスケール)
 _SPR_GAUGE_BAR_H = 14       # 1 本のバーの高さ
 _SPR_GAUGE_BAR_GAP = 3      # 20日バーと5日バーの縦間隔
 
+# 買い集め評価 A〜E による緑バー (買い側) の背景色。C が現状色 (#d4f4d4)。
+# 赤バー (売り側) は濃淡を付けず固定色 (#f4d4d4)。
+_SPR_GAUGE_GREEN_COLORS = {
+    "A": "#5cc85c",
+    "B": "#9be29b",
+    "C": "#d4f4d4",
+    "D": "#ecfbec",
+    "E": "#f8fef8",
+}
+_SPR_GAUGE_GREEN_DEFAULT = _SPR_GAUGE_GREEN_COLORS["C"]
+_SPR_GAUGE_RED_FIXED = "#f4d4d4"
+
 
 def _to_finite_number(v):
     """None / 数値化不能 / NaN を None に正規化する。それ以外は float を返す。"""
@@ -998,13 +1010,15 @@ def _format_spr_rv_text(spr_f, rv_f, period_label=None):
     return base
 
 
-def _build_spr_gauge_bar_svg(spr, rv, y, period_label):
+def _build_spr_gauge_bar_svg(spr, rv, y, period_label, bg_label=None):
     """SPR/rv 1 本分のバー要素 (rect + ティック [+ ヒゲ]) を SVG 文字列で返す。
 
     spr が欠損ならバー全体をスキップ ("" を返す)。rv 欠損ならヒゲ無しで描画。
     spr は 0〜100 にクリップ、ヒゲ端も 0〜100 にクリップする。
     period_label は "20日" / "5日" などの期間表示で、SVG <title> に埋め込み
-    バー単体のホバーで「SPR ±rv (20日)」が出るようにする。
+    バー単体のホバーで「SPR ±rv (20日) 買い集めX」が出るようにする。
+    bg_label は買い集め評価 (A〜E)。指定があれば緑バーの濃淡を 5 段階で変える
+    (A=濃 / C=現状 / E=薄)。赤バーは固定色。None や未知ラベルは C 相当にフォールバック。
     """
     spr_f = _to_finite_number(spr)
     if spr_f is None:
@@ -1012,14 +1026,19 @@ def _build_spr_gauge_bar_svg(spr, rv, y, period_label):
     spr_x = max(0.0, min(100.0, spr_f))
     rv_f = _to_finite_number(rv)
     bar_title = _format_spr_rv_text(spr_f, rv_f, period_label)
+    if bg_label:
+        bar_title += " 買い集め%s" % bg_label
     parts = ['<title>%s</title>' % html_mod.escape(bar_title)]
-    # 背景塗り分け: 左=薄緑 (買い余地)、右=薄赤 (売り圧)
+    # 背景塗り分け: 左=緑 (買い余地、濃淡=買い集め評価) / 右=赤 (売り圧、固定色)
+    green = _SPR_GAUGE_GREEN_COLORS.get(bg_label, _SPR_GAUGE_GREEN_DEFAULT)
     parts.append(
-        '<rect x="0" y="%d" width="%g" height="%d" fill="#d4f4d4"/>' % (y, spr_x, _SPR_GAUGE_BAR_H)
+        '<rect x="0" y="%d" width="%g" height="%d" fill="%s"/>' % (
+            y, spr_x, _SPR_GAUGE_BAR_H, green,
+        )
     )
     parts.append(
-        '<rect x="%g" y="%d" width="%g" height="%d" fill="#f4d4d4"/>' % (
-            spr_x, y, _SPR_GAUGE_WIDTH - spr_x, _SPR_GAUGE_BAR_H,
+        '<rect x="%g" y="%d" width="%g" height="%d" fill="%s"/>' % (
+            spr_x, y, _SPR_GAUGE_WIDTH - spr_x, _SPR_GAUGE_BAR_H, _SPR_GAUGE_RED_FIXED,
         )
     )
     # ヒゲ (± rv) を先に描いてからティックを最後に上載せ → 交差箇所でティックが消えない
@@ -1042,7 +1061,7 @@ def _build_spr_gauge_bar_svg(spr, rv, y, period_label):
     return '<g>%s</g>' % "".join(parts)
 
 
-def build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5):
+def build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5, sprw_label=None, sprbg_label=None):
     """SPR/rv の横バーゲージ (2 本縦積み、上=20日 / 下=5日) を SVG 文字列で返す。
 
     20日バー / 5日バーは独立に欠損判定する:
@@ -1050,6 +1069,8 @@ def build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5):
       - rv_X が欠損 → 該当バーはティック + 背景のみ (ヒゲ無し)
       - spr_20 / spr_5 両方欠損 → "—" を返す
     片側だけ欠損で両方非表示になる回帰を避けるため、内部で 2 本独立に判定する。
+    sprw_label (週評価 A〜E) → 20日バーの色濃度、sprbg_label (日評価) → 5日バーの色濃度。
+    None や未知ラベルは C 相当 (現状色) にフォールバック。
     """
     has_20 = _to_finite_number(spr_20) is not None
     has_5 = _to_finite_number(spr_5) is not None
@@ -1057,8 +1078,8 @@ def build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5):
         return "—"
     h = _SPR_GAUGE_BAR_H * 2 + _SPR_GAUGE_BAR_GAP
     bars = [
-        _build_spr_gauge_bar_svg(spr_20, rv_20, 0, "20日"),
-        _build_spr_gauge_bar_svg(spr_5, rv_5, _SPR_GAUGE_BAR_H + _SPR_GAUGE_BAR_GAP, "5日"),
+        _build_spr_gauge_bar_svg(spr_20, rv_20, 0, "20日", sprw_label),
+        _build_spr_gauge_bar_svg(spr_5, rv_5, _SPR_GAUGE_BAR_H + _SPR_GAUGE_BAR_GAP, "5日", sprbg_label),
     ]
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'
@@ -1203,7 +1224,9 @@ def _html_market(market_db):
             sprbg_label = None
             if spr_20 is not None and spr_bg is not None:
                 sprbg_label = step_func(spr_bg - spr_20, spr_levels, spr_labels)
-            gauge_svg = build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5)
+            gauge_svg = build_spr_gauge_svg(
+                spr_20, rv_20, spr_5, rv_5, sprw_label, sprbg_label,
+            )
             gauge_tooltip = build_spr_gauge_tooltip(
                 spr_20, rv_20, spr_5, rv_5, sprw_label, sprbg_label,
             )

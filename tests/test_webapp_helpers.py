@@ -1563,28 +1563,6 @@ class TestComputeCellStyles:
         else:
             assert styles["tags"] == expected
 
-    # ----- 買い集め (合計 >=8 濃黄 / <=4 水色 / 5-7 色なし) -----
-    # 手入力データで空白混入が多いため "A, B" のような空白付き入力が
-    # _buy_collection_score_sum 内部で strip されて正常評価されることも確認する。
-    @pytest.mark.parametrize(
-        "value, expected",
-        [
-            ("A,A", f"background:{C['濃黄']}"),   # 10 >=8
-            ("A,B", f"background:{C['濃黄']}"),   # 9 >=8 (境界)
-            ("A, B", f"background:{C['濃黄']}"), # 空白付き入力 (strip 処理の退行検知)
-            ("B,C", None),                         # 7 5-7範囲
-            ("D,D", f"background:{C['水色']}"),   # 4 <=4 (境界)
-            ("E,E", f"background:{C['水色']}"),   # 2 <=4
-            ("—", None),                           # 不正値
-        ],
-    )
-    def test_buy_collection_rule(self, value, expected):
-        styles = helpers.compute_cell_styles({"buy_collection": value}, today=TODAY)
-        if expected is None:
-            assert "buy_collection" not in styles
-        else:
-            assert styles["buy_collection"] == expected
-
     # ----- 進捗率乖離: <C3>タグ優先 -----
     def test_progress_diff_c3_priority_over_eiri(self):
         """<C3> タグは薄赤で営利>=20 の濃黄より優先 (タグありなしで両方確認)"""
@@ -2335,17 +2313,25 @@ class TestBuildSprGaugeForStock:
     需給バランスゲージを組み立てるテスト (issue #247 portfolio_list 展開)"""
 
     def test_normal_renders_svg_and_tooltip(self):
-        """正常: sprs/vols が揃っている → svg は <svg> 開始、tooltip に SPR ±rv を含む"""
+        """正常: sprs/vols が揃っている → svg は <svg> 開始、SVG 内 <title> + セル全体 tooltip に
+        買い集め評価が併記される (SVG <title> がホバー時に勝つため両方に出す)"""
+        # price.get_spr_expr で 週diff=10 → B / 日diff=12 → A になる入力
         stock = {
-            "sell_pressure_ratio": [48, 45, 0],
+            "sell_pressure_ratio": [48, 45, 60],
+            "sell_pressure_ratio_w": [40, 42, 50],
             "stddev_volatility": [2.4, 2.6],
         }
         gauge = helpers._build_spr_gauge_for_stock(stock)
         assert gauge["svg"].startswith("<svg")
+        # バー単体 <title> に SPR + 買い集め評価が併記される
+        assert "SPR 48 ±2.4 (20日) 買い集めB" in gauge["svg"]
+        assert "SPR 45 ±2.6 (5日) 買い集めA" in gauge["svg"]
+        # セル全体 tooltip にも (フォールバック用) 同等情報
         assert "SPR 48 ±2.4 (20日)" in gauge["tooltip"]
-        assert "SPR 45 ±2.6 (5日)" in gauge["tooltip"]
-        # 個別銘柄では「買い集め」列が別途あるため tooltip 2 行目は出さない
-        assert "買い集め" not in gauge["tooltip"]
+        assert "買い集め 週B 日A" in gauge["tooltip"]
+        # 緑バーは週B 相当の中濃緑 (#9be29b)、赤バーは固定色のまま
+        assert "#9be29b" in gauge["svg"]
+        assert "#f4d4d4" in gauge["svg"]
 
     def test_missing_data_returns_em_dash(self):
         """sprs/vols 欠損: svg は '—'、tooltip は空"""

@@ -162,8 +162,7 @@
       <th title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸">RS(20,5)</th>
       <th>トレンド</th>
       <th>タグ</th>
-      <th>買い集め</th>
-      <th>需給バランス</th>
+      <th title="バー背景の濃淡で買い集め評価 (A=濃 / E=薄、左=緑 / 右=赤)">需給バランス</th>
       <th>時価総額</th>
     </tr>
   </thead>
@@ -234,13 +233,12 @@
           style="max-width:7em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.trend_template or '' }}">{{ row.trend_template }}{% if row.price_kairi_wma10_str %} <span class="kairi-num {{ row.price_kairi_wma10_zone }}">{{ row.price_kairi_wma10_str }}</span>{% endif %}</td>
       <td title="{{ row.tags }}"
           style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
-      <td style="{{ row.styles.buy_collection or '' }}">{{ row.buy_collection }}</td>
       <td class="spr-gauge-cell" title="{{ row.spr_gauge.tooltip }}">{{ row.spr_gauge.svg|safe }}</td>
       <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
     </tr>
     <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
-      {# 状態列 1 つ追加 (22→23)、削除モード時はさらに +1 / issue #227 で旧 RSライン+株価向き 2列を1列に統合 → 1 減 / issue #247 で需給バランス列追加 +1 #}
-      <td colspan="{% if delete_mode_allowed %}24{% else %}23{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
+      {# 状態列 1 つ追加 (22→23)、削除モード時はさらに +1 / issue #227 で旧 RSライン+株価向き 2列を1列に統合 → 1 減 / 買い集め+需給バランスを需給バランス1列に統合 → 1 減 #}
+      <td colspan="{% if delete_mode_allowed %}23{% else %}22{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
         <div style="display:flex;flex-wrap:wrap;gap:0.8em;align-items:flex-start;">
           {% if row.gyoseki.isKonki %}
           <div style="flex:0 0 auto;">

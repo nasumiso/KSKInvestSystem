@@ -1663,6 +1663,31 @@ def _annual_growth(stock: Dict[str, Any]) -> tuple:
     return result[1], result[2]
 
 
+def _extract_buy_collection_labels(stock: Dict[str, Any]) -> tuple:
+    """個別銘柄の sell_pressure_ratio / sell_pressure_ratio_w から
+    買い集め評価 (週, 日) のアルファベットラベルを返す。
+
+    price.get_spr_expr の出力 (例 "47,32,D,E") からアルファベット部分のみ抽出。
+    片方/両方欠損は (None, None) や (週ラベル, None) で返す。
+    """
+    if not stock:
+        return (None, None)
+    sprs = stock.get("sell_pressure_ratio") or []
+    sprs_w = stock.get("sell_pressure_ratio_w") or []
+    if not sprs:
+        return (None, None)
+    try:
+        from price import get_spr_expr  # 遅延 import (循環回避)
+        full = get_spr_expr(sprs, sprs_w)
+    except Exception:
+        return (None, None)
+    parts = full.split(",")
+    letters = [p for p in parts if p and not p.lstrip("+-").isdigit()]
+    sprw = letters[0] if len(letters) > 0 else None
+    sprbg = letters[1] if len(letters) > 1 else None
+    return (sprw, sprbg)
+
+
 def _build_spr_gauge_for_stock(stock: Dict[str, Any]) -> Dict[str, str]:
     """個別銘柄の sell_pressure_ratio / stddev_volatility から需給バランスゲージを組み立てる。
 
@@ -1671,7 +1696,7 @@ def _build_spr_gauge_for_stock(stock: Dict[str, Any]) -> Dict[str, str]:
       stddev_volatility   = [rv_20, rv_5]
     市場指数 (make_market_db) の spr_20 / spr_5 / rv_20 / rv_5 と形式が違うため、
     ここで取り出して build_spr_gauge_svg / build_spr_gauge_tooltip に渡す。
-    買い集め評価は portfolio 一覧では別列に出すので tooltip 側からは省略。
+    買い集め評価 (週/日) はバー背景の濃淡と tooltip に併記する。
     """
     from make_market_db import build_spr_gauge_svg, build_spr_gauge_tooltip  # 遅延 import (循環回避)
     sprs = stock.get("sell_pressure_ratio") or []
@@ -1680,33 +1705,13 @@ def _build_spr_gauge_for_stock(stock: Dict[str, Any]) -> Dict[str, str]:
     spr_5 = sprs[1] if len(sprs) > 1 else None
     rv_20 = vols[0] if len(vols) > 0 else None
     rv_5 = vols[1] if len(vols) > 1 else None
+    sprw_label, sprbg_label = _extract_buy_collection_labels(stock)
     return {
-        "svg": build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5),
-        "tooltip": build_spr_gauge_tooltip(spr_20, rv_20, spr_5, rv_5),
+        "svg": build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5, sprw_label, sprbg_label),
+        "tooltip": build_spr_gauge_tooltip(
+            spr_20, rv_20, spr_5, rv_5, sprw_label, sprbg_label,
+        ),
     }
-
-
-def _format_buy_collection(stock: Dict[str, Any]) -> str:
-    """買い集めの週/日アルファベット評価を "週,日" の形式で返す (例: "D,E")。
-
-    code_rank.csv SRR 列の "47,32,D,E,-6" のうち最後 (50DMA乖離率を除く)
-    アルファベット 2 文字に相当する。price.get_spr_expr のロジックを再利用。
-    """
-    if not stock:
-        return "—"
-    sprs = stock.get("sell_pressure_ratio") or []
-    sprs_w = stock.get("sell_pressure_ratio_w") or []
-    if not sprs:
-        return "—"
-    try:
-        from price import get_spr_expr  # 遅延 import (循環回避)
-        full = get_spr_expr(sprs, sprs_w)
-    except Exception:
-        return "—"
-    # full は "47,32,D,E" や "47,32,D" 等。アルファベット部分のみ抽出
-    parts = full.split(",")
-    letters = [p for p in parts if p and not p.lstrip("+-").isdigit()]
-    return ",".join(letters) if letters else "—"
 
 
 def _progress_quarter_and_diff(stock: Dict[str, Any]) -> tuple:
@@ -2530,7 +2535,6 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "price_kairi_wma10_str": "",
             "price_kairi_wma10_zone": "",
             "tags": "—",
-            "buy_collection": "—",
             "spr_gauge": {"svg": "—", "tooltip": ""},
             "theoretical_diff": "—",
             "theoretical_diff_raw": None,
@@ -2585,7 +2589,6 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "price_kairi_wma10_str": trend_info["kairi_str"],
         "price_kairi_wma10_zone": trend_info["kairi_zone"],
         "tags": _format_tags(stock),
-        "buy_collection": _format_buy_collection(stock),
         "spr_gauge": _build_spr_gauge_for_stock(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
         "theoretical_diff_raw": _theoretical_diff_raw(stock),
@@ -2613,10 +2616,6 @@ PORTFOLIO_COLORS = {
     "水色": "#6fa8dc",   # データなし/低スコア (買い集めDD以下、トレンド空)
 }
 
-# 買い集めスコア (A=5, B=4, ..., E=1)。スプシの CHOOSE(CODE-64,5,4,3,2,1) に対応
-_BUY_COLLECTION_SCORE = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1}
-
-
 def _parse_research_update_md(md_str: Optional[str], today: date) -> Optional[date]:
     """'4/27' を date オブジェクトにする。today より未来なら去年扱い。"""
     if not md_str or md_str == "—":
@@ -2629,20 +2628,6 @@ def _parse_research_update_md(md_str: Optional[str], today: date) -> Optional[da
         return candidate
     except (ValueError, AttributeError):
         return None
-
-
-def _buy_collection_score_sum(s: Optional[str]) -> Optional[int]:
-    """'C,C' → 各文字スコアの合計 (A=5..E=1)。フォーマット不正なら None。"""
-    if not s or "," not in s:
-        return None
-    parts = s.split(",")
-    if len(parts) < 2:
-        return None
-    left = parts[0].strip()
-    right = parts[1].strip()
-    if left not in _BUY_COLLECTION_SCORE or right not in _BUY_COLLECTION_SCORE:
-        return None
-    return _BUY_COLLECTION_SCORE[left] + _BUY_COLLECTION_SCORE[right]
 
 
 def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Dict[str, str]:
@@ -2767,14 +2752,6 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         styles["tags"] = bg_with_white("青")
     elif "押" in tags:
         styles["tags"] = f"color:{PORTFOLIO_COLORS['青']}"
-
-    # --- 買い集め (ルール 20, 21): スコア合計 ≧ 8 濃黄 / ≦ 4 水色
-    score = _buy_collection_score_sum(row.get("buy_collection"))
-    if isinstance(score, int):
-        if score >= 8:
-            styles["buy_collection"] = bg("濃黄")
-        elif score <= 4:
-            styles["buy_collection"] = bg("水色")
 
     # --- 時価総額 (ルール 29, 30): カテゴリ "中" / "大" → 薄黄 (極小/小/特大は色なし)
     cat = row.get("market_cap_category")
