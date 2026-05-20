@@ -712,9 +712,9 @@ class TestSprGaugeSvg:
         assert svg.startswith("<svg")
         # 各バー: 背景 rect 2枚 (左緑 + 右赤) × 2本 = 4枚
         assert svg.count('<rect') == 4
-        # ラベル未指定なので緑バーは C 相当 (#d4f4d4) ×2、赤バーは固定色 (#f4d4d4) ×2
+        # ラベル未指定なので緑バーは C 相当 (#d4f4d4) ×2、赤バーは固定色 (#f4c7c3) ×2
         assert svg.count('#d4f4d4') == 2
-        assert svg.count('#f4d4d4') == 2
+        assert svg.count('#f4c7c3') == 2
         # ティック (stroke-width=2) と ヒゲ (stroke-width=1) それぞれ 2 本ずつ
         assert svg.count('stroke-width="2"') == 2
         assert svg.count('stroke-width="1"') == 2
@@ -763,12 +763,12 @@ class TestSprGaugeSvg:
     ])
     def test_buy_collection_label_drives_green_bar_density(self, sprw, expected_green_20):
         """週評価 → 20日バー / 日評価 → 5日バー で緑バーの濃淡をコントロールする。
-        赤バーは固定色 (#f4d4d4)、ラベル欠損は C 相当にフォールバック。"""
+        赤バーは固定色 (#f4c7c3)、ラベル欠損は C 相当にフォールバック。"""
         svg = make_market_db.build_spr_gauge_svg(50, 2.0, 60, 3.0, sprw, None)
         # 緑バー (20日) は期待濃度
         assert expected_green_20 in svg
         # 赤バーは sprw / sprbg に関わらず固定色のみ (両バーぶん 2 回)
-        assert svg.count("#f4d4d4") == 2
+        assert svg.count("#f4c7c3") == 2
 
     def test_bar_title_includes_buy_collection_label(self):
         """バー単体 <title> に '買い集めX' が併記される (ホバー時に SVG <title> が勝つため)"""

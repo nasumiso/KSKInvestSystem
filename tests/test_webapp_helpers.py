@@ -1481,9 +1481,11 @@ class TestComputeCellStyles:
             ({"progress_diff_eiri_raw": 20, "gyoseki_quarity_expr": ""}, "progress_diff",
              f"background:{C['濃黄']}"),
             ({"progress_diff_eiri_raw": 19, "gyoseki_quarity_expr": ""}, "progress_diff", None),
-            # ステージ ("2S" を含む → 薄赤)
-            ({"memo": {"stage": "2S(3T)"}}, "stage", f"background:{C['薄赤']}"),
-            ({"memo": {"stage": "3S"}}, "stage", None),
+            # ステージ (2S=濃黄 単色 / 3S=水色 単色 / 4S=青 単色 + 白文字)
+            ({"memo": {"stage": "2S(3T)"}}, "stage", f"background:{C['濃黄']}"),
+            ({"memo": {"stage": "3S"}}, "stage", f"background:{C['水色']}"),
+            ({"memo": {"stage": "4S"}}, "stage", f"background:{C['青']};color:#fff"),
+            ({"memo": {"stage": ""}}, "stage", None),
             # 時価総額 (カテゴリ "中"/"大" → 薄黄、それ以外なし)
             ({"market_cap_category": "中"}, "market_cap", f"background:{C['薄黄']}"),
             ({"market_cap_category": "大"}, "market_cap", f"background:{C['薄黄']}"),
@@ -1563,15 +1565,50 @@ class TestComputeCellStyles:
         else:
             assert styles["tags"] == expected
 
-    # ----- 進捗率乖離: <C3>タグ優先 -----
-    def test_progress_diff_c3_priority_over_eiri(self):
-        """<C3> タグは薄赤で営利>=20 の濃黄より優先 (タグありなしで両方確認)"""
-        # <C3> あり: 営利の値に関わらず薄赤
+    # ----- 進捗率乖離: <C3>=赤(注目) 単独 / eiri≧20 = 濃黄 単独 / 両該当=左右分割 -----
+    def test_progress_diff_c3_only(self):
+        """<C3> タグのみで eiri 不該当: 赤 (注目) 単色 + 白文字"""
+        styles = helpers.compute_cell_styles(
+            {"progress_diff_eiri_raw": 10, "gyoseki_quarity_expr": "[A]20%<C3>"},
+            today=TODAY,
+        )
+        assert styles["progress_diff"] == f"background:{C['赤']};color:#fff"
+
+    def test_progress_diff_c3_and_eiri_split(self):
+        """<C3> + eiri≧20 両該当: 左半分=赤 / 右半分=濃黄 の linear-gradient"""
         styles = helpers.compute_cell_styles(
             {"progress_diff_eiri_raw": 30, "gyoseki_quarity_expr": "[A]20%<C3>"},
             today=TODAY,
         )
-        assert styles["progress_diff"] == f"background:{C['薄赤']}"
+        assert styles["progress_diff"] == (
+            f"background:linear-gradient(to right,"
+            f"{C['赤']} 50%,{C['濃黄']} 50%)"
+        )
+
+    # ----- ステージ: 2 つ併存は強い順に左 -----
+    @pytest.mark.parametrize(
+        "stage, expected",
+        [
+            # 2S + 3S → 左 2S(濃黄) / 右 3S(水色) (注: 強い=数字大の S なので 3S が左)
+            ("2S/3S", (
+                f"background:linear-gradient(to right,"
+                f"{C['水色']} 50%,{C['濃黄']} 50%)"
+            )),
+            # 3S + 4S → 左 4S(青) / 右 3S(水色)
+            ("3S/4S", (
+                f"background:linear-gradient(to right,"
+                f"{C['青']} 50%,{C['水色']} 50%)"
+            )),
+            # 2S + 4S → 左 4S(青) / 右 2S(濃黄)
+            ("2S/4S", (
+                f"background:linear-gradient(to right,"
+                f"{C['青']} 50%,{C['濃黄']} 50%)"
+            )),
+        ],
+    )
+    def test_stage_split_two_marks(self, stage, expected):
+        styles = helpers.compute_cell_styles({"memo": {"stage": stage}}, today=TODAY)
+        assert styles["stage"] == expected
 
     # ----- 決算日 ±1ヶ月 + 3Q → 濃黄、それ以外 → 薄黄/色なし -----
     @pytest.mark.parametrize(
@@ -2312,22 +2349,28 @@ class TestBuildTrendInfoGauge:
     """build_trend_info() の kairi_gauge_svg と tooltip 結合を検証する (issue portfolio-trend-gauge)"""
 
     @pytest.mark.parametrize(
-        "kairi, misses, expect_marker, expect_overheat_marker, expect_unpass_tooltip",
+        "kairi, misses, expect_marker, expect_marker_color, expect_unpass_tooltip",
         [
-            # 健全帯 +12: マーカー有り / 橙ではない / 不通過0件なので「不通過:」行なし (◎扱い)
-            (12, [], True, False, False),
-            # 小割れ -3: マーカー有り / 不通過1件あるので「不通過:」行あり (◯扱い)
-            (-3, ["RS"], True, False, True),
-            # +25 ちょうど: overheat 境界、橙マーカー
-            (25, [], True, True, False),
-            # 範囲外 +30: クランプ + 橙マーカー
-            (30, [], True, True, False),
+            # |kairi| < 10%: 中立 (黒)、不通過0件なので「不通過:」行なし (◎扱い)
+            (5, [], True, "#000", False),
+            # 健全帯 +12: 淡緑 (#9be29b)、不通過1件あるので「不通過:」行あり (◯扱い)
+            (12, ["RS"], True, "#9be29b", True),
+            # 小割れ -3: 中立 (黒)、不通過1件あるので「不通過:」行あり
+            (-3, ["RS"], True, "#000", True),
+            # +25 ちょうど: 濃緑 (#2e7d32)
+            (25, [], True, "#2e7d32", False),
+            # 範囲外 +30: クランプ + 濃緑
+            (30, [], True, "#2e7d32", False),
+            # マイナス -15: 淡薄赤 (#f4c7c3)
+            (-15, ["RS"], True, "#f4c7c3", True),
+            # マイナス -25: 濃薄赤 (#c62828)
+            (-25, ["RS"], True, "#c62828", True),
             # データ無し: kairi=None、マーカーなし、記号のみ
-            (None, [], False, False, False),
+            (None, [], False, None, False),
         ],
     )
     def test_gauge_svg_and_tooltip(
-        self, kairi, misses, expect_marker, expect_overheat_marker, expect_unpass_tooltip,
+        self, kairi, misses, expect_marker, expect_marker_color, expect_unpass_tooltip,
     ):
         stock = {"price_kairi_wma10": kairi, "trend_template": misses}
         info = helpers.build_trend_info(stock)
@@ -2341,13 +2384,11 @@ class TestBuildTrendInfoGauge:
         line_count = svg.count("<line")
         if expect_marker:
             assert line_count == 2
+            assert expect_marker_color in svg
         else:
             assert line_count == 0
-        # overheat マーカー色 (kairi >= +25 のみ橙)
-        if expect_overheat_marker:
-            assert "#e67e22" in svg
-        else:
-            assert "#e67e22" not in svg
+        # 廃止された overheat オレンジ色 (#e67e22) は出現しない
+        assert "#e67e22" not in svg
         # tooltip は常に「10WMA乖離: ...」行を含む
         assert "10WMA乖離:" in info["tooltip"]
         # 不通過項目は ◯ のときのみ含まれる
@@ -2378,9 +2419,9 @@ class TestBuildSprGaugeForStock:
         # セル全体 tooltip にも (フォールバック用) 同等情報
         assert "SPR 48 ±2.4 (20日)" in gauge["tooltip"]
         assert "買い集め 週B 日A" in gauge["tooltip"]
-        # 緑バーは週B 相当の中濃緑 (#9be29b)、赤バーは固定色のまま
+        # 緑バーは週B 相当の中濃緑 (#9be29b)、赤バーは薄赤 (#f4c7c3) で統一
         assert "#9be29b" in gauge["svg"]
-        assert "#f4d4d4" in gauge["svg"]
+        assert "#f4c7c3" in gauge["svg"]
 
     def test_missing_data_returns_em_dash(self):
         """sprs/vols 欠損: svg は '—'、tooltip は空"""

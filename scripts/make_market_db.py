@@ -980,7 +980,7 @@ _SPR_GAUGE_GREEN_COLORS = {
     "E": "#f8fef8",
 }
 _SPR_GAUGE_GREEN_DEFAULT = _SPR_GAUGE_GREEN_COLORS["C"]
-_SPR_GAUGE_RED_FIXED = "#f4d4d4"
+_SPR_GAUGE_RED_FIXED = "#f4c7c3"  # パレットの「薄赤 (株価マイナス)」と統一
 
 
 def _to_finite_number(v):

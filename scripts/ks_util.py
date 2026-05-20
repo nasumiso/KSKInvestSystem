@@ -751,7 +751,22 @@ def format_kairi_wma10(kairi):
 
 # overheat 閾値と色は kairi_wma10_zone_class() の `kairi-zone-overheat` 境界と一致させる
 _KAIRI_GAUGE_RANGE = 25.0
-_KAIRI_GAUGE_OVERHEAT_COLOR = "#e67e22"
+# マーカー縦線色: |kairi| < 10% 黒 (中立) / < 20% 淡色 / ≥ 20% 濃色
+_KAIRI_GAUGE_NEUTRAL_COLOR = "#000"
+_KAIRI_GAUGE_POS_FAINT = "#9be29b"
+_KAIRI_GAUGE_POS_STRONG = "#2e7d32"
+_KAIRI_GAUGE_NEG_FAINT = "#f4c7c3"
+_KAIRI_GAUGE_NEG_STRONG = "#c62828"
+
+
+def _kairi_gauge_marker_color(kairi_pct: float) -> str:
+    """10WMA乖離率の符号と大きさからマーカー縦線色を返す。"""
+    abs_k = abs(kairi_pct)
+    if abs_k < 10.0:
+        return _KAIRI_GAUGE_NEUTRAL_COLOR
+    if kairi_pct > 0:
+        return _KAIRI_GAUGE_POS_FAINT if abs_k < 20.0 else _KAIRI_GAUGE_POS_STRONG
+    return _KAIRI_GAUGE_NEG_FAINT if abs_k < 20.0 else _KAIRI_GAUGE_NEG_STRONG
 
 
 def kairi_gauge_svg(kairi, symbol):
@@ -778,7 +793,7 @@ def kairi_gauge_svg(kairi, symbol):
             mx = (k_clamped + _KAIRI_GAUGE_RANGE) * px_per_pct
             # 端でクリップされてマーカーが半分の太さに見えないよう、両端は 1px 内側に寄せる
             mx = max(1.0, min(width - 1.0, mx))
-            marker_color = _KAIRI_GAUGE_OVERHEAT_COLOR if k >= _KAIRI_GAUGE_RANGE else "#000"
+            marker_color = _kairi_gauge_marker_color(k)
             parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="3"/>' % (mx, mx, height))
             parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="%s" stroke-width="2"/>' % (mx, mx, height, marker_color))
 

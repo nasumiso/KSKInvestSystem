@@ -1852,7 +1852,35 @@ _RS_COLORS = {"up": "#1976d2", "down": "#ef6c00", "flat": "#999"}
 _RS_FADED = {"up": "#90caf9", "down": "#ffcc80", "flat": "#ccc"}
 _BLUE_DOT = "#1976d2"
 
+# portfolio ミニチャート: 20日株価騰落率による線色 (|r20| < 10% 灰 / < 20% 淡 / ≥ 20% 濃)
+_MINI_LINE_NEUTRAL = "#999"
+_MINI_LINE_POS_FAINT = "#9be29b"
+_MINI_LINE_POS_STRONG = "#2e7d32"
+_MINI_LINE_NEG_FAINT = "#f4c7c3"
+_MINI_LINE_NEG_STRONG = "#c62828"
+
 _FLAT_THRESHOLD_PERCENT_PER_DAY = 0.05  # 傾き |x| < 0.05%/日 は flat 扱い
+
+
+def _mini_line_color_by_return(price_asc: List[float]) -> str:
+    """portfolio ミニチャート用に 20日株価騰落率の符号と大きさで線色を決める。
+
+    |r20| < 10% は灰 (中立)、10-20% は淡色、≥ 20% は濃色。
+    データ不足 (2点未満 or 始値<=0) は灰。
+    """
+    if len(price_asc) < 2:
+        return _MINI_LINE_NEUTRAL
+    p0 = price_asc[0]
+    p1 = price_asc[-1]
+    if not isinstance(p0, (int, float)) or not isinstance(p1, (int, float)) or p0 <= 0:
+        return _MINI_LINE_NEUTRAL
+    r20_pct = (p1 / p0 - 1.0) * 100.0
+    abs_r = abs(r20_pct)
+    if abs_r < 10.0:
+        return _MINI_LINE_NEUTRAL
+    if r20_pct > 0:
+        return _MINI_LINE_POS_FAINT if abs_r < 20.0 else _MINI_LINE_POS_STRONG
+    return _MINI_LINE_NEG_FAINT if abs_r < 20.0 else _MINI_LINE_NEG_STRONG
 
 
 def compute_slope_per_day(values: List[float]) -> Optional[float]:
@@ -2101,8 +2129,8 @@ def build_price_rs_chart_mini(
     # x 座標は等間隔 3 点
     xs = [pad_x, pad_x + inner_w / 2, pad_x + inner_w]
 
-    rs_slope_full = compute_slope_per_day(rs_asc) if len(rs_asc) >= 2 else None
-    rs_dir = _slope_direction(rs_slope_full)
+    # 線色は 20日株価騰落率ベース (|r20| < 10% 灰 / < 20% 淡 / ≥ 20% 濃)
+    line_color = _mini_line_color_by_return(price_asc)
 
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">']
 
@@ -2110,12 +2138,12 @@ def build_price_rs_chart_mini(
     ys = normalize_minmax(rs_pts_raw, inner_h)
     ys = [y + pad_y for y in ys]
     points = list(zip(xs, ys))
-    parts.append(_svg_polyline(points, _RS_COLORS[rs_dir], 1.5))
-    # 末尾点: Blue Dot or 通常マーカー
+    parts.append(_svg_polyline(points, line_color, 1.5))
+    # 末尾点: Blue Dot or 通常マーカー (通常マーカーは線色連動)
     if has_blue_dot:
         parts.append(_svg_circle(points[-1][0], points[-1][1], 2.5, _BLUE_DOT))
     else:
-        parts.append(_svg_circle(points[-1][0], points[-1][1], 1.6, _RS_COLORS[rs_dir]))
+        parts.append(_svg_circle(points[-1][0], points[-1][1], 1.6, line_color))
 
     parts.append("</svg>")
     return ("".join(parts), tooltip)
@@ -2601,14 +2629,18 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
 # ==================================================
 
 PORTFOLIO_COLORS = {
-    "薄黄": "#fce8b2",   # 良 (PER低い、配当>3、RS≧70 等)
+    # ポジティブ系
+    "薄黄": "#fce8b2",   # 良 (PER割安、配当>3、RS≧70 等)
     "濃黄": "#fbbc04",   # 強良 (順位<300、配当≧5、RS>80 等)
-    "薄赤": "#f4c7c3",   # 警告 (ステージ2S、3Q連続向上タグ)
-    "青":   "#4285f4",   # 警告シグナル (警/売)
-    "赤":   "#ea4335",   # 強警告シグナル (ポ/ブ/最)
+    "赤":   "#ea4335",   # 注目
+    "緑":   "#d4f4d4",   # 株価的にプラス (需給、MA乖離率)
+    # ネガティブ系
+    "青":   "#4285f4",   # 警告 (強)
+    "水色": "#6fa8dc",   # 薄警告 (青の弱い版)
+    "薄赤": "#f4c7c3",   # 株価的にマイナス (需給、MA乖離率)
+    # 中立 (データ状態)
     "薄灰": "#cccccc",   # データ古い (14日以上)
     "濃灰": "#999999",   # データ古い (1ヶ月以上)
-    "水色": "#6fa8dc",   # データなし/低スコア (買い集めDD以下、トレンド空)
 }
 
 def _parse_research_update_md(md_str: Optional[str], today: date) -> Optional[date]:
@@ -2685,12 +2717,19 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         elif div_raw > 3:
             styles["dividend"] = bg("薄黄")
 
-    # --- 進捗率乖離 (ルール 9, 10): <C3>タグ 薄赤 / 営利乖離≧20 濃黄
+    # --- 進捗率乖離: <C3>タグ 赤(注目) / 営利乖離≧20 濃黄 / 両該当は左右分割
     quarity = row.get("gyoseki_quarity_expr") or ""
     eiri_raw = row.get("progress_diff_eiri_raw")
-    if "<C3>" in quarity:
-        styles["progress_diff"] = bg("薄赤")
-    elif isinstance(eiri_raw, (int, float)) and eiri_raw >= 20:
+    has_c3 = "<C3>" in quarity
+    hit_eiri = isinstance(eiri_raw, (int, float)) and eiri_raw >= 20
+    if has_c3 and hit_eiri:
+        styles["progress_diff"] = (
+            f"background:linear-gradient(to right,"
+            f"{PORTFOLIO_COLORS['赤']} 50%,{PORTFOLIO_COLORS['濃黄']} 50%)"
+        )
+    elif has_c3:
+        styles["progress_diff"] = bg_with_white("赤")
+    elif hit_eiri:
         styles["progress_diff"] = bg("濃黄")
 
     # --- 決算日 (ルール 22, 23): 更新日±1ヶ月+3Q 濃黄 / ±1ヶ月のみ 薄黄
@@ -2717,10 +2756,23 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         elif diff_days >= 14:
             styles["last_research_update"] = bg("薄灰")
 
-    # --- ステージ (ルール 13): "2S" 含む → 薄赤
+    # --- ステージ: 2S=濃黄 / 3S=水色 / 4S=青、2つ併存は左右分割 (強い順に左)
     stage = (row.get("memo") or {}).get("stage") or ""
-    if "2S" in stage:
-        styles["stage"] = bg("薄赤")
+    stage_color_map = {"4S": "青", "3S": "水色", "2S": "濃黄"}
+    stage_hits = [s for s in ("4S", "3S", "2S") if s in stage]
+    if len(stage_hits) >= 2:
+        left, right = stage_hits[0], stage_hits[1]
+        styles["stage"] = (
+            f"background:linear-gradient(to right,"
+            f"{PORTFOLIO_COLORS[stage_color_map[left]]} 50%,"
+            f"{PORTFOLIO_COLORS[stage_color_map[right]]} 50%)"
+        )
+    elif stage_hits:
+        single = stage_hits[0]
+        if single == "4S":
+            styles["stage"] = bg_with_white("青")
+        else:
+            styles["stage"] = bg(stage_color_map[single])
 
     # --- RS (ルール 27, 28): > 80 濃黄 / >= 70 薄黄
     rs_raw = row.get("rs_raw")
