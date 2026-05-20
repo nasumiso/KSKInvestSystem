@@ -716,29 +716,6 @@ def trend_bg_class(symbol):
     return _TREND_BG_CLASS.get(symbol, "")
 
 
-def kairi_wma10_zone_class(kairi):
-    """10WMA乖離率(%)から 5 段階のゾーン CSS クラス名を返す。
-
-    issue #248: 利確警戒 / 健全 / 押し目 / 小割れ / 崩れ の 5 段階。
-    None や数値化不能なら "" を返す。
-    """
-    if kairi is None:
-        return ""
-    try:
-        k = float(kairi)
-    except (TypeError, ValueError):
-        return ""
-    if k >= 25:
-        return "kairi-zone-overheat"
-    if k >= 10:
-        return "kairi-zone-healthy"
-    if k >= 0:
-        return "kairi-zone-pullback"
-    if k > -5:
-        return "kairi-zone-near-break"
-    return "kairi-zone-break"
-
-
 def format_kairi_wma10(kairi):
     """10WMA乖離率 (%) を "+12%" / "-3%" 形式で整形。None や数値化不能なら "" を返す。"""
     if kairi is None:
