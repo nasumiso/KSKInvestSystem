@@ -775,6 +775,9 @@ tr:hover { background: #f5f5f5; }
 .kairi-num.kairi-zone-break      { color: #c0392b; }  /* ≤-5% 崩れ */
 .rs-strong { color: #27ae60; font-weight: bold; }
 .rs-weak { color: #c0392b; font-weight: bold; }
+/* 需給バランスセル (issue #247): SPR/rv の横バー 2 本縦積み */
+.spr-gauge-cell { padding: 4px; vertical-align: middle; white-space: nowrap; }
+.spr-gauge-cell svg { display: block; }
 /* market_state */
 .state-confirmed { background: #eafaf1; color: #27ae60; font-weight: bold; }
 .state-pressure  { background: #fffbe6; color: #b8860b; font-weight: bold; }
@@ -963,6 +966,131 @@ def _rs_class(rs_raw):
     return ""
 
 
+_SPR_GAUGE_WIDTH = 100      # バー本体の幅 (= SPR 0〜100 のスケール)
+_SPR_GAUGE_BAR_H = 14       # 1 本のバーの高さ
+_SPR_GAUGE_BAR_GAP = 3      # 20日バーと5日バーの縦間隔
+
+
+def _to_finite_number(v):
+    """None / 数値化不能 / NaN を None に正規化する。それ以外は float を返す。"""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if f != f:  # NaN
+        return None
+    return f
+
+
+def _format_spr_rv_text(spr_f, rv_f, period_label=None):
+    """SPR / rv 値を tooltip 表示用の文字列に整形する (バー単体 / セル全体で共通)。
+
+    spr_f / rv_f は _to_finite_number 通過後の float | None を渡す。
+    period_label を渡すと末尾に " (20日)" のような期間表記が付く。
+    """
+    base = "SPR %d" % int(round(spr_f))
+    if rv_f is not None:
+        base += " ±%.1f" % rv_f
+    if period_label:
+        base += " (%s)" % period_label
+    return base
+
+
+def _build_spr_gauge_bar_svg(spr, rv, y, period_label):
+    """SPR/rv 1 本分のバー要素 (rect + ティック [+ ヒゲ]) を SVG 文字列で返す。
+
+    spr が欠損ならバー全体をスキップ ("" を返す)。rv 欠損ならヒゲ無しで描画。
+    spr は 0〜100 にクリップ、ヒゲ端も 0〜100 にクリップする。
+    period_label は "20日" / "5日" などの期間表示で、SVG <title> に埋め込み
+    バー単体のホバーで「SPR ±rv (20日)」が出るようにする。
+    """
+    spr_f = _to_finite_number(spr)
+    if spr_f is None:
+        return ""
+    spr_x = max(0.0, min(100.0, spr_f))
+    rv_f = _to_finite_number(rv)
+    bar_title = _format_spr_rv_text(spr_f, rv_f, period_label)
+    parts = ['<title>%s</title>' % html_mod.escape(bar_title)]
+    # 背景塗り分け: 左=薄緑 (買い余地)、右=薄赤 (売り圧)
+    parts.append(
+        '<rect x="0" y="%d" width="%g" height="%d" fill="#d4f4d4"/>' % (y, spr_x, _SPR_GAUGE_BAR_H)
+    )
+    parts.append(
+        '<rect x="%g" y="%d" width="%g" height="%d" fill="#f4d4d4"/>' % (
+            spr_x, y, _SPR_GAUGE_WIDTH - spr_x, _SPR_GAUGE_BAR_H,
+        )
+    )
+    # ヒゲ (± rv) を先に描いてからティックを最後に上載せ → 交差箇所でティックが消えない
+    if rv_f is not None:
+        whisker_lo = max(0.0, spr_x - rv_f)
+        whisker_hi = min(100.0, spr_x + rv_f)
+        whisker_y = y + _SPR_GAUGE_BAR_H / 2
+        parts.append(
+            '<line x1="%g" y1="%g" x2="%g" y2="%g" stroke="#555" stroke-width="1"/>' % (
+                whisker_lo, whisker_y, whisker_hi, whisker_y,
+            )
+        )
+    # 中央ティック (SPR 値の縦線): 太め
+    parts.append(
+        '<line x1="%g" y1="%d" x2="%g" y2="%d" stroke="#555" stroke-width="2"/>' % (
+            spr_x, y, spr_x, y + _SPR_GAUGE_BAR_H,
+        )
+    )
+    # 1 本のバーを <g> で包んで <title> をそのバー専用にする
+    return '<g>%s</g>' % "".join(parts)
+
+
+def _build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5):
+    """SPR/rv の横バーゲージ (2 本縦積み、上=20日 / 下=5日) を SVG 文字列で返す。
+
+    20日バー / 5日バーは独立に欠損判定する:
+      - spr_X が欠損 → 該当バーをスキップ (もう一方は描画)
+      - rv_X が欠損 → 該当バーはティック + 背景のみ (ヒゲ無し)
+      - spr_20 / spr_5 両方欠損 → "—" を返す
+    片側だけ欠損で両方非表示になる回帰を避けるため、内部で 2 本独立に判定する。
+    """
+    has_20 = _to_finite_number(spr_20) is not None
+    has_5 = _to_finite_number(spr_5) is not None
+    if not has_20 and not has_5:
+        return "—"
+    h = _SPR_GAUGE_BAR_H * 2 + _SPR_GAUGE_BAR_GAP
+    bars = [
+        _build_spr_gauge_bar_svg(spr_20, rv_20, 0, "20日"),
+        _build_spr_gauge_bar_svg(spr_5, rv_5, _SPR_GAUGE_BAR_H + _SPR_GAUGE_BAR_GAP, "5日"),
+    ]
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'
+        '%s</svg>'
+    ) % (_SPR_GAUGE_WIDTH, h, _SPR_GAUGE_WIDTH, h, "".join(bars))
+
+
+def _build_spr_gauge_tooltip(spr_20, rv_20, spr_5, rv_5, sprw_label, sprbg_label):
+    """需給バランスセルの title 属性文字列を組み立てる。
+
+    1 行目: SPR ± rv (20日/5日) — 片側欠損なら欠損側を省略
+    2 行目: 買い集め 週X 日Y — sprw_label / sprbg_label が None なら該当を省略、両方 None なら 2 行目自体を省略
+    """
+    def _fmt(spr, rv, label):
+        spr_f = _to_finite_number(spr)
+        if spr_f is None:
+            return None
+        return _format_spr_rv_text(spr_f, _to_finite_number(rv), label)
+    spr_parts = [s for s in (_fmt(spr_20, rv_20, "20日"), _fmt(spr_5, rv_5, "5日")) if s]
+    lines = []
+    if spr_parts:
+        lines.append(" / ".join(spr_parts))
+    bg_parts = []
+    if sprw_label:
+        bg_parts.append("週%s" % sprw_label)
+    if sprbg_label:
+        bg_parts.append("日%s" % sprbg_label)
+    if bg_parts:
+        lines.append("買い集め " + " ".join(bg_parts))
+    return "\n".join(lines)
+
+
 def _html_market(market_db):
     """市場指標セクションのHTMLを生成する
 
@@ -1053,22 +1181,31 @@ def _html_market(market_db):
             rs_raw = db.get("rs_raw", "")
             rs_class = _rs_class(rs_raw)
 
-            # 売り圧力レシオ + 買い集め評価 (週,日)
+            # 売り圧力レシオ + 買い集め評価 (週,日) → 需給バランスセル (issue #247)
             # 個別銘柄は price.get_spr_expr で評価しているが、指数は sell_pressure_ratio が空のため
             # spr_20 / spr_buygagher (日次) と sell_pressure_ratio_w (週次) から直接計算する。
             from price import step_func
             spr_levels = [-10, -5, 0, 5, 10]
             spr_labels = ["E", "D", "C", "B", "A"]
-            spr_parts = ["%d" % db.get("spr_20", 0), "%d" % db.get("spr_5", 0)]
-            # データ有無は None / 長さで判定 (0 は calc_ratio が返す有効値なので除外しない)
-            sprw = db.get("sell_pressure_ratio_w")
-            if isinstance(sprw, list) and len(sprw) >= 3:
-                spr_parts.append(step_func(sprw[2] - sprw[0], spr_levels, spr_labels))
             spr_20 = db.get("spr_20")
+            spr_5 = db.get("spr_5")
+            rv_20 = db.get("rv_20")
+            rv_5 = db.get("rv_5")
+            # 買い集め評価 (週次): sell_pressure_ratio_w[2] - [0] のステップ評価
+            sprw = db.get("sell_pressure_ratio_w")
+            sprw_label = None
+            if isinstance(sprw, list) and len(sprw) >= 3:
+                sprw_label = step_func(sprw[2] - sprw[0], spr_levels, spr_labels)
+            # 買い集め評価 (日次): spr_buygagher - spr_20 のステップ評価
             spr_bg = db.get("spr_buygagher")
+            sprbg_label = None
             if spr_20 is not None and spr_bg is not None:
-                spr_parts.append(step_func(spr_bg - spr_20, spr_levels, spr_labels))
-            spr_display = ", ".join(spr_parts)
+                sprbg_label = step_func(spr_bg - spr_20, spr_levels, spr_labels)
+            gauge_svg = _build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5)
+            gauge_tooltip = _build_spr_gauge_tooltip(
+                spr_20, rv_20, spr_5, rv_5, sprw_label, sprbg_label,
+            )
+            gauge_title_attr = ' title="%s"' % html_mod.escape(gauge_tooltip) if gauge_tooltip else ""
 
             rows_html.append(
                 '<tr>\n'
@@ -1078,8 +1215,7 @@ def _html_market(market_db):
                 '  <td%s%s>%s</td>\n'
                 '  <td>%s</td>\n'
                 '  <td%s>%s</td>\n'
-                '  <td>%s</td>\n'
-                '  <td>%.1f, %.1f</td>\n'
+                '  <td class="spr-gauge-cell"%s>%s</td>\n'
                 '</tr>' % (
                     html_mod.escape(chart_url), html_mod.escape(market_name),
                     rs_class, rs_raw,
@@ -1087,8 +1223,7 @@ def _html_market(market_db):
                     dd_class, dd_title, html_mod.escape(dd_display),
                     html_mod.escape(ftd_rally_display),
                     state_class, html_mod.escape(state_display),
-                    html_mod.escape(spr_display),
-                    db.get("rv_20", 0.0), db.get("rv_5", 0.0),
+                    gauge_title_attr, gauge_svg,
                 )
             )
         except KeyError:
@@ -1103,7 +1238,7 @@ def _html_market(market_db):
         '<thead><tr>\n'
         '  <th>市場名</th><th>RS</th><th>トレンド</th>\n'
         '  <th>DD</th><th>FTD/ラリー</th>\n'
-        '  <th>市場状態</th><th>売り圧力レシオ (20,5,買い集め週,日)</th><th>ボラティリティ (20,5)</th>\n'
+        '  <th>市場状態</th><th>需給バランス</th>\n'
         '</tr></thead>\n'
         '<tbody>'
     )
