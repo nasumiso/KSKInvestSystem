@@ -747,3 +747,43 @@ def format_kairi_wma10(kairi):
         return "%+d%%" % int(round(float(kairi)))
     except (TypeError, ValueError):
         return ""
+
+
+# overheat 閾値と色は kairi_wma10_zone_class() の `kairi-zone-overheat` 境界と一致させる
+_KAIRI_GAUGE_RANGE = 25.0
+_KAIRI_GAUGE_OVERHEAT_COLOR = "#e67e22"
+
+
+def kairi_gauge_svg(kairi, symbol):
+    """10WMA乖離率を -25%〜+25% の縦線マーカーで描画する SVG を返す。
+
+    kairi >= +25 はクランプ + overheat 色のマーカー。
+    kairi が None で symbol も空なら "" を返す。
+    """
+    width = 40
+    height = 28
+    if kairi is None and not symbol:
+        return ""
+
+    px_per_pct = width / (_KAIRI_GAUGE_RANGE * 2)
+    parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d" style="vertical-align:middle;">' % (width, height, width, height)]
+
+    if kairi is not None:
+        try:
+            k = float(kairi)
+        except (TypeError, ValueError):
+            k = None
+        if k is not None:
+            k_clamped = max(-_KAIRI_GAUGE_RANGE, min(_KAIRI_GAUGE_RANGE, k))
+            mx = (k_clamped + _KAIRI_GAUGE_RANGE) * px_per_pct
+            # 端でクリップされてマーカーが半分の太さに見えないよう、両端は 1px 内側に寄せる
+            mx = max(1.0, min(width - 1.0, mx))
+            marker_color = _KAIRI_GAUGE_OVERHEAT_COLOR if k >= _KAIRI_GAUGE_RANGE else "#000"
+            parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="3"/>' % (mx, mx, height))
+            parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="%s" stroke-width="2"/>' % (mx, mx, height, marker_color))
+
+    if symbol:
+        parts.append('<text x="50%%" y="50%%" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="bold" fill="#000" stroke="white" stroke-width="3" paint-order="stroke">%s</text>' % symbol)
+
+    parts.append('</svg>')
+    return "".join(parts)
