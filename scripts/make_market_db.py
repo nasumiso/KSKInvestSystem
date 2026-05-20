@@ -758,26 +758,25 @@ tr:hover { background: #f5f5f5; }
 .theme-heat2  { background: #66bb6a; border-color: #4caf50; }
 
 /* 市場テーブル */
+/* table のデフォルト width:100% を解除し、列幅の合計だけのコンパクトな表にする */
+.market-table { width: auto; }
 .market-table th { background: #2c3e50; color: #fff; }
+/* 列幅: 市場名と市場状態は内容に合わせ最小幅、それ以外は固定 (需給バランスを広げ、FTDを狭める) */
+.market-table th, .market-table td { white-space: nowrap; }
+.market-table th.col-rs,    .market-table td.col-rs    { width: 60px; text-align: center; }
+.market-table th.col-trend, .market-table td.col-trend { width: 50px; text-align: center; padding: 0; }
+.market-table th.col-dd,    .market-table td.col-dd    { width: 80px; text-align: center; }
+.market-table th.col-ftd,   .market-table td.col-ftd   { width: 80px; text-align: center; }
+.market-table th.col-spr,   .market-table td.col-spr   { width: 140px; }
 .signal-sell { background: #fdedec; color: #c0392b; font-weight: bold; }
 .signal-buy { background: #eafaf1; color: #27ae60; font-weight: bold; }
 /* トレンド列の背景色 (portfolio_list と仕様統一: ◎=濃黄 / ◯=薄黄 / —=水色) */
 .trend-bg-strong { background: #fbbc04; }  /* ◎ */
 .trend-bg-good   { background: #fce8b2; }  /* ◯ */
 .trend-bg-none   { background: #6fa8dc; }  /* — / 空 */
-/* 10WMA乖離率の数値表示 (issue #248)
-   ゾーンを文字色で表現 (portfolio 側でトレンド列背景がすでに使われているため統一)。 */
-.kairi-num { margin-left: 2px; }
-.kairi-num.kairi-zone-overheat   { color: #e67e22; }  /* ≥+25% 利確警戒 */
-.kairi-num.kairi-zone-healthy    { color: #27ae60; }  /* +10〜+25% 健全 */
-.kairi-num.kairi-zone-pullback   { color: #2ecc71; }  /* 0〜+10% 押し目 */
-.kairi-num.kairi-zone-near-break { color: #e74c3c; }  /* -5〜0% 小割れ */
-.kairi-num.kairi-zone-break      { color: #c0392b; }  /* ≤-5% 崩れ */
-.rs-strong { color: #27ae60; font-weight: bold; }
-.rs-weak { color: #c0392b; font-weight: bold; }
 /* 需給バランスセル (issue #247): SPR/rv の横バー 2 本縦積み */
 .spr-gauge-cell { padding: 4px; vertical-align: middle; white-space: nowrap; }
-.spr-gauge-cell svg { display: block; }
+.spr-gauge-cell svg { display: block; width: 100%; height: auto; }
 /* market_state */
 .state-confirmed { background: #eafaf1; color: #27ae60; font-weight: bold; }
 .state-pressure  { background: #fffbe6; color: #b8860b; font-weight: bold; }
@@ -953,16 +952,25 @@ def _adjust_index_trend_template(db):
     return adjusted
 
 
-def _rs_class(rs_raw):
-    """rs_raw 値からCSSクラス名を返す。
-    >1.0=rs-strong (緑) / <1.0=rs-weak (赤) / =1.0 もしくは未取得 = クラスなし
+def _rs_style(rs_raw):
+    """rs_raw 値から inline style 属性を返す (portfolio パレット準拠)。
+
+    - >= 1.2: 濃黄 (#fbbc04)
+    - 1.1〜1.2: 薄黄 (#fce8b2)
+    - 0.9〜1.1: 色なし (中立)
+    - 0.8〜0.9: 水色 (#6fa8dc 薄警告)
+    - <= 0.8: 青 (#4285f4 警告) + 白文字
     """
     if not rs_raw:
         return ""
-    if rs_raw > 1.0:
-        return ' class="rs-strong"'
-    if rs_raw < 1.0:
-        return ' class="rs-weak"'
+    if rs_raw >= 1.2:
+        return ' style="background:#fbbc04"'
+    if rs_raw >= 1.1:
+        return ' style="background:#fce8b2"'
+    if rs_raw <= 0.8:
+        return ' style="background:#4285f4;color:#fff"'
+    if rs_raw <= 0.9:
+        return ' style="background:#6fa8dc"'
     return ""
 
 
@@ -980,7 +988,7 @@ _SPR_GAUGE_GREEN_COLORS = {
     "E": "#f8fef8",
 }
 _SPR_GAUGE_GREEN_DEFAULT = _SPR_GAUGE_GREEN_COLORS["C"]
-_SPR_GAUGE_RED_FIXED = "#f4d4d4"
+_SPR_GAUGE_RED_FIXED = "#f4c7c3"  # パレットの「薄赤 (株価マイナス)」と統一
 
 
 def _to_finite_number(v):
@@ -1162,11 +1170,11 @@ def _html_market(market_db):
                 dd_display = "%d / %d" % (dd_count, dd_threshold)
             dd_dates = ", ".join([d[0][3:] for d in dd_with_close if d and len(d) >= 1])
             dd_title = ' title="%s"' % html_mod.escape(dd_dates) if dd_dates else ""
-            dd_class = ""
+            dd_extra_cls = ""
             if dd_count >= market_state.DD_THRESHOLD_TO_CORRECTION:
-                dd_class = ' class="dd-correction"'
+                dd_extra_cls = " dd-correction"
             elif dd_count >= market_state.DD_THRESHOLD_TO_PRESSURE:
-                dd_class = ' class="dd-pressure"'
+                dd_extra_cls = " dd-pressure"
 
             # FTD/ラリー列: correction中はラリー Day N、それ以外は直近FTD日
             if state == market_state.MARKET_IN_CORRECTION:
@@ -1186,23 +1194,27 @@ def _html_market(market_db):
             else:
                 state_display = state_label
             state_css = market_state.STATE_CSS_CLASS.get(state, "")
-            state_class = ' class="%s"' % state_css if state_css else ""
 
-            kairi = db.get("price_kairi_wma10")
+            # トレンド列: portfolio と同仕様で 10WMA乖離率の縦バー + 中央記号 + 詳細tooltip
+            kairi_raw = db.get("price_kairi_wma10")
+            kairi_for_gauge = kairi_raw if isinstance(kairi_raw, (int, float)) else None
             bg_cls = trend_bg_class(trend_expr)
-            trend_class = ' class="%s"' % bg_cls if bg_cls else ""
-            trend_title = ' title="不通過: %s"' % html_mod.escape(trend_misses) if trend_misses else ""
-            kairi_str = format_kairi_wma10(kairi)
-            if kairi_str:
-                span_class = ("kairi-num %s" % kairi_wma10_zone_class(kairi)).strip()
-                trend_cell_inner = '%s <span class="%s">%s</span>' % (
-                    html_mod.escape(trend_expr), span_class, kairi_str,
-                )
-            else:
-                trend_cell_inner = html_mod.escape(trend_expr)
+            trend_extra_cls = " %s" % bg_cls if bg_cls else ""
+            # tooltip: 不通過 (◯のみ) + 10WMA乖離率
+            kairi_str = format_kairi_wma10(kairi_for_gauge) or "—"
+            tooltip_lines = []
+            if trend_expr == "◯" and trend_misses:
+                tooltip_lines.append("不通過: " + trend_misses)
+            tooltip_lines.append("10WMA乖離: " + kairi_str)
+            trend_title = ' title="%s"' % html_mod.escape("\n".join(tooltip_lines))
+            # 市場指数は個別銘柄より日次ボラが小さいので、ゲージのレンジと濃淡閾値を縮める
+            trend_cell_inner = kairi_gauge_svg(
+                kairi_for_gauge, trend_expr,
+                range_pct=15.0, faint_threshold=5.0, strong_threshold=10.0,
+            )
 
             rs_raw = db.get("rs_raw", "")
-            rs_class = _rs_class(rs_raw)
+            rs_style = _rs_style(rs_raw)
 
             # 売り圧力レシオ + 買い集め評価 (週,日) → 需給バランスセル (issue #247)
             # 個別銘柄は price.get_spr_expr で評価しているが、指数は sell_pressure_ratio が空のため
@@ -1232,22 +1244,24 @@ def _html_market(market_db):
             )
             gauge_title_attr = ' title="%s"' % html_mod.escape(gauge_tooltip) if gauge_tooltip else ""
 
+            state_class = "col-state" + (" " + state_css if state_css else "")
+            state_attr = ' class="%s"' % state_class
             rows_html.append(
                 '<tr>\n'
                 '  <td><strong><a href="%s" target="_blank" rel="noopener">%s</a></strong></td>\n'
+                '  <td class="col-rs"%s>%s</td>\n'
+                '  <td class="col-trend%s"%s>%s</td>\n'
+                '  <td class="col-dd%s"%s>%s</td>\n'
+                '  <td class="col-ftd">%s</td>\n'
                 '  <td%s>%s</td>\n'
-                '  <td%s%s>%s</td>\n'
-                '  <td%s%s>%s</td>\n'
-                '  <td>%s</td>\n'
-                '  <td%s>%s</td>\n'
-                '  <td class="spr-gauge-cell"%s>%s</td>\n'
+                '  <td class="col-spr spr-gauge-cell"%s>%s</td>\n'
                 '</tr>' % (
                     html_mod.escape(chart_url), html_mod.escape(market_name),
-                    rs_class, rs_raw,
-                    trend_class, trend_title, trend_cell_inner,
-                    dd_class, dd_title, html_mod.escape(dd_display),
+                    rs_style, rs_raw,
+                    trend_extra_cls, trend_title, trend_cell_inner,
+                    dd_extra_cls, dd_title, html_mod.escape(dd_display),
                     html_mod.escape(ftd_rally_display),
-                    state_class, html_mod.escape(state_display),
+                    state_attr, html_mod.escape(state_display),
                     gauge_title_attr, gauge_svg,
                 )
             )
@@ -1261,9 +1275,9 @@ def _html_market(market_db):
         '<h2>市場</h2>\n'
         '<table class="market-table">\n'
         '<thead><tr>\n'
-        '  <th>市場名</th><th>RS</th><th>トレンド</th>\n'
-        '  <th>DD</th><th>FTD/ラリー</th>\n'
-        '  <th>市場状態</th><th>需給バランス</th>\n'
+        '  <th>市場名</th><th class="col-rs">RS</th><th class="col-trend">トレンド</th>\n'
+        '  <th class="col-dd">DD</th><th class="col-ftd">FTD/ラリー</th>\n'
+        '  <th class="col-state">市場状態</th><th class="col-spr">需給バランス</th>\n'
         '</tr></thead>\n'
         '<tbody>'
     )

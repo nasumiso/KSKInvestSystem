@@ -376,23 +376,27 @@ class TestKairiGaugeSvg:
     """kairi_gauge_svg(): 10WMA乖離率の SVG バーゲージ生成 (issue portfolio-trend-gauge)"""
 
     @pytest.mark.parametrize(
-        "kairi, symbol, expect_svg, expect_marker, expect_overheat",
+        "kairi, symbol, expect_svg, expect_marker, expect_color",
         [
-            # 健全帯 +12: SVG + マーカーあり + 橙ではない
-            (12, "◎", True, True, False),
-            # 小割れ -3: SVG + マーカーあり + 橙ではない
-            (-3, "◯", True, True, False),
-            # +25 境界: マーカーは右端、橙
-            (25, "◎", True, True, True),
-            # 範囲外 +30: クランプ + 橙
-            (30, "◎", True, True, True),
+            # |kairi| < 10%: 中立 (黒)
+            (5, "◎", True, True, "#000"),
+            (-3, "◯", True, True, "#000"),
+            # プラス淡 (10〜20%): 淡緑
+            (12, "◎", True, True, "#9be29b"),
+            # プラス濃 (≥20%): 濃緑
+            (25, "◎", True, True, "#2e7d32"),
+            (30, "◎", True, True, "#2e7d32"),
+            # マイナス淡 (-10〜-20%): 淡薄赤
+            (-15, "◯", True, True, "#f4c7c3"),
+            # マイナス濃 (≤-20%): 濃薄赤
+            (-25, "◯", True, True, "#c62828"),
             # データ無し + 記号あり: SVG (記号のみ)、マーカーなし
-            (None, "—", True, False, False),
+            (None, "—", True, False, None),
             # データ無し + 記号も空: 空文字
-            (None, "", False, False, False),
+            (None, "", False, False, None),
         ],
     )
-    def test_gauge_shape(self, kairi, symbol, expect_svg, expect_marker, expect_overheat):
+    def test_gauge_shape(self, kairi, symbol, expect_svg, expect_marker, expect_color):
         svg = ks_util.kairi_gauge_svg(kairi, symbol)
         if not expect_svg:
             assert svg == ""
@@ -402,13 +406,33 @@ class TestKairiGaugeSvg:
         line_count = svg.count("<line")
         if expect_marker:
             assert line_count == 2
+            assert expect_color in svg
         else:
             assert line_count == 0
-        # overheat マーカー色は kairi >= +25 のみ
-        if expect_overheat:
-            assert "#e67e22" in svg
-        else:
-            assert "#e67e22" not in svg
+        # 廃止された overheat オレンジ色 (#e67e22) は出現しない
+        assert "#e67e22" not in svg
         # 記号が SVG に埋め込まれる
         if symbol:
             assert symbol in svg
+
+    @pytest.mark.parametrize(
+        "kairi, expect_color",
+        [
+            # 縮小レンジ (range=15, faint=5, strong=10) での色境界
+            (4, "#000"),         # |k| < 5: 中立
+            (-4, "#000"),
+            (7, "#9be29b"),      # 5 <= k < 10: プラス淡
+            (-7, "#f4c7c3"),     # -10 < k <= -5: マイナス淡
+            (12, "#2e7d32"),     # k >= 10: プラス濃
+            (-12, "#c62828"),    # k <= -10: マイナス濃
+            (20, "#2e7d32"),     # range=15 を超える値もクランプして濃色
+        ],
+    )
+    def test_market_scale(self, kairi, expect_color):
+        """市場用 (range=15, faint=5, strong=10) の色境界が正しく切り替わる。"""
+        svg = ks_util.kairi_gauge_svg(
+            kairi, "◎",
+            range_pct=15.0, faint_threshold=5.0, strong_threshold=10.0,
+        )
+        assert svg.startswith("<svg")
+        assert expect_color in svg

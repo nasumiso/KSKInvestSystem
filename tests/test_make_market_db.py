@@ -466,11 +466,11 @@ class TestHtmlMarket:
         assert 'trend-bg-strong' in result or 'trend-bg-good' in result
 
     def test_market_table_header(self):
-        """テーブルヘッダーが含まれる (Part B: DD/FTD 列名改修)"""
+        """テーブルヘッダーが含まれる (Part B: DD/FTD 列名改修 + 列幅 class 追加)"""
         result = make_market_db._html_market(self._make_market_db())
         assert 'market-table' in result
-        assert '<th>DD</th>' in result
-        assert '<th>FTD/ラリー</th>' in result
+        assert '<th class="col-dd">DD</th>' in result
+        assert '<th class="col-ftd">FTD/ラリー</th>' in result
 
     # ===== Part B: 表示文言・列構成テスト =====
     def test_market_state_header_label(self):
@@ -653,26 +653,30 @@ class TestHtmlMarket:
         assert "NASDAQ" not in result
         assert "S&amp;P 500" not in result
 
-    def test_rs_strong_class_when_rs_raw_above_one(self):
-        """rs_raw > 1.0 で rs-strong クラスが付く (issue #148 Part 1)"""
-        result = make_market_db._html_market(self._make_market_db())
-        assert 'rs-strong' in result
-
-    def test_rs_weak_class_when_rs_raw_below_one(self):
-        """rs_raw < 1.0 で rs-weak クラスが付く (issue #148 Part 1)"""
+    def test_rs_bg_yellow_when_rs_raw_high(self):
+        """rs_raw >= 1.2 で濃黄背景 / 1.1〜1.2 で薄黄背景 (portfolio パレット準拠)"""
         db = self._make_market_db()
-        db["topix"]["rs_raw"] = 0.92
+        db["topix"]["rs_raw"] = 1.25
         result = make_market_db._html_market(db)
-        assert 'rs-weak' in result
+        assert 'background:#fbbc04' in result
 
-    def test_rs_no_class_when_rs_raw_equals_one(self):
-        """rs_raw == 1.0 ではクラス付かない (デフォルト灰)"""
+    def test_rs_bg_blue_when_rs_raw_low(self):
+        """rs_raw <= 0.8 で青背景+白文字 (警告)"""
+        db = self._make_market_db()
+        db["topix"]["rs_raw"] = 0.75
+        result = make_market_db._html_market(db)
+        assert 'background:#4285f4;color:#fff' in result
+
+    def test_rs_no_style_when_rs_raw_neutral(self):
+        """0.9 < rs < 1.1 では背景色付かない (中立)"""
         db = {
             "topix": dict(self._make_market_db()["topix"], rs_raw=1.0)
         }
         result = make_market_db._html_market(db)
-        assert 'rs-strong' not in result
-        assert 'rs-weak' not in result
+        assert 'background:#fbbc04' not in result
+        assert 'background:#fce8b2' not in result
+        assert 'background:#6fa8dc' not in result
+        assert 'background:#4285f4' not in result
 
     def test_index_rs_threshold_removes_RS_from_trend(self):
         """rs_raw > 1.05 なら trend_template の "RS" 未達が除外される (issue #148 Part 1)"""
@@ -712,9 +716,9 @@ class TestSprGaugeSvg:
         assert svg.startswith("<svg")
         # 各バー: 背景 rect 2枚 (左緑 + 右赤) × 2本 = 4枚
         assert svg.count('<rect') == 4
-        # ラベル未指定なので緑バーは C 相当 (#d4f4d4) ×2、赤バーは固定色 (#f4d4d4) ×2
+        # ラベル未指定なので緑バーは C 相当 (#d4f4d4) ×2、赤バーは固定色 (#f4c7c3) ×2
         assert svg.count('#d4f4d4') == 2
-        assert svg.count('#f4d4d4') == 2
+        assert svg.count('#f4c7c3') == 2
         # ティック (stroke-width=2) と ヒゲ (stroke-width=1) それぞれ 2 本ずつ
         assert svg.count('stroke-width="2"') == 2
         assert svg.count('stroke-width="1"') == 2
@@ -763,12 +767,12 @@ class TestSprGaugeSvg:
     ])
     def test_buy_collection_label_drives_green_bar_density(self, sprw, expected_green_20):
         """週評価 → 20日バー / 日評価 → 5日バー で緑バーの濃淡をコントロールする。
-        赤バーは固定色 (#f4d4d4)、ラベル欠損は C 相当にフォールバック。"""
+        赤バーは固定色 (#f4c7c3)、ラベル欠損は C 相当にフォールバック。"""
         svg = make_market_db.build_spr_gauge_svg(50, 2.0, 60, 3.0, sprw, None)
         # 緑バー (20日) は期待濃度
         assert expected_green_20 in svg
         # 赤バーは sprw / sprbg に関わらず固定色のみ (両バーぶん 2 回)
-        assert svg.count("#f4d4d4") == 2
+        assert svg.count("#f4c7c3") == 2
 
     def test_bar_title_includes_buy_collection_label(self):
         """バー単体 <title> に '買い集めX' が併記される (ホバー時に SVG <title> が勝つため)"""
@@ -835,23 +839,25 @@ class TestAdjustIndexTrendTemplate:
         assert original["trend_template"] == original_misses
 
 
-class TestRsClass:
-    """rs_raw 値からCSSクラスを返すテスト (issue #148 Part 1)"""
+class TestRsStyle:
+    """rs_raw 値から背景色 inline style を返すテスト (portfolio パレット準拠)"""
 
-    def test_strong_when_above_one(self):
-        assert make_market_db._rs_class(1.15) == ' class="rs-strong"'
-
-    def test_weak_when_below_one(self):
-        assert make_market_db._rs_class(0.92) == ' class="rs-weak"'
-
-    def test_no_class_when_equal_one(self):
-        assert make_market_db._rs_class(1.0) == ""
-
-    def test_no_class_when_zero(self):
-        assert make_market_db._rs_class(0) == ""
-
-    def test_no_class_when_empty_string(self):
-        assert make_market_db._rs_class("") == ""
+    @pytest.mark.parametrize("rs, expected", [
+        (1.25, ' style="background:#fbbc04"'),                  # >= 1.2 濃黄
+        (1.20, ' style="background:#fbbc04"'),                  # 境界
+        (1.15, ' style="background:#fce8b2"'),                  # >= 1.1 薄黄
+        (1.10, ' style="background:#fce8b2"'),                  # 境界
+        (1.00, ""),                                              # 中立
+        (0.95, ""),
+        (0.90, ' style="background:#6fa8dc"'),                  # <= 0.9 水色
+        (0.85, ' style="background:#6fa8dc"'),
+        (0.80, ' style="background:#4285f4;color:#fff"'),       # <= 0.8 青 + 白文字
+        (0.70, ' style="background:#4285f4;color:#fff"'),
+        (0, ""),                                                 # 未取得
+        ("", ""),                                                # 空文字
+    ])
+    def test_rs_style(self, rs, expected):
+        assert make_market_db._rs_style(rs) == expected
 
 
 class TestHtmlKessan:

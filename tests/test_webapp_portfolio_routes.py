@@ -660,8 +660,8 @@ class TestUpdateMemoAjax:
         assert resp.status_code == 200
         body = resp.get_json()
         assert "styles" in body
-        # ステージ "2S" は薄赤色付け対象 (ルール 13)
-        assert body["styles"].get("stage") == "background:#f4c7c3"
+        # ステージ "2S" 単独は濃黄 (新意味体系: 2S=濃黄 / 3S=水色 / 4S=青)
+        assert body["styles"].get("stage") == "background:#fbbc04"
         # display フィールドに保存後の表示値が入っている
         assert body["display"]["stage"] == "2S"
         assert body["display"]["last_research_update"] == "5/10"

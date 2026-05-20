@@ -443,16 +443,6 @@ nav .quick-search {
 .trend-bg-good   { background: #fce8b2; }
 .trend-bg-none   { background: #6fa8dc; }
 
-/* 10WMA乖離率の数値表示 (issue #248)
-   portfolio_list ではトレンド列の背景が ◎/◯/— に占有されるため、
-   ゾーンは文字色で表現する。 */
-.kairi-num { margin-left: 2px; }
-.kairi-num.kairi-zone-overheat   { color: #e67e22; }  /* ≥+25% 利確警戒 */
-.kairi-num.kairi-zone-healthy    { color: #27ae60; }  /* +10〜+25% 健全 */
-.kairi-num.kairi-zone-pullback   { color: #2ecc71; }  /* 0〜+10% 押し目 */
-.kairi-num.kairi-zone-near-break { color: #e74c3c; }  /* -5〜0% 小割れ */
-.kairi-num.kairi-zone-break      { color: #c0392b; }  /* ≤-5% 崩れ */
-
 /* 需給バランスセル (issue #247): SPR/rv の横バー 2 本縦積み */
 .spr-gauge-cell { padding: 4px; vertical-align: middle; white-space: nowrap; width: 80px; }
 .spr-gauge-cell svg { display: block; width: 80px; height: auto; }

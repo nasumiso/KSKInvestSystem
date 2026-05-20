@@ -716,29 +716,6 @@ def trend_bg_class(symbol):
     return _TREND_BG_CLASS.get(symbol, "")
 
 
-def kairi_wma10_zone_class(kairi):
-    """10WMA乖離率(%)から 5 段階のゾーン CSS クラス名を返す。
-
-    issue #248: 利確警戒 / 健全 / 押し目 / 小割れ / 崩れ の 5 段階。
-    None や数値化不能なら "" を返す。
-    """
-    if kairi is None:
-        return ""
-    try:
-        k = float(kairi)
-    except (TypeError, ValueError):
-        return ""
-    if k >= 25:
-        return "kairi-zone-overheat"
-    if k >= 10:
-        return "kairi-zone-healthy"
-    if k >= 0:
-        return "kairi-zone-pullback"
-    if k > -5:
-        return "kairi-zone-near-break"
-    return "kairi-zone-break"
-
-
 def format_kairi_wma10(kairi):
     """10WMA乖離率 (%) を "+12%" / "-3%" 形式で整形。None や数値化不能なら "" を返す。"""
     if kairi is None:
@@ -751,13 +728,36 @@ def format_kairi_wma10(kairi):
 
 # overheat 閾値と色は kairi_wma10_zone_class() の `kairi-zone-overheat` 境界と一致させる
 _KAIRI_GAUGE_RANGE = 25.0
-_KAIRI_GAUGE_OVERHEAT_COLOR = "#e67e22"
+# マーカー縦線色: |kairi| < faint 黒 (中立) / < strong 淡色 / ≥ strong 濃色
+# 個別銘柄の既定は (range=25, faint=10, strong=20)。市場用は (15, 5, 10) に縮める。
+_KAIRI_GAUGE_FAINT_THRESHOLD = 10.0
+_KAIRI_GAUGE_STRONG_THRESHOLD = 20.0
+_KAIRI_GAUGE_NEUTRAL_COLOR = "#000"
+_KAIRI_GAUGE_POS_FAINT = "#9be29b"
+_KAIRI_GAUGE_POS_STRONG = "#2e7d32"
+_KAIRI_GAUGE_NEG_FAINT = "#f4c7c3"
+_KAIRI_GAUGE_NEG_STRONG = "#c62828"
 
 
-def kairi_gauge_svg(kairi, symbol):
-    """10WMA乖離率を -25%〜+25% の縦線マーカーで描画する SVG を返す。
+def _kairi_gauge_marker_color(kairi_pct: float,
+                              faint_threshold: float = _KAIRI_GAUGE_FAINT_THRESHOLD,
+                              strong_threshold: float = _KAIRI_GAUGE_STRONG_THRESHOLD) -> str:
+    """10WMA乖離率の符号と大きさからマーカー縦線色を返す。"""
+    abs_k = abs(kairi_pct)
+    if abs_k < faint_threshold:
+        return _KAIRI_GAUGE_NEUTRAL_COLOR
+    if kairi_pct > 0:
+        return _KAIRI_GAUGE_POS_FAINT if abs_k < strong_threshold else _KAIRI_GAUGE_POS_STRONG
+    return _KAIRI_GAUGE_NEG_FAINT if abs_k < strong_threshold else _KAIRI_GAUGE_NEG_STRONG
 
-    kairi >= +25 はクランプ + overheat 色のマーカー。
+
+def kairi_gauge_svg(kairi, symbol,
+                    range_pct: float = _KAIRI_GAUGE_RANGE,
+                    faint_threshold: float = _KAIRI_GAUGE_FAINT_THRESHOLD,
+                    strong_threshold: float = _KAIRI_GAUGE_STRONG_THRESHOLD):
+    """10WMA乖離率を -range_pct〜+range_pct の縦線マーカーで描画する SVG を返す。
+
+    kairi >= +range_pct はクランプ + strong 色のマーカー。
     kairi が None で symbol も空なら "" を返す。
     """
     width = 40
@@ -765,7 +765,7 @@ def kairi_gauge_svg(kairi, symbol):
     if kairi is None and not symbol:
         return ""
 
-    px_per_pct = width / (_KAIRI_GAUGE_RANGE * 2)
+    px_per_pct = width / (range_pct * 2)
     parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d" style="vertical-align:middle;">' % (width, height, width, height)]
 
     if kairi is not None:
@@ -774,13 +774,17 @@ def kairi_gauge_svg(kairi, symbol):
         except (TypeError, ValueError):
             k = None
         if k is not None:
-            k_clamped = max(-_KAIRI_GAUGE_RANGE, min(_KAIRI_GAUGE_RANGE, k))
-            mx = (k_clamped + _KAIRI_GAUGE_RANGE) * px_per_pct
+            k_clamped = max(-range_pct, min(range_pct, k))
+            mx = (k_clamped + range_pct) * px_per_pct
             # 端でクリップされてマーカーが半分の太さに見えないよう、両端は 1px 内側に寄せる
             mx = max(1.0, min(width - 1.0, mx))
-            marker_color = _KAIRI_GAUGE_OVERHEAT_COLOR if k >= _KAIRI_GAUGE_RANGE else "#000"
-            parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="3"/>' % (mx, mx, height))
-            parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="%s" stroke-width="2"/>' % (mx, mx, height, marker_color))
+            marker_color = _kairi_gauge_marker_color(k, faint_threshold, strong_threshold)
+            # 緑系 (株価プラス) は淡色で細く見えるため少し太くする
+            is_green = marker_color in (_KAIRI_GAUGE_POS_FAINT, _KAIRI_GAUGE_POS_STRONG)
+            marker_w = 3 if is_green else 2
+            halo_w = marker_w + 1
+            parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="%d"/>' % (mx, mx, height, halo_w))
+            parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="%s" stroke-width="%d"/>' % (mx, mx, height, marker_color, marker_w))
 
     if symbol:
         parts.append('<text x="50%%" y="50%%" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="bold" fill="#000" stroke="white" stroke-width="3" paint-order="stroke">%s</text>' % symbol)
