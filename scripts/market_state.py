@@ -271,6 +271,12 @@ def derive_state(prev_state, valid_dd_count, ftd_today, below_10ma=False):
 def append_state_history(history, today_date, new_state, trigger):
     """state_history に1件追加。直近 STATE_HISTORY_MAX 件のみ保持。
 
+    1日に複数回呼ばれる場合 (cron + 手動再実行など) の保護:
+      - 既存と new_state が同じで、既存 trigger が遷移系 (= "stay"/"init" 以外) なら、
+        既存エントリの trigger を保持して上書きしない。新規 trigger が "stay" でも
+        元の遷移情報 (例: "dd>=4") が失われないようにする
+      - state が異なる場合は新規 entry で置換 (= 同日内の遷移を反映)
+
     Args:
         history: 既存の履歴 [(date, state, trigger), ...] (新しいが先頭)
         today_date: str
@@ -282,7 +288,14 @@ def append_state_history(history, today_date, new_state, trigger):
     """
     if not isinstance(history, list):
         history = []
-    # 同じ日の既存エントリは置き換え (1日複数回計算される場合)
+    # 同日エントリを探す
+    existing = next((h for h in history if h[0] == today_date), None)
+    if existing is not None:
+        existing_state, existing_trigger = existing[1], existing[2]
+        # 同日かつ state 同じで、既存が遷移系 trigger なら trigger を保持
+        if existing_state == new_state and existing_trigger not in ("stay", "init"):
+            trigger = existing_trigger
+    # 既存エントリを除外して先頭に追加
     history = [h for h in history if h[0] != today_date]
     history.insert(0, (today_date, new_state, trigger))
     return history[:STATE_HISTORY_MAX]

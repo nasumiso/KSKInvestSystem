@@ -1004,6 +1004,88 @@ class TestHtmlDisclosure:
         assert 'disc-row-gyoseki' in result
 
 
+class TestUpdateIndexMarketStateFTD:
+    """_update_index_market_state の FTD 判定統合テスト。
+
+    issue (state遷移FTD不動作): _calc_daily_indicators が
+    new_index_db["price"|"low"|"volume"] を返さなかったため、ラリー追跡が一度も
+    起動せず FTD が成立しないバグの回帰防止。
+    """
+
+    def _build_meta(self, prev_state, rally_start_date=None, rally_start_low=None,
+                    prev_volume=0, dd_list=None):
+        return {
+            "rally_attempt_start_date": rally_start_date,
+            "rally_attempt_start_low": rally_start_low,
+            "distribution_days_with_close": dd_list or [],
+            "last_ftd_date": None,
+            "prev_volume": prev_volume,
+        }
+
+    def test_rally_day1_starts_when_correction_and_close_up(self):
+        """前日 correction + 当日終値 > 前日終値 で rally Day 1 が確定する。
+
+        当日 OHLV (price/low/volume) が new_index_db に詰まっていることが前提。
+        欠落するとラリー追跡が永遠に起動しない (本タスクの主バグ)。
+        """
+        import market_state
+        prev_index_db = {
+            "market_state": market_state.MARKET_IN_CORRECTION,
+            "state_meta": self._build_meta(market_state.MARKET_IN_CORRECTION,
+                                            prev_volume=1000),
+            "state_history": [("26/05/20", market_state.MARKET_IN_CORRECTION, "dd>=6")],
+        }
+        # 当日: 大幅反発、出来高増、low/high あり
+        new_index_db = {
+            "price": 61684,
+            "low": 60282,
+            "high": 62043,
+            "volume": 2504900,
+            "daily_history": ["26/05/21", "26/05/20", "26/05/19"],
+            "distribution_days_with_close": [],
+            "price_log": [
+                (datetime(2026, 5, 21).date(), 61684),
+                (datetime(2026, 5, 20).date(), 59804),
+            ],
+            "price_kairi_wma10": -2.0,
+        }
+        make_market_db._update_index_market_state(prev_index_db, new_index_db)
+        sm = new_index_db["state_meta"]
+        assert sm["rally_attempt_start_date"] == "26/05/21", (
+            f"ラリー Day 1 が記録されていない: {sm}"
+        )
+        assert sm["rally_attempt_start_low"] == 60282
+        # まだ Day 1 なので FTD は成立しない (Day 4 以降が条件)
+        assert sm["last_ftd_date"] is None
+        assert new_index_db["market_state"] == market_state.MARKET_IN_CORRECTION
+
+    def test_no_rally_when_close_not_up(self):
+        """前日 correction でも当日終値が前日以下ならラリー Day 1 にならない。"""
+        import market_state
+        prev_index_db = {
+            "market_state": market_state.MARKET_IN_CORRECTION,
+            "state_meta": self._build_meta(market_state.MARKET_IN_CORRECTION,
+                                            prev_volume=1000),
+            "state_history": [],
+        }
+        new_index_db = {
+            "price": 59500,  # 前日 59804 より下
+            "low": 59000,
+            "high": 60000,
+            "volume": 2000000,
+            "daily_history": ["26/05/21", "26/05/20"],
+            "distribution_days_with_close": [],
+            "price_log": [
+                (datetime(2026, 5, 21).date(), 59500),
+                (datetime(2026, 5, 20).date(), 59804),
+            ],
+            "price_kairi_wma10": -3.0,
+        }
+        make_market_db._update_index_market_state(prev_index_db, new_index_db)
+        sm = new_index_db["state_meta"]
+        assert sm["rally_attempt_start_date"] is None
+
+
 class TestCreateMarketHtml:
     """create_market_html() 統合テスト"""
 
