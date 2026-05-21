@@ -24,8 +24,14 @@
 
 {# issue #165: 市場 / テーマランクの後にテーマニュース調査を表示。手動実行ボタン付き #}
 <style>
-  /* skill 出力の長文 li を読みやすくする scoped CSS */
-  .theme-news-body h2 { font-size: 1.05em; margin: 1.2em 0 0.4em 0; padding-bottom: 0.15em; border-bottom: 1px solid #d8dde2; color: #2c3e50; }
+  /* skill 出力の長文 li を読みやすくする scoped CSS。
+     market_data.html 由来のグローバル h2 (濃紺背景+白文字) を上書きするため、
+     background/color/padding/border-radius を明示リセットする。 */
+  .theme-news-body h2 {
+    font-size: 1.05em; margin: 1.2em 0 0.4em 0;
+    padding: 0 0 0.15em 0; border-bottom: 1px solid #d8dde2;
+    color: #2c3e50; background: transparent; border-radius: 0;
+  }
   .theme-news-body h2:first-child { margin-top: 0; }
   .theme-news-body h3 { font-size: 0.95em; margin: 1em 0 0.3em 0; color: #555; }
   .theme-news-body ul { margin: 0.3em 0 0.8em 0; padding-left: 1.4em; }
