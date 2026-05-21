@@ -74,3 +74,18 @@ def test_run_claude_skill_creates_marker_on_success(tmp_history):
     with patch.object(rtn.subprocess, "run", side_effect=fake_run_empty):
         assert rtn._run_claude_skill() == 1
     assert not marker_path.exists()
+
+    # ケース4: skill が期待と違う日付でファイルを書いた → 不一致検知 + rc=1
+    # SKILL.md 1-0/7 の価格日規約違反を検知できることを担保する。
+    history_path.unlink(missing_ok=True)
+    wrong_path = history_path.parent / "2026-05-22.md"  # 期待は 2026-05-21.md
+    def fake_run_wrong_date(*args, **kwargs):
+        wrong_path.write_text("# wrong date\n", encoding="utf-8")
+        return subprocess.CompletedProcess(args, returncode=0, stdout="", stderr="")
+
+    with patch.object(rtn.subprocess, "run", side_effect=fake_run_wrong_date):
+        assert rtn._run_claude_skill() == 1
+    assert not marker_path.exists()
+    # 検知ヘルパーが直近書込みファイルを掴むこと
+    detected = rtn._detect_recent_history(history_path)
+    assert detected == wrong_path

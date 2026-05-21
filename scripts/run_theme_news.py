@@ -76,7 +76,16 @@ def _run_claude_skill() -> int:
 
     history_file = _today_history_path()
     if not history_file.exists():
-        log_warning(f"[theme-news] claude -p は成功したが {history_file.name} が見つからない")
+        # skill が期待と違う日付で書いた可能性。直近書込みファイルを特定して詳細を出す。
+        recent = _detect_recent_history(history_file)
+        if recent is not None:
+            log_warning(
+                f"[theme-news] history 日付不一致: 期待={history_file.name} / "
+                f"skill が生成={recent.name}。SKILL.md 1-0/7 の価格日 (= get_price_day) "
+                f"でファイル名を書く規約に違反している。skill 側を確認すること。"
+            )
+        else:
+            log_warning(f"[theme-news] claude -p は成功したが {history_file.name} が見つからない")
         return 1
     if history_file.stat().st_size <= 0:
         log_warning(f"[theme-news] history が空ファイル: {history_file.name}")
@@ -87,6 +96,31 @@ def _run_claude_skill() -> int:
     _today_done_marker_path().touch()
     log_print(f"[theme-news] 完了: {history_file.name}")
     return 0
+
+
+def _detect_recent_history(expected: Path) -> "Path | None":
+    """期待ファイル名 (expected) と違う日付で skill が書いた可能性のあるファイルを返す。
+
+    検出条件: HISTORY_DIR 直下の *.md のうち、mtime が claude -p 実行中
+    (= now から 30 分以内) で、ファイル名が expected と異なるもの。
+    複数あれば mtime 最新を返す。無ければ None。
+    """
+    import time
+    if not HISTORY_DIR.exists():
+        return None
+    now = time.time()
+    candidates = []
+    for p in HISTORY_DIR.glob("*.md"):
+        if p == expected:
+            continue
+        try:
+            if now - p.stat().st_mtime <= 30 * 60:
+                candidates.append(p)
+        except OSError:
+            continue
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 def main() -> int:
