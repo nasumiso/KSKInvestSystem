@@ -30,13 +30,14 @@ ALLOWED_TAGS = frozenset({
 # 属性値の許可パターン
 _HREF_PATTERN = re.compile(r"^https?://")
 _TARGET_PATTERN = re.compile(r"^_blank$")
+_REL_PATTERN = re.compile(r"^noopener$")
 _STYLE_COLOR_PATTERN = re.compile(r"^color:#[0-9a-fA-F]{3,6}$")
 # theme-news Sources セクション折りたたみ用に <details class="sources"> のみ許可。
 # 他クラス名は除去される (XSS 経路にはならないが、混乱回避のため厳密に絞る)。
 _DETAILS_CLASS_PATTERN = re.compile(r"^sources$")
 
 ALLOWED_ATTRS = {
-    "a": {"href": _HREF_PATTERN, "target": _TARGET_PATTERN},
+    "a": {"href": _HREF_PATTERN, "target": _TARGET_PATTERN, "rel": _REL_PATTERN},
     "span": {"style": _STYLE_COLOR_PATTERN},
     "details": {"class": _DETAILS_CLASS_PATTERN},
 }

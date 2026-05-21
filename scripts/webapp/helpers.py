@@ -269,9 +269,18 @@ def theme_news_md_to_html(text: str) -> str:
     # Sources セクション (`## Sources` から末尾まで) を <details class="sources"> で
     # 折りたたむ。skill 出力末尾に必ず「## Sources」見出しが入る規約に依存。
     # マッチしなければ何もしない (旧 history で Sources 無いものは素通り)。
+    def _wrap_sources(match: re.Match) -> str:
+        # Sources セクション内の <a href="..."> は外部サイト前提なので別タブで開く。
+        body = re.sub(
+            r'<a\s+href="(https?://[^"]+)">',
+            r'<a href="\1" target="_blank" rel="noopener">',
+            match.group(1),
+        )
+        return f'<details class="sources"><summary>📎 Sources を表示</summary>{body}</details>'
+
     html = re.sub(
         r'<h2>Sources</h2>\s*(<ul>.*?</ul>)',
-        r'<details class="sources"><summary>📎 Sources を表示</summary>\1</details>',
+        _wrap_sources,
         html,
         count=1,
         flags=re.DOTALL,
