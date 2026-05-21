@@ -798,6 +798,7 @@ class TestSprGaugeTooltip:
         text = make_market_db.build_spr_gauge_tooltip(49, 2.3, 46, 2.5, "D", "C")
         assert "SPR 49 ±2.3 (20日)" in text
         assert "SPR 46 ±2.5 (5日)" in text
+        assert text.index("(5日)") < text.index("(20日)")
         assert "買い集め 週D 日C" in text
 
     def test_omits_missing_spr_and_buygather(self):
