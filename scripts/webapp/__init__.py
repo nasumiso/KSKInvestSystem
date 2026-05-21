@@ -39,6 +39,10 @@ def create_app() -> Flask:
     app.register_blueprint(disclosure_bp)
     app.register_blueprint(portfolio_bp)
 
+    # issue #165: /market テンプレートで theme-news markdown を HTML 化するフィルタ
+    from webapp.helpers import theme_news_md_to_html
+    app.jinja_env.filters["theme_news_md_to_html"] = theme_news_md_to_html
+
     @app.context_processor
     def _inject_today_jst():
         # issue #220: action_date input の value/max に使う実カレンダー上の JST 当日。

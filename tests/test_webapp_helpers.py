@@ -2429,3 +2429,28 @@ class TestBuildSprGaugeForStock:
         gauge = helpers._build_spr_gauge_for_stock({})
         assert gauge["svg"] == "—"
         assert gauge["tooltip"] == ""
+
+
+class TestThemeNewsMdToHtml:
+    """issue #165: theme-news markdown → HTML 変換 + サニタイズ"""
+
+    def test_converts_markdown_and_sanitizes(self):
+        """見出し / 箇条書き / 太字 / リンクが HTML 化され、危険タグはエスケープされる。"""
+        src = (
+            "## テーマA\n"
+            "- **重要**: 業績好調\n"
+            "- [出典](https://example.com)\n"
+            "\n"
+            "<script>alert(1)</script>\n"
+        )
+        out = helpers.theme_news_md_to_html(src)
+        assert "<h2>テーマA</h2>" in out
+        assert "<li><strong>重要</strong>: 業績好調</li>" in out
+        assert '<a href="https://example.com">出典</a>' in out
+        # script はエスケープされる (sanitize_html 経由)
+        assert "<script>" not in out
+        assert "&lt;script&gt;" in out
+
+    def test_empty_input_returns_empty(self):
+        assert helpers.theme_news_md_to_html("") == ""
+        assert helpers.theme_news_md_to_html(None) == ""

@@ -240,6 +240,21 @@ def _markdown_to_html(text: str) -> str:
     return text
 
 
+def theme_news_md_to_html(text: str) -> str:
+    """theme-news history の markdown を HTML に変換しサニタイズする (issue #165)。
+
+    skill 出力は見出し・箇条書き・表を含む正式な markdown なので、
+    `markdown` パッケージで HTML 化してから既存サニタイザに通す。
+    対応: 見出し (h2/h3)、箇条書き (-, 1.)、太字 (**), 強調 (*),
+          インラインコード (`), リンク [text](url), テーブル
+    """
+    if not text:
+        return ""
+    import markdown as _md
+    html = _md.markdown(text, extensions=["extra", "sane_lists"])
+    return sanitize_html(html)
+
+
 def _normalize_analysis_date(raw: str) -> str:
     """分析日の入力を YY/MM/DD 形式に正規化する。
 

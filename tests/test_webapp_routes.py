@@ -881,6 +881,46 @@ class TestMarketRouteKessanCard:
         assert 'data-is-past="1"' in html
 
 
+class TestMarketRouteThemeNews:
+    """issue #165: /market に当日 theme-news 調査結果を表示する。
+
+    完了マーカー (.md.done) が無いと表示しない (half-written history 固定回避)。
+    """
+
+    @pytest.mark.parametrize("history_exists,marker_exists,expect_visible", [
+        (True, True, True),     # 両方あり → 表示
+        (True, False, False),   # マーカー無し → 非表示
+        (False, False, False),  # 何もなし → 非表示
+    ])
+    def test_visibility_requires_done_marker(
+        self, client, tmp_path, monkeypatch, history_exists, marker_exists, expect_visible
+    ):
+        from datetime import date as _date, datetime as _dt
+        from webapp.routes import market as _market_route
+
+        fixed_today = _date(2026, 5, 21)
+        monkeypatch.setattr(_market_route, "get_price_day", lambda _now: fixed_today)
+        monkeypatch.setattr(
+            _market_route, "_THEME_NEWS_HISTORY_DIR", tmp_path
+        )
+
+        if history_exists:
+            (tmp_path / f"{fixed_today.isoformat()}.md").write_text(
+                "## テスト見出し\n**強調本文**\n", encoding="utf-8"
+            )
+        if marker_exists:
+            (tmp_path / f"{fixed_today.isoformat()}.md.done").touch()
+
+        resp = client.get("/market")
+        html = resp.data.decode()
+        if expect_visible:
+            assert "📰 テーマニュース調査" in html
+            assert "<h2>テスト見出し</h2>" in html
+            assert "<strong>強調本文</strong>" in html
+        else:
+            assert "📰 テーマニュース調査" not in html
+
+
 class TestDetailGyoutaiThemes:
     """issue #205: 銘柄詳細ページの業態・テーマ inline 編集 (AJAX 即時保存)。
 

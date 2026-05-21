@@ -105,6 +105,21 @@ class TestSanitizeHtml:
         result = sanitize_html("line1\nline2\nline3")
         assert "line1\nline2\nline3" in result
 
+    def test_markdown_tags_allowed_and_xss_still_blocked(self):
+        """issue #165: theme-news 表示用に h3/ul/li 等を許可しつつ script は除去維持。"""
+        html = (
+            "<h3>見出し</h3><ul><li><strong>太字</strong></li></ul>"
+            "<script>alert(1)</script><p onclick='x'>段落</p>"
+        )
+        result = sanitize_html(html)
+        # 許可タグはそのまま残る
+        assert "<h3>見出し</h3>" in result
+        assert "<ul><li><strong>太字</strong></li></ul>" in result
+        assert "<p>段落</p>" in result   # onclick は剥がされる
+        # script タグはエスケープされる
+        assert "<script>" not in result
+        assert "&lt;script&gt;" in result
+
 
 class TestStripHtmlTags:
     """strip_html_tags() のテスト。"""
