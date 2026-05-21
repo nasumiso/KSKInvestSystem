@@ -405,6 +405,25 @@ class TestAppendStateHistory:
         h = ms.append_state_history(None, "26/04/30", ms.CONFIRMED_UPTREND, "init")
         assert h == [("26/04/30", ms.CONFIRMED_UPTREND, "init")]
 
+    def test_preserves_transition_trigger_on_same_day_stay_overwrite(self):
+        """同日 2 回呼ばれた時、後から "stay" で上書きすると遷移系 trigger が失われる
+        バグへの回帰防止。state が同じで既存が遷移系なら trigger を保持する。
+
+        シナリオ: 当日 cron で under_pressure → confirmed_uptrend に遷移して "dd<4_recover"
+        が記録される。同日に make_market_db が再実行されると、prev_state が既に
+        confirmed になっているため derive_state は "stay" を返すが、append_state_history
+        はそれを無視して既存 "dd<4_recover" を維持する。
+        """
+        h = [("26/05/14", ms.CONFIRMED_UPTREND, "dd<4_recover")]
+        h2 = ms.append_state_history(h, "26/05/14", ms.CONFIRMED_UPTREND, "stay")
+        assert h2[0] == ("26/05/14", ms.CONFIRMED_UPTREND, "dd<4_recover")
+
+    def test_replaces_when_state_changes_on_same_day(self):
+        """同日でも state が変わった場合は新規 entry で置換 (遷移を記録する)。"""
+        h = [("26/05/14", ms.CONFIRMED_UPTREND, "stay")]
+        h2 = ms.append_state_history(h, "26/05/14", ms.UPTREND_UNDER_PRESSURE, "dd>=4")
+        assert h2[0] == ("26/05/14", ms.UPTREND_UNDER_PRESSURE, "dd>=4")
+
 
 # ==================================================
 # to_direction_signal

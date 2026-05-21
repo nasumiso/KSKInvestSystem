@@ -443,8 +443,27 @@ class TestCalcDailyIndicators:
             "distribution_days", "distribution_days_with_close", "followthrough_days",
             "daily_history", "direction_signal",
             "spr_20", "spr_5", "spr_buygagher", "rv_20", "rv_5",
+            # state machine の FTD/ラリー判定が当日 OHLV をトップレベルキーから読むため必須
+            "price", "low", "high", "volume",
         ):
             assert key in result
+
+    def test_top_level_ohlv_matches_latest_row(self):
+        """当日 OHLV (price/low/high/volume) が daily_price_list[0] と一致する。
+
+        make_market_db._update_index_market_state が new_index_db["price"|"low"|
+        "high"|"volume"] を参照して FTD/ラリー判定を行うため、ここで欠落すると
+        state machine の上方向遷移 (correction → confirmed) が常時不発になる。
+        """
+        rows = self._make_price_list(25)
+        result = price._calc_daily_indicators(rows)
+        # daily_price_list[0] = 当日 (新しい順) なので最後に追加された n=24 のデータ
+        # _make_price_list で reverse 済なので rows[0] が最新 (=close 1120)
+        head = rows[0]
+        assert result["price"] == int(head[4].replace(",", ""))
+        assert result["low"] == int(head[3].replace(",", ""))
+        assert result["high"] == int(head[2].replace(",", ""))
+        assert result["volume"] == int(head[7].replace(",", ""))
 
     def test_empty_input_returns_empty(self):
         result = price._calc_daily_indicators([])

@@ -495,6 +495,19 @@ def _calc_daily_indicators(daily_price_list):
     dic["followthrough_days"] = followthrough_day
     # daily_history (新しい日が先頭) を State Machine の DD 失効判定で使う
     dic["daily_history"] = [d[0] for d in daily_price_list[:count_day + 1]]
+    # 当日 OHLV をトップレベルキーに詰める。make_market_db._update_index_market_state
+    # が new_index_db["price"|"low"|"high"|"volume"] を参照して FTD/ラリー判定を行うため、
+    # kabutan/yfinance 両系統で確実にセットしておく (issue: state遷移FTD不動作)。
+    # daily_price_list[0] = 当日 (新しい順、8要素タプル「日付,始値,高値,安値,終値,前日比,前日比%,売買高」)。
+    try:
+        head = daily_price_list[0]
+        dic["price"] = int(float(head[4].replace(",", "")))   # 終値
+        dic["low"] = int(float(head[3].replace(",", "")))
+        dic["high"] = int(float(head[2].replace(",", "")))
+        dic["volume"] = int(float(head[7].replace(",", "")))
+    except (ValueError, IndexError, AttributeError, TypeError):
+        # raw データが想定外なら明示的に None を残す (state machine 側が安全に短絡する)
+        pass
     log_debug("ディストリビューション:", distribution_day)
     log_debug("フォロースルー候補:", followthrough_day)
 
