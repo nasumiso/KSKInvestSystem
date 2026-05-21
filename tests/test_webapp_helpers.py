@@ -2416,6 +2416,7 @@ class TestBuildSprGaugeForStock:
         # バー単体 <title> に SPR + 買い集め評価が併記される
         assert "SPR 48 ±2.4 (20日) 買い集めB" in gauge["svg"]
         assert "SPR 45 ±2.6 (5日) 買い集めA" in gauge["svg"]
+        assert gauge["svg"].index("(5日)") < gauge["svg"].index("(20日)")
         # セル全体 tooltip にも (フォールバック用) 同等情報
         assert "SPR 48 ±2.4 (20日)" in gauge["tooltip"]
         assert "買い集め 週B 日A" in gauge["tooltip"]

@@ -1070,7 +1070,7 @@ def _build_spr_gauge_bar_svg(spr, rv, y, period_label, bg_label=None):
 
 
 def build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5, sprw_label=None, sprbg_label=None):
-    """SPR/rv の横バーゲージ (2 本縦積み、上=20日 / 下=5日) を SVG 文字列で返す。
+    """SPR/rv の横バーゲージ (2 本縦積み、上=5日 / 下=20日) を SVG 文字列で返す。
 
     20日バー / 5日バーは独立に欠損判定する:
       - spr_X が欠損 → 該当バーをスキップ (もう一方は描画)
@@ -1086,8 +1086,8 @@ def build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5, sprw_label=None, sprbg_label
         return "—"
     h = _SPR_GAUGE_BAR_H * 2 + _SPR_GAUGE_BAR_GAP
     bars = [
-        _build_spr_gauge_bar_svg(spr_20, rv_20, 0, "20日", sprw_label),
-        _build_spr_gauge_bar_svg(spr_5, rv_5, _SPR_GAUGE_BAR_H + _SPR_GAUGE_BAR_GAP, "5日", sprbg_label),
+        _build_spr_gauge_bar_svg(spr_5, rv_5, 0, "5日", sprbg_label),
+        _build_spr_gauge_bar_svg(spr_20, rv_20, _SPR_GAUGE_BAR_H + _SPR_GAUGE_BAR_GAP, "20日", sprw_label),
     ]
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'

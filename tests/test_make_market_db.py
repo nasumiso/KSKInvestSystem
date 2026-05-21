@@ -723,6 +723,11 @@ class TestSprGaugeSvg:
         assert svg.count('stroke-width="2"') == 2
         assert svg.count('stroke-width="1"') == 2
 
+    def test_5day_bar_is_rendered_before_20day_bar(self):
+        """需給バランスは 5日バーを上、20日バーを下に表示する"""
+        svg = make_market_db.build_spr_gauge_svg(50, 2.0, 60, 3.0)
+        assert svg.index("(5日)") < svg.index("(20日)")
+
     @pytest.mark.parametrize("spr_20,spr_5,expected_label", [
         (50, None, "20日"),   # 5日欠損 → 20日のみ
         (None, 60, "5日"),    # 20日欠損 → 5日のみ
