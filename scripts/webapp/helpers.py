@@ -263,6 +263,19 @@ def theme_news_md_to_html(text: str) -> str:
     # 文の区切りで使われている全角中点を改行ポイントにする。
     # 先頭 `・` (li 直後) には br を入れないよう、`>・` の直後は対象外。
     html = re.sub(r"(?<![>\s])・", "<br>・", html)
+    # 「+」「→」の前に <wbr> を挟んで、文が長くても自然な位置で折り返せるようにする。
+    # skill 出力で「日経+1.9%+KOSPI+4%+Samsungスト中止」のような連結が頻出するため。
+    html = re.sub(r"(?<=[ぁ-んァ-ヶー一-龯%])([+→])", r"<wbr>\1", html)
+    # Sources セクション (`## Sources` から末尾まで) を <details class="sources"> で
+    # 折りたたむ。skill 出力末尾に必ず「## Sources」見出しが入る規約に依存。
+    # マッチしなければ何もしない (旧 history で Sources 無いものは素通り)。
+    html = re.sub(
+        r'<h2>Sources</h2>\s*(<ul>.*?</ul>)',
+        r'<details class="sources"><summary>📎 Sources を表示</summary>\1</details>',
+        html,
+        count=1,
+        flags=re.DOTALL,
+    )
     return sanitize_html(html)
 
 

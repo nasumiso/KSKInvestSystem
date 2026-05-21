@@ -2475,3 +2475,25 @@ class TestThemeNewsMdToHtml:
         assert "&lt;h1&gt;" not in out
         # 後続の h2 は残る
         assert "<h2>市場全体</h2>" in out
+
+    def test_sources_section_collapsed_in_details(self):
+        """`## Sources` 以降は <details class="sources"> で折りたたまれる。"""
+        src = (
+            "## 1. 蓄電池\n- 材料\n\n"
+            "## Sources\n- [link1](https://example.com/a)\n- [link2](https://example.com/b)\n"
+        )
+        out = helpers.theme_news_md_to_html(src)
+        assert '<details class="sources">' in out
+        assert "<summary>📎 Sources を表示</summary>" in out
+        # Sources の中身 (リンク) は details の中に入っている
+        i_details = out.index('<details class="sources">')
+        i_link = out.index('https://example.com/a')
+        assert i_details < i_link
+        # 本編の h2 は details の外に残る
+        assert "<h2>1. 蓄電池</h2>" in out
+
+    def test_inserts_wbr_before_plus_and_arrow(self):
+        """日本語/数字/% に続く `+` `→` の前に <wbr> を挟む (長文折返しヒント)。"""
+        src = "- 反発+1.9%→翌日続伸\n"
+        out = helpers.theme_news_md_to_html(src)
+        assert "反発<wbr>+1.9%<wbr>→翌日続伸" in out

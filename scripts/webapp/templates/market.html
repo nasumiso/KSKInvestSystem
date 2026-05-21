@@ -16,8 +16,30 @@
 </div>
 {% endif %}
 
-{# issue #165: テーマランク直下に theme-news 調査結果を表示。手動実行ボタン付き #}
-<div id="theme-news-section" style="margin: 0.5em 0 1em 0;">
+{# 市場データ本文: 決算セクションはプレースホルダに置き換え済み (市場 → テーマランクの順) #}
+{% set body_parts = market_parts.get('body_without_kessan', '').split('<div id="kessan-placeholder-mark">__KESSAN_PLACEHOLDER__</div>') %}
+{% if body_parts[0] %}
+{{ body_parts[0] | safe }}
+{% endif %}
+
+{# issue #165: 市場 / テーマランクの後にテーマニュース調査を表示。手動実行ボタン付き #}
+<style>
+  /* skill 出力の長文 li を読みやすくする scoped CSS */
+  .theme-news-body h2 { font-size: 1.05em; margin: 1.2em 0 0.4em 0; padding-bottom: 0.15em; border-bottom: 1px solid #d8dde2; color: #2c3e50; }
+  .theme-news-body h2:first-child { margin-top: 0; }
+  .theme-news-body h3 { font-size: 0.95em; margin: 1em 0 0.3em 0; color: #555; }
+  .theme-news-body ul { margin: 0.3em 0 0.8em 0; padding-left: 1.4em; }
+  .theme-news-body li { margin-bottom: 0.5em; }
+  .theme-news-body li:last-child { margin-bottom: 0; }
+  .theme-news-body strong { color: #1a2532; }
+  .theme-news-body a { color: #1976d2; text-decoration: none; }
+  .theme-news-body a:hover { text-decoration: underline; }
+  /* Sources 折りたたみ */
+  .theme-news-body details.sources { margin-top: 1em; }
+  .theme-news-body details.sources summary { cursor: pointer; color: #555; font-size: 0.9em; padding: 0.3em 0; }
+  .theme-news-body details.sources ul { font-size: 0.85em; }
+</style>
+<div id="theme-news-section" style="margin: 1em 0 1em 0;">
   <details open>
     <summary style="cursor:pointer;font-weight:bold;color:#2c3e50;">
       📰 テーマニュース調査
@@ -58,7 +80,7 @@
       </span>
     </div>
     {% if theme_news.current %}
-    <div class="theme-news-body" style="padding: 0.5em 1em; background: #f8f9fa; border-radius: 4px; margin-top: 0.5em;">
+    <div class="theme-news-body" style="padding: 0.8em 1.2em; background: #f8f9fa; border-radius: 4px; margin-top: 0.5em; max-width: 60em; line-height: 1.75; font-size: 0.95em;">
       {{ theme_news.current.markdown | theme_news_md_to_html | safe }}
     </div>
     {% else %}
@@ -129,12 +151,6 @@
   {% if theme_news.running %}startPolling();{% endif %}
 })();
 </script>
-
-{# 市場データ本文: 決算セクションはプレースホルダに置き換え済み #}
-{% set body_parts = market_parts.get('body_without_kessan', '').split('<div id="kessan-placeholder-mark">__KESSAN_PLACEHOLDER__</div>') %}
-{% if body_parts[0] %}
-{{ body_parts[0] | safe }}
-{% endif %}
 
 {# ここから動的決算セクション #}
 <h2>決算日</h2>
