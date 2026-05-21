@@ -26,11 +26,25 @@
       {%- else %}
       (未実施)
       {%- endif %}
-      {%- if theme_news.current and theme_news.current.meta and theme_news.current.meta.estimated_cost_usd is not none %}
-      <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.5em;"
-            title="Opus 4.x の従量課金単価で概算 (Max plan では実請求は発生しない)">
-        💰 約 ${{ '%.2f' | format(theme_news.current.meta.estimated_cost_usd) }}
-      </span>
+      {%- if theme_news.current and theme_news.current.meta %}
+        {%- if theme_news.current.meta.estimated_cost_usd is not none %}
+        <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.5em;"
+              title="Opus 4.x の従量課金単価で概算 (Max plan では実請求は発生しない)">
+          💰 約 ${{ '%.2f' | format(theme_news.current.meta.estimated_cost_usd) }}
+        </span>
+        {%- endif %}
+        {%- if theme_news.current.meta.elapsed_sec %}
+        <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.4em;"
+              title="claude -p 実行時間 (start_new_session で fire-and-forget 起動)">
+          ⏱ {{ (theme_news.current.meta.elapsed_sec // 60) | int }}分{{ (theme_news.current.meta.elapsed_sec % 60) | int }}秒
+        </span>
+        {%- endif %}
+        {%- if theme_news.current.meta.executed_at %}
+        <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.4em;"
+              title="meta.json に保存された skill 完了時刻">
+          🕒 {{ theme_news.current.meta.executed_at[11:16] }}
+        </span>
+        {%- endif %}
       {%- endif %}
     </summary>
     <div style="padding: 0.4em 1em 0; display: flex; gap: 0.6em; align-items: center; flex-wrap: wrap;">

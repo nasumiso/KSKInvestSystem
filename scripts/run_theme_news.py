@@ -65,12 +65,14 @@ def _should_skip(args) -> bool:
 
 
 def _run_claude_skill() -> int:
+    import time
     log_print("[theme-news] claude -p '/theme-news' を起動")
     cmd = [
         "claude", "-p", "/theme-news",
         "--allowed-tools", "Read,Write,Bash,WebSearch,Glob,Grep",
         "--output-format", "json",  # 末尾に result/usage が含まれる JSON が出力される
     ]
+    started = time.monotonic()
     try:
         result = subprocess.run(
             cmd,
@@ -86,6 +88,7 @@ def _run_claude_skill() -> int:
     except FileNotFoundError:
         log_error("[theme-news] claude CLI が見つかりません")
         return 1
+    elapsed_sec = time.monotonic() - started
 
     if result.returncode != 0:
         log_warning(f"[theme-news] claude -p 異常終了: rc={result.returncode}")
@@ -110,7 +113,7 @@ def _run_claude_skill() -> int:
         return 1
 
     # usage 抽出 → .meta.json 保存 (失敗してもメイン処理は止めない)
-    _try_save_usage_meta(result.stdout)
+    _try_save_usage_meta(result.stdout, elapsed_sec=elapsed_sec)
 
     # 完了マーカー作成。ここに到達したときのみ「当日完了」扱いになる。
     _today_done_marker_path().touch()
@@ -118,12 +121,13 @@ def _run_claude_skill() -> int:
     return 0
 
 
-def _try_save_usage_meta(stdout: str) -> None:
+def _try_save_usage_meta(stdout: str, elapsed_sec: float = 0.0) -> None:
     """claude -p --output-format json の出力末尾から usage を抽出し meta.json に保存。
 
     出力フォーマットは Anthropic の仕様で {"type":"result", "usage":{...}, "total_cost_usd":...}
     の単一 JSON が末尾にある (それより前は各メッセージの JSON)。
     フォーマットが想定外なら警告だけ出して保存はスキップする (機能の主目的ではないため)。
+    elapsed_sec は claude -p 起動から終了までの実時間 (秒)。
     """
     try:
         # 出力は jsonl っぽい形式の場合と、単一 JSON object の場合がある
@@ -160,6 +164,7 @@ def _try_save_usage_meta(stdout: str) -> None:
             cost = _estimate_cost_usd(usage)
         meta = {
             "executed_at": datetime.now().isoformat(timespec="seconds"),
+            "elapsed_sec": round(elapsed_sec, 1) if elapsed_sec else None,
             "usage": usage,
             "estimated_cost_usd": round(cost, 4) if cost is not None else None,
             "model_note": "Opus 4.x の従量課金単価で概算。Max plan ではこの請求は発生しない",
