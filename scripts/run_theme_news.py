@@ -226,6 +226,10 @@ def main() -> int:
     if _should_skip(args):
         return 0
 
+    # クリーン checkout や履歴削除後の初回起動でも marker/meta が touch できるよう、
+    # 先に HISTORY_DIR を確実に作る (.gitignore 対象なので Git では追跡されない)。
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+
     running_marker = _today_running_marker_path() if args.web_trigger else None
     if running_marker is not None:
         # 多重起動防止: 既に .running があれば 1 を返す (webapp 側が 409 を返す前提)

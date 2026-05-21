@@ -1,6 +1,7 @@
 """run_theme_news.py の重複ガード / claude -p 起動の単体テスト (issue #165)"""
 
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -96,6 +97,36 @@ def test_run_claude_skill_creates_marker_on_success(tmp_history):
     # 検知ヘルパーが直近書込みファイルを掴むこと
     detected = rtn._detect_recent_history(history_path)
     assert detected == wrong_path
+
+
+def test_main_creates_history_dir_for_clean_checkout(tmp_path, monkeypatch):
+    """初回 (HISTORY_DIR が存在しない) 起動でも .running 作成が落ちないことを担保する。
+
+    .gitignore で history/ が Git 管理されていないため、クリーン checkout 直後に
+    /market の手動実行ボタンが押された場合 HISTORY_DIR が無い状態で touch される。
+    rtn.main() が mkdir(parents=True, exist_ok=True) で先に作る必要がある。
+    """
+    missing_dir = tmp_path / "history"  # まだ作らない
+    assert not missing_dir.exists()
+    monkeypatch.setattr(rtn, "HISTORY_DIR", missing_dir)
+    fixed_date = datetime(2026, 5, 21, 19, 0, 0)
+    monkeypatch.setattr(rtn, "get_price_day", lambda _now: fixed_date.date())
+    class _FakeDatetime(datetime):
+        @classmethod
+        def today(cls):
+            return fixed_date
+    monkeypatch.setattr(rtn, "datetime", _FakeDatetime)
+    # claude -p 起動はモック (rc=0 で history も書く)
+    def fake_run(*args, **kwargs):
+        (missing_dir / "2026-05-21.md").write_text("# 本文", encoding="utf-8")
+        return subprocess.CompletedProcess(args, returncode=0, stdout="", stderr="")
+    monkeypatch.setattr(rtn.subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["run_theme_news.py", "--web-trigger"])
+
+    rc = rtn.main()
+    assert rc == 0
+    assert missing_dir.exists()
+    assert (missing_dir / "2026-05-21.md.done").exists()
 
 
 def test_usage_meta_saved_from_claude_json_output(tmp_history):
