@@ -2108,17 +2108,17 @@ class TestPriceRsSparkline:
         assert tooltip == ""
 
     def test_full_chart_renders_axis_labels(self):
-        """Y軸ラベル: 株価=絶対値 (緑), RS=初日比変化率% (青) を表示する"""
+        """Y軸ラベル: 株価とRSは共通% 軸 (灰) に統一、末尾現在値は系列色 (緑/青) で表示。"""
         price_log = self._make_log(list(range(120, 100, -1)))  # 20点: 101..120
-        # rs_line も初日比で見やすい値に
         rs_line = self._make_log([1.20 - i * 0.01 for i in range(20)])  # 1.01..1.20
         svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
-        # 株価最大値 120 (緑 #2e7d32) が左軸に出る
-        assert "120" in svg
-        assert "#2e7d32" in svg
-        # RS の % 表記が右軸に出る (初日比で +X% or -X%)
+        # 共通Y軸は % 表記
         assert "%" in svg
+        # 株価系列色 (緑) と RS系列色 (青) は末尾現在値ラベル等に使われる
+        assert "#2e7d32" in svg
         assert "#1976d2" in svg
+        # 凡例が新仕様 (騰落率%) であること
+        assert "騰落率%" in svg
 
     # --- codex review 対応: 5日基準のずれ / 短期履歴ガイドはみ出し ---
 
@@ -2205,10 +2205,12 @@ class TestPriceRsSparkline:
         assert "<polyline" in svg
         # ガイド線の x1 がすべて pad_x (= 36, 左端) 以上、x_today (= 36+inner_w) 以下に収まる
         import re
-        # viewBox 0 0 400 120 / pad_left=36 / pad_right=36 / inner_w = 400-72 = 328
+        # viewBox 0 0 400 120 / pad_left=36 / pad_right=8 / inner_w = 400-44 = 356
+        # (重ね描き化で右側軸ラベルが不要になり pad_right 縮小)
         pad_left = 36
-        inner_w = 400 - 72
-        x_today = pad_left + inner_w  # = 364
+        pad_right = 8
+        inner_w = 400 - pad_left - pad_right
+        x_today = pad_left + inner_w  # = 392
         guides = re.findall(r'<line x1="([-0-9.]+)" y1="[0-9.]+" x2="[-0-9.]+" y2="[0-9.]+"\s+stroke="#e0e0e0"', svg)
         assert len(guides) >= 2  # 少なくとも t20 と today のガイド
         for gx in guides:
