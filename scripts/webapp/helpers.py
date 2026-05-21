@@ -247,11 +247,18 @@ def theme_news_md_to_html(text: str) -> str:
     `markdown` パッケージで HTML 化してから既存サニタイザに通す。
     対応: 見出し (h2/h3)、箇条書き (-, 1.)、太字 (**), 強調 (*),
           インラインコード (`), リンク [text](url), テーブル
+
+    また skill 出力の長文 li を読みやすくするため、全角中点 `・` の前に <br> を挿入する。
+    skill 側は文を `・` で繋いで 1 行に詰める癖があり、そのままだと折返しの長文になる。
     """
     if not text:
         return ""
     import markdown as _md
     html = _md.markdown(text, extensions=["extra", "sane_lists"])
+    # 文の区切りで使われている全角中点を改行ポイントにする。
+    # 先頭 `・` (li 直後) には br を入れないよう、`>・` の直後は対象外。
+    import re
+    html = re.sub(r"(?<![>\s])・", "<br>・", html)
     return sanitize_html(html)
 
 

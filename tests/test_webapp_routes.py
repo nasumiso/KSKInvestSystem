@@ -882,43 +882,109 @@ class TestMarketRouteKessanCard:
 
 
 class TestMarketRouteThemeNews:
-    """issue #165: /market に当日 theme-news 調査結果を表示する。
+    """issue #165: /market に theme-news 調査結果と手動実行ボタンを表示する。
 
-    完了マーカー (.md.done) が無いと表示しない (half-written history 固定回避)。
+    - 当日 (.md + .md.done) があれば当日表示
+    - 当日無ければ前回分 (最新 .md.done 付き) を「前回分」ラベルで表示
+    - 当日 .md.running があれば「実行中...」+ ボタン disabled
+    - meta.json があれば「💰 約$X」コストバッジ
+    POST /market/theme_news/run / GET /market/theme_news/status の挙動も検証
     """
 
-    @pytest.mark.parametrize("history_exists,marker_exists,expect_visible", [
-        (True, True, True),     # 両方あり → 表示
-        (True, False, False),   # マーカー無し → 非表示
-        (False, False, False),  # 何もなし → 非表示
-    ])
-    def test_visibility_requires_done_marker(
-        self, client, tmp_path, monkeypatch, history_exists, marker_exists, expect_visible
-    ):
-        from datetime import date as _date, datetime as _dt
+    def _setup_history_dir(self, tmp_path, monkeypatch, fixed_today):
         from webapp.routes import market as _market_route
-
-        fixed_today = _date(2026, 5, 21)
         monkeypatch.setattr(_market_route, "get_price_day", lambda _now: fixed_today)
-        monkeypatch.setattr(
-            _market_route, "_THEME_NEWS_HISTORY_DIR", tmp_path
-        )
+        monkeypatch.setattr(_market_route, "_THEME_NEWS_HISTORY_DIR", tmp_path)
+        return _market_route
 
-        if history_exists:
-            (tmp_path / f"{fixed_today.isoformat()}.md").write_text(
-                "## テスト見出し\n**強調本文**\n", encoding="utf-8"
-            )
-        if marker_exists:
-            (tmp_path / f"{fixed_today.isoformat()}.md.done").touch()
+    @pytest.mark.parametrize("today_md,today_done,prev_md,prev_done,expect_label,expect_btn_disabled", [
+        # 当日両揃い → 当日表示 + 再実行ボタン (disabled なし)
+        (True, True, False, False, "2026-05-21", False),
+        # 当日 done 無し + 前日両揃い → 前日表示 + 「前回分」ラベル
+        (False, False, True, True, "2026-05-20", False),
+        # 何も無し → 「未実施」表示
+        (False, False, False, False, "未実施", False),
+        # 当日途中ファイル (md だけで done 無し) + 前日両揃い → 前日表示 (途中 md は公開しない)
+        (True, False, True, True, "2026-05-20", False),
+    ])
+    def test_display_fallback_and_button(
+        self, client, tmp_path, monkeypatch,
+        today_md, today_done, prev_md, prev_done, expect_label, expect_btn_disabled,
+    ):
+        from datetime import date as _date
+        fixed_today = _date(2026, 5, 21)
+        self._setup_history_dir(tmp_path, monkeypatch, fixed_today)
+
+        if today_md:
+            (tmp_path / "2026-05-21.md").write_text("## 当日見出し\n", encoding="utf-8")
+        if today_done:
+            (tmp_path / "2026-05-21.md.done").touch()
+        if prev_md:
+            (tmp_path / "2026-05-20.md").write_text("## 前日見出し\n", encoding="utf-8")
+        if prev_done:
+            (tmp_path / "2026-05-20.md.done").touch()
 
         resp = client.get("/market")
         html = resp.data.decode()
-        if expect_visible:
-            assert "📰 テーマニュース調査" in html
-            assert "<h2>テスト見出し</h2>" in html
-            assert "<strong>強調本文</strong>" in html
-        else:
-            assert "📰 テーマニュース調査" not in html
+        assert "📰 テーマニュース調査" in html
+        assert expect_label in html
+        # 「前回分」ラベルは today_done 無しで前日があるときだけ出る
+        if not today_done and prev_done:
+            assert "前回分" in html
+        # 実行ボタンは常に存在
+        assert 'id="theme-news-run-btn"' in html
+
+    def test_running_state_disables_button_and_shows_message(self, client, tmp_path, monkeypatch):
+        from datetime import date as _date
+        fixed_today = _date(2026, 5, 21)
+        self._setup_history_dir(tmp_path, monkeypatch, fixed_today)
+        (tmp_path / "2026-05-21.md.running").touch()
+
+        resp = client.get("/market")
+        html = resp.data.decode()
+        assert "実行中..." in html
+        # button[disabled] (空属性 or `disabled="disabled"` のいずれか)
+        assert "theme-news-run-btn" in html and "disabled" in html
+
+    def test_meta_cost_badge(self, client, tmp_path, monkeypatch):
+        import json
+        from datetime import date as _date
+        fixed_today = _date(2026, 5, 21)
+        self._setup_history_dir(tmp_path, monkeypatch, fixed_today)
+        (tmp_path / "2026-05-21.md").write_text("# 本文", encoding="utf-8")
+        (tmp_path / "2026-05-21.md.done").touch()
+        (tmp_path / "2026-05-21.md.meta.json").write_text(
+            json.dumps({"estimated_cost_usd": 28.53, "usage": {}}), encoding="utf-8"
+        )
+        resp = client.get("/market")
+        html = resp.data.decode()
+        assert "💰 約 $28.53" in html
+
+    def test_run_endpoint_409_when_already_running(self, client, tmp_path, monkeypatch):
+        from datetime import date as _date
+        fixed_today = _date(2026, 5, 21)
+        self._setup_history_dir(tmp_path, monkeypatch, fixed_today)
+        (tmp_path / "2026-05-21.md.running").touch()
+
+        resp = client.post("/market/theme_news/run")
+        assert resp.status_code == 409
+        assert resp.get_json()["status"] == "already_running"
+
+    def test_status_endpoint_reports_marker_states(self, client, tmp_path, monkeypatch):
+        from datetime import date as _date
+        fixed_today = _date(2026, 5, 21)
+        self._setup_history_dir(tmp_path, monkeypatch, fixed_today)
+        # 完了状態
+        (tmp_path / "2026-05-21.md").write_text("# 本文", encoding="utf-8")
+        (tmp_path / "2026-05-21.md.done").touch()
+
+        resp = client.get("/market/theme_news/status")
+        assert resp.status_code == 200
+        s = resp.get_json()
+        assert s["date"] == "2026-05-21"
+        assert s["done"] is True
+        assert s["running"] is False
+        assert s["has_today_history"] is True
 
 
 class TestDetailGyoutaiThemes:

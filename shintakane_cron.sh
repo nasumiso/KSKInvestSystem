@@ -60,24 +60,13 @@ echo "===== $(date '+%Y-%m-%d %H:%M:%S') make_stock_db.py 開始 =====" >> ../lo
 python make_stock_db.py >> ../logs/make_stock_db.log 2>&1
 RET2=$?
 
-# --- run_theme_news.py ---
-# 上流 (shintakane.py / make_stock_db.py) が両方成功した日のみ実行する。
-# 上流失敗時は market_data.html が古い可能性があり、ニュース調査が前日データを
-# 「当日分」として保存して /market に誤情報を固定するのを防ぐため。
-rotate_log ../logs/theme_news.log
-echo "===== $(date '+%Y-%m-%d %H:%M:%S') run_theme_news.py 開始 =====" >> ../logs/theme_news.log
-if [ "$RET1" -eq 0 ] && [ "$RET2" -eq 0 ]; then
-  python run_theme_news.py --cron >> ../logs/theme_news.log 2>&1
-  RET3=$?
-else
-  echo "[run_theme_news] 上流失敗 (RET1=$RET1, RET2=$RET2) のためスキップ" >> ../logs/theme_news.log
-  RET3=0
-fi
+# theme-news 調査は /market のボタンから手動実行する運用 (issue #165)。
+# claude -p が将来従量課金化される可能性 + 1 回 5〜15 分かかる重い処理のため、
+# 毎日 cron で走らせず、必要な日だけユーザー判断で起動する。
 
 # --- 結果サマリー ---
 echo ""
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行結果 ====="
 report "shintakane.py" $RET1 ../logs/shintakane.log
 report "make_stock_db.py" $RET2 ../logs/make_stock_db.log
-report "run_theme_news.py" $RET3 ../logs/theme_news.log
 echo "================================================"

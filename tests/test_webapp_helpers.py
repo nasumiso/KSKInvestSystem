@@ -2454,3 +2454,12 @@ class TestThemeNewsMdToHtml:
     def test_empty_input_returns_empty(self):
         assert helpers.theme_news_md_to_html("") == ""
         assert helpers.theme_news_md_to_html(None) == ""
+
+    def test_inserts_br_before_zenkaku_middot(self):
+        """skill 出力で `・` (全角中点) 区切りの長文 li は読みづらいので、
+        テキスト中の `・` 前に <br> を挿入する。先頭 `・` (li 直後) には入れない。"""
+        src = "- 地合い: 日経4日続落・6万円割れ達成・米10年金利4.68%\n"
+        out = helpers.theme_news_md_to_html(src)
+        # 文中の ・ 前には <br> が入る
+        assert "日経4日続落<br>・6万円割れ達成" in out
+        assert "6万円割れ達成<br>・米10年金利" in out
