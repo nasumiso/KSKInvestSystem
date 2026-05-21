@@ -2463,3 +2463,13 @@ class TestThemeNewsMdToHtml:
         # 文中の ・ 前には <br> が入る
         assert "日経4日続落<br>・6万円割れ達成" in out
         assert "6万円割れ達成<br>・米10年金利" in out
+
+    def test_strips_leading_h1_title(self):
+        """skill 出力先頭の `# 見出し` (h1) は /market summary 側で日付を出しているので
+        冗長 + sanitize_html で許可外タグとしてエスケープされ生文字列が見える問題を防ぐ。"""
+        src = "# テーマ急上昇ニュース要約（2026-05-20）\n\n## 市場全体\n- 本文\n"
+        out = helpers.theme_news_md_to_html(src)
+        assert "<h1>" not in out
+        assert "&lt;h1&gt;" not in out
+        # 後続の h2 は残る
+        assert "<h2>市場全体</h2>" in out

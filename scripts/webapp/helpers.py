@@ -255,9 +255,13 @@ def theme_news_md_to_html(text: str) -> str:
         return ""
     import markdown as _md
     html = _md.markdown(text, extensions=["extra", "sane_lists"])
+    import re
+    # skill 出力先頭の `# 見出し` (= ファイルタイトル) は /market summary で既に日付を
+    # 表示しているので冗長。<h1>...</h1> を削除する (sanitize_html で h1 をエスケープ
+    # して `<h1>` 文字列が出るのを防ぐ目的も兼ねる)。
+    html = re.sub(r"<h1>.*?</h1>\s*", "", html, count=1, flags=re.DOTALL)
     # 文の区切りで使われている全角中点を改行ポイントにする。
     # 先頭 `・` (li 直後) には br を入れないよう、`>・` の直後は対象外。
-    import re
     html = re.sub(r"(?<![>\s])・", "<br>・", html)
     return sanitize_html(html)
 
