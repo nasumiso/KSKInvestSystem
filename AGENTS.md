@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+## Onboarding
+This project was originally maintained with Claude Code. At the start of any Codex session, read `CLAUDE.md` first and follow its repository-specific guidance in addition to this file.
+
 ## Project Structure & Module Organization
 `scripts/` holds the core Python modules and entry points (e.g., `shintakane.py`, `make_stock_db.py`). Data and cache files live under `data/` (stock DB, market indices, scraped CSV outputs), and runtime logs are written to `logs/`. Tests are minimal; `tests/` exists but is currently empty. Workspace settings are in `.vscode/` and `.code-workspace` files.
 

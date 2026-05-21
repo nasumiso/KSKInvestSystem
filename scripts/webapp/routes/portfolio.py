@@ -128,6 +128,16 @@ def _sync_txt_safely() -> None:
         flash(f"my_watch_list.txt 同期に失敗: {e}", "error")
 
 
+def _flash_stock_info(code_s: str, message_suffix: str) -> None:
+    """銘柄コードに詳細ページリンクを付けて info flash する。"""
+    normalized = ps.normalize_code_s(code_s)
+    detail_url = url_for("detail.stock_detail", code_s=normalized)
+    flash(
+        f'<a href="{detail_url}">{normalized}</a>{message_suffix}',
+        "html_info",
+    )
+
+
 def _redirect_with_return_query(
     default_status_query: Optional[str] = None,
     code_s: Optional[str] = None,
@@ -272,6 +282,8 @@ def transition(code_s: str):
         return _redirect_with_return_query(code_s=code_s)
 
     try:
+        before = ps.get_record(code_s)
+        old_status = (before or {}).get("status")
         ps.transition_status(code_s, new_status, reason=reason, action_date=action_date)
     except KeyError as e:
         flash(f"レコード未登録: {e}", "error")
@@ -281,6 +293,13 @@ def transition(code_s: str):
         return _redirect_with_return_query(code_s=code_s)
 
     _sync_txt_safely()
+    normalized = ps.normalize_code_s(code_s)
+    old_label = STATUS_VALUE_TO_LABEL.get(old_status, old_status)
+    new_label = STATUS_VALUE_TO_LABEL.get(new_status, new_status)
+    if old_status == new_status:
+        _flash_stock_info(normalized, f" のステータスは {new_label} のままです")
+    else:
+        _flash_stock_info(normalized, f" のステータスを {old_label} から {new_label} に変更しました")
     return _redirect_with_return_query(code_s=code_s)
 
 
@@ -396,7 +415,7 @@ def update_memo(code_s: str):
                     "gyoutai_themes": list((row.get("memo") or {}).get("gyoutai_themes") or []),
                 }
         return jsonify(body)
-    flash(f"{code_s} のメモを保存しました", "info")
+    _flash_stock_info(code_s, " のメモを保存しました")
     return _redirect_with_return_query(code_s=code_s)
 
 

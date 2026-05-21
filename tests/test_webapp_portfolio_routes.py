@@ -217,6 +217,16 @@ class TestTransitionPost:
             for log in logs
         )
 
+    def test_transition_shows_linked_success_flash(self, client):
+        """ステータス変更後、銘柄コードリンク付きの完了メッセージを表示する"""
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={"new_status": "3監", "reason": "格下げテスト"},
+            follow_redirects=True,
+        )
+        html = resp.data.decode()
+        assert '<a href="/stock/3496">3496</a> のステータスを 保有 から 監視 に変更しました' in html
+
     def test_transition_1ho_to_2jun_records_uri_log(self, client, portfolio_db_path):
         """1保 → 2準 は売却扱いで action_type=売却 のログが記録される"""
         resp = client.post(
@@ -533,6 +543,16 @@ class TestUpdateMemoPost:
         # action_log に "メモ更新" が 1 件追加 (初回登録 + メモ更新 = 2 件)
         logs = ps.list_action_logs("6324", db_path=portfolio_db_path)
         assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 1
+
+    def test_memo_shows_linked_success_flash(self, client):
+        """メモ保存後、銘柄コードリンク付きの完了メッセージを表示する"""
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"trade_idea": "X"},
+            follow_redirects=True,
+        )
+        html = resp.data.decode()
+        assert '<a href="/stock/6324">6324</a> のメモを保存しました' in html
 
     def test_memo_partial_three_fields_keeps_others(self, client, portfolio_db_path):
         """部分送信: 送られたキーだけ更新、未送信フィールドは現行値据え置き (codex P1)"""
