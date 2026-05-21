@@ -1008,7 +1008,7 @@ class TestCreateMarketHtml:
     """create_market_html() 統合テスト"""
 
     def test_generates_html_file(self, tmp_path):
-        """HTMLファイルが生成される"""
+        """HTMLファイルが生成される。/market 表示順に揃えて「市場」を先に出すこと。"""
         market_db = {
             "theme_rank": ["AI"],
             "theme_rank_diff": {"AI": None},
@@ -1036,6 +1036,8 @@ class TestCreateMarketHtml:
             assert '<!DOCTYPE html>' in content
             assert 'テーマランク' in content
             assert '市場' in content
+            # 表示順検証: 「市場」セクションが「テーマランク」より先に出ること
+            assert content.index('<h2>市場</h2>') < content.index('<h2>テーマランク</h2>')
 
     def test_sections_omitted_when_none(self, tmp_path):
         """引数がNoneのセクションは省略される（セクション見出しが生成されない）"""
