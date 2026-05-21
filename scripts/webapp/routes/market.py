@@ -183,22 +183,44 @@ def theme_news_run():
     if paths["running"].exists():
         return jsonify({"status": "already_running", "date": today.isoformat()}), 409
 
-    # Popen で fire-and-forget。stdout/stderr は親プロセス webapp のものに流す。
-    # webapp のログに混じるが、運用上 cron ログを別ファイルに分けない方が手動デバッグしやすい。
+    # Popen で fire-and-forget。stdout/stderr は logs/theme_news.log に追記する。
+    # 失敗時のデバッグ用 (`tail logs/theme_news.log` で claude -p の出力が読める)。
+    # shintakane_cron.sh と同じ場所に集約。ローテーションは cron 経由起動時に
+    # rotate_log が走るので、手動連発でログが肥大したらユーザーが手で削除する想定。
+    log_dir = _PROJECT_ROOT / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "theme_news.log"
+    try:
+        log_fh = open(log_path, "ab")
+        # 起動マーカーを書き込んで、ログ末尾を見たときに最新実行の開始位置が分かるようにする
+        log_fh.write(
+            f"\n===== {datetime.now().isoformat(timespec='seconds')} "
+            f"/market から theme-news 手動起動 (date={today.isoformat()}) =====\n".encode("utf-8")
+        )
+        log_fh.flush()
+    except OSError as e:
+        log_warning(f"[market] theme-news ログファイルを開けない: {e}")
+        log_fh = None
     try:
         subprocess.Popen(
             [sys.executable, str(_RUN_THEME_NEWS_SCRIPT), "--web-trigger"],
             cwd=str(_PROJECT_ROOT / "scripts"),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_fh if log_fh is not None else subprocess.DEVNULL,
+            stderr=subprocess.STDOUT if log_fh is not None else subprocess.DEVNULL,
             start_new_session=True,  # webapp 再起動でも skill 実行は継続させる
         )
     except (FileNotFoundError, OSError) as e:
+        if log_fh is not None:
+            log_fh.close()
         log_warning(f"[market] theme-news 起動失敗: {e}")
         return jsonify({"status": "spawn_failed", "error": str(e)}), 500
+    finally:
+        # 親プロセス側 fd は閉じてよい (子プロセスが dup して保持しているため書込み継続)
+        if log_fh is not None:
+            log_fh.close()
 
-    log_print(f"[market] theme-news skill 起動 (date={today.isoformat()})")
-    return jsonify({"status": "started", "date": today.isoformat()}), 202
+    log_print(f"[market] theme-news skill 起動 (date={today.isoformat()}, log={log_path})")
+    return jsonify({"status": "started", "date": today.isoformat(), "log_path": str(log_path)}), 202
 
 
 @market_bp.route("/market/theme_news/status", methods=["GET"])
