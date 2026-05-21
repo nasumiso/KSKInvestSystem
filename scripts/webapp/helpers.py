@@ -240,6 +240,32 @@ def _markdown_to_html(text: str) -> str:
     return text
 
 
+def theme_news_md_to_html(text: str) -> str:
+    """theme-news history の markdown を HTML に変換しサニタイズする (issue #165)。
+
+    skill 出力は見出し・箇条書き・表を含む正式な markdown なので、
+    `markdown` パッケージで HTML 化してから既存サニタイザに通す。
+    対応: 見出し (h2/h3)、箇条書き (-, 1.)、太字 (**), 強調 (*),
+          インラインコード (`), リンク [text](url), テーブル
+
+    また skill 出力の長文 li を読みやすくするため、全角中点 `・` の前に <br> を挿入する。
+    skill 側は文を `・` で繋いで 1 行に詰める癖があり、そのままだと折返しの長文になる。
+    """
+    if not text:
+        return ""
+    import markdown as _md
+    html = _md.markdown(text, extensions=["extra", "sane_lists"])
+    import re
+    # skill 出力先頭の `# 見出し` (= ファイルタイトル) は /market summary で既に日付を
+    # 表示しているので冗長。<h1>...</h1> を削除する (sanitize_html で h1 をエスケープ
+    # して `<h1>` 文字列が出るのを防ぐ目的も兼ねる)。
+    html = re.sub(r"<h1>.*?</h1>\s*", "", html, count=1, flags=re.DOTALL)
+    # 文の区切りで使われている全角中点を改行ポイントにする。
+    # 先頭 `・` (li 直後) には br を入れないよう、`>・` の直後は対象外。
+    html = re.sub(r"(?<![>\s])・", "<br>・", html)
+    return sanitize_html(html)
+
+
 def _normalize_analysis_date(raw: str) -> str:
     """分析日の入力を YY/MM/DD 形式に正規化する。
 

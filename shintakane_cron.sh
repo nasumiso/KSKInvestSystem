@@ -60,6 +60,10 @@ echo "===== $(date '+%Y-%m-%d %H:%M:%S') make_stock_db.py 開始 =====" >> ../lo
 python make_stock_db.py >> ../logs/make_stock_db.log 2>&1
 RET2=$?
 
+# theme-news 調査は /market のボタンから手動実行する運用 (issue #165)。
+# claude -p が将来従量課金化される可能性 + 1 回 5〜15 分かかる重い処理のため、
+# 毎日 cron で走らせず、必要な日だけユーザー判断で起動する。
+
 # --- 結果サマリー ---
 echo ""
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行結果 ====="

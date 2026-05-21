@@ -2431,3 +2431,47 @@ class TestBuildSprGaugeForStock:
         gauge = helpers._build_spr_gauge_for_stock({})
         assert gauge["svg"] == "—"
         assert gauge["tooltip"] == ""
+
+
+class TestThemeNewsMdToHtml:
+    """issue #165: theme-news markdown → HTML 変換 + サニタイズ"""
+
+    def test_converts_markdown_and_sanitizes(self):
+        """見出し / 箇条書き / 太字 / リンクが HTML 化され、危険タグはエスケープされる。"""
+        src = (
+            "## テーマA\n"
+            "- **重要**: 業績好調\n"
+            "- [出典](https://example.com)\n"
+            "\n"
+            "<script>alert(1)</script>\n"
+        )
+        out = helpers.theme_news_md_to_html(src)
+        assert "<h2>テーマA</h2>" in out
+        assert "<li><strong>重要</strong>: 業績好調</li>" in out
+        assert '<a href="https://example.com">出典</a>' in out
+        # script はエスケープされる (sanitize_html 経由)
+        assert "<script>" not in out
+        assert "&lt;script&gt;" in out
+
+    def test_empty_input_returns_empty(self):
+        assert helpers.theme_news_md_to_html("") == ""
+        assert helpers.theme_news_md_to_html(None) == ""
+
+    def test_inserts_br_before_zenkaku_middot(self):
+        """skill 出力で `・` (全角中点) 区切りの長文 li は読みづらいので、
+        テキスト中の `・` 前に <br> を挿入する。先頭 `・` (li 直後) には入れない。"""
+        src = "- 地合い: 日経4日続落・6万円割れ達成・米10年金利4.68%\n"
+        out = helpers.theme_news_md_to_html(src)
+        # 文中の ・ 前には <br> が入る
+        assert "日経4日続落<br>・6万円割れ達成" in out
+        assert "6万円割れ達成<br>・米10年金利" in out
+
+    def test_strips_leading_h1_title(self):
+        """skill 出力先頭の `# 見出し` (h1) は /market summary 側で日付を出しているので
+        冗長 + sanitize_html で許可外タグとしてエスケープされ生文字列が見える問題を防ぐ。"""
+        src = "# テーマ急上昇ニュース要約（2026-05-20）\n\n## 市場全体\n- 本文\n"
+        out = helpers.theme_news_md_to_html(src)
+        assert "<h1>" not in out
+        assert "&lt;h1&gt;" not in out
+        # 後続の h2 は残る
+        assert "<h2>市場全体</h2>" in out

@@ -9,13 +9,22 @@ reimport_rich_text.py が生成する HTML 片と、Webapp のユーザー入力
     <b>          — 太字
     <a href target> — ハイパーリンク (http/https のみ)
     <span style>   — 色付きテキスト (color:#XXXXXX のみ)
+
+    issue #165 で theme-news markdown 表示のため以下を追加:
+    <h2/h3/h4>, <ul/ol/li>, <p>, <strong>, <em>, <code>, <br>,
+    <table/thead/tbody/tr/th/td>
 """
 
 import re
 from html.parser import HTMLParser
 
 # 許可タグと属性の定義
-ALLOWED_TAGS = frozenset({"b", "a", "span"})
+ALLOWED_TAGS = frozenset({
+    "b", "a", "span",
+    # theme-news 表示用 (markdown 生成タグ)
+    "h2", "h3", "h4", "ul", "ol", "li", "p", "strong", "em", "code", "br",
+    "table", "thead", "tbody", "tr", "th", "td",
+})
 
 # 属性値の許可パターン
 _HREF_PATTERN = re.compile(r"^https?://")

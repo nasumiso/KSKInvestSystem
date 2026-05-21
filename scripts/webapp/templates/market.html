@@ -16,6 +16,106 @@
 </div>
 {% endif %}
 
+{# issue #165: テーマランク直下に theme-news 調査結果を表示。手動実行ボタン付き #}
+<div id="theme-news-section" style="margin: 0.5em 0 1em 0;">
+  <details open>
+    <summary style="cursor:pointer;font-weight:bold;color:#2c3e50;">
+      📰 テーマニュース調査
+      {%- if theme_news.current %}
+      ({{ theme_news.current.date }}{% if not theme_news.is_today %} <span style="color:#b27500;">— 前回分</span>{% endif %})
+      {%- else %}
+      (未実施)
+      {%- endif %}
+      {%- if theme_news.current and theme_news.current.meta and theme_news.current.meta.estimated_cost_usd is not none %}
+      <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.5em;"
+            title="Opus 4.x の従量課金単価で概算 (Max plan では実請求は発生しない)">
+        💰 約 ${{ '%.2f' | format(theme_news.current.meta.estimated_cost_usd) }}
+      </span>
+      {%- endif %}
+    </summary>
+    <div style="padding: 0.4em 1em 0; display: flex; gap: 0.6em; align-items: center; flex-wrap: wrap;">
+      <button type="button" id="theme-news-run-btn"
+              style="padding: 0.4em 1.0em; cursor: pointer; border: 1px solid #2c3e50; border-radius: 4px; background: #2c3e50; color: #fff; font-weight: 600;"
+              {% if theme_news.running %}disabled{% endif %}>
+        {% if theme_news.is_today %}🔄 当日分のテーマニュースを再調査する{% else %}▶ 当日分のテーマニュースを調査する{% endif %}
+      </button>
+      <span id="theme-news-status-msg" style="color:#666;font-size:0.85em;">
+        {% if theme_news.running %}実行中... (最大 5〜15 分){% else %}クリックで claude -p 起動 (約 5〜15 分){% endif %}
+      </span>
+    </div>
+    {% if theme_news.current %}
+    <div class="theme-news-body" style="padding: 0.5em 1em; background: #f8f9fa; border-radius: 4px; margin-top: 0.5em;">
+      {{ theme_news.current.markdown | theme_news_md_to_html | safe }}
+    </div>
+    {% else %}
+    <div style="padding: 0.5em 1em; color:#888;">過去履歴も無いため、まずは「当日分を調査」を実行してください。</div>
+    {% endif %}
+  </details>
+</div>
+<script>
+(function() {
+  const btn = document.getElementById('theme-news-run-btn');
+  const msg = document.getElementById('theme-news-status-msg');
+  if (!btn) return;
+
+  let pollTimer = null;
+  const POLL_INTERVAL_MS = 30 * 1000;  // 30秒ごとに status を見る (skill は 5〜15 分かかる)
+
+  function startPolling() {
+    if (pollTimer !== null) return;
+    pollTimer = setInterval(checkStatus, POLL_INTERVAL_MS);
+  }
+  function stopPolling() {
+    if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  async function checkStatus() {
+    try {
+      const r = await fetch('/market/theme_news/status');
+      if (!r.ok) return;
+      const s = await r.json();
+      if (s.done) {
+        // 完了 → reload で当日分を表示
+        msg.textContent = '完了。ページをリロードします...';
+        stopPolling();
+        setTimeout(() => location.reload(), 500);
+      } else if (!s.running) {
+        // 何らかの理由で running が消えたが done も無い → 失敗扱い、ボタン再有効化
+        stopPolling();
+        btn.disabled = false;
+        msg.textContent = '実行が終了しましたが完了マーカーが出ていません。logs/ を確認してください。';
+      }
+    } catch (e) {
+      // ネットワーク一時エラーは無視して次回まで待つ
+    }
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    msg.textContent = '起動中...';
+    try {
+      const r = await fetch('/market/theme_news/run', { method: 'POST' });
+      if (r.status === 409) {
+        msg.textContent = '既に実行中です。';
+      } else if (r.status === 202) {
+        msg.textContent = '実行中... (最大 5〜15 分)';
+        startPolling();
+      } else {
+        const err = await r.json().catch(() => ({}));
+        msg.textContent = '起動失敗: ' + (err.error || r.status);
+        btn.disabled = false;
+      }
+    } catch (e) {
+      msg.textContent = 'リクエスト失敗: ' + e.message;
+      btn.disabled = false;
+    }
+  });
+
+  // 初期表示時に既に running なら polling 開始 (ページ再訪時に進行を拾う)
+  {% if theme_news.running %}startPolling();{% endif %}
+})();
+</script>
+
 {# 市場データ本文: 決算セクションはプレースホルダに置き換え済み #}
 {% set body_parts = market_parts.get('body_without_kessan', '').split('<div id="kessan-placeholder-mark">__KESSAN_PLACEHOLDER__</div>') %}
 {% if body_parts[0] %}
