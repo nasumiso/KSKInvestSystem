@@ -318,29 +318,29 @@
             <strong style="font-size:0.85em;color:#666;">今期</strong>
           </div>
           {% endif %}
-          <div style="flex:0 1 auto;min-width:300px;max-width:50em;">
+          <div style="flex:0 1 auto;min-width:300px;max-width:60em;">
             <strong style="font-size:0.85em;color:#666;">手動メモ</strong>
             {% if not fallback_mode %}
             <form action="/portfolio/{{ row.code_s }}/memo" method="POST"
-                  style="display:flex;flex-direction:column;gap:0.4em;margin:0.3em 0 0 0;font-size:0.85em;">
+                  style="display:grid;grid-template-columns:1fr 1fr;gap:0.6em 1em;margin:0.3em 0 0 0;font-size:0.95em;">
               <input type="hidden" name="return_query" value="{{ return_query }}">
               {# 業態・テーマ / 更新日 / ステージ は表内 inline 編集に移動 (issue #177) #}
               {% for field, label in [
                   ("watch_in_reason", "IN 理由"),
-                  ("trade_idea", "売買アイデア"),
                   ("inago_origin", "イナゴ元"),
+                  ("trade_idea", "売買アイデア"),
                   ("takaichi_sensitivity", "高市感応度"),
                   ("jukyu_chart", "需給チャート"),
               ] %}
               <label style="display:flex;flex-direction:column;gap:0.1em;margin:0;">
                 <span style="color:#666;">{{ label }}</span>
                 <textarea name="{{ field }}" rows="2"
-                          style="font-size:0.85em;padding:0.3em;margin:0;font-family:inherit;"
+                          style="font-size:0.95em;padding:0.3em;margin:0;font-family:inherit;"
                           >{{ row.memo[field] or "" }}</textarea>
               </label>
               {% endfor %}
               <button type="submit"
-                      style="padding:0.3em 0.6em;font-size:0.85em;margin:0.2em 0 0 0;align-self:flex-start;">
+                      style="grid-column:1 / -1;justify-self:end;padding:0.3em 0.6em;font-size:0.95em;margin:0.2em 0 0 0;">
                 メモを保存
               </button>
             </form>
