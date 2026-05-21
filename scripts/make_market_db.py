@@ -1640,8 +1640,8 @@ def create_market_html(market_db,
         now.strftime("%Y-%m-%d"),
         _HTML_CSS,
         date_str,
+        market_html,   # 市場を先 (/market 表示順を「市場 → テーマランク → ニュース → 決算」に揃える)
         theme_html,
-        market_html,
         kessan_html,
         now.strftime("%Y-%m-%d %H:%M"),
     )
