@@ -2497,3 +2497,33 @@ class TestThemeNewsMdToHtml:
         src = "- 反発+1.9%→翌日続伸\n"
         out = helpers.theme_news_md_to_html(src)
         assert "反発<wbr>+1.9%<wbr>→翌日続伸" in out
+
+
+class TestBuildGyosekiTooltips:
+    """issue #204: gyoseki_quarity_expr から portfolio 列 tooltip を生成する。"""
+
+    @pytest.mark.parametrize("expr,expected", [
+        # 通常ケース (<C3>無し)
+        (
+            "[A]5±8%,2±6%[Q]-5±12%,1±8%",
+            {
+                "sales_growth": "5年平均: 5±8%",
+                "profit_growth": "5年平均: 2±6%",
+                "progress_diff": "4Q平均: 売上-5±12% / 利益1±8%",
+            },
+        ),
+        # <C3> タグ付き
+        (
+            "[A]5±8%,2±6%[Q]-5±12%,1±8%<C3>",
+            {
+                "sales_growth": "5年平均: 5±8%",
+                "profit_growth": "5年平均: 2±6%",
+                "progress_diff": "4Q平均: 売上-5±12% / 利益1±8% [3Q連続利益率向上]",
+            },
+        ),
+        # 空文字・パース失敗時は全空 (Jinja 側で title 属性が出ない想定)
+        ("", {"sales_growth": "", "profit_growth": "", "progress_diff": ""}),
+        ("invalid", {"sales_growth": "", "profit_growth": "", "progress_diff": ""}),
+    ])
+    def test_tooltip_format(self, expr, expected):
+        assert helpers.build_gyoseki_tooltips(expr) == expected
