@@ -55,6 +55,10 @@ def index():
         and bool(CODE_S_PATTERN.match(q_normalized))
     )
 
+    # issue #244: クエリが何も無いトップアクセスでは銘柄一覧を出さず
+    # What's new プレースホルダーを描画する。一覧は検索クエリありのときだけ。
+    has_query = bool(q or code_s or rating or keyword)
+
     return render_template(
         "search.html",
         records=records,
@@ -64,6 +68,7 @@ def index():
         filter_q=q,
         can_add=can_add,
         q_normalized=q_normalized,
+        has_query=has_query,
     )
 
 
