@@ -41,6 +41,7 @@
 {% endif %}
 {% endwith %}
 
+{% if has_query %}
 <p style="font-size:0.85em;color:#666;">{{ records|length }} 件</p>
 
 {% if records %}
@@ -80,5 +81,13 @@
   <button type="submit">この銘柄 ({{ q_normalized }}) を ResearchDB に追加</button>
 </form>
 {% endif %}
+{% endif %}
+
+{% else %}
+{# issue #244: クエリなしトップアクセスは銘柄一覧ではなく What's new プレースホルダーを表示 #}
+<section id="whats-new" style="margin-top:1.5em;padding:1.2em 1.4em;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;">
+  <h3 style="margin-top:0;font-size:1.05em;color:#2c3e50;">📌 What's new — 今日の注目要素</h3>
+  <p style="color:#888;font-size:0.9em;margin-bottom:0;">準備中。市況・テーマ・保有銘柄など、その日にチェックすべき要素を後日ここに集約予定。</p>
+</section>
 {% endif %}
 {% endblock %}

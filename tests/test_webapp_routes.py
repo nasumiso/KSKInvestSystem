@@ -75,10 +75,24 @@ class TestSearchRoute:
         resp = client.get("/")
         assert resp.status_code == 200
 
-    def test_index_shows_records(self, client):
+    def test_index_no_query_hides_records_and_shows_whats_new(self, client):
+        """issue #244: クエリなしトップでは銘柄一覧を出さず What's new プレースホルダーを表示"""
         resp = client.get("/")
-        assert "3496" in resp.data.decode()
-        assert "アズーム" in resp.data.decode()
+        html = resp.data.decode()
+        # 銘柄一覧テーブルは描画されない
+        assert "アズーム" not in html
+        assert '<table' not in html
+        # What's new プレースホルダーが存在する
+        assert 'id="whats-new"' in html
+        assert "What's new" in html
+
+    def test_index_with_keyword_shows_records(self, client):
+        """issue #244: 検索クエリ付き (keyword) では従来通り一覧を表示"""
+        resp = client.get("/?keyword=アズーム")
+        html = resp.data.decode()
+        assert resp.status_code == 200
+        assert "3496" in html
+        assert "アズーム" in html
 
     def test_index_filter_by_rating(self, client):
         resp = client.get("/?rating=A")
