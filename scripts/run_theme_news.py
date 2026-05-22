@@ -107,9 +107,11 @@ def _run_claude_skill() -> int:
             )
         else:
             log_warning(f"[theme-news] claude -p は成功したが {history_file.name} が見つからない")
+        _log_claude_output_tail(result.stdout, result.stderr)
         return 1
     if history_file.stat().st_size <= 0:
         log_warning(f"[theme-news] history が空ファイル: {history_file.name}")
+        _log_claude_output_tail(result.stdout, result.stderr)
         return 1
 
     # usage 抽出 → .meta.json 保存 (失敗してもメイン処理は止めない)
@@ -119,6 +121,17 @@ def _run_claude_skill() -> int:
     _today_done_marker_path().touch()
     log_print(f"[theme-news] 完了: {history_file.name}")
     return 0
+
+
+# rc=0 だが skill が history を生成しなかった「静かな失敗」時の調査用に、
+# claude -p の出力末尾を warning として残す。--output-format json なので
+# 末尾には result/usage JSON が出ているはずで、原因切り分けの手がかりになる。
+_OUTPUT_TAIL_BYTES = 2048
+
+
+def _log_claude_output_tail(stdout: str, stderr: str) -> None:
+    log_warning(f"[theme-news] claude -p stdout 末尾: {(stdout or '')[-_OUTPUT_TAIL_BYTES:]!r}")
+    log_warning(f"[theme-news] claude -p stderr 末尾: {(stderr or '')[-_OUTPUT_TAIL_BYTES:]!r}")
 
 
 def _try_save_usage_meta(stdout: str, elapsed_sec: float = 0.0) -> None:
