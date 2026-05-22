@@ -467,11 +467,9 @@ def get_market_html_parts() -> Dict[str, str]:
       - "available": bool 相当の "1" or "" （ファイル存在判定）
       - "css": <style> タグの中身
       - "header": <h1> の HTML
-      - "body_without_kessan": <body> 内のコンテンツのうち、
-         <h2>決算日</h2> 以下のブロック（次の <h2> 直前まで、または
-         <details><summary>▶ 済の決算を表示...</summary> 含む）を除去したもの。
-         <h1> は除外し、決算セクションのあった位置にプレースホルダ
-         "<!--KESSAN_PLACEHOLDER-->" を挿入。
+      - "body": <body> 内のコンテンツのうち、<h2>決算日</h2> 以下のブロック
+         （次の <h2> 直前まで）を除去したもの。<h1>/footer も除外。
+         issue #213: 決算日セクションは /disclosure に移設したため、市場ページでは抑制する。
       - "footer": <footer> タグ
 
     ファイル未存在時は {"available": ""} を返す。
@@ -533,10 +531,6 @@ def get_market_html_parts() -> Dict[str, str]:
                     break
             to_remove.append(sibling)
             sibling = next_sib
-        # プレースホルダを h2決算日 の位置に挿入
-        placeholder = soup.new_tag("div", id="kessan-placeholder-mark")
-        placeholder.string = "__KESSAN_PLACEHOLDER__"
-        kessan_h2.insert_before(placeholder)
         for el in to_remove:
             el.extract()
 
@@ -556,7 +550,7 @@ def get_market_html_parts() -> Dict[str, str]:
         "available": "1",
         "css": css or "",
         "header": header_html,
-        "body_without_kessan": body_html,
+        "body": body_html,
         "footer": footer_html,
     }
 

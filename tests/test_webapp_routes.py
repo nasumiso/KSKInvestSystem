@@ -788,15 +788,15 @@ class TestDisclosureRoute:
         assert "fin" in html
 
     def test_global_nav_has_disclosure_link(self, client):
-        """グローバルナビに /disclosure へのリンクがある"""
+        """グローバルナビに /disclosure へのリンクがある (タブ名は「決算・開示」)"""
         resp = client.get("/")
         html = resp.data.decode()
         assert 'href="/disclosure"' in html
-        assert "適宜開示" in html
+        assert "決算・開示" in html
 
 
-class TestMarketRouteKessanCard:
-    """GET /market の決算日カード表示テスト
+class TestDisclosureRouteKessanCard:
+    """GET /disclosure の決算日カード表示テスト (issue #213 で /market から移設)
 
     当日決算 (kessanbi == today) は中身は past 扱いで反応コメ枠を出すが、
     カードの見た目 ("(済)" ラベル / past クラス) は通常表示にする。
@@ -828,9 +828,9 @@ class TestMarketRouteKessanCard:
         today_md = _dt.today().strftime("%m/%d")
         yesterday_str = "2026/04/26"
 
-        from webapp.routes import market as _market_route
+        from webapp.routes import disclosure as _disc_route
         monkeypatch.setattr(
-            _market_route, "get_market_kessan_data",
+            _disc_route, "get_market_kessan_data",
             lambda: {
                 "base_day": _dt.today().date(),
                 "future_entries": [],
@@ -845,7 +845,7 @@ class TestMarketRouteKessanCard:
             },
         )
 
-        resp = client.get("/market")
+        resp = client.get("/disclosure")
         html = resp.data.decode()
         assert resp.status_code == 200
 
@@ -860,9 +860,9 @@ class TestMarketRouteKessanCard:
         from datetime import datetime as _dt
         today_str = _dt.today().strftime("%Y/%m/%d")
 
-        from webapp.routes import market as _market_route
+        from webapp.routes import disclosure as _disc_route
         monkeypatch.setattr(
-            _market_route, "get_market_kessan_data",
+            _disc_route, "get_market_kessan_data",
             lambda: {
                 "base_day": _dt.today().date(),
                 "future_entries": [],
@@ -875,7 +875,7 @@ class TestMarketRouteKessanCard:
             },
         )
 
-        resp = client.get("/market")
+        resp = client.get("/disclosure")
         html = resp.data.decode()
         # data-is-past="1" で past 扱い (反応コメ枠が出る)
         assert 'data-is-past="1"' in html
