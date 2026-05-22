@@ -279,13 +279,16 @@
         {% endfor %}
       </td>
       <td style="{{ row.styles.rank or '' }}">{{ row.rank if row.rank is not none else "—" }}</td>
-      <td style="{{ row.styles.sales_growth or '' }}">{{ row.sales_growth }}</td>
-      <td style="{{ row.styles.profit_growth or '' }}">{{ row.profit_growth }}</td>
+      <td {% if row.gyoseki_tooltips.sales_growth %}title="{{ row.gyoseki_tooltips.sales_growth }}"{% endif %}
+          style="{{ row.styles.sales_growth or '' }}">{{ row.sales_growth }}</td>
+      <td {% if row.gyoseki_tooltips.profit_growth %}title="{{ row.gyoseki_tooltips.profit_growth }}"{% endif %}
+          style="{{ row.styles.profit_growth or '' }}">{{ row.profit_growth }}</td>
       <td style="{{ row.styles.per or '' }}">{{ row.per }}</td>
       <td style="{{ row.styles.theoretical_diff or '' }}">{{ row.theoretical_diff }}</td>
       <td style="{{ row.styles.dividend or '' }}">{{ row.dividend }}</td>
       <td>{{ row.quarter }}</td>
-      <td style="{{ row.styles.progress_diff or '' }}">{{ row.progress_diff }}</td>
+      <td {% if row.gyoseki_tooltips.progress_diff %}title="{{ row.gyoseki_tooltips.progress_diff }}"{% endif %}
+          style="{{ row.styles.progress_diff or '' }}">{{ row.progress_diff }}</td>
       <td data-style-field="kessanbi_md"
           style="{{ row.styles.kessanbi_md or '' }}">{{ row.kessanbi_md }}</td>
       <td title="クリックで編集 (M/D 形式)"

@@ -1874,6 +1874,66 @@ def _gyoseki_quarity_expr_safe(stock: Dict[str, Any]) -> str:
         return ""
 
 
+# issue #204: gyoseki_quarity_expr を [A]…/[Q]…/<C3> の各セグメントに分解する
+_GYOSEKI_EXPR_RE = re.compile(
+    r"\[A\](?P<annual>[-\d]+±\d+%,[-\d]+±\d+%)"
+    r"\[Q\](?P<quarter>[-\d]+±\d+%,[-\d]+±\d+%)"
+    r"(?P<c3><C3>)?"
+)
+
+
+def parse_gyoseki_quarity_expr(expr: str) -> Dict[str, Any]:
+    """gyoseki_quarity_expr を tooltip 生成用に分解する。
+
+    入力例: "[A]5±8%,2±6%[Q]-5±12%,1±8%<C3>"
+    返り値: {
+        "sales_5y": "5±8%", "profit_5y": "2±6%",     # [A] = 過去5年年度平均
+        "sales_4q": "-5±12%", "profit_4q": "1±8%",   # [Q] = 過去4Q平均
+        "has_c3": True,                              # 3Q連続利益率向上タグ
+    }
+    パース失敗時は全フィールドが None / has_c3 = False の dict を返す。
+    """
+    empty = {"sales_5y": None, "profit_5y": None, "sales_4q": None, "profit_4q": None, "has_c3": False}
+    if not expr:
+        return empty
+    m = _GYOSEKI_EXPR_RE.search(expr)
+    if not m:
+        return empty
+    sales_5y, profit_5y = m.group("annual").split(",", 1)
+    sales_4q, profit_4q = m.group("quarter").split(",", 1)
+    return {
+        "sales_5y": sales_5y,
+        "profit_5y": profit_5y,
+        "sales_4q": sales_4q,
+        "profit_4q": profit_4q,
+        "has_c3": bool(m.group("c3")),
+    }
+
+
+def build_gyoseki_tooltips(expr: str) -> Dict[str, str]:
+    """gyoseki_quarity_expr から 3 セル分の tooltip 文字列を生成する (issue #204)。
+
+    返り値キー: sales_growth / profit_growth / progress_diff
+    データが無いセルは空文字。Jinja2 側で空なら title 属性を出さない想定。
+    """
+    parsed = parse_gyoseki_quarity_expr(expr)
+    sales_tip = f"5年平均: {parsed['sales_5y']}" if parsed["sales_5y"] else ""
+    profit_tip = f"5年平均: {parsed['profit_5y']}" if parsed["profit_5y"] else ""
+
+    parts: List[str] = []
+    if parsed["sales_4q"] and parsed["profit_4q"]:
+        parts.append(f"4Q平均: 売上{parsed['sales_4q']} / 利益{parsed['profit_4q']}")
+    if parsed["has_c3"]:
+        parts.append("[3Q連続利益率向上]")
+    progress_tip = " ".join(parts)
+
+    return {
+        "sales_growth": sales_tip,
+        "profit_growth": profit_tip,
+        "progress_diff": progress_tip,
+    }
+
+
 # ==================================================
 # 株価 + RSライン 統合スパークライン (issue #227)
 # ==================================================
@@ -2600,6 +2660,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "theoretical_diff": "—",
             "theoretical_diff_raw": None,
             "gyoseki_quarity_expr": "",
+            "gyoseki_tooltips": {"sales_growth": "", "profit_growth": "", "progress_diff": ""},
             "gyoseki": {},
             "indicators_raw": {},
         }
@@ -2621,6 +2682,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     trend_info = build_trend_info(stock)
 
     market_cap_raw = market_cap if isinstance(market_cap, (int, float)) else None
+    gyoseki_quarity_expr = _gyoseki_quarity_expr_safe(stock)
 
     return {
         "rank": rank if isinstance(rank, int) else None,
@@ -2651,7 +2713,9 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "spr_gauge": _build_spr_gauge_for_stock(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
         "theoretical_diff_raw": _theoretical_diff_raw(stock),
-        "gyoseki_quarity_expr": _gyoseki_quarity_expr_safe(stock),
+        "gyoseki_quarity_expr": gyoseki_quarity_expr,
+        # issue #204: 売上成長/利益成長/進捗率乖離 列の tooltip
+        "gyoseki_tooltips": build_gyoseki_tooltips(gyoseki_quarity_expr),
         "gyoseki": {
             "isKonki": stock.get("isKonki"),
         },
