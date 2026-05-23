@@ -19,6 +19,8 @@ from ks_util import *
 URL_THEME_RANK_KABUTAN = "https://kabutan.jp/info/accessranking/3_2"
 from db_shelve import get_market_db as _get_market_shelve_db
 
+THEME_STRENGTH_WINDOW_DAYS = 40
+
 
 def parse_theme_html(html):
     # print ux_cmd_head(html, 10)
@@ -173,11 +175,125 @@ THEME_RANK_INTERVAL = 1  # 再取得までの日数
 INTERVAL_BACKUP = 3  # バックアップ日数
 
 
-def make_theme_data(prev_momentum_rank=None):
+def _theme_rank_history_date(cach_date):
+    """テーマランク履歴用の日付文字列を返す。"""
+    if cach_date:
+        return get_price_day(cach_date).isoformat()
+    return get_price_day(datetime.today()).isoformat()
+
+
+def update_theme_rank_history(history, date_str, theme_rank_list,
+                              window_days=THEME_STRENGTH_WINDOW_DAYS):
+    """Kabutan生順位履歴を同日置換で更新し、強度値を計算する。
+
+    Args:
+        history: [(date_str, [(theme_name, rank), ...]), ...]
+        date_str: 更新対象日 (YYYY-MM-DD)
+        theme_rank_list: Kabutan生順位のテーマ名リスト
+        window_days: 保持する営業日数
+    Returns:
+        tuple: (new_history, theme_strength, theme_strength_days)
+    """
+    rank_rows = [(theme, i + 1) for i, theme in enumerate(theme_rank_list[:30])]
+    new_history = []
+    replaced = False
+    for old_date, old_rows in history or []:
+        if old_date == date_str:
+            new_history.append((date_str, rank_rows))
+            replaced = True
+        else:
+            new_history.append((old_date, old_rows))
+    if not replaced:
+        new_history.append((date_str, rank_rows))
+    new_history = new_history[-window_days:]
+
+    theme_strength = {}
+    theme_strength_days = {}
+    for _, rows in new_history:
+        for theme, rank in rows:
+            pt = max(0, 31 - int(rank))
+            if pt <= 0:
+                continue
+            theme_strength[theme] = theme_strength.get(theme, 0) + pt
+            theme_strength_days[theme] = theme_strength_days.get(theme, 0) + 1
+
+    return new_history, theme_strength, theme_strength_days
+
+
+def _shelve_path_exists(path):
+    """ShelveDB を新規作成せず、既存DBファイルの有無だけ判定する。"""
+    suffixes = ("", ".dat", ".dir", ".bak", ".db")
+    return any(os.path.exists(path + suffix) for suffix in suffixes)
+
+
+def _split_theme_names(themes):
+    """stock_data['themes'] をテーマ名リストに正規化する。"""
+    if isinstance(themes, str):
+        return [t.strip() for t in themes.split(",") if t.strip()]
+    if isinstance(themes, (list, tuple)):
+        return [str(t).strip() for t in themes if str(t).strip()]
+    return []
+
+
+def build_theme_portfolio_links(portfolio_records, stock_map):
+    """保有/準保有銘柄をテーマ名から逆引きできる形にする。
+
+    Returns:
+        dict: {theme_name: {"hold": [(code_s, stock_name)], "semi": [...]}}
+    """
+    status_key = {"1保": "hold", "2準": "semi"}
+    links = {}
+    for rec in portfolio_records or []:
+        status = rec.get("status")
+        key = status_key.get(status)
+        if not key:
+            continue
+        code_s = rec.get("code_s")
+        stock = (stock_map or {}).get(code_s) or {}
+        stock_name = stock.get("stock_name") or code_s
+        item = (code_s, stock_name)
+        for theme in _split_theme_names(stock.get("themes", "")):
+            theme_links = links.setdefault(theme, {"hold": [], "semi": []})
+            if item not in theme_links[key]:
+                theme_links[key].append(item)
+    for theme_links in links.values():
+        theme_links["hold"].sort(key=lambda item: item[0])
+        theme_links["semi"].sort(key=lambda item: item[0])
+    return links
+
+
+def collect_theme_portfolio_links():
+    """portfolio_shelve と stocks_shelve からテーマカード強調用データを作る。"""
+    try:
+        from db_shelve import PORTFOLIO_SHELVE, STOCKS_SHELVE, ShelveDB
+        import portfolio_shelve
+
+        if not _shelve_path_exists(PORTFOLIO_SHELVE) or not _shelve_path_exists(STOCKS_SHELVE):
+            return {}
+        records = (
+            portfolio_shelve.list_records(status="1保")
+            + portfolio_shelve.list_records(status="2準")
+        )
+        if not records:
+            return {}
+        stock_map = {}
+        with ShelveDB(STOCKS_SHELVE) as db:
+            for rec in records:
+                code_s = rec.get("code_s")
+                if code_s:
+                    stock_map[code_s] = db.get(code_s) or {}
+        return build_theme_portfolio_links(records, stock_map)
+    except Exception as e:
+        log_warning("[theme] portfolio links 作成失敗:", e)
+        return {}
+
+
+def make_theme_data(prev_momentum_rank=None, theme_rank_history=None):
     """テーマランクデータを作成
 
     Args:
         prev_momentum_rank: 前日のモメンタム順位リスト（差分ラベル計算用）
+        theme_rank_history: Kabutan生順位履歴（強度計算用）
     """
     log_print("テーマランクデータを作成します")
     theme_rank_list, prev_theme_rank_list, cach_date, _ = get_theme_rank_list()
@@ -223,6 +339,13 @@ def make_theme_data(prev_momentum_rank=None):
     market_db["theme_rank"] = theme_rank2_list
     market_db["theme_rank_diff"] = theme_rank_diff
     market_db["access_date_theme_rank"] = cach_date
+    history_date = _theme_rank_history_date(cach_date)
+    history, strength, strength_days = update_theme_rank_history(
+        theme_rank_history, history_date, theme_rank_list,
+    )
+    market_db["theme_rank_history"] = history
+    market_db["theme_strength"] = strength
+    market_db["theme_strength_days"] = strength_days
     return market_db
 
 
@@ -555,8 +678,12 @@ def update_market_db():
         market_db["prev_theme_rank_save_date"] = today_cal
         log_print("前日モメンタム順位を退避: %s" % today_cal)
     prev_momentum_rank = market_db.get("prev_theme_rank", [])
-    theme_db = make_theme_data(prev_momentum_rank)
+    theme_db = make_theme_data(
+        prev_momentum_rank,
+        theme_rank_history=market_db.get("theme_rank_history", []),
+    )
     market_db.update(theme_db)
+    market_db["theme_portfolio_links"] = collect_theme_portfolio_links()
 
     # 各指数を更新 (まず DD/FTD 候補と当日価格を取得)
     index_makers = [
@@ -739,13 +866,16 @@ tr:hover { background: #f5f5f5; }
 .theme-grid { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 16px 0; }
 .theme-badge {
   display: inline-flex; flex-direction: column; align-items: center;
-  border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px;
+  border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px 0 10px;
   background: #fff; min-width: 110px; font-size: 0.85em;
+  overflow: hidden;
 }
 .theme-badge .rank { font-size: 0.75em; color: #333; }
 .theme-badge .name { font-weight: bold; text-align: center; color: #333; }
 .theme-badge .change { font-size: 0.8em; margin-top: 2px; color: #333; }
 .theme-badge .rate { font-size: 0.8em; margin-top: 2px; }
+.theme-badge .strength-track { width: calc(100% + 20px); height: 5px; margin-top: 5px; background: rgba(255,255,255,0.55); align-self: stretch; }
+.theme-badge .strength-bar { height: 100%; background: #1f4e79; }
 .theme-badge .change-up { color: #c0392b; }
 .theme-badge .change-down { color: #2980b9; }
 .rate-pos { color: #c0392b; }
@@ -756,6 +886,11 @@ tr:hover { background: #f5f5f5; }
 .theme-heat0  { background: #fff; }
 .theme-heat1  { background: #a5d6a7; border-color: #81c784; }
 .theme-heat2  { background: #66bb6a; border-color: #4caf50; }
+.theme-badge.theme-hold { border: 3px solid #d4af37; }
+.theme-badge.theme-semi { border: 2px solid #a8a8a8; }
+.theme-badge .portfolio-links { margin-top: 4px; font-size: 0.75em; color: #333; }
+.theme-badge .portfolio-links summary { cursor: pointer; list-style: none; }
+.theme-badge .portfolio-links summary::-webkit-details-marker { display: none; }
 
 /* 市場テーブル */
 /* table のデフォルト width:100% を解除し、列幅の合計だけのコンパクトな表にする */
@@ -832,6 +967,10 @@ def _html_theme_rank(market_db, theme_rank_data=None):
     theme_rank = market_db.get("theme_rank", [])
     theme_rank_diff = market_db.get("theme_rank_diff", {})
     theme_momentum = market_db.get("theme_momentum", {})
+    theme_strength = market_db.get("theme_strength", {})
+    theme_strength_days = market_db.get("theme_strength_days", {})
+    theme_portfolio_links = market_db.get("theme_portfolio_links", {})
+    max_strength = max(theme_strength.values()) if theme_strength else 0
 
     if not theme_rank:
         return ""
@@ -880,14 +1019,54 @@ def _html_theme_rank(market_db, theme_rank_data=None):
                 rate_class, avg_rate, count
             )
 
+        strength = int(theme_strength.get(theme, 0) or 0)
+        strength_days = int(theme_strength_days.get(theme, 0) or 0)
+        strength_width = (strength * 100.0 / max_strength) if max_strength else 0
+        strength_title = html_mod.escape(
+            "強度: %dpt / %d日中%d日Top30" % (
+                strength, THEME_STRENGTH_WINDOW_DAYS, strength_days,
+            ),
+            quote=True,
+        )
+        link_info = theme_portfolio_links.get(theme, {}) or {}
+        hold_items = link_info.get("hold", []) or []
+        semi_items = link_info.get("semi", []) or []
+        portfolio_class = " theme-hold" if hold_items else (
+            " theme-semi" if semi_items else ""
+        )
+        portfolio_html = ""
+        if hold_items or semi_items:
+            def _stock_label(item):
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    code_s, stock_name = item[0], item[1]
+                    label = "%s %s" % (code_s, stock_name) if stock_name else code_s
+                else:
+                    label = str(item)
+                return html_mod.escape(label)
+
+            code_parts = []
+            if hold_items:
+                code_parts.append("保 " + ", ".join(_stock_label(item) for item in hold_items))
+            if semi_items:
+                code_parts.append("準 " + ", ".join(_stock_label(item) for item in semi_items))
+            portfolio_html = (
+                '    <details class="portfolio-links"><summary>銘柄</summary>%s</details>\n'
+                % "<br>".join(code_parts)
+            )
         theme_escaped = html_mod.escape(theme)
         parts.append(
-            '  <div class="theme-badge %s">\n'
+            '  <div class="theme-badge %s%s">\n'
             '    <span class="rank">#%d</span>\n'
             '    <span class="name">%s</span>\n'
             '    <span class="change %s">%s</span>\n'
             '    %s\n'
-            '  </div>' % (heat_class, i + 1, theme_escaped, change_class, change_text, rate_html)
+            '%s'
+            '    <div class="strength-track" title="%s"><div class="strength-bar" style="width:%.1f%%"></div></div>\n'
+            '  </div>' % (
+                heat_class, portfolio_class, i + 1, theme_escaped, change_class,
+                change_text, rate_html, portfolio_html, strength_title,
+                strength_width,
+            )
         )
 
     parts.append('</div>')

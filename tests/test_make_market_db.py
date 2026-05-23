@@ -289,6 +289,18 @@ class TestHtmlThemeRank:
                 "半導体": (-0.3, 5),
                 "防衛": (0.0, 8),
             },
+            "theme_strength": {
+                "AI": 100,
+                "半導体": 50,
+            },
+            "theme_strength_days": {
+                "AI": 4,
+                "半導体": 2,
+            },
+            "theme_portfolio_links": {
+                "AI": {"hold": [("3496", "アズーム")], "semi": []},
+                "半導体": {"hold": [], "semi": [("6324", "ハーモニック")]},
+            },
             "access_date_theme_rank": datetime(2026, 3, 15),
         }
 
@@ -324,6 +336,22 @@ class TestHtmlThemeRank:
         """テーマランクが空の場合は空文字列"""
         result = make_market_db._html_theme_rank({"theme_rank": []})
         assert result == ""
+
+    def test_strength_bar(self):
+        """テーマ持続強度バーとhover詳細が付く"""
+        result = make_market_db._html_theme_rank(self._make_market_db())
+        assert 'class="strength-track"' in result
+        assert 'class="strength-bar" style="width:100.0%"' in result
+        assert 'style="width:50.0%"' in result
+        assert '強度: 100pt / 40日中4日Top30' in result
+
+    def test_portfolio_border_and_codes(self):
+        """保有/準保有テーマに枠線クラスと銘柄コード・銘柄名が付く"""
+        result = make_market_db._html_theme_rank(self._make_market_db())
+        assert "theme-hold" in result
+        assert "theme-semi" in result
+        assert "保 3496 アズーム" in result
+        assert "準 6324 ハーモニック" in result
 
     def test_rank_history(self):
         """Kabutanランキング履歴が含まれる"""
@@ -1282,6 +1310,8 @@ class TestMakeThemeDataDiff:
         assert "theme_rank" in result
         assert "theme_rank_diff" in result
         assert "access_date_theme_rank" in result
+        assert "theme_rank_history" in result
+        assert "theme_strength" in result
 
     def test_all_themes_have_diff(self):
         """theme_rankの全テーマにtheme_rank_diffのエントリがある"""
@@ -1290,6 +1320,67 @@ class TestMakeThemeDataDiff:
             result = make_market_db.make_theme_data(prev_momentum)
         for theme in result["theme_rank"]:
             assert theme in result["theme_rank_diff"]
+
+
+class TestThemeRankHistory:
+    """テーマ持続強度の履歴計算テスト"""
+
+    def test_append_and_strength(self):
+        """Kabutan生順位から強度とTop30日数を計算する"""
+        history, strength, days = make_market_db.update_theme_rank_history(
+            [], "2026-03-18", ["AI", "半導体", "防衛"],
+        )
+        assert history == [
+            ("2026-03-18", [("AI", 1), ("半導体", 2), ("防衛", 3)])
+        ]
+        assert strength["AI"] == 30
+        assert strength["半導体"] == 29
+        assert days["AI"] == 1
+
+    def test_same_day_replaces(self):
+        """同日再実行はappendではなく置換する"""
+        history = [("2026-03-18", [("AI", 1), ("半導体", 2)])]
+        history, strength, days = make_market_db.update_theme_rank_history(
+            history, "2026-03-18", ["DX"],
+        )
+        assert history == [("2026-03-18", [("DX", 1)])]
+        assert strength == {"DX": 30}
+        assert days == {"DX": 1}
+
+    def test_window_keeps_latest_40_days(self):
+        """履歴は40営業日分だけ保持する"""
+        history = [
+            ("2026-03-%02d" % i, [("AI", 1)])
+            for i in range(1, 41)
+        ]
+        history, strength, _ = make_market_db.update_theme_rank_history(
+            history, "2026-04-01", ["AI"],
+        )
+        assert len(history) == make_market_db.THEME_STRENGTH_WINDOW_DAYS
+        assert history[0][0] == "2026-03-02"
+        assert history[-1][0] == "2026-04-01"
+        assert strength["AI"] == 30 * make_market_db.THEME_STRENGTH_WINDOW_DAYS
+
+
+class TestThemePortfolioLinks:
+    """テーマカードの保有/準保有リンク作成テスト"""
+
+    def test_build_links_exact_theme_match(self):
+        records = [
+            {"code_s": "3496", "status": "1保"},
+            {"code_s": "6324", "status": "2準"},
+            {"code_s": "7203", "status": "3監"},
+        ]
+        stock_map = {
+            "3496": {"stock_name": "アズーム", "themes": "AI,半導体"},
+            "6324": {"stock_name": "ハーモニック", "themes": "半導体,ロボット"},
+            "7203": {"stock_name": "トヨタ", "themes": "自動車"},
+        }
+        result = make_market_db.build_theme_portfolio_links(records, stock_map)
+        assert result["AI"]["hold"] == [("3496", "アズーム")]
+        assert result["半導体"]["hold"] == [("3496", "アズーム")]
+        assert result["半導体"]["semi"] == [("6324", "ハーモニック")]
+        assert "自動車" not in result
 
 
 # ==================================================
