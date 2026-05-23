@@ -1136,3 +1136,71 @@ class TestDetailGyoutaiThemes:
         # 業態・テーマ inline edit (input) は出る (空値で)
         html = resp.data.decode()
         assert 'name="gyoutai_themes_0"' in html
+
+
+class TestTransitionWithQty:
+    """issue #269: POST /portfolio/<code>/transition に qty を同時送信したときの挙動"""
+
+    @pytest.fixture
+    def portfolio_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        rec = rs.create_research_record("3496", "アズーム", overall_rating="A")
+        rs.upsert_research_record(rec, db_path=db_path)
+        # 3496 を 1保 で登録
+        ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)
+        ps.transition_status("3496", "1保", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app, portfolio_db
+
+    @pytest.mark.parametrize(
+        "new_status, qty_form, expected_qty, expected_status",
+        [
+            # 同一ステータス (1保 → 1保) + qty 更新 → status 変わらず、qty だけ反映
+            ("1保", "250", 250, "1保"),
+            # 異ステータス遷移 (1保 → 2準) + qty 送信 → status 変更、qty は無視 (元のまま)
+            ("2準", "999", 0, "2準"),  # add_to_watch 直後 qty=0、2準 では update_qty が呼ばれない
+            # 1保 のまま qty="" (空) → qty 変更なし、status も 1保 のまま (no-op)
+            ("1保", "", 0, "1保"),
+        ],
+        ids=["same-1ho-update-qty", "to-2jun-ignore-qty", "1ho-empty-noop"],
+    )
+    def test_transition_qty_combinations(
+        self, portfolio_app, new_status, qty_form, expected_qty, expected_status
+    ):
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+        client = app.test_client()
+
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={"new_status": new_status, "qty": qty_form, "reason": ""},
+        )
+        # redirect (302) または 200 を許容 (実装は redirect)
+        assert resp.status_code in (200, 302)
+
+        rec = ps.get_record("3496", db_path=portfolio_db)
+        assert rec["status"] == expected_status
+        assert rec["qty"] == expected_qty
+
+    def test_transition_rejects_invalid_qty(self, portfolio_app):
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+        client = app.test_client()
+
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={"new_status": "1保", "qty": "-5", "reason": ""},
+        )
+        # error flash + redirect、status/qty は変更されない (1保 / qty=0 のまま)
+        assert resp.status_code in (200, 302)
+        rec = ps.get_record("3496", db_path=portfolio_db)
+        assert rec["status"] == "1保"
+        assert rec["qty"] == 0

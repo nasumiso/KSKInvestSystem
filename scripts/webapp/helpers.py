@@ -1621,7 +1621,26 @@ def list_portfolio_with_indicators(
         row["status_label"] = _PORTFOLIO_STATUS_LABEL.get(status, status)
         # issue #178: 業態境界判定用 (template から再計算しないで済むよう)
         row["gyoutai_first"] = _gyoutai_first_line(row)
+        # issue #269: 保有株数とポジション量 (1保 のみ意味を持つ)
+        qty = rec.get("qty", 0) or 0
+        price = stock.get("price") if isinstance(stock, dict) else None
+        if status == "1保" and qty > 0 and isinstance(price, (int, float)) and price > 0:
+            row["position_value"] = float(price) * qty
+        else:
+            row["position_value"] = 0.0
+        row["qty"] = qty
+        row["position_ratio"] = 0.0  # 後段で 1保 群の max に対する相対比で埋め直す
         rows.append(row)
+
+    # issue #269: 1保 銘柄の最大ポジション量を基準に position_ratio (0-100) を計算
+    max_position = max(
+        (r["position_value"] for r in rows if r.get("status") == "1保"),
+        default=0.0,
+    )
+    if max_position > 0:
+        for r in rows:
+            if r.get("status") == "1保" and r["position_value"] > 0:
+                r["position_ratio"] = r["position_value"] / max_position * 100.0
 
     # 業態順: 業態 1 行目 (空は末尾) → 順位昇順 (None は末尾) → コード
     rows.sort(key=lambda r: (
