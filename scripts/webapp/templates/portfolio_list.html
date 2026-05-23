@@ -391,7 +391,9 @@
       <strong id="portfolio-modal-title"></strong>
       <button type="button" class="portfolio-modal-close" onclick="closePortfolioModal()" aria-label="閉じる">×</button>
     </div>
-    <form method="POST" id="portfolio-modal-form" class="portfolio-modal-body">
+    {# issue #269: qty の step=100 と「手入力 25 株」を両立させるため novalidate。
+       new_status の required はテンプレ側で空 option を出さないことで担保。 #}
+    <form method="POST" id="portfolio-modal-form" class="portfolio-modal-body" novalidate>
       <input type="hidden" name="return_query" value="{{ return_query }}">
       <p style="margin:0 0 0.6em 0;">現在: <strong id="portfolio-modal-current"></strong></p>
       <div id="portfolio-modal-transition-fields">
@@ -400,11 +402,12 @@
           <select name="new_status" required id="portfolio-modal-new-status" style="margin-left:0.4em;"></select>
         </label>
         {# issue #269: 株数欄は変更先=1保 のときのみ表示 (JS で hide/show 切替)。
-           step=1 で 1株単位の入力を許容 (ミニ株対応)。 #}
+           ↑↓スピンは 100 株単位 (step=100)。手入力は任意の整数を許容 (form novalidate で
+           HTML5 step バリデーションを無効化)。バックエンドの _validate_qty で >=0 整数を保証。 #}
         <div id="portfolio-modal-qty-row" style="display:none;margin-bottom:0.6em;">
           <label style="display:flex;align-items:center;gap:0.4em;">
             株数:
-            <input type="number" name="qty" id="portfolio-modal-qty" min="0" step="1" value="100"
+            <input type="number" name="qty" id="portfolio-modal-qty" min="0" step="100" value="100"
                    style="width:6em;text-align:right;padding:0.2em 0.3em;">
             <span style="color:#888;font-size:0.85em;">株</span>
           </label>
