@@ -264,12 +264,13 @@ def build_theme_portfolio_links(portfolio_records, stock_map):
 
 def collect_theme_portfolio_links():
     """portfolio_shelve と stocks_shelve からテーマカード強調用データを作る。"""
-    try:
-        from db_shelve import PORTFOLIO_SHELVE, STOCKS_SHELVE, ShelveDB
-        import portfolio_shelve
+    import dbm
+    from db_shelve import PORTFOLIO_SHELVE, STOCKS_SHELVE, ShelveDB
+    import portfolio_shelve
 
-        if not _shelve_path_exists(PORTFOLIO_SHELVE) or not _shelve_path_exists(STOCKS_SHELVE):
-            return {}
+    if not _shelve_path_exists(PORTFOLIO_SHELVE) or not _shelve_path_exists(STOCKS_SHELVE):
+        return {}
+    try:
         records = (
             portfolio_shelve.list_records(status="1保")
             + portfolio_shelve.list_records(status="2準")
@@ -283,7 +284,7 @@ def collect_theme_portfolio_links():
                 if code_s:
                     stock_map[code_s] = db.get(code_s) or {}
         return build_theme_portfolio_links(records, stock_map)
-    except Exception as e:
+    except dbm.error as e:
         log_warning("[theme] portfolio links 作成失敗:", e)
         return {}
 

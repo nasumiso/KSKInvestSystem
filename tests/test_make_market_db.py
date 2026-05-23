@@ -1,6 +1,7 @@
 """make_market_db.py の計算関数テスト"""
 
 import pytest
+import dbm
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -1381,6 +1382,19 @@ class TestThemePortfolioLinks:
         assert result["半導体"]["hold"] == [("3496", "アズーム")]
         assert result["半導体"]["semi"] == [("6324", "ハーモニック")]
         assert "自動車" not in result
+
+    def test_collect_links_dbm_error_returns_empty(self):
+        """DBアクセス系エラーは警告だけ出して空dictにする"""
+        with patch.object(make_market_db, "_shelve_path_exists", return_value=True), \
+                patch("portfolio_shelve.list_records", side_effect=dbm.error[0]("boom")):
+            assert make_market_db.collect_theme_portfolio_links() == {}
+
+    def test_collect_links_logic_error_is_not_swallowed(self):
+        """API変更などの論理エラーは握り潰さず失敗させる"""
+        with patch.object(make_market_db, "_shelve_path_exists", return_value=True), \
+                patch("portfolio_shelve.list_records", side_effect=AttributeError("boom")):
+            with pytest.raises(AttributeError):
+                make_market_db.collect_theme_portfolio_links()
 
 
 # ==================================================
