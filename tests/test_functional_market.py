@@ -134,6 +134,16 @@ def market_env(tmp_path):
         make_market_db, "make_sp500_db",
         return_value={"sp500": index_data.copy()},
     ))
+    patches.append(patch.object(
+        make_market_db, "make_fng_db",
+        return_value={"fear_and_greed": {
+            "score": 66.9,
+            "rating": "greed",
+            "score_5d_ago": 58.2,
+            "score_20d_ago": 38.1,
+            "access_date": datetime(2026, 5, 23, 12, 0),
+        }},
+    ))
 
     # Google Drive、決算、適宜開示をモック
     patches.append(patch("googledrive.upload_csv"))
@@ -282,4 +292,3 @@ class TestUpdateMarketDbFlow:
         assert "↑" in content or "↓" in content, (
             "HTML内に差分ラベルが含まれていない"
         )
-
