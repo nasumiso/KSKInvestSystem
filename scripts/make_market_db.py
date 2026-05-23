@@ -12,6 +12,7 @@ import os
 
 import price
 import make_stock_db
+import fng
 
 from ks_util import *
 
@@ -381,6 +382,11 @@ def make_sp500_db():
     return _make_us_index_db("_GSPC", "^GSPC", "sp500")
 
 
+def make_fng_db():
+    """CNN Fear & Greed Index を取得する。"""
+    return {"fear_and_greed": fng.fetch_fear_and_greed()}
+
+
 _market_db_cache = None
 _market_db_lock = threading.Lock()
 
@@ -557,6 +563,14 @@ def update_market_db():
     prev_momentum_rank = market_db.get("prev_theme_rank", [])
     theme_db = make_theme_data(prev_momentum_rank)
     market_db.update(theme_db)
+
+    try:
+        market_db.update(make_fng_db())
+    except Exception as e:
+        log_warning(
+            "[market] Fear & Greed 取得失敗のため DB 更新をスキップ "
+            "(前回データを保持): %s" % e
+        )
 
     # 各指数を更新 (まず DD/FTD 候補と当日価格を取得)
     index_makers = [
@@ -784,6 +798,16 @@ tr:hover { background: #f5f5f5; }
 /* DD 進行度の警告色 */
 .dd-pressure  { background: #fffbe6; color: #b8860b; font-weight: bold; }
 .dd-correction { background: #fdedec; color: #c0392b; font-weight: bold; }
+.fng-card { display: inline-flex; align-items: center; gap: 12px; margin: 0 0 10px 0; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fff; font-size: 0.9em; }
+.fng-score { font-size: 1.35em; font-weight: bold; }
+.fng-rating { padding: 2px 8px; border-radius: 999px; font-size: 0.85em; font-weight: bold; color: #fff; }
+.fng-rating-extreme-fear { background: #a93226; }
+.fng-rating-fear { background: #e67e22; }
+.fng-rating-neutral { background: #7f8c8d; }
+.fng-rating-greed { background: #27ae60; }
+.fng-rating-extreme-greed { background: #145a32; }
+.fng-delta-pos { color: #c0392b; }
+.fng-delta-neg { color: #2980b9; }
 
 /* 決算 */
 .kessan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
@@ -972,6 +996,56 @@ def _rs_style(rs_raw):
     if rs_raw <= 0.9:
         return ' style="background:#6fa8dc"'
     return ""
+
+
+def _format_fng_delta(score, past_score):
+    """Fear & Greed の差分表示用テキストを返す。"""
+    try:
+        delta = float(score) - float(past_score)
+    except (TypeError, ValueError):
+        return "—", ""
+    cls = "fng-delta-pos" if delta >= 0 else "fng-delta-neg"
+    return "%+.1f" % delta, cls
+
+
+def _html_fear_and_greed(market_db):
+    """Fear & Greed Index のサマリーHTMLを生成する。"""
+    fng_db = market_db.get("fear_and_greed") or {}
+    if not fng_db:
+        return ""
+
+    try:
+        score = float(fng_db["score"])
+    except (KeyError, TypeError, ValueError):
+        return ""
+    rating = str(fng_db.get("rating", "")).strip().lower()
+    rating_label = rating.replace("_", " ").title() if rating else "Unknown"
+    rating_class = "fng-rating-" + rating.replace(" ", "-") if rating else "fng-rating-neutral"
+    delta_5, delta_5_class = _format_fng_delta(score, fng_db.get("score_5d_ago"))
+    delta_20, delta_20_class = _format_fng_delta(score, fng_db.get("score_20d_ago"))
+    access_date = fng_db.get("access_date")
+    access_text = ""
+    if hasattr(access_date, "strftime"):
+        access_text = " 更新: " + access_date.strftime("%Y-%m-%d %H:%M")
+
+    return (
+        '<div class="fng-card" title="%s">\n'
+        '  <strong>Fear &amp; Greed</strong>\n'
+        '  <span class="fng-score">%.1f</span>\n'
+        '  <span class="fng-rating %s">%s</span>\n'
+        '  <span>5営業日前比 <span class="%s">%s</span></span>\n'
+        '  <span>20営業日前比 <span class="%s">%s</span></span>\n'
+        '</div>\n'
+    ) % (
+        html_mod.escape(access_text.strip()),
+        score,
+        html_mod.escape(rating_class),
+        html_mod.escape(rating_label),
+        html_mod.escape(delta_5_class),
+        html_mod.escape(delta_5),
+        html_mod.escape(delta_20_class),
+        html_mod.escape(delta_20),
+    )
 
 
 _SPR_GAUGE_WIDTH = 100      # バー本体の幅 (= SPR 0〜100 のスケール)
@@ -1273,6 +1347,7 @@ def _html_market(market_db):
 
     header = (
         '<h2>市場</h2>\n'
+        '%s'
         '<table class="market-table">\n'
         '<thead><tr>\n'
         '  <th>市場名</th><th class="col-rs">RS</th><th class="col-trend">トレンド</th>\n'
@@ -1280,7 +1355,7 @@ def _html_market(market_db):
         '  <th class="col-state">市場状態</th><th class="col-spr">需給バランス</th>\n'
         '</tr></thead>\n'
         '<tbody>'
-    )
+    ) % _html_fear_and_greed(market_db)
     return header + '\n'.join(rows_html) + '\n</tbody></table>'
 
 

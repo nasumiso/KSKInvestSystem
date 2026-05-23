@@ -472,6 +472,24 @@ class TestHtmlMarket:
         assert '<th class="col-dd">DD</th>' in result
         assert '<th class="col-ftd">FTD/ラリー</th>' in result
 
+    def test_fear_and_greed_summary(self):
+        """Fear & Greed サマリーが市場テーブル前に表示される"""
+        db = self._make_market_db()
+        db["fear_and_greed"] = {
+            "score": 66.9,
+            "rating": "greed",
+            "score_5d_ago": 58.2,
+            "score_20d_ago": 38.1,
+            "access_date": datetime(2026, 5, 23, 12, 0),
+        }
+        result = make_market_db._html_market(db)
+        assert "Fear &amp; Greed" in result
+        assert "66.9" in result
+        assert "Greed" in result
+        assert "+8.7" in result
+        assert "+28.8" in result
+        assert "fng-rating-greed" in result
+
     # ===== Part B: 表示文言・列構成テスト =====
     def test_market_state_header_label(self):
         """列ヘッダが「市場状態」になっている"""
@@ -1447,13 +1465,18 @@ class TestUpdateMarketDbSkipsOnFetchFailure:
             patch.object(
                 make_market_db, "make_theme_data", return_value={"theme_rank": []}
             ),
+            patch.object(
+                make_market_db,
+                "make_fng_db",
+                return_value={"fear_and_greed": {"score": 50, "rating": "neutral"}},
+            ),
         )
 
     def test_前日DBが取得失敗時に保持される(self):
         """前日に正常取得した topix が、当日の取得失敗で上書きされない"""
         prev_topix = self._good_index_dict(rs=1.17)
         prev_db = {"topix": prev_topix, "theme_rank": []}
-        captured, p_get, p_save, p_theme = self._patch_common(prev_db)
+        captured, p_get, p_save, p_theme, p_fng = self._patch_common(prev_db)
 
         empty_maker = lambda: {"topix": {}}
         good_mothers = lambda: {"mothers": self._good_index_dict(rs=1.08)}
@@ -1461,7 +1484,7 @@ class TestUpdateMarketDbSkipsOnFetchFailure:
         good_nasdaq = lambda: {"nasdaq": self._good_index_dict(rs=1.17)}
         good_sp500 = lambda: {"sp500": self._good_index_dict(rs=1.11)}
 
-        with p_get, p_save, p_theme, \
+        with p_get, p_save, p_theme, p_fng, \
                 patch.object(make_market_db, "make_topix_db", side_effect=empty_maker), \
                 patch.object(make_market_db, "make_mothers_db", side_effect=good_mothers), \
                 patch.object(make_market_db, "make_nikkei_db", side_effect=good_nikkei), \
@@ -1478,14 +1501,14 @@ class TestUpdateMarketDbSkipsOnFetchFailure:
         """週足だけ部分的に成功 (rs_raw=0, price_log 無し) でも上書きされない"""
         prev_topix = self._good_index_dict(rs=1.17)
         prev_db = {"topix": prev_topix, "theme_rank": []}
-        captured, p_get, p_save, p_theme = self._patch_common(prev_db)
+        captured, p_get, p_save, p_theme, p_fng = self._patch_common(prev_db)
 
         partial_maker = lambda: {
             "topix": {"rs_raw": 0, "trend_template": "0/7", "pullback_20": 0}
         }
         good = lambda key, rs: (lambda: {key: self._good_index_dict(rs=rs)})
 
-        with p_get, p_save, p_theme, \
+        with p_get, p_save, p_theme, p_fng, \
                 patch.object(make_market_db, "make_topix_db", side_effect=partial_maker), \
                 patch.object(make_market_db, "make_mothers_db", side_effect=good("mothers", 1.08)), \
                 patch.object(make_market_db, "make_nikkei_db", side_effect=good("nikkei225", 1.29)), \
@@ -1499,12 +1522,12 @@ class TestUpdateMarketDbSkipsOnFetchFailure:
         """既存DBに topix が無い状態で取得失敗 → 空 dict をセットして
         下流の market_db['topix'] 参照が KeyError にならないようにする"""
         prev_db = {"theme_rank": []}  # topix キー無し
-        captured, p_get, p_save, p_theme = self._patch_common(prev_db)
+        captured, p_get, p_save, p_theme, p_fng = self._patch_common(prev_db)
 
         empty_maker = lambda: {"topix": {}}
         good = lambda key, rs: (lambda: {key: self._good_index_dict(rs=rs)})
 
-        with p_get, p_save, p_theme, \
+        with p_get, p_save, p_theme, p_fng, \
                 patch.object(make_market_db, "make_topix_db", side_effect=empty_maker), \
                 patch.object(make_market_db, "make_mothers_db", side_effect=good("mothers", 1.08)), \
                 patch.object(make_market_db, "make_nikkei_db", side_effect=good("nikkei225", 1.29)), \
@@ -1514,3 +1537,26 @@ class TestUpdateMarketDbSkipsOnFetchFailure:
 
         assert "topix" in captured["saved"]
         assert captured["saved"]["topix"] == {}
+
+    def test_fng_fetch_failure_keeps_previous_value(self):
+        """Fear & Greed 取得失敗時は前回値を保持する"""
+        prev_fng = {
+            "score": 44.0,
+            "rating": "neutral",
+            "score_5d_ago": 40.0,
+            "score_20d_ago": 30.0,
+        }
+        prev_db = {"theme_rank": [], "fear_and_greed": prev_fng}
+        captured, p_get, p_save, p_theme, _ = self._patch_common(prev_db)
+        good = lambda key, rs: (lambda: {key: self._good_index_dict(rs=rs)})
+
+        with p_get, p_save, p_theme, \
+                patch.object(make_market_db, "make_fng_db", side_effect=RuntimeError("boom")), \
+                patch.object(make_market_db, "make_topix_db", side_effect=good("topix", 1.17)), \
+                patch.object(make_market_db, "make_mothers_db", side_effect=good("mothers", 1.08)), \
+                patch.object(make_market_db, "make_nikkei_db", side_effect=good("nikkei225", 1.29)), \
+                patch.object(make_market_db, "make_nasdaq_db", side_effect=good("nasdaq", 1.17)), \
+                patch.object(make_market_db, "make_sp500_db", side_effect=good("sp500", 1.11)):
+            make_market_db.update_market_db()
+
+        assert captured["saved"]["fear_and_greed"] == prev_fng
