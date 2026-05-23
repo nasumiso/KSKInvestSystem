@@ -346,13 +346,22 @@ class TestHtmlThemeRank:
         assert 'style="width:50.0%"' in result
         assert '強度: 100pt / 40日中4日Top30' in result
 
-    def test_portfolio_border_and_codes(self):
-        """保有/準保有テーマに枠線クラスと銘柄コード・銘柄名が付く"""
+    def test_portfolio_border_and_modal_data(self):
+        """保有/準保有テーマに枠線・クリック属性・モーダル用JSON銘柄データが付く"""
         result = make_market_db._html_theme_rank(self._make_market_db())
+        # 枠線クラスは維持
         assert "theme-hold" in result
         assert "theme-semi" in result
-        assert "保 3496 アズーム" in result
-        assert "準 6324 ハーモニック" in result
+        # クリック可能カードとonclickハンドラ
+        assert "theme-clickable" in result
+        assert 'onclick="openThemeModal(this)"' in result
+        # data-* 属性に銘柄情報がJSONで埋め込まれる
+        assert 'data-theme="AI"' in result
+        assert "3496" in result and "アズーム" in result
+        assert "6324" in result and "ハーモニック" in result
+        # モーダル雛形が出力される
+        assert 'id="theme-modal"' in result
+        assert "function openThemeModal" in result
 
     def test_rank_history(self):
         """Kabutanランキング履歴が含まれる"""

@@ -6,6 +6,7 @@
 
 import re
 import html as html_mod
+import json
 from datetime import datetime, timedelta
 import csv
 import os
@@ -867,15 +868,15 @@ tr:hover { background: #f5f5f5; }
 .theme-grid { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 16px 0; }
 .theme-badge {
   display: inline-flex; flex-direction: column; align-items: center;
-  border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px 0 10px;
-  background: #fff; min-width: 110px; font-size: 0.85em;
+  border: 1px solid #ddd; border-radius: 6px; padding: 6px 6px 0 6px;
+  background: #fff; width: 108px; box-sizing: border-box; font-size: 0.8em;
   overflow: hidden;
 }
 .theme-badge .rank { font-size: 0.75em; color: #333; }
-.theme-badge .name { font-weight: bold; text-align: center; color: #333; }
+.theme-badge .name { font-weight: bold; text-align: center; color: #333; font-size: 0.95em; line-height: 1.2; word-break: break-all; overflow-wrap: anywhere; }
 .theme-badge .change { font-size: 0.8em; margin-top: 2px; color: #333; }
 .theme-badge .rate { font-size: 0.8em; margin-top: 2px; }
-.theme-badge .strength-track { width: calc(100% + 20px); height: 5px; margin-top: 5px; background: rgba(255,255,255,0.55); align-self: stretch; }
+.theme-badge .strength-track { width: 96px; height: 5px; margin-top: 5px; background: rgba(255,255,255,0.55); }
 .theme-badge .strength-bar { height: 100%; background: #1f4e79; }
 .theme-badge .change-up { color: #c0392b; }
 .theme-badge .change-down { color: #2980b9; }
@@ -889,9 +890,31 @@ tr:hover { background: #f5f5f5; }
 .theme-heat2  { background: #66bb6a; border-color: #4caf50; }
 .theme-badge.theme-hold { border: 3px solid #d4af37; }
 .theme-badge.theme-semi { border: 2px solid #a8a8a8; }
-.theme-badge .portfolio-links { margin-top: 4px; font-size: 0.75em; color: #333; }
-.theme-badge .portfolio-links summary { cursor: pointer; list-style: none; }
-.theme-badge .portfolio-links summary::-webkit-details-marker { display: none; }
+.theme-badge.theme-clickable { cursor: pointer; }
+.theme-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000;
+  display: none; align-items: center; justify-content: center;
+}
+.theme-modal-content {
+  background: #fff; border-radius: 6px; padding: 1em 1.2em;
+  width: min(420px, 90vw); max-height: 80vh; overflow-y: auto;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+}
+.theme-modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 0.6em; padding-bottom: 0.4em; border-bottom: 1px solid #eee;
+}
+.theme-modal-header h3 { margin: 0; font-size: 1.05em; }
+.theme-modal-close {
+  background: none; border: none; font-size: 1.4em; cursor: pointer;
+  padding: 0 0.3em; line-height: 1; color: #888;
+}
+.theme-modal-section { margin-top: 0.6em; }
+.theme-modal-section h4 { margin: 0 0 0.3em 0; font-size: 0.9em; color: #555; }
+.theme-modal-section ul { list-style: none; padding: 0; margin: 0; }
+.theme-modal-section li { margin-bottom: 0.3em; font-size: 0.9em; list-style: none; }
+.theme-modal-section a { color: #1976d2; text-decoration: none; }
+.theme-modal-section a:hover { text-decoration: underline; }
 
 /* 市場テーブル */
 /* table のデフォルト width:100% を解除し、列幅の合計だけのコンパクトな表にする */
@@ -1032,45 +1055,102 @@ def _html_theme_rank(market_db, theme_rank_data=None):
         link_info = theme_portfolio_links.get(theme, {}) or {}
         hold_items = link_info.get("hold", []) or []
         semi_items = link_info.get("semi", []) or []
+        has_links = bool(hold_items or semi_items)
         portfolio_class = " theme-hold" if hold_items else (
             " theme-semi" if semi_items else ""
         )
-        portfolio_html = ""
-        if hold_items or semi_items:
-            def _stock_label(item):
-                if isinstance(item, (list, tuple)) and len(item) >= 2:
-                    code_s, stock_name = item[0], item[1]
-                    label = "%s %s" % (code_s, stock_name) if stock_name else code_s
-                else:
-                    label = str(item)
-                return html_mod.escape(label)
-
-            code_parts = []
-            if hold_items:
-                code_parts.append("保 " + ", ".join(_stock_label(item) for item in hold_items))
-            if semi_items:
-                code_parts.append("準 " + ", ".join(_stock_label(item) for item in semi_items))
-            portfolio_html = (
-                '    <details class="portfolio-links"><summary>銘柄</summary>%s</details>\n'
-                % "<br>".join(code_parts)
+        clickable_class = " theme-clickable" if has_links else ""
+        if has_links:
+            hold_json = html_mod.escape(
+                json.dumps(hold_items, ensure_ascii=False), quote=True,
             )
+            semi_json = html_mod.escape(
+                json.dumps(semi_items, ensure_ascii=False), quote=True,
+            )
+            theme_attr = html_mod.escape(theme, quote=True)
+            click_attrs = (
+                ' data-theme="%s" data-hold="%s" data-semi="%s"'
+                ' onclick="openThemeModal(this)"'
+            ) % (theme_attr, hold_json, semi_json)
+        else:
+            click_attrs = ""
         theme_escaped = html_mod.escape(theme)
         parts.append(
-            '  <div class="theme-badge %s%s">\n'
+            '  <div class="theme-badge %s%s%s"%s>\n'
             '    <span class="rank">#%d</span>\n'
             '    <span class="name">%s</span>\n'
             '    <span class="change %s">%s</span>\n'
             '    %s\n'
-            '%s'
             '    <div class="strength-track" title="%s"><div class="strength-bar" style="width:%.1f%%"></div></div>\n'
             '  </div>' % (
-                heat_class, portfolio_class, i + 1, theme_escaped, change_class,
-                change_text, rate_html, portfolio_html, strength_title,
+                heat_class, portfolio_class, clickable_class, click_attrs,
+                i + 1, theme_escaped, change_class,
+                change_text, rate_html, strength_title,
                 strength_width,
             )
         )
 
     parts.append('</div>')
+
+    # 保有/準保有銘柄ポップアップダイアログ
+    parts.append(
+        '<div id="theme-modal" class="theme-modal-overlay"'
+        ' onclick="closeThemeModalOnOverlay(event)">\n'
+        '  <div class="theme-modal-content">\n'
+        '    <div class="theme-modal-header">\n'
+        '      <h3 id="theme-modal-title"></h3>\n'
+        '      <button type="button" class="theme-modal-close"'
+        ' onclick="closeThemeModal()" aria-label="閉じる">×</button>\n'
+        '    </div>\n'
+        '    <div id="theme-modal-body"></div>\n'
+        '  </div>\n'
+        '</div>\n'
+        '<script>\n'
+        'function openThemeModal(card) {\n'
+        '  var theme = card.dataset.theme || "";\n'
+        '  var hold = [];\n'
+        '  var semi = [];\n'
+        '  try { hold = JSON.parse(card.dataset.hold || "[]"); } catch (e) {}\n'
+        '  try { semi = JSON.parse(card.dataset.semi || "[]"); } catch (e) {}\n'
+        '  document.getElementById("theme-modal-title").textContent = theme;\n'
+        '  var body = document.getElementById("theme-modal-body");\n'
+        '  body.innerHTML = "";\n'
+        '  function section(label, items) {\n'
+        '    if (!items.length) return;\n'
+        '    var div = document.createElement("div");\n'
+        '    div.className = "theme-modal-section";\n'
+        '    var h4 = document.createElement("h4");\n'
+        '    h4.textContent = label;\n'
+        '    div.appendChild(h4);\n'
+        '    var ul = document.createElement("ul");\n'
+        '    items.forEach(function(item) {\n'
+        '      var li = document.createElement("li");\n'
+        '      var a = document.createElement("a");\n'
+        '      a.href = "/detail/" + encodeURIComponent(item[0]);\n'
+        '      a.target = "_blank";\n'
+        '      a.rel = "noopener";\n'
+        '      a.textContent = item[0] + (item[1] ? " " + item[1] : "");\n'
+        '      li.appendChild(a);\n'
+        '      ul.appendChild(li);\n'
+        '    });\n'
+        '    div.appendChild(ul);\n'
+        '    body.appendChild(div);\n'
+        '  }\n'
+        '  section("保有", hold);\n'
+        '  section("準保有", semi);\n'
+        '  document.getElementById("theme-modal").style.display = "flex";\n'
+        '}\n'
+        'function closeThemeModal() {\n'
+        '  document.getElementById("theme-modal").style.display = "none";\n'
+        '}\n'
+        'function closeThemeModalOnOverlay(e) {\n'
+        '  if (e.target.id === "theme-modal") closeThemeModal();\n'
+        '}\n'
+        'document.addEventListener("keydown", function(e) {\n'
+        '  if (e.key === "Escape") closeThemeModal();\n'
+        '});\n'
+        '</script>'
+    )
 
     # Kabutanランキング履歴
     if theme_rank_data:
