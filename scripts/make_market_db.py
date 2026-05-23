@@ -921,7 +921,10 @@ def _html_theme_rank(market_db, theme_rank_data=None):
     if theme_rank_data:
         theme_rank_list, prev_theme_rank_list, _, prev_day = theme_rank_data
         if theme_rank_list or prev_theme_rank_list:
-            parts.append('<h3>Kabutanランキング履歴</h3>')
+            parts.append(
+                '<h3><a href="https://kabutan.jp/info/accessranking/3_2"'
+                ' target="_blank" rel="noopener">Kabutanランキング履歴</a></h3>'
+            )
             parts.append('<div class="rank-history"><table>')
             access_date = market_db.get("access_date_theme_rank")
             def _rank_row(date_str, rank_list):
@@ -1031,7 +1034,8 @@ def _html_fear_and_greed(market_db):
 
     return (
         '<div class="fng-card" title="%s">\n'
-        '  <strong>Fear &amp; Greed</strong>\n'
+        '  <strong><a href="https://edition.cnn.com/markets/fear-and-greed"'
+        ' target="_blank" rel="noopener">Fear &amp; Greed</a></strong>\n'
         '  <span class="fng-score">%.1f</span>\n'
         '  <span class="fng-rating %s">%s</span>\n'
         '  <span>5営業日前比 <span class="%s">%s</span></span>\n'
