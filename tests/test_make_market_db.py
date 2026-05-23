@@ -1560,3 +1560,20 @@ class TestUpdateMarketDbSkipsOnFetchFailure:
             make_market_db.update_market_db()
 
         assert captured["saved"]["fear_and_greed"] == prev_fng
+
+    def test_fng_fetch_failure_sets_empty_on_first_run(self):
+        """Fear & Greed 初回取得失敗時もキーを確保する"""
+        prev_db = {"theme_rank": []}
+        captured, p_get, p_save, p_theme, _ = self._patch_common(prev_db)
+        good = lambda key, rs: (lambda: {key: self._good_index_dict(rs=rs)})
+
+        with p_get, p_save, p_theme, \
+                patch.object(make_market_db, "make_fng_db", side_effect=RuntimeError("boom")), \
+                patch.object(make_market_db, "make_topix_db", side_effect=good("topix", 1.17)), \
+                patch.object(make_market_db, "make_mothers_db", side_effect=good("mothers", 1.08)), \
+                patch.object(make_market_db, "make_nikkei_db", side_effect=good("nikkei225", 1.29)), \
+                patch.object(make_market_db, "make_nasdaq_db", side_effect=good("nasdaq", 1.17)), \
+                patch.object(make_market_db, "make_sp500_db", side_effect=good("sp500", 1.11)):
+            make_market_db.update_market_db()
+
+        assert captured["saved"]["fear_and_greed"] == {}

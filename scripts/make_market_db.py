@@ -564,6 +564,7 @@ def update_market_db():
     theme_db = make_theme_data(prev_momentum_rank)
     market_db.update(theme_db)
 
+    market_db.setdefault("fear_and_greed", {})
     try:
         market_db.update(make_fng_db())
     except Exception as e:
@@ -1345,9 +1346,8 @@ def _html_market(market_db):
     if not rows_html:
         return ""
 
-    header = (
-        '<h2>市場</h2>\n'
-        '%s'
+    fng_html = _html_fear_and_greed(market_db)
+    header_static = (
         '<table class="market-table">\n'
         '<thead><tr>\n'
         '  <th>市場名</th><th class="col-rs">RS</th><th class="col-trend">トレンド</th>\n'
@@ -1355,7 +1355,8 @@ def _html_market(market_db):
         '  <th class="col-state">市場状態</th><th class="col-spr">需給バランス</th>\n'
         '</tr></thead>\n'
         '<tbody>'
-    ) % _html_fear_and_greed(market_db)
+    )
+    header = '<h2>市場</h2>\n' + fng_html + header_static
     return header + '\n'.join(rows_html) + '\n</tbody></table>'
 
 
