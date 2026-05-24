@@ -54,6 +54,8 @@ source .venv/bin/activate && cd scripts && python -c "from ks_util import get_pr
 **1-1. 過去履歴**:
 `.claude/skills/theme-news/history/*.md` を Glob し、ファイル名 `YYYY-MM-DD.md` で **今日 (= 1-0 の価格日) から30日以内** のものだけ Read。テーマの継続性・推移把握に使う。存在しなければスキップ。
 
+`.md.running` / `.md.done` / `.md.meta.json` は run_theme_news.py ラッパーが管理する補助ファイルで、**スキル側では一切参照・解釈しない**。特に `.md.running` は親ラッパー (= 自分を起動した親プロセス) が作ったロックなので、これを「並行する別セッションが走っている」と誤検出して中止しないこと。並行実行の制御はラッパー側の責務。
+
 **1-2. 履歴の日付ギャップ検出**:
 履歴最新日と今日の差で分岐する。
 
