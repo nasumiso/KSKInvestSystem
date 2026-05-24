@@ -262,13 +262,14 @@ nav .quick-search {
   font-weight: bold;
   margin-left: 4px;
 }
-/* 5d / 20d は補助情報として控えめに表示 (フォントサイズは 1d と同じ) */
+/* 5d / 20d は | 区切りで併記。色は通常 (rate-pos/neg) のまま */
 .kessan-pc-mid {
-  color: #888;
   margin-left: 3px;
 }
-.kessan-pc-mid .rate-pos { color: #d88; }
-.kessan-pc-mid .rate-neg { color: #88a; }
+.kessan-pc-sep {
+  color: #888;
+  margin: 0 4px;
+}
 .kessan-pts-label {
   display: inline-block;
   background: #34495e;
