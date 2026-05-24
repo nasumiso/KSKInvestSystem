@@ -19,18 +19,18 @@
       {% endif %}
       <small style="color:#888;font-size:0.5em;">{{ record.code_s }}</small>
       {{ record.stock_name or '' }}
-      {# issue #236: stock_name_prev を inline 編集化。旧名 / エイリアス (俗称・旧表記) #}
+      {# issue #236: stock_name_prev を inline 編集化。エイリアス (旧名・俗称・別表記) #}
       {% if record.stock_name_prev %}
       <span class="stock-name-prev-edit"
             title="クリックで編集 (空欄で削除)"
             data-code="{{ record.code_s }}"
             data-current="{{ record.stock_name_prev }}"
             onclick="editStockNamePrev(this)">
-        (旧{{ record.stock_name_prev }})
+        ({{ record.stock_name_prev }})
       </span>
       {% else %}
       <button type="button" class="stock-name-prev-add"
-              title="旧名・俗称などのエイリアスを追加 (検索でヒットするようになります)"
+              title="エイリアス (旧名・俗称・別表記) を追加 (検索でヒットするようになります)"
               data-code="{{ record.code_s }}"
               data-current=""
               onclick="editStockNamePrev(this)">✎</button>
