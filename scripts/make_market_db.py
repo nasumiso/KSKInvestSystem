@@ -73,8 +73,8 @@ def _migrate_theme_rank_files():
             shutil.move(os.path.join(old_dir, fname), os.path.join(new_dir, fname))
 
 
-def _archive_old_theme_rank(theme_rank_dir, days=30):
-    """30日以前のtheme_rank_YYMMDD.htmlをhistory/に移動"""
+def _archive_old_theme_rank(theme_rank_dir, days=THEME_STRENGTH_WINDOW_DAYS):
+    """強度ウィンドウ日数より古いtheme_rank_YYMMDD.htmlをhistory/に移動"""
     history_dir = os.path.join(theme_rank_dir, "history")
     today = datetime.today()
     for fname in os.listdir(theme_rank_dir):
