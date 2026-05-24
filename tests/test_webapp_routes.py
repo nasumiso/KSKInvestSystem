@@ -714,7 +714,7 @@ class TestKessanCommentApiContract:
         assert resp.status_code == 200
         data = resp.get_json()
         assert "post_price_changes" in data
-        assert data["post_price_changes"] == {"1d": "", "5d": ""}
+        assert data["post_price_changes"] == {"1d": "", "5d": "", "20d": ""}
         assert "post_price_change" not in data
 
     def test_get_legacy_record_returns_normalized_dict(self, client):
@@ -723,7 +723,7 @@ class TestKessanCommentApiContract:
         resp = client.get("/api/kessan_comment/3496?kessanbi=2024/05/14")
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["post_price_changes"] == {"1d": "-3.1", "5d": ""}
+        assert data["post_price_changes"] == {"1d": "-3.1", "5d": "", "20d": ""}
         assert "post_price_change" not in data
 
     def test_get_new_format_record_passthrough(self, client, db_path):
@@ -735,7 +735,7 @@ class TestKessanCommentApiContract:
             "quarter": 4,
             "pre_expectation": "○",
             "pre_outlook": "テスト",
-            "post_price_changes": {"1d": "+2.5", "5d": "+4.0"},
+            "post_price_changes": {"1d": "+2.5", "5d": "+4.0", "20d": "+8.0"},
             "post_comment": "新形式",
             "kessan_matagi": False,
             "held_before_kessan": False,
@@ -744,7 +744,7 @@ class TestKessanCommentApiContract:
         rs.upsert_research_record(rec, db_path=db_path)
         resp = client.get("/api/kessan_comment/3496?kessanbi=2026/03/15")
         data = resp.get_json()
-        assert data["post_price_changes"] == {"1d": "+2.5", "5d": "+4.0"}
+        assert data["post_price_changes"] == {"1d": "+2.5", "5d": "+4.0", "20d": "+8.0"}
         assert "post_price_change" not in data
 
     def test_post_response_returns_only_new_schema(self, client, monkeypatch):
@@ -752,7 +752,7 @@ class TestKessanCommentApiContract:
         from webapp import helpers as _helpers
         monkeypatch.setattr(
             _helpers, "calc_price_reactions",
-            lambda c, k: {"1d": "+1.0", "5d": "+2.0"},
+            lambda c, k: {"1d": "+1.0", "5d": "+2.0", "20d": "+3.0"},
         )
         monkeypatch.setattr(_helpers, "_is_possess_now", lambda c: False)
         resp = client.post("/api/kessan_comment/3496", data={
@@ -764,7 +764,7 @@ class TestKessanCommentApiContract:
         })
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["post_price_changes"] == {"1d": "+1.0", "5d": "+2.0"}
+        assert data["post_price_changes"] == {"1d": "+1.0", "5d": "+2.0", "20d": "+3.0"}
         assert "post_price_change" not in data
 
 
@@ -824,7 +824,7 @@ class TestDisclosureRouteKessanCard:
             "quarter": 4,
             "pre_expectation": "",
             "pre_outlook": "",
-            "post_price_changes": {"1d": "", "5d": ""},
+            "post_price_changes": {"1d": "", "5d": "", "20d": ""},
             "post_comment": "",
             "has_comment": False,
             "is_possess": False,

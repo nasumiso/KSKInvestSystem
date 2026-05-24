@@ -652,7 +652,10 @@ def _split_log_around_kessanbi(
 
 
 def _format_reaction(before_price: Optional[int], after_price: int) -> str:
-    """前営業日終値 → N営業日後終値の変動率を符号付き文字列で返す。失敗時は ""。"""
+    """前営業日終値 → N営業日後終値の変動率を符号付き文字列で返す。失敗時は ""。
+
+    桁数: |x| >= 10 のとき整数 (例 +16) / |x| < 10 のとき小数1桁 (例 +2.7)
+    """
     if before_price is None or before_price == 0:
         return ""
     try:
@@ -660,6 +663,8 @@ def _format_reaction(before_price: Optional[int], after_price: int) -> str:
     except (ValueError, ZeroDivisionError):
         return ""
     sign = "+" if change >= 0 else ""
+    if abs(change) >= 10:
+        return f"{sign}{change:.0f}"
     return f"{sign}{change:.1f}"
 
 

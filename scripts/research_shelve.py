@@ -91,7 +91,7 @@ RECORD_FIELDS = frozenset(
 
 # 決算コメントの反応率を計算する期間 (キー名, 営業日数) のタプル列
 # 表示・保存・後方互換正規化すべての場面でこの定数を参照する
-KESSAN_REACTION_PERIODS = (("1d", 1), ("5d", 5))
+KESSAN_REACTION_PERIODS = (("1d", 1), ("5d", 5), ("20d", 20))
 
 # 決算コメントエントリの既知フィールド
 KESSAN_COMMENT_FIELDS = frozenset(
