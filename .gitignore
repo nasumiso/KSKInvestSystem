@@ -35,3 +35,6 @@ data_old/
 
 # Playwright MCP の自動生成ログ・スナップショット
 .playwright-mcp/
+
+# ルート直下に置く検証用スクリーンショット (issue別等)
+/*.png
