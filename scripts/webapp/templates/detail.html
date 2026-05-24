@@ -409,10 +409,11 @@
             {% set pc5 = entry.post_price_changes['5d'] %}
             {% set pc20 = entry.post_price_changes['20d'] %}
             {% if pc1 or pc5 or pc20 %}
-              {% if pc1 %}<span class="kessan-price-change {% if pc1.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc1 }}%</span>{% else %}<span>-</span>{% endif %}
-              <span class="kessan-pc-sep">|</span>
-              <span class="{% if pc5 and pc5.startswith('-') %}rate-neg{% elif pc5 %}rate-pos{% endif %}">{% if pc5 %}{{ pc5 }}%{% else %}-{% endif %}</span>
-              <span class="{% if pc20 and pc20.startswith('-') %}rate-neg{% elif pc20 %}rate-pos{% endif %}">{% if pc20 %}{{ pc20 }}%{% else %}-{% endif %}</span>
+              {# 値があるものだけ表示。1d と 5d/20d の境目に | を入れる (どちらか欠ければ | も出さない) #}
+              {% if pc1 %}<span class="kessan-price-change {% if pc1.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc1 }}%</span>{% endif %}
+              {% if pc1 and (pc5 or pc20) %}<span class="kessan-pc-sep">|</span>{% endif %}
+              {% if pc5 %}<span class="{% if pc5.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc5 }}%</span>{% endif %}
+              {% if pc20 %}<span class="{% if pc20.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc20 }}%</span>{% endif %}
             {% else %}-{% endif %}
           </td>
           <td class="col-outlook kessan-ellipsis" title="{{ entry.pre_outlook or '' }}">{{ entry.pre_outlook or '' }}</td>
