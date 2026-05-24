@@ -972,7 +972,9 @@ def get_daily_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
     try:
         with sema:
             ticker = yf.Ticker(ticker_symbol)
-            df = ticker.history(period="1mo", auto_adjust=True)
+            # 2mo: 決算反応20d (決算前 + 20営業日後) と rs_line 20日前比に必要な
+            # 営業日 ~40日分を確保する (1mo だと暦日30日 ≒ 営業日19日で不足)
+            df = ticker.history(period="2mo", auto_adjust=True)
     except Exception as e:
         log_warning("yfinance取得エラー(%s): %s" % (code_s, e))
         return None, None
@@ -1369,7 +1371,9 @@ def prefetch_yfinance_batch(code_s_list, stocks=None):
         try:
             df = yf.download(
                 ticker_str,
-                period="1mo",
+                # 2mo: 個別取得側 (get_daily_data_yfinance) と揃える。
+                # 決算反応20d / rs_line 20日前比に必要な営業日 ~40日分を確保。
+                period="2mo",
                 auto_adjust=True,
                 threads=True,
                 progress=False,

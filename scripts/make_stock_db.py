@@ -1993,6 +1993,23 @@ def refresh_stock(code_list):
     log_print("[refresh_stock] 強制再取得を完了しました")
 
 
+def refresh_price(code_list):
+    """指定銘柄の price のみを UPD_FORCE で強制再取得する。
+
+    yfinance キャッシュ (.json) と stocks_shelve の price_log を更新する。
+    master/shihyo/gyoseki/rironkabuka は再取得しないため Kabutan スクレイピング
+    負荷が無く、price_log の取得期間設定 (period) 変更後の反映確認などに使う。
+    """
+    if not code_list:
+        log_warning("[refresh_price] 銘柄コードが指定されていません")
+        return
+    codes = list(code_list)
+    log_print("=" * 30)
+    log_print(f"[refresh_price] price 強制再取得を開始します: {codes}")
+    update_db_rows(codes, upd=UPD_FORCE, tables=["price"])
+    log_print("[refresh_price] price 強制再取得を完了しました")
+
+
 # ==================================================
 # main
 # ==================================================
@@ -2125,6 +2142,11 @@ def main():
             log_warning("refresh_stock: 銘柄コードを 1 つ以上指定してください")
         else:
             refresh_stock(list(args.codes))
+    elif command == "refresh_price":  # 指定銘柄の price のみ強制再取得 (yfinanceキャッシュ + price_log)
+        if not args.codes:
+            log_warning("refresh_price: 銘柄コードを 1 つ以上指定してください")
+        else:
+            refresh_price(list(args.codes))
     elif command == "test":
         test()
 
