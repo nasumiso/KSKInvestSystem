@@ -824,3 +824,79 @@ class TestListRecordsFilterExcluded:
         records = ps.list_records(include_excluded=True, db_path=db_path)
         codes = [r["code_s"] for r in records]
         assert codes == ["4377", "5032"]
+
+
+# ==================================================
+# issue #269: 保有株数 (qty) の入出力
+# ==================================================
+class TestQty:
+    """update_qty / get_record の qty 補完を集約テスト"""
+
+    @pytest.mark.parametrize(
+        "new_qty, expected, expect_log_count",
+        [
+            (100, 100, 1),    # 新規セット
+            (250, 250, 1),    # 上書き
+            (0, 0, 1),        # 0 株 (利確直後の枠取り)
+            (0, 0, 0),        # 差分なし (no-op): 初期 qty=0 のまま 0 を入れる → 変化なし
+        ],
+        ids=["set-100", "overwrite-250", "set-zero", "noop-same"],
+    )
+    def test_update_qty_writes_value_and_no_action_log(
+        self, db_path, new_qty, expected, expect_log_count
+    ):
+        """update_qty は qty を更新し、action_log は追記しない。差分なしは no-op。"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        log_count_before = len(ps.list_action_logs("4377", db_path=db_path))
+
+        if expect_log_count == 0:
+            # 差分なしケース: 一度 0 にしてから 0 を入れる → 2 回目が no-op
+            ps.update_qty("4377", 0, db_path=db_path)
+
+        rec = ps.update_qty("4377", new_qty, db_path=db_path)
+        assert rec["qty"] == expected
+        # action_log は qty 更新で増えない (1保 遷移ログ +「初回登録」のみ)
+        log_count_after = len(ps.list_action_logs("4377", db_path=db_path))
+        assert log_count_after == log_count_before
+
+    @pytest.mark.parametrize(
+        "bad_qty, exc",
+        [
+            (-1, ValueError),
+            (1.5, TypeError),
+            ("100", TypeError),
+            (True, TypeError),     # bool は除外する仕様
+        ],
+        ids=["negative", "float", "str", "bool"],
+    )
+    def test_update_qty_rejects_invalid(self, db_path, bad_qty, exc):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        with pytest.raises(exc):
+            ps.update_qty("4377", bad_qty, db_path=db_path)
+
+    def test_update_qty_unregistered_raises_keyerror(self, db_path):
+        with pytest.raises(KeyError):
+            ps.update_qty("9999", 100, db_path=db_path)
+
+    def test_legacy_record_without_qty_loads_as_zero(self, db_path):
+        """qty キーが無い旧データは get_record / list_records で qty=0 補完される"""
+        from db_shelve import ShelveDB
+
+        legacy_record = {
+            "code_s": "4377",
+            "status": "1保",
+            "registered_at": "2024-01-01T00:00:00+09:00",
+            "updated_at": "2024-01-01T00:00:00+09:00",
+            "memo": ps.create_memo(),
+            "excluded": False,
+            # qty なし
+        }
+        with ShelveDB(db_path) as db:
+            db["record:4377"] = legacy_record
+
+        rec = ps.get_record("4377", db_path=db_path)
+        assert rec["qty"] == 0
+        records = ps.list_records(db_path=db_path)
+        assert records[0]["qty"] == 0

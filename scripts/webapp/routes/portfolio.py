@@ -104,6 +104,9 @@ def _allowed_transitions_from(current: str) -> list[tuple[str, str]]:
     """現在のステータスから許可される遷移先を (label, value) で返す。
 
     label は UI 表示用 (例: 保有→準保有 は「準保有 (売却)」のように補注を入れる)。
+
+    issue #269: 現在 1保 のときは「1保 (株数のみ変更)」を選択肢に含める。
+    送信時 transition_status() は同一ステータスで no-op となり、qty だけ更新される。
     """
     pairs: list[tuple[str, str]] = []
     for st_from, st_to in ps.ALLOWED_TRANSITIONS:
@@ -113,7 +116,11 @@ def _allowed_transitions_from(current: str) -> list[tuple[str, str]]:
         if current == "1保" and st_to == "2準":
             label = f"{label} (売却)"
         pairs.append((label, st_to))
-    pairs.sort(key=lambda x: x[1])
+    # issue #269: 1保 のとき「保有のまま (株数のみ変更)」を先頭に追加
+    if current == "1保":
+        pairs.insert(0, ("保有のまま (株数のみ変更)", "1保"))
+    else:
+        pairs.sort(key=lambda x: x[1])
     return pairs
 
 
@@ -262,6 +269,10 @@ def transition(code_s: str):
 
     portfolio_shelve.transition_status のバリデーションに任せる。
     同一遷移は no-op (Phase 3a 仕様)、不正遷移は ValueError。
+
+    issue #269: form に qty が含まれていて new_status=1保 のとき、
+    ステータス遷移と合わせて保有株数 (qty) も更新する。qty 更新は
+    action_log を残さない (portfolio_shelve.update_qty の仕様)。
     """
     rejected = _reject_when_fallback()
     if rejected is not None:
@@ -270,6 +281,20 @@ def transition(code_s: str):
     new_status = (request.form.get("new_status") or "").strip()
     reason = (request.form.get("reason") or "").strip()
     action_date = (request.form.get("action_date") or "").strip() or None
+
+    # issue #269: qty は任意。空文字/欠落は None (qty 変更なし)、
+    # 整数パース失敗・負数は error flash で reject。
+    qty_raw = (request.form.get("qty") or "").strip()
+    qty: Optional[int] = None
+    if qty_raw:
+        try:
+            qty = int(qty_raw)
+        except ValueError:
+            flash(f"不正な株数: {qty_raw!r} (整数で入力してください)", "error")
+            return _redirect_with_return_query(code_s=code_s)
+        if qty < 0:
+            flash(f"不正な株数: {qty} (0 以上で入力してください)", "error")
+            return _redirect_with_return_query(code_s=code_s)
 
     try:
         ps.validate_code_s(code_s)
@@ -285,6 +310,9 @@ def transition(code_s: str):
         before = ps.get_record(code_s)
         old_status = (before or {}).get("status")
         ps.transition_status(code_s, new_status, reason=reason, action_date=action_date)
+        # issue #269: 1保 のときだけ qty を反映する (他ステータスでは無視)
+        if new_status == "1保" and qty is not None:
+            ps.update_qty(code_s, qty)
     except KeyError as e:
         flash(f"レコード未登録: {e}", "error")
         return _redirect_with_return_query(code_s=code_s)

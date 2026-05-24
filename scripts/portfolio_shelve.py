@@ -78,6 +78,7 @@ RECORD_FIELDS = frozenset(
         "updated_at",
         "memo",
         "excluded",
+        "qty",
     }
 )
 
@@ -176,6 +177,18 @@ def validate_action_type(action_type: Any) -> None:
             f"invalid action_type: {action_type!r} "
             f"(許容値: {sorted(VALID_ACTION_TYPES)})"
         )
+
+
+def _validate_qty(qty: Any) -> None:
+    """保有株数を検証する (issue #269)。
+
+    - 整数型 (bool は除外: True/False が 1/0 として通るのを防ぐ)
+    - 0 以上
+    """
+    if isinstance(qty, bool) or not isinstance(qty, int):
+        raise TypeError(f"qty must be int, got {type(qty).__name__}")
+    if qty < 0:
+        raise ValueError(f"qty must be >= 0, got {qty}")
 
 
 def validate_transition(status_from: Optional[str], status_to: str) -> None:
@@ -340,14 +353,15 @@ def _normalize_loaded_memo(memo: Any) -> Dict[str, Any]:
 
 
 def _normalize_loaded_record(record: Any) -> Any:
-    """shelve から読み込んだ record の memo を正規化する (issue #187)。"""
+    """shelve から読み込んだ record の memo / qty を正規化する (issue #187, #269)。"""
     if not isinstance(record, dict):
         return record
-    if "memo" in record:
-        result = dict(record)
+    result = dict(record)
+    if "memo" in result:
         result["memo"] = _normalize_loaded_memo(result.get("memo"))
-        return result
-    return record
+    # 旧データに qty が無ければ 0 を補完 (issue #269)
+    result.setdefault("qty", 0)
+    return result
 
 
 def create_record(
@@ -357,6 +371,7 @@ def create_record(
     memo: Optional[Dict[str, str]] = None,
     registered_at: Optional[str] = None,
     updated_at: Optional[str] = None,
+    qty: int = 0,
 ) -> Dict[str, Any]:
     """portfolio レコード dict を生成する。
 
@@ -367,6 +382,7 @@ def create_record(
     - status はデフォルト "3監" (新規追加用)
     - memo が None なら空メモで埋める
     - registered_at / updated_at が None なら現在時刻を埋める
+    - qty: 保有株数 (issue #269、1保 のときのみ意味を持つ、デフォルト 0)
     """
     validate_code_s(code_s)
     normalized_code = normalize_code_s(code_s)
@@ -375,6 +391,7 @@ def create_record(
         memo = create_memo()
     elif not isinstance(memo, dict):
         raise TypeError(f"memo must be dict, got {type(memo).__name__}")
+    _validate_qty(qty)
     timestamp = registered_at or now_iso()
     return {
         "code_s": normalized_code,
@@ -383,6 +400,7 @@ def create_record(
         "updated_at": updated_at or timestamp,
         "memo": dict(memo),
         "excluded": False,
+        "qty": int(qty),
     }
 
 
@@ -643,6 +661,45 @@ def upsert_record(
         log_print("portfolio_shelve: レコード更新", normalized)
     else:
         log_print("portfolio_shelve: レコード追加", normalized)
+
+
+def update_qty(
+    code_s: str,
+    qty: int,
+    *,
+    db_path: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """既存レコードの保有株数を更新する (issue #269)。
+
+    - 株数変更はアクションログを残さない (要件 §5)
+    - updated_at も触らない (株数変更は監査対象外、ファイル mtime の不要な変化を避ける)
+    - 差分なしは no-op で early return (戻り値も現レコード)
+    - レコード未登録は KeyError
+    - 不正値 (非整数 / 負数) は TypeError / ValueError
+
+    Returns: 更新後のレコード。差分なしの場合は現レコードをそのまま返す。
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    _validate_qty(qty)
+    qty_int = int(qty)
+
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            key = _record_key(normalized)
+            if key not in db:
+                raise KeyError(
+                    f"portfolio_shelve: {normalized} はレコード未登録です"
+                )
+            record = db[key]
+            current_qty = record.get("qty", 0)
+            if current_qty == qty_int:
+                return _normalize_loaded_record(record)
+            record["qty"] = qty_int
+            db[key] = record
+    log_print("portfolio_shelve: 株数更新", normalized, f"{current_qty} -> {qty_int}")
+    return _normalize_loaded_record(record)
 
 
 def transition_status(

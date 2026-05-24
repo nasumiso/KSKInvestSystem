@@ -248,7 +248,15 @@
           style="max-width:10em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
         <a href="/stock/{{ row.code_s }}">{{ macros.stock_name_with_prev(row) }}</a>
       </td>
-      <td>
+      {# issue #269: 1保 銘柄はポジション量 (現在株価 × 保有株数) の 1保群内 最大比 で
+         td の背景を左から塗りつぶす。塗り幅 0% (qty=0 / price 未取得) は style 空文字。
+         tooltip にポジション金額 (株価 × 株数) を表示。 #}
+      {% set position_ratio = row.position_ratio or 0 %}
+      {% set position_value = row.position_value or 0 %}
+      <td
+        {%- if row.status == '1保' and position_value > 0 %} title="ポジション: ¥{{ '{:,}'.format(position_value|int) }} ({{ row.qty }}株)"{% endif -%}
+        {%- if row.status == '1保' and position_ratio > 0 %} style="background: linear-gradient(to right, rgba(40,80,40,0.18) 0% {{ '%.1f'|format(position_ratio) }}%, transparent {{ '%.1f'|format(position_ratio) }}% 100%);"{% endif -%}
+      >
         {% if fallback_mode %}
         <span class="status-badge status-{{ row.status_query }}">{{ row.status_label }}</span>
         {% else %}
@@ -258,6 +266,7 @@
                 data-stock-name="{{ macros.stock_name_with_prev(row)|striptags }}"
                 data-status-label="{{ row.status_label }}"
                 data-status-query="{{ row.status_query }}"
+                data-qty="{{ row.qty or 0 }}"
                 data-transitions='{{ row.transitions|tojson|forceescape }}'
                 onclick="openPortfolioModalFromBadge(this)"
                 aria-label="保有ステータスを変更">{{ row.status_label }}</button>
@@ -382,7 +391,9 @@
       <strong id="portfolio-modal-title"></strong>
       <button type="button" class="portfolio-modal-close" onclick="closePortfolioModal()" aria-label="閉じる">×</button>
     </div>
-    <form method="POST" id="portfolio-modal-form" class="portfolio-modal-body">
+    {# issue #269: qty の step=100 と「手入力 25 株」を両立させるため novalidate。
+       new_status の required はテンプレ側で空 option を出さないことで担保。 #}
+    <form method="POST" id="portfolio-modal-form" class="portfolio-modal-body" novalidate>
       <input type="hidden" name="return_query" value="{{ return_query }}">
       <p style="margin:0 0 0.6em 0;">現在: <strong id="portfolio-modal-current"></strong></p>
       <div id="portfolio-modal-transition-fields">
@@ -390,6 +401,17 @@
           変更先:
           <select name="new_status" required id="portfolio-modal-new-status" style="margin-left:0.4em;"></select>
         </label>
+        {# issue #269: 株数欄は変更先=1保 のときのみ表示 (JS で hide/show 切替)。
+           ↑↓スピンは 100 株単位 (step=100)。手入力は任意の整数を許容 (form novalidate で
+           HTML5 step バリデーションを無効化)。バックエンドの _validate_qty で >=0 整数を保証。 #}
+        <div id="portfolio-modal-qty-row" style="display:none;margin-bottom:0.6em;">
+          <label style="display:flex;align-items:center;gap:0.4em;">
+            株数:
+            <input type="number" name="qty" id="portfolio-modal-qty" min="0" step="100" value="100"
+                   style="width:6em;text-align:right;padding:0.2em 0.3em;">
+            <span style="color:#888;font-size:0.85em;">株</span>
+          </label>
+        </div>
         <label style="display:block;margin-bottom:0.6em;">
           アクション日付:
           <input type="date" name="action_date" value="{{ today_jst }}" max="{{ today_jst }}" required
@@ -449,6 +471,14 @@ document.querySelectorAll('table details').forEach(function(d) {
 
 {% if not fallback_mode %}
 // ========== 保有状態モーダル ==========
+// issue #269: qty 欄は「変更先=1保」のときのみ表示する。
+function syncPortfolioQtyVisibility() {
+  var select = document.getElementById('portfolio-modal-new-status');
+  var qtyRow = document.getElementById('portfolio-modal-qty-row');
+  if (!select || !qtyRow) return;
+  qtyRow.style.display = (select.value === '1保') ? '' : 'none';
+}
+
 function openPortfolioModalFromBadge(btn) {
   var modal = document.getElementById('portfolio-modal');
   if (!modal) return;
@@ -456,6 +486,8 @@ function openPortfolioModalFromBadge(btn) {
   var stockName = btn.dataset.stockName || '';
   var statusLabel = btn.dataset.statusLabel || '';
   var statusQuery = btn.dataset.statusQuery || '';
+  var currentQty = parseInt(btn.dataset.qty || '0', 10);
+  if (!isFinite(currentQty) || currentQty < 0) currentQty = 0;
   var transitions = [];
   try {
     transitions = JSON.parse(btn.dataset.transitions || '[]');
@@ -484,12 +516,25 @@ function openPortfolioModalFromBadge(btn) {
   document.getElementById('portfolio-modal-no-transition').style.display = hasTransitions ? 'none' : '';
   document.getElementById('portfolio-modal-submit').style.display = hasTransitions ? '' : 'none';
 
+  // issue #269: qty 欄の初期値。現状 1保 で qty>0 ならその値、それ以外はデフォルト 100
+  var qtyInput = document.getElementById('portfolio-modal-qty');
+  if (qtyInput) {
+    qtyInput.value = (statusQuery === 'hold' && currentQty > 0) ? currentQty : 100;
+  }
+  syncPortfolioQtyVisibility();
+
   var excludeBtn = document.getElementById('portfolio-modal-exclude');
   excludeBtn.style.display = (statusQuery === 'semi' || statusQuery === 'watch') ? '' : 'none';
   excludeBtn.onclick = function() { excludeFromUniverse(code); };
 
   modal.style.display = 'flex';
 }
+
+// issue #269: モーダル要素は document に最初から存在するので、DOMContentLoaded で 1 回バインド。
+document.addEventListener('DOMContentLoaded', function() {
+  var select = document.getElementById('portfolio-modal-new-status');
+  if (select) select.addEventListener('change', syncPortfolioQtyVisibility);
+});
 function closePortfolioModal() {
   var modal = document.getElementById('portfolio-modal');
   if (modal) modal.style.display = 'none';

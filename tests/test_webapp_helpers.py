@@ -1871,6 +1871,70 @@ class TestListPortfolioWithIndicators:
         assert by_code["0003"]["status_query"] == "watch"
         assert by_code["0003"]["status_label"] == "監視"
 
+    # ===== issue #269: position_ratio 集計 =====
+    @pytest.mark.parametrize(
+        "records, prices, expected",
+        [
+            # ケース1: 1保 2銘柄、最大ポジションが 100%、もう1つが 25%
+            (
+                [
+                    ("0001", "1保", 100),   # 1000 * 100 = 100000
+                    ("0002", "1保", 25),    # 1000 * 25  = 25000
+                ],
+                {"0001": 1000, "0002": 1000},
+                {"0001": 100.0, "0002": 25.0},
+            ),
+            # ケース2: 1保 と 2準 が混在 → 2準 は集計外、ratio=0
+            (
+                [
+                    ("0001", "1保", 100),
+                    ("0002", "2準", 100),
+                ],
+                {"0001": 500, "0002": 9999},
+                {"0001": 100.0, "0002": 0.0},
+            ),
+            # ケース3: qty=0 / price=None → position_value=0、ratio=0
+            (
+                [
+                    ("0001", "1保", 0),
+                    ("0002", "1保", 100),
+                ],
+                {"0001": 1000, "0002": None},  # 0002 は price なし
+                {"0001": 0.0, "0002": 0.0},
+            ),
+            # ケース4: 全 1保 が qty=0 → max=0 で全 ratio=0
+            (
+                [
+                    ("0001", "1保", 0),
+                    ("0002", "1保", 0),
+                ],
+                {"0001": 1000, "0002": 1000},
+                {"0001": 0.0, "0002": 0.0},
+            ),
+        ],
+        ids=["two-1ho-25pct", "exclude-2jun", "qty0-or-no-price", "all-zero"],
+    )
+    def test_position_ratio_computed(self, monkeypatch, records, prices, expected):
+        # _bulk_get_stock_data を price 付き dict 返却に差し替え
+        monkeypatch.setattr(
+            helpers, "_bulk_get_stock_data",
+            lambda codes: {c: ({"price": prices.get(c)} if prices.get(c) is not None else {}) for c in codes},
+        )
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {c: "" for c in codes})
+        monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
+        monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
+
+        recs = [
+            {"code_s": c, "status": s, "qty": q, "rank": None, "memo": {"gyoutai_themes": []}}
+            for (c, s, q) in records
+        ]
+        rows = helpers.list_portfolio_with_indicators(recs)
+        by_code = {r["code_s"]: r for r in rows}
+        for code, exp_ratio in expected.items():
+            assert by_code[code]["position_ratio"] == pytest.approx(exp_ratio), (
+                f"{code}: expected ratio {exp_ratio}, got {by_code[code]['position_ratio']}"
+            )
+
 
 class TestMarkdownToHtml:
     """_markdown_to_html: *太字* / **赤字** 変換"""
