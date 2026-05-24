@@ -262,9 +262,8 @@ nav .quick-search {
   font-weight: bold;
   margin-left: 4px;
 }
-/* 5d / 20d は補助情報として控えめに表示 */
+/* 5d / 20d は補助情報として控えめに表示 (フォントサイズは 1d と同じ) */
 .kessan-pc-mid {
-  font-size: 0.8em;
   color: #888;
   margin-left: 3px;
 }
