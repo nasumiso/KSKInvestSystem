@@ -208,20 +208,23 @@ class TestDetailStockNamePrev:
     """issue #183: stock_name_prev の併記表示"""
 
     def test_detail_displays_stock_name_prev(self, client, db_path):
-        """stock_name_prev が入っていれば「新名 (旧○○)」併記される"""
-        # 既存テストデータの 3496 に旧名を入れる
+        """stock_name_prev が入っていれば「銘柄名 (エイリアス)」併記される"""
+        # 既存テストデータの 3496 にエイリアスを入れる
         rs.sync_stock_name("3496", "アズームニューネーム", db_path=db_path)
         resp = client.get("/stock/3496")
         html = resp.data.decode()
         assert "アズームニューネーム" in html
-        assert "(旧アズーム)" in html
+        assert "(アズーム)" in html
 
     def test_detail_no_paren_when_stock_name_prev_none(self, client, db_path):
-        """stock_name_prev が None なら旧名併記なし (デフォルト状態)"""
+        """stock_name_prev が None ならエイリアス併記なし (デフォルト状態)"""
         resp = client.get("/stock/3496")
         html = resp.data.decode()
         assert "アズーム" in html
-        assert "(旧" not in html
+        # stock_name_prev 由来の編集 span (class 属性に stock-name-prev-edit) は出ない
+        # (CSS 定義の `.stock-name-prev-edit { ... }` には引っかからないよう class 属性形で見る)
+        assert 'class="stock-name-prev-edit"' not in html
+        assert 'class="stock-name-prev-add"' in html
 
 
 class TestStockNamePrevRoute:
