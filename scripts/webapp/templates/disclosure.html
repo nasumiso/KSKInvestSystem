@@ -141,9 +141,9 @@
   </div>
   {% endif %}
 
-  {# それ以前の過去決算: 折りたたみ #}
+  {# それ以前の過去決算: 折りたたみ (開閉状態を localStorage で記憶) #}
   {% if kessan_data.older_past_entries %}
-  <details>
+  <details id="kessan-older-past">
     <summary style="cursor:pointer; color:#666; margin:8px 0;">▶ さらに前の決算を表示 ({{ kessan_data.older_past_entries|length }}件)</summary>
     <div class="kessan-grid">
       {% for kessanbi, stocks in kessan_data.older_past_entries %}

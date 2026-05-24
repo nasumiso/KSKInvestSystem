@@ -474,3 +474,15 @@ document.addEventListener('change', function(e) {
   var li = el.closest('.kessan-stock');
   if (li) saveKessanFromEditor(li);
 });
+
+/* id 付き details 要素の開閉状態を localStorage に記憶し、ページ再訪時に復元する。
+   現状は disclosure ページの「さらに前の決算」(#kessan-older-past) を主対象とする。 */
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('details[id]').forEach(function(d) {
+    var key = 'details-open:' + d.id;
+    if (localStorage.getItem(key) === '1') d.open = true;
+    d.addEventListener('toggle', function() {
+      localStorage.setItem(key, d.open ? '1' : '0');
+    });
+  });
+});
