@@ -295,7 +295,7 @@ function rememberKessanInitialValues(editor) {
   });
 }
 
-/* 1d/5d 反応率を editor の post-price-change スパンに反映する。
+/* 1d/5d/20d 反応率を editor の post-price-change スパンに反映する。
    API が空文字を返したときは、テンプレ初期描画で入っている値を
    上書きしない（market 側の補完計算結果が消えないようにするため）。 */
 function updatePostPriceChangeDisplay(editor, data) {
@@ -304,8 +304,10 @@ function updatePostPriceChangeDisplay(editor, data) {
   var changes = data.post_price_changes || {};
   var pc1Span = postPc.querySelector('.kessan-pc-1d');
   var pc5Span = postPc.querySelector('.kessan-pc-5d');
+  var pc20Span = postPc.querySelector('.kessan-pc-20d');
   if (pc1Span && changes['1d']) pc1Span.textContent = changes['1d'];
   if (pc5Span && changes['5d']) pc5Span.textContent = changes['5d'];
+  if (pc20Span && changes['20d']) pc20Span.textContent = changes['20d'];
 }
 
 function isKessanDirty(editor) {

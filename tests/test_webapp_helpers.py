@@ -117,7 +117,7 @@ class TestGetResearchDetail:
             "quarter": 1,
             "pre_expectation": "",
             "pre_outlook": "",
-            "post_price_changes": {"1d": "", "5d": ""},
+            "post_price_changes": {"1d": "", "5d": "", "20d": ""},
             "post_comment": "",
             "kessan_matagi": False,
             "held_before_kessan": False,
@@ -128,7 +128,7 @@ class TestGetResearchDetail:
         detail = helpers.get_research_detail("3496")
         entry = detail["kessan_comments"][0]
         # 未来エントリなので補完されず空のまま
-        assert entry["post_price_changes"] == {"1d": "", "5d": ""}
+        assert entry["post_price_changes"] == {"1d": "", "5d": "", "20d": ""}
 
 
 class TestGetMarketKessanData:
@@ -1049,63 +1049,89 @@ class TestPriceReactionFromLog:
         assert helpers._price_reaction_from_log(log, kessan, n_business_days=0) == ""
 
 
+class TestFormatReactionDigits:
+    """_format_reaction の桁数ルール: |x|>=10 は整数 / <10 は小数1桁"""
+
+    @pytest.mark.parametrize("before,after,expected", [
+        # |x| < 10 → 小数1桁
+        (1000, 1032, "+3.2"),
+        (1000, 985, "-1.5"),
+        (1000, 1099, "+9.9"),
+        (1000, 999, "-0.1"),
+        # |x| >= 10 → 整数
+        (1000, 1100, "+10"),
+        (1000, 899, "-10"),
+        (1000, 1162, "+16"),
+        (1000, 1513, "+51"),
+        (1000, 700, "-30"),
+    ])
+    def test_format_rule(self, before, after, expected):
+        assert helpers._format_reaction(before, after) == expected
+
+
 class TestCalcPriceReactions:
     """calc_price_reactions の dict 返却 (issue #133)"""
 
-    def test_returns_dict_with_both_periods(self, monkeypatch):
+    def test_returns_dict_with_all_periods(self, monkeypatch):
         from datetime import date, timedelta
         kessan = date(2026, 4, 1)
         log = [(kessan - timedelta(days=1), 1000)]
-        for i, pr in enumerate([1032, 1040, 1045, 1048, 1051], start=1):
+        # 1d=+3.2, 5d=+5.1, 20d=+12 (>=10 で整数表記)
+        prs = [1032, 1040, 1045, 1048, 1051,
+               1055, 1060, 1062, 1065, 1070,
+               1075, 1078, 1082, 1085, 1090,
+               1095, 1100, 1105, 1110, 1120]
+        for i, pr in enumerate(prs, start=1):
             log.append((kessan + timedelta(days=i), pr))
         monkeypatch.setattr(helpers, "get_stock_data", lambda c: {"price_log": log})
         result = helpers.calc_price_reactions("5032", "2026/04/01")
-        assert result == {"1d": "+3.2", "5d": "+5.1"}
+        assert result == {"1d": "+3.2", "5d": "+5.1", "20d": "+12"}
 
     def test_invalid_kessanbi_returns_empty_dict(self):
         result = helpers.calc_price_reactions("5032", "invalid-date")
-        assert result == {"1d": "", "5d": ""}
+        assert result == {"1d": "", "5d": "", "20d": ""}
 
     def test_partial_log_returns_partial_dict(self, monkeypatch):
         from datetime import date, timedelta
         kessan = date(2026, 4, 1)
-        # 後ろ1本しか無い → 1d は取れて 5d は ""
+        # 後ろ1本しか無い → 1d は取れて 5d / 20d は ""
         log = [(kessan - timedelta(days=1), 1000), (kessan + timedelta(days=1), 1050)]
         monkeypatch.setattr(helpers, "get_stock_data", lambda c: {"price_log": log})
         result = helpers.calc_price_reactions("5032", "2026/04/01")
         assert result["1d"] == "+5.0"
         assert result["5d"] == ""
+        assert result["20d"] == ""
 
 
 class TestNormalizePostPriceChanges:
     """normalize_kessan_post_price_changes の後方互換正規化 (issue #133)"""
 
     def test_new_format_passthrough(self):
-        entry = {"post_price_changes": {"1d": "+3", "5d": "+5"}}
+        entry = {"post_price_changes": {"1d": "+3", "5d": "+5", "20d": "+12"}}
         result = rs.normalize_kessan_post_price_changes(entry)
-        assert result == {"1d": "+3", "5d": "+5"}
+        assert result == {"1d": "+3", "5d": "+5", "20d": "+12"}
 
     def test_old_format_lifts_to_1d(self):
         entry = {"post_price_change": "-15"}
         result = rs.normalize_kessan_post_price_changes(entry)
-        assert result == {"1d": "-15", "5d": ""}
+        assert result == {"1d": "-15", "5d": "", "20d": ""}
 
     def test_both_present_prefers_new(self):
         entry = {
             "post_price_change": "-15",
-            "post_price_changes": {"1d": "+2", "5d": "+3"},
+            "post_price_changes": {"1d": "+2", "5d": "+3", "20d": "+5"},
         }
         result = rs.normalize_kessan_post_price_changes(entry)
-        assert result == {"1d": "+2", "5d": "+3"}
+        assert result == {"1d": "+2", "5d": "+3", "20d": "+5"}
 
     def test_neither_present_returns_empty(self):
         result = rs.normalize_kessan_post_price_changes({})
-        assert result == {"1d": "", "5d": ""}
+        assert result == {"1d": "", "5d": "", "20d": ""}
 
     def test_partial_new_format_filled_with_empty(self):
-        entry = {"post_price_changes": {"1d": "+3"}}  # 5d 欠落
+        entry = {"post_price_changes": {"1d": "+3"}}  # 5d / 20d 欠落
         result = rs.normalize_kessan_post_price_changes(entry)
-        assert result == {"1d": "+3", "5d": ""}
+        assert result == {"1d": "+3", "5d": "", "20d": ""}
 
 
 class TestSaveKessanCommentMultiPeriod:

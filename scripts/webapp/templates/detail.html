@@ -407,10 +407,11 @@
           <td class="col-change">
             {% set pc1 = entry.post_price_changes['1d'] %}
             {% set pc5 = entry.post_price_changes['5d'] %}
-            {% if pc1 or pc5 %}
+            {% set pc20 = entry.post_price_changes['20d'] %}
+            {% if pc1 or pc5 or pc20 %}
               {% if pc1 %}<span class="kessan-price-change {% if pc1.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc1 }}%</span>{% else %}<span>-</span>{% endif %}
-              /
-              {% if pc5 %}<span class="kessan-price-change {% if pc5.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc5 }}%</span>{% else %}<span>-</span>{% endif %}
+              <span class="kessan-pc-mid">(<span class="{% if pc5 and pc5.startswith('-') %}rate-neg{% elif pc5 %}rate-pos{% endif %}">{{ pc5 or '-' }}</span>
+              <span class="{% if pc20 and pc20.startswith('-') %}rate-neg{% elif pc20 %}rate-pos{% endif %}">{{ pc20 or '-' }}</span>)</span>
             {% else %}-{% endif %}
           </td>
           <td class="col-outlook kessan-ellipsis" title="{{ entry.pre_outlook or '' }}">{{ entry.pre_outlook or '' }}</td>

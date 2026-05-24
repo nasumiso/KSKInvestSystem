@@ -17,7 +17,7 @@
 {% endif %}
 
 {# 動的決算セクション (市場ページから移設) #}
-<h2>決算日</h2>
+<h2 title="株価変動率の表記: 翌営業日 (5営業日後 20営業日後) / 例: +16.2% (+51 +30)&#10;・PTS は決算日夜のPTS価格 / 1d は決算前営業日終値 → 翌営業日終値&#10;・|変動率| ≧ 10% は整数表記、未満は小数1桁">決算日 <span style="font-size:0.55em; color:#888; cursor:help;">[?]</span></h2>
 <div id="kessan-section">
   {% macro render_kessan_editor(s, is_past) -%}
     <div class="kessan-editor" style="display:none;" data-loaded="0">
@@ -38,8 +38,7 @@
         <label>株価変動率:</label>
         <span class="kessan-field-display kessan-post-price-change">
           <span class="kessan-pc-1d">{{ s.post_price_changes['1d'] or '-' }}</span>
-          /
-          <span class="kessan-pc-5d">{{ s.post_price_changes['5d'] or '-' }}</span>
+          <span class="kessan-pc-mid">(<span class="kessan-pc-5d">{{ s.post_price_changes['5d'] or '-' }}</span> <span class="kessan-pc-20d">{{ s.post_price_changes['20d'] or '-' }}</span>)</span>
         </span>
       </div>
       <div class="kessan-editor-row">
@@ -70,16 +69,17 @@
       <a href="/stock/{{ s.code_s }}">{% if s.stock_name %}{{ macros.stock_name_with_prev(s) }}{% else %}-{% endif %}</a>
       {% if s.quarter %}<span class="kessan-q-label">[{{ s.quarter }}Q]</span>{% endif %}
       {% if s.pre_expectation %}<span class="kessan-expectation-badge exp-{{ s.pre_expectation }}">{{ s.pre_expectation }}</span>{% endif %}
-      {% if is_past and (s.post_price_changes['pts'] or s.post_price_changes['1d'] or s.post_price_changes['5d']) %}
+      {% if is_past and (s.post_price_changes['pts'] or s.post_price_changes['1d'] or s.post_price_changes['5d'] or s.post_price_changes['20d']) %}
         {% set pcp = s.post_price_changes['pts'] %}
         {% set pc1 = s.post_price_changes['1d'] %}
         {% set pc5 = s.post_price_changes['5d'] %}
+        {% set pc20 = s.post_price_changes['20d'] %}
         <span class="kessan-price-change">
           {% if pcp %}<span class="kessan-pts-label">PTS</span><span class="{% if pcp.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pcp }}%</span>{% endif %}
-          {% if pc1 or pc5 %}
+          {% if pc1 or pc5 or pc20 %}
             {% if pc1 %}<span class="{% if pc1.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc1 }}%</span>{% else %}<span>-</span>{% endif %}
-            /
-            {% if pc5 %}<span class="{% if pc5.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc5 }}%</span>{% else %}<span>-</span>{% endif %}
+            <span class="kessan-pc-mid">(<span class="{% if pc5 and pc5.startswith('-') %}rate-neg{% elif pc5 %}rate-pos{% endif %}">{{ pc5 or '-' }}</span>
+            <span class="{% if pc20 and pc20.startswith('-') %}rate-neg{% elif pc20 %}rate-pos{% endif %}">{{ pc20 or '-' }}</span>)</span>
           {% endif %}
         </span>
       {% endif %}

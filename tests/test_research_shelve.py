@@ -260,7 +260,7 @@ class TestCrud:
         rs.upsert_research_record(rec, db_path=db_path)
         loaded = rs.get_research_record("5032", db_path=db_path)
         entry = loaded["kessan_comments"][0]
-        assert entry["post_price_changes"] == {"1d": "-15", "5d": ""}
+        assert entry["post_price_changes"] == {"1d": "-15", "5d": "", "20d": ""}
 
     def test_get_research_record_preserves_post_price_changes_dict(self, db_path):
         """新形式 post_price_changes は読出時もそのまま"""
@@ -270,13 +270,13 @@ class TestCrud:
             "quarter": 3,
             "pre_expectation": "○",
             "pre_outlook": "見通し",
-            "post_price_changes": {"1d": "+3.2", "5d": "+5.1"},
+            "post_price_changes": {"1d": "+3.2", "5d": "+5.1", "20d": "+12"},
             "post_comment": "",
         }]
         rs.upsert_research_record(rec, db_path=db_path)
         loaded = rs.get_research_record("5032", db_path=db_path)
         entry = loaded["kessan_comments"][0]
-        assert entry["post_price_changes"] == {"1d": "+3.2", "5d": "+5.1"}
+        assert entry["post_price_changes"] == {"1d": "+3.2", "5d": "+5.1", "20d": "+12"}
 
     def test_get_research_record_preserves_pts_key(self, db_path):
         """PTS キー (issue #154) は normalize 後も保持される"""
