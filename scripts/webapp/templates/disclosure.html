@@ -17,7 +17,7 @@
 {% endif %}
 
 {# 動的決算セクション (市場ページから移設) #}
-<h2 title="株価変動率の表記: 翌営業日 | 5営業日後 20営業日後 / 例: +16.2% | +51% +30%&#10;・PTS は決算日夜のPTS価格 / 1d は決算前営業日終値 → 翌営業日終値&#10;・|変動率| ≧ 10% は整数表記、未満は小数1桁">決算日 <span style="font-size:0.55em; color:#888; cursor:help;">[?]</span></h2>
+<h2 title="株価変動率の表記: 翌営業日 | 5営業日後 20営業日後 / 例: +16.2% | +51% +30%">決算日 <span style="font-size:0.55em; color:#888; cursor:help;">[?]</span></h2>
 <div id="kessan-section">
   {% macro render_kessan_editor(s, is_past) -%}
     <div class="kessan-editor" style="display:none;" data-loaded="0">
