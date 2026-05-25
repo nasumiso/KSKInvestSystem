@@ -7,6 +7,7 @@
 import re
 import html as html_mod
 import json
+import urllib.parse
 from datetime import datetime, timedelta
 import csv
 import os
@@ -889,6 +890,8 @@ tr:hover { background: #f5f5f5; }
 }
 .theme-badge .rank { font-size: 0.75em; color: #333; }
 .theme-badge .name { font-weight: bold; text-align: center; color: #333; font-size: 0.95em; line-height: 1.2; word-break: break-all; overflow-wrap: anywhere; }
+.theme-badge a.name { text-decoration: none; }
+.theme-badge a.name:hover { text-decoration: underline; }
 .theme-badge .change { font-size: 0.8em; margin-top: 2px; color: #333; }
 .theme-badge .rate { font-size: 0.8em; margin-top: 2px; }
 .theme-badge .strength-track { width: 96px; height: 5px; margin-top: 5px; background: rgba(255,255,255,0.55); }
@@ -1100,16 +1103,24 @@ def _html_theme_rank(market_db, theme_rank_data=None):
         else:
             click_attrs = ""
         theme_escaped = html_mod.escape(theme)
+        kabutan_theme_url = html_mod.escape(
+            "https://kabutan.jp/themes/?theme=" + urllib.parse.quote(theme),
+            quote=True,
+        )
+        name_html = (
+            '<a class="name" href="%s" target="_blank" rel="noopener"'
+            ' onclick="event.stopPropagation()" title="株探テーマページを開く">%s</a>'
+        ) % (kabutan_theme_url, theme_escaped)
         parts.append(
             '  <div class="theme-badge %s%s%s"%s>\n'
             '    <span class="rank">#%d</span>\n'
-            '    <span class="name">%s</span>\n'
+            '    %s\n'
             '    <span class="change %s">%s</span>\n'
             '    %s\n'
             '    <div class="strength-track" title="%s"><div class="strength-bar" style="width:%.1f%%"></div></div>\n'
             '  </div>' % (
                 heat_class, portfolio_class, clickable_class, click_attrs,
-                i + 1, theme_escaped, change_class,
+                i + 1, name_html, change_class,
                 change_text, rate_html, strength_title,
                 strength_width,
             )
