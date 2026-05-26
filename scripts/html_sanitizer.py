@@ -28,18 +28,28 @@ ALLOWED_TAGS = frozenset({
 })
 
 # 属性値の許可パターン
-_HREF_PATTERN = re.compile(r"^https?://")
+# href は外部リンク (http/https) と theme-news 脚注の内部 anchor (#thn-src-N) を許可。
+_HREF_PATTERN = re.compile(r"^(?:https?://|#thn-src-\d{1,2}$)")
 _TARGET_PATTERN = re.compile(r"^_blank$")
 _REL_PATTERN = re.compile(r"^noopener$")
 _STYLE_COLOR_PATTERN = re.compile(r"^color:#[0-9a-fA-F]{3,6}$")
 # theme-news Sources セクション折りたたみ用に <details class="sources"> のみ許可。
 # 他クラス名は除去される (XSS 経路にはならないが、混乱回避のため厳密に絞る)。
 _DETAILS_CLASS_PATTERN = re.compile(r"^sources$")
+# theme-news 脚注リンク用の class と Sources <li> の id を専用パターンで許可。
+_A_CLASS_PATTERN = re.compile(r"^thn-footnote$")
+_LI_ID_PATTERN = re.compile(r"^thn-src-\d{1,2}$")
 
 ALLOWED_ATTRS = {
-    "a": {"href": _HREF_PATTERN, "target": _TARGET_PATTERN, "rel": _REL_PATTERN},
+    "a": {
+        "href": _HREF_PATTERN,
+        "target": _TARGET_PATTERN,
+        "rel": _REL_PATTERN,
+        "class": _A_CLASS_PATTERN,
+    },
     "span": {"style": _STYLE_COLOR_PATTERN},
     "details": {"class": _DETAILS_CLASS_PATTERN},
+    "li": {"id": _LI_ID_PATTERN},
 }
 
 

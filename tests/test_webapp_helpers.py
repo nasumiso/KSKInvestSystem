@@ -2588,6 +2588,44 @@ class TestThemeNewsMdToHtml:
         out = helpers.theme_news_md_to_html(src)
         assert "反発<wbr>+1.9%<wbr>→翌日続伸" in out
 
+    @pytest.mark.parametrize(
+        "src,must_contain,must_not_contain",
+        [
+            # 本文の ⟨N⟩ が anchor link 化され、Sources の <li>[N] に id が付く。
+            # 旧履歴の [99] (構成銘柄数) は anchor 化されず素通りすることも同時確認。
+            (
+                "## 1. 半導体 (+3.8%, ↑1, [99])\n"
+                "- 材料: 太陽誘電ストップ高 ⟨4⟩、SBG 40兆円 ⟨3⟩⟨8⟩\n\n"
+                "## Sources\n"
+                "- [3] [SBG40兆円](https://example.com/sbg)\n"
+                "- [4] [太陽誘電](https://example.com/tau)\n"
+                "- [8] [対中関税](https://example.com/tariff)\n",
+                [
+                    '<a href="#thn-src-4" class="thn-footnote">[4]</a>',
+                    '<a href="#thn-src-3" class="thn-footnote">[3]</a>',
+                    '<a href="#thn-src-8" class="thn-footnote">[8]</a>',
+                    '<li id="thn-src-3">[3] ',
+                    '<li id="thn-src-4">[4] ',
+                    '<li id="thn-src-8">[8] ',
+                    # 構成銘柄数 [99] は anchor 化されず素通り
+                    "(+3.8%, ↑1, [99])",
+                ],
+                [
+                    # 旧表記 [99] を anchor 化していない
+                    "#thn-src-99",
+                    'class="thn-footnote">[99]',
+                ],
+            ),
+        ],
+    )
+    def test_inline_footnotes(self, src, must_contain, must_not_contain):
+        """⟨N⟩ → anchor + Sources <li>[N] → id 付与。[99] (構成銘柄数) は影響なし。"""
+        out = helpers.theme_news_md_to_html(src)
+        for needle in must_contain:
+            assert needle in out, f"expected {needle!r} in output: {out}"
+        for needle in must_not_contain:
+            assert needle not in out, f"unexpected {needle!r} in output: {out}"
+
 
 class TestBuildGyosekiTooltips:
     """issue #204: gyoseki_quarity_expr から portfolio 列 tooltip を生成する。"""

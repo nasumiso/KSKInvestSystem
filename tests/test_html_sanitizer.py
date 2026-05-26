@@ -3,6 +3,8 @@
 import os
 import sys
 
+import pytest
+
 # scripts/ を sys.path に追加
 _SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "scripts")
 if _SCRIPTS_DIR not in sys.path:
@@ -119,6 +121,40 @@ class TestSanitizeHtml:
         # script タグはエスケープされる
         assert "<script>" not in result
         assert "&lt;script&gt;" in result
+
+    @pytest.mark.parametrize(
+        "html,must_contain,must_not_contain",
+        [
+            # 内部 anchor (#thn-src-N) と class="thn-footnote" は許可
+            (
+                '<a href="#thn-src-4" class="thn-footnote">[4]</a>',
+                ['href="#thn-src-4"', 'class="thn-footnote"'],
+                [],
+            ),
+            # <li id="thn-src-N"> も許可
+            (
+                '<li id="thn-src-3">[3] body</li>',
+                ['id="thn-src-3"'],
+                [],
+            ),
+            # 範囲外の id / class / href は剥がされる (XSS 防御維持)
+            (
+                '<a href="#other" class="other">x</a>'
+                '<li id="other-id">y</li>'
+                '<a href="javascript:alert(1)">z</a>',
+                [],
+                ["#other", 'class="other"', "other-id", "javascript:"],
+            ),
+        ],
+    )
+    def test_theme_news_footnote_anchors_allowed(self, html, must_contain, must_not_contain):
+        """theme-news 脚注用の内部 anchor (#thn-src-N) と id="thn-src-N" / class="thn-footnote"
+        は許可されるが、それ以外の id/class/href は剥がされる。"""
+        result = sanitize_html(html)
+        for needle in must_contain:
+            assert needle in result, f"expected {needle!r} in {result!r}"
+        for needle in must_not_contain:
+            assert needle not in result, f"unexpected {needle!r} in {result!r}"
 
 
 class TestStripHtmlTags:

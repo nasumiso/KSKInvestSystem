@@ -38,6 +38,17 @@
   .theme-news-body details.sources { margin-top: 1em; }
   .theme-news-body details.sources summary { cursor: pointer; color: #555; font-size: 0.9em; padding: 0.3em 0; }
   .theme-news-body details.sources ul { font-size: 0.85em; }
+  /* 本文中の脚注リンク (⟨N⟩ → [N]) */
+  .theme-news-body a.thn-footnote {
+    font-size: 0.75em;
+    vertical-align: super;
+    text-decoration: none;
+    color: #1e6db1;
+    margin: 0 0.1em;
+  }
+  .theme-news-body a.thn-footnote:hover { text-decoration: underline; }
+  /* ジャンプ先 <li> をハイライト */
+  .theme-news-body details.sources li:target { background: #fff7c2; transition: background 0.5s; }
 </style>
 <div id="theme-news-section" style="margin: 1em 0 1em 0;">
   <details open>
@@ -149,6 +160,14 @@
 
   // 初期表示時に既に running なら polling 開始 (ページ再訪時に進行を拾う)
   {% if theme_news.running %}startPolling();{% endif %}
+
+  // 本文の脚注リンクをクリックしたら、折りたたまれている Sources を自動展開してから anchor ジャンプ。
+  document.querySelectorAll('.theme-news-body a.thn-footnote').forEach(a => {
+    a.addEventListener('click', () => {
+      const details = document.querySelector('.theme-news-body details.sources');
+      if (details && !details.open) details.open = true;
+    });
+  });
 })();
 </script>
 
