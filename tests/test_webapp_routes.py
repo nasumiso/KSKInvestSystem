@@ -1004,6 +1004,52 @@ class TestMarketRouteThemeNews:
         assert s["has_today_history"] is True
 
 
+class TestMarketRouteCalendar:
+    """issue #165: /market に株カレンダーを表示する。
+
+    events.json (theme-news skill が更新) を読んで Jinja に渡し、
+    インラインで JS レンダリングする。3 ケース:
+      - 正常: 配列で 2 件 → available=True, count=2, summary に "(2件)" 表示
+      - ファイル無し: available=False, summary に "(未登録)" 表示
+      - 壊れた JSON: 同上 (例外を出さない)
+    """
+
+    @pytest.mark.parametrize("scenario,content,expect_available,expect_count,expect_summary", [
+        ("valid_2",
+         '[{"id":"a","title":"イベントA","start":"2026-05-20","end":"2026-05-20","importance":"high","themes":["半導体"],"body":"本文A"},'
+         ' {"id":"b","title":"イベントB","start":"2026-05-22","end":"2026-05-22","importance":"mid","themes":[],"body":"本文B"}]',
+         True, 2, "(2件)"),
+        ("missing", None,   False, 0, "(未登録)"),
+        ("broken",  "{not valid json", False, 0, "(未登録)"),
+    ])
+    def test_load_calendar_payload_and_render(
+        self, client, tmp_path, monkeypatch, scenario, content, expect_available, expect_count, expect_summary,
+    ):
+        from datetime import date as _date
+        from webapp.routes import market as _market_route
+
+        fixed_today = _date(2026, 5, 21)
+        monkeypatch.setattr(_market_route, "get_price_day", lambda _now: fixed_today)
+        events_path = tmp_path / "events.json"
+        if content is not None:
+            events_path.write_text(content, encoding="utf-8")
+        monkeypatch.setattr(_market_route, "_CALENDAR_EVENTS_JSON", events_path)
+
+        payload = _market_route._load_calendar_payload()
+        assert payload["available"] is expect_available
+        assert payload["events_count"] == expect_count
+        assert payload["today"] == "2026-05-21"
+
+        resp = client.get("/market")
+        html = resp.data.decode()
+        assert "📅 株カレンダー" in html
+        assert expect_summary in html
+        if expect_available and expect_count > 0:
+            # インラインテンプレートが include され、events が JSON で埋め込まれる
+            assert 'class="theme-news-calendar"' in html
+            assert "イベントA" in html
+
+
 class TestDetailGyoutaiThemes:
     """issue #205: 銘柄詳細ページの業態・テーマ inline 編集 (AJAX 即時保存)。
 

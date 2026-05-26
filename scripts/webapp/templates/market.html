@@ -171,6 +171,32 @@
 })();
 </script>
 
+{# issue #165: テーマニュース調査の直下に株カレンダー (events.json から描画)。
+   id 付きなので app.js:478 の自動 hook で開閉状態が localStorage 永続化される。 #}
+<div id="theme-news-calendar-section" style="margin: 1em 0;">
+  <details id="theme-news-calendar" open>
+    <summary style="cursor:pointer;font-weight:bold;color:#2c3e50;">
+      📅 株カレンダー
+      {%- if calendar.available %}
+      <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.5em;">
+        ({{ calendar.events_count }}件)
+      </span>
+      {%- else %}
+      <span style="font-weight:normal;font-size:0.85em;color:#999;margin-left:0.5em;">
+        (未登録)
+      </span>
+      {%- endif %}
+    </summary>
+    {% if calendar.available and calendar.events_count > 0 %}
+      {% include "_calendar_inline.html" %}
+    {% else %}
+    <p style="color:#888;padding:0.5em 1em;">
+      カレンダーに登録されたイベントがありません。theme-news skill が events.json を更新するとここに表示されます。
+    </p>
+    {% endif %}
+  </details>
+</div>
+
 {% if market_parts.available %}
 {{ market_parts.footer | safe }}
 {% endif %}
