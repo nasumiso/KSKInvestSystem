@@ -25,6 +25,8 @@ market_bp = Blueprint("market", __name__)
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _THEME_NEWS_HISTORY_DIR = _PROJECT_ROOT / ".claude" / "skills" / "theme-news" / "history"
 _RUN_THEME_NEWS_SCRIPT = _PROJECT_ROOT / "scripts" / "run_theme_news.py"
+# issue #165: 株カレンダー events.json (theme-news skill が更新する)
+_CALENDAR_EVENTS_JSON = _PROJECT_ROOT / ".claude" / "skills" / "theme-news" / "events.json"
 
 
 def _history_paths_for(target_date) -> Dict[str, Path]:
@@ -112,16 +114,46 @@ def _load_theme_news_for_display() -> Dict[str, Any]:
     return {"current": fallback, "is_today": False, "running": running}
 
 
+def _load_calendar_payload() -> Dict[str, Any]:
+    """events.json を読み /market テンプレに渡す dict を返す (issue #165)。
+
+    返り値:
+      available: bool — events.json が読めて配列だったか
+      events_json: str — テンプレ <script type="application/json"> に埋め込む JSON 文字列
+      events_count: int — イベント数 (summary に表示)
+      today: str — YYYY-MM-DD (get_price_day 基準、JS の TODAY に渡す)
+
+    失敗時 (ファイル無し / 壊れた JSON / 非配列) は available=False で空配列を返す。
+    """
+    today = get_price_day(datetime.today()).isoformat()
+    if not _CALENDAR_EVENTS_JSON.exists():
+        return {"available": False, "events_json": "[]", "events_count": 0, "today": today}
+    try:
+        events = json.loads(_CALENDAR_EVENTS_JSON.read_text(encoding="utf-8"))
+        if not isinstance(events, list):
+            raise ValueError("events.json is not a list")
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        log_warning(f"[market] calendar events 読み込み失敗: {e}")
+        return {"available": False, "events_json": "[]", "events_count": 0, "today": today}
+    # <script type="application/json"> 内で安全に解釈されるよう `<` をエスケープ
+    # (`</script>` がイベント本文に混入したケースの保険)
+    events_json = json.dumps(events, ensure_ascii=False, separators=(",", ":"))
+    events_json = events_json.replace("<", "\\u003c")
+    return {"available": True, "events_json": events_json, "events_count": len(events), "today": today}
+
+
 @market_bp.route("/market", methods=["GET"])
 def market_page():
     """市場データページ。静的 market_data.html (決算日セクション除く) と theme-news を表示する。"""
     market_parts = get_market_html_parts()
     theme_news = _load_theme_news_for_display()
+    calendar = _load_calendar_payload()
 
     return render_template(
         "market.html",
         market_parts=market_parts,
         theme_news=theme_news,
+        calendar=calendar,
     )
 
 
