@@ -900,3 +900,34 @@ class TestQty:
         assert rec["qty"] == 0
         records = ps.list_records(db_path=db_path)
         assert records[0]["qty"] == 0
+
+
+class TestQtyGlobalUpdatedAt:
+    """PF 全体で 1 つ持つ qty 最終更新タイムスタンプの集約テスト"""
+
+    def test_initial_state_is_none(self, db_path):
+        """qty 更新が一度も走っていなければ None"""
+        assert ps.get_qty_global_updated_at(db_path=db_path) is None
+
+    def test_updated_when_qty_changes(self, db_path):
+        """qty が実際に変化したときだけ ISO 8601 形式のタイムスタンプが書き込まれる"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        ps.update_qty("4377", 100, db_path=db_path)
+
+        ts = ps.get_qty_global_updated_at(db_path=db_path)
+        assert ts is not None
+        # ISO 8601 (JST タイムゾーン付き) の先頭は YYYY-MM-DD
+        assert len(ts) >= 10 and ts[4] == "-" and ts[7] == "-"
+
+    def test_not_updated_on_noop(self, db_path):
+        """qty が同じ値で再保存された (no-op) ときはタイムスタンプを更新しない"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        ps.update_qty("4377", 100, db_path=db_path)
+        ts_before = ps.get_qty_global_updated_at(db_path=db_path)
+
+        # 同じ値で再保存 → no-op
+        ps.update_qty("4377", 100, db_path=db_path)
+        ts_after = ps.get_qty_global_updated_at(db_path=db_path)
+        assert ts_after == ts_before

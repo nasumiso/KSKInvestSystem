@@ -594,6 +594,19 @@ def dashboard():
     else:
         gyoutai_theme_choices = collect_gyoutai_theme_choices(all_records_inc)
 
+    # 保有フィルタ表示時のみ、運用総額と PF 全体の qty 最終更新日を集計
+    hold_summary = None
+    if not fallback_mode and active_status == "1保":
+        hold_rows = [r for r in rows if r.get("status") == "1保"]
+        if hold_rows:
+            total_position_value = sum(
+                (r.get("position_value") or 0) for r in hold_rows
+            )
+            hold_summary = {
+                "total_man": int(round(total_position_value / 10000)),
+                "qty_updated_at": ps.get_qty_global_updated_at(),
+            }
+
     return render_template(
         "portfolio_list.html",
         status_choices=STATUS_CHOICES,
@@ -608,4 +621,5 @@ def dashboard():
         fallback_mode=fallback_mode,
         gyoutai_theme_choices=gyoutai_theme_choices,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
+        hold_summary=hold_summary,
     )

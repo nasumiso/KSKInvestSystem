@@ -1253,3 +1253,54 @@ class TestTransitionWithQty:
         rec = ps.get_record("3496", db_path=portfolio_db)
         assert rec["status"] == "1保"
         assert rec["qty"] == 0
+
+
+class TestPortfolioHoldSummary:
+    """保有 (status=hold) フィルタ表示時の運用総額 / 保有株数更新日サマリーの統合テスト"""
+
+    @pytest.fixture
+    def portfolio_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        rec = rs.create_research_record("3496", "アズーム", overall_rating="A")
+        rs.upsert_research_record(rec, db_path=db_path)
+        ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)
+        ps.transition_status("3496", "1保", db_path=portfolio_db)
+        ps.update_qty("3496", 100, db_path=portfolio_db)
+
+        # 一覧画面は _bulk_get_stock_data 経由で stocks_shelve を読むので、
+        # こちらを差し替えて price を固定 (position_value 計算用)
+        from webapp import helpers as _h
+
+        def patched_bulk(code_list):
+            return {c: ({"price": 2500} if c == "3496" else {}) for c in code_list}
+
+        monkeypatch.setattr(_h, "_bulk_get_stock_data", patched_bulk)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app
+
+    def test_hold_filter_shows_summary(self, portfolio_app):
+        client = portfolio_app.test_client()
+        resp = client.get("/portfolio?status=hold")
+        html = resp.data.decode()
+        assert resp.status_code == 200
+        assert "運用総額:" in html
+        assert "25 万円" in html  # 2500 × 100 / 10000 = 25
+        assert "保有株数更新日:" in html
+        # update_qty を呼んでいるので「未記録」ではない
+        assert "未記録" not in html
+
+    def test_other_filters_hide_summary(self, portfolio_app):
+        client = portfolio_app.test_client()
+        for status in ("semi", "watch", ""):
+            resp = client.get(f"/portfolio?status={status}")
+            html = resp.data.decode()
+            assert "運用総額:" not in html, f"status={status} でサマリーが漏れている"
+            assert "保有株数更新日:" not in html, f"status={status} でサマリーが漏れている"

@@ -69,6 +69,9 @@ KEY_RECORD_PREFIX = "record:"
 KEY_ACTION_LOG_PREFIX = "action_log:"
 KEY_SEQ_PREFIX = "_seq:"
 
+# PF 全体で 1 つだけ保持するメタキー (どこかの銘柄で qty が変化したら更新)
+KEY_QTY_GLOBAL_UPDATED_AT = "_meta:qty_global_updated_at"
+
 # レコードの既知フィールド (銘柄名は持たない: 表示時に stocks_shelve / research_shelve から都度取得する)
 RECORD_FIELDS = frozenset(
     {
@@ -698,8 +701,23 @@ def update_qty(
                 return _normalize_loaded_record(record)
             record["qty"] = qty_int
             db[key] = record
+            db[KEY_QTY_GLOBAL_UPDATED_AT] = now_iso()
     log_print("portfolio_shelve: 株数更新", normalized, f"{current_qty} -> {qty_int}")
     return _normalize_loaded_record(record)
+
+
+def get_qty_global_updated_at(
+    *,
+    db_path: Optional[str] = None,
+) -> Optional[str]:
+    """PF 全体で最後に qty が変化した ISO 8601 タイムスタンプを返す。
+
+    どの銘柄でも qty が変化していない (初期状態) なら None。
+    保有銘柄リストの更新タイミングを「PF 全体で 1 つの時刻」として可視化するためのメタ情報。
+    """
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        return db.get(KEY_QTY_GLOBAL_UPDATED_AT)
 
 
 def transition_status(
