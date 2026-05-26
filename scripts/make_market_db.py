@@ -971,6 +971,7 @@ tr:hover { background: #f5f5f5; }
 .fng-rating-extreme-greed { background: #145a32; }
 .fng-delta-pos { color: #c0392b; }
 .fng-delta-neg { color: #2980b9; }
+.credit-divider { display: inline-block; width: 1px; height: 1em; background: #ccc; margin: 0 4px; }
 
 /* 決算 */
 .kessan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
@@ -1324,6 +1325,87 @@ def _html_fear_and_greed(market_db):
     )
 
 
+def _format_credit_delta(latest, prev):
+    """信用評価/倍率の差分表示 (pt) と方向クラス。
+
+    pt 差が + なら "天井圏寄り" として赤系 (fng-delta-pos 流用)、
+    - なら "底値圏寄り" として青系 (fng-delta-neg 流用) を返す。
+    値が None なら ("—", "") を返す。
+    """
+    try:
+        delta = float(latest) - float(prev)
+    except (TypeError, ValueError):
+        return "—", ""
+    cls = "fng-delta-pos" if delta >= 0 else "fng-delta-neg"
+    return "%+.2f" % delta, cls
+
+
+def _html_credit_balance(market_db):
+    """信用評価損益率/倍率のサマリーHTML を生成する (issue #211)。
+
+    market_db は使わず、$KS_DATA_DIR/code_rank_data/credit_balance.json を読む。
+    fng-card と並べて表示する用途。
+    """
+    path = os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json")
+    if not os.path.exists(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    history = payload.get("history") or []
+    if not history:
+        return ""
+    latest = history[-1]
+    eval_rate = latest.get("credit_eval_rate")
+    bairitsu = latest.get("credit_bairitsu")
+    if eval_rate is None:
+        return ""
+    date_str = latest.get("date", "")
+
+    def _prev(field, n):
+        if len(history) < n + 1:
+            return None
+        return history[-(n + 1)].get(field)
+
+    eval_1w, eval_1w_cls = _format_credit_delta(eval_rate, _prev("credit_eval_rate", 1))
+    eval_4w, eval_4w_cls = _format_credit_delta(eval_rate, _prev("credit_eval_rate", 4))
+
+    bairitsu_html = ""
+    if bairitsu is not None:
+        bai_1w, bai_1w_cls = _format_credit_delta(bairitsu, _prev("credit_bairitsu", 1))
+        bai_4w, bai_4w_cls = _format_credit_delta(bairitsu, _prev("credit_bairitsu", 4))
+        bairitsu_html = (
+            '  <span class="credit-divider"></span>\n'
+            '  <span>信用倍率</span>\n'
+            '  <span class="fng-score">%.2f</span>\n'
+            '  <span>1週比 <span class="%s">%s</span></span>\n'
+            '  <span>4週比 <span class="%s">%s</span></span>\n'
+        ) % (
+            bairitsu,
+            html_mod.escape(bai_1w_cls), html_mod.escape(bai_1w),
+            html_mod.escape(bai_4w_cls), html_mod.escape(bai_4w),
+        )
+
+    return (
+        '<div class="fng-card" title="%s 基準">\n'
+        '  <strong><a href="https://nikkei225jp.com/data/sinyou.php"'
+        ' target="_blank" rel="noopener">信用評価</a></strong>\n'
+        '  <span class="fng-score">%.2f%%</span>\n'
+        '  <span>1週比 <span class="%s">%s</span>pt</span>\n'
+        '  <span>4週比 <span class="%s">%s</span>pt</span>\n'
+        '%s'
+        '</div>\n'
+    ) % (
+        html_mod.escape(date_str),
+        eval_rate,
+        html_mod.escape(eval_1w_cls), html_mod.escape(eval_1w),
+        html_mod.escape(eval_4w_cls), html_mod.escape(eval_4w),
+        bairitsu_html,
+    )
+
+
 _SPR_GAUGE_WIDTH = 100      # バー本体の幅 (= SPR 0〜100 のスケール)
 _SPR_GAUGE_BAR_H = 14       # 1 本のバーの高さ
 _SPR_GAUGE_BAR_GAP = 3      # 5日バーと20日バーの縦間隔
@@ -1622,6 +1704,7 @@ def _html_market(market_db):
         return ""
 
     fng_html = _html_fear_and_greed(market_db)
+    credit_html = _html_credit_balance(market_db)
     header_static = (
         '<table class="market-table">\n'
         '<thead><tr>\n'
@@ -1631,7 +1714,7 @@ def _html_market(market_db):
         '</tr></thead>\n'
         '<tbody>'
     )
-    header = '<h2>市場</h2>\n' + fng_html + header_static
+    header = '<h2>市場</h2>\n' + fng_html + credit_html + header_static
     return header + '\n'.join(rows_html) + '\n</tbody></table>'
 
 
