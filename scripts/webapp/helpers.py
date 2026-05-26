@@ -1693,7 +1693,7 @@ def _format_tags(stock: Dict[str, Any]) -> str:
     """code_rank.csv「タグ」列と同じ表記を返す。
 
     make_stock_db.make_signal() の tags リストを "/" join する。
-    market_db を渡さないので R高/強乖/弱乖 タグは出ない (Phase 4 送り)。
+    market_db を渡さないので 強乖/弱乖 タグは出ない (Phase 4 送り)。
     """
     if not stock:
         return "—"

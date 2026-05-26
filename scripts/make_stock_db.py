@@ -964,7 +964,7 @@ def get_index_trend_template_expr(stock):
 def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
     """銘柄DBデータから、シグナル情報を作成する。
 
-    market_db を渡すと rs_line ベースのタグ (R高 / 強乖 / 弱乖) も付与される。
+    market_db を渡すと rs_line ベースのタグ (強乖 / 弱乖) も付与される。
     後方互換のため market_db=None ならスキップ。
     rs_line を渡せば再計算をスキップする。
     """
@@ -1058,8 +1058,6 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
         topix_log = market_db.get("topix", {}).get("price_log", [])
         latest_date = topix_log[0][0] if topix_log else None
         if rs_line and latest_date and rs_line[0][0] == latest_date:
-            if compute_rs_line_new_high(stock, market_db, rs_line=rs_line):
-                tags.append("R高")
             div = compute_rs_line_divergence(stock, market_db, rs_line=rs_line)
             if div == "bullish":
                 tags.append("強乖")
