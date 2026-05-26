@@ -170,6 +170,14 @@
 
 <p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">
   {% if total > 0 %}{{ total }} 件表示{% else %}0 件{% endif %}
+  {% if hold_summary %}
+  <span style="margin-left:1em;">
+    運用総額: {{ '{:,}'.format(hold_summary.total_man) }} 万円
+    /
+    保有株数更新日:
+    {% if hold_summary.qty_updated_at %}{{ hold_summary.qty_updated_at[:10] }}{% else %}未記録{% endif %}
+  </span>
+  {% endif %}
 </p>
 
 {% if not fallback_mode %}
