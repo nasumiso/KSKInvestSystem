@@ -4,12 +4,49 @@
 GET / : 銘柄コード/名前/評価でフィルタし一覧表示
 """
 
+import os
+from datetime import datetime
+
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 
+from ks_util import DATA_DIR
 from research_shelve import CODE_S_PATTERN
 from webapp.helpers import search_records, add_stock
 
 search_bp = Blueprint("search", __name__)
+
+# issue #98: トップページに統合する Google Spreadsheet 一覧
+# 最終更新日はローカル CSV の mtime (スプシ upload 直前に書かれる) を流用する
+PORTAL_SPREADSHEETS = (
+    {
+        "title": "Shintakane Result",
+        "url": "https://docs.google.com/spreadsheets/d/1KxOFvfgT7o_XGDASGylxA0Rn9yEqPLSv6Yweb_jGsHk/edit?usp=sharing",
+        "mtime_csv": "shintakane_result_data/shintakane_result.csv",
+    },
+    {
+        "title": "Code Rank",
+        "url": "https://docs.google.com/spreadsheets/d/1zto-8-fZ5hTZfXY6k2C49HZHbyA3OE8BgkReAViLSNU/edit?usp=sharing",
+        "mtime_csv": "code_rank_data/code_rank.csv",
+    },
+)
+
+
+def _portal_spreadsheets():
+    """PORTAL_SPREADSHEETS に最終更新日を付与して返す"""
+    cards = []
+    for sp in PORTAL_SPREADSHEETS:
+        csv_path = os.path.join(DATA_DIR, sp["mtime_csv"])
+        try:
+            ts = os.path.getmtime(csv_path)
+            updated_at = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+        except OSError:
+            updated_at = "—"
+        cards.append({
+            "title": sp["title"],
+            "url": sp["url"],
+            "updated_at": updated_at,
+        })
+    return cards
 
 
 @search_bp.route("/")
@@ -69,6 +106,7 @@ def index():
         can_add=can_add,
         q_normalized=q_normalized,
         has_query=has_query,
+        portal_spreadsheets=_portal_spreadsheets() if not has_query else None,
     )
 
 
