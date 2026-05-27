@@ -1828,11 +1828,10 @@ class TestCollectGyoutaiThemeChoices:
 
 
 class TestListPortfolioWithIndicators:
-    """list_portfolio_with_indicators の業態順ソート / status_query / status_label 検証 (issue #178, #215)。
+    """list_portfolio_with_indicators のソート / status_query / status_label 検証。
 
     外部参照 (_bulk_get_stock_data, _bulk_resolve_stock_names, compute_cell_styles) は
     monkeypatch でスタブし、並び順とフィールド埋めだけを検証する。
-    issue #215: 順位ソートを廃止し業態順固定。sort_key 引数は撤廃済み。
     """
 
     @pytest.fixture
@@ -1858,7 +1857,7 @@ class TestListPortfolioWithIndicators:
             self._make("0002", "1保", rank=10, themes=["半導体"]),
             self._make("0003", "1保", rank=5, themes=["人材"]),
         ]
-        rows = helpers.list_portfolio_with_indicators(records)
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
         # 業態順 (人材→半導体) かつ業態内は rank 昇順
         assert [r["code_s"] for r in rows] == ["0003", "0001", "0002"]
 
@@ -1868,7 +1867,7 @@ class TestListPortfolioWithIndicators:
             self._make("0002", "1保", rank=20, themes=["半導体"]),
             self._make("0003", "1保", rank=5, themes=None),
         ]
-        rows = helpers.list_portfolio_with_indicators(records)
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
         # 半導体が先頭、空 themes は末尾 (末尾内は rank 昇順)
         assert [r["code_s"] for r in rows] == ["0002", "0003", "0001"]
 
@@ -1878,7 +1877,7 @@ class TestListPortfolioWithIndicators:
             self._make("0001", "1保", rank=10, themes=["AI", "人材"]),
             self._make("0002", "1保", rank=20, themes=["人材", "AI"]),
         ]
-        rows = helpers.list_portfolio_with_indicators(records)
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
         # 0001 の themes[0]=AI が先、0002 の themes[0]=人材 が後
         assert [r["code_s"] for r in rows] == ["0001", "0002"]
 
@@ -1896,6 +1895,34 @@ class TestListPortfolioWithIndicators:
         assert by_code["0002"]["status_label"] == "準保有"
         assert by_code["0003"]["status_query"] == "watch"
         assert by_code["0003"]["status_label"] == "監視"
+
+    @pytest.mark.parametrize(
+        "sort_key, expected",
+        [
+            ("position", ["0003", "0001", "0004", "0002"]),
+            ("rank", ["0002", "0003", "0001", "0004"]),
+            ("gyoutai", ["0003", "0001", "0002", "0004"]),
+        ],
+        ids=["position", "rank", "gyoutai"],
+    )
+    def test_sort_key_switches_order(self, monkeypatch, sort_key, expected):
+        prices = {"0001": 1000, "0003": 500, "0004": 10000}
+        monkeypatch.setattr(
+            helpers, "_bulk_get_stock_data",
+            lambda codes: {c: {"price": prices[c]} for c in codes if c in prices},
+        )
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {c: "" for c in codes})
+        monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
+        monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
+
+        records = [
+            {**self._make("0001", "1保", rank=30, themes=["人材"]), "qty": 100},
+            {**self._make("0002", "2準", rank=5, themes=["半導体"]), "qty": 100},
+            {**self._make("0003", "1保", rank=10, themes=["AI"]), "qty": 300},
+            {**self._make("0004", "1保", rank=None, themes=[]), "qty": 0},
+        ]
+        rows = helpers.list_portfolio_with_indicators(records, sort_key=sort_key)
+        assert [r["code_s"] for r in rows] == expected
 
     # ===== issue #269: position_ratio 集計 =====
     @pytest.mark.parametrize(

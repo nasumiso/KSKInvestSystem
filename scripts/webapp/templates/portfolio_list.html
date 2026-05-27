@@ -148,6 +148,7 @@
 {# issue #215: フィルタは status / gyoutai_theme の単一選択 select 2 つ。onchange で即送信。 #}
 <form id="portfolio-filter-form" action="/portfolio" method="GET"
       style="display:flex;flex-wrap:wrap;gap:1.2em;align-items:center;margin-bottom:0.6em;padding:0.5em 0.6em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;font-size:0.9em;">
+  <input type="hidden" name="sort" value="{{ active_sort }}">
   <label style="display:inline-flex;align-items:center;gap:0.4em;margin:0;">
     <span style="color:#666;">ステータス</span>
     <select name="status" onchange="this.form.submit()" style="padding:0.2em 0.3em;font-size:0.9em;margin:0;">
@@ -211,9 +212,9 @@
       <th></th>
       <th>コード</th>
       <th>銘柄名</th>
-      <th>状態</th>
-      <th>業態・テーマ</th>
-      <th>順位</th>
+      <th><a href="{{ sort_urls.position }}">状態</a></th>
+      <th><a href="{{ sort_urls.gyoutai }}">業態・テーマ</a></th>
+      <th><a href="{{ sort_urls.rank }}">順位</a></th>
       <th>売上成長(%)</th>
       <th>利益成長(%)</th>
       <th>PER</th>
@@ -236,8 +237,8 @@
     {% for row in rows %}
     {# issue #178: 前行と業態 1 行目が異なる行は境界線を入れる。
        row.gyoutai_first は helpers.list_portfolio_with_indicators が precompute 済み。
-       issue #215: ソート分岐廃止に伴い常時有効。 #}
-    <tr data-code="{{ row.code_s }}"{% if not loop.first and loop.previtem.gyoutai_first != row.gyoutai_first %} class="gyoutai-boundary"{% endif %}>
+       issue #274: 業態順以外では境界線を出さない。 #}
+    <tr data-code="{{ row.code_s }}"{% if active_sort == "gyoutai" and not loop.first and loop.previtem.gyoutai_first != row.gyoutai_first %} class="gyoutai-boundary"{% endif %}>
       {% if delete_mode_allowed %}
       {# codex 指摘 P2: 1保 は bulk_exclude() で reject されるため checkbox を出さない #}
       <td class="bulk-col">
