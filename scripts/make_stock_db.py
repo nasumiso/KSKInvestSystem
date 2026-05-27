@@ -1295,6 +1295,146 @@ def _adjust_momentum_scale(scale_raw):
 # DB一覧表示
 # ==================================================
 
+def compute_total_pt(gyoseki_pt, shihyo_pt, mom_pt, funda_pt):
+    """総合PT を計算する。list_all_db のランキングと webapp 詳細ページの両方から使う。
+
+    重み: 業績 40, 指標 20, モメンタム 25, ファンダ 15。
+    """
+    return int((40 * gyoseki_pt + 20 * shihyo_pt + 25 * mom_pt + 15 * funda_pt) / 100)
+
+
+# code_rank.csv のヘッダ。build_code_rank_row の dict キーもこのリストと一致させる。
+CODE_RANK_HEADERS = [
+    "ポートフォリオ",
+    "タグ",
+    "決算日",
+    "順位",
+    "過去順位(1日/5日前)",
+    "コード",
+    "銘柄名",
+    "セクター",
+    "総合PT",
+    "プロフィット/クォリティ",
+    "バリュー/サイズ",
+    "モメンタム(現在.20日比/5日比)",
+    "ファンダメンタル",
+    "更新日(業績|指標|価格)",
+    "シグナル",
+    "トレンドテンプレート",
+    "ローソク足ボラティリティ(20,5)",
+    "売り圧力レシオ(20,5) 買い集め(週,日) 50DMA乖離率",
+    "業績(今季/今四半期 売上/営利成長率)",
+    "進捗率(現四半期/売上(前年)利益(前年)",
+    "指標(時価総額|PER|EVR|ROE|売上高営業利益率|有利子負債自己負債比率|自己資本比率)",
+    "理論株価(乖離率|上限,下限))",
+    "過去業績(5年増収増益 4Q増収増益率)",
+    "信用(倍率|出来高買残比)",
+    "テーマ",
+    "概要",
+]
+
+
+def build_code_rank_row(
+    code_s,
+    stock_data,
+    *,
+    total_pt,
+    gyoseki_pt,
+    shihyo_pt,
+    mom_pt,
+    funda_pt,
+    rank,
+    pf_stocks,
+    possess_list,
+    market_db,
+    topix_map=None,
+):
+    """code_rank.csv の 1行を dict 形式で構築する。
+
+    戻り値の dict キーは ``CODE_RANK_HEADERS`` と一致する。
+    順位/コード/銘柄名はリンク装飾を含まないテキストのみ。CSV書き出し時は
+    ``_decorate_links_for_csv()`` で HYPERLINK を被せる。webapp 等の
+    read-only 用途ではテキストのまま使える。
+    """
+    # ---- 更新日・概要・テーマ・決算日
+    date_exp = get_access_dates_expr(stock_data)
+    overview = stock_data.get("overview", "")
+    themes = stock_data.get("themes", "")
+    main_theme = make_market_db.get_major_theme(themes)
+    kessanbi = kessan.get_kessanbi_expr(stock_data)
+    # ---- テクニカル
+    trend = get_trend_template_expr(stock_data)
+    vola, sell_press = get_vola_and_sell_press_expr(stock_data)
+    # ---- ポートフォリオ
+    ports = []
+    if code_s in pf_stocks:
+        ports.append("監")
+    if code_s in possess_list:
+        ports.append("保")
+    ports = "".join(ports)
+    # ---- rs_line を1回だけ計算して下流で使い回す
+    rs_line = compute_rs_line(stock_data, market_db, topix_map=topix_map)
+    # ---- タグ、シグナル、過去順位
+    signal, tags, prev_rank = get_signal_tags_prevrank_expr(
+        stock_data, market_db=market_db, topix_map=topix_map, rs_line=rs_line
+    )
+    # ---- 指標・業績・理論株価
+    indicator_expr = shihyou.get_shihyo_expr(stock_data)
+    credit_expr = shihyou.get_credit_expr(stock_data)
+    progress_expr, growth_exp = gyoseki.get_gyoseki_expr(stock_data)
+    rironkabuka_expr = rironkabuka.get_rironkabuka_expr(stock_data)
+    gyoseki_quarity_expr = gyoseki.get_gyoseki_quarity_expr(stock_data)
+    # ---- その他
+    sector = stock_data.get("sector", "")
+    rs_log = get_rs_line_changes_expr(stock_data, market_db, rs_line=rs_line)
+    momentum = "%d.%s" % (mom_pt, rs_log)
+    # CSV の get_stock_name_exp に合わせて "Unknown" フォールバック
+    stock_name = stock_data.get("stock_name", "Unknown")
+
+    return {
+        "ポートフォリオ": ports,
+        "タグ": tags,
+        "決算日": kessanbi,
+        "順位": str(rank),
+        "過去順位(1日/5日前)": prev_rank,
+        "コード": code_s,
+        "銘柄名": stock_name,
+        "セクター": sector,
+        "総合PT": total_pt,
+        "プロフィット/クォリティ": gyoseki_pt,
+        "バリュー/サイズ": shihyo_pt,
+        "モメンタム(現在.20日比/5日比)": momentum,
+        "ファンダメンタル": funda_pt,
+        "更新日(業績|指標|価格)": date_exp,
+        "シグナル": signal,
+        "トレンドテンプレート": trend,
+        "ローソク足ボラティリティ(20,5)": vola,
+        "売り圧力レシオ(20,5) 買い集め(週,日) 50DMA乖離率": sell_press,
+        "業績(今季/今四半期 売上/営利成長率)": growth_exp,
+        "進捗率(現四半期/売上(前年)利益(前年)": progress_expr,
+        "指標(時価総額|PER|EVR|ROE|売上高営業利益率|有利子負債自己負債比率|自己資本比率)": indicator_expr,
+        "理論株価(乖離率|上限,下限))": rironkabuka_expr,
+        "過去業績(5年増収増益 4Q増収増益率)": gyoseki_quarity_expr,
+        "信用(倍率|出来高買残比)": credit_expr,
+        "テーマ": main_theme,
+        "概要": overview,
+    }
+
+
+def _decorate_links_for_csv(code_s, row_dict, stock_data):
+    """build_code_rank_row の dict を CSV 1行 (list) に変換し、HYPERLINK を被せる。
+
+    順位/コード/銘柄名の3列に既存の HYPERLINK 装飾を適用する。
+    """
+    URL_YAHOO_QUOTE = "https://finance.yahoo.co.jp/quote/%s.%s"
+    market_code = get_market_code(stock_data)
+    yahoo_url = URL_YAHOO_QUOTE % (code_s, market_code)
+    decorated = dict(row_dict)
+    decorated["順位"] = '=HYPERLINK("%s", "%s")' % (yahoo_url, row_dict["順位"])
+    decorated["コード"] = get_code_exp(code_s)
+    decorated["銘柄名"] = get_stock_name_exp(stock_data)
+    return [decorated[h] for h in CODE_RANK_HEADERS]
+
 
 def list_all_db(upload_csv=True, update_portforio=True):
     """DB内銘柄のランキングリスト
@@ -1315,15 +1455,7 @@ def list_all_db(upload_csv=True, update_portforio=True):
             # mom_pt = int((v.get('rs_raw', 0) - 1) * 100)
             mom_pt = v.get("momentum_pt", 0)
             funda_pt = v.get("funda_pt", 0)
-            total_pt = int(
-                (
-                    40 * gyoseki_pt
-                    + 20 * shihyo_pt
-                    + 25 * mom_pt
-                    + 15 * funda_pt  # noqa: E226,E501
-                )
-                / 100
-            )
+            total_pt = compute_total_pt(gyoseki_pt, shihyo_pt, mom_pt, funda_pt)
             stocks_active.append((k, total_pt, gyoseki_pt, shihyo_pt, mom_pt, funda_pt))
         except KeyError as e:
             log_print("必要キー%sなし" % e, k, v.get("stock_name", ""))
@@ -1407,128 +1539,25 @@ def list_all_db(upload_csv=True, update_portforio=True):
     # 全銘柄ループの前に TOPIX 終値マップを1回だけ構築（rs_line 計算用）
     topix_map = _topix_close_map(market_db)
     rows = []
-    rows.append(
-        [
-            "ポートフォリオ",
-            "タグ",
-            "決算日",
-            "順位",
-            "過去順位(1日/5日前)",
-            "コード",
-            "銘柄名",
-            "セクター",
-            "総合PT",
-            "プロフィット/クォリティ",
-            "バリュー/サイズ",
-            "モメンタム(現在.20日比/5日比)",
-            "ファンダメンタル",
-            "更新日(業績|指標|価格)",
-            "シグナル",
-            "トレンドテンプレート",
-            "ローソク足ボラティリティ(20,5)",
-            "売り圧力レシオ(20,5) 買い集め(週,日) 50DMA乖離率",
-            "業績(今季/今四半期 売上/営利成長率)",
-            "進捗率(現四半期/売上(前年)利益(前年)",
-            "指標(時価総額|PER|EVR|ROE|売上高営業利益率|有利子負債自己負債比率|自己資本比率)",
-            "理論株価(乖離率|上限,下限))",
-            "過去業績(5年増収増益 4Q増収増益率)",
-            "信用(倍率|出来高買残比)",
-            "テーマ",
-            "概要",
-        ]
-    )
+    rows.append(list(CODE_RANK_HEADERS))
 
     for i, stock in enumerate(stocks_active):
         stock_data = stocks[stock[0]]
-        # 更新日
-        date_exp = get_access_dates_expr(stock_data)
-
-        overview = ""
-        if "overview" in stock_data:
-            overview = stock_data.get("overview", "")
-        themes = stock_data.get("themes", "")
-        main_theme = make_market_db.get_major_theme(themes)
-        # 決算日
-        kessanbi = kessan.get_kessanbi_expr(stock_data)
-        # トレンド、押し目
-        trend = get_trend_template_expr(stock_data)
-
-        # ボラティリティ、売り圧力レシオ・買い集め指数
-        vola, sell_press = get_vola_and_sell_press_expr(stock_data)
-        # 順位
-        # buffet_url = "https://www.buffett-code.com/company/%s/library" % (stock[0])
-        # TODO: 福証などでは.Fになる
-        # URL_YAHOO_QUOTE = "https://finance.yahoo.com/quote/%s.%s"
-        URL_YAHOO_QUOTE = "https://finance.yahoo.co.jp/quote/%s.%s"
-        market_code = get_market_code(stock_data)
-        yahoo_url = URL_YAHOO_QUOTE % (stock[0], market_code)
-
-        rank = i + 1
-        rank = '=HYPERLINK("%s", "%d")' % (yahoo_url, rank)
-        # ---- ポートフォリオ
-        ports = []
-        if stock[0] in pf_stocks:
-            ports.append("監")
-        if stock[0] in possess_list:
-            ports.append("保")
-        ports = "".join(ports)
-        # rs_line を1回だけ計算して下流の関数で使い回す
-        rs_line = compute_rs_line(stock_data, market_db, topix_map=topix_map)
-        # ---- タグ、シグナル
-        signal, tags, prev_rank = get_signal_tags_prevrank_expr(
-            stock_data, market_db=market_db, topix_map=topix_map, rs_line=rs_line
+        row_dict = build_code_rank_row(
+            stock[0],
+            stock_data,
+            total_pt=stock[1],
+            gyoseki_pt=stock[2],
+            shihyo_pt=stock[3],
+            mom_pt=stock[4],
+            funda_pt=stock[5],
+            rank=i + 1,
+            pf_stocks=pf_stocks,
+            possess_list=possess_list,
+            market_db=market_db,
+            topix_map=topix_map,
         )
-
-        # ---- 指標用の項目
-        indicator_expr = shihyou.get_shihyo_expr(stock_data)
-        credit_expr = shihyou.get_credit_expr(stock_data)
-
-        # ---- 業績用項目
-        progress_expr, growth_exp = gyoseki.get_gyoseki_expr(stock_data)
-
-        # 理論株価
-        rironkabuka_expr = rironkabuka.get_rironkabuka_expr(stock_data)
-        # 過去業績
-        gyoseki_quarity_expr = gyoseki.get_gyoseki_quarity_expr(stock_data)
-
-        # ---- その他項目
-        code = get_code_exp(stock[0])
-        stock_name = get_stock_name_exp(stock_data)
-        sector = stock_data.get("sector", "")
-        # relates_rank = stock_data.get("relates_rank", 0) # 関連銘柄内順位:封印
-        rs_log = get_rs_line_changes_expr(stock_data, market_db, rs_line=rs_line)
-        momentum = "%d.%s" % (stock[4], rs_log)
-        # 行要素作成
-        rows.append(
-            [
-                ports,
-                tags,
-                kessanbi,
-                str(rank),
-                prev_rank,
-                code,
-                stock_name,
-                sector,
-                stock[1],
-                stock[2],
-                stock[3],
-                momentum,
-                stock[5],
-                date_exp,
-                signal,
-                trend,
-                vola,
-                sell_press,
-                growth_exp,
-                progress_expr,
-                indicator_expr,
-                rironkabuka_expr,
-                gyoseki_quarity_expr,
-                credit_expr,  # noqa: E501
-                main_theme,
-                overview,
-            ]
-        )
+        rows.append(_decorate_links_for_csv(stock[0], row_dict, stock_data))
     # CSV書き込み
     with open(rank_csv, "w", encoding="utf-8") as f:  # python3対応
         rank_csv_w = csv.writer(f)
