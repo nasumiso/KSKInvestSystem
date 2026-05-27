@@ -1224,7 +1224,14 @@ class TestCreateDisclosureHtml:
             ["20260424", '=HYPERLINK("https://example.com","6324")',
              "ハーモニック", "決算", '=HYPERLINK("https://example.com","決算短信")'],
         ]
-        with patch.object(make_market_db, 'DATA_DIR', str(tmp_path)):
+        # _html_disclosure() は datetime.today() で 30日カットオフ判定をするため
+        # テストデータの日付 (20260424) を常に「直近」と見なせるよう現在時刻を固定する
+        fixed_now = datetime(2026, 4, 25, 12, 0, 0)
+        with patch.object(make_market_db, 'DATA_DIR', str(tmp_path)), \
+             patch.object(make_market_db, 'datetime') as mock_dt:
+            mock_dt.today.return_value = fixed_now
+            mock_dt.now.return_value = fixed_now
+            mock_dt.strptime.side_effect = datetime.strptime
             os.makedirs(os.path.join(str(tmp_path), "code_rank_data"), exist_ok=True)
             html_path = make_market_db.create_disclosure_html(disc_csv)
             assert os.path.exists(html_path)
