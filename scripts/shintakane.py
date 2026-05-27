@@ -6,6 +6,7 @@ import os
 import re
 from datetime import datetime, timedelta
 import csv
+import json
 import shutil
 import traceback
 import glob
@@ -1514,6 +1515,66 @@ def update_pf_kessan_db(stocks):
     kessan.save_pf_kessan_db(stocks)
 
 
+def _credit_cache_is_fresh(out_path, today):
+    """credit_balance.json の generated_at が today と同日なら True (取得スキップ可)。
+
+    元データは週次更新 (公表ラグ含めて週1) のため、同一日に再取得する意味はない。
+    日付が変われば取りに行く。
+    """
+    if not os.path.exists(out_path):
+        return False
+    try:
+        with open(out_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        gen_at = payload.get("generated_at")
+        if not gen_at:
+            return False
+        gen_date = datetime.fromisoformat(gen_at).date()
+    except (OSError, ValueError, KeyError):
+        return False
+    return gen_date == today
+
+
+def update_credit_balance():
+    """信用評価損益率 (2市場) を nikkei225jp.com から取得して JSON 保存 (issue #211)。
+
+    キャッシュ: generated_at が今日と同日なら HTTP 取得をスキップする。
+    取得失敗時は log_warning で残し、既存ファイルがあればそのまま使う。
+    デイリー全体は止めない。
+    """
+    import market_breadth
+
+    out_path = os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json")
+    today = get_price_day(datetime.today())
+    if _credit_cache_is_fresh(out_path, today):
+        log_print(f"---- 信用評価損益率 キャッシュ有効のためスキップ (generated_at={today.isoformat()})")
+        return
+
+    log_print("----> 信用評価損益率 (2市場) 更新")
+    try:
+        rows = market_breadth.fetch_credit_balance_weekly()
+    except Exception as e:
+        log_warning(f"[credit_balance] 取得失敗のためスキップ: {e}")
+        return
+    if not rows:
+        log_warning("[credit_balance] 取得結果が空")
+        return
+    history = rows[-30:]
+    payload = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "source": "nikkei225jp.com (2市場・日経新聞算出)",
+        "latest": history[-1],
+        "history": history,
+    }
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    log_print(
+        f"<---- 信用評価損益率 更新完了 latest={history[-1]['date']} "
+        f"eval={history[-1]['credit_eval_rate']}%"
+    )
+
+
 def main(force=False):
     """メイン関数"""
     # TODO: 新高値更新タイミングをタグで
@@ -1533,6 +1594,7 @@ def main(force=False):
         get_todays_dekidakaup(force=force)
         get_todays_pts(force=force)
         update_todays_news()
+        update_credit_balance()
     # 新高値銘柄の各種解析
     if "analyze" in args:
         todays_shintakane(UPD_INTERVAL)  # UPD_FORCE/UPD_INTERVAL/UPD_CACHE/UPD_REEVAL

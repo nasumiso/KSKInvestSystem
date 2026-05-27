@@ -20,6 +20,7 @@ import gyoseki
 import disclosure
 import shintakane
 import make_market_db
+import market_breadth
 import rironkabuka
 from ks_util import http_get_html
 
@@ -183,6 +184,23 @@ class TestLiveHtmlTheme:
         result = make_market_db.parse_theme_html(html)
         assert isinstance(result, list)
         assert len(result) > 0  # テーマランクは常にデータがある
+        _sleep()
+
+
+class TestLiveHtmlCreditBalance:
+    """market_breadth.py — nikkei225jp.com dailyweek2.json 取得→パース (issue #211)"""
+
+    def test_信用評価損益率の抽出(self):
+        """dailyweek2.json から直近 30 週以内に float 化可能な確定値があること"""
+        rows = market_breadth.fetch_credit_balance_weekly()
+        assert isinstance(rows, list)
+        assert len(rows) > 0, "信用評価率の確定値が 1 件も取れていない"
+        # 直近 30 週分に float 化可能な値があるか
+        recent = rows[-30:]
+        assert all(isinstance(r["credit_eval_rate"], float) for r in recent)
+        # 日付昇順 (parse_credit_balance の契約)
+        dates = [r["date"] for r in recent]
+        assert dates == sorted(dates)
         _sleep()
 
 
