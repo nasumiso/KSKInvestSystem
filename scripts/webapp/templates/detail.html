@@ -55,24 +55,28 @@
       {% if stock.kessanbi %} | 決算日: {{ stock.kessanbi[2:] }}{% endif %}
       {# issue #205: 業態・テーマを同じ行に配置。change/blur で AJAX 即時保存 (portfolio_list と同方式) #}
       {% if portfolio_status_query and not portfolio_fallback_mode %}
+      {% set master_names = theme_master | map(attribute='name') | list %}
       | <span class="gyoutai-themes-inline" data-code="{{ record.code_s }}">
         業態・テーマ:
         {% for i in range(gyoutai_themes_max_slots) %}
-        <input type="text"
-               list="gyoutai-theme-choices"
-               class="gyoutai-input-detail"
-               name="gyoutai_themes_{{ i }}"
-               value="{{ gyoutai_themes[i] if i < (gyoutai_themes|length) else '' }}"
-               placeholder="—"
-               title="Ctrl/Cmd+クリックでこのテーマで portfolio 絞り込み (新タブ)"
-               style="font-size:0.9em;padding:0.1em 0.3em;width:8em;margin:0 0.1em;border:1px solid #ddd;">
+        {% set current = gyoutai_themes[i] if i < (gyoutai_themes|length) else '' %}
+        <select class="gyoutai-input-detail"
+                name="gyoutai_themes_{{ i }}"
+                title="Ctrl/Cmd+クリックでこのテーマで portfolio 絞り込み (新タブ)"
+                style="font-size:0.9em;padding:0.1em 0.3em;width:auto;min-width:8em;margin:0 0.1em;border:1px solid #ddd;">
+          <option value="">— (未設定)</option>
+          {% if current and current not in master_names %}
+          <option value="{{ current }}" selected>⚠️ {{ current }}</option>
+          {% endif %}
+          {% for theme in theme_master %}
+          <option value="{{ theme.name }}" {% if theme.name == current %}selected{% endif %}>{{ theme.name }}</option>
+          {% endfor %}
+        </select>
         {% endfor %}
+        <a href="{{ url_for('portfolio.themes_index') }}"
+           style="font-size:0.85em;color:#555;text-decoration:none;padding:0 0.3em;"
+           title="テーママスターを編集">✏️</a>
       </span>
-      <datalist id="gyoutai-theme-choices">
-        {% for choice in gyoutai_theme_choices %}
-        <option value="{{ choice }}">
-        {% endfor %}
-      </datalist>
       {% endif %}
       <form method="POST" action="/stock/{{ record.code_s }}/refresh" style="display:inline;margin-left:0.5em;">
         <button type="submit" title="業績・指標・株価などの最新データを再取得します"
@@ -690,10 +694,7 @@ function excludeFromUniverse(codeS) {
 
   inputs.forEach(function(inp) {
     inp.addEventListener('change', save);
-    inp.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-    });
-    // issue #230: Ctrl/Cmd+左クリックでこのテーマで portfolio 絞り込みを新タブで開く
+    // issue #230 + #282: Ctrl/Cmd+左クリックで現在値での portfolio 絞り込みを新タブで開く
     inp.addEventListener('mousedown', function(e) {
       if (e.button !== 0) return;
       if (!(e.ctrlKey || e.metaKey)) return;

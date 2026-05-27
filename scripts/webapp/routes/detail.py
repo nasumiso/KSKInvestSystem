@@ -13,7 +13,6 @@ from webapp.helpers import (
     get_stock_data,
     get_disclosures,
     has_recent_disclosure,
-    collect_gyoutai_theme_choices,
 )
 from webapp.routes.portfolio import (
     STATUS_VALUE_TO_LABEL,
@@ -88,10 +87,8 @@ def stock_detail(code_s: str):
     if not isinstance(_memo, dict):
         _memo = {}
     gyoutai_themes = _memo.get("gyoutai_themes") or []
-    gyoutai_theme_choices = (
-        collect_gyoutai_theme_choices(ps.list_records(include_excluded=True))
-        if not portfolio_fallback_mode else []
-    )
+    # issue #282: テーママスターから候補を取得
+    theme_master = [] if portfolio_fallback_mode else ps.list_themes()
 
     # issue #227: 株価 + RSライン 統合チャート (フル版)
     # market_db のロード失敗時は RS 無しの株価のみで描画 (500 にしない)
@@ -122,6 +119,6 @@ def stock_detail(code_s: str):
         portfolio_fallback_mode=portfolio_fallback_mode,
         portfolio_transitions=portfolio_transitions,
         gyoutai_themes=gyoutai_themes,
-        gyoutai_theme_choices=gyoutai_theme_choices,
+        theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
     )

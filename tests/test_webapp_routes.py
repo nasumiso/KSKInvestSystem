@@ -1075,6 +1075,10 @@ class TestDetailGyoutaiThemes:
 
         ps.add_to_watch("3496", reason="テスト用", db_path=portfolio_db)
         ps.transition_status("3496", "1保", reason="テスト用 1保 へ", db_path=portfolio_db)
+        # issue #282: テーママスター必須化に伴い、テストで使う name を登録
+        ps.create_theme("AI", db_path=portfolio_db)
+        ps.create_theme("半導体", db_path=portfolio_db)
+        ps.create_theme("新規テーマ", db_path=portfolio_db)
 
         app = create_app()
         app.config["TESTING"] = True
@@ -1086,7 +1090,7 @@ class TestDetailGyoutaiThemes:
         return app.test_client()
 
     def test_registered_stock_renders_inline_inputs(self, portfolio_client):
-        """登録済銘柄: 業態・テーマ inline edit (data-code 付き wrapper + 2 input) が出る"""
+        """登録済銘柄: 業態・テーマ inline edit (data-code 付き wrapper + 2 select) が出る"""
         html = portfolio_client.get("/stock/3496").data.decode()
         assert 'class="gyoutai-themes-inline" data-code="3496"' in html
         assert 'name="gyoutai_themes_0"' in html
@@ -1094,23 +1098,20 @@ class TestDetailGyoutaiThemes:
         # AJAX 化したので保存ボタンは無い、form タグも無い
         assert "action=\"/portfolio/3496/memo\"" not in html
 
-    def test_registered_stock_renders_datalist(self, portfolio_client):
-        """datalist#gyoutai-theme-choices が出る (候補は空でもタグは描画)"""
-        html = portfolio_client.get("/stock/3496").data.decode()
-        assert '<datalist id="gyoutai-theme-choices">' in html
-
     def test_existing_themes_prefilled(self, portfolio_app):
-        """事前に保存したテーマが input value にプリフィルされる"""
+        """事前に保存したテーマが select の selected 属性として出力される"""
         import portfolio_shelve as ps
         app, portfolio_db = portfolio_app
         ps.update_memo("3496", {"gyoutai_themes": ["AI", "半導体"]}, db_path=portfolio_db)
 
         html = app.test_client().get("/stock/3496").data.decode()
+        # select 化されたので value="X" selected の形式で確認
         assert 'value="AI"' in html
         assert 'value="半導体"' in html
+        assert 'selected' in html
 
     def test_unregistered_stock_hides_inline_inputs(self, portfolio_client):
-        """未登録銘柄では inline edit (gyoutai_themes_0 input) が出ない"""
+        """未登録銘柄では inline edit (gyoutai_themes_0 入力) が出ない"""
         html = portfolio_client.get("/stock/1234").data.decode()
         assert 'name="gyoutai_themes_0"' not in html
         assert 'class="gyoutai-themes-inline"' not in html
@@ -1306,3 +1307,65 @@ class TestPortfolioHoldSummary:
             html = resp.data.decode()
             assert "運用総額:" not in html, f"status={status} でサマリーが漏れている"
             assert "保有株数更新日:" not in html, f"status={status} でサマリーが漏れている"
+
+
+# ==================================================
+# /portfolio/themes (issue #282)
+# ==================================================
+class TestPortfolioThemes:
+    """テーママスター編集画面の smoke テスト"""
+
+    @pytest.fixture
+    def themes_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        # fallback_mode を外すため最低 1 件 record を入れる
+        ps.add_to_watch("3496", db_path=portfolio_db)
+        ps.create_theme("半導体", "test", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app, portfolio_db
+
+    def test_index_returns_200(self, themes_app):
+        app, _ = themes_app
+        client = app.test_client()
+        resp = client.get("/portfolio/themes")
+        assert resp.status_code == 200
+        assert "半導体" in resp.data.decode()
+
+    def test_create_and_delete_roundtrip(self, themes_app):
+        import portfolio_shelve as ps
+        app, portfolio_db = themes_app
+        client = app.test_client()
+        # 作成
+        resp = client.post(
+            "/portfolio/themes/create",
+            data={"name": "防衛", "description": "防衛関連"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert ps.get_theme("防衛", db_path=portfolio_db) is not None
+        # 削除
+        resp = client.post(
+            "/portfolio/themes/防衛/delete", follow_redirects=False
+        )
+        assert resp.status_code == 302
+        assert ps.get_theme("防衛", db_path=portfolio_db) is None
+
+    def test_update_renames(self, themes_app):
+        import portfolio_shelve as ps
+        app, portfolio_db = themes_app
+        client = app.test_client()
+        resp = client.post(
+            "/portfolio/themes/半導体/update",
+            data={"name": "セミコン", "description": "renamed"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert ps.get_theme("半導体", db_path=portfolio_db) is None
+        assert ps.get_theme("セミコン", db_path=portfolio_db)["description"] == "renamed"

@@ -16,9 +16,21 @@ def _set_legacy_gyoutai_theme(code_s: str, value: str, db_path: str) -> None:
 
     update_memo 経由で gyoutai_theme を直接書き込むことで、
     新フィールド gyoutai_themes は [] のまま残る (移行前の状態)。
+
+    issue #282: 移行スクリプトは update_memo で gyoutai_themes を書き込むため、
+    旧値を分割した各 name をテーママスターに事前登録しておく。
     """
     ps.add_to_watch(code_s, db_path=db_path)
     ps.update_memo(code_s, {"gyoutai_theme": value}, db_path=db_path)
+    # 移行先 list に入る name を先にマスター登録
+    for raw in value.split("\n"):
+        name = raw.strip()
+        if not name:
+            continue
+        try:
+            ps.create_theme(name, db_path=db_path)
+        except ValueError:
+            pass  # 重複は無視
 
 
 class TestMigrateGyoutaiThemeToList:
@@ -72,6 +84,7 @@ class TestMigrateGyoutaiThemeToList:
     def test_skips_record_with_existing_gyoutai_themes(self, db_path):
         # 既に gyoutai_themes に値がある → スキップ (上書きしない)
         ps.add_to_watch("4377", db_path=db_path)
+        ps.create_theme("新データ", db_path=db_path)  # issue #282: マスター事前登録
         ps.update_memo(
             "4377",
             {"gyoutai_theme": "旧データ", "gyoutai_themes": ["新データ"]},
