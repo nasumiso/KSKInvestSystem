@@ -75,16 +75,18 @@ class TestSearchRoute:
         resp = client.get("/")
         assert resp.status_code == 200
 
-    def test_index_no_query_hides_records_and_shows_whats_new(self, client):
-        """issue #244: クエリなしトップでは銘柄一覧を出さず What's new プレースホルダーを表示"""
+    def test_index_no_query_hides_records_and_shows_portal(self, client):
+        """issue #98: クエリなしトップでは銘柄一覧を出さず Spreadsheet ポータルを表示"""
         resp = client.get("/")
         html = resp.data.decode()
         # 銘柄一覧テーブルは描画されない
         assert "アズーム" not in html
         assert '<table' not in html
-        # What's new プレースホルダーが存在する
-        assert 'id="whats-new"' in html
-        assert "What's new" in html
+        # Spreadsheet ポータルカードが存在する
+        assert 'id="portal-spreadsheets"' in html
+        assert "Shintakane Result" in html
+        assert "Code Rank" in html
+        assert "最終更新" in html
 
     def test_index_with_keyword_shows_records(self, client):
         """issue #244: 検索クエリ付き (keyword) では従来通り一覧を表示"""
