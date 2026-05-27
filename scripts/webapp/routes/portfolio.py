@@ -100,15 +100,18 @@ def _build_query_string(
     status: Optional[str],
     gyoutai_theme: Optional[str],
     sort_key: Optional[str] = None,
+    include_empty_status: bool = False,
 ) -> str:
     """フィルタ / ソートから URL クエリ文字列を組み立てる。
 
-    status None は「すべて」の明示選択として `status=` を出す。
+    include_empty_status=True のときだけ、status None を「すべて」の
+    明示選択として `status=` にする。POST 後の素の /portfolio fallback と
+    画面上の「すべて」選択維持を混同しないため、呼び出し側で明示する。
     """
     params = []
     if status and status in STATUS_VALUE_TO_QUERY:
         params.append(("status", STATUS_VALUE_TO_QUERY[status]))
-    elif status is None:
+    elif status is None and include_empty_status:
         params.append(("status", ""))
     if gyoutai_theme:
         params.append(("gyoutai_theme", gyoutai_theme))
@@ -175,8 +178,7 @@ def _redirect_with_return_query(
     そのまま受け取り、URL に付与する。これで POST 後も直前のフィルタが復元できる。
 
     空 or 未指定時の戻り先 (issue #215):
-      - `default_status_query=None` (デフォルト): 素の `/portfolio` (= 全件表示) に戻す。
-        引数なし /portfolio の全件状態からの POST を復元するためのフォールバック。
+      - `default_status_query=None` (デフォルト): 素の `/portfolio` (= 保有デフォルト) に戻す。
       - `default_status_query="watch"` 等: `?status=<value>` を付与。`add()` から
         追加直後の銘柄が見えるよう監視フィルタに切り替えたい場合に使う。
 
@@ -604,7 +606,13 @@ def dashboard():
     )
 
     # POST → リダイレクトの戻り先として使う現状クエリ (status/gyoutai_theme)
-    return_query = _build_query_string(active_status, active_gyoutai_theme, active_sort)
+    preserve_all_status = "status" in request.args and active_status is None
+    return_query = _build_query_string(
+        active_status,
+        active_gyoutai_theme,
+        active_sort,
+        include_empty_status=preserve_all_status,
+    )
     # テンプレートで select の selected 判定に使う、active_status の query 形式 (例: "hold")
     active_status_query = (
         STATUS_VALUE_TO_QUERY[active_status] if active_status in STATUS_VALUE_TO_QUERY else ""
@@ -617,7 +625,12 @@ def dashboard():
         gyoutai_theme_choices = collect_gyoutai_theme_choices(all_records_inc)
 
     sort_urls = {
-        k: "?" + _build_query_string(active_status, active_gyoutai_theme, k)
+        k: "?" + _build_query_string(
+            active_status,
+            active_gyoutai_theme,
+            k,
+            include_empty_status=preserve_all_status,
+        )
         for k in ("position", "rank", "gyoutai")
     }
 

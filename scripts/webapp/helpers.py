@@ -1678,6 +1678,7 @@ def list_portfolio_with_indicators(
             r.get("code_s", ""),
         ))
     else:
+        # position は保有ポジション確認用。1保以外は評価せずコード順で末尾に寄せる。
         rows.sort(key=lambda r: (
             r.get("status") != "1保",
             -(r.get("position_value") or 0),
