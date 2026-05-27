@@ -961,9 +961,15 @@ tr:hover { background: #f5f5f5; }
 /* DD 進行度の警告色 */
 .dd-pressure  { background: #fffbe6; color: #b8860b; font-weight: bold; }
 .dd-correction { background: #fdedec; color: #c0392b; font-weight: bold; }
-.fng-card { display: inline-flex; align-items: center; gap: 12px; margin: 0 0 10px 0; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fff; font-size: 0.9em; }
-.fng-score { font-size: 1.35em; font-weight: bold; }
-.fng-rating { padding: 2px 8px; border-radius: 999px; font-size: 0.85em; font-weight: bold; color: #fff; }
+/* 市場指標サマリー表 (Fear & Greed / 信用評価損益率 / 信用倍率 統合) */
+.market-indicators { border-collapse: collapse; margin: 0 0 10px 0; background: #fff; width: auto; }
+.market-indicators th, .market-indicators td { padding: 3px 8px; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
+.market-indicators th.mi-label { font-weight: bold; }
+.market-indicators td.mi-value { font-weight: bold; text-align: right; }
+.market-indicators td.mi-rating { text-align: center; padding: 3px 6px; }
+.market-indicators td.mi-delta { text-align: right; }
+.market-indicators .mi-unit { color: #888; font-size: 0.85em; margin-right: 2px; }
+.fng-rating { padding: 1px 6px; border-radius: 999px; font-size: 0.85em; font-weight: bold; color: #fff; }
 .fng-rating-extreme-fear { background: #a93226; }
 .fng-rating-fear { background: #e67e22; }
 .fng-rating-neutral { background: #7f8c8d; }
@@ -971,7 +977,6 @@ tr:hover { background: #f5f5f5; }
 .fng-rating-extreme-greed { background: #145a32; }
 .fng-delta-pos { color: #c0392b; }
 .fng-delta-neg { color: #2980b9; }
-.credit-divider { display: inline-block; width: 1px; height: 1em; background: #ccc; margin: 0 4px; }
 
 /* 決算 */
 .kessan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
@@ -1284,47 +1289,6 @@ def _format_fng_delta(score, past_score):
     return "%+.1f" % delta, cls
 
 
-def _html_fear_and_greed(market_db):
-    """Fear & Greed Index のサマリーHTMLを生成する。"""
-    fng_db = market_db.get("fear_and_greed") or {}
-    if not fng_db:
-        return ""
-
-    try:
-        score = float(fng_db["score"])
-    except (KeyError, TypeError, ValueError):
-        return ""
-    rating = str(fng_db.get("rating", "")).strip().lower()
-    rating_label = rating.replace("_", " ").title() if rating else "Unknown"
-    rating_class = "fng-rating-" + rating.replace(" ", "-") if rating else "fng-rating-neutral"
-    delta_5, delta_5_class = _format_fng_delta(score, fng_db.get("score_5d_ago"))
-    delta_20, delta_20_class = _format_fng_delta(score, fng_db.get("score_20d_ago"))
-    access_date = fng_db.get("access_date")
-    access_text = ""
-    if hasattr(access_date, "strftime"):
-        access_text = " 更新: " + access_date.strftime("%Y-%m-%d %H:%M")
-
-    return (
-        '<div class="fng-card" title="%s">\n'
-        '  <strong><a href="https://edition.cnn.com/markets/fear-and-greed"'
-        ' target="_blank" rel="noopener">Fear &amp; Greed</a></strong>\n'
-        '  <span class="fng-score">%.1f</span>\n'
-        '  <span class="fng-rating %s">%s</span>\n'
-        '  <span>5営業日前比 <span class="%s">%s</span></span>\n'
-        '  <span>20営業日前比 <span class="%s">%s</span></span>\n'
-        '</div>\n'
-    ) % (
-        html_mod.escape(access_text.strip()),
-        score,
-        html_mod.escape(rating_class),
-        html_mod.escape(rating_label),
-        html_mod.escape(delta_5_class),
-        html_mod.escape(delta_5),
-        html_mod.escape(delta_20_class),
-        html_mod.escape(delta_20),
-    )
-
-
 def _format_credit_delta(latest, prev):
     """信用評価/倍率の差分表示 (pt) と方向クラス。
 
@@ -1340,69 +1304,136 @@ def _format_credit_delta(latest, prev):
     return "%+.2f" % delta, cls
 
 
-def _html_credit_balance(market_db):
-    """信用評価損益率/倍率のサマリーHTML を生成する (issue #211)。
+def _fng_row(market_db):
+    """Fear & Greed の表 1 行分 (label_html, value_html, rating_html, d1_html, d4_html, title)。
+    取得失敗時は None。"""
+    fng_db = market_db.get("fear_and_greed") or {}
+    if not fng_db:
+        return None
+    try:
+        score = float(fng_db["score"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    rating = str(fng_db.get("rating", "")).strip().lower()
+    rating_label = rating.replace("_", " ").title() if rating else "Unknown"
+    rating_class = "fng-rating-" + rating.replace(" ", "-") if rating else "fng-rating-neutral"
+    d5_text, d5_cls = _format_fng_delta(score, fng_db.get("score_5d_ago"))
+    d20_text, d20_cls = _format_fng_delta(score, fng_db.get("score_20d_ago"))
+    access_date = fng_db.get("access_date")
+    title = ""
+    if hasattr(access_date, "strftime"):
+        title = "更新: " + access_date.strftime("%Y-%m-%d %H:%M")
+    label_html = (
+        '<a href="https://edition.cnn.com/markets/fear-and-greed"'
+        ' target="_blank" rel="noopener">Fear &amp; Greed</a>'
+    )
+    value_html = '%.1f' % score
+    rating_html = '<span class="fng-rating %s">%s</span>' % (
+        html_mod.escape(rating_class), html_mod.escape(rating_label),
+    )
+    d1_html = (
+        '<span class="mi-unit">5日</span> '
+        '<span class="%s">%s</span>'
+    ) % (html_mod.escape(d5_cls), html_mod.escape(d5_text))
+    d4_html = (
+        '<span class="mi-unit">20日</span> '
+        '<span class="%s">%s</span>'
+    ) % (html_mod.escape(d20_cls), html_mod.escape(d20_text))
+    return label_html, value_html, rating_html, d1_html, d4_html, title
 
-    market_db は使わず、$KS_DATA_DIR/code_rank_data/credit_balance.json を読む。
-    fng-card と並べて表示する用途。
+
+def _credit_rows(market_db):
+    """信用評価損益率と信用倍率の表行リストを返す ([(label,value,rating,d1,d4,title), ...])。
+    取得失敗時は []。
+
+    market_db は使わず、$KS_DATA_DIR/code_rank_data/credit_balance.json を読む (issue #211)。
     """
     path = os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json")
     if not os.path.exists(path):
-        return ""
+        return []
     try:
         with open(path, "r", encoding="utf-8") as f:
             payload = json.load(f)
     except (OSError, ValueError):
-        return ""
+        return []
     history = payload.get("history") or []
     if not history:
-        return ""
+        return []
     latest = history[-1]
     eval_rate = latest.get("credit_eval_rate")
     bairitsu = latest.get("credit_bairitsu")
     if eval_rate is None:
-        return ""
+        return []
     date_str = latest.get("date", "")
+    title = "%s 基準" % date_str if date_str else ""
 
     def _prev(field, n):
         if len(history) < n + 1:
             return None
         return history[-(n + 1)].get(field)
 
-    eval_1w, eval_1w_cls = _format_credit_delta(eval_rate, _prev("credit_eval_rate", 1))
-    eval_4w, eval_4w_cls = _format_credit_delta(eval_rate, _prev("credit_eval_rate", 4))
-
-    bairitsu_html = ""
+    rows = []
+    e1, e1_cls = _format_credit_delta(eval_rate, _prev("credit_eval_rate", 1))
+    e4, e4_cls = _format_credit_delta(eval_rate, _prev("credit_eval_rate", 4))
+    eval_label = (
+        '<a href="https://nikkei225jp.com/data/sinyou.php"'
+        ' target="_blank" rel="noopener">信用評価損益率</a>'
+    )
+    rows.append((
+        eval_label,
+        '%.2f%%' % eval_rate,
+        '',
+        '<span class="mi-unit">1週</span> <span class="%s">%s</span>pt' % (
+            html_mod.escape(e1_cls), html_mod.escape(e1)),
+        '<span class="mi-unit">4週</span> <span class="%s">%s</span>pt' % (
+            html_mod.escape(e4_cls), html_mod.escape(e4)),
+        title,
+    ))
     if bairitsu is not None:
-        bai_1w, bai_1w_cls = _format_credit_delta(bairitsu, _prev("credit_bairitsu", 1))
-        bai_4w, bai_4w_cls = _format_credit_delta(bairitsu, _prev("credit_bairitsu", 4))
-        bairitsu_html = (
-            '  <span class="credit-divider"></span>\n'
-            '  <span>信用倍率</span>\n'
-            '  <span class="fng-score">%.2f</span>\n'
-            '  <span>1週比 <span class="%s">%s</span></span>\n'
-            '  <span>4週比 <span class="%s">%s</span></span>\n'
-        ) % (
-            bairitsu,
-            html_mod.escape(bai_1w_cls), html_mod.escape(bai_1w),
-            html_mod.escape(bai_4w_cls), html_mod.escape(bai_4w),
-        )
+        b1, b1_cls = _format_credit_delta(bairitsu, _prev("credit_bairitsu", 1))
+        b4, b4_cls = _format_credit_delta(bairitsu, _prev("credit_bairitsu", 4))
+        rows.append((
+            '信用倍率',
+            '%.2f' % bairitsu,
+            '',
+            '<span class="mi-unit">1週</span> <span class="%s">%s</span>' % (
+                html_mod.escape(b1_cls), html_mod.escape(b1)),
+            '<span class="mi-unit">4週</span> <span class="%s">%s</span>' % (
+                html_mod.escape(b4_cls), html_mod.escape(b4)),
+            title,
+        ))
+    return rows
 
+
+def _html_market_indicators(market_db):
+    """Fear & Greed と信用評価損益率 / 信用倍率を 1 つの表に統合した HTML を返す。
+
+    取得できる行が 1 つもなければ空文字。
+    """
+    rows = []
+    fng = _fng_row(market_db)
+    if fng is not None:
+        rows.append(fng)
+    rows.extend(_credit_rows(market_db))
+    if not rows:
+        return ""
+
+    body = []
+    for label, value, rating, d1, d4, title in rows:
+        title_attr = (' title="%s"' % html_mod.escape(title)) if title else ''
+        body.append(
+            '<tr%s>'
+            '<th class="mi-label">%s</th>'
+            '<td class="mi-value">%s</td>'
+            '<td class="mi-rating">%s</td>'
+            '<td class="mi-delta">%s</td>'
+            '<td class="mi-delta">%s</td>'
+            '</tr>' % (title_attr, label, value, rating, d1, d4)
+        )
     return (
-        '<div class="fng-card" title="%s 基準">\n'
-        '  <strong><a href="https://nikkei225jp.com/data/sinyou.php"'
-        ' target="_blank" rel="noopener">信用評価</a></strong>\n'
-        '  <span class="fng-score">%.2f%%</span>\n'
-        '  <span>1週比 <span class="%s">%s</span>pt</span>\n'
-        '  <span>4週比 <span class="%s">%s</span>pt</span>\n'
-        '%s'
-        '</div>\n'
-    ) % (
-        html_mod.escape(date_str),
-        eval_rate,
-        html_mod.escape(eval_1w_cls), html_mod.escape(eval_1w),
-        html_mod.escape(eval_4w_cls), html_mod.escape(eval_4w),
-        bairitsu_html,
+        '<table class="market-indicators">\n'
+        '<tbody>\n' + '\n'.join(body) + '\n</tbody>\n'
+        '</table>\n'
     )
 
 
@@ -1703,8 +1734,7 @@ def _html_market(market_db):
     if not rows_html:
         return ""
 
-    fng_html = _html_fear_and_greed(market_db)
-    credit_html = _html_credit_balance(market_db)
+    indicators_html = _html_market_indicators(market_db)
     header_static = (
         '<table class="market-table">\n'
         '<thead><tr>\n'
@@ -1714,7 +1744,7 @@ def _html_market(market_db):
         '</tr></thead>\n'
         '<tbody>'
     )
-    header = '<h2>市場</h2>\n' + fng_html + credit_html + header_static
+    header = '<h2>市場</h2>\n' + indicators_html + header_static
     return header + '\n'.join(rows_html) + '\n</tbody></table>'
 
 

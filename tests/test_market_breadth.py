@@ -53,7 +53,7 @@ def test_parse_credit_balance_bairitsu_can_be_none():
     }]
 
 
-# --- make_market_db._html_credit_balance ---------------------------------
+# --- make_market_db._html_market_indicators (信用評価損益率パート) -------
 
 def _write_credit_json(tmp_path, history):
     """credit_balance.json を $KS_DATA_DIR/code_rank_data/ に書く。"""
@@ -64,8 +64,8 @@ def _write_credit_json(tmp_path, history):
     return path
 
 
-def test_html_credit_balance_renders_eval_and_bairitsu(tmp_path, monkeypatch):
-    """評価率・倍率いずれも 1週比/4週比 pt 差付きで HTML 化される。"""
+def test_market_indicators_renders_eval_and_bairitsu(tmp_path, monkeypatch):
+    """評価率・倍率いずれも 1週/4週前比 pt 差付きで統合表に出る。"""
     history = [
         {"date": "2026-04-03", "credit_eval_rate": -7.67, "credit_bairitsu": 6.07},
         {"date": "2026-04-10", "credit_eval_rate": -6.59, "credit_bairitsu": 5.30},
@@ -76,8 +76,9 @@ def test_html_credit_balance_renders_eval_and_bairitsu(tmp_path, monkeypatch):
     _write_credit_json(tmp_path, history)
     monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
 
-    html = make_market_db._html_credit_balance({})
-    assert "信用評価" in html
+    html = make_market_db._html_market_indicators({})
+    assert 'class="market-indicators"' in html
+    assert "信用評価損益率" in html
     assert 'href="https://nikkei225jp.com/data/sinyou.php"' in html
     assert "-4.82%" in html  # 最新 evaluation rate
     assert "6.85" in html    # 最新 bairitsu
@@ -89,10 +90,10 @@ def test_html_credit_balance_renders_eval_and_bairitsu(tmp_path, monkeypatch):
     assert "+1.11" in html
 
 
-def test_html_credit_balance_returns_empty_when_no_file(tmp_path, monkeypatch):
-    """credit_balance.json が無ければ空文字を返し、市場HTMLを壊さない。"""
+def test_market_indicators_returns_empty_when_no_data(tmp_path, monkeypatch):
+    """credit_balance.json も Fear & Greed も無ければ空文字 (HTML を壊さない)。"""
     monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
-    assert make_market_db._html_credit_balance({}) == ""
+    assert make_market_db._html_market_indicators({}) == ""
 
 
 @pytest.mark.parametrize("latest, prev, expected_text, expected_cls", [
