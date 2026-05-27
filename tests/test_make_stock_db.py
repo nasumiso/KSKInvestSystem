@@ -1021,21 +1021,8 @@ class TestMakeSignalRsLine:
             "price_log": [(d0 - timedelta(days=i), 2000 + (25 - i) * 10) for i in range(25)],
         }
         _, tags = make_stock_db.make_signal(stock)
-        assert "R高" not in tags
         assert "強乖" not in tags
         assert "弱乖" not in tags
-
-    def test_rs_line_new_high_tag(self):
-        """rs_line 新高値発生時に R高 タグが付く"""
-        d0 = date(2026, 4, 28)
-        stock = {
-            "price_log": [(d0 - timedelta(days=i), 2000 + (25 - i) * 10) for i in range(25)],
-        }
-        market_db = {
-            "topix": {"price_log": [(d0 - timedelta(days=i), 1000) for i in range(25)]},
-        }
-        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
-        assert "R高" in tags
 
     def test_rs_line_bullish_divergence_tag(self):
         """強気ダイバージェンス発生時に 強乖 タグが付く"""
@@ -1060,31 +1047,15 @@ class TestMakeSignalRsLine:
         古い銘柄が混じる。連日同じシグナルが残らないように当日限定にする必要がある。
         """
         d0 = date(2026, 4, 28)
-        # 銘柄 price_log は1週間前まで (新高値が立つ条件のデータ)
-        stock = {
-            "price_log": [(d0 - timedelta(days=7 + i), 2000 + (25 - i) * 10) for i in range(25)],
-        }
-        # TOPIX は当日 (d0) まで
-        market_db = {
-            "topix": {"price_log": [(d0 - timedelta(days=i), 1000) for i in range(32)]},
-        }
+        stock_log, topix_log = _make_div_logs(1900, 2000, 900, 1000)
+        # 銘柄 price_log は1週間ずらした古いデータ
+        stale_stock_log = [(d - timedelta(days=7), p) for d, p in stock_log]
+        stock = {"price_log": stale_stock_log}
+        market_db = {"topix": {"price_log": topix_log}}
         _, tags = make_stock_db.make_signal(stock, market_db=market_db)
-        # rs_line[0] は1週間前の日付なので当日扱いにならず、タグは付かない
-        assert "R高" not in tags
+        # rs_line[0] は当日と一致しないため、強乖/弱乖は付かない
         assert "強乖" not in tags
         assert "弱乖" not in tags
-
-    def test_rs_line_tags_emit_when_latest_date_matches(self):
-        """銘柄 price_log[0] の日付が TOPIX price_log[0] と一致する場合はタグが立つ"""
-        d0 = date(2026, 4, 28)
-        stock = {
-            "price_log": [(d0 - timedelta(days=i), 2000 + (25 - i) * 10) for i in range(25)],
-        }
-        market_db = {
-            "topix": {"price_log": [(d0 - timedelta(days=i), 1000) for i in range(25)]},
-        }
-        _, tags = make_stock_db.make_signal(stock, market_db=market_db)
-        assert "R高" in tags
 
 
 # ==================================================
