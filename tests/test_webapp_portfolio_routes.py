@@ -954,8 +954,8 @@ class TestDashboardFilter:
         assert "トヨタ" not in html
         assert "ハーモニック" not in html
 
-    def test_legacy_sort_param_silently_ignored(self, client):
-        """旧 URL ?sort=rank&page=2 が混ざっても 200 で返る (issue #215 silent 無視)。
+    def test_sort_param_still_returns_dashboard(self, client):
+        """?sort=rank&page=2 が混ざっても 200 で返る。
         status 未指定なので デフォルト hold フィルタが効く。"""
         resp = client.get("/portfolio?sort=rank&page=2")
         assert resp.status_code == 200
@@ -963,6 +963,34 @@ class TestDashboardFilter:
         assert "アズーム" in html
         assert "トヨタ" not in html
         assert "ハーモニック" not in html
+
+    def test_sort_links_and_filter_hidden_are_rendered(self, client):
+        """issue #274: 対象ヘッダの sort リンクと filter form の hidden sort を出す"""
+        resp = client.get("/portfolio?status=hold&sort=rank")
+        html = resp.data.decode()
+        assert 'name="sort" value="rank"' in html
+        assert "sort=position" in html
+        assert "sort=rank" in html
+        assert "sort=gyoutai" in html
+
+    def test_sort_links_preserve_all_status_filter(self, client):
+        """issue #274: status= の全件表示から sort を変えても全件表示を維持する"""
+        resp = client.get("/portfolio?status=&sort=rank")
+        html = resp.data.decode()
+        assert "status=&amp;sort=position" in html
+        assert "status=&amp;sort=gyoutai" in html
+
+    def test_gyoutai_boundary_only_for_gyoutai_sort(self, client, portfolio_db_path):
+        """issue #274: 業態境界線は gyoutai sort のときだけ出す"""
+        ps.update_memo("3496", {"gyoutai_themes": ["AI"]}, db_path=portfolio_db_path)
+        ps.update_memo("7203", {"gyoutai_themes": ["自動車"]}, db_path=portfolio_db_path)
+        ps.update_memo("6324", {"gyoutai_themes": ["ロボット"]}, db_path=portfolio_db_path)
+
+        html = client.get("/portfolio?status=&sort=gyoutai").data.decode()
+        assert 'class="gyoutai-boundary"' in html
+
+        html = client.get("/portfolio?status=&sort=rank").data.decode()
+        assert 'class="gyoutai-boundary"' not in html
 
     def test_invalid_status_falls_back_to_all(self, client):
         """不正値だけのフィルタは全件表示にフォールバック (None 扱い)"""

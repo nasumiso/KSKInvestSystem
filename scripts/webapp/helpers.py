@@ -1588,6 +1588,7 @@ def _gyoutai_first_line(row: Dict[str, Any]) -> str:
 
 def list_portfolio_with_indicators(
     records: List[Dict[str, Any]],
+    sort_key: str = "position",
 ) -> List[Dict[str, Any]]:
     """portfolio_shelve のレコード列に stocks_shelve から最新指標を補完する (Phase 3b)。
 
@@ -1596,6 +1597,7 @@ def list_portfolio_with_indicators(
 
     Args:
         records: portfolio_shelve.list_records の戻り値 (既に status 等で絞り込み済み)
+        sort_key: "position" / "rank" / "gyoutai" のいずれか。不正値は position 扱い。
 
     Returns:
         各 dict: portfolio レコード + {stock_name, rank, kessanbi_md, per, market_cap,
@@ -1603,7 +1605,7 @@ def list_portfolio_with_indicators(
                                      quarter, progress_diff, trend_template, tags,
                                      theoretical_diff, gyoseki, indicators_raw,
                                      status_query, status_label}
-        並び順は業態 1 行目昇順 → 順位昇順 → コード (issue #215: 順位ソート廃止、空業態/None順位は末尾)。
+        並び順は sort_key で切替 (issue #274)。
     """
     if not records:
         return []
@@ -1660,14 +1662,27 @@ def list_portfolio_with_indicators(
             if r.get("status") == "1保" and r["position_value"] > 0:
                 r["position_ratio"] = r["position_value"] / max_position * 100.0
 
-    # 業態順: 業態 1 行目 (空は末尾) → 順位昇順 (None は末尾) → コード
-    rows.sort(key=lambda r: (
-        r["gyoutai_first"] == "",
-        r["gyoutai_first"],
-        r.get("rank") is None,
-        r.get("rank") or 0,
-        r.get("code_s", ""),
-    ))
+    if sort_key == "rank":
+        rows.sort(key=lambda r: (
+            r.get("rank") is None,
+            r.get("rank") or 0,
+            r.get("code_s", ""),
+        ))
+    elif sort_key == "gyoutai":
+        # 業態順: 業態 1 行目 (空は末尾) → 順位昇順 (None は末尾) → コード
+        rows.sort(key=lambda r: (
+            r["gyoutai_first"] == "",
+            r["gyoutai_first"],
+            r.get("rank") is None,
+            r.get("rank") or 0,
+            r.get("code_s", ""),
+        ))
+    else:
+        rows.sort(key=lambda r: (
+            r.get("status") != "1保",
+            -(r.get("position_value") or 0),
+            r.get("code_s", ""),
+        ))
     return rows
 
 

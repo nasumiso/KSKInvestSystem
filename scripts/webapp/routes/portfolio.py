@@ -55,6 +55,8 @@ STATUS_CHOICES = [
     ("watch", "3監", STATUS_VALUE_TO_LABEL["3監"]),
 ]
 DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 書き込み POST 後フォールバック先
+PORTFOLIO_SORT_KEYS = {"position", "rank", "gyoutai"}
+DEFAULT_SORT_KEY = "position"
 
 
 def _parse_status_filter(args) -> Optional[str]:
@@ -86,17 +88,35 @@ def _parse_gyoutai_theme(args) -> Optional[str]:
     return raw or None
 
 
-def _build_query_string(status: Optional[str], gyoutai_theme: Optional[str]) -> str:
-    """フィルタから URL クエリ文字列を組み立てる (issue #215)。
+def _parse_sort_key(args) -> str:
+    """request.args から portfolio 一覧の sort key を取り出す (issue #274)。"""
+    raw = (args.get("sort") or "").strip().lower()
+    if raw in PORTFOLIO_SORT_KEYS:
+        return raw
+    return DEFAULT_SORT_KEY
 
-    POST → リダイレクトの戻り先として使う。両方 None なら空文字を返し、
-    呼び出し側 (`_redirect_with_return_query`) でデフォルトに落ちる。
+
+def _build_query_string(
+    status: Optional[str],
+    gyoutai_theme: Optional[str],
+    sort_key: Optional[str] = None,
+) -> str:
+    """フィルタ / ソートから URL クエリ文字列を組み立てる。
+
+    status None は「すべて」の明示選択として `status=` を出す。
     """
     params = []
     if status and status in STATUS_VALUE_TO_QUERY:
         params.append(("status", STATUS_VALUE_TO_QUERY[status]))
+    elif status is None:
+        params.append(("status", ""))
     if gyoutai_theme:
         params.append(("gyoutai_theme", gyoutai_theme))
+    if sort_key:
+        params.append((
+            "sort",
+            sort_key if sort_key in PORTFOLIO_SORT_KEYS else DEFAULT_SORT_KEY,
+        ))
     return urlencode(params)
 
 
@@ -529,16 +549,18 @@ def _build_fallback_records() -> list[dict]:
 
 @portfolio_bp.route("/portfolio")
 def dashboard():
-    """フィルタ型ダッシュボード (issue #215 でページング/ソートは廃止)。
+    """フィルタ型ダッシュボード。
 
     URL クエリ:
-      status:        hold / semi / watch のいずれか単一 (省略時=全ステータス)
+      status:        hold / semi / watch のいずれか単一 (省略時=hold、空文字=全ステータス)
       gyoutai_theme: 業態/テーマ名の完全一致 (省略時=全業態テーマ)
                      指定時は status を無視して全銘柄から該当業態/テーマを抽出。
-    並び順は常時業態順。`sort` / `page` パラメータは silent に無視 (旧 URL 互換)。
+      sort:          position / rank / gyoutai (省略時=position)
+    `page` パラメータは silent に無視 (旧 URL 互換)。
     """
     active_status = _parse_status_filter(request.args)
     active_gyoutai_theme = _parse_gyoutai_theme(request.args)
+    active_sort = _parse_sort_key(request.args)
 
     # issue #186: fallback 判定は除外含む全件で行う (全件除外時の誤判定を避ける)。
     # 表示・件数カウントは除外を弾いた visible_records を使う。
@@ -567,7 +589,7 @@ def dashboard():
         filtered_records = visible_records
     else:
         filtered_records = [r for r in visible_records if r.get("status") == active_status]
-    rows = list_portfolio_with_indicators(filtered_records)
+    rows = list_portfolio_with_indicators(filtered_records, sort_key=active_sort)
 
     # 行ごとに transitions を埋める。fallback 中は空。
     for row in rows:
@@ -582,7 +604,7 @@ def dashboard():
     )
 
     # POST → リダイレクトの戻り先として使う現状クエリ (status/gyoutai_theme)
-    return_query = _build_query_string(active_status, active_gyoutai_theme)
+    return_query = _build_query_string(active_status, active_gyoutai_theme, active_sort)
     # テンプレートで select の selected 判定に使う、active_status の query 形式 (例: "hold")
     active_status_query = (
         STATUS_VALUE_TO_QUERY[active_status] if active_status in STATUS_VALUE_TO_QUERY else ""
@@ -593,6 +615,11 @@ def dashboard():
         gyoutai_theme_choices: list = []
     else:
         gyoutai_theme_choices = collect_gyoutai_theme_choices(all_records_inc)
+
+    sort_urls = {
+        k: "?" + _build_query_string(active_status, active_gyoutai_theme, k)
+        for k in ("position", "rank", "gyoutai")
+    }
 
     # 保有フィルタ表示時のみ、運用総額と PF 全体の qty 最終更新日を集計
     hold_summary = None
@@ -612,6 +639,8 @@ def dashboard():
         status_choices=STATUS_CHOICES,
         active_status_query=active_status_query,
         active_gyoutai_theme=active_gyoutai_theme or "",
+        active_sort=active_sort,
+        sort_urls=sort_urls,
         counts=counts,
         rows=rows,
         total=len(rows),
