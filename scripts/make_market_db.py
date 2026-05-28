@@ -1358,6 +1358,26 @@ def _vi_rating_html(vi):
     return '<span class="fng-rating fng-rating-greed">安穏</span>'
 
 
+# 新高値-新安値 の天井圏/底値圏バッジ閾値。
+# 一般指標が無いため過去 2 年 (2024-05〜2026-05, 503 営業日) の分布から算出した
+# 10/90 percentile。新高値超過 (相場が強い) ほど高く、順相関なので高=天井圏/低=底値圏。
+_BREADTH_CEILING_THRESHOLD = 181   # >=181 で上位 10% (天井圏)
+_BREADTH_BOTTOM_THRESHOLD = -29    # <=-29 で下位 10% (底値圏)
+
+
+def _breadth_rating_html(diff):
+    """新高値-新安値 の天井圏/底値圏バッジ HTML を返す。中間水準は空文字。
+
+    値 (新高値-新安値) は相場と順相関。高い (新高値が多い) ほど過熱=天井圏 (greed 系緑)、
+    低い (新安値が多い) ほど売られすぎ=底値圏 (fear 系) で fng-rating の配色を流用する。
+    """
+    if diff >= _BREADTH_CEILING_THRESHOLD:
+        return '<span class="fng-rating fng-rating-greed">天井圏</span>'
+    if diff <= _BREADTH_BOTTOM_THRESHOLD:
+        return '<span class="fng-rating fng-rating-fear">底値圏</span>'
+    return ''
+
+
 def _load_breadth_json(filename):
     """$KS_DATA_DIR/code_rank_data/<filename> の history リストを返す。
 
@@ -1455,7 +1475,7 @@ def _breadth_row(market_db):
     return (
         label,
         value_html,
-        '',
+        _breadth_rating_html(diff),
         '<span class="%s">%s</span>' % (html_mod.escape(d5_cls), html_mod.escape(d5)),
         '<span class="%s">%s</span>' % (html_mod.escape(d20_cls), html_mod.escape(d20)),
         _format_short_date(latest.get("date", "")),

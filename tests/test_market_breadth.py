@@ -222,6 +222,21 @@ def test_vi_rating_html(vi, expected):
     assert expected in make_market_db._vi_rating_html(vi)
 
 
+@pytest.mark.parametrize("diff, expected_badge, absent_badge", [
+    (200, "天井圏", "底値圏"),   # >=181 で天井圏
+    (-50, "底値圏", "天井圏"),   # <=-29 で底値圏
+    (45, None, None),           # 中間 (中央値付近): バッジなし
+])
+def test_breadth_rating_html(diff, expected_badge, absent_badge):
+    """新高値-新安値 バッジが閾値 (天井>=+181/底<=-29) で出し分けされる (issue #292)。"""
+    html = make_market_db._breadth_rating_html(diff)
+    if expected_badge is None:
+        assert "天井圏" not in html and "底値圏" not in html
+    else:
+        assert expected_badge in html
+        assert absent_badge not in html
+
+
 def _build_history(records, n, key_fn):
     """index -1=最新 / -6=5日前 / -21=20日前 に狙った値が来る 21 件の history を組む。
 
