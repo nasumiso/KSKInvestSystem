@@ -1417,6 +1417,7 @@ def _vi_row(market_db):
     d20, d20_cls = _format_fng_delta(vi, _prev(20))
     label = (
         '<a href="https://nikkei225jp.com/data/vix.php"'
+        ' title="日経平均ボラティリティー・インデックス (恐怖指数)。今後 30 日の予想変動率。高いほど警戒・恐怖。nikkei225jp.com より。"'
         ' target="_blank" rel="noopener">日経VI</a>'
     )
     return (
@@ -1470,6 +1471,7 @@ def _breadth_row(market_db):
         high, low)
     label = (
         '<a href="https://nikkei225jp.com/data/new.php"'
+        ' title="年初来高値を更新した銘柄数から年初来安値更新数を引いた値。プラス=新高値優勢 (強い相場)/マイナス=新安値優勢。nikkei225jp.com より。"'
         ' target="_blank" rel="noopener">新高値-新安値</a>'
     )
     return (
@@ -1502,6 +1504,7 @@ def _fng_row(market_db):
     title = "直近=5日前比 / 中期=20日前比"
     label_html = (
         '<a href="https://edition.cnn.com/markets/fear-and-greed"'
+        ' title="米国株市場の投資家心理を 0-100 で示す指数 (0=極度の恐怖/100=極度の強欲)。CNN 算出。"'
         ' target="_blank" rel="noopener">Fear &amp; Greed</a>'
     )
     value_html = '%.1f' % score
@@ -1549,6 +1552,7 @@ def _credit_rows(market_db):
     e4, e4_cls = _format_credit_delta(eval_rate, _prev("credit_eval_rate", 4))
     eval_label = (
         '<a href="https://nikkei225jp.com/data/sinyou.php"'
+        ' title="信用買い建玉の平均含み損益率 (2 市場)。マイナスが浅い=過熱/深い=売られすぎの目安。nikkei225jp.com (日経新聞算出) より。"'
         ' target="_blank" rel="noopener">信用評価損益率</a>'
     )
     # tooltip: 期間の意味 + 信用倍率 (値と 1週/4週変化) を統合
