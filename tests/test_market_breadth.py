@@ -223,12 +223,12 @@ def test_vi_rating_html(vi, expected):
 
 
 @pytest.mark.parametrize("diff, expected_badge, absent_badge", [
-    (200, "天井圏", "底値圏"),   # >=181 で天井圏
-    (-50, "底値圏", "天井圏"),   # <=-29 で底値圏
-    (45, None, None),           # 中間 (中央値付近): バッジなし
+    (300, "天井圏", "底値圏"),   # >=251 で天井圏
+    (-100, "底値圏", "天井圏"),  # <=-75 で底値圏
+    (-50, None, None),          # 中間 (やや弱いが底値圏ではない): バッジなし
 ])
 def test_breadth_rating_html(diff, expected_badge, absent_badge):
-    """新高値-新安値 バッジが閾値 (天井>=+181/底<=-29) で出し分けされる (issue #292)。"""
+    """新高値-新安値 バッジが閾値 (天井>=+251/底<=-75) で出し分けされる (issue #292)。"""
     html = make_market_db._breadth_rating_html(diff)
     if expected_badge is None:
         assert "天井圏" not in html and "底値圏" not in html

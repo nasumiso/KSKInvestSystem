@@ -1360,9 +1360,11 @@ def _vi_rating_html(vi):
 
 # 新高値-新安値 の天井圏/底値圏バッジ閾値。
 # 一般指標が無いため過去 2 年 (2024-05〜2026-05, 503 営業日) の分布から算出した
-# 10/90 percentile。新高値超過 (相場が強い) ほど高く、順相関なので高=天井圏/低=底値圏。
-_BREADTH_CEILING_THRESHOLD = 181   # >=181 で上位 10% (天井圏)
-_BREADTH_BOTTOM_THRESHOLD = -29    # <=-29 で下位 10% (底値圏)
+# 5/95 percentile。新高値超過 (相場が強い) ほど高く、順相関なので高=天井圏/低=底値圏。
+# 日本株は新高値優勢が常態 (中央値 +45) のため、わずかなマイナスを底値圏としないよう
+# 上下各 5% の極端な水準のみ点灯させる。
+_BREADTH_CEILING_THRESHOLD = 251   # >=251 で上位 5% (天井圏)
+_BREADTH_BOTTOM_THRESHOLD = -75    # <=-75 で下位 5% (底値圏)
 
 
 def _breadth_rating_html(diff):
