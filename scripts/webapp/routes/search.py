@@ -28,6 +28,10 @@ PORTAL_SPREADSHEETS = (
         "url": "https://docs.google.com/spreadsheets/d/1zto-8-fZ5hTZfXY6k2C49HZHbyA3OE8BgkReAViLSNU/edit?usp=sharing",
         "mtime_csv": "code_rank_data/code_rank.csv",
     },
+    {
+        "title": "投資メモ",
+        "url": "https://docs.google.com/document/d/1_O8GdD7SwA6mCMJR5SC362oX1UouJCGworj9z1rZ2I4/edit?usp=sharing",
+    },
 )
 
 
@@ -35,11 +39,15 @@ def _portal_spreadsheets():
     """PORTAL_SPREADSHEETS に最終更新日を付与して返す"""
     cards = []
     for sp in PORTAL_SPREADSHEETS:
-        csv_path = os.path.join(DATA_DIR, sp["mtime_csv"])
-        try:
-            ts = os.path.getmtime(csv_path)
-            updated_at = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
-        except OSError:
+        mtime_csv = sp.get("mtime_csv")
+        if mtime_csv:
+            csv_path = os.path.join(DATA_DIR, mtime_csv)
+            try:
+                ts = os.path.getmtime(csv_path)
+                updated_at = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+            except OSError:
+                updated_at = "—"
+        else:
             updated_at = "—"
         cards.append({
             "title": sp["title"],
