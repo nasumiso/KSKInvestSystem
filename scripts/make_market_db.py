@@ -961,13 +961,14 @@ tr:hover { background: #f5f5f5; }
 /* DD 進行度の警告色 */
 .dd-pressure  { background: #fffbe6; color: #b8860b; font-weight: bold; }
 .dd-correction { background: #fdedec; color: #c0392b; font-weight: bold; }
-/* 市場指標サマリー表 (Fear & Greed / 信用評価損益率 / 信用倍率 統合) */
+/* 市場指標サマリー表 (Fear & Greed / 信用評価損益率 統合。信用倍率は tooltip) */
 .market-indicators { border-collapse: collapse; margin: 0 0 10px 0; background: #fff; width: auto; }
 .market-indicators th, .market-indicators td { padding: 3px 8px; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
 .market-indicators th.mi-label { font-weight: bold; }
 .market-indicators td.mi-value { font-weight: bold; text-align: right; }
 .market-indicators td.mi-rating { text-align: center; padding: 3px 6px; }
 .market-indicators td.mi-delta { text-align: right; }
+.market-indicators td.mi-date { text-align: right; color: #888; font-size: 0.85em; }
 .market-indicators .mi-unit { color: #888; font-size: 0.85em; margin-right: 2px; }
 .fng-rating { padding: 1px 6px; border-radius: 999px; font-size: 0.85em; font-weight: bold; color: #fff; }
 .fng-rating-extreme-fear { background: #a93226; }
@@ -1304,6 +1305,38 @@ def _format_credit_delta(latest, prev):
     return "%+.2f" % delta, cls
 
 
+def _format_short_date(value):
+    """日付を "26/5/22" 形式 (yy/M/d, ゼロ埋めなし) に整形する。
+
+    value は date/datetime か "2026-05-22" 形式の文字列。整形不能なら空文字。
+    """
+    if hasattr(value, "year"):
+        return "%d/%d/%d" % (value.year % 100, value.month, value.day)
+    try:
+        y, m, d = str(value).split("-")[:3]
+        return "%d/%d/%d" % (int(y) % 100, int(m), int(d))
+    except (ValueError, AttributeError):
+        return ""
+
+
+# 信用評価損益率の天井圏/底値圏バッジ閾値。一般目安 (天井 -3% 以上 / 底 -15% 以下)。
+_CREDIT_CEILING_THRESHOLD = -3.0
+_CREDIT_BOTTOM_THRESHOLD = -15.0
+
+
+def _credit_rating_html(eval_rate):
+    """信用評価損益率の天井圏/底値圏バッジ HTML を返す。中間水準は空文字。
+
+    天井圏 (買われすぎ) は greed 系、底値圏 (売られすぎ) は fear 系の
+    fng-rating 配色を流用する。
+    """
+    if eval_rate >= _CREDIT_CEILING_THRESHOLD:
+        return '<span class="fng-rating fng-rating-greed">天井圏</span>'
+    if eval_rate <= _CREDIT_BOTTOM_THRESHOLD:
+        return '<span class="fng-rating fng-rating-fear">底値圏</span>'
+    return ''
+
+
 def _fng_row(market_db):
     """Fear & Greed の表 1 行分 (label_html, value_html, rating_html, d1_html, d4_html, title)。
     取得失敗時は None。"""
@@ -1319,10 +1352,8 @@ def _fng_row(market_db):
     rating_class = "fng-rating-" + rating.replace(" ", "-") if rating else "fng-rating-neutral"
     d5_text, d5_cls = _format_fng_delta(score, fng_db.get("score_5d_ago"))
     d20_text, d20_cls = _format_fng_delta(score, fng_db.get("score_20d_ago"))
-    access_date = fng_db.get("access_date")
-    title = ""
-    if hasattr(access_date, "strftime"):
-        title = "更新: " + access_date.strftime("%Y-%m-%d %H:%M")
+    date_text = _format_short_date(fng_db.get("access_date"))
+    title = "直近=5日前比 / 中期=20日前比"
     label_html = (
         '<a href="https://edition.cnn.com/markets/fear-and-greed"'
         ' target="_blank" rel="noopener">Fear &amp; Greed</a>'
@@ -1331,21 +1362,18 @@ def _fng_row(market_db):
     rating_html = '<span class="fng-rating %s">%s</span>' % (
         html_mod.escape(rating_class), html_mod.escape(rating_label),
     )
-    d1_html = (
-        '<span class="mi-unit">5日</span> '
-        '<span class="%s">%s</span>'
-    ) % (html_mod.escape(d5_cls), html_mod.escape(d5_text))
-    d4_html = (
-        '<span class="mi-unit">20日</span> '
-        '<span class="%s">%s</span>'
-    ) % (html_mod.escape(d20_cls), html_mod.escape(d20_text))
-    return label_html, value_html, rating_html, d1_html, d4_html, title
+    d1_html = '<span class="%s">%s</span>' % (
+        html_mod.escape(d5_cls), html_mod.escape(d5_text))
+    d4_html = '<span class="%s">%s</span>' % (
+        html_mod.escape(d20_cls), html_mod.escape(d20_text))
+    return label_html, value_html, rating_html, d1_html, d4_html, date_text, title
 
 
 def _credit_rows(market_db):
-    """信用評価損益率と信用倍率の表行リストを返す ([(label,value,rating,d1,d4,title), ...])。
+    """信用評価損益率の表行リストを返す ([(label,value,rating,d1,d4,title)])。
     取得失敗時は []。
 
+    信用倍率は独立行をやめ、信用評価損益率行の tooltip に統合する (issue #292)。
     market_db は使わず、$KS_DATA_DIR/code_rank_data/credit_balance.json を読む (issue #211)。
     """
     path = os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json")
@@ -1365,48 +1393,41 @@ def _credit_rows(market_db):
     if eval_rate is None:
         return []
     date_str = latest.get("date", "")
-    title = "%s 基準" % date_str if date_str else ""
 
     def _prev(field, n):
         if len(history) < n + 1:
             return None
         return history[-(n + 1)].get(field)
 
-    rows = []
     e1, e1_cls = _format_credit_delta(eval_rate, _prev("credit_eval_rate", 1))
     e4, e4_cls = _format_credit_delta(eval_rate, _prev("credit_eval_rate", 4))
     eval_label = (
         '<a href="https://nikkei225jp.com/data/sinyou.php"'
         ' target="_blank" rel="noopener">信用評価損益率</a>'
     )
-    rows.append((
-        eval_label,
-        '%.2f%%' % eval_rate,
-        '',
-        '<span class="mi-unit">1週</span> <span class="%s">%s</span>pt' % (
-            html_mod.escape(e1_cls), html_mod.escape(e1)),
-        '<span class="mi-unit">4週</span> <span class="%s">%s</span>pt' % (
-            html_mod.escape(e4_cls), html_mod.escape(e4)),
-        title,
-    ))
+    # tooltip: 期間の意味 + 信用倍率 (値と 1週/4週変化) を統合
+    title_parts = ["直近=1週前比 / 中期=4週前比"]
     if bairitsu is not None:
         b1, b1_cls = _format_credit_delta(bairitsu, _prev("credit_bairitsu", 1))
         b4, b4_cls = _format_credit_delta(bairitsu, _prev("credit_bairitsu", 4))
-        rows.append((
-            '信用倍率',
-            '%.2f' % bairitsu,
-            '',
-            '<span class="mi-unit">1週</span> <span class="%s">%s</span>' % (
-                html_mod.escape(b1_cls), html_mod.escape(b1)),
-            '<span class="mi-unit">4週</span> <span class="%s">%s</span>' % (
-                html_mod.escape(b4_cls), html_mod.escape(b4)),
-            title,
-        ))
-    return rows
+        title_parts.append(
+            "信用倍率 %.2f (1週 %s / 4週 %s)" % (bairitsu, b1, b4))
+    title = " / ".join(title_parts)
+    return [(
+        eval_label,
+        '%.2f%%' % eval_rate,
+        _credit_rating_html(eval_rate),
+        '<span class="%s">%s</span>pt' % (
+            html_mod.escape(e1_cls), html_mod.escape(e1)),
+        '<span class="%s">%s</span>pt' % (
+            html_mod.escape(e4_cls), html_mod.escape(e4)),
+        _format_short_date(date_str),
+        title,
+    )]
 
 
 def _html_market_indicators(market_db):
-    """Fear & Greed と信用評価損益率 / 信用倍率を 1 つの表に統合した HTML を返す。
+    """Fear & Greed と信用評価損益率を 1 つの表に統合した HTML を返す。
 
     取得できる行が 1 つもなければ空文字。
     """
@@ -1419,7 +1440,7 @@ def _html_market_indicators(market_db):
         return ""
 
     body = []
-    for label, value, rating, d1, d4, title in rows:
+    for label, value, rating, d1, d4, date_text, title in rows:
         title_attr = (' title="%s"' % html_mod.escape(title)) if title else ''
         body.append(
             '<tr%s>'
@@ -1428,7 +1449,9 @@ def _html_market_indicators(market_db):
             '<td class="mi-rating">%s</td>'
             '<td class="mi-delta">%s</td>'
             '<td class="mi-delta">%s</td>'
-            '</tr>' % (title_attr, label, value, rating, d1, d4)
+            '<td class="mi-date">%s</td>'
+            '</tr>' % (title_attr, label, value, rating, d1, d4,
+                      html_mod.escape(date_text))
         )
     return (
         '<table class="market-indicators">\n'

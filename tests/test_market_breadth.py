@@ -65,7 +65,7 @@ def _write_credit_json(tmp_path, history):
 
 
 def test_market_indicators_renders_eval_and_bairitsu(tmp_path, monkeypatch):
-    """評価率・倍率いずれも 1週/4週前比 pt 差付きで統合表に出る。"""
+    """評価率は値・変化セルに、倍率は tooltip (title) に統合される (issue #292)。"""
     history = [
         {"date": "2026-04-03", "credit_eval_rate": -7.67, "credit_bairitsu": 6.07},
         {"date": "2026-04-10", "credit_eval_rate": -6.59, "credit_bairitsu": 5.30},
@@ -81,13 +81,40 @@ def test_market_indicators_renders_eval_and_bairitsu(tmp_path, monkeypatch):
     assert "信用評価損益率" in html
     assert 'href="https://nikkei225jp.com/data/sinyou.php"' in html
     assert "-4.82%" in html  # 最新 evaluation rate
-    assert "6.85" in html    # 最新 bairitsu
     # 1週比 (latest - 1個前): -4.82 - (-5.45) = +0.63
     assert "+0.63" in html
     # 4週比 (latest - 4個前): -4.82 - (-7.67) = +2.85
     assert "+2.85" in html
-    # 倍率の 1週比: 6.85 - 5.74 = +1.11
+    # 信用倍率は独立行をやめ tooltip (title 属性) に移設
+    assert 'title="' in html
+    assert "信用倍率 6.85" in html
+    # 倍率の 1週比: 6.85 - 5.74 = +1.11 も tooltip 内
     assert "+1.11" in html
+    # -4.82% は中間水準なのでバッジは出ない
+    assert "天井圏" not in html
+    assert "底値圏" not in html
+    # 更新日は独立列 (mi-date) に 26/5/1 形式 (ゼロ埋めなし) で出る
+    assert 'class="mi-date"' in html
+    assert "26/5/1" in html
+
+
+@pytest.mark.parametrize("eval_rate, expected_badge, absent_badge", [
+    (-2.5, "天井圏", "底値圏"),   # >= -3.0 で天井圏
+    (-16.0, "底値圏", "天井圏"),  # <= -15.0 で底値圏
+    (-8.0, None, None),          # 中間: バッジなし
+])
+def test_market_indicators_credit_badge(tmp_path, monkeypatch, eval_rate, expected_badge, absent_badge):
+    """信用評価損益率の天井圏/底値圏バッジが閾値で出し分けされる (issue #292)。"""
+    _write_credit_json(tmp_path, [
+        {"date": "2026-05-01", "credit_eval_rate": eval_rate, "credit_bairitsu": 6.0},
+    ])
+    monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
+    html = make_market_db._html_market_indicators({})
+    if expected_badge is None:
+        assert "天井圏" not in html and "底値圏" not in html
+    else:
+        assert expected_badge in html
+        assert absent_badge not in html
 
 
 def test_market_indicators_returns_empty_when_no_data(tmp_path, monkeypatch):
