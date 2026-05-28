@@ -295,7 +295,7 @@
                 class="gyoutai-input"
                 title="Ctrl/Cmd+クリックでこのテーマで絞り込み (新タブ)"
                 {% if fallback_mode %}disabled{% endif %}>
-          <option value="">— (未設定)</option>
+          <option value="">—</option>
           {% if current and current not in master_names %}
           <option value="{{ current }}" selected>⚠️ {{ current }}</option>
           {% endif %}
