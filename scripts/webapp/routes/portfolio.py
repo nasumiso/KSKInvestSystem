@@ -22,7 +22,6 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 import portfolio
 import portfolio_shelve as ps
 from webapp.helpers import (
-    collect_gyoutai_theme_choices,
     compute_cell_styles,
     get_stock_data,
     list_portfolio_with_indicators,
@@ -618,11 +617,11 @@ def dashboard():
         STATUS_VALUE_TO_QUERY[active_status] if active_status in STATUS_VALUE_TO_QUERY else ""
     )
 
-    # issue #187: datalist 候補は表示フィルタ/excluded と独立、shelve 内の全レコードから集計
+    # issue #282: テーママスターから候補を取得 (フィルタ select / 入力 select 兼用)
     if fallback_mode:
-        gyoutai_theme_choices: list = []
+        theme_master: list = []
     else:
-        gyoutai_theme_choices = collect_gyoutai_theme_choices(all_records_inc)
+        theme_master = ps.list_themes()
 
     sort_urls = {
         k: "?" + _build_query_string(
@@ -661,7 +660,97 @@ def dashboard():
         delete_mode_allowed=delete_mode_allowed,
         status_label=STATUS_VALUE_TO_LABEL,
         fallback_mode=fallback_mode,
-        gyoutai_theme_choices=gyoutai_theme_choices,
+        theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
         hold_summary=hold_summary,
     )
+
+
+# ===========================================
+# テーママスター編集 (issue #282)
+# ===========================================
+
+@portfolio_bp.route("/portfolio/themes", methods=["GET"])
+def themes_index():
+    """テーママスター一覧・編集画面を表示する。"""
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    themes = ps.list_themes()
+    usage = ps.count_theme_usage()
+    return render_template(
+        "portfolio_themes.html",
+        themes=themes,
+        usage=usage,
+        theme_name_max_len=ps.THEME_NAME_MAX_LEN,
+    )
+
+
+@portfolio_bp.route("/portfolio/themes/create", methods=["POST"])
+def themes_create():
+    """テーマを新規作成して /portfolio/themes に戻る (PRG)。"""
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    name = (request.form.get("name") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    try:
+        ps.create_theme(name, description)
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return redirect(url_for("portfolio.themes_index"))
+    flash(f"テーマ「{name}」を作成しました", "info")
+    return redirect(url_for("portfolio.themes_index"))
+
+
+@portfolio_bp.route("/portfolio/themes/<name>/update", methods=["POST"])
+def themes_update(name: str):
+    """テーマのリネーム / 説明文編集。
+
+    フォームは name + description の両方を常に送る (portfolio_themes.html は
+    edit 開始時に両 input を同時に表示する設計)。よって description フィールドが
+    POST に含まれている場合は空文字でも意図的なクリアとして上書きする。
+    """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    new_name = (request.form.get("name") or "").strip()
+    description = request.form.get("description")
+    try:
+        ps.update_theme(
+            name,
+            new_name=new_name if new_name and new_name != name else None,
+            description=description if description is not None else None,
+        )
+    except KeyError:
+        flash(f"テーマ「{name}」が見つかりません", "error")
+        return redirect(url_for("portfolio.themes_index"))
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return redirect(url_for("portfolio.themes_index"))
+    if new_name and new_name != name:
+        flash(f"テーマを「{name}」→「{new_name}」にリネームしました", "info")
+    else:
+        flash(f"テーマ「{name}」を更新しました", "info")
+    return redirect(url_for("portfolio.themes_index"))
+
+
+@portfolio_bp.route("/portfolio/themes/<name>/delete", methods=["POST"])
+def themes_delete(name: str):
+    """テーマを削除し、全銘柄から除去する。"""
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    try:
+        affected = ps.delete_theme(name)
+    except KeyError:
+        flash(f"テーマ「{name}」が見つかりません", "error")
+        return redirect(url_for("portfolio.themes_index"))
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return redirect(url_for("portfolio.themes_index"))
+    flash(
+        f"テーマ「{name}」を削除しました (影響: {affected} 銘柄)",
+        "info",
+    )
+    return redirect(url_for("portfolio.themes_index"))

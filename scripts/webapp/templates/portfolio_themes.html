@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}テーマ管理 | Shintakane Research{% endblock %}
+
+{% block content %}
+<style>
+  table.themes-table { width: 100%; font-size: 0.9em; }
+  table.themes-table th, table.themes-table td { padding: 0.4em 0.6em; vertical-align: middle; }
+  table.themes-table td.name-cell { font-weight: 600; max-width: 14em; word-break: break-word; }
+  table.themes-table td.desc-cell { color: #555; max-width: 28em; word-break: break-word; }
+  table.themes-table td.usage-cell { text-align: right; color: #666; width: 4em; }
+  table.themes-table td.op-cell { width: 14em; white-space: nowrap; }
+  table.themes-table input[type="text"] { font-size: 0.9em; padding: 0.2em 0.4em; margin: 0; height: auto; width: 100%; }
+  table.themes-table button { font-size: 0.85em; padding: 0.2em 0.6em; margin: 0 0.2em 0 0; height: auto; }
+  .themes-create-form { background: #f5f7fa; border: 1px solid #d8dee6; border-radius: 4px; padding: 0.6em 0.8em; margin-bottom: 1em; }
+  .themes-create-form input[type="text"] { font-size: 0.9em; padding: 0.3em 0.5em; margin: 0; height: auto; }
+  .themes-create-form button { font-size: 0.9em; padding: 0.3em 0.8em; margin: 0; height: auto; }
+</style>
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6em;">
+  <h2 style="margin:0;">テーマ管理</h2>
+  <a href="{{ url_for('portfolio.dashboard') }}" style="font-size:0.9em;">← ポートフォリオに戻る</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  {% for category, message in messages %}
+  <div style="padding:0.5em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;{% if category == 'error' %}background:#ffeaea;color:#c00;border:1px solid #fcc;{% else %}background:#eaffea;color:#060;border:1px solid #cfc;{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+{% endwith %}
+
+<form method="POST" action="{{ url_for('portfolio.themes_create') }}" class="themes-create-form">
+  <div style="display:flex;gap:0.6em;align-items:center;flex-wrap:wrap;">
+    <label style="margin:0;">
+      <span style="color:#666;font-size:0.85em;">名前</span>
+      <input type="text" name="name" required maxlength="{{ theme_name_max_len }}"
+             placeholder="例: 半導体" style="width:12em;">
+    </label>
+    <label style="margin:0;flex:1;min-width:18em;">
+      <span style="color:#666;font-size:0.85em;">説明 (任意)</span>
+      <input type="text" name="description" placeholder="" style="width:100%;">
+    </label>
+    <button type="submit">+ 追加</button>
+  </div>
+</form>
+
+<p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">テーマ {{ themes|length }} 件</p>
+
+{# 各行の編集 / 削除フォームは HTML5 の form="id" 属性でセル横断的に関連付け、
+   td の入れ子構造を壊さない。 #}
+{% for theme in themes %}
+<form id="theme-update-{{ loop.index }}" method="POST"
+      action="{{ url_for('portfolio.themes_update', name=theme.name) }}" style="display:none;"></form>
+<form id="theme-delete-{{ loop.index }}" method="POST"
+      action="{{ url_for('portfolio.themes_delete', name=theme.name) }}" style="display:none;"></form>
+{% endfor %}
+
+<table class="themes-table">
+  <thead>
+    <tr>
+      <th style="text-align:left;">名前</th>
+      <th style="text-align:left;">説明</th>
+      <th style="text-align:right;">使用</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for theme in themes %}
+    {% set uses = usage.get(theme.name, 0) %}
+    {% set fid = 'theme-update-' ~ loop.index %}
+    {% set did = 'theme-delete-' ~ loop.index %}
+    <tr data-name="{{ theme.name }}" data-delete-form="{{ did }}">
+      <td class="name-cell">
+        <span class="display-name">{{ theme.name }}</span>
+        <input type="text" name="name" value="{{ theme.name }}" form="{{ fid }}"
+               required maxlength="{{ theme_name_max_len }}"
+               class="edit-input edit-name" style="display:none;">
+      </td>
+      <td class="desc-cell">
+        <span class="display-desc">{{ theme.description or '' }}</span>
+        <input type="text" name="description" value="{{ theme.description or '' }}" form="{{ fid }}"
+               class="edit-input edit-desc" style="display:none;">
+      </td>
+      <td class="usage-cell">{{ uses }}</td>
+      <td class="op-cell">
+        <span class="display-ops">
+          <button type="button" class="edit-btn" onclick="toggleEdit(this, true)">編集</button>
+          <button type="button" class="delete-btn"
+                  onclick="confirmDeleteTheme({{ theme.name|tojson }}, {{ uses }})">削除</button>
+        </span>
+        <span class="edit-ops" style="display:none;">
+          <button type="submit" form="{{ fid }}">保存</button>
+          <button type="button" onclick="toggleEdit(this, false)">キャンセル</button>
+        </span>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" style="text-align:center;color:#999;padding:1em;">登録済みテーマがありません。上のフォームから追加してください。</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+function toggleEdit(btn, openEdit) {
+  var tr = btn.closest('tr');
+  if (!tr) return;
+  tr.querySelectorAll('.display-name, .display-desc, .display-ops').forEach(function(el) {
+    el.style.display = openEdit ? 'none' : '';
+  });
+  tr.querySelectorAll('.edit-input, .edit-ops').forEach(function(el) {
+    el.style.display = openEdit ? '' : 'none';
+  });
+}
+
+function confirmDeleteTheme(name, uses) {
+  var msg = uses > 0
+    ? 'テーマ「' + name + '」を削除しますか?\n' + uses + ' 銘柄から除去されます。'
+    : 'テーマ「' + name + '」を削除しますか?';
+  if (!confirm(msg)) return;
+  var tr = document.querySelector('tr[data-name="' + CSS.escape(name) + '"]');
+  if (!tr) return;
+  var formId = tr.dataset.deleteForm;
+  var form = document.getElementById(formId);
+  if (form) form.submit();
+}
+</script>
+{% endblock %}

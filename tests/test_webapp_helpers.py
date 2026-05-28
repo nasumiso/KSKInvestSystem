@@ -1797,36 +1797,6 @@ class TestProgressQuarterAndDiff:
         assert diff == "—"
 
 
-class TestCollectGyoutaiThemeChoices:
-    """issue #187: portfolio_shelve 全レコードから datalist 候補を集計する。
-
-    主機能 (flatten + unique + sort + strip) と防御的な missing/empty 系を統合。
-    """
-
-    def test_flatten_unique_sort_with_strip(self):
-        """重複除去 + 五十音/アルファベット昇順ソート + 空白 strip + 空要素除去"""
-        records = [
-            {"memo": {"gyoutai_themes": ["半導体", "AI"]}},
-            {"memo": {"gyoutai_themes": [" AI ", "ロボット", "", "  "]}},  # strip + 空除去
-            {"memo": {"gyoutai_themes": ["半導体"]}},  # 重複
-        ]
-        assert helpers.collect_gyoutai_theme_choices(records) == [
-            "AI", "ロボット", "半導体",
-        ]
-
-    def test_missing_or_invalid_returns_empty(self):
-        """memo 無 / gyoutai_themes None / 空 records / 非str 要素 を防御"""
-        assert helpers.collect_gyoutai_theme_choices([]) == []
-        assert helpers.collect_gyoutai_theme_choices([{}]) == []
-        assert helpers.collect_gyoutai_theme_choices(
-            [{"memo": {"gyoutai_themes": None}}]
-        ) == []
-        # 非str 要素 (None, int) が混入してもクラッシュしない
-        assert helpers.collect_gyoutai_theme_choices(
-            [{"memo": {"gyoutai_themes": ["AI", None, 123, "半導体"]}}]
-        ) == ["AI", "半導体"]
-
-
 class TestListPortfolioWithIndicators:
     """list_portfolio_with_indicators のソート / status_query / status_label 検証。
 

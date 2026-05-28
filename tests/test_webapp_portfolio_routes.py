@@ -49,6 +49,13 @@ def app(portfolio_db_path, stocks_db_path, txt_path, monkeypatch):
     ps.add_to_watch("7203", reason="テスト 2準 用", db_path=portfolio_db_path)
     ps.transition_status("7203", "2準", reason="テスト 2準 へ昇格 (3監→2準)", db_path=portfolio_db_path)
 
+    # issue #282: テストで使うテーマ name をマスター登録
+    for name in ("半導体", "AI", "X", "既存", "EV", "Robotics", "ロボット", "自動車"):
+        try:
+            ps.create_theme(name, db_path=portfolio_db_path)
+        except ValueError:
+            pass  # 重複は無視
+
     # stocks_shelve にダミーデータ
     with ShelveDB(stocks_db_path) as db:
         db["6324"] = {
@@ -777,8 +784,8 @@ class TestGyoutaiThemesPost:
         assert rec["memo"]["gyoutai_themes"] == ["既存"]
         assert rec["memo"]["trade_idea"] == "X"
 
-    def test_dashboard_renders_datalist(self, client, portfolio_db_path):
-        # 候補集計が dashboard のテンプレに渡って HTML に含まれる
+    def test_dashboard_renders_theme_select_options(self, client, portfolio_db_path):
+        """issue #282: テーママスターの name がフィルタ select / 行 select の選択肢として出る"""
         ps.update_memo(
             "6324",
             {"gyoutai_themes": ["半導体", "AI"]},
@@ -787,9 +794,11 @@ class TestGyoutaiThemesPost:
         resp = client.get("/portfolio?status=hold")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert 'id="gyoutai-theme-choices"' in html
-        assert "半導体" in html
-        assert "AI" in html
+        # マスター登録済み name が option として描画される
+        assert '<option value="半導体"' in html
+        assert '<option value="AI"' in html
+        # 旧 datalist は廃止
+        assert 'id="gyoutai-theme-choices"' not in html
 
 
 # ==================================================
