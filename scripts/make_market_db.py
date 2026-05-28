@@ -964,6 +964,11 @@ tr:hover { background: #f5f5f5; }
 /* 市場指標サマリー表 (Fear & Greed / 信用評価損益率 統合。信用倍率は tooltip) */
 .market-indicators { border-collapse: collapse; margin: 0 0 10px 0; background: #fff; width: auto; }
 .market-indicators th, .market-indicators td { padding: 3px 8px; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
+.market-indicators thead th { background: #f0f0f0; font-weight: bold; color: #555; }
+.market-indicators thead th.mi-value { text-align: right; }
+.market-indicators thead th.mi-rating { text-align: center; }
+.market-indicators thead th.mi-delta { text-align: right; }
+.market-indicators thead th.mi-date { text-align: right; }
 .market-indicators th.mi-label { font-weight: bold; }
 .market-indicators td.mi-value { font-weight: bold; text-align: right; }
 .market-indicators td.mi-rating { text-align: center; padding: 3px 6px; }
@@ -1453,8 +1458,19 @@ def _html_market_indicators(market_db):
             '</tr>' % (title_attr, label, value, rating, d1, d4,
                       html_mod.escape(date_text))
         )
+    header = (
+        '<thead><tr>'
+        '<th class="mi-label">指標</th>'
+        '<th class="mi-value">値</th>'
+        '<th class="mi-rating">評価</th>'
+        '<th class="mi-delta">直近</th>'
+        '<th class="mi-delta">中期</th>'
+        '<th class="mi-date">更新日</th>'
+        '</tr></thead>\n'
+    )
     return (
         '<table class="market-indicators">\n'
+        + header +
         '<tbody>\n' + '\n'.join(body) + '\n</tbody>\n'
         '</table>\n'
     )
