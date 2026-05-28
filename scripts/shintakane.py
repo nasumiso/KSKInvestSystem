@@ -1575,6 +1575,82 @@ def update_credit_balance():
     )
 
 
+def update_new_high_low():
+    """年初来 新高値/新安値 銘柄数を nikkei225jp.com から取得して JSON 保存 (issue #292)。
+
+    キャッシュ・失敗時の扱いは update_credit_balance と同じ (デイリー全体は止めない)。
+    """
+    import market_breadth
+
+    out_path = os.path.join(DATA_DIR, "code_rank_data", "new_high_low.json")
+    today = get_price_day(datetime.today())
+    if _credit_cache_is_fresh(out_path, today):
+        log_print(f"---- 新高値新安値 キャッシュ有効のためスキップ (generated_at={today.isoformat()})")
+        return
+
+    log_print("----> 新高値新安値 更新")
+    try:
+        rows = market_breadth.fetch_new_high_low()
+    except Exception as e:
+        log_warning(f"[new_high_low] 取得失敗のためスキップ: {e}")
+        return
+    if not rows:
+        log_warning("[new_high_low] 取得結果が空")
+        return
+    history = rows[-30:]
+    payload = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "source": "nikkei225jp.com (new.php)",
+        "latest": history[-1],
+        "history": history,
+    }
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    log_print(
+        f"<---- 新高値新安値 更新完了 latest={history[-1]['date']} "
+        f"高={history[-1]['new_high']} 安={history[-1]['new_low']}"
+    )
+
+
+def update_nikkei_vi():
+    """日経VI (恐怖指数) を nikkei225jp.com から取得して JSON 保存 (issue #292)。
+
+    キャッシュ・失敗時の扱いは update_credit_balance と同じ (デイリー全体は止めない)。
+    """
+    import market_breadth
+
+    out_path = os.path.join(DATA_DIR, "code_rank_data", "nikkei_vi.json")
+    today = get_price_day(datetime.today())
+    if _credit_cache_is_fresh(out_path, today):
+        log_print(f"---- 日経VI キャッシュ有効のためスキップ (generated_at={today.isoformat()})")
+        return
+
+    log_print("----> 日経VI 更新")
+    try:
+        rows = market_breadth.fetch_nikkei_vi()
+    except Exception as e:
+        log_warning(f"[nikkei_vi] 取得失敗のためスキップ: {e}")
+        return
+    if not rows:
+        log_warning("[nikkei_vi] 取得結果が空")
+        return
+    history = rows[-30:]
+    payload = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "source": "nikkei225jp.com (vix.php)",
+        "latest": history[-1],
+        "history": history,
+    }
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    log_print(
+        f"<---- 日経VI 更新完了 latest={history[-1]['date']} "
+        f"vi={history[-1]['nikkei_vi']}"
+    )
+
+
 def main(force=False):
     """メイン関数"""
     # TODO: 新高値更新タイミングをタグで
@@ -1595,6 +1671,8 @@ def main(force=False):
         get_todays_pts(force=force)
         update_todays_news()
         update_credit_balance()
+        update_new_high_low()
+        update_nikkei_vi()
     # 新高値銘柄の各種解析
     if "analyze" in args:
         todays_shintakane(UPD_INTERVAL)  # UPD_FORCE/UPD_INTERVAL/UPD_CACHE/UPD_REEVAL
