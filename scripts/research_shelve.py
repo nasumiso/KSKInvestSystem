@@ -21,6 +21,7 @@ import fcntl
 import os
 import re
 import threading
+import unicodedata
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
@@ -806,8 +807,19 @@ def _parse_rating_filter(rating: Optional[str]) -> Optional[set]:
     return set(tokens)
 
 
-def _matches_keyword(record: Dict[str, Any], keyword_lower: str) -> bool:
-    """レコードが keyword (小文字) を含むかを判定する。
+def normalize_for_search(text: str) -> str:
+    """検索照合用に文字列を正規化する。
+
+    NFKC で全角英数字記号を半角へ畳み込み (例: 'ＫＯＡ' → 'KOA')、
+    さらに小文字化する。これにより半角キーワードで全角データに
+    マッチできる (逆も同様)。比較する keyword 側・フィールド値側の
+    双方に同じ正規化をかけて使う。
+    """
+    return unicodedata.normalize("NFKC", text).lower()
+
+
+def _matches_keyword(record: Dict[str, Any], keyword_norm: str) -> bool:
+    """レコードが keyword (正規化済み) を含むかを判定する。
 
     HTML タグが含まれるフィールドではタグを除去してから検索する。
     """
@@ -818,7 +830,7 @@ def _matches_keyword(record: Dict[str, Any], keyword_lower: str) -> bool:
         if not isinstance(value, str):
             continue
         plain = strip_html_tags(value)
-        if keyword_lower in plain.lower():
+        if keyword_norm in normalize_for_search(plain):
             return True
     return False
 
@@ -837,7 +849,7 @@ def list_research_records(
     - 結果は code_s 昇順
     """
     rating_set = _parse_rating_filter(rating)
-    keyword_lower = keyword.lower() if keyword else None
+    keyword_norm = normalize_for_search(keyword) if keyword else None
     path = _resolve_db_path(db_path)
 
     results: List[Dict[str, Any]] = []
@@ -848,8 +860,8 @@ def list_research_records(
             if rating_set is not None:
                 if record.get("overall_rating", "") not in rating_set:
                     continue
-            if keyword_lower is not None:
-                if not _matches_keyword(record, keyword_lower):
+            if keyword_norm is not None:
+                if not _matches_keyword(record, keyword_norm):
                     continue
             results.append(record)
 
