@@ -1342,6 +1342,127 @@ def _credit_rating_html(eval_rate):
     return ''
 
 
+# 日経VI の評価バッジ閾値。一般目安 (平常時 20 前後、30 超で恐怖、40 超でパニック)。
+def _vi_rating_html(vi):
+    """日経VI の安穏/警戒/恐怖/パニックバッジ HTML を返す。
+
+    <20=安穏 (greed 系緑) / 20-30=警戒 (neutral 系) / 30-40=恐怖 (fear 系) /
+    >=40=パニック (extreme-fear 系) で fng-rating の配色を流用する。
+    """
+    if vi >= 40:
+        return '<span class="fng-rating fng-rating-extreme-fear">パニック</span>'
+    if vi >= 30:
+        return '<span class="fng-rating fng-rating-fear">恐怖</span>'
+    if vi >= 20:
+        return '<span class="fng-rating fng-rating-neutral">警戒</span>'
+    return '<span class="fng-rating fng-rating-greed">安穏</span>'
+
+
+def _load_breadth_json(filename):
+    """$KS_DATA_DIR/code_rank_data/<filename> の history リストを返す。
+
+    ファイル無し・形式不正・history 空なら None。
+    """
+    path = os.path.join(DATA_DIR, "code_rank_data", filename)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, ValueError):
+        return None
+    history = payload.get("history") or []
+    return history or None
+
+
+def _vi_row(market_db):
+    """日経VI の表 1 行分タプルを返す。取得失敗時は None。
+
+    値=最新VI、評価=安穏/警戒/恐怖/パニック、直近=5日前比、中期=20日前比。
+    """
+    history = _load_breadth_json("nikkei_vi.json")
+    if not history:
+        return None
+    latest = history[-1]
+    vi = latest.get("nikkei_vi")
+    if vi is None:
+        return None
+
+    def _prev(n):
+        if len(history) < n + 1:
+            return None
+        return history[-(n + 1)].get("nikkei_vi")
+
+    d5, d5_cls = _format_fng_delta(vi, _prev(5))
+    d20, d20_cls = _format_fng_delta(vi, _prev(20))
+    label = (
+        '<a href="https://nikkei225jp.com/data/vix.php"'
+        ' target="_blank" rel="noopener">日経VI</a>'
+    )
+    return (
+        label,
+        '%.2f' % vi,
+        _vi_rating_html(vi),
+        '<span class="%s">%s</span>' % (html_mod.escape(d5_cls), html_mod.escape(d5)),
+        '<span class="%s">%s</span>' % (html_mod.escape(d20_cls), html_mod.escape(d20)),
+        _format_short_date(latest.get("date", "")),
+        "直近=5日前比 / 中期=20日前比",
+    )
+
+
+def _breadth_row(market_db):
+    """新高値-新安値 の差分を 1 項目にまとめた表 1 行分タプルを返す。取得失敗時は None。
+
+    値=最新の(新高値-新安値)、直近=5日前の差分との変化量、中期=20日前の差分との変化量。
+    tooltip に新高値/新安値の内訳を併記する。
+    """
+    history = _load_breadth_json("new_high_low.json")
+    if not history:
+        return None
+    latest = history[-1]
+    high, low = latest.get("new_high"), latest.get("new_low")
+    if high is None or low is None:
+        return None
+    diff = high - low
+
+    def _prev_diff(n):
+        if len(history) < n + 1:
+            return None
+        rec = history[-(n + 1)]
+        h, l = rec.get("new_high"), rec.get("new_low")
+        if h is None or l is None:
+            return None
+        return h - l
+
+    def _int_delta(prev):
+        """差分 (整数) の変化量を +N/-N 形式で返す。prev が None なら ('—', '')。"""
+        if prev is None:
+            return "—", ""
+        delta = diff - prev
+        cls = "fng-delta-pos" if delta >= 0 else "fng-delta-neg"
+        return "%+d" % delta, cls
+
+    d5, d5_cls = _int_delta(_prev_diff(5))
+    d20, d20_cls = _int_delta(_prev_diff(20))
+    # diff 自体は符号付き整数。+N/-N 表記に揃える
+    value_html = '%+d' % diff
+    title = "新高値 %d / 新安値 %d / 直近=5日前差分との変化 / 中期=20日前差分との変化" % (
+        high, low)
+    label = (
+        '<a href="https://nikkei225jp.com/data/new.php"'
+        ' target="_blank" rel="noopener">新高値-新安値</a>'
+    )
+    return (
+        label,
+        value_html,
+        '',
+        '<span class="%s">%s</span>' % (html_mod.escape(d5_cls), html_mod.escape(d5)),
+        '<span class="%s">%s</span>' % (html_mod.escape(d20_cls), html_mod.escape(d20)),
+        _format_short_date(latest.get("date", "")),
+        title,
+    )
+
+
 def _fng_row(market_db):
     """Fear & Greed の表 1 行分 (label_html, value_html, rating_html, d1_html, d4_html, title)。
     取得失敗時は None。"""
@@ -1432,7 +1553,7 @@ def _credit_rows(market_db):
 
 
 def _html_market_indicators(market_db):
-    """Fear & Greed と信用評価損益率を 1 つの表に統合した HTML を返す。
+    """Fear & Greed / 信用評価損益率 / 日経VI / 新高値-新安値 を 1 つの表に統合した HTML を返す。
 
     取得できる行が 1 つもなければ空文字。
     """
@@ -1441,6 +1562,12 @@ def _html_market_indicators(market_db):
     if fng is not None:
         rows.append(fng)
     rows.extend(_credit_rows(market_db))
+    vi = _vi_row(market_db)
+    if vi is not None:
+        rows.append(vi)
+    breadth = _breadth_row(market_db)
+    if breadth is not None:
+        rows.append(breadth)
     if not rows:
         return ""
 

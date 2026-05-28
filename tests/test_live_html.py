@@ -204,6 +204,32 @@ class TestLiveHtmlCreditBalance:
         _sleep()
 
 
+class TestLiveHtmlNikkei225jp:
+    """market_breadth.py — nikkei225jp.com 日経VI / 新高値新安値 取得→パース (issue #292)
+
+    JSON ファイル名 (SL621_1990.json / daily2year.json) や列構成が変わると失敗する。
+    """
+
+    def test_日経VIの抽出(self):
+        rows = market_breadth.fetch_nikkei_vi()
+        assert isinstance(rows, list) and len(rows) > 0
+        recent = rows[-30:]
+        assert all(isinstance(r["nikkei_vi"], float) for r in recent)
+        dates = [r["date"] for r in recent]
+        assert dates == sorted(dates)
+        _sleep()
+
+    def test_新高値新安値の抽出(self):
+        rows = market_breadth.fetch_new_high_low()
+        assert isinstance(rows, list) and len(rows) > 0
+        recent = rows[-30:]
+        assert all(isinstance(r["new_high"], int) and isinstance(r["new_low"], int)
+                   for r in recent)
+        dates = [r["date"] for r in recent]
+        assert dates == sorted(dates)
+        _sleep()
+
+
 class TestLiveHtmlDisclosure:
     """disclosure.py — kabutanニュースHTML取得→パース"""
 

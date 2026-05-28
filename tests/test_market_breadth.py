@@ -1,4 +1,4 @@
-"""market_breadth / 信用評価関連のテスト (issue #211)。"""
+"""market_breadth / 信用評価・日経VI・新高値新安値関連のテスト (issue #211, #292)。"""
 
 import json
 import os
@@ -176,3 +176,95 @@ def test_update_credit_balance_fetches_when_cache_stale(tmp_path, monkeypatch):
         fake_fetch.assert_called_once()
     payload = json.loads(cache.read_text(encoding="utf-8"))
     assert payload["latest"]["date"] == "2026-05-22"
+
+
+# --- issue #292: 日経VI / 新高値-新安値 ----------------------------------
+
+def test_parse_js_rows_handles_trailing_empty_row():
+    """daily2year.json の最終行は連続カンマ ([..,,,]) を含むため null 補正でパースする。
+
+    新高値/新安値が空の最終行は fetch_new_high_low 側でスキップされる。
+    """
+    text = (
+        "var DAILY = [\n"
+        "[%d,64999.41,2461,\"\",\"\",720,790,84.14,88,131,1510],\n"
+        "[%d,64693.12,2608,\"\",\"\",767,748,86.66,,,1515]\n"
+        "];" % (TS_0424, TS_0501)
+    )
+    rows = market_breadth._parse_js_rows(text, "DAILY")
+    assert len(rows) == 2
+    assert rows[0][8] == 88 and rows[0][9] == 131
+    # 連続カンマ箇所は null (None) に補正される
+    assert rows[1][8] is None and rows[1][9] is None
+
+
+def test_fetch_new_high_low_skips_unconfirmed_row():
+    """新高値/新安値が数値でない最終行 (当日未確定) はスキップされる。"""
+    text = (
+        "var DAILY = [\n"
+        "[%d,0,0,0,0,0,0,0,88,131,0],\n"
+        "[%d,0,0,0,0,0,0,0,,,0]\n"
+        "];" % (TS_0424, TS_0501)
+    )
+    with patch("market_breadth._fetch_nikkei_json", return_value=text):
+        out = market_breadth.fetch_new_high_low()
+    assert out == [{"date": "2026-04-24", "new_high": 88, "new_low": 131}]
+
+
+@pytest.mark.parametrize("vi, expected", [
+    (16.77, "安穏"),
+    (24.0, "警戒"),
+    (33.0, "恐怖"),
+    (45.0, "パニック"),
+])
+def test_vi_rating_html(vi, expected):
+    """日経VI バッジが閾値 (<20/20-30/30-40/>=40) で出し分けされる。"""
+    assert expected in make_market_db._vi_rating_html(vi)
+
+
+def _build_history(records, n, key_fn):
+    """index -1=最新 / -6=5日前 / -21=20日前 に狙った値が来る 21 件の history を組む。
+
+    records は {0: 最新, 5: 5日前, 20: 20日前} の dict (キーは「N営業日前」)。
+    指定の無い index はダミー値 key_fn(i) で埋める。
+    """
+    hist = []
+    for i in range(20, -1, -1):  # 20日前 → 最新 の順
+        hist.append({"date": "2026-05-%02d" % (21 - i), **(records.get(i) or key_fn(i))})
+    return hist
+
+
+def test_vi_and_breadth_rows_in_indicators(tmp_path, monkeypatch):
+    """日経VI と 新高値-新安値 が変化量付きで統合表に出る (issue #292)。
+
+    index -1=最新 / -6=5日前 / -21=20日前 を基準に直近/中期の変化量を検証する。
+    """
+    code_rank = tmp_path / "code_rank_data"
+    code_rank.mkdir(parents=True)
+    # 日経VI: 最新 16.77 / 5日前 16.5 (直近 +0.3) / 20日前 17.0 (中期 -0.2)
+    vi_hist = _build_history(
+        {0: {"nikkei_vi": 16.77}, 5: {"nikkei_vi": 16.5}, 20: {"nikkei_vi": 17.0}},
+        20, lambda i: {"nikkei_vi": 16.0})
+    (code_rank / "nikkei_vi.json").write_text(
+        json.dumps({"history": vi_hist}), encoding="utf-8")
+    # 新高値-新安値: 最新 -43 (88-131) / 5日前 -80 (直近 +37) / 20日前 -140 (中期 +97)
+    nhl_hist = _build_history(
+        {0: {"new_high": 88, "new_low": 131},
+         5: {"new_high": 70, "new_low": 150},
+         20: {"new_high": 60, "new_low": 200}},
+        20, lambda i: {"new_high": 50, "new_low": 50})
+    (code_rank / "new_high_low.json").write_text(
+        json.dumps({"history": nhl_hist}), encoding="utf-8")
+    monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
+
+    html = make_market_db._html_market_indicators({})
+    # 日経VI 行: 値 + バッジ + 直近 +0.3 / 中期 -0.2
+    assert "日経VI" in html
+    assert "16.77" in html
+    assert "安穏" in html
+    assert "+0.3" in html and "-0.2" in html
+    # 新高値-新安値 行: 値 -43、直近 +37 / 中期 +97、内訳は tooltip
+    assert "新高値-新安値" in html
+    assert "-43" in html
+    assert "+37" in html and "+97" in html
+    assert "新高値 88 / 新安値 131" in html
