@@ -128,15 +128,15 @@ issue #283 の検討過程で「グループの点火を RS ライン新高値 (
 
 - **キャッシュは入れない** (シンプル優先、既存 `theme_rank` / 銘柄詳細と同じく都度計算)
 - N+1 を避けるため、`make_stock_db._topix_close_map(market_db)` で **TOPIX 終値マップを 1 回だけ構築**し、全銘柄の rs_line 計算に `topix_map=` で渡す
-- **再計算回避と既存 API 不変更の両立** (codex 指摘②への対応): 銘柄ごとに `rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)` を 1 回だけ計算し、A/B は既存内部関数 `make_stock_db._rs_line_changes_from_line(rs_line)` を helpers から直接呼んで `(a, b, _)` を得る
-  - 理由: 公開関数 `compute_rs_line_changes()` は `rs_line=` 引数を持たず内部で `compute_rs_line` を再呼び出しするため、これを使うと rs_line が二重計算になる。`_rs_line_changes_from_line` は rs_line を直接受ける純粋関数なので、計算済み rs_line をそのまま渡せる
+- **公開 API を使い private 関数には依存しない** (simplify レビューでの方針確定): 銘柄ごとに公開関数 `compute_rs_line_changes(stock, market_db, topix_map=topix_map)` を呼んで `(A, B)` を得る。`topix_map` を渡すことで内部 `compute_rs_line` の TOPIX マップ再構築を避ける
+  - 当初は再計算回避のため内部関数 `_rs_line_changes_from_line(rs_line)` を直接呼ぶ案だったが、private 関数への越境依存 (カプセル化の崩れ・テストの脆さ) を避けるため公開 API に統一。`compute_rs_line` の二重計算は発生するが、ポートフォリオは数百銘柄規模で影響は無視できる
   - 既存関数のシグネチャは一切変更しない (API 変更なし)
 - 銘柄数 200・テーマ数 30 想定で 1 リクエスト数百 ms 見込み。rs_line 計算は price_log のスライス比較のみで重くない
 
 ### 欠損銘柄の扱い
 
 - `momentum_pt` が None / 欠損のものは集計対象から除外 (count には含める = テーマに属する全銘柄数)
-- rs_line がデータ不足 (`_rs_line_changes_from_line` が A / B に None を返す) の銘柄は、その指標 (slope_a / slope_b) の平均から個別に除外する (A は取れるが B は None、というケースもあるため指標ごとに有効銘柄数で平均)
+- rs_line がデータ不足 (`compute_rs_line_changes` が A / B に None を返す) の銘柄は、その指標 (slope_a / slope_b) の平均から個別に除外する (A は取れるが B は None、というケースもあるため指標ごとに有効銘柄数で平均)
 - 集計対象が 0 銘柄ならその指標は `None` (テンプレ側で "—" 表示)
 
 ### リターン計算
@@ -173,7 +173,7 @@ def build_portfolio_theme_summary(
 
 - `_bulk_get_stock_data` / `_bulk_resolve_stock_names` を流用
 - market_db は `from make_market_db import get_market_db` の遅延 import で取得
-- rs_line 系は `from make_stock_db import compute_rs_line, _topix_close_map, _rs_line_changes_from_line` を遅延 import
+- rs_line 系は `from make_stock_db import compute_rs_line_changes, _topix_close_map` を遅延 import
 - 戻り値は完全な dict (テンプレで `.get` フォールバック不要)
 
 ---
@@ -246,15 +246,14 @@ WebApp ルートのテストは `tests/test_webapp_routes.py` に 1 本追加:
 ## 依存関係
 
 - 短期層は **#155 (rs_line) の指標 A / B 実装完了が前提**。実装済み:
-  - `compute_rs_line_changes()` (A / B) / `_rs_line_changes_from_line()` — `make_stock_db.py:288 / 332`
+  - `compute_rs_line_changes()` (A / B) — `make_stock_db.py:288`
   - `compute_rs_line()` / `_topix_close_map()` — `make_stock_db.py`
 
 ## 想定リスク
 
 - **テーマ名の表記揺れ**: portfolio_theme_master 完了前は同義語・誤字が別テーマとして集計される。可視化の副次効果として有用なのでそのまま表示
 - **構成銘柄 1 のテーマ**: momentum_pt 平均 = その銘柄自体。マーカー表示で目視抑制
-- **rs_line 計算コスト**: `_topix_close_map` を 1 回構築 + 銘柄ごと rs_line 1 回計算 + `_rs_line_changes_from_line` に渡して再計算回避すれば数百 ms 程度。キャッシュなし
-- **内部関数 `_rs_line_changes_from_line` への依存**: 先頭 `_` の非公開関数を helpers から呼ぶ。既存 `get_rs_line_changes_expr` も同じ内部関数を使っており、変更時は両方が影響を受ける既知の結合
+- **rs_line 計算コスト**: `_topix_close_map` を 1 回構築 + 銘柄ごと `compute_rs_line_changes` を呼ぶ (同一銘柄が複数テーマに属しても slope_by_code で 1 回に集約)。数百銘柄規模で数百 ms 程度。キャッシュなし
 
 ## 実装規模見込み
 

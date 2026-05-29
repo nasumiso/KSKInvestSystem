@@ -2652,3 +2652,142 @@ class TestBuildGyosekiTooltips:
     ])
     def test_tooltip_format(self, expr, expected):
         assert helpers.build_gyoseki_tooltips(expr) == expected
+
+
+class TestBuildPortfolioThemeSummary:
+    """build_portfolio_theme_summary のテスト (issue #283)。
+
+    rs_line 系 (compute_rs_line_changes) と DB バルク取得は monkeypatch で
+    固定値に差し替え、集約ロジック (平均 / 除外 / ソート) を検証する。
+    """
+
+    def _record(self, code_s, themes, status="3監"):
+        return {"code_s": code_s, "status": status,
+                "memo": {"gyoutai_themes": themes}}
+
+    def test_basic_aggregation(self, monkeypatch):
+        """2 テーマ × 3 銘柄で momentum_pt 平均/最大・リターンが期待通り。"""
+        records = [
+            self._record("1111", ["半導体"]),
+            self._record("2222", ["半導体"]),
+            self._record("3333", ["防衛"]),
+        ]
+        stock_data = {
+            "1111": {"stock_name": "A", "momentum_pt": 80,
+                     "price_log": [("d0", 110)] + [("d", 100)] * 70},
+            "2222": {"stock_name": "B", "momentum_pt": 60,
+                     "price_log": [("d0", 90)] + [("d", 100)] * 70},
+            "3333": {"stock_name": "C", "momentum_pt": 50, "price_log": []},
+        }
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(
+            helpers, "_bulk_resolve_stock_names",
+            lambda codes: {c: stock_data[c]["stock_name"] for c in codes},
+        )
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: None)  # rs_line スキップ
+
+        out = helpers.build_portfolio_theme_summary(records=records, sort_key="momentum")
+        by_theme = {t["theme"]: t for t in out}
+        assert by_theme["半導体"]["member_count"] == 2
+        assert by_theme["半導体"]["momentum_pt_avg"] == 70.0  # (80+60)/2
+        assert by_theme["半導体"]["momentum_pt_max"] == 80.0
+        assert round(by_theme["半導体"]["ret_20d_avg"], 1) == 0.0  # (+10% + -10%)/2
+        # 半導体 (avg 70) が 防衛 (avg 50) より先 (momentum 降順)
+        assert out[0]["theme"] == "半導体"
+
+    def test_same_code_in_two_themes(self, monkeypatch):
+        """同一銘柄が 2 テーマに属する場合、両テーマで集計される。"""
+        records = [self._record("1111", ["半導体", "AI"])]
+        stock_data = {"1111": {"stock_name": "A", "momentum_pt": 80, "price_log": []}}
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names",
+                            lambda codes: {"1111": "A"})
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: None)
+
+        out = helpers.build_portfolio_theme_summary(records=records)
+        themes = {t["theme"] for t in out}
+        assert themes == {"半導体", "AI"}
+        for t in out:
+            assert t["member_count"] == 1
+            assert t["momentum_pt_avg"] == 80.0
+
+    def test_missing_momentum_excluded_but_counted(self, monkeypatch):
+        """momentum_pt 欠損銘柄は集計から除外されるが member_count には含まれる。"""
+        records = [
+            self._record("1111", ["半導体"]),
+            self._record("2222", ["半導体"]),  # momentum_pt 欠損
+        ]
+        stock_data = {
+            "1111": {"stock_name": "A", "momentum_pt": 80, "price_log": []},
+            "2222": {"stock_name": "B", "price_log": []},  # momentum_pt なし
+        }
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names",
+                            lambda codes: {c: stock_data[c]["stock_name"] for c in codes})
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: None)
+
+        out = helpers.build_portfolio_theme_summary(records=records)
+        t = out[0]
+        assert t["member_count"] == 2          # 欠損も数える
+        assert t["momentum_pt_avg"] == 80.0     # 欠損は平均から除外
+        assert len(t["leaders"]) == 1           # momentum_pt がある銘柄のみ
+
+    def test_slope_aggregation_excludes_none(self, monkeypatch):
+        """短期スロープ: rs_line データ不足銘柄 (None) は平均から除外される。"""
+        records = [
+            self._record("1111", ["半導体"]),
+            self._record("2222", ["半導体"]),
+        ]
+        stock_data = {
+            "1111": {"stock_name": "A", "momentum_pt": 80, "price_log": []},
+            "2222": {"stock_name": "B", "momentum_pt": 60, "price_log": []},
+        }
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names",
+                            lambda codes: {c: stock_data[c]["stock_name"] for c in codes})
+        import make_market_db
+        import make_stock_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"topix": {}})
+        monkeypatch.setattr(make_stock_db, "_topix_close_map", lambda mdb: {"d": 1.0})
+        # 公開 API compute_rs_line_changes を stock 名から (A, B) を返すよう差し替え。
+        # A=有効/B=None, A=有効/B=有効 を返し分け
+        slope_map = {"A": (2.0, None), "B": (4.0, 8.0)}
+        monkeypatch.setattr(
+            make_stock_db, "compute_rs_line_changes",
+            lambda stock, mdb, topix_map=None: slope_map[stock["stock_name"]],
+        )
+        out = helpers.build_portfolio_theme_summary(records=records)
+        t = out[0]
+        assert t["slope_a_avg"] == 3.0          # (2.0 + 4.0) / 2
+        assert t["slope_b_avg"] == 8.0          # B のみ有効 (A の B は None で除外)
+
+    @pytest.mark.parametrize("sort_key,expected_first", [
+        ("momentum", "強"),    # momentum_pt 平均が高いテーマが先頭
+        ("slope_a", "急"),     # slope_a 平均が高いテーマが先頭
+    ])
+    def test_sort_key_switch(self, monkeypatch, sort_key, expected_first):
+        """sort_key で momentum / slope_a の並び順が切り替わる。"""
+        records = [
+            self._record("1111", ["強"]),   # momentum 高, slope 低
+            self._record("2222", ["急"]),   # momentum 低, slope 高
+        ]
+        stock_data = {
+            "1111": {"stock_name": "S", "momentum_pt": 90, "price_log": []},
+            "2222": {"stock_name": "Q", "momentum_pt": 40, "price_log": []},
+        }
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names",
+                            lambda codes: {c: stock_data[c]["stock_name"] for c in codes})
+        import make_market_db
+        import make_stock_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"topix": {}})
+        monkeypatch.setattr(make_stock_db, "_topix_close_map", lambda mdb: {"d": 1.0})
+        slope_map = {"S": (1.0, 1.0), "Q": (9.0, 9.0)}
+        monkeypatch.setattr(make_stock_db, "compute_rs_line_changes",
+                            lambda stock, mdb, topix_map=None: slope_map[stock["stock_name"]])
+
+        out = helpers.build_portfolio_theme_summary(records=records, sort_key=sort_key)
+        assert out[0]["theme"] == expected_first

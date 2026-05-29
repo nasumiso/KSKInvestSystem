@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}業態テーマ別 RS サマリー | Shintakane Research{% endblock %}
+
+{% block content %}
+<style>
+  table.theme-summary { width: 100%; font-size: 0.9em; border-collapse: collapse; }
+  table.theme-summary th, table.theme-summary td { padding: 0.4em 0.6em; vertical-align: middle; border-bottom: 1px solid #e2e8f0; }
+  table.theme-summary th { text-align: right; color: #666; font-weight: 600; white-space: nowrap; }
+  table.theme-summary th.theme-col, table.theme-summary th.leaders-col { text-align: left; }
+  table.theme-summary td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.theme-summary td.theme-cell { font-weight: 600; word-break: break-word; max-width: 14em; }
+  table.theme-summary td.leaders-cell { font-size: 0.85em; white-space: nowrap; }
+  table.theme-summary tr.few-members { background: #fafad2; }  /* 少数構成マーカー (薄黄) */
+  table.theme-summary details { margin: 0; }
+  table.theme-summary details summary { cursor: pointer; list-style: none; }
+  table.theme-summary details summary::-webkit-details-marker { display: none; }
+  table.theme-summary .member-list { margin: 0.3em 0 0.3em 1em; font-size: 0.85em; color: #444; }
+  .mom-strong { font-weight: 700; color: #060; }
+  .mom-weak { color: #c00; }
+  .slope-up { color: #060; }
+  .slope-down { color: #c00; }
+  .sort-bar a { font-size: 0.85em; color: #555; text-decoration: none; padding: 0.2em 0.5em; border: 1px solid #ccc; border-radius: 3px; background: #fff; margin-left: 0.3em; }
+  .sort-bar a.active { background: #2c5282; color: #fff; border-color: #2c5282; }
+</style>
+
+{% macro fmt_pct(v) %}{% if v is none %}—{% else %}{{ '%+.1f'|format(v) }}%{% endif %}{% endmacro %}
+{% macro fmt_int(v) %}{% if v is none %}—{% else %}{{ v|round|int }}{% endif %}{% endmacro %}
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6em;flex-wrap:wrap;gap:0.5em;">
+  <h2 style="margin:0;">業態テーマ別 RS サマリー</h2>
+  <a href="{{ url_for('portfolio.dashboard') }}" style="font-size:0.9em;">← ポートフォリオに戻る</a>
+</div>
+
+<p style="font-size:0.85em;color:#666;margin:0 0 0.6em 0;">
+  手動付けした業態テーマ (memo.gyoutai_themes) を自分の分類軸とした市場ローテーション検知。
+  中長期の強さ (momentum_pt) と短期の値動き傾向 (rs_line スロープ) を併記する。
+</p>
+
+<div class="sort-bar" style="margin-bottom:0.6em;">
+  <span style="font-size:0.85em;color:#666;">並べ替え:</span>
+  <a href="{{ sort_urls['momentum'] }}" class="{% if active_sort == 'momentum' %}active{% endif %}">強さ (momentum)</a>
+  <a href="{{ sort_urls['slope_a'] }}" class="{% if active_sort == 'slope_a' %}active{% endif %}">短期スロープ (A)</a>
+</div>
+
+{% if fallback_mode %}
+<p style="padding:0.8em 1em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;color:#666;">
+  portfolio_shelve が空のためテーマ集計を表示できません。銘柄を登録すると集計対象になります。
+</p>
+{% elif not themes %}
+<p style="padding:0.8em 1em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;color:#666;">
+  業態テーマ (memo.gyoutai_themes) が設定された銘柄がありません。
+</p>
+{% else %}
+<p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">
+  {{ themes|length }} テーマ / {{ total_members }} 銘柄
+</p>
+
+<table class="theme-summary">
+  <thead>
+    <tr>
+      <th class="theme-col">テーマ</th>
+      <th>構成</th>
+      <th title="構成銘柄の momentum_pt 平均 (0〜100)">mom平均</th>
+      <th title="構成銘柄の momentum_pt 最大">最大</th>
+      <th title="rs_line (銘柄/TOPIX) の 5日前比の平均">短期スロープ</th>
+      <th title="rs_line (銘柄/TOPIX) の 20日前比の平均">中期スロープ</th>
+      <th title="20 営業日リターンの平均">20日</th>
+      <th title="65 営業日リターンの平均">65日</th>
+      <th class="leaders-col" title="momentum_pt 降順 上位3銘柄">リーダー株 (top3)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in themes %}
+    <tr class="{% if t.member_count == 1 %}few-members{% endif %}">
+      <td class="theme-cell">
+        <details>
+          <summary title="クリックで構成銘柄を展開">▶ {{ t.theme }}</summary>
+          <div class="member-list">
+            {% for m in t.members %}
+            <div>
+              <a href="{{ url_for('detail.stock_detail', code_s=m.code_s) }}">{{ m.code_s }}</a>
+              {{ m.stock_name }}
+              <span style="color:#888;">({{ m.status }}{% if m.momentum_pt is not none %} / RS {{ m.momentum_pt|round|int }}{% endif %})</span>
+            </div>
+            {% endfor %}
+          </div>
+        </details>
+      </td>
+      <td class="num">{{ t.member_count }}</td>
+      <td class="num">
+        {% if t.momentum_pt_avg is not none and t.momentum_pt_avg >= 70 %}<span class="mom-strong">{{ fmt_int(t.momentum_pt_avg) }}</span>
+        {% elif t.momentum_pt_avg is not none and t.momentum_pt_avg <= 30 %}<span class="mom-weak">{{ fmt_int(t.momentum_pt_avg) }}</span>
+        {% else %}{{ fmt_int(t.momentum_pt_avg) }}{% endif %}
+      </td>
+      <td class="num">{{ fmt_int(t.momentum_pt_max) }}</td>
+      <td class="num">
+        {% if t.slope_a_avg is not none %}<span class="{% if t.slope_a_avg >= 0 %}slope-up{% else %}slope-down{% endif %}">{{ fmt_pct(t.slope_a_avg) }}</span>{% else %}—{% endif %}
+      </td>
+      <td class="num">
+        {% if t.slope_b_avg is not none %}<span class="{% if t.slope_b_avg >= 0 %}slope-up{% else %}slope-down{% endif %}">{{ fmt_pct(t.slope_b_avg) }}</span>{% else %}—{% endif %}
+      </td>
+      <td class="num">{{ fmt_pct(t.ret_20d_avg) }}</td>
+      <td class="num">{{ fmt_pct(t.ret_65d_avg) }}</td>
+      <td class="leaders-cell">
+        {% for l in t.leaders %}<a href="{{ url_for('detail.stock_detail', code_s=l.code_s) }}">{{ l.code_s }}</a>({{ l.momentum_pt|round|int }}){% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

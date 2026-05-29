@@ -2941,3 +2941,167 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         styles["market_cap"] = bg("薄黄")
 
     return styles
+
+
+# ===========================================
+# 業態テーマ別 RS サマリー (issue #283)
+# ===========================================
+
+def _calc_return_pct(price_log: List, days: int) -> Optional[float]:
+    """price_log (新しい順 [(date, price), ...]) の days 営業日リターン (%) を返す。
+
+    len(price_log) <= days の銘柄は None (計算不能)。基準価格 0 も None。
+    """
+    if not price_log or len(price_log) <= days:
+        return None
+    cur = price_log[0][1]
+    past = price_log[days][1]
+    if not past:
+        return None
+    return (cur - past) / past * 100.0
+
+
+def _avg_or_none(values: List[float]) -> Optional[float]:
+    """None を含まない値リストの平均。空なら None。"""
+    return sum(values) / len(values) if values else None
+
+
+def build_portfolio_theme_summary(
+    records: Optional[List[Dict[str, Any]]] = None,
+    sort_key: str = "momentum",
+) -> List[Dict[str, Any]]:
+    """portfolio_shelve のユニバースを memo['gyoutai_themes'] でグルーピングし、
+    テーマごとの中長期 (momentum_pt) + 短期 (rs_line スロープ) 集約指標と
+    上位リーダー株を返す (issue #283)。
+
+    Args:
+        records: portfolio_shelve.list_records(include_excluded=False) の戻り値。
+            None なら関数内で取得する (テスト時に注入できるよう引数化)。
+        sort_key: "momentum" | "slope_a"。並べ替えキー。
+
+    Returns:
+        list[dict]: 各テーマの集約 dict。並び順は sort_key に従う
+            (None は末尾) → member_count 降順 → テーマ名昇順。
+    """
+    if records is None:
+        import portfolio_shelve as ps  # 遅延 import (循環回避)
+        records = ps.list_records(include_excluded=False)
+
+    # テーマ → [code_s, ...] の逆引き (スロット最大2を両方展開、空は無視)
+    theme_to_codes: Dict[str, List[str]] = {}
+    for rec in records:
+        code_s = rec.get("code_s", "")
+        if not code_s:
+            continue
+        themes = (rec.get("memo") or {}).get("gyoutai_themes") or []
+        for t in themes:
+            if not isinstance(t, str):
+                continue
+            name = t.strip()
+            if not name:
+                continue
+            theme_to_codes.setdefault(name, []).append(code_s)
+    if not theme_to_codes:
+        return []
+
+    # status ラベル参照用に code_s → status を引けるようにする
+    status_by_code = {r.get("code_s", ""): r.get("status", "") for r in records}
+
+    all_codes = sorted({c for codes in theme_to_codes.values() for c in codes})
+    stock_map = _bulk_get_stock_data(all_codes)
+    name_map = _bulk_resolve_stock_names(all_codes)
+
+    # rs_line 計算の共有リソース (issue #283: N+1 回避、再計算回避)
+    try:
+        from make_market_db import get_market_db  # 遅延 import (循環回避)
+        market_db = get_market_db()
+    except Exception:  # noqa: BLE001
+        market_db = None
+    topix_map = None
+    if market_db is not None:
+        try:
+            from make_stock_db import _topix_close_map  # 遅延 import
+            topix_map = _topix_close_map(market_db)
+        except Exception:  # noqa: BLE001
+            topix_map = None
+
+    # 銘柄ごとの rs_line スロープ (A, B) を 1 回だけ計算してキャッシュ。
+    # 公開 API compute_rs_line_changes を使う (private 関数には依存しない)。
+    # topix_map を渡すことで内部 compute_rs_line の TOPIX マップ再構築を避ける。
+    slope_by_code: Dict[str, tuple] = {}
+    if market_db is not None and topix_map:
+        from make_stock_db import compute_rs_line_changes  # 遅延 import
+        for code_s in all_codes:
+            stock = stock_map.get(code_s) or {}
+            try:
+                a, b = compute_rs_line_changes(stock, market_db, topix_map=topix_map)
+            except Exception:  # noqa: BLE001
+                a, b = None, None
+            slope_by_code[code_s] = (a, b)
+
+    result: List[Dict[str, Any]] = []
+    for theme, codes in theme_to_codes.items():
+        members: List[Dict[str, Any]] = []
+        mom_values: List[float] = []
+        ret20_values: List[float] = []
+        ret65_values: List[float] = []
+        slope_a_values: List[float] = []
+        slope_b_values: List[float] = []
+        for code_s in codes:
+            stock = stock_map.get(code_s) or {}
+            mom = stock.get("momentum_pt")
+            if isinstance(mom, (int, float)):
+                mom_values.append(float(mom))
+            price_log = stock.get("price_log") or []
+            r20 = _calc_return_pct(price_log, 20)
+            r65 = _calc_return_pct(price_log, 65)
+            if r20 is not None:
+                ret20_values.append(r20)
+            if r65 is not None:
+                ret65_values.append(r65)
+            a, b = slope_by_code.get(code_s, (None, None))
+            if a is not None:
+                slope_a_values.append(a)
+            if b is not None:
+                slope_b_values.append(b)
+            members.append({
+                "code_s": code_s,
+                "stock_name": name_map.get(code_s, "") or "",
+                "momentum_pt": float(mom) if isinstance(mom, (int, float)) else None,
+                "status": _PORTFOLIO_STATUS_LABEL.get(
+                    status_by_code.get(code_s, ""), status_by_code.get(code_s, "")
+                ),
+            })
+        # members を momentum_pt 降順 (None 末尾) → code_s 昇順で並べる
+        members.sort(key=lambda m: (
+            m["momentum_pt"] is None,
+            -(m["momentum_pt"] or 0),
+            m["code_s"],
+        ))
+        leaders = [
+            {"code_s": m["code_s"], "stock_name": m["stock_name"],
+             "momentum_pt": m["momentum_pt"]}
+            for m in members if m["momentum_pt"] is not None
+        ][:3]
+        result.append({
+            "theme": theme,
+            "member_count": len(codes),
+            "momentum_pt_avg": _avg_or_none(mom_values),
+            "momentum_pt_max": max(mom_values) if mom_values else None,
+            "ret_20d_avg": _avg_or_none(ret20_values),
+            "ret_65d_avg": _avg_or_none(ret65_values),
+            "slope_a_avg": _avg_or_none(slope_a_values),
+            "slope_b_avg": _avg_or_none(slope_b_values),
+            "leaders": leaders,
+            "members": members,
+        })
+
+    # ソート: sort_key 降順 (None 末尾) → member_count 降順 → テーマ名昇順
+    primary = "slope_a_avg" if sort_key == "slope_a" else "momentum_pt_avg"
+    result.sort(key=lambda r: (
+        r[primary] is None,
+        -(r[primary] or 0),
+        -r["member_count"],
+        r["theme"],
+    ))
+    return result
