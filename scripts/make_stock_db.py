@@ -362,10 +362,11 @@ def _rs_line_changes_from_line(rs_line):
     b = _deviation(20)
     if b is not None:
         return (a, b, False)
-    for window in (19, 18, 17, 16, 15):
-        b = _deviation(window)
-        if b is not None:
-            return (a, b, True)
+    # 20 本に満たないときは、データ長に収まる最大 window (15-19 本) の平均で代替する。
+    # MA 版では _deviation(window) が None になるのは len < window のときだけなので、
+    # 試すべき window は min(len, 19) の 1 つに定まる (15 本未満なら代替不可)。
+    if len(rs_line) >= 15:
+        return (a, _deviation(min(len(rs_line), 19)), True)
     return (a, None, False)
 
 

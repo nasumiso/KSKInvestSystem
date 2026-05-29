@@ -22,6 +22,7 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 import portfolio
 import portfolio_shelve as ps
 from webapp.helpers import (
+    THEME_SUMMARY_SORT_FIELDS,
     build_portfolio_theme_summary,
     compute_cell_styles,
     get_stock_data,
@@ -671,7 +672,8 @@ def dashboard():
 # 業態テーマ別 RS サマリー (issue #283)
 # ===========================================
 
-THEME_SUMMARY_SORT_KEYS = {"momentum", "dev_a"}
+# 許可 sort_key は helper のマッピング (真実の源) から導出する
+THEME_SUMMARY_SORT_KEYS = set(THEME_SUMMARY_SORT_FIELDS)
 DEFAULT_THEME_SUMMARY_SORT = "momentum"
 
 
@@ -700,7 +702,7 @@ def theme_summary():
 
     sort_urls = {
         k: url_for("portfolio.theme_summary", sort=k)
-        for k in ("momentum", "dev_a")
+        for k in THEME_SUMMARY_SORT_KEYS
     }
     return render_template(
         "portfolio_theme_summary.html",

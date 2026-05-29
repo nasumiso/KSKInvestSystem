@@ -2965,6 +2965,14 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
 # 業態テーマ別 RS サマリー (issue #283)
 # ===========================================
 
+# sort_key (UI/URL) → 並べ替えに使う集計フィールド名。許可キーの真実はここに集約し、
+# ルート側の allowlist もこの keys() を参照する (二重定義を避ける)。
+THEME_SUMMARY_SORT_FIELDS = {
+    "momentum": "momentum_pt_avg",
+    "dev_a": "dev_a_avg",
+}
+
+
 def _avg_or_none(values: List[float]) -> Optional[float]:
     """None を含まない値リストの平均。空なら None。"""
     return sum(values) / len(values) if values else None
@@ -3088,7 +3096,7 @@ def build_portfolio_theme_summary(
         })
 
     # ソート: sort_key 降順 (None 末尾) → member_count 降順 → テーマ名昇順
-    primary = "dev_a_avg" if sort_key == "dev_a" else "momentum_pt_avg"
+    primary = THEME_SUMMARY_SORT_FIELDS.get(sort_key, "momentum_pt_avg")
     result.sort(key=lambda r: (
         r[primary] is None,
         -(r[primary] or 0),
