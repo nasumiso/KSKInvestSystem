@@ -286,17 +286,18 @@ def compute_rs_line(stock, market_db, topix_map=None):
 
 
 def compute_rs_line_changes(stock, market_db, topix_map=None):
-    """rs_line の 5日前比 A・20日前比 B 騰落率を%値で計算する。
+    """rs_line の「今日 vs 直近 N 日移動平均」乖離率 A・B を%値で計算する (issue #283)。
 
-    20日前データが無い場合は 19,18,17,16,15日前の順に代替 (B は近似値)。
+    A = 直近 5 日平均乖離率、B = 直近 20 日平均乖離率。20 本に満たない場合は
+    19,18,17,16,15 本平均で B を代替 (近似値)。
 
     Returns:
         tuple[float|None, float|None]: (短期A%, 中期B%)
-            - rs_line が 6本未満 → (None, None)
-            - rs_line が 6本以上16本未満 → (A, None)
-            - rs_line が 16本以上21本未満 → (A, B_approx) ※15-19日前で代替
-            - rs_line が 21本以上 → (A, B)
-            past値が0の場合も None
+            - rs_line が 5本未満 → (None, None)
+            - rs_line が 5本以上15本未満 → (A, None)
+            - rs_line が 15本以上20本未満 → (A, B_approx) ※15-19本平均で代替
+            - rs_line が 20本以上 → (A, B)
+            移動平均が0の場合も None
     """
     rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
     a, b, _ = _rs_line_changes_from_line(rs_line)
@@ -309,13 +310,14 @@ def _fmt_rs_change(v):
 
 
 def get_rs_line_changes_expr(stock, market_db, topix_map=None, rs_line=None):
-    """rs_line 騰落率を CSV 表示用の '中期B%/短期A%' 文字列にする。
+    """rs_line の移動平均乖離率を CSV 表示用の '中期B%/短期A%' 文字列にする。
 
+    A = 5日平均乖離率、B = 20日平均乖離率 (issue #283 で N日前比から MA 乖離率に変更)。
     rs_line を渡せば再計算をスキップする (CSV ループで複数の rs_line 系関数を
     呼ぶ際に共有するため)。
 
     Returns:
-        str: 例 "+12/+5"。20日比が 15-19日前で代替された場合は末尾 * を付ける
+        str: 例 "+12/+5"。20日比が 15-19本平均で代替された場合は末尾 * を付ける
             (例: "+12*/+5")。両方計算不能なら "" 、片方のみなら "-/+5" 等
     """
     if rs_line is None:
@@ -330,33 +332,41 @@ def get_rs_line_changes_expr(stock, market_db, topix_map=None, rs_line=None):
 
 
 def _rs_line_changes_from_line(rs_line):
-    """rs_line 系列から 5日前比 A・20日前比 B 騰落率を計算する内部関数
+    """rs_line 系列から「今日 vs 直近 N 日移動平均」の乖離率 A・B を計算する内部関数。
+
+    A = 直近 5 日平均乖離率、B = 直近 20 日平均乖離率 (いずれも今日 rs_line[0] を含む)。
+    1 点比較 (旧: N 日前の 1 点との比) ではヒゲ・急変でブレるため、基準を移動平均にして
+    ブレを 1/N に薄め、勢い・過熱の度合いを安定して捉える (issue #283)。
 
     Returns:
         tuple[float|None, float|None, bool]: (A, B, B が代替値か)
-            B は offset 20 で取れなければ 19,18,17,16,15 の順に代替。
-            代替を使った場合 b_is_approx=True。
+            乖離率 = (rs_line[0] - mean(直近 window 本)) / mean(直近 window 本) * 100。
+            A は window=5 (5 本未満は None)。
+            B は window=20、20 本未満なら 19,18,17,16,15 本平均で代替 (b_is_approx=True)。
+            平均が 0 の場合も None。
     """
     if not rs_line:
         return (None, None, False)
     current = rs_line[0][1]
 
-    def _change(offset):
-        if len(rs_line) <= offset:
+    def _deviation(window):
+        """今日 rs_line[0] と直近 window 本 (今日含む) の平均との乖離率%。"""
+        if len(rs_line) < window:
             return None
-        past = rs_line[offset][1]
-        if past == 0:
+        ma = sum(v for _, v in rs_line[:window]) / window
+        if ma == 0:
             return None
-        return (current - past) / past * 100
+        return (current - ma) / ma * 100
 
-    a = _change(5)
-    b = _change(20)
+    a = _deviation(5)
+    b = _deviation(20)
     if b is not None:
         return (a, b, False)
-    for offset in (19, 18, 17, 16, 15):
-        b = _change(offset)
-        if b is not None:
-            return (a, b, True)
+    # 20 本に満たないときは、データ長に収まる最大 window (15-19 本) の平均で代替する。
+    # MA 版では _deviation(window) が None になるのは len < window のときだけなので、
+    # 試すべき window は min(len, 19) の 1 つに定まる (15 本未満なら代替不可)。
+    if len(rs_line) >= 15:
+        return (a, _deviation(min(len(rs_line), 19)), True)
     return (a, None, False)
 
 

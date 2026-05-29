@@ -1369,3 +1369,35 @@ class TestPortfolioThemes:
         assert resp.status_code == 302
         assert ps.get_theme("半導体", db_path=portfolio_db) is None
         assert ps.get_theme("セミコン", db_path=portfolio_db)["description"] == "renamed"
+
+
+class TestPortfolioThemeSummary:
+    """業態テーマ別 RS サマリー画面の smoke テスト (issue #283)"""
+
+    @pytest.fixture
+    def summary_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        # 業態テーマ付きで 1 件登録 (集計対象になる)
+        memo = ps.create_memo(gyoutai_themes=["半導体"])
+        ps.add_to_watch("3496", memo=memo, db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app
+
+    @pytest.mark.parametrize("url", [
+        "/portfolio/themes/summary",
+        "/portfolio/themes/summary?sort=dev_a",
+    ])
+    def test_summary_returns_200(self, summary_app, url):
+        client = summary_app.test_client()
+        resp = client.get(url)
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "業態テーマ別 RS サマリー" in html
+        assert "半導体" in html

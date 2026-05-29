@@ -22,6 +22,8 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 import portfolio
 import portfolio_shelve as ps
 from webapp.helpers import (
+    THEME_SUMMARY_SORT_FIELDS,
+    build_portfolio_theme_summary,
     compute_cell_styles,
     get_stock_data,
     list_portfolio_with_indicators,
@@ -663,6 +665,52 @@ def dashboard():
         theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
         hold_summary=hold_summary,
+    )
+
+
+# ===========================================
+# 業態テーマ別 RS サマリー (issue #283)
+# ===========================================
+
+# 許可 sort_key は helper のマッピング (真実の源) から導出する
+THEME_SUMMARY_SORT_KEYS = set(THEME_SUMMARY_SORT_FIELDS)
+DEFAULT_THEME_SUMMARY_SORT = "momentum"
+
+
+@portfolio_bp.route("/portfolio/themes/summary", methods=["GET"])
+def theme_summary():
+    """業態テーマ別 RS サマリー (閲覧専用、issue #283)。
+
+    手動付けした業態テーマ (memo.gyoutai_themes) でユニバースをグルーピングし、
+    momentum_pt (中長期) と rs_line 移動平均乖離オシレーター (短期の勢い) を集約表示する。
+
+    URL クエリ:
+      sort: momentum / dev_a (省略時=momentum)
+    """
+    sort_key = (request.args.get("sort") or "").strip()
+    if sort_key not in THEME_SUMMARY_SORT_KEYS:
+        sort_key = DEFAULT_THEME_SUMMARY_SORT
+
+    fallback_mode = _is_fallback_mode()
+    # fallback (portfolio_shelve 空) では空テーブル + 案内文。
+    if fallback_mode:
+        themes: list = []
+        total_members = 0
+    else:
+        themes = build_portfolio_theme_summary(sort_key=sort_key)
+        total_members = sum(t["member_count"] for t in themes)
+
+    sort_urls = {
+        k: url_for("portfolio.theme_summary", sort=k)
+        for k in THEME_SUMMARY_SORT_KEYS
+    }
+    return render_template(
+        "portfolio_theme_summary.html",
+        themes=themes,
+        total_members=total_members,
+        active_sort=sort_key,
+        sort_urls=sort_urls,
+        fallback_mode=fallback_mode,
     )
 
 
