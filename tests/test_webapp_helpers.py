@@ -2096,7 +2096,7 @@ class TestPriceRsSparkline:
         assert "</svg>" in svg
         assert "polyline" in svg
         assert "株価:" in tooltip
-        assert "RSライン:" in tooltip
+        assert "RSライン乖離:" in tooltip
 
     def test_mini_chart_insufficient_data_returns_dash(self):
         svg, _ = helpers.build_price_rs_chart_mini([], [], has_blue_dot=False)
@@ -2131,7 +2131,7 @@ class TestPriceRsSparkline:
         assert svg.count("<polyline") >= 4
         assert "stroke-dasharray" in svg  # RSライン点線
         assert "株価:" in tooltip
-        assert "RSライン:" in tooltip
+        assert "RSライン乖離:" in tooltip
 
     def test_full_chart_includes_date_labels(self):
         price_log = self._make_log(list(range(120, 100, -1)))
@@ -2666,18 +2666,16 @@ class TestBuildPortfolioThemeSummary:
                 "memo": {"gyoutai_themes": themes}}
 
     def test_basic_aggregation(self, monkeypatch):
-        """2 テーマ × 3 銘柄で momentum_pt 平均/最大・リターンが期待通り。"""
+        """2 テーマ × 3 銘柄で momentum_pt 平均/最大が期待通り。"""
         records = [
             self._record("1111", ["半導体"]),
             self._record("2222", ["半導体"]),
             self._record("3333", ["防衛"]),
         ]
         stock_data = {
-            "1111": {"stock_name": "A", "momentum_pt": 80,
-                     "price_log": [("d0", 110)] + [("d", 100)] * 70},
-            "2222": {"stock_name": "B", "momentum_pt": 60,
-                     "price_log": [("d0", 90)] + [("d", 100)] * 70},
-            "3333": {"stock_name": "C", "momentum_pt": 50, "price_log": []},
+            "1111": {"stock_name": "A", "momentum_pt": 80},
+            "2222": {"stock_name": "B", "momentum_pt": 60},
+            "3333": {"stock_name": "C", "momentum_pt": 50},
         }
         monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
         monkeypatch.setattr(
@@ -2692,7 +2690,6 @@ class TestBuildPortfolioThemeSummary:
         assert by_theme["半導体"]["member_count"] == 2
         assert by_theme["半導体"]["momentum_pt_avg"] == 70.0  # (80+60)/2
         assert by_theme["半導体"]["momentum_pt_max"] == 80.0
-        assert round(by_theme["半導体"]["ret_20d_avg"], 1) == 0.0  # (+10% + -10%)/2
         # 半導体 (avg 70) が 防衛 (avg 50) より先 (momentum 降順)
         assert out[0]["theme"] == "半導体"
 
@@ -2735,8 +2732,8 @@ class TestBuildPortfolioThemeSummary:
         assert t["momentum_pt_avg"] == 80.0     # 欠損は平均から除外
         assert len(t["leaders"]) == 1           # momentum_pt がある銘柄のみ
 
-    def test_slope_aggregation_excludes_none(self, monkeypatch):
-        """短期スロープ: rs_line データ不足銘柄 (None) は平均から除外される。"""
+    def test_dev_aggregation_excludes_none(self, monkeypatch):
+        """短期の勢い: rs_line データ不足銘柄 (None) は平均から除外される。"""
         records = [
             self._record("1111", ["半導体"]),
             self._record("2222", ["半導体"]),
@@ -2752,27 +2749,27 @@ class TestBuildPortfolioThemeSummary:
         import make_stock_db
         monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"topix": {}})
         monkeypatch.setattr(make_stock_db, "_topix_close_map", lambda mdb: {"d": 1.0})
-        # 公開 API compute_rs_line_changes を stock 名から (A, B) を返すよう差し替え。
+        # 公開 API compute_rs_line_changes を stock 名から (A, B) 乖離率を返すよう差し替え。
         # A=有効/B=None, A=有効/B=有効 を返し分け
-        slope_map = {"A": (2.0, None), "B": (4.0, 8.0)}
+        dev_map = {"A": (2.0, None), "B": (4.0, 8.0)}
         monkeypatch.setattr(
             make_stock_db, "compute_rs_line_changes",
-            lambda stock, mdb, topix_map=None: slope_map[stock["stock_name"]],
+            lambda stock, mdb, topix_map=None: dev_map[stock["stock_name"]],
         )
         out = helpers.build_portfolio_theme_summary(records=records)
         t = out[0]
-        assert t["slope_a_avg"] == 3.0          # (2.0 + 4.0) / 2
-        assert t["slope_b_avg"] == 8.0          # B のみ有効 (A の B は None で除外)
+        assert t["dev_a_avg"] == 3.0            # (2.0 + 4.0) / 2
+        assert t["dev_b_avg"] == 8.0            # B のみ有効 (A の B は None で除外)
 
     @pytest.mark.parametrize("sort_key,expected_first", [
         ("momentum", "強"),    # momentum_pt 平均が高いテーマが先頭
-        ("slope_a", "急"),     # slope_a 平均が高いテーマが先頭
+        ("dev_a", "急"),       # dev_a (短期の勢い) 平均が高いテーマが先頭
     ])
     def test_sort_key_switch(self, monkeypatch, sort_key, expected_first):
-        """sort_key で momentum / slope_a の並び順が切り替わる。"""
+        """sort_key で momentum / dev_a の並び順が切り替わる。"""
         records = [
-            self._record("1111", ["強"]),   # momentum 高, slope 低
-            self._record("2222", ["急"]),   # momentum 低, slope 高
+            self._record("1111", ["強"]),   # momentum 高, 勢い 低
+            self._record("2222", ["急"]),   # momentum 低, 勢い 高
         ]
         stock_data = {
             "1111": {"stock_name": "S", "momentum_pt": 90, "price_log": []},
@@ -2785,9 +2782,9 @@ class TestBuildPortfolioThemeSummary:
         import make_stock_db
         monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"topix": {}})
         monkeypatch.setattr(make_stock_db, "_topix_close_map", lambda mdb: {"d": 1.0})
-        slope_map = {"S": (1.0, 1.0), "Q": (9.0, 9.0)}
+        dev_map = {"S": (1.0, 1.0), "Q": (9.0, 9.0)}
         monkeypatch.setattr(make_stock_db, "compute_rs_line_changes",
-                            lambda stock, mdb, topix_map=None: slope_map[stock["stock_name"]])
+                            lambda stock, mdb, topix_map=None: dev_map[stock["stock_name"]])
 
         out = helpers.build_portfolio_theme_summary(records=records, sort_key=sort_key)
         assert out[0]["theme"] == expected_first

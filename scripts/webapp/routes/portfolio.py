@@ -671,7 +671,7 @@ def dashboard():
 # 業態テーマ別 RS サマリー (issue #283)
 # ===========================================
 
-THEME_SUMMARY_SORT_KEYS = {"momentum", "slope_a"}
+THEME_SUMMARY_SORT_KEYS = {"momentum", "dev_a"}
 DEFAULT_THEME_SUMMARY_SORT = "momentum"
 
 
@@ -680,10 +680,10 @@ def theme_summary():
     """業態テーマ別 RS サマリー (閲覧専用、issue #283)。
 
     手動付けした業態テーマ (memo.gyoutai_themes) でユニバースをグルーピングし、
-    momentum_pt (中長期) と rs_line スロープ (短期) を集約表示する。
+    momentum_pt (中長期) と rs_line 移動平均乖離オシレーター (短期の勢い) を集約表示する。
 
     URL クエリ:
-      sort: momentum / slope_a (省略時=momentum)
+      sort: momentum / dev_a (省略時=momentum)
     """
     sort_key = (request.args.get("sort") or "").strip()
     if sort_key not in THEME_SUMMARY_SORT_KEYS:
@@ -700,7 +700,7 @@ def theme_summary():
 
     sort_urls = {
         k: url_for("portfolio.theme_summary", sort=k)
-        for k in ("momentum", "slope_a")
+        for k in ("momentum", "dev_a")
     }
     return render_template(
         "portfolio_theme_summary.html",

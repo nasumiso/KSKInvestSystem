@@ -2155,6 +2155,23 @@ def _format_total_change(values: List[float], window: int) -> str:
     return f"{pct:+.1f}%"
 
 
+def _format_ma_deviation(values: List[float], window: int) -> str:
+    """最新値 (values[-1]) と直近 window 本 (今日含む) の移動平均との乖離率を整形する。
+
+    RSライン tooltip 用 (issue #283)。1 点比較ではなく移動平均基準にすることで
+    ヒゲ・急変のブレを薄め、勢い・過熱の度合いを安定して見せる。
+    values は古い順 (最新が末尾)。データ不足時は取得できるだけで計算。0 除算は "—"。
+    """
+    if not values or window <= 0:
+        return "—"
+    recent = values[-window:] if len(values) >= window else values
+    ma = sum(recent) / len(recent)
+    if ma == 0:
+        return "—"
+    pct = (values[-1] - ma) / ma * 100
+    return f"{pct:+.1f}%"
+
+
 def _build_chart_tooltip(
     price_values: List[float],
     rs_values: List[float],
@@ -2163,15 +2180,16 @@ def _build_chart_tooltip(
 ) -> str:
     """チャート tooltip (title 属性向け) を生成する。
 
-    20本 / 5本 の合計騰落率を見せる。平均ではなく合計なので、期間内の動きが
-    そのまま % で読める (例: 「20で +5%, 5で -26%」のような乖離パターンが分かる)。
+    株価行は 20本 / 5本 の合計騰落率 (期間内の動きがそのまま % で読める)。
+    RSライン行は移動平均乖離率 (今日 vs 直近 20本/5本平均、issue #283)。1 点比較
+    だとヒゲでブレるため、平均基準で勢い・過熱を安定して見せる。
     unit_label は "日" (日足 mini) / "週" (週足 full) を切り替える。
     """
     lines = [
         f"株価: 20{unit_label} {_format_total_change(price_values, _SPARK_LOOKBACK)}, "
         f"5{unit_label} {_format_total_change(price_values, _SPARK_RECENT)}",
-        f"RSライン: 20{unit_label} {_format_total_change(rs_values, _SPARK_LOOKBACK)}, "
-        f"5{unit_label} {_format_total_change(rs_values, _SPARK_RECENT)}",
+        f"RSライン乖離: 20{unit_label}平均 {_format_ma_deviation(rs_values, _SPARK_LOOKBACK)}, "
+        f"5{unit_label}平均 {_format_ma_deviation(rs_values, _SPARK_RECENT)}",
     ]
     if has_blue_dot:
         lines.append("新高値: ●")
@@ -2947,20 +2965,6 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
 # 業態テーマ別 RS サマリー (issue #283)
 # ===========================================
 
-def _calc_return_pct(price_log: List, days: int) -> Optional[float]:
-    """price_log (新しい順 [(date, price), ...]) の days 営業日リターン (%) を返す。
-
-    len(price_log) <= days の銘柄は None (計算不能)。基準価格 0 も None。
-    """
-    if not price_log or len(price_log) <= days:
-        return None
-    cur = price_log[0][1]
-    past = price_log[days][1]
-    if not past:
-        return None
-    return (cur - past) / past * 100.0
-
-
 def _avg_or_none(values: List[float]) -> Optional[float]:
     """None を含まない値リストの平均。空なら None。"""
     return sum(values) / len(values) if values else None
@@ -2977,7 +2981,7 @@ def build_portfolio_theme_summary(
     Args:
         records: portfolio_shelve.list_records(include_excluded=False) の戻り値。
             None なら関数内で取得する (テスト時に注入できるよう引数化)。
-        sort_key: "momentum" | "slope_a"。並べ替えキー。
+        sort_key: "momentum" | "dev_a"。並べ替えキー。
 
     Returns:
         list[dict]: 各テーマの集約 dict。並び順は sort_key に従う
@@ -3028,7 +3032,8 @@ def build_portfolio_theme_summary(
     # 銘柄ごとの rs_line スロープ (A, B) を 1 回だけ計算してキャッシュ。
     # 公開 API compute_rs_line_changes を使う (private 関数には依存しない)。
     # topix_map を渡すことで内部 compute_rs_line の TOPIX マップ再構築を避ける。
-    slope_by_code: Dict[str, tuple] = {}
+    # (a, b) = 今日 vs 直近5日/20日移動平均の乖離率 = 勢いオシレーター。
+    dev_by_code: Dict[str, tuple] = {}
     if market_db is not None and topix_map:
         from make_stock_db import compute_rs_line_changes  # 遅延 import
         for code_s in all_codes:
@@ -3037,33 +3042,24 @@ def build_portfolio_theme_summary(
                 a, b = compute_rs_line_changes(stock, market_db, topix_map=topix_map)
             except Exception:  # noqa: BLE001
                 a, b = None, None
-            slope_by_code[code_s] = (a, b)
+            dev_by_code[code_s] = (a, b)
 
     result: List[Dict[str, Any]] = []
     for theme, codes in theme_to_codes.items():
         members: List[Dict[str, Any]] = []
         mom_values: List[float] = []
-        ret20_values: List[float] = []
-        ret65_values: List[float] = []
-        slope_a_values: List[float] = []
-        slope_b_values: List[float] = []
+        dev_a_values: List[float] = []
+        dev_b_values: List[float] = []
         for code_s in codes:
             stock = stock_map.get(code_s) or {}
             mom = stock.get("momentum_pt")
             if isinstance(mom, (int, float)):
                 mom_values.append(float(mom))
-            price_log = stock.get("price_log") or []
-            r20 = _calc_return_pct(price_log, 20)
-            r65 = _calc_return_pct(price_log, 65)
-            if r20 is not None:
-                ret20_values.append(r20)
-            if r65 is not None:
-                ret65_values.append(r65)
-            a, b = slope_by_code.get(code_s, (None, None))
+            a, b = dev_by_code.get(code_s, (None, None))
             if a is not None:
-                slope_a_values.append(a)
+                dev_a_values.append(a)
             if b is not None:
-                slope_b_values.append(b)
+                dev_b_values.append(b)
             members.append({
                 "code_s": code_s,
                 "stock_name": name_map.get(code_s, "") or "",
@@ -3078,26 +3074,21 @@ def build_portfolio_theme_summary(
             -(m["momentum_pt"] or 0),
             m["code_s"],
         ))
-        leaders = [
-            {"code_s": m["code_s"], "stock_name": m["stock_name"],
-             "momentum_pt": m["momentum_pt"]}
-            for m in members if m["momentum_pt"] is not None
-        ][:3]
+        # members は momentum_pt 降順済み。先頭から非 None 上位 3 件がリーダー株
+        leaders = [m for m in members if m["momentum_pt"] is not None][:3]
         result.append({
             "theme": theme,
             "member_count": len(codes),
             "momentum_pt_avg": _avg_or_none(mom_values),
             "momentum_pt_max": max(mom_values) if mom_values else None,
-            "ret_20d_avg": _avg_or_none(ret20_values),
-            "ret_65d_avg": _avg_or_none(ret65_values),
-            "slope_a_avg": _avg_or_none(slope_a_values),
-            "slope_b_avg": _avg_or_none(slope_b_values),
+            "dev_a_avg": _avg_or_none(dev_a_values),
+            "dev_b_avg": _avg_or_none(dev_b_values),
             "leaders": leaders,
             "members": members,
         })
 
     # ソート: sort_key 降順 (None 末尾) → member_count 降順 → テーマ名昇順
-    primary = "slope_a_avg" if sort_key == "slope_a" else "momentum_pt_avg"
+    primary = "dev_a_avg" if sort_key == "dev_a" else "momentum_pt_avg"
     result.sort(key=lambda r: (
         r[primary] is None,
         -(r[primary] or 0),

@@ -17,8 +17,8 @@
   table.theme-summary .member-list { margin: 0.3em 0 0.3em 1em; font-size: 0.85em; color: #444; }
   .mom-strong { font-weight: 700; color: #060; }
   .mom-weak { color: #c00; }
-  .slope-up { color: #060; }
-  .slope-down { color: #c00; }
+  .dev-up { color: #060; }
+  .dev-down { color: #c00; }
   .sort-bar a { font-size: 0.85em; color: #555; text-decoration: none; padding: 0.2em 0.5em; border: 1px solid #ccc; border-radius: 3px; background: #fff; margin-left: 0.3em; }
   .sort-bar a.active { background: #2c5282; color: #fff; border-color: #2c5282; }
 </style>
@@ -33,13 +33,13 @@
 
 <p style="font-size:0.85em;color:#666;margin:0 0 0.6em 0;">
   手動付けした業態テーマ (memo.gyoutai_themes) を自分の分類軸とした市場ローテーション検知。
-  中長期の強さ (momentum_pt) と短期の値動き傾向 (rs_line スロープ) を併記する。
+  中長期の強さ (momentum_pt) と短期の勢い (rs_line の移動平均乖離) を併記する。
 </p>
 
 <div class="sort-bar" style="margin-bottom:0.6em;">
   <span style="font-size:0.85em;color:#666;">並べ替え:</span>
   <a href="{{ sort_urls['momentum'] }}" class="{% if active_sort == 'momentum' %}active{% endif %}">強さ (momentum)</a>
-  <a href="{{ sort_urls['slope_a'] }}" class="{% if active_sort == 'slope_a' %}active{% endif %}">短期スロープ (A)</a>
+  <a href="{{ sort_urls['dev_a'] }}" class="{% if active_sort == 'dev_a' %}active{% endif %}">短期の勢い (5日乖離)</a>
 </div>
 
 {% if fallback_mode %}
@@ -62,10 +62,8 @@
       <th>構成</th>
       <th title="構成銘柄の momentum_pt 平均 (0〜100)">mom平均</th>
       <th title="構成銘柄の momentum_pt 最大">最大</th>
-      <th title="rs_line (銘柄/TOPIX) の 5日前比の平均">短期スロープ</th>
-      <th title="rs_line (銘柄/TOPIX) の 20日前比の平均">中期スロープ</th>
-      <th title="20 営業日リターンの平均">20日</th>
-      <th title="65 営業日リターンの平均">65日</th>
+      <th title="今日の rs_line (銘柄/TOPIX) と直近5日移動平均の乖離率の平均。正=直近平均より上振れ(勢い強)">5日乖離</th>
+      <th title="今日の rs_line (銘柄/TOPIX) と直近20日移動平均の乖離率の平均。正=直近平均より上振れ(勢い強)">20日乖離</th>
       <th class="leaders-col" title="momentum_pt 降順 上位3銘柄">リーダー株 (top3)</th>
     </tr>
   </thead>
@@ -94,13 +92,11 @@
       </td>
       <td class="num">{{ fmt_int(t.momentum_pt_max) }}</td>
       <td class="num">
-        {% if t.slope_a_avg is not none %}<span class="{% if t.slope_a_avg >= 0 %}slope-up{% else %}slope-down{% endif %}">{{ fmt_pct(t.slope_a_avg) }}</span>{% else %}—{% endif %}
+        {% if t.dev_a_avg is not none %}<span class="{% if t.dev_a_avg >= 0 %}dev-up{% else %}dev-down{% endif %}">{{ fmt_pct(t.dev_a_avg) }}</span>{% else %}—{% endif %}
       </td>
       <td class="num">
-        {% if t.slope_b_avg is not none %}<span class="{% if t.slope_b_avg >= 0 %}slope-up{% else %}slope-down{% endif %}">{{ fmt_pct(t.slope_b_avg) }}</span>{% else %}—{% endif %}
+        {% if t.dev_b_avg is not none %}<span class="{% if t.dev_b_avg >= 0 %}dev-up{% else %}dev-down{% endif %}">{{ fmt_pct(t.dev_b_avg) }}</span>{% else %}—{% endif %}
       </td>
-      <td class="num">{{ fmt_pct(t.ret_20d_avg) }}</td>
-      <td class="num">{{ fmt_pct(t.ret_65d_avg) }}</td>
       <td class="leaders-cell">
         {% for l in t.leaders %}<a href="{{ url_for('detail.stock_detail', code_s=l.code_s) }}">{{ l.code_s }}</a>({{ l.momentum_pt|round|int }}){% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
       </td>
