@@ -578,6 +578,14 @@ class TestListFilter:
         assert len(results) == 1
         assert results[0]["code_s"] == "9999"
 
+    # --- 全角半角ゆれ吸収 (NFKC): 実データ 6999 銘柄名が全角 'ＫＯＡ' のケース ---
+    @pytest.mark.parametrize("keyword", ["KOA", "koa", "ＫＯＡ"])
+    def test_filter_keyword_fullwidth_normalize(self, db_path, keyword):
+        rec = rs.create_research_record("6999", "ＫＯＡ", overall_rating="B")
+        rs.upsert_research_record(rec, db_path=db_path)
+        results = rs.list_research_records(keyword=keyword, db_path=db_path)
+        assert [r["code_s"] for r in results] == ["6999"]
+
     # --- issue #236: stock_name_prev も検索対象 (エイリアス) ---
     def test_filter_keyword_stock_name_prev(self, db_path):
         rec = rs.create_research_record(

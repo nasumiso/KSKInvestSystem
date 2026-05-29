@@ -5,6 +5,7 @@ GET / : 銘柄コード/名前/評価でフィルタし一覧表示
 """
 
 import os
+import unicodedata
 from datetime import datetime
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash
@@ -68,7 +69,8 @@ def index():
 
     if q:
         # q は code_s 部分一致 OR keyword 一致 (search_records が見る複数フィールド)
-        q_upper = q.upper()
+        # NFKC で全角コード入力 (例: '６９９９') も半角登録の code_s にマッチさせる
+        q_upper = unicodedata.normalize("NFKC", q).upper()
         code_match = [
             r for r in search_records(rating=rating)
             if q_upper in r.get("code_s", "")
@@ -85,7 +87,8 @@ def index():
     else:
         records = search_records(rating=rating, keyword=keyword)
         if code_s:
-            records = [r for r in records if code_s.upper() in r.get("code_s", "")]
+            code_s_norm = unicodedata.normalize("NFKC", code_s).upper()
+            records = [r for r in records if code_s_norm in r.get("code_s", "")]
 
     # コード/銘柄名検索で1件のみヒットした場合は詳細ページへ直接ジャンプ
     if (q or code_s) and len(records) == 1:
@@ -93,7 +96,7 @@ def index():
 
     # issue #216: q がコード形式 (4桁数字 or 3桁数字+大文字) で 0 件ヒット時のみ
     # 「この銘柄を追加」フォームを出す。銘柄名検索や不正フォーマットでは出さない。
-    q_normalized = q.upper()
+    q_normalized = unicodedata.normalize("NFKC", q).upper()
     can_add = (
         bool(q)
         and not records
