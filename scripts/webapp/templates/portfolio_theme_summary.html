@@ -98,7 +98,7 @@
         {% if t.dev_b_avg is not none %}<span class="{% if t.dev_b_avg >= 0 %}dev-up{% else %}dev-down{% endif %}">{{ fmt_pct(t.dev_b_avg) }}</span>{% else %}—{% endif %}
       </td>
       <td class="leaders-cell">
-        {% for l in t.leaders %}<a href="{{ url_for('detail.stock_detail', code_s=l.code_s) }}">{{ l.code_s }}</a>({{ l.momentum_pt|round|int }}){% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
+        {% for l in t.leaders %}{% set nm = l.stock_name or l.code_s %}<a href="{{ url_for('detail.stock_detail', code_s=l.code_s) }}" title="{{ nm }}">{{ nm|truncate(8, true, '..', 0) }}</a>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
       </td>
     </tr>
     {% endfor %}
