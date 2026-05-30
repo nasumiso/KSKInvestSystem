@@ -90,6 +90,19 @@ def stock_detail(code_s: str):
     # issue #282: テーママスターから候補を取得
     theme_master = [] if portfolio_fallback_mode else ps.list_themes()
 
+    # issue #297: 業態テーマ自動提案ボタンの表示条件。
+    # 未設定 (全スロット空) かつ事業テキスト (四季報特色・コメント・株探概要) が
+    # 1 つでもある銘柄にのみ「🤖 提案」ボタンを出す。
+    from theme_suggest import build_business_text  # 遅延 import
+    gyoutai_themes_unset = not any((t or "").strip() for t in gyoutai_themes)
+    has_business_text = bool(
+        build_business_text(
+            record.get("overview"),
+            record.get("shikiho_comments"),
+            stock.get("overview") if stock else None,
+        )
+    )
+
     # issue #227: 株価 + RSライン 統合チャート (フル版)
     # market_db のロード失敗時は RS 無しの株価のみで描画 (500 にしない)
     from webapp.helpers import build_stock_chart_payload  # 遅延 import
@@ -121,4 +134,6 @@ def stock_detail(code_s: str):
         gyoutai_themes=gyoutai_themes,
         theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
+        gyoutai_themes_unset=gyoutai_themes_unset,
+        has_business_text=has_business_text,
     )
