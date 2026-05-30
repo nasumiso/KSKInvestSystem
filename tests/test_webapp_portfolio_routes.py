@@ -1265,3 +1265,15 @@ class TestPortfolioCharts:
         assert "対象銘柄なし" in html
         # グリッド本体 (class 属性) は描かれない。CSS 定義の .charts-grid は別物。
         assert 'class="charts-grid"' not in html
+
+    def test_charts_embeds_stage_and_update_for_inline_edit(self, client, portfolio_db_path):
+        """inline 編集の初期値として stage / 更新日が JSON 埋め込みに出る (issue #231)"""
+        ps.update_memo(
+            "3496",
+            {"stage": "2S", "last_research_update": "5/30"},
+            db_path=portfolio_db_path,
+        )
+        resp = client.get("/portfolio/charts?status=hold")
+        html = resp.data.decode()
+        assert '"stage": "2S"' in html
+        assert '"last_research_update": "5/30"' in html

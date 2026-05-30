@@ -697,8 +697,14 @@ def charts():
     rows = list_portfolio_with_indicators(filtered_records, sort_key="gyoutai")
 
     # iframe 表示に必要な最小キーのみ JSON 化して渡す。
+    # stage / 更新日 (last_research_update) はチャートページ上での inline 編集の初期値。
     stocks = [
-        {"code_s": r["code_s"], "stock_name": r.get("stock_name") or ""}
+        {
+            "code_s": r["code_s"],
+            "stock_name": r.get("stock_name") or "",
+            "stage": (r.get("memo") or {}).get("stage") or "",
+            "last_research_update": (r.get("memo") or {}).get("last_research_update") or "",
+        }
         for r in rows
     ]
     active_status_query = (
