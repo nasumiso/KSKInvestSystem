@@ -360,6 +360,20 @@
   // サーバから渡される初期リンク配列 (label/url の dict 列)
   var CHAT_LINKS = {{ (record.chat_links or [])|tojson }};
 
+  // URL のドメイン主要部をラベルとして返す (label 未設定時の既定表示)。
+  // 例: https://chatgpt.com/g/... -> "chatgpt", docs.google.com -> "google"。
+  // www. を除き、TLD を落とした最後の要素を採る。パース不能時は URL をそのまま返す。
+  function _chatLabelFromUrl(url) {
+    try {
+      var host = new URL(url).hostname.replace(/^www\./, '');
+      var parts = host.split('.');
+      if (parts.length >= 2) return parts[parts.length - 2];
+      return host || url;
+    } catch (e) {
+      return url;
+    }
+  }
+
   // links 配列から #chat-links-list を再構築する。
   // label/url は createElement + textContent / setAttribute で挿入し XSS を防ぐ。
   function renderChatLinks(links) {
@@ -381,13 +395,14 @@
       a.href = link.url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      a.textContent = link.label || link.url;
+      // 手動ラベルがあれば優先、無ければ URL のドメイン主要部を表示
+      a.textContent = link.label || _chatLabelFromUrl(link.url);
       row.appendChild(a);
 
       var edit = document.createElement('button');
       edit.type = 'button';
       edit.textContent = '✎';
-      edit.title = '編集';
+      edit.title = '表示名を編集';
       edit.style.cssText = 'width:auto !important;padding:0 0.3em;font-size:0.8em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;';
       edit.onclick = function () { editChatLink(idx, link); };
       row.appendChild(edit);
@@ -428,25 +443,23 @@
     });
   }
 
+  // 追加は URL のみ (ラベルは後から ✎ で付ける)。
   function addChatLink() {
-    var label = window.prompt('ラベル (例: ChatGPT 事業分析)', '');
-    if (label === null) return;  // Cancel
-    var url = window.prompt('URL (http:// または https://)', '');
-    if (url === null) return;
+    var url = window.prompt('チャットの URL (http:// または https://)', '');
+    if (url === null) return;  // Cancel
     var fd = new FormData();
-    fd.append('label', label);
+    fd.append('label', '');
     fd.append('url', url);
     _postChatLink('/chat_link', fd);
   }
 
+  // ✎ はラベル (表示名) の後付け編集。URL は維持したまま label のみ更新する。
   function editChatLink(idx, link) {
-    var label = window.prompt('ラベル', link.label || '');
+    var label = window.prompt('表示名 (空欄でドメイン名を表示)', link.label || '');
     if (label === null) return;
-    var url = window.prompt('URL (http:// または https://)', link.url || '');
-    if (url === null) return;
     var fd = new FormData();
     fd.append('label', label);
-    fd.append('url', url);
+    fd.append('url', link.url);
     _postChatLink('/chat_link/' + idx, fd);
   }
 
