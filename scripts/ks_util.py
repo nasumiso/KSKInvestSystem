@@ -71,6 +71,15 @@ def _resolve_data_dir(fallback_root: str) -> str:
 DATA_DIR = _resolve_data_dir(ROOT_DIR)
 LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 
+# theme-news 生成データのルート ($KS_DATA_DIR/theme_news/)。
+# コードと生成データの責任分離のため、履歴・カレンダー素材は DATA_DIR 配下に置く
+# (issue #279)。code_rank_data/ と同じく DATA_DIR 起点で解決する。
+THEME_NEWS_DIR = os.path.join(DATA_DIR, "theme_news")
+THEME_NEWS_HISTORY_DIR = os.path.join(THEME_NEWS_DIR, "history")
+THEME_NEWS_EVENTS_JSON = os.path.join(THEME_NEWS_DIR, "events.json")
+THEME_NEWS_CALENDAR_HTML = os.path.join(THEME_NEWS_DIR, "calendar.html")
+THEME_NEWS_CALENDAR_ARCHIVE = os.path.join(THEME_NEWS_DIR, "calendar-archive.md")
+
 # ==================================================
 # ユーティリティ
 # ==================================================

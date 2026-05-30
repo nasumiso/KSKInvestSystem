@@ -15,11 +15,19 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ks_util import get_price_day, log_print, log_warning, log_error
+from ks_util import (
+    get_price_day,
+    log_print,
+    log_warning,
+    log_error,
+    THEME_NEWS_HISTORY_DIR,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-HISTORY_DIR = PROJECT_ROOT / ".claude" / "skills" / "theme-news" / "history"
+# issue #279: 生成データ (履歴) は $KS_DATA_DIR/theme_news/history/ に集約。
+# PROJECT_ROOT は claude -p の cwd 等で引き続き使うため残す。
+HISTORY_DIR = Path(THEME_NEWS_HISTORY_DIR)
 
 # claude CLI のタイムアウト (秒)。WebSearch 5-10 回 + 推察生成想定で 15 分
 CLAUDE_TIMEOUT_SEC = 900
