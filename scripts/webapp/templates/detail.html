@@ -76,6 +76,13 @@
         <a href="{{ url_for('portfolio.themes_index') }}"
            style="font-size:0.85em;color:#555;text-decoration:none;padding:0 0.3em;"
            title="テーママスターを編集">✏️</a>
+        {# issue #297: 業態テーマ未設定 & 事業テキストありの銘柄に LLM 提案ボタン #}
+        {% if gyoutai_themes_unset and has_business_text %}
+        <button type="button" class="gyoutai-suggest-btn" data-code="{{ record.code_s }}"
+                title="事業内容 (四季報・概要) から業態テーマを LLM 提案"
+                style="font-size:0.85em;padding:0.1em 0.5em;margin-left:0.2em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">🤖 提案</button>
+        <span class="gyoutai-suggest-msg" style="font-size:0.8em;color:#888;margin-left:0.3em;"></span>
+        {% endif %}
       </span>
       {% endif %}
       <form method="POST" action="/stock/{{ record.code_s }}/refresh" style="display:inline;margin-left:0.5em;">
@@ -318,6 +325,16 @@
       <textarea class="editable-field rich-edit" name="memo" rows="6" data-form="memo" style="display:none;">{{ record.memo or '' }}</textarea>
     </div>
 
+    {# issue #265: 外部チャット (ChatGPT/Claude) リンク。AJAX で個別保存するため
+       memo フォーム送信対象になる name 付き input は置かない。 #}
+    <div class="memo-field">
+      <label>外部チャット</label>
+      <div id="chat-links-list" data-code="{{ record.code_s }}"></div>
+      <button type="button" onclick="addChatLink(this)" data-code="{{ record.code_s }}"
+              title="ChatGPT/Claude のチャット URL を登録"
+              style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0.2em 0 0 0;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">+ 追加</button>
+    </div>
+
     <div class="memo-field">
       <label>機関投資家</label>
       <div class="rich-display" onclick="switchToEdit(this)" style="min-height:3em;">{{ record.institutional_comment or '' }}</div>
@@ -337,6 +354,122 @@
 
   </form>
 </div>
+
+{# issue #265: 外部チャットリンクの描画・追加・編集・削除 (AJAX) #}
+<script>
+  // サーバから渡される初期リンク配列 (label/url の dict 列)
+  var CHAT_LINKS = {{ (record.chat_links or [])|tojson }};
+
+  // URL のドメイン主要部をラベルとして返す (label 未設定時の既定表示)。
+  // 例: https://chatgpt.com/g/... -> "chatgpt", docs.google.com -> "google"。
+  // www. を除き、TLD を落とした最後の要素を採る。パース不能時は URL をそのまま返す。
+  function _chatLabelFromUrl(url) {
+    try {
+      var host = new URL(url).hostname.replace(/^www\./, '');
+      var parts = host.split('.');
+      if (parts.length >= 2) return parts[parts.length - 2];
+      return host || url;
+    } catch (e) {
+      return url;
+    }
+  }
+
+  // links 配列から #chat-links-list を再構築する。
+  // label/url は createElement + textContent / setAttribute で挿入し XSS を防ぐ。
+  function renderChatLinks(links) {
+    var container = document.getElementById('chat-links-list');
+    container.innerHTML = '';
+    if (!links.length) {
+      var empty = document.createElement('span');
+      empty.style.color = '#999';
+      empty.style.fontSize = '0.85em';
+      empty.textContent = '未登録';
+      container.appendChild(empty);
+      return;
+    }
+    links.forEach(function (link, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:0.3em;margin-bottom:0.2em;';
+
+      var a = document.createElement('a');
+      a.href = link.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      // 手動ラベルがあれば優先、無ければ URL のドメイン主要部を表示
+      a.textContent = link.label || _chatLabelFromUrl(link.url);
+      row.appendChild(a);
+
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.textContent = '✎';
+      edit.title = '表示名を編集';
+      edit.style.cssText = 'width:auto !important;padding:0 0.3em;font-size:0.8em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;';
+      edit.onclick = function () { editChatLink(idx, link); };
+      row.appendChild(edit);
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '🗑';
+      del.title = '削除';
+      del.style.cssText = 'width:auto !important;padding:0 0.3em;font-size:0.8em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;';
+      del.onclick = function () { deleteChatLink(idx, link); };
+      row.appendChild(del);
+
+      container.appendChild(row);
+    });
+  }
+
+  function _chatCode() {
+    return document.getElementById('chat-links-list').dataset.code;
+  }
+
+  // fetch 共通処理。成功で links を再描画、失敗で alert。
+  function _postChatLink(path, formData) {
+    fetch('/stock/' + encodeURIComponent(_chatCode()) + path, {
+      method: 'POST',
+      headers: {'X-Requested-With': 'XMLHttpRequest'},
+      body: formData,
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok || !j.ok) {
+          alert('失敗: ' + (j.error || r.status));
+          return;
+        }
+        CHAT_LINKS = j.links;
+        renderChatLinks(CHAT_LINKS);
+      });
+    }).catch(function (err) {
+      alert('通信エラー: ' + err);
+    });
+  }
+
+  // 追加は URL のみ (ラベルは後から ✎ で付ける)。
+  function addChatLink() {
+    var url = window.prompt('チャットの URL (http:// または https://)', '');
+    if (url === null) return;  // Cancel
+    var fd = new FormData();
+    fd.append('label', '');
+    fd.append('url', url);
+    _postChatLink('/chat_link', fd);
+  }
+
+  // ✎ はラベル (表示名) の後付け編集。URL は維持したまま label のみ更新する。
+  function editChatLink(idx, link) {
+    var label = window.prompt('表示名 (空欄でドメイン名を表示)', link.label || '');
+    if (label === null) return;
+    var fd = new FormData();
+    fd.append('label', label);
+    fd.append('url', link.url);
+    _postChatLink('/chat_link/' + idx, fd);
+  }
+
+  function deleteChatLink(idx, link) {
+    if (!window.confirm('削除しますか?\n' + (link.label || link.url))) return;
+    _postChatLink('/chat_link/' + idx + '/delete', new FormData());
+  }
+
+  renderChatLinks(CHAT_LINKS);
+</script>
 
 {# ===== 6. 四季報（click-to-edit） ===== #}
 <div class="memo-section" id="shikiho-section">
@@ -671,7 +804,7 @@ function excludeFromUniverse(codeS) {
     var fd = new FormData();
     inputs.forEach(function(inp) { fd.append(inp.name, inp.value); });
     inputs.forEach(function(inp) { inp.classList.add('saving'); inp.classList.remove('error'); });
-    fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+    return fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
       method: 'POST',
       headers: { 'X-Requested-With': 'XMLHttpRequest' },
       body: fd,
@@ -682,13 +815,15 @@ function excludeFromUniverse(codeS) {
       if (!res.ok || !res.json || res.json.ok !== true) {
         inputs.forEach(function(inp) { inp.classList.add('error'); });
         alert((res.json && res.json.error) || '業態・テーマの保存に失敗しました');
-        return;
+        return false;
       }
       var themes = (res.json.display && res.json.display.gyoutai_themes) || [];
       inputs.forEach(function(inp, i) { inp.value = themes[i] != null ? themes[i] : ''; });
+      return true;
     }).catch(function(err) {
       inputs.forEach(function(inp) { inp.classList.remove('saving'); inp.classList.add('error'); });
       alert('通信エラー: ' + err);
+      return false;
     });
   }
 
@@ -704,6 +839,66 @@ function excludeFromUniverse(codeS) {
       window.open('/portfolio?gyoutai_theme=' + encodeURIComponent(v), '_blank', 'noopener');
     });
   });
+
+  // issue #297: 業態テーマ LLM 提案ボタン。
+  // 提案を select にプリセットするだけ (保存はユーザーが change で確定)。
+  var suggestBtn = wrap.querySelector('.gyoutai-suggest-btn');
+  var suggestMsg = wrap.querySelector('.gyoutai-suggest-msg');
+  if (suggestBtn) {
+    suggestBtn.addEventListener('click', function() {
+      suggestBtn.disabled = true;
+      suggestBtn.textContent = '提案中...';
+      if (suggestMsg) suggestMsg.textContent = '';
+      fetch('/stock/' + encodeURIComponent(code) + '/suggest_themes', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      }).then(function(r) {
+        return r.json().then(function(json) { return { ok: r.ok, json: json }; });
+      }).then(function(res) {
+        suggestBtn.disabled = false;
+        suggestBtn.textContent = '🤖 提案';
+        if (!res.ok || !res.json || res.json.ok !== true) {
+          if (suggestMsg) suggestMsg.textContent = (res.json && res.json.error) || '提案に失敗しました';
+          return;
+        }
+        var preset = res.json.preset || [];
+        var low = res.json.low || [];
+        var newThemes = res.json['new'] || [];
+        // preset (高確信・マスター内) を前のスロットから順に select へ反映し、
+        // 既存の AJAX 保存フローで即時保存する。
+        var applied = 0;
+        preset.forEach(function(item, i) {
+          var inp = inputs[i];
+          if (!inp) return;
+          var hasOpt = Array.prototype.some.call(inp.options, function(o) { return o.value === item.name; });
+          if (hasOpt) {
+            inp.value = item.name;
+            applied += 1;
+          }
+        });
+        // メッセージ欄に確信度を数値表示。
+        var fmt = function(arr) {
+          return arr.map(function(e) { return e.name + ' ' + e.confidence + '%'; }).join(' / ');
+        };
+        var lines = [];
+        if (preset.length) lines.push('✓ ' + fmt(preset));
+        if (low.length) lines.push('参考(低確信): ' + fmt(low));
+        if (newThemes.length) lines.push('新テーマ候補: ' + fmt(newThemes) + ' (採用は ✏️ でマスター追加)');
+        if (applied > 0) {
+          if (suggestMsg) suggestMsg.textContent = lines.join(' ｜ ') + ' ｜ 保存中...';
+          save().then(function(ok) {
+            if (suggestMsg) suggestMsg.textContent = lines.join(' ｜ ') + (ok ? ' ｜ 保存しました' : ' ｜ 保存に失敗しました');
+          });
+        } else if (suggestMsg) {
+          suggestMsg.textContent = lines.length ? lines.join(' ｜ ') : '該当なし';
+        }
+      }).catch(function(err) {
+        suggestBtn.disabled = false;
+        suggestBtn.textContent = '🤖 提案';
+        if (suggestMsg) suggestMsg.textContent = '通信エラー: ' + err;
+      });
+    });
+  }
 })();
 </script>
 {% endif %}

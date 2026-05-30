@@ -87,6 +87,7 @@ RECORD_FIELDS = frozenset(
         "analysis_date_raw",
         "kessan_date_raw",
         "corporate_url_override",
+        "chat_links",
     }
 )
 
@@ -258,6 +259,7 @@ def create_research_record(
     analysis_date_raw: str = "",
     kessan_date_raw: str = "",
     corporate_url_override: str = "",
+    chat_links: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """銘柄調査レコードのひな型 dict を生成する。
 
@@ -306,6 +308,7 @@ def create_research_record(
         "analysis_date_raw": analysis_date_raw,
         "kessan_date_raw": kessan_date_raw,
         "corporate_url_override": corporate_url_override,
+        "chat_links": _normalize_chat_links(chat_links),
     }
 
 
@@ -439,6 +442,31 @@ def _normalize_shikiho_comments(comments):
     return result
 
 
+def _normalize_chat_links(links):
+    """外部チャットリンクを List[{"label", "url"}] に正規化する（後方互換, issue #265）。
+
+    - list でなければ空リスト
+    - 各要素は dict かつ url が http://・https:// 始まりの str のもののみ採用
+    - label は str 化して strip。壊れたエントリ・不正 URL は捨てる
+    """
+    if not isinstance(links, list):
+        return []
+    result = []
+    for item in links:
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url")
+        if not isinstance(url, str):
+            continue
+        url = url.strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            continue
+        label = item.get("label")
+        label = label.strip() if isinstance(label, str) else ""
+        result.append({"label": label, "url": url})
+    return result
+
+
 def sort_shikiho_comments_desc(
     comments: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
@@ -499,6 +527,7 @@ def get_research_record(
     held_after_kessan が無ければ False で補完する（後方互換）。
     post_price_changes が無く旧 post_price_change のみがある場合、
     {"1d": <旧値>, "5d": ""} に正規化する（後方互換）。
+    chat_links は未設定/壊れたエントリを除去して List[{"label","url"}] に正規化する。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
@@ -524,6 +553,7 @@ def get_research_record(
             record["corporate_url_override"] = ""
         if "stock_name_prev" not in record:
             record["stock_name_prev"] = None
+        record["chat_links"] = _normalize_chat_links(record.get("chat_links"))
     return record
 
 
