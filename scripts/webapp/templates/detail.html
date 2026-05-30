@@ -678,7 +678,7 @@ function excludeFromUniverse(codeS) {
     var fd = new FormData();
     inputs.forEach(function(inp) { fd.append(inp.name, inp.value); });
     inputs.forEach(function(inp) { inp.classList.add('saving'); inp.classList.remove('error'); });
-    fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+    return fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
       method: 'POST',
       headers: { 'X-Requested-With': 'XMLHttpRequest' },
       body: fd,
@@ -689,13 +689,15 @@ function excludeFromUniverse(codeS) {
       if (!res.ok || !res.json || res.json.ok !== true) {
         inputs.forEach(function(inp) { inp.classList.add('error'); });
         alert((res.json && res.json.error) || '業態・テーマの保存に失敗しました');
-        return;
+        return false;
       }
       var themes = (res.json.display && res.json.display.gyoutai_themes) || [];
       inputs.forEach(function(inp, i) { inp.value = themes[i] != null ? themes[i] : ''; });
+      return true;
     }).catch(function(err) {
       inputs.forEach(function(inp) { inp.classList.remove('saving'); inp.classList.add('error'); });
       alert('通信エラー: ' + err);
+      return false;
     });
   }
 
@@ -733,20 +735,37 @@ function excludeFromUniverse(codeS) {
           if (suggestMsg) suggestMsg.textContent = (res.json && res.json.error) || '提案に失敗しました';
           return;
         }
-        var themes = res.json.themes || [];
-        if (themes.length === 0) {
-          if (suggestMsg) suggestMsg.textContent = '候補なし';
-          return;
-        }
-        // 提案テーマを前のスロットから順に select へ反映 (value に持つ option を選択)。
-        // 既存値は無い前提 (未設定銘柄のみボタン表示)。保存は走らせない。
-        themes.forEach(function(name, i) {
+        var preset = res.json.preset || [];
+        var low = res.json.low || [];
+        var newThemes = res.json['new'] || [];
+        // preset (高確信・マスター内) を前のスロットから順に select へ反映し、
+        // 既存の AJAX 保存フローで即時保存する。
+        var applied = 0;
+        preset.forEach(function(item, i) {
           var inp = inputs[i];
           if (!inp) return;
-          var hasOpt = Array.prototype.some.call(inp.options, function(o) { return o.value === name; });
-          if (hasOpt) inp.value = name;
+          var hasOpt = Array.prototype.some.call(inp.options, function(o) { return o.value === item.name; });
+          if (hasOpt) {
+            inp.value = item.name;
+            applied += 1;
+          }
         });
-        if (suggestMsg) suggestMsg.textContent = '提案を反映 (保存は select 変更で確定)';
+        // メッセージ欄に確信度を数値表示。
+        var fmt = function(arr) {
+          return arr.map(function(e) { return e.name + ' ' + e.confidence + '%'; }).join(' / ');
+        };
+        var lines = [];
+        if (preset.length) lines.push('✓ ' + fmt(preset));
+        if (low.length) lines.push('参考(低確信): ' + fmt(low));
+        if (newThemes.length) lines.push('新テーマ候補: ' + fmt(newThemes) + ' (採用は ✏️ でマスター追加)');
+        if (applied > 0) {
+          if (suggestMsg) suggestMsg.textContent = lines.join(' ｜ ') + ' ｜ 保存中...';
+          save().then(function(ok) {
+            if (suggestMsg) suggestMsg.textContent = lines.join(' ｜ ') + (ok ? ' ｜ 保存しました' : ' ｜ 保存に失敗しました');
+          });
+        } else if (suggestMsg) {
+          suggestMsg.textContent = lines.length ? lines.join(' ｜ ') : '該当なし';
+        }
       }).catch(function(err) {
         suggestBtn.disabled = false;
         suggestBtn.textContent = '🤖 提案';

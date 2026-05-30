@@ -14,10 +14,21 @@ def db_path(tmp_path):
 
 
 @pytest.fixture
-def app(db_path, monkeypatch):
+def app(db_path, tmp_path, monkeypatch):
     """テスト用Flaskアプリ (DBパス差し替え済み)"""
     monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
     monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+    # トップページの Spreadsheet ポータルは CSV の mtime を表示に使う。
+    # CI には実データが無いため、テスト用 DATA_DIR にダミー CSV を置く。
+    portal_data_dir = tmp_path / "data"
+    for rel in (
+        "shintakane_result_data/shintakane_result.csv",
+        "code_rank_data/code_rank.csv",
+    ):
+        path = portal_data_dir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("dummy\n")
+    monkeypatch.setattr("webapp.routes.search.DATA_DIR", str(portal_data_dir))
 
     # テストデータ投入
     rec = rs.create_research_record(
@@ -75,8 +86,20 @@ class TestSearchRoute:
         resp = client.get("/")
         assert resp.status_code == 200
 
-    def test_index_no_query_hides_records_and_shows_portal(self, client):
+    def test_index_no_query_hides_records_and_shows_portal(self, client, monkeypatch):
         """issue #98: クエリなしトップでは銘柄一覧を出さず Spreadsheet ポータルを表示"""
+        # 「最終更新」はローカル CSV の mtime 依存 (search._portal_spreadsheets) のため
+        # CI 環境 (CSV 無し) では updated_at が "—" になり表示されない。ポータル表示
+        # 自体の検証が目的なので updated_at を固定値にモックして環境非依存にする。
+        import webapp.routes.search as search_route
+        monkeypatch.setattr(
+            search_route,
+            "_portal_spreadsheets",
+            lambda: [
+                {"title": "Shintakane Result", "url": "https://example.com/r", "updated_at": "2026-05-29 12:00"},
+                {"title": "Code Rank", "url": "https://example.com/c", "updated_at": "2026-05-29 12:00"},
+            ],
+        )
         resp = client.get("/")
         html = resp.data.decode()
         # 銘柄一覧テーブルは描画されない
@@ -1439,21 +1462,32 @@ class TestSuggestThemes:
         app.config["TESTING"] = True
         return app
 
-    def test_suggest_returns_filtered_themes(self, suggest_app, monkeypatch):
-        """事業テキスト・マスターありで提案テーマが JSON で返る"""
+    def test_suggest_returns_confidence_buckets(self, suggest_app, monkeypatch):
+        """事業テキスト・マスターありで {preset, low, new} 形式が返る"""
         monkeypatch.setattr(
             "webapp.routes.memo.theme_suggest.suggest_gyoutai_themes",
-            lambda business_text, theme_names: ["不動産"],
+            lambda business_text, theme_names: {
+                "preset": [{"name": "不動産", "confidence": 80}],
+                "low": [{"name": "AI", "confidence": 40}],
+                "new": [{"name": "認証ソリューション", "confidence": 75, "reason": "..."}],
+            },
         )
         resp = suggest_app.test_client().post("/stock/3496/suggest_themes")
         assert resp.status_code == 200
-        assert resp.get_json() == {"ok": True, "themes": ["不動産"]}
+        json = resp.get_json()
+        assert json["ok"] is True
+        assert json["preset"] == [{"name": "不動産", "confidence": 80}]
+        assert json["low"] == [{"name": "AI", "confidence": 40}]
+        assert json["new"][0]["name"] == "認証ソリューション"
 
     def test_suggest_empty_business_text(self, suggest_app):
-        """事業テキスト空銘柄は LLM を呼ばず空配列 + reason を返す"""
+        """事業テキスト空銘柄は LLM を呼ばず空の buckets + reason を返す"""
         resp = suggest_app.test_client().post("/stock/1234/suggest_themes")
         assert resp.status_code == 200
-        assert resp.get_json() == {"ok": True, "themes": [], "reason": "no_business_text"}
+        assert resp.get_json() == {
+            "ok": True, "preset": [], "low": [], "new": [],
+            "reason": "no_business_text",
+        }
 
     def test_suggest_rejects_already_set(self, suggest_app):
         """業態テーマ設定済み銘柄は 409 で拒否 (サーバー側ガード)"""

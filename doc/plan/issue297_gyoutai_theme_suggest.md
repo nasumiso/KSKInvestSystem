@@ -1,5 +1,35 @@
 # issue #297 実装プラン: 業態テーマを事業内容から LLM で自動提案
 
+> ## 追補 (Phase 2): 確信度スコア + 新テーマ参考提案
+>
+> 初版 (Phase 1, PR #298 でマージ予定) の利用フィードバック:
+> 「無理やり 2 件埋めて低関連のテーマを出すことがある」(例: 4395 アクリート =
+> SMS 配信代行に `AIサービス`/`SIコンサル`)。確信度の概念が無く、件数を埋めようと
+> 弱い候補も拾うのが原因。
+>
+> ### Phase 2 仕様
+> - LLM 出力を `[{name, confidence(0-100), reason}]` の JSON に変更。
+> - **プリセット**: マスター内テーマで `confidence >= 60` のものだけ select に反映。
+>   ボタン脇に「AIサービス 72%」と数値表示する。
+> - **低確信 (< 60)**: マスター内でも select には入れず「低確信」として参考表示のみ。
+> - **新テーマ参考提案**: マスターに合致する高確信テーマが無い/弱い場合、LLM に
+>   「マスターに無いが投資テーマとして適切な粒度の新テーマ」を提案させ、**参考表示のみ**
+>   (select には出さない。マスター追加は ✏️ から手動)。
+>   - 粒度ガイドをプロンプトに明記: 特定すぎ (例「SMSサービス」) も汎用すぎ (例「ITサービス」)
+>     も避け、投資テーマとして括れる粒度 (例「認証ソリューション」) にする。
+> - confidence 閾値は定数 `SUGGEST_CONFIDENCE_THRESHOLD = 60` で持つ。
+>
+> ### Phase 2 検証可能なゴール
+> - (F) LLM 出力が name/confidence/reason を持ち、confidence>=60 のマスター内テーマのみ
+>       プリセットされる
+> - (G) UI に各候補の confidence が数値表示される
+> - (H) 低確信テーマ・新テーマ提案は参考表示され select にはプリセットされない
+> - (I) アクリートのような銘柄で、本業に合わない高確信テーマが無ければ高確信枠が空になる
+>       (無理やり埋めない)
+>
+> 以下の本文 (§1 ロジック・§2 API・§4 テンプレート・検証) は Phase 2 仕様に
+> 全面更新済み。Phase 1 で実装済みの部分は差分のみ手を入れる。
+
 ## ゴール
 
 銘柄詳細画面で、業態テーマ未設定の銘柄に「🤖 提案」ボタンを出し、
@@ -59,16 +89,29 @@ def build_business_text(research_overview, shikiho_comments, stocks_overview) ->
     # 3 ソースを結合して 1 つの事業説明テキストにする。
     # 各ソースに見出しを付けて結合。全ソース空なら "" を返す。
 
-def suggest_gyoutai_themes(business_text, theme_names, *, max_suggest=2, timeout_sec=45) -> list[str]
-    # claude -p を subprocess 起動し、theme_names の中から business_text に最も合う
-    # テーマを最大 max_suggest 件、JSON 配列で返させる。
-    # - business_text が空なら [] を即返す (LLM 起動しない)
-    # - theme_names が空なら [] を即返す
-    # - プロンプトで「以下のリストからのみ選べ。リスト外は出力するな」と制約
-    # - --output-format json で claude -p を起動、result フィールドから JSON 配列を抽出
-    # - 返り値は theme_names に含まれるものだけにフィルタ (ハルシネーション防止 = ゴールE)
-    # - 重複除去・max_suggest 件で打ち切り
-    # - タイムアウト/異常終了/パース失敗時は [] を返す (UI 側でエラー表示)
+SUGGEST_CONFIDENCE_THRESHOLD = 60  # これ以上の confidence のマスター内テーマを select にプリセット
+
+def suggest_gyoutai_themes(business_text, theme_names, *, timeout_sec=45) -> dict
+    # claude -p を subprocess 起動し、business_text に合う業態テーマを確信度付きで返す。
+    # 戻り値 (Phase 2):
+    #   {
+    #     "preset":  [{"name": str, "confidence": int}, ...],  # マスター内 & confidence>=閾値。select 反映対象
+    #     "low":     [{"name": str, "confidence": int}, ...],  # マスター内だが confidence<閾値。参考表示のみ
+    #     "new":     [{"name": str, "confidence": int, "reason": str}, ...],  # マスター外の新テーマ提案。参考のみ
+    #   }
+    # - business_text 空 / theme_names 空 → 全て空の dict を返す (LLM 起動しない)
+    # - プロンプトで以下を指示:
+    #   * 事業内容に合致する業態テーマを、マスター一覧から confidence(0-100) 付きで挙げる
+    #   * マスターに適切なものが無い/弱い場合のみ、投資テーマとして適切な粒度の新テーマを
+    #     提案してよい (粒度ガイド: 特定すぎ「SMSサービス」も汎用すぎ「ITサービス」も避け、
+    #     「認証ソリューション」のような投資テーマ粒度に)。新テーマには reason を付ける。
+    #   * 無理に件数を埋めない。合致しなければ confidence を低く付ける/挙げない。
+    #   * 出力は JSON: {"matched": [{name, confidence}], "new": [{name, confidence, reason}]}
+    # - matched を theme_names で照合し、マスター内のみ採用 (ハルシネーション防止)。
+    #   confidence>=閾値 → preset、未満 → low に振り分け。重複除去。confidence 降順ソート。
+    # - new はマスター外のものだけ残す (誤って既存名を新テーマ扱いしないよう theme_names を除外)。
+    # - preset は最大 GYOUTAI_THEMES_MAX_SLOTS 件 (=2) で打ち切り (select スロット数)。
+    # - タイムアウト/異常終了/パース失敗時は全て空の dict を返す (UI 側でエラー表示)。
 ```
 
 claude -p の呼び出し方 (`run_theme_news.py` 踏襲):
@@ -78,8 +121,9 @@ result = subprocess.run(cmd, cwd=PROJECT_ROOT, timeout=timeout_sec,
                         check=False, capture_output=True, text=True)
 ```
 - プロンプトはテーマ一覧と事業テキストを埋め込んだ単一文字列。ツール不要なので `--allowed-tools` は付けない (Web 検索等させない)。
-- `--output-format json` の stdout 末尾 JSON から `result` を取り出し、その中の JSON 配列をパース。
-  - LLM 出力が ```json フェンス付きの可能性に備え、配列部分 `[...]` を正規表現で抽出してから json.loads。
+- `--output-format json` の stdout 末尾 JSON から `result` を取り出し、その中の JSON オブジェクトをパース。
+  - LLM 出力が ```json フェンス付きの可能性に備え、オブジェクト部分 `{...}` を正規表現で抽出してから json.loads。
+  - confidence は int に正規化 (0-100 にクランプ)。型不正・欠損エントリはスキップ。
 
 ログ: `log_print`/`log_warning`/`log_error` を使用 (print 不可)。
 個別銘柄の中間値・プロンプト全文は `log_debug`。
@@ -102,11 +146,13 @@ def post_suggest_themes(code_s):
     #      (portfolio_record.memo.gyoutai_themes を detail.py:86-89 と同じ方法で取得)
     # 3. business_text = build_business_text(record.overview, record.shikiho_comments,
     #                                        stock.overview)
-    #    business_text 空 → 200 {"ok": True, "themes": [], "reason": "no_business_text"}
+    #    business_text 空 → 200
+    #      {"ok": True, "preset": [], "low": [], "new": [], "reason": "no_business_text"}
     # 4. theme_names = [t["name"] for t in ps.list_themes()]
-    #    theme_names 空 → 200 {"ok": True, "themes": [], "reason": "no_master"}
-    # 5. themes = suggest_gyoutai_themes(business_text, theme_names)
-    # 6. 200 {"ok": True, "themes": themes}
+    #    theme_names 空 → 200 {"ok": True, "preset": [], "low": [], "new": [], "reason": "no_master"}
+    # 5. result = suggest_gyoutai_themes(business_text, theme_names)  # {preset, low, new}
+    # 6. 200 {"ok": True, "preset": [...], "low": [...], "new": [...]}
+    #    business_text 空時も同形 (空配列 + reason="no_business_text")
     # 例外時 → 500 {"ok": False, "error": str(e)}
 ```
 - サーバー側ガード (codex 指摘1 対応): クライアントの表示条件に依存せず、API 側で
@@ -146,29 +192,43 @@ JS (既存の inline script ブロックに追記、または detail.html 末尾
 ```
 - ボタン click → fetch POST /stock/<code>/suggest_themes (X-Requested-With ヘッダ)
 - ボタンを「提案中...」に変えて disable (二重実行防止)
-- 応答 themes[] を gyoutai-input-detail の select に順に selected 設定
-  (既存値が無い前提だが、空きスロットに前から詰める)
-- themes 空なら「候補なし」を一時表示
-- 失敗時はアラート or ボタン脇に「提案失敗」表示
-- 保存はしない (ユーザーが既存の保存フローで確定)
+- 応答 preset[] を gyoutai-input-detail の select に順に selected 設定
+  (value に持つ option を選択。前のスロットから詰める)
+- ボタン脇のメッセージ欄 (.gyoutai-suggest-msg) に確信度を数値表示:
+  * preset: 「✓ AIサービス 72% / 半導体 65%」のように name と confidence を併記
+  * low (参考):  「参考(低確信): 物流 45%」
+  * new (参考):  「新テーマ候補: 認証ソリューション 80% (理由...)」
+  * preset/low/new すべて空なら「該当なし」
+- preset が空 (=高確信なし) のときは select に何も入れない (無理やり埋めない = ゴールI)
+- 失敗時はメッセージ欄に「提案失敗」表示
+- 保存はしない (ユーザーが既存の保存フローで確定)。new はマスター未登録なので
+  select には入れず、✏️ から手動でマスター追加してもらう旨を文言で促す。
 ```
-- select への反映方法: `gyoutai-input-detail` クラスの select を順に取得し、
-  themes[i] を value に持つ option を selected にする。
-  value が option に無い場合 (マスター未登録) はスキップ — ただし API 側でフィルタ済みなので基本発生しない。
+- select への反映: `gyoutai-input-detail` の select を順に取得し、preset[i].name を
+  value に持つ option を選択。value が option に無ければスキップ (preset は API で
+  マスター内フィルタ済みなので基本発生しない)。
+- 確信度の数値は preset/low/new 各エントリの confidence をそのまま表示。
 
 ## 検証
 
 CLAUDE.md / testing.md のマッピングに従う。
 
-- 新規 `theme_suggest.py` のユニットテスト (`tests/test_theme_suggest.py`, 5 本以下 parametrize):
+- 新規 `theme_suggest.py` のユニットテスト (`tests/test_theme_suggest.py`, parametrize で集約):
   - `build_business_text`: 全空→""、一部あり→結合される (parametrize で数ケース)
-  - `suggest_gyoutai_themes`: business_text 空→[]、theme_names 空→[]、
-    LLM 返り値のフィルタ (マスター外除去・重複除去・max 件打ち切り) を subprocess mock で検証
+  - `suggest_gyoutai_themes` (Phase 2): business_text 空 / theme_names 空 → 全空 dict、
+    LLM 返り値 (matched + new) を subprocess mock で渡し、
+    * confidence>=60 のマスター内 → preset、<60 → low に振り分くこと
+    * マスター外 matched は除去されること (ハルシネーション防止 = ゴールF)
+    * new はマスター外のみ残ること、preset が GYOUTAI_THEMES_MAX_SLOTS で打ち切られること
+    * 「無理やり埋めない」= 高確信ゼロなら preset 空 (ゴールI)
   - subprocess は monkeypatch でモック (実際の claude -p は呼ばない)
 - WebApp ルート: `pytest tests/test_webapp_routes.py -v` (memo.py 変更のため)
-  - suggest_themes エンドポイントの 200/空応答パスを 1〜2 ケース追加 (theme_suggest をモック)
+  - suggest_themes の応答が {preset, low, new} 形式になること、空応答・409 を検証
+    (theme_suggest をモック)
 - テンプレート変更はブラウザ目視 (testing.md: HTML/JS のみはブラウザ確認):
-  - 未設定 & 事業テキストあり銘柄でボタン表示 → 押下 → select に反映を確認
+  - 未設定 & 事業テキストあり銘柄でボタン表示 → 押下 → preset が select に反映 (ゴールF/H)
+  - 確信度が数値表示される (ゴールG)、low/new は参考表示で select に入らない (ゴールH)
+  - アクリート 4395 で本業に合わない高確信が無く preset が空になる挙動 (ゴールI)
   - 設定済み銘柄 / 事業テキスト空銘柄でボタン非表示を確認
   - スクリーンショットは `.playwright-mcp/` 配下に保存
 

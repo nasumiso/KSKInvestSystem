@@ -40,28 +40,62 @@ def test_build_business_text(ro, comments, so, expected_contains, expected_empty
 
 
 # ==================================================
-# suggest_gyoutai_themes
+# suggest_gyoutai_themes (Phase 2: 確信度 + 新テーマ)
 # ==================================================
+EMPTY = {"preset": [], "low": [], "new": []}
+
+
 @pytest.mark.parametrize(
     "business_text, theme_names, llm_result, expected",
     [
-        # business_text 空 → LLM 呼ばず []
-        ("", ["AI", "半導体"], '["AI"]', []),
-        # theme_names 空 → []
-        ("半導体の会社", [], '["半導体"]', []),
-        # マスター外を除去 (防衛 はマスターに無い)
-        ("AIと防衛の会社", ["AI", "半導体"], '["AI", "防衛"]', ["AI"]),
-        # 重複除去 + max_suggest=2 で打ち切り
+        # business_text 空 → LLM 呼ばず空 dict
+        ("", ["AI", "半導体"], '{"matched": [{"name": "AI", "confidence": 90}]}', EMPTY),
+        # theme_names 空 → 空 dict
+        ("半導体の会社", [], '{"matched": [{"name": "半導体", "confidence": 90}]}', EMPTY),
+        # パース不能 → 空 dict
+        ("半導体の会社", ["AI", "半導体"], "JSONじゃない応答", EMPTY),
+        # confidence で preset / low に振り分け (60 が閾値)
+        (
+            "半導体とAIの会社",
+            ["AI", "半導体"],
+            '{"matched": [{"name": "半導体", "confidence": 85}, {"name": "AI", "confidence": 40}]}',
+            {
+                "preset": [{"name": "半導体", "confidence": 85}],
+                "low": [{"name": "AI", "confidence": 40}],
+                "new": [],
+            },
+        ),
+        # マスター外 matched は除去 (防衛 は一覧に無い)
+        (
+            "AIと防衛の会社",
+            ["AI", "半導体"],
+            '{"matched": [{"name": "AI", "confidence": 80}, {"name": "防衛", "confidence": 90}]}',
+            {"preset": [{"name": "AI", "confidence": 80}], "low": [], "new": []},
+        ),
+        # 高確信ゼロ → preset 空 (無理やり埋めない)。新テーマは new に。
+        (
+            "SMS配信代行サービス",
+            ["AI", "半導体"],
+            '{"matched": [{"name": "AI", "confidence": 30}], '
+            '"new": [{"name": "認証ソリューション", "confidence": 75, "reason": "認証用途が主力"}]}',
+            {
+                "preset": [],
+                "low": [{"name": "AI", "confidence": 30}],
+                "new": [{"name": "認証ソリューション", "confidence": 75, "reason": "認証用途が主力"}],
+            },
+        ),
+        # preset は max 2 件で打ち切り (confidence 降順)、フェンス付きでも抽出
         (
             "色々な事業",
             ["AI", "半導体", "EV"],
-            '["AI", "AI", "半導体", "EV"]',
-            ["AI", "半導体"],
+            '```json\n{"matched": [{"name": "EV", "confidence": 70}, '
+            '{"name": "AI", "confidence": 95}, {"name": "半導体", "confidence": 80}]}\n```',
+            {
+                "preset": [{"name": "AI", "confidence": 95}, {"name": "半導体", "confidence": 80}],
+                "low": [{"name": "EV", "confidence": 70}],
+                "new": [],
+            },
         ),
-        # フェンス付き・説明文付きでも配列を抽出
-        ("半導体の会社", ["AI", "半導体"], 'おすすめ: ```json\n["半導体"]\n```', ["半導体"]),
-        # パース不能 → []
-        ("半導体の会社", ["AI", "半導体"], "JSONじゃない応答", []),
     ],
 )
 def test_suggest_gyoutai_themes(monkeypatch, business_text, theme_names, llm_result, expected):

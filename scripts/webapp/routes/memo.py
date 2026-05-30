@@ -134,14 +134,25 @@ def post_suggest_themes(code_s: str):
             stock.get("overview"),
         )
         if not business_text:
-            return jsonify({"ok": True, "themes": [], "reason": "no_business_text"})
+            return jsonify({
+                "ok": True, "preset": [], "low": [], "new": [],
+                "reason": "no_business_text",
+            })
 
         theme_names = [t["name"] for t in ps.list_themes()]
         if not theme_names:
-            return jsonify({"ok": True, "themes": [], "reason": "no_master"})
+            return jsonify({
+                "ok": True, "preset": [], "low": [], "new": [],
+                "reason": "no_master",
+            })
 
-        themes = theme_suggest.suggest_gyoutai_themes(business_text, theme_names)
-        return jsonify({"ok": True, "themes": themes})
+        result = theme_suggest.suggest_gyoutai_themes(business_text, theme_names)
+        return jsonify({
+            "ok": True,
+            "preset": result["preset"],
+            "low": result["low"],
+            "new": result["new"],
+        })
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)}), 500
     finally:
