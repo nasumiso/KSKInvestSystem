@@ -1401,3 +1401,63 @@ class TestPortfolioThemeSummary:
         html = resp.data.decode()
         assert "業態テーマ別 RS サマリー" in html
         assert "半導体" in html
+
+
+class TestSuggestThemes:
+    """issue #297: POST /stock/<code_s>/suggest_themes (LLM 業態テーマ提案)。
+
+    claude -p は呼ばず theme_suggest.suggest_gyoutai_themes をモックして、
+    エンドポイントのガード分岐 (設定済み409・事業テキスト空・正常提案) を検証する。
+    """
+
+    @pytest.fixture
+    def suggest_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        # 事業テキストあり銘柄 (overview + shikiho_comments)
+        rec = rs.create_research_record(
+            "3496", "アズーム", overall_rating="A",
+            overview="駐車場サブリース", shikiho_comments=["最高益"],
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        # 事業テキスト空銘柄
+        rec_empty = rs.create_research_record("1234", "空テスト", overall_rating="B")
+        rs.upsert_research_record(rec_empty, db_path=db_path)
+        # テーママスター登録
+        ps.create_theme("不動産", db_path=portfolio_db)
+        ps.create_theme("AI", db_path=portfolio_db)
+        # 3496 を 3監 で登録 (テーマ未設定)
+        ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)
+        ps.add_to_watch("1234", reason="テスト", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app
+
+    def test_suggest_returns_filtered_themes(self, suggest_app, monkeypatch):
+        """事業テキスト・マスターありで提案テーマが JSON で返る"""
+        monkeypatch.setattr(
+            "webapp.routes.memo.theme_suggest.suggest_gyoutai_themes",
+            lambda business_text, theme_names: ["不動産"],
+        )
+        resp = suggest_app.test_client().post("/stock/3496/suggest_themes")
+        assert resp.status_code == 200
+        assert resp.get_json() == {"ok": True, "themes": ["不動産"]}
+
+    def test_suggest_empty_business_text(self, suggest_app):
+        """事業テキスト空銘柄は LLM を呼ばず空配列 + reason を返す"""
+        resp = suggest_app.test_client().post("/stock/1234/suggest_themes")
+        assert resp.status_code == 200
+        assert resp.get_json() == {"ok": True, "themes": [], "reason": "no_business_text"}
+
+    def test_suggest_rejects_already_set(self, suggest_app):
+        """業態テーマ設定済み銘柄は 409 で拒否 (サーバー側ガード)"""
+        import portfolio_shelve as ps
+        ps.update_memo("3496", {"gyoutai_themes": ["不動産"]})
+        resp = suggest_app.test_client().post("/stock/3496/suggest_themes")
+        assert resp.status_code == 409
