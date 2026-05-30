@@ -1224,3 +1224,44 @@ class TestDeleteCheckboxScope:
         assert 'class="bulk-cb"' not in html
         # bulk-col の th も出ない (delete_mode_allowed が False)
         assert 'class="bulk-col"' not in html
+
+
+class TestPortfolioCharts:
+    """GET /portfolio/charts チャート一覧モード (issue #231)。
+
+    fixture の 3 銘柄: 6324(3監/ハーモニック)・3496(1保/アズーム)・7203(2準/トヨタ)。
+    """
+
+    def test_charts_returns_200_with_chart_url(self, client):
+        """全件 (status=) で対象銘柄の code と株探チャート iframe URL が出る"""
+        resp = client.get("/portfolio/charts?status=")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        # 全銘柄の code_s が JSON 埋め込みに含まれる
+        assert "3496" in html and "6324" in html and "7203" in html
+        # JS が組み立てる株探チャート URL のベース
+        assert "kabutan.jp/stock/chart" in html
+
+    @pytest.mark.parametrize(
+        "query, present, absent",
+        [
+            ("status=hold", "3496", "7203"),   # 1保 のみ → アズーム在、トヨタ無
+            ("status=watch", "6324", "3496"),  # 3監 のみ → ハーモニック在、アズーム無
+        ],
+    )
+    def test_charts_status_filter(self, client, query, present, absent):
+        """status フィルタが /portfolio と同じ規則で効く (JSON 埋め込みの code_s で判定)"""
+        resp = client.get("/portfolio/charts?" + query)
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert present in html
+        assert absent not in html
+
+    def test_charts_empty_shows_message(self, client):
+        """該当ゼロ件のフィルタは「対象銘柄なし」を出しグリッドを描かない"""
+        resp = client.get("/portfolio/charts?gyoutai_theme=存在しないテーマ")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "対象銘柄なし" in html
+        # グリッド本体 (class 属性) は描かれない。CSS 定義の .charts-grid は別物。
+        assert 'class="charts-grid"' not in html

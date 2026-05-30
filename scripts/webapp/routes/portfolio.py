@@ -668,6 +668,51 @@ def dashboard():
     )
 
 
+@portfolio_bp.route("/portfolio/charts")
+def charts():
+    """チャート一覧確認モード (2x2 株探 iframe、issue #231)。
+
+    /portfolio と同じ status / gyoutai_theme フィルタで銘柄を抽出し、
+    業態順に並べた全件をテンプレートへ渡す。ページ送り・足切替は
+    クライアント側 JS が担当する (サーバー往復なし)。並び順は issue 仕様で
+    「portfolio 一覧と同じ順番固定」= 業態順なので sort は受け取らず gyoutai 固定。
+    """
+    active_status = _parse_status_filter(request.args)
+    active_gyoutai_theme = _parse_gyoutai_theme(request.args)
+
+    all_records_inc = ps.list_records(include_excluded=True)
+    visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
+
+    # フィルタ抽出は dashboard() と同じ規則 (issue #215): gyoutai_theme 指定時は
+    # status 無視で完全一致、未指定かつ status None なら全件、それ以外は status 一致。
+    if active_gyoutai_theme:
+        filtered_records = [
+            r for r in visible_records
+            if active_gyoutai_theme in ((r.get("memo") or {}).get("gyoutai_themes") or [])
+        ]
+    elif active_status is None:
+        filtered_records = visible_records
+    else:
+        filtered_records = [r for r in visible_records if r.get("status") == active_status]
+    rows = list_portfolio_with_indicators(filtered_records, sort_key="gyoutai")
+
+    # iframe 表示に必要な最小キーのみ JSON 化して渡す。
+    stocks = [
+        {"code_s": r["code_s"], "stock_name": r.get("stock_name") or ""}
+        for r in rows
+    ]
+    active_status_query = (
+        STATUS_VALUE_TO_QUERY[active_status] if active_status in STATUS_VALUE_TO_QUERY else ""
+    )
+    return render_template(
+        "portfolio_charts.html",
+        stocks=stocks,
+        total=len(stocks),
+        active_status_query=active_status_query,
+        active_gyoutai_theme=active_gyoutai_theme or "",
+    )
+
+
 # ===========================================
 # 業態テーマ別 RS サマリー (issue #283)
 # ===========================================
