@@ -1426,6 +1426,51 @@ class TestPortfolioThemeSummary:
         assert "半導体" in html
 
 
+class TestChatLinkRoutes:
+    """issue #265: 外部チャットリンク AJAX ルート"""
+
+    def test_add_update_delete_flow(self, client, db_path):
+        """追加 → 更新 → 削除の一連と永続化を検証"""
+        # 追加 (201, links に1件)
+        resp = client.post("/stock/3496/chat_link",
+                           data={"label": "ChatGPT", "url": "https://chat.example/a"})
+        assert resp.status_code == 201
+        assert resp.get_json()["links"] == [
+            {"label": "ChatGPT", "url": "https://chat.example/a"}
+        ]
+        # 永続化確認
+        assert rs.get_research_record("3496", db_path=db_path)["chat_links"] == [
+            {"label": "ChatGPT", "url": "https://chat.example/a"}
+        ]
+        # 更新 (200, index 0 を上書き)
+        resp = client.post("/stock/3496/chat_link/0",
+                           data={"label": "Claude", "url": "https://claude.example/b"})
+        assert resp.status_code == 200
+        assert resp.get_json()["links"] == [
+            {"label": "Claude", "url": "https://claude.example/b"}
+        ]
+        # 削除 (200, 空に戻る)
+        resp = client.post("/stock/3496/chat_link/0/delete")
+        assert resp.status_code == 200
+        assert resp.get_json()["links"] == []
+        assert rs.get_research_record("3496", db_path=db_path)["chat_links"] == []
+
+    @pytest.mark.parametrize("path, data, status", [
+        # 不正 URL (http/https 以外) → 400
+        ("/stock/3496/chat_link", {"label": "x", "url": "ftp://x"}, 400),
+        ("/stock/3496/chat_link", {"label": "x", "url": ""}, 400),
+        # 未登録銘柄 → 404
+        ("/stock/9999/chat_link", {"label": "x", "url": "https://x.example"}, 404),
+        # index 範囲外 (chat_links 空なので 0 も範囲外) → 400
+        ("/stock/3496/chat_link/5", {"label": "x", "url": "https://x.example"}, 400),
+        ("/stock/3496/chat_link/5/delete", {}, 400),
+    ])
+    def test_error_cases(self, client, path, data, status):
+        resp = client.post(path, data=data)
+        assert resp.status_code == status
+        assert resp.get_json()["ok"] is False
+
+
 class TestSuggestThemes:
     """issue #297: POST /stock/<code_s>/suggest_themes (LLM 業態テーマ提案)。
 
