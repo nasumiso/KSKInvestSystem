@@ -45,13 +45,13 @@ source .venv/bin/activate && cd scripts && python -c "from ks_util import get_pr
 ```
 
 **1-0b. theme-news データディレクトリの実パス確定 (issue #279)**:
-履歴・カレンダー素材は `$KS_DATA_DIR/theme_news/` 配下にある (コードと分離)。Glob/Read/Write ツールは環境変数を展開しないため、まず Bash で実パスに展開してから以降の Glob/Read/Write で使う:
+履歴・カレンダー素材は theme-news データディレクトリ (コードと分離) 配下にある。Glob/Read/Write ツールは環境変数を展開せず、また `$KS_DATA_DIR` 未設定環境ではコード側が git common-dir や `data/` にフォールバックするため、**ここでも ks_util と同じ解決規則を使う**。下記 Bash で実パスを取得して以降の Glob/Read/Write で使う (venv 必須、`scripts/` から実行):
 
 ```bash
-echo "${KS_DATA_DIR:?KS_DATA_DIR 未設定}/theme_news"
+source .venv/bin/activate && cd scripts && python -c "from ks_util import THEME_NEWS_DIR; print(THEME_NEWS_DIR)"
 ```
 
-以降この出力 (例 `/Users/.../shintakane_data/theme_news`) を `{THEME_NEWS}` と呼び、`{THEME_NEWS}/history/`・`{THEME_NEWS}/events.json`・`{THEME_NEWS}/calendar.html` を参照する。
+以降この出力 (例 `/Users/.../shintakane_data/theme_news`) を `{THEME_NEWS}` と呼び、`{THEME_NEWS}/history/`・`{THEME_NEWS}/events.json`・`{THEME_NEWS}/calendar.html` を参照する。`$KS_DATA_DIR` を直接展開せず必ずこのコマンドの出力を使う (コード側とパスが一致する唯一の方法)。
 
 理由: market_data.html は 18:00 以降に生成され翌日 0:00 台に実行されることがある。**カレンダー日付で「今日」とすると、5/19 大引け後に生成された market_data.html を 5/20 早朝に開いた場合「5/20 のデータ」と誤認**して翌営業日の動きとして語ってしまう。価格日基準なら同じ実行が 5/19 扱いになり、調査対象日と本文中の日付が一致する。
 
@@ -324,7 +324,10 @@ Sources は手順 6-1 の基準を満たす URL のみ。本文の主張を裏�
 **8-3. 更新・アーカイブ**:
 - 既存エントリと `title` 類似 or 日付±3日以内 → 新規追加せず、既存オブジェクトを書き換え (`id` は維持)
 - `end < TODAY` になったエントリは `body` 末尾に「→ 実績: ...」を追記。それ以外の処理は不要 (グリッドが自動で淡色化)
-- `end < TODAY - 30 日` のエントリは events.json から削除し、`{THEME_NEWS}/calendar-archive.md` 末尾の `<tbody>` に `<tr>` として追記 (アーカイブ日列に今日の日付)
+- `end < TODAY - 30 日` のエントリは events.json から削除し、`{THEME_NEWS}/calendar-archive.md` 末尾に **Markdown テーブル行** を1行追記する (ファイルは HTML ではなく Markdown テーブル。`<tbody>`/`<tr>` は使わない)。列はヘッダーと同じ `| 日付 | タイトル | 結果サマリ | 重要度 | 関連テーマ | アーカイブ日 |` の順で、アーカイブ日列に今日 (価格日) を入れる:
+  ```
+  | 2026-04-15 | 日銀会合 | 利上げ見送りで円安進行 | high | 金融/円安 | 2026-05-29 |
+  ```
 
 **8-4. HTML 再生成**:
 ```bash
