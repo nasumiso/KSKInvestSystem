@@ -16,9 +16,30 @@ from datetime import date, datetime
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent
-EVENTS_JSON = SKILL_DIR / "events.json"
-TEMPLATE_HTML = SKILL_DIR / "calendar_template.html"
-OUTPUT_HTML = SKILL_DIR / "calendar.html"
+
+# issue #279: 生成データ (events.json, calendar.html) は $KS_DATA_DIR/theme_news/ に集約。
+# テンプレートは **コード** なので SKILL_DIR のまま据え置き。
+# scripts/ks_util から DATA_DIR ベースのパス定数を import する。
+# render_calendar は scripts と同居するリポジトリ内ツールなので、ks_util が取れない =
+# 異常事態。旧パスへ黙って書くとデータ分裂・移行漏れに気づけないため、フォールバックせず
+# 即エラー終了する (issue #279 論点3)。
+_scripts_dir = SKILL_DIR.parent.parent.parent / "scripts"
+if _scripts_dir.exists() and str(_scripts_dir) not in sys.path:
+    sys.path.insert(0, str(_scripts_dir))
+try:
+    from ks_util import (  # type: ignore
+        get_price_day,
+        THEME_NEWS_EVENTS_JSON,
+        THEME_NEWS_CALENDAR_HTML,
+    )
+except ImportError as e:
+    print(f"render_calendar: ks_util を import できません (パス解決不能のため中断): {e}",
+          file=sys.stderr)
+    raise SystemExit(1)
+
+EVENTS_JSON = Path(THEME_NEWS_EVENTS_JSON)
+TEMPLATE_HTML = SKILL_DIR / "calendar_template.html"   # コード: 据え置き
+OUTPUT_HTML = Path(THEME_NEWS_CALENDAR_HTML)
 
 
 def resolve_today(today_arg: str | None) -> str:
@@ -27,12 +48,9 @@ def resolve_today(today_arg: str | None) -> str:
         # フォーマット検証
         datetime.strptime(today_arg, "%Y-%m-%d")
         return today_arg
-    # ks_util.get_price_day を試す (17:00前は前日扱いの CLAUDE.md 規約準拠)
+    # get_price_day で 17:00前は前日扱い (CLAUDE.md 規約)。日付は近似でも実害が小さいので
+    # 取得失敗時のみ date.today にフォールバックする (パス定数とは扱いを変える)。
     try:
-        scripts_dir = SKILL_DIR.parent.parent.parent / "scripts"
-        if scripts_dir.exists() and str(scripts_dir) not in sys.path:
-            sys.path.insert(0, str(scripts_dir))
-        from ks_util import get_price_day  # type: ignore
         return get_price_day(datetime.now()).isoformat()
     except Exception:
         return date.today().isoformat()
@@ -53,6 +71,7 @@ def render(events_json: Path, template_html: Path, output_html: Path, today: str
         .replace("{{TODAY}}", today)
         .replace("{{EVENTS_JSON}}", events_str)
     )
+    output_html.parent.mkdir(parents=True, exist_ok=True)
     output_html.write_text(rendered)
     print(f"wrote {output_html} (events: {len(events)}, today: {today})")
 

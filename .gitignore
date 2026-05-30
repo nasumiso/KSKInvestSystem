@@ -25,8 +25,16 @@ __pycache__/
 .serena
 data_old/
 
-# theme-newsスキルの調査履歴（ローカル専用）
+# theme-news スキルの生成データ（ローカル専用 / issue #279 で $KS_DATA_DIR/theme_news/ へ移行）
+# コード (SKILL.md / render_calendar.py / calendar_template.html) は追跡し、生成データのみ無視する。
+# 旧パスにも並行稼働中はデータが残るため、旧パスの生成物も無視対象にする。
 .claude/skills/theme-news/history/
+.claude/skills/theme-news/events.json
+.claude/skills/theme-news/calendar.html
+.claude/skills/theme-news/calendar-archive.md
+.claude/skills/theme-news/*.running
+.claude/skills/theme-news/*.done
+.claude/skills/theme-news/*.meta.json
 
 # Claude Code 作業ファイル（ローカル専用）
 .claude/plans/

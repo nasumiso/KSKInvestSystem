@@ -44,6 +44,15 @@ market_data.html の上位3テーマについて、急騰・急落の理由を W
 source .venv/bin/activate && cd scripts && python -c "from ks_util import get_price_day; from datetime import datetime; print(get_price_day(datetime.now()).isoformat())"
 ```
 
+**1-0b. theme-news データディレクトリの実パス確定 (issue #279)**:
+履歴・カレンダー素材は theme-news データディレクトリ (コードと分離) 配下にある。Glob/Read/Write ツールは環境変数を展開せず、また `$KS_DATA_DIR` 未設定環境ではコード側が git common-dir や `data/` にフォールバックするため、**ここでも ks_util と同じ解決規則を使う**。下記 Bash で実パスを取得して以降の Glob/Read/Write で使う (venv 必須、`scripts/` から実行):
+
+```bash
+source .venv/bin/activate && cd scripts && python -c "from ks_util import THEME_NEWS_DIR; print(THEME_NEWS_DIR)"
+```
+
+以降この出力 (例 `/Users/.../shintakane_data/theme_news`) を `{THEME_NEWS}` と呼び、`{THEME_NEWS}/history/`・`{THEME_NEWS}/events.json`・`{THEME_NEWS}/calendar.html` を参照する。`$KS_DATA_DIR` を直接展開せず必ずこのコマンドの出力を使う (コード側とパスが一致する唯一の方法)。
+
 理由: market_data.html は 18:00 以降に生成され翌日 0:00 台に実行されることがある。**カレンダー日付で「今日」とすると、5/19 大引け後に生成された market_data.html を 5/20 早朝に開いた場合「5/20 のデータ」と誤認**して翌営業日の動きとして語ってしまう。価格日基準なら同じ実行が 5/19 扱いになり、調査対象日と本文中の日付が一致する。
 
 実装例 (時刻ごとの返り値):
@@ -52,7 +61,7 @@ source .venv/bin/activate && cd scripts && python -c "from ks_util import get_pr
 - 5/20 17:30 実行 → `2026-05-20` (17:00 過ぎで当日扱い)
 
 **1-1. 過去履歴**:
-`.claude/skills/theme-news/history/*.md` を Glob し、ファイル名 `YYYY-MM-DD.md` で **今日 (= 1-0 の価格日) から30日以内** のものだけ Read。テーマの継続性・推移把握に使う。存在しなければスキップ。
+`{THEME_NEWS}/history/*.md` (= 手順 1-0b で展開した実パス) を Glob し、ファイル名 `YYYY-MM-DD.md` で **今日 (= 1-0 の価格日) から30日以内** のものだけ Read。テーマの継続性・推移把握に使う。存在しなければスキップ。
 
 `.md.running` / `.md.done` / `.md.meta.json` は run_theme_news.py ラッパーが管理する補助ファイルで、**スキル側では一切参照・解釈しない**。特に `.md.running` は親ラッパー (= 自分を起動した親プロセス) が作ったロックなので、これを「並行する別セッションが走っている」と誤検出して中止しないこと。並行実行の制御はラッパー側の責務。
 
@@ -64,7 +73,7 @@ source .venv/bin/activate && cd scripts && python -c "from ks_util import get_pr
 - 3営業日以上欠落 / 初回実行: 直近1週間を遡及検索
 
 **1-3. 株カレンダー**:
-`.claude/skills/theme-news/calendar.html` を Read。
+`{THEME_NEWS}/calendar.html` を Read。
 
 - 「直近」「中期」のイベントは手順3 (マクロ) と手順5 (推察) で「あと N 日でこのイベント」のカウントダウンとして参照
 - 「Past」は過去イベントの結果記録で必要時のみ参照
@@ -252,7 +261,7 @@ A〜D のいずれかで「介入」「数値コミット」「国際連動」�
 
 ### 7. 履歴保存
 
-`.claude/skills/theme-news/history/{今日}.md` (= 手順 1-0 の価格日) に要約を Write。ディレクトリ無ければ `mkdir -p`、同日再実行は上書き、本文は1行圧縮 (材料・推察)。**Sources セクションは手順 6 で並べた URL リストをそのまま含める** (webapp の `/market` 表示で出典確認に使う)。
+`{THEME_NEWS}/history/{今日}.md` (= 手順 1-0 の価格日、1-0b の実パス) に要約を Write。ディレクトリ無ければ `mkdir -p`、同日再実行は上書き、本文は1行圧縮 (材料・推察)。**Sources セクションは手順 6 で並べた URL リストをそのまま含める** (webapp の `/market` 表示で出典確認に使う)。
 
 **⚠️ ファイル名は手順 1-0 の Bash で取得した価格日をそのまま使う**:
 - 17:00 前に実行された場合、`date.today()` (実カレンダー日) と価格日は **1日ずれる**
@@ -288,7 +297,7 @@ Sources は手順 6-1 の基準を満たす URL のみ。本文の主張を裏�
 
 ### 8. 株カレンダー更新
 
-`events.json` を編集 → `python .claude/skills/theme-news/render_calendar.py` で `calendar.html` を再生成。`calendar.html` は直接編集しない (上書きされる)。
+`{THEME_NEWS}/events.json` を編集 → `python .claude/skills/theme-news/render_calendar.py` で `{THEME_NEWS}/calendar.html` を再生成。`calendar.html` は直接編集しない (上書きされる)。render_calendar.py は **コード** なので skill 配下のパスのまま実行する (出力先だけが新パスになる)。
 
 **8-1. 拾う基準**:
 当日の調査本文 (手順6) から、以下をすべて満たすイベントだけを拾う。
@@ -315,7 +324,10 @@ Sources は手順 6-1 の基準を満たす URL のみ。本文の主張を裏�
 **8-3. 更新・アーカイブ**:
 - 既存エントリと `title` 類似 or 日付±3日以内 → 新規追加せず、既存オブジェクトを書き換え (`id` は維持)
 - `end < TODAY` になったエントリは `body` 末尾に「→ 実績: ...」を追記。それ以外の処理は不要 (グリッドが自動で淡色化)
-- `end < TODAY - 30 日` のエントリは events.json から削除し、`calendar-archive.html` 末尾の `<tbody>` に `<tr>` として追記 (アーカイブ日列に今日の日付)
+- `end < TODAY - 30 日` のエントリは events.json から削除し、`{THEME_NEWS}/calendar-archive.md` 末尾に **Markdown テーブル行** を1行追記する (ファイルは HTML ではなく Markdown テーブル。`<tbody>`/`<tr>` は使わない)。列はヘッダーと同じ `| 日付 | タイトル | 結果サマリ | 重要度 | 関連テーマ | アーカイブ日 |` の順で、アーカイブ日列に今日 (価格日) を入れる:
+  ```
+  | 2026-04-15 | 日銀会合 | 利上げ見送りで円安進行 | high | 金融/円安 | 2026-05-29 |
+  ```
 
 **8-4. HTML 再生成**:
 ```bash
