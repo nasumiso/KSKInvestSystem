@@ -1174,7 +1174,7 @@ def _html_theme_rank(market_db, theme_rank_data=None):
         '    items.forEach(function(item) {\n'
         '      var li = document.createElement("li");\n'
         '      var a = document.createElement("a");\n'
-        '      a.href = "/detail/" + encodeURIComponent(item[0]);\n'
+        '      a.href = "/stock/" + encodeURIComponent(item[0]);\n'
         '      a.target = "_blank";\n'
         '      a.rel = "noopener";\n'
         '      a.textContent = item[0] + (item[1] ? " " + item[1] : "");\n'
