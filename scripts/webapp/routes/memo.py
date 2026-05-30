@@ -6,6 +6,9 @@ POST /stock/<code_s>/shikiho          : 四季報保存
 POST /stock/<code_s>/ir_comment       : IR分析コメント一括保存
 POST /stock/<code_s>/corporate_url    : 会社HP URL 上書き保存/クリア (issue #208)
 POST /stock/<code_s>/stock_name_prev  : 旧名/エイリアス 保存/クリア (issue #236, AJAX)
+POST /stock/<code_s>/chat_link            : 外部チャットリンク追加 (issue #265, AJAX)
+POST /stock/<code_s>/chat_link/<idx>      : 外部チャットリンク更新 (issue #265, AJAX)
+POST /stock/<code_s>/chat_link/<idx>/delete : 外部チャットリンク削除 (issue #265, AJAX)
 """
 
 from flask import Blueprint, flash, jsonify, request, redirect, url_for
@@ -16,6 +19,9 @@ from webapp.helpers import (
     save_ir_comments,
     save_corporate_url_override,
     save_stock_name_prev,
+    add_chat_link,
+    update_chat_link,
+    delete_chat_link,
 )
 
 memo_bp = Blueprint("memo", __name__)
@@ -85,3 +91,60 @@ def post_stock_name_prev(code_s: str):
     except (ValueError, TypeError) as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return ("", 204)
+
+
+# =======================================================
+# 外部チャットリンク (chat_links) ルート (issue #265, AJAX/JSON)
+# =======================================================
+
+def _validate_chat_url(url: str):
+    """chat_link の URL を検証する。不正なら (error_message) を返し、正常なら None。"""
+    if not url:
+        return "URL を入力してください"
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return "URL は http:// または https:// で始めてください"
+    return None
+
+
+@memo_bp.route("/stock/<code_s>/chat_link", methods=["POST"])
+def post_chat_link_add(code_s: str):
+    """外部チャットリンク追加 -> JSON {ok, links}。"""
+    label = request.form.get("label", "")
+    url = request.form.get("url", "").strip()
+    err = _validate_chat_url(url)
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    try:
+        links = add_chat_link(code_s, label, url)
+    except (ValueError, TypeError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    return jsonify({"ok": True, "links": links}), 201
+
+
+@memo_bp.route("/stock/<code_s>/chat_link/<int:idx>", methods=["POST"])
+def post_chat_link_update(code_s: str, idx: int):
+    """外部チャットリンク更新 -> JSON {ok, links}。範囲外 idx は 400。"""
+    label = request.form.get("label", "")
+    url = request.form.get("url", "").strip()
+    err = _validate_chat_url(url)
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    try:
+        links = update_chat_link(code_s, idx, label, url)
+    except IndexError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except (ValueError, TypeError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    return jsonify({"ok": True, "links": links})
+
+
+@memo_bp.route("/stock/<code_s>/chat_link/<int:idx>/delete", methods=["POST"])
+def post_chat_link_delete(code_s: str, idx: int):
+    """外部チャットリンク削除 -> JSON {ok, links}。範囲外 idx は 400。"""
+    try:
+        links = delete_chat_link(code_s, idx)
+    except IndexError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except (ValueError, TypeError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    return jsonify({"ok": True, "links": links})

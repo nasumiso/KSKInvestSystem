@@ -25,6 +25,7 @@ from research_shelve import (
     normalize_code_s,
     validate_rating,
     _flock,
+    _normalize_chat_links,
     normalize_kessan_post_price_changes,
     VALID_RATINGS,
     VALID_EXPECTATIONS,
@@ -454,6 +455,68 @@ def save_corporate_url_override(code_s: str, url: str) -> str:
         record["corporate_url_override"] = cleaned
         upsert_research_record(record)
     return cleaned
+
+
+# =======================================================
+# 外部チャットリンク (chat_links) の CRUD (issue #265)
+# =======================================================
+# URL の http/https バリデーションはルート側で実施する
+# (save_corporate_url_override と同じ層分担)。helpers は index 範囲・
+# レコード存在チェックのみ行い、_flock で read-modify-write を直列化する。
+
+def _get_record_for_chat_link(normalized: str) -> Dict[str, Any]:
+    """chat_link 操作用にレコードを取得する。未登録は ValueError。"""
+    record = get_research_record(normalized)
+    if record is None:
+        raise ValueError(f"レコード未登録: {normalized}")
+    return record
+
+
+def add_chat_link(code_s: str, label: str, url: str) -> List[Dict[str, str]]:
+    """外部チャットリンクを末尾に追加し、保存後の全リストを返す。"""
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    entry = {"label": (label or "").strip(), "url": (url or "").strip()}
+    with _flock():
+        record = _get_record_for_chat_link(normalized)
+        links = _normalize_chat_links(record.get("chat_links"))
+        links.append(entry)
+        record["chat_links"] = links
+        upsert_research_record(record)
+    return links
+
+
+def update_chat_link(
+    code_s: str, index: int, label: str, url: str
+) -> List[Dict[str, str]]:
+    """index 行を上書きし、保存後の全リストを返す。範囲外は IndexError。"""
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    entry = {"label": (label or "").strip(), "url": (url or "").strip()}
+    with _flock():
+        record = _get_record_for_chat_link(normalized)
+        links = _normalize_chat_links(record.get("chat_links"))
+        if not 0 <= index < len(links):
+            raise IndexError(f"chat_links の index 範囲外: {index}")
+        links[index] = entry
+        record["chat_links"] = links
+        upsert_research_record(record)
+    return links
+
+
+def delete_chat_link(code_s: str, index: int) -> List[Dict[str, str]]:
+    """index 行を削除し、保存後の全リストを返す。範囲外は IndexError。"""
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    with _flock():
+        record = _get_record_for_chat_link(normalized)
+        links = _normalize_chat_links(record.get("chat_links"))
+        if not 0 <= index < len(links):
+            raise IndexError(f"chat_links の index 範囲外: {index}")
+        del links[index]
+        record["chat_links"] = links
+        upsert_research_record(record)
+    return links
 
 
 # =======================================================

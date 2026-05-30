@@ -318,6 +318,16 @@
       <textarea class="editable-field rich-edit" name="memo" rows="6" data-form="memo" style="display:none;">{{ record.memo or '' }}</textarea>
     </div>
 
+    {# issue #265: 外部チャット (ChatGPT/Claude) リンク。AJAX で個別保存するため
+       memo フォーム送信対象になる name 付き input は置かない。 #}
+    <div class="memo-field">
+      <label>外部チャット</label>
+      <div id="chat-links-list" data-code="{{ record.code_s }}"></div>
+      <button type="button" onclick="addChatLink(this)" data-code="{{ record.code_s }}"
+              title="ChatGPT/Claude のチャット URL を登録"
+              style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0.2em 0 0 0;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">+ 追加</button>
+    </div>
+
     <div class="memo-field">
       <label>機関投資家</label>
       <div class="rich-display" onclick="switchToEdit(this)" style="min-height:3em;">{{ record.institutional_comment or '' }}</div>
@@ -337,6 +347,109 @@
 
   </form>
 </div>
+
+{# issue #265: 外部チャットリンクの描画・追加・編集・削除 (AJAX) #}
+<script>
+  // サーバから渡される初期リンク配列 (label/url の dict 列)
+  var CHAT_LINKS = {{ (record.chat_links or [])|tojson }};
+
+  // links 配列から #chat-links-list を再構築する。
+  // label/url は createElement + textContent / setAttribute で挿入し XSS を防ぐ。
+  function renderChatLinks(links) {
+    var container = document.getElementById('chat-links-list');
+    container.innerHTML = '';
+    if (!links.length) {
+      var empty = document.createElement('span');
+      empty.style.color = '#999';
+      empty.style.fontSize = '0.85em';
+      empty.textContent = '未登録';
+      container.appendChild(empty);
+      return;
+    }
+    links.forEach(function (link, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:0.3em;margin-bottom:0.2em;';
+
+      var a = document.createElement('a');
+      a.href = link.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = link.label || link.url;
+      row.appendChild(a);
+
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.textContent = '✎';
+      edit.title = '編集';
+      edit.style.cssText = 'width:auto !important;padding:0 0.3em;font-size:0.8em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;';
+      edit.onclick = function () { editChatLink(idx, link); };
+      row.appendChild(edit);
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '🗑';
+      del.title = '削除';
+      del.style.cssText = 'width:auto !important;padding:0 0.3em;font-size:0.8em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;';
+      del.onclick = function () { deleteChatLink(idx, link); };
+      row.appendChild(del);
+
+      container.appendChild(row);
+    });
+  }
+
+  function _chatCode() {
+    return document.getElementById('chat-links-list').dataset.code;
+  }
+
+  // fetch 共通処理。成功で links を再描画、失敗で alert。
+  function _postChatLink(path, formData) {
+    fetch('/stock/' + encodeURIComponent(_chatCode()) + path, {
+      method: 'POST',
+      headers: {'X-Requested-With': 'XMLHttpRequest'},
+      body: formData,
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok || !j.ok) {
+          alert('失敗: ' + (j.error || r.status));
+          return;
+        }
+        CHAT_LINKS = j.links;
+        renderChatLinks(CHAT_LINKS);
+      });
+    }).catch(function (err) {
+      alert('通信エラー: ' + err);
+    });
+  }
+
+  function addChatLink() {
+    var label = window.prompt('ラベル (例: ChatGPT 事業分析)', '');
+    if (label === null) return;  // Cancel
+    var url = window.prompt('URL (http:// または https://)', '');
+    if (url === null) return;
+    var fd = new FormData();
+    fd.append('label', label);
+    fd.append('url', url);
+    _postChatLink('/chat_link', fd);
+  }
+
+  function editChatLink(idx, link) {
+    var label = window.prompt('ラベル', link.label || '');
+    if (label === null) return;
+    var url = window.prompt('URL (http:// または https://)', link.url || '');
+    if (url === null) return;
+    var fd = new FormData();
+    fd.append('label', label);
+    fd.append('url', url);
+    _postChatLink('/chat_link/' + idx, fd);
+  }
+
+  function deleteChatLink(idx, link) {
+    if (!window.confirm('削除しますか?\n' + (link.label || link.url))) return;
+    _postChatLink('/chat_link/' + idx + '/delete', new FormData());
+  }
+
+  renderChatLinks(CHAT_LINKS);
+</script>
 
 {# ===== 6. 四季報（click-to-edit） ===== #}
 <div class="memo-section" id="shikiho-section">
