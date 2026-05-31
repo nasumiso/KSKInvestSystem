@@ -13,6 +13,7 @@ from webapp.helpers import (
     get_stock_data,
     get_disclosures,
     has_recent_disclosure,
+    get_current_research_data,
 )
 from webapp.routes.portfolio import (
     STATUS_VALUE_TO_LABEL,
@@ -118,6 +119,16 @@ def stock_detail(code_s: str):
     except Exception:  # noqa: BLE001
         price_rs_chart = {"svg": "", "tooltip": "", "blue_dot": False}
 
+    # issue #219: 現在の調査材料 (code_rank.csv 相当)。
+    # 既取得の stock / portfolio_status を渡して shelve 二重 open と
+    # portfolio_shelve 全件スキャンを回避。失敗時は None で表示スキップ。
+    try:
+        current_research = get_current_research_data(
+            code_s, stock_data=stock, portfolio_status=portfolio_status,
+        )
+    except Exception:  # noqa: BLE001
+        current_research = None
+
     return render_template(
         "detail.html",
         record=record,
@@ -134,6 +145,7 @@ def stock_detail(code_s: str):
         gyoutai_themes=gyoutai_themes,
         theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
+        current_research=current_research,
         gyoutai_themes_unset=gyoutai_themes_unset,
         has_business_text=has_business_text,
     )

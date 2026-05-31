@@ -209,6 +209,34 @@
 </details>
 {% endif %}
 
+{# ===== 1.5. 現在の調査材料 (issue #219) ===== #}
+{% if current_research %}
+<style>
+.current-research-body { font-size: 0.9em; line-height: 1.7; }
+.cr-row { display: flex; flex-wrap: wrap; gap: 0.6em 1em; padding: 0.15em 0; align-items: baseline; }
+.cr-group { color: #666; min-width: 6em; font-weight: bold; }
+.cr-item { white-space: nowrap; }
+.cr-label { color: #888; font-size: 0.85em; margin-right: 0.2em; }
+.cr-value { color: #222; }
+</style>
+<details open class="current-research">
+  <summary><strong>現在の調査材料</strong></summary>
+  <div class="current-research-body">
+    {% for group_name, items in current_research %}
+    <div class="cr-row">
+      <span class="cr-group">【{{ group_name }}】</span>
+      {% for label, value in items %}
+      <span class="cr-item">
+        {% if label %}<span class="cr-label">{{ label }}</span>{% endif %}
+        <span class="cr-value">{{ value if value else '—' }}</span>
+      </span>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+
 {# ===== 2. 業績スナップショット時系列 ===== #}
 {% set snapshots = record.snapshots or [] %}
 {% if snapshots %}

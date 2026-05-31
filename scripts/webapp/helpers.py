@@ -3024,6 +3024,136 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
     return styles
 
 
+# ==================================================
+# issue #219: 銘柄詳細ページ「現在の調査材料」セクション
+# ==================================================
+
+# code_rank.csv の元ラベル → UI 短縮ラベル
+# 値そのものに意味が埋め込まれている列は空文字 (ラベル省略してそのまま値を出す)
+_CR_LABEL_MAP = {
+    "タグ": "タグ",
+    "順位": "順位",
+    "過去順位(1日/5日前)": "過去",
+    "シグナル": "シグナル",
+    "総合PT": "総合PT",
+    "プロフィット/クォリティ": "プロフィット",
+    "バリュー/サイズ": "バリュー",
+    "モメンタム(現在.20日比/5日比)": "モメンタム",
+    "ファンダメンタル": "ファンダ",
+    "トレンドテンプレート": "トレンド",
+    "ローソク足ボラティリティ(20,5)": "ボラ",
+    "売り圧力レシオ(20,5) 買い集め(週,日) 50DMA乖離率": "売り圧/買集/50DMA",
+    "業績(今季/今四半期 売上/営利成長率)": "売上/営利成長率",
+    "進捗率(現四半期/売上(前年)利益(前年)": "進捗",
+    "指標(時価総額|PER|EVR|ROE|売上高営業利益率|有利子負債自己負債比率|自己資本比率)": "",
+    "理論株価(乖離率|上限,下限))": "",
+    "過去業績(5年増収増益 4Q増収増益率)": "",
+    "信用(倍率|出来高買残比)": "",
+    "テーマ": "",
+    "更新日(業績|指標|価格)": "更新日",
+    "セクター": "セクター",
+}
+
+# グループ定義: (グループ名, [code_rank.csv 元ラベル, ...])
+_CR_GROUPS = [
+    ("ランク", ["タグ", "順位", "過去順位(1日/5日前)", "シグナル"]),
+    ("スコア", [
+        "総合PT", "プロフィット/クォリティ", "バリュー/サイズ",
+        "モメンタム(現在.20日比/5日比)", "ファンダメンタル",
+    ]),
+    ("テクニカル", [
+        "トレンドテンプレート",
+        "ローソク足ボラティリティ(20,5)",
+        "売り圧力レシオ(20,5) 買い集め(週,日) 50DMA乖離率",
+    ]),
+    ("業績", [
+        "業績(今季/今四半期 売上/営利成長率)",
+        "進捗率(現四半期/売上(前年)利益(前年)",
+    ]),
+    ("指標", ["指標(時価総額|PER|EVR|ROE|売上高営業利益率|有利子負債自己負債比率|自己資本比率)"]),
+    ("理論株価", ["理論株価(乖離率|上限,下限))"]),
+    ("過去業績", ["過去業績(5年増収増益 4Q増収増益率)"]),
+    ("信用", ["信用(倍率|出来高買残比)"]),
+    ("テーマ", ["テーマ"]),
+    ("更新日", ["更新日(業績|指標|価格)", "セクター"]),
+]
+
+
+def get_current_research_data(code_s, stock_data=None, portfolio_status=None):
+    """銘柄詳細ページ用に「現在の調査材料」(= code_rank.csv 相当) を取得する。
+
+    stocks_shelve から都度計算する read-only ヘルパ。
+    戻り値: ``[(group_name, [(short_label, value), ...]), ...]``。
+    stocks_shelve 未登録や必要キー欠落時は None を返す。
+
+    Args:
+        code_s: 銘柄コード
+        stock_data: detail.py 側で既に取得済みなら渡す (二重 open 回避)
+        portfolio_status: portfolio_shelve の status 文字列 ("1保"/"2準"/"3監")
+                          detail.py の portfolio_status を渡す (parse_my_portforio
+                          の全件スキャン回避 + excluded 整合)
+
+    issue #219.
+    """
+    import make_stock_db
+    import make_market_db
+
+    if stock_data is None:
+        stock_data = get_stock_data(code_s)
+    if not stock_data:
+        return None
+    # スコア計算 (list_all_db と同じ make_stock_db.compute_total_pt を共有)
+    try:
+        gyoseki_pt = int(stock_data["score_gyoseki"])
+        shihyo_pt = stock_data["shihyo_pt"]
+        mom_pt = stock_data.get("momentum_pt", 0)
+        funda_pt = stock_data.get("funda_pt", 0)
+        total_pt = make_stock_db.compute_total_pt(gyoseki_pt, shihyo_pt, mom_pt, funda_pt)
+    except (KeyError, TypeError):
+        return None
+
+    # 現在順位は stock_rank_log の先頭 (最新)。make_stock_db.get_rank_log で取得
+    rank_entry = make_stock_db.get_rank_log(stock_data, "stock_rank_log", 0)
+    rank = rank_entry[1] if rank_entry and len(rank_entry) >= 2 else ""
+
+    # ポートフォリオ ports は detail.py 既取得の portfolio_status から組み立てる。
+    # 値マッピング: "1保" -> 保, "3監"/"2準" -> 監 (CSV ロジックと同じ)
+    pf_stocks = [code_s] if portfolio_status in ("3監", "2準") else []
+    possess_list = [code_s] if portfolio_status == "1保" else []
+
+    market_db = make_market_db.get_market_db()
+
+    row_dict = make_stock_db.build_code_rank_row(
+        code_s,
+        stock_data,
+        total_pt=total_pt,
+        gyoseki_pt=gyoseki_pt,
+        shihyo_pt=shihyo_pt,
+        mom_pt=mom_pt,
+        funda_pt=funda_pt,
+        rank=rank,
+        pf_stocks=pf_stocks,
+        possess_list=possess_list,
+        market_db=market_db,
+    )
+
+    # グループ構造に整形 (空グループは行ごと省略)
+    groups = []
+    for group_name, keys in _CR_GROUPS:
+        items = []
+        for key in keys:
+            value = row_dict.get(key, "")
+            # 数値は str 化、その他はそのまま
+            if isinstance(value, (int, float)):
+                value = str(value)
+            short_label = _CR_LABEL_MAP.get(key, key)
+            items.append((short_label, value))
+        # 全 item の value が空ならグループ自体スキップ
+        if any(v for _, v in items):
+            groups.append((group_name, items))
+    return groups
+
+
 # ===========================================
 # 業態テーマ別 RS サマリー (issue #283)
 # ===========================================

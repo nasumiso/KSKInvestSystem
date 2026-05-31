@@ -1090,3 +1090,85 @@ class TestSyncResearchStockName:
         # 例外を吐かずに正常終了すること
         make_stock_db._sync_research_stock_name("1436", new_name="新名")
 
+
+class TestComputeTotalPt:
+    """issue #219: compute_total_pt の重み式テスト。
+
+    list_all_db と webapp/helpers.get_current_research_data で同じ
+    式を共有するため、係数 (40/20/25/15) が変わったときに気付ける。
+    """
+
+    def test_weights(self):
+        # 全 100 → (40+20+25+15) = 10000 / 100 = 100
+        assert make_stock_db.compute_total_pt(100, 100, 100, 100) == 100
+        # 業績だけ 100、他 0 → 4000 / 100 = 40
+        assert make_stock_db.compute_total_pt(100, 0, 0, 0) == 40
+        # int 切り捨て確認
+        assert make_stock_db.compute_total_pt(1, 1, 1, 1) == 1
+
+
+class TestBuildCodeRankRow:
+    """issue #219: build_code_rank_row のリファクタ等価性テスト。
+
+    最小限の stock_data で dict が CODE_RANK_HEADERS と完全一致のキーを
+    持つこと、ports / 順位 / コード / 銘柄名 / 各スコアが期待値に
+    なることを確認する。
+    """
+
+    def _minimal_stock_data(self):
+        return {
+            "stock_name": "テスト銘柄",
+            "score_gyoseki": 50,
+            "shihyo_pt": 40,
+            "momentum_pt": 30,
+            "funda_pt": 20,
+            "sector": "情報・通信業",
+            "themes": "",
+            "overview": "概要テスト",
+            "stock_rank_log": [],
+            # 各 expr 関数が前提とする中間 dict (空でよい)
+            "shihyo": {},
+        }
+
+    def test_dict_keys_match_headers(self):
+        row = make_stock_db.build_code_rank_row(
+            "9999", self._minimal_stock_data(),
+            total_pt=39, gyoseki_pt=50, shihyo_pt=40, mom_pt=30, funda_pt=20,
+            rank=7, pf_stocks=[], possess_list=[], market_db={},
+        )
+        assert set(row.keys()) == set(make_stock_db.CODE_RANK_HEADERS)
+
+    def test_basic_field_values(self):
+        row = make_stock_db.build_code_rank_row(
+            "9999", self._minimal_stock_data(),
+            total_pt=39, gyoseki_pt=50, shihyo_pt=40, mom_pt=30, funda_pt=20,
+            rank=7, pf_stocks=["9999"], possess_list=[], market_db={},
+        )
+        assert row["ポートフォリオ"] == "監"
+        assert row["順位"] == "7"
+        assert row["コード"] == "9999"
+        assert row["銘柄名"] == "テスト銘柄"
+        assert row["総合PT"] == 39
+        assert row["プロフィット/クォリティ"] == 50
+        assert row["セクター"] == "情報・通信業"
+        assert row["概要"] == "概要テスト"
+
+    def test_decorate_links_for_csv_returns_ordered_list(self):
+        stock_data = self._minimal_stock_data()
+        row = make_stock_db.build_code_rank_row(
+            "9999", stock_data,
+            total_pt=39, gyoseki_pt=50, shihyo_pt=40, mom_pt=30, funda_pt=20,
+            rank=7, pf_stocks=[], possess_list=[], market_db={},
+        )
+        decorated = make_stock_db._decorate_links_for_csv("9999", row, stock_data)
+        # CSV 行は CODE_RANK_HEADERS と同じ順序、長さ一致
+        assert len(decorated) == len(make_stock_db.CODE_RANK_HEADERS)
+        # 順位/コード/銘柄名は HYPERLINK 装飾されている
+        idx_rank = make_stock_db.CODE_RANK_HEADERS.index("順位")
+        idx_code = make_stock_db.CODE_RANK_HEADERS.index("コード")
+        idx_name = make_stock_db.CODE_RANK_HEADERS.index("銘柄名")
+        assert decorated[idx_rank].startswith('=HYPERLINK(')
+        assert "9999" in decorated[idx_code]
+        # 銘柄名は corporate_url が無いとプレーンテキストで返る
+        assert decorated[idx_name] == "テスト銘柄"
+

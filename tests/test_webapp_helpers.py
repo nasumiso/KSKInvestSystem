@@ -2654,6 +2654,56 @@ class TestBuildGyosekiTooltips:
         assert helpers.build_gyoseki_tooltips(expr) == expected
 
 
+class TestGetCurrentResearchData:
+    """issue #219: get_current_research_data のテスト。
+
+    stocks_shelve 未登録 / 必要キー欠落の境界条件と、
+    正常系でグループ構造が返ることを確認する (各グループ内容の詳細は
+    build_code_rank_row のテストでカバー)。
+    """
+
+    def test_missing_stock_returns_none(self, monkeypatch):
+        # stocks_shelve から空 dict が返るケース
+        monkeypatch.setattr(helpers, "get_stock_data", lambda code_s: {})
+        assert helpers.get_current_research_data("9999") is None
+
+    def test_missing_score_returns_none(self, monkeypatch):
+        # score_gyoseki / shihyo_pt が欠落しているケース
+        monkeypatch.setattr(
+            helpers, "get_stock_data",
+            lambda code_s: {"stock_name": "テスト", "overview": "概要"},
+        )
+        assert helpers.get_current_research_data("9999") is None
+
+    def test_normal_returns_grouped_structure(self, monkeypatch):
+        # 必要最小限の stock_data。build_code_rank_row の各 helper は
+        # 空 dict でも空文字を返す前提なのでスコア計算が通れば構造が出る
+        stock_data = {
+            "stock_name": "テスト",
+            "score_gyoseki": 50,
+            "shihyo_pt": 40,
+            "momentum_pt": 30,
+            "funda_pt": 20,
+            "stock_rank_log": [],
+            "themes": "",
+            "sector": "情報・通信業",
+            "shihyo": {},
+        }
+        monkeypatch.setattr(helpers, "get_stock_data", lambda code_s: stock_data)
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"theme_rank": []})
+        # get_major_theme は内部で get_market_db を直接呼ぶので別途モック
+        monkeypatch.setattr(make_market_db, "get_major_theme", lambda themes: "")
+
+        result = helpers.get_current_research_data("9999")
+        assert result is not None
+        # 戻り値は [(group_name, [(label, value), ...]), ...]
+        assert isinstance(result, list)
+        group_names = [g[0] for g in result]
+        # スコアグループは確実に出る (総合PT が非零)
+        assert "スコア" in group_names
+
+
 class TestBuildPortfolioThemeSummary:
     """build_portfolio_theme_summary のテスト (issue #283)。
 
