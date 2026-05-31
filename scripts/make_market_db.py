@@ -359,7 +359,7 @@ def get_major_theme(themes):
     @themes 銘柄のテーマ: stock_dbの'themes'キー
     """
     market_db = get_market_db()
-    theme_rank = market_db["theme_rank"]  # 現在のランキング
+    theme_rank = market_db.get("theme_rank", [])  # 現在のランキング (未生成なら空)
     theme_rank_dict = {v: i + 1 for (i, v) in enumerate(theme_rank)}
     if not themes:
         return ""
