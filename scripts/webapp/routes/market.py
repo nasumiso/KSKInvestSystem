@@ -15,18 +15,25 @@ from typing import Any, Dict, Optional
 
 from flask import Blueprint, jsonify, render_template
 
-from ks_util import get_price_day, log_print, log_warning
+from ks_util import (
+    get_price_day,
+    log_print,
+    log_warning,
+    THEME_NEWS_HISTORY_DIR,
+    THEME_NEWS_EVENTS_JSON,
+)
 from webapp.helpers import get_market_html_parts
 
 market_bp = Blueprint("market", __name__)
 
-# issue #165: theme-news 当日 history の格納場所
 # scripts/webapp/routes/market.py から見て project root は 3 階層上
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_THEME_NEWS_HISTORY_DIR = _PROJECT_ROOT / ".claude" / "skills" / "theme-news" / "history"
+# issue #279: theme-news 生成データ (history, events.json) は $KS_DATA_DIR/theme_news/ に集約
+_THEME_NEWS_HISTORY_DIR = Path(THEME_NEWS_HISTORY_DIR)
+# run_theme_news.py は **コード** なので PROJECT_ROOT 配下のまま
 _RUN_THEME_NEWS_SCRIPT = _PROJECT_ROOT / "scripts" / "run_theme_news.py"
 # issue #165: 株カレンダー events.json (theme-news skill が更新する)
-_CALENDAR_EVENTS_JSON = _PROJECT_ROOT / ".claude" / "skills" / "theme-news" / "events.json"
+_CALENDAR_EVENTS_JSON = Path(THEME_NEWS_EVENTS_JSON)
 
 
 def _history_paths_for(target_date) -> Dict[str, Path]:

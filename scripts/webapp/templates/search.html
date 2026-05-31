@@ -91,7 +91,7 @@
     <h3 style="margin:0;font-size:1em;line-height:1.3;">
       <a href="{{ sp.url }}" target="_blank" rel="noopener">{{ sp.title }}</a>
     </h3>
-    <p style="margin:0.15em 0 0 0;font-size:0.72em;color:#888;line-height:1.2;">最終更新: {{ sp.updated_at }}</p>
+    {% if sp.updated_at != "—" %}<p style="margin:0.15em 0 0 0;font-size:0.72em;color:#888;line-height:1.2;">最終更新: {{ sp.updated_at }}</p>{% endif %}
   </article>
   {% endfor %}
 </section>

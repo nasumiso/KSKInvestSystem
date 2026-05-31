@@ -148,6 +148,7 @@
 {# issue #215: フィルタは status / gyoutai_theme の単一選択 select 2 つ。onchange で即送信。 #}
 <form id="portfolio-filter-form" action="/portfolio" method="GET"
       style="display:flex;flex-wrap:wrap;gap:1.2em;align-items:center;margin-bottom:0.6em;padding:0.5em 0.6em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;font-size:0.9em;">
+  <input type="hidden" name="sort" value="{{ active_sort }}">
   <label style="display:inline-flex;align-items:center;gap:0.4em;margin:0;">
     <span style="color:#666;">ステータス</span>
     <select name="status" onchange="this.form.submit()" style="padding:0.2em 0.3em;font-size:0.9em;margin:0;">
@@ -161,11 +162,20 @@
     <span style="color:#666;">業態・テーマ</span>
     <select name="gyoutai_theme" onchange="this.form.submit()" style="padding:0.2em 0.3em;font-size:0.9em;margin:0;max-width:18em;">
       <option value="">すべて</option>
-      {% for choice in gyoutai_theme_choices %}
-      <option value="{{ choice }}" {% if choice == active_gyoutai_theme %}selected{% endif %}>{{ choice }}</option>
+      {% for theme in theme_master %}
+      <option value="{{ theme.name }}" {% if theme.name == active_gyoutai_theme %}selected{% endif %}>{{ theme.name }}</option>
       {% endfor %}
     </select>
   </label>
+  <a href="{{ url_for('portfolio.themes_index') }}"
+     style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
+     title="テーママスターを編集">✏️ テーマを編集</a>
+  <a href="{{ url_for('portfolio.theme_summary') }}"
+     style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
+     title="業態テーマ別 RS サマリー">📊 テーマサマリー</a>
+  <a href="{{ url_for('portfolio.charts') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
+     style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
+     title="現在のフィルタ結果をチャート一覧で確認">📊 チャート一覧</a>
 </form>
 
 <p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">
@@ -211,9 +221,9 @@
       <th></th>
       <th>コード</th>
       <th>銘柄名</th>
-      <th>状態</th>
-      <th>業態・テーマ</th>
-      <th>順位</th>
+      <th><a href="{{ sort_urls.position }}">状態</a></th>
+      <th><a href="{{ sort_urls.gyoutai }}">業態・テーマ</a></th>
+      <th><a href="{{ sort_urls.rank }}">順位</a></th>
       <th>売上成長(%)</th>
       <th>利益成長(%)</th>
       <th>PER</th>
@@ -236,8 +246,8 @@
     {% for row in rows %}
     {# issue #178: 前行と業態 1 行目が異なる行は境界線を入れる。
        row.gyoutai_first は helpers.list_portfolio_with_indicators が precompute 済み。
-       issue #215: ソート分岐廃止に伴い常時有効。 #}
-    <tr data-code="{{ row.code_s }}"{% if not loop.first and loop.previtem.gyoutai_first != row.gyoutai_first %} class="gyoutai-boundary"{% endif %}>
+       issue #274: 業態順以外では境界線を出さない。 #}
+    <tr data-code="{{ row.code_s }}"{% if active_sort == "gyoutai" and not loop.first and loop.previtem.gyoutai_first != row.gyoutai_first %} class="gyoutai-boundary"{% endif %}>
       {% if delete_mode_allowed %}
       {# codex 指摘 P2: 1保 は bulk_exclude() で reject されるため checkbox を出さない #}
       <td class="bulk-col">
@@ -283,16 +293,22 @@
       <td class="gyoutai-themes-cell" data-code="{{ row.code_s }}"
           style="max-width:11em;padding:0 2px;line-height:0;{{ row.styles.gyoutai_themes or '' }}">
         {% set themes = row.memo.gyoutai_themes or [] %}
+        {% set master_names = theme_master | map(attribute='name') | list %}
         {% for i in range(gyoutai_themes_max_slots) %}
-        <input type="text"
-               list="gyoutai-theme-choices"
-               name="gyoutai_themes_{{ i }}"
-               value="{{ themes[i] if i < (themes|length) else '' }}"
-               data-slot="{{ i }}"
-               class="gyoutai-input"
-               placeholder="—"
-               title="Ctrl/Cmd+クリックでこのテーマで絞り込み (新タブ)"
-               {% if fallback_mode %}disabled{% endif %}>
+        {% set current = themes[i] if i < (themes|length) else '' %}
+        <select name="gyoutai_themes_{{ i }}"
+                data-slot="{{ i }}"
+                class="gyoutai-input"
+                title="Ctrl/Cmd+クリックでこのテーマで絞り込み (新タブ)"
+                {% if fallback_mode %}disabled{% endif %}>
+          <option value="">—</option>
+          {% if current and current not in master_names %}
+          <option value="{{ current }}" selected>⚠️ {{ current }}</option>
+          {% endif %}
+          {% for theme in theme_master %}
+          <option value="{{ theme.name }}" {% if theme.name == current %}selected{% endif %}>{{ theme.name }}</option>
+          {% endfor %}
+        </select>
         {% endfor %}
       </td>
       <td style="{{ row.styles.rank or '' }}">{{ row.rank if row.rank is not none else "—" }}</td>
@@ -386,12 +402,6 @@
 </table>
 </div>
 
-<datalist id="gyoutai-theme-choices">
-  {% for choice in gyoutai_theme_choices %}
-  <option value="{{ choice }}">
-  {% endfor %}
-</datalist>
-
 {% if not fallback_mode %}
 <div id="portfolio-modal" class="portfolio-modal-overlay" style="display:none;" onclick="closePortfolioModalOnOverlay(event)">
   <div class="portfolio-modal-content" role="dialog" aria-labelledby="portfolio-modal-title">
@@ -461,6 +471,14 @@
 .gyoutai-themes-cell .gyoutai-input:focus { outline: 1px solid #4285f4; background: #fff; }
 .gyoutai-themes-cell .gyoutai-input.saving { background: #fff8c4; }
 .gyoutai-themes-cell .gyoutai-input.error { background: #fce4e4; border-color: #d33; }
+/* issue #282: select でも行高を input と揃える */
+.gyoutai-themes-cell select.gyoutai-input {
+  height: auto;
+  padding: 0 2px;
+  background-image: none;
+  -webkit-appearance: menulist;
+  appearance: menulist;
+}
 </style>
 
 <script>
@@ -870,12 +888,10 @@ function excludeFromUniverse(codeS) {
     var inputs = td.querySelectorAll('.gyoutai-input');
     inputs.forEach(function(inp) {
       if (inp.disabled) return;
-      // datalist 選択 (change) / 自由入力後の blur で保存
+      // select の選択変更で保存 (issue #282)
       inp.addEventListener('change', function() { saveCell(td); });
-      inp.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-      });
-      // issue #230: Ctrl/Cmd+左クリックでこのテーマで portfolio 絞り込みを新タブで開く
+      // issue #230 + #282: Ctrl/Cmd+左クリックで現在値での portfolio 絞り込みを新タブで開く。
+      // select は mousedown 時点で .value が選択中の値で安定しているのでそのまま使う。
       inp.addEventListener('mousedown', function(e) {
         if (e.button !== 0) return;
         if (!(e.ctrlKey || e.metaKey)) return;

@@ -663,41 +663,41 @@ class TestComputeRsLineChanges:
         assert a is None and b is None
 
     def test_none_when_too_short_for_short_change(self):
-        """rs_line が 6本未満なら 5日前比 A も計算不能"""
-        stock = {"price_log": _make_log(5, base=2000)}
-        market_db = {"topix": {"price_log": _make_log(5, base=1000)}}
+        """rs_line が 5本未満なら 5日移動平均乖離 A も計算不能"""
+        stock = {"price_log": _make_log(4, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(4, base=1000)}}
         a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is None and b is None
 
     def test_short_only_when_partial_data(self):
-        """rs_line が 6本以上16本未満なら A だけ計算可、B は None (15日前すら届かない)"""
+        """rs_line が 5本以上15本未満なら A だけ計算可、B は None (20日平均に届かず代替も不可)"""
         stock = {"price_log": _make_log(10, base=2000)}
         market_db = {"topix": {"price_log": _make_log(10, base=1000)}}
         a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is None
 
-    def test_fallback_when_16_to_20_bars(self):
-        """rs_line が 16-20本のとき、B は 15-19日前で代替して数値を返す"""
-        # 20本 = index 0..19 → offset 19 で代替可能
-        stock = {"price_log": _make_log(20, base=2000, step=20)}
-        market_db = {"topix": {"price_log": _make_log(20, base=1000, step=2)}}
+    def test_fallback_when_15_to_19_bars(self):
+        """rs_line が 15-19本のとき、B は 15-19本平均で代替して数値を返す"""
+        # 19本 → window 19 で代替可能
+        stock = {"price_log": _make_log(19, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(19, base=1000, step=2)}}
         a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is not None
-        # 16本 = index 0..15 → offset 15 で代替可能
-        stock = {"price_log": _make_log(16, base=2000, step=20)}
-        market_db = {"topix": {"price_log": _make_log(16, base=1000, step=2)}}
+        # 15本 → window 15 で代替可能
+        stock = {"price_log": _make_log(15, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(15, base=1000, step=2)}}
         a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is not None
 
-    def test_no_fallback_when_15_bars(self):
-        """rs_line が 15本のとき (index 0..14)、offset 15 にも届かないので B は None"""
-        stock = {"price_log": _make_log(15, base=2000, step=20)}
-        market_db = {"topix": {"price_log": _make_log(15, base=1000, step=2)}}
+    def test_no_fallback_when_14_bars(self):
+        """rs_line が 14本のとき、window 15 にも届かないので B は None"""
+        stock = {"price_log": _make_log(14, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(14, base=1000, step=2)}}
         a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is None
 
     def test_both_when_full_data(self):
-        """rs_line が 21本以上で A・B 両方計算可"""
+        """rs_line が 20本以上で A・B 両方計算可"""
         stock = {"price_log": _make_log(25, base=2000)}
         market_db = {"topix": {"price_log": _make_log(25, base=1000)}}
         a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
@@ -867,16 +867,16 @@ class TestCalibrateMomentumPt:
 
 
     def test_fallback_marked_with_asterisk(self):
-        """rs_line 16-20本のとき、B 値の末尾に '*' が付く"""
-        stock = {"price_log": _make_log(20, base=2000, step=20)}
-        market_db = {"topix": {"price_log": _make_log(20, base=1000, step=2)}}
+        """rs_line 15-19本のとき、B 値の末尾に '*' が付く (window 20 未満で代替)"""
+        stock = {"price_log": _make_log(19, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(19, base=1000, step=2)}}
         s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
         parts = s.split("/")
         assert parts[0].endswith("*"), "フォールバック時は B 値末尾に '*' が付くべき"
         assert not parts[1].endswith("*"), "A 値には '*' を付けない"
 
     def test_no_asterisk_when_full_data(self):
-        """rs_line 21本以上 (offset 20 で取れる) のとき、'*' は付かない"""
+        """rs_line 20本以上 (window 20 で取れる) のとき、'*' は付かない"""
         stock = {"price_log": _make_log(25, base=2000, step=20)}
         market_db = {"topix": {"price_log": _make_log(25, base=1000, step=2)}}
         s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
@@ -884,9 +884,9 @@ class TestCalibrateMomentumPt:
         assert not parts[0].endswith("*")
 
     def test_no_asterisk_when_b_uncomputable(self):
-        """rs_line 15本以下 (B 計算不能) のとき、'-' に '*' は付かない"""
-        stock = {"price_log": _make_log(15, base=2000, step=20)}
-        market_db = {"topix": {"price_log": _make_log(15, base=1000, step=2)}}
+        """rs_line 14本以下 (B 計算不能) のとき、'-' に '*' は付かない"""
+        stock = {"price_log": _make_log(14, base=2000, step=20)}
+        market_db = {"topix": {"price_log": _make_log(14, base=1000, step=2)}}
         s = make_stock_db.get_rs_line_changes_expr(stock, market_db)
         parts = s.split("/")
         assert parts[0] == "-"

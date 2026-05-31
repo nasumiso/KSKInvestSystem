@@ -49,6 +49,13 @@ def app(portfolio_db_path, stocks_db_path, txt_path, monkeypatch):
     ps.add_to_watch("7203", reason="テスト 2準 用", db_path=portfolio_db_path)
     ps.transition_status("7203", "2準", reason="テスト 2準 へ昇格 (3監→2準)", db_path=portfolio_db_path)
 
+    # issue #282: テストで使うテーマ name をマスター登録
+    for name in ("半導体", "AI", "X", "既存", "EV", "Robotics", "ロボット", "自動車"):
+        try:
+            ps.create_theme(name, db_path=portfolio_db_path)
+        except ValueError:
+            pass  # 重複は無視
+
     # stocks_shelve にダミーデータ
     with ShelveDB(stocks_db_path) as db:
         db["6324"] = {
@@ -777,8 +784,8 @@ class TestGyoutaiThemesPost:
         assert rec["memo"]["gyoutai_themes"] == ["既存"]
         assert rec["memo"]["trade_idea"] == "X"
 
-    def test_dashboard_renders_datalist(self, client, portfolio_db_path):
-        # 候補集計が dashboard のテンプレに渡って HTML に含まれる
+    def test_dashboard_renders_theme_select_options(self, client, portfolio_db_path):
+        """issue #282: テーママスターの name がフィルタ select / 行 select の選択肢として出る"""
         ps.update_memo(
             "6324",
             {"gyoutai_themes": ["半導体", "AI"]},
@@ -787,9 +794,11 @@ class TestGyoutaiThemesPost:
         resp = client.get("/portfolio?status=hold")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert 'id="gyoutai-theme-choices"' in html
-        assert "半導体" in html
-        assert "AI" in html
+        # マスター登録済み name が option として描画される
+        assert '<option value="半導体"' in html
+        assert '<option value="AI"' in html
+        # 旧 datalist は廃止
+        assert 'id="gyoutai-theme-choices"' not in html
 
 
 # ==================================================
@@ -923,6 +932,18 @@ class TestFallbackFromTxt:
         # shelve は空のまま (memo 更新で 1 件作られたら fallback 解除事故が起きる)
         assert ps.list_records(db_path=portfolio_db_path) == []
 
+    def test_fallback_charts_shows_txt_records(self, fallback_client):
+        """フォールバック中も /portfolio/charts に txt 由来銘柄が出る (issue #231 codex P2)。
+
+        shelve 空のままチャート一覧を開くと「対象銘柄なし」で空になる回帰を防ぐ。
+        デフォルト status=1保 なので保有 (H6324=ハーモニック) が JSON 埋め込みに出る。
+        """
+        resp = fallback_client.get("/portfolio/charts")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "6324" in html
+        assert "対象銘柄なし" not in html
+
 
 # ==================================================
 # issue #178: フィルタ / ソート / ページング / status badge / return_query
@@ -954,8 +975,8 @@ class TestDashboardFilter:
         assert "トヨタ" not in html
         assert "ハーモニック" not in html
 
-    def test_legacy_sort_param_silently_ignored(self, client):
-        """旧 URL ?sort=rank&page=2 が混ざっても 200 で返る (issue #215 silent 無視)。
+    def test_sort_param_still_returns_dashboard(self, client):
+        """?sort=rank&page=2 が混ざっても 200 で返る。
         status 未指定なので デフォルト hold フィルタが効く。"""
         resp = client.get("/portfolio?sort=rank&page=2")
         assert resp.status_code == 200
@@ -963,6 +984,34 @@ class TestDashboardFilter:
         assert "アズーム" in html
         assert "トヨタ" not in html
         assert "ハーモニック" not in html
+
+    def test_sort_links_and_filter_hidden_are_rendered(self, client):
+        """issue #274: 対象ヘッダの sort リンクと filter form の hidden sort を出す"""
+        resp = client.get("/portfolio?status=hold&sort=rank")
+        html = resp.data.decode()
+        assert 'name="sort" value="rank"' in html
+        assert "sort=position" in html
+        assert "sort=rank" in html
+        assert "sort=gyoutai" in html
+
+    def test_sort_links_preserve_all_status_filter(self, client):
+        """issue #274: status= の全件表示から sort を変えても全件表示を維持する"""
+        resp = client.get("/portfolio?status=&sort=rank")
+        html = resp.data.decode()
+        assert "status=&amp;sort=position" in html
+        assert "status=&amp;sort=gyoutai" in html
+
+    def test_gyoutai_boundary_only_for_gyoutai_sort(self, client, portfolio_db_path):
+        """issue #274: 業態境界線は gyoutai sort のときだけ出す"""
+        ps.update_memo("3496", {"gyoutai_themes": ["AI"]}, db_path=portfolio_db_path)
+        ps.update_memo("7203", {"gyoutai_themes": ["自動車"]}, db_path=portfolio_db_path)
+        ps.update_memo("6324", {"gyoutai_themes": ["ロボット"]}, db_path=portfolio_db_path)
+
+        html = client.get("/portfolio?status=&sort=gyoutai").data.decode()
+        assert 'class="gyoutai-boundary"' in html
+
+        html = client.get("/portfolio?status=&sort=rank").data.decode()
+        assert 'class="gyoutai-boundary"' not in html
 
     def test_invalid_status_falls_back_to_all(self, client):
         """不正値だけのフィルタは全件表示にフォールバック (None 扱い)"""
@@ -1187,3 +1236,56 @@ class TestDeleteCheckboxScope:
         assert 'class="bulk-cb"' not in html
         # bulk-col の th も出ない (delete_mode_allowed が False)
         assert 'class="bulk-col"' not in html
+
+
+class TestPortfolioCharts:
+    """GET /portfolio/charts チャート一覧モード (issue #231)。
+
+    fixture の 3 銘柄: 6324(3監/ハーモニック)・3496(1保/アズーム)・7203(2準/トヨタ)。
+    """
+
+    def test_charts_returns_200_with_chart_url(self, client):
+        """全件 (status=) で対象銘柄の code と株探チャート iframe URL が出る"""
+        resp = client.get("/portfolio/charts?status=")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        # 全銘柄の code_s が JSON 埋め込みに含まれる
+        assert "3496" in html and "6324" in html and "7203" in html
+        # JS が組み立てる株探チャート URL のベース
+        assert "kabutan.jp/stock/chart" in html
+
+    @pytest.mark.parametrize(
+        "query, present, absent",
+        [
+            ("status=hold", "3496", "7203"),   # 1保 のみ → アズーム在、トヨタ無
+            ("status=watch", "6324", "3496"),  # 3監 のみ → ハーモニック在、アズーム無
+        ],
+    )
+    def test_charts_status_filter(self, client, query, present, absent):
+        """status フィルタが /portfolio と同じ規則で効く (JSON 埋め込みの code_s で判定)"""
+        resp = client.get("/portfolio/charts?" + query)
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert present in html
+        assert absent not in html
+
+    def test_charts_empty_shows_message(self, client):
+        """該当ゼロ件のフィルタは「対象銘柄なし」を出しグリッドを描かない"""
+        resp = client.get("/portfolio/charts?gyoutai_theme=存在しないテーマ")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "対象銘柄なし" in html
+        # グリッド本体 (class 属性) は描かれない。CSS 定義の .charts-grid は別物。
+        assert 'class="charts-grid"' not in html
+
+    def test_charts_embeds_stage_and_update_for_inline_edit(self, client, portfolio_db_path):
+        """inline 編集の初期値として stage / 更新日が JSON 埋め込みに出る (issue #231)"""
+        ps.update_memo(
+            "3496",
+            {"stage": "2S", "last_research_update": "5/30"},
+            db_path=portfolio_db_path,
+        )
+        resp = client.get("/portfolio/charts?status=hold")
+        html = resp.data.decode()
+        assert '"stage": "2S"' in html
+        assert '"last_research_update": "5/30"' in html

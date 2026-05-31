@@ -14,10 +14,21 @@ def db_path(tmp_path):
 
 
 @pytest.fixture
-def app(db_path, monkeypatch):
+def app(db_path, tmp_path, monkeypatch):
     """テスト用Flaskアプリ (DBパス差し替え済み)"""
     monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
     monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+    # トップページの Spreadsheet ポータルは CSV の mtime を表示に使う。
+    # CI には実データが無いため、テスト用 DATA_DIR にダミー CSV を置く。
+    portal_data_dir = tmp_path / "data"
+    for rel in (
+        "shintakane_result_data/shintakane_result.csv",
+        "code_rank_data/code_rank.csv",
+    ):
+        path = portal_data_dir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("dummy\n")
+    monkeypatch.setattr("webapp.routes.search.DATA_DIR", str(portal_data_dir))
 
     # テストデータ投入
     rec = rs.create_research_record(
@@ -75,8 +86,20 @@ class TestSearchRoute:
         resp = client.get("/")
         assert resp.status_code == 200
 
-    def test_index_no_query_hides_records_and_shows_portal(self, client):
+    def test_index_no_query_hides_records_and_shows_portal(self, client, monkeypatch):
         """issue #98: クエリなしトップでは銘柄一覧を出さず Spreadsheet ポータルを表示"""
+        # 「最終更新」はローカル CSV の mtime 依存 (search._portal_spreadsheets) のため
+        # CI 環境 (CSV 無し) では updated_at が "—" になり表示されない。ポータル表示
+        # 自体の検証が目的なので updated_at を固定値にモックして環境非依存にする。
+        import webapp.routes.search as search_route
+        monkeypatch.setattr(
+            search_route,
+            "_portal_spreadsheets",
+            lambda: [
+                {"title": "Shintakane Result", "url": "https://example.com/r", "updated_at": "2026-05-29 12:00"},
+                {"title": "Code Rank", "url": "https://example.com/c", "updated_at": "2026-05-29 12:00"},
+            ],
+        )
         resp = client.get("/")
         html = resp.data.decode()
         # 銘柄一覧テーブルは描画されない
@@ -1075,6 +1098,10 @@ class TestDetailGyoutaiThemes:
 
         ps.add_to_watch("3496", reason="テスト用", db_path=portfolio_db)
         ps.transition_status("3496", "1保", reason="テスト用 1保 へ", db_path=portfolio_db)
+        # issue #282: テーママスター必須化に伴い、テストで使う name を登録
+        ps.create_theme("AI", db_path=portfolio_db)
+        ps.create_theme("半導体", db_path=portfolio_db)
+        ps.create_theme("新規テーマ", db_path=portfolio_db)
 
         app = create_app()
         app.config["TESTING"] = True
@@ -1086,7 +1113,7 @@ class TestDetailGyoutaiThemes:
         return app.test_client()
 
     def test_registered_stock_renders_inline_inputs(self, portfolio_client):
-        """登録済銘柄: 業態・テーマ inline edit (data-code 付き wrapper + 2 input) が出る"""
+        """登録済銘柄: 業態・テーマ inline edit (data-code 付き wrapper + 2 select) が出る"""
         html = portfolio_client.get("/stock/3496").data.decode()
         assert 'class="gyoutai-themes-inline" data-code="3496"' in html
         assert 'name="gyoutai_themes_0"' in html
@@ -1094,23 +1121,20 @@ class TestDetailGyoutaiThemes:
         # AJAX 化したので保存ボタンは無い、form タグも無い
         assert "action=\"/portfolio/3496/memo\"" not in html
 
-    def test_registered_stock_renders_datalist(self, portfolio_client):
-        """datalist#gyoutai-theme-choices が出る (候補は空でもタグは描画)"""
-        html = portfolio_client.get("/stock/3496").data.decode()
-        assert '<datalist id="gyoutai-theme-choices">' in html
-
     def test_existing_themes_prefilled(self, portfolio_app):
-        """事前に保存したテーマが input value にプリフィルされる"""
+        """事前に保存したテーマが select の selected 属性として出力される"""
         import portfolio_shelve as ps
         app, portfolio_db = portfolio_app
         ps.update_memo("3496", {"gyoutai_themes": ["AI", "半導体"]}, db_path=portfolio_db)
 
         html = app.test_client().get("/stock/3496").data.decode()
+        # select 化されたので value="X" selected の形式で確認
         assert 'value="AI"' in html
         assert 'value="半導体"' in html
+        assert 'selected' in html
 
     def test_unregistered_stock_hides_inline_inputs(self, portfolio_client):
-        """未登録銘柄では inline edit (gyoutai_themes_0 input) が出ない"""
+        """未登録銘柄では inline edit (gyoutai_themes_0 入力) が出ない"""
         html = portfolio_client.get("/stock/1234").data.decode()
         assert 'name="gyoutai_themes_0"' not in html
         assert 'class="gyoutai-themes-inline"' not in html
@@ -1306,3 +1330,213 @@ class TestPortfolioHoldSummary:
             html = resp.data.decode()
             assert "運用総額:" not in html, f"status={status} でサマリーが漏れている"
             assert "保有株数更新日:" not in html, f"status={status} でサマリーが漏れている"
+
+
+# ==================================================
+# /portfolio/themes (issue #282)
+# ==================================================
+class TestPortfolioThemes:
+    """テーママスター編集画面の smoke テスト"""
+
+    @pytest.fixture
+    def themes_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        # fallback_mode を外すため最低 1 件 record を入れる
+        ps.add_to_watch("3496", db_path=portfolio_db)
+        ps.create_theme("半導体", "test", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app, portfolio_db
+
+    def test_index_returns_200(self, themes_app):
+        app, _ = themes_app
+        client = app.test_client()
+        resp = client.get("/portfolio/themes")
+        assert resp.status_code == 200
+        assert "半導体" in resp.data.decode()
+
+    def test_create_and_delete_roundtrip(self, themes_app):
+        import portfolio_shelve as ps
+        app, portfolio_db = themes_app
+        client = app.test_client()
+        # 作成
+        resp = client.post(
+            "/portfolio/themes/create",
+            data={"name": "防衛", "description": "防衛関連"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert ps.get_theme("防衛", db_path=portfolio_db) is not None
+        # 削除
+        resp = client.post(
+            "/portfolio/themes/防衛/delete", follow_redirects=False
+        )
+        assert resp.status_code == 302
+        assert ps.get_theme("防衛", db_path=portfolio_db) is None
+
+    def test_update_renames(self, themes_app):
+        import portfolio_shelve as ps
+        app, portfolio_db = themes_app
+        client = app.test_client()
+        resp = client.post(
+            "/portfolio/themes/半導体/update",
+            data={"name": "セミコン", "description": "renamed"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert ps.get_theme("半導体", db_path=portfolio_db) is None
+        assert ps.get_theme("セミコン", db_path=portfolio_db)["description"] == "renamed"
+
+
+class TestPortfolioThemeSummary:
+    """業態テーマ別 RS サマリー画面の smoke テスト (issue #283)"""
+
+    @pytest.fixture
+    def summary_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        # 業態テーマ付きで 1 件登録 (集計対象になる)
+        memo = ps.create_memo(gyoutai_themes=["半導体"])
+        ps.add_to_watch("3496", memo=memo, db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app
+
+    @pytest.mark.parametrize("url", [
+        "/portfolio/themes/summary",
+        "/portfolio/themes/summary?sort=dev_a",
+    ])
+    def test_summary_returns_200(self, summary_app, url):
+        client = summary_app.test_client()
+        resp = client.get(url)
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "業態テーマ別 RS サマリー" in html
+        assert "半導体" in html
+
+
+class TestChatLinkRoutes:
+    """issue #265: 外部チャットリンク AJAX ルート"""
+
+    def test_add_update_delete_flow(self, client, db_path):
+        """追加 → 更新 → 削除の一連と永続化を検証"""
+        # 追加 (201, links に1件)
+        resp = client.post("/stock/3496/chat_link",
+                           data={"label": "ChatGPT", "url": "https://chat.example/a"})
+        assert resp.status_code == 201
+        assert resp.get_json()["links"] == [
+            {"label": "ChatGPT", "url": "https://chat.example/a"}
+        ]
+        # 永続化確認
+        assert rs.get_research_record("3496", db_path=db_path)["chat_links"] == [
+            {"label": "ChatGPT", "url": "https://chat.example/a"}
+        ]
+        # 更新 (200, index 0 を上書き)
+        resp = client.post("/stock/3496/chat_link/0",
+                           data={"label": "Claude", "url": "https://claude.example/b"})
+        assert resp.status_code == 200
+        assert resp.get_json()["links"] == [
+            {"label": "Claude", "url": "https://claude.example/b"}
+        ]
+        # 削除 (200, 空に戻る)
+        resp = client.post("/stock/3496/chat_link/0/delete")
+        assert resp.status_code == 200
+        assert resp.get_json()["links"] == []
+        assert rs.get_research_record("3496", db_path=db_path)["chat_links"] == []
+
+    @pytest.mark.parametrize("path, data, status", [
+        # 不正 URL (http/https 以外) → 400
+        ("/stock/3496/chat_link", {"label": "x", "url": "ftp://x"}, 400),
+        ("/stock/3496/chat_link", {"label": "x", "url": ""}, 400),
+        # 未登録銘柄 → 404
+        ("/stock/9999/chat_link", {"label": "x", "url": "https://x.example"}, 404),
+        # index 範囲外 (chat_links 空なので 0 も範囲外) → 400
+        ("/stock/3496/chat_link/5", {"label": "x", "url": "https://x.example"}, 400),
+        ("/stock/3496/chat_link/5/delete", {}, 400),
+    ])
+    def test_error_cases(self, client, path, data, status):
+        resp = client.post(path, data=data)
+        assert resp.status_code == status
+        assert resp.get_json()["ok"] is False
+
+
+class TestSuggestThemes:
+    """issue #297: POST /stock/<code_s>/suggest_themes (LLM 業態テーマ提案)。
+
+    claude -p は呼ばず theme_suggest.suggest_gyoutai_themes をモックして、
+    エンドポイントのガード分岐 (設定済み409・事業テキスト空・正常提案) を検証する。
+    """
+
+    @pytest.fixture
+    def suggest_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        # 事業テキストあり銘柄 (overview + shikiho_comments)
+        rec = rs.create_research_record(
+            "3496", "アズーム", overall_rating="A",
+            overview="駐車場サブリース", shikiho_comments=["最高益"],
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        # 事業テキスト空銘柄
+        rec_empty = rs.create_research_record("1234", "空テスト", overall_rating="B")
+        rs.upsert_research_record(rec_empty, db_path=db_path)
+        # テーママスター登録
+        ps.create_theme("不動産", db_path=portfolio_db)
+        ps.create_theme("AI", db_path=portfolio_db)
+        # 3496 を 3監 で登録 (テーマ未設定)
+        ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)
+        ps.add_to_watch("1234", reason="テスト", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app
+
+    def test_suggest_returns_confidence_buckets(self, suggest_app, monkeypatch):
+        """事業テキスト・マスターありで {preset, low, new} 形式が返る"""
+        monkeypatch.setattr(
+            "webapp.routes.memo.theme_suggest.suggest_gyoutai_themes",
+            lambda business_text, theme_names: {
+                "preset": [{"name": "不動産", "confidence": 80}],
+                "low": [{"name": "AI", "confidence": 40}],
+                "new": [{"name": "認証ソリューション", "confidence": 75, "reason": "..."}],
+            },
+        )
+        resp = suggest_app.test_client().post("/stock/3496/suggest_themes")
+        assert resp.status_code == 200
+        json = resp.get_json()
+        assert json["ok"] is True
+        assert json["preset"] == [{"name": "不動産", "confidence": 80}]
+        assert json["low"] == [{"name": "AI", "confidence": 40}]
+        assert json["new"][0]["name"] == "認証ソリューション"
+
+    def test_suggest_empty_business_text(self, suggest_app):
+        """事業テキスト空銘柄は LLM を呼ばず空の buckets + reason を返す"""
+        resp = suggest_app.test_client().post("/stock/1234/suggest_themes")
+        assert resp.status_code == 200
+        assert resp.get_json() == {
+            "ok": True, "preset": [], "low": [], "new": [],
+            "reason": "no_business_text",
+        }
+
+    def test_suggest_rejects_already_set(self, suggest_app):
+        """業態テーマ設定済み銘柄は 409 で拒否 (サーバー側ガード)"""
+        import portfolio_shelve as ps
+        ps.update_memo("3496", {"gyoutai_themes": ["不動産"]})
+        resp = suggest_app.test_client().post("/stock/3496/suggest_themes")
+        assert resp.status_code == 409

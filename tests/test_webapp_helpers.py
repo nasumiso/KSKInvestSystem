@@ -1797,42 +1797,11 @@ class TestProgressQuarterAndDiff:
         assert diff == "—"
 
 
-class TestCollectGyoutaiThemeChoices:
-    """issue #187: portfolio_shelve 全レコードから datalist 候補を集計する。
-
-    主機能 (flatten + unique + sort + strip) と防御的な missing/empty 系を統合。
-    """
-
-    def test_flatten_unique_sort_with_strip(self):
-        """重複除去 + 五十音/アルファベット昇順ソート + 空白 strip + 空要素除去"""
-        records = [
-            {"memo": {"gyoutai_themes": ["半導体", "AI"]}},
-            {"memo": {"gyoutai_themes": [" AI ", "ロボット", "", "  "]}},  # strip + 空除去
-            {"memo": {"gyoutai_themes": ["半導体"]}},  # 重複
-        ]
-        assert helpers.collect_gyoutai_theme_choices(records) == [
-            "AI", "ロボット", "半導体",
-        ]
-
-    def test_missing_or_invalid_returns_empty(self):
-        """memo 無 / gyoutai_themes None / 空 records / 非str 要素 を防御"""
-        assert helpers.collect_gyoutai_theme_choices([]) == []
-        assert helpers.collect_gyoutai_theme_choices([{}]) == []
-        assert helpers.collect_gyoutai_theme_choices(
-            [{"memo": {"gyoutai_themes": None}}]
-        ) == []
-        # 非str 要素 (None, int) が混入してもクラッシュしない
-        assert helpers.collect_gyoutai_theme_choices(
-            [{"memo": {"gyoutai_themes": ["AI", None, 123, "半導体"]}}]
-        ) == ["AI", "半導体"]
-
-
 class TestListPortfolioWithIndicators:
-    """list_portfolio_with_indicators の業態順ソート / status_query / status_label 検証 (issue #178, #215)。
+    """list_portfolio_with_indicators のソート / status_query / status_label 検証。
 
     外部参照 (_bulk_get_stock_data, _bulk_resolve_stock_names, compute_cell_styles) は
     monkeypatch でスタブし、並び順とフィールド埋めだけを検証する。
-    issue #215: 順位ソートを廃止し業態順固定。sort_key 引数は撤廃済み。
     """
 
     @pytest.fixture
@@ -1858,7 +1827,7 @@ class TestListPortfolioWithIndicators:
             self._make("0002", "1保", rank=10, themes=["半導体"]),
             self._make("0003", "1保", rank=5, themes=["人材"]),
         ]
-        rows = helpers.list_portfolio_with_indicators(records)
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
         # 業態順 (人材→半導体) かつ業態内は rank 昇順
         assert [r["code_s"] for r in rows] == ["0003", "0001", "0002"]
 
@@ -1868,7 +1837,7 @@ class TestListPortfolioWithIndicators:
             self._make("0002", "1保", rank=20, themes=["半導体"]),
             self._make("0003", "1保", rank=5, themes=None),
         ]
-        rows = helpers.list_portfolio_with_indicators(records)
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
         # 半導体が先頭、空 themes は末尾 (末尾内は rank 昇順)
         assert [r["code_s"] for r in rows] == ["0002", "0003", "0001"]
 
@@ -1878,7 +1847,7 @@ class TestListPortfolioWithIndicators:
             self._make("0001", "1保", rank=10, themes=["AI", "人材"]),
             self._make("0002", "1保", rank=20, themes=["人材", "AI"]),
         ]
-        rows = helpers.list_portfolio_with_indicators(records)
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="gyoutai")
         # 0001 の themes[0]=AI が先、0002 の themes[0]=人材 が後
         assert [r["code_s"] for r in rows] == ["0001", "0002"]
 
@@ -1896,6 +1865,34 @@ class TestListPortfolioWithIndicators:
         assert by_code["0002"]["status_label"] == "準保有"
         assert by_code["0003"]["status_query"] == "watch"
         assert by_code["0003"]["status_label"] == "監視"
+
+    @pytest.mark.parametrize(
+        "sort_key, expected",
+        [
+            ("position", ["0003", "0001", "0004", "0002"]),
+            ("rank", ["0002", "0003", "0001", "0004"]),
+            ("gyoutai", ["0003", "0001", "0002", "0004"]),
+        ],
+        ids=["position", "rank", "gyoutai"],
+    )
+    def test_sort_key_switches_order(self, monkeypatch, sort_key, expected):
+        prices = {"0001": 1000, "0003": 500, "0004": 10000}
+        monkeypatch.setattr(
+            helpers, "_bulk_get_stock_data",
+            lambda codes: {c: {"price": prices[c]} for c in codes if c in prices},
+        )
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {c: "" for c in codes})
+        monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
+        monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
+
+        records = [
+            {**self._make("0001", "1保", rank=30, themes=["人材"]), "qty": 100},
+            {**self._make("0002", "2準", rank=5, themes=["半導体"]), "qty": 100},
+            {**self._make("0003", "1保", rank=10, themes=["AI"]), "qty": 300},
+            {**self._make("0004", "1保", rank=None, themes=[]), "qty": 0},
+        ]
+        rows = helpers.list_portfolio_with_indicators(records, sort_key=sort_key)
+        assert [r["code_s"] for r in rows] == expected
 
     # ===== issue #269: position_ratio 集計 =====
     @pytest.mark.parametrize(
@@ -2099,7 +2096,7 @@ class TestPriceRsSparkline:
         assert "</svg>" in svg
         assert "polyline" in svg
         assert "株価:" in tooltip
-        assert "RSライン:" in tooltip
+        assert "RSライン乖離:" in tooltip
 
     def test_mini_chart_insufficient_data_returns_dash(self):
         svg, _ = helpers.build_price_rs_chart_mini([], [], has_blue_dot=False)
@@ -2134,7 +2131,7 @@ class TestPriceRsSparkline:
         assert svg.count("<polyline") >= 4
         assert "stroke-dasharray" in svg  # RSライン点線
         assert "株価:" in tooltip
-        assert "RSライン:" in tooltip
+        assert "RSライン乖離:" in tooltip
 
     def test_full_chart_includes_date_labels(self):
         price_log = self._make_log(list(range(120, 100, -1)))
@@ -2705,3 +2702,139 @@ class TestGetCurrentResearchData:
         group_names = [g[0] for g in result]
         # スコアグループは確実に出る (総合PT が非零)
         assert "スコア" in group_names
+
+
+class TestBuildPortfolioThemeSummary:
+    """build_portfolio_theme_summary のテスト (issue #283)。
+
+    rs_line 系 (compute_rs_line_changes) と DB バルク取得は monkeypatch で
+    固定値に差し替え、集約ロジック (平均 / 除外 / ソート) を検証する。
+    """
+
+    def _record(self, code_s, themes, status="3監"):
+        return {"code_s": code_s, "status": status,
+                "memo": {"gyoutai_themes": themes}}
+
+    def test_basic_aggregation(self, monkeypatch):
+        """2 テーマ × 3 銘柄で momentum_pt 平均/最大が期待通り。"""
+        records = [
+            self._record("1111", ["半導体"]),
+            self._record("2222", ["半導体"]),
+            self._record("3333", ["防衛"]),
+        ]
+        stock_data = {
+            "1111": {"stock_name": "A", "momentum_pt": 80},
+            "2222": {"stock_name": "B", "momentum_pt": 60},
+            "3333": {"stock_name": "C", "momentum_pt": 50},
+        }
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(
+            helpers, "_bulk_resolve_stock_names",
+            lambda codes: {c: stock_data[c]["stock_name"] for c in codes},
+        )
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: None)  # rs_line スキップ
+
+        out = helpers.build_portfolio_theme_summary(records=records, sort_key="momentum")
+        by_theme = {t["theme"]: t for t in out}
+        assert by_theme["半導体"]["member_count"] == 2
+        assert by_theme["半導体"]["momentum_pt_avg"] == 70.0  # (80+60)/2
+        assert by_theme["半導体"]["momentum_pt_max"] == 80.0
+        # 半導体 (avg 70) が 防衛 (avg 50) より先 (momentum 降順)
+        assert out[0]["theme"] == "半導体"
+
+    def test_same_code_in_two_themes(self, monkeypatch):
+        """同一銘柄が 2 テーマに属する場合、両テーマで集計される。"""
+        records = [self._record("1111", ["半導体", "AI"])]
+        stock_data = {"1111": {"stock_name": "A", "momentum_pt": 80, "price_log": []}}
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names",
+                            lambda codes: {"1111": "A"})
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: None)
+
+        out = helpers.build_portfolio_theme_summary(records=records)
+        themes = {t["theme"] for t in out}
+        assert themes == {"半導体", "AI"}
+        for t in out:
+            assert t["member_count"] == 1
+            assert t["momentum_pt_avg"] == 80.0
+
+    def test_missing_momentum_excluded_but_counted(self, monkeypatch):
+        """momentum_pt 欠損銘柄は集計から除外されるが member_count には含まれる。"""
+        records = [
+            self._record("1111", ["半導体"]),
+            self._record("2222", ["半導体"]),  # momentum_pt 欠損
+        ]
+        stock_data = {
+            "1111": {"stock_name": "A", "momentum_pt": 80, "price_log": []},
+            "2222": {"stock_name": "B", "price_log": []},  # momentum_pt なし
+        }
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names",
+                            lambda codes: {c: stock_data[c]["stock_name"] for c in codes})
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: None)
+
+        out = helpers.build_portfolio_theme_summary(records=records)
+        t = out[0]
+        assert t["member_count"] == 2          # 欠損も数える
+        assert t["momentum_pt_avg"] == 80.0     # 欠損は平均から除外
+        assert len(t["leaders"]) == 1           # momentum_pt がある銘柄のみ
+
+    def test_dev_aggregation_excludes_none(self, monkeypatch):
+        """短期の勢い: rs_line データ不足銘柄 (None) は平均から除外される。"""
+        records = [
+            self._record("1111", ["半導体"]),
+            self._record("2222", ["半導体"]),
+        ]
+        stock_data = {
+            "1111": {"stock_name": "A", "momentum_pt": 80, "price_log": []},
+            "2222": {"stock_name": "B", "momentum_pt": 60, "price_log": []},
+        }
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names",
+                            lambda codes: {c: stock_data[c]["stock_name"] for c in codes})
+        import make_market_db
+        import make_stock_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"topix": {}})
+        monkeypatch.setattr(make_stock_db, "_topix_close_map", lambda mdb: {"d": 1.0})
+        # 公開 API compute_rs_line_changes を stock 名から (A, B) 乖離率を返すよう差し替え。
+        # A=有効/B=None, A=有効/B=有効 を返し分け
+        dev_map = {"A": (2.0, None), "B": (4.0, 8.0)}
+        monkeypatch.setattr(
+            make_stock_db, "compute_rs_line_changes",
+            lambda stock, mdb, topix_map=None: dev_map[stock["stock_name"]],
+        )
+        out = helpers.build_portfolio_theme_summary(records=records)
+        t = out[0]
+        assert t["dev_a_avg"] == 3.0            # (2.0 + 4.0) / 2
+        assert t["dev_b_avg"] == 8.0            # B のみ有効 (A の B は None で除外)
+
+    @pytest.mark.parametrize("sort_key,expected_first", [
+        ("momentum", "強"),    # momentum_pt 平均が高いテーマが先頭
+        ("dev_a", "急"),       # dev_a (短期の勢い) 平均が高いテーマが先頭
+    ])
+    def test_sort_key_switch(self, monkeypatch, sort_key, expected_first):
+        """sort_key で momentum / dev_a の並び順が切り替わる。"""
+        records = [
+            self._record("1111", ["強"]),   # momentum 高, 勢い 低
+            self._record("2222", ["急"]),   # momentum 低, 勢い 高
+        ]
+        stock_data = {
+            "1111": {"stock_name": "S", "momentum_pt": 90, "price_log": []},
+            "2222": {"stock_name": "Q", "momentum_pt": 40, "price_log": []},
+        }
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names",
+                            lambda codes: {c: stock_data[c]["stock_name"] for c in codes})
+        import make_market_db
+        import make_stock_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"topix": {}})
+        monkeypatch.setattr(make_stock_db, "_topix_close_map", lambda mdb: {"d": 1.0})
+        dev_map = {"S": (1.0, 1.0), "Q": (9.0, 9.0)}
+        monkeypatch.setattr(make_stock_db, "compute_rs_line_changes",
+                            lambda stock, mdb, topix_map=None: dev_map[stock["stock_name"]])
+
+        out = helpers.build_portfolio_theme_summary(records=records, sort_key=sort_key)
+        assert out[0]["theme"] == expected_first

@@ -1,4 +1,4 @@
-"""market_breadth / 信用評価関連のテスト (issue #211)。"""
+"""market_breadth / 信用評価・日経VI・新高値新安値関連のテスト (issue #211, #292)。"""
 
 import json
 import os
@@ -53,7 +53,7 @@ def test_parse_credit_balance_bairitsu_can_be_none():
     }]
 
 
-# --- make_market_db._html_credit_balance ---------------------------------
+# --- make_market_db._html_market_indicators (信用評価損益率パート) -------
 
 def _write_credit_json(tmp_path, history):
     """credit_balance.json を $KS_DATA_DIR/code_rank_data/ に書く。"""
@@ -64,8 +64,8 @@ def _write_credit_json(tmp_path, history):
     return path
 
 
-def test_html_credit_balance_renders_eval_and_bairitsu(tmp_path, monkeypatch):
-    """評価率・倍率いずれも 1週比/4週比 pt 差付きで HTML 化される。"""
+def test_market_indicators_renders_eval_and_bairitsu(tmp_path, monkeypatch):
+    """評価率は値・変化セルに、倍率は tooltip (title) に統合される (issue #292)。"""
     history = [
         {"date": "2026-04-03", "credit_eval_rate": -7.67, "credit_bairitsu": 6.07},
         {"date": "2026-04-10", "credit_eval_rate": -6.59, "credit_bairitsu": 5.30},
@@ -76,23 +76,51 @@ def test_html_credit_balance_renders_eval_and_bairitsu(tmp_path, monkeypatch):
     _write_credit_json(tmp_path, history)
     monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
 
-    html = make_market_db._html_credit_balance({})
-    assert "信用評価" in html
+    html = make_market_db._html_market_indicators({})
+    assert 'class="market-indicators"' in html
+    assert "信用評価損益率" in html
     assert 'href="https://nikkei225jp.com/data/sinyou.php"' in html
     assert "-4.82%" in html  # 最新 evaluation rate
-    assert "6.85" in html    # 最新 bairitsu
     # 1週比 (latest - 1個前): -4.82 - (-5.45) = +0.63
     assert "+0.63" in html
     # 4週比 (latest - 4個前): -4.82 - (-7.67) = +2.85
     assert "+2.85" in html
-    # 倍率の 1週比: 6.85 - 5.74 = +1.11
+    # 信用倍率は独立行をやめ tooltip (title 属性) に移設
+    assert 'title="' in html
+    assert "信用倍率 6.85" in html
+    # 倍率の 1週比: 6.85 - 5.74 = +1.11 も tooltip 内
     assert "+1.11" in html
+    # -4.82% は中間水準なのでバッジは出ない
+    assert "天井圏" not in html
+    assert "底値圏" not in html
+    # 更新日は独立列 (mi-date) に 26/5/1 形式 (ゼロ埋めなし) で出る
+    assert 'class="mi-date"' in html
+    assert "26/5/1" in html
 
 
-def test_html_credit_balance_returns_empty_when_no_file(tmp_path, monkeypatch):
-    """credit_balance.json が無ければ空文字を返し、市場HTMLを壊さない。"""
+@pytest.mark.parametrize("eval_rate, expected_badge, absent_badge", [
+    (-2.5, "天井圏", "底値圏"),   # >= -3.0 で天井圏
+    (-16.0, "底値圏", "天井圏"),  # <= -15.0 で底値圏
+    (-8.0, None, None),          # 中間: バッジなし
+])
+def test_market_indicators_credit_badge(tmp_path, monkeypatch, eval_rate, expected_badge, absent_badge):
+    """信用評価損益率の天井圏/底値圏バッジが閾値で出し分けされる (issue #292)。"""
+    _write_credit_json(tmp_path, [
+        {"date": "2026-05-01", "credit_eval_rate": eval_rate, "credit_bairitsu": 6.0},
+    ])
     monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
-    assert make_market_db._html_credit_balance({}) == ""
+    html = make_market_db._html_market_indicators({})
+    if expected_badge is None:
+        assert "天井圏" not in html and "底値圏" not in html
+    else:
+        assert expected_badge in html
+        assert absent_badge not in html
+
+
+def test_market_indicators_returns_empty_when_no_data(tmp_path, monkeypatch):
+    """credit_balance.json も Fear & Greed も無ければ空文字 (HTML を壊さない)。"""
+    monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
+    assert make_market_db._html_market_indicators({}) == ""
 
 
 @pytest.mark.parametrize("latest, prev, expected_text, expected_cls", [
@@ -148,3 +176,110 @@ def test_update_credit_balance_fetches_when_cache_stale(tmp_path, monkeypatch):
         fake_fetch.assert_called_once()
     payload = json.loads(cache.read_text(encoding="utf-8"))
     assert payload["latest"]["date"] == "2026-05-22"
+
+
+# --- issue #292: 日経VI / 新高値-新安値 ----------------------------------
+
+def test_parse_js_rows_handles_trailing_empty_row():
+    """daily2year.json の最終行は連続カンマ ([..,,,]) を含むため null 補正でパースする。
+
+    新高値/新安値が空の最終行は fetch_new_high_low 側でスキップされる。
+    """
+    text = (
+        "var DAILY = [\n"
+        "[%d,64999.41,2461,\"\",\"\",720,790,84.14,88,131,1510],\n"
+        "[%d,64693.12,2608,\"\",\"\",767,748,86.66,,,1515]\n"
+        "];" % (TS_0424, TS_0501)
+    )
+    rows = market_breadth._parse_js_rows(text, "DAILY")
+    assert len(rows) == 2
+    assert rows[0][8] == 88 and rows[0][9] == 131
+    # 連続カンマ箇所は null (None) に補正される
+    assert rows[1][8] is None and rows[1][9] is None
+
+
+def test_fetch_new_high_low_skips_unconfirmed_row():
+    """新高値/新安値が数値でない最終行 (当日未確定) はスキップされる。"""
+    text = (
+        "var DAILY = [\n"
+        "[%d,0,0,0,0,0,0,0,88,131,0],\n"
+        "[%d,0,0,0,0,0,0,0,,,0]\n"
+        "];" % (TS_0424, TS_0501)
+    )
+    with patch("market_breadth._fetch_nikkei_json", return_value=text):
+        out = market_breadth.fetch_new_high_low()
+    assert out == [{"date": "2026-04-24", "new_high": 88, "new_low": 131}]
+
+
+@pytest.mark.parametrize("vi, expected", [
+    (16.77, "安穏"),
+    (24.0, "警戒"),
+    (33.0, "恐怖"),
+    (45.0, "パニック"),
+])
+def test_vi_rating_html(vi, expected):
+    """日経VI バッジが閾値 (<20/20-30/30-40/>=40) で出し分けされる。"""
+    assert expected in make_market_db._vi_rating_html(vi)
+
+
+@pytest.mark.parametrize("diff, expected_badge, absent_badge", [
+    (300, "天井圏", "底値圏"),   # >=251 で天井圏
+    (-100, "底値圏", "天井圏"),  # <=-75 で底値圏
+    (-50, None, None),          # 中間 (やや弱いが底値圏ではない): バッジなし
+])
+def test_breadth_rating_html(diff, expected_badge, absent_badge):
+    """新高値-新安値 バッジが閾値 (天井>=+251/底<=-75) で出し分けされる (issue #292)。"""
+    html = make_market_db._breadth_rating_html(diff)
+    if expected_badge is None:
+        assert "天井圏" not in html and "底値圏" not in html
+    else:
+        assert expected_badge in html
+        assert absent_badge not in html
+
+
+def _build_history(records, n, key_fn):
+    """index -1=最新 / -6=5日前 / -21=20日前 に狙った値が来る 21 件の history を組む。
+
+    records は {0: 最新, 5: 5日前, 20: 20日前} の dict (キーは「N営業日前」)。
+    指定の無い index はダミー値 key_fn(i) で埋める。
+    """
+    hist = []
+    for i in range(20, -1, -1):  # 20日前 → 最新 の順
+        hist.append({"date": "2026-05-%02d" % (21 - i), **(records.get(i) or key_fn(i))})
+    return hist
+
+
+def test_vi_and_breadth_rows_in_indicators(tmp_path, monkeypatch):
+    """日経VI と 新高値-新安値 が変化量付きで統合表に出る (issue #292)。
+
+    index -1=最新 / -6=5日前 / -21=20日前 を基準に直近/中期の変化量を検証する。
+    """
+    code_rank = tmp_path / "code_rank_data"
+    code_rank.mkdir(parents=True)
+    # 日経VI: 最新 16.77 / 5日前 16.5 (直近 +0.3) / 20日前 17.0 (中期 -0.2)
+    vi_hist = _build_history(
+        {0: {"nikkei_vi": 16.77}, 5: {"nikkei_vi": 16.5}, 20: {"nikkei_vi": 17.0}},
+        20, lambda i: {"nikkei_vi": 16.0})
+    (code_rank / "nikkei_vi.json").write_text(
+        json.dumps({"history": vi_hist}), encoding="utf-8")
+    # 新高値-新安値: 最新 -43 (88-131) / 5日前 -80 (直近 +37) / 20日前 -140 (中期 +97)
+    nhl_hist = _build_history(
+        {0: {"new_high": 88, "new_low": 131},
+         5: {"new_high": 70, "new_low": 150},
+         20: {"new_high": 60, "new_low": 200}},
+        20, lambda i: {"new_high": 50, "new_low": 50})
+    (code_rank / "new_high_low.json").write_text(
+        json.dumps({"history": nhl_hist}), encoding="utf-8")
+    monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
+
+    html = make_market_db._html_market_indicators({})
+    # 日経VI 行: 値 + バッジ + 直近 +0.3 / 中期 -0.2
+    assert "日経VI" in html
+    assert "16.77" in html
+    assert "安穏" in html
+    assert "+0.3" in html and "-0.2" in html
+    # 新高値-新安値 行: 値 -43、直近 +37 / 中期 +97、内訳は tooltip
+    assert "新高値-新安値" in html
+    assert "-43" in html
+    assert "+37" in html and "+97" in html
+    assert "新高値 88 / 新安値 131" in html

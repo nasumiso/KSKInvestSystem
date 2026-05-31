@@ -25,6 +25,7 @@ from research_shelve import (
     normalize_code_s,
     validate_rating,
     _flock,
+    _normalize_chat_links,
     normalize_kessan_post_price_changes,
     VALID_RATINGS,
     VALID_EXPECTATIONS,
@@ -454,6 +455,68 @@ def save_corporate_url_override(code_s: str, url: str) -> str:
         record["corporate_url_override"] = cleaned
         upsert_research_record(record)
     return cleaned
+
+
+# =======================================================
+# 外部チャットリンク (chat_links) の CRUD (issue #265)
+# =======================================================
+# URL の http/https バリデーションはルート側で実施する
+# (save_corporate_url_override と同じ層分担)。helpers は index 範囲・
+# レコード存在チェックのみ行い、_flock で read-modify-write を直列化する。
+
+def _get_record_for_chat_link(normalized: str) -> Dict[str, Any]:
+    """chat_link 操作用にレコードを取得する。未登録は ValueError。"""
+    record = get_research_record(normalized)
+    if record is None:
+        raise ValueError(f"レコード未登録: {normalized}")
+    return record
+
+
+def add_chat_link(code_s: str, label: str, url: str) -> List[Dict[str, str]]:
+    """外部チャットリンクを末尾に追加し、保存後の全リストを返す。"""
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    entry = {"label": (label or "").strip(), "url": (url or "").strip()}
+    with _flock():
+        record = _get_record_for_chat_link(normalized)
+        links = _normalize_chat_links(record.get("chat_links"))
+        links.append(entry)
+        record["chat_links"] = links
+        upsert_research_record(record)
+    return links
+
+
+def update_chat_link(
+    code_s: str, index: int, label: str, url: str
+) -> List[Dict[str, str]]:
+    """index 行を上書きし、保存後の全リストを返す。範囲外は IndexError。"""
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    entry = {"label": (label or "").strip(), "url": (url or "").strip()}
+    with _flock():
+        record = _get_record_for_chat_link(normalized)
+        links = _normalize_chat_links(record.get("chat_links"))
+        if not 0 <= index < len(links):
+            raise IndexError(f"chat_links の index 範囲外: {index}")
+        links[index] = entry
+        record["chat_links"] = links
+        upsert_research_record(record)
+    return links
+
+
+def delete_chat_link(code_s: str, index: int) -> List[Dict[str, str]]:
+    """index 行を削除し、保存後の全リストを返す。範囲外は IndexError。"""
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    with _flock():
+        record = _get_record_for_chat_link(normalized)
+        links = _normalize_chat_links(record.get("chat_links"))
+        if not 0 <= index < len(links):
+            raise IndexError(f"chat_links の index 範囲外: {index}")
+        del links[index]
+        record["chat_links"] = links
+        upsert_research_record(record)
+    return links
 
 
 # =======================================================
@@ -1588,6 +1651,7 @@ def _gyoutai_first_line(row: Dict[str, Any]) -> str:
 
 def list_portfolio_with_indicators(
     records: List[Dict[str, Any]],
+    sort_key: str = "position",
 ) -> List[Dict[str, Any]]:
     """portfolio_shelve のレコード列に stocks_shelve から最新指標を補完する (Phase 3b)。
 
@@ -1596,6 +1660,7 @@ def list_portfolio_with_indicators(
 
     Args:
         records: portfolio_shelve.list_records の戻り値 (既に status 等で絞り込み済み)
+        sort_key: "position" / "rank" / "gyoutai" のいずれか。不正値は position 扱い。
 
     Returns:
         各 dict: portfolio レコード + {stock_name, rank, kessanbi_md, per, market_cap,
@@ -1603,7 +1668,7 @@ def list_portfolio_with_indicators(
                                      quarter, progress_diff, trend_template, tags,
                                      theoretical_diff, gyoseki, indicators_raw,
                                      status_query, status_label}
-        並び順は業態 1 行目昇順 → 順位昇順 → コード (issue #215: 順位ソート廃止、空業態/None順位は末尾)。
+        並び順は sort_key で切替 (issue #274)。
     """
     if not records:
         return []
@@ -1660,33 +1725,29 @@ def list_portfolio_with_indicators(
             if r.get("status") == "1保" and r["position_value"] > 0:
                 r["position_ratio"] = r["position_value"] / max_position * 100.0
 
-    # 業態順: 業態 1 行目 (空は末尾) → 順位昇順 (None は末尾) → コード
-    rows.sort(key=lambda r: (
-        r["gyoutai_first"] == "",
-        r["gyoutai_first"],
-        r.get("rank") is None,
-        r.get("rank") or 0,
-        r.get("code_s", ""),
-    ))
+    if sort_key == "rank":
+        rows.sort(key=lambda r: (
+            r.get("rank") is None,
+            r.get("rank") or 0,
+            r.get("code_s", ""),
+        ))
+    elif sort_key == "gyoutai":
+        # 業態順: 業態 1 行目 (空は末尾) → 順位昇順 (None は末尾) → コード
+        rows.sort(key=lambda r: (
+            r["gyoutai_first"] == "",
+            r["gyoutai_first"],
+            r.get("rank") is None,
+            r.get("rank") or 0,
+            r.get("code_s", ""),
+        ))
+    else:
+        # position は保有ポジション確認用。1保以外は評価せずコード順で末尾に寄せる。
+        rows.sort(key=lambda r: (
+            r.get("status") != "1保",
+            -(r.get("position_value") or 0),
+            r.get("code_s", ""),
+        ))
     return rows
-
-
-def collect_gyoutai_theme_choices(records: List[Dict[str, Any]]) -> List[str]:
-    """portfolio_shelve 全レコードの memo.gyoutai_themes をフラット化して候補リストを返す (issue #187)。
-
-    空要素除去・ユニーク化・アルファベット/五十音昇順ソート済み。
-    datalist の選択肢として使う想定。
-    """
-    seen = set()
-    for rec in records:
-        memo = rec.get("memo") or {}
-        for theme in (memo.get("gyoutai_themes") or []):
-            if not isinstance(theme, str):
-                continue
-            t = theme.strip()
-            if t:
-                seen.add(t)
-    return sorted(seen)
 
 
 def _format_tags(stock: Dict[str, Any]) -> str:
@@ -2157,6 +2218,23 @@ def _format_total_change(values: List[float], window: int) -> str:
     return f"{pct:+.1f}%"
 
 
+def _format_ma_deviation(values: List[float], window: int) -> str:
+    """最新値 (values[-1]) と直近 window 本 (今日含む) の移動平均との乖離率を整形する。
+
+    RSライン tooltip 用 (issue #283)。1 点比較ではなく移動平均基準にすることで
+    ヒゲ・急変のブレを薄め、勢い・過熱の度合いを安定して見せる。
+    values は古い順 (最新が末尾)。データ不足時は取得できるだけで計算。0 除算は "—"。
+    """
+    if not values or window <= 0:
+        return "—"
+    recent = values[-window:] if len(values) >= window else values
+    ma = sum(recent) / len(recent)
+    if ma == 0:
+        return "—"
+    pct = (values[-1] - ma) / ma * 100
+    return f"{pct:+.1f}%"
+
+
 def _build_chart_tooltip(
     price_values: List[float],
     rs_values: List[float],
@@ -2165,15 +2243,16 @@ def _build_chart_tooltip(
 ) -> str:
     """チャート tooltip (title 属性向け) を生成する。
 
-    20本 / 5本 の合計騰落率を見せる。平均ではなく合計なので、期間内の動きが
-    そのまま % で読める (例: 「20で +5%, 5で -26%」のような乖離パターンが分かる)。
+    株価行は 20本 / 5本 の合計騰落率 (期間内の動きがそのまま % で読める)。
+    RSライン行は移動平均乖離率 (今日 vs 直近 20本/5本平均、issue #283)。1 点比較
+    だとヒゲでブレるため、平均基準で勢い・過熱を安定して見せる。
     unit_label は "日" (日足 mini) / "週" (週足 full) を切り替える。
     """
     lines = [
         f"株価: 20{unit_label} {_format_total_change(price_values, _SPARK_LOOKBACK)}, "
         f"5{unit_label} {_format_total_change(price_values, _SPARK_RECENT)}",
-        f"RSライン: 20{unit_label} {_format_total_change(rs_values, _SPARK_LOOKBACK)}, "
-        f"5{unit_label} {_format_total_change(rs_values, _SPARK_RECENT)}",
+        f"RSライン乖離: 20{unit_label}平均 {_format_ma_deviation(rs_values, _SPARK_LOOKBACK)}, "
+        f"5{unit_label}平均 {_format_ma_deviation(rs_values, _SPARK_RECENT)}",
     ]
     if has_blue_dot:
         lines.append("新高値: ●")
@@ -3073,3 +3152,148 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None):
         if any(v for _, v in items):
             groups.append((group_name, items))
     return groups
+
+
+# ===========================================
+# 業態テーマ別 RS サマリー (issue #283)
+# ===========================================
+
+# sort_key (UI/URL) → 並べ替えに使う集計フィールド名。許可キーの真実はここに集約し、
+# ルート側の allowlist もこの keys() を参照する (二重定義を避ける)。
+THEME_SUMMARY_SORT_FIELDS = {
+    "momentum": "momentum_pt_avg",
+    "dev_a": "dev_a_avg",
+}
+
+
+def _avg_or_none(values: List[float]) -> Optional[float]:
+    """None を含まない値リストの平均。空なら None。"""
+    return sum(values) / len(values) if values else None
+
+
+def build_portfolio_theme_summary(
+    records: Optional[List[Dict[str, Any]]] = None,
+    sort_key: str = "momentum",
+) -> List[Dict[str, Any]]:
+    """portfolio_shelve のユニバースを memo['gyoutai_themes'] でグルーピングし、
+    テーマごとの中長期 (momentum_pt) + 短期 (rs_line スロープ) 集約指標と
+    上位リーダー株を返す (issue #283)。
+
+    Args:
+        records: portfolio_shelve.list_records(include_excluded=False) の戻り値。
+            None なら関数内で取得する (テスト時に注入できるよう引数化)。
+        sort_key: "momentum" | "dev_a"。並べ替えキー。
+
+    Returns:
+        list[dict]: 各テーマの集約 dict。並び順は sort_key に従う
+            (None は末尾) → member_count 降順 → テーマ名昇順。
+    """
+    if records is None:
+        import portfolio_shelve as ps  # 遅延 import (循環回避)
+        records = ps.list_records(include_excluded=False)
+
+    # テーマ → [code_s, ...] の逆引き (スロット最大2を両方展開、空は無視)
+    theme_to_codes: Dict[str, List[str]] = {}
+    for rec in records:
+        code_s = rec.get("code_s", "")
+        if not code_s:
+            continue
+        themes = (rec.get("memo") or {}).get("gyoutai_themes") or []
+        for t in themes:
+            if not isinstance(t, str):
+                continue
+            name = t.strip()
+            if not name:
+                continue
+            theme_to_codes.setdefault(name, []).append(code_s)
+    if not theme_to_codes:
+        return []
+
+    # status ラベル参照用に code_s → status を引けるようにする
+    status_by_code = {r.get("code_s", ""): r.get("status", "") for r in records}
+
+    all_codes = sorted({c for codes in theme_to_codes.values() for c in codes})
+    stock_map = _bulk_get_stock_data(all_codes)
+    name_map = _bulk_resolve_stock_names(all_codes)
+
+    # rs_line 計算の共有リソース (issue #283: N+1 回避、再計算回避)
+    try:
+        from make_market_db import get_market_db  # 遅延 import (循環回避)
+        market_db = get_market_db()
+    except Exception:  # noqa: BLE001
+        market_db = None
+    topix_map = None
+    if market_db is not None:
+        try:
+            from make_stock_db import _topix_close_map  # 遅延 import
+            topix_map = _topix_close_map(market_db)
+        except Exception:  # noqa: BLE001
+            topix_map = None
+
+    # 銘柄ごとの rs_line スロープ (A, B) を 1 回だけ計算してキャッシュ。
+    # 公開 API compute_rs_line_changes を使う (private 関数には依存しない)。
+    # topix_map を渡すことで内部 compute_rs_line の TOPIX マップ再構築を避ける。
+    # (a, b) = 今日 vs 直近5日/20日移動平均の乖離率 = 勢いオシレーター。
+    dev_by_code: Dict[str, tuple] = {}
+    if market_db is not None and topix_map:
+        from make_stock_db import compute_rs_line_changes  # 遅延 import
+        for code_s in all_codes:
+            stock = stock_map.get(code_s) or {}
+            try:
+                a, b = compute_rs_line_changes(stock, market_db, topix_map=topix_map)
+            except Exception:  # noqa: BLE001
+                a, b = None, None
+            dev_by_code[code_s] = (a, b)
+
+    result: List[Dict[str, Any]] = []
+    for theme, codes in theme_to_codes.items():
+        members: List[Dict[str, Any]] = []
+        mom_values: List[float] = []
+        dev_a_values: List[float] = []
+        dev_b_values: List[float] = []
+        for code_s in codes:
+            stock = stock_map.get(code_s) or {}
+            mom = stock.get("momentum_pt")
+            if isinstance(mom, (int, float)):
+                mom_values.append(float(mom))
+            a, b = dev_by_code.get(code_s, (None, None))
+            if a is not None:
+                dev_a_values.append(a)
+            if b is not None:
+                dev_b_values.append(b)
+            members.append({
+                "code_s": code_s,
+                "stock_name": name_map.get(code_s, "") or "",
+                "momentum_pt": float(mom) if isinstance(mom, (int, float)) else None,
+                "status": _PORTFOLIO_STATUS_LABEL.get(
+                    status_by_code.get(code_s, ""), status_by_code.get(code_s, "")
+                ),
+            })
+        # members を momentum_pt 降順 (None 末尾) → code_s 昇順で並べる
+        members.sort(key=lambda m: (
+            m["momentum_pt"] is None,
+            -(m["momentum_pt"] or 0),
+            m["code_s"],
+        ))
+        # members は momentum_pt 降順済み。先頭から非 None 上位 3 件がリーダー株
+        leaders = [m for m in members if m["momentum_pt"] is not None][:3]
+        result.append({
+            "theme": theme,
+            "member_count": len(codes),
+            "momentum_pt_avg": _avg_or_none(mom_values),
+            "momentum_pt_max": max(mom_values) if mom_values else None,
+            "dev_a_avg": _avg_or_none(dev_a_values),
+            "dev_b_avg": _avg_or_none(dev_b_values),
+            "leaders": leaders,
+            "members": members,
+        })
+
+    # ソート: sort_key 降順 (None 末尾) → member_count 降順 → テーマ名昇順
+    primary = THEME_SUMMARY_SORT_FIELDS.get(sort_key, "momentum_pt_avg")
+    result.sort(key=lambda r: (
+        r[primary] is None,
+        -(r[primary] or 0),
+        -r["member_count"],
+        r["theme"],
+    ))
+    return result

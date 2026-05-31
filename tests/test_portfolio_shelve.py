@@ -497,7 +497,17 @@ class TestUpdateMemo:
 
 
 class TestGyoutaiThemesField:
-    """issue #187: gyoutai_themes (list[str]) フィールドの読み書き / バリデーション。"""
+    """issue #187: gyoutai_themes (list[str]) フィールドの読み書き / バリデーション。
+
+    issue #282: update_memo がマスター登録済み name のみ受け付けるよう変更されたため、
+    テストはマスター登録を前提に動作させる。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _seed_master(self, db_path):
+        """テストで使う name (半導体 / AI) をマスター登録しておく"""
+        ps.create_theme("半導体", db_path=db_path)
+        ps.create_theme("AI", db_path=db_path)
 
     def test_create_memo_defaults_empty_list(self):
         memo = ps.create_memo()
@@ -931,3 +941,108 @@ class TestQtyGlobalUpdatedAt:
         ps.update_qty("4377", 100, db_path=db_path)
         ts_after = ps.get_qty_global_updated_at(db_path=db_path)
         assert ts_after == ts_before
+
+
+# ==================================================
+# テーママスター (issue #282)
+# ==================================================
+class TestThemeMaster:
+    """create / update / delete / count + update_memo の整合性"""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "",                        # 空文字
+            "   ",                     # 空白のみ
+            "x" * 31,                  # 上限超過 (THEME_NAME_MAX_LEN=30)
+            "AI/半導体",                # URL 禁止 /
+            "AI?半導体",                # URL 禁止 ?
+            "AI&半導体",                # URL 禁止 &
+            "AI\nNL",                  # 制御文字
+        ],
+    )
+    def test_create_theme_rejects_invalid_names(self, db_path, name):
+        with pytest.raises(ValueError):
+            ps.create_theme(name, db_path=db_path)
+
+    def test_create_theme_rejects_duplicate(self, db_path):
+        ps.create_theme("半導体", db_path=db_path)
+        with pytest.raises(ValueError):
+            ps.create_theme("半導体", db_path=db_path)
+
+    def test_update_theme_renames_records(self, db_path):
+        """リネームで既存銘柄の memo[gyoutai_themes] も新 name に追従し、削除では除去される。
+        action_log にも "メモ更新" が追記され、影響件数が delete_theme の戻り値と一致する。
+        """
+        ps.create_theme("半導体", db_path=db_path)
+        ps.create_theme("AI", db_path=db_path)
+        ps.add_to_watch("6324", db_path=db_path)
+        ps.update_memo(
+            "6324", {"gyoutai_themes": ["半導体", "AI"]}, db_path=db_path
+        )
+
+        # リネーム
+        ps.update_theme("半導体", new_name="セミコン", db_path=db_path)
+        rec = ps.get_record("6324", db_path=db_path)
+        assert rec["memo"]["gyoutai_themes"] == ["セミコン", "AI"]
+        assert ps.get_theme("半導体", db_path=db_path) is None
+        assert ps.get_theme("セミコン", db_path=db_path)["name"] == "セミコン"
+
+        # 削除 → 影響 1 銘柄、該当 name が消える
+        affected = ps.delete_theme("セミコン", db_path=db_path)
+        assert affected == 1
+        rec = ps.get_record("6324", db_path=db_path)
+        assert rec["memo"]["gyoutai_themes"] == ["AI"]
+
+        # action_log に "メモ更新" が 2 回 (リネーム + 削除) 追記されている
+        logs = ps.list_action_logs("6324", db_path=db_path)
+        memo_logs = [l for l in logs if l["action_type"] == "メモ更新"]
+        assert len(memo_logs) >= 2
+
+    @pytest.mark.parametrize(
+        "current,posted,expected,should_raise",
+        [
+            # 純新規の未登録 name は ValueError
+            (["半導体"], ["半導体", "未登録新規"], None, True),
+            # 現行レコードに既にある未登録 name は保持を許可 (移行漏れ救済)
+            (["未登録既存"], ["未登録既存"], ["未登録既存"], False),
+            # 未登録 name を空文字に置き換えれば除去できる
+            (["未登録既存"], [""], [], False),
+            # マスター登録済み name は採用
+            (["半導体"], ["AI"], ["AI"], False),
+            # 重複は除去される
+            (["半導体"], ["AI", "AI"], ["AI"], False),
+        ],
+    )
+    def test_update_memo_master_validation(
+        self, db_path, current, posted, expected, should_raise
+    ):
+        """update_memo の gyoutai_themes マスター未登録判定 (issue #282)"""
+        ps.create_theme("半導体", db_path=db_path)
+        ps.create_theme("AI", db_path=db_path)
+        ps.add_to_watch("6324", db_path=db_path)
+        # 現行値を直書き込みで仕込む (未登録 name を含むケースを作るため)
+        rec = ps.get_record("6324", db_path=db_path)
+        rec["memo"]["gyoutai_themes"] = current
+        ps.upsert_record(rec, db_path=db_path)
+
+        if should_raise:
+            with pytest.raises(ValueError):
+                ps.update_memo(
+                    "6324", {"gyoutai_themes": posted}, db_path=db_path
+                )
+        else:
+            ps.update_memo(
+                "6324", {"gyoutai_themes": posted}, db_path=db_path
+            )
+            after = ps.get_record("6324", db_path=db_path)
+            assert after["memo"]["gyoutai_themes"] == expected
+
+    def test_count_theme_usage(self, db_path):
+        ps.create_theme("AI", db_path=db_path)
+        ps.create_theme("半導体", db_path=db_path)
+        ps.add_to_watch("6324", db_path=db_path)
+        ps.add_to_watch("9984", db_path=db_path)
+        ps.update_memo("6324", {"gyoutai_themes": ["AI", "半導体"]}, db_path=db_path)
+        ps.update_memo("9984", {"gyoutai_themes": ["AI"]}, db_path=db_path)
+        assert ps.count_theme_usage(db_path=db_path) == {"AI": 2, "半導体": 1}

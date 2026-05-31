@@ -68,6 +68,14 @@ VALID_ACTION_TYPES = frozenset(
 KEY_RECORD_PREFIX = "record:"
 KEY_ACTION_LOG_PREFIX = "action_log:"
 KEY_SEQ_PREFIX = "_seq:"
+KEY_THEME_PREFIX = "theme:"
+
+# テーママスター (issue #282)
+THEME_FIELDS = frozenset({"name", "description", "created_at"})
+THEME_NAME_MAX_LEN = 30  # UI バッジを崩さない上限
+# URL に含めると曖昧になる文字 + HTML/JS リテラルを破壊する文字を name に許可しない
+# (`/portfolio/themes/<name>/...` ルートの破綻防止 + テンプレ展開時の注入予防)
+_THEME_NAME_FORBIDDEN_RE = re.compile(r"[\/\?\#\&\%\+\<\>\"\'\\\x00-\x1F]")
 
 # PF 全体で 1 つだけ保持するメタキー (どこかの銘柄で qty が変化したら更新)
 KEY_QTY_GLOBAL_UPDATED_AT = "_meta:qty_global_updated_at"
@@ -884,6 +892,277 @@ def exclude_from_universe(
     return True
 
 
+# ===========================================
+# テーママスター (issue #282)
+# ===========================================
+
+def _theme_key(name: str) -> str:
+    return f"{KEY_THEME_PREFIX}{name}"
+
+
+def validate_theme_name(name: Any) -> str:
+    """テーマ name を検証して正規化済み name を返す。
+
+    - str でない → TypeError
+    - strip() 後に空 → ValueError
+    - 長さ > THEME_NAME_MAX_LEN → ValueError
+    - URL 禁止文字 (/ ? # & % + 制御文字) を含む → ValueError
+
+    正規化: strip() のみ (大文字小文字は維持、内部空白も維持)
+    """
+    if not isinstance(name, str):
+        raise TypeError(f"theme name must be str, got {type(name).__name__}")
+    normalized = name.strip()
+    if not normalized:
+        raise ValueError("theme name は空にできません")
+    if len(normalized) > THEME_NAME_MAX_LEN:
+        raise ValueError(
+            f"theme name は {THEME_NAME_MAX_LEN} 文字以内: {name!r} ({len(normalized)} 文字)"
+        )
+    m = _THEME_NAME_FORBIDDEN_RE.search(normalized)
+    if m:
+        raise ValueError(
+            f"theme name に使用できない文字が含まれています: {name!r} (禁止: / ? # & % + 制御文字)"
+        )
+    return normalized
+
+
+def _validate_theme_description(description: Any) -> str:
+    if description is None:
+        return ""
+    if not isinstance(description, str):
+        raise TypeError(
+            f"theme description must be str or None, got {type(description).__name__}"
+        )
+    return description
+
+
+def list_themes(*, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """テーママスターを name 昇順で取得する。"""
+    path = _resolve_db_path(db_path)
+    results: List[Dict[str, Any]] = []
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_THEME_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            results.append(dict(value))
+    results.sort(key=lambda r: r.get("name", ""))
+    return results
+
+
+def get_theme(name: str, *, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """1件取得 (存在しなければ None)。"""
+    normalized = validate_theme_name(name)
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        value = db.get(_theme_key(normalized))
+    return dict(value) if isinstance(value, dict) else None
+
+
+def create_theme(
+    name: str,
+    description: str = "",
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """テーマを新規作成する。重複は ValueError。"""
+    normalized = validate_theme_name(name)
+    desc = _validate_theme_description(description)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            key = _theme_key(normalized)
+            if key in db:
+                raise ValueError(f"theme {normalized!r} は既に存在します")
+            record = {
+                "name": normalized,
+                "description": desc,
+                "created_at": now_iso(),
+            }
+            db[key] = record
+    log_print("portfolio_shelve: theme 作成", normalized)
+    return dict(record)
+
+
+def update_theme(
+    name: str,
+    new_name: Optional[str] = None,
+    description: Optional[str] = None,
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """テーマを更新する (リネーム / 説明文編集)。
+
+    - new_name が現行と異なれば旧キー削除 + 新キー作成 + 全 record の memo[gyoutai_themes] 書き換え
+    - description が None でなければその値で上書き
+    - 同 _flock + 同 ShelveDB セッション内で完結 (途中失敗で不整合を残さない)
+
+    戻り値: 更新後の theme レコード
+    """
+    normalized = validate_theme_name(name)
+    new_normalized = validate_theme_name(new_name) if new_name is not None else None
+    desc_value = _validate_theme_description(description) if description is not None else None
+
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            old_key = _theme_key(normalized)
+            if old_key not in db:
+                raise KeyError(f"theme {normalized!r} は存在しません")
+            current = dict(db[old_key])
+
+            renaming = new_normalized is not None and new_normalized != normalized
+            if renaming:
+                new_key = _theme_key(new_normalized)
+                if new_key in db:
+                    raise ValueError(f"theme {new_normalized!r} は既に存在します")
+                current["name"] = new_normalized
+            if desc_value is not None:
+                current["description"] = desc_value
+
+            if renaming:
+                # 旧キー削除 + 新キー作成 + 銘柄側書き換え
+                del db[old_key]
+                db[new_key] = current
+                affected_codes = _rewrite_theme_in_records(
+                    db, normalized, new_normalized
+                )
+            else:
+                db[old_key] = current
+                affected_codes = []
+
+            # 影響を受けた record の action_log は flock 内で追記 (リエントラント対応済み)
+            for code in affected_codes:
+                _append_action_log_inner(db, code, "メモ更新")
+    if renaming:
+        log_print(
+            "portfolio_shelve: theme リネーム",
+            f"{normalized} -> {new_normalized}",
+            f"affected={len(affected_codes)}",
+        )
+    else:
+        log_print("portfolio_shelve: theme 更新", normalized)
+    return dict(current)
+
+
+def delete_theme(name: str, *, db_path: Optional[str] = None) -> int:
+    """テーマを削除する。全 record から該当 name を除去。
+
+    戻り値: 影響を受けた銘柄数
+    """
+    normalized = validate_theme_name(name)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            key = _theme_key(normalized)
+            if key not in db:
+                raise KeyError(f"theme {normalized!r} は存在しません")
+            del db[key]
+            affected_codes = _rewrite_theme_in_records(db, normalized, None)
+            for code in affected_codes:
+                _append_action_log_inner(db, code, "メモ更新")
+    log_print(
+        "portfolio_shelve: theme 削除",
+        normalized,
+        f"affected={len(affected_codes)}",
+    )
+    return len(affected_codes)
+
+
+def count_theme_usage(*, db_path: Optional[str] = None) -> Dict[str, int]:
+    """name -> 使用銘柄数 を返す (編集画面表示用)。"""
+    path = _resolve_db_path(db_path)
+    counts: Dict[str, int] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_RECORD_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            memo = value.get("memo") or {}
+            for theme in (memo.get("gyoutai_themes") or []):
+                if isinstance(theme, str) and theme:
+                    counts[theme] = counts.get(theme, 0) + 1
+    return counts
+
+
+def _rewrite_theme_in_records(
+    db: ShelveDB,
+    old_name: str,
+    new_name: Optional[str],
+) -> List[str]:
+    """全 record:* を走査し、memo[gyoutai_themes] 内の old_name を new_name に置換する。
+
+    - new_name=None なら除去 (削除)
+    - new_name 指定で同一スロットに新 name が既に存在する場合は重複除去
+    - 変更があった record は updated_at を now_iso() に更新
+    - 戻り値: 変更があった code_s のリスト (action_log 追記用)
+
+    呼び出し側で _flock + ShelveDB セッションを保持していること前提。
+    """
+    affected: List[str] = []
+    record_keys = [k for k in db.keys() if k.startswith(KEY_RECORD_PREFIX)]
+    for key in record_keys:
+        record = db[key]
+        if not isinstance(record, dict):
+            continue
+        memo = record.get("memo") or {}
+        themes = memo.get("gyoutai_themes") or []
+        if not isinstance(themes, list) or old_name not in themes:
+            continue
+        new_themes: List[str] = []
+        for t in themes:
+            if t == old_name:
+                if new_name is None:
+                    continue
+                if new_name in new_themes:
+                    continue  # リネーム後に重複する場合は除去
+                new_themes.append(new_name)
+            else:
+                if t in new_themes:
+                    continue
+                new_themes.append(t)
+        if new_themes == list(themes):
+            continue
+        new_memo = dict(memo)
+        new_memo["gyoutai_themes"] = new_themes
+        new_record = dict(record)
+        new_record["memo"] = new_memo
+        new_record["updated_at"] = now_iso()
+        db[key] = new_record
+        affected.append(record.get("code_s") or key[len(KEY_RECORD_PREFIX):])
+    return affected
+
+
+def _append_action_log_inner(
+    db: ShelveDB,
+    code_s: str,
+    action_type: str,
+    *,
+    reason: str = "",
+) -> None:
+    """既にオープン済みの ShelveDB に action_log を直接書き込む (flock 内専用)。
+
+    append_action_log は内部で _flock + ShelveDB を再オープンするため、
+    リネーム/削除のような巨大トランザクション内ではこちらを使って同一セッションに収める。
+    """
+    validate_action_type(action_type)
+    normalized = normalize_code_s(code_s)
+    seq = _next_seq(db, normalized)
+    entry = {
+        "code_s": normalized,
+        "seq": seq,
+        "timestamp": now_iso(),
+        "action_type": action_type,
+        "status_from": None,
+        "status_to": None,
+        "reason": reason,
+    }
+    db[_action_log_key(normalized, seq)] = entry
+
+
 def update_memo(
     code_s: str,
     fields: Dict[str, Any],
@@ -960,6 +1239,33 @@ def update_memo(
                 )
             record = db[key]
             current_memo = record.get("memo", {}) or {}
+
+            # gyoutai_themes (list[str]) のマスター整合性チェック (issue #282)
+            # - 空文字は除去 (スロットクリア)
+            # - マスター登録済み name は採用
+            # - 未登録 name で現行レコードに既に存在する場合は保持を許可 (移行漏れ救済)
+            # - 純新規の未登録 name は ValueError
+            if "gyoutai_themes" in normalized_fields:
+                cleaned: List[str] = []
+                current_themes = current_memo.get("gyoutai_themes") or []
+                master_names = {
+                    k[len(KEY_THEME_PREFIX):]
+                    for k in db.keys()
+                    if k.startswith(KEY_THEME_PREFIX)
+                }
+                for raw in normalized_fields["gyoutai_themes"]:
+                    t = raw.strip()
+                    if not t:
+                        continue
+                    if t in master_names or t in current_themes:
+                        if t not in cleaned:
+                            cleaned.append(t)
+                        continue
+                    raise ValueError(
+                        f"portfolio_shelve: theme {t!r} はマスター未登録のため新規付与できません"
+                    )
+                normalized_fields["gyoutai_themes"] = cleaned
+
             changed = any(
                 current_memo.get(k, _current_default(k)) != v
                 for k, v in normalized_fields.items()

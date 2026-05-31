@@ -21,6 +21,7 @@ import fcntl
 import os
 import re
 import threading
+import unicodedata
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
@@ -86,6 +87,7 @@ RECORD_FIELDS = frozenset(
         "analysis_date_raw",
         "kessan_date_raw",
         "corporate_url_override",
+        "chat_links",
     }
 )
 
@@ -257,6 +259,7 @@ def create_research_record(
     analysis_date_raw: str = "",
     kessan_date_raw: str = "",
     corporate_url_override: str = "",
+    chat_links: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """銘柄調査レコードのひな型 dict を生成する。
 
@@ -305,6 +308,7 @@ def create_research_record(
         "analysis_date_raw": analysis_date_raw,
         "kessan_date_raw": kessan_date_raw,
         "corporate_url_override": corporate_url_override,
+        "chat_links": _normalize_chat_links(chat_links),
     }
 
 
@@ -438,6 +442,31 @@ def _normalize_shikiho_comments(comments):
     return result
 
 
+def _normalize_chat_links(links):
+    """外部チャットリンクを List[{"label", "url"}] に正規化する（後方互換, issue #265）。
+
+    - list でなければ空リスト
+    - 各要素は dict かつ url が http://・https:// 始まりの str のもののみ採用
+    - label は str 化して strip。壊れたエントリ・不正 URL は捨てる
+    """
+    if not isinstance(links, list):
+        return []
+    result = []
+    for item in links:
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url")
+        if not isinstance(url, str):
+            continue
+        url = url.strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            continue
+        label = item.get("label")
+        label = label.strip() if isinstance(label, str) else ""
+        result.append({"label": label, "url": url})
+    return result
+
+
 def sort_shikiho_comments_desc(
     comments: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
@@ -498,6 +527,7 @@ def get_research_record(
     held_after_kessan が無ければ False で補完する（後方互換）。
     post_price_changes が無く旧 post_price_change のみがある場合、
     {"1d": <旧値>, "5d": ""} に正規化する（後方互換）。
+    chat_links は未設定/壊れたエントリを除去して List[{"label","url"}] に正規化する。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
@@ -523,6 +553,7 @@ def get_research_record(
             record["corporate_url_override"] = ""
         if "stock_name_prev" not in record:
             record["stock_name_prev"] = None
+        record["chat_links"] = _normalize_chat_links(record.get("chat_links"))
     return record
 
 
@@ -806,8 +837,19 @@ def _parse_rating_filter(rating: Optional[str]) -> Optional[set]:
     return set(tokens)
 
 
-def _matches_keyword(record: Dict[str, Any], keyword_lower: str) -> bool:
-    """レコードが keyword (小文字) を含むかを判定する。
+def normalize_for_search(text: str) -> str:
+    """検索照合用に文字列を正規化する。
+
+    NFKC で全角英数字記号を半角へ畳み込み (例: 'ＫＯＡ' → 'KOA')、
+    さらに小文字化する。これにより半角キーワードで全角データに
+    マッチできる (逆も同様)。比較する keyword 側・フィールド値側の
+    双方に同じ正規化をかけて使う。
+    """
+    return unicodedata.normalize("NFKC", text).lower()
+
+
+def _matches_keyword(record: Dict[str, Any], keyword_norm: str) -> bool:
+    """レコードが keyword (正規化済み) を含むかを判定する。
 
     HTML タグが含まれるフィールドではタグを除去してから検索する。
     """
@@ -818,7 +860,7 @@ def _matches_keyword(record: Dict[str, Any], keyword_lower: str) -> bool:
         if not isinstance(value, str):
             continue
         plain = strip_html_tags(value)
-        if keyword_lower in plain.lower():
+        if keyword_norm in normalize_for_search(plain):
             return True
     return False
 
@@ -837,7 +879,7 @@ def list_research_records(
     - 結果は code_s 昇順
     """
     rating_set = _parse_rating_filter(rating)
-    keyword_lower = keyword.lower() if keyword else None
+    keyword_norm = normalize_for_search(keyword) if keyword else None
     path = _resolve_db_path(db_path)
 
     results: List[Dict[str, Any]] = []
@@ -848,8 +890,8 @@ def list_research_records(
             if rating_set is not None:
                 if record.get("overall_rating", "") not in rating_set:
                     continue
-            if keyword_lower is not None:
-                if not _matches_keyword(record, keyword_lower):
+            if keyword_norm is not None:
+                if not _matches_keyword(record, keyword_norm):
                     continue
             results.append(record)
 

@@ -578,6 +578,14 @@ class TestListFilter:
         assert len(results) == 1
         assert results[0]["code_s"] == "9999"
 
+    # --- 全角半角ゆれ吸収 (NFKC): 実データ 6999 銘柄名が全角 'ＫＯＡ' のケース ---
+    @pytest.mark.parametrize("keyword", ["KOA", "koa", "ＫＯＡ"])
+    def test_filter_keyword_fullwidth_normalize(self, db_path, keyword):
+        rec = rs.create_research_record("6999", "ＫＯＡ", overall_rating="B")
+        rs.upsert_research_record(rec, db_path=db_path)
+        results = rs.list_research_records(keyword=keyword, db_path=db_path)
+        assert [r["code_s"] for r in results] == ["6999"]
+
     # --- issue #236: stock_name_prev も検索対象 (エイリアス) ---
     def test_filter_keyword_stock_name_prev(self, db_path):
         rec = rs.create_research_record(
@@ -1002,3 +1010,33 @@ class TestStockNamePrev:
         assert rs.clear_stock_name_prev_field("1436", db_path=db_path) is False
         # 未登録 → False
         assert rs.clear_stock_name_prev_field("9999", db_path=db_path) is False
+
+
+class TestChatLinks:
+    """issue #265: chat_links の正規化と後方互換"""
+
+    @pytest.mark.parametrize("raw, expected", [
+        # 未設定 (旧レコード) / 非リスト → 空リスト
+        (None, []),
+        ("not-a-list", []),
+        ([], []),
+        # 正常エントリ (label/url が保持される)
+        ([{"label": "ChatGPT", "url": "https://chat.example/a"}],
+         [{"label": "ChatGPT", "url": "https://chat.example/a"}]),
+        # label 欠損は空文字で補完、url の前後空白は strip
+        ([{"url": "  https://x.example  "}], [{"label": "", "url": "https://x.example"}]),
+        # 壊れたエントリ (dict でない / url 非str / http以外) は除去
+        (["str", {"label": "no url"}, {"url": 123},
+          {"url": "ftp://x"}, {"label": "ok", "url": "http://ok.example"}],
+         [{"label": "ok", "url": "http://ok.example"}]),
+    ])
+    def test_normalize_chat_links(self, raw, expected):
+        assert rs._normalize_chat_links(raw) == expected
+
+    def test_get_record_backfills_chat_links(self, db_path):
+        """旧レコード (chat_links 欠損) を読むと空リストで補完される"""
+        rec = rs.create_research_record("3496", "アズーム")
+        del rec["chat_links"]  # 旧スキーマを再現
+        rs.upsert_research_record(rec, db_path=db_path)
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert loaded["chat_links"] == []

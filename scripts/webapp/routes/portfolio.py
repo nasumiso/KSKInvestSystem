@@ -22,7 +22,8 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 import portfolio
 import portfolio_shelve as ps
 from webapp.helpers import (
-    collect_gyoutai_theme_choices,
+    THEME_SUMMARY_SORT_FIELDS,
+    build_portfolio_theme_summary,
     compute_cell_styles,
     get_stock_data,
     list_portfolio_with_indicators,
@@ -55,6 +56,8 @@ STATUS_CHOICES = [
     ("watch", "3監", STATUS_VALUE_TO_LABEL["3監"]),
 ]
 DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 書き込み POST 後フォールバック先
+PORTFOLIO_SORT_KEYS = {"position", "rank", "gyoutai"}
+DEFAULT_SORT_KEY = "position"
 
 
 def _parse_status_filter(args) -> Optional[str]:
@@ -86,17 +89,38 @@ def _parse_gyoutai_theme(args) -> Optional[str]:
     return raw or None
 
 
-def _build_query_string(status: Optional[str], gyoutai_theme: Optional[str]) -> str:
-    """フィルタから URL クエリ文字列を組み立てる (issue #215)。
+def _parse_sort_key(args) -> str:
+    """request.args から portfolio 一覧の sort key を取り出す (issue #274)。"""
+    raw = (args.get("sort") or "").strip().lower()
+    if raw in PORTFOLIO_SORT_KEYS:
+        return raw
+    return DEFAULT_SORT_KEY
 
-    POST → リダイレクトの戻り先として使う。両方 None なら空文字を返し、
-    呼び出し側 (`_redirect_with_return_query`) でデフォルトに落ちる。
+
+def _build_query_string(
+    status: Optional[str],
+    gyoutai_theme: Optional[str],
+    sort_key: Optional[str] = None,
+    include_empty_status: bool = False,
+) -> str:
+    """フィルタ / ソートから URL クエリ文字列を組み立てる。
+
+    include_empty_status=True のときだけ、status None を「すべて」の
+    明示選択として `status=` にする。POST 後の素の /portfolio fallback と
+    画面上の「すべて」選択維持を混同しないため、呼び出し側で明示する。
     """
     params = []
     if status and status in STATUS_VALUE_TO_QUERY:
         params.append(("status", STATUS_VALUE_TO_QUERY[status]))
+    elif status is None and include_empty_status:
+        params.append(("status", ""))
     if gyoutai_theme:
         params.append(("gyoutai_theme", gyoutai_theme))
+    if sort_key:
+        params.append((
+            "sort",
+            sort_key if sort_key in PORTFOLIO_SORT_KEYS else DEFAULT_SORT_KEY,
+        ))
     return urlencode(params)
 
 
@@ -155,8 +179,7 @@ def _redirect_with_return_query(
     そのまま受け取り、URL に付与する。これで POST 後も直前のフィルタが復元できる。
 
     空 or 未指定時の戻り先 (issue #215):
-      - `default_status_query=None` (デフォルト): 素の `/portfolio` (= 全件表示) に戻す。
-        引数なし /portfolio の全件状態からの POST を復元するためのフォールバック。
+      - `default_status_query=None` (デフォルト): 素の `/portfolio` (= 保有デフォルト) に戻す。
       - `default_status_query="watch"` 等: `?status=<value>` を付与。`add()` から
         追加直後の銘柄が見えるよう監視フィルタに切り替えたい場合に使う。
 
@@ -529,16 +552,18 @@ def _build_fallback_records() -> list[dict]:
 
 @portfolio_bp.route("/portfolio")
 def dashboard():
-    """フィルタ型ダッシュボード (issue #215 でページング/ソートは廃止)。
+    """フィルタ型ダッシュボード。
 
     URL クエリ:
-      status:        hold / semi / watch のいずれか単一 (省略時=全ステータス)
+      status:        hold / semi / watch のいずれか単一 (省略時=hold、空文字=全ステータス)
       gyoutai_theme: 業態/テーマ名の完全一致 (省略時=全業態テーマ)
                      指定時は status を無視して全銘柄から該当業態/テーマを抽出。
-    並び順は常時業態順。`sort` / `page` パラメータは silent に無視 (旧 URL 互換)。
+      sort:          position / rank / gyoutai (省略時=position)
+    `page` パラメータは silent に無視 (旧 URL 互換)。
     """
     active_status = _parse_status_filter(request.args)
     active_gyoutai_theme = _parse_gyoutai_theme(request.args)
+    active_sort = _parse_sort_key(request.args)
 
     # issue #186: fallback 判定は除外含む全件で行う (全件除外時の誤判定を避ける)。
     # 表示・件数カウントは除外を弾いた visible_records を使う。
@@ -567,7 +592,7 @@ def dashboard():
         filtered_records = visible_records
     else:
         filtered_records = [r for r in visible_records if r.get("status") == active_status]
-    rows = list_portfolio_with_indicators(filtered_records)
+    rows = list_portfolio_with_indicators(filtered_records, sort_key=active_sort)
 
     # 行ごとに transitions を埋める。fallback 中は空。
     for row in rows:
@@ -582,17 +607,33 @@ def dashboard():
     )
 
     # POST → リダイレクトの戻り先として使う現状クエリ (status/gyoutai_theme)
-    return_query = _build_query_string(active_status, active_gyoutai_theme)
+    preserve_all_status = "status" in request.args and active_status is None
+    return_query = _build_query_string(
+        active_status,
+        active_gyoutai_theme,
+        active_sort,
+        include_empty_status=preserve_all_status,
+    )
     # テンプレートで select の selected 判定に使う、active_status の query 形式 (例: "hold")
     active_status_query = (
         STATUS_VALUE_TO_QUERY[active_status] if active_status in STATUS_VALUE_TO_QUERY else ""
     )
 
-    # issue #187: datalist 候補は表示フィルタ/excluded と独立、shelve 内の全レコードから集計
+    # issue #282: テーママスターから候補を取得 (フィルタ select / 入力 select 兼用)
     if fallback_mode:
-        gyoutai_theme_choices: list = []
+        theme_master: list = []
     else:
-        gyoutai_theme_choices = collect_gyoutai_theme_choices(all_records_inc)
+        theme_master = ps.list_themes()
+
+    sort_urls = {
+        k: "?" + _build_query_string(
+            active_status,
+            active_gyoutai_theme,
+            k,
+            include_empty_status=preserve_all_status,
+        )
+        for k in ("position", "rank", "gyoutai")
+    }
 
     # 保有フィルタ表示時のみ、運用総額と PF 全体の qty 最終更新日を集計
     hold_summary = None
@@ -612,6 +653,8 @@ def dashboard():
         status_choices=STATUS_CHOICES,
         active_status_query=active_status_query,
         active_gyoutai_theme=active_gyoutai_theme or "",
+        active_sort=active_sort,
+        sort_urls=sort_urls,
         counts=counts,
         rows=rows,
         total=len(rows),
@@ -619,7 +662,199 @@ def dashboard():
         delete_mode_allowed=delete_mode_allowed,
         status_label=STATUS_VALUE_TO_LABEL,
         fallback_mode=fallback_mode,
-        gyoutai_theme_choices=gyoutai_theme_choices,
+        theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
         hold_summary=hold_summary,
     )
+
+
+@portfolio_bp.route("/portfolio/charts")
+def charts():
+    """チャート一覧確認モード (2x2 株探 iframe、issue #231)。
+
+    /portfolio と同じ status / gyoutai_theme フィルタで銘柄を抽出し、
+    業態順に並べた全件をテンプレートへ渡す。ページ送り・足切替は
+    クライアント側 JS が担当する (サーバー往復なし)。並び順は issue 仕様で
+    「portfolio 一覧と同じ順番固定」= 業態順なので sort は受け取らず gyoutai 固定。
+    """
+    active_status = _parse_status_filter(request.args)
+    active_gyoutai_theme = _parse_gyoutai_theme(request.args)
+
+    # issue #186: 未移行環境 (portfolio_shelve 空) では dashboard() と同じく
+    # my_watch_list.txt 由来の仮レコードにフォールバックする (除外含む全件で判定)。
+    all_records_inc = ps.list_records(include_excluded=True)
+    if not all_records_inc:
+        visible_records = _build_fallback_records()
+    else:
+        visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
+
+    # フィルタ抽出は dashboard() と同じ規則 (issue #215): gyoutai_theme 指定時は
+    # status 無視で完全一致、未指定かつ status None なら全件、それ以外は status 一致。
+    if active_gyoutai_theme:
+        filtered_records = [
+            r for r in visible_records
+            if active_gyoutai_theme in ((r.get("memo") or {}).get("gyoutai_themes") or [])
+        ]
+    elif active_status is None:
+        filtered_records = visible_records
+    else:
+        filtered_records = [r for r in visible_records if r.get("status") == active_status]
+    rows = list_portfolio_with_indicators(filtered_records, sort_key="gyoutai")
+
+    # iframe 表示に必要な最小キーのみ JSON 化して渡す。
+    # stage / 更新日 (last_research_update) はチャートページ上での inline 編集の初期値。
+    stocks = [
+        {
+            "code_s": r["code_s"],
+            "stock_name": r.get("stock_name") or "",
+            "stage": (r.get("memo") or {}).get("stage") or "",
+            "last_research_update": (r.get("memo") or {}).get("last_research_update") or "",
+        }
+        for r in rows
+    ]
+    active_status_query = (
+        STATUS_VALUE_TO_QUERY[active_status] if active_status in STATUS_VALUE_TO_QUERY else ""
+    )
+    return render_template(
+        "portfolio_charts.html",
+        stocks=stocks,
+        total=len(stocks),
+        active_status_query=active_status_query,
+        active_gyoutai_theme=active_gyoutai_theme or "",
+    )
+
+
+# ===========================================
+# 業態テーマ別 RS サマリー (issue #283)
+# ===========================================
+
+# 許可 sort_key は helper のマッピング (真実の源) から導出する
+THEME_SUMMARY_SORT_KEYS = set(THEME_SUMMARY_SORT_FIELDS)
+DEFAULT_THEME_SUMMARY_SORT = "momentum"
+
+
+@portfolio_bp.route("/portfolio/themes/summary", methods=["GET"])
+def theme_summary():
+    """業態テーマ別 RS サマリー (閲覧専用、issue #283)。
+
+    手動付けした業態テーマ (memo.gyoutai_themes) でユニバースをグルーピングし、
+    momentum_pt (中長期) と rs_line 移動平均乖離オシレーター (短期の勢い) を集約表示する。
+
+    URL クエリ:
+      sort: momentum / dev_a (省略時=momentum)
+    """
+    sort_key = (request.args.get("sort") or "").strip()
+    if sort_key not in THEME_SUMMARY_SORT_KEYS:
+        sort_key = DEFAULT_THEME_SUMMARY_SORT
+
+    fallback_mode = _is_fallback_mode()
+    # fallback (portfolio_shelve 空) では空テーブル + 案内文。
+    if fallback_mode:
+        themes: list = []
+        total_members = 0
+    else:
+        themes = build_portfolio_theme_summary(sort_key=sort_key)
+        total_members = sum(t["member_count"] for t in themes)
+
+    sort_urls = {
+        k: url_for("portfolio.theme_summary", sort=k)
+        for k in THEME_SUMMARY_SORT_KEYS
+    }
+    return render_template(
+        "portfolio_theme_summary.html",
+        themes=themes,
+        total_members=total_members,
+        active_sort=sort_key,
+        sort_urls=sort_urls,
+        fallback_mode=fallback_mode,
+    )
+
+
+# ===========================================
+# テーママスター編集 (issue #282)
+# ===========================================
+
+@portfolio_bp.route("/portfolio/themes", methods=["GET"])
+def themes_index():
+    """テーママスター一覧・編集画面を表示する。"""
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    themes = ps.list_themes()
+    usage = ps.count_theme_usage()
+    return render_template(
+        "portfolio_themes.html",
+        themes=themes,
+        usage=usage,
+        theme_name_max_len=ps.THEME_NAME_MAX_LEN,
+    )
+
+
+@portfolio_bp.route("/portfolio/themes/create", methods=["POST"])
+def themes_create():
+    """テーマを新規作成して /portfolio/themes に戻る (PRG)。"""
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    name = (request.form.get("name") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    try:
+        ps.create_theme(name, description)
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return redirect(url_for("portfolio.themes_index"))
+    flash(f"テーマ「{name}」を作成しました", "info")
+    return redirect(url_for("portfolio.themes_index"))
+
+
+@portfolio_bp.route("/portfolio/themes/<name>/update", methods=["POST"])
+def themes_update(name: str):
+    """テーマのリネーム / 説明文編集。
+
+    フォームは name + description の両方を常に送る (portfolio_themes.html は
+    edit 開始時に両 input を同時に表示する設計)。よって description フィールドが
+    POST に含まれている場合は空文字でも意図的なクリアとして上書きする。
+    """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    new_name = (request.form.get("name") or "").strip()
+    description = request.form.get("description")
+    try:
+        ps.update_theme(
+            name,
+            new_name=new_name if new_name and new_name != name else None,
+            description=description if description is not None else None,
+        )
+    except KeyError:
+        flash(f"テーマ「{name}」が見つかりません", "error")
+        return redirect(url_for("portfolio.themes_index"))
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return redirect(url_for("portfolio.themes_index"))
+    if new_name and new_name != name:
+        flash(f"テーマを「{name}」→「{new_name}」にリネームしました", "info")
+    else:
+        flash(f"テーマ「{name}」を更新しました", "info")
+    return redirect(url_for("portfolio.themes_index"))
+
+
+@portfolio_bp.route("/portfolio/themes/<name>/delete", methods=["POST"])
+def themes_delete(name: str):
+    """テーマを削除し、全銘柄から除去する。"""
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    try:
+        affected = ps.delete_theme(name)
+    except KeyError:
+        flash(f"テーマ「{name}」が見つかりません", "error")
+        return redirect(url_for("portfolio.themes_index"))
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return redirect(url_for("portfolio.themes_index"))
+    flash(
+        f"テーマ「{name}」を削除しました (影響: {affected} 銘柄)",
+        "info",
+    )
+    return redirect(url_for("portfolio.themes_index"))
