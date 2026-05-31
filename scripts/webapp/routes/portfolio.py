@@ -680,8 +680,13 @@ def charts():
     active_status = _parse_status_filter(request.args)
     active_gyoutai_theme = _parse_gyoutai_theme(request.args)
 
+    # issue #186: 未移行環境 (portfolio_shelve 空) では dashboard() と同じく
+    # my_watch_list.txt 由来の仮レコードにフォールバックする (除外含む全件で判定)。
     all_records_inc = ps.list_records(include_excluded=True)
-    visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
+    if not all_records_inc:
+        visible_records = _build_fallback_records()
+    else:
+        visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
 
     # フィルタ抽出は dashboard() と同じ規則 (issue #215): gyoutai_theme 指定時は
     # status 無視で完全一致、未指定かつ status None なら全件、それ以外は status 一致。

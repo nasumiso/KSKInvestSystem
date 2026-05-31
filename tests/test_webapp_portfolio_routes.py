@@ -932,6 +932,18 @@ class TestFallbackFromTxt:
         # shelve は空のまま (memo 更新で 1 件作られたら fallback 解除事故が起きる)
         assert ps.list_records(db_path=portfolio_db_path) == []
 
+    def test_fallback_charts_shows_txt_records(self, fallback_client):
+        """フォールバック中も /portfolio/charts に txt 由来銘柄が出る (issue #231 codex P2)。
+
+        shelve 空のままチャート一覧を開くと「対象銘柄なし」で空になる回帰を防ぐ。
+        デフォルト status=1保 なので保有 (H6324=ハーモニック) が JSON 埋め込みに出る。
+        """
+        resp = fallback_client.get("/portfolio/charts")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "6324" in html
+        assert "対象銘柄なし" not in html
+
 
 # ==================================================
 # issue #178: フィルタ / ソート / ページング / status badge / return_query
