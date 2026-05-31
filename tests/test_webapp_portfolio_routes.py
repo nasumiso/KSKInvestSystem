@@ -932,6 +932,18 @@ class TestFallbackFromTxt:
         # shelve は空のまま (memo 更新で 1 件作られたら fallback 解除事故が起きる)
         assert ps.list_records(db_path=portfolio_db_path) == []
 
+    def test_fallback_charts_shows_txt_records(self, fallback_client):
+        """フォールバック中も /portfolio/charts に txt 由来銘柄が出る (issue #231 codex P2)。
+
+        shelve 空のままチャート一覧を開くと「対象銘柄なし」で空になる回帰を防ぐ。
+        デフォルト status=1保 なので保有 (H6324=ハーモニック) が JSON 埋め込みに出る。
+        """
+        resp = fallback_client.get("/portfolio/charts")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "6324" in html
+        assert "対象銘柄なし" not in html
+
 
 # ==================================================
 # issue #178: フィルタ / ソート / ページング / status badge / return_query
@@ -1224,3 +1236,56 @@ class TestDeleteCheckboxScope:
         assert 'class="bulk-cb"' not in html
         # bulk-col の th も出ない (delete_mode_allowed が False)
         assert 'class="bulk-col"' not in html
+
+
+class TestPortfolioCharts:
+    """GET /portfolio/charts チャート一覧モード (issue #231)。
+
+    fixture の 3 銘柄: 6324(3監/ハーモニック)・3496(1保/アズーム)・7203(2準/トヨタ)。
+    """
+
+    def test_charts_returns_200_with_chart_url(self, client):
+        """全件 (status=) で対象銘柄の code と株探チャート iframe URL が出る"""
+        resp = client.get("/portfolio/charts?status=")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        # 全銘柄の code_s が JSON 埋め込みに含まれる
+        assert "3496" in html and "6324" in html and "7203" in html
+        # JS が組み立てる株探チャート URL のベース
+        assert "kabutan.jp/stock/chart" in html
+
+    @pytest.mark.parametrize(
+        "query, present, absent",
+        [
+            ("status=hold", "3496", "7203"),   # 1保 のみ → アズーム在、トヨタ無
+            ("status=watch", "6324", "3496"),  # 3監 のみ → ハーモニック在、アズーム無
+        ],
+    )
+    def test_charts_status_filter(self, client, query, present, absent):
+        """status フィルタが /portfolio と同じ規則で効く (JSON 埋め込みの code_s で判定)"""
+        resp = client.get("/portfolio/charts?" + query)
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert present in html
+        assert absent not in html
+
+    def test_charts_empty_shows_message(self, client):
+        """該当ゼロ件のフィルタは「対象銘柄なし」を出しグリッドを描かない"""
+        resp = client.get("/portfolio/charts?gyoutai_theme=存在しないテーマ")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "対象銘柄なし" in html
+        # グリッド本体 (class 属性) は描かれない。CSS 定義の .charts-grid は別物。
+        assert 'class="charts-grid"' not in html
+
+    def test_charts_embeds_stage_and_update_for_inline_edit(self, client, portfolio_db_path):
+        """inline 編集の初期値として stage / 更新日が JSON 埋め込みに出る (issue #231)"""
+        ps.update_memo(
+            "3496",
+            {"stage": "2S", "last_research_update": "5/30"},
+            db_path=portfolio_db_path,
+        )
+        resp = client.get("/portfolio/charts?status=hold")
+        html = resp.data.decode()
+        assert '"stage": "2S"' in html
+        assert '"last_research_update": "5/30"' in html

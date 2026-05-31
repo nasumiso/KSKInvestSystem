@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block title %}チャート一覧 - Shintakane Research{% endblock %}
+
+{% block content %}
+{# issue #231: ポートフォリオ銘柄を 2x2 株探 iframe でザッと一覧確認するモード。
+   ページ送り・足切替はクライアント JS で完結 (全銘柄を JSON で埋め込み)。 #}
+<style>
+  /* ヘッダバーぶんを除いた高さに 2x2 グリッドをフィットさせる */
+  .charts-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.8em;
+    padding: 0.4em 0.6em; margin-bottom: 0.4em;
+    background: #f5f7fa; border: 1px solid #d8dee6; border-radius: 4px;
+    font-size: 0.9em;
+  }
+  .charts-bar a, .charts-bar button { margin: 0; }
+  .charts-bar .tf-btn, .charts-bar .nav-btn {
+    padding: 0.2em 0.7em; font-size: 0.9em; border: 1px solid #bbb;
+    background: #fff; color: #333; border-radius: 3px; cursor: pointer;
+  }
+  .charts-bar .tf-btn.active { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+  .charts-count { color: #555; }
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4em;
+  }
+  .chart-cell {
+    display: flex; flex-direction: column;
+    border: 1px solid #d8dee6; border-radius: 4px; overflow: hidden;
+    background: #fff;
+  }
+  .chart-cell-header {
+    display: flex; align-items: center; gap: 0.6em;
+    padding: 0.25em 0.5em; font-size: 0.85em;
+    background: #eef1f5; border-bottom: 1px solid #d8dee6;
+  }
+  .chart-cell-header .name { font-weight: 600; color: #222; text-decoration: none; }
+  .chart-cell-header .name:hover { text-decoration: underline; }
+  .chart-cell-header .kabu { color: #555; font-size: 0.85em; text-decoration: none; }
+  .chart-cell-header .edit-sep { color: #ccc; }
+  .chart-cell-header .edit-label { color: #888; font-size: 0.85em; }
+  .chart-cell-header .editable {
+    min-width: 2.5em; padding: 0 0.3em; cursor: pointer;
+    border-bottom: 1px dashed #bbb; color: #1a3; font-weight: 600;
+  }
+  .chart-cell-header .editable:hover { background: #fffbe6; }
+  .chart-cell-header .editable input {
+    font-size: 0.85em; padding: 0 0.2em; margin: 0; height: auto; width: 6em;
+  }
+  /* プレースホルダー (空セル) では編集 UI も隠す */
+  .chart-cell.placeholder .chart-cell-header .edit-sep,
+  .chart-cell.placeholder .chart-cell-header .edit-label,
+  .chart-cell.placeholder .chart-cell-header .editable { display: none; }
+  /* 株探チャートページは上部にヘッダ・広告・銘柄サマリー、下部に注釈・広告バナーが
+     乗るフルページ。iframe を窓 (.chart-viewport) でクリップし、--chart-offset 分だけ
+     上にずらしてチャート本体だけを見せる。窓の高さ (--chart-window-h) でチャート下端
+     より先 (バナー等) を隠す。--chart-iframe-h は iframe 自体の描画高さ (固定)。 */
+  .chart-viewport {
+    position: relative; overflow: hidden;
+    height: var(--chart-window-h);
+    --chart-offset: 524px;
+    --chart-offset-x: 135px;
+    --chart-window-h: 555px;
+    --chart-iframe-w: 1100px;
+    --chart-iframe-h: 1400px;
+  }
+  .chart-viewport iframe {
+    position: absolute;
+    top: calc(-1 * var(--chart-offset));
+    left: calc(-1 * var(--chart-offset-x));
+    width: var(--chart-iframe-w); height: var(--chart-iframe-h);
+    border: 0;
+  }
+  .chart-cell.placeholder { background: #fafbfc; }
+  .chart-cell.placeholder .chart-cell-header { visibility: hidden; }
+</style>
+
+<div style="margin-bottom:0.4em;">
+  <a href="{{ url_for('portfolio.dashboard') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
+     style="font-size:0.85em;color:#555;text-decoration:none;">← 保有銘柄ダッシュボードに戻る</a>
+</div>
+
+{% if total == 0 %}
+<p style="padding:1em;color:#666;">対象銘柄なし</p>
+{% else %}
+<div class="charts-bar">
+  <span class="charts-count" id="charts-count"></span>
+  <span>
+    <button type="button" class="tf-btn" data-tf="d">日足</button>
+    <button type="button" class="tf-btn active" data-tf="w">週足</button>
+    <button type="button" class="tf-btn" data-tf="m">月足</button>
+  </span>
+  <span>
+    <button type="button" class="nav-btn" id="prev-btn">← 前</button>
+    <button type="button" class="nav-btn" id="next-btn">次 →</button>
+  </span>
+</div>
+
+<div class="charts-grid">
+  {% for i in range(2) %}
+  <div class="chart-cell placeholder" data-cell="{{ i }}">
+    <div class="chart-cell-header">
+      <a class="name" target="_blank" rel="noopener"></a>
+      <a class="kabu" target="_blank" rel="noopener">株探</a>
+      <span class="edit-sep">|</span>
+      <span class="edit-label">ステージ</span>
+      <span class="editable edit-stage" title="クリックで編集 (更新日も当日に自動補完)">—</span>
+      <span class="edit-label">更新日</span>
+      <span class="editable edit-update" title="クリックで編集 (M/D)">—</span>
+    </div>
+    <div class="chart-viewport">
+      <iframe scrolling="no"></iframe>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+  (function () {
+    var STOCKS = {{ stocks|tojson }};
+    var PER_PAGE = 2;  // 1x2 レイアウト (左右 2 銘柄、issue #231)
+    var total = STOCKS.length;
+    var totalPages = Math.ceil(total / PER_PAGE);
+    var page = 0;        // 0 始まり
+    var timeframe = 'w'; // 日足 d / 週足 w / 月足 m
+    // 株探チャートの足切替は ashi= パラメータ (1=日足 / 2=週足 / 3=月足)。
+    var ASHI = { d: 1, w: 2, m: 3 };
+
+    var cells = Array.prototype.slice.call(document.querySelectorAll('.chart-cell'));
+    var countEl = document.getElementById('charts-count');
+
+    function render() {
+      var start = page * PER_PAGE;
+      for (var i = 0; i < PER_PAGE; i++) {
+        var cell = cells[i];
+        var iframe = cell.querySelector('iframe');
+        var nameLink = cell.querySelector('.name');
+        var kabuLink = cell.querySelector('.kabu');
+        var stageEl = cell.querySelector('.edit-stage');
+        var updateEl = cell.querySelector('.edit-update');
+        var s = STOCKS[start + i];
+        if (!s) {
+          // ページ末尾の 1 件不足: 空セルをプレースホルダー表示 (グリッド維持)
+          cell.classList.add('placeholder');
+          cell.removeAttribute('data-code');
+          iframe.src = 'about:blank';
+          nameLink.textContent = '';
+          nameLink.removeAttribute('href');
+          kabuLink.removeAttribute('href');
+          continue;
+        }
+        cell.classList.remove('placeholder');
+        cell.dataset.code = s.code_s;  // 編集 AJAX の対象銘柄
+        var code = encodeURIComponent(s.code_s);
+        iframe.src = 'https://kabutan.jp/stock/chart?code=' + code + '&ashi=' + ASHI[timeframe];
+        nameLink.textContent = s.code_s + ' ' + s.stock_name;
+        nameLink.href = '/stock/' + code;
+        kabuLink.href = 'https://kabutan.jp/stock/chart?code=' + code;
+        // stage / 更新日の初期値 (編集中でなければ最新値で再描画)
+        if (stageEl.dataset.editing !== '1') stageEl.textContent = s.stage || '—';
+        if (updateEl.dataset.editing !== '1') updateEl.textContent = s.last_research_update || '—';
+      }
+      var dispStart = total === 0 ? 0 : start + 1;
+      var dispEnd = Math.min(start + PER_PAGE, total);
+      countEl.textContent = dispStart + '-' + dispEnd + ' / ' + total + ' 銘柄';
+    }
+
+    function goPrev() { if (page > 0) { page--; render(); } }
+    function goNext() { if (page < totalPages - 1) { page++; render(); } }
+
+    function setTimeframe(tf) {
+      timeframe = tf;
+      document.querySelectorAll('.tf-btn').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.tf === tf);
+      });
+      render();
+    }
+
+    document.getElementById('prev-btn').addEventListener('click', goPrev);
+    document.getElementById('next-btn').addEventListener('click', goNext);
+    document.querySelectorAll('.tf-btn').forEach(function (b) {
+      b.addEventListener('click', function () { setTimeframe(b.dataset.tf); });
+    });
+
+    // キーボードショートカット: ← / → (J / K)。入力欄フォーカス中は無効。
+    document.addEventListener('keydown', function (e) {
+      var el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) {
+        return;
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'k' || e.key === 'K') { goPrev(); }
+      else if (e.key === 'ArrowRight' || e.key === 'j' || e.key === 'J') { goNext(); }
+    });
+
+    // ----- stage / 更新日の inline 編集 (portfolio 一覧と同仕様、issue #231) -----
+    function todayMD() {
+      var d = new Date();
+      return (d.getMonth() + 1) + '/' + d.getDate();
+    }
+
+    // YYYY-MM-DD → M/D。不正日付は null。
+    function toMD(ymd) {
+      if (!ymd) return '';
+      var p = ymd.split('-');
+      if (p.length !== 3) return null;
+      var mm = parseInt(p[1], 10), dd = parseInt(p[2], 10);
+      return mm + '/' + dd;
+    }
+    // M/D → input[type=date] 用 YYYY-MM-DD (当年。空は空)。
+    function mdToYMD(md) {
+      var m = (md || '').match(/^(\d{1,2})\/(\d{1,2})$/);
+      if (!m) return '';
+      var y = new Date().getFullYear();
+      var mm = ('0' + m[1]).slice(-2), dd = ('0' + m[2]).slice(-2);
+      return y + '-' + mm + '-' + dd;
+    }
+
+    function startEdit(span) {
+      if (span.dataset.editing === '1') return;
+      var cell = span.closest('.chart-cell');
+      var code = cell && cell.dataset.code;
+      if (!code) return;  // プレースホルダーセルは編集不可
+      span.dataset.editing = '1';
+      var isStage = span.classList.contains('edit-stage');
+      var current = span.textContent === '—' ? '' : span.textContent;
+
+      var input = document.createElement('input');
+      if (isStage) {
+        input.type = 'text';
+        input.value = current;
+      } else {
+        input.type = 'date';
+        input.value = mdToYMD(current);
+      }
+      span.textContent = '';
+      span.appendChild(input);
+      input.focus();
+
+      var finished = false;
+      function commit() {
+        if (finished) return;
+        finished = true;
+        span.dataset.editing = '';
+
+        var newValue;
+        if (isStage) {
+          newValue = (input.value || '').trim();
+        } else {
+          newValue = toMD(input.value);
+          if (newValue === null) {
+            alert('日付として不正です (M/D 形式)');
+            span.textContent = current || '—';
+            return;
+          }
+        }
+
+        var fields = {};
+        fields[isStage ? 'stage' : 'last_research_update'] = newValue;
+        // ステージ編集時は更新日も当日に自動補完 (portfolio 一覧と同仕様)
+        if (isStage) fields['last_research_update'] = todayMD();
+
+        var fd = new FormData();
+        Object.keys(fields).forEach(function (k) { fd.append(k, fields[k]); });
+        fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          body: fd,
+        }).then(function (resp) {
+          return resp.json().then(function (body) { return { ok: resp.ok, body: body }; });
+        }).then(function (res) {
+          if (!res.ok || !res.body || res.body.ok !== true) {
+            alert('保存失敗: ' + ((res.body && res.body.error) || 'unknown'));
+            span.textContent = current || '—';
+            return;
+          }
+          var disp = res.body.display || {};
+          // STOCKS 側も更新しておく (ページ送りで戻った時に最新値を出すため)
+          var s = STOCKS.filter(function (x) { return x.code_s === code; })[0];
+          var stageVal = (disp.stage !== undefined && disp.stage !== '—') ? disp.stage : fields.stage;
+          var updVal = (disp.last_research_update !== undefined && disp.last_research_update !== '—')
+            ? disp.last_research_update : fields.last_research_update;
+          if (isStage) {
+            span.textContent = (stageVal || '') || '—';
+            if (s) s.stage = stageVal || '';
+            // 同セルの更新日も自動補完値で同期
+            var updSpan = cell.querySelector('.edit-update');
+            if (updSpan && updSpan.dataset.editing !== '1') updSpan.textContent = (updVal || '') || '—';
+            if (s) s.last_research_update = updVal || '';
+          } else {
+            span.textContent = (updVal || '') || '—';
+            if (s) s.last_research_update = updVal || '';
+          }
+        }).catch(function (err) {
+          alert('保存失敗: ' + err);
+          span.textContent = current || '—';
+        });
+      }
+
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        else if (e.key === 'Escape') { finished = true; span.dataset.editing = ''; span.textContent = current || '—'; }
+      });
+    }
+
+    document.querySelectorAll('.chart-cell .editable').forEach(function (span) {
+      span.addEventListener('click', function () { startEdit(span); });
+    });
+
+    render();
+  })();
+</script>
+{% endif %}
+{% endblock %}
