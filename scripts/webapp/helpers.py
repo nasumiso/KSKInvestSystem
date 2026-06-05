@@ -55,13 +55,35 @@ def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
     return record
 
 
+def _backfill_entry_reactions(
+    entry: Dict[str, Any],
+    log: List,
+    dt: date,
+) -> Dict[str, str]:
+    """1エントリの post_price_changes の空き期間を price_log から補完する。
+
+    entry["post_price_changes"] を in-place で埋め、今回新たに埋まった期間だけを
+    {key: 値} で返す (永続化ターゲット用)。何も埋まらなければ空 dict。
+    """
+    existing = entry.get("post_price_changes") or {}
+    calculated = _price_reactions_from_log(log, dt)
+    newly_filled: Dict[str, str] = {}
+    for key, _ in KESSAN_REACTION_PERIODS:
+        if not existing.get(key) and calculated.get(key):
+            existing[key] = calculated[key]
+            newly_filled[key] = calculated[key]
+    entry["post_price_changes"] = existing
+    return newly_filled
+
+
 def _backfill_post_price_changes_for_entries(
     code_s: str,
     entries: List[Dict[str, Any]],
 ) -> None:
     """過去エントリの post_price_changes に欠損期間があれば price_log から補完する。
 
-    永続化はせず、entry dict を in-place で更新する。
+    entry dict を in-place で更新し、新たに埋まった反応率は 1d と同じく確定値として
+    shelve に永続化する (price_log の30日ウィンドウから決算日が外れても消えないように)。
     決算日が未来 (今日以降) のエントリは補完対象外。
     """
     if not entries:
@@ -81,16 +103,22 @@ def _backfill_post_price_changes_for_entries(
     if not targets:
         return
 
-    log = _bulk_price_logs([code_s]).get(normalize_code_s(code_s), [])
+    normalized = normalize_code_s(code_s)
+    log = _bulk_price_logs([code_s]).get(normalized, [])
     if not log:
         return
+    ppc_persist_targets: List[Tuple[str, str, int, Dict[str, str]]] = []
     for entry, dt in targets:
-        existing = entry.get("post_price_changes") or {}
-        calculated = _price_reactions_from_log(log, dt)
-        for key, _ in KESSAN_REACTION_PERIODS:
-            if not existing.get(key) and calculated.get(key):
-                existing[key] = calculated[key]
-        entry["post_price_changes"] = existing
+        newly_filled = _backfill_entry_reactions(entry, log, dt)
+        if newly_filled:
+            ppc_persist_targets.append((
+                normalized,
+                entry.get("kessanbi", ""),
+                int(entry.get("quarter", 0) or 0),
+                newly_filled,
+            ))
+    if ppc_persist_targets:
+        _persist_kessan_post_price_changes(ppc_persist_targets)
 
 
 def get_stock_data(code_s: str) -> Dict[str, Any]:
@@ -914,6 +942,57 @@ def _persist_kessan_held_flags(
             log_warning(f"[kessan_matagi] 永続化失敗 code={code_s}: {e}")
 
 
+def _persist_kessan_post_price_changes(
+    targets: List[Tuple[str, str, int, Dict[str, str]]],
+) -> None:
+    """指定 (code_s, kessanbi, quarter) の post_price_changes の空き期間を確定保存する。
+
+    targets の各 updates dict は {"5d": "+5.1", "20d": "+30"} のような
+    「backfill 計算で新たに埋まった非空値」のみ。
+
+    決算反応 (1d/5d/20d) は本来コメント記入時にスナップショット保存されるが、
+    記入時にはまだ経過していない期間は空のまま残る。表示時の backfill で計算
+    できたものを 1d と同じく確定値として永続化し、price_log の30日ウィンドウから
+    決算日が外れても消えないようにする。
+
+    並行書き込み安全対応 (_persist_kessan_held_flags と同じ):
+      - ロック下で get_research_record() による再取得を行い stale record を使わない
+      - 既存 dict の **空き期間にのみ** 書き込む (非空既存値・"pts" 等の未知キーは温存)
+    """
+    grouped: Dict[str, List[Tuple[str, int, Dict[str, str]]]] = {}
+    for code_s, kessanbi, quarter, updates in targets:
+        grouped.setdefault(code_s, []).append((kessanbi, quarter, updates))
+
+    for code_s, items in grouped.items():
+        try:
+            with _flock():
+                record = get_research_record(code_s)
+                if record is None:
+                    continue
+                comments = list(record.get("kessan_comments") or [])
+                changed = False
+                for kessanbi, quarter, updates in items:
+                    for existing in comments:
+                        if (
+                            existing.get("kessanbi") == kessanbi
+                            and int(existing.get("quarter", 0) or 0) == quarter
+                        ):
+                            # 既存 dict をベースに正規化 ("pts" 等の未知キーは温存)
+                            ppc = normalize_kessan_post_price_changes(existing)
+                            for key, new_val in updates.items():
+                                # 空き期間にのみ書き込む (非空既存値は上書きしない)
+                                if new_val and not ppc.get(key):
+                                    ppc[key] = new_val
+                                    changed = True
+                            existing["post_price_changes"] = ppc
+                            break
+                if changed:
+                    record["kessan_comments"] = comments
+                    upsert_research_record(record)
+        except Exception as e:
+            log_warning(f"[post_price_changes] 永続化失敗 code={code_s}: {e}")
+
+
 def _parse_form_tristate_bool(raw: Any) -> Optional[bool]:
     """フォーム値を bool / None (=未指定) に正規化する。
 
@@ -1426,6 +1505,9 @@ def get_market_kessan_data() -> Dict[str, Any]:
     # (stale rec を直接 upsert すると並行編集を上書きするため、lock 下で再取得する)
     # targets: [(code_s, kessanbi, quarter, {"held_before_kessan": True, ...}), ...]
     persist_targets: List[Tuple[str, str, int, Dict[str, bool]]] = []
+    # backfill で新たに埋まった反応率を確定保存するターゲット
+    # targets: [(code_s, kessanbi, quarter, {"5d": "+5.1", ...}), ...]
+    ppc_persist_targets: List[Tuple[str, str, int, Dict[str, str]]] = []
     for entry in merged.values():
         kessanbi = entry["kessanbi"]
         dt = _parse_kessanbi(kessanbi)
@@ -1437,11 +1519,14 @@ def get_market_kessan_data() -> Dict[str, Any]:
             existing_changes = entry.get("post_price_changes") or {}
             if any(not existing_changes.get(key) for key, _ in KESSAN_REACTION_PERIODS):
                 log = price_logs_cache.get(entry["code_s"], [])
-                calculated = _price_reactions_from_log(log, dt)
-                for key, _ in KESSAN_REACTION_PERIODS:
-                    if not existing_changes.get(key) and calculated.get(key):
-                        existing_changes[key] = calculated[key]
-                entry["post_price_changes"] = existing_changes
+                newly_filled = _backfill_entry_reactions(entry, log, dt)
+                if newly_filled:
+                    ppc_persist_targets.append((
+                        entry["code_s"],
+                        entry["kessanbi"],
+                        int(entry.get("quarter", 0) or 0),
+                        newly_filled,
+                    ))
 
         # 前後保有フラグのスナップショット化
         # - 未来エントリ (dt >= base_day): is_possess=True なら held_before_kessan=True
@@ -1490,6 +1575,8 @@ def get_market_kessan_data() -> Dict[str, Any]:
 
     if persist_targets:
         _persist_kessan_held_flags(persist_targets)
+    if ppc_persist_targets:
+        _persist_kessan_post_price_changes(ppc_persist_targets)
 
     # 銘柄コード順にカード内ソート
     for d in (

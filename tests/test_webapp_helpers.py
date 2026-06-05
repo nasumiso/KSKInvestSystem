@@ -131,6 +131,86 @@ class TestGetResearchDetail:
         assert entry["post_price_changes"] == {"1d": "", "5d": "", "20d": ""}
 
 
+class TestBackfillPersistence:
+    """backfill で補完した反応率が shelve に確定保存される (price_log の
+    30日ウィンドウから決算日が外れても消えないように)"""
+
+    def _setup_entry(self, monkeypatch, post_price_changes, log):
+        """過去決算エントリ1件を挿入し、price_log と today を固定する"""
+        from datetime import date as _date
+        monkeypatch.setattr(
+            helpers,
+            "_bulk_price_logs",
+            lambda codes: {"3496": log} if "3496" in codes else {},
+        )
+        monkeypatch.setattr(
+            helpers, "get_price_day", lambda _: _date(2026, 4, 25)
+        )
+        rec = rs.get_research_record("3496")
+        rec["kessan_comments"] = [{
+            "kessanbi": "2026/04/01",
+            "quarter": 4,
+            "pre_expectation": "○",
+            "pre_outlook": "テスト",
+            "post_price_changes": dict(post_price_changes),
+            "post_comment": "",
+            "kessan_matagi": False,
+            "held_before_kessan": False,
+            "held_after_kessan": False,
+        }]
+        rs.upsert_research_record(rec)
+
+    @staticmethod
+    def _log_with_after_prices():
+        """決算日前営業日終値 + 5営業日後までの終値 (5d まで計算可能)"""
+        from datetime import date as _date, timedelta as _td
+        kessan = _date(2026, 4, 1)
+        log = [(kessan - _td(days=1), 1000)]
+        for i, pr in enumerate([1032, 1040, 1045, 1048, 1051], start=1):
+            log.append((kessan + _td(days=i), pr))
+        return log
+
+    def test_backfilled_5d_is_persisted(self, populated_db, monkeypatch):
+        """補完した 5d が再読込 (= 別呼び出し) でも残る = 永続化されている"""
+        self._setup_entry(
+            monkeypatch,
+            {"1d": "+3.2", "5d": ""},
+            self._log_with_after_prices(),
+        )
+        # 1回目: get_research_detail 内 backfill が走り永続化される
+        helpers.get_research_detail("3496")
+        # 別ルートで生の shelve を再読込し、永続化されたか確認
+        rec = rs.get_research_record("3496")
+        assert rec["kessan_comments"][0]["post_price_changes"]["5d"] == "+5.1"
+
+    def test_existing_nonempty_and_pts_not_overwritten(
+        self, populated_db, monkeypatch
+    ):
+        """既存の非空値・pts キーは backfill 永続化で上書きされない"""
+        self._setup_entry(
+            monkeypatch,
+            # 5d は手動入力済み (+99)、pts も入っている → どちらも温存される
+            {"pts": "+2.5", "1d": "+3.2", "5d": "+99"},
+            self._log_with_after_prices(),
+        )
+        helpers.get_research_detail("3496")
+        ppc = rs.get_research_record("3496")["kessan_comments"][0]["post_price_changes"]
+        assert ppc["5d"] == "+99"   # 既存値温存
+        assert ppc["pts"] == "+2.5"  # 未知キー温存
+
+    def test_uncomputable_period_not_persisted(
+        self, populated_db, monkeypatch
+    ):
+        """price_log に決算日付近が無く計算不能なら何も永続化されない (冪等)"""
+        from datetime import date as _date, timedelta as _td
+        # 決算日 (2026/04/01) より後だけの log → before_price が取れず計算不能
+        log = [(_date(2026, 4, 20) + _td(days=i), 1000 + i) for i in range(5)]
+        self._setup_entry(monkeypatch, {"1d": "+3.2", "5d": ""}, log)
+        helpers.get_research_detail("3496")
+        ppc = rs.get_research_record("3496")["kessan_comments"][0]["post_price_changes"]
+        assert ppc["5d"] == ""  # 計算不能なので空のまま
+
+
 class TestGetMarketKessanData:
     """get_market_kessan_data の振り分けロジックテスト"""
 
