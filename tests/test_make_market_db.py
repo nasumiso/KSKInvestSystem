@@ -1398,24 +1398,29 @@ class TestThemeRankHistory:
 
 
 class TestThemePortfolioLinks:
-    """テーマカードの保有/準保有リンク作成テスト"""
+    """テーマカードの保有/準保有/監視リンク作成テスト"""
 
     def test_build_links_exact_theme_match(self):
         records = [
             {"code_s": "3496", "status": "1保"},
             {"code_s": "6324", "status": "2準"},
             {"code_s": "7203", "status": "3監"},
+            {"code_s": "9999", "status": "9other"},
         ]
         stock_map = {
             "3496": {"stock_name": "アズーム", "themes": "AI,半導体"},
             "6324": {"stock_name": "ハーモニック", "themes": "半導体,ロボット"},
             "7203": {"stock_name": "トヨタ", "themes": "自動車"},
+            "9999": {"stock_name": "対象外", "themes": "圏外"},
         }
         result = make_market_db.build_theme_portfolio_links(records, stock_map)
         assert result["AI"]["hold"] == [("3496", "アズーム")]
         assert result["半導体"]["hold"] == [("3496", "アズーム")]
         assert result["半導体"]["semi"] == [("6324", "ハーモニック")]
-        assert "自動車" not in result
+        # 監視 (3監) もテーマに紐付く (issue #307)
+        assert result["自動車"]["watch"] == [("7203", "トヨタ")]
+        # 未対応 status はどのテーマにも紐付かない
+        assert "圏外" not in result
 
     def test_collect_links_dbm_error_returns_empty(self):
         """DBアクセス系エラーは警告だけ出して空dictにする"""

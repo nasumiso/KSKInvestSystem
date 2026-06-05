@@ -242,9 +242,9 @@ def build_theme_portfolio_links(portfolio_records, stock_map):
     """保有/準保有銘柄をテーマ名から逆引きできる形にする。
 
     Returns:
-        dict: {theme_name: {"hold": [(code_s, stock_name)], "semi": [...]}}
+        dict: {theme_name: {"hold": [(code_s, stock_name)], "semi": [...], "watch": [...]}}
     """
-    status_key = {"1保": "hold", "2準": "semi"}
+    status_key = {"1保": "hold", "2準": "semi", "3監": "watch"}
     links = {}
     for rec in portfolio_records or []:
         status = rec.get("status")
@@ -256,12 +256,13 @@ def build_theme_portfolio_links(portfolio_records, stock_map):
         stock_name = stock.get("stock_name") or code_s
         item = (code_s, stock_name)
         for theme in _split_theme_names(stock.get("themes", "")):
-            theme_links = links.setdefault(theme, {"hold": [], "semi": []})
+            theme_links = links.setdefault(theme, {"hold": [], "semi": [], "watch": []})
             if item not in theme_links[key]:
                 theme_links[key].append(item)
     for theme_links in links.values():
         theme_links["hold"].sort(key=lambda item: item[0])
         theme_links["semi"].sort(key=lambda item: item[0])
+        theme_links["watch"].sort(key=lambda item: item[0])
     return links
 
 
@@ -277,6 +278,7 @@ def collect_theme_portfolio_links():
         records = (
             portfolio_shelve.list_records(status="1保")
             + portfolio_shelve.list_records(status="2準")
+            + portfolio_shelve.list_records(status="3監")
         )
         if not records:
             return {}
@@ -931,6 +933,7 @@ tr:hover { background: #f5f5f5; }
 .theme-modal-section h4 { margin: 0 0 0.3em 0; font-size: 0.9em; color: #555; }
 .theme-modal-section ul { list-style: none; padding: 0; margin: 0; }
 .theme-modal-section li { margin-bottom: 0.3em; font-size: 0.9em; list-style: none; }
+.theme-modal-inline { margin: 0; font-size: 0.9em; line-height: 1.6; }
 .theme-modal-section a { color: #1976d2; text-decoration: none; }
 .theme-modal-section a:hover { text-decoration: underline; }
 
@@ -1095,7 +1098,9 @@ def _html_theme_rank(market_db, theme_rank_data=None):
         link_info = theme_portfolio_links.get(theme, {}) or {}
         hold_items = link_info.get("hold", []) or []
         semi_items = link_info.get("semi", []) or []
-        has_links = bool(hold_items or semi_items)
+        watch_items = link_info.get("watch", []) or []
+        has_links = bool(hold_items or semi_items or watch_items)
+        # カードの強調色は保有 > 準保有の優先順 (監視は強調色を付けない)
         portfolio_class = " theme-hold" if hold_items else (
             " theme-semi" if semi_items else ""
         )
@@ -1107,11 +1112,14 @@ def _html_theme_rank(market_db, theme_rank_data=None):
             semi_json = html_mod.escape(
                 json.dumps(semi_items, ensure_ascii=False), quote=True,
             )
+            watch_json = html_mod.escape(
+                json.dumps(watch_items, ensure_ascii=False), quote=True,
+            )
             theme_attr = html_mod.escape(theme, quote=True)
             click_attrs = (
-                ' data-theme="%s" data-hold="%s" data-semi="%s"'
+                ' data-theme="%s" data-hold="%s" data-semi="%s" data-watch="%s"'
                 ' onclick="openThemeModal(this)"'
-            ) % (theme_attr, hold_json, semi_json)
+            ) % (theme_attr, hold_json, semi_json, watch_json)
         else:
             click_attrs = ""
         theme_escaped = html_mod.escape(theme)
@@ -1158,8 +1166,10 @@ def _html_theme_rank(market_db, theme_rank_data=None):
         '  var theme = card.dataset.theme || "";\n'
         '  var hold = [];\n'
         '  var semi = [];\n'
+        '  var watch = [];\n'
         '  try { hold = JSON.parse(card.dataset.hold || "[]"); } catch (e) {}\n'
         '  try { semi = JSON.parse(card.dataset.semi || "[]"); } catch (e) {}\n'
+        '  try { watch = JSON.parse(card.dataset.watch || "[]"); } catch (e) {}\n'
         '  document.getElementById("theme-modal-title").textContent = theme;\n'
         '  var body = document.getElementById("theme-modal-body");\n'
         '  body.innerHTML = "";\n'
@@ -1184,8 +1194,30 @@ def _html_theme_rank(market_db, theme_rank_data=None):
         '    div.appendChild(ul);\n'
         '    body.appendChild(div);\n'
         '  }\n'
+        '  function inlineSection(label, items) {\n'
+        '    if (!items.length) return;\n'
+        '    var div = document.createElement("div");\n'
+        '    div.className = "theme-modal-section";\n'
+        '    var h4 = document.createElement("h4");\n'
+        '    h4.textContent = label;\n'
+        '    div.appendChild(h4);\n'
+        '    var p = document.createElement("p");\n'
+        '    p.className = "theme-modal-inline";\n'
+        '    items.forEach(function(item, idx) {\n'
+        '      if (idx > 0) p.appendChild(document.createTextNode(", "));\n'
+        '      var a = document.createElement("a");\n'
+        '      a.href = "/stock/" + encodeURIComponent(item[0]);\n'
+        '      a.target = "_blank";\n'
+        '      a.rel = "noopener";\n'
+        '      a.textContent = item[0] + (item[1] ? " " + item[1] : "");\n'
+        '      p.appendChild(a);\n'
+        '    });\n'
+        '    div.appendChild(p);\n'
+        '    body.appendChild(div);\n'
+        '  }\n'
         '  section("保有", hold);\n'
         '  section("準保有", semi);\n'
+        '  inlineSection("監視", watch);\n'
         '  document.getElementById("theme-modal").style.display = "flex";\n'
         '}\n'
         'function closeThemeModal() {\n'
