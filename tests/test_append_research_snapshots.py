@@ -314,7 +314,7 @@ class TestUpdateResearchSnapshots:
         assert all(s["acquired_date"] == _today_yy_m_d() for s in snaps)
 
     def test_kessanbi_fallback_when_jisseki_unset(self, db_path, monkeypatch):
-        """kessan_jisseki_date 未設定なら kessanbi をフォールバック候補にする"""
+        """kessan_jisseki_date 未設定なら kessanbi を候補にする"""
         stock = _make_stock("3496", kessanbi=_today_str(-3))  # jisseki 未設定
         monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
 
@@ -326,6 +326,29 @@ class TestUpdateResearchSnapshots:
         loaded = rs.get_research_record("3496", db_path=db_path)
         assert len(loaded["snapshots"]) == 1
         assert loaded["snapshots"][0]["date_yy_m"] == _today_yy_m_d(-3)
+
+    def test_kessanbi_in_window_not_dropped_by_old_jisseki(self, db_path, monkeypatch):
+        """前回 jisseki が窓外でも、今回決算日 kessanbi が窓内なら拾う (PR#312 codex P2)。
+
+        master 更新が shintakane.update_todays_kessan より先に走り、
+        kessan_jisseki_date が前回分 (窓外) のまま kessanbi だけ今回決算日 (窓内)
+        になるケースで、今回決算の auto スナップショットを取りこぼさないこと。
+        """
+        stock = _make_stock(
+            "3496",
+            kessan_jisseki_date=_today_str(-90),  # 前回決算 (窓外)
+            kessanbi=_today_str(-2),              # 今回決算日 (窓内)
+        )
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+
+        rec = rs.create_research_record("3496", "アズーム")
+        rs.upsert_research_record(rec, db_path=db_path)
+
+        make_stock_db.update_research_snapshots(db_path=db_path)
+
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        dates = {s["date_yy_m"] for s in loaded["snapshots"]}
+        assert _today_yy_m_d(-2) in dates  # kessanbi (今回決算) が拾われる
 
     def test_migration_not_affected_by_auto(self, db_path, monkeypatch):
         """既存の migration (月精度) があっても auto (日精度) は追記される"""

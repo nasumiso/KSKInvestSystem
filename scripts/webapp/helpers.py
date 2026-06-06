@@ -139,10 +139,10 @@ def _latest_kessan_date_yy_m(stock: Dict[str, Any]) -> str:
 
     kessan_jisseki_date (発表実績日) と kessan_mod_date (修正日) を比較し、
     新しい方を採用する。どちらも無い/不正なら空文字を返す。
-    kessanbi (次回予定日に上書きされ得る) は使わない。新規追加は手動操作で
-    「今の業績」を撮る用途なので、実績日が無ければ呼び出し側が取得日に
-    フォールバックする (決算ウィンドウ判定を行う B経路の _collect_trigger_dates
-    とはフォールバック方針が異なる)。
+    新規追加は手動操作で「今の業績」を撮る用途のため、kessanbi (次回予定日に
+    上書きされ得る) は使わず、実績日が無ければ呼び出し側が取得日にフォール
+    バックする。決算ウィンドウ判定を行う B経路 (_collect_trigger_dates) とは
+    別の用途・別ロジック。
     """
     latest = None
     for date_field in ("kessan_jisseki_date", "kessan_mod_date"):

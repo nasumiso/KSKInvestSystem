@@ -1787,16 +1787,19 @@ KESSAN_WINDOW_DAYS = 14
 def _collect_trigger_dates(stock, today):
     """stock の決算実績日/修正日から KESSAN_WINDOW_DAYS 以内のトリガー日を返す。
 
-    - kessan_jisseki_date (決算発表実績日) と kessan_mod_date (決算修正日) を候補にする。
-      両者は別フィールドで保持される実イベントの日付なので、両方窓内なら両方返す
+    - kessan_jisseki_date (決算発表実績日)、kessanbi (決算発表日/次回予定日)、
+      kessan_mod_date (決算修正日) を独立に窓判定し、窓内のものを候補にする。
+      いずれも実イベントの日付なので、複数窓内なら複数返す
       (発表行・修正行を別スナップショットとして残すため)。
-    - kessan_jisseki_date 未設定の銘柄 (次回 fetch で入るまでの繋ぎ) は kessanbi を
-      フォールバック候補にする。kessanbi は次回予定日に上書きされ得るため実績日を優先。
-    - 同日 (発表日==修正日 等) は1件に集約。
+    - kessanbi も候補に残すのは、master 更新が shintakane.update_todays_kessan より
+      先に走ると kessan_jisseki_date が前回分のまま (窓外) で kessanbi だけ今回決算日
+      (窓内) になるケースがあり、これを取りこぼさないため。未来の次回予定日は
+      days<0 で自動的に窓外になる。
+    - 同日 (発表日==予定日==修正日 等) は1件に集約。
     """
-    jisseki = stock.get("kessan_jisseki_date", "") or stock.get("kessanbi", "")
     candidates = []
-    for date_str in (jisseki, stock.get("kessan_mod_date", "")):
+    for field in ("kessan_jisseki_date", "kessanbi", "kessan_mod_date"):
+        date_str = stock.get(field, "")
         if not date_str:
             continue
         try:
@@ -1805,7 +1808,7 @@ def _collect_trigger_dates(stock, today):
             continue
         if 0 <= (today - dt).days <= KESSAN_WINDOW_DAYS:
             candidates.append(date_str)
-    # 同日 (発表日==修正日) を集約しつつ順序は保持
+    # 同日 (発表日==予定日==修正日 等) を集約しつつ順序は保持
     return list(dict.fromkeys(candidates))
 
 
