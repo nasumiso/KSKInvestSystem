@@ -252,6 +252,10 @@
       var isJukyu = span.classList.contains('edit-jukyu');
       var current = span.textContent === '—' ? '' : span.textContent;
 
+      function isSameCell() {
+        return cell && cell.dataset.code === code;
+      }
+
       var input = document.createElement(isJukyu ? 'textarea' : 'input');
       if (isJukyu) {
         input.value = current;
@@ -279,7 +283,7 @@
           newValue = toMD(input.value);
           if (newValue === null) {
             alert('日付として不正です (M/D 形式)');
-            span.textContent = current || '—';
+            if (isSameCell()) span.textContent = current || '—';
             return;
           }
         }
@@ -300,7 +304,7 @@
         }).then(function (res) {
           if (!res.ok || !res.body || res.body.ok !== true) {
             alert('保存失敗: ' + ((res.body && res.body.error) || 'unknown'));
-            span.textContent = current || '—';
+            if (isSameCell()) span.textContent = current || '—';
             return;
           }
           var disp = res.body.display || {};
@@ -311,24 +315,27 @@
             ? disp.last_research_update : fields.last_research_update;
           var jukyuVal = (disp.jukyu_chart !== undefined) ? disp.jukyu_chart : fields.jukyu_chart;
           if (isStage) {
-            span.textContent = (stageVal || '') || '—';
             if (s) s.stage = stageVal || '';
+            if (s) s.last_research_update = updVal || '';
+            if (!isSameCell()) return;
+            span.textContent = (stageVal || '') || '—';
             // 同セルの更新日も自動補完値で同期
             var updSpan = cell.querySelector('.edit-update');
             if (updSpan && updSpan.dataset.editing !== '1') updSpan.textContent = (updVal || '') || '—';
-            if (s) s.last_research_update = updVal || '';
           } else {
             if (isJukyu) {
-              span.textContent = (jukyuVal || '') || '—';
               if (s) s.jukyu_chart = jukyuVal || '';
+              if (!isSameCell()) return;
+              span.textContent = (jukyuVal || '') || '—';
             } else {
-              span.textContent = (updVal || '') || '—';
               if (s) s.last_research_update = updVal || '';
+              if (!isSameCell()) return;
+              span.textContent = (updVal || '') || '—';
             }
           }
         }).catch(function (err) {
           alert('保存失敗: ' + err);
-          span.textContent = current || '—';
+          if (isSameCell()) span.textContent = current || '—';
         });
       }
 
