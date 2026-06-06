@@ -28,13 +28,17 @@ def _today_yy_m_d(offset_days=0):
     return f"{dt.year % 100}.{dt.month}.{dt.day}"
 
 
-def _make_stock(code_s, kessanbi="", kessan_mod_date="", stock_name="テスト銘柄"):
+def _make_stock(
+    code_s, kessanbi="", kessan_mod_date="", kessan_jisseki_date="",
+    stock_name="テスト銘柄",
+):
     """最小限の stock dict を生成する"""
     return {
         "code_s": code_s,
         "stock_name": stock_name,
         "kessanbi": kessanbi,
         "kessan_mod_date": kessan_mod_date,
+        "kessan_jisseki_date": kessan_jisseki_date,
         "score_gyoseki": "0",
         "shihyo_pt": 0,
         "shihyo": {},
@@ -270,11 +274,30 @@ class TestUpdateResearchSnapshots:
         assert len(manuals) == 1
         assert manuals[0]["ir_quant"] == "手動値"
 
-    def test_newer_date_wins_when_both_in_window(self, db_path, monkeypatch):
-        """両方が窓内の場合、新しい方の日付のみ採用される"""
-        ann_date = _today_str(-3)
-        mod_date = _today_str()
-        stock = _make_stock("3496", kessanbi=ann_date, kessan_mod_date=mod_date)
+    @pytest.mark.parametrize(
+        "jisseki_delta, mod_delta, expected_deltas",
+        [
+            # 発表日・修正日が両方窓内 → 別行で2件 (発表行+修正行)
+            (-3, 0, [-3, 0]),
+            (-1, -5, [-1, -5]),
+            # 発表日==修正日 (同日) → 1件に集約
+            (-2, -2, [-2]),
+            # 修正日が窓外 → 発表行のみ1件
+            (-3, -20, [-3]),
+        ],
+    )
+    def test_announce_and_mod_dates_become_separate_rows(
+        self, db_path, monkeypatch, jisseki_delta, mod_delta, expected_deltas,
+    ):
+        """発表日と修正日が両方窓内なら別行で残す。同日は集約、窓外は除外。
+
+        各 auto 行の acquired_date は取得日 (本日) になる。
+        """
+        stock = _make_stock(
+            "3496",
+            kessan_jisseki_date=_today_str(jisseki_delta),
+            kessan_mod_date=_today_str(mod_delta),
+        )
         monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
 
         rec = rs.create_research_record("3496", "アズーム")
@@ -283,30 +306,16 @@ class TestUpdateResearchSnapshots:
         make_stock_db.update_research_snapshots(db_path=db_path)
 
         loaded = rs.get_research_record("3496", db_path=db_path)
-        assert len(loaded["snapshots"]) == 1
-        assert loaded["snapshots"][0]["date_yy_m"] == _today_yy_m_d()
+        snaps = loaded["snapshots"]
+        assert len(snaps) == len(expected_deltas)
+        actual_dates = {s["date_yy_m"] for s in snaps}
+        assert actual_dates == {_today_yy_m_d(d) for d in expected_deltas}
+        # 株価依存指標の取得日は本日
+        assert all(s["acquired_date"] == _today_yy_m_d() for s in snaps)
 
-    def test_newer_kessanbi_wins_over_old_mod_date(self, db_path, monkeypatch):
-        """kessanbi が修正日より新しい場合、kessanbi が採用される"""
-        old_mod_date = _today_str(-5)
-        ann_date = _today_str(-1)
-        stock = _make_stock("3496", kessanbi=ann_date, kessan_mod_date=old_mod_date)
-        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
-
-        rec = rs.create_research_record("3496", "アズーム")
-        rs.upsert_research_record(rec, db_path=db_path)
-
-        make_stock_db.update_research_snapshots(db_path=db_path)
-
-        loaded = rs.get_research_record("3496", db_path=db_path)
-        assert len(loaded["snapshots"]) == 1
-        assert loaded["snapshots"][0]["date_yy_m"] == _today_yy_m_d(-1)
-
-    def test_only_kessanbi_when_mod_date_outside_window(self, db_path, monkeypatch):
-        """修正日が窓外なら kessanbi のみ使われる"""
-        ann_date = _today_str(-3)
-        old_mod_date = _today_str(-20)  # 窓外
-        stock = _make_stock("3496", kessanbi=ann_date, kessan_mod_date=old_mod_date)
+    def test_kessanbi_fallback_when_jisseki_unset(self, db_path, monkeypatch):
+        """kessan_jisseki_date 未設定なら kessanbi をフォールバック候補にする"""
+        stock = _make_stock("3496", kessanbi=_today_str(-3))  # jisseki 未設定
         monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
 
         rec = rs.create_research_record("3496", "アズーム")

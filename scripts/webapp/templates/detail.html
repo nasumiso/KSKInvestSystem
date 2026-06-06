@@ -297,7 +297,7 @@
     <table class="snapshot-table">
       <thead>
         <tr>
-          <th>日付</th>
+          <th>取得日</th>
           <th>クォリティ指標</th>
           <th>理論株価乖離</th>
         </tr>
@@ -305,7 +305,7 @@
       <tbody>
         {% for snap in indicator_snaps[:5] %}
         <tr>
-          <td>{{ snap.date_yy_m }}</td>
+          <td>{{ snap.acquired_date or snap.date_yy_m }}</td>
           <td>{{ snap.quality_indicators|replace('\n', ' ') if snap.quality_indicators else '' }}</td>
           <td>{{ snap.rironkabuka_kairi if snap.rironkabuka_kairi else '' }}</td>
         </tr>
@@ -319,7 +319,7 @@
         <tbody>
           {% for snap in indicator_snaps[5:] %}
           <tr>
-            <td>{{ snap.date_yy_m }}</td>
+            <td>{{ snap.acquired_date or snap.date_yy_m }}</td>
             <td>{{ snap.quality_indicators|replace('\n', ' ') if snap.quality_indicators else '' }}</td>
             <td>{{ snap.rironkabuka_kairi if snap.rironkabuka_kairi else '' }}</td>
           </tr>

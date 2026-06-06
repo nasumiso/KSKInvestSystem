@@ -146,6 +146,7 @@ MAX_KESSAN_COMMENTS = 12
 SNAPSHOT_FIELDS = frozenset(
     {
         "date_yy_m",
+        "acquired_date",
         "ir_quant",
         "ir_comment",
         "quality_indicators",
@@ -205,6 +206,14 @@ def validate_date_yy_m(date_yy_m: Any) -> None:
             raise ValueError(
                 f"invalid date_yy_m day: {date_yy_m!r} (日は1-31の範囲)"
             )
+
+
+def to_date_yy_m(d) -> str:
+    """date/datetime を "YY.M.D" 形式の date_yy_m 文字列に変換する。
+
+    例: date(2026, 4, 15) -> "26.4.15"。validate_date_yy_m が受理する形式。
+    """
+    return f"{d.year % 100}.{d.month}.{d.day}"
 
 
 def validate_rating(rating: Any) -> None:
@@ -315,6 +324,7 @@ def create_research_record(
 def create_snapshot(
     date_yy_m: str,
     *,
+    acquired_date: str = "",
     ir_quant: str = "",
     ir_comment: str = "",
     quality_indicators: str = "",
@@ -323,15 +333,19 @@ def create_snapshot(
 ) -> Dict[str, Any]:
     """決算スナップショット1件の dict を生成する。
 
-    - date_yy_m は validate_date_yy_m で検証
+    - date_yy_m は業績(ir_quant)の決算日/修正日。validate_date_yy_m で検証
+    - acquired_date は指標/理論株価(株価依存)の取得日 ("YY.M.D")。空可
     - data_source は manual/migration/auto のみ許容 (デフォルト manual)
     - 他フィールドは空文字をデフォルト (原文保持用)
     """
     validate_date_yy_m(date_yy_m)
+    if acquired_date:
+        validate_date_yy_m(acquired_date)
     validate_data_source(data_source)
 
     return {
         "date_yy_m": date_yy_m,
+        "acquired_date": acquired_date,
         "ir_quant": ir_quant,
         "ir_comment": ir_comment,
         "quality_indicators": quality_indicators,
