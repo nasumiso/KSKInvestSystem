@@ -24,6 +24,7 @@
     grid-template-columns: 1fr 1fr;
     gap: 0.4em;
   }
+  .charts-grid:focus { outline: none; }
   .chart-cell {
     display: flex; flex-direction: column;
     border: 1px solid #d8dee6; border-radius: 4px; overflow: hidden;
@@ -46,6 +47,14 @@
   .chart-cell-header .editable:hover { background: #fffbe6; }
   .chart-cell-header .editable input {
     font-size: 0.85em; padding: 0 0.2em; margin: 0; height: auto; width: 6em;
+  }
+  .chart-cell-header .edit-jukyu {
+    min-width: 4em; max-width: 18em; max-height: 2.6em;
+    overflow: auto; white-space: pre-wrap;
+  }
+  .chart-cell-header .editable textarea {
+    font-size: 0.85em; padding: 0.15em 0.2em; margin: 0;
+    width: 18em; height: 4.5em; resize: vertical;
   }
   /* プレースホルダー (空セル) では編集 UI も隠す */
   .chart-cell.placeholder .chart-cell-header .edit-sep,
@@ -96,7 +105,7 @@
   </span>
 </div>
 
-<div class="charts-grid">
+<div class="charts-grid" tabindex="-1">
   {% for i in range(2) %}
   <div class="chart-cell placeholder" data-cell="{{ i }}">
     <div class="chart-cell-header">
@@ -107,9 +116,11 @@
       <span class="editable edit-stage" title="クリックで編集 (更新日も当日に自動補完)">—</span>
       <span class="edit-label">更新日</span>
       <span class="editable edit-update" title="クリックで編集 (M/D)">—</span>
+      <span class="edit-label">需給</span>
+      <span class="editable edit-jukyu" title="クリックで編集">—</span>
     </div>
     <div class="chart-viewport">
-      <iframe scrolling="no"></iframe>
+      <iframe scrolling="no" tabindex="-1"></iframe>
     </div>
   </div>
   {% endfor %}
@@ -127,7 +138,16 @@
     var ASHI = { d: 1, w: 2, m: 3 };
 
     var cells = Array.prototype.slice.call(document.querySelectorAll('.chart-cell'));
+    var gridEl = document.querySelector('.charts-grid');
     var countEl = document.getElementById('charts-count');
+
+    function focusChartShortcuts() {
+      var el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) {
+        return;
+      }
+      if (gridEl) gridEl.focus({ preventScroll: true });
+    }
 
     function render() {
       var start = page * PER_PAGE;
@@ -138,6 +158,7 @@
         var kabuLink = cell.querySelector('.kabu');
         var stageEl = cell.querySelector('.edit-stage');
         var updateEl = cell.querySelector('.edit-update');
+        var jukyuEl = cell.querySelector('.edit-jukyu');
         var s = STOCKS[start + i];
         if (!s) {
           // ページ末尾の 1 件不足: 空セルをプレースホルダー表示 (グリッド維持)
@@ -156,17 +177,18 @@
         nameLink.textContent = s.code_s + ' ' + s.stock_name;
         nameLink.href = '/stock/' + code;
         kabuLink.href = 'https://kabutan.jp/stock/chart?code=' + code;
-        // stage / 更新日の初期値 (編集中でなければ最新値で再描画)
+        // stage / 更新日 / 需給チャートの初期値 (編集中でなければ最新値で再描画)
         if (stageEl.dataset.editing !== '1') stageEl.textContent = s.stage || '—';
         if (updateEl.dataset.editing !== '1') updateEl.textContent = s.last_research_update || '—';
+        if (jukyuEl.dataset.editing !== '1') jukyuEl.textContent = s.jukyu_chart || '—';
       }
       var dispStart = total === 0 ? 0 : start + 1;
       var dispEnd = Math.min(start + PER_PAGE, total);
       countEl.textContent = dispStart + '-' + dispEnd + ' / ' + total + ' 銘柄';
     }
 
-    function goPrev() { if (page > 0) { page--; render(); } }
-    function goNext() { if (page < totalPages - 1) { page++; render(); } }
+    function goPrev() { if (page > 0) { page--; render(); focusChartShortcuts(); } }
+    function goNext() { if (page < totalPages - 1) { page++; render(); focusChartShortcuts(); } }
 
     function setTimeframe(tf) {
       timeframe = tf;
@@ -188,11 +210,16 @@
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) {
         return;
       }
-      if (e.key === 'ArrowLeft' || e.key === 'k' || e.key === 'K') { goPrev(); }
-      else if (e.key === 'ArrowRight' || e.key === 'j' || e.key === 'J') { goNext(); }
+      if (e.key === 'ArrowLeft' || e.key === 'k' || e.key === 'K') { e.preventDefault(); goPrev(); }
+      else if (e.key === 'ArrowRight' || e.key === 'j' || e.key === 'J') { e.preventDefault(); goNext(); }
     });
 
-    // ----- stage / 更新日の inline 編集 (portfolio 一覧と同仕様、issue #231) -----
+    cells.forEach(function (cell) {
+      var iframe = cell.querySelector('iframe');
+      if (iframe) iframe.addEventListener('load', focusChartShortcuts);
+    });
+
+    // ----- stage / 更新日 / 需給チャートの inline 編集 (portfolio 一覧と同仕様、issue #231 / #305) -----
     function todayMD() {
       var d = new Date();
       return (d.getMonth() + 1) + '/' + d.getDate();
@@ -222,10 +249,13 @@
       if (!code) return;  // プレースホルダーセルは編集不可
       span.dataset.editing = '1';
       var isStage = span.classList.contains('edit-stage');
+      var isJukyu = span.classList.contains('edit-jukyu');
       var current = span.textContent === '—' ? '' : span.textContent;
 
-      var input = document.createElement('input');
-      if (isStage) {
+      var input = document.createElement(isJukyu ? 'textarea' : 'input');
+      if (isJukyu) {
+        input.value = current;
+      } else if (isStage) {
         input.type = 'text';
         input.value = current;
       } else {
@@ -243,7 +273,7 @@
         span.dataset.editing = '';
 
         var newValue;
-        if (isStage) {
+        if (isStage || isJukyu) {
           newValue = (input.value || '').trim();
         } else {
           newValue = toMD(input.value);
@@ -255,7 +285,7 @@
         }
 
         var fields = {};
-        fields[isStage ? 'stage' : 'last_research_update'] = newValue;
+        fields[isJukyu ? 'jukyu_chart' : (isStage ? 'stage' : 'last_research_update')] = newValue;
         // ステージ編集時は更新日も当日に自動補完 (portfolio 一覧と同仕様)
         if (isStage) fields['last_research_update'] = todayMD();
 
@@ -279,6 +309,7 @@
           var stageVal = (disp.stage !== undefined && disp.stage !== '—') ? disp.stage : fields.stage;
           var updVal = (disp.last_research_update !== undefined && disp.last_research_update !== '—')
             ? disp.last_research_update : fields.last_research_update;
+          var jukyuVal = (disp.jukyu_chart !== undefined) ? disp.jukyu_chart : fields.jukyu_chart;
           if (isStage) {
             span.textContent = (stageVal || '') || '—';
             if (s) s.stage = stageVal || '';
@@ -287,8 +318,13 @@
             if (updSpan && updSpan.dataset.editing !== '1') updSpan.textContent = (updVal || '') || '—';
             if (s) s.last_research_update = updVal || '';
           } else {
-            span.textContent = (updVal || '') || '—';
-            if (s) s.last_research_update = updVal || '';
+            if (isJukyu) {
+              span.textContent = (jukyuVal || '') || '—';
+              if (s) s.jukyu_chart = jukyuVal || '';
+            } else {
+              span.textContent = (updVal || '') || '—';
+              if (s) s.last_research_update = updVal || '';
+            }
           }
         }).catch(function (err) {
           alert('保存失敗: ' + err);
@@ -298,7 +334,7 @@
 
       input.addEventListener('blur', commit);
       input.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Enter' && (!isJukyu || e.ctrlKey || e.metaKey)) { e.preventDefault(); input.blur(); }
         else if (e.key === 'Escape') { finished = true; span.dataset.editing = ''; span.textContent = current || '—'; }
       });
     }
@@ -308,6 +344,7 @@
     });
 
     render();
+    focusChartShortcuts();
   })();
 </script>
 {% endif %}
