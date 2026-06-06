@@ -97,10 +97,11 @@ research_shelve + stocks_shelve → 統合ビュー（Phase 2）
 - `shikiho_comments` (list[str]): 四季報コメント（最新が先頭。スプシは最大5件だが件数上限は設けない）
 
 **時系列スナップショットブロック**:
-- `snapshots` (list[dict]): 1決算=1スナップショット、最新が先頭（`date_yy_m` 降順ソート）
+- `snapshots` (list[dict]): 1決算イベント=1スナップショット、最新が先頭（`date_yy_m` 降順ソート）。決算発表と業績修正は別イベントとして別スナップショットに記録する
 
-各スナップショットは1つの決算タイミングに対応し、以下のフィールドを持つ:
-- `date_yy_m` (str): `"26.1"` のような `YY.M` 表記。**内部も同形式で保持**（スプシ原文準拠、決算月までしか情報がないため ISO 化しない）
+各スナップショットは1つの決算イベント（発表または修正）に対応し、以下のフィールドを持つ:
+- `date_yy_m` (str): 業績(`ir_quant`)の**決算日/修正日**。`"26.1"`（`YY.M` 月精度、移行データ）または `"26.4.15"`（`YY.M.D` 日精度、自動追記）。**内部も同形式で保持**（ISO 化しない）
+- `acquired_date` (str): 株価依存の指標・理論株価乖離の**取得日**（`"YY.M.D"`、空可）。業績は株価非依存なので決算日、指標は株価依存なので取得日、と日付を二軸で持つ。移行データは空（表示時は `date_yy_m` にフォールバック）
 - `ir_quant` (str): IR 分析の定量部分を原文保持（例: `"[A]26%,21%[Q]25%,25%[P]1Q21%(22%),20%(19%)"`)
 - `ir_comment` (str): IR 分析の手動コメント（`・` 箇条書き行を改行区切りで連結）
 - `quality_indicators` (str): クォリティ指標を原文保持（改行含む。例: `"555億 PER27 PBR9.3\n配当2.8 ROE36"`)
@@ -141,6 +142,14 @@ CLAUDE.md の当該規約は **`stocks_shelve` に対するスクレイピング
 - **追記タイミング**: `list_all_db()` の処理末尾（CSV 出力後）
 - **データソース区分**: `data_source="auto"` として記録
 - **呼び出しパターン**: レコード非存在時はまず `upsert_research_record(create_research_record(...))` で最低限の土台を作ってから `upsert_snapshot` を呼ぶ（`upsert_snapshot` は自動作成しない）
+
+#### 日付セマンティクスの分離（PR #312）
+
+- **業績=決算日 / 指標=取得日**: `ir_quant`（株価非依存）は `date_yy_m`=決算日/修正日、`quality_indicators`・`rironkabuka_kairi`（株価依存）は `acquired_date`=取得日（本日）を持つ。全経路（決算自動追記・新規監視追加 `add_stock`）で一貫適用
+- **発表と修正は別行**: `_collect_trigger_dates()` が `kessan_jisseki_date`（発表実績日）・`kessanbi`（発表日/次回予定日）・`kessan_mod_date`（修正日）を独立に14日窓判定し、窓内のものを全てトリガーにする。発表行・修正行は別スナップショットとして残す（同日は集約）
+- **直近決算実績日の保持**: `kessanbi` は次回予定日に上書きされ実績日が残らないため、`shintakane.py` の決算発表パース時に `kessan_jisseki_date` へ実績日を保存
+- **冪等更新の保護**: 同一 `date_yy_m` の再実行では auto 行のみ指標・`acquired_date` を更新。manual/migration 行は保護され不変
+- **移行データ**: 過去 migration 分（`date_yy_m`=YY.M 月精度、`acquired_date` 空）は再変換せず据え置き
 
 ---
 
