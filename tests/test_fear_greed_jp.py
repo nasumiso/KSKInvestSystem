@@ -29,13 +29,15 @@ def test_rating_boundaries(score, rating):
     assert fg._rating(score) == rating
 
 
-# --- volatility 方向反転 (VI 高い=Fear=低スコア) --------------------------
+# --- volatility 方向反転 (VI 高い=Fear=低スコア) + raw 値 ------------------
 def test_volatility_inverted():
-    # VI 最大値(最新)→ 反転で 0 付近、最小値→ 100 付近
+    # VI 最大値(最新)→ 反転で score 0、最小値→ score 100。raw は VI 実値。
     hist_high = [{"nikkei_vi": v} for v in [10, 20, 40]]   # 最新=最大
     hist_low = [{"nikkei_vi": v} for v in [40, 20, 10]]    # 最新=最小
-    assert fg.compute_component_volatility(hist_high) == 0.0
-    assert fg.compute_component_volatility(hist_low) == 100.0
+    score_h, raw_h = fg.compute_component_volatility(hist_high)
+    score_l, raw_l = fg.compute_component_volatility(hist_low)
+    assert (score_h, raw_h) == (0.0, 40)
+    assert (score_l, raw_l) == (100.0, 10)
 
 
 # --- 合成: None 成分は除外して残りで平均 ---------------------------------
@@ -53,9 +55,12 @@ def test_volatility_inverted():
 def test_compose_excludes_none(breadth, vi, expect_components, expect_score):
     result = fg.compute_fear_greed_jp(breadth, vi)
     assert result is not None
-    # None でない成分が平均に使われている
+    # None でない成分が平均に使われている。各成分は {"score","raw"} dict。
     valid = {k for k, v in result["components"].items() if v is not None}
     assert expect_components <= valid
+    for k in valid:
+        assert "score" in result["components"][k]
+        assert "raw" in result["components"][k]
     assert 0.0 <= result["score"] <= 100.0
     assert result["rating"] in (
         "Extreme Fear", "Fear", "Neutral", "Greed", "Extreme Greed")

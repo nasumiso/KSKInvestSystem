@@ -249,37 +249,43 @@ def _build_history(records, n, key_fn):
     return hist
 
 
-def test_vi_and_breadth_rows_in_indicators(tmp_path, monkeypatch):
-    """日経VI と 新高値-新安値 が変化量付きで統合表に出る (issue #292)。
+def test_fgjp_accordion_components_in_indicators(tmp_path, monkeypatch):
+    """日本版 F&G の成分がアコーディオン展開行に出る (issue #212)。
 
-    index -1=最新 / -6=5日前 / -21=20日前 を基準に直近/中期の変化量を検証する。
+    日経VI・新高値新安値は独立行をやめ、F&G 成分の内訳 (score + 元データ実値) に統合。
     """
     code_rank = tmp_path / "code_rank_data"
     code_rank.mkdir(parents=True)
-    # 日経VI: 最新 16.77 / 5日前 16.5 (直近 +0.3) / 20日前 17.0 (中期 -0.2)
-    vi_hist = _build_history(
-        {0: {"nikkei_vi": 16.77}, 5: {"nikkei_vi": 16.5}, 20: {"nikkei_vi": 17.0}},
-        20, lambda i: {"nikkei_vi": 16.0})
-    (code_rank / "nikkei_vi.json").write_text(
-        json.dumps({"history": vi_hist}), encoding="utf-8")
-    # 新高値-新安値: 最新 -43 (88-131) / 5日前 -80 (直近 +37) / 20日前 -140 (中期 +97)
-    nhl_hist = _build_history(
-        {0: {"new_high": 88, "new_low": 131},
-         5: {"new_high": 70, "new_low": 150},
-         20: {"new_high": 60, "new_low": 200}},
-        20, lambda i: {"new_high": 50, "new_low": 50})
-    (code_rank / "new_high_low.json").write_text(
-        json.dumps({"history": nhl_hist}), encoding="utf-8")
+    fgjp = {
+        "history": [{
+            "date": "2026-06-05",
+            "score": 78.4,
+            "components": {
+                "momentum": {"score": 87.0, "raw": 19.24},
+                "strength": {"score": 72.4, "raw": 39},
+                "breadth": {"score": 76.6, "raw": 856},
+                "volatility": {"score": 77.9, "raw": 21.51},
+            },
+        }],
+    }
+    (code_rank / "fear_greed_jp.json").write_text(
+        json.dumps(fgjp), encoding="utf-8")
     monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
 
     html = make_market_db._html_market_indicators({})
-    # 日経VI 行: 値 + バッジ + 直近 +0.3 / 中期 -0.2
-    assert "日経VI" in html
-    assert "16.77" in html
-    assert "安穏" in html
-    assert "+0.3" in html and "-0.2" in html
-    # 新高値-新安値 行: 値 -43、直近 +37 / 中期 +97、内訳は tooltip
-    assert "新高値-新安値" in html
-    assert "-43" in html
-    assert "+37" in html and "+97" in html
-    assert "新高値 88 / 新安値 131" in html
+    # 親行: 日本版F&G + 合成スコア + アコーディオン toggle
+    assert "日本版Fear" in html
+    assert "78.4" in html
+    assert "mi-fgjp-parent" in html and "mi-fgjp-child" in html
+    # 成分の展開行: 各成分名 + 0-100スコア + 元データ実値
+    assert "モメンタム" in html and "新高値強さ" in html
+    assert "騰落ブレッドス" in html and "ボラティリティ" in html
+    assert "21.51" in html          # 日経VI 実値
+    assert "+39" in html            # 新高値-新安値 実値
+    assert "+19.2%" in html         # モメンタム乖離率
+    # 各成分に 0-100 スコア基準のバッジ (score 87/72/77/78 はいずれも Greed〜Extreme Greed)
+    assert "fng-rating-extreme-greed" in html   # momentum 87
+    assert "fng-rating-greed" in html           # strength 72 等
+    # 各成分に参照リンク (統合前の独立行のリンクを踏襲)
+    assert 'href="https://nikkei225jp.com/data/vix.php"' in html
+    assert 'href="https://nikkei225jp.com/data/new.php"' in html

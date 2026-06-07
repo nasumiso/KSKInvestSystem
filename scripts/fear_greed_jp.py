@@ -81,11 +81,15 @@ def compute_component_momentum(breadth_history):
     if not hist:
         return None
     latest = hist[-1]
-    return normalize_min_max(latest, hist[:-1][-_NORM_WINDOW:])
+    score = normalize_min_max(latest, hist[:-1][-_NORM_WINDOW:])
+    return score, latest  # raw = 125日MA乖離率(%)
 
 
 def compute_component_strength(breadth_history):
-    """Stock Price Strength: 新高値 - 新安値 を 0-100 化 (高い=Greed)。"""
+    """Stock Price Strength: 新高値 - 新安値 を 0-100 化 (高い=Greed)。
+
+    Returns: (score 0-100, raw=新高値-新安値) または None。
+    """
     diffs = [
         r["new_high"] - r["new_low"]
         for r in breadth_history
@@ -93,11 +97,14 @@ def compute_component_strength(breadth_history):
     ]
     if len(diffs) < 2:
         return None
-    return normalize_min_max(diffs[-1], diffs[:-1][-_NORM_WINDOW:])
+    return normalize_min_max(diffs[-1], diffs[:-1][-_NORM_WINDOW:]), diffs[-1]
 
 
 def compute_component_breadth(breadth_history):
-    """Stock Price Breadth: 値上がり - 値下がり を 0-100 化 (高い=Greed)。"""
+    """Stock Price Breadth: 値上がり - 値下がり を 0-100 化 (高い=Greed)。
+
+    Returns: (score 0-100, raw=値上がり-値下がり) または None。
+    """
     diffs = [
         r["advances"] - r["declines"]
         for r in breadth_history
@@ -105,19 +112,20 @@ def compute_component_breadth(breadth_history):
     ]
     if len(diffs) < 2:
         return None
-    return normalize_min_max(diffs[-1], diffs[:-1][-_NORM_WINDOW:])
+    return normalize_min_max(diffs[-1], diffs[:-1][-_NORM_WINDOW:]), diffs[-1]
 
 
 def compute_component_volatility(vi_history):
     """Market Volatility: 日経VI を 0-100 化し方向反転 (VI が高い=Fear)。
 
     vi_history: [{date, nikkei_vi}, ...] 日付昇順。
+    Returns: (score 0-100=反転後, raw=日経VI) または None。
     """
     vis = [r["nikkei_vi"] for r in vi_history if r.get("nikkei_vi") is not None]
     if len(vis) < 2:
         return None
-    raw = normalize_min_max(vis[-1], vis[:-1][-_NORM_WINDOW:])
-    return 100.0 - raw  # VI は高いほど Fear なので反転
+    raw_score = normalize_min_max(vis[-1], vis[:-1][-_NORM_WINDOW:])
+    return 100.0 - raw_score, vis[-1]  # VI は高いほど Fear なので反転、raw=VI実値
 
 
 def _rating(score):
@@ -140,21 +148,31 @@ def compute_fear_greed_jp(breadth_history, vi_history):
     全成分 None なら None を返す。
 
     Returns:
-        dict|None: {"score": float, "rating": str, "components": {name: 0-100|None}}
+        dict|None: {
+            "score": float, "rating": str,
+            "components": {name: {"score": 0-100, "raw": float} | None},
+        }
+        components の各成分は score(0-100) と raw(元データ値) を持つ。
+        未取得成分は None。
     """
-    components = {
+    raw_components = {
         "momentum": compute_component_momentum(breadth_history),
         "strength": compute_component_strength(breadth_history),
         "breadth": compute_component_breadth(breadth_history),
         "volatility": compute_component_volatility(vi_history),
     }
-    valid = [v for v in components.values() if v is not None]
+    valid = [c[0] for c in raw_components.values() if c is not None]
     if not valid:
         return None
     score = sum(valid) / len(valid)
+    components = {}
+    for k, c in raw_components.items():
+        if c is None:
+            components[k] = None
+        else:
+            components[k] = {"score": round(c[0], 1), "raw": round(c[1], 2)}
     return {
         "score": round(score, 1),
         "rating": _rating(score),
-        "components": {k: (round(v, 1) if v is not None else None)
-                       for k, v in components.items()},
+        "components": components,
     }
