@@ -1784,8 +1784,11 @@ def _html_market_indicators(market_db):
     取得できる行が 1 つもなければ空文字。
     """
     # F&G (米CNN) / 日本版F&G (成分はアコーディオン展開) / 信用評価損益率 の順。
-    # 日経VI・新高値新安値は日本版F&Gの成分と重複するため独立行をやめ、
-    # F&G のアコーディオン内訳に統合する (issue #212)。
+    # 日経VI・新高値新安値は日本版F&Gの成分と重複するため、F&G が出せる日は
+    # アコーディオン内訳に統合し独立行を出さない (issue #212)。
+    # ただし fear_greed_jp.json が無い/壊れている日は F&G を出せないので、
+    # 従来どおり日経VI・新高値新安値を独立行でフォールバック表示する
+    # (nikkei_vi.json / new_high_low.json が残っていれば情報を失わない)。
     body = []
     fng = _fng_row(market_db)
     if fng is not None:
@@ -1796,6 +1799,14 @@ def _html_market_indicators(market_db):
         body.append(fgjp_html)
     for credit in _credit_rows(market_db):
         body.append(_render_indicator_tr(credit))
+    if not fgjp_html:
+        # F&G が出せない日のみ: 日経VI・新高値新安値を独立行で表示 (退行防止)
+        vi = _vi_row(market_db)
+        if vi is not None:
+            body.append(_render_indicator_tr(vi))
+        breadth = _breadth_row(market_db)
+        if breadth is not None:
+            body.append(_render_indicator_tr(breadth))
     if not body:
         return ""
 

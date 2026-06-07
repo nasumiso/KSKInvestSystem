@@ -289,3 +289,32 @@ def test_fgjp_accordion_components_in_indicators(tmp_path, monkeypatch):
     # 各成分に参照リンク (統合前の独立行のリンクを踏襲)
     assert 'href="https://nikkei225jp.com/data/vix.php"' in html
     assert 'href="https://nikkei225jp.com/data/new.php"' in html
+
+
+def test_fgjp_absent_falls_back_to_vi_and_breadth_rows(tmp_path, monkeypatch):
+    """fear_greed_jp.json が無い日は 日経VI・新高値新安値を独立行で表示する (退行防止)。
+
+    F&G アコーディオンに統合したことで、F&G を出せない日に従来表示が消えるのを防ぐ。
+    """
+    code_rank = tmp_path / "code_rank_data"
+    code_rank.mkdir(parents=True)
+    # fear_greed_jp.json は作らない (取得失敗日を再現)
+    vi_hist = _build_history(
+        {0: {"nikkei_vi": 16.77}, 5: {"nikkei_vi": 16.5}, 20: {"nikkei_vi": 17.0}},
+        20, lambda i: {"nikkei_vi": 16.0})
+    (code_rank / "nikkei_vi.json").write_text(
+        json.dumps({"history": vi_hist}), encoding="utf-8")
+    nhl_hist = _build_history(
+        {0: {"new_high": 88, "new_low": 131}},
+        20, lambda i: {"new_high": 50, "new_low": 50})
+    (code_rank / "new_high_low.json").write_text(
+        json.dumps({"history": nhl_hist}), encoding="utf-8")
+    monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
+
+    html = make_market_db._html_market_indicators({})
+    # F&G アコーディオンの親行は出ない (トグルJSのセレクタ文字列とは区別して tr で判定)
+    assert 'class="mi-fgjp-parent"' not in html
+    assert "日本版Fear" not in html
+    # 日経VI・新高値新安値が独立行でフォールバック表示される
+    assert "日経VI" in html and "16.77" in html
+    assert "新高値-新安値" in html
