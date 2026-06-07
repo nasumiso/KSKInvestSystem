@@ -1,7 +1,7 @@
 """日本市場版 Fear & Greed Index (issue #212)。
 
 CNN Fear & Greed Index の構造 (成分構成・等ウェイト平均・5段階 rating) に準拠しつつ、
-各成分の正規化は独自実装 (直近2年 min-max) する日本市場版センチメント指数。
+各成分の正規化は独自実装 (直近2年の percentile rank) する日本市場版センチメント指数。
 
 CNN 原典との差分 (運用上の限界は issue #212 参照):
   1. 成分数 6→4 (第1弾)。Junk Bond Demand は日本市場に対応物が無く除外。
@@ -9,7 +9,8 @@ CNN 原典との差分 (運用上の限界は issue #212 参照):
      データが揃い次第 components に追加する (取れない成分は平均から除外)。
   2. Stock Price Strength が「52週」ではなく「年初来」基準 (データ源の都合)。
   3. Stock Price Breadth が出来高ベースではなく銘柄数ベース。
-  4. 正規化レンジは CNN 非公開のため独自 (直近2年 min-max)。
+  4. 正規化は CNN 非公開のため独自。外れ値1点でレンジが圧縮される min-max を避け、
+     直近2年の percentile rank を採用 (単一の極値に頑健)。
 
 第1弾の4成分 (いずれも nikkei225jp.com 由来、新規データ源不要):
   - Market Momentum     : 日経225 vs 125日移動平均の乖離率
@@ -24,8 +25,24 @@ _NORM_WINDOW = 490
 _MA_DAYS = 125
 
 
+def normalize_percentile(value, history):
+    """直近履歴に対する value の percentile rank を 0-100 で返す (issue #212)。
+
+    「history 中で value 以下の割合」(中央順位法) を百分率にする。
+    min-max と違い単一の外れ値に頑健で、レンジが極端な値1点に圧縮されない。
+    history が空なら中立 50。同値が多いケースも中央順位で滑らかに扱う。
+    """
+    if not history:
+        return 50.0
+    below = sum(1 for h in history if h < value)
+    equal = sum(1 for h in history if h == value)
+    # 中央順位法: 同値は半分が下とみなす (value 自身を含めないため +0.5*equal)
+    rank = (below + 0.5 * equal) / len(history)
+    return max(0.0, min(100.0, rank * 100.0))
+
+
 def normalize_min_max(value, history):
-    """直近の min-max で 0-100 にスケールする。
+    """直近の min-max で 0-100 にスケールする (旧方式、参考用に残置)。
 
     history は正規化の基準となる過去値リスト (最新値 value は含めない想定)。
     履歴が空・最大最小が一致なら中立 50 を返す。0-100 にクリップする。
@@ -81,7 +98,7 @@ def compute_component_momentum(breadth_history):
     if not hist:
         return None
     latest = hist[-1]
-    score = normalize_min_max(latest, hist[:-1][-_NORM_WINDOW:])
+    score = normalize_percentile(latest, hist[:-1][-_NORM_WINDOW:])
     return score, latest  # raw = 125日MA乖離率(%)
 
 
@@ -97,7 +114,7 @@ def compute_component_strength(breadth_history):
     ]
     if len(diffs) < 2:
         return None
-    return normalize_min_max(diffs[-1], diffs[:-1][-_NORM_WINDOW:]), diffs[-1]
+    return normalize_percentile(diffs[-1], diffs[:-1][-_NORM_WINDOW:]), diffs[-1]
 
 
 def compute_component_breadth(breadth_history):
@@ -112,7 +129,7 @@ def compute_component_breadth(breadth_history):
     ]
     if len(diffs) < 2:
         return None
-    return normalize_min_max(diffs[-1], diffs[:-1][-_NORM_WINDOW:]), diffs[-1]
+    return normalize_percentile(diffs[-1], diffs[:-1][-_NORM_WINDOW:]), diffs[-1]
 
 
 def compute_component_volatility(vi_history):
@@ -124,7 +141,7 @@ def compute_component_volatility(vi_history):
     vis = [r["nikkei_vi"] for r in vi_history if r.get("nikkei_vi") is not None]
     if len(vis) < 2:
         return None
-    raw_score = normalize_min_max(vis[-1], vis[:-1][-_NORM_WINDOW:])
+    raw_score = normalize_percentile(vis[-1], vis[:-1][-_NORM_WINDOW:])
     return 100.0 - raw_score, vis[-1]  # VI は高いほど Fear なので反転、raw=VI実値
 
 
@@ -155,6 +172,14 @@ def compute_fear_greed_jp(breadth_history, vi_history):
         components の各成分は score(0-100) と raw(元データ値) を持つ。
         未取得成分は None。
     """
+    # VI履歴を breadth の最新日以前に揃える。
+    # 揃えないと過去日の一括再計算時に VI 成分だけ最新 VI で正規化されてしまい、
+    # 時系列スコア (history の前日比/5日前比) が不正になる (issue #212 セルフレビュー指摘)。
+    if breadth_history and vi_history:
+        as_of = breadth_history[-1].get("date")
+        if as_of:
+            vi_history = [v for v in vi_history if v.get("date", "") <= as_of] or vi_history
+
     raw_components = {
         "momentum": compute_component_momentum(breadth_history),
         "strength": compute_component_strength(breadth_history),

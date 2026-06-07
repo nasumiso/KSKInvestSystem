@@ -5,7 +5,22 @@ import pytest
 import fear_greed_jp as fg
 
 
-# --- normalize_min_max: 境界 ---------------------------------------------
+# --- normalize_percentile: 境界・外れ値頑健性 (現行の主正規化) -------------
+@pytest.mark.parametrize("value,history,expected", [
+    (50, [], 50.0),                       # 履歴空 → 中立
+    (5, [10, 20, 30, 40], 0.0),           # 全要素より小 → 0
+    (50, [10, 20, 30, 40], 100.0),        # 全要素より大 → 100
+    (25, [10, 20, 30, 40], 50.0),         # 中央 (2件が下) → 50
+    (20, [10, 20, 30, 40], 37.5),         # 中央順位: below1 + equal0.5 = 1.5/4
+    # 外れ値頑健性: 極端な1点があっても percentile は圧縮されない
+    # (min-max なら value=11 は (11-10)/(1000-10)≈0.1 だが percentile は 75)
+    (11, [10, 12, 13, 1000], 25.0),       # 11 より下は 10 のみ → 1/4 = 25
+])
+def test_normalize_percentile(value, history, expected):
+    assert fg.normalize_percentile(value, history) == expected
+
+
+# --- normalize_min_max: 境界 (旧方式、参考用に残置) -----------------------
 @pytest.mark.parametrize("value,history,expected", [
     (50, [], 50.0),            # 履歴空 → 中立
     (5, [5, 5, 5], 50.0),      # 最大最小一致 → 中立
