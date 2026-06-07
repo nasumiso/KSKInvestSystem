@@ -2949,3 +2949,74 @@ class TestBuildPortfolioThemeSummary:
 
         out = helpers.build_portfolio_theme_summary(records=records, sort_key=sort_key)
         assert out[0]["theme"] == expected_first
+
+
+# ==================================================
+# issue #253: signal セル tooltip/背景色・チャートマーカー
+# ==================================================
+class TestSignalDisplay:
+    """_build_signal_display の強度/色・_resolve_signal_markers の週マップ"""
+
+    def _mmdd_days_ago(self, n):
+        from datetime import date, timedelta
+        return (date.today() - timedelta(days=n)).strftime("%m/%d")
+
+    @pytest.mark.parametrize(
+        "kind, num, days_ago, expect_word, alpha_high",
+        [
+            ("ブ", 200, 0, "強", True),    # per>=200 強・直近 → 濃い
+            ("ブ", 199, 0, "中", False),   # per=199 中 → 強より薄い
+            ("ポ", 0, 1, "強", True),      # MA10乖離0 強・直近
+            ("ポ", -5, 6, "弱", False),    # 乖離-5 弱・古い → 薄い
+        ],
+    )
+    def test_strength_and_alpha(self, kind, num, days_ago,
+                                expect_word, alpha_high):
+        mmdd = self._mmdd_days_ago(days_ago)
+        key = "pocket_pivot" if kind == "ポ" else "breakout"
+        stock = {key: ["%s,%d" % (mmdd, num)], "trend_template": []}
+        disp = helpers._build_signal_display(stock)
+        assert expect_word in disp["tooltip"]
+        # alpha を style 文字列から抽出 (rgba(...,A))
+        import re
+        m = re.search(r"rgba\(234,67,53,([0-9.]+)\)", disp["style"])
+        assert m is not None
+        alpha = float(m.group(1))
+        assert (alpha >= 0.8) is alpha_high
+
+    def test_resolve_markers_iso_week_map(self):
+        """日足発生日(週末と非一致)を ISO週で正しい週バーにマップ・窓外はdrop"""
+        from datetime import date, timedelta
+        today = date.today()
+        # 週足バー日付 (昇順): 直近4週 (各週の代表日として週初の月曜)
+        monday = today - timedelta(days=today.weekday())  # 今週月曜
+        window_dates = [monday - timedelta(weeks=k) for k in (3, 2, 1, 0)]
+        xs = [10.0, 20.0, 30.0, 40.0]
+        price_ys = [5.0, 6.0, 7.0, 8.0]
+        # ポ: 今週内の発生日 (週バー月曜と非一致でも ISO週で最新バー index3)
+        po_day = (monday + timedelta(days=2)).strftime("%m/%d")  # 今週水曜
+        # ブ: 窓より古い (5週前) → drop
+        old_day = (monday - timedelta(weeks=5)).strftime("%m/%d")
+        markers = helpers._resolve_signal_markers(
+            ["%s,0" % po_day], ["%s,180" % old_day], window_dates, xs, price_ys)
+        kinds = {m["kind"]: m for m in markers}
+        assert "ポ" in kinds
+        assert kinds["ポ"]["x"] == 40.0  # 今週(最新)バーにマップ
+        assert "ブ" not in kinds  # 窓外drop
+
+    def test_chart_markers_render_and_offset(self):
+        """build_price_rs_chart_full: 三角/ダイヤが描画され、同週はYオフセット"""
+        from datetime import date, timedelta
+        # 週足 price_log (新しい順, (date, close))
+        base = date.today()
+        price_log = [(base - timedelta(weeks=i), 1000 + i) for i in range(20)]
+        # 同じ最新週にポ・ブ両方
+        mmdd = base.strftime("%m/%d")
+        svg, _ = helpers.build_price_rs_chart_full(
+            price_log, [], False,
+            pocket_pivot=["%s,0" % mmdd], breakout=["%s,180" % mmdd])
+        assert "polygon" in svg  # 三角 or ダイヤ
+        assert "#2e7d32" in svg and "#f57c00" in svg  # ポ緑・ブ橙
+        # markers なしなら polygon は出ない (後方互換)
+        svg2, _ = helpers.build_price_rs_chart_full(price_log, [], False)
+        assert "#f57c00" not in svg2
