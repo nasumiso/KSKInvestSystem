@@ -55,8 +55,11 @@ cd scripts && python make_stock_db.py calibrate_momentum
 ## 市場DB操作
 
 ```bash
-cd scripts && python make_market_db.py
+cd scripts && python make_market_db.py        # 市場DB更新 + market_data.html 生成
+cd scripts && python make_market_db.py html   # DB更新なしで market_data.html だけ再生成
 ```
+
+`html` サブコマンドは既存の market_db から表示用 HTML (market_data.html / disclosure_data.html) を作り直すだけ。スクレイピング不要なので、表示確認のための再生成に使う。
 
 ## 銘柄調査DB (`research_shelve`)
 

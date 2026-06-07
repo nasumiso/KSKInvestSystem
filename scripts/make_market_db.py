@@ -11,6 +11,7 @@ import urllib.parse
 from datetime import datetime, timedelta
 import csv
 import os
+import sys
 
 import price
 import make_stock_db
@@ -2580,6 +2581,14 @@ def create_disclosure_html(disc_csv):
 def main():
     # ロガーの初期化
     logger = setup_logger("make_stock_db")
+
+    # `html` サブコマンド: DB更新をスキップし、既存の market_db から
+    # market_data.html / disclosure_data.html だけを再生成する。
+    # 表示用HTMLの作り直しだけ手早くやりたいとき用 (DBスクレイピング不要)。
+    if "html" in sys.argv[1:]:
+        log_print("market_data.html を再生成します (DB更新なし)")
+        create_market_csv()
+        return
 
     market_db = update_market_db()  # noqa: F841
     create_market_csv()
