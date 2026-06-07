@@ -135,6 +135,39 @@ def fetch_new_high_low():
     return out
 
 
+def fetch_market_breadth_daily():
+    """daily2year.json から日本市場版 Fear & Greed 用の日次時系列をまとめて返す (issue #212)。
+
+    fetch_new_high_low と同じファイル・同じ取得経路を使い、合成スコアに必要な列を
+    1 回の HTTP で抽出する。列構成 (2026-06 時点で実データ突き合わせ確認済):
+      [0] unix timestamp(ms), [1] 日経225終値, [5] 値上がり銘柄数,
+      [6] 値下がり銘柄数, [8] 新高値数, [9] 新安値数 (いずれも東証プライム)。
+
+    Returns:
+        list of dict: [{date, nikkei_close, advances, declines, new_high, new_low}, ...]
+                      日付昇順。必要列が数値でない行 (最新の未確定行など) はスキップ。
+    """
+    text = _fetch_nikkei_json(NEW_HIGH_LOW_URL, NEW_HIGH_LOW_REFERER)
+    rows = _parse_js_rows(text, "DAILY")
+    out = []
+    for r in rows:
+        if len(r) <= 9 or not isinstance(r[0], (int, float)):
+            continue
+        close, adv, dec, high, low = r[1], r[5], r[6], r[8], r[9]
+        if not all(isinstance(v, (int, float)) for v in (close, adv, dec, high, low)):
+            continue
+        d = datetime.fromtimestamp(r[0] / 1000, tz=JST).date().isoformat()
+        out.append({
+            "date": d,
+            "nikkei_close": float(close),
+            "advances": int(adv),
+            "declines": int(dec),
+            "new_high": int(high),
+            "new_low": int(low),
+        })
+    return out
+
+
 def fetch_nikkei_vi():
     """SL621_1990.json から 日経VI (恐怖指数) の時系列を返す。
 

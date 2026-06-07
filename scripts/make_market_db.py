@@ -1552,6 +1552,74 @@ def _fng_row(market_db):
     return label_html, value_html, rating_html, d1_html, d4_html, date_text, title
 
 
+def _fgjp_row(market_db):
+    """日本市場版 Fear & Greed の表 1 行分タプルを返す。取得失敗時は None (issue #212)。
+
+    値=合成スコア(0-100)、評価=5段階rating、直近=5日前比、中期=20日前比。
+    market_db は使わず、$KS_DATA_DIR/code_rank_data/fear_greed_jp.json を読む。
+    tooltip に成分数と原典差分の注記を入れる。
+    """
+    history = _load_breadth_json("fear_greed_jp.json")
+    if not history:
+        return None
+    latest = history[-1]
+    score = latest.get("score")
+    if score is None:
+        return None
+    components = latest.get("components") or {}
+    n_valid = sum(1 for v in components.values() if v is not None)
+    rating = str(_fgjp_rating(score)).strip()
+    rating_class = "fng-rating-" + rating.lower().replace(" ", "-")
+
+    def _prev(n):
+        if len(history) < n + 1:
+            return None
+        return history[-(n + 1)].get("score")
+
+    d5, d5_cls = _format_fng_delta(score, _prev(5))
+    d20, d20_cls = _format_fng_delta(score, _prev(20))
+    label = (
+        '<span title="CNN Fear &amp; Greed の構造に準拠した日本市場版 (独自実装)。'
+        '%d 成分の等ウェイト平均。両端で信頼度が高く中間域はノイズが多い。'
+        '差分: Junk Bond除外・52週→年初来・出来高→銘柄数・正規化は独自(直近2年min-max)。">'
+        '日本版Fear &amp; Greed</span>' % n_valid
+    )
+    # tooltip に4成分の 0-100 スコアを併記 (各成分とも高いほど Greed 寄与。
+    # volatility は日経VI を反転済みなので高い=低ボラ=Greed)。未取得成分は "—"。
+    _COMP_LABELS = [
+        ("momentum", "モメンタム"), ("strength", "新高値強さ"),
+        ("breadth", "騰落ブレッドス"), ("volatility", "ボラ(反転)"),
+    ]
+    comp_parts = []
+    for key, jp in _COMP_LABELS:
+        v = components.get(key)
+        comp_parts.append("%s %s" % (jp, ("%.0f" % v) if v is not None else "—"))
+    title = "直近=5日前比 / 中期=20日前比 ｜ 成分: " + " / ".join(comp_parts)
+    return (
+        label,
+        '%.1f' % score,
+        '<span class="fng-rating %s">%s</span>' % (
+            html_mod.escape(rating_class), html_mod.escape(rating)),
+        '<span class="%s">%s</span>' % (html_mod.escape(d5_cls), html_mod.escape(d5)),
+        '<span class="%s">%s</span>' % (html_mod.escape(d20_cls), html_mod.escape(d20)),
+        _format_short_date(latest.get("date", "")),
+        title,
+    )
+
+
+def _fgjp_rating(score):
+    """日本版 Fear & Greed の 0-100 スコアを 5 段階 rating に変換 (CNN準拠)。"""
+    if score < 25:
+        return "Extreme Fear"
+    if score < 45:
+        return "Fear"
+    if score < 55:
+        return "Neutral"
+    if score < 75:
+        return "Greed"
+    return "Extreme Greed"
+
+
 def _credit_rows(market_db):
     """信用評価損益率の表行リストを返す ([(label,value,rating,d1,d4,title)])。
     取得失敗時は []。
@@ -1611,7 +1679,7 @@ def _credit_rows(market_db):
 
 
 def _html_market_indicators(market_db):
-    """Fear & Greed / 信用評価損益率 / 日経VI / 新高値-新安値 を 1 つの表に統合した HTML を返す。
+    """Fear & Greed (米CNN/日本版) / 信用評価損益率 / 日経VI / 新高値-新安値 を 1 つの表に統合した HTML を返す。
 
     取得できる行が 1 つもなければ空文字。
     """
@@ -1619,6 +1687,9 @@ def _html_market_indicators(market_db):
     fng = _fng_row(market_db)
     if fng is not None:
         rows.append(fng)
+    fgjp = _fgjp_row(market_db)  # CNN本体の直後に置き日米センチメント差を視認可能に (issue #212)
+    if fgjp is not None:
+        rows.append(fgjp)
     rows.extend(_credit_rows(market_db))
     vi = _vi_row(market_db)
     if vi is not None:
