@@ -5,12 +5,13 @@
 {% block content %}
 {# 一覧の列数を多く表示するため、main.container のデフォルト max-width を上書きして全幅化 #}
 <style>
-  main.container { max-width: 100% !important; padding-left: 0.8em !important; padding-right: 0.8em !important; }
-  /* 22 列をできるだけ表示するための列幅微調整 (issue #177)。
+  html, body { overflow-x: hidden; }
+  main.container { width: 100vw !important; max-width: none !important; margin-left: 0 !important; margin-right: 0 !important; padding-left: 0 !important; padding-right: 0 !important; }
+  /* 24 列をできるだけ表示するための列幅微調整 (issue #177 / #199 / #314)。
      全体 font-size ダウン + セル padding 圧縮 + ヘッダ折り返し許可。 */
-  table.portfolio-list { font-size: 0.78em; }
+  table.portfolio-list { width: 100%; font-size: 0.76em; }
   table.portfolio-list th, table.portfolio-list td {
-    padding: 0.3em 0.4em;
+    padding: 0.25em 0.35em;
     white-space: normal;  /* ヘッダの折り返しを許可してセル幅を縮める */
   }
   /* 長いヘッダラベル ("RSライン(20,5)" 等) が列幅を引っ張らないよう、
@@ -27,6 +28,26 @@
   }
   /* 数値・短文列は明示的に狭くする */
   table.portfolio-list td.num { text-align: right; }
+  table.portfolio-list td.rating-cell { text-align: center; white-space: nowrap; }
+  table.portfolio-list td.stage-cell {
+    width: 5em;
+    max-width: 5em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  table.portfolio-list td.jukyu-cell {
+    max-width: 6em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: pre-line;
+    line-height: 1.2;
+  }
+  .portfolio-table-wrap {
+    width: 100vw;
+    max-width: 100vw;
+    overflow-x: auto;
+  }
   /* 削除モード時のみチェックボックス列を表示 */
   .bulk-col { display: none; }
   body.delete-mode .bulk-col { display: table-cell; }
@@ -213,7 +234,7 @@
 {% endif %}
 
 {% if rows %}
-<div style="overflow:auto;max-height:80vh;">
+<div class="portfolio-table-wrap">
 <table class="portfolio-list">
   <thead>
     <tr>
@@ -222,6 +243,7 @@
       <th>コード</th>
       <th>銘柄名</th>
       <th><a href="{{ sort_urls.position }}">状態</a></th>
+      <th>評価</th>
       <th><a href="{{ sort_urls.gyoutai }}">業態・テーマ</a></th>
       <th><a href="{{ sort_urls.rank }}">順位</a></th>
       <th>売上成長(%)</th>
@@ -234,6 +256,7 @@
       <th>決算日</th>
       <th>更新日</th>
       <th>ステージ</th>
+      <th>チャートパターン</th>
       <th>RS</th>
       <th title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸">RS(20,5)</th>
       <th>トレンド</th>
@@ -290,8 +313,9 @@
                 aria-label="保有ステータスを変更">{{ row.status_label }}</button>
         {% endif %}
       </td>
+      <td class="rating-cell"{% if row.overall_rating in ('S', 'A') %} style="background:#fbbc04"{% endif %}>{{ row.overall_rating or "—" }}</td>
       <td class="gyoutai-themes-cell" data-code="{{ row.code_s }}"
-          style="max-width:11em;padding:0 2px;line-height:0;{{ row.styles.gyoutai_themes or '' }}">
+          style="max-width:10em;padding:0 2px;line-height:0;{{ row.styles.gyoutai_themes or '' }}">
         {% set themes = row.memo.gyoutai_themes or [] %}
         {% set master_names = theme_master | map(attribute='name') | list %}
         {% for i in range(gyoutai_themes_max_slots) %}
@@ -330,8 +354,13 @@
           style="{{ row.styles.last_research_update or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.last_research_update or "—" }}</td>
       <td title="クリックで編集 (ステージ変更時は更新日も自動で当日に) / Ctrl+クリックで株探チャート"
           data-style-field="stage"
-          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="stage" data-touch-update="1"{% endif %}
+          class="stage-cell{% if not fallback_mode %} editable{% endif %}"
+          {% if not fallback_mode %}data-code="{{ row.code_s }}" data-field="stage" data-touch-update="1"{% endif %}
           style="{{ row.styles.stage or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.stage or "—" }}</td>
+      <td title="{{ ((row.memo.jukyu_chart or '') ~ ' (クリックで編集)') if (not fallback_mode and row.memo.jukyu_chart) else ('クリックで編集' if not fallback_mode else (row.memo.jukyu_chart or '')) }}"
+          data-full="{{ row.memo.jukyu_chart or '' }}"
+          {% if not fallback_mode %}class="editable jukyu-cell" data-code="{{ row.code_s }}" data-field="jukyu_chart" data-multiline="1" data-input-width="8em"{% else %}class="jukyu-cell"{% endif %}
+          style="{% if not fallback_mode %}cursor:pointer{% endif %}">{{ row.memo.jukyu_chart or "—" }}</td>
       <td style="{{ row.styles.rs or '' }}">{{ row.rs }}</td>
       {# issue #227: 株価 + RSライン 3点ミニチャート (旧 RSライン/株価向き 2列を統合) #}
       <td title="{{ row.price_rs_chart.tooltip }}" style="padding:0 2px;line-height:0;">
@@ -346,8 +375,8 @@
       <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
     </tr>
     <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
-      {# 状態列 1 つ追加 (22→23)、削除モード時はさらに +1 / issue #227 で旧 RSライン+株価向き 2列を1列に統合 → 1 減 / 買い集め+需給バランスを需給バランス1列に統合 → 1 減 #}
-      <td colspan="{% if delete_mode_allowed %}23{% else %}22{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
+      {# 状態列 + 評価/需給列を含む全列に展開行を合わせる #}
+      <td colspan="{% if delete_mode_allowed %}25{% else %}24{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
         <div style="display:flex;flex-wrap:wrap;gap:0.8em;align-items:flex-start;">
           {% if row.gyoseki.isKonki %}
           <div style="flex:0 0 auto;">
@@ -366,7 +395,6 @@
                   ("inago_origin", "イナゴ元"),
                   ("trade_idea", "売買アイデア"),
                   ("takaichi_sensitivity", "高市感応度"),
-                  ("jukyu_chart", "需給チャート"),
               ] %}
               <label style="display:flex;flex-direction:column;gap:0.1em;margin:0;">
                 <span style="color:#666;">{{ label }}</span>
@@ -627,6 +655,12 @@ function excludeFromUniverse(codeS) {
     td.textContent = value || '—';
   }
 
+  function renderJukyu(td, value) {
+    td.dataset.full = value || '';
+    td.title = value ? value + ' (クリックで編集)' : 'クリックで編集';
+    td.textContent = value || '—';
+  }
+
   // PORTFOLIO_COLORS のうち背景色に使われる HEX (compute_cell_styles の bg() / bg_with_white() 出力)。
   // 既存セルの背景色をクリアする際にこの集合を使って判定する。
   var PORTFOLIO_BG_COLORS = [
@@ -701,7 +735,7 @@ function excludeFromUniverse(codeS) {
     if (td.dataset.multiline === '1') {
       input = document.createElement('textarea');
       input.rows = 2;
-      input.style.cssText = 'width:11em;font-size:0.85em;padding:0.2em;font-family:inherit;';
+      input.style.cssText = 'width:' + (td.dataset.inputWidth || '11em') + ';font-size:0.85em;padding:0.2em;font-family:inherit;';
     } else if (td.dataset.inputType === 'date') {
       input = document.createElement('input');
       input.type = 'date';
@@ -718,7 +752,7 @@ function excludeFromUniverse(codeS) {
     } else {
       input = document.createElement('input');
       input.type = 'text';
-      input.style.cssText = 'font-size:0.85em;padding:0.2em;width:6em;';
+      input.style.cssText = 'font-size:0.85em;padding:0.2em;width:' + (td.dataset.inputWidth || '6em') + ';';
     }
     if (input.tagName === 'TEXTAREA' || input.type === 'text') {
       input.value = currentValue;
@@ -782,6 +816,7 @@ function excludeFromUniverse(codeS) {
           alert('保存失敗: ' + (res.body && res.body.error || 'unknown'));
           // 元値で再描画
           if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
+          else if (field === 'jukyu_chart') renderJukyu(td, currentValue);
           else renderPlain(td, currentValue);
           return;
         }
@@ -789,6 +824,7 @@ function excludeFromUniverse(codeS) {
         var disp = (res.body.display) || {};
         var displayValue = (disp[field] !== undefined) ? disp[field] : newValue;
         if (field === 'gyoutai_theme') renderGyoutaiTheme(td, displayValue);
+        else if (field === 'jukyu_chart') renderJukyu(td, displayValue);
         else renderPlain(td, displayValue);
 
         // ステージ編集時は同じ行の last_research_update セルも更新
@@ -808,6 +844,7 @@ function excludeFromUniverse(codeS) {
       }).catch(function(err) {
         alert('保存失敗: ' + err);
         if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
+        else if (field === 'jukyu_chart') renderJukyu(td, currentValue);
         else renderPlain(td, currentValue);
       });
     }
@@ -817,6 +854,7 @@ function excludeFromUniverse(codeS) {
       finished = true;
       td.dataset.editing = '';
       if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
+      else if (field === 'jukyu_chart') renderJukyu(td, currentValue);
       else renderPlain(td, currentValue);
     }
 

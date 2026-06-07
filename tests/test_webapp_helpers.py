@@ -1889,6 +1889,8 @@ class TestListPortfolioWithIndicators:
         """rank を rec から直接読めるよう _extract_indicators_for_portfolio もスタブ。"""
         monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {c: {} for c in codes})
         monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {c: f"name_{c}" for c in codes})
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {c: None for c in codes})
+        monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {c: "" for c in codes})
         monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
         # _extract_indicators_for_portfolio は rec の rank を上書きしないよう空 dict を返す
         monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
@@ -1946,6 +1948,31 @@ class TestListPortfolioWithIndicators:
         assert by_code["0003"]["status_query"] == "watch"
         assert by_code["0003"]["status_label"] == "監視"
 
+    def test_overall_rating_filled_from_research_shelve(self, populated_db, monkeypatch):
+        rec = rs.get_research_record("3496")
+        rec["overall_rating"] = "S"
+        rs.upsert_research_record(rec)
+        rs.upsert_research_record(rs.create_research_record("1234", "空評価"))
+
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {c: {} for c in codes})
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {c: "" for c in codes})
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {c: None for c in codes})
+        monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
+        monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
+        monkeypatch.setattr(helpers, "build_stock_chart_payload", lambda stock, market_db, mode: {"svg": "", "tooltip": ""})
+
+        records = [
+            self._make("3496", "3監"),
+            self._make("1234", "3監"),
+            self._make("9999", "3監"),
+        ]
+        rows = helpers.list_portfolio_with_indicators(records)
+        by_code = {r["code_s"]: r for r in rows}
+
+        assert by_code["3496"]["overall_rating"] == "S"
+        assert by_code["1234"]["overall_rating"] == ""
+        assert by_code["9999"]["overall_rating"] == ""
+
     @pytest.mark.parametrize(
         "sort_key, expected",
         [
@@ -1962,6 +1989,8 @@ class TestListPortfolioWithIndicators:
             lambda codes: {c: {"price": prices[c]} for c in codes if c in prices},
         )
         monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {c: "" for c in codes})
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {c: None for c in codes})
+        monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {c: "" for c in codes})
         monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
         monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
 
@@ -2024,6 +2053,8 @@ class TestListPortfolioWithIndicators:
             lambda codes: {c: ({"price": prices.get(c)} if prices.get(c) is not None else {}) for c in codes},
         )
         monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {c: "" for c in codes})
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {c: None for c in codes})
+        monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {c: "" for c in codes})
         monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
         monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
 
