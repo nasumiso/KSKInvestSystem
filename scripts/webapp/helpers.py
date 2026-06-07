@@ -1740,6 +1740,26 @@ def _bulk_resolve_stock_name_prevs(code_list: List[str]) -> Dict[str, Optional[s
     return result
 
 
+def _bulk_resolve_overall_ratings(code_list: List[str]) -> Dict[str, str]:
+    """複数 code_s 分の総合評価 (research_shelve.overall_rating) をバルク取得する。"""
+    from db_shelve import RESEARCH_SHELVE  # 遅延 import (循環回避)
+
+    result: Dict[str, str] = {c: "" for c in code_list if c}
+    if not result:
+        return result
+
+    valid_nonempty = VALID_RATINGS - {""}
+    with ShelveDB(RESEARCH_SHELVE) as db:
+        for c in list(result.keys()):
+            rec = db.get(normalize_code_s(c))
+            if not rec:
+                continue
+            rating = rec.get("overall_rating") or ""
+            if rating in valid_nonempty:
+                result[c] = rating
+    return result
+
+
 # issue #178: status 内部値 → URL クエリ / 表示ラベルの対応表 (helpers 内部利用のみ)。
 # routes/portfolio.py の同名定数とは独立に保持し、循環 import を避ける。
 _PORTFOLIO_STATUS_QUERY = {
@@ -1796,6 +1816,7 @@ def list_portfolio_with_indicators(
     stock_map = _bulk_get_stock_data(code_list)
     name_map = _bulk_resolve_stock_names(code_list)
     name_prev_map = _bulk_resolve_stock_name_prevs(code_list)  # issue #183
+    rating_map = _bulk_resolve_overall_ratings(code_list)  # issue #199
     today = date.today()  # 全 row 共通の基準日 (issue #177)
 
     # issue #227: 株価 + RSライン 統合チャート用に market_db を1回だけロード。
@@ -1812,6 +1833,7 @@ def list_portfolio_with_indicators(
         row = dict(rec)
         row["stock_name"] = name_map.get(code_s, "") or rec.get("stock_name", "")  # 旧データ互換
         row["stock_name_prev"] = name_prev_map.get(code_s)  # issue #183
+        row["overall_rating"] = rating_map.get(code_s, "")  # issue #199
         stock = stock_map.get(code_s, {})
         row.update(_extract_indicators_for_portfolio(stock))
         # issue #227: 3点ミニチャート (svg + tooltip)

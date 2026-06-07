@@ -9,6 +9,7 @@ import os
 import pytest
 
 import portfolio_shelve as ps
+import research_shelve as rs
 from db_shelve import ShelveDB, STOCKS_SHELVE
 from webapp import create_app
 
@@ -24,13 +25,18 @@ def stocks_db_path(tmp_path):
 
 
 @pytest.fixture
+def research_db_path(tmp_path):
+    return str(tmp_path / "test_research_shelve")
+
+
+@pytest.fixture
 def txt_path(tmp_path):
     """sync_to_my_watch_list_txt の出力先を tmp_path に逃がす"""
     return str(tmp_path / "my_watch_list.txt")
 
 
 @pytest.fixture
-def app(portfolio_db_path, stocks_db_path, txt_path, monkeypatch):
+def app(portfolio_db_path, stocks_db_path, research_db_path, txt_path, monkeypatch):
     """テスト用 Flask アプリ。"""
     # portfolio_shelve のパス差し替え
     monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db_path)
@@ -38,6 +44,9 @@ def app(portfolio_db_path, stocks_db_path, txt_path, monkeypatch):
     # stocks_shelve のパス差し替え
     monkeypatch.setattr("db_shelve.STOCKS_SHELVE", stocks_db_path)
     monkeypatch.setattr("webapp.helpers.STOCKS_SHELVE", stocks_db_path)
+    # research_shelve のパス差し替え (portfolio 一覧の評価/旧名 fallback 用)
+    monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", research_db_path)
+    monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", research_db_path)
     # my_watch_list.txt の出力先を tmp_path に
     monkeypatch.setattr("portfolio_shelve.DATA_DIR", os.path.dirname(txt_path))
 
@@ -87,6 +96,16 @@ def app(portfolio_db_path, stocks_db_path, txt_path, monkeypatch):
             "trend_template": ["不通過1", "不通過2", "不通過3"],
             "stock_rank_log": [("2026-05-03", 200)],
         }
+
+    # portfolio 登録済み銘柄の調査レコード。評価列の表示確認に使う。
+    rs.upsert_research_record(
+        rs.create_research_record("3496", "アズーム", overall_rating="S"),
+        db_path=research_db_path,
+    )
+    rs.upsert_research_record(
+        rs.create_research_record("6324", "ハーモニックドライブシステムズ", overall_rating=""),
+        db_path=research_db_path,
+    )
 
     app = create_app()
     app.config["TESTING"] = True
@@ -161,6 +180,25 @@ class TestDashboardGet:
         # 売上成長%・利益成長% (アズーム fixture の gyoseki_current から計算: 50→100 は +100%)
         # 値の "%" は列ヘッダ側 ("利益成長(%)") に集約 (issue #177)
         assert ">100<" in html
+
+    def test_dashboard_shows_rating_and_jukyu_column(self, client, portfolio_db_path):
+        """評価列とチャートパターン inline 編集列が一覧に出る (issue #199 / #314)"""
+        ps.update_memo(
+            "3496",
+            {"jukyu_chart": "月足低位ブレイク\nCWH"},
+            db_path=portfolio_db_path,
+        )
+
+        resp = client.get("/portfolio?status=hold")
+        html = resp.data.decode()
+
+        assert "<th>評価</th>" in html
+        assert "<th>チャートパターン</th>" in html
+        assert '<td class="rating-cell" style="background:#fbbc04">S</td>' in html
+        assert 'data-field="jukyu_chart"' in html
+        assert 'data-multiline="1"' in html
+        assert "月足低位ブレイク" in html
+        assert 'name="jukyu_chart"' not in html
 
 
 class TestAddPost:
@@ -692,6 +730,20 @@ class TestUpdateMemoAjax:
         # display フィールドに保存後の表示値が入っている
         assert body["display"]["stage"] == "2S"
         assert body["display"]["last_research_update"] == "5/10"
+
+    def test_ajax_updates_jukyu_chart_with_newline(self, client, portfolio_db_path):
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"jukyu_chart": "月足低位ブレイク\nCWH"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["display"]["jukyu_chart"] == "月足低位ブレイク\nCWH"
+
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["memo"]["jukyu_chart"] == "月足低位ブレイク\nCWH"
 
     def test_ajax_unknown_code_returns_404_json(self, client):
         resp = client.post(
