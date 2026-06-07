@@ -6,7 +6,10 @@
 {# 一覧の列数を多く表示するため、main.container のデフォルト max-width を上書きして全幅化 #}
 <style>
   html, body { overflow-x: hidden; }
-  main.container { width: 100vw !important; max-width: none !important; margin-left: 0 !important; margin-right: 0 !important; padding-left: 0 !important; padding-right: 0 !important; }
+  /* 全幅化 (max-width 解除) しつつ、左右に余白を確保する (issue #314: 詰まりすぎ解消)。
+     他ページは max-width + 中央寄せで余白を作るが、本ページは全幅のため
+     左右パディングで他ページと同程度の余白を再現する。 */
+  main.container { width: 100%; max-width: none !important; padding-left: var(--pico-spacing) !important; padding-right: var(--pico-spacing) !important; }
   /* 24 列をできるだけ表示するための列幅微調整 (issue #177 / #199 / #314)。
      全体 font-size ダウン + セル padding 圧縮 + ヘッダ折り返し許可。 */
   table.portfolio-list { width: 100%; font-size: 0.76em; }
@@ -44,8 +47,7 @@
     line-height: 1.2;
   }
   .portfolio-table-wrap {
-    width: 100vw;
-    max-width: 100vw;
+    width: 100%;
     overflow-x: auto;
   }
   /* 削除モード時のみチェックボックス列を表示 */
