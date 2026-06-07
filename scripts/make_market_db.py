@@ -978,6 +978,17 @@ tr:hover { background: #f5f5f5; }
 .market-indicators td.mi-delta { text-align: right; }
 .market-indicators td.mi-date { text-align: right; color: #888; font-size: 0.85em; }
 .market-indicators .mi-unit { color: #888; font-size: 0.85em; margin-right: 2px; }
+/* 日本版F&G アコーディオン (issue #212) */
+.market-indicators tr.mi-fgjp-parent { cursor: pointer; }
+.market-indicators tr.mi-fgjp-parent:hover { background: #f7fbff; }
+.market-indicators .mi-fgjp-toggle { color: #888; font-size: 0.8em; display: inline-block; transition: transform 0.1s; }
+.market-indicators tr.mi-fgjp-parent.open .mi-fgjp-toggle { transform: rotate(90deg); }
+.market-indicators tr.mi-fgjp-child { display: none; background: #fbfcfd; }
+.market-indicators tr.mi-fgjp-child.open { display: table-row; }
+.market-indicators tr.mi-fgjp-child th.mi-label { font-weight: normal; color: #555; padding-left: 18px; }
+.market-indicators tr.mi-fgjp-child a.mi-fgjp-childlabel { color: #555; text-decoration: none; }
+.market-indicators tr.mi-fgjp-child a.mi-fgjp-childlabel:hover { color: #1976d2; text-decoration: underline; }
+.market-indicators td.mi-fgjp-raw { text-align: right; color: #666; font-size: 0.9em; }
 .fng-rating { padding: 1px 6px; border-radius: 999px; font-size: 0.85em; font-weight: bold; color: #fff; }
 .fng-rating-extreme-fear { background: #a93226; }
 .fng-rating-fear { background: #e67e22; }
@@ -1552,6 +1563,163 @@ def _fng_row(market_db):
     return label_html, value_html, rating_html, d1_html, d4_html, date_text, title
 
 
+def _render_indicator_tr(row, extra_class="", extra_attr=""):
+    """指標表の 1 行 (label,value,rating,d1,d4,date,title) を <tr> HTML 化する。"""
+    label, value, rating, d1, d4, date_text, title = row
+    title_attr = (' title="%s"' % html_mod.escape(title)) if title else ''
+    cls_attr = (' class="%s"' % extra_class) if extra_class else ''
+    return (
+        '<tr%s%s%s>'
+        '<th class="mi-label">%s</th>'
+        '<td class="mi-value">%s</td>'
+        '<td class="mi-rating">%s</td>'
+        '<td class="mi-delta">%s</td>'
+        '<td class="mi-delta">%s</td>'
+        '<td class="mi-date">%s</td>'
+        '</tr>' % (cls_attr, title_attr, extra_attr, label, value, rating,
+                  d1, d4, html_mod.escape(date_text))
+    )
+
+
+# 日本版 F&G の成分: (キー, 表示名, tooltip説明, 元データ整形関数, 参照リンクURL)。
+# バッジは 0-100 スコアを F&G 本体と同じ 5 段階 rating に変換して統一表示する。
+def _fmt_signed_int(raw):
+    return "%+d" % int(round(raw))
+
+
+def _fmt_pct(raw):
+    return "%+.1f%%" % raw
+
+
+def _fmt_vi(raw):
+    return "%.2f" % raw
+
+
+_FGJP_COMPONENTS = [
+    ("momentum", "モメンタム", "日経225 vs 125日移動平均の乖離率。高いほど Greed。",
+     _fmt_pct, "https://nikkei225jp.com/nikkei/"),
+    ("strength", "新高値強さ", "東証プライム 新高値数 - 新安値数。高いほど Greed。",
+     _fmt_signed_int, "https://nikkei225jp.com/data/new.php"),
+    ("breadth", "騰落ブレッドス", "東証プライム 値上がり - 値下がり銘柄数。高いほど Greed。",
+     _fmt_signed_int, "https://nikkei225jp.com/data/touraku.php"),
+    ("volatility", "ボラティリティ", "日経VI (恐怖指数)。高いほど Fear なので反転してスコア化。",
+     _fmt_vi, "https://nikkei225jp.com/data/vix.php"),
+]
+
+
+def _fgjp_accordion_html(market_db):
+    """日本版 F&G の親行 + 成分の展開行 (アコーディオン) HTML を返す。取得失敗時は空文字。
+
+    親行クリックで成分行 (mi-fgjp-child) の表示/非表示をトグルする (issue #212)。
+    成分行は各成分の 0-100 スコア (値列) と元データ実値 (評価列) を併記する。
+    日経VI・新高値新安値はこの内訳に統合され独立行を持たない。
+    market_db は使わず fear_greed_jp.json を読む。
+    """
+    history = _load_breadth_json("fear_greed_jp.json")
+    if not history:
+        return ""
+    latest = history[-1]
+    score = latest.get("score")
+    if score is None:
+        return ""
+    components = latest.get("components") or {}
+    n_valid = sum(1 for v in components.values() if v is not None)
+    rating = str(_fgjp_rating(score)).strip()
+    rating_class = "fng-rating-" + rating.lower().replace(" ", "-")
+
+    def _prev(n):
+        if len(history) < n + 1:
+            return None
+        return history[-(n + 1)].get("score")
+
+    d5, d5_cls = _format_fng_delta(score, _prev(5))
+    d20, d20_cls = _format_fng_delta(score, _prev(20))
+    label = (
+        '<span class="mi-fgjp-toggle">▸ </span>'
+        '<span title="CNN Fear &amp; Greed の構造に準拠した日本市場版 (独自実装)。'
+        '%d 成分の等ウェイト平均。クリックで成分内訳を展開。'
+        '両端で信頼度が高く中間域はノイズが多い。'
+        '差分: Junk Bond除外・52週→年初来・出来高→銘柄数・正規化は独自(直近2年min-max)。">'
+        '日本版Fear &amp; Greed</span>' % n_valid
+    )
+    parent = _render_indicator_tr(
+        (
+            label,
+            '%.1f' % score,
+            '<span class="fng-rating %s">%s</span>' % (
+                html_mod.escape(rating_class), html_mod.escape(rating)),
+            '<span class="%s">%s</span>' % (
+                html_mod.escape(d5_cls), html_mod.escape(d5)),
+            '<span class="%s">%s</span>' % (
+                html_mod.escape(d20_cls), html_mod.escape(d20)),
+            _format_short_date(latest.get("date", "")),
+            "直近=5日前比 / 中期=20日前比 ｜ クリックで成分内訳",
+        ),
+        extra_class="mi-fgjp-parent",
+    )
+
+    children = []
+    for key, jp, desc, fmt, url in _FGJP_COMPONENTS:
+        comp = components.get(key)
+        if comp is None:
+            value_html, raw_html, rating_html = "—", "", ""
+        else:
+            cscore = comp.get("score")
+            craw = comp.get("raw")
+            value_html = ("%.0f" % cscore) if cscore is not None else "—"
+            raw_html = fmt(craw) if craw is not None else ""
+            # バッジは 0-100 スコアを F&G 本体と同じ 5 段階 rating で統一表示
+            if cscore is not None:
+                crate = _fgjp_rating(cscore)
+                crate_cls = "fng-rating-" + crate.lower().replace(" ", "-")
+                rating_html = '<span class="fng-rating %s">%s</span>' % (
+                    html_mod.escape(crate_cls), html_mod.escape(crate))
+            else:
+                rating_html = ""
+        # ラベルは参照リンク付き (統合前の独立行のリンクを踏襲)
+        child_label = (
+            '└ <a href="%s" title="%s" target="_blank" rel="noopener"'
+            ' class="mi-fgjp-childlabel">%s</a>'
+            % (html_mod.escape(url), html_mod.escape(desc), html_mod.escape(jp))
+        )
+        children.append(
+            '<tr class="mi-fgjp-child">'
+            '<th class="mi-label">%s</th>'
+            '<td class="mi-value">%s</td>'
+            '<td class="mi-rating">%s</td>'
+            '<td class="mi-delta mi-fgjp-raw" colspan="2">%s</td>'
+            '<td class="mi-date"></td>'
+            '</tr>' % (child_label, value_html, rating_html, raw_html)
+        )
+    return parent + "\n" + "\n".join(children)
+
+
+def _fgjp_rating(score):
+    """日本版 Fear & Greed の 0-100 スコアを 5 段階 rating に変換 (CNN準拠)。"""
+    if score < 25:
+        return "Extreme Fear"
+    if score < 45:
+        return "Fear"
+    if score < 55:
+        return "Neutral"
+    if score < 75:
+        return "Greed"
+    return "Extreme Greed"
+
+
+def _fgjp_rating(score):
+    """日本版 Fear & Greed の 0-100 スコアを 5 段階 rating に変換 (CNN準拠)。"""
+    if score < 25:
+        return "Extreme Fear"
+    if score < 45:
+        return "Fear"
+    if score < 55:
+        return "Neutral"
+    if score < 75:
+        return "Greed"
+    return "Extreme Greed"
+
+
 def _credit_rows(market_db):
     """信用評価損益率の表行リストを返す ([(label,value,rating,d1,d4,title)])。
     取得失敗時は []。
@@ -1611,38 +1779,37 @@ def _credit_rows(market_db):
 
 
 def _html_market_indicators(market_db):
-    """Fear & Greed / 信用評価損益率 / 日経VI / 新高値-新安値 を 1 つの表に統合した HTML を返す。
+    """Fear & Greed (米CNN/日本版) / 信用評価損益率 / 日経VI / 新高値-新安値 を 1 つの表に統合した HTML を返す。
 
     取得できる行が 1 つもなければ空文字。
     """
-    rows = []
+    # F&G (米CNN) / 日本版F&G (成分はアコーディオン展開) / 信用評価損益率 の順。
+    # 日経VI・新高値新安値は日本版F&Gの成分と重複するため、F&G が出せる日は
+    # アコーディオン内訳に統合し独立行を出さない (issue #212)。
+    # ただし fear_greed_jp.json が無い/壊れている日は F&G を出せないので、
+    # 従来どおり日経VI・新高値新安値を独立行でフォールバック表示する
+    # (nikkei_vi.json / new_high_low.json が残っていれば情報を失わない)。
+    body = []
     fng = _fng_row(market_db)
     if fng is not None:
-        rows.append(fng)
-    rows.extend(_credit_rows(market_db))
-    vi = _vi_row(market_db)
-    if vi is not None:
-        rows.append(vi)
-    breadth = _breadth_row(market_db)
-    if breadth is not None:
-        rows.append(breadth)
-    if not rows:
+        body.append(_render_indicator_tr(fng))
+    # 日本版F&G: 親行 (クリックで成分展開) + 成分の展開行
+    fgjp_html = _fgjp_accordion_html(market_db)
+    if fgjp_html:
+        body.append(fgjp_html)
+    for credit in _credit_rows(market_db):
+        body.append(_render_indicator_tr(credit))
+    if not fgjp_html:
+        # F&G が出せない日のみ: 日経VI・新高値新安値を独立行で表示 (退行防止)
+        vi = _vi_row(market_db)
+        if vi is not None:
+            body.append(_render_indicator_tr(vi))
+        breadth = _breadth_row(market_db)
+        if breadth is not None:
+            body.append(_render_indicator_tr(breadth))
+    if not body:
         return ""
 
-    body = []
-    for label, value, rating, d1, d4, date_text, title in rows:
-        title_attr = (' title="%s"' % html_mod.escape(title)) if title else ''
-        body.append(
-            '<tr%s>'
-            '<th class="mi-label">%s</th>'
-            '<td class="mi-value">%s</td>'
-            '<td class="mi-rating">%s</td>'
-            '<td class="mi-delta">%s</td>'
-            '<td class="mi-delta">%s</td>'
-            '<td class="mi-date">%s</td>'
-            '</tr>' % (title_attr, label, value, rating, d1, d4,
-                      html_mod.escape(date_text))
-        )
     header = (
         '<thead><tr>'
         '<th class="mi-label">指標</th>'
@@ -1653,11 +1820,29 @@ def _html_market_indicators(market_db):
         '<th class="mi-date">更新日</th>'
         '</tr></thead>\n'
     )
+    # 親行クリックで成分行 (mi-fgjp-child) をトグル。click ハンドラは一度だけ束縛する。
+    toggle_js = (
+        '<script>\n'
+        '(function(){\n'
+        '  var p = document.querySelector(".market-indicators tr.mi-fgjp-parent");\n'
+        '  if (!p || p.dataset.bound) return;\n'
+        '  p.dataset.bound = "1";\n'
+        '  p.addEventListener("click", function(){\n'
+        '    p.classList.toggle("open");\n'
+        '    var n = p.nextElementSibling;\n'
+        '    while (n && n.classList.contains("mi-fgjp-child")) {\n'
+        '      n.classList.toggle("open"); n = n.nextElementSibling;\n'
+        '    }\n'
+        '  });\n'
+        '})();\n'
+        '</script>\n'
+    )
     return (
         '<table class="market-indicators">\n'
         + header +
         '<tbody>\n' + '\n'.join(body) + '\n</tbody>\n'
         '</table>\n'
+        + toggle_js
     )
 
 

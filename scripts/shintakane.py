@@ -1654,6 +1654,77 @@ def update_nikkei_vi():
     )
 
 
+def update_fear_greed_jp():
+    """日本市場版 Fear & Greed Index を計算して JSON 保存 (issue #212)。
+
+    breadth (日経終値・値上がり/値下がり・新高値/安値) は daily2year.json から取得し、
+    日経VI は update_nikkei_vi が保存した nikkei_vi.json を読む (本関数は VI 更新後に呼ぶ)。
+    取得できない成分は除外して残り成分で合成する。
+    キャッシュ・失敗時の扱いは他の update_* と同じ (デイリー全体は止めない)。
+    """
+    import market_breadth
+    import fear_greed_jp
+
+    out_path = os.path.join(DATA_DIR, "code_rank_data", "fear_greed_jp.json")
+    today = get_price_day(datetime.today())
+    if _credit_cache_is_fresh(out_path, today):
+        log_print(f"---- 日本版Fear&Greed キャッシュ有効のためスキップ (generated_at={today.isoformat()})")
+        return
+
+    log_print("----> 日本版Fear&Greed 更新")
+    try:
+        breadth_history = market_breadth.fetch_market_breadth_daily()
+    except Exception as e:
+        log_warning(f"[fear_greed_jp] breadth 取得失敗のためスキップ: {e}")
+        return
+    if not breadth_history:
+        log_warning("[fear_greed_jp] breadth 取得結果が空")
+        return
+
+    # 日経VI はフル履歴を取得して正規化に使う。
+    # nikkei_vi.json は30日分しか保持せず min-max レンジが狭すぎる (直近2年で正規化したい)
+    # ため、breadth と同様にここで生データを直接取得する。取得失敗時は VI 成分のみ除外。
+    vi_history = []
+    try:
+        vi_history = market_breadth.fetch_nikkei_vi()
+    except Exception as e:
+        log_warning(f"[fear_greed_jp] 日経VI取得失敗 (VI成分を除外): {e}")
+
+    result = fear_greed_jp.compute_fear_greed_jp(breadth_history, vi_history)
+    if result is None:
+        log_warning("[fear_greed_jp] 全成分が None のためスキップ")
+        return
+
+    # history は date + score + components を 30 営業日分保持 (前日比/5日前比表示用)
+    latest_date = breadth_history[-1]["date"]
+    prev_history = []
+    if os.path.exists(out_path):
+        try:
+            with open(out_path, "r", encoding="utf-8") as f:
+                prev_history = (json.load(f).get("history") or [])
+        except (OSError, ValueError):
+            prev_history = []
+    entry = {"date": latest_date, "score": result["score"],
+             "components": result["components"]}
+    history = [h for h in prev_history if h.get("date") != latest_date]
+    history.append(entry)
+    history = history[-30:]
+
+    payload = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "source": "nikkei225jp.com (daily2year.json / vix.php) より独自合成 (CNN構造準拠)",
+        "latest": {"date": latest_date, **result},
+        "history": history,
+    }
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    log_print(
+        f"<---- 日本版Fear&Greed 更新完了 latest={latest_date} "
+        f"score={result['score']} ({result['rating']})"
+    )
+
+
 def main(force=False):
     """メイン関数"""
     # TODO: 新高値更新タイミングをタグで
@@ -1676,6 +1747,7 @@ def main(force=False):
         update_credit_balance()
         update_new_high_low()
         update_nikkei_vi()
+        update_fear_greed_jp()  # VI 更新後に呼ぶ (nikkei_vi.json を参照するため)
     # 新高値銘柄の各種解析
     if "analyze" in args:
         todays_shintakane(UPD_INTERVAL)  # UPD_FORCE/UPD_INTERVAL/UPD_CACHE/UPD_REEVAL
