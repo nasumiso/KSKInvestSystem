@@ -1580,8 +1580,9 @@ def parse_price_text_from_list(price_current, price_list):
 
     # ---- ポケットピポット
     # 過去10日間で出来高の最も多い陽線の日
-    # 出来高収縮では50ma、ブレイク後の上昇トレンドは10maを使うのが本来
-    # TODO: 本当は50maを参照したいが、50日分のデータが必要..
+    # 出来高収縮では50ma、ブレイク後の上昇トレンドは10maを使うのが本来。
+    # 日足は period="2mo" (~40営業日) で MA50 には不足するため、現状データで
+    # 計算可能な MA25 を併用し、ベース形成期の中期押し目も拾う (issue #110)。
     pockets = []
     for ind in range(10):
         # 過去10日間の出来高
@@ -1599,6 +1600,14 @@ def parse_price_text_from_list(price_current, price_list):
         if len(prices) == 0:
             break
         ma10 = sum(prices) / len(prices)
+        # MA25 (25日分揃わなければ MA10 のみで判定)
+        prices25 = []
+        for j in range(25):
+            try:
+                prices25.append(price_list[ind + j][6])
+            except IndexError:
+                break
+        ma25 = sum(prices25) / len(prices25) if len(prices25) >= 25 else None
         down_vol = max(volumes) if len(volumes) > 0 else 0  # 下落日の出来高
         # down_vol = sum(volumes) # 下落日の出来高
         if price_list[ind][6] > price_list[ind + 1][6]:  # 上昇日
@@ -1607,8 +1616,11 @@ def parse_price_text_from_list(price_current, price_list):
             continue
         ref_price = min(price_list[ind][3], price_list[ind + 1][6])  # 安値と前日終値
         kairi = round(100 * float(ref_price - ma10) / ma10, 1)  # 安値からのma10との乖離
+        # MA25 乖離。MA10 or MA25 のいずれかが近ければ extended でないとみなす
+        kairi25 = round(100 * float(ref_price - ma25) / ma25, 1) if ma25 else None
+        not_extended = kairi <= 4 or (kairi25 is not None and kairi25 <= 4)
         # print "down_vol=", down_vol, "vol=", vol, "ma10=", ma10, "kairi=", kairi
-        if vol > down_vol and kairi <= 4:
+        if vol > down_vol and not_extended:
             dt = parse_date_str(price_list[ind][0])
             if dt:
                 day = dt.strftime("%m/%d")

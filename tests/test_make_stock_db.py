@@ -149,6 +149,61 @@ class TestMakeSignal:
         signal, tags = make_stock_db.make_signal(stock)
         assert "[売過]" in signal
 
+    # ---- issue #110: ポケットピポット改善 ----
+
+    @pytest.mark.parametrize(
+        "trend_template, expect_tag",
+        [
+            ([], True),  # 全通過(◎) → タグ付与
+            (["RS"], True),  # 除外対象外のmiss → タグ付与
+            (["pr>ma30,40"], False),  # 長期MA割れ → 除外
+            (["ma40Up"], False),  # MA40下降(Stage4) → 除外
+            (["high(low)52"], False),  # 52週高値圏外(crash) → 除外
+            ("__missing__", True),  # trend_template キー欠落 → タグ付与
+        ],
+    )
+    def test_pocket_pivot_stage4_filter(self, trend_template, expect_tag):
+        """項目1: Stage 4 崩壊銘柄ではポケットピポットを除外する"""
+        today = datetime.today()
+        recent = (today - timedelta(days=2)).strftime("%m/%d")
+        stock = {"pocket_pivot": ["%s,2" % recent]}
+        if trend_template != "__missing__":
+            stock["trend_template"] = trend_template
+        _, tags = make_stock_db.make_signal(stock)
+        assert ("ポ" in tags) is expect_tag
+
+    def test_pocket_pivot_year_boundary(self, monkeypatch):
+        """項目3: 年初に年末シグナルを処理しても delta_day が正で「ポ」が付く"""
+
+        class FakeDateTime(datetime):
+            @classmethod
+            def today(cls):
+                return cls(2026, 1, 3)
+
+        monkeypatch.setattr(make_stock_db, "datetime", FakeDateTime)
+        # 12/31 のシグナル: 素朴に 2026/12/31 と解釈すると delta_day が負になる
+        stock = {"pocket_pivot": ["12/31,2"], "trend_template": []}
+        _, tags = make_stock_db.make_signal(stock)
+        assert "ポ" in tags
+        # ブレイクアウト側も同じ年跨ぎ修正
+        stock_b = {"breakout": ["12/31,50"], "trend_template": []}
+        _, tags_b = make_stock_db.make_signal(stock_b)
+        assert "ブ" in tags_b
+
+    def test_pocket_pivot_consecutive(self):
+        """項目4: 連続ポケットピポットは最大3件・「ポ」タグは1個"""
+        today = datetime.today()
+        days = [(today - timedelta(days=n)).strftime("%m/%d") for n in (1, 2, 3, 4)]
+        stock = {
+            "pocket_pivot": ["%s,%d" % (d, i) for i, d in enumerate(days)],
+            "trend_template": [],
+        }
+        signal, tags = make_stock_db.make_signal(stock)
+        assert tags.count("ポ") == 1
+        # 先頭3件のみ signal に出力、4件目は出ない
+        assert days[2] in signal
+        assert days[3] not in signal
+
 
 # ==================================================
 # update_db — shihyo マージロジック

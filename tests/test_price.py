@@ -945,6 +945,37 @@ class TestParsePriceTextFromList:
         # 入力が5件しかなければ price_log も最大5件
         assert len(result_dict["price_log"]) <= 5
 
+    def test_pocket_pivot_ma25_detection(self):
+        """issue #110: MA10乖離は4超だがMA25乖離は4以内なら検出される
+
+        直近10日平均(MA10)より過去25日平均(MA25)が高い「下落基調からの反発」を、
+        MA25 併用で拾えることを確認する。
+        """
+        from datetime import date as _date, timedelta
+        d0 = _date(2025, 12, 31)
+        price_list = []
+        for i in range(30):
+            dt = d0 - timedelta(days=i)
+            date_str = "%d年%d月%d日" % (dt.year, dt.month, dt.day)
+            if i == 0:
+                # 当日(最新): 上昇日・出来高最大・安値1045
+                close = 1046
+                low = 1045
+                vol = 999999
+            elif i < 10:
+                close = 1000  # 直近10日 → MA10≈1000
+                low = close - 5
+                vol = 100000
+            else:
+                close = 1100  # 過去10〜24日 → MA25 を引き上げる
+                low = close - 5
+                vol = 100000
+            price_list.append([date_str, close, close + 10, low, close, vol, close])
+        result_dict, _ = price.parse_price_text_from_list(1046, price_list)
+        # ref_price=1045: kairi10=(1045-1000.6)/1000.6≈4.4%(>4) だが
+        # kairi25=(1045-1060)/1060<0(<=4) なので検出される
+        assert len(result_dict["pocket_pivot"]) >= 1
+
 
 # ==================================================
 # get_momentum_calib (issue #104)
