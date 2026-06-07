@@ -30,6 +30,7 @@ less is more の方針でコーディングする。出典: [andrej-karpathy-ski
   - 現在の運用環境では `KS_DATA_DIR=/Users/k_sohara/Ext/GoogleDrive/shintakane_data`（`.zshrc` で設定済み）
 - テストは「書けば書くほど良い」ものではない。1 PR で追加するテストは 5本以下を目安に、parametrize で集約する。自明な動作・getter/setter 素通し・ファクトリの各フィールド個別確認は書かない。詳細は [doc/TESTING.md](doc/TESTING.md) の「テスト量・粒度の方針」を参照。
 - Playwright MCP・`screencapture` 等でスクリーンショットを保存する前に [.claude/rules/playwright.md](.claude/rules/playwright.md) を参照。
+- 開発中に同じ系統の再現可能なワンショット処理 (`python -c` や複数行 Bash) を2回以上叩いたら、CLIサブコマンド/関数への昇格を1行で提案する。承認されたら [promote-to-command](.claude/skills/promote-to-command/SKILL.md) スキルの手順 (既存CLI確認→標準形選択→既存関数再利用→COMMANDS.md追記) で実施。`calc_*` 等のスコア計算はCLI化せずテストでカバーする。
 
 ## アーキテクチャ
 
