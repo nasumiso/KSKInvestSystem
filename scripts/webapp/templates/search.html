@@ -84,16 +84,25 @@
 {% endif %}
 
 {% else %}
-{# issue #98: クエリなしトップアクセスは Google Spreadsheets リンクカードを表示 #}
-<section id="portal-spreadsheets" style="margin-top:1.5em;display:flex;flex-wrap:wrap;gap:0.6em;">
-  {% for sp in portal_spreadsheets %}
-  <article style="margin:0;padding:0.5em 0.8em;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;">
-    <h3 style="margin:0;font-size:1em;line-height:1.3;">
-      <a href="{{ sp.url }}" target="_blank" rel="noopener">{{ sp.title }}</a>
-    </h3>
-    {% if sp.updated_at != "—" %}<p style="margin:0.15em 0 0 0;font-size:0.72em;color:#888;line-height:1.2;">最終更新: {{ sp.updated_at }}</p>{% endif %}
-  </article>
-  {% endfor %}
+{# issue #98: クエリなしトップアクセスは Google Spreadsheets / GitHub リンクをひとまとまりで表示 #}
+<section id="portal-spreadsheets" style="margin-top:1.5em;padding:0.8em 1em;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;">
+  <div style="display:flex;flex-wrap:wrap;gap:0.4em 1.2em;">
+    {% for sp in portal_spreadsheets %}
+    <div style="margin:0;">
+      <h3 style="margin:0;font-size:1em;line-height:1.3;">
+        <a href="{{ sp.url }}" target="_blank" rel="noopener">{{ sp.title }}</a>
+      </h3>
+      {% if sp.updated_at != "—" %}<p style="margin:0.15em 0 0 0;font-size:0.72em;color:#888;line-height:1.2;">最終更新: {{ sp.updated_at }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if portal_links %}
+  <div style="display:flex;flex-wrap:wrap;gap:1.2em;margin-top:0.6em;padding-top:0.5em;border-top:1px solid #e1e5ea;">
+    {% for ln in portal_links %}
+    <a href="{{ ln.url }}" target="_blank" rel="noopener" style="font-size:0.9em;">{{ ln.title }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
 </section>
 {# issue #244: What's new プレースホルダー (将来的にその日の注目要素を集約予定) #}
 <section id="whats-new" style="margin-top:1em;padding:0.8em 1em;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;">
