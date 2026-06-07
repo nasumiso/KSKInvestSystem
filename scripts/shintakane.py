@@ -1658,7 +1658,7 @@ def update_fear_greed_jp():
     """日本市場版 Fear & Greed Index を計算して JSON 保存 (issue #212)。
 
     breadth (日経終値・値上がり/値下がり・新高値/安値) は daily2year.json から取得し、
-    日経VI は update_nikkei_vi が保存した nikkei_vi.json を読む (本関数は VI 更新後に呼ぶ)。
+    日経VI は VI 時系列を直接取得する。
     取得できない成分は除外して残り成分で合成する。
     キャッシュ・失敗時の扱いは他の update_* と同じ (デイリー全体は止めない)。
     """
@@ -1690,13 +1690,28 @@ def update_fear_greed_jp():
     except Exception as e:
         log_warning(f"[fear_greed_jp] 日経VI取得失敗 (VI成分を除外): {e}")
 
-    result = fear_greed_jp.compute_fear_greed_jp(breadth_history, vi_history)
+    latest_date = breadth_history[-1]["date"]
+    vi_history_for_fgjp = vi_history
+    if vi_history and latest_date:
+        vi_history_for_fgjp = [
+            v for v in vi_history if v.get("date", "") <= latest_date
+        ] or vi_history
+
+    result = fear_greed_jp.compute_fear_greed_jp(
+        breadth_history, vi_history_for_fgjp
+    )
     if result is None:
         log_warning("[fear_greed_jp] 全成分が None のためスキップ")
         return
 
+    components = result.get("components") or {}
+    for key in ("momentum", "strength", "breadth"):
+        if components.get(key) is not None:
+            components[key]["date"] = latest_date
+    if components.get("volatility") is not None and vi_history_for_fgjp:
+        components["volatility"]["date"] = vi_history_for_fgjp[-1].get("date")
+
     # history は date + score + components を 30 営業日分保持 (前日比/5日前比表示用)
-    latest_date = breadth_history[-1]["date"]
     prev_history = []
     if os.path.exists(out_path):
         try:

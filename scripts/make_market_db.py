@@ -1663,10 +1663,11 @@ def _fgjp_accordion_html(market_db):
     for key, jp, desc, fmt, url in _FGJP_COMPONENTS:
         comp = components.get(key)
         if comp is None:
-            value_html, raw_html, rating_html = "—", "", ""
+            value_html, raw_html, rating_html, date_text = "—", "", "", ""
         else:
             cscore = comp.get("score")
             craw = comp.get("raw")
+            date_text = _format_short_date(comp.get("date", ""))
             value_html = ("%.0f" % cscore) if cscore is not None else "—"
             raw_html = fmt(craw) if craw is not None else ""
             # バッジは 0-100 スコアを F&G 本体と同じ 5 段階 rating で統一表示
@@ -1689,8 +1690,9 @@ def _fgjp_accordion_html(market_db):
             '<td class="mi-value">%s</td>'
             '<td class="mi-rating">%s</td>'
             '<td class="mi-delta mi-fgjp-raw" colspan="2">%s</td>'
-            '<td class="mi-date"></td>'
-            '</tr>' % (child_label, value_html, rating_html, raw_html)
+            '<td class="mi-date">%s</td>'
+            '</tr>' % (child_label, value_html, rating_html, raw_html,
+                      html_mod.escape(date_text))
         )
     return parent + "\n" + "\n".join(children)
 

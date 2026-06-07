@@ -261,10 +261,10 @@ def test_fgjp_accordion_components_in_indicators(tmp_path, monkeypatch):
             "date": "2026-06-05",
             "score": 78.4,
             "components": {
-                "momentum": {"score": 87.0, "raw": 19.24},
-                "strength": {"score": 72.4, "raw": 39},
-                "breadth": {"score": 76.6, "raw": 856},
-                "volatility": {"score": 77.9, "raw": 21.51},
+                "momentum": {"score": 87.0, "raw": 19.24, "date": "2026-06-05"},
+                "strength": {"score": 72.4, "raw": 39, "date": "2026-06-05"},
+                "breadth": {"score": 76.6, "raw": 856, "date": "2026-06-05"},
+                "volatility": {"score": 77.9, "raw": 21.51, "date": "2026-06-04"},
             },
         }],
     }
@@ -283,12 +283,55 @@ def test_fgjp_accordion_components_in_indicators(tmp_path, monkeypatch):
     assert "21.51" in html          # 日経VI 実値
     assert "+39" in html            # 新高値-新安値 実値
     assert "+19.2%" in html         # モメンタム乖離率
+    # 成分ごとの更新日を保持・表示する
+    assert "26/6/5" in html
+    assert "26/6/4" in html
     # 各成分に 0-100 スコア基準のバッジ (score 87/72/77/78 はいずれも Greed〜Extreme Greed)
     assert "fng-rating-extreme-greed" in html   # momentum 87
     assert "fng-rating-greed" in html           # strength 72 等
     # 各成分に参照リンク (統合前の独立行のリンクを踏襲)
     assert 'href="https://nikkei225jp.com/data/vix.php"' in html
     assert 'href="https://nikkei225jp.com/data/new.php"' in html
+
+
+def test_update_fear_greed_jp_persists_component_dates(tmp_path, monkeypatch):
+    """日本版 F&G は成分ごとの更新日を保持する。"""
+    code_rank = tmp_path / "code_rank_data"
+    code_rank.mkdir(parents=True)
+    monkeypatch.setattr(shintakane, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(shintakane, "_credit_cache_is_fresh", lambda path, today: False)
+
+    breadth_history = [
+        {"date": "2026-06-04", "nikkei_close": 38000, "advances": 900, "declines": 700, "new_high": 80, "new_low": 20},
+        {"date": "2026-06-05", "nikkei_close": 38100, "advances": 920, "declines": 680, "new_high": 88, "new_low": 18},
+    ]
+    vi_history = [
+        {"date": "2026-06-03", "nikkei_vi": 23.1},
+        {"date": "2026-06-04", "nikkei_vi": 21.5},
+        {"date": "2026-06-06", "nikkei_vi": 25.0},
+    ]
+
+    with patch("market_breadth.fetch_market_breadth_daily", return_value=breadth_history), \
+            patch("market_breadth.fetch_nikkei_vi", return_value=vi_history), \
+            patch("fear_greed_jp.compute_fear_greed_jp", return_value={
+                "score": 78.4,
+                "rating": "Extreme Greed",
+                "components": {
+                    "momentum": {"score": 87.0, "raw": 19.24},
+                    "strength": {"score": 72.4, "raw": 39},
+                    "breadth": {"score": 76.6, "raw": 856},
+                    "volatility": {"score": 77.9, "raw": 21.51},
+                },
+            }):
+        shintakane.update_fear_greed_jp()
+
+    payload = json.loads((code_rank / "fear_greed_jp.json").read_text(encoding="utf-8"))
+    components = payload["latest"]["components"]
+    assert components["momentum"]["date"] == "2026-06-05"
+    assert components["strength"]["date"] == "2026-06-05"
+    assert components["breadth"]["date"] == "2026-06-05"
+    # VI は breadth 最新日以前の最終日を使う
+    assert components["volatility"]["date"] == "2026-06-04"
 
 
 def test_fgjp_absent_falls_back_to_vi_and_breadth_rows(tmp_path, monkeypatch):
