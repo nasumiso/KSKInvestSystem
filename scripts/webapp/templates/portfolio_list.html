@@ -46,9 +46,15 @@
     white-space: pre-line;
     line-height: 1.2;
   }
+  /* overflow:auto + max-height で縦スクロールコンテナを作る。
+     thead th の position:sticky (列名固定) はこのコンテナを基準に動くため、
+     overflow-y / max-height を欠かすと sticky が壊れる (commit 0bba1b4)。
+     overflow-x:auto 単独だと祖先 containing block を作り sticky を妨げるため、
+     縦横まとめて overflow:auto にする。 */
   .portfolio-table-wrap {
     width: 100%;
-    overflow-x: auto;
+    overflow: auto;
+    max-height: 80vh;
   }
   /* 削除モード時のみチェックボックス列を表示 */
   .bulk-col { display: none; }
