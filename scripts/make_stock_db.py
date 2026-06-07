@@ -1785,26 +1785,31 @@ KESSAN_WINDOW_DAYS = 14
 
 
 def _collect_trigger_dates(stock, today):
-    """stock の kessanbi / kessan_mod_date から KESSAN_WINDOW_DAYS 以内のトリガー日を返す。
+    """stock の決算実績日/修正日から KESSAN_WINDOW_DAYS 以内のトリガー日を返す。
 
-    両方が窓内の場合は新しい方のみ採用 (stocks データが最新イベント時点の値しか
-    保持しないため、古い方に書くと履歴捏造になる)。
+    - kessan_jisseki_date (決算発表実績日)、kessanbi (決算発表日/次回予定日)、
+      kessan_mod_date (決算修正日) を独立に窓判定し、窓内のものを候補にする。
+      いずれも実イベントの日付なので、複数窓内なら複数返す
+      (発表行・修正行を別スナップショットとして残すため)。
+    - kessanbi も候補に残すのは、master 更新が shintakane.update_todays_kessan より
+      先に走ると kessan_jisseki_date が前回分のまま (窓外) で kessanbi だけ今回決算日
+      (窓内) になるケースがあり、これを取りこぼさないため。未来の次回予定日は
+      days<0 で自動的に窓外になる。
+    - 同日 (発表日==予定日==修正日 等) は1件に集約。
     """
     candidates = []
-    for date_field in ("kessanbi", "kessan_mod_date"):
-        date_str = stock.get(date_field, "")
+    for field in ("kessan_jisseki_date", "kessanbi", "kessan_mod_date"):
+        date_str = stock.get(field, "")
         if not date_str:
             continue
         try:
             dt = datetime.strptime(date_str, "%Y/%m/%d").date()
-            if 0 <= (today - dt).days <= KESSAN_WINDOW_DAYS:
-                candidates.append((dt, date_str))
         except ValueError:
-            pass
-    if len(candidates) >= 2:
-        candidates.sort(reverse=True)
-        return [candidates[0][1]]
-    return [c[1] for c in candidates]
+            continue
+        if 0 <= (today - dt).days <= KESSAN_WINDOW_DAYS:
+            candidates.append(date_str)
+    # 同日 (発表日==予定日==修正日 等) を集約しつつ順序は保持
+    return list(dict.fromkeys(candidates))
 
 
 def update_research_snapshots(*, db_path=None, code_filter=None):
@@ -1889,10 +1894,13 @@ def update_research_snapshots(*, db_path=None, code_filter=None):
         for s in record.get("snapshots", []):
             existing_by_date.setdefault(s["date_yy_m"], []).append(s)
 
+        # 指標/理論株価は株価依存のため取得日 (today) をラベルにする
+        acquired_date = research_shelve.to_date_yy_m(today)
+
         for trigger_date_str in trigger_dates:
             try:
-                dt = datetime.strptime(trigger_date_str, "%Y/%m/%d")
-                date_yy_m = f"{dt.year % 100}.{dt.month}.{dt.day}"
+                dt = datetime.strptime(trigger_date_str, "%Y/%m/%d").date()
+                date_yy_m = research_shelve.to_date_yy_m(dt)
 
                 # 同日に1件でも非auto (manual/migration等) があれば、
                 # 後段の upsert_snapshot(overwrite_same_date=True) で消えてしまうため
@@ -1912,6 +1920,7 @@ def update_research_snapshots(*, db_path=None, code_filter=None):
 
                 snapshot = research_shelve.create_snapshot(
                     date_yy_m,
+                    acquired_date=acquired_date,
                     ir_quant=ir_quant,
                     quality_indicators=quality_indicators,
                     rironkabuka_kairi=rironkabuka_kairi,

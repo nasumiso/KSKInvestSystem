@@ -19,6 +19,7 @@ from research_shelve import (
     upsert_research_record,
     create_research_record,
     create_snapshot,
+    to_date_yy_m,
     list_research_records,
     sort_shikiho_comments_desc,
     validate_code_s,
@@ -133,6 +134,32 @@ def get_stock_data(code_s: str) -> Dict[str, Any]:
         return db.get(normalized) or {}
 
 
+def _latest_kessan_date_yy_m(stock: Dict[str, Any]) -> str:
+    """stock の直近決算イベント日 (実績日/修正日のうち新しい方) を "YY.M.D" で返す。
+
+    kessan_jisseki_date (発表実績日) と kessan_mod_date (修正日) を比較し、
+    新しい方を採用する。どちらも無い/不正なら空文字を返す。
+    新規追加は手動操作で「今の業績」を撮る用途のため、kessanbi (次回予定日に
+    上書きされ得る) は使わず、実績日が無ければ呼び出し側が取得日にフォール
+    バックする。決算ウィンドウ判定を行う B経路 (_collect_trigger_dates) とは
+    別の用途・別ロジック。
+    """
+    latest = None
+    for date_field in ("kessan_jisseki_date", "kessan_mod_date"):
+        date_str = stock.get(date_field, "")
+        if not date_str:
+            continue
+        try:
+            dt = datetime.strptime(date_str, "%Y/%m/%d").date()
+        except ValueError:
+            continue
+        if latest is None or dt > latest:
+            latest = dt
+    if latest is None:
+        return ""
+    return to_date_yy_m(latest)
+
+
 def add_stock(code_s: str) -> str:
     """銘柄を research_shelve に追加する。
 
@@ -167,10 +194,15 @@ def add_stock(code_s: str) -> str:
         ir_quant = growth_expr + progress_expr
 
         today = get_price_day(datetime.today())
-        date_yy_m = f"{today.year % 100}.{today.month}.{today.day}"
+        acquired_date = to_date_yy_m(today)
+
+        # 業績 date_yy_m は直近の決算イベント日 (実績日/修正日のうち新しい方)。
+        # 取得できなければ取得日にフォールバック (dedup キーが必要なため)。
+        date_yy_m = _latest_kessan_date_yy_m(stock) or acquired_date
 
         snapshot = create_snapshot(
             date_yy_m,
+            acquired_date=acquired_date,
             ir_quant=ir_quant,
             quality_indicators=shihyou.get_shihyo_expr(stock),
             rironkabuka_kairi=rironkabuka.get_rironkabuka_expr(stock),
@@ -1708,6 +1740,26 @@ def _bulk_resolve_stock_name_prevs(code_list: List[str]) -> Dict[str, Optional[s
     return result
 
 
+def _bulk_resolve_overall_ratings(code_list: List[str]) -> Dict[str, str]:
+    """複数 code_s 分の総合評価 (research_shelve.overall_rating) をバルク取得する。"""
+    from db_shelve import RESEARCH_SHELVE  # 遅延 import (循環回避)
+
+    result: Dict[str, str] = {c: "" for c in code_list if c}
+    if not result:
+        return result
+
+    valid_nonempty = VALID_RATINGS - {""}
+    with ShelveDB(RESEARCH_SHELVE) as db:
+        for c in list(result.keys()):
+            rec = db.get(normalize_code_s(c))
+            if not rec:
+                continue
+            rating = rec.get("overall_rating") or ""
+            if rating in valid_nonempty:
+                result[c] = rating
+    return result
+
+
 # issue #178: status 内部値 → URL クエリ / 表示ラベルの対応表 (helpers 内部利用のみ)。
 # routes/portfolio.py の同名定数とは独立に保持し、循環 import を避ける。
 _PORTFOLIO_STATUS_QUERY = {
@@ -1764,6 +1816,7 @@ def list_portfolio_with_indicators(
     stock_map = _bulk_get_stock_data(code_list)
     name_map = _bulk_resolve_stock_names(code_list)
     name_prev_map = _bulk_resolve_stock_name_prevs(code_list)  # issue #183
+    rating_map = _bulk_resolve_overall_ratings(code_list)  # issue #199
     today = date.today()  # 全 row 共通の基準日 (issue #177)
 
     # issue #227: 株価 + RSライン 統合チャート用に market_db を1回だけロード。
@@ -1780,6 +1833,7 @@ def list_portfolio_with_indicators(
         row = dict(rec)
         row["stock_name"] = name_map.get(code_s, "") or rec.get("stock_name", "")  # 旧データ互換
         row["stock_name_prev"] = name_prev_map.get(code_s)  # issue #183
+        row["overall_rating"] = rating_map.get(code_s, "")  # issue #199
         stock = stock_map.get(code_s, {})
         row.update(_extract_indicators_for_portfolio(stock))
         # issue #227: 3点ミニチャート (svg + tooltip)

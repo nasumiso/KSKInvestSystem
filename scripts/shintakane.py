@@ -1492,6 +1492,9 @@ def update_todays_kessan():
             if kessanbi and kessanbi != announce_date:
                 stocks[code_s]["kessanbi"] = announce_date
                 log_print("決算発表日更新", code_s, announce_date)
+            # kessanbi は次回予定日に上書きされ得るため、直近決算実績日は
+            # 別フィールドで確実に保持する (スナップショットの決算日ラベルに使う)
+            stocks[code_s]["kessan_jisseki_date"] = announce_date
             stocks[code_s]["kessan_announce"] = "発表," + item[2] + "," + item[3]
         except KeyError:
             log_print(code_s, "はDBにありません")

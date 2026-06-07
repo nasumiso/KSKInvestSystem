@@ -112,7 +112,7 @@ stocks_shelve（日次更新の揮発性キャッシュ）とは別に、銘柄�
 
 - **識別・評価**: 銘柄名、旧銘柄名（`stock_name_prev`, issue #183）、総合評価（S〜E）、企業概要、機関投資家コメント
 - **手動メモ**: OpenWork、ジムクレイマー、四季報コメント、メモ・総括
-- **スナップショット** (list): 決算タイミングごとの IR定量データ・クォリティ指標・理論株価乖離（`date_yy_m` 降順）
+- **スナップショット** (list): 決算タイミングごとの IR定量データ・クォリティ指標・理論株価乖離（`date_yy_m` 降順）。日付は2軸で保持する: 業績(IR定量)は株価非依存なので `date_yy_m`=**決算日/修正日**、株価依存の指標・理論株価乖離は `acquired_date`=**取得日**。WebApp の業績テーブルは `date_yy_m`、指標テーブルは `acquired_date` を表示
 
 ### 銘柄名変更の追従（issue #183）
 
@@ -127,9 +127,14 @@ stocks_shelve（日次更新の揮発性キャッシュ）とは別に、銘柄�
 
 `make_stock_db.py` の `update_research_snapshots()` が `list_all_db()` 末尾で実行:
 
-- research_shelve管理銘柄のうち、決算発表日/修正通知日から14日以内（`KESSAN_WINDOW_DAYS`）の銘柄が対象
+- research_shelve管理銘柄のうち、決算イベント日から14日以内（`KESSAN_WINDOW_DAYS`）の銘柄が対象。トリガー日は `kessan_jisseki_date`（決算発表実績日）・`kessanbi`（発表日/次回予定日）・`kessan_mod_date`（決算修正日）を**独立に窓判定**し、窓内のものを全て採用（`_collect_trigger_dates`）。未来の次回予定日は自動的に窓外
+- 決算発表と業績修正は**別イベント**として別スナップショット行に記録する（発表行・修正行を `date_yy_m` で分けて残す）。同日のトリガーは1件に集約
+- 業績(IR定量)の `date_yy_m` は決算イベント日、株価依存の指標・理論株価乖離の `acquired_date` は取得日（本日）を付与
 - `gyoseki`・`shihyou`・`rironkabuka` から自動抽出、`data_source: "auto"` で記録
-- 同一 `date_yy_m` のスナップショットは冪等上書き
+- 同一 `date_yy_m` の auto 行は冪等上書き（指標・`acquired_date` を更新）。manual/migration 行は保護され不変
+- 直近決算実績日 `kessan_jisseki_date` は `shintakane.py` の決算発表パース時に保存（`kessanbi` は次回予定日に上書きされ実績日が残らないため別フィールドで保持）
+
+> 新規監視追加（WebApp `add_stock`）も同じ日付ルール（業績=直近決算イベント日、指標=取得日）でスナップショットを1件作る。
 
 ### モジュール構成
 
