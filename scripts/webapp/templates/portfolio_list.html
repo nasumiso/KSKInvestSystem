@@ -397,7 +397,8 @@
             <form action="/portfolio/{{ row.code_s }}/memo" method="POST"
                   style="display:grid;grid-template-columns:1fr 1fr;gap:0.6em 1em;margin:0.3em 0 0 0;font-size:0.95em;">
               <input type="hidden" name="return_query" value="{{ return_query }}">
-              {# 業態・テーマ / 更新日 / ステージ は表内 inline 編集に移動 (issue #177) #}
+              {# 業態・テーマ / 更新日 / ステージ は表内 inline 編集に移動 (issue #177)。
+                 需給チャート (チャートパターン列) も表内 inline 編集に移動 (issue #314) #}
               {% for field, label in [
                   ("watch_in_reason", "IN 理由"),
                   ("inago_origin", "イナゴ元"),
