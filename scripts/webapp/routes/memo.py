@@ -35,8 +35,13 @@ memo_bp = Blueprint("memo", __name__)
 # 業態テーマ提案 (issue #297) の同時実行ガード。
 # 単一プロセス運用 (app.run) 前提のプロセス内ロック。多重押下・並行リクエストで
 # claude -p が同時に複数走りワーカースレッドが枯渇するのを防ぐ。
+# リクエストはロックが空くまでタイムアウト付きで待機し、順番に直列実行する。
+# 待ち行列が異常に長い (大量同時押下) 場合のみタイムアウトで 429 を返す。
 # ※ 将来マルチプロセス運用 (gunicorn 等) に切り替える場合は file lock 等に置換が必要。
 _suggest_themes_lock = threading.Lock()
+# 提案ロックの待機タイムアウト (秒)。claude -p (Haiku) 1回が数秒〜十数秒のため、
+# 現実的な同時押下 (2〜3件) なら 60 秒で吸収できる。
+SUGGEST_THEMES_LOCK_TIMEOUT_SEC = 60
 
 
 @memo_bp.route("/stock/<code_s>/memo", methods=["POST"])
@@ -173,9 +178,13 @@ def post_suggest_themes(code_s: str):
     サーバー側でもボタン表示条件 (テーマ未設定・事業テキストあり) を再検証し、
     直接 API を叩いても設定済み銘柄では LLM を起動しない (コスト暴発防止)。
     """
-    # 同時実行ガード: 既に提案処理中なら 429 を返す (二重起動防止)。
-    if not _suggest_themes_lock.acquire(blocking=False):
-        return jsonify({"ok": False, "error": "他の提案処理を実行中です"}), 429
+    # 同時実行ガード: 既に提案処理中ならロックが空くまで待機し、順番に直列実行する。
+    # 待ちきれない (待ち行列が長すぎる) 場合のみ 429 を返す。
+    if not _suggest_themes_lock.acquire(timeout=SUGGEST_THEMES_LOCK_TIMEOUT_SEC):
+        return jsonify({
+            "ok": False,
+            "error": "提案処理が混み合っています。時間をおいて再試行してください",
+        }), 429
     try:
         record = get_research_detail(code_s)
         stock = get_stock_data(code_s)
