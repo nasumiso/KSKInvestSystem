@@ -1538,6 +1538,24 @@ def _credit_cache_is_fresh(out_path, today):
     return gen_date == today
 
 
+def _saved_latest_date(out_path):
+    """保存済み JSON の latest.date ("YYYY-MM-DD") を返す。無い/壊れていれば None。
+
+    日次データ (新高安・VI・F&G) で「データ元から取得した最新日付の方が新しいか」を
+    判定するために使う。get_price_day は営業日補正をしないため today 基準では
+    土日祝に毎回再取得に落ちる。代わりに取得結果と保存済みを直接突き合わせる。
+    """
+    if not os.path.exists(out_path):
+        return None
+    try:
+        with open(out_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        d = (payload.get("latest") or {}).get("date")
+    except (OSError, ValueError, KeyError, AttributeError):
+        return None
+    return d or None
+
+
 def update_credit_balance():
     """信用評価損益率 (2市場) を nikkei225jp.com から取得して JSON 保存 (issue #211)。
 
@@ -1586,10 +1604,6 @@ def update_new_high_low():
     import market_breadth
 
     out_path = os.path.join(DATA_DIR, "code_rank_data", "new_high_low.json")
-    today = get_price_day(datetime.today())
-    if _credit_cache_is_fresh(out_path, today):
-        log_print(f"---- 新高値新安値 キャッシュ有効のためスキップ (generated_at={today.isoformat()})")
-        return
 
     log_print("----> 新高値新安値 更新")
     try:
@@ -1599,6 +1613,11 @@ def update_new_high_low():
         return
     if not rows:
         log_warning("[new_high_low] 取得結果が空")
+        return
+    fetched_latest = rows[-1]["date"]
+    saved_latest = _saved_latest_date(out_path)
+    if saved_latest is not None and saved_latest > fetched_latest:
+        log_print(f"---- 新高値新安値 保存済みが新しいためスキップ (saved={saved_latest} fetched={fetched_latest})")
         return
     history = rows[-30:]
     payload = {
@@ -1624,10 +1643,6 @@ def update_nikkei_vi():
     import market_breadth
 
     out_path = os.path.join(DATA_DIR, "code_rank_data", "nikkei_vi.json")
-    today = get_price_day(datetime.today())
-    if _credit_cache_is_fresh(out_path, today):
-        log_print(f"---- 日経VI キャッシュ有効のためスキップ (generated_at={today.isoformat()})")
-        return
 
     log_print("----> 日経VI 更新")
     try:
@@ -1637,6 +1652,11 @@ def update_nikkei_vi():
         return
     if not rows:
         log_warning("[nikkei_vi] 取得結果が空")
+        return
+    fetched_latest = rows[-1]["date"]
+    saved_latest = _saved_latest_date(out_path)
+    if saved_latest is not None and saved_latest > fetched_latest:
+        log_print(f"---- 日経VI 保存済みが新しいためスキップ (saved={saved_latest} fetched={fetched_latest})")
         return
     history = rows[-30:]
     payload = {
@@ -1666,10 +1686,6 @@ def update_fear_greed_jp():
     import fear_greed_jp
 
     out_path = os.path.join(DATA_DIR, "code_rank_data", "fear_greed_jp.json")
-    today = get_price_day(datetime.today())
-    if _credit_cache_is_fresh(out_path, today):
-        log_print(f"---- 日本版Fear&Greed キャッシュ有効のためスキップ (generated_at={today.isoformat()})")
-        return
 
     log_print("----> 日本版Fear&Greed 更新")
     try:
@@ -1691,6 +1707,10 @@ def update_fear_greed_jp():
         log_warning(f"[fear_greed_jp] 日経VI取得失敗 (VI成分を除外): {e}")
 
     latest_date = breadth_history[-1]["date"]
+    saved_latest = _saved_latest_date(out_path)
+    if saved_latest is not None and saved_latest > latest_date:
+        log_print(f"---- 日本版Fear&Greed 保存済みが新しいためスキップ (saved={saved_latest} fetched={latest_date})")
+        return
     vi_history_for_fgjp = vi_history
     if vi_history and latest_date:
         vi_history_for_fgjp = [

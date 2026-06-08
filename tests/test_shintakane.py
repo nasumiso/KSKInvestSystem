@@ -696,3 +696,26 @@ class TestGetTodaysPts:
         assert len(use_cache_calls) == 3
         for url, use_cache in use_cache_calls:
             assert use_cache is False, f"force=True なのに use_cache=True: {url}"
+
+
+# ==================================================
+# _saved_latest_date (日次データのキャッシュ判定)
+# ==================================================
+
+class Test_saved_latest_date:
+    """保存済み JSON の latest.date を読む共通ヘルパー。"""
+
+    @pytest.mark.parametrize("content,expected", [
+        ('{"latest": {"date": "2026-06-08", "new_high": 22}}', "2026-06-08"),  # 正常
+        ('{"latest": {}}', None),          # latest はあるが date 無し
+        ('{"history": []}', None),         # latest キー無し
+        ('{"latest": null}', None),        # latest が null
+        ('not a json {{{', None),          # 壊れた JSON
+    ])
+    def test_各種JSONからlatest日付を取り出す(self, tmp_path, content, expected):
+        p = tmp_path / "daily.json"
+        p.write_text(content, encoding="utf-8")
+        assert shintakane._saved_latest_date(str(p)) == expected
+
+    def test_ファイル無しはNone(self, tmp_path):
+        assert shintakane._saved_latest_date(str(tmp_path / "missing.json")) is None
