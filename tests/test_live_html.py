@@ -207,7 +207,7 @@ class TestLiveHtmlCreditBalance:
 class TestLiveHtmlNikkei225jp:
     """market_breadth.py — nikkei225jp.com 日経VI / 新高値新安値 取得→パース (issue #292)
 
-    JSON ファイル名 (SL621_1990.json / daily2year.json) や列構成が変わると失敗する。
+    JSON ファイル名 (SL161_1990.json / daily2year.json) や列構成が変わると失敗する。
     """
 
     def test_日経VIの抽出(self):

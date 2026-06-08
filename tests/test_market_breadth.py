@@ -211,6 +211,26 @@ def test_fetch_new_high_low_skips_unconfirmed_row():
     assert out == [{"date": "2026-04-24", "new_high": 88, "new_low": 131}]
 
 
+def test_fetch_nikkei_vi_reads_s161_series():
+    """日経VI は S621(VIX) ではなく S161 系列を読む。"""
+    text = (
+        "var S161 = [\n"
+        "[%d,28.37],\n"
+        "[%d,27.28]\n"
+        "];\n"
+        "var S621 = [\n"
+        "[%d,21.51],\n"
+        "[%d,15.40]\n"
+        "];" % (TS_0424, TS_0501, TS_0424, TS_0501)
+    )
+    with patch("market_breadth._fetch_nikkei_json", return_value=text):
+        out = market_breadth.fetch_nikkei_vi()
+    assert out == [
+        {"date": "2026-04-24", "nikkei_vi": 28.37},
+        {"date": "2026-05-01", "nikkei_vi": 27.28},
+    ]
+
+
 @pytest.mark.parametrize("vi, expected", [
     (16.77, "安穏"),
     (24.0, "警戒"),
@@ -279,7 +299,7 @@ def test_fgjp_accordion_components_in_indicators(tmp_path, monkeypatch):
     assert "mi-fgjp-parent" in html and "mi-fgjp-child" in html
     # 成分の展開行: 各成分名 + 0-100スコア + 元データ実値
     assert "モメンタム" in html and "新高値強さ" in html
-    assert "騰落ブレッドス" in html and "ボラティリティ" in html
+    assert "騰落ブレッドス" in html and "日経VI" in html
     assert "21.51" in html          # 日経VI 実値
     assert "+39" in html            # 新高値-新安値 実値
     assert "+19.2%" in html         # モメンタム乖離率

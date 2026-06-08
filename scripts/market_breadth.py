@@ -22,7 +22,7 @@ CREDIT_BALANCE_REFERER = "https://nikkei225jp.com/data/sinyou.php"
 NEW_HIGH_LOW_URL = "https://nikkei225jp.com/_data/_nfsWEB/DAY/daily2year.json"
 NEW_HIGH_LOW_REFERER = "https://nikkei225jp.com/data/new.php"
 
-NIKKEI_VI_URL = "https://nikkei225jp.com/_data/_nfsWEB/HS_DATA_DAY/SL621_1990.json"
+NIKKEI_VI_URL = "https://nikkei225jp.com/_data/_nfsWEB/HS_DATA_DAY/SL161_1990.json"
 NIKKEI_VI_REFERER = "https://nikkei225jp.com/data/vix.php"
 
 
@@ -169,16 +169,16 @@ def fetch_market_breadth_daily():
 
 
 def fetch_nikkei_vi():
-    """SL621_1990.json から 日経VI (恐怖指数) の時系列を返す。
+    """SL161_1990.json から 日経VI (恐怖指数) の時系列を返す。
 
-    出典: nikkei225jp.com 経由 (vix.php の var S621)。
+    出典: nikkei225jp.com 経由 (vix.php の var S161)。
           [0]=unix timestamp(ms), [1]=日経VI (2026-05 時点で確認)。
 
     Returns:
         list of dict: [{date, nikkei_vi}, ...] 日付昇順。値が数値でない行はスキップ。
     """
     text = _fetch_nikkei_json(NIKKEI_VI_URL, NIKKEI_VI_REFERER)
-    rows = _parse_js_rows(text, "S621")
+    rows = _parse_js_rows(text, "S161")
     out = []
     for r in rows:
         if len(r) < 2 or not isinstance(r[0], (int, float)) \

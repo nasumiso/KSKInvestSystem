@@ -1603,7 +1603,7 @@ _FGJP_COMPONENTS = [
      _fmt_signed_int, "https://nikkei225jp.com/data/new.php"),
     ("breadth", "騰落ブレッドス", "東証プライム 値上がり - 値下がり銘柄数。高いほど Greed。",
      _fmt_signed_int, "https://nikkei225jp.com/data/touraku.php"),
-    ("volatility", "ボラティリティ", "日経VI (恐怖指数)。高いほど Fear なので反転してスコア化。",
+    ("volatility", "日経VI", "日経VI (恐怖指数)。高いほど Fear なので反転してスコア化。",
      _fmt_vi, "https://nikkei225jp.com/data/vix.php"),
 ]
 
