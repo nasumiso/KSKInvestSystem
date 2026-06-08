@@ -33,6 +33,10 @@ PORTAL_SPREADSHEETS = (
         "title": "投資メモ",
         "url": "https://docs.google.com/document/d/1_O8GdD7SwA6mCMJR5SC362oX1UouJCGworj9z1rZ2I4/edit?usp=sharing",
     },
+    {
+        "title": "PTS",
+        "url": "https://kabutan.jp/warning/pts_night_price_increase",
+    },
 )
 
 # GitHub の PR / issue 一覧へのリンク (最終更新は持たない)
