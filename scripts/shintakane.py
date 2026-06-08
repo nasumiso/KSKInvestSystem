@@ -1541,9 +1541,9 @@ def _credit_cache_is_fresh(out_path, today):
 def _saved_latest_date(out_path):
     """保存済み JSON の latest.date ("YYYY-MM-DD") を返す。無い/壊れていれば None。
 
-    日次データ (新高安・VI・F&G) で「データ元から取得した最新日付の方が新しいか」を
-    判定するために使う。get_price_day は営業日補正をしないため today 基準では
-    土日祝に毎回再取得に落ちる。代わりに取得結果と保存済みを直接突き合わせる。
+    日次データ (新高安・VI・F&G) で「保存済みが最新営業日に追いついているか」を
+    判定するために使う。取得前スキップ (_recent_weekday との比較) と
+    取得後の巻き戻し防止ガードの両方で参照する。
     """
     if not os.path.exists(out_path):
         return None
@@ -1554,6 +1554,21 @@ def _saved_latest_date(out_path):
     except (OSError, ValueError, KeyError, AttributeError):
         return None
     return d or None
+
+
+def _recent_weekday(now):
+    """now (datetime) から見た直近の平日を "YYYY-MM-DD" で返す。
+
+    土日は直前の金曜まで遡る。祝日は判定しない (カレンダー不要)。
+    日次データの取得前スキップで「保存済みが最新営業日に追いついているか」を
+    祝日カレンダー無しで近似判定するために使う。get_price_day は曜日補正を
+    しないため today 基準では土日に毎回再取得へ落ちる、その回避。
+    """
+    d = now.date()
+    wd = d.weekday()  # 月=0 .. 日=6
+    if wd >= 5:  # 土(5)/日(6) は直前の金曜へ
+        d -= timedelta(days=wd - 4)
+    return d.isoformat()
 
 
 def update_credit_balance():
@@ -1605,6 +1620,11 @@ def update_new_high_low():
 
     out_path = os.path.join(DATA_DIR, "code_rank_data", "new_high_low.json")
 
+    saved_latest = _saved_latest_date(out_path)
+    if saved_latest is not None and saved_latest >= _recent_weekday(datetime.now()):
+        log_print(f"---- 新高値新安値 最新営業日を保持済みのためスキップ (saved={saved_latest})")
+        return
+
     log_print("----> 新高値新安値 更新")
     try:
         rows = market_breadth.fetch_new_high_low()
@@ -1615,7 +1635,6 @@ def update_new_high_low():
         log_warning("[new_high_low] 取得結果が空")
         return
     fetched_latest = rows[-1]["date"]
-    saved_latest = _saved_latest_date(out_path)
     if saved_latest is not None and saved_latest > fetched_latest:
         log_print(f"---- 新高値新安値 保存済みが新しいためスキップ (saved={saved_latest} fetched={fetched_latest})")
         return
@@ -1644,6 +1663,11 @@ def update_nikkei_vi():
 
     out_path = os.path.join(DATA_DIR, "code_rank_data", "nikkei_vi.json")
 
+    saved_latest = _saved_latest_date(out_path)
+    if saved_latest is not None and saved_latest >= _recent_weekday(datetime.now()):
+        log_print(f"---- 日経VI 最新営業日を保持済みのためスキップ (saved={saved_latest})")
+        return
+
     log_print("----> 日経VI 更新")
     try:
         rows = market_breadth.fetch_nikkei_vi()
@@ -1654,7 +1678,6 @@ def update_nikkei_vi():
         log_warning("[nikkei_vi] 取得結果が空")
         return
     fetched_latest = rows[-1]["date"]
-    saved_latest = _saved_latest_date(out_path)
     if saved_latest is not None and saved_latest > fetched_latest:
         log_print(f"---- 日経VI 保存済みが新しいためスキップ (saved={saved_latest} fetched={fetched_latest})")
         return
@@ -1687,6 +1710,11 @@ def update_fear_greed_jp():
 
     out_path = os.path.join(DATA_DIR, "code_rank_data", "fear_greed_jp.json")
 
+    saved_latest = _saved_latest_date(out_path)
+    if saved_latest is not None and saved_latest >= _recent_weekday(datetime.now()):
+        log_print(f"---- 日本版Fear&Greed 最新営業日を保持済みのためスキップ (saved={saved_latest})")
+        return
+
     log_print("----> 日本版Fear&Greed 更新")
     try:
         breadth_history = market_breadth.fetch_market_breadth_daily()
@@ -1707,7 +1735,6 @@ def update_fear_greed_jp():
         log_warning(f"[fear_greed_jp] 日経VI取得失敗 (VI成分を除外): {e}")
 
     latest_date = breadth_history[-1]["date"]
-    saved_latest = _saved_latest_date(out_path)
     if saved_latest is not None and saved_latest > latest_date:
         log_print(f"---- 日本版Fear&Greed 保存済みが新しいためスキップ (saved={saved_latest} fetched={latest_date})")
         return

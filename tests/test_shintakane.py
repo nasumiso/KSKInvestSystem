@@ -1,5 +1,7 @@
 """shintakane.py のHTMLパース関数テスト"""
 
+from datetime import datetime
+
 import pytest
 
 import shintakane
@@ -719,3 +721,17 @@ class Test_saved_latest_date:
 
     def test_ファイル無しはNone(self, tmp_path):
         assert shintakane._saved_latest_date(str(tmp_path / "missing.json")) is None
+
+
+class Test_recent_weekday:
+    """now から見た直近平日 (土日は前金曜まで遡る) を返すヘルパー。"""
+
+    @pytest.mark.parametrize("dt,expected", [
+        (datetime(2026, 6, 11, 12), "2026-06-11"),  # 木 → 当日
+        (datetime(2026, 6, 12, 12), "2026-06-12"),  # 金 → 当日
+        (datetime(2026, 6, 13, 12), "2026-06-12"),  # 土 → 前日金
+        (datetime(2026, 6, 14, 12), "2026-06-12"),  # 日 → 前々日金
+        (datetime(2026, 6, 8, 12), "2026-06-08"),   # 月 → 当日
+    ])
+    def test_曜日ごとの直近平日(self, dt, expected):
+        assert shintakane._recent_weekday(dt) == expected
