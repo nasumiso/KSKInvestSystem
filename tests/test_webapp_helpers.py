@@ -2453,7 +2453,8 @@ class TestPriceRsSparkline:
 
     @pytest.mark.parametrize("case_id,has_new_daily_stock,has_new_daily_topix,empty_weekly,topix_weekly_leads,expect_provisional,expect_empty_svg", [
         ("a_caseA_provisional", True, True, False, False, True, False),
-        ("b_topix_daily_stale", True, False, False, False, False, False),
+        # TOPIX 日足が週足末尾と同 ISO 週でも、銘柄日足が新しければ最新化する (>= 緩和)
+        ("b_topix_daily_same_week", True, False, False, False, True, False),
         ("c_both_daily_same_week", False, False, False, False, False, False),
         ("d_caseC_no_weekly", True, True, True, False, False, True),
         # TOPIX 週足が当日分まで進んでいる非対称ケース。銘柄週足を基準に provisional を許可
@@ -2463,8 +2464,10 @@ class TestPriceRsSparkline:
         self, case_id, has_new_daily_stock, has_new_daily_topix, empty_weekly,
         topix_weekly_leads, expect_provisional, expect_empty_svg,
     ):
-        """build_stock_chart_payload の mode='full': 仮終値追加は銘柄週足基準で判定。
+        """build_stock_chart_payload の mode='full': 仮終値の最新化は銘柄週足基準で判定。
 
+        日足 ISO 週が銘柄週足の最新 ISO 週「以上」なら最新化する (>= 緩和)。TOPIX 日足が
+        週足末尾と同 ISO 週でも銘柄日足が新しければ最新化する (b_topix_daily_same_week)。
         Case C (銘柄週足空) は空 SVG を返す (build_price_rs_chart_full の 2 点未満
         早期 return 仕様と整合、初回更新サイクル後に Case A/B 経路で自動復帰)。
         TOPIX 週足が当日分を含む非対称ケース (e_topix_weekly_leads) でも、
@@ -2949,3 +2952,79 @@ class TestBuildPortfolioThemeSummary:
 
         out = helpers.build_portfolio_theme_summary(records=records, sort_key=sort_key)
         assert out[0]["theme"] == expected_first
+
+
+# ==================================================
+# issue #253: signal セル tooltip/背景色・チャートマーカー
+# ==================================================
+class TestSignalDisplay:
+    """_build_signal_display の強度/色・_resolve_signal_markers の週マップ"""
+
+    def _mmdd_days_ago(self, n):
+        from datetime import date, timedelta
+        return (date.today() - timedelta(days=n)).strftime("%m/%d")
+
+    @pytest.mark.parametrize(
+        "kind, num, days_ago, expect_word, alpha_high",
+        [
+            ("ブ", 200, 0, "強", True),    # per>=200 強・直近 → 濃い
+            ("ブ", 199, 0, "中", False),   # per=199 中 → 強より薄い
+            ("ポ", 0, 1, "強", True),      # MA10乖離0 強・直近
+            ("ポ", -5, 6, "弱", False),    # 乖離-5 弱・古い → 薄い
+        ],
+    )
+    def test_strength_and_alpha(self, kind, num, days_ago,
+                                expect_word, alpha_high):
+        mmdd = self._mmdd_days_ago(days_ago)
+        key = "pocket_pivot" if kind == "ポ" else "breakout"
+        stock = {key: ["%s,%d" % (mmdd, num)], "trend_template": []}
+        disp = helpers._build_signal_display(stock)
+        assert expect_word in disp["tooltip"]
+        # alpha を style 文字列から抽出 (rgba(...,A))
+        import re
+        m = re.search(r"rgba\(234,67,53,([0-9.]+)\)", disp["style"])
+        assert m is not None
+        alpha = float(m.group(1))
+        assert (alpha >= 0.8) is alpha_high
+
+    def test_resolve_markers_x_interp_and_drop(self):
+        """発生日を週バー間で日割り按分 (同週内の日付差がXに出る)・窓外はdrop"""
+        from datetime import date, timedelta
+        today = date.today()
+        # 週足バー日付 (昇順): 直近4週 (各週の代表日として週初の月曜)
+        monday = today - timedelta(days=today.weekday())  # 今週月曜
+        window_dates = [monday - timedelta(weeks=k) for k in (3, 2, 1, 0)]
+        xs = [10.0, 20.0, 30.0, 40.0]
+        # ポ: 先週の半ば (バー間の按分で xs[2]=30 と xs[3]=40 の中間付近)
+        po_day = (monday - timedelta(days=3)).strftime("%m/%d")  # 先週金曜
+        # ブ: 窓より古い (5週前) → drop
+        old_day = (monday - timedelta(weeks=5)).strftime("%m/%d")
+        markers = helpers._resolve_signal_markers(
+            ["%s,0" % po_day], ["%s,180" % old_day], window_dates, xs)
+        kinds = {m["kind"]: m for m in markers}
+        assert "ポ" in kinds
+        # 先週金曜は xs[2](先週月)と xs[3](今週月)の間 → 週バーにスナップせず按分
+        assert 30.0 < kinds["ポ"]["x"] < 40.0
+        assert "ブ" not in kinds  # 窓外drop
+
+    def test_chart_markers_render_and_size(self):
+        """build_price_rs_chart_full: ポ三角/ブダイヤが線より後 (前面) に描画・強度でサイズ可変"""
+        from datetime import date, timedelta
+        base = date.today()
+        price_log = [(base - timedelta(weeks=i), 1000 + i) for i in range(20)]
+        mmdd = base.strftime("%m/%d")
+        svg, _ = helpers.build_price_rs_chart_full(
+            price_log, [], False,
+            pocket_pivot=["%s,0" % mmdd], breakout=["%s,180" % mmdd])
+        assert "#2e7d32" in svg and "#f57c00" in svg  # ポ緑・ブ橙
+        # マーカー (polygon) は polyline 群より後 = 最前面
+        assert svg.rindex("polygon") > svg.rindex("polyline")
+        # ポの強度でサイズが変わる: 強(乖離0, size6) vs 弱(乖離-5, size3)
+        svg_strong, _ = helpers.build_price_rs_chart_full(
+            price_log, [], False, pocket_pivot=["%s,0" % mmdd])
+        svg_weak, _ = helpers.build_price_rs_chart_full(
+            price_log, [], False, pocket_pivot=["%s,-5" % mmdd])
+        assert svg_strong != svg_weak  # サイズ差で polygon 座標が変わる
+        # markers なしなら polygon は出ない (後方互換)
+        svg2, _ = helpers.build_price_rs_chart_full(price_log, [], False)
+        assert "#f57c00" not in svg2

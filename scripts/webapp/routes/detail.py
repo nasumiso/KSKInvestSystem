@@ -129,6 +129,13 @@ def stock_detail(code_s: str):
     except Exception:  # noqa: BLE001
         current_research = None
 
+    # issue #253: シグナルセルの tooltip + 背景色
+    from webapp.helpers import _build_signal_display  # 遅延 import
+    try:
+        signal_display = _build_signal_display(stock)
+    except Exception:  # noqa: BLE001
+        signal_display = {"tooltip": "", "style": ""}
+
     return render_template(
         "detail.html",
         record=record,
@@ -146,6 +153,7 @@ def stock_detail(code_s: str):
         theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
         current_research=current_research,
+        signal_display=signal_display,
         gyoutai_themes_unset=gyoutai_themes_unset,
         has_business_text=has_business_text,
     )

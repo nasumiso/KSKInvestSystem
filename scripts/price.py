@@ -1673,8 +1673,13 @@ def parse_price_text_from_list(price_current, price_list):
             continue
         kairi = round(100 * float(ref_price - ma10) / ma10, 1)
         vol = price_list[ind][5]
+        # ストップ高張り付き対応 (issue #253): 値幅制限上限張り付き時は買いが
+        # 集中しても約定せず出来高が逆に減るため、出来高基準だけでは検知できない。
+        # 前日比 +20% 以上 (値幅制限上限相当) なら出来高条件をスキップして検知する。
+        prev_close = price_list[ind + 1][6]
+        chg_rate = (price_list[ind][6] - prev_close) / prev_close if prev_close else 0.0
         # print "AVG:", ind, avg_vol, avg_count, vol, kairi
-        if vol >= 1.5 * avg_vol and kairi <= 5:
+        if (vol >= 1.5 * avg_vol or chg_rate >= 0.20) and kairi <= 5:
             # TODO: ボラティリティ的なブレイクアウトを見たほうが良いが、
             # ややめんどうなのでまずはma乖離で ローソク足ボラティリティを使えば良い
             if price_list[ind][6] > price_list[ind + 1][6]:
@@ -1683,7 +1688,9 @@ def parse_price_text_from_list(price_current, price_list):
                     day = dt.strftime("%m/%d")
                 else:
                     day = price_list[ind][0]
-                per = 100 * vol / avg_vol - 100
+                # ストップ高張り付き時は出来高が減り per が負になりうるため 0 床。
+                # 保存値は常に非負で強度バケット (issue #253 webapp) が単調に振る舞う。
+                per = max(100 * vol / avg_vol - 100, 0)
                 log_debug("ブレイク:%s,%d" % (day, per))
                 breaks.append("%s,%d" % (day, per))
     price["breakout"] = breaks
