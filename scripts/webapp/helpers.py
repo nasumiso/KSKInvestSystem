@@ -2534,40 +2534,41 @@ def _svg_diamond(cx: float, cy: float, size: float, color: str,
             % (pts, color, opacity, t))
 
 
-def _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs, price_ys):
+def _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs):
     """ポ/ブシグナルを週足チャートの表示窓にマップした marker spec を返す (issue #253)。
+
+    X は発生日を週バー間で線形補間する (週足だが発生日は日単位のため、週の幅を
+    日割りで按分)。窓外 (最古バーより古い) は drop。
 
     Args:
         pocket_pivot/breakout: "MM/DD,num" 文字列リスト (年なし)
         window_dates: 表示窓 (基準週揃え後) の週バー日付列 (昇順, datetime.date)
-        xs/price_ys: 各週バーの X / 株価線 Y 座標 (window_dates と同じ index)
+        xs: 各週バーの X 座標 (window_dates と同じ index)
 
     Returns:
-        [{"kind","x","y","num","delta","strength"}] のリスト。窓外は drop。
+        [{"kind","x","num","delta","strength"}] のリスト。窓外は drop。
     """
-    if not window_dates or not xs or not price_ys:
+    if not window_dates or not xs:
         return []
     today = date.today()
     # 年推定の基準は today。週バー最新日(latest)を基準にすると、週足が確定週どまりで
     # シグナル発生日(数日前)が latest より新しいとき誤って前年扱いになる。
     latest = window_dates[-1]  # チャート最新日 (= 直近週)
     oldest = window_dates[0]
-    iso_weeks = [d.isocalendar()[:2] for d in window_dates]
 
-    def _week_index(d):
-        # 発生日 d を ISO週で表示窓の週バーにマップ。
-        iw = d.isocalendar()[:2]
-        for i, w in enumerate(iso_weeks):
-            if w == iw:
-                return i
-        # ISO週一致なし: 窓より古ければ drop、新しければ最新バー、
-        # 窓内のすき間なら d 以降で最も近い後続バーに寄せる。
-        if d < oldest:
-            return None  # 窓外 (古い) → drop
-        cand = [i for i, wd in enumerate(window_dates) if wd >= d]
-        if cand:
-            return cand[0]
-        return None  # d が全週バーより新しい → 後段で最新バー判定
+    def _interp_x(d):
+        # 発生日 d を挟む週バー間で X を線形補間 (週の幅を日割り按分)。
+        if d <= oldest:
+            return xs[0] if d == oldest else None  # 最古より古い → 窓外 drop
+        if d >= latest:
+            return xs[-1]  # 最新以降 → 末尾 clamp (はみ出し防止)
+        for i in range(len(window_dates) - 1):
+            d0, d1 = window_dates[i], window_dates[i + 1]
+            if d0 <= d <= d1:
+                span = (d1 - d0).days
+                frac = (d - d0).days / span if span else 0.0
+                return xs[i] + frac * (xs[i + 1] - xs[i])
+        return None
 
     markers = []
     for kind, sigs in (("ポ", pocket_pivot or []), ("ブ", breakout or [])):
@@ -2585,15 +2586,11 @@ def _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs, price_ys):
             delta = (today - d).days
             if delta < 0:
                 continue
-            idx = _week_index(d)
-            if idx is None:
-                # 全週バーより新しければ最新バー、古ければ窓外 drop
-                if d > latest:
-                    idx = len(window_dates) - 1
-                else:
-                    continue
+            x = _interp_x(d)
+            if x is None:
+                continue  # 窓外 (古い) → drop
             markers.append({
-                "kind": kind, "x": xs[idx], "y": price_ys[idx],
+                "kind": kind, "x": x,
                 "num": num, "delta": delta,
                 "strength": _signal_strength_bucket(kind, num),
             })
@@ -2889,32 +2886,6 @@ def build_price_rs_chart_full(
         parts.append(_svg_polyline(price_points[-_recent_pts:], _PRICE_COLORS[price_dir_recent], 2.2))
     parts.append(_svg_circle(price_points[-1][0], price_points[-1][1], 2.5, _PRICE_COLORS[price_dir_recent]))
 
-    # ポ/ブ発生日マーカー (issue #253): ポ=緑三角 / ブ=橙ダイヤ。
-    # ブはサイズ/不透明度を出来高超過率%の強度に連動。ポの強さ定義は別issueのため
-    # 当面 fixed size。古いシグナルは鮮度係数で半透明化。同週ポ・ブは Y をずらす。
-    if window_dates:
-        markers = _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs, price_ys)
-        size_map = {"強": 6.0, "中": 4.5, "弱": 3.0}
-        opa_map = {"強": 1.0, "中": 0.8, "弱": 0.6}
-
-        # 同一週バー (x) にポ・ブが両方あるか
-        x_counts = {}
-        for m in markers:
-            x_counts[m["x"]] = x_counts.get(m["x"], 0) + 1
-        for m in markers:
-            collide = x_counts.get(m["x"], 0) >= 2
-            fresh = _signal_freshness_alpha(m["delta"])
-            title = "%s %d日前 (%s)" % (m["kind"], m["delta"], m["strength"])
-            if m["kind"] == "ポ":
-                y = m["y"] - 6 if collide else m["y"]
-                # ポは強さ定義が別issueのため fixed size、鮮度のみ反映
-                parts.append(_svg_triangle(m["x"], y, 4.0, "#2e7d32", fresh, title))
-            else:  # ブ
-                y = m["y"] + 6 if collide else m["y"]
-                size = size_map[m["strength"]]
-                opacity = opa_map[m["strength"]] * fresh
-                parts.append(_svg_diamond(m["x"], y, size, "#f57c00", opacity, title))
-
     # 株価末尾現在値ラベル
     price_now_x = price_points[-1][0]
     price_now_y = price_points[-1][1]
@@ -2957,6 +2928,25 @@ def build_price_rs_chart_full(
             f'<text x="{rs_now_x - offset:.1f}" y="{rs_now_y + rs_label_dy:.1f}" font-size="9" '
             f'fill="#1976d2" font-weight="bold" text-anchor="end">{_format_pct_axis(rs_pct[-1])}</text>'
         )
+
+    # ポ/ブ発生日マーカー (issue #253): ポ=緑三角 / ブ=橙ダイヤ。
+    # X は発生日を週幅で日割り按分、Y は X軸直上の固定バンドに配置し株価線と分離。
+    # サイズは強度バケット (ポ・ブ共通)。詳細チャートは発生日が X 位置で読めるため
+    # 鮮度による半透明化は行わない。株価線・RS線より後 (最前面) に描く。
+    if window_dates:
+        markers = _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs)
+        size_map = {"強": 6.0, "中": 4.5, "弱": 3.0}
+        opa_map = {"強": 1.0, "中": 0.8, "弱": 0.6}
+        # X軸直上の固定バンド: ポは下段、ブはその上の段 (重なり回避)。
+        y_po = chart_top + chart_h - 4
+        y_bu = y_po - 11
+        for m in markers:
+            size = size_map[m["strength"]]
+            title = "%s %d日前 (%s)" % (m["kind"], m["delta"], m["strength"])
+            if m["kind"] == "ポ":
+                parts.append(_svg_triangle(m["x"], y_po, size, "#2e7d32", 1.0, title))
+            else:  # ブ
+                parts.append(_svg_diamond(m["x"], y_bu, size, "#f57c00", opa_map[m["strength"]], title))
 
     parts.append("</svg>")
     return ("".join(parts), tooltip)
@@ -3017,12 +3007,13 @@ def build_stock_chart_payload(
 
 
 def _is_provisional_eligible(stock, market_db):
-    """今週仮終値を追加すべきかと、追加用の (date, stock_close, topix_close) を返す。
+    """今週仮終値の (date, stock_close, topix_close, replace) を返す。
 
-    銘柄週足の最新 ISO 週より日足 (銘柄/TOPIX) が新しい週なら provisional 追加可。
-    TOPIX 週足が当日分まで進んでいる非対称ケース (週初に make_market_db が
-    先行して当日分を週足末尾に積むケース) でも、銘柄週足を基準にすれば
-    日足側の今週分を仮終値として安全に追加できる。
+    銘柄週足の最新 ISO 週以上に日足 (銘柄/TOPIX) が進んでいれば最新日足を反映する。
+    今週の週足バーが既にある (ISO週一致) 場合は週途中の集計値なので最新日足で
+    置換 (replace=True)、まだ無い場合は prepend (replace=False)。
+    TOPIX 週足が当日分まで進んでいる非対称ケースでも、銘柄週足を基準にすれば
+    日足側の今週分を仮終値として安全に反映できる。
     銘柄週足が空 (Case C) は追加しない (build_price_rs_chart_full の早期 return で空 SVG)。
     """
     if not stock:
@@ -3036,10 +3027,14 @@ def _is_provisional_eligible(stock, market_db):
     if not daily_stock or not daily_topix:
         return None
     stock_week_iso = stock_week[0][0].isocalendar()[:2]
-    if not (daily_stock[0][0].isocalendar()[:2] > stock_week_iso
-            and daily_topix[0][0].isocalendar()[:2] > stock_week_iso):
+    daily_stock_iso = daily_stock[0][0].isocalendar()[:2]
+    if not (daily_stock_iso >= stock_week_iso
+            and daily_topix[0][0].isocalendar()[:2] >= stock_week_iso):
         return None
-    return (daily_stock[0][0], float(daily_stock[0][1]), float(daily_topix[0][1]))
+    # series(週足台帳)側の置換判定: 今週バーが既にある (ISO週一致) なら置換。
+    replace = daily_stock_iso == stock_week_iso
+    return (daily_stock[0][0], float(daily_stock[0][1]),
+            float(daily_topix[0][1]), replace)
 
 
 def _build_full_week_series(stock, market_db):
@@ -3056,24 +3051,33 @@ def _build_full_week_series(stock, market_db):
     eligible = _is_provisional_eligible(stock, market_db)
     if eligible is None:
         return series
-    dt, stock_close, _ = eligible
-    return [(dt, stock_close)] + series
+    dt, stock_close, _, replace = eligible
+    # replace: 今週バーが既にある → 週途中値を最新日足で置換。なければ prepend。
+    rest = series[1:] if replace else series
+    return [(dt, stock_close)] + rest
 
 
 def _append_provisional_rs(rs_line, stock, market_db):
-    """rs_line の末尾 (= 先頭, 日付降順) に今週仮終値分の rs 点を追加する。
+    """rs_line の先頭 (日付降順) に今週仮終値分の rs 点を反映する。
 
-    _build_full_week_series と同じ判定条件 (両週足と両日足の ISO 週比較) を踏む。
+    追加可否は _build_full_week_series と同じ条件 (両日足が週足以上)。ただし置換判定は
+    rs_line[0] 自身の ISO 週で独立に行う: compute_rs_line_weekly は TOPIX 側の同一 ISO 週が
+    欠けるとその週を落とすため、price_week_log[0] が今週でも rs_line[0] が前週のことがある。
+    stock_week 基準で先頭を落とすと前週 RS を誤って捨て系列長・基準週がずれる。
     """
     eligible = _is_provisional_eligible(stock, market_db)
     if eligible is None:
         return rs_line
-    dt, stock_close, topix_close = eligible
+    dt, stock_close, topix_close, _ = eligible
     try:
         rs_val = stock_close / topix_close
     except ZeroDivisionError:
         return rs_line
-    return [(dt, rs_val)] + list(rs_line)
+    rs_line = list(rs_line)
+    # rs_line[0] が今週分なら置換、前週どまりなら prepend。
+    rs_replace = bool(rs_line) and rs_line[0][0].isocalendar()[:2] == dt.isocalendar()[:2]
+    rest = rs_line[1:] if rs_replace else rs_line
+    return [(dt, rs_val)] + rest
 
 
 def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
