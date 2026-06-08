@@ -126,3 +126,34 @@ class TestCalcGyosekiScore:
         # スコアは0〜100の範囲になる想定
         assert isinstance(result, (int, float))
         assert result >= 0
+
+    def test_quarter_with_missing_dash(self):
+        """四半期テーブルに欠損 "－" が混在しても TypeError で落ちずスコアを返す。
+
+        前年四半期セルが "－" (str) のまま数値比較に入り
+        TypeError: '>=' not supported between str and int で全体が落ちた回帰の防止。
+        """
+        table_current = [
+            ["2023.03", 13000, 1600, 1700, 1100, 110, 28],
+            ["2024.03", 14000, 1800, 1900, 1200, 120, 30],
+            ["予2025.03", 15000, 2000, 2100, 1400, 140, 35],
+        ]
+        table_quarter = [
+            # 前年4Q: 売上・営利を欠損 "－" にする (上場間もない等で前年実績なし)
+            ["23.04-06", "－", "－", 420, 280, 28, 5.0],
+            ["23.07-09", "－", "－", 440, 290, 29, 5.1],
+            ["23.10-12", "－", "－", 460, 300, 30, 5.2],
+            ["24.01-03", 3300, 460, 480, 310, 31, 5.3],
+            ["24.04-06", 3500, 500, 520, 350, 35, 5.5],
+            ["24.07-09", 3600, 520, 540, 360, 36, 5.6],
+            ["24.10-12", 3700, 540, 560, 370, 37, 5.7],
+            ["25.01-03", 3800, 560, 580, 380, 38, 5.8],
+            ["前年同期比", "+15.2", "+21.7", "+20.8", "+22.6", "+22.6", "+9.4"],
+        ]
+        tables = {
+            "gyoseki_current": table_current,
+            "gyoseki_quarter": table_quarter,
+        }
+        result = gyoseki.calc_gyoseki_score(tables)
+        assert isinstance(result, (int, float))
+        assert result >= 0

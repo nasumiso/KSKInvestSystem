@@ -508,17 +508,18 @@ def calc_gyoseki_score(tables):
             for col in (c + 1 for c in range(4)):
                 try:
                     # print "col", col, table_quarter[i+4][col], table_quarter[i][col]
-                    if table_quarter[i][col] >= 0:
+                    # 業績欠損セルは "－" (str) のまま入るため、数値比較の前に弾く。
+                    # 値がないものは成長率100扱い (従来の意図を比較前に移動)。
+                    if not isinstance(table_quarter[i][col], (int, float)):
+                        quarter_growth[i - 1][col] = 100
+                        log_debug("  業績の値がないため成長率100に", table_quarter[i][col])
+                    elif table_quarter[i][col] >= 0:
                         prev_quarter = (
                             table_quarter[i][col] if table_quarter[i][col] > 0 else 1
                         )  # 0割は無理やり1にする
-                        if prev_quarter == "－":
-                            quarter_growth[i - 1][col] = 100
-                            log_debug("  業績の値がないため成長率100に", prev_quarter)
-                        else:
-                            quarter_growth[i - 1][col] = (
-                                float(table_quarter[i + 4][col]) / prev_quarter - 1
-                            ) * 100
+                        quarter_growth[i - 1][col] = (
+                            float(table_quarter[i + 4][col]) / prev_quarter - 1
+                        ) * 100
                     else:
                         # 林さんの赤字のとき用計算
                         val1 = float(table_quarter[i + 4][col] - table_quarter[i][col])
