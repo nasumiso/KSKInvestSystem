@@ -229,7 +229,7 @@
       <span class="cr-item">
         {% if label %}<span class="cr-label">{{ label }}</span>{% endif %}
         {% if label == 'シグナル' and signal_display and signal_display.tooltip %}
-        <span class="cr-value" title="{{ signal_display.tooltip }}" style="cursor:help;{{ signal_display.style }}">{{ value if value else '—' }}</span>
+        <span class="cr-value" title="{{ signal_display.tooltip }}" style="cursor:help;">{{ value if value else '—' }}</span>
         {% else %}
         <span class="cr-value">{{ value if value else '—' }}</span>
         {% endif %}

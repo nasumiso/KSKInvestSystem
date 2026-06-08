@@ -2696,7 +2696,7 @@ def build_price_rs_chart_full(
     rs_line: List,
     has_blue_dot: bool,
     width: int = 400,
-    height: int = 120,
+    height: int = 138,
     pocket_pivot: Optional[List] = None,
     breakout: Optional[List] = None,
 ) -> tuple:
@@ -2763,8 +2763,11 @@ def build_price_rs_chart_full(
     pad_right = 8
     pad_y_top = 14
     pad_y_bottom = 14
+    # X軸の下に常設するポ/ブマーカー専用バンド (issue #253)。騰落率描画域とは独立。
+    marker_band_h = 18
     inner_w = width - pad_left - pad_right
-    inner_h = height - pad_y_top - pad_y_bottom
+    # 騰落率描画域はバンドを除いた高さで計算 (描画域は従来の 120 ベースを維持)。
+    inner_h = height - marker_band_h - pad_y_top - pad_y_bottom
     pad_x = pad_left
 
     chart_top = pad_y_top
@@ -2834,7 +2837,8 @@ def build_price_rs_chart_full(
         t20_label = price_log[t20_idx][0].strftime("%m/%d") if t20_idx >= 0 else ""
     except Exception:
         today_label = t5_label = t20_label = ""
-    label_y = height - 2
+    # 日付ラベルは X軸 (chart_top+chart_h) 直下に置く。その下がマーカー専用バンド。
+    label_y = chart_top + chart_h + 9
     parts.append(
         f'<text x="{x_t20:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="start">{t20_label}</text>'
     )
@@ -2930,23 +2934,24 @@ def build_price_rs_chart_full(
         )
 
     # ポ/ブ発生日マーカー (issue #253): ポ=緑三角 / ブ=橙ダイヤ。
-    # X は発生日を週幅で日割り按分、Y は X軸直上の固定バンドに配置し株価線と分離。
-    # サイズは強度バケット (ポ・ブ共通)。詳細チャートは発生日が X 位置で読めるため
-    # 鮮度による半透明化は行わない。株価線・RS線より後 (最前面) に描く。
+    # X は発生日を週幅で日割り按分、Y は X軸 + 日付ラベルの下に常設したマーカー専用バンド
+    # (騰落率Y軸と無関係) に配置し、株価線/RS線と完全分離する。サイズは強度バケット。
+    # 詳細チャートは発生日が X 位置で読めるため鮮度による半透明化は行わない。最前面に描く。
     if window_dates:
         markers = _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs)
         size_map = {"強": 6.0, "中": 4.5, "弱": 3.0}
         opa_map = {"強": 1.0, "中": 0.8, "弱": 0.6}
-        # 菱形は同 size でも三角より細く見えるため、ブのみ 1.4 倍して視認性を揃える。
-        BU_SIZE_SCALE = 1.4
-        # X軸直上の固定バンド: ポは下段、ブはその上の段 (重なり回避)。
-        y_po = chart_top + chart_h - 4
-        y_bu = y_po - 11
+        # ポは三角・ブは菱形。視認性調整: ポは控えめに縮小、ブは強調して拡大。
+        PO_SIZE_SCALE = 0.8
+        BU_SIZE_SCALE = 1.8
+        # マーカー専用バンド内: ポは下段、ブはその上の段 (同発生週の重なり回避)。
+        y_po = label_y + 16  # 日付ラベル baseline の下
+        y_bu = y_po - 6
         for m in markers:
             size = size_map[m["strength"]]
             title = "%s %d日前 (%s)" % (m["kind"], m["delta"], m["strength"])
             if m["kind"] == "ポ":
-                parts.append(_svg_triangle(m["x"], y_po, size, "#2e7d32", 1.0, title))
+                parts.append(_svg_triangle(m["x"], y_po, size * PO_SIZE_SCALE, "#2e7d32", 1.0, title))
             else:  # ブ
                 parts.append(_svg_diamond(m["x"], y_bu, size * BU_SIZE_SCALE, "#f57c00", opa_map[m["strength"]], title))
 
