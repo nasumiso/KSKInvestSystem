@@ -2937,6 +2937,8 @@ def build_price_rs_chart_full(
         markers = _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs)
         size_map = {"強": 6.0, "中": 4.5, "弱": 3.0}
         opa_map = {"強": 1.0, "中": 0.8, "弱": 0.6}
+        # 菱形は同 size でも三角より細く見えるため、ブのみ 1.4 倍して視認性を揃える。
+        BU_SIZE_SCALE = 1.4
         # X軸直上の固定バンド: ポは下段、ブはその上の段 (重なり回避)。
         y_po = chart_top + chart_h - 4
         y_bu = y_po - 11
@@ -2946,7 +2948,7 @@ def build_price_rs_chart_full(
             if m["kind"] == "ポ":
                 parts.append(_svg_triangle(m["x"], y_po, size, "#2e7d32", 1.0, title))
             else:  # ブ
-                parts.append(_svg_diamond(m["x"], y_bu, size, "#f57c00", opa_map[m["strength"]], title))
+                parts.append(_svg_diamond(m["x"], y_bu, size * BU_SIZE_SCALE, "#f57c00", opa_map[m["strength"]], title))
 
     parts.append("</svg>")
     return ("".join(parts), tooltip)
