@@ -982,6 +982,25 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
     signal = ""
     tags = []
 
+    def get_recent_signal_delta(mmdd):
+        """価格更新日に紐づく直近シグナルだけ日数差を返す。"""
+        access_date_price = stock.get("access_date_price")
+        if not access_date_price:
+            return None
+        anchor_day = get_price_day(access_date_price)
+        try:
+            sig_day = datetime.strptime(
+                "%d/%s" % (anchor_day.year, mmdd), "%Y/%m/%d"
+            ).date()
+        except ValueError:
+            raise
+        if sig_day > anchor_day:
+            sig_day = sig_day.replace(year=anchor_day.year - 1)
+        # 価格更新日より古すぎるシグナルは stale データとして除外する。
+        if (anchor_day - sig_day).days > 366:
+            return None
+        return (today.date() - sig_day).days
+
     # 新高値
     new_high = stock.get("new_high", "")
     if new_high:
@@ -1000,28 +1019,37 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
                 tags.append("押")
     # ポケットピポット
     pocket_pivot = stock.get("pocket_pivot", "")
-    for sig in pocket_pivot:
-        spl = sig.split(",")
-        try:
-            dt = datetime.strptime(str(today.year) + "/" + spl[0], "%Y/%m/%d")
-            delta_day = (today - dt).days
-            # mark = "★"  if delta_day < 3 else ""
-            if delta_day <= 7 and delta_day >= 0:
-                tags.append("ポ")
-        except ValueError:
-            log_warning("ポケットピポット日付エラー", spl[0])
-        signal += "\n[ポ]"
-        signal += "%s(%s)," % (spl[0], spl[1])
-        break  # 一つにしておく(最新日)
+    # Stage 4 崩壊銘柄ではポケットピポットを無効化する (issue #110)。
+    # trend_template (週足) の不通過項目に長期トレンド崩壊系が含まれていれば除外。
+    # ・"pr>ma30,40": 株価が長期MA(MA40≒MA200相当)を下回る
+    # ・"ma40Up": MA40 が1ヶ月前より下降 (Stage 4)
+    # ・"high(low)52": 52週高値圏から外れる (crash mode)
+    # trend_template が空(◎)・キー欠落(週足取得失敗)ならベース形成中とみなし除外しない。
+    trend_template = stock.get("trend_template", [])
+    pp_misses = set(trend_template) if isinstance(trend_template, (list, tuple, set)) else set()
+    if pocket_pivot and not (pp_misses & {"pr>ma30,40", "ma40Up", "high(low)52"}):
+        for i, sig in enumerate(pocket_pivot):
+            if i >= 3:  # 連続ポケットピポットは最大3件まで表示 (issue #110)
+                break
+            spl = sig.split(",")
+            try:
+                delta_day = get_recent_signal_delta(spl[0])
+                # mark = "★"  if delta_day < 3 else ""
+                if delta_day is not None and delta_day <= 7 and delta_day >= 0 and "ポ" not in tags:
+                    tags.append("ポ")
+            except ValueError:
+                log_warning("ポケットピポット日付エラー", spl[0])
+            if i == 0:
+                signal += "\n[ポ]"
+            signal += "%s(%s)," % (spl[0], spl[1])
     # ブレイクアウト
     breakout = stock.get("breakout", [])
     for brk in breakout:
         brkspl = brk.split(",")
         try:
-            dt = datetime.strptime(str(today.year) + "/" + brkspl[0], "%Y/%m/%d")
-            delta_day = (today - dt).days
+            delta_day = get_recent_signal_delta(brkspl[0])
             # mark = "★"  if delta_day < 3 else ""
-            if delta_day <= 7 and delta_day >= 0:
+            if delta_day is not None and delta_day <= 7 and delta_day >= 0:
                 tags.append("ブ")
         except ValueError:
             log_warning("ブレイクアウト日付エラー", brkspl[0])

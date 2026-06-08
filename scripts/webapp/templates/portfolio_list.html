@@ -377,7 +377,7 @@
       <td title="{{ row.trend_template_tooltip }}" style="width:40px;padding:0;line-height:0;text-align:center;{{ row.styles.trend_template or '' }}">
         {% if row.kairi_gauge_svg %}{{ row.kairi_gauge_svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
       </td>
-      <td title="{{ row.tags }}"
+      <td title="{{ row.signal_display.tooltip or row.tags }}"
           style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
       <td class="spr-gauge-cell" title="{{ row.spr_gauge.tooltip }}">{{ row.spr_gauge.svg|safe }}</td>
       <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>

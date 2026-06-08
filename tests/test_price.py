@@ -945,6 +945,76 @@ class TestParsePriceTextFromList:
         # 入力が5件しかなければ price_log も最大5件
         assert len(result_dict["price_log"]) <= 5
 
+    def test_pocket_pivot_ma25_detection(self):
+        """issue #110: MA10乖離は4超だがMA25乖離は4以内なら検出される
+
+        直近10日平均(MA10)より過去25日平均(MA25)が高い「下落基調からの反発」を、
+        MA25 併用で拾えることを確認する。
+        """
+        from datetime import date as _date, timedelta
+        d0 = _date(2025, 12, 31)
+        price_list = []
+        for i in range(30):
+            dt = d0 - timedelta(days=i)
+            date_str = "%d年%d月%d日" % (dt.year, dt.month, dt.day)
+            if i == 0:
+                # 当日(最新): 上昇日・出来高最大・安値1045
+                close = 1046
+                low = 1045
+                vol = 999999
+            elif i < 10:
+                close = 1000  # 直近10日 → MA10≈1000
+                low = close - 5
+                vol = 100000
+            else:
+                close = 1100  # 過去10〜24日 → MA25 を引き上げる
+                low = close - 5
+                vol = 100000
+            price_list.append([date_str, close, close + 10, low, close, vol, close])
+        result_dict, _ = price.parse_price_text_from_list(1046, price_list)
+        # ref_price=1045: kairi10=(1045-1000.6)/1000.6≈4.4%(>4) だが
+        # kairi25=(1045-1060)/1060<0(<=4) なので検出される
+        assert len(result_dict["pocket_pivot"]) >= 1
+
+    @pytest.mark.parametrize(
+        "today_close, today_vol, expect_break, expect_per_nonneg",
+        [
+            # 通常出来高ブレイク (vol>=1.5*avg) → 検出 (回帰)
+            (1010, 300000, True, True),
+            # ストップ高張り付き: 低出来高だが前日比+20% → 新規検出・per>=0
+            (1200, 50000, True, True),
+            # 微増・低出来高 (前日比+1%, vol<avg) → 非検出
+            (1010, 50000, False, None),
+        ],
+    )
+    def test_breakout_stop_high(self, today_close, today_vol,
+                                expect_break, expect_per_nonneg):
+        """issue #253: ストップ高張り付き (前日比+20%) で出来高条件をスキップ検知"""
+        from datetime import date as _date, timedelta
+        d0 = _date(2025, 12, 31)
+        price_list = []
+        for i in range(25):
+            dt = d0 - timedelta(days=i)
+            date_str = "%d年%d月%d日" % (dt.year, dt.month, dt.day)
+            if i == 0:
+                close = today_close
+                low = 1000  # 当日安値=前日終値で ref_price を抑え kairi<=5
+                vol = today_vol
+            else:
+                close = 1000  # 過去は横ばい → ma10≈1000, avg_vol≈100000
+                low = 995
+                vol = 100000
+            price_list.append([date_str, close, close + 10, low, close, vol, close])
+        result_dict, _ = price.parse_price_text_from_list(today_close, price_list)
+        breaks = result_dict["breakout"]
+        if expect_break:
+            assert len(breaks) >= 1
+            # per (出来高超過率%) は 0 床で非負
+            per = int(breaks[0].split(",")[1])
+            assert per >= 0
+        else:
+            assert len(breaks) == 0
+
 
 # ==================================================
 # get_momentum_calib (issue #104)

@@ -6,6 +6,7 @@ research_shelve のデータ取得・更新をWebアプリ用にラップする�
 同じロックファイルを取ることでプロセス間の安全な共存を保証する。
 """
 
+import html
 import os
 import re
 from datetime import date, datetime, timedelta
@@ -1891,20 +1892,116 @@ def list_portfolio_with_indicators(
     return rows
 
 
-def _format_tags(stock: Dict[str, Any]) -> str:
+def _format_tags(stock: Dict[str, Any], tags=None) -> str:
     """code_rank.csv「タグ」列と同じ表記を返す。
 
     make_stock_db.make_signal() の tags リストを "/" join する。
     market_db を渡さないので 強乖/弱乖 タグは出ない (Phase 4 送り)。
+    tags を渡すと make_signal の再呼び出しを省略する (一覧の二重計算回避)。
     """
     if not stock:
         return "—"
-    try:
-        from make_stock_db import make_signal  # 遅延 import
-        _signal, tags = make_signal(stock)
-    except Exception:
-        return "—"
+    if tags is None:
+        try:
+            from make_stock_db import make_signal  # 遅延 import
+            _signal, tags = make_signal(stock)
+        except Exception:
+            return "—"
     return "/".join(tags) if tags else "—"
+
+
+# ポ/ブシグナルの鮮度係数 (issue #253)。経過日数→不透明度の乗数。
+# tooltip 背景色 (_build_signal_display) とチャートマーカー (項目3) で共有する。
+def _signal_freshness_alpha(delta: int) -> float:
+    if delta <= 2:
+        return 1.0
+    if delta <= 5:
+        return 0.6
+    return 0.35
+
+
+# ポ/ブシグナルの強度バケット (issue #253)。
+# tooltip 文言 (_build_signal_display) とチャートマーカーサイズ (項目3) で共有する。
+def _signal_strength_bucket(kind: str, num: int) -> str:
+    """シグナル種別と保存数値から強度ラベル 強/中/弱 を返す。
+
+    ポ: num = MA10乖離率% (小さい=MAに近い良い位置=強)。
+    ブ: num = 出来高超過率% (大きい=出来高急増=強)。
+    しきい値は暫定 (issue #253)、実データで要調整。
+    """
+    if kind == "ポ":
+        if num >= -1:
+            return "強"
+        if num >= -3:
+            return "中"
+        return "弱"
+    # ブ
+    if num >= 200:
+        return "強"
+    if num >= 100:
+        return "中"
+    return "弱"
+
+
+def _build_signal_display(stock: Dict[str, Any], tags=None) -> Dict[str, str]:
+    """signal セルの tooltip と背景色 style を組み立てる (issue #253)。
+
+    make_signal の tags で ポ/ブ が出る銘柄のみ対象 (Stage4除外・連続3件制約を尊重)。
+    数値は raw な pocket_pivot/breakout から取得し、検出日・強度・意味を tooltip に出す。
+    背景色は最強・最新シグナルの強度×鮮度で赤系 rgba の濃淡。
+
+    tags を渡すと make_signal の再呼び出しを省略する (一覧の二重計算回避)。
+
+    Returns:
+        {"tooltip": str, "style": str}。対象シグナルなしなら空文字。
+    """
+    empty = {"tooltip": "", "style": ""}
+    if not stock:
+        return empty
+    if tags is None:
+        try:
+            from make_stock_db import make_signal  # 遅延 import
+            _signal, tags = make_signal(stock)
+        except Exception:
+            return empty
+    today = date.today()
+    strength_alpha = {"強": 0.85, "中": 0.55, "弱": 0.30}
+
+    lines = []
+    max_alpha = 0.0
+    # ポ/ブ共通パース (_resolve_signal_markers と同じループ形)
+    for kind, sigs, limit, tmpl in (
+        ("ポ", stock.get("pocket_pivot"), 3,
+         "[ポ] %s %s 押し目買い圧(MA10乖離 %d) / %d日前"),
+        ("ブ", stock.get("breakout"), 1,
+         "[ブ] %s %s 出来高ブレイク(出来高+%d%%) / %d日前"),
+    ):
+        if kind not in tags:
+            continue
+        for sig in list(sigs or [])[:limit]:
+            spl = str(sig).split(",")
+            if len(spl) < 2:
+                continue
+            try:
+                num = int(spl[1])
+            except ValueError:
+                continue
+            dt = _parse_research_update_md(spl[0], today)
+            if dt is None:
+                continue
+            delta = (today - dt).days
+            if delta < 0 or delta > 7:
+                continue
+            bucket = _signal_strength_bucket(kind, num)
+            lines.append(tmpl % (spl[0], bucket, num, delta))
+            max_alpha = max(max_alpha,
+                            strength_alpha[bucket] * _signal_freshness_alpha(delta))
+
+    if not lines:
+        return empty
+    # 赤 #ea4335 → rgba
+    style = "background:rgba(234,67,53,%.2f);color:#000" % max_alpha
+    return {"tooltip": "\n".join(lines), "style": style}
 
 
 def _format_theoretical_diff(stock: Dict[str, Any]) -> str:
@@ -2417,6 +2514,89 @@ def _svg_circle(cx: float, cy: float, r: float, color: str) -> str:
     return f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{color}"/>'
 
 
+def _svg_triangle(cx: float, cy: float, size: float, color: str,
+                  opacity: float = 1.0, title: str = "") -> str:
+    """上向き三角マーカー (issue #253: ポケットピボット用)。"""
+    pts = "%.1f,%.1f %.1f,%.1f %.1f,%.1f" % (
+        cx, cy - size, cx - size, cy + size, cx + size, cy + size)
+    t = "<title>%s</title>" % html.escape(title) if title else ""
+    return ('<polygon points="%s" fill="%s" opacity="%.2f">%s</polygon>'
+            % (pts, color, opacity, t))
+
+
+def _svg_diamond(cx: float, cy: float, size: float, color: str,
+                 opacity: float = 1.0, title: str = "") -> str:
+    """ダイヤ (菱形) マーカー (issue #253: ブレイクアウト用)。"""
+    pts = "%.1f,%.1f %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (
+        cx, cy - size, cx + size, cy, cx, cy + size, cx - size, cy)
+    t = "<title>%s</title>" % html.escape(title) if title else ""
+    return ('<polygon points="%s" fill="%s" opacity="%.2f">%s</polygon>'
+            % (pts, color, opacity, t))
+
+
+def _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs):
+    """ポ/ブシグナルを週足チャートの表示窓にマップした marker spec を返す (issue #253)。
+
+    X は発生日を週バー間で線形補間する (週足だが発生日は日単位のため、週の幅を
+    日割りで按分)。窓外 (最古バーより古い) は drop。
+
+    Args:
+        pocket_pivot/breakout: "MM/DD,num" 文字列リスト (年なし)
+        window_dates: 表示窓 (基準週揃え後) の週バー日付列 (昇順, datetime.date)
+        xs: 各週バーの X 座標 (window_dates と同じ index)
+
+    Returns:
+        [{"kind","x","num","delta","strength"}] のリスト。窓外は drop。
+    """
+    if not window_dates or not xs:
+        return []
+    today = date.today()
+    # 年推定の基準は today。週バー最新日(latest)を基準にすると、週足が確定週どまりで
+    # シグナル発生日(数日前)が latest より新しいとき誤って前年扱いになる。
+    latest = window_dates[-1]  # チャート最新日 (= 直近週)
+    oldest = window_dates[0]
+
+    def _interp_x(d):
+        # 発生日 d を挟む週バー間で X を線形補間 (週の幅を日割り按分)。
+        if d <= oldest:
+            return xs[0] if d == oldest else None  # 最古より古い → 窓外 drop
+        if d >= latest:
+            return xs[-1]  # 最新以降 → 末尾 clamp (はみ出し防止)
+        for i in range(len(window_dates) - 1):
+            d0, d1 = window_dates[i], window_dates[i + 1]
+            if d0 <= d <= d1:
+                span = (d1 - d0).days
+                frac = (d - d0).days / span if span else 0.0
+                return xs[i] + frac * (xs[i + 1] - xs[i])
+        return None
+
+    markers = []
+    for kind, sigs in (("ポ", pocket_pivot or []), ("ブ", breakout or [])):
+        for sig in sigs:
+            spl = str(sig).split(",")
+            if len(spl) < 2:
+                continue
+            d = _parse_research_update_md(spl[0], today)
+            if d is None:
+                continue
+            try:
+                num = int(spl[1])
+            except ValueError:
+                continue
+            delta = (today - d).days
+            if delta < 0:
+                continue
+            x = _interp_x(d)
+            if x is None:
+                continue  # 窓外 (古い) → drop
+            markers.append({
+                "kind": kind, "x": x,
+                "num": num, "delta": delta,
+                "strength": _signal_strength_bucket(kind, num),
+            })
+    return markers
+
+
 def _format_price_axis(value: float) -> str:
     """株価軸ラベル (円)。1000円超は K 表記、それ以下は整数。"""
     if value >= 10000:
@@ -2516,7 +2696,9 @@ def build_price_rs_chart_full(
     rs_line: List,
     has_blue_dot: bool,
     width: int = 400,
-    height: int = 120,
+    height: int = 138,
+    pocket_pivot: Optional[List] = None,
+    breakout: Optional[List] = None,
 ) -> tuple:
     """詳細ページ用 20 週フルチャート SVG と tooltip を返す (週足 20 本ベース)。
 
@@ -2556,6 +2738,17 @@ def build_price_rs_chart_full(
     if len(price_asc) < 2 or price_asc[0] <= 0:
         return ("", "")
 
+    # ポ/ブマーカー用に表示窓の週バー日付列を price_asc と同じ手順で構築 (issue #253)。
+    # _asc_series_from_log と同じく log[:LOOKBACK] を昇順化し None 値を除外、末尾 n_align 本。
+    window_dates = []
+    if pocket_pivot or breakout:
+        try:
+            sliced = list(price_log)[:_SPARK_LOOKBACK]
+            dates_asc = [d for d, v in reversed(sliced) if v is not None]
+            window_dates = dates_asc[-len(price_asc):]
+        except Exception:  # noqa: BLE001
+            window_dates = []
+
     # % 変換 (基準週=0%)
     p_base = price_asc[0]
     price_pct = [(p / p_base - 1.0) * 100.0 for p in price_asc]
@@ -2570,8 +2763,11 @@ def build_price_rs_chart_full(
     pad_right = 8
     pad_y_top = 14
     pad_y_bottom = 14
+    # X軸の下に常設するポ/ブマーカー専用バンド (issue #253)。騰落率描画域とは独立。
+    marker_band_h = 18
     inner_w = width - pad_left - pad_right
-    inner_h = height - pad_y_top - pad_y_bottom
+    # 騰落率描画域はバンドを除いた高さで計算 (描画域は従来の 120 ベースを維持)。
+    inner_h = height - marker_band_h - pad_y_top - pad_y_bottom
     pad_x = pad_left
 
     chart_top = pad_y_top
@@ -2641,7 +2837,8 @@ def build_price_rs_chart_full(
         t20_label = price_log[t20_idx][0].strftime("%m/%d") if t20_idx >= 0 else ""
     except Exception:
         today_label = t5_label = t20_label = ""
-    label_y = height - 2
+    # 日付ラベルは X軸 (chart_top+chart_h) 直下に置く。その下がマーカー専用バンド。
+    label_y = chart_top + chart_h + 9
     parts.append(
         f'<text x="{x_t20:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="start">{t20_label}</text>'
     )
@@ -2736,6 +2933,28 @@ def build_price_rs_chart_full(
             f'fill="#1976d2" font-weight="bold" text-anchor="end">{_format_pct_axis(rs_pct[-1])}</text>'
         )
 
+    # ポ/ブ発生日マーカー (issue #253): ポ=緑三角 / ブ=橙ダイヤ。
+    # X は発生日を週幅で日割り按分、Y は X軸 + 日付ラベルの下に常設したマーカー専用バンド
+    # (騰落率Y軸と無関係) に配置し、株価線/RS線と完全分離する。サイズは強度バケット。
+    # 詳細チャートは発生日が X 位置で読めるため鮮度による半透明化は行わない。最前面に描く。
+    if window_dates:
+        markers = _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs)
+        size_map = {"強": 6.0, "中": 4.5, "弱": 3.0}
+        opa_map = {"強": 1.0, "中": 0.8, "弱": 0.6}
+        # ポは三角・ブは菱形。視認性調整: ポは控えめに縮小、ブは強調して拡大。
+        PO_SIZE_SCALE = 0.8
+        BU_SIZE_SCALE = 1.8
+        # マーカー専用バンド内: ポは下段、ブはその上の段 (同発生週の重なり回避)。
+        y_po = label_y + 16  # 日付ラベル baseline の下
+        y_bu = y_po - 6
+        for m in markers:
+            size = size_map[m["strength"]]
+            title = "%s %d日前 (%s)" % (m["kind"], m["delta"], m["strength"])
+            if m["kind"] == "ポ":
+                parts.append(_svg_triangle(m["x"], y_po, size * PO_SIZE_SCALE, "#2e7d32", 1.0, title))
+            else:  # ブ
+                parts.append(_svg_diamond(m["x"], y_bu, size * BU_SIZE_SCALE, "#f57c00", opa_map[m["strength"]], title))
+
     parts.append("</svg>")
     return ("".join(parts), tooltip)
 
@@ -2777,7 +2996,11 @@ def build_stock_chart_payload(
                 rs_line = _append_provisional_rs(rs_line, stock, market_db)
             except Exception:  # noqa: BLE001
                 rs_line = []
-        svg, tooltip = build_price_rs_chart_full(price_log, rs_line, has_blue_dot)
+        svg, tooltip = build_price_rs_chart_full(
+            price_log, rs_line, has_blue_dot,
+            pocket_pivot=(stock or {}).get("pocket_pivot") or [],
+            breakout=(stock or {}).get("breakout") or [],
+        )
     else:
         price_log = (stock or {}).get("price_log") or []
         rs_line = []
@@ -2791,12 +3014,13 @@ def build_stock_chart_payload(
 
 
 def _is_provisional_eligible(stock, market_db):
-    """今週仮終値を追加すべきかと、追加用の (date, stock_close, topix_close) を返す。
+    """今週仮終値の (date, stock_close, topix_close, replace) を返す。
 
-    銘柄週足の最新 ISO 週より日足 (銘柄/TOPIX) が新しい週なら provisional 追加可。
-    TOPIX 週足が当日分まで進んでいる非対称ケース (週初に make_market_db が
-    先行して当日分を週足末尾に積むケース) でも、銘柄週足を基準にすれば
-    日足側の今週分を仮終値として安全に追加できる。
+    銘柄週足の最新 ISO 週以上に日足 (銘柄/TOPIX) が進んでいれば最新日足を反映する。
+    今週の週足バーが既にある (ISO週一致) 場合は週途中の集計値なので最新日足で
+    置換 (replace=True)、まだ無い場合は prepend (replace=False)。
+    TOPIX 週足が当日分まで進んでいる非対称ケースでも、銘柄週足を基準にすれば
+    日足側の今週分を仮終値として安全に反映できる。
     銘柄週足が空 (Case C) は追加しない (build_price_rs_chart_full の早期 return で空 SVG)。
     """
     if not stock:
@@ -2810,10 +3034,14 @@ def _is_provisional_eligible(stock, market_db):
     if not daily_stock or not daily_topix:
         return None
     stock_week_iso = stock_week[0][0].isocalendar()[:2]
-    if not (daily_stock[0][0].isocalendar()[:2] > stock_week_iso
-            and daily_topix[0][0].isocalendar()[:2] > stock_week_iso):
+    daily_stock_iso = daily_stock[0][0].isocalendar()[:2]
+    if not (daily_stock_iso >= stock_week_iso
+            and daily_topix[0][0].isocalendar()[:2] >= stock_week_iso):
         return None
-    return (daily_stock[0][0], float(daily_stock[0][1]), float(daily_topix[0][1]))
+    # series(週足台帳)側の置換判定: 今週バーが既にある (ISO週一致) なら置換。
+    replace = daily_stock_iso == stock_week_iso
+    return (daily_stock[0][0], float(daily_stock[0][1]),
+            float(daily_topix[0][1]), replace)
 
 
 def _build_full_week_series(stock, market_db):
@@ -2830,24 +3058,33 @@ def _build_full_week_series(stock, market_db):
     eligible = _is_provisional_eligible(stock, market_db)
     if eligible is None:
         return series
-    dt, stock_close, _ = eligible
-    return [(dt, stock_close)] + series
+    dt, stock_close, _, replace = eligible
+    # replace: 今週バーが既にある → 週途中値を最新日足で置換。なければ prepend。
+    rest = series[1:] if replace else series
+    return [(dt, stock_close)] + rest
 
 
 def _append_provisional_rs(rs_line, stock, market_db):
-    """rs_line の末尾 (= 先頭, 日付降順) に今週仮終値分の rs 点を追加する。
+    """rs_line の先頭 (日付降順) に今週仮終値分の rs 点を反映する。
 
-    _build_full_week_series と同じ判定条件 (両週足と両日足の ISO 週比較) を踏む。
+    追加可否は _build_full_week_series と同じ条件 (両日足が週足以上)。ただし置換判定は
+    rs_line[0] 自身の ISO 週で独立に行う: compute_rs_line_weekly は TOPIX 側の同一 ISO 週が
+    欠けるとその週を落とすため、price_week_log[0] が今週でも rs_line[0] が前週のことがある。
+    stock_week 基準で先頭を落とすと前週 RS を誤って捨て系列長・基準週がずれる。
     """
     eligible = _is_provisional_eligible(stock, market_db)
     if eligible is None:
         return rs_line
-    dt, stock_close, topix_close = eligible
+    dt, stock_close, topix_close, _ = eligible
     try:
         rs_val = stock_close / topix_close
     except ZeroDivisionError:
         return rs_line
-    return [(dt, rs_val)] + list(rs_line)
+    rs_line = list(rs_line)
+    # rs_line[0] が今週分なら置換、前週どまりなら prepend。
+    rs_replace = bool(rs_line) and rs_line[0][0].isocalendar()[:2] == dt.isocalendar()[:2]
+    rest = rs_line[1:] if rs_replace else rs_line
+    return [(dt, rs_val)] + rest
 
 
 def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
@@ -2941,6 +3178,13 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     market_cap_raw = market_cap if isinstance(market_cap, (int, float)) else None
     gyoseki_quarity_expr = _gyoseki_quarity_expr_safe(stock)
 
+    # make_signal は tags 列とシグナル表示の両方で使うため1回だけ呼ぶ (issue #253)
+    try:
+        from make_stock_db import make_signal  # 遅延 import
+        _signal, _tags = make_signal(stock)
+    except Exception:  # noqa: BLE001
+        _tags = None
+
     return {
         "rank": rank if isinstance(rank, int) else None,
         "kessanbi_md": _format_kessanbi_md(stock.get("kessanbi")),
@@ -2966,7 +3210,8 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "trend_template": trend_info["expr"],
         "trend_template_tooltip": trend_info["tooltip"],
         "kairi_gauge_svg": trend_info["kairi_gauge_svg"],
-        "tags": _format_tags(stock),
+        "tags": _format_tags(stock, _tags),
+        "signal_display": _build_signal_display(stock, _tags),  # issue #253: tooltip+背景色
         "spr_gauge": _build_spr_gauge_for_stock(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
         "theoretical_diff_raw": _theoretical_diff_raw(stock),
@@ -3151,7 +3396,10 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
     # --- シグナル (ルール 2-7): 強い色から順に評価
     tags = row.get("tags") or ""
     if any(c in tags for c in ("ポ", "ブ", "最")):
-        styles["tags"] = bg_with_white("赤")
+        # issue #253: ポ/ブは強度×鮮度の赤系濃淡を優先 (signal_display.style)。
+        # 算出不可・「最」のみの場合は従来の一律赤にフォールバック。
+        sig_style = (row.get("signal_display") or {}).get("style")
+        styles["tags"] = sig_style or bg_with_white("赤")
     elif any(c in tags for c in ("警", "売")):
         styles["tags"] = bg_with_white("青")
     elif "押" in tags:
