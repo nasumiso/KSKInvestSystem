@@ -1557,14 +1557,16 @@ def _saved_latest_date(out_path):
 
 
 def _recent_weekday(now):
-    """now (datetime) から見た直近の平日を "YYYY-MM-DD" で返す。
+    """now (datetime) から見た「期待される最新営業日」を "YYYY-MM-DD" で返す。
 
-    土日は直前の金曜まで遡る。祝日は判定しない (カレンダー不要)。
     日次データの取得前スキップで「保存済みが最新営業日に追いついているか」を
-    祝日カレンダー無しで近似判定するために使う。get_price_day は曜日補正を
-    しないため today 基準では土日に毎回再取得へ落ちる、その回避。
+    祝日カレンダー無しで近似判定するために使う。2段階で補正する:
+      1. 17時カットオーバー (get_price_day): 17時前は前日 (市場データ未確定のため)。
+      2. 土日補正: 土→前金曜、日→前々金曜。
+    祝日は判定しない (カレンダー不要)。祝日当日・祝日翌営業日17時前は基準が祝日に
+    なり saved とズレて毎回 fetch するが、頻度極小のため割り切る (Simplicity First)。
     """
-    d = now.date()
+    d = get_price_day(now)  # 17時カットオーバー済みの date
     wd = d.weekday()  # 月=0 .. 日=6
     if wd >= 5:  # 土(5)/日(6) は直前の金曜へ
         d -= timedelta(days=wd - 4)

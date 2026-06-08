@@ -724,14 +724,14 @@ class Test_saved_latest_date:
 
 
 class Test_recent_weekday:
-    """now から見た直近平日 (土日は前金曜まで遡る) を返すヘルパー。"""
+    """now から見た期待最新営業日 (17時カットオーバー + 土日補正) を返すヘルパー。"""
 
     @pytest.mark.parametrize("dt,expected", [
-        (datetime(2026, 6, 11, 12), "2026-06-11"),  # 木 → 当日
-        (datetime(2026, 6, 12, 12), "2026-06-12"),  # 金 → 当日
-        (datetime(2026, 6, 13, 12), "2026-06-12"),  # 土 → 前日金
-        (datetime(2026, 6, 14, 12), "2026-06-12"),  # 日 → 前々日金
-        (datetime(2026, 6, 8, 12), "2026-06-08"),   # 月 → 当日
+        (datetime(2026, 6, 11, 18), "2026-06-11"),  # 木17時後 → 当日
+        (datetime(2026, 6, 11, 10), "2026-06-10"),  # 木17時前 → 前日 (退行解消)
+        (datetime(2026, 6, 13, 12), "2026-06-12"),  # 土 → 前金曜
+        (datetime(2026, 6, 14, 12), "2026-06-12"),  # 日 → 前々金曜
+        (datetime(2026, 6, 8, 10), "2026-06-05"),   # 月17時前 → 前金曜
     ])
-    def test_曜日ごとの直近平日(self, dt, expected):
+    def test_期待最新営業日(self, dt, expected):
         assert shintakane._recent_weekday(dt) == expected
