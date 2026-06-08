@@ -2961,11 +2961,20 @@ class TestSignalDisplay:
     """_build_signal_display の強度/色・_resolve_signal_markers の週マップ"""
 
     def _anchor(self):
-        # extract_signals は access_date_price を get_price_day() で anchor 化する。
-        # テストは anchor を基準に mmdd を作り delta を安定させる。
-        from datetime import datetime
+        # extract_signals は access_date_price を get_price_day() で anchor 化し、
+        # かつ (today - anchor_day) で stale 判定する。テストは anchor を基準に
+        # mmdd を作り delta を安定させる。
+        # 素の datetime.now() だと CI(UTC) の午前実行で get_price_day の17時
+        # カットオーバーにより anchor_day が前日(日曜)になり、曜日依存の按分
+        # テストが崩れる。そこで「今日付近の直近平日 20:00」に正規化して
+        # 実行時刻・TZ に依存させない (stale 判定も today-anchor が小さく通る)。
+        from datetime import datetime, timedelta
         from ks_util import get_price_day
-        now = datetime.now()
+        today = datetime.now().date()
+        wd = today.weekday()
+        if wd >= 5:  # 土(5)/日(6) は直近金曜へ
+            today -= timedelta(days=wd - 4)
+        now = datetime(today.year, today.month, today.day, 20, 0)  # 平日20:00
         return now, get_price_day(now)
 
     def _stock_with_signal(self, kind, num, days_ago):
