@@ -971,6 +971,92 @@ def get_index_trend_template_expr(stock):
     return ("△ %d/7" % pass_count, miss_str)
 
 
+# ポケットピポット無効化対象の trend_template 不通過項目 (Stage 4 崩壊系, issue #110)。
+_PP_STAGE4_MISSES = {"pr>ma30,40", "ma40Up", "high(low)52"}
+
+
+def _signal_recent_delta(stock, mmdd):
+    """価格更新日 (access_date_price) を基準にシグナル発生日の経過日数を返す。
+
+    make_signal の tags 付与と extract_signals が同じ日付基準を使うための共通関数。
+    access_date_price を get_price_day() で anchor 化し、年補完してから今日との日数差を返す。
+
+    Returns:
+        int | None: 経過日数。access_date_price 無し・366日超 (stale) なら None。
+        ValueError は mmdd 不正時に送出 (呼び出し側でログ)。
+    """
+    access_date_price = stock.get("access_date_price")
+    if not access_date_price:
+        return None
+    anchor_day = get_price_day(access_date_price)
+    sig_day = datetime.strptime(
+        "%d/%s" % (anchor_day.year, mmdd), "%Y/%m/%d"
+    ).date()
+    if sig_day > anchor_day:
+        sig_day = sig_day.replace(year=anchor_day.year - 1)
+    # 価格更新日より古すぎるシグナルは stale データとして除外する。
+    if (anchor_day - sig_day).days > 366:
+        return None
+    return (datetime.today().date() - sig_day).days
+
+
+def extract_signals(stock):
+    """tags と同じフィルタを通した表示対象ポ/ブシグナルを返す (issue #253/#310)。
+
+    make_signal の tags 付与条件と完全一致させ、一覧 tooltip/背景色・詳細チャート
+    マーカーが make_signal と同じシグナル集合を見るための単一ソース。
+
+    フィルタ:
+      - ポ: trend_template に Stage4 崩壊系が含まれれば全除外、先頭最大3件走査。
+      - ブ: 先頭1件のみ走査。
+      - 各シグナル: access_date_price 基準の delta が 0〜7日のものだけ採用。
+
+    Returns:
+        list[dict]: [{"kind","mmdd","num","sig_date","delta"}] (表示順)。
+            sig_date は access_date_price 基準で年補完した発生日 (date)。
+    """
+    out = []
+    pocket_pivot = stock.get("pocket_pivot", "")
+    trend_template = stock.get("trend_template", [])
+    pp_misses = set(trend_template) if isinstance(trend_template, (list, tuple, set)) else set()
+    pp_enabled = pocket_pivot and not (pp_misses & _PP_STAGE4_MISSES)
+
+    sources = []
+    if pp_enabled:
+        sources.append(("ポ", list(pocket_pivot)[:3]))  # 連続ポは最大3件
+    breakout = stock.get("breakout", [])
+    if breakout:
+        sources.append(("ブ", list(breakout)[:1]))  # ブは最新1件のみ
+
+    for kind, sigs in sources:
+        for sig in sigs:
+            spl = str(sig).split(",")
+            if len(spl) < 2:
+                continue
+            try:
+                num = int(spl[1])
+            except ValueError:
+                continue
+            try:
+                delta = _signal_recent_delta(stock, spl[0])
+            except ValueError:
+                log_warning("シグナル日付エラー", spl[0])
+                continue
+            if delta is None or delta < 0 or delta > 7:
+                continue
+            anchor = get_price_day(stock.get("access_date_price"))
+            sig_date = datetime.strptime(
+                "%d/%s" % (anchor.year, spl[0]), "%Y/%m/%d"
+            ).date()
+            if sig_date > anchor:
+                sig_date = sig_date.replace(year=anchor.year - 1)
+            out.append({
+                "kind": kind, "mmdd": spl[0], "num": num,
+                "sig_date": sig_date, "delta": delta,
+            })
+    return out
+
+
 def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
     """銘柄DBデータから、シグナル情報を作成する。
 
@@ -983,23 +1069,8 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
     tags = []
 
     def get_recent_signal_delta(mmdd):
-        """価格更新日に紐づく直近シグナルだけ日数差を返す。"""
-        access_date_price = stock.get("access_date_price")
-        if not access_date_price:
-            return None
-        anchor_day = get_price_day(access_date_price)
-        try:
-            sig_day = datetime.strptime(
-                "%d/%s" % (anchor_day.year, mmdd), "%Y/%m/%d"
-            ).date()
-        except ValueError:
-            raise
-        if sig_day > anchor_day:
-            sig_day = sig_day.replace(year=anchor_day.year - 1)
-        # 価格更新日より古すぎるシグナルは stale データとして除外する。
-        if (anchor_day - sig_day).days > 366:
-            return None
-        return (today.date() - sig_day).days
+        """価格更新日に紐づく直近シグナルだけ日数差を返す (共通関数に委譲)。"""
+        return _signal_recent_delta(stock, mmdd)
 
     # 新高値
     new_high = stock.get("new_high", "")

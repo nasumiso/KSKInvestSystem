@@ -236,6 +236,49 @@ class TestMakeSignal:
 
 
 # ==================================================
+# extract_signals — 一覧/チャートが共有する表示対象シグナル抽出 (issue #253/#310)
+# ==================================================
+class TestExtractSignals:
+    """extract_signals が make_signal の tags と同じフィルタ集合を返す"""
+
+    def _stock(self, **kw):
+        today = datetime.today()
+        base = {"trend_template": [], "access_date_price": today}
+        base.update(kw)
+        return base, today
+
+    @pytest.mark.parametrize(
+        "case, kw_factory, expect_kinds",
+        [
+            # Stage4 崩壊 → ポ全除外
+            ("stage4_drop", lambda d: {
+                "pocket_pivot": ["%s,2" % d(2)], "trend_template": ["ma40Up"]}, []),
+            # ポ4件目以降は落ちる (3件まで)
+            ("pp_cap3", lambda d: {
+                "pocket_pivot": ["%s,%d" % (d(n), n) for n in (1, 2, 3, 4)]},
+             ["ポ", "ポ", "ポ"]),
+            # ブは1件のみ
+            ("bo_cap1", lambda d: {
+                "breakout": ["%s,180" % d(1), "%s,200" % d(2)]}, ["ブ"]),
+            # delta>7 は除外
+            ("stale_drop", lambda d: {"pocket_pivot": ["%s,2" % d(10)]}, []),
+        ],
+    )
+    def test_filter_matches_tags(self, case, kw_factory, expect_kinds):
+        today = datetime.today()
+        def d(n):
+            return (today - timedelta(days=n)).strftime("%m/%d")
+        stock, _ = self._stock(**kw_factory(d))
+        signals = make_stock_db.extract_signals(stock)
+        assert [s["kind"] for s in signals] == expect_kinds
+
+    def test_no_access_date_returns_empty(self):
+        """access_date_price 無し → 日付基準が立たず空 (tags と同じ)"""
+        stock = {"pocket_pivot": ["06/03,2"], "trend_template": []}
+        assert make_stock_db.extract_signals(stock) == []
+
+
+# ==================================================
 # update_db — shihyo マージロジック
 # ==================================================
 class TestUpdateDbShihyoMerge:
