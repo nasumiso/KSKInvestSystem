@@ -2960,9 +2960,21 @@ class TestBuildPortfolioThemeSummary:
 class TestSignalDisplay:
     """_build_signal_display の強度/色・_resolve_signal_markers の週マップ"""
 
-    def _mmdd_days_ago(self, n):
-        from datetime import date, timedelta
-        return (date.today() - timedelta(days=n)).strftime("%m/%d")
+    def _anchor(self):
+        # extract_signals は access_date_price を get_price_day() で anchor 化する。
+        # テストは anchor を基準に mmdd を作り delta を安定させる。
+        from datetime import datetime
+        from ks_util import get_price_day
+        now = datetime.now()
+        return now, get_price_day(now)
+
+    def _stock_with_signal(self, kind, num, days_ago):
+        anchor_now, anchor_day = self._anchor()
+        from datetime import timedelta
+        mmdd = (anchor_day - timedelta(days=days_ago)).strftime("%m/%d")
+        key = "pocket_pivot" if kind == "ポ" else "breakout"
+        return {key: ["%s,%d" % (mmdd, num)], "trend_template": [],
+                "access_date_price": anchor_now}
 
     @pytest.mark.parametrize(
         "kind, num, days_ago, expect_word, alpha_high",
@@ -2975,9 +2987,7 @@ class TestSignalDisplay:
     )
     def test_strength_and_alpha(self, kind, num, days_ago,
                                 expect_word, alpha_high):
-        mmdd = self._mmdd_days_ago(days_ago)
-        key = "pocket_pivot" if kind == "ポ" else "breakout"
-        stock = {key: ["%s,%d" % (mmdd, num)], "trend_template": []}
+        stock = self._stock_with_signal(kind, num, days_ago)
         disp = helpers._build_signal_display(stock)
         assert expect_word in disp["tooltip"]
         # alpha を style 文字列から抽出 (rgba(...,A))
@@ -2989,42 +2999,53 @@ class TestSignalDisplay:
 
     def test_resolve_markers_x_interp_and_drop(self):
         """発生日を週バー間で日割り按分 (同週内の日付差がXに出る)・窓外はdrop"""
-        from datetime import date, timedelta
-        today = date.today()
+        from datetime import timedelta
+        anchor_now, anchor_day = self._anchor()
         # 週足バー日付 (昇順): 直近4週 (各週の代表日として週初の月曜)
-        monday = today - timedelta(days=today.weekday())  # 今週月曜
+        monday = anchor_day - timedelta(days=anchor_day.weekday())  # 今週月曜
         window_dates = [monday - timedelta(weeks=k) for k in (3, 2, 1, 0)]
         xs = [10.0, 20.0, 30.0, 40.0]
         # ポ: 先週の半ば (バー間の按分で xs[2]=30 と xs[3]=40 の中間付近)
         po_day = (monday - timedelta(days=3)).strftime("%m/%d")  # 先週金曜
-        # ブ: 窓より古い (5週前) → drop
-        old_day = (monday - timedelta(weeks=5)).strftime("%m/%d")
-        markers = helpers._resolve_signal_markers(
-            ["%s,0" % po_day], ["%s,180" % old_day], window_dates, xs)
+        # ブ: extract_signals の delta>7 フィルタで drop されるよう 8 日以上前
+        old_day = (anchor_day - timedelta(days=10)).strftime("%m/%d")
+        stock = {"pocket_pivot": ["%s,0" % po_day],
+                 "breakout": ["%s,180" % old_day],
+                 "trend_template": [], "access_date_price": anchor_now}
+        markers = helpers._resolve_signal_markers(stock, window_dates, xs)
         kinds = {m["kind"]: m for m in markers}
         assert "ポ" in kinds
         # 先週金曜は xs[2](先週月)と xs[3](今週月)の間 → 週バーにスナップせず按分
         assert 30.0 < kinds["ポ"]["x"] < 40.0
-        assert "ブ" not in kinds  # 窓外drop
+        assert "ブ" not in kinds  # delta>7 で drop
 
     def test_chart_markers_render_and_size(self):
         """build_price_rs_chart_full: ポ三角/ブダイヤが線より後 (前面) に描画・強度でサイズ可変"""
-        from datetime import date, timedelta
-        base = date.today()
-        price_log = [(base - timedelta(weeks=i), 1000 + i) for i in range(20)]
-        mmdd = base.strftime("%m/%d")
+        from datetime import timedelta
+        anchor_now, anchor_day = self._anchor()
+        price_log = [(anchor_day - timedelta(weeks=i), 1000 + i) for i in range(20)]
+        mmdd = anchor_day.strftime("%m/%d")
+
+        def _stock(pp=None, bo=None):
+            s = {"trend_template": [], "access_date_price": anchor_now}
+            if pp is not None:
+                s["pocket_pivot"] = pp
+            if bo is not None:
+                s["breakout"] = bo
+            return s
+
         svg, _ = helpers.build_price_rs_chart_full(
             price_log, [], False,
-            pocket_pivot=["%s,0" % mmdd], breakout=["%s,180" % mmdd])
+            stock=_stock(pp=["%s,0" % mmdd], bo=["%s,180" % mmdd]))
         assert "#2e7d32" in svg and "#f57c00" in svg  # ポ緑・ブ橙
         # マーカー (polygon) は polyline 群より後 = 最前面
         assert svg.rindex("polygon") > svg.rindex("polyline")
         # ポの強度でサイズが変わる: 強(乖離0, size6) vs 弱(乖離-5, size3)
         svg_strong, _ = helpers.build_price_rs_chart_full(
-            price_log, [], False, pocket_pivot=["%s,0" % mmdd])
+            price_log, [], False, stock=_stock(pp=["%s,0" % mmdd]))
         svg_weak, _ = helpers.build_price_rs_chart_full(
-            price_log, [], False, pocket_pivot=["%s,-5" % mmdd])
+            price_log, [], False, stock=_stock(pp=["%s,-5" % mmdd]))
         assert svg_strong != svg_weak  # サイズ差で polygon 座標が変わる
-        # markers なしなら polygon は出ない (後方互換)
+        # stock なしなら polygon は出ない
         svg2, _ = helpers.build_price_rs_chart_full(price_log, [], False)
         assert "#f57c00" not in svg2

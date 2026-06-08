@@ -202,6 +202,32 @@ class TestMakeSignal:
         _, tags_b = make_stock_db.make_signal(stock_b)
         assert "ブ" in tags_b
 
+    @pytest.mark.parametrize(
+        "today_dt, expect_tag",
+        [
+            (datetime(2026, 6, 13), True),   # 金曜更新の8日後(翌週末): anchor基準でdelta=0→残る
+            (datetime(2026, 7, 7), False),   # 32日後: 銘柄データstale(>30日)→消える
+        ],
+    )
+    def test_pocket_pivot_anchor_based_freshness(self, monkeypatch, today_dt, expect_tag):
+        """鮮度は anchor_day 基準。週末・数日の更新停止では当日シグナルが残り、
+        30日超の更新停止では stale として消える (PR320 レビュー対応)。"""
+
+        class FakeDateTime(datetime):
+            @classmethod
+            def today(cls):
+                return today_dt
+
+        monkeypatch.setattr(make_stock_db, "datetime", FakeDateTime)
+        # access_date_price=2026/6/5(金) 18:00、シグナルは同日 06/05
+        stock = {
+            "pocket_pivot": ["06/05,2"],
+            "trend_template": [],
+            "access_date_price": datetime(2026, 6, 5, 18, 0),
+        }
+        _, tags = make_stock_db.make_signal(stock)
+        assert ("ポ" in tags) is expect_tag
+
     def test_pocket_pivot_stale_prior_year_not_reactivated(self, monkeypatch):
         """前年以前の stale シグナルを年初に再点灯しない"""
 
@@ -233,6 +259,49 @@ class TestMakeSignal:
         # 先頭3件のみ signal に出力、4件目は出ない
         assert days[2] in signal
         assert days[3] not in signal
+
+
+# ==================================================
+# extract_signals — 一覧/チャートが共有する表示対象シグナル抽出 (issue #253/#310)
+# ==================================================
+class TestExtractSignals:
+    """extract_signals が make_signal の tags と同じフィルタ集合を返す"""
+
+    def _stock(self, **kw):
+        today = datetime.today()
+        base = {"trend_template": [], "access_date_price": today}
+        base.update(kw)
+        return base, today
+
+    @pytest.mark.parametrize(
+        "case, kw_factory, expect_kinds",
+        [
+            # Stage4 崩壊 → ポ全除外
+            ("stage4_drop", lambda d: {
+                "pocket_pivot": ["%s,2" % d(2)], "trend_template": ["ma40Up"]}, []),
+            # ポ4件目以降は落ちる (3件まで)
+            ("pp_cap3", lambda d: {
+                "pocket_pivot": ["%s,%d" % (d(n), n) for n in (1, 2, 3, 4)]},
+             ["ポ", "ポ", "ポ"]),
+            # ブは1件のみ
+            ("bo_cap1", lambda d: {
+                "breakout": ["%s,180" % d(1), "%s,200" % d(2)]}, ["ブ"]),
+            # delta>7 は除外
+            ("stale_drop", lambda d: {"pocket_pivot": ["%s,2" % d(10)]}, []),
+        ],
+    )
+    def test_filter_matches_tags(self, case, kw_factory, expect_kinds):
+        today = datetime.today()
+        def d(n):
+            return (today - timedelta(days=n)).strftime("%m/%d")
+        stock, _ = self._stock(**kw_factory(d))
+        signals = make_stock_db.extract_signals(stock)
+        assert [s["kind"] for s in signals] == expect_kinds
+
+    def test_no_access_date_returns_empty(self):
+        """access_date_price 無し → 日付基準が立たず空 (tags と同じ)"""
+        stock = {"pocket_pivot": ["06/03,2"], "trend_template": []}
+        assert make_stock_db.extract_signals(stock) == []
 
 
 # ==================================================

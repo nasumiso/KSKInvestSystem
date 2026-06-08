@@ -1943,14 +1943,12 @@ def _signal_strength_bucket(kind: str, num: int) -> str:
     return "弱"
 
 
-def _build_signal_display(stock: Dict[str, Any], tags=None) -> Dict[str, str]:
+def _build_signal_display(stock: Dict[str, Any]) -> Dict[str, str]:
     """signal セルの tooltip と背景色 style を組み立てる (issue #253)。
 
-    make_signal の tags で ポ/ブ が出る銘柄のみ対象 (Stage4除外・連続3件制約を尊重)。
-    数値は raw な pocket_pivot/breakout から取得し、検出日・強度・意味を tooltip に出す。
+    extract_signals (make_signal と同一フィルタ) が返す表示対象シグナルだけを使い、
+    一覧 tooltip/背景色と詳細チャートマーカーが同じシグナル集合を見るようにする。
     背景色は最強・最新シグナルの強度×鮮度で赤系 rgba の濃淡。
-
-    tags を渡すと make_signal の再呼び出しを省略する (一覧の二重計算回避)。
 
     Returns:
         {"tooltip": str, "style": str}。対象シグナルなしなら空文字。
@@ -1958,44 +1956,24 @@ def _build_signal_display(stock: Dict[str, Any], tags=None) -> Dict[str, str]:
     empty = {"tooltip": "", "style": ""}
     if not stock:
         return empty
-    if tags is None:
-        try:
-            from make_stock_db import make_signal  # 遅延 import
-            _signal, tags = make_signal(stock)
-        except Exception:
-            return empty
-    today = date.today()
+    try:
+        from make_stock_db import extract_signals  # 遅延 import
+        signals = extract_signals(stock)
+    except Exception:  # noqa: BLE001
+        return empty
     strength_alpha = {"強": 0.85, "中": 0.55, "弱": 0.30}
+    tmpls = {
+        "ポ": "[ポ] %s %s 押し目買い圧(MA10乖離 %d) / %d日前",
+        "ブ": "[ブ] %s %s 出来高ブレイク(出来高+%d%%) / %d日前",
+    }
 
     lines = []
     max_alpha = 0.0
-    # ポ/ブ共通パース (_resolve_signal_markers と同じループ形)
-    for kind, sigs, limit, tmpl in (
-        ("ポ", stock.get("pocket_pivot"), 3,
-         "[ポ] %s %s 押し目買い圧(MA10乖離 %d) / %d日前"),
-        ("ブ", stock.get("breakout"), 1,
-         "[ブ] %s %s 出来高ブレイク(出来高+%d%%) / %d日前"),
-    ):
-        if kind not in tags:
-            continue
-        for sig in list(sigs or [])[:limit]:
-            spl = str(sig).split(",")
-            if len(spl) < 2:
-                continue
-            try:
-                num = int(spl[1])
-            except ValueError:
-                continue
-            dt = _parse_research_update_md(spl[0], today)
-            if dt is None:
-                continue
-            delta = (today - dt).days
-            if delta < 0 or delta > 7:
-                continue
-            bucket = _signal_strength_bucket(kind, num)
-            lines.append(tmpl % (spl[0], bucket, num, delta))
-            max_alpha = max(max_alpha,
-                            strength_alpha[bucket] * _signal_freshness_alpha(delta))
+    for s in signals:
+        bucket = _signal_strength_bucket(s["kind"], s["num"])
+        lines.append(tmpls[s["kind"]] % (s["mmdd"], bucket, s["num"], s["delta"]))
+        max_alpha = max(max_alpha,
+                        strength_alpha[bucket] * _signal_freshness_alpha(s["delta"]))
 
     if not lines:
         return empty
@@ -2534,25 +2512,28 @@ def _svg_diamond(cx: float, cy: float, size: float, color: str,
             % (pts, color, opacity, t))
 
 
-def _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs):
+def _resolve_signal_markers(stock, window_dates, xs):
     """ポ/ブシグナルを週足チャートの表示窓にマップした marker spec を返す (issue #253)。
 
-    X は発生日を週バー間で線形補間する (週足だが発生日は日単位のため、週の幅を
-    日割りで按分)。窓外 (最古バーより古い) は drop。
+    シグナルの抽出・フィルタ・年補完は extract_signals (make_signal と同一基準) に委譲し、
+    一覧 tooltip と同じシグナル集合をマーカー化する。X は発生日を週バー間で線形補間する
+    (週足だが発生日は日単位のため週の幅を日割り按分)。窓外 (最古バーより古い) は drop。
 
     Args:
-        pocket_pivot/breakout: "MM/DD,num" 文字列リスト (年なし)
+        stock: 銘柄DB dict (pocket_pivot/breakout/trend_template/access_date_price を参照)
         window_dates: 表示窓 (基準週揃え後) の週バー日付列 (昇順, datetime.date)
         xs: 各週バーの X 座標 (window_dates と同じ index)
 
     Returns:
         [{"kind","x","num","delta","strength"}] のリスト。窓外は drop。
     """
-    if not window_dates or not xs:
+    if not window_dates or not xs or not stock:
         return []
-    today = date.today()
-    # 年推定の基準は today。週バー最新日(latest)を基準にすると、週足が確定週どまりで
-    # シグナル発生日(数日前)が latest より新しいとき誤って前年扱いになる。
+    try:
+        from make_stock_db import extract_signals  # 遅延 import
+        signals = extract_signals(stock)
+    except Exception:  # noqa: BLE001
+        return []
     latest = window_dates[-1]  # チャート最新日 (= 直近週)
     oldest = window_dates[0]
 
@@ -2571,29 +2552,15 @@ def _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs):
         return None
 
     markers = []
-    for kind, sigs in (("ポ", pocket_pivot or []), ("ブ", breakout or [])):
-        for sig in sigs:
-            spl = str(sig).split(",")
-            if len(spl) < 2:
-                continue
-            d = _parse_research_update_md(spl[0], today)
-            if d is None:
-                continue
-            try:
-                num = int(spl[1])
-            except ValueError:
-                continue
-            delta = (today - d).days
-            if delta < 0:
-                continue
-            x = _interp_x(d)
-            if x is None:
-                continue  # 窓外 (古い) → drop
-            markers.append({
-                "kind": kind, "x": x,
-                "num": num, "delta": delta,
-                "strength": _signal_strength_bucket(kind, num),
-            })
+    for s in signals:
+        x = _interp_x(s["sig_date"])
+        if x is None:
+            continue  # 窓外 (古い) → drop
+        markers.append({
+            "kind": s["kind"], "x": x,
+            "num": s["num"], "delta": s["delta"],
+            "strength": _signal_strength_bucket(s["kind"], s["num"]),
+        })
     return markers
 
 
@@ -2697,8 +2664,7 @@ def build_price_rs_chart_full(
     has_blue_dot: bool,
     width: int = 400,
     height: int = 138,
-    pocket_pivot: Optional[List] = None,
-    breakout: Optional[List] = None,
+    stock: Optional[Dict[str, Any]] = None,
 ) -> tuple:
     """詳細ページ用 20 週フルチャート SVG と tooltip を返す (週足 20 本ベース)。
 
@@ -2741,7 +2707,7 @@ def build_price_rs_chart_full(
     # ポ/ブマーカー用に表示窓の週バー日付列を price_asc と同じ手順で構築 (issue #253)。
     # _asc_series_from_log と同じく log[:LOOKBACK] を昇順化し None 値を除外、末尾 n_align 本。
     window_dates = []
-    if pocket_pivot or breakout:
+    if stock:
         try:
             sliced = list(price_log)[:_SPARK_LOOKBACK]
             dates_asc = [d for d, v in reversed(sliced) if v is not None]
@@ -2938,7 +2904,7 @@ def build_price_rs_chart_full(
     # (騰落率Y軸と無関係) に配置し、株価線/RS線と完全分離する。サイズは強度バケット。
     # 詳細チャートは発生日が X 位置で読めるため鮮度による半透明化は行わない。最前面に描く。
     if window_dates:
-        markers = _resolve_signal_markers(pocket_pivot, breakout, window_dates, xs)
+        markers = _resolve_signal_markers(stock, window_dates, xs)
         size_map = {"強": 6.0, "中": 4.5, "弱": 3.0}
         opa_map = {"強": 1.0, "中": 0.8, "弱": 0.6}
         # ポは三角・ブは菱形。視認性調整: ポは控えめに縮小、ブは強調して拡大。
@@ -2998,8 +2964,7 @@ def build_stock_chart_payload(
                 rs_line = []
         svg, tooltip = build_price_rs_chart_full(
             price_log, rs_line, has_blue_dot,
-            pocket_pivot=(stock or {}).get("pocket_pivot") or [],
-            breakout=(stock or {}).get("breakout") or [],
+            stock=stock,
         )
     else:
         price_log = (stock or {}).get("price_log") or []
@@ -3211,7 +3176,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "trend_template_tooltip": trend_info["tooltip"],
         "kairi_gauge_svg": trend_info["kairi_gauge_svg"],
         "tags": _format_tags(stock, _tags),
-        "signal_display": _build_signal_display(stock, _tags),  # issue #253: tooltip+背景色
+        "signal_display": _build_signal_display(stock),  # issue #253: tooltip+背景色
         "spr_gauge": _build_spr_gauge_for_stock(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
         "theoretical_diff_raw": _theoretical_diff_raw(stock),
