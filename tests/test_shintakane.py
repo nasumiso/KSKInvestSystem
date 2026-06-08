@@ -1,5 +1,7 @@
 """shintakane.py のHTMLパース関数テスト"""
 
+from datetime import datetime
+
 import pytest
 
 import shintakane
@@ -696,3 +698,40 @@ class TestGetTodaysPts:
         assert len(use_cache_calls) == 3
         for url, use_cache in use_cache_calls:
             assert use_cache is False, f"force=True なのに use_cache=True: {url}"
+
+
+# ==================================================
+# _saved_latest_date (日次データのキャッシュ判定)
+# ==================================================
+
+class Test_saved_latest_date:
+    """保存済み JSON の latest.date を読む共通ヘルパー。"""
+
+    @pytest.mark.parametrize("content,expected", [
+        ('{"latest": {"date": "2026-06-08", "new_high": 22}}', "2026-06-08"),  # 正常
+        ('{"latest": {}}', None),          # latest はあるが date 無し
+        ('{"history": []}', None),         # latest キー無し
+        ('{"latest": null}', None),        # latest が null
+        ('not a json {{{', None),          # 壊れた JSON
+    ])
+    def test_各種JSONからlatest日付を取り出す(self, tmp_path, content, expected):
+        p = tmp_path / "daily.json"
+        p.write_text(content, encoding="utf-8")
+        assert shintakane._saved_latest_date(str(p)) == expected
+
+    def test_ファイル無しはNone(self, tmp_path):
+        assert shintakane._saved_latest_date(str(tmp_path / "missing.json")) is None
+
+
+class Test_recent_weekday:
+    """now から見た期待最新営業日 (17時カットオーバー + 土日補正) を返すヘルパー。"""
+
+    @pytest.mark.parametrize("dt,expected", [
+        (datetime(2026, 6, 11, 18), "2026-06-11"),  # 木17時後 → 当日
+        (datetime(2026, 6, 11, 10), "2026-06-10"),  # 木17時前 → 前日 (退行解消)
+        (datetime(2026, 6, 13, 12), "2026-06-12"),  # 土 → 前金曜
+        (datetime(2026, 6, 14, 12), "2026-06-12"),  # 日 → 前々金曜
+        (datetime(2026, 6, 8, 10), "2026-06-05"),   # 月17時前 → 前金曜
+    ])
+    def test_期待最新営業日(self, dt, expected):
+        assert shintakane._recent_weekday(dt) == expected
