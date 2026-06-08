@@ -3040,6 +3040,11 @@ class TestSignalDisplay:
         assert "#2e7d32" in svg and "#f57c00" in svg  # ポ緑・ブ橙
         # マーカー (polygon) は polyline 群より後 = 最前面
         assert svg.rindex("polygon") > svg.rindex("polyline")
+        # tooltip に発生日 (M/D, ゼロ埋めなし) を明示する (週足チャートの
+        # X 位置だけでは発生日が読み取りづらいため)
+        sig_md = "%d/%d" % (anchor_day.month, anchor_day.day)
+        assert "<title>ポ %s " % sig_md in svg
+        assert "<title>ブ %s " % sig_md in svg
         # ポの強度でサイズが変わる: 強(乖離0, size6) vs 弱(乖離-5, size3)
         svg_strong, _ = helpers.build_price_rs_chart_full(
             price_log, [], False, stock=_stock(pp=["%s,0" % mmdd]))

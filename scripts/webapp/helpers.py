@@ -2559,6 +2559,7 @@ def _resolve_signal_markers(stock, window_dates, xs):
         markers.append({
             "kind": s["kind"], "x": x,
             "num": s["num"], "delta": s["delta"],
+            "sig_date": s["sig_date"],
             "strength": _signal_strength_bucket(s["kind"], s["num"]),
         })
     return markers
@@ -2915,7 +2916,11 @@ def build_price_rs_chart_full(
         y_bu = y_po - 6
         for m in markers:
             size = size_map[m["strength"]]
-            title = "%s %d日前 (%s)" % (m["kind"], m["delta"], m["strength"])
+            # 週足チャートに日足発生日を重ねるため、X位置だけでは発生日が読み取り
+            # づらい (週バーは月曜ラベルで週末終値を示すため視覚的にズレる)。
+            # 発生日 (M/D) を tooltip に明示して誤読を防ぐ。
+            sig_md = "%d/%d" % (m["sig_date"].month, m["sig_date"].day)
+            title = "%s %s (%s)" % (m["kind"], sig_md, m["strength"])
             if m["kind"] == "ポ":
                 parts.append(_svg_triangle(m["x"], y_po, size * PO_SIZE_SCALE, "#2e7d32", 1.0, title))
             else:  # ブ
