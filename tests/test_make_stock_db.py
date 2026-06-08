@@ -202,6 +202,32 @@ class TestMakeSignal:
         _, tags_b = make_stock_db.make_signal(stock_b)
         assert "ブ" in tags_b
 
+    @pytest.mark.parametrize(
+        "today_dt, expect_tag",
+        [
+            (datetime(2026, 6, 13), True),   # 金曜更新の8日後(翌週末): anchor基準でdelta=0→残る
+            (datetime(2026, 7, 7), False),   # 32日後: 銘柄データstale(>30日)→消える
+        ],
+    )
+    def test_pocket_pivot_anchor_based_freshness(self, monkeypatch, today_dt, expect_tag):
+        """鮮度は anchor_day 基準。週末・数日の更新停止では当日シグナルが残り、
+        30日超の更新停止では stale として消える (PR320 レビュー対応)。"""
+
+        class FakeDateTime(datetime):
+            @classmethod
+            def today(cls):
+                return today_dt
+
+        monkeypatch.setattr(make_stock_db, "datetime", FakeDateTime)
+        # access_date_price=2026/6/5(金) 18:00、シグナルは同日 06/05
+        stock = {
+            "pocket_pivot": ["06/05,2"],
+            "trend_template": [],
+            "access_date_price": datetime(2026, 6, 5, 18, 0),
+        }
+        _, tags = make_stock_db.make_signal(stock)
+        assert ("ポ" in tags) is expect_tag
+
     def test_pocket_pivot_stale_prior_year_not_reactivated(self, monkeypatch):
         """前年以前の stale シグナルを年初に再点灯しない"""
 
