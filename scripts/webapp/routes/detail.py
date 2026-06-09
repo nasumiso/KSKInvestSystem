@@ -149,6 +149,8 @@ def stock_detail(code_s: str):
         portfolio_status_query=portfolio_status_query,
         portfolio_fallback_mode=portfolio_fallback_mode,
         portfolio_transitions=portfolio_transitions,
+        # モーダルの株数欄初期値 (保有中のみ意味を持つ。未登録/フォールバックは 0)
+        portfolio_qty=(portfolio_record or {}).get("qty") or 0,
         gyoutai_themes=gyoutai_themes,
         theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,

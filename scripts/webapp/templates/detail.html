@@ -14,10 +14,21 @@
 <div class="stock-header">
   <div class="left">
     <h1>
-      {% if record.overall_rating %}
-      <span class="rating-badge rating-{{ record.overall_rating }}">{{ record.overall_rating }}</span>
-      {% endif %}
-      <small style="color:#888;font-size:0.5em;">{{ record.code_s }}</small>
+      {# issue: 左上バッジから総合評価を変更可能に。クリックで select 表示、
+         手動メモの「総合評価」と双方向連動 (memo-form で同じ overall_rating を送信)。 #}
+      <span class="rating-badge-edit rating-badge rating-{{ record.overall_rating or 'none' }}"
+            id="rating-badge-wrap"
+            onclick="editRatingBadge()"
+            title="クリックで総合評価を変更">{{ record.overall_rating or '—' }}</span>
+      <select class="editable-select rating-badge-select hidden" id="rating-badge-select"
+              name="overall_rating" data-form="memo" form="memo-form"
+              onblur="hideRatingBadge()">
+        <option value="">未評価</option>
+        {% for r in valid_ratings %}
+        <option value="{{ r }}" {{ 'selected' if record.overall_rating == r }}>{{ r }}</option>
+        {% endfor %}
+      </select>
+      <small style="color:#888;font-size:0.5em;display:inline;">{{ record.code_s }}</small>
       {{ record.stock_name or '' }}
       {# issue #236: stock_name_prev を inline 編集化。エイリアス (旧名・俗称・別表記) #}
       {% if record.stock_name_prev %}
@@ -343,7 +354,9 @@
 
     <div class="memo-field">
       <label>総合評価</label>
-      <select class="editable-select" name="overall_rating" data-form="memo">
+      {# 送信は左上バッジの select (#rating-badge-select) に一本化。こちらは双方向
+         同期用のミラー。変更すると onchange でバッジ側に反映し保存される。 #}
+      <select class="editable-select" id="rating-memo-select" onchange="syncRatingFromMemo()">
         <option value="">未評価</option>
         {% for r in valid_ratings %}
         <option value="{{ r }}" {{ 'selected' if record.overall_rating == r }}>{{ r }}</option>
@@ -606,18 +619,31 @@
     </div>
     {% if portfolio_status_query %}
     {# 登録済: ステータス遷移フォーム #}
-    <form method="POST" action="{{ url_for('portfolio.transition', code_s=record.code_s) }}" class="portfolio-modal-body">
+    {# issue #269 同様: qty の step=100 と手入力 (任意整数) を両立させるため novalidate。 #}
+    <form method="POST" action="{{ url_for('portfolio.transition', code_s=record.code_s) }}"
+          class="portfolio-modal-body" novalidate>
       <input type="hidden" name="return_to" value="detail">
       <p style="margin:0 0 0.6em 0;">現在: <strong>{{ portfolio_status_label }}</strong></p>
       {% if portfolio_transitions %}
       <label style="display:block;margin-bottom:0.6em;">
         変更先:
-        <select name="new_status" required style="margin-left:0.4em;">
+        <select name="new_status" required id="detail-portfolio-new-status"
+                onchange="syncDetailPortfolioQtyVisibility()" style="margin-left:0.4em;">
           {% for label, value in portfolio_transitions %}
           <option value="{{ value }}">{{ label }}</option>
           {% endfor %}
         </select>
       </label>
+      {# issue #269: 株数欄は変更先=1保 のときのみ表示。↑↓は 100 株単位、手入力は任意整数。 #}
+      <div id="detail-portfolio-qty-row" style="display:none;margin-bottom:0.6em;">
+        <label style="display:flex;align-items:center;gap:0.4em;">
+          株数:
+          <input type="number" name="qty" id="detail-portfolio-qty" min="0" step="100"
+                 value="{{ portfolio_qty if portfolio_qty and portfolio_qty > 0 else 100 }}"
+                 style="width:6em;text-align:right;padding:0.2em 0.3em;">
+          <span style="color:#888;font-size:0.85em;">株</span>
+        </label>
+      </div>
       <label style="display:block;margin-bottom:0.6em;">
         アクション日付:
         <input type="date" name="action_date" value="{{ today_jst }}" max="{{ today_jst }}" required
@@ -762,8 +788,67 @@
 </style>
 
 <script>
+// ===== 総合評価バッジ (左上) のインライン編集 =====
+// 送信は #rating-badge-select (name=overall_rating, form=memo-form) に一本化し、
+// 手動メモの #rating-memo-select とは双方向同期する。
+function editRatingBadge() {
+  var wrap = document.getElementById('rating-badge-wrap');
+  var sel = document.getElementById('rating-badge-select');
+  if (!wrap || !sel) return;
+  wrap.classList.add('hidden');
+  sel.classList.remove('hidden');
+  sel.focus();
+}
+function hideRatingBadge() {
+  var wrap = document.getElementById('rating-badge-wrap');
+  var sel = document.getElementById('rating-badge-select');
+  if (!wrap || !sel) return;
+  sel.classList.add('hidden');
+  wrap.classList.remove('hidden');
+}
+// バッジ select の変更をバッジ表示とメモ側ミラーに反映する。
+// (保存自体は editable-select の data-form=memo + focusout 自動保存に任せる)
+function _applyRatingToBadge(value) {
+  var wrap = document.getElementById('rating-badge-wrap');
+  if (!wrap) return;
+  wrap.textContent = value || '—';
+  wrap.className = 'rating-badge-edit rating-badge rating-' + (value || 'none');
+}
+document.addEventListener('DOMContentLoaded', function() {
+  var badgeSel = document.getElementById('rating-badge-select');
+  var memoSel = document.getElementById('rating-memo-select');
+  if (badgeSel) {
+    badgeSel.addEventListener('change', function() {
+      _applyRatingToBadge(badgeSel.value);
+      if (memoSel) memoSel.value = badgeSel.value;
+    });
+  }
+});
+// メモ側 select の変更をバッジ select に反映し、保存を発火させる。
+function syncRatingFromMemo() {
+  var badgeSel = document.getElementById('rating-badge-select');
+  var memoSel = document.getElementById('rating-memo-select');
+  if (!badgeSel || !memoSel) return;
+  badgeSel.value = memoSel.value;
+  _applyRatingToBadge(badgeSel.value);
+  // 自動保存パイプライン (input→dirty, focusout→submit) に乗せるため両イベントを発火。
+  badgeSel.dispatchEvent(new Event('input', { bubbles: true }));
+  badgeSel.dispatchEvent(new Event('focusout', { bubbles: true }));
+}
+
+// ===== 保有モーダル: 株数欄の表示制御 (issue #269 と同仕様) =====
+// 変更先=1保 のときだけ qty 行を出す。
+function syncDetailPortfolioQtyVisibility() {
+  var sel = document.getElementById('detail-portfolio-new-status');
+  var row = document.getElementById('detail-portfolio-qty-row');
+  if (!sel || !row) return;
+  row.style.display = (sel.value === '1保') ? '' : 'none';
+}
+
 function openPortfolioModal() {
   document.getElementById('portfolio-modal').style.display = 'flex';
+  // 初期表示時にも qty 行の表示/非表示を現在の選択に合わせる。
+  syncDetailPortfolioQtyVisibility();
 }
 function closePortfolioModal() {
   document.getElementById('portfolio-modal').style.display = 'none';

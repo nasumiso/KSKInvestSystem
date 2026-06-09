@@ -18,6 +18,26 @@
 .rating-C { background: #2ecc71; }
 .rating-D { background: #3498db; }
 .rating-E { background: #95a5a6; }
+/* 未評価 (クリックで設定可能) */
+.rating-none { background: #ccc; color: #666; }
+/* クリックで select に切り替わる編集可能バッジ (見た目は通常のバッジのまま)。 */
+.rating-badge-edit { cursor: pointer; }
+.rating-badge-edit:hover { filter: brightness(0.95); outline: 1px solid #4285f4; }
+.rating-badge-edit.hidden { display: none; }
+/* バッジ位置の評価 select。Pico の select{width:100%} による全幅化を防ぎ、
+   バッジと同程度の大きさで inline に収める。.hidden で非表示制御する。 */
+.rating-badge-select {
+  display: inline-block;
+  width: auto !important;
+  font-size: 1.1em;
+  font-weight: bold;
+  padding: 0.05em 0.3em;
+  margin: 0;
+  vertical-align: middle;
+  border: 1px solid #4285f4;
+  border-radius: 4px;
+}
+.rating-badge-select.hidden { display: none; }
 
 /* 保有状態バッジ (保有/準保有/監視) */
 .portfolio-badge {
