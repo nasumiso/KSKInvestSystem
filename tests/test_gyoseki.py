@@ -26,6 +26,21 @@ class TestCalcGrowthRate:
         """大幅成長"""
         assert gyoseki.calc_growth_rate(100, 300) == 200
 
+    @pytest.mark.parametrize("cur,nxt", [
+        ("－", 0),      # 前年同期が欠損 (calc_quarter_growth で発火した実ケース)
+        (100, "－"),    # 当期が欠損
+        ("－", "－"),   # 両方欠損
+    ])
+    def test_missing_dash(self, cur, nxt):
+        """欠損セル "－" (str) が混じっても TypeError で落ちず 0 を返す。
+
+        業績パースは欠損を "－" のまま格納する仕様 (parse_kabutan_account2)。
+        calc_growth_rate の cur>0 比較に str が到達し
+        TypeError: '>' not supported between str and int で
+        make_stock_db 全体が落ちた回帰の防止。
+        """
+        assert gyoseki.calc_growth_rate(cur, nxt) == 0
+
 
 # ==================================================
 # calc_growth_rate2

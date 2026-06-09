@@ -835,6 +835,10 @@ def calc_growth_rate(cur, nxt):
     """成長率を返す
     -100~+100％数値で返す
     """
+    # 業績欠損セルは "－" (str) のまま入るため、数値比較の前に弾く。
+    # 値がない (計算不能) ものは成長率0扱い (既存の except ValueError: return 0 と同義)。
+    if not isinstance(cur, (int, float)) or not isinstance(nxt, (int, float)):
+        return 0
     if cur > 0:
         try:
             return int(round(100 * float(nxt) / cur - 100, 0))
