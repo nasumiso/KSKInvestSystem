@@ -152,7 +152,7 @@ class TestMakeSignal:
     # ---- issue #110: ポケットピポット改善 ----
 
     @pytest.mark.parametrize(
-        "trend_template, expect_tag",
+        "trend_template, expect_signal",
         [
             ([], True),  # 全通過(◎) → タグ付与
             (None, True),  # legacy None → 空扱い
@@ -163,7 +163,7 @@ class TestMakeSignal:
             ("__missing__", True),  # trend_template キー欠落 → タグ付与
         ],
     )
-    def test_pocket_pivot_stage4_filter(self, trend_template, expect_tag):
+    def test_pocket_pivot_stage4_filter(self, trend_template, expect_signal):
         """項目1: Stage 4 崩壊銘柄ではポケットピポットを除外する"""
         today = datetime.today()
         recent = (today - timedelta(days=2)).strftime("%m/%d")
@@ -173,8 +173,9 @@ class TestMakeSignal:
         }
         if trend_template != "__missing__":
             stock["trend_template"] = trend_template
-        _, tags = make_stock_db.make_signal(stock)
-        assert ("ポ" in tags) is expect_tag
+        signal, tags = make_stock_db.make_signal(stock)
+        assert ("[ポ]" in signal) is expect_signal
+        assert "ポ" not in tags
 
     def test_pocket_pivot_year_boundary(self, monkeypatch):
         """項目3: 年初に年末シグナルを処理しても delta_day が正で「ポ」が付く"""
@@ -191,25 +192,27 @@ class TestMakeSignal:
             "trend_template": [],
             "access_date_price": datetime(2026, 1, 3, 18, 0),
         }
-        _, tags = make_stock_db.make_signal(stock)
-        assert "ポ" in tags
+        signal, tags = make_stock_db.make_signal(stock)
+        assert "[ポ]" in signal
+        assert "ポ" not in tags
         # ブレイクアウト側も同じ年跨ぎ修正
         stock_b = {
             "breakout": ["12/31,50"],
             "trend_template": [],
             "access_date_price": datetime(2026, 1, 3, 18, 0),
         }
-        _, tags_b = make_stock_db.make_signal(stock_b)
-        assert "ブ" in tags_b
+        signal_b, tags_b = make_stock_db.make_signal(stock_b)
+        assert "[ブ]" in signal_b
+        assert "ブ" not in tags_b
 
     @pytest.mark.parametrize(
-        "today_dt, expect_tag",
+        "today_dt, expect_visible",
         [
             (datetime(2026, 6, 13), True),   # 金曜更新の8日後(翌週末): anchor基準でdelta=0→残る
             (datetime(2026, 7, 7), False),   # 32日後: 銘柄データstale(>30日)→消える
         ],
     )
-    def test_pocket_pivot_anchor_based_freshness(self, monkeypatch, today_dt, expect_tag):
+    def test_pocket_pivot_anchor_based_freshness(self, monkeypatch, today_dt, expect_visible):
         """鮮度は anchor_day 基準。週末・数日の更新停止では当日シグナルが残り、
         30日超の更新停止では stale として消える (PR320 レビュー対応)。"""
 
@@ -225,8 +228,10 @@ class TestMakeSignal:
             "trend_template": [],
             "access_date_price": datetime(2026, 6, 5, 18, 0),
         }
-        _, tags = make_stock_db.make_signal(stock)
-        assert ("ポ" in tags) is expect_tag
+        signal, tags = make_stock_db.make_signal(stock)
+        visible = any(s["kind"] == "ポ" for s in make_stock_db.extract_signals(stock))
+        assert visible is expect_visible
+        assert "ポ" not in tags
 
     def test_pocket_pivot_stale_prior_year_not_reactivated(self, monkeypatch):
         """前年以前の stale シグナルを年初に再点灯しない"""
@@ -242,11 +247,12 @@ class TestMakeSignal:
             "trend_template": [],
             "access_date_price": datetime(2024, 12, 31, 18, 0),
         }
-        _, tags = make_stock_db.make_signal(stock)
+        signal, tags = make_stock_db.make_signal(stock)
+        assert "[ポ]" in signal
         assert "ポ" not in tags
 
     def test_pocket_pivot_consecutive(self):
-        """項目4: 連続ポケットピポットは最大3件・「ポ」タグは1個"""
+        """項目4: 連続ポケットピポットは最大3件。タグ列にはポを出さない"""
         today = datetime.today()
         days = [(today - timedelta(days=n)).strftime("%m/%d") for n in (1, 2, 3, 4)]
         stock = {
@@ -255,10 +261,35 @@ class TestMakeSignal:
             "access_date_price": today,
         }
         signal, tags = make_stock_db.make_signal(stock)
-        assert tags.count("ポ") == 1
+        assert "ポ" not in tags
         # 先頭3件のみ signal に出力、4件目は出ない
         assert days[2] in signal
         assert days[3] not in signal
+
+    @pytest.mark.parametrize(
+        "origin, days_ago, expected",
+        [
+            ("高出P", 0, ["高", "出", "P"]),
+            ("高", 1, ["高"]),
+            ("出P", 2, []),
+        ],
+    )
+    def test_kabutan_origin_tags(self, monkeypatch, origin, days_ago, expected):
+        """株探リスト由来タグは当日分のみ高/出/Pを付与する"""
+        base = datetime(2026, 6, 9, 18, 0)
+
+        class FakeDate(date):
+            @classmethod
+            def today(cls):
+                return base.date()
+
+        monkeypatch.setattr(make_stock_db, "date", FakeDate)
+        stock = {
+            "kabutan_origin": origin,
+            "kabutan_origin_date": base - timedelta(days=days_ago),
+        }
+        _signal, tags = make_stock_db.make_signal(stock)
+        assert tags == expected
 
 
 # ==================================================

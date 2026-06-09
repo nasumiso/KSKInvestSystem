@@ -1653,13 +1653,10 @@ class TestComputeCellStyles:
     @pytest.mark.parametrize(
         "tags, expected",
         [
-            ("ポ", f"background:{C['赤']};color:#fff"),
-            ("ブ", f"background:{C['赤']};color:#fff"),
             ("最", f"background:{C['赤']};color:#fff"),
             ("警", f"background:{C['青']};color:#fff"),
             ("売", f"background:{C['青']};color:#fff"),
             ("押", f"color:{C['青']}"),
-            ("警/ポ", f"background:{C['赤']};color:#fff"),     # 赤 > 青
             ("警/押", f"background:{C['青']};color:#fff"),     # 青背景 > 青文字
             ("", None),
         ],
@@ -1670,6 +1667,16 @@ class TestComputeCellStyles:
             assert "tags" not in styles
         else:
             assert styles["tags"] == expected
+
+    def test_signal_cell_uses_signal_display_style(self):
+        """ポ/ブの赤背景は新シグナル列に移す"""
+        style = "background:rgba(234,67,53,0.85);color:#fff"
+        styles = helpers.compute_cell_styles(
+            {"tags": "高", "signal_mark": "ポ/ブ", "signal_display": {"style": style}},
+            today=TODAY,
+        )
+        assert "tags" not in styles
+        assert styles["signal"] == style
 
     # ----- 進捗率乖離: <C3>=赤(注目) 単独 / eiri≧20 = 濃黄 単独 / 両該当=左右分割 -----
     def test_progress_diff_c3_only(self):
@@ -2996,6 +3003,24 @@ class TestSignalDisplay:
         assert m is not None
         alpha = float(m.group(1))
         assert (alpha >= 0.8) is alpha_high
+
+    def test_format_signal_uses_recent_marks_only_but_keeps_full_title(self):
+        """表示記号は直近ポ/ブのみ、title用全文は make_signal の signal を保持する"""
+        from datetime import timedelta
+        anchor_now, anchor_day = self._anchor()
+        stock = {
+            "pocket_pivot": ["%s,0" % (anchor_day - timedelta(days=1)).strftime("%m/%d")],
+            "breakout": ["%s,180" % (anchor_day - timedelta(days=10)).strftime("%m/%d")],
+            "trend_template": [],
+            "access_date_price": anchor_now,
+            "sell_pressure_ratio": [50, 80, 40, 2.5, 1.8],
+            "rs_raw": 0.5,
+        }
+        mark, full = helpers._format_signal(stock)
+        assert mark == "ポ"
+        assert "[ポ]" in full
+        assert "[ブ]" in full
+        assert "[買過]" in full
 
     def test_resolve_markers_x_interp_and_drop(self):
         """発生日を週バー間で日割り按分 (同週内の日付差がXに出る)・窓外はdrop"""

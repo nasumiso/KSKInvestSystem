@@ -735,3 +735,18 @@ class Test_recent_weekday:
     ])
     def test_期待最新営業日(self, dt, expected):
         assert shintakane._recent_weekday(dt) == expected
+
+
+class TestOriginToMark:
+    @pytest.mark.parametrize(
+        "origin, expected",
+        [
+            ("shintakane", "高"),
+            ("dekidakaup", "出"),
+            ("pts", "P"),
+            ("shintakanedekidakauppts", "高出P"),
+            ("", ""),
+        ],
+    )
+    def test_origin_to_mark(self, origin, expected):
+        assert shintakane._origin_to_mark(origin) == expected

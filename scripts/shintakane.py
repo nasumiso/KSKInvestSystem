@@ -236,6 +236,18 @@ def get_latest_pts_fname():
     return today_csv, today
 
 
+def _origin_to_mark(origin):
+    """origin文字列を表示用記号へ変換する。"""
+    mark = ""
+    if str(origin).find("shintakane") >= 0:
+        mark += "高"
+    if str(origin).find("dekidakaup") >= 0:
+        mark += "出"
+    if str(origin).find("pts") >= 0:
+        mark += "P"
+    return mark
+
+
 def todays_shintakane(upd=UPD_INTERVAL):
     """本日の新高値銘柄データを解析して結果を表示する"""
     log_print("=" * 30)
@@ -422,6 +434,37 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # 調査不要なものを除く(stocksが必要なのでここで)
     today_list = filter_today_list(today_list)
     already_list = filter_today_list(already_list)
+
+    def save_kabutan_origin():
+        """本日リスト掲載の株探由来記号をDBへ保存する。"""
+        base_day = get_price_day(datetime.today())
+        active_sources = {
+            "shintakane": bool(latest_csv_dt) and get_price_day(latest_csv_dt) == base_day,
+            "dekidakaup": bool(latest_csv_dt_d) and get_price_day(latest_csv_dt_d) == base_day,
+            "pts": bool(latest_csv_dt_p) and get_price_day(latest_csv_dt_p) == base_day,
+        }
+        saved_at = datetime.today()
+        for item in today_list:
+            origin = item.get("origin", "")
+            mark = ""
+            if active_sources["shintakane"] and origin.find("shintakane") >= 0:
+                mark += "高"
+            if active_sources["dekidakaup"] and origin.find("dekidakaup") >= 0:
+                mark += "出"
+            if active_sources["pts"] and origin.find("pts") >= 0:
+                mark += "P"
+            if not mark:
+                continue
+            stock_db.update_db(
+                stocks,
+                {
+                    "code_s": item["code_s"],
+                    "kabutan_origin": mark,
+                    "kabutan_origin_date": saved_at,
+                },
+            )
+
+    save_kabutan_origin()
     already_list_code = [a["code_s"] for a in already_list]
     today_list_code = [a["code_s"] for a in today_list]
     # 未調査フィルタ
@@ -576,13 +619,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         funda_pt = stock.get("funda_pt", 0)
         overview = stock.get("overview", "")
         purchase_money = int(stock.get("lowest_purchase_money", 0)) / 10000
-        origin = ""
-        if d["origin"].find("shintakane") >= 0:
-            origin += "新"
-        if d["origin"].find("pts") >= 0:
-            origin += "P"
-        if d["origin"].find("dekidakaup") >= 0:
-            origin += "出"
+        origin = _origin_to_mark(d["origin"])
         major_theme = make_market_db.get_major_theme(stock.get("themes", ""))
         if TO_CSV:
             row = [
