@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, jsonify, render_template, url_for
 
 from ks_util import (
     get_price_day,
@@ -153,6 +153,19 @@ def _load_calendar_payload() -> Dict[str, Any]:
 def market_page():
     """市場データページ。静的 market_data.html (決算日セクション除く) と theme-news を表示する。"""
     market_parts = get_market_html_parts()
+    if market_parts.get("available"):
+        theme_summary_link_html = (
+            '<h2>テーマランク</h2>'
+            '<div style="margin:-0.2em 0 0.9em 0;">'
+            f'<a href="{url_for("portfolio.theme_summary")}" '
+            'style="display:inline-block;font-size:0.9em;color:#555;text-decoration:none;'
+            'padding:0.35em 0.7em;border:1px solid #ccc;border-radius:4px;background:#fff;" '
+            'title="業態テーマ別 RS サマリーを別ページで開く">📊 テーマサマリーを見る</a>'
+            "</div>"
+        )
+        market_parts["body"] = market_parts.get("body", "").replace(
+            "<h2>テーマランク</h2>", theme_summary_link_html, 1
+        )
     theme_news = _load_theme_news_for_display()
     calendar = _load_calendar_payload()
 
@@ -235,5 +248,3 @@ def theme_news_status():
         "done": paths["done"].exists(),
         "has_today_history": paths["md"].exists(),
     })
-
-
