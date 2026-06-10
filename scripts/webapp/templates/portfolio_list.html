@@ -175,10 +175,10 @@
   <div class="dashboard-header-actions">
     <a href="{{ url_for('portfolio.theme_summary') }}"
        class="dashboard-header-link"
-       title="業態テーマ別 RS サマリー">テーマサマリー</a>
+       title="業態テーマ別 RS サマリー">📊 テーマサマリー</a>
     <a href="{{ url_for('portfolio.charts') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
        class="dashboard-header-link"
-       title="現在のフィルタ結果をチャート一覧で確認">チャート一覧</a>
+       title="現在のフィルタ結果をチャート一覧で確認">📊 チャート一覧</a>
     {% if not fallback_mode %}
     <button type="button" id="toggle-manage-mode">管理</button>
     {% endif %}
