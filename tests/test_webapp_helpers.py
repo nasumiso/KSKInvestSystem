@@ -760,10 +760,25 @@ class TestSaveMemo:
 
     def test_save_memo_manual_date_wins_over_auto(self, populated_db):
         """分析日を手動編集した保存ではメモ変更があっても手動値を採用"""
-        form = {"memo": "新しい総括", "analysis_date_raw": "25/12/1"}
+        form = {
+            "memo": "新しい総括",
+            "analysis_date_raw": "25/12/1",
+            "analysis_date_raw__dirty": "1",
+        }
         helpers.save_memo("3496", form)
         rec = helpers.get_research_detail("3496")
         assert rec["analysis_date_raw"] == "25/12/1"
+
+    def test_save_memo_stale_submitted_date_is_ignored_when_not_dirty(self, populated_db):
+        """未編集 input の古い分析日が再送されても手動編集扱いせず当日更新する"""
+        form = {
+            "memo": "新しい総括",
+            "analysis_date_raw": "11/13",
+            "analysis_date_raw__dirty": "",
+        }
+        helpers.save_memo("3496", form)
+        rec = helpers.get_research_detail("3496")
+        assert rec["analysis_date_raw"] == helpers._today_analysis_date()
 
 
 class TestSaveStockNamePrev:

@@ -426,8 +426,9 @@ def save_memo(code_s: str, form_data: dict) -> None:
             if "analysis_date_raw" in form_data
             else None
         )
+        date_dirty = bool((form_data.get("analysis_date_raw__dirty") or "").strip())
         existing_date = _normalize_analysis_date(record.get("analysis_date_raw", "") or "")
-        if submitted_date is not None and submitted_date != existing_date:
+        if date_dirty and submitted_date is not None and submitted_date != existing_date:
             record["analysis_date_raw"] = submitted_date
         elif record["memo"] != old_memo:
             record["analysis_date_raw"] = _today_analysis_date()

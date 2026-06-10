@@ -112,6 +112,13 @@ function revertShikiho() {
 var _saveQueue = Promise.resolve();
 function submitFormAsync(form) {
   var formData = new FormData(form);
+  /* フィールド自体が手動編集されたかをサーバに渡す。
+     値が送信されるだけでは「未編集の初期値」か区別できないため、
+     dirty フラグを hidden 的に追加する。 */
+  form.querySelectorAll('.editable-field, .editable-select').forEach(function(el) {
+    if (!el.name) return;
+    formData.set(el.name + '__dirty', el.classList.contains('dirty') ? '1' : '');
+  });
   _saveQueue = _saveQueue.then(function() {
     return fetch(form.action, { method: 'POST', body: formData }).then(function(response) {
       if (!response.ok) return;
