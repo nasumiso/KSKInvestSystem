@@ -810,24 +810,31 @@ class TestComputeRsLineWeeklyNewHigh5d:
 # compute_rs_line_changes
 # ==================================================
 class TestComputeRsLineChanges:
-    """rs_line 騰落率 (5日前比 A / 20日前比 B) の単体テスト"""
+    """rs_line 騰落率 (5日MA乖離 A / 20日MA乖離 B / 前日比 D) の単体テスト"""
 
     def test_none_when_rs_line_empty(self):
-        a, b = make_stock_db.compute_rs_line_changes({}, {"topix": {}})
-        assert a is None and b is None
+        a, b, d = make_stock_db.compute_rs_line_changes({}, {"topix": {}})
+        assert a is None and b is None and d is None
 
     def test_none_when_too_short_for_short_change(self):
-        """rs_line が 5本未満なら 5日移動平均乖離 A も計算不能"""
+        """rs_line が 5本未満なら 5日移動平均乖離 A は計算不能 (前日比 D は2本あれば計算可)"""
         stock = {"price_log": _make_log(4, base=2000)}
         market_db = {"topix": {"price_log": _make_log(4, base=1000)}}
-        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
-        assert a is None and b is None
+        a, b, d = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is None and b is None and d is not None
+
+    def test_day_change_none_when_single_bar(self):
+        """rs_line が 1本のみなら前日比 D も計算不能"""
+        stock = {"price_log": _make_log(1, base=2000)}
+        market_db = {"topix": {"price_log": _make_log(1, base=1000)}}
+        a, b, d = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a is None and b is None and d is None
 
     def test_short_only_when_partial_data(self):
         """rs_line が 5本以上15本未満なら A だけ計算可、B は None (20日平均に届かず代替も不可)"""
         stock = {"price_log": _make_log(10, base=2000)}
         market_db = {"topix": {"price_log": _make_log(10, base=1000)}}
-        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        a, b, _ = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is None
 
     def test_fallback_when_15_to_19_bars(self):
@@ -835,43 +842,43 @@ class TestComputeRsLineChanges:
         # 19本 → window 19 で代替可能
         stock = {"price_log": _make_log(19, base=2000, step=20)}
         market_db = {"topix": {"price_log": _make_log(19, base=1000, step=2)}}
-        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        a, b, _ = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is not None
         # 15本 → window 15 で代替可能
         stock = {"price_log": _make_log(15, base=2000, step=20)}
         market_db = {"topix": {"price_log": _make_log(15, base=1000, step=2)}}
-        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        a, b, _ = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is not None
 
     def test_no_fallback_when_14_bars(self):
         """rs_line が 14本のとき、window 15 にも届かないので B は None"""
         stock = {"price_log": _make_log(14, base=2000, step=20)}
         market_db = {"topix": {"price_log": _make_log(14, base=1000, step=2)}}
-        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        a, b, _ = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is None
 
     def test_both_when_full_data(self):
         """rs_line が 20本以上で A・B 両方計算可"""
         stock = {"price_log": _make_log(25, base=2000)}
         market_db = {"topix": {"price_log": _make_log(25, base=1000)}}
-        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
+        a, b, _ = make_stock_db.compute_rs_line_changes(stock, market_db)
         assert a is not None and b is not None
 
     def test_uptrend_positive_signs(self):
-        """rs_line が上昇トレンド (TOPIX より速く上昇) なら A・B プラス"""
+        """rs_line が上昇トレンド (TOPIX より速く上昇) なら A・B・D プラス"""
         # 銘柄: 速く上昇 (step=20), TOPIX: 緩やか (step=2) → ratio は単調増加
         stock = {"price_log": _make_log(25, base=2000, step=20)}
         market_db = {"topix": {"price_log": _make_log(25, base=1000, step=2)}}
-        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
-        assert a > 0 and b > 0
+        a, b, d = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a > 0 and b > 0 and d > 0
 
     def test_downtrend_negative_signs(self):
-        """rs_line 下降トレンド (TOPIX より遅い) なら A・B マイナス"""
+        """rs_line 下降トレンド (TOPIX より遅い) なら A・B・D マイナス"""
         # 銘柄: 緩やか上昇 (step=2), TOPIX: 速く上昇 (step=20)
         stock = {"price_log": _make_log(25, base=2000, step=2)}
         market_db = {"topix": {"price_log": _make_log(25, base=1000, step=20)}}
-        a, b = make_stock_db.compute_rs_line_changes(stock, market_db)
-        assert a < 0 and b < 0
+        a, b, d = make_stock_db.compute_rs_line_changes(stock, market_db)
+        assert a < 0 and b < 0 and d < 0
 
 
 # ==================================================

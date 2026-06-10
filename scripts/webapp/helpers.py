@@ -3521,7 +3521,9 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None):
 # ルート側の allowlist もこの keys() を参照する (二重定義を避ける)。
 THEME_SUMMARY_SORT_FIELDS = {
     "momentum": "momentum_pt_avg",
+    "dev_1d": "dev_1d_avg",
     "dev_a": "dev_a_avg",
+    "dev_b": "dev_b_avg",
 }
 
 
@@ -3541,7 +3543,7 @@ def build_portfolio_theme_summary(
     Args:
         records: portfolio_shelve.list_records(include_excluded=False) の戻り値。
             None なら関数内で取得する (テスト時に注入できるよう引数化)。
-        sort_key: "momentum" | "dev_a"。並べ替えキー。
+        sort_key: "momentum" | "dev_1d" | "dev_a" | "dev_b"。並べ替えキー。
 
     Returns:
         list[dict]: 各テーマの集約 dict。並び順は sort_key に従う
@@ -3589,20 +3591,21 @@ def build_portfolio_theme_summary(
         except Exception:  # noqa: BLE001
             topix_map = None
 
-    # 銘柄ごとの rs_line スロープ (A, B) を 1 回だけ計算してキャッシュ。
+    # 銘柄ごとの rs_line スロープ (A, B, D) を 1 回だけ計算してキャッシュ。
     # 公開 API compute_rs_line_changes を使う (private 関数には依存しない)。
     # topix_map を渡すことで内部 compute_rs_line の TOPIX マップ再構築を避ける。
     # (a, b) = 今日 vs 直近5日/20日移動平均の乖離率 = 勢いオシレーター。
+    # d = 前日比 = 当日の瞬間的な強さ。
     dev_by_code: Dict[str, tuple] = {}
     if market_db is not None and topix_map:
         from make_stock_db import compute_rs_line_changes  # 遅延 import
         for code_s in all_codes:
             stock = stock_map.get(code_s) or {}
             try:
-                a, b = compute_rs_line_changes(stock, market_db, topix_map=topix_map)
+                a, b, d = compute_rs_line_changes(stock, market_db, topix_map=topix_map)
             except Exception:  # noqa: BLE001
-                a, b = None, None
-            dev_by_code[code_s] = (a, b)
+                a, b, d = None, None, None
+            dev_by_code[code_s] = (a, b, d)
 
     result: List[Dict[str, Any]] = []
     for theme, codes in theme_to_codes.items():
@@ -3610,16 +3613,19 @@ def build_portfolio_theme_summary(
         mom_values: List[float] = []
         dev_a_values: List[float] = []
         dev_b_values: List[float] = []
+        dev_1d_values: List[float] = []
         for code_s in codes:
             stock = stock_map.get(code_s) or {}
             mom = stock.get("momentum_pt")
             if isinstance(mom, (int, float)):
                 mom_values.append(float(mom))
-            a, b = dev_by_code.get(code_s, (None, None))
+            a, b, d = dev_by_code.get(code_s, (None, None, None))
             if a is not None:
                 dev_a_values.append(a)
             if b is not None:
                 dev_b_values.append(b)
+            if d is not None:
+                dev_1d_values.append(d)
             members.append({
                 "code_s": code_s,
                 "stock_name": name_map.get(code_s, "") or "",
@@ -3641,6 +3647,7 @@ def build_portfolio_theme_summary(
             "member_count": len(codes),
             "momentum_pt_avg": _avg_or_none(mom_values),
             "momentum_pt_max": max(mom_values) if mom_values else None,
+            "dev_1d_avg": _avg_or_none(dev_1d_values),
             "dev_a_avg": _avg_or_none(dev_a_values),
             "dev_b_avg": _avg_or_none(dev_b_values),
             "leaders": leaders,
