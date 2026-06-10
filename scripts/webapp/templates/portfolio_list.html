@@ -871,6 +871,8 @@ function excludeFromUniverse(codeS) {
     input.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') { e.preventDefault(); cancel(); }
       if (e.key === 'Enter' && input.tagName !== 'TEXTAREA') { e.preventDefault(); input.blur(); }
+      // textarea (複数行セル) は素の Enter を改行に使うため Cmd/Ctrl+Enter で確定
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && input.tagName === 'TEXTAREA') { e.preventDefault(); input.blur(); }
     });
   }
 
