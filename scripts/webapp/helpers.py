@@ -380,6 +380,16 @@ def _normalize_analysis_date(raw: str) -> str:
     return raw
 
 
+def _today_analysis_date() -> str:
+    """当日の暦日を分析日形式 "YY/M/D" (ゼロ埋めなし) で返す。
+
+    分析日は「ユーザーが分析作業を行った日」の記録 (表示専用) なので、
+    価格基準日 (ks_util.get_price_day) ではなく暦日を使う。
+    """
+    t = date.today()
+    return f"{t.year % 100}/{t.month}/{t.day}"
+
+
 def save_memo(code_s: str, form_data: dict) -> None:
     """手動メモフィールドを更新する。
 
@@ -402,14 +412,26 @@ def save_memo(code_s: str, form_data: dict) -> None:
         record["institutional_comment"] = form_data.get(
             "institutional_comment", ""
         )
+        old_memo = record.get("memo", "")
         record["memo"] = sanitize_html(_markdown_to_html(form_data.get("memo", "")))
         record["openwork"] = sanitize_html(_markdown_to_html(form_data.get("openwork", "")))
         record["cramer"] = form_data.get("cramer", "")
 
-        if "analysis_date_raw" in form_data:
-            record["analysis_date_raw"] = _normalize_analysis_date(
-                form_data["analysis_date_raw"]
-            )
+        # 分析日: 手動編集 (フォーム値が既存値から変化) を最優先し、
+        # 触られていなければメモ・総括の変更時に当日へ自動更新する。
+        # 旧データは年なし形式 ("11/13") があり、フォーム往復の年補完だけで
+        # 手動編集と誤判定しないよう、比較は両辺とも正規化後で行う
+        submitted_date = (
+            _normalize_analysis_date(form_data["analysis_date_raw"])
+            if "analysis_date_raw" in form_data
+            else None
+        )
+        date_dirty = bool((form_data.get("analysis_date_raw__dirty") or "").strip())
+        existing_date = _normalize_analysis_date(record.get("analysis_date_raw", "") or "")
+        if date_dirty and submitted_date is not None and submitted_date != existing_date:
+            record["analysis_date_raw"] = submitted_date
+        elif record["memo"] != old_memo:
+            record["analysis_date_raw"] = _today_analysis_date()
 
         upsert_research_record(record)
 
@@ -477,13 +499,20 @@ def save_ir_comments(code_s: str, form_data: dict) -> None:
             raise ValueError(f"レコード未登録: {normalized}")
 
         snapshots = record.get("snapshots") or []
+        changed = False
         for snap in snapshots:
             date = snap.get("date_yy_m", "")
             form_key = f"ir_comment_{date}"
             if form_key in form_data:
-                snap["ir_comment"] = sanitize_html(_markdown_to_html(form_data[form_key]))
+                new_comment = sanitize_html(_markdown_to_html(form_data[form_key]))
+                if new_comment != snap.get("ir_comment", ""):
+                    changed = True
+                snap["ir_comment"] = new_comment
 
         record["snapshots"] = snapshots
+        # IR分析コメントが実際に変化した保存では分析日を当日へ自動更新する
+        if changed:
+            record["analysis_date_raw"] = _today_analysis_date()
         upsert_research_record(record)
 
 

@@ -740,6 +740,46 @@ class TestSaveMemo:
         assert rec["overview"] == "駐車場サブリース"
         assert len(rec["snapshots"]) == 2
 
+    def test_save_memo_changed_updates_analysis_date(self, populated_db):
+        """メモ・総括の変更で分析日が当日 (暦日) に自動更新される"""
+        form = {"memo": "新しい総括", "analysis_date_raw": "11/13"}
+        helpers.save_memo("3496", form)
+        rec = helpers.get_research_detail("3496")
+        assert rec["analysis_date_raw"] == helpers._today_analysis_date()
+
+    def test_save_memo_unchanged_keeps_analysis_date(self, populated_db):
+        """メモ・総括が無変更 (他フィールドのみ変更) なら分析日は触らない"""
+        form = {
+            "overall_rating": "S",
+            "memo": "テストメモ",  # fixture と同値 = 無変更
+            "analysis_date_raw": "11/13",
+        }
+        helpers.save_memo("3496", form)
+        rec = helpers.get_research_detail("3496")
+        assert rec["analysis_date_raw"] == "11/13"
+
+    def test_save_memo_manual_date_wins_over_auto(self, populated_db):
+        """分析日を手動編集した保存ではメモ変更があっても手動値を採用"""
+        form = {
+            "memo": "新しい総括",
+            "analysis_date_raw": "25/12/1",
+            "analysis_date_raw__dirty": "1",
+        }
+        helpers.save_memo("3496", form)
+        rec = helpers.get_research_detail("3496")
+        assert rec["analysis_date_raw"] == "25/12/1"
+
+    def test_save_memo_stale_submitted_date_is_ignored_when_not_dirty(self, populated_db):
+        """未編集 input の古い分析日が再送されても手動編集扱いせず当日更新する"""
+        form = {
+            "memo": "新しい総括",
+            "analysis_date_raw": "11/13",
+            "analysis_date_raw__dirty": "",
+        }
+        helpers.save_memo("3496", form)
+        rec = helpers.get_research_detail("3496")
+        assert rec["analysis_date_raw"] == helpers._today_analysis_date()
+
 
 class TestSaveStockNamePrev:
     """issue #236: save_stock_name_prev のテスト"""
@@ -831,6 +871,17 @@ class TestSaveIrComments:
         snaps = rec["snapshots"]
         assert snaps[0]["ir_comment"] == "26.4のみ更新"
         assert snaps[1]["ir_comment"] == "順調"  # 未変更
+
+    @pytest.mark.parametrize("form,expect_today", [
+        ({"ir_comment_26.4": "新コメント"}, True),   # 変更あり → 分析日を当日に
+        ({"ir_comment_26.4": "好調"}, False),        # 無変更再保存 → 分析日は不変
+    ])
+    def test_save_ir_comments_analysis_date(self, populated_db, form, expect_today):
+        """IR分析コメントの実変更時のみ分析日を当日へ自動更新する"""
+        helpers.save_ir_comments("3496", form)
+        rec = helpers.get_research_detail("3496")
+        expected = helpers._today_analysis_date() if expect_today else "11/13"
+        assert rec["analysis_date_raw"] == expected
 
 
 class TestHasRecentDisclosure:
