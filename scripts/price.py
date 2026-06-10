@@ -511,6 +511,40 @@ def _calc_daily_indicators(daily_price_list):
     log_debug("ディストリビューション:", distribution_day)
     log_debug("フォロースルー候補:", followthrough_day)
 
+    # ---- 10日MA乖離率 + 30日連続10ma上回り判定 (短期ブレイク上昇時の利確基準)
+    # トレンド列の点線マーカー用。30日連続で終値が10maを上回ると赤実線に切替える。
+    try:
+        closes = [int(float(d[4].replace(",", ""))) for d in daily_price_list]
+    except (ValueError, IndexError):
+        closes = []
+    # 直近10本平均からの乖離率
+    if len(closes) >= 10:
+        ma10 = sum(closes[:10]) / 10
+        dic["price_kairi_ma10"] = (closes[0] - ma10) * 100 / ma10 if ma10 else None
+    else:
+        dic["price_kairi_ma10"] = None
+    # 保持データ内のどこかに「30営業日連続で終値 > その日の10ma」の期間があるか。
+    # 利確基準 (10maを30日上回り続けた) が一度でも成立すると、その後10maを割って
+    # 売りシグナルが出ても基準は有効なまま → トレンド列で赤太点線として残し続ける。
+    # 各日 i の10ma = closes[i:i+10] の平均 (要 i+10 本)。一致・下回りで連続を切断 (厳密)。
+    # (原典は7週=35日だが日足取得が period="2mo"≒40日のため取得範囲で収まる30日に調整)
+    STREAK_DAYS = 30
+
+    def _above_ma10(i):
+        ma = sum(closes[i:i + 10]) / 10 if len(closes) >= i + 10 else None
+        return ma is not None and ma != 0 and closes[i] > ma
+
+    # 各起点 s から STREAK_DAYS 連続で _above_ma10 が成立する s があれば True
+    had_streak = False
+    if len(closes) >= STREAK_DAYS + 9:
+        max_start = len(closes) - (STREAK_DAYS + 9)  # s+STREAK_DAYS+9 が範囲内に収まる上限
+        for s in range(max_start + 1):
+            if all(_above_ma10(i) for i in range(s, s + STREAK_DAYS)):
+                had_streak = True
+                break
+    dic["ma10_above_streak_30"] = had_streak  # データ不足時も False
+    log_debug("10日MA乖離率:", dic["price_kairi_ma10"], "30日連続上回り期間あり:", had_streak)
+
     # direction_signal は make_market_db.py が market_state を計算してから上書きする。
     # 計算前のデフォルト値として空文字を入れておく (後方互換のためフィールド自体は維持)。
     dic["direction_signal"] = ""

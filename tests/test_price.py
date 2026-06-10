@@ -545,6 +545,23 @@ class TestCalcDailyIndicators:
         result = price._calc_daily_indicators(rows)
         assert len(result["price_log"]) == 30
 
+    @pytest.mark.parametrize("n,break_days,expected", [
+        (45, [], True),               # 全日 終値>10ma → 30日連続窓が存在
+        (50, [0, 1, 2], True),        # 直近を割り込み (売りシグナル中) でも古い側に達成窓あり → 残る
+        (45, list(range(0, 45, 5)), False),  # 5日おきに割り込み → どの30日窓も成立しない
+        (30, [], False),              # 終値39本未満 (データ不足) → 未達成扱い
+    ])
+    def test_ma10_above_streak_30(self, n, break_days, expected):
+        """保持データ内に30日連続10ma上回り期間があるか。break_days はその日を急落させる。"""
+        rows = self._make_price_list(n)  # 先頭=最新、単調増加 (新しいほど高い)
+        for bd in break_days:
+            d, o, h, _l, _c, r5, r6, v = rows[bd]
+            rows[bd] = (d, o, h, "0", "1", r5, r6, v)  # 終値1で10maを確実に割り込む
+        result = price._calc_daily_indicators(rows)
+        assert result["ma10_above_streak_30"] is expected
+        # price_kairi_ma10 は数値 (10本以上あるため)
+        assert isinstance(result["price_kairi_ma10"], float)
+
     def test_price_log_tuple_format(self):
         """price_log の各要素は (date, int) タプル"""
         rows = self._make_price_list_with_real_dates(30)
