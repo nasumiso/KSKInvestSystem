@@ -2956,6 +2956,44 @@ class TestBuildPortfolioThemeSummary:
         out = helpers.build_portfolio_theme_summary(records=records, sort_key=sort_key)
         assert out[0]["theme"] == expected_first
 
+    def test_position_value_aggregation(self, monkeypatch):
+        """ポジション集計: 1保のみ計上、テーマ無し1保は分母のみ、2テーマは50/50按分、max正規化。"""
+        records = [
+            {"code_s": "1111", "status": "1保", "qty": 100,
+             "memo": {"gyoutai_themes": ["半導体"]}},        # 100,000
+            {"code_s": "2222", "status": "1保", "qty": 10,
+             "memo": {"gyoutai_themes": ["半導体", "AI"]}},   # 50,000 → 両テーマに25,000ずつ按分
+            {"code_s": "3333", "status": "2準", "qty": 100,
+             "memo": {"gyoutai_themes": ["防衛"]}},           # 2準 → 計上しない
+            {"code_s": "4444", "status": "1保", "qty": 50,
+             "memo": {"gyoutai_themes": []}},                 # テーマ無し 100,000 → 分母のみ
+        ]
+        stock_data = {
+            "1111": {"stock_name": "A", "momentum_pt": 80, "price": 1000},
+            "2222": {"stock_name": "B", "momentum_pt": 60, "price": 5000},
+            "3333": {"stock_name": "C", "momentum_pt": 50, "price": 1000},
+            "4444": {"stock_name": "D", "momentum_pt": 40, "price": 2000},
+        }
+        # codes でフィルタ: テーマ無し 1保 (4444) が fetch 対象に入ることも検証する
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data",
+                            lambda codes: {c: stock_data[c] for c in codes if c in stock_data})
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names",
+                            lambda codes: {c: stock_data[c]["stock_name"] for c in codes})
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: None)
+
+        out = helpers.build_portfolio_theme_summary(records=records)
+        by_theme = {t["theme"]: t for t in out}
+        # 分母 = 100,000 + 50,000 + 100,000 (テーマ無し) = 250,000
+        assert by_theme["半導体"]["position_value"] == 125000.0  # 100,000 + 50,000/2
+        assert by_theme["半導体"]["position_pct"] == 50.0
+        assert by_theme["半導体"]["position_ratio"] == 100.0  # 最大テーマ
+        assert by_theme["AI"]["position_value"] == 25000.0      # 50,000/2
+        assert by_theme["AI"]["position_pct"] == 10.0
+        assert by_theme["AI"]["position_ratio"] == 20.0
+        assert by_theme["防衛"]["position_value"] == 0.0
+        assert by_theme["防衛"]["position_ratio"] == 0.0
+
 
 # ==================================================
 # issue #253: signal セル tooltip/背景色・チャートマーカー

@@ -3555,6 +3555,8 @@ def build_portfolio_theme_summary(
 
     # テーマ → [code_s, ...] の逆引き (スロット最大2を両方展開、空は無視)
     theme_to_codes: Dict[str, List[str]] = {}
+    # 銘柄が属するテーマ数 (ポジションの按分用。2テーマ銘柄は 50/50 で各テーマに計上)
+    theme_count_by_code: Dict[str, int] = {}
     for rec in records:
         code_s = rec.get("code_s", "")
         if not code_s:
@@ -3567,6 +3569,7 @@ def build_portfolio_theme_summary(
             if not name:
                 continue
             theme_to_codes.setdefault(name, []).append(code_s)
+            theme_count_by_code[code_s] = theme_count_by_code.get(code_s, 0) + 1
     if not theme_to_codes:
         return []
 
@@ -3574,8 +3577,26 @@ def build_portfolio_theme_summary(
     status_by_code = {r.get("code_s", ""): r.get("status", "") for r in records}
 
     all_codes = sorted({c for codes in theme_to_codes.values() for c in codes})
-    stock_map = _bulk_get_stock_data(all_codes)
+    # ポジション分母 (全保有合計) 計算用に、テーマ未設定の 1保 銘柄も price を引く
+    holding_codes = {
+        r.get("code_s", "") for r in records
+        if r.get("status") == "1保" and (r.get("qty", 0) or 0) > 0 and r.get("code_s")
+    }
+    stock_map = _bulk_get_stock_data(sorted(set(all_codes) | holding_codes))
     name_map = _bulk_resolve_stock_names(all_codes)
+
+    # 銘柄単位の保有ポジション (1保 × qty>0 × price>0 のみ)。
+    # 条件は list_portfolio_with_indicators の position_value と同一。
+    position_value_by_code: Dict[str, float] = {}
+    for rec in records:
+        code_s = rec.get("code_s", "")
+        qty = rec.get("qty", 0) or 0
+        if rec.get("status") != "1保" or not code_s or qty <= 0:
+            continue
+        price = (stock_map.get(code_s) or {}).get("price")
+        if isinstance(price, (int, float)) and price > 0:
+            position_value_by_code[code_s] = float(price) * qty
+    total_position_value = sum(position_value_by_code.values())
 
     # rs_line 計算の共有リソース (issue #283: N+1 回避、再計算回避)
     try:
@@ -3633,6 +3654,10 @@ def build_portfolio_theme_summary(
                 "status": _PORTFOLIO_STATUS_LABEL.get(
                     status_by_code.get(code_s, ""), status_by_code.get(code_s, "")
                 ),
+                # 展開リストのバッジ色分け用 (hold/semi/watch)
+                "status_query": _PORTFOLIO_STATUS_QUERY.get(
+                    status_by_code.get(code_s, ""), ""
+                ),
             })
         # members を momentum_pt 降順 (None 末尾) → code_s 昇順で並べる
         members.sort(key=lambda m: (
@@ -3642,6 +3667,12 @@ def build_portfolio_theme_summary(
         ))
         # members は momentum_pt 降順済み。先頭から非 None 上位 3 件がリーダー株
         leaders = [m for m in members if m["momentum_pt"] is not None][:3]
+        # テーマ内 1保 銘柄の合計ポジション。2テーマ所属銘柄は 50/50 で按分
+        # (テーマ間の pct 合計は 100% を超えない)
+        position_value = sum(
+            position_value_by_code.get(c, 0.0) / (theme_count_by_code.get(c) or 1)
+            for c in codes
+        )
         result.append({
             "theme": theme,
             "member_count": len(codes),
@@ -3652,7 +3683,19 @@ def build_portfolio_theme_summary(
             "dev_b_avg": _avg_or_none(dev_b_values),
             "leaders": leaders,
             "members": members,
+            "position_value": position_value,
+            "position_pct": (
+                position_value / total_position_value * 100.0
+                if total_position_value > 0 else 0.0
+            ),
+            "position_ratio": 0.0,
         })
+
+    # 最大ポジションのテーマ = 100 として塗り幅を正規化 (portfolio 状態列と同方式)
+    max_theme_position = max((r["position_value"] for r in result), default=0.0)
+    if max_theme_position > 0:
+        for r in result:
+            r["position_ratio"] = r["position_value"] / max_theme_position * 100.0
 
     # ソート: sort_key 降順 (None 末尾) → member_count 降順 → テーマ名昇順
     primary = THEME_SUMMARY_SORT_FIELDS.get(sort_key, "momentum_pt_avg")
