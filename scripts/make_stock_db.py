@@ -286,22 +286,24 @@ def compute_rs_line(stock, market_db, topix_map=None):
 
 
 def compute_rs_line_changes(stock, market_db, topix_map=None):
-    """rs_line の「今日 vs 直近 N 日移動平均」乖離率 A・B を%値で計算する (issue #283)。
+    """rs_line の「今日 vs 直近 N 日移動平均」乖離率 A・B と前日比 D を%値で計算する (issue #283)。
 
     A = 直近 5 日平均乖離率、B = 直近 20 日平均乖離率。20 本に満たない場合は
     19,18,17,16,15 本平均で B を代替 (近似値)。
+    D = 前日比 (1点比較)。当日の瞬間的な強さの把握用。
 
     Returns:
-        tuple[float|None, float|None]: (短期A%, 中期B%)
-            - rs_line が 5本未満 → (None, None)
-            - rs_line が 5本以上15本未満 → (A, None)
-            - rs_line が 15本以上20本未満 → (A, B_approx) ※15-19本平均で代替
-            - rs_line が 20本以上 → (A, B)
-            移動平均が0の場合も None
+        tuple[float|None, float|None, float|None]: (短期A%, 中期B%, 前日比D%)
+            - rs_line が 5本未満 → A=None
+            - rs_line が 5本以上15本未満 → (A, None, D)
+            - rs_line が 15本以上20本未満 → (A, B_approx, D) ※15-19本平均で代替
+            - rs_line が 20本以上 → (A, B, D)
+            - rs_line が 2本未満 → D=None
+            移動平均 (D は前日値) が0の場合も None
     """
     rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
-    a, b, _ = _rs_line_changes_from_line(rs_line)
-    return (a, b)
+    a, b, _, d = _rs_line_changes_from_line(rs_line)
+    return (a, b, d)
 
 
 def _fmt_rs_change(v):
@@ -322,7 +324,7 @@ def get_rs_line_changes_expr(stock, market_db, topix_map=None, rs_line=None):
     """
     if rs_line is None:
         rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
-    a, b, b_is_approx = _rs_line_changes_from_line(rs_line)
+    a, b, b_is_approx, _ = _rs_line_changes_from_line(rs_line)
     if a is None and b is None:
         return ""
     b_str = _fmt_rs_change(b)
@@ -332,21 +334,24 @@ def get_rs_line_changes_expr(stock, market_db, topix_map=None, rs_line=None):
 
 
 def _rs_line_changes_from_line(rs_line):
-    """rs_line 系列から「今日 vs 直近 N 日移動平均」の乖離率 A・B を計算する内部関数。
+    """rs_line 系列から「今日 vs 直近 N 日移動平均」の乖離率 A・B と前日比 D を計算する内部関数。
 
     A = 直近 5 日平均乖離率、B = 直近 20 日平均乖離率 (いずれも今日 rs_line[0] を含む)。
     1 点比較 (旧: N 日前の 1 点との比) ではヒゲ・急変でブレるため、基準を移動平均にして
     ブレを 1/N に薄め、勢い・過熱の度合いを安定して捉える (issue #283)。
+    D = 前日比。window=1 の MA 乖離は恒等的に 0 になるため、D だけは
+    rs_line[1] との 1 点比較とする (当日の瞬間的な強さの把握用)。
 
     Returns:
-        tuple[float|None, float|None, bool]: (A, B, B が代替値か)
+        tuple[float|None, float|None, bool, float|None]: (A, B, B が代替値か, D)
             乖離率 = (rs_line[0] - mean(直近 window 本)) / mean(直近 window 本) * 100。
             A は window=5 (5 本未満は None)。
             B は window=20、20 本未満なら 19,18,17,16,15 本平均で代替 (b_is_approx=True)。
-            平均が 0 の場合も None。
+            D = (rs_line[0] - rs_line[1]) / rs_line[1] * 100 (2 本未満は None)。
+            平均 (D は前日値) が 0 の場合も None。
     """
     if not rs_line:
-        return (None, None, False)
+        return (None, None, False, None)
     current = rs_line[0][1]
 
     def _deviation(window):
@@ -358,16 +363,20 @@ def _rs_line_changes_from_line(rs_line):
             return None
         return (current - ma) / ma * 100
 
+    d = None
+    if len(rs_line) >= 2 and rs_line[1][1] != 0:
+        d = (current - rs_line[1][1]) / rs_line[1][1] * 100
+
     a = _deviation(5)
     b = _deviation(20)
     if b is not None:
-        return (a, b, False)
+        return (a, b, False, d)
     # 20 本に満たないときは、データ長に収まる最大 window (15-19 本) の平均で代替する。
     # MA 版では _deviation(window) が None になるのは len < window のときだけなので、
     # 試すべき window は min(len, 19) の 1 つに定まる (15 本未満なら代替不可)。
     if len(rs_line) >= 15:
-        return (a, _deviation(min(len(rs_line), 19)), True)
-    return (a, None, False)
+        return (a, _deviation(min(len(rs_line), 19)), True, d)
+    return (a, None, False, d)
 
 
 def compute_rs_line_new_high(stock, market_db, topix_map=None, lookback=20, rs_line=None):

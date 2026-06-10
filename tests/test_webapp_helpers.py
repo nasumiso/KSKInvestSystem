@@ -2913,9 +2913,9 @@ class TestBuildPortfolioThemeSummary:
         import make_stock_db
         monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"topix": {}})
         monkeypatch.setattr(make_stock_db, "_topix_close_map", lambda mdb: {"d": 1.0})
-        # 公開 API compute_rs_line_changes を stock 名から (A, B) 乖離率を返すよう差し替え。
-        # A=有効/B=None, A=有効/B=有効 を返し分け
-        dev_map = {"A": (2.0, None), "B": (4.0, 8.0)}
+        # 公開 API compute_rs_line_changes を stock 名から (A, B, D) 乖離率を返すよう差し替え。
+        # A=有効/B=None/D=None, A=有効/B=有効/D=有効 を返し分け
+        dev_map = {"A": (2.0, None, None), "B": (4.0, 8.0, 1.0)}
         monkeypatch.setattr(
             make_stock_db, "compute_rs_line_changes",
             lambda stock, mdb, topix_map=None: dev_map[stock["stock_name"]],
@@ -2924,13 +2924,16 @@ class TestBuildPortfolioThemeSummary:
         t = out[0]
         assert t["dev_a_avg"] == 3.0            # (2.0 + 4.0) / 2
         assert t["dev_b_avg"] == 8.0            # B のみ有効 (A の B は None で除外)
+        assert t["dev_1d_avg"] == 1.0           # B のみ有効 (A の D は None で除外)
 
     @pytest.mark.parametrize("sort_key,expected_first", [
         ("momentum", "強"),    # momentum_pt 平均が高いテーマが先頭
+        ("dev_1d", "急"),      # dev_1d (前日比) 平均が高いテーマが先頭
         ("dev_a", "急"),       # dev_a (短期の勢い) 平均が高いテーマが先頭
+        ("dev_b", "急"),       # dev_b (20日乖離) 平均が高いテーマが先頭
     ])
     def test_sort_key_switch(self, monkeypatch, sort_key, expected_first):
-        """sort_key で momentum / dev_a の並び順が切り替わる。"""
+        """sort_key で momentum / dev_1d / dev_a / dev_b の並び順が切り替わる。"""
         records = [
             self._record("1111", ["強"]),   # momentum 高, 勢い 低
             self._record("2222", ["急"]),   # momentum 低, 勢い 高
@@ -2946,7 +2949,7 @@ class TestBuildPortfolioThemeSummary:
         import make_stock_db
         monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"topix": {}})
         monkeypatch.setattr(make_stock_db, "_topix_close_map", lambda mdb: {"d": 1.0})
-        dev_map = {"S": (1.0, 1.0), "Q": (9.0, 9.0)}
+        dev_map = {"S": (1.0, 1.0, 0.5), "Q": (9.0, 9.0, 3.0)}
         monkeypatch.setattr(make_stock_db, "compute_rs_line_changes",
                             lambda stock, mdb, topix_map=None: dev_map[stock["stock_name"]])
 

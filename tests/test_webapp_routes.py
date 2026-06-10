@@ -1415,7 +1415,9 @@ class TestPortfolioThemeSummary:
 
     @pytest.mark.parametrize("url", [
         "/portfolio/themes/summary",
+        "/portfolio/themes/summary?sort=dev_1d",
         "/portfolio/themes/summary?sort=dev_a",
+        "/portfolio/themes/summary?sort=dev_b",
     ])
     def test_summary_returns_200(self, summary_app, url):
         client = summary_app.test_client()
