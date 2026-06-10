@@ -143,7 +143,25 @@
   .portfolio-add-form button { padding: 0.3em 0.8em; margin: 0; }
   .portfolio-add-form .hint { color: #999; font-size: 0.85em; }
   /* 管理ボタン + 展開パネル */
-  .dashboard-header { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; }
+  .dashboard-header { display: flex; justify-content: space-between; align-items: center; gap: 1em; flex-wrap: wrap; }
+  .dashboard-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5em;
+    flex-wrap: wrap;
+  }
+  .dashboard-header-link {
+    display: inline-block;
+    font-size: 0.85em;
+    color: #555;
+    text-decoration: none;
+    padding: 0.3em 0.7em;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fff;
+    white-space: nowrap;
+  }
   #toggle-manage-mode { padding: 0.3em 0.8em; font-size: 0.85em; margin: 0; }
   #manage-panel {
     padding: 0.6em 0.8em; margin: 0.4em 0 0.6em 0;
@@ -154,9 +172,17 @@
 </style>
 <div class="dashboard-header">
   <h2 style="margin:0;">保有銘柄ダッシュボード</h2>
-  {% if not fallback_mode %}
-  <button type="button" id="toggle-manage-mode">管理</button>
-  {% endif %}
+  <div class="dashboard-header-actions">
+    <a href="{{ url_for('portfolio.theme_summary') }}"
+       class="dashboard-header-link"
+       title="業態テーマ別 RS サマリー">テーマサマリー</a>
+    <a href="{{ url_for('portfolio.charts') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
+       class="dashboard-header-link"
+       title="現在のフィルタ結果をチャート一覧で確認">チャート一覧</a>
+    {% if not fallback_mode %}
+    <button type="button" id="toggle-manage-mode">管理</button>
+    {% endif %}
+  </div>
 </div>
 
 {% if fallback_mode %}
@@ -199,12 +225,6 @@
   <a href="{{ url_for('portfolio.themes_index') }}"
      style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
      title="テーママスターを編集">✏️ テーマを編集</a>
-  <a href="{{ url_for('portfolio.theme_summary') }}"
-     style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
-     title="業態テーマ別 RS サマリー">📊 テーマサマリー</a>
-  <a href="{{ url_for('portfolio.charts') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
-     style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
-     title="現在のフィルタ結果をチャート一覧で確認">📊 チャート一覧</a>
 </form>
 
 <p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">
