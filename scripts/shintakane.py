@@ -444,6 +444,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
             "pts": bool(latest_csv_dt_p) and get_price_day(latest_csv_dt_p) == base_day,
         }
         saved_at = datetime.today()
+        updates = []
         for item in today_list:
             origin = item.get("origin", "")
             mark = ""
@@ -455,14 +456,15 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 mark += "P"
             if not mark:
                 continue
-            stock_db.update_db(
-                stocks,
+            updates.append(
                 {
                     "code_s": item["code_s"],
                     "kabutan_origin": mark,
                     "kabutan_origin_date": saved_at,
-                },
+                }
             )
+        # shelve へ直接永続化する(stocks は export 済み dict のため保存されない)
+        stock_db.persist_stock_fields(updates)
 
     save_kabutan_origin()
     already_list_code = [a["code_s"] for a in already_list]

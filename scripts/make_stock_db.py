@@ -889,6 +889,24 @@ def get_stock_db(code):
         return db.get(str(code), {})
 
 
+def persist_stock_fields(stock_data_list):
+    """指定銘柄の任意フィールドを shelve へ直接永続化する。
+
+    update_db_rows の戻り値(export_to_dict した通常 dict)に update_db を
+    かけてもメモリ上のコピーが変わるだけで shelve に保存されないため、
+    永続化が必要な軽量フィールド更新はこの関数を経由する。
+
+    Args:
+        stock_data_list: list<dict> 各要素は code_s と更新カラムを持つ
+    """
+    if not stock_data_list:
+        return
+    with _get_stock_shelve_db() as db:
+        for stock_data in stock_data_list:
+            update_db(db, stock_data)
+        db.sync()
+
+
 @contextmanager
 def print_to():
     output = io.StringIO()
