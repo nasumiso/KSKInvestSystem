@@ -763,11 +763,18 @@ def _kairi_gauge_marker_color(kairi_pct: float,
 def kairi_gauge_svg(kairi, symbol,
                     range_pct: float = _KAIRI_GAUGE_RANGE,
                     faint_threshold: float = _KAIRI_GAUGE_FAINT_THRESHOLD,
-                    strong_threshold: float = _KAIRI_GAUGE_STRONG_THRESHOLD):
-    """10WMA乖離率を -range_pct〜+range_pct の縦線マーカーで描画する SVG を返す。
+                    strong_threshold: float = _KAIRI_GAUGE_STRONG_THRESHOLD,
+                    kairi_ma10=None,
+                    ma10_streak: bool = False):
+    """10WMA(=50日MA)乖離率を -range_pct〜+range_pct の縦線マーカーで描画する SVG を返す。
 
     kairi >= +range_pct はクランプ + strong 色のマーカー。
     kairi が None で symbol も空なら "" を返す。
+
+    kairi_ma10 を渡すと10日MA乖離を黒の点線で重ねて描く。
+    ma10_streak=True (保持データ内に30日連続10ma上回り期間あり = 利確基準有効)
+    のときは赤の太点線に切替える。マーカーの横位置が現在の10ma乖離なので、
+    中央より左 (株価が10maを割った) かどうかも位置で読み取れる。
     """
     width = 40
     height = 28
@@ -794,6 +801,23 @@ def kairi_gauge_svg(kairi, symbol,
             halo_w = marker_w + 1
             parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="%d"/>' % (mx, mx, height, halo_w))
             parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="%s" stroke-width="%d"/>' % (mx, mx, height, marker_color, marker_w))
+
+    # 10日MA乖離マーカー (通常は黒の点線。30日連続10ma上回りなら赤の太実線)
+    if kairi_ma10 is not None:
+        try:
+            k10 = float(kairi_ma10)
+        except (TypeError, ValueError):
+            k10 = None
+        if k10 is not None:
+            k10_clamped = max(-range_pct, min(range_pct, k10))
+            mx10 = (k10_clamped + range_pct) * px_per_pct
+            mx10 = max(1.0, min(width - 1.0, mx10))
+            if ma10_streak:
+                # 利確基準有効: 赤の太点線 + white halo (視認性確保)
+                parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="4" stroke-dasharray="3,2"/>' % (mx10, mx10, height))
+                parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="%s" stroke-width="3" stroke-dasharray="3,2"/>' % (mx10, mx10, height, _KAIRI_GAUGE_NEG_STRONG))
+            else:
+                parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="#000" stroke-width="1" stroke-dasharray="2,2"/>' % (mx10, mx10, height))
 
     if symbol:
         parts.append('<text x="50%%" y="50%%" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="bold" fill="#000" stroke="white" stroke-width="3" paint-order="stroke">%s</text>' % symbol)

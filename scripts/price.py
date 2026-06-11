@@ -436,6 +436,48 @@ def add_stalling_days(dic, daily_price_list, high52_weekly):
     return dic
 
 
+def calc_ma10_kairi_indicators(closes):
+    """終値リスト (新しい日が先頭) から 10日MA乖離率と30日連続上回り判定を計算する。
+
+    Kabutan/yfinance 両系統で共通利用する。トレンド列の点線マーカー用。
+    30日連続で終値が10maを上回る期間が保持データ窓内にあると赤実線に切替える。
+
+    Args:
+        closes: 終値 (int/float) のリスト、新しい日が先頭
+    Returns:
+        dict: price_kairi_ma10 (float or None) / ma10_above_streak_30 (bool)
+    """
+    res = {}
+    # 直近10本平均からの乖離率
+    if len(closes) >= 10:
+        ma10 = sum(closes[:10]) / 10
+        res["price_kairi_ma10"] = (closes[0] - ma10) * 100 / ma10 if ma10 else None
+    else:
+        res["price_kairi_ma10"] = None
+    # 保持している価格データ (日足~40日) の範囲内に「30営業日連続で終値 > その日の
+    # 10ma」の期間があるか。利確基準 (10maを30日上回り続けた) がこの窓内で一度でも
+    # 成立していれば、その後10maを割って売りシグナルが出ても True のまま → トレンド列で
+    # 赤太点線として表示する (達成期間が保持データ窓の外に流れたら False に戻る = 現状仕様)。
+    # 各日 i の10ma = closes[i:i+10] の平均 (要 i+10 本)。一致・下回りで連続を切断 (厳密)。
+    # (原典は7週=35日だが日足取得が period="2mo"≒40日のため取得範囲で収まる30日に調整)
+    STREAK_DAYS = 30
+
+    def _above_ma10(i):
+        ma = sum(closes[i:i + 10]) / 10 if len(closes) >= i + 10 else None
+        return ma is not None and ma != 0 and closes[i] > ma
+
+    # 各起点 s から STREAK_DAYS 連続で _above_ma10 が成立する s があれば True
+    had_streak = False
+    if len(closes) >= STREAK_DAYS + 9:
+        max_start = len(closes) - (STREAK_DAYS + 9)  # s+STREAK_DAYS+9 が範囲内に収まる上限
+        for s in range(max_start + 1):
+            if all(_above_ma10(i) for i in range(s, s + STREAK_DAYS)):
+                had_streak = True
+                break
+    res["ma10_above_streak_30"] = had_streak  # データ不足時も False
+    return res
+
+
 def _calc_daily_indicators(daily_price_list):
     """daily_price_listから日次指標を計算する
     parse_price_d_html_kabutanから指標計算部分を分離。
@@ -510,6 +552,15 @@ def _calc_daily_indicators(daily_price_list):
         pass
     log_debug("ディストリビューション:", distribution_day)
     log_debug("フォロースルー候補:", followthrough_day)
+
+    # ---- 10日MA乖離率 + 30日連続10ma上回り判定 (短期ブレイク上昇時の利確基準)
+    # トレンド列の点線マーカー用。daily_price_list は終値が d[4]。
+    try:
+        closes = [int(float(d[4].replace(",", ""))) for d in daily_price_list]
+    except (ValueError, IndexError):
+        closes = []
+    dic.update(calc_ma10_kairi_indicators(closes))
+    log_debug("10日MA乖離率:", dic["price_kairi_ma10"], "30日連続上回り期間あり:", dic["ma10_above_streak_30"])
 
     # direction_signal は make_market_db.py が market_state を計算してから上書きする。
     # 計算前のデフォルト値として空文字を入れておく (後方互換のためフィールド自体は維持)。
@@ -1711,6 +1762,11 @@ def parse_price_text_from_list(price_current, price_list):
         # print "過去価格", past_prices
     price["price_log"] = past_prices
     # TODO: 週次でやっている20MA押しをやりたい
+
+    # ---- 10日MA乖離率 + 30日連続上回り判定 (トレンド列の点線マーカー用)
+    # price_list は終値が [6]。_calc_daily_indicators と同一ロジックを共通化。
+    closes = [row[6] for row in price_list]
+    price.update(calc_ma10_kairi_indicators(closes))
 
     return price, [price_list[0][6], price_list[0][2], price_list[0][3]]
 

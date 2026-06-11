@@ -3107,14 +3107,23 @@ def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
     raw = (stock or {}).get("price_kairi_wma10")
     kairi_raw = raw if isinstance(raw, (int, float)) else None
     kairi_str = format_kairi_wma10(kairi_raw) or "—"
+    # 10日MA乖離 (点線マーカー) + 30日連続10ma上回り判定 (赤実線 = 利確基準有効)
+    raw_ma10 = (stock or {}).get("price_kairi_ma10")
+    kairi_ma10 = raw_ma10 if isinstance(raw_ma10, (int, float)) else None
+    ma10_streak = bool((stock or {}).get("ma10_above_streak_30"))
     tooltip_lines = []
     if tooltip_src:
         tooltip_lines.append("不通過: " + ",".join(tooltip_src))
     tooltip_lines.append("10WMA乖離: " + kairi_str)
+    tooltip_lines.append("10日MA乖離: " + (format_kairi_wma10(kairi_ma10) or "—"))
+    if ma10_streak:
+        tooltip_lines.append("30日連続10ma上 (利確基準)")
     return {
         "expr": expr,
         "tooltip": "\n".join(tooltip_lines),
-        "kairi_gauge_svg": kairi_gauge_svg(kairi_raw, expr),
+        "kairi_gauge_svg": kairi_gauge_svg(
+            kairi_raw, expr, kairi_ma10=kairi_ma10, ma10_streak=ma10_streak,
+        ),
     }
 
 

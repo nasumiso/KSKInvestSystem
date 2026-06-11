@@ -3155,3 +3155,28 @@ class TestSignalDisplay:
         # stock なしなら polygon は出ない
         svg2, _ = helpers.build_price_rs_chart_full(price_log, [], False)
         assert "#f57c00" not in svg2
+
+
+class TestBuildTrendInfoMa10:
+    """トレンド列の10日MA乖離マーカー (通常は黒点線、30日連続上回り期間ありで赤太点線)"""
+
+    @pytest.mark.parametrize("kairi_ma10,streak,expect_marker,expect_red", [
+        (5.0, False, True, False),    # 通常: 黒の点線
+        (5.0, True, True, True),      # 30日連続上回り期間あり: 赤の太点線
+        (None, False, False, False),  # 10ma乖離なし: マーカー描かれない
+    ])
+    def test_ma10_marker(self, kairi_ma10, streak, expect_marker, expect_red):
+        stock = {
+            "trend_template": [],          # ◎ (全通過) で symbol が出る
+            "price_kairi_wma10": 3.0,
+            "price_kairi_ma10": kairi_ma10,
+            "ma10_above_streak_30": streak,
+        }
+        info = helpers.build_trend_info(stock)
+        svg = info["kairi_gauge_svg"]
+        # 通常も赤も点線 (dasharray)。マーカー有無は乖離値の有無で決まる
+        assert ("stroke-dasharray" in svg) is expect_marker
+        assert ("#c62828" in svg) is expect_red  # 赤は streak のときだけ
+        # tooltip に10日MA乖離行が入る
+        assert "10日MA乖離:" in info["tooltip"]
+        assert ("30日連続10ma上 (利確基準)" in info["tooltip"]) is streak
