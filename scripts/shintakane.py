@@ -236,6 +236,16 @@ def get_latest_pts_fname():
     return today_csv, today
 
 
+def _is_csv_active(latest_csv_dt, base_day):
+    """CSVファイル日付が当日営業日(base_day)と一致するか判定する。
+
+    latest_csv_dt は get_latest_*_fname() が返すファイル日付で時刻は現在時刻のまま。
+    get_price_day() を再適用すると 17時前に前日へ二重補正されるため、日付部分
+    (.date()) と base_day を直接比較する。
+    """
+    return bool(latest_csv_dt) and latest_csv_dt.date() == base_day
+
+
 def _origin_to_mark(origin):
     """origin文字列を表示用記号へ変換する。"""
     mark = ""
@@ -437,11 +447,12 @@ def todays_shintakane(upd=UPD_INTERVAL):
 
     def save_kabutan_origin():
         """本日リスト掲載の株探由来記号をDBへ保存する。"""
+        # base_day は「当日とみなす営業日」(17時前は前日)。
         base_day = get_price_day(datetime.today())
         active_sources = {
-            "shintakane": bool(latest_csv_dt) and get_price_day(latest_csv_dt) == base_day,
-            "dekidakaup": bool(latest_csv_dt_d) and get_price_day(latest_csv_dt_d) == base_day,
-            "pts": bool(latest_csv_dt_p) and get_price_day(latest_csv_dt_p) == base_day,
+            "shintakane": _is_csv_active(latest_csv_dt, base_day),
+            "dekidakaup": _is_csv_active(latest_csv_dt_d, base_day),
+            "pts": _is_csv_active(latest_csv_dt_p, base_day),
         }
         saved_at = datetime.today()
         updates = []
