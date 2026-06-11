@@ -289,6 +289,7 @@
       <th title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸">RS(20,5)</th>
       <th>トレンド</th>
       <th>タグ</th>
+      <th title="ポ/ブ記号。ホバーで signal 全文 (発生日付含む)">シグナル</th>
       <th title="バー背景の濃淡で買い集め評価 (A=濃 / E=薄、左=緑 / 右=赤)">需給バランス</th>
       <th>時価総額</th>
     </tr>
@@ -397,14 +398,16 @@
       <td title="{{ row.trend_template_tooltip }}" style="width:40px;padding:0;line-height:0;text-align:center;{{ row.styles.trend_template or '' }}">
         {% if row.kairi_gauge_svg %}{{ row.kairi_gauge_svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
       </td>
-      <td title="{{ row.signal_display.tooltip or row.tags }}"
+      <td title="{{ row.tags if row.tags != '—' else '' }}"
           style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
+      <td title="{{ row.signal_full or '' }}"
+          style="max-width:3em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.signal or '' }}">{{ row.signal_mark }}</td>
       <td class="spr-gauge-cell" title="{{ row.spr_gauge.tooltip }}">{{ row.spr_gauge.svg|safe }}</td>
       <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
     </tr>
     <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
       {# 状態列 + 評価/需給列を含む全列に展開行を合わせる #}
-      <td colspan="{% if delete_mode_allowed %}25{% else %}24{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
+      <td colspan="{% if delete_mode_allowed %}26{% else %}25{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
         <div style="display:flex;flex-wrap:wrap;gap:0.8em;align-items:flex-start;">
           {% if row.gyoseki.isKonki %}
           <div style="flex:0 0 auto;">

@@ -1939,6 +1939,24 @@ def _format_tags(stock: Dict[str, Any], tags=None) -> str:
     return "/".join(tags) if tags else "—"
 
 
+def _format_signal(stock: Dict[str, Any]) -> Tuple[str, str]:
+    """portfolio 一覧のシグナル列用に (表示記号, tooltip全文) を返す。"""
+    if not stock:
+        return ("—", "")
+    try:
+        from make_stock_db import extract_signals, make_signal  # 遅延 import
+        signal_full, _tags = make_signal(stock)
+        signals = extract_signals(stock)
+    except Exception:  # noqa: BLE001
+        return ("—", "")
+    marks = []
+    for sig in signals:
+        kind = sig.get("kind")
+        if kind and kind not in marks:
+            marks.append(kind)
+    return ("/".join(marks) if marks else "—", signal_full or "")
+
+
 # ポ/ブシグナルの鮮度係数 (issue #253)。経過日数→不透明度の乗数。
 # tooltip 背景色 (_build_signal_display) とチャートマーカー (項目3) で共有する。
 def _signal_freshness_alpha(delta: int) -> float:
@@ -3158,6 +3176,8 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "trend_template_tooltip": "—",
             "kairi_gauge_svg": "",
             "tags": "—",
+            "signal_mark": "—",
+            "signal_full": "",
             "spr_gauge": {"svg": "—", "tooltip": ""},
             "theoretical_diff": "—",
             "theoretical_diff_raw": None,
@@ -3192,6 +3212,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         _signal, _tags = make_signal(stock)
     except Exception:  # noqa: BLE001
         _tags = None
+    signal_mark, signal_full = _format_signal(stock)
 
     return {
         "rank": rank if isinstance(rank, int) else None,
@@ -3219,6 +3240,8 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "trend_template_tooltip": trend_info["tooltip"],
         "kairi_gauge_svg": trend_info["kairi_gauge_svg"],
         "tags": _format_tags(stock, _tags),
+        "signal_mark": signal_mark,
+        "signal_full": signal_full,
         "signal_display": _build_signal_display(stock),  # issue #253: tooltip+背景色
         "spr_gauge": _build_spr_gauge_for_stock(stock),
         "theoretical_diff": _format_theoretical_diff(stock),
@@ -3403,15 +3426,16 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
 
     # --- シグナル (ルール 2-7): 強い色から順に評価
     tags = row.get("tags") or ""
-    if any(c in tags for c in ("ポ", "ブ", "最")):
-        # issue #253: ポ/ブは強度×鮮度の赤系濃淡を優先 (signal_display.style)。
-        # 算出不可・「最」のみの場合は従来の一律赤にフォールバック。
-        sig_style = (row.get("signal_display") or {}).get("style")
-        styles["tags"] = sig_style or bg_with_white("赤")
+    if "最" in tags:
+        styles["tags"] = bg_with_white("赤")
     elif any(c in tags for c in ("警", "売")):
         styles["tags"] = bg_with_white("青")
     elif "押" in tags:
         styles["tags"] = f"color:{PORTFOLIO_COLORS['青']}"
+    signal_mark = row.get("signal_mark") or ""
+    if signal_mark and signal_mark != "—":
+        sig_style = (row.get("signal_display") or {}).get("style")
+        styles["signal"] = sig_style or bg_with_white("赤")
 
     # --- 時価総額 (ルール 29, 30): カテゴリ "中" / "大" → 薄黄 (極小/小/特大は色なし)
     cat = row.get("market_cap_category")

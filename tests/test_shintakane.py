@@ -1,6 +1,6 @@
 """shintakane.py のHTMLパース関数テスト"""
 
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -735,3 +735,40 @@ class Test_recent_weekday:
     ])
     def test_期待最新営業日(self, dt, expected):
         assert shintakane._recent_weekday(dt) == expected
+
+
+class TestOriginToMark:
+    @pytest.mark.parametrize(
+        "origin, expected",
+        [
+            ("shintakane", "高"),
+            ("dekidakaup", "出"),
+            ("pts", "P"),
+            ("shintakanedekidakauppts", "高出P"),
+            ("", ""),
+        ],
+    )
+    def test_origin_to_mark(self, origin, expected):
+        assert shintakane._origin_to_mark(origin) == expected
+
+
+class TestIsCsvActive:
+    """CSVファイル日付と当日営業日の一致判定 (二重補正リグレッション防止)"""
+
+    @pytest.mark.parametrize(
+        "latest_csv_dt, base_day, expected",
+        [
+            # 17時前に当日CSVが無く前日CSVを掴むケース。
+            # latest_csv_dt の時刻は現在時刻(16時)のままだが、日付が base_day と
+            # 一致するため active=True (get_price_day 二重適用なら False になり退行)
+            (datetime(2026, 6, 10, 16), date(2026, 6, 10), True),
+            # 17時後に当日CSVを掴む通常ケース
+            (datetime(2026, 6, 11, 18), date(2026, 6, 11), True),
+            # 古い前々日CSVしかない場合は inactive
+            (datetime(2026, 6, 9, 18), date(2026, 6, 11), False),
+            # CSV未取得 (空) は inactive
+            (None, date(2026, 6, 11), False),
+        ],
+    )
+    def test_is_csv_active(self, latest_csv_dt, base_day, expected):
+        assert shintakane._is_csv_active(latest_csv_dt, base_day) is expected

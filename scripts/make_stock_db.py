@@ -898,6 +898,24 @@ def get_stock_db(code):
         return db.get(str(code), {})
 
 
+def persist_stock_fields(stock_data_list):
+    """指定銘柄の任意フィールドを shelve へ直接永続化する。
+
+    update_db_rows の戻り値(export_to_dict した通常 dict)に update_db を
+    かけてもメモリ上のコピーが変わるだけで shelve に保存されないため、
+    永続化が必要な軽量フィールド更新はこの関数を経由する。
+
+    Args:
+        stock_data_list: list<dict> 各要素は code_s と更新カラムを持つ
+    """
+    if not stock_data_list:
+        return
+    with _get_stock_shelve_db() as db:
+        for stock_data in stock_data_list:
+            update_db(db, stock_data)
+        db.sync()
+
+
 @contextmanager
 def print_to():
     output = io.StringIO()
@@ -1101,6 +1119,17 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
             dt = get_price_day(dt)
             if (date.today() - dt).days <= 30:
                 tags.append("".join(new_high))
+    # 株探リスト掲載（本日のみ）
+    kabutan_origin = stock.get("kabutan_origin", "")
+    if kabutan_origin and stock.get("kabutan_origin_date"):
+        dt = get_price_day(stock.get("kabutan_origin_date"))
+        if (date.today() - dt).days <= 1:
+            if "高" in kabutan_origin:
+                tags.append("高")
+            if "出" in kabutan_origin:
+                tags.append("出")
+            if "P" in kabutan_origin:
+                tags.append("P")
     # 20MA押し
     pb20 = stock.get("pullback_20", "")
     if pb20:
@@ -1127,8 +1156,6 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
             try:
                 delta_day = get_recent_signal_delta(spl[0])
                 # mark = "★"  if delta_day < 3 else ""
-                if delta_day is not None and delta_day <= 7 and delta_day >= 0 and "ポ" not in tags:
-                    tags.append("ポ")
             except ValueError:
                 log_warning("ポケットピポット日付エラー", spl[0])
             if i == 0:
@@ -1141,8 +1168,6 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
         try:
             delta_day = get_recent_signal_delta(brkspl[0])
             # mark = "★"  if delta_day < 3 else ""
-            if delta_day is not None and delta_day <= 7 and delta_day >= 0:
-                tags.append("ブ")
         except ValueError:
             log_warning("ブレイクアウト日付エラー", brkspl[0])
         signal += "[ブ]"
