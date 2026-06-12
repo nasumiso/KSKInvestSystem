@@ -62,12 +62,18 @@
   .page-toggle button:first-child { border-radius: 4px 0 0 4px; }
   .page-toggle button:last-child { border-radius: 0 4px 4px 0; border-left: none; }
   .page-toggle button.active { background: #4285f4; border-color: #4285f4; color: #fff; }
-  /* issue #327: IN理由・イナゴ元・売買メモの短縮表示セル (1行省略、ホバーで全文) */
+  /* issue #327: IN理由・イナゴ元・売買メモの短縮表示セル (改行反映で2行まで、ホバーで全文)。
+     td に max-height は効かないため内側の .memo-clamp で line-clamp する */
   table.portfolio-list td.memo-short-cell {
     max-width: 12em;
+  }
+  table.portfolio-list td.memo-short-cell .memo-clamp {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: pre-line;
+    line-height: 1.2;
   }
   /* issue #327: 売買戦略 select のバッジ色 (定型値ごとに固定色、未分類/リスト外は警告色) */
   select.trade-idea-select {
@@ -475,7 +481,7 @@
           title="{{ (memo_value ~ ' (クリックで編集)') if (not fallback_mode and memo_value) else ('クリックで編集' if not fallback_mode else memo_value) }}"
           data-full="{{ memo_value }}"
           {% if not fallback_mode %}class="editable memo-short-cell" data-code="{{ row.code_s }}" data-field="{{ memo_field }}" data-multiline="1" data-input-width="{{ input_width }}"{% else %}class="memo-short-cell"{% endif %}
-          style="{% if not fallback_mode %}cursor:pointer{% endif %}">{{ memo_value or "—" }}</td>
+          style="{% if not fallback_mode %}cursor:pointer{% endif %}">{%- if memo_value -%}<div class="memo-clamp">{{ memo_value }}</div>{%- else -%}—{%- endif -%}</td>
       {% endfor %}
     </tr>
     {# issue #327: 手動メモの展開パネルは廃止。全項目をページ2の列 (inline 編集) に移設 #}
@@ -718,13 +724,23 @@ function excludeFromUniverse(codeS) {
     td.textContent = value || '—';
   }
 
-  // 短縮表示 (data-full 全文保持 + 1行省略) する memo フィールド (issue #314 / #327)
+  // 短縮表示 (data-full 全文保持 + 改行反映2行省略) する memo フィールド (issue #314 / #327)
   var SHORT_TEXT_FIELDS = ['jukyu_chart', 'inago_origin', 'watch_in_reason', 'takaichi_sensitivity'];
 
   function renderJukyu(td, value) {
     td.dataset.full = value || '';
     td.title = value ? value + ' (クリックで編集)' : 'クリックで編集';
-    td.textContent = value || '—';
+    td.innerHTML = '';
+    if (!value) {
+      td.textContent = '—';
+      return;
+    }
+    // memo-short-cell では .memo-clamp の CSS (line-clamp 2) が効く。
+    // jukyu-cell ではセレクタ外のため素の div となり従来通り pre-line 全行表示。
+    var div = document.createElement('div');
+    div.className = 'memo-clamp';
+    div.textContent = value;
+    td.appendChild(div);
   }
 
   // PORTFOLIO_COLORS のうち背景色に使われる HEX (compute_cell_styles の bg() / bg_with_white() 出力)。
