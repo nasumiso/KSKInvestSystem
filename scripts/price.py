@@ -457,8 +457,8 @@ def calc_ma10_kairi_indicators(closes, lows):
         res["price_kairi_ma10"] = (closes[0] - ma10) * 100 / ma10 if ma10 else None
     else:
         res["price_kairi_ma10"] = None
-    # streak 判定は lows を porosity 判定で参照する。安値欠損で closes と長さが
-    # ずれると lows[i] が別日を指すため、不一致なら streak は判定不能として False。
+    # streak 判定は lows を porosity 判定で参照する。closes と日付整列できない
+    # 場合だけ判定不能とする。各要素の None は「その日の安値だけ欠損」を表す。
     if len(lows) != len(closes):
         res["ma10_above_streak_30"] = False
         return res
@@ -497,6 +497,8 @@ def calc_ma10_kairi_indicators(closes, lows):
             # 当日 streak=True を立てた翌日に violation 確定で False へひっくり返る
             # (前日分の先取り誤判定)。確定情報のみで判定するため未確定は不成立とする。
             return False
+        if lows[i] is None or lows[i - 1] is None:
+            return False  # porosity 判定に必要な安値欠損日は未確定扱い
         return lows[i - 1] >= lows[i]
 
     # 各起点 s から STREAK_DAYS 連続で維持が成立する s があれば True
@@ -594,10 +596,12 @@ def _calc_daily_indicators(daily_price_list):
         closes = [int(float(d[4].replace(",", ""))) for d in daily_price_list]
     except (ValueError, IndexError):
         closes = []
-    try:
-        lows = [int(float(d[3].replace(",", ""))) for d in daily_price_list]
-    except (ValueError, IndexError):
-        lows = []
+    lows = []
+    for d in daily_price_list:
+        try:
+            lows.append(int(float(d[3].replace(",", ""))))
+        except (ValueError, IndexError):
+            lows.append(None)
     dic.update(calc_ma10_kairi_indicators(closes, lows))
     log_debug("10日MA乖離率:", dic["price_kairi_ma10"], "30日連続上回り期間あり:", dic["ma10_above_streak_30"])
 

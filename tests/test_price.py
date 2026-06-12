@@ -597,7 +597,7 @@ class TestCalcDailyIndicators:
 
         従来は終値さえ読めれば乖離率を出せていた。porosity 用に安値を読む変更で、
         安値欠損が乖離率まで巻き込んで全滅する回帰が起きないことを確認する
-        (streak 判定は lows 不整合のため False に倒れるが、乖離率は生きる)。
+        (安値が不要な日なら streak まで巻き込まず、乖離率も生きる)。
         """
         rows = self._make_price_list(39)  # 全日 終値>10ma
         d, o, h, _l, c, r5, r6, v = rows[7]
@@ -605,7 +605,15 @@ class TestCalcDailyIndicators:
         result = price._calc_daily_indicators(rows)
         # 乖離率は終値だけで計算できる → None にならない
         assert isinstance(result["price_kairi_ma10"], float)
-        # 安値欠損で lows が落ちる → streak は判定不能として False
+        assert result["ma10_above_streak_30"] is True
+
+    def test_ma10_streak_missing_low_break_day_is_false(self):
+        """porosity 判定が必要な割れ日に安値欠損があると streak は未確定扱い。"""
+        rows = self._make_price_list(39)
+        d, o, h, _l, _c, r5, r6, v = rows[5]
+        rows[5] = (d, o, h, "－", "1", r5, r6, v)  # 終値割れ + 安値欠損
+        result = price._calc_daily_indicators(rows)
+        assert isinstance(result["price_kairi_ma10"], float)
         assert result["ma10_above_streak_30"] is False
 
     def test_price_log_tuple_format(self):
