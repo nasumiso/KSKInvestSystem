@@ -69,7 +69,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* issue #327: 売買アイデア select のバッジ色 (定型値ごとに固定色、未分類/リスト外は警告色) */
+  /* issue #327: 売買戦略 select のバッジ色 (定型値ごとに固定色、未分類/リスト外は警告色) */
   select.trade-idea-select {
     width: 100%; max-width: 11em; font-size: 1em; padding: 0 2px; margin: 0;
     border: 1px solid transparent; border-radius: 3px; font-family: inherit;
@@ -77,9 +77,9 @@
   }
   select.trade-idea-select[data-idea="GARP"] { background: #d0e0f8; color: #1a4b8e; }
   select.trade-idea-select[data-idea="ピーターリンチ"] { background: #b8d8f4; color: #0d3a6e; }
-  select.trade-idea-select[data-idea="テーマ"] { background: #d4ead4; color: #285028; }
-  select.trade-idea-select[data-idea="イベント・カタリスト"] { background: #e4d4f4; color: #5a2d82; }
-  select.trade-idea-select[data-idea="モメンタム"] { background: #fde0c0; color: #8a5200; }
+  select.trade-idea-select[data-idea="中期テーマ"] { background: #d4ead4; color: #285028; }
+  select.trade-idea-select[data-idea="中期モメンタム"] { background: #fde0c0; color: #8a5200; }
+  select.trade-idea-select[data-idea="短期イベント"] { background: #e4d4f4; color: #5a2d82; }
   select.trade-idea-select[data-idea="底値リバ"] { background: #c8ecec; color: #1a6b6b; }
   select.trade-idea-select[data-idea="夢枠"] { background: #f8d8e8; color: #8e2a5a; }
   select.trade-idea-select[data-idea="大型高配当"] { background: #ece8c0; color: #6e6200; }
@@ -338,7 +338,7 @@
       <th data-page="2">更新日</th>
       <th data-page="2">ステージ</th>
       <th data-page="2">チャートパターン</th>
-      <th data-page="2" title="定型リストから単一選択。未分類は警告色">売買アイデア</th>
+      <th data-page="2" title="定型リストから単一選択。未分類は警告色">売買戦略</th>
       <th data-page="2">イナゴ元</th>
       <th data-page="2">IN理由</th>
       <th data-page="2" title="旧: 高市感応度">売買メモ</th>
@@ -450,14 +450,14 @@
           data-full="{{ row.memo.jukyu_chart or '' }}"
           {% if not fallback_mode %}class="editable jukyu-cell" data-code="{{ row.code_s }}" data-field="jukyu_chart" data-multiline="1" data-input-width="8em"{% else %}class="jukyu-cell"{% endif %}
           style="{% if not fallback_mode %}cursor:pointer{% endif %}">{{ row.memo.jukyu_chart or "—" }}</td>
-      {# issue #327: 売買アイデア (定型リスト単一選択 + 色分けバッジ)。
+      {# issue #327: 売買戦略 (定型リスト単一選択 + 色分けバッジ)。
          リスト外の旧自由記述値は ⚠️ 付き option を差し込んで保持し、再分類を促す #}
       {% set current_idea = row.memo.trade_idea or '' %}
       <td data-page="2" style="padding:0 2px;">
         <select class="trade-idea-select"
                 data-code="{{ row.code_s }}"
                 data-idea="{{ current_idea }}"
-                title="売買アイデア (選択で即保存)"
+                title="売買戦略 (選択で即保存)"
                 {% if fallback_mode %}disabled{% endif %}>
           <option value="">未分類</option>
           {% if current_idea and current_idea not in trade_idea_options %}
@@ -1010,7 +1010,7 @@ function excludeFromUniverse(codeS) {
   });
 })();
 
-// ========== 売買アイデア inline 編集 (issue #327) ==========
+// ========== 売買戦略 inline 編集 (issue #327) ==========
 // select の change で即 POST。保存成功で data-idea を更新しバッジ色を反映、失敗時は元値に戻す。
 (function() {
   document.querySelectorAll('select.trade-idea-select').forEach(function(sel) {
@@ -1033,7 +1033,7 @@ function excludeFromUniverse(codeS) {
         if (!res.ok || !res.json || res.json.ok !== true) {
           sel.classList.add('error');
           sel.value = prev;
-          alert((res.json && res.json.error) || '売買アイデアの保存に失敗しました');
+          alert((res.json && res.json.error) || '売買戦略の保存に失敗しました');
           return;
         }
         var saved = (res.json.display && res.json.display.trade_idea) || '';

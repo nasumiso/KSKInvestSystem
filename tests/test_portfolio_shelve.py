@@ -402,8 +402,8 @@ class TestUpdateMemo:
 
     def test_update_single_field(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
-        rec = ps.update_memo("4377", {"trade_idea": "モメンタム"}, db_path=db_path)
-        assert rec["memo"]["trade_idea"] == "モメンタム"
+        rec = ps.update_memo("4377", {"trade_idea": "中期モメンタム"}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == "中期モメンタム"
         # action_log に "メモ更新" 1 件 (初回登録 1 件 + メモ更新 1 件 = 計 2 件)
         logs = ps.list_action_logs("4377", db_path=db_path)
         assert len(logs) == 2
@@ -445,7 +445,7 @@ class TestUpdateMemo:
         ps.add_to_watch("4377", db_path=db_path)
         ps.update_memo(
             "4377",
-            {"trade_idea": "テーマ", "watch_in_reason": "B", "stage": "1S"},
+            {"trade_idea": "中期テーマ", "watch_in_reason": "B", "stage": "1S"},
             db_path=db_path,
         )
         # 1 項目だけ送信、残りは据え置きされるべき
@@ -457,7 +457,7 @@ class TestUpdateMemo:
     def test_update_with_empty_string_overwrites(self, db_path):
         """空文字を明示的に渡したらメモ削除として "" に上書き"""
         ps.add_to_watch("4377", db_path=db_path)
-        ps.update_memo("4377", {"trade_idea": "モメンタム"}, db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "中期モメンタム"}, db_path=db_path)
         rec = ps.update_memo("4377", {"trade_idea": ""}, db_path=db_path)
         assert rec["memo"]["trade_idea"] == ""
         # action_log: 初回登録 + メモ更新×2 = 3 件
@@ -483,9 +483,9 @@ class TestUpdateMemo:
 
     def test_update_no_diff_is_noop(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
-        ps.update_memo("4377", {"trade_idea": "モメンタム"}, db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "中期モメンタム"}, db_path=db_path)
         rec_before = ps.get_record("4377", db_path=db_path)
-        ps.update_memo("4377", {"trade_idea": "モメンタム"}, db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "中期モメンタム"}, db_path=db_path)
         rec_after = ps.get_record("4377", db_path=db_path)
         # updated_at が変わらない (no-op)
         assert rec_before["updated_at"] == rec_after["updated_at"]

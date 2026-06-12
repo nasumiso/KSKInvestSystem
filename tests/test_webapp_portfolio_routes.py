@@ -616,13 +616,13 @@ class TestUpdateMemoPost:
         # 3 項目だけ送信 (form に他のキーを含めない)
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"trade_idea": "テーマ", "watch_in_reason": "Y2", "stage": "2S"},
+            data={"trade_idea": "中期テーマ", "watch_in_reason": "Y2", "stage": "2S"},
         )
         assert resp.status_code == 302
 
         rec = ps.get_record("6324", db_path=portfolio_db_path)
         # 送られた 3 項目は更新
-        assert rec["memo"]["trade_idea"] == "テーマ"
+        assert rec["memo"]["trade_idea"] == "中期テーマ"
         assert rec["memo"]["watch_in_reason"] == "Y2"
         assert rec["memo"]["stage"] == "2S"
         # 送られなかった 2 項目は据え置き
