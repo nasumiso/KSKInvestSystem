@@ -1044,16 +1044,17 @@ def _signal_recent_delta(stock, mmdd):
     return delta, sig_day
 
 
-def extract_signals(stock):
-    """tags と同じフィルタを通した表示対象ポ/ブシグナルを返す (issue #253/#310)。
+def extract_signals(stock, max_delta_days=10):
+    """表示対象ポ/ブシグナルを返す (issue #253/#310)。
 
-    make_signal の tags 付与条件と完全一致させ、一覧 tooltip/背景色・詳細チャート
-    マーカーが make_signal と同じシグナル集合を見るための単一ソース。
+    一覧 tooltip/背景色はデフォルトの 10 日以内だけを使い、詳細チャートは
+    max_delta_days=None で make_signal と同じ元シグナルをチャート窓内に描ける。
 
     フィルタ:
       - ポ: trend_template に Stage4 崩壊系が含まれれば全除外、先頭最大3件走査。
       - ブ: 先頭1件のみ走査。
-      - 各シグナル: access_date_price 基準の delta が 0〜7日のものだけ採用。
+      - 各シグナル: access_date_price 基準で delta を計算し、
+        max_delta_days が整数なら 0〜max_delta_days のものだけ採用。
 
     Returns:
         list[dict]: [{"kind","mmdd","num","sig_date","delta"}] (表示順)。
@@ -1086,7 +1087,9 @@ def extract_signals(stock):
             except ValueError:
                 log_warning("シグナル日付エラー", spl[0])
                 continue
-            if delta is None or delta < 0 or delta > 7:
+            if delta is None or delta < 0:
+                continue
+            if max_delta_days is not None and delta > max_delta_days:
                 continue
             out.append({
                 "kind": kind, "mmdd": spl[0], "num": num,

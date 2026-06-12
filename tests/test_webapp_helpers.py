@@ -3118,13 +3118,13 @@ class TestSignalDisplay:
             "rs_raw": 0.5,
         }
         mark, full = helpers._format_signal(stock)
-        assert mark == "ポ"
+        assert mark == "ポ/ブ"
         assert "[ポ]" in full
         assert "[ブ]" in full
         assert "[買過]" in full
 
     def test_resolve_markers_x_interp_and_drop(self):
-        """発生日を週バー間で日割り按分 (同週内の日付差がXに出る)・窓外はdrop"""
+        """発生日を週バー間で日割り按分し、10日超でも窓内なら描画、窓外はdrop"""
         from datetime import timedelta
         anchor_now, anchor_day = self._anchor()
         # 週足バー日付 (昇順): 直近4週 (各週の代表日として週初の月曜)
@@ -3133,17 +3133,18 @@ class TestSignalDisplay:
         xs = [10.0, 20.0, 30.0, 40.0]
         # ポ: 先週の半ば (バー間の按分で xs[2]=30 と xs[3]=40 の中間付近)
         po_day = (monday - timedelta(days=3)).strftime("%m/%d")  # 先週金曜
-        # ブ: extract_signals の delta>7 フィルタで drop されるよう 8 日以上前
-        old_day = (anchor_day - timedelta(days=10)).strftime("%m/%d")
+        # ブ: 11日前でもチャート窓内なら描画される
+        old_day = (anchor_day - timedelta(days=11)).strftime("%m/%d")
         stock = {"pocket_pivot": ["%s,0" % po_day],
                  "breakout": ["%s,180" % old_day],
                  "trend_template": [], "access_date_price": anchor_now}
         markers = helpers._resolve_signal_markers(stock, window_dates, xs)
         kinds = {m["kind"]: m for m in markers}
         assert "ポ" in kinds
+        assert "ブ" in kinds
         # 先週金曜は xs[2](先週月)と xs[3](今週月)の間 → 週バーにスナップせず按分
         assert 30.0 < kinds["ポ"]["x"] < 40.0
-        assert "ブ" not in kinds  # delta>7 で drop
+        assert 30.0 <= kinds["ブ"]["x"] < 40.0
 
     def test_chart_markers_render_and_size(self):
         """build_price_rs_chart_full: ポ三角/ブダイヤが線より後 (前面) に描画・強度でサイズ可変"""

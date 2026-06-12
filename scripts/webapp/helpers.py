@@ -2562,9 +2562,10 @@ def _svg_diamond(cx: float, cy: float, size: float, color: str,
 def _resolve_signal_markers(stock, window_dates, xs):
     """ポ/ブシグナルを週足チャートの表示窓にマップした marker spec を返す (issue #253)。
 
-    シグナルの抽出・フィルタ・年補完は extract_signals (make_signal と同一基準) に委譲し、
-    一覧 tooltip と同じシグナル集合をマーカー化する。X は発生日を週バー間で線形補間する
-    (週足だが発生日は日単位のため週の幅を日割り按分)。窓外 (最古バーより古い) は drop。
+    シグナルの抽出・フィルタ・年補完は extract_signals に委譲する。
+    詳細チャートは signal 欄と同じ元シグナルを窓内で見せたいので、一覧 tooltip 用の
+    7日制限は外し、週足表示窓に入るものだけをマーカー化する。X は発生日を週バー間で
+    線形補間する (週足だが発生日は日単位のため週の幅を日割り按分)。窓外は drop。
 
     Args:
         stock: 銘柄DB dict (pocket_pivot/breakout/trend_template/access_date_price を参照)
@@ -2578,7 +2579,7 @@ def _resolve_signal_markers(stock, window_dates, xs):
         return []
     try:
         from make_stock_db import extract_signals  # 遅延 import
-        signals = extract_signals(stock)
+        signals = extract_signals(stock, max_delta_days=None)
     except Exception:  # noqa: BLE001
         return []
     latest = window_dates[-1]  # チャート最新日 (= 直近週)

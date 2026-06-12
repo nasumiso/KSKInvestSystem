@@ -317,8 +317,8 @@ class TestExtractSignals:
             # ブは1件のみ
             ("bo_cap1", lambda d: {
                 "breakout": ["%s,180" % d(1), "%s,200" % d(2)]}, ["ブ"]),
-            # delta>7 は除外
-            ("stale_drop", lambda d: {"pocket_pivot": ["%s,2" % d(10)]}, []),
+            # delta>10 は除外
+            ("stale_drop", lambda d: {"pocket_pivot": ["%s,2" % d(12)]}, []),
         ],
     )
     def test_filter_matches_tags(self, case, kw_factory, expect_kinds):
@@ -333,6 +333,17 @@ class TestExtractSignals:
         """access_date_price 無し → 日付基準が立たず空 (tags と同じ)"""
         stock = {"pocket_pivot": ["06/03,2"], "trend_template": []}
         assert make_stock_db.extract_signals(stock) == []
+
+    def test_max_delta_none_keeps_older_signal(self):
+        """max_delta_days=None なら 10日超でも access_date_price 基準で取得する"""
+        today = datetime.today()
+        stock = {
+            "pocket_pivot": [f"{(today - timedelta(days=11)).strftime('%m/%d')},2"],
+            "trend_template": [],
+            "access_date_price": today,
+        }
+        signals = make_stock_db.extract_signals(stock, max_delta_days=None)
+        assert [s["kind"] for s in signals] == ["ポ"]
 
 
 # ==================================================
