@@ -444,17 +444,24 @@ def calc_ma10_kairi_indicators(closes, lows):
 
     Args:
         closes: 終値 (int/float) のリスト、新しい日が先頭
-        lows: 安値 (int/float) のリスト、新しい日が先頭 (closes と同じ日付並び)
+        lows: 安値 (int/float) のリスト、新しい日が先頭 (closes と同じ日付並び)。
+            安値が欠損して closes と長さが揃わない場合は streak 判定のみ無効化し、
+            乖離率は closes だけで計算する (安値欠損が乖離率まで巻き込まないため)。
     Returns:
         dict: price_kairi_ma10 (float or None) / ma10_above_streak_30 (bool)
     """
     res = {}
-    # 直近10本平均からの乖離率
+    # 乖離率は closes のみで計算する (安値の欠損に影響されない)
     if len(closes) >= 10:
         ma10 = sum(closes[:10]) / 10
         res["price_kairi_ma10"] = (closes[0] - ma10) * 100 / ma10 if ma10 else None
     else:
         res["price_kairi_ma10"] = None
+    # streak 判定は lows を porosity 判定で参照する。安値欠損で closes と長さが
+    # ずれると lows[i] が別日を指すため、不一致なら streak は判定不能として False。
+    if len(lows) != len(closes):
+        res["ma10_above_streak_30"] = False
+        return res
     # 保持している価格データ (日足~40日) の範囲内に「30営業日連続で 10ma を維持した」
     # 期間があるか。利確基準 (10maを30日上回り続けた) がこの窓内で一度でも成立していれば、
     # その後10maを割って売りシグナルが出ても True のまま → トレンド列で赤太点線として表示
@@ -580,12 +587,16 @@ def _calc_daily_indicators(daily_price_list):
     log_debug("フォロースルー候補:", followthrough_day)
 
     # ---- 10日MA乖離率 + 30日連続10ma上回り判定 (短期ブレイク上昇時の利確基準)
-    # トレンド列の点線マーカー用。daily_price_list は終値が d[4]。
+    # トレンド列の点線マーカー用。daily_price_list は終値が d[4]・安値が d[3]。
+    # closes と lows は別々に読む。安値の欠損 (株探 "－" 等) で lows が落ちても
+    # 終値ベースの乖離率は計算できるようにする (calc 側で長さ不一致は streak 無効化)。
     try:
         closes = [int(float(d[4].replace(",", ""))) for d in daily_price_list]
-        lows = [int(float(d[3].replace(",", ""))) for d in daily_price_list]
     except (ValueError, IndexError):
         closes = []
+    try:
+        lows = [int(float(d[3].replace(",", ""))) for d in daily_price_list]
+    except (ValueError, IndexError):
         lows = []
     dic.update(calc_ma10_kairi_indicators(closes, lows))
     log_debug("10日MA乖離率:", dic["price_kairi_ma10"], "30日連続上回り期間あり:", dic["ma10_above_streak_30"])
