@@ -465,6 +465,12 @@ def update_memo(code_s: str):
                     "jukyu_chart": (row.get("memo") or {}).get("jukyu_chart") or "",
                     "gyoutai_theme": (row.get("memo") or {}).get("gyoutai_theme") or "",
                     "gyoutai_themes": list((row.get("memo") or {}).get("gyoutai_themes") or []),
+                    # issue #327: ページ2列 (売買アイデア / IN理由 / イナゴ元 / 売買メモ) の
+                    # inline 編集後の表示同期に使う
+                    "trade_idea": (row.get("memo") or {}).get("trade_idea") or "",
+                    "watch_in_reason": (row.get("memo") or {}).get("watch_in_reason") or "",
+                    "inago_origin": (row.get("memo") or {}).get("inago_origin") or "",
+                    "takaichi_sensitivity": (row.get("memo") or {}).get("takaichi_sensitivity") or "",
                 }
         return jsonify(body)
     _flash_stock_info(code_s, " のメモを保存しました")
@@ -665,6 +671,7 @@ def dashboard():
         fallback_mode=fallback_mode,
         theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
+        trade_idea_options=ps.TRADE_IDEA_OPTIONS,
         hold_summary=hold_summary,
     )
 

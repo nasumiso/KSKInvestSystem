@@ -402,8 +402,8 @@ class TestUpdateMemo:
 
     def test_update_single_field(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
-        rec = ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
-        assert rec["memo"]["trade_idea"] == "上値追い"
+        rec = ps.update_memo("4377", {"trade_idea": "モメンタム"}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == "モメンタム"
         # action_log に "メモ更新" 1 件 (初回登録 1 件 + メモ更新 1 件 = 計 2 件)
         logs = ps.list_action_logs("4377", db_path=db_path)
         assert len(logs) == 2
@@ -411,24 +411,53 @@ class TestUpdateMemo:
         assert logs[1]["status_from"] is None
         assert logs[1]["status_to"] is None
 
+    @pytest.mark.parametrize(
+        "current, new_value, expect_error",
+        [
+            # 定型リスト内の値は保存できる
+            ("", "GARP", False),
+            ("", "底値リバ", False),
+            # 空文字 (未分類) はいつでも許容
+            ("GARP", "", False),
+            # リスト外の純新規値は ValueError
+            ("", "押し目買い", True),
+            # リスト外でも現行値と同じなら保持を許可 (旧自由記述の救済)
+            ("押し目買い", "押し目買い", False),
+        ],
+    )
+    def test_trade_idea_options_validation(self, db_path, current, new_value, expect_error):
+        """trade_idea の定型値チェック (issue #327): リスト内/空は許容、リスト外新規は拒否、現行値は救済"""
+        ps.add_to_watch("4377", db_path=db_path)
+        if current:
+            # 旧自由記述値は移行 (create_record 直接格納) 相当として update_memo を通さず埋め込む
+            rec = ps.get_record("4377", db_path=db_path)
+            rec["memo"]["trade_idea"] = current
+            ps.upsert_record(rec, db_path=db_path)
+        if expect_error:
+            with pytest.raises(ValueError, match="定型リスト外"):
+                ps.update_memo("4377", {"trade_idea": new_value}, db_path=db_path)
+        else:
+            rec = ps.update_memo("4377", {"trade_idea": new_value}, db_path=db_path)
+            assert rec["memo"]["trade_idea"] == new_value
+
     def test_update_partial_keeps_other_fields(self, db_path):
         """部分更新: fields に含まれないキーは現行値据え置き (codex P1 対応)"""
         ps.add_to_watch("4377", db_path=db_path)
         ps.update_memo(
             "4377",
-            {"trade_idea": "A", "watch_in_reason": "B", "stage": "1S"},
+            {"trade_idea": "テーマ", "watch_in_reason": "B", "stage": "1S"},
             db_path=db_path,
         )
         # 1 項目だけ送信、残りは据え置きされるべき
-        rec = ps.update_memo("4377", {"trade_idea": "X"}, db_path=db_path)
-        assert rec["memo"]["trade_idea"] == "X"
+        rec = ps.update_memo("4377", {"trade_idea": "GARP"}, db_path=db_path)
+        assert rec["memo"]["trade_idea"] == "GARP"
         assert rec["memo"]["watch_in_reason"] == "B"  # 据え置き
         assert rec["memo"]["stage"] == "1S"           # 据え置き
 
     def test_update_with_empty_string_overwrites(self, db_path):
         """空文字を明示的に渡したらメモ削除として "" に上書き"""
         ps.add_to_watch("4377", db_path=db_path)
-        ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "モメンタム"}, db_path=db_path)
         rec = ps.update_memo("4377", {"trade_idea": ""}, db_path=db_path)
         assert rec["memo"]["trade_idea"] == ""
         # action_log: 初回登録 + メモ更新×2 = 3 件
@@ -445,6 +474,7 @@ class TestUpdateMemo:
         # list 系フィールド (gyoutai_themes) は別バリデーション経路なのでこのテストでは除外
         str_fields = ps.MEMO_FIELDS - ps.MEMO_LIST_FIELDS
         all_fields = {f: f"val_{f}" for f in str_fields}
+        all_fields["trade_idea"] = "GARP"  # issue #327: trade_idea は定型値のみ許容
         rec = ps.update_memo("4377", all_fields, db_path=db_path)
         for k, v in all_fields.items():
             assert rec["memo"][k] == v
@@ -453,9 +483,9 @@ class TestUpdateMemo:
 
     def test_update_no_diff_is_noop(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
-        ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "モメンタム"}, db_path=db_path)
         rec_before = ps.get_record("4377", db_path=db_path)
-        ps.update_memo("4377", {"trade_idea": "上値追い"}, db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "モメンタム"}, db_path=db_path)
         rec_after = ps.get_record("4377", db_path=db_path)
         # updated_at が変わらない (no-op)
         assert rec_before["updated_at"] == rec_after["updated_at"]
@@ -483,17 +513,17 @@ class TestUpdateMemo:
 
     def test_update_unregistered_record_raises(self, db_path):
         with pytest.raises(KeyError):
-            ps.update_memo("9999", {"trade_idea": "X"}, db_path=db_path)
+            ps.update_memo("9999", {"trade_idea": "GARP"}, db_path=db_path)
 
     def test_update_invalid_code_s_raises(self, db_path):
         with pytest.raises(ValueError):
-            ps.update_memo("abc", {"trade_idea": "X"}, db_path=db_path)
+            ps.update_memo("abc", {"trade_idea": "GARP"}, db_path=db_path)
 
     def test_update_normalizes_code_s(self, db_path):
         ps.add_to_watch("215A", db_path=db_path)
-        rec = ps.update_memo("215a", {"trade_idea": "X"}, db_path=db_path)
+        rec = ps.update_memo("215a", {"trade_idea": "GARP"}, db_path=db_path)
         assert rec["code_s"] == "215A"
-        assert rec["memo"]["trade_idea"] == "X"
+        assert rec["memo"]["trade_idea"] == "GARP"
 
 
 class TestGyoutaiThemesField:
@@ -532,12 +562,12 @@ class TestGyoutaiThemesField:
 
     def test_update_gyoutai_themes_partial_keeps_other_fields(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
-        ps.update_memo("4377", {"trade_idea": "X"}, db_path=db_path)
+        ps.update_memo("4377", {"trade_idea": "GARP"}, db_path=db_path)
         rec = ps.update_memo(
             "4377", {"gyoutai_themes": ["AI"]}, db_path=db_path
         )
         assert rec["memo"]["gyoutai_themes"] == ["AI"]
-        assert rec["memo"]["trade_idea"] == "X"
+        assert rec["memo"]["trade_idea"] == "GARP"
 
     def test_update_gyoutai_themes_rejects_non_list(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)

@@ -193,7 +193,8 @@ class TestDashboardGet:
         html = resp.data.decode()
 
         assert "<th>評価</th>" in html
-        assert "<th>チャートパターン</th>" in html
+        # issue #327: チャートパターンはページ2 (手動入力) 列へ移設
+        assert '<th data-page="2">チャートパターン</th>' in html
         assert '<td class="rating-cell" style="background:#fbbc04">S</td>' in html
         assert 'data-field="jukyu_chart"' in html
         assert 'data-multiline="1"' in html
@@ -580,6 +581,7 @@ class TestUpdateMemoPost:
         # list 系フィールド (gyoutai_themes) は別 form name (gyoutai_themes_0/1) のため除外
         str_fields = ps.MEMO_FIELDS - ps.MEMO_LIST_FIELDS
         form_data = {field: f"val_{field}" for field in str_fields}
+        form_data["trade_idea"] = "GARP"  # issue #327: trade_idea は定型値のみ許容
         resp = client.post("/portfolio/6324/memo", data=form_data)
         assert resp.status_code == 302
         rec = ps.get_record("6324", db_path=portfolio_db_path)
@@ -593,7 +595,7 @@ class TestUpdateMemoPost:
         """メモ保存後、銘柄コードリンク付きの完了メッセージを表示する"""
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"trade_idea": "X"},
+            data={"trade_idea": "GARP"},
             follow_redirects=True,
         )
         html = resp.data.decode()
@@ -603,7 +605,7 @@ class TestUpdateMemoPost:
         """部分送信: 送られたキーだけ更新、未送信フィールドは現行値据え置き (codex P1)"""
         # 事前に 5 項目をセット
         prefilled = {
-            "trade_idea": "X",
+            "trade_idea": "GARP",
             "watch_in_reason": "Y",
             "stage": "1S",
             "inago_origin": "twitter",
@@ -614,13 +616,13 @@ class TestUpdateMemoPost:
         # 3 項目だけ送信 (form に他のキーを含めない)
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"trade_idea": "X2", "watch_in_reason": "Y2", "stage": "2S"},
+            data={"trade_idea": "テーマ", "watch_in_reason": "Y2", "stage": "2S"},
         )
         assert resp.status_code == 302
 
         rec = ps.get_record("6324", db_path=portfolio_db_path)
         # 送られた 3 項目は更新
-        assert rec["memo"]["trade_idea"] == "X2"
+        assert rec["memo"]["trade_idea"] == "テーマ"
         assert rec["memo"]["watch_in_reason"] == "Y2"
         assert rec["memo"]["stage"] == "2S"
         # 送られなかった 2 項目は据え置き
@@ -629,7 +631,7 @@ class TestUpdateMemoPost:
 
     def test_memo_empty_string_overwrites(self, client, portfolio_db_path):
         """空文字を明示送信したら "" に上書き (メモ削除扱い)"""
-        ps.update_memo("6324", {"trade_idea": "X"}, db_path=portfolio_db_path)
+        ps.update_memo("6324", {"trade_idea": "GARP"}, db_path=portfolio_db_path)
         resp = client.post(
             "/portfolio/6324/memo",
             data={"trade_idea": ""},
@@ -640,12 +642,12 @@ class TestUpdateMemoPost:
 
     def test_memo_no_diff_no_action_log(self, client, portfolio_db_path):
         """全項目を現行値そのまま送ったら action_log は増えない"""
-        ps.update_memo("6324", {"trade_idea": "X"}, db_path=portfolio_db_path)
+        ps.update_memo("6324", {"trade_idea": "GARP"}, db_path=portfolio_db_path)
         before_logs = ps.list_action_logs("6324", db_path=portfolio_db_path)
 
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"trade_idea": "X"},  # 現行値と同じ
+            data={"trade_idea": "GARP"},  # 現行値と同じ
         )
         assert resp.status_code == 302
         after_logs = ps.list_action_logs("6324", db_path=portfolio_db_path)
@@ -654,7 +656,7 @@ class TestUpdateMemoPost:
     def test_memo_unregistered_code_flash_error(self, client, portfolio_db_path):
         resp = client.post(
             "/portfolio/9999/memo",
-            data={"trade_idea": "X"},
+            data={"trade_idea": "GARP"},
         )
         assert resp.status_code == 302
         assert ps.get_record("9999", db_path=portfolio_db_path) is None
@@ -662,7 +664,7 @@ class TestUpdateMemoPost:
     def test_memo_invalid_code_flash_error(self, client):
         resp = client.post(
             "/portfolio/abc/memo",
-            data={"trade_idea": "X"},
+            data={"trade_idea": "GARP"},
         )
         assert resp.status_code == 302
 
@@ -670,22 +672,22 @@ class TestUpdateMemoPost:
         """textarea の改行 \\r\\n は \\n に正規化される"""
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"trade_idea": "上値追い\r\n決算待ち\r\n"},
+            data={"watch_in_reason": "上値追い\r\n決算待ち\r\n"},
         )
         assert resp.status_code == 302
         rec = ps.get_record("6324", db_path=portfolio_db_path)
         # 前後 strip + \r\n → \n 正規化
-        assert rec["memo"]["trade_idea"] == "上値追い\n決算待ち"
+        assert rec["memo"]["watch_in_reason"] == "上値追い\n決算待ち"
 
     def test_memo_unknown_form_field_ignored(self, client, portfolio_db_path):
         """MEMO_FIELDS 外のフォームキーは無視され、エラーにならない"""
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"trade_idea": "X", "csrf_token": "dummy", "garbage": "ignored"},
+            data={"trade_idea": "GARP", "csrf_token": "dummy", "garbage": "ignored"},
         )
         assert resp.status_code == 302
         rec = ps.get_record("6324", db_path=portfolio_db_path)
-        assert rec["memo"]["trade_idea"] == "X"
+        assert rec["memo"]["trade_idea"] == "GARP"
         assert "csrf_token" not in rec["memo"]
         assert "garbage" not in rec["memo"]
 
@@ -744,6 +746,25 @@ class TestUpdateMemoAjax:
 
         rec = ps.get_record("6324", db_path=portfolio_db_path)
         assert rec["memo"]["jukyu_chart"] == "月足低位ブレイク\nCWH"
+
+    def test_ajax_display_includes_page2_memo_fields(self, client, portfolio_db_path):
+        """issue #327: ページ2列の inline 編集同期用に display へ 4 フィールドを含める"""
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={
+                "trade_idea": "GARP",
+                "watch_in_reason": "新製品サイクル",
+                "inago_origin": "X@foo",
+                "takaichi_sensitivity": "決算前に半分利確",
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["display"]["trade_idea"] == "GARP"
+        assert body["display"]["watch_in_reason"] == "新製品サイクル"
+        assert body["display"]["inago_origin"] == "X@foo"
+        assert body["display"]["takaichi_sensitivity"] == "決算前に半分利確"
 
     def test_ajax_unknown_code_returns_404_json(self, client):
         resp = client.post(
@@ -828,13 +849,13 @@ class TestGyoutaiThemesPost:
         )
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"trade_idea": "X"},
+            data={"trade_idea": "GARP"},
             headers={"X-Requested-With": "XMLHttpRequest"},
         )
         assert resp.status_code == 200
         rec = ps.get_record("6324", db_path=portfolio_db_path)
         assert rec["memo"]["gyoutai_themes"] == ["既存"]
-        assert rec["memo"]["trade_idea"] == "X"
+        assert rec["memo"]["trade_idea"] == "GARP"
 
     def test_dashboard_renders_theme_select_options(self, client, portfolio_db_path):
         """issue #282: テーママスターの name がフィルタ select / 行 select の選択肢として出る"""
@@ -978,7 +999,7 @@ class TestFallbackFromTxt:
         """フォールバック中は /portfolio/<code>/memo も reject (issue #175)"""
         portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
         resp = fallback_client.post(
-            "/portfolio/3496/memo", data={"trade_idea": "X"}
+            "/portfolio/3496/memo", data={"trade_idea": "GARP"}
         )
         assert resp.status_code == 302
         # shelve は空のまま (memo 更新で 1 件作られたら fallback 解除事故が起きる)
@@ -1148,7 +1169,7 @@ class TestReturnQueryRedirect:
         """memo POST 時、return_query が反映される"""
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"trade_idea": "X", "return_query": "status=watch"},
+            data={"trade_idea": "GARP", "return_query": "status=watch"},
         )
         assert resp.status_code == 302
         loc = resp.headers["Location"]

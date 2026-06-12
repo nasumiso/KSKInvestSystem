@@ -116,6 +116,17 @@ MEMO_LIST_FIELDS = frozenset({"gyoutai_themes"})
 # gyoutai_themes の UI スロット上限 (issue #187)
 GYOUTAI_THEMES_MAX_SLOTS = 2
 
+# trade_idea の定型リスト (issue #327: 自由記述から単一選択式へ移行)。
+# 空文字 = 未分類。リスト外の既存値 (旧自由記述) は update_memo で保持を許可する (救済)。
+# CSV 移行 (create_record 経由) はこのチェックを通らないため自由記述のまま格納される。
+TRADE_IDEA_OPTIONS = (
+    "GARP",
+    "テーマ",
+    "イベント・カタリスト",
+    "モメンタム",
+    "底値リバ",
+)
+
 ACTION_LOG_FIELDS = frozenset(
     {
         "code_s",
@@ -1265,6 +1276,19 @@ def update_memo(
                         f"portfolio_shelve: theme {t!r} はマスター未登録のため新規付与できません"
                     )
                 normalized_fields["gyoutai_themes"] = cleaned
+
+            # trade_idea の定型値チェック (issue #327)
+            # - 空文字 (未分類) と TRADE_IDEA_OPTIONS 内の値は採用
+            # - リスト外でも現行レコードに既に入っている値は保持を許可 (旧自由記述の救済)
+            # - 純新規のリスト外値は ValueError
+            if "trade_idea" in normalized_fields:
+                idea = normalized_fields["trade_idea"]
+                current_idea = current_memo.get("trade_idea", "")
+                if idea and idea not in TRADE_IDEA_OPTIONS and idea != current_idea:
+                    raise ValueError(
+                        f"portfolio_shelve: trade_idea {idea!r} は定型リスト外のため"
+                        f"新規付与できません (許容値: {list(TRADE_IDEA_OPTIONS)})"
+                    )
 
             changed = any(
                 current_memo.get(k, _current_default(k)) != v
