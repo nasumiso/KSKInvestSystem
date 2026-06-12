@@ -436,42 +436,77 @@ def add_stalling_days(dic, daily_price_list, high52_weekly):
     return dic
 
 
-def calc_ma10_kairi_indicators(closes):
-    """終値リスト (新しい日が先頭) から 10日MA乖離率と30日連続上回り判定を計算する。
+def calc_ma10_kairi_indicators(closes, lows):
+    """終値・安値リスト (新しい日が先頭) から 10日MA乖離率と30日連続上回り判定を計算する。
 
     Kabutan/yfinance 両系統で共通利用する。トレンド列の点線マーカー用。
     30日連続で終値が10maを上回る期間が保持データ窓内にあると赤実線に切替える。
 
     Args:
         closes: 終値 (int/float) のリスト、新しい日が先頭
+        lows: 安値 (int/float) のリスト、新しい日が先頭 (closes と同じ日付並び)。
+            安値が欠損して closes と長さが揃わない場合は streak 判定のみ無効化し、
+            乖離率は closes だけで計算する (安値欠損が乖離率まで巻き込まないため)。
     Returns:
         dict: price_kairi_ma10 (float or None) / ma10_above_streak_30 (bool)
     """
     res = {}
-    # 直近10本平均からの乖離率
+    # 乖離率は closes のみで計算する (安値の欠損に影響されない)
     if len(closes) >= 10:
         ma10 = sum(closes[:10]) / 10
         res["price_kairi_ma10"] = (closes[0] - ma10) * 100 / ma10 if ma10 else None
     else:
         res["price_kairi_ma10"] = None
-    # 保持している価格データ (日足~40日) の範囲内に「30営業日連続で終値 > その日の
-    # 10ma」の期間があるか。利確基準 (10maを30日上回り続けた) がこの窓内で一度でも
-    # 成立していれば、その後10maを割って売りシグナルが出ても True のまま → トレンド列で
-    # 赤太点線として表示する (達成期間が保持データ窓の外に流れたら False に戻る = 現状仕様)。
-    # 各日 i の10ma = closes[i:i+10] の平均 (要 i+10 本)。一致・下回りで連続を切断 (厳密)。
+    # streak 判定は lows を porosity 判定で参照する。closes と日付整列できない
+    # 場合だけ判定不能とする。各要素の None は「その日の安値だけ欠損」を表す。
+    if len(lows) != len(closes):
+        res["ma10_above_streak_30"] = False
+        return res
+    # 保持している価格データ (日足~40日) の範囲内に「30営業日連続で 10ma を維持した」
+    # 期間があるか。利確基準 (10maを30日上回り続けた) がこの窓内で一度でも成立していれば、
+    # その後10maを割って売りシグナルが出ても True のまま → トレンド列で赤太点線として表示
+    # する (達成期間が保持データ窓の外に流れたら False に戻る = 現状仕様)。
+    #
+    # 連続維持の判定は Morales/Kacher の violation (浸透許容=porosity) に準拠する:
+    #   - 終値 > 10ma なら維持。
+    #   - 終値が10maを割っても、翌営業日の安値が「割れた日の安値」を下回らなければ維持
+    #     (一時的な潜りは shakeout として救済)。
+    #   - 終値が10maを割り、かつ翌営業日の安値が割れた日の安値を下回ったら violation 成立
+    #     として切断。
+    # 原典は「翌日以降」に安値を下回ることを violation とするが、本実装は監視窓を
+    # 「割れ日の翌営業日のみ」に固定する (割れ直後のフォロースルー有無で本物/ダマシを
+    # 判定する趣旨。窓終端を確定させ判定を決定的にするため)。
+    # 各日 i の10ma = closes[i:i+10] の平均 (要 i+10 本)。リスト先頭が最新日なので、
+    # 日 i の「翌営業日」は index i-1。
     # (原典は7週=35日だが日足取得が period="2mo"≒40日のため取得範囲で収まる30日に調整)
     STREAK_DAYS = 30
 
-    def _above_ma10(i):
-        ma = sum(closes[i:i + 10]) / 10 if len(closes) >= i + 10 else None
-        return ma is not None and ma != 0 and closes[i] > ma
+    def _ma10(i):
+        return sum(closes[i:i + 10]) / 10 if len(closes) >= i + 10 else None
 
-    # 各起点 s から STREAK_DAYS 連続で _above_ma10 が成立する s があれば True
+    def _streak_holds(i):
+        ma = _ma10(i)
+        if ma is None or ma == 0:
+            return False  # 10ma 算出不可 = データ不足
+        if closes[i] > ma:
+            return True  # 終値が10ma上 → 維持
+        # 終値が10maを割った日。翌営業日 (i-1) の安値が割れ日 i の安値を下回れば
+        # violation 成立 → 切断。下回らなければ porosity 救済で維持。
+        if i == 0:
+            # 最新日の割れは翌営業日が未到来で violation 未確定。ここを維持側に倒すと
+            # 当日 streak=True を立てた翌日に violation 確定で False へひっくり返る
+            # (前日分の先取り誤判定)。確定情報のみで判定するため未確定は不成立とする。
+            return False
+        if lows[i] is None or lows[i - 1] is None:
+            return False  # porosity 判定に必要な安値欠損日は未確定扱い
+        return lows[i - 1] >= lows[i]
+
+    # 各起点 s から STREAK_DAYS 連続で維持が成立する s があれば True
     had_streak = False
     if len(closes) >= STREAK_DAYS + 9:
         max_start = len(closes) - (STREAK_DAYS + 9)  # s+STREAK_DAYS+9 が範囲内に収まる上限
         for s in range(max_start + 1):
-            if all(_above_ma10(i) for i in range(s, s + STREAK_DAYS)):
+            if all(_streak_holds(i) for i in range(s, s + STREAK_DAYS)):
                 had_streak = True
                 break
     res["ma10_above_streak_30"] = had_streak  # データ不足時も False
@@ -554,12 +589,20 @@ def _calc_daily_indicators(daily_price_list):
     log_debug("フォロースルー候補:", followthrough_day)
 
     # ---- 10日MA乖離率 + 30日連続10ma上回り判定 (短期ブレイク上昇時の利確基準)
-    # トレンド列の点線マーカー用。daily_price_list は終値が d[4]。
+    # トレンド列の点線マーカー用。daily_price_list は終値が d[4]・安値が d[3]。
+    # closes と lows は別々に読む。安値の欠損 (株探 "－" 等) で lows が落ちても
+    # 終値ベースの乖離率は計算できるようにする (calc 側で長さ不一致は streak 無効化)。
     try:
         closes = [int(float(d[4].replace(",", ""))) for d in daily_price_list]
     except (ValueError, IndexError):
         closes = []
-    dic.update(calc_ma10_kairi_indicators(closes))
+    lows = []
+    for d in daily_price_list:
+        try:
+            lows.append(int(float(d[3].replace(",", ""))))
+        except (ValueError, IndexError):
+            lows.append(None)
+    dic.update(calc_ma10_kairi_indicators(closes, lows))
     log_debug("10日MA乖離率:", dic["price_kairi_ma10"], "30日連続上回り期間あり:", dic["ma10_above_streak_30"])
 
     # direction_signal は make_market_db.py が market_state を計算してから上書きする。
@@ -1764,9 +1807,11 @@ def parse_price_text_from_list(price_current, price_list):
     # TODO: 週次でやっている20MA押しをやりたい
 
     # ---- 10日MA乖離率 + 30日連続上回り判定 (トレンド列の点線マーカー用)
-    # price_list は終値が [6]。_calc_daily_indicators と同一ロジックを共通化。
+    # この price_list は終値が [6]・安値が [3] (int 済み)。_calc_daily_indicators とは
+    # カラム体系が異なる点に注意。calc_ma10_kairi_indicators のロジックを共通化。
     closes = [row[6] for row in price_list]
-    price.update(calc_ma10_kairi_indicators(closes))
+    lows = [row[3] for row in price_list]
+    price.update(calc_ma10_kairi_indicators(closes, lows))
 
     return price, [price_list[0][6], price_list[0][2], price_list[0][3]]
 
