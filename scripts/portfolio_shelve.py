@@ -119,12 +119,16 @@ GYOUTAI_THEMES_MAX_SLOTS = 2
 # trade_idea の定型リスト (issue #327: 自由記述から単一選択式へ移行)。
 # 空文字 = 未分類。リスト外の既存値 (旧自由記述) は update_memo で保持を許可する (救済)。
 # CSV 移行 (create_record 経由) はこのチェックを通らないため自由記述のまま格納される。
+# 「スイング」等の保有期間はここでは表現せず、時間軸属性 (issue #326 連携) で扱う。
 TRADE_IDEA_OPTIONS = (
     "GARP",
+    "ピーターリンチ",
     "テーマ",
     "イベント・カタリスト",
     "モメンタム",
     "底値リバ",
+    "夢枠",
+    "大型高配当",
 )
 
 ACTION_LOG_FIELDS = frozenset(
