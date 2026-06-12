@@ -192,10 +192,10 @@ class TestDashboardGet:
         resp = client.get("/portfolio?status=hold")
         html = resp.data.decode()
 
-        assert "<th>評価</th>" in html
-        # issue #327: チャートパターンはページ2 (手動入力) 列へ移設
+        # issue #327: 評価は指標ページ (ページ1) のみ、チャートパターンはページ2へ移設
+        assert '<th data-page="1">評価</th>' in html
         assert '<th data-page="2">チャートパターン</th>' in html
-        assert '<td class="rating-cell" style="background:#fbbc04">S</td>' in html
+        assert '<td data-page="1" class="rating-cell" style="background:#fbbc04">S</td>' in html
         assert 'data-field="jukyu_chart"' in html
         assert 'data-multiline="1"' in html
         assert "月足低位ブレイク" in html

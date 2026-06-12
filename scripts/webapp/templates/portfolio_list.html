@@ -52,8 +52,10 @@
   table.portfolio-list [data-page="2"] { display: none; }
   body.portfolio-page-2 table.portfolio-list [data-page="2"] { display: table-cell; }
   body.portfolio-page-2 table.portfolio-list [data-page="1"] { display: none; }
-  .page-toggle { display: inline-flex; gap: 0; }
+  /* Pico は [role=group] に width:100% を当てるため width:auto で打ち消す */
+  .page-toggle { display: inline-flex; gap: 0; flex: 0 0 auto; width: auto; margin: 0; }
   .page-toggle button {
+    width: auto;  /* Pico の button width:100% を打ち消す */
     padding: 0.3em 0.9em; font-size: 0.85em; margin: 0;
     border: 1px solid #ccc; background: #fff; color: #555; cursor: pointer;
   }
@@ -207,11 +209,6 @@
 <div class="dashboard-header">
   <h2 style="margin:0;">保有銘柄ダッシュボード</h2>
   <div class="dashboard-header-actions">
-    {# issue #327: 列セットのページ切り替え (指標=自動算出 / メモ=手動入力) #}
-    <div class="page-toggle" role="group" aria-label="表示列の切り替え">
-      <button type="button" data-page-btn="1" class="active">指標</button>
-      <button type="button" data-page-btn="2">メモ</button>
-    </div>
     <a href="{{ url_for('portfolio.theme_summary') }}"
        class="dashboard-header-link"
        title="業態テーマ別 RS サマリー">📊 テーマサマリー</a>
@@ -266,17 +263,24 @@
      title="現在のフィルタ結果をチャート一覧で確認">📊 チャート一覧</a>
 </form>
 
-<p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">
-  {% if total > 0 %}{{ total }} 件表示{% else %}0 件{% endif %}
-  {% if hold_summary %}
-  <span style="margin-left:1em;">
-    運用総額: {{ '{:,}'.format(hold_summary.total_man) }} 万円
-    /
-    保有株数更新日:
-    {% if hold_summary.qty_updated_at %}{{ hold_summary.qty_updated_at[:10] }}{% else %}未記録{% endif %}
-  </span>
-  {% endif %}
-</p>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:1em;flex-wrap:wrap;margin:0 0 0.4em 0;">
+  <p style="font-size:0.85em;color:#666;margin:0;">
+    {% if total > 0 %}{{ total }} 件表示{% else %}0 件{% endif %}
+    {% if hold_summary %}
+    <span style="margin-left:1em;">
+      運用総額: {{ '{:,}'.format(hold_summary.total_man) }} 万円
+      /
+      保有株数更新日:
+      {% if hold_summary.qty_updated_at %}{{ hold_summary.qty_updated_at[:10] }}{% else %}未記録{% endif %}
+    </span>
+    {% endif %}
+  </p>
+  {# issue #327: 列セットのページ切り替え (指標=自動算出 / メモ=手動入力)。テーブル直上に置く #}
+  <div class="page-toggle" role="group" aria-label="表示列の切り替え">
+    <button type="button" data-page-btn="1" class="active" title="ショートカット: 1">指標</button>
+    <button type="button" data-page-btn="2" title="ショートカット: 2">メモ</button>
+  </div>
+</div>
 
 {% if not fallback_mode %}
 <div id="manage-panel" style="display:none;">
@@ -310,9 +314,9 @@
       <th>コード</th>
       <th>銘柄名</th>
       <th><a href="{{ sort_urls.position }}">状態</a></th>
-      <th>評価</th>
       <th><a href="{{ sort_urls.gyoutai }}">業態・テーマ</a></th>
-      <th><a href="{{ sort_urls.rank }}">順位</a></th>
+      <th data-page="1">評価</th>
+      <th data-page="1"><a href="{{ sort_urls.rank }}">順位</a></th>
       <th data-page="1">売上成長(%)</th>
       <th data-page="1">利益成長(%)</th>
       <th data-page="1">PER</th>
@@ -380,7 +384,6 @@
                 aria-label="保有ステータスを変更">{{ row.status_label }}</button>
         {% endif %}
       </td>
-      <td class="rating-cell"{% if row.overall_rating in ('S', 'A') %} style="background:#fbbc04"{% endif %}>{{ row.overall_rating or "—" }}</td>
       <td class="gyoutai-themes-cell" data-code="{{ row.code_s }}"
           style="max-width:10em;padding:0 2px;line-height:0;{{ row.styles.gyoutai_themes or '' }}">
         {% set themes = row.memo.gyoutai_themes or [] %}
@@ -402,7 +405,8 @@
         </select>
         {% endfor %}
       </td>
-      <td style="{{ row.styles.rank or '' }}">{{ row.rank if row.rank is not none else "—" }}</td>
+      <td data-page="1" class="rating-cell"{% if row.overall_rating in ('S', 'A') %} style="background:#fbbc04"{% endif %}>{{ row.overall_rating or "—" }}</td>
+      <td data-page="1" style="{{ row.styles.rank or '' }}">{{ row.rank if row.rank is not none else "—" }}</td>
       <td data-page="1" {% if row.gyoseki_tooltips.sales_growth %}title="{{ row.gyoseki_tooltips.sales_growth }}"{% endif %}
           style="{{ row.styles.sales_growth or '' }}">{{ row.sales_growth }}</td>
       <td data-page="1" {% if row.gyoseki_tooltips.profit_growth %}title="{{ row.gyoseki_tooltips.profit_growth }}"{% endif %}
@@ -560,11 +564,22 @@
 // ========== ページ切り替え (issue #327: 指標=自動算出 / メモ=手動入力) ==========
 (function() {
   var buttons = document.querySelectorAll('.page-toggle button[data-page-btn]');
+  function switchPage(pageBtn) {
+    document.body.classList.toggle('portfolio-page-2', pageBtn.dataset.pageBtn === '2');
+    buttons.forEach(function(b) { b.classList.toggle('active', b === pageBtn); });
+  }
   buttons.forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      document.body.classList.toggle('portfolio-page-2', btn.dataset.pageBtn === '2');
-      buttons.forEach(function(b) { b.classList.toggle('active', b === btn); });
-    });
+    btn.addEventListener('click', function() { switchPage(btn); });
+  });
+  // キーボードショートカット: 1=指標 / 2=メモ (入力フォーカス中は無効)
+  document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.key === '1' || e.key === '2') {
+      var btn = document.querySelector('.page-toggle button[data-page-btn="' + e.key + '"]');
+      if (btn) switchPage(btn);
+    }
   });
 })();
 
