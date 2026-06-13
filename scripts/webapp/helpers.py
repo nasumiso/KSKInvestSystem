@@ -2597,13 +2597,20 @@ def _svg_triangle(cx: float, cy: float, size: float, color: str,
 
 
 def _svg_diamond(cx: float, cy: float, size: float, color: str,
-                 opacity: float = 1.0, title: str = "") -> str:
-    """ダイヤ (菱形) マーカー (issue #253: ブレイクアウト用)。"""
+                 opacity: float = 1.0, title: str = "", filled: bool = True) -> str:
+    """ダイヤ (菱形) マーカー (issue #253: ブレイクアウト用)。
+
+    filled=False は輪郭のみ (中抜き)。高値追い圏の extended 候補を半透明で
+    弱く見せるのに使う。
+    """
     pts = "%.1f,%.1f %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (
         cx, cy - size, cx + size, cy, cx, cy + size, cx - size, cy)
     t = "<title>%s</title>" % html.escape(title) if title else ""
-    return ('<polygon points="%s" fill="%s" opacity="%.2f">%s</polygon>'
-            % (pts, color, opacity, t))
+    if filled:
+        return ('<polygon points="%s" fill="%s" opacity="%.2f">%s</polygon>'
+                % (pts, color, opacity, t))
+    return ('<polygon points="%s" fill="none" stroke="%s" stroke-width="1.2" '
+            'opacity="%.2f">%s</polygon>' % (pts, color, opacity, t))
 
 
 def _resolve_signal_markers(stock, window_dates, xs):
@@ -2626,7 +2633,8 @@ def _resolve_signal_markers(stock, window_dates, xs):
         return []
     try:
         from make_stock_db import extract_signals  # 遅延 import
-        signals = extract_signals(stock, max_delta_days=None)
+        # 詳細チャートのみ extended (高値追い圏で弾かれたブレイク候補) を含める。
+        signals = extract_signals(stock, max_delta_days=None, include_extended=True)
     except Exception:  # noqa: BLE001
         return []
     latest = window_dates[-1]  # チャート最新日 (= 直近週)
@@ -2651,12 +2659,17 @@ def _resolve_signal_markers(stock, window_dates, xs):
         x = _interp_x(s["sig_date"])
         if x is None:
             continue  # 窓外 (古い) → drop
-        markers.append({
+        m = {
             "kind": s["kind"], "x": x,
             "num": s["num"], "delta": s["delta"],
             "sig_date": s["sig_date"],
-            "strength": _signal_strength_bucket(s["kind"], s["num"]),
-        })
+        }
+        if s.get("extended"):
+            # extended は強度を出さない (出来高の大きさを強調すると高値追い規律と逆行)。
+            m["extended"] = True
+        else:
+            m["strength"] = _signal_strength_bucket(s["kind"], s["num"])
+        markers.append(m)
     return markers
 
 
@@ -3007,15 +3020,24 @@ def build_price_rs_chart_full(
         # ポは三角・ブは菱形。視認性調整: ポは控えめに縮小、ブは強調して拡大。
         PO_SIZE_SCALE = 0.8
         BU_SIZE_SCALE = 1.8
+        EXT_SIZE = 4.5  # extended は強度を持たないので固定サイズ
         # マーカー専用バンド内: ポは下段、ブはその上の段 (同発生週の重なり回避)。
         y_po = label_y + 16  # 日付ラベル baseline の下
         y_bu = y_po - 6
         for m in markers:
-            size = size_map[m["strength"]]
             # 週足チャートに日足発生日を重ねるため、X位置だけでは発生日が読み取り
             # づらい (週バーは月曜ラベルで週末終値を示すため視覚的にズレる)。
             # 発生日 (M/D) を tooltip に明示して誤読を防ぐ。
             sig_md = "%d/%d" % (m["sig_date"].month, m["sig_date"].day)
+            # extended (高値追い圏で正規ブレイクから弾かれた候補): strength を持たない
+            # ため size_map 参照より前に分岐。半透明・中抜きの橙ダイヤで弱く表示し、
+            # tooltip に乖離と「対象外」を明記する。num は MA10乖離%。
+            if m.get("extended"):
+                title = "ブ(extended) %s 乖離+%d%% 高値追い圏・対象外" % (sig_md, m["num"])
+                parts.append(_svg_diamond(
+                    m["x"], y_bu, EXT_SIZE * BU_SIZE_SCALE, "#f57c00", 0.3, title, filled=False))
+                continue
+            size = size_map[m["strength"]]
             title = "%s %s (%s)" % (m["kind"], sig_md, m["strength"])
             if m["kind"] == "ポ":
                 parts.append(_svg_triangle(m["x"], y_po, size * PO_SIZE_SCALE, "#2e7d32", 1.0, title))
@@ -3464,14 +3486,17 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         elif rs_raw >= 70:
             styles["rs"] = bg("薄黄")
 
-    # --- トレンド (ルール 24, 25, 26): "◎" 濃黄 / "◯" 薄黄 / 空欄("—") 水色
+    # --- トレンド (ルール 24, 25, 26): "◎" 濃黄 / "◯" 薄黄 / "×"(全miss=Stage4崩壊) 青 /
+    #     "—"(未評価/データ欠損) 赤。× と — は意味が異なるため別色 (issue #111)。
     trend = row.get("trend_template") or ""
     if "◎" in trend:
         styles["trend_template"] = bg("濃黄")
     elif "◯" in trend:
         styles["trend_template"] = bg("薄黄")
+    elif "×" in trend:
+        styles["trend_template"] = bg("青")
     elif not trend or trend == "—":
-        styles["trend_template"] = bg("水色")
+        styles["trend_template"] = bg("赤")
 
     # --- シグナル (ルール 2-7): 強い色から順に評価
     tags = row.get("tags") or ""

@@ -466,10 +466,12 @@ nav .quick-search {
 }
 
 /* トレンド表示の背景色 (issue #248)
-   portfolio_list は inline style、detail.html はクラスで適用。仕様統一: ◎=濃黄/◯=薄黄/—=水色 */
-.trend-bg-strong { background: #fbbc04; }
-.trend-bg-good   { background: #fce8b2; }
-.trend-bg-none   { background: #6fa8dc; }
+   portfolio_list は inline style、detail.html はクラスで適用。
+   仕様統一: ◎=濃黄/◯=薄黄/×=青(全崩壊)/—=赤(欠損) */
+.trend-bg-strong   { background: #fbbc04; }
+.trend-bg-good     { background: #fce8b2; }
+.trend-bg-collapse { background: #4285f4; }
+.trend-bg-missing  { background: #ea4335; }
 
 /* 需給バランスセル (issue #247): SPR/rv の横バー 2 本縦積み */
 .spr-gauge-cell { padding: 4px; vertical-align: middle; white-space: nowrap; width: 80px; }

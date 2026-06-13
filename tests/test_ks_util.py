@@ -436,3 +436,28 @@ class TestKairiGaugeSvg:
         )
         assert svg.startswith("<svg")
         assert expect_color in svg
+
+
+class TestTrendSymbolAndBgClass:
+    """trend_symbol_from_misses / trend_bg_class: miss 数→記号→背景色クラスの対応。
+
+    webapp 一覧 (compute_cell_styles) の色仕様と統一する (issue #111):
+    ◎/◯ は黄系、× (全条件miss=Stage4崩壊)=青, — (未評価/欠損)=赤。▲/△ は色なし。
+    """
+
+    _COND = ["c%d" % i for i in range(7)]  # 7条件ぶんのダミー miss
+
+    @pytest.mark.parametrize(
+        "misses, symbol, bg_cls",
+        [
+            ([], "◎", "trend-bg-strong"),
+            (_COND[:2], "◯", "trend-bg-good"),
+            (_COND[:3], "▲", ""),                       # 色なし
+            (_COND[:6], "△", ""),                       # 色なし
+            (_COND, "×", "trend-bg-collapse"),          # 全7 miss = 崩壊 → 青
+            (None, "—", "trend-bg-missing"),            # 未評価/欠損 → 赤
+        ],
+    )
+    def test_symbol_and_bg(self, misses, symbol, bg_cls):
+        assert ks_util.trend_symbol_from_misses(misses) == symbol
+        assert ks_util.trend_bg_class(symbol) == bg_cls

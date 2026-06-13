@@ -1086,6 +1086,38 @@ class TestParsePriceTextFromList:
         else:
             assert len(breaks) == 0
 
+    @pytest.mark.parametrize(
+        "today_close, today_low, prev_close, expect_regular, expect_ext",
+        [
+            # 乖離+9%: 正規ブレイク(+5%以内)から弾かれ extended に入る
+            (1150, 1120, 1100, False, True),
+            # 乖離+22%: 当日は extended、前日もブレイク条件を満たし regular に入る
+            (1300, 1280, 1250, True, True),
+            # 乖離が小さい(押し目位置): 正規ブレイクで extended には入らない
+            (1080, 1070, 1050, True, False),
+        ],
+    )
+    def test_breakout_extended(self, today_close, today_low, prev_close,
+                               expect_regular, expect_ext):
+        """高値追い圏 (+5% < kairi <= 25%) で弾かれたブレイク候補が
+        breakout_extended に入ること (詳細チャートの半透明マーカー用)。"""
+        from datetime import date as _date, timedelta
+        d0 = _date(2025, 12, 31)
+        price_list = []
+        for i in range(25):
+            dt = d0 - timedelta(days=i)
+            date_str = "%d年%d月%d日" % (dt.year, dt.month, dt.day)
+            if i == 0:
+                close, low, vol = today_close, today_low, 300000
+            elif i == 1:
+                close, low, vol = prev_close, prev_close - 5, 100000
+            else:
+                close, low, vol = 1000, 995, 100000  # 横ばい → ma10≈1000
+            price_list.append([date_str, close, close + 10, low, close, vol, close])
+        result_dict, _ = price.parse_price_text_from_list(today_close, price_list)
+        assert (len(result_dict["breakout"]) >= 1) == expect_regular
+        assert (len(result_dict["breakout_extended"]) >= 1) == expect_ext
+
     @pytest.mark.parametrize("bd,next_low,expected", [
         # 7カラム経路 (close=adj_close=[6], low=[3]) の porosity 回帰。割れ日 (bd) で
         # adj_close だけ10maを割り、翌営業日 (bd-1) の安値で維持/切断が分岐することを検証。

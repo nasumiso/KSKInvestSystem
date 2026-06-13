@@ -27,6 +27,18 @@ PRICE_D_FNAME_KABUTAN = os.path.join(
 INTERVAL_DAY_D = 1
 INTERVAL_DAY_W = 7
 
+# ブレイクアウト extended 候補 (詳細チャートのみ表示)。正規ブレイクは MA10乖離
+# +5%以内 (高値追いを避けるオニール/ミネルヴィニ規律) だが、出来高/急騰と上昇は
+# 満たすのに乖離が +5% 超で弾かれた「高値追い圏」の候補を、行き過ぎ (クライマックス)
+# を除く上限までは拾って半透明マーカーで可視化する。シグナル列には出さない。
+BREAKOUT_EXTENDED_KAIRI_MAX = 25
+
+# ブレイク検知の出来高平均日数 (issue #111)。20日では短期の急騰を平均が拾いやすく
+# 基準が緩むため、より長期の平常出来高を基準にする。検知ループは直近10日を判定し
+# 各日で前日から遡って平均を取るため、必要データは 10+30=40日。日足取得 period="2mo"
+# (~41営業日) で全検知日が完全な30日平均を保てる上限値 (取得範囲は広げない)。
+BREAKOUT_AVG_VOLUME_DAYS = 30
+
 
 # モメンタムポイント動的キャリブレーション (issue #104) のデフォルト値。
 # market_db['momentum_calib'] が無い・古い・サンプル不足の場合のフォールバック先。
@@ -1729,11 +1741,12 @@ def parse_price_text_from_list(price_current, price_list):
 
     # ---- ブレイクアウト
     breaks = []
+    breaks_ext = []  # 高値追い圏の extended 候補 (詳細チャートのみ)
     for ind in range(10):
-        # 過去20日平均出来高
+        # 過去 BREAKOUT_AVG_VOLUME_DAYS 日平均出来高 (issue #111)
         avg_vol = 0
         avg_count = 0
-        for j in range(20):
+        for j in range(BREAKOUT_AVG_VOLUME_DAYS):
             if ind + 1 + j >= len(price_list):
                 continue
             avg_vol += price_list[ind + 1 + j][5]  # +1:前日から
@@ -1773,21 +1786,26 @@ def parse_price_text_from_list(price_current, price_list):
         prev_close = price_list[ind + 1][6]
         chg_rate = (price_list[ind][6] - prev_close) / prev_close if prev_close else 0.0
         # print "AVG:", ind, avg_vol, avg_count, vol, kairi
-        if (vol >= 1.5 * avg_vol or chg_rate >= 0.20) and kairi <= 5:
-            # TODO: ボラティリティ的なブレイクアウトを見たほうが良いが、
-            # ややめんどうなのでまずはma乖離で ローソク足ボラティリティを使えば良い
-            if price_list[ind][6] > price_list[ind + 1][6]:
-                dt = parse_date_str(price_list[ind][0])
-                if dt:
-                    day = dt.strftime("%m/%d")
-                else:
-                    day = price_list[ind][0]
+        vol_or_surge = vol >= 1.5 * avg_vol or chg_rate >= 0.20
+        rising = price_list[ind][6] > price_list[ind + 1][6]
+        if vol_or_surge and rising:
+            dt = parse_date_str(price_list[ind][0])
+            day = dt.strftime("%m/%d") if dt else price_list[ind][0]
+            if kairi <= 5:
+                # TODO: ボラティリティ的なブレイクアウトを見たほうが良いが、
+                # ややめんどうなのでまずはma乖離で ローソク足ボラティリティを使えば良い
                 # ストップ高張り付き時は出来高が減り per が負になりうるため 0 床。
                 # 保存値は常に非負で強度バケット (issue #253 webapp) が単調に振る舞う。
                 per = max(100 * vol / avg_vol - 100, 0)
                 log_debug("ブレイク:%s,%d" % (day, per))
                 breaks.append("%s,%d" % (day, per))
+            elif kairi <= BREAKOUT_EXTENDED_KAIRI_MAX:
+                # 高値追い圏 (規律上は買わない) の extended 候補。kairi を保存し
+                # 詳細チャートの tooltip で乖離を表示する (強度は出さない)。
+                log_debug("ブレイクext:%s,%d" % (day, round(kairi)))
+                breaks_ext.append("%s,%d" % (day, round(kairi)))
     price["breakout"] = breaks
+    price["breakout_extended"] = breaks_ext
     # print breaks
     # ---- 過去価格
     past_prices = []
