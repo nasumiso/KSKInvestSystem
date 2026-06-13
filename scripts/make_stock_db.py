@@ -998,13 +998,15 @@ def get_index_trend_template_expr(stock):
     return ("△ %d/7" % pass_count, miss_str)
 
 
-# trend_template (Minervini 7条件) の全項目。calc_trend_template (price.py) が
-# 不通過項目を misses として返すため、misses がこの7項目すべてを含む = 1つも条件を
+# trend_template (Minervini) の全条件名。calc_trend_template (price.py) が
+# 不通過項目を misses として返すため、misses がこの全項目を含む = 1つも条件を
 # 満たさない = 完全な Stage 4 崩壊、と判定する (issue #110/#111)。
+# 件数は ks_util.TREND_TEMPLATE_CONDITION_COUNT (× 記号判定) と一致させる。
 _TREND_TEMPLATE_ALL = {
     "pr>ma10", "pr>ma30,40", "ma30>ma40", "ma40Up",
     "ma10>ma30,40", "high(low)52", "RS",
 }
+assert len(_TREND_TEMPLATE_ALL) == TREND_TEMPLATE_CONDITION_COUNT
 
 
 def _is_stage4(misses):
