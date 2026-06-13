@@ -33,6 +33,12 @@ INTERVAL_DAY_W = 7
 # を除く上限までは拾って半透明マーカーで可視化する。シグナル列には出さない。
 BREAKOUT_EXTENDED_KAIRI_MAX = 25
 
+# ブレイク検知の出来高平均日数 (issue #111)。20日では短期の急騰を平均が拾いやすく
+# 基準が緩むため、より長期の平常出来高を基準にする。検知ループは直近10日を判定し
+# 各日で前日から遡って平均を取るため、必要データは 10+30=40日。日足取得 period="2mo"
+# (~41営業日) で全検知日が完全な30日平均を保てる上限値 (取得範囲は広げない)。
+BREAKOUT_AVG_VOLUME_DAYS = 30
+
 
 # モメンタムポイント動的キャリブレーション (issue #104) のデフォルト値。
 # market_db['momentum_calib'] が無い・古い・サンプル不足の場合のフォールバック先。
@@ -1737,10 +1743,10 @@ def parse_price_text_from_list(price_current, price_list):
     breaks = []
     breaks_ext = []  # 高値追い圏の extended 候補 (詳細チャートのみ)
     for ind in range(10):
-        # 過去20日平均出来高
+        # 過去 BREAKOUT_AVG_VOLUME_DAYS 日平均出来高 (issue #111)
         avg_vol = 0
         avg_count = 0
-        for j in range(20):
+        for j in range(BREAKOUT_AVG_VOLUME_DAYS):
             if ind + 1 + j >= len(price_list):
                 continue
             avg_vol += price_list[ind + 1 + j][5]  # +1:前日から
