@@ -2061,6 +2061,34 @@ class TestListPortfolioWithIndicators:
         rows = helpers.list_portfolio_with_indicators(records, sort_key=sort_key)
         assert [r["code_s"] for r in rows] == expected
 
+    def test_sort_by_rs_change_1d_desc_none_last(self, monkeypatch, stub_externals):
+        """issue #332: 前日比RSライン騰落率 降順、None は末尾、同値はコード順。"""
+        import make_stock_db
+        import make_market_db
+        # market_db / topix_map を truthy にして compute_rs_line_changes 経路を通す
+        # (helpers は make_market_db / make_stock_db から遅延 import するため両モジュールを差し替え)
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"_": 1})
+        monkeypatch.setattr(make_stock_db, "_topix_close_map", lambda mdb: {"_": 1})
+        # 前日比 D をコード別に注入 (A, B は未使用なので None)
+        prev = {"0001": 2.0, "0002": -1.0, "0003": 2.0, "0004": None}
+        monkeypatch.setattr(
+            make_stock_db, "compute_rs_line_changes",
+            lambda stock, mdb, topix_map=None: (None, None, prev[stock["code_s"]]),
+        )
+        monkeypatch.setattr(
+            helpers, "_bulk_get_stock_data",
+            lambda codes: {c: {"code_s": c} for c in codes},
+        )
+        records = [
+            self._make("0002", "1保", rank=1),  # -1.0
+            self._make("0004", "1保", rank=2),  # None → 末尾
+            self._make("0003", "1保", rank=3),  # 2.0 (0001 と同値、コード順で後)
+            self._make("0001", "1保", rank=4),  # 2.0
+        ]
+        rows = helpers.list_portfolio_with_indicators(records, sort_key="rs_change_1d")
+        # 降順: 2.0 (0001, 0003 コード順) → -1.0 (0002) → None (0004) 末尾
+        assert [r["code_s"] for r in rows] == ["0001", "0003", "0002", "0004"]
+
     # ===== issue #269: position_ratio 集計 =====
     @pytest.mark.parametrize(
         "records, prices, expected",
@@ -2301,6 +2329,28 @@ class TestPriceRsSparkline:
         assert "stroke-dasharray" in svg  # RSライン点線
         assert "株価:" in tooltip
         assert "RSライン乖離:" in tooltip
+
+    # --- issue #332: 前日比 (1日比) は mini (portfolio) のみ tooltip に出す ---
+
+    def test_mini_chart_tooltip_includes_prev_change_but_full_does_not(self):
+        # rs_line 末尾2点 (最新 1.10 / 前日 1.08) → 前日比 +1.9%。mini にだけ出る。
+        price_log = self._make_log([110, 108, 106, 104, 102, 100])
+        rs_line = self._make_log([1.10, 1.08, 1.06, 1.04, 1.02, 1.00])
+        _, mini_tooltip = helpers.build_price_rs_chart_mini(price_log, rs_line, has_blue_dot=False)
+        assert "前日比:" in mini_tooltip
+        assert "+1.9%" in mini_tooltip
+        # full (詳細ページ週足) には出さない (issue #332: 対象外への波及防止)
+        _, full_tooltip = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
+        assert "前日比:" not in full_tooltip
+
+    @pytest.mark.parametrize("rs_values,expected", [
+        ([1.00, 1.05], "+5.0%"),      # 古い順 [前日, 最新] → 上昇
+        ([1.05, 1.00], "-4.8%"),      # 下落
+        ([1.05], "—"),                # 2点未満
+        ([0.0, 1.00], "—"),           # 前日値0 → 0除算回避
+    ])
+    def test_format_prev_change(self, rs_values, expected):
+        assert helpers._format_prev_change(rs_values) == expected
 
     def test_full_chart_includes_date_labels(self):
         price_log = self._make_log(list(range(120, 100, -1)))
