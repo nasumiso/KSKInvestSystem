@@ -703,8 +703,9 @@ _TREND_BG_CLASS = {"◎": "trend-bg-strong", "◯": "trend-bg-good", "—": "tre
 def trend_symbol_from_misses(misses):
     """trend_template (不通過項目 list) から表示用の記号一文字を返す。
 
-    make_stock_db.get_trend_template_expr() と判定基準を揃える (◎/◯/▲/△ + 7件以上は空)。
-    None や非 list は "—" を返す。
+    make_stock_db.get_trend_template_expr() と判定基準を揃える (◎/◯/▲/△)。
+    7件全 miss (完全 Stage 4 崩壊) は "×"、None や非 list (未評価/データ欠損) は "—"。
+    両者は意味が異なるため記号で区別する (背景色も別: × → 青, — → 赤)。
     """
     if not isinstance(misses, list):
         return "—"
@@ -717,7 +718,7 @@ def trend_symbol_from_misses(misses):
         return "▲"
     if n <= 6:
         return "△"
-    return "—"
+    return "×"
 
 
 def trend_bg_class(symbol):

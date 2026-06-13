@@ -1681,14 +1681,15 @@ class TestComputeCellStyles:
         else:
             assert styles["per"] == expected_color
 
-    # ----- トレンド (◎ 濃黄 / ◯ 薄黄 / —, 空欄 水色 / ◎◯ で ◎優先) -----
+    # ----- トレンド (◎ 濃黄 / ◯ 薄黄 / × 青(全崩壊) / —, 空欄 赤(欠損) / ◎◯ で ◎優先) -----
     @pytest.mark.parametrize(
         "trend, expected",
         [
             ("◎pr>ma10", f"background:{C['濃黄']}"),
             ("◯RS", f"background:{C['薄黄']}"),
-            ("—", f"background:{C['水色']}"),
-            ("", f"background:{C['水色']}"),
+            ("×", f"background:{C['青']}"),       # 7件全miss = Stage4崩壊
+            ("—", f"background:{C['赤']}"),       # 未評価/データ欠損
+            ("", f"background:{C['赤']}"),
             ("◎◯", f"background:{C['濃黄']}"),  # ◎優先
             ("▲", None),                          # 対象外記号
         ],
@@ -1824,10 +1825,10 @@ class TestComputeCellStyles:
             assert styles["last_research_update"] == expected
 
     # ----- 統合: 空 row / today デフォルト -----
-    def test_empty_row_only_trend_water_blue(self):
-        """空 row では trend_template が空欄扱いで水色のみ付く"""
+    def test_empty_row_only_trend_data_missing_red(self):
+        """空 row では trend_template が欠損扱いで赤のみ付く"""
         styles = helpers.compute_cell_styles({}, today=TODAY)
-        assert styles == {"trend_template": f"background:{C['水色']}"}
+        assert styles == {"trend_template": f"background:{C['赤']}"}
 
     def test_default_today_uses_date_today(self):
         """today 省略時は date.today() を使う (落ちないことの確認)"""
