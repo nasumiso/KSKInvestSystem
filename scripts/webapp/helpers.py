@@ -1857,6 +1857,17 @@ def list_portfolio_with_indicators(
     except Exception:  # noqa: BLE001
         market_db = None
 
+    # issue #332: 前日比RSライン騰落率 (1日比) を銘柄ごとに計算するための TOPIX マップ。
+    # theme_summary と同じく topix_map を1回だけ構築し compute_rs_line_changes に渡して
+    # 内部の TOPIX マップ再構築 (N銘柄ぶん) を避ける。
+    topix_map = None
+    if market_db is not None:
+        try:
+            from make_stock_db import _topix_close_map  # 遅延 import
+            topix_map = _topix_close_map(market_db)
+        except Exception:  # noqa: BLE001
+            topix_map = None
+
     rows: List[Dict[str, Any]] = []
     for rec in records:
         code_s = rec.get("code_s", "")
@@ -1868,6 +1879,17 @@ def list_portfolio_with_indicators(
         row.update(_extract_indicators_for_portfolio(stock))
         # issue #227: 3点ミニチャート (svg + tooltip)
         row["price_rs_chart"] = build_stock_chart_payload(stock, market_db, mode="mini")
+        # issue #332: 前日比RSライン騰落率 (1日比) を RS(20,5) 列ソート用に格納。
+        # compute_rs_line_changes は (5日乖離A, 20日乖離B, 前日比D) を返す。D のみ使う。
+        if topix_map:
+            try:
+                from make_stock_db import compute_rs_line_changes  # 遅延 import
+                _a, _b, d = compute_rs_line_changes(stock, market_db, topix_map=topix_map)
+            except Exception:  # noqa: BLE001
+                d = None
+        else:
+            d = None
+        row["rs_change_1d"] = d
         row["styles"] = compute_cell_styles(row, today=today)
         # issue #178: ステータス列 (badge) 表示用の query / label を埋める
         status = rec.get("status", "")
@@ -1909,6 +1931,13 @@ def list_portfolio_with_indicators(
             r["gyoutai_first"],
             r.get("rank") is None,
             r.get("rank") or 0,
+            r.get("code_s", ""),
+        ))
+    elif sort_key == "rs_change_1d":
+        # issue #332: 前日比RSライン騰落率 降順。None (算出不可) は末尾、同値はコード順。
+        rows.sort(key=lambda r: (
+            r.get("rs_change_1d") is None,
+            -(r.get("rs_change_1d") or 0.0),
             r.get("code_s", ""),
         ))
     else:
@@ -2498,11 +2527,24 @@ def _format_ma_deviation(values: List[float], window: int) -> str:
     return f"{pct:+.1f}%"
 
 
+def _format_prev_change(values: List[float]) -> str:
+    """rs_line 値列 (古い順) の末尾2点から前日比 (1日比) % を整形する (issue #332)。
+
+    前日比 = (最新 - 前日) / 前日 * 100。compute_rs_line_changes の D と同定義 (隣接2点比較)。
+    2点未満・前日値0は "—"。
+    """
+    if not values or len(values) < 2 or values[-2] == 0:
+        return "—"
+    pct = (values[-1] - values[-2]) / values[-2] * 100
+    return f"{pct:+.1f}%"
+
+
 def _build_chart_tooltip(
     price_values: List[float],
     rs_values: List[float],
     has_blue_dot: bool,
     unit_label: str = "日",
+    include_prev_change: bool = False,
 ) -> str:
     """チャート tooltip (title 属性向け) を生成する。
 
@@ -2510,6 +2552,9 @@ def _build_chart_tooltip(
     RSライン行は移動平均乖離率 (今日 vs 直近 20本/5本平均、issue #283)。1 点比較
     だとヒゲでブレるため、平均基準で勢い・過熱を安定して見せる。
     unit_label は "日" (日足 mini) / "週" (週足 full) を切り替える。
+
+    include_prev_change=True のとき RSライン前日比 (1日比) 行を足す (issue #332)。
+    portfolio 一覧の mini チャートのみ有効化し、詳細ページ週足 (full) には出さない。
     """
     lines = [
         f"株価: 20{unit_label} {_format_total_change(price_values, _SPARK_LOOKBACK)}, "
@@ -2517,6 +2562,8 @@ def _build_chart_tooltip(
         f"RSライン乖離: 20{unit_label}平均 {_format_ma_deviation(rs_values, _SPARK_LOOKBACK)}, "
         f"5{unit_label}平均 {_format_ma_deviation(rs_values, _SPARK_RECENT)}",
     ]
+    if include_prev_change:
+        lines.append(f"前日比: {_format_prev_change(rs_values)}")
     if has_blue_dot:
         lines.append("新高値: ●")
     return "\n".join(lines)
@@ -2657,7 +2704,8 @@ def build_price_rs_chart_mini(
     if len(rs_asc) < 2:
         return ("—", "")
 
-    tooltip = _build_chart_tooltip(price_asc, rs_asc, has_blue_dot)
+    # issue #332: portfolio 一覧の mini チャートのみ前日比 (1日比) 行を tooltip に足す。
+    tooltip = _build_chart_tooltip(price_asc, rs_asc, has_blue_dot, include_prev_change=True)
 
     pad_x = 4
     pad_y = 3
