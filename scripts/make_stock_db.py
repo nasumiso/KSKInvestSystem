@@ -120,7 +120,7 @@ def get_price_data(stocks, code_s, upd=UPD_INTERVAL):
 
 def update_stock_log(rank_log, rank):
     """ランクログを更新
-    Returns: 20個(日分)のランクログ(新しい日付が先)
+    Returns: 30個(日分)のランクログ(新しい日付が先)
     """
     date = get_price_day(datetime.today())
     ind = 0
@@ -135,7 +135,7 @@ def update_stock_log(rank_log, rank):
         rank_log.insert(0, (date, rank))
     rank_log = sorted(rank_log, key=lambda x: x[0], reverse=True)
     # print "ランクログ更新:", ind, date, rank
-    return rank_log[0:20]
+    return rank_log[0:30]
 
 
 def update_stock_rank(stock, rank):

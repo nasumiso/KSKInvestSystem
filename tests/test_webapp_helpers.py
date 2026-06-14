@@ -2320,15 +2320,16 @@ class TestPriceRsSparkline:
 
     # --- build_price_rs_chart_full ---
 
-    def test_full_chart_renders_two_polylines(self):
+    def test_full_chart_renders_rs_line(self):
+        """株価系列は廃止。RSライン (点線) のみ描画され tooltip は RSライン乖離を持つ。"""
         price_log = self._make_log(list(range(120, 100, -1)))  # 20点 (新しい順 = 降順)
         rs_line = self._make_log([1.20 - i * 0.01 for i in range(20)])
         svg, tooltip = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
         assert "<svg" in svg
-        # 株価実線 + 末尾5日重ね描き + RS点線 + 末尾5日重ね描き = polyline は 4 本以上
-        assert svg.count("<polyline") >= 4
+        # RS点線 (全期間 + 末尾5週重ね描き) = polyline は 2 本以上
+        assert svg.count("<polyline") >= 2
         assert "stroke-dasharray" in svg  # RSライン点線
-        assert "株価:" in tooltip
+        assert "株価:" not in tooltip  # 株価行は廃止
         assert "RSライン乖離:" in tooltip
 
     # --- issue #332: 前日比 (1日比) は mini (portfolio) のみ tooltip に出す ---
@@ -2360,27 +2361,41 @@ class TestPriceRsSparkline:
         # 当日 = 5/15 ラベルが出る
         assert "05/15" in svg
 
-    def test_build_payload_with_none_market_db_returns_price_only_chart(self):
-        """build_stock_chart_payload は market_db=None でも株価のみで SVG を返す。
+    def test_build_payload_with_none_market_db_renders_rs_rank_history(self):
+        """build_stock_chart_payload は market_db=None でも rs_rank_log があれば
+        RS(0~99)履歴で SVG を返す (空チャート回帰を避ける)。
 
-        codex review 対応: detail ルートで market_db 取得失敗時に
-        フォールバックとして「価格のみチャート」を出すための保証。
-        issue #239 以降は mode='full' が週足ベースなので price_week_log を入力に使う。
+        株価系列廃止に伴い旧「価格のみフォールバック」契約を置き換える。
+        market_db が無いと RSライン (対TOPIX) は算出できないが、rs_rank_log は
+        stock 単体に持つので RS履歴 (右軸) は描ける。週足軸の土台に price_week_log を使う。
         """
         from datetime import date as _d, timedelta
         base = _d(2026, 5, 15)
         stock = {
             "price_log": [(base - timedelta(days=i), 100 + i) for i in range(20)],
             "price_week_log": [(base - timedelta(days=i * 7), 100 + i) for i in range(20)],
+            # 直近 6 営業日分の RS(0~99) 履歴 (右軸に重畳される)
+            "rs_rank_log": [(base - timedelta(days=i), 70 - i) for i in range(6)],
         }
         payload = helpers.build_stock_chart_payload(stock, market_db=None, mode="full")
         assert payload["svg"]  # 空文字でない
         assert "<svg" in payload["svg"]
         assert payload["blue_dot"] is False
-        # RS データが無いので、tooltip の RSライン 行は "—" になる
-        assert "RSライン" in payload["tooltip"]
-        # 株価分は正しく出る
-        assert "株価:" in payload["tooltip"]
+        # RS履歴の右軸色 (紫) と 25 刻みスナップの軸目盛りが出る
+        assert helpers._RS_RANK_COLOR in payload["svg"]
+        assert "株価:" not in payload["tooltip"]  # 株価行は廃止
+        # tooltip に RS(0~99) 現在値が出る (末尾 = 70)
+        assert "RS(0~99): 70" in payload["tooltip"]
+
+    @pytest.mark.parametrize("values,expected", [
+        ([60, 72, 68, 94], (50, 99)),   # 50台~90台 → 50~99
+        ([20, 35, 28, 40], (0, 50)),    # 0台~40台 → 0~50
+        ([60, 70], (50, 75)),           # 1帯内 → 50~75 (1帯ぶん確保)
+        ([95, 99], (75, 99)),           # 最上帯 → 75~99 (hi=99で上限clamp)
+    ])
+    def test_rs_rank_axis_bounds_snaps_to_25(self, values, expected):
+        """右軸レンジは min-max を 25 刻み境界にスナップ。1帯内/最上帯も帯幅を確保。"""
+        assert helpers._rs_rank_axis_bounds(values) == expected
 
     def test_full_chart_t20_label_matches_displayed_window(self):
         """price_log が _SPARK_LOOKBACK (20) を超える場合、左端ラベルは
@@ -2415,17 +2430,16 @@ class TestPriceRsSparkline:
         assert tooltip == ""
 
     def test_full_chart_renders_axis_labels(self):
-        """Y軸ラベル: 株価とRSは共通% 軸 (灰) に統一、末尾現在値は系列色 (緑/青) で表示。"""
+        """左Y軸 = RSライン % (灰)、線・末尾現在値は RS系列色 (青)。株価系列は廃止。"""
         price_log = self._make_log(list(range(120, 100, -1)))  # 20点: 101..120
         rs_line = self._make_log([1.20 - i * 0.01 for i in range(20)])  # 1.01..1.20
         svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, has_blue_dot=False)
-        # 共通Y軸は % 表記
+        # 左Y軸は % 表記
         assert "%" in svg
-        # 株価系列色 (緑) と RS系列色 (青) は末尾現在値ラベル等に使われる
-        assert "#2e7d32" in svg
+        # RS系列色 (青) が線・末尾ラベルに使われる
         assert "#1976d2" in svg
-        # 凡例が新仕様 (騰落率%) であること
-        assert "騰落率%" in svg
+        # 凡例が新仕様 (RSライン左軸 / RS右軸) であること
+        assert "RSライン" in svg and "RS (0~99/右軸)" in svg
 
     # --- codex review 対応: 5日基準のずれ / 短期履歴ガイドはみ出し ---
 
@@ -3212,8 +3226,10 @@ class TestSignalDisplay:
                 s["breakout"] = bo
             return s
 
+        # RSライン (polyline) を出すため rs_line を与える (株価系列は廃止済み)
+        rs_line = [(anchor_day - timedelta(weeks=i), 1.0 + i * 0.01) for i in range(20)]
         svg, _ = helpers.build_price_rs_chart_full(
-            price_log, [], False,
+            price_log, rs_line, False,
             stock=_stock(pp=["%s,0" % mmdd], bo=["%s,180" % mmdd]))
         assert "#2e7d32" in svg and "#f57c00" in svg  # ポ緑・ブ橙
         # マーカー (polygon) は polyline 群より後 = 最前面

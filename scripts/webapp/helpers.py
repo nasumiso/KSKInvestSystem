@@ -2343,6 +2343,7 @@ _PRICE_FADED = {"up": "#a5d6a7", "down": "#ef9a9a", "flat": "#ccc"}
 _RS_COLORS = {"up": "#1976d2", "down": "#ef6c00", "flat": "#999"}
 _RS_FADED = {"up": "#90caf9", "down": "#ffcc80", "flat": "#ccc"}
 _BLUE_DOT = "#1976d2"
+_RS_RANK_COLOR = "#7b1fa2"  # RS(0~99)履歴 (右軸): RSライン青と区別する紫系
 
 # portfolio ミニチャート: 20日株価騰落率による線色 (|r20| < 10% 灰 / < 20% 淡 / ≥ 20% 濃)
 _MINI_LINE_NEUTRAL = "#999"
@@ -2545,6 +2546,8 @@ def _build_chart_tooltip(
     has_blue_dot: bool,
     unit_label: str = "日",
     include_prev_change: bool = False,
+    rs_rank_now: Optional[float] = None,
+    full_chart: bool = False,
 ) -> str:
     """チャート tooltip (title 属性向け) を生成する。
 
@@ -2555,13 +2558,24 @@ def _build_chart_tooltip(
 
     include_prev_change=True のとき RSライン前日比 (1日比) 行を足す (issue #332)。
     portfolio 一覧の mini チャートのみ有効化し、詳細ページ週足 (full) には出さない。
+
+    full_chart=True のとき (詳細ページ full): 株価系列を廃止したため株価行は出さない。
+    rs_rank_now があれば RS(0~99) 現在値行を先頭に足す (無ければ RSライン乖離行のみ)。
+    full_chart=False (mini) は従来どおり株価行を先頭に出す。
     """
-    lines = [
-        f"株価: 20{unit_label} {_format_total_change(price_values, _SPARK_LOOKBACK)}, "
-        f"5{unit_label} {_format_total_change(price_values, _SPARK_RECENT)}",
+    lines = []
+    if full_chart:
+        if rs_rank_now is not None:
+            lines.append(f"RS(0~99): {int(round(rs_rank_now))}")
+    else:
+        lines.append(
+            f"株価: 20{unit_label} {_format_total_change(price_values, _SPARK_LOOKBACK)}, "
+            f"5{unit_label} {_format_total_change(price_values, _SPARK_RECENT)}"
+        )
+    lines.append(
         f"RSライン乖離: 20{unit_label}平均 {_format_ma_deviation(rs_values, _SPARK_LOOKBACK)}, "
-        f"5{unit_label}平均 {_format_ma_deviation(rs_values, _SPARK_RECENT)}",
-    ]
+        f"5{unit_label}平均 {_format_ma_deviation(rs_values, _SPARK_RECENT)}"
+    )
     if include_prev_change:
         lines.append(f"前日比: {_format_prev_change(rs_values)}")
     if has_blue_dot:
@@ -2613,6 +2627,34 @@ def _svg_diamond(cx: float, cy: float, size: float, color: str,
             'opacity="%.2f">%s</polygon>' % (pts, color, opacity, t))
 
 
+def _interp_x_on_weekbars(d, window_dates, xs):
+    """日付 d を週バー列の表示窓にマップした X 座標を返す。
+
+    発生日 d を挟む週バー間で X を線形補間 (週の幅を日割り按分)。
+    最古より古い → 窓外で None (drop)、最新以降 → 末尾 clamp。
+    ポ/ブマーカー (_resolve_signal_markers) と RS履歴重畳 (_overlay_rs_rank) が
+    同一の「実日付→週足X」按分を共用する。
+
+    Args:
+        d: マップ対象の日付 (datetime.date)
+        window_dates: 週バー日付列 (昇順, datetime.date)
+        xs: 各週バーの X 座標 (window_dates と同じ index)
+    """
+    oldest = window_dates[0]
+    latest = window_dates[-1]
+    if d <= oldest:
+        return xs[0] if d == oldest else None  # 最古より古い → 窓外 drop
+    if d >= latest:
+        return xs[-1]  # 最新以降 → 末尾 clamp (はみ出し防止)
+    for i in range(len(window_dates) - 1):
+        d0, d1 = window_dates[i], window_dates[i + 1]
+        if d0 <= d <= d1:
+            span = (d1 - d0).days
+            frac = (d - d0).days / span if span else 0.0
+            return xs[i] + frac * (xs[i + 1] - xs[i])
+    return None
+
+
 def _resolve_signal_markers(stock, window_dates, xs):
     """ポ/ブシグナルを週足チャートの表示窓にマップした marker spec を返す (issue #253)。
 
@@ -2637,26 +2679,9 @@ def _resolve_signal_markers(stock, window_dates, xs):
         signals = extract_signals(stock, max_delta_days=None, include_extended=True)
     except Exception:  # noqa: BLE001
         return []
-    latest = window_dates[-1]  # チャート最新日 (= 直近週)
-    oldest = window_dates[0]
-
-    def _interp_x(d):
-        # 発生日 d を挟む週バー間で X を線形補間 (週の幅を日割り按分)。
-        if d <= oldest:
-            return xs[0] if d == oldest else None  # 最古より古い → 窓外 drop
-        if d >= latest:
-            return xs[-1]  # 最新以降 → 末尾 clamp (はみ出し防止)
-        for i in range(len(window_dates) - 1):
-            d0, d1 = window_dates[i], window_dates[i + 1]
-            if d0 <= d <= d1:
-                span = (d1 - d0).days
-                frac = (d - d0).days / span if span else 0.0
-                return xs[i] + frac * (xs[i + 1] - xs[i])
-        return None
-
     markers = []
     for s in signals:
-        x = _interp_x(s["sig_date"])
+        x = _interp_x_on_weekbars(s["sig_date"], window_dates, xs)
         if x is None:
             continue  # 窓外 (古い) → drop
         m = {
@@ -2768,6 +2793,128 @@ def build_price_rs_chart_mini(
     return ("".join(parts), tooltip)
 
 
+def _clean_rs_rank_points(rs_rank_log) -> List:
+    """rs_rank_log を昇順 (日付昇順) に整形し、None/0以下の無効値を除外する。
+
+    rs_rank_log: [(date, momentum_pt), ...] (日付降順, momentum_pt は 0~99)。
+    返り値: [(date, value), ...] 日付昇順。0 はエラー値として除外 (get_rank_log_expr 同方針)。
+    """
+    if not rs_rank_log:
+        return []
+    pts = [(d, v) for d, v in rs_rank_log if v is not None and v > 0]
+    pts.sort(key=lambda x: x[0])  # 日付昇順
+    return pts
+
+
+def _rs_rank_axis_bounds(values) -> tuple:
+    """RS(0~99)右軸の表示レンジ (lo, hi) を 25 刻みの境界にスナップして返す。
+
+    境界候補 = 0/25/50/75/99。データ min-max を内包する最寄りの境界帯に丸める
+    (lo = min を下回る最大境界, hi = max を上回る最小境界)。これにより線が軸の
+    一部に張り付かず、かつ「高RS帯/中RS帯」の水準感を保てる。
+    全点が 1 帯内なら 1 帯ぶん (例 60~70 → 50~75) を確保する。
+    """
+    bounds = [0, 25, 50, 75, 99]
+    lo_val, hi_val = min(values), max(values)
+    lo = max((b for b in bounds if b <= lo_val), default=0)
+    hi = min((b for b in bounds if b >= hi_val), default=99)
+    if hi <= lo:  # 同一境界に張り付く場合は 1 帯ぶん広げる
+        idx = bounds.index(lo)
+        if idx + 1 < len(bounds):
+            hi = bounds[idx + 1]
+        else:
+            lo = bounds[idx - 1]
+    return lo, hi
+
+
+def _overlay_rs_rank(parts, rank_pts, price_log, *,
+                     window_dates, xs, chart_top, chart_h,
+                     pad_x, inner_w, pad_right):
+    """RS(0~99)履歴を右Y軸 (25刻みスナップの可変スケール) で週足軸に重畳する。
+
+    横軸は週足スケールのまま、RS各点の日付を window_dates/xs (週バー列) に実日付で
+    マップする (_interp_x_on_weekbars)。欠番は price_log の営業日カレンダー隣接で
+    判定し、連続営業日でない区間は線を分割する (跨いで補間しない)。
+
+    右軸レンジは表示期間の RS min-max を 25 刻み境界にスナップして決める
+    (_rs_rank_axis_bounds)。
+
+    Args:
+        parts: SVG 文字列リスト (追記する)
+        rank_pts: _clean_rs_rank_points の結果 (日付昇順, [(date, value)])
+        price_log: 日足/週足台帳 (新しい順)。実営業日カレンダー突き合わせに使う
+        window_dates / xs: 週バー日付列 (昇順) と各週バーの X 座標
+        chart_top / chart_h: 騰落率描画域の上端 y と高さ (右軸もこの範囲を共有)
+        pad_x / inner_w / pad_right: 右軸目盛りラベルの X 位置決めに使う
+    Returns:
+        描画したら True、点不足/窓不足で描かなければ False。
+    """
+    if len(rank_pts) < 2 or not window_dates or not xs:
+        return False
+
+    # 右軸レンジを表示期間の RS 値域から 25 刻み境界にスナップ。
+    axis_lo, axis_hi = _rs_rank_axis_bounds([v for _, v in rank_pts])
+    axis_span = axis_hi - axis_lo
+
+    def _y_rank(v: float) -> float:
+        # 右軸: [axis_lo, axis_hi] を描画域に線形マップ。v=axis_hi が chart_top。
+        return chart_top + chart_h - ((v - axis_lo) / axis_span) * chart_h
+
+    # price_log (新しい順) の日付→index マップ。連続営業日判定 (隣接 index 差=1) に使う。
+    price_dates = [d for d, _ in price_log] if price_log else []
+    date_to_idx = {d: i for i, d in enumerate(price_dates)}
+
+    # 各 RS 点を (x, y, price_idx) に変換。窓外 (x=None) は drop。
+    placed = []
+    for d, v in rank_pts:
+        x = _interp_x_on_weekbars(d, window_dates, xs)
+        if x is None:
+            continue  # 週足窓より古い → drop
+        placed.append((x, _y_rank(v), date_to_idx.get(d)))
+
+    if len(placed) < 2:
+        return False
+
+    # price_log の営業日隣接 (idx 差=1) で連続セグメントに分割。
+    # idx が None (price_log に無い日付) はそこで切る。
+    segments = []
+    cur = [placed[0]]
+    for prev, p in zip(placed, placed[1:]):
+        pi_prev, pi = prev[2], p[2]
+        contiguous = (pi_prev is not None and pi is not None and pi_prev - pi == 1)
+        if contiguous:
+            cur.append(p)
+        else:
+            segments.append(cur)
+            cur = [p]
+    segments.append(cur)
+
+    # 各セグメントを個別 polyline (単色)。1点だけのセグメントは線にならないので skip。
+    for seg in segments:
+        if len(seg) >= 2:
+            pts = [(x, y) for x, y, _ in seg]
+            parts.append(_svg_polyline(pts, _RS_RANK_COLOR, 1.4))
+
+    # 末尾点 (最新) に circle + 現在値ラベル。
+    last_x, last_y, _ = placed[-1]
+    last_v = rank_pts[-1][1]
+    parts.append(_svg_circle(last_x, last_y, 2.2, _RS_RANK_COLOR))
+    parts.append(
+        f'<text x="{last_x - 4:.1f}" y="{last_y - 3:.1f}" font-size="9" '
+        f'fill="{_RS_RANK_COLOR}" font-weight="bold" text-anchor="end">{int(round(last_v))}</text>'
+    )
+
+    # 右Y軸目盛り (axis_lo / axis_hi と間の 25 刻み境界)。RSライン左軸と区別する紫系。
+    axis_x = pad_x + inner_w + pad_right - 2
+    ticks = [v for v in (0, 25, 50, 75, 99) if axis_lo <= v <= axis_hi]
+    for v in ticks:
+        parts.append(
+            f'<text x="{axis_x:.1f}" y="{_y_rank(v) + 3:.1f}" font-size="8" '
+            f'fill="{_RS_RANK_COLOR}" text-anchor="end">{v}</text>'
+        )
+    return True
+
+
 def build_price_rs_chart_full(
     price_log: List,
     rs_line: List,
@@ -2775,42 +2922,51 @@ def build_price_rs_chart_full(
     width: int = 400,
     height: int = 138,
     stock: Optional[Dict[str, Any]] = None,
+    rs_rank_log: Optional[List] = None,
 ) -> tuple:
     """詳細ページ用 20 週フルチャート SVG と tooltip を返す (週足 20 本ベース)。
 
-    株価と RSライン を「基準週=0% 起点の累積騰落率 (%)」に揃え、同一パネル・共通Y軸で重ねる。
-      - 2本の縦差 ≒ TOPIX 騰落率 (TOPIXより強い/弱いが交差・乖離として直読できる)
+    RSライン (対TOPIX) と RS(0~99)履歴 を 1 パネル・二重Y軸で重ねる:
+      - 左Y軸 = RSライン (週足20週, 基準週=0% 起点の累積騰落率 %)
+      - 右Y軸 = RS(0~99)履歴 (日足30日, 0~99 固定スケール) を右端側に重畳
+        (横軸は週足スケールのまま、RS各点は実日付で週足軸にマップ)
       - 0% の水平基準線を薄く描画
-      - 末尾 5 週部分は太く濃色で強調 (現状踏襲)
-      - 軸ガイド (基準週 / 5週前 / 今日) と日付ラベルは現状踏襲
+      - 末尾 5 週部分は太く濃色で強調 (RSライン)
+      - 軸ガイド (基準週 / 5週前 / 今日) と日付ラベル
       - Blue Dot は RS ライン末尾の青丸 (r=4)
-      - Y軸ラベルは共通スケール (灰色) で 1 系統のみ
-      - 末尾現在値ラベルは系列色 (緑/青) で末尾点の左に表示
+      - ポ/ブ発生日マーカーは X軸下のバンドに描画
 
+    描画契約: RSライン と RS(0~99)履歴 のうち描けるものを描く。両方無ければ空SVG。
     末尾 1 本は Case A (両週足あり + 日足が両週足より新しい) のみ今週仮終値 (= 最新日足) になる。
     """
     price_asc_raw = _asc_series_from_log(price_log, _SPARK_LOOKBACK)
     rs_asc_raw = _asc_series_from_log(rs_line, _SPARK_LOOKBACK)
 
-    if len(price_asc_raw) < 2 and len(rs_asc_raw) < 2:
-        return ("", "")
+    # RS履歴 (右軸) 用の有効点を先に整形 (昇順, None/0以下を除外)。
+    rank_pts = _clean_rs_rank_points(rs_rank_log)
 
-    # tooltip は元の比率列ベース (現状踏襲)
-    tooltip = _build_chart_tooltip(price_asc_raw, rs_asc_raw, has_blue_dot, unit_label="週")
-
-    # 基準週を揃える: 両系列の末尾 (= 今日) は同じ前提なので min 長で末尾揃え。
-    # これにより price_asc[0] と rs_asc[0] は必ず同じ「基準週」の値になり、
-    # 縦差が常に TOPIX 騰落率の累積として読める。
+    # RSライン描画可否。RSライン2点未満でも RS履歴/マーカーがあれば描画継続する
+    # (空SVG 判定は週足軸の土台 price_asc < 2 で後段に一本化)。
     rs_available = len(rs_asc_raw) >= 2 and rs_asc_raw[0] > 0
+
+    # tooltip: RSライン乖離 + RS(0~99)現在値 (株価行は廃止)
+    rank_now = rank_pts[-1][1] if rank_pts else None
+    tooltip = _build_chart_tooltip(
+        price_asc_raw, rs_asc_raw, has_blue_dot, unit_label="週",
+        rs_rank_now=rank_now, full_chart=True)
+
+    # 週足軸 (X) は price_log (週足台帳) の日付列で決まる。RSライン有無に関わらず
+    # price_asc を週バー本数の土台にする (RS履歴の実日付→週足X マッピングに必要)。
     if rs_available:
         n_align = min(len(price_asc_raw), len(rs_asc_raw))
         price_asc = price_asc_raw[-n_align:]
         rs_asc = rs_asc_raw[-n_align:]
     else:
-        # RS データなし: 株価のみで % 描画する
         price_asc = price_asc_raw
         rs_asc = []
 
+    # 週足軸の土台 (price_log) が2点未満なら週足チャートを組めない → 空SVG。
+    # (RS履歴のみ単独描画はしない: 通常 price_week_log があり price_asc は埋まる)
     if len(price_asc) < 2 or price_asc[0] <= 0:
         return ("", "")
 
@@ -2825,18 +2981,16 @@ def build_price_rs_chart_full(
         except Exception:  # noqa: BLE001
             window_dates = []
 
-    # % 変換 (基準週=0%)
-    p_base = price_asc[0]
-    price_pct = [(p / p_base - 1.0) * 100.0 for p in price_asc]
+    # % 変換 (基準週=0%) — RSラインのみ (株価系列は廃止)
     if rs_asc:
         r_base = rs_asc[0]
         rs_pct = [(r / r_base - 1.0) * 100.0 for r in rs_asc]
     else:
         rs_pct = []
 
-    # Y軸ラベルのため左に余白。右側は末尾点インラインラベルに任せるので最小限。
+    # 左に RSライン% 軸ラベル、右に RS(0~99) 軸ラベルを出すため両側に余白。
     pad_left = 36
-    pad_right = 8
+    pad_right = 28
     pad_y_top = 14
     pad_y_bottom = 14
     # X軸の下に常設するポ/ブマーカー専用バンド (issue #253)。騰落率描画域とは独立。
@@ -2856,8 +3010,8 @@ def build_price_rs_chart_full(
     def _xs_for(length: int) -> List[float]:
         return [pad_x + inner_w - step * (length - 1 - i) for i in range(length)]
 
-    # 共通 Y スケール (% 統一)
-    all_pct = list(price_pct) + list(rs_pct)
+    # 左Y スケール (RSライン% のみ)。RSライン無し時は 0% 基準のダミーレンジ。
+    all_pct = list(rs_pct) if rs_pct else [0.0]
     y_min = min(all_pct)
     y_max = max(all_pct)
     # 0% 基準線を必ず含める
@@ -2929,12 +3083,12 @@ def build_price_rs_chart_full(
     # 凡例 (上端)
     parts.append(
         '<text x="' + str(pad_x) + '" y="10" font-size="9" fill="#666">'
-        '<tspan fill="#2e7d32">━ 株価 (騰落率%)</tspan>'
-        '<tspan dx="6" fill="#1976d2" font-style="italic">┄ RSライン (対TOPIX, 騰落率%)</tspan>'
+        '<tspan fill="#1976d2" font-style="italic">┄ RSライン (対TOPIX %/左軸)</tspan>'
+        '<tspan dx="6" fill="' + _RS_RANK_COLOR + '">━ RS (0~99/右軸)</tspan>'
         '</text>'
     )
 
-    # 共通 Y 軸ラベル (灰色, 系列に紐づかない)
+    # 左Y軸ラベル (RSライン %, 灰色)
     label_x = pad_left - 2
     parts.append(
         f'<text x="{label_x}" y="{chart_top + 3:.1f}" font-size="8" '
@@ -2947,32 +3101,7 @@ def build_price_rs_chart_full(
 
     _recent_pts = _SPARK_RECENT + 1
 
-    # 株価線 (実線)
-    # 方向判定は元系列 (price_asc) で算出 (% 系列だと末尾値が 0 近傍になると flat に流れやすい)
-    price_slope_full = compute_slope_per_day(price_asc)
-    price_slope_recent = (
-        compute_slope_per_day(price_asc[-_recent_pts:])
-        if len(price_asc) >= _recent_pts
-        else None
-    )
-    price_dir_full = _slope_direction(price_slope_full)
-    price_dir_recent = _slope_direction(price_slope_recent)
-
     xs = _xs_for(n)
-    price_ys = [_y_for(p) for p in price_pct]
-    price_points = list(zip(xs, price_ys))
-    parts.append(_svg_polyline(price_points, _PRICE_FADED[price_dir_full], 1.5))
-    if len(price_points) >= _recent_pts:
-        parts.append(_svg_polyline(price_points[-_recent_pts:], _PRICE_COLORS[price_dir_recent], 2.2))
-    parts.append(_svg_circle(price_points[-1][0], price_points[-1][1], 2.5, _PRICE_COLORS[price_dir_recent]))
-
-    # 株価末尾現在値ラベル
-    price_now_x = price_points[-1][0]
-    price_now_y = price_points[-1][1]
-    parts.append(
-        f'<text x="{price_now_x - 4:.1f}" y="{price_now_y + 3:.1f}" font-size="9" '
-        f'fill="#2e7d32" font-weight="bold" text-anchor="end">{_format_pct_axis(price_pct[-1])}</text>'
-    )
 
     # RS線 (点線)
     if rs_pct:
@@ -2995,17 +3124,12 @@ def build_price_rs_chart_full(
         else:
             parts.append(_svg_circle(rs_points[-1][0], rs_points[-1][1], 2.0, _RS_COLORS[rs_dir_recent]))
 
-        # RS末尾現在値ラベル (株価ラベルと重なる場合は上下にずらす)
+        # RS末尾現在値ラベル
         rs_now_x = rs_points[-1][0]
         rs_now_y = rs_points[-1][1]
         offset = 8 if has_blue_dot else 4
-        # 株価ラベルと縦に近い場合は RS ラベルを少し上下にずらす
-        rs_label_dy = 3
-        if abs(rs_now_y - price_now_y) < 10:
-            # 株価が上なら RS は下、株価が下なら RS は上にずらす
-            rs_label_dy = 12 if rs_now_y >= price_now_y else -6
         parts.append(
-            f'<text x="{rs_now_x - offset:.1f}" y="{rs_now_y + rs_label_dy:.1f}" font-size="9" '
+            f'<text x="{rs_now_x - offset:.1f}" y="{rs_now_y + 3:.1f}" font-size="9" '
             f'fill="#1976d2" font-weight="bold" text-anchor="end">{_format_pct_axis(rs_pct[-1])}</text>'
         )
 
@@ -3043,6 +3167,17 @@ def build_price_rs_chart_full(
                 parts.append(_svg_triangle(m["x"], y_po, size * PO_SIZE_SCALE, "#2e7d32", 1.0, title))
             else:  # ブ
                 parts.append(_svg_diamond(m["x"], y_bu, size * BU_SIZE_SCALE, "#f57c00", opa_map[m["strength"]], title))
+
+    # RS(0~99)履歴を右Y軸 (0~99 固定) で右端側に重畳 (最前面)。
+    # 横軸は週足スケールのまま、RS各点は実日付で週足軸 (window_dates/xs) にマップ。
+    # 営業日カレンダー突き合わせは日足 price_log を使う (price_log 引数は週足台帳のため)。
+    daily_price_log = (stock or {}).get("price_log") or []
+    _overlay_rs_rank(
+        parts, rank_pts, daily_price_log,
+        window_dates=window_dates, xs=xs,
+        chart_top=chart_top, chart_h=chart_h,
+        pad_x=pad_x, inner_w=inner_w, pad_right=pad_right,
+    )
 
     parts.append("</svg>")
     return ("".join(parts), tooltip)
@@ -3085,9 +3220,11 @@ def build_stock_chart_payload(
                 rs_line = _append_provisional_rs(rs_line, stock, market_db)
             except Exception:  # noqa: BLE001
                 rs_line = []
+        rs_rank_log = (stock or {}).get("rs_rank_log") or []
         svg, tooltip = build_price_rs_chart_full(
             price_log, rs_line, has_blue_dot,
             stock=stock,
+            rs_rank_log=rs_rank_log,
         )
     else:
         price_log = (stock or {}).get("price_log") or []
