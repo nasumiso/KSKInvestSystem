@@ -467,14 +467,14 @@
         <select class="trade-idea-select"
                 data-code="{{ row.code_s }}"
                 data-idea="{{ current_idea }}"
-                title="売買戦略 (選択で即保存)"
+                title="{{ trade_idea_descriptions[current_idea] if current_idea in trade_idea_descriptions else '売買戦略 (選択で即保存)' }}"
                 {% if fallback_mode %}disabled{% endif %}>
           <option value="">未分類</option>
           {% if current_idea and current_idea not in trade_idea_options %}
           <option value="{{ current_idea }}" selected>⚠️ {{ current_idea }}</option>
           {% endif %}
           {% for idea in trade_idea_options %}
-          <option value="{{ idea }}" {% if idea == current_idea %}selected{% endif %}>{{ idea }}</option>
+          <option value="{{ idea }}" {% if idea == current_idea %}selected{% endif %} title="{{ trade_idea_descriptions[idea] }}">{{ idea }}</option>
           {% endfor %}
         </select>
       </td>
@@ -1059,6 +1059,9 @@ function excludeFromUniverse(codeS) {
         var saved = (res.json.display && res.json.display.trade_idea) || '';
         sel.dataset.idea = saved;
         sel.value = saved;
+        // 選択中戦略の説明を select の tooltip に反映 (未分類/リスト外は既定文言)
+        var opt = sel.options[sel.selectedIndex];
+        sel.title = (opt && opt.title) || '売買戦略 (選択で即保存)';
       }).catch(function(err) {
         sel.classList.remove('saving');
         sel.classList.add('error');

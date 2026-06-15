@@ -672,6 +672,7 @@ def dashboard():
         theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
         trade_idea_options=ps.TRADE_IDEA_OPTIONS,
+        trade_idea_descriptions=ps.TRADE_IDEA_DESCRIPTIONS,
         hold_summary=hold_summary,
     )
 
