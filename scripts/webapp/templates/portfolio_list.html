@@ -576,14 +576,24 @@
 <script>
 // ========== ページ切り替え (issue #327: 指標=自動算出 / メモ=手動入力) ==========
 (function() {
+  var STORAGE_KEY = 'portfolioActivePage';
   var buttons = document.querySelectorAll('.page-toggle button[data-page-btn]');
   function switchPage(pageBtn) {
     document.body.classList.toggle('portfolio-page-2', pageBtn.dataset.pageBtn === '2');
     buttons.forEach(function(b) { b.classList.toggle('active', b === pageBtn); });
+    try { localStorage.setItem(STORAGE_KEY, pageBtn.dataset.pageBtn); } catch (e) {}
   }
   buttons.forEach(function(btn) {
     btn.addEventListener('click', function() { switchPage(btn); });
   });
+  // 前回選択したページを復元 (再訪・リロード後も保持)
+  try {
+    var saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      var savedBtn = document.querySelector('.page-toggle button[data-page-btn="' + saved + '"]');
+      if (savedBtn) switchPage(savedBtn);
+    }
+  } catch (e) {}
   // キーボードショートカット: 1=指標 / 2=メモ (入力フォーカス中は無効)
   document.addEventListener('keydown', function(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
