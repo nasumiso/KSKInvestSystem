@@ -118,9 +118,14 @@ def get_price_data(stocks, code_s, upd=UPD_INTERVAL):
     return price_dict
 
 
+# ランクログ保持日数。詳細チャートの週足20週窓 (≈100営業日) の約半分をカバーし、
+# RS(0~99)履歴を右端側に重畳できるようにする (rs_rank_log / stock_rank_log 共用)。
+RANK_LOG_DAYS = 60
+
+
 def update_stock_log(rank_log, rank):
     """ランクログを更新
-    Returns: 20個(日分)のランクログ(新しい日付が先)
+    Returns: RANK_LOG_DAYS 個(日分)のランクログ(新しい日付が先)
     """
     date = get_price_day(datetime.today())
     ind = 0
@@ -135,7 +140,7 @@ def update_stock_log(rank_log, rank):
         rank_log.insert(0, (date, rank))
     rank_log = sorted(rank_log, key=lambda x: x[0], reverse=True)
     # print "ランクログ更新:", ind, date, rank
-    return rank_log[0:20]
+    return rank_log[0:RANK_LOG_DAYS]
 
 
 def update_stock_rank(stock, rank):
@@ -970,7 +975,7 @@ def get_trend_template_expr(stock):
         return "▲"
     if miss_count <= 6:
         return "△"
-    return ""
+    return "×"  # 7件全 miss = 完全 Stage 4 崩壊 (trend_symbol_from_misses と整合)
 
 
 def get_index_trend_template_expr(stock):
@@ -998,8 +1003,24 @@ def get_index_trend_template_expr(stock):
     return ("△ %d/7" % pass_count, miss_str)
 
 
-# ポケットピポット無効化対象の trend_template 不通過項目 (Stage 4 崩壊系, issue #110)。
-_PP_STAGE4_MISSES = {"pr>ma30,40", "ma40Up", "high(low)52"}
+# trend_template (Minervini) の全条件名。calc_trend_template (price.py) が
+# 不通過項目を misses として返すため、misses がこの全項目を含む = 1つも条件を
+# 満たさない = 完全な Stage 4 崩壊、と判定する (issue #110/#111)。
+# 件数は ks_util.TREND_TEMPLATE_CONDITION_COUNT (× 記号判定) と一致させる。
+_TREND_TEMPLATE_ALL = {
+    "pr>ma10", "pr>ma30,40", "ma30>ma40", "ma40Up",
+    "ma10>ma30,40", "high(low)52", "RS",
+}
+assert len(_TREND_TEMPLATE_ALL) == TREND_TEMPLATE_CONDITION_COUNT
+
+
+def _is_stage4(misses):
+    """trend_template の不通過項目集合が「全条件 miss」= Stage 4 崩壊か判定する。
+
+    部分的な不通過 (下落途中・Stage 1 底値圏など) は対象外。1つも条件を満たさない
+    完全崩壊銘柄のみ True。ポケットピポット・ブレイク双方で同じ基準を使う (issue #110/#111)。
+    """
+    return _TREND_TEMPLATE_ALL <= misses
 
 
 # シグナル表示で銘柄データ自体を stale とみなす上限 (access_date_price が今日からこの
@@ -1044,35 +1065,48 @@ def _signal_recent_delta(stock, mmdd):
     return delta, sig_day
 
 
-def extract_signals(stock):
-    """tags と同じフィルタを通した表示対象ポ/ブシグナルを返す (issue #253/#310)。
+def extract_signals(stock, max_delta_days=10, include_extended=False):
+    """表示対象ポ/ブシグナルを返す (issue #253/#310)。
 
-    make_signal の tags 付与条件と完全一致させ、一覧 tooltip/背景色・詳細チャート
-    マーカーが make_signal と同じシグナル集合を見るための単一ソース。
+    一覧 tooltip/背景色はデフォルトの 10 日以内だけを使い、詳細チャートは
+    max_delta_days=None で make_signal と同じ元シグナルをチャート窓内に描ける。
 
     フィルタ:
       - ポ: trend_template に Stage4 崩壊系が含まれれば全除外、先頭最大3件走査。
       - ブ: 先頭1件のみ走査。
-      - 各シグナル: access_date_price 基準の delta が 0〜7日のものだけ採用。
+      - 各シグナル: access_date_price 基準で delta を計算し、
+        max_delta_days が整数なら 0〜max_delta_days のものだけ採用。
+
+    include_extended=True のときのみ breakout_extended (高値追い圏で正規ブレイクから
+    弾かれた候補) を kind="ブ"・extended=True 付きで含める。詳細チャートマーカー専用で、
+    シグナル列・一覧 tooltip 経路 (デフォルト False) には出さない。
 
     Returns:
         list[dict]: [{"kind","mmdd","num","sig_date","delta"}] (表示順)。
+            extended 候補のみ "extended": True を持ち、num は MA10乖離% (正規ブレイクの
+            num=出来高超過% とは意味が異なる)。
             sig_date は access_date_price 基準で年補完した発生日 (date)。
     """
     out = []
     pocket_pivot = stock.get("pocket_pivot", "")
     trend_template = stock.get("trend_template", [])
-    pp_misses = set(trend_template) if isinstance(trend_template, (list, tuple, set)) else set()
-    pp_enabled = pocket_pivot and not (pp_misses & _PP_STAGE4_MISSES)
+    misses = set(trend_template) if isinstance(trend_template, (list, tuple, set)) else set()
+    # Stage 4 崩壊 (7条件全 miss) ではポ/ブともに無効化 (issue #110/#111)。
+    stage4 = _is_stage4(misses)
 
+    # (kind, sigs, extended) の3要素。extended は描画側で半透明中抜き表示する目印。
     sources = []
-    if pp_enabled:
-        sources.append(("ポ", list(pocket_pivot)[:3]))  # 連続ポは最大3件
+    if pocket_pivot and not stage4:
+        sources.append(("ポ", list(pocket_pivot)[:3], False))  # 連続ポは最大3件
     breakout = stock.get("breakout", [])
-    if breakout:
-        sources.append(("ブ", list(breakout)[:1]))  # ブは最新1件のみ
+    if breakout and not stage4:
+        sources.append(("ブ", list(breakout)[:1], False))  # ブは最新1件のみ
+    if include_extended and not stage4:
+        breakout_ext = stock.get("breakout_extended", [])
+        if breakout_ext:
+            sources.append(("ブ", list(breakout_ext)[:3], True))  # extended は直近3件まで
 
-    for kind, sigs in sources:
+    for kind, sigs, extended in sources:
         for sig in sigs:
             spl = str(sig).split(",")
             if len(spl) < 2:
@@ -1086,12 +1120,17 @@ def extract_signals(stock):
             except ValueError:
                 log_warning("シグナル日付エラー", spl[0])
                 continue
-            if delta is None or delta < 0 or delta > 7:
+            if delta is None or delta < 0:
                 continue
-            out.append({
+            if max_delta_days is not None and delta > max_delta_days:
+                continue
+            entry = {
                 "kind": kind, "mmdd": spl[0], "num": num,
                 "sig_date": sig_date, "delta": delta,
-            })
+            }
+            if extended:
+                entry["extended"] = True
+            out.append(entry)
     return out
 
 
@@ -1138,17 +1177,16 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
             dt = get_price_day(dt)
             if (date.today() - dt).days <= 30:
                 tags.append("押")
-    # ポケットピポット
-    pocket_pivot = stock.get("pocket_pivot", "")
-    # Stage 4 崩壊銘柄ではポケットピポットを無効化する (issue #110)。
-    # trend_template (週足) の不通過項目に長期トレンド崩壊系が含まれていれば除外。
-    # ・"pr>ma30,40": 株価が長期MA(MA40≒MA200相当)を下回る
-    # ・"ma40Up": MA40 が1ヶ月前より下降 (Stage 4)
-    # ・"high(low)52": 52週高値圏から外れる (crash mode)
+    # Stage 4 崩壊銘柄ではポケットピポット/ブレイクを無効化する (issue #110/#111)。
+    # trend_template (週足) の7条件を1つも満たさない (全 miss) 場合のみ崩壊とみなす。
+    # 部分的な不通過 (下落途中・Stage 1 底値圏) は対象外。
     # trend_template が空(◎)・キー欠落(週足取得失敗)ならベース形成中とみなし除外しない。
     trend_template = stock.get("trend_template", [])
-    pp_misses = set(trend_template) if isinstance(trend_template, (list, tuple, set)) else set()
-    if pocket_pivot and not (pp_misses & {"pr>ma30,40", "ma40Up", "high(low)52"}):
+    misses = set(trend_template) if isinstance(trend_template, (list, tuple, set)) else set()
+    stage4 = _is_stage4(misses)
+    # ポケットピポット
+    pocket_pivot = stock.get("pocket_pivot", "")
+    if pocket_pivot and not stage4:
         for i, sig in enumerate(pocket_pivot):
             if i >= 3:  # 連続ポケットピポットは最大3件まで表示 (issue #110)
                 break
@@ -1163,16 +1201,17 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
             signal += "%s(%s)," % (spl[0], spl[1])
     # ブレイクアウト
     breakout = stock.get("breakout", [])
-    for brk in breakout:
-        brkspl = brk.split(",")
-        try:
-            delta_day = get_recent_signal_delta(brkspl[0])
-            # mark = "★"  if delta_day < 3 else ""
-        except ValueError:
-            log_warning("ブレイクアウト日付エラー", brkspl[0])
-        signal += "[ブ]"
-        signal += "%s(%s)," % (brkspl[0], brkspl[1])
-        break  # 一つにしておく(最新日)
+    if not stage4:
+        for brk in breakout:
+            brkspl = brk.split(",")
+            try:
+                delta_day = get_recent_signal_delta(brkspl[0])
+                # mark = "★"  if delta_day < 3 else ""
+            except ValueError:
+                log_warning("ブレイクアウト日付エラー", brkspl[0])
+            signal += "[ブ]"
+            signal += "%s(%s)," % (brkspl[0], brkspl[1])
+            break  # 一つにしておく(最新日)
     # 売り圧力レシオ(5日)による買われ過ぎ売われすぎ
     sell_ratio = stock.get("sell_pressure_ratio", [])
     if sell_ratio:

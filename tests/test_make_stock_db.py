@@ -73,7 +73,7 @@ class TestGetTrendTemplateExpr:
             ({"trend_template": []}, "◎"),                                   # 全通過
             ({"trend_template": ["a", "b", "c"]}, "▲"),                      # 3-4 ミス
             ({"trend_template": ["a", "b", "c", "d", "e"]}, "△"),            # 5-6 ミス
-            ({"trend_template": ["a", "b", "c", "d", "e", "f", "g"]}, ""),   # 7+ ミス
+            ({"trend_template": ["a", "b", "c", "d", "e", "f", "g"]}, "×"),  # 7 ミス(全崩壊)
         ],
     )
     def test_classification_exact(self, stock, expected):
@@ -151,20 +151,25 @@ class TestMakeSignal:
 
     # ---- issue #110: ポケットピポット改善 ----
 
+    _ALL7 = [
+        "pr>ma10", "pr>ma30,40", "ma30>ma40", "ma40Up",
+        "ma10>ma30,40", "high(low)52", "RS",
+    ]
+
     @pytest.mark.parametrize(
         "trend_template, expect_signal",
         [
             ([], True),  # 全通過(◎) → タグ付与
             (None, True),  # legacy None → 空扱い
-            (["RS"], True),  # 除外対象外のmiss → タグ付与
-            (["pr>ma30,40"], False),  # 長期MA割れ → 除外
-            (["ma40Up"], False),  # MA40下降(Stage4) → 除外
-            (["high(low)52"], False),  # 52週高値圏外(crash) → 除外
+            (["RS"], True),  # 1項目だけmiss → タグ付与
+            (["pr>ma30,40", "ma40Up", "high(low)52"], True),  # 部分崩壊(旧3条件) → タグ付与
+            (_ALL7[:6], True),  # 6項目miss(1つ通過) → タグ付与
+            (_ALL7, False),  # 7項目全miss(完全Stage4崩壊) → 除外
             ("__missing__", True),  # trend_template キー欠落 → タグ付与
         ],
     )
     def test_pocket_pivot_stage4_filter(self, trend_template, expect_signal):
-        """項目1: Stage 4 崩壊銘柄ではポケットピポットを除外する"""
+        """Stage 4 崩壊(7条件全miss)銘柄でのみポケットピポットを除外する (issue #110/#111)"""
         today = datetime.today()
         recent = (today - timedelta(days=2)).strftime("%m/%d")
         stock = {
@@ -307,9 +312,11 @@ class TestExtractSignals:
     @pytest.mark.parametrize(
         "case, kw_factory, expect_kinds",
         [
-            # Stage4 崩壊 → ポ全除外
+            # Stage4 崩壊 (7条件全miss) → ポ全除外
             ("stage4_drop", lambda d: {
-                "pocket_pivot": ["%s,2" % d(2)], "trend_template": ["ma40Up"]}, []),
+                "pocket_pivot": ["%s,2" % d(2)],
+                "trend_template": ["pr>ma10", "pr>ma30,40", "ma30>ma40", "ma40Up",
+                                   "ma10>ma30,40", "high(low)52", "RS"]}, []),
             # ポ4件目以降は落ちる (3件まで)
             ("pp_cap3", lambda d: {
                 "pocket_pivot": ["%s,%d" % (d(n), n) for n in (1, 2, 3, 4)]},
@@ -317,8 +324,8 @@ class TestExtractSignals:
             # ブは1件のみ
             ("bo_cap1", lambda d: {
                 "breakout": ["%s,180" % d(1), "%s,200" % d(2)]}, ["ブ"]),
-            # delta>7 は除外
-            ("stale_drop", lambda d: {"pocket_pivot": ["%s,2" % d(10)]}, []),
+            # delta>10 は除外
+            ("stale_drop", lambda d: {"pocket_pivot": ["%s,2" % d(12)]}, []),
         ],
     )
     def test_filter_matches_tags(self, case, kw_factory, expect_kinds):
@@ -333,6 +340,17 @@ class TestExtractSignals:
         """access_date_price 無し → 日付基準が立たず空 (tags と同じ)"""
         stock = {"pocket_pivot": ["06/03,2"], "trend_template": []}
         assert make_stock_db.extract_signals(stock) == []
+
+    def test_max_delta_none_keeps_older_signal(self):
+        """max_delta_days=None なら 10日超でも access_date_price 基準で取得する"""
+        today = datetime.today()
+        stock = {
+            "pocket_pivot": [f"{(today - timedelta(days=11)).strftime('%m/%d')},2"],
+            "trend_template": [],
+            "access_date_price": today,
+        }
+        signals = make_stock_db.extract_signals(stock, max_delta_days=None)
+        assert [s["kind"] for s in signals] == ["ポ"]
 
 
 # ==================================================

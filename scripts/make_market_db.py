@@ -951,10 +951,11 @@ tr:hover { background: #f5f5f5; }
 .market-table th.col-spr,   .market-table td.col-spr   { width: 140px; }
 .signal-sell { background: #fdedec; color: #c0392b; font-weight: bold; }
 .signal-buy { background: #eafaf1; color: #27ae60; font-weight: bold; }
-/* トレンド列の背景色 (portfolio_list と仕様統一: ◎=濃黄 / ◯=薄黄 / —=水色) */
-.trend-bg-strong { background: #fbbc04; }  /* ◎ */
-.trend-bg-good   { background: #fce8b2; }  /* ◯ */
-.trend-bg-none   { background: #6fa8dc; }  /* — / 空 */
+/* トレンド列の背景色 (portfolio 一覧と仕様統一: ◎=濃黄 / ◯=薄黄 / ×=青(全崩壊) / —=赤(欠損)) */
+.trend-bg-strong   { background: #fbbc04; }  /* ◎ */
+.trend-bg-good     { background: #fce8b2; }  /* ◯ */
+.trend-bg-collapse { background: #4285f4; }  /* × (全条件miss=Stage4崩壊) */
+.trend-bg-missing  { background: #ea4335; }  /* — / 空 (未評価/欠損) */
 /* 需給バランスセル (issue #247): SPR/rv の横バー 2 本縦積み */
 .spr-gauge-cell { padding: 4px; vertical-align: middle; white-space: nowrap; }
 .spr-gauge-cell svg { display: block; width: 100%; height: auto; }

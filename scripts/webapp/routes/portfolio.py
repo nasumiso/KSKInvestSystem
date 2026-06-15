@@ -56,7 +56,7 @@ STATUS_CHOICES = [
     ("watch", "3監", STATUS_VALUE_TO_LABEL["3監"]),
 ]
 DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 書き込み POST 後フォールバック先
-PORTFOLIO_SORT_KEYS = {"position", "rank", "gyoutai"}
+PORTFOLIO_SORT_KEYS = {"position", "rank", "gyoutai", "rs_change_1d"}  # rs_change_1d: issue #332
 DEFAULT_SORT_KEY = "position"
 
 
@@ -639,7 +639,7 @@ def dashboard():
             k,
             include_empty_status=preserve_all_status,
         )
-        for k in ("position", "rank", "gyoutai")
+        for k in ("position", "rank", "gyoutai", "rs_change_1d")  # rs_change_1d: issue #332
     }
 
     # 保有フィルタ表示時のみ、運用総額と PF 全体の qty 最終更新日を集計

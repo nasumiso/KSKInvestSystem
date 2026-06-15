@@ -30,6 +30,8 @@
     background: var(--pico-background-color);
     box-shadow: 0 1px 0 #d8dee6;
   }
+  /* issue #332: ソート適用中のヘッダを強調 (theme_summary と同色) */
+  table.portfolio-list thead th.sort-active a { color: #2c5282; font-weight: bold; }
   /* 数値・短文列は明示的に狭くする */
   table.portfolio-list td.num { text-align: right; }
   table.portfolio-list td.rating-cell { text-align: center; white-space: nowrap; }
@@ -335,7 +337,9 @@
       <th data-page="1" title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
       <th data-page="1">決算日</th>
       <th data-page="1">RS</th>
-      <th data-page="1" title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸">RS(20,5)</th>
+      {# issue #332: ヘッダクリックで前日比RSライン騰落率の降順ソート。適用中はソートキーを明示 (▼前日比) #}
+      <th data-page="1" class="{% if active_sort == 'rs_change_1d' %}sort-active{% endif %}"
+          title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸。クリックで前日比RSライン騰落率の降順ソート"><a href="{{ sort_urls['rs_change_1d'] }}">{% if active_sort == 'rs_change_1d' %}▼前日比{% else %}RS(20,5){% endif %}</a></th>
       <th data-page="1">トレンド</th>
       <th data-page="1">タグ</th>
       <th data-page="1" title="ポ/ブ記号。ホバーで signal 全文 (発生日付含む)">シグナル</th>

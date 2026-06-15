@@ -548,19 +548,73 @@ class TestCalcDailyIndicators:
     @pytest.mark.parametrize("n,break_days,expected", [
         (45, [], True),               # 全日 終値>10ma → 30日連続窓が存在
         (50, [0, 1, 2], True),        # 直近を割り込み (売りシグナル中) でも古い側に達成窓あり → 残る
-        (45, list(range(0, 45, 5)), False),  # 5日おきに割り込み → どの30日窓も成立しない
+        # 単発の飛び石割れは porosity (翌日安値が割れ日安値を上回る) で全て救済され連続維持。
+        # break日の安値を 0 にしても翌営業日は通常の高い安値なので violation 不成立 → True。
+        (45, list(range(0, 45, 5)), True),
         (30, [], False),              # 終値39本未満 (データ不足) → 未達成扱い
     ])
     def test_ma10_above_streak_30(self, n, break_days, expected):
-        """保持データ内に30日連続10ma上回り期間があるか。break_days はその日を急落させる。"""
+        """保持データ内に30日連続10ma維持期間があるか。break_days はその日を急落させる。
+
+        break日は終値・安値とも極端に下げる。porosity 仕様では「終値割れ + 翌営業日の安値が
+        割れ日安値を下回る」で初めて連続切断 (violation)。単発の飛び石割れは翌日安値で救済され
+        維持される (連続 violation を起こさない限り streak は壊れない)。
+        """
         rows = self._make_price_list(n)  # 先頭=最新、単調増加 (新しいほど高い)
         for bd in break_days:
             d, o, h, _l, _c, r5, r6, v = rows[bd]
-            rows[bd] = (d, o, h, "0", "1", r5, r6, v)  # 終値1で10maを確実に割り込む
+            rows[bd] = (d, o, h, "0", "1", r5, r6, v)  # 終値1・安値0で10maを確実に割り込む
         result = price._calc_daily_indicators(rows)
         assert result["ma10_above_streak_30"] is expected
         # price_kairi_ma10 は数値 (10本以上あるため)
         assert isinstance(result["price_kairi_ma10"], float)
+
+    @pytest.mark.parametrize("bd,next_low,expected", [
+        # 30連続窓の途中 (bd=5) で終値だけ10maを割る単発割れ。
+        # 翌営業日 (index bd-1) の安値が割れ日安値を下回るか否かで維持/切断が変わる。
+        (5, 9999, True),   # 翌日安値 >= 割れ日安値 → porosity 救済 → 30連続維持
+        (5, 1, False),     # 翌日安値 < 割れ日安値 → violation 成立 → 切断
+        # 最新日 (bd=0) の割れは翌営業日が未到来 = violation 未確定。先取り誤判定を
+        # 避けるため不成立 (False) に倒す。next_low は無関係 (翌日が存在しない)。
+        (0, None, False),
+    ])
+    def test_ma10_streak_porosity(self, bd, next_low, expected):
+        """終値割れ時の porosity 救済/violation 切断、および最新日の未確定扱いを検証する。"""
+        # 39本ちょうどにして30連続窓を1つ (s=0, i=0..29) に絞り、bd を必ず含める。
+        rows = self._make_price_list(39)  # 先頭=最新、単調増加
+        # 割れ日 bd: 終値だけ10maを割り込ませ、安値は基準値 (500) を置く
+        d, o, h, _l, _c, r5, r6, v = rows[bd]
+        rows[bd] = (d, o, h, "500", "1", r5, r6, v)
+        # bd>0 のときのみ翌営業日 bd-1 の安値を可変 (割れ日安値500 との大小で violation 判定)
+        if bd > 0:
+            d2, o2, h2, _l2, c2, r52, r62, v2 = rows[bd - 1]
+            rows[bd - 1] = (d2, o2, h2, str(next_low), c2, r52, r62, v2)
+        result = price._calc_daily_indicators(rows)
+        assert result["ma10_above_streak_30"] is expected
+
+    def test_ma10_kairi_survives_missing_low(self):
+        """安値1件が非数値 (株探 "－" 等) でも、終値ベースの乖離率は計算される。
+
+        従来は終値さえ読めれば乖離率を出せていた。porosity 用に安値を読む変更で、
+        安値欠損が乖離率まで巻き込んで全滅する回帰が起きないことを確認する
+        (安値が不要な日なら streak まで巻き込まず、乖離率も生きる)。
+        """
+        rows = self._make_price_list(39)  # 全日 終値>10ma
+        d, o, h, _l, c, r5, r6, v = rows[7]
+        rows[7] = (d, o, h, "－", c, r5, r6, v)  # 安値だけ非数値に欠損
+        result = price._calc_daily_indicators(rows)
+        # 乖離率は終値だけで計算できる → None にならない
+        assert isinstance(result["price_kairi_ma10"], float)
+        assert result["ma10_above_streak_30"] is True
+
+    def test_ma10_streak_missing_low_break_day_is_false(self):
+        """porosity 判定が必要な割れ日に安値欠損があると streak は未確定扱い。"""
+        rows = self._make_price_list(39)
+        d, o, h, _l, _c, r5, r6, v = rows[5]
+        rows[5] = (d, o, h, "－", "1", r5, r6, v)  # 終値割れ + 安値欠損
+        result = price._calc_daily_indicators(rows)
+        assert isinstance(result["price_kairi_ma10"], float)
+        assert result["ma10_above_streak_30"] is False
 
     def test_price_log_tuple_format(self):
         """price_log の各要素は (date, int) タプル"""
@@ -1031,6 +1085,72 @@ class TestParsePriceTextFromList:
             assert per >= 0
         else:
             assert len(breaks) == 0
+
+    @pytest.mark.parametrize(
+        "today_close, today_low, prev_close, expect_regular, expect_ext",
+        [
+            # 乖離+9%: 正規ブレイク(+5%以内)から弾かれ extended に入る
+            (1150, 1120, 1100, False, True),
+            # 乖離+22%: 当日は extended、前日もブレイク条件を満たし regular に入る
+            (1300, 1280, 1250, True, True),
+            # 乖離が小さい(押し目位置): 正規ブレイクで extended には入らない
+            (1080, 1070, 1050, True, False),
+        ],
+    )
+    def test_breakout_extended(self, today_close, today_low, prev_close,
+                               expect_regular, expect_ext):
+        """高値追い圏 (+5% < kairi <= 25%) で弾かれたブレイク候補が
+        breakout_extended に入ること (詳細チャートの半透明マーカー用)。"""
+        from datetime import date as _date, timedelta
+        d0 = _date(2025, 12, 31)
+        price_list = []
+        for i in range(25):
+            dt = d0 - timedelta(days=i)
+            date_str = "%d年%d月%d日" % (dt.year, dt.month, dt.day)
+            if i == 0:
+                close, low, vol = today_close, today_low, 300000
+            elif i == 1:
+                close, low, vol = prev_close, prev_close - 5, 100000
+            else:
+                close, low, vol = 1000, 995, 100000  # 横ばい → ma10≈1000
+            price_list.append([date_str, close, close + 10, low, close, vol, close])
+        result_dict, _ = price.parse_price_text_from_list(today_close, price_list)
+        assert (len(result_dict["breakout"]) >= 1) == expect_regular
+        assert (len(result_dict["breakout_extended"]) >= 1) == expect_ext
+
+    @pytest.mark.parametrize("bd,next_low,expected", [
+        # 7カラム経路 (close=adj_close=[6], low=[3]) の porosity 回帰。割れ日 (bd) で
+        # adj_close だけ10maを割り、翌営業日 (bd-1) の安値で維持/切断が分岐することを検証。
+        (5, 9999, True),   # 翌日安値 >= 割れ日安値 → porosity 救済 → 30連続維持
+        (5, 1, False),     # 翌日安値 < 割れ日安値 → violation 成立 → 切断
+        # 最新日 (bd=0) の割れは翌営業日が未到来 = violation 未確定 → 不成立 (False)。
+        (0, None, False),
+    ])
+    def test_ma10_streak_porosity_7col(self, bd, next_low, expected):
+        """parse_price_text_from_list (7カラム経路) でも porosity 判定が効くことの回帰。
+
+        全日 adj_close>10ma を確実に満たすよう刻みを大きく取り、39本で30連続窓を
+        1つ (i=0..29) に絞る。bd をその窓に含め violation 成立時のみ False になる構成。
+        """
+        from datetime import date as _date, timedelta
+        d0 = _date(2025, 12, 31)
+        price_list = []
+        # i 小 (新しい) ほど高値になる急上昇データ → 全日 adj_close>10ma
+        for i in range(39):
+            dt = d0 - timedelta(days=i)
+            date_str = "%d年%d月%d日" % (dt.year, dt.month, dt.day)
+            close = 1000 + (38 - i) * 50  # 最新ほど高い
+            price_list.append([date_str, close, close + 20, close - 10,
+                               close, 100000 + i * 1000, close])
+        d, o, h, _l, c, v, _adj = price_list[bd]
+        # 割れ日 bd: adj_close ([6]) だけ10maを割り込ませ、安値 ([3]) は基準値 500
+        price_list[bd] = [d, o, h, 500, c, v, 1]
+        # bd>0 のときのみ翌営業日 bd-1 の安値 ([3]) を可変 (割れ日安値 500 との大小で判定)
+        if bd > 0:
+            d2, o2, h2, _l2, c2, v2, adj2 = price_list[bd - 1]
+            price_list[bd - 1] = [d2, o2, h2, next_low, c2, v2, adj2]
+        result_dict, _ = price.parse_price_text_from_list(1050, price_list)
+        assert result_dict["ma10_above_streak_30"] is expected
 
 
 # ==================================================

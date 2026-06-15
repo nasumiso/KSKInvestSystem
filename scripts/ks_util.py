@@ -697,14 +697,25 @@ def get_db_code(rec: dict) -> str:
     return rec["code_s"]
 
 
-_TREND_BG_CLASS = {"◎": "trend-bg-strong", "◯": "trend-bg-good", "—": "trend-bg-none"}
+# 記号→背景色クラス。webapp 一覧 (compute_cell_styles) の色仕様と統一:
+# ◎=濃黄, ◯=薄黄, ×(全条件miss=Stage4崩壊)=青, —(未評価/欠損)=赤。
+_TREND_BG_CLASS = {
+    "◎": "trend-bg-strong", "◯": "trend-bg-good",
+    "×": "trend-bg-collapse", "—": "trend-bg-missing",
+}
+
+# trend_template (Minervini) の全条件数。price.calc_trend_template が不通過項目を
+# misses として返すため、miss 数がこれと等しい = 1つも条件を満たさない完全崩壊
+# (Stage 4)。make_stock_db._TREND_TEMPLATE_ALL (条件名の集合) と件数を揃える。
+TREND_TEMPLATE_CONDITION_COUNT = 7
 
 
 def trend_symbol_from_misses(misses):
     """trend_template (不通過項目 list) から表示用の記号一文字を返す。
 
-    make_stock_db.get_trend_template_expr() と判定基準を揃える (◎/◯/▲/△ + 7件以上は空)。
-    None や非 list は "—" を返す。
+    make_stock_db.get_trend_template_expr() と判定基準を揃える (◎/◯/▲/△)。
+    全条件 miss (完全 Stage 4 崩壊) は "×"、None や非 list (未評価/データ欠損) は "—"。
+    両者は意味が異なるため記号で区別する (背景色も別: × → 青, — → 赤)。
     """
     if not isinstance(misses, list):
         return "—"
@@ -715,13 +726,13 @@ def trend_symbol_from_misses(misses):
         return "◯"
     if n <= 4:
         return "▲"
-    if n <= 6:
+    if n < TREND_TEMPLATE_CONDITION_COUNT:
         return "△"
-    return "—"
+    return "×"
 
 
 def trend_bg_class(symbol):
-    """トレンド記号 (◎/◯/—) から背景色 CSS クラス名を返す。▲/△/その他は ""。"""
+    """トレンド記号 (◎/◯/×/—) から背景色 CSS クラス名を返す。▲/△/その他は ""。"""
     return _TREND_BG_CLASS.get(symbol, "")
 
 
