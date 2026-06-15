@@ -2397,6 +2397,16 @@ class TestPriceRsSparkline:
         """右軸レンジは min-max を 25 刻み境界にスナップ。1帯内/最上帯も帯幅を確保。"""
         assert helpers._rs_rank_axis_bounds(values) == expected
 
+    def test_full_chart_empty_when_no_rs_line_and_no_rs_rank(self):
+        """株価線廃止後、RSライン不可 (rs_line 空) かつ RS履歴2点未満なら空SVG。
+        週足 price_log が2本あっても軸・凡例だけのデータ無しチャート枠を出さない。
+        """
+        price_log = self._make_log(list(range(120, 100, -1)))  # 週足20点ぶん
+        svg, tooltip = helpers.build_price_rs_chart_full(
+            price_log, [], has_blue_dot=False, rs_rank_log=[])
+        assert svg == ""
+        assert tooltip == ""
+
     def test_full_chart_t20_label_matches_displayed_window(self):
         """price_log が _SPARK_LOOKBACK (20) を超える場合、左端ラベルは
         '表示窓内の最古日 (20日前)' であって '全履歴の最古日' ではない。

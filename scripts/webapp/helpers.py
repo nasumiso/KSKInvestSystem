@@ -2971,6 +2971,11 @@ def build_price_rs_chart_full(
     if len(price_asc) < 2 or price_asc[0] <= 0:
         return ("", "")
 
+    # 描ける系列が一つも無い場合は空 SVG。株価線廃止後、RSライン不可 (market_db=None 等) で
+    # かつ RS履歴も2点未満だと軸・凡例だけのデータ無しチャート枠になるのを防ぐ。
+    if not rs_available and len(rank_pts) < 2:
+        return ("", "")
+
     # ポ/ブマーカー用に表示窓の週バー日付列を price_asc と同じ手順で構築 (issue #253)。
     # _asc_series_from_log と同じく log[:LOOKBACK] を昇順化し None 値を除外、末尾 n_align 本。
     window_dates = []
