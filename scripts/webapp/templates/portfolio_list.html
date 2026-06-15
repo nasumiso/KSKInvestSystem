@@ -817,15 +817,17 @@ function excludeFromUniverse(codeS) {
       if (currentValue === '—') currentValue = '';
     }
 
+    // 編集 input のフォントは表示セル (table 0.76em) より大きく揃える
+    var EDIT_FONT_SIZE = '1.15em';
     var input;
     if (td.dataset.multiline === '1') {
       input = document.createElement('textarea');
       input.rows = 2;
-      input.style.cssText = 'width:' + (td.dataset.inputWidth || '11em') + ';font-size:0.85em;padding:0.2em;font-family:inherit;';
+      input.style.cssText = 'width:' + (td.dataset.inputWidth || '11em') + ';font-size:' + EDIT_FONT_SIZE + ';padding:0.2em;font-family:inherit;';
     } else if (td.dataset.inputType === 'date') {
       input = document.createElement('input');
       input.type = 'date';
-      input.style.cssText = 'font-size:0.85em;padding:0.2em;width:9em;';
+      input.style.cssText = 'font-size:' + EDIT_FONT_SIZE + ';padding:0.2em;width:9em;';
       // M/D を YYYY-MM-DD に変換 (year は当年補完、未来日なら前年)
       if (currentValue && /^\d{1,2}\/\d{1,2}$/.test(currentValue)) {
         var parts = currentValue.split('/');
@@ -838,7 +840,7 @@ function excludeFromUniverse(codeS) {
     } else {
       input = document.createElement('input');
       input.type = 'text';
-      input.style.cssText = 'font-size:0.85em;padding:0.2em;width:' + (td.dataset.inputWidth || '6em') + ';';
+      input.style.cssText = 'font-size:' + EDIT_FONT_SIZE + ';padding:0.2em;width:' + (td.dataset.inputWidth || '6em') + ';';
     }
     if (input.tagName === 'TEXTAREA' || input.type === 'text') {
       input.value = currentValue;
