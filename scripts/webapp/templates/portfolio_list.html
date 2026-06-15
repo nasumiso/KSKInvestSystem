@@ -10,8 +10,9 @@
      他ページは max-width + 中央寄せで余白を作るが、本ページは全幅のため
      左右パディングで他ページと同程度の余白を再現する。 */
   main.container { width: 100%; max-width: none !important; padding-left: var(--pico-spacing) !important; padding-right: var(--pico-spacing) !important; }
-  /* 24 列をできるだけ表示するための列幅微調整 (issue #177 / #199 / #314)。
-     全体 font-size ダウン + セル padding 圧縮 + ヘッダ折り返し許可。 */
+  /* 多数の列をできるだけ表示するための列幅微調整 (issue #177 / #199 / #314)。
+     全体 font-size ダウン + セル padding 圧縮 + ヘッダ折り返し許可。
+     issue #327 で列を指標 (ページ1) / メモ (ページ2) に分割し、同時表示数を削減。 */
   table.portfolio-list { width: 100%; font-size: 0.76em; }
   table.portfolio-list th, table.portfolio-list td {
     padding: 0.25em 0.35em;
@@ -48,6 +49,50 @@
     white-space: pre-line;
     line-height: 1.2;
   }
+  /* issue #327: ページ切り替え (指標/メモ)。data-page="1" は指標ページ、
+     data-page="2" は手動メモページ。属性なしの列は両ページ共通。 */
+  table.portfolio-list [data-page="2"] { display: none; }
+  body.portfolio-page-2 table.portfolio-list [data-page="2"] { display: table-cell; }
+  body.portfolio-page-2 table.portfolio-list [data-page="1"] { display: none; }
+  /* Pico は [role=group] に width:100% を当てるため width:auto で打ち消す */
+  .page-toggle { display: inline-flex; gap: 0; flex: 0 0 auto; width: auto; margin: 0; }
+  .page-toggle button {
+    width: auto;  /* Pico の button width:100% を打ち消す */
+    padding: 0.3em 0.9em; font-size: 0.85em; margin: 0;
+    border: 1px solid #ccc; background: #fff; color: #555; cursor: pointer;
+  }
+  .page-toggle button:first-child { border-radius: 4px 0 0 4px; }
+  .page-toggle button:last-child { border-radius: 0 4px 4px 0; border-left: none; }
+  .page-toggle button.active { background: #4285f4; border-color: #4285f4; color: #fff; }
+  /* issue #327: IN理由・イナゴ元・売買メモの短縮表示セル (改行反映で2行まで、ホバーで全文)。
+     td に max-height は効かないため内側の .memo-clamp で line-clamp する */
+  table.portfolio-list td.memo-short-cell {
+    max-width: 12em;
+  }
+  table.portfolio-list td.memo-short-cell .memo-clamp {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    white-space: pre-line;
+    line-height: 1.2;
+  }
+  /* issue #327: 売買戦略 select のバッジ色 (定型値ごとに固定色、未分類/リスト外は警告色) */
+  select.trade-idea-select {
+    width: 100%; max-width: 11em; font-size: 1em; padding: 0 2px; margin: 0;
+    border: 1px solid transparent; border-radius: 3px; font-family: inherit;
+    background: #fce4e4; color: #a33;  /* デフォルト = 未分類 (警告色) */
+  }
+  select.trade-idea-select[data-idea="GARP"] { background: #d0e0f8; color: #1a4b8e; }
+  select.trade-idea-select[data-idea="ピーターリンチ"] { background: #b8d8f4; color: #0d3a6e; }
+  select.trade-idea-select[data-idea="中期テーマ"] { background: #d4ead4; color: #285028; }
+  select.trade-idea-select[data-idea="中期モメンタム"] { background: #fde0c0; color: #8a5200; }
+  select.trade-idea-select[data-idea="短期イベント"] { background: #e4d4f4; color: #5a2d82; }
+  select.trade-idea-select[data-idea="底値リバ"] { background: #c8ecec; color: #1a6b6b; }
+  select.trade-idea-select[data-idea="夢枠"] { background: #f8d8e8; color: #8e2a5a; }
+  select.trade-idea-select[data-idea="大型高配当"] { background: #ece8c0; color: #6e6200; }
+  select.trade-idea-select.saving { background: #fff8c4; }
+  select.trade-idea-select.error { background: #fce4e4; border-color: #d33; }
   /* overflow:auto + max-height で縦スクロールコンテナを作る。
      thead th の position:sticky (列名固定) はこのコンテナを基準に動くため、
      overflow-y / max-height を欠かすと sticky が壊れる (commit 0bba1b4)。
@@ -229,17 +274,24 @@
      title="現在のフィルタ結果をチャート一覧で確認">📊 チャート一覧</a>
 </form>
 
-<p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">
-  {% if total > 0 %}{{ total }} 件表示{% else %}0 件{% endif %}
-  {% if hold_summary %}
-  <span style="margin-left:1em;">
-    運用総額: {{ '{:,}'.format(hold_summary.total_man) }} 万円
-    /
-    保有株数更新日:
-    {% if hold_summary.qty_updated_at %}{{ hold_summary.qty_updated_at[:10] }}{% else %}未記録{% endif %}
-  </span>
-  {% endif %}
-</p>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:1em;flex-wrap:wrap;margin:0 0 0.4em 0;">
+  <p style="font-size:0.85em;color:#666;margin:0;">
+    {% if total > 0 %}{{ total }} 件表示{% else %}0 件{% endif %}
+    {% if hold_summary %}
+    <span style="margin-left:1em;">
+      運用総額: {{ '{:,}'.format(hold_summary.total_man) }} 万円
+      /
+      保有株数更新日:
+      {% if hold_summary.qty_updated_at %}{{ hold_summary.qty_updated_at[:10] }}{% else %}未記録{% endif %}
+    </span>
+    {% endif %}
+  </p>
+  {# issue #327: 列セットのページ切り替え (指標=自動算出 / メモ=手動入力)。テーブル直上に置く #}
+  <div class="page-toggle" role="group" aria-label="表示列の切り替え">
+    <button type="button" data-page-btn="1" class="active" title="ショートカット: 1">指標</button>
+    <button type="button" data-page-btn="2" title="ショートカット: 2">メモ</button>
+  </div>
+</div>
 
 {% if not fallback_mode %}
 <div id="manage-panel" style="display:none;">
@@ -267,35 +319,39 @@
 <div class="portfolio-table-wrap">
 <table class="portfolio-list">
   <thead>
+    {# issue #327: data-page なし = 両ページ共通、"1" = 指標ページ、"2" = メモページ #}
     <tr>
       {% if delete_mode_allowed %}<th class="bulk-col"></th>{% endif %}
-      <th></th>
       <th>コード</th>
       <th>銘柄名</th>
       <th><a href="{{ sort_urls.position }}">状態</a></th>
-      <th>評価</th>
       <th><a href="{{ sort_urls.gyoutai }}">業態・テーマ</a></th>
-      <th><a href="{{ sort_urls.rank }}">順位</a></th>
-      <th>売上成長(%)</th>
-      <th>利益成長(%)</th>
-      <th>PER</th>
-      <th>理論株価乖離(%)</th>
-      <th>配当(%)</th>
-      <th title="決算Q (進行中の四半期)">決算Q</th>
-      <th title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
-      <th>決算日</th>
-      <th>更新日</th>
-      <th>ステージ</th>
-      <th>チャートパターン</th>
-      <th>RS</th>
+      <th data-page="1">評価</th>
+      <th data-page="1"><a href="{{ sort_urls.rank }}">順位</a></th>
+      <th data-page="1">売上成長(%)</th>
+      <th data-page="1">利益成長(%)</th>
+      <th data-page="1">PER</th>
+      <th data-page="1">理論株価乖離(%)</th>
+      <th data-page="1">配当(%)</th>
+      <th data-page="1" title="決算Q (進行中の四半期)">決算Q</th>
+      <th data-page="1" title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
+      <th data-page="1">決算日</th>
+      <th data-page="1">RS</th>
       {# issue #332: ヘッダクリックで前日比RSライン騰落率の降順ソート。適用中はソートキーを明示 (▼前日比) #}
-      <th class="{% if active_sort == 'rs_change_1d' %}sort-active{% endif %}"
+      <th data-page="1" class="{% if active_sort == 'rs_change_1d' %}sort-active{% endif %}"
           title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸。クリックで前日比RSライン騰落率の降順ソート"><a href="{{ sort_urls['rs_change_1d'] }}">{% if active_sort == 'rs_change_1d' %}▼前日比{% else %}RS(20,5){% endif %}</a></th>
-      <th>トレンド</th>
-      <th>タグ</th>
-      <th title="ポ/ブ記号。ホバーで signal 全文 (発生日付含む)">シグナル</th>
-      <th title="バー背景の濃淡で買い集め評価 (A=濃 / E=薄、左=緑 / 右=赤)">需給バランス</th>
-      <th>時価総額</th>
+      <th data-page="1">トレンド</th>
+      <th data-page="1">タグ</th>
+      <th data-page="1" title="ポ/ブ記号。ホバーで signal 全文 (発生日付含む)">シグナル</th>
+      <th data-page="1" title="バー背景の濃淡で買い集め評価 (A=濃 / E=薄、左=緑 / 右=赤)">需給バランス</th>
+      <th data-page="1">時価総額</th>
+      <th data-page="2">更新日</th>
+      <th data-page="2">ステージ</th>
+      <th data-page="2">チャートパターン</th>
+      <th data-page="2" title="定型リストから単一選択。未分類は警告色">売買戦略</th>
+      <th data-page="2">イナゴ元</th>
+      <th data-page="2">IN理由</th>
+      <th data-page="2" title="旧: 高市感応度">売買メモ</th>
     </tr>
   </thead>
   <tbody>
@@ -312,11 +368,6 @@
         {% endif %}
       </td>
       {% endif %}
-      <td>
-        <details>
-          <summary style="cursor:pointer;list-style:none;">▸</summary>
-        </details>
-      </td>
       <td><a href="https://kabutan.jp/stock/chart?code={{ row.code_s }}" target="_blank" rel="noopener noreferrer">{{ row.code_s }}</a></td>
       <td title="{{ row.stock_name }}"
           style="max-width:10em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
@@ -346,7 +397,6 @@
                 aria-label="保有ステータスを変更">{{ row.status_label }}</button>
         {% endif %}
       </td>
-      <td class="rating-cell"{% if row.overall_rating in ('S', 'A') %} style="background:#fbbc04"{% endif %}>{{ row.overall_rating or "—" }}</td>
       <td class="gyoutai-themes-cell" data-code="{{ row.code_s }}"
           style="max-width:10em;padding:0 2px;line-height:0;{{ row.styles.gyoutai_themes or '' }}">
         {% set themes = row.memo.gyoutai_themes or [] %}
@@ -368,99 +418,77 @@
         </select>
         {% endfor %}
       </td>
-      <td style="{{ row.styles.rank or '' }}">{{ row.rank if row.rank is not none else "—" }}</td>
-      <td {% if row.gyoseki_tooltips.sales_growth %}title="{{ row.gyoseki_tooltips.sales_growth }}"{% endif %}
+      <td data-page="1" class="rating-cell"{% if row.overall_rating in ('S', 'A') %} style="background:#fbbc04"{% endif %}>{{ row.overall_rating or "—" }}</td>
+      <td data-page="1" style="{{ row.styles.rank or '' }}">{{ row.rank if row.rank is not none else "—" }}</td>
+      <td data-page="1" {% if row.gyoseki_tooltips.sales_growth %}title="{{ row.gyoseki_tooltips.sales_growth }}"{% endif %}
           style="{{ row.styles.sales_growth or '' }}">{{ row.sales_growth }}</td>
-      <td {% if row.gyoseki_tooltips.profit_growth %}title="{{ row.gyoseki_tooltips.profit_growth }}"{% endif %}
+      <td data-page="1" {% if row.gyoseki_tooltips.profit_growth %}title="{{ row.gyoseki_tooltips.profit_growth }}"{% endif %}
           style="{{ row.styles.profit_growth or '' }}">{{ row.profit_growth }}</td>
-      <td style="{{ row.styles.per or '' }}">{{ row.per }}</td>
-      <td style="{{ row.styles.theoretical_diff or '' }}">{{ row.theoretical_diff }}</td>
-      <td style="{{ row.styles.dividend or '' }}">{{ row.dividend }}</td>
-      <td>{{ row.quarter }}</td>
-      <td {% if row.gyoseki_tooltips.progress_diff %}title="{{ row.gyoseki_tooltips.progress_diff }}"{% endif %}
+      <td data-page="1" style="{{ row.styles.per or '' }}">{{ row.per }}</td>
+      <td data-page="1" style="{{ row.styles.theoretical_diff or '' }}">{{ row.theoretical_diff }}</td>
+      <td data-page="1" style="{{ row.styles.dividend or '' }}">{{ row.dividend }}</td>
+      <td data-page="1">{{ row.quarter }}</td>
+      <td data-page="1" {% if row.gyoseki_tooltips.progress_diff %}title="{{ row.gyoseki_tooltips.progress_diff }}"{% endif %}
           style="{{ row.styles.progress_diff or '' }}">{{ row.progress_diff }}</td>
-      <td data-style-field="kessanbi_md"
+      <td data-page="1" data-style-field="kessanbi_md"
           style="{{ row.styles.kessanbi_md or '' }}">{{ row.kessanbi_md }}</td>
-      <td title="クリックで編集 (M/D 形式)"
+      <td data-page="1" style="{{ row.styles.rs or '' }}">{{ row.rs }}</td>
+      {# issue #227: 株価 + RSライン 3点ミニチャート (旧 RSライン/株価向き 2列を統合) #}
+      <td data-page="1" title="{{ row.price_rs_chart.tooltip }}" style="padding:0 2px;line-height:0;">
+        {% if row.price_rs_chart.svg %}{{ row.price_rs_chart.svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
+      </td>
+      <td data-page="1" title="{{ row.trend_template_tooltip }}" style="width:40px;padding:0;line-height:0;text-align:center;{{ row.styles.trend_template or '' }}">
+        {% if row.kairi_gauge_svg %}{{ row.kairi_gauge_svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
+      </td>
+      <td data-page="1" title="{{ row.tags if row.tags != '—' else '' }}"
+          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
+      <td data-page="1" title="{{ row.signal_full or '' }}"
+          style="max-width:3em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.signal or '' }}">{{ row.signal_mark }}</td>
+      <td data-page="1" class="spr-gauge-cell" title="{{ row.spr_gauge.tooltip }}">{{ row.spr_gauge.svg|safe }}</td>
+      <td data-page="1" style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
+      {# issue #327: ページ2 (手動入力)。更新日/ステージ/チャートパターンをページ1から移設 #}
+      <td data-page="2" title="クリックで編集 (M/D 形式)"
           data-style-field="last_research_update"
           {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="last_research_update"{% endif %}
           style="{{ row.styles.last_research_update or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.last_research_update or "—" }}</td>
-      <td title="クリックで編集 (ステージ変更時は更新日も自動で当日に) / Ctrl+クリックで株探チャート"
+      <td data-page="2" title="クリックで編集 (ステージ変更時は更新日も自動で当日に) / Ctrl+クリックで株探チャート"
           data-style-field="stage"
           class="stage-cell{% if not fallback_mode %} editable{% endif %}"
           {% if not fallback_mode %}data-code="{{ row.code_s }}" data-field="stage" data-touch-update="1"{% endif %}
           style="{{ row.styles.stage or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.stage or "—" }}</td>
-      <td title="{{ ((row.memo.jukyu_chart or '') ~ ' (クリックで編集)') if (not fallback_mode and row.memo.jukyu_chart) else ('クリックで編集' if not fallback_mode else (row.memo.jukyu_chart or '')) }}"
+      <td data-page="2" title="{{ ((row.memo.jukyu_chart or '') ~ ' (クリックで編集)') if (not fallback_mode and row.memo.jukyu_chart) else ('クリックで編集' if not fallback_mode else (row.memo.jukyu_chart or '')) }}"
           data-full="{{ row.memo.jukyu_chart or '' }}"
           {% if not fallback_mode %}class="editable jukyu-cell" data-code="{{ row.code_s }}" data-field="jukyu_chart" data-multiline="1" data-input-width="8em"{% else %}class="jukyu-cell"{% endif %}
           style="{% if not fallback_mode %}cursor:pointer{% endif %}">{{ row.memo.jukyu_chart or "—" }}</td>
-      <td style="{{ row.styles.rs or '' }}">{{ row.rs }}</td>
-      {# issue #227: 株価 + RSライン 3点ミニチャート (旧 RSライン/株価向き 2列を統合) #}
-      <td title="{{ row.price_rs_chart.tooltip }}" style="padding:0 2px;line-height:0;">
-        {% if row.price_rs_chart.svg %}{{ row.price_rs_chart.svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
-      </td>
-      <td title="{{ row.trend_template_tooltip }}" style="width:40px;padding:0;line-height:0;text-align:center;{{ row.styles.trend_template or '' }}">
-        {% if row.kairi_gauge_svg %}{{ row.kairi_gauge_svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
-      </td>
-      <td title="{{ row.tags if row.tags != '—' else '' }}"
-          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
-      <td title="{{ row.signal_full or '' }}"
-          style="max-width:3em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.signal or '' }}">{{ row.signal_mark }}</td>
-      <td class="spr-gauge-cell" title="{{ row.spr_gauge.tooltip }}">{{ row.spr_gauge.svg|safe }}</td>
-      <td style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
-    </tr>
-    <tr class="row-detail" id="detail-{{ row.code_s }}" style="display:none;">
-      {# 状態列 + 評価/需給列を含む全列に展開行を合わせる #}
-      <td colspan="{% if delete_mode_allowed %}26{% else %}25{% endif %}" style="background:#f8f8f8;padding:0.8em 1em;">
-        <div style="display:flex;flex-wrap:wrap;gap:0.8em;align-items:flex-start;">
-          {% if row.gyoseki.isKonki %}
-          <div style="flex:0 0 auto;">
-            <strong style="font-size:0.85em;color:#666;">今期</strong>
-          </div>
+      {# issue #327: 売買戦略 (定型リスト単一選択 + 色分けバッジ)。
+         リスト外の旧自由記述値は ⚠️ 付き option を差し込んで保持し、再分類を促す #}
+      {% set current_idea = row.memo.trade_idea or '' %}
+      <td data-page="2" style="padding:0 2px;">
+        <select class="trade-idea-select"
+                data-code="{{ row.code_s }}"
+                data-idea="{{ current_idea }}"
+                title="売買戦略 (選択で即保存)"
+                {% if fallback_mode %}disabled{% endif %}>
+          <option value="">未分類</option>
+          {% if current_idea and current_idea not in trade_idea_options %}
+          <option value="{{ current_idea }}" selected>⚠️ {{ current_idea }}</option>
           {% endif %}
-          <div style="flex:0 1 auto;min-width:300px;max-width:60em;">
-            <strong style="font-size:0.85em;color:#666;">手動メモ</strong>
-            {% if not fallback_mode %}
-            <form action="/portfolio/{{ row.code_s }}/memo" method="POST"
-                  style="display:grid;grid-template-columns:1fr 1fr;gap:0.6em 1em;margin:0.3em 0 0 0;font-size:0.95em;">
-              <input type="hidden" name="return_query" value="{{ return_query }}">
-              {# 業態・テーマ / 更新日 / ステージ は表内 inline 編集に移動 (issue #177)。
-                 需給チャート (チャートパターン列) も表内 inline 編集に移動 (issue #314) #}
-              {% for field, label in [
-                  ("watch_in_reason", "IN 理由"),
-                  ("inago_origin", "イナゴ元"),
-                  ("trade_idea", "売買アイデア"),
-                  ("takaichi_sensitivity", "高市感応度"),
-              ] %}
-              <label style="display:flex;flex-direction:column;gap:0.1em;margin:0;">
-                <span style="color:#666;">{{ label }}</span>
-                <textarea name="{{ field }}" rows="2"
-                          style="font-size:0.95em;padding:0.3em;margin:0;font-family:inherit;"
-                          >{{ row.memo[field] or "" }}</textarea>
-              </label>
-              {% endfor %}
-              <button type="submit"
-                      style="grid-column:1 / -1;justify-self:end;padding:0.3em 0.6em;font-size:0.95em;margin:0.2em 0 0 0;">
-                メモを保存
-              </button>
-            </form>
-            {% else %}
-            {# フォールバックモード時は読み取り専用表示を維持 #}
-            {% if row.memo.last_research_update %}
-            <span style="font-size:0.85em;color:#999;margin-left:0.5em;">調査更新日: {{ row.memo.last_research_update }}</span>
-            {% endif %}
-            <ul style="font-size:0.85em;margin:0.3em 0 0 1em;padding:0;">
-              <li><strong>IN 理由:</strong> {{ row.memo.watch_in_reason or "—" }}</li>
-              <li><strong>売買アイデア:</strong> {{ row.memo.trade_idea or "—" }}</li>
-              <li><strong>イナゴ元:</strong> {{ row.memo.inago_origin or "—" }}</li>
-              <li><strong>高市感応度:</strong> {{ row.memo.takaichi_sensitivity or "—" }}</li>
-              <li><strong>需給チャート:</strong> {{ row.memo.jukyu_chart or "—" }}</li>
-            </ul>
-            {% endif %}
-          </div>
-        </div>
+          {% for idea in trade_idea_options %}
+          <option value="{{ idea }}" {% if idea == current_idea %}selected{% endif %}>{{ idea }}</option>
+          {% endfor %}
+        </select>
       </td>
+      {# issue #327: イナゴ元 / IN理由 / 売買メモ (旧: 高市感応度) は短縮表示 + inline 編集 #}
+      {% for memo_field, input_width in [("inago_origin", "10em"), ("watch_in_reason", "14em"), ("takaichi_sensitivity", "14em")] %}
+      {% set memo_value = row.memo[memo_field] or '' %}
+      <td data-page="2"
+          title="{{ (memo_value ~ ' (クリックで編集)') if (not fallback_mode and memo_value) else ('クリックで編集' if not fallback_mode else memo_value) }}"
+          data-full="{{ memo_value }}"
+          {% if not fallback_mode %}class="editable memo-short-cell" data-code="{{ row.code_s }}" data-field="{{ memo_field }}" data-multiline="1" data-input-width="{{ input_width }}"{% else %}class="memo-short-cell"{% endif %}
+          style="{% if not fallback_mode %}cursor:pointer{% endif %}">{%- if memo_value -%}<div class="memo-clamp">{{ memo_value }}</div>{%- else -%}—{%- endif -%}</td>
+      {% endfor %}
     </tr>
+    {# issue #327: 手動メモの展開パネルは廃止。全項目をページ2の列 (inline 編集) に移設 #}
     {% endfor %}
   </tbody>
 </table>
@@ -546,18 +574,27 @@
 </style>
 
 <script>
-// summary クリックで対応する .row-detail を展開
-document.querySelectorAll('table details').forEach(function(d) {
-  d.addEventListener('toggle', function() {
-    var row = d.closest('tr');
-    var nextRow = row.nextElementSibling;
-    if (nextRow && nextRow.classList.contains('row-detail')) {
-      nextRow.style.display = d.open ? '' : 'none';
-    }
-    var summary = d.querySelector('summary');
-    if (summary) summary.textContent = d.open ? '▾' : '▸';
+// ========== ページ切り替え (issue #327: 指標=自動算出 / メモ=手動入力) ==========
+(function() {
+  var buttons = document.querySelectorAll('.page-toggle button[data-page-btn]');
+  function switchPage(pageBtn) {
+    document.body.classList.toggle('portfolio-page-2', pageBtn.dataset.pageBtn === '2');
+    buttons.forEach(function(b) { b.classList.toggle('active', b === pageBtn); });
+  }
+  buttons.forEach(function(btn) {
+    btn.addEventListener('click', function() { switchPage(btn); });
   });
-});
+  // キーボードショートカット: 1=指標 / 2=メモ (入力フォーカス中は無効)
+  document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.key === '1' || e.key === '2') {
+      var btn = document.querySelector('.page-toggle button[data-page-btn="' + e.key + '"]');
+      if (btn) switchPage(btn);
+    }
+  });
+})();
 
 {% if not fallback_mode %}
 // ========== 保有状態モーダル ==========
@@ -691,10 +728,23 @@ function excludeFromUniverse(codeS) {
     td.textContent = value || '—';
   }
 
+  // 短縮表示 (data-full 全文保持 + 改行反映2行省略) する memo フィールド (issue #314 / #327)
+  var SHORT_TEXT_FIELDS = ['jukyu_chart', 'inago_origin', 'watch_in_reason', 'takaichi_sensitivity'];
+
   function renderJukyu(td, value) {
     td.dataset.full = value || '';
     td.title = value ? value + ' (クリックで編集)' : 'クリックで編集';
-    td.textContent = value || '—';
+    td.innerHTML = '';
+    if (!value) {
+      td.textContent = '—';
+      return;
+    }
+    // memo-short-cell では .memo-clamp の CSS (line-clamp 2) が効く。
+    // jukyu-cell ではセレクタ外のため素の div となり従来通り pre-line 全行表示。
+    var div = document.createElement('div');
+    div.className = 'memo-clamp';
+    div.textContent = value;
+    td.appendChild(div);
   }
 
   // PORTFOLIO_COLORS のうち背景色に使われる HEX (compute_cell_styles の bg() / bg_with_white() 出力)。
@@ -852,7 +902,7 @@ function excludeFromUniverse(codeS) {
           alert('保存失敗: ' + (res.body && res.body.error || 'unknown'));
           // 元値で再描画
           if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
-          else if (field === 'jukyu_chart') renderJukyu(td, currentValue);
+          else if (SHORT_TEXT_FIELDS.indexOf(field) !== -1) renderJukyu(td, currentValue);
           else renderPlain(td, currentValue);
           return;
         }
@@ -860,7 +910,7 @@ function excludeFromUniverse(codeS) {
         var disp = (res.body.display) || {};
         var displayValue = (disp[field] !== undefined) ? disp[field] : newValue;
         if (field === 'gyoutai_theme') renderGyoutaiTheme(td, displayValue);
-        else if (field === 'jukyu_chart') renderJukyu(td, displayValue);
+        else if (SHORT_TEXT_FIELDS.indexOf(field) !== -1) renderJukyu(td, displayValue);
         else renderPlain(td, displayValue);
 
         // ステージ編集時は同じ行の last_research_update セルも更新
@@ -880,7 +930,7 @@ function excludeFromUniverse(codeS) {
       }).catch(function(err) {
         alert('保存失敗: ' + err);
         if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
-        else if (field === 'jukyu_chart') renderJukyu(td, currentValue);
+        else if (SHORT_TEXT_FIELDS.indexOf(field) !== -1) renderJukyu(td, currentValue);
         else renderPlain(td, currentValue);
       });
     }
@@ -890,7 +940,7 @@ function excludeFromUniverse(codeS) {
       finished = true;
       td.dataset.editing = '';
       if (field === 'gyoutai_theme') renderGyoutaiTheme(td, currentValue);
-      else if (field === 'jukyu_chart') renderJukyu(td, currentValue);
+      else if (SHORT_TEXT_FIELDS.indexOf(field) !== -1) renderJukyu(td, currentValue);
       else renderPlain(td, currentValue);
     }
 
@@ -975,6 +1025,45 @@ function excludeFromUniverse(codeS) {
         if (!v) return;
         e.preventDefault();
         window.open('/portfolio?gyoutai_theme=' + encodeURIComponent(v), '_blank', 'noopener');
+      });
+    });
+  });
+})();
+
+// ========== 売買戦略 inline 編集 (issue #327) ==========
+// select の change で即 POST。保存成功で data-idea を更新しバッジ色を反映、失敗時は元値に戻す。
+(function() {
+  document.querySelectorAll('select.trade-idea-select').forEach(function(sel) {
+    if (sel.disabled) return;
+    sel.addEventListener('change', function() {
+      var code = sel.dataset.code;
+      var prev = sel.dataset.idea || '';
+      var fd = new FormData();
+      fd.append('trade_idea', sel.value);
+      sel.classList.add('saving');
+      sel.classList.remove('error');
+      fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: fd,
+      }).then(function(r) {
+        return r.json().then(function(json) { return { ok: r.ok, json: json }; });
+      }).then(function(res) {
+        sel.classList.remove('saving');
+        if (!res.ok || !res.json || res.json.ok !== true) {
+          sel.classList.add('error');
+          sel.value = prev;
+          alert((res.json && res.json.error) || '売買戦略の保存に失敗しました');
+          return;
+        }
+        var saved = (res.json.display && res.json.display.trade_idea) || '';
+        sel.dataset.idea = saved;
+        sel.value = saved;
+      }).catch(function(err) {
+        sel.classList.remove('saving');
+        sel.classList.add('error');
+        sel.value = prev;
+        alert('通信エラー: ' + err);
       });
     });
   });

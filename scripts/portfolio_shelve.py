@@ -101,9 +101,9 @@ MEMO_FIELDS = frozenset(
         "gyoutai_theme",          # 旧: 業態・テーマ (str/改行区切り、移行期間中のみ残す。issue #187)
         "gyoutai_themes",         # 新: 業態・テーマ (list[str]、UI では最大2件)
         "watch_in_reason",        # ウォッチ・IN理由
-        "trade_idea",             # 投資売買アイデア
+        "trade_idea",             # 売買戦略 (旧: 投資売買アイデア)
         "inago_origin",           # イナゴ元・きっかけ
-        "takaichi_sensitivity",   # 高市感応度
+        "takaichi_sensitivity",   # 売買メモ (旧: 高市感応度)
         "last_research_update",   # 銘柄調査スプシでの更新日 (M/D 形式、年なし)
         "stage",                  # ステージ評価 (例: "1S", "2S(3T)", "3S")
         "jukyu_chart",            # 需給チャートメモ (例: "月足低位ブレイク CWH")
@@ -115,6 +115,21 @@ MEMO_LIST_FIELDS = frozenset({"gyoutai_themes"})
 
 # gyoutai_themes の UI スロット上限 (issue #187)
 GYOUTAI_THEMES_MAX_SLOTS = 2
+
+# trade_idea (売買戦略) の定型リスト (issue #327: 自由記述から単一選択式へ移行)。
+# 空文字 = 未分類。リスト外の既存値 (旧自由記述) は update_memo で保持を許可する (救済)。
+# CSV 移行 (create_record 経由) はこのチェックを通らないため自由記述のまま格納される。
+# 時間軸は戦略名に内包する (中期テーマ等)。各戦略の定義・決算またぎ可否は編集画面 issue で管理予定。
+TRADE_IDEA_OPTIONS = (
+    "GARP",            # 中長期: 安定成長株を押し目・一時的売り込まれ局面で拾う
+    "ピーターリンチ",    # 中長期: 身近な実感で好印象の銘柄を持つ
+    "中期テーマ",        # 中期: 相場の物色テーマの波に乗る
+    "中期モメンタム",    # 中期: 新高値ブレイク順張り 2〜3ヶ月保有 (メイン戦略)
+    "短期イベント",      # 短期: 決算・材料・政策などカタリスト狙い
+    "底値リバ",          # 短期: 下げすぎリバ。サイズ小・機械的利確損切り
+    "夢枠",             # 長期: 2〜3年の夢に乗る。現物放置
+    "大型高配当",        # 恒常: PF安定・信用代用
+)
 
 ACTION_LOG_FIELDS = frozenset(
     {
@@ -1265,6 +1280,19 @@ def update_memo(
                         f"portfolio_shelve: theme {t!r} はマスター未登録のため新規付与できません"
                     )
                 normalized_fields["gyoutai_themes"] = cleaned
+
+            # trade_idea の定型値チェック (issue #327)
+            # - 空文字 (未分類) と TRADE_IDEA_OPTIONS 内の値は採用
+            # - リスト外でも現行レコードに既に入っている値は保持を許可 (旧自由記述の救済)
+            # - 純新規のリスト外値は ValueError
+            if "trade_idea" in normalized_fields:
+                idea = normalized_fields["trade_idea"]
+                current_idea = current_memo.get("trade_idea", "")
+                if idea and idea not in TRADE_IDEA_OPTIONS and idea != current_idea:
+                    raise ValueError(
+                        f"portfolio_shelve: trade_idea {idea!r} は定型リスト外のため"
+                        f"新規付与できません (許容値: {list(TRADE_IDEA_OPTIONS)})"
+                    )
 
             changed = any(
                 current_memo.get(k, _current_default(k)) != v
