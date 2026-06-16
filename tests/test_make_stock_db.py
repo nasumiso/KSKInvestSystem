@@ -341,6 +341,22 @@ class TestExtractSignals:
         stock = {"pocket_pivot": ["06/03,2"], "trend_template": []}
         assert make_stock_db.extract_signals(stock) == []
 
+    @pytest.mark.parametrize("suffix, expect_per", [
+        (",13,256", 256),  # 3要素: per あり (マーカー強度バケット用)
+        (",13", None),     # 旧2要素: per 欠落 → 描画側で固定サイズにフォールバック
+    ])
+    def test_extended_per_parsed(self, suffix, expect_per):
+        """include_extended=True で breakout_extended の3要素目を extended_per に読む。
+        旧2要素データは extended_per を持たない (後方互換)。"""
+        today = datetime.today()
+        d = (today - timedelta(days=3)).strftime("%m/%d")  # 当日だと年補完で前年化するため数日前
+        stock, _ = self._stock(breakout_extended=[d + suffix])
+        signals = make_stock_db.extract_signals(
+            stock, max_delta_days=None, include_extended=True)
+        ext = [s for s in signals if s.get("extended")]
+        assert len(ext) == 1
+        assert ext[0].get("extended_per") == expect_per
+
     def test_max_delta_none_keeps_older_signal(self):
         """max_delta_days=None なら 10日超でも access_date_price 基準で取得する"""
         today = datetime.today()

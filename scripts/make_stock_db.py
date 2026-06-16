@@ -1130,6 +1130,13 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
             }
             if extended:
                 entry["extended"] = True
+                # 3要素目があれば出来高超過率 (描画側のマーカー強度バケット用)。
+                # 旧2要素データは per なし → 描画側で従来の固定サイズにフォールバック。
+                if len(spl) >= 3:
+                    try:
+                        entry["extended_per"] = int(spl[2])
+                    except ValueError:
+                        pass
             out.append(entry)
     return out
 

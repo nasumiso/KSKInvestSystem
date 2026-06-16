@@ -1999,11 +1999,11 @@ def _signal_freshness_alpha(delta: int) -> float:
 # ポ/ブシグナルの強度バケット (issue #253)。
 # tooltip 文言 (_build_signal_display) とチャートマーカーサイズ (項目3) で共有する。
 def _signal_strength_bucket(kind: str, num: int) -> str:
-    """シグナル種別と保存数値から強度ラベル 強/中/弱 を返す。
+    """シグナル種別と保存数値から強度ラベルを返す。
 
-    ポ: num = MA10乖離率% (小さい=MAに近い良い位置=強)。
-    ブ: num = 出来高超過率% (大きい=出来高急増=強)。
-    しきい値は暫定 (issue #253)、実データで要調整。
+    ポ: num = MA10乖離率% (小さい=MAに近い良い位置=強)。3段階 (強/中/弱)。
+    ブ: num = 出来高超過率% (大きい=出来高急増=強)。4段階 (特強/強/中/弱)。
+        しきい値 500/200/100 は DB全体3046件の分布で校正 (特強=上位約10%)。
     """
     if kind == "ポ":
         if num >= -1:
@@ -2012,6 +2012,8 @@ def _signal_strength_bucket(kind: str, num: int) -> str:
             return "中"
         return "弱"
     # ブ
+    if num >= 500:
+        return "特強"
     if num >= 200:
         return "強"
     if num >= 100:
@@ -2037,7 +2039,7 @@ def _build_signal_display(stock: Dict[str, Any]) -> Dict[str, str]:
         signals = extract_signals(stock)
     except Exception:  # noqa: BLE001
         return empty
-    strength_alpha = {"強": 0.85, "中": 0.55, "弱": 0.30}
+    strength_alpha = {"特強": 1.0, "強": 0.85, "中": 0.55, "弱": 0.30}
     tmpls = {
         "ポ": "[ポ] %s %s 押し目買い圧(MA10乖離 %d) / %d日前",
         "ブ": "[ブ] %s %s 出来高ブレイク(出来高+%d%%) / %d日前",
@@ -2690,8 +2692,13 @@ def _resolve_signal_markers(stock, window_dates, xs):
             "sig_date": s["sig_date"],
         }
         if s.get("extended"):
-            # extended は強度を出さない (出来高の大きさを強調すると高値追い規律と逆行)。
             m["extended"] = True
+            # extended_per (出来高超過率) があれば通常ブレイクと同じ強度バケットで
+            # マーカーサイズを決める。旧2要素データは per なし → strength を付けず
+            # 描画側で固定サイズにフォールバックする。
+            per = s.get("extended_per")
+            if per is not None:
+                m["strength"] = _signal_strength_bucket("ブ", per)
         else:
             m["strength"] = _signal_strength_bucket(s["kind"], s["num"])
         markers.append(m)
@@ -3145,12 +3152,14 @@ def build_price_rs_chart_full(
     # 詳細チャートは発生日が X 位置で読めるため鮮度による半透明化は行わない。最前面に描く。
     if window_dates:
         markers = _resolve_signal_markers(stock, window_dates, xs)
-        size_map = {"強": 6.0, "中": 4.5, "弱": 3.0}
-        opa_map = {"強": 1.0, "中": 0.8, "弱": 0.6}
+        # ブは4段階 (特強/強/中/弱)、ポは3段階 (強/中/弱) で特強は使わない。
+        # サイズは等差1.5。opacity は強で上限 (1.0) のため特強も 1.0。
+        size_map = {"特強": 7.5, "強": 6.0, "中": 4.5, "弱": 3.0}
+        opa_map = {"特強": 1.0, "強": 1.0, "中": 0.8, "弱": 0.6}
         # ポは三角・ブは菱形。視認性調整: ポは控えめに縮小、ブは強調して拡大。
         PO_SIZE_SCALE = 0.8
         BU_SIZE_SCALE = 1.8
-        EXT_SIZE = 4.5  # extended は強度を持たないので固定サイズ
+        EXT_SIZE = 4.5  # extended の per 未保存 (旧データ) 時の固定サイズ
         # マーカー専用バンド内: ポは下段、ブはその上の段 (同発生週の重なり回避)。
         y_po = label_y + 16  # 日付ラベル baseline の下
         y_bu = y_po - 6
@@ -3159,13 +3168,15 @@ def build_price_rs_chart_full(
             # づらい (週バーは月曜ラベルで週末終値を示すため視覚的にズレる)。
             # 発生日 (M/D) を tooltip に明示して誤読を防ぐ。
             sig_md = "%d/%d" % (m["sig_date"].month, m["sig_date"].day)
-            # extended (高値追い圏で正規ブレイクから弾かれた候補): strength を持たない
-            # ため size_map 参照より前に分岐。半透明・中抜きの橙ダイヤで弱く表示し、
-            # tooltip に乖離と「対象外」を明記する。num は MA10乖離%。
+            # extended (高値追い圏で正規ブレイクから弾かれた候補): 中抜き・半透明の
+            # 橙ダイヤで「対象外」を表しつつ、サイズは通常ブレイクと同じ強度バケット
+            # (出来高超過率) に連動させる。per 未保存の旧データは strength を持たない
+            # ため固定サイズ EXT_SIZE にフォールバック。num は MA10乖離% で tooltip に出す。
             if m.get("extended"):
+                ext_size = size_map[m["strength"]] if m.get("strength") else EXT_SIZE
                 title = "ブ(extended) %s 乖離+%d%% 高値追い圏・対象外" % (sig_md, m["num"])
                 parts.append(_svg_diamond(
-                    m["x"], y_bu, EXT_SIZE * BU_SIZE_SCALE, "#f57c00", 0.3, title, filled=False))
+                    m["x"], y_bu, ext_size * BU_SIZE_SCALE, "#f57c00", 0.5, title, filled=False))
                 continue
             size = size_map[m["strength"]]
             title = "%s %s (%s)" % (m["kind"], sig_md, m["strength"])
