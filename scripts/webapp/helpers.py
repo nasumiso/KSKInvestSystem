@@ -2602,6 +2602,21 @@ def _svg_circle(cx: float, cy: float, r: float, color: str) -> str:
     return f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{color}"/>'
 
 
+def _svg_hover_rect(cx: float, cy: float, half_w: float, half_h: float, title: str = "") -> str:
+    """透明 hover ターゲット矩形を返す。
+
+    SVG title は細い polygon だと hover しづらいことがあるため、見た目とは別に
+    マーカー周辺へ当たり判定を広げる。fill-opacity=0 だとブラウザによっては
+    hover 判定が不安定なため、ごく薄い不透明度を使う。
+    """
+    t = "<title>%s</title>" % html.escape(title) if title else ""
+    return (
+        '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" '
+        'fill="#fff" fill-opacity="0.001">%s</rect>'
+        % (cx - half_w, cy - half_h, half_w * 2, half_h * 2, t)
+    )
+
+
 def _svg_triangle(cx: float, cy: float, size: float, color: str,
                   opacity: float = 1.0, title: str = "") -> str:
     """上向き三角マーカー (issue #253: ポケットピボット用)。"""
@@ -3042,6 +3057,10 @@ def build_price_rs_chart_full(
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" style="display:block;">'
     ]
+    # 詳細チャートは親要素 title を使わず、SVG 内で hover 領域を分ける。
+    # 非シグナル要素は pointer-events を切り、チャート本体の透明 hover 面だけが
+    # RS 系 tooltip を出す。マーカーバンドはポ/ブ polygon の title のみ有効にする。
+    parts.append('<g pointer-events="none">')
 
     # 背景枠
     parts.append(
@@ -3146,6 +3165,19 @@ def build_price_rs_chart_full(
             f'fill="#1976d2" font-weight="bold" text-anchor="end">{_format_pct_axis(rs_pct[-1])}</text>'
         )
 
+    # RS(0~99)履歴を右Y軸 (0~99 固定) で右端側に重畳 (最前面)。
+    # 横軸は週足スケールのまま、RS各点は実日付で週足軸 (window_dates/xs) にマップ。
+    # 営業日カレンダー突き合わせは日足 price_log を使う (price_log 引数は週足台帳のため)。
+    daily_price_log = (stock or {}).get("price_log") or []
+    _overlay_rs_rank(
+        parts, rank_pts, daily_price_log,
+        window_dates=window_dates, xs=xs,
+        chart_top=chart_top, chart_h=chart_h,
+        pad_x=pad_x, inner_w=inner_w, pad_right=pad_right,
+    )
+
+    parts.append("</g>")
+
     # ポ/ブ発生日マーカー (issue #253): ポ=緑三角 / ブ=橙ダイヤ。
     # X は発生日を週幅で日割り按分、Y は X軸 + 日付ラベルの下に常設したマーカー専用バンド
     # (騰落率Y軸と無関係) に配置し、株価線/RS線と完全分離する。サイズは強度バケット。
@@ -3175,26 +3207,26 @@ def build_price_rs_chart_full(
             if m.get("extended"):
                 ext_size = size_map[m["strength"]] if m.get("strength") else EXT_SIZE
                 title = "ブ(extended) %s 乖離+%d%% 高値追い圏・対象外" % (sig_md, m["num"])
+                parts.append(_svg_hover_rect(m["x"], y_bu, 8.0, 8.0, title))
                 parts.append(_svg_diamond(
                     m["x"], y_bu, ext_size * BU_SIZE_SCALE, "#f57c00", 0.5, title, filled=False))
                 continue
             size = size_map[m["strength"]]
             title = "%s %s (%s)" % (m["kind"], sig_md, m["strength"])
             if m["kind"] == "ポ":
+                parts.append(_svg_hover_rect(m["x"], y_po, 8.0, 8.0, title))
                 parts.append(_svg_triangle(m["x"], y_po, size * PO_SIZE_SCALE, "#2e7d32", 1.0, title))
             else:  # ブ
+                parts.append(_svg_hover_rect(m["x"], y_bu, 8.0, 8.0, title))
                 parts.append(_svg_diamond(m["x"], y_bu, size * BU_SIZE_SCALE, "#f57c00", opa_map[m["strength"]], title))
 
-    # RS(0~99)履歴を右Y軸 (0~99 固定) で右端側に重畳 (最前面)。
-    # 横軸は週足スケールのまま、RS各点は実日付で週足軸 (window_dates/xs) にマップ。
-    # 営業日カレンダー突き合わせは日足 price_log を使う (price_log 引数は週足台帳のため)。
-    daily_price_log = (stock or {}).get("price_log") or []
-    _overlay_rs_rank(
-        parts, rank_pts, daily_price_log,
-        window_dates=window_dates, xs=xs,
-        chart_top=chart_top, chart_h=chart_h,
-        pad_x=pad_x, inner_w=inner_w, pad_right=pad_right,
-    )
+    if tooltip:
+        chart_hover_h = chart_top + chart_h + 2
+        parts.append(
+            '<rect x="0" y="0" width="%d" height="%.1f" fill="#fff" fill-opacity="0">'
+            '<title>%s</title></rect>'
+            % (width, chart_hover_h, html.escape(tooltip))
+        )
 
     parts.append("</svg>")
     return ("".join(parts), tooltip)

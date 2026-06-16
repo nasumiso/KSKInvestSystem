@@ -1,5 +1,6 @@
 """webapp/helpers.py のテスト (tmp_path で一時DBを作成)"""
 
+import html
 import os
 
 import pytest
@@ -3251,13 +3252,34 @@ class TestSignalDisplay:
         assert "<title>ブ %s " % sig_md in svg
         # ポの強度でサイズが変わる: 強(乖離0, size6) vs 弱(乖離-5, size3)
         svg_strong, _ = helpers.build_price_rs_chart_full(
-            price_log, [], False, stock=_stock(pp=["%s,0" % mmdd]))
+            price_log, rs_line, False, stock=_stock(pp=["%s,0" % mmdd]))
         svg_weak, _ = helpers.build_price_rs_chart_full(
-            price_log, [], False, stock=_stock(pp=["%s,-5" % mmdd]))
+            price_log, rs_line, False, stock=_stock(pp=["%s,-5" % mmdd]))
         assert svg_strong != svg_weak  # サイズ差で polygon 座標が変わる
         # stock なしなら polygon は出ない
         svg2, _ = helpers.build_price_rs_chart_full(price_log, [], False)
         assert "#f57c00" not in svg2
+
+    def test_chart_marker_band_uses_signal_tooltip_only(self):
+        """詳細チャートはRS hover面とシグナルマーカー帯を分離する。"""
+        from datetime import timedelta
+        anchor_now, anchor_day = self._anchor()
+        price_log = [(anchor_day - timedelta(weeks=i), 1000 + i) for i in range(20)]
+        rs_line = [(anchor_day - timedelta(weeks=i), 1.0 + i * 0.01) for i in range(20)]
+        mmdd = anchor_day.strftime("%m/%d")
+        stock = {
+            "trend_template": [],
+            "access_date_price": anchor_now,
+            "breakout": ["%s,180" % mmdd],
+        }
+
+        svg, tooltip = helpers.build_price_rs_chart_full(price_log, rs_line, False, stock=stock)
+
+        assert '<g pointer-events="none">' in svg
+        assert '<rect x="0" y="0"' in svg
+        assert "<title>%s</title></rect>" % html.escape(tooltip) in svg
+        assert 'fill-opacity="0.001"' in svg
+        assert "<title>ブ %d/%d " % (anchor_day.month, anchor_day.day) in svg
 
 
 class TestBuildTrendInfoMa10:
