@@ -272,6 +272,9 @@
   <a href="{{ url_for('portfolio.charts') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
      style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
      title="現在のフィルタ結果をチャート一覧で確認">📊 チャート一覧</a>
+  <a href="{{ url_for('portfolio.shikiho_page') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
+     style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
+     title="四季報コメントを順次更新">📝 四季報更新</a>
 </form>
 
 <div style="display:flex;align-items:center;justify-content:space-between;gap:1em;flex-wrap:wrap;margin:0 0 0.4em 0;">

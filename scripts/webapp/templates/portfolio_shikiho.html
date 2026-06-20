@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block title %}四季報順次更新 - Shintakane Research{% endblock %}
+
+{% block content %}
+{# issue #313: portfolio 銘柄の四季報コメントを 1 銘柄ずつ順次更新する専用ページ。
+   銘柄切替・AJAX 取得・自動保存はこのページ内の専用 JS で完結 (app.js の四季報 JS は
+   銘柄切替と相性が悪いため再利用しない)。四季報本体は切替時に都度 GET で取得 (方式b)。 #}
+<style>
+  .sk-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.9em;
+    padding: 0.4em 0.6em; margin-bottom: 0.5em;
+    background: #f5f7fa; border: 1px solid #d8dee6; border-radius: 4px;
+    font-size: 0.9em;
+  }
+  .sk-bar .nav-btn {
+    padding: 0.2em 0.8em; font-size: 0.9em; border: 1px solid #bbb;
+    background: #fff; color: #333; border-radius: 3px; cursor: pointer;
+  }
+  .sk-progress { color: #555; }
+  .sk-count { color: #555; }
+  .sk-header { margin-bottom: 0.6em; font-size: 1.05em; }
+  .sk-header .name { font-weight: 600; color: #222; text-decoration: none; }
+  .sk-header .name:hover { text-decoration: underline; }
+  .sk-header .kabu { color: #555; font-size: 0.85em; text-decoration: none; margin-left: 0.6em; }
+  .sk-header .done-mark { color: #1a3; font-weight: 700; margin-left: 0.5em; }
+  .memo-field { margin-bottom: 0.8em; }
+  .memo-field label { display: block; font-size: 0.85em; color: #555; margin-bottom: 0.2em; }
+  .shikiho-entry { display: flex; align-items: start; gap: 0.3em; margin-bottom: 0.3em; }
+  .shikiho-entry .period { font-size: 0.8em; color: #888; min-width: 3em; padding-top: 0.6em; }
+</style>
+
+<div style="margin-bottom:0.4em;">
+  <a href="{{ url_for('portfolio.dashboard') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
+     style="font-size:0.85em;color:#555;text-decoration:none;">← 保有銘柄ダッシュボードに戻る</a>
+</div>
+
+{% if total == 0 %}
+<p style="padding:1em;color:#666;">対象銘柄なし</p>
+{% else %}
+<div class="sk-bar">
+  <span class="sk-progress">今号({{ current_period }})入力済 <span id="done-count">{{ done_count }}</span> / {{ total }}</span>
+  <label style="cursor:pointer;"><input type="checkbox" id="filter-todo"> 今号未入力のみ</label>
+  <span>
+    <button type="button" class="nav-btn" id="prev-btn">← 前</button>
+    <button type="button" class="nav-btn" id="next-btn">次 →</button>
+  </span>
+  <span class="sk-count" id="nav-count"></span>
+</div>
+
+<div class="sk-header">
+  <a class="name" id="sk-name" target="_blank" rel="noopener"></a>
+  <a class="kabu" id="sk-kabu" target="_blank" rel="noopener">株探</a>
+  <span class="done-mark" id="sk-done" style="display:none;">✓ 今号入力済</span>
+</div>
+
+<form id="shikiho-form" action="" method="post">
+  <div class="memo-field">
+    <label>企業概要</label>
+    <textarea id="sk-overview" name="overview" rows="3"></textarea>
+  </div>
+  <div class="memo-field">
+    <label>四季報コメント (<span id="shikiho-count">0</span>/8件)</label>
+    <div id="shikiho-edit-area"></div>
+    <button type="button" id="btn-add-shikiho" class="outline"
+            style="margin-top:0.3em;padding:0.2em 0.8em;font-size:0.85em;">+ 追加</button>
+  </div>
+</form>
+
+<script>
+  (function () {
+    var STOCKS = {{ stocks|tojson }};
+    var CURRENT_PERIOD = {{ current_period|tojson }};
+    var MAX_SHIKIHO = 8;
+
+    var form = document.getElementById('shikiho-form');
+    var overviewEl = document.getElementById('sk-overview');
+    var editArea = document.getElementById('shikiho-edit-area');
+    var countEl = document.getElementById('shikiho-count');
+    var nameLink = document.getElementById('sk-name');
+    var kabuLink = document.getElementById('sk-kabu');
+    var doneMark = document.getElementById('sk-done');
+    var navCountEl = document.getElementById('nav-count');
+    var doneCountEl = document.getElementById('done-count');
+    var filterToggle = document.getElementById('filter-todo');
+
+    // navIds: トグル切替時に確定する固定スナップショット (保存では作り直さない)。
+    var navIds = STOCKS.map(function (s) { return s.code_s; });
+    var pos = 0;
+    var loadedSnapshot = '';  // 直近 renderForm 時のフォーム値 (dirty 判定用)
+    var saveChain = Promise.resolve();  // 保存の直列化
+
+    function byCode(code) {
+      return STOCKS.filter(function (s) { return s.code_s === code; })[0];
+    }
+
+    // 四季報行を 1 つ生成 (period span + hidden + textarea)。
+    function makeEntry(idx, period, comment) {
+      var div = document.createElement('div');
+      div.className = 'shikiho-entry';
+      var span = document.createElement('span');
+      span.className = 'period';
+      span.textContent = period || '-';
+      var hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'shikiho_periods_' + idx;
+      hidden.value = period || '';
+      var ta = document.createElement('textarea');
+      ta.name = 'shikiho_comments_' + idx;
+      ta.rows = 4;
+      ta.style.flex = '1';
+      ta.value = comment || '';
+      div.appendChild(span);
+      div.appendChild(hidden);
+      div.appendChild(ta);
+      return div;
+    }
+
+    function updateCount() {
+      countEl.textContent = editArea.querySelectorAll('.shikiho-entry').length;
+    }
+
+    // フォーム値を 1 本の文字列に直列化 (dirty 判定用)。
+    function serializeForm() {
+      var parts = [overviewEl.value];
+      editArea.querySelectorAll('.shikiho-entry').forEach(function (e) {
+        var p = e.querySelector('input[type=hidden]').value;
+        var c = e.querySelector('textarea').value;
+        parts.push(p + '' + c);
+      });
+      return parts.join('');
+    }
+
+    function isDirty() {
+      return serializeForm() !== loadedSnapshot;
+    }
+
+    // 現在のフォーム内容から「今号の非空コメント有無」を判定。
+    function formHasCurrent() {
+      var entries = editArea.querySelectorAll('.shikiho-entry');
+      for (var i = 0; i < entries.length; i++) {
+        var p = entries[i].querySelector('input[type=hidden]').value.trim();
+        var c = entries[i].querySelector('textarea').value.trim();
+        if (p === CURRENT_PERIOD && c) return true;
+      }
+      return false;
+    }
+
+    function refreshDoneCount() {
+      var done = STOCKS.filter(function (s) { return s.has_current; }).length;
+      doneCountEl.textContent = done;
+    }
+
+    function setDoneMark(has) {
+      doneMark.style.display = has ? '' : 'none';
+    }
+
+    // 1 銘柄ぶんの四季報を AJAX 取得してフォームを再構築。
+    function renderForm(code) {
+      var s = byCode(code);
+      var enc = encodeURIComponent(code);
+      nameLink.textContent = code + (s ? ' ' + s.stock_name : '');
+      nameLink.href = '/stock/' + enc;
+      kabuLink.href = 'https://kabutan.jp/stock/chart?code=' + enc;
+      form.action = '/stock/' + enc + '/shikiho';
+      navCountEl.textContent = (pos + 1) + ' / ' + navIds.length;
+
+      return fetch('/portfolio/shikiho/' + enc + '/data')
+        .then(function (resp) { return resp.json(); })
+        .then(function (body) {
+          if (!body || body.ok !== true) {
+            overviewEl.value = '';
+            editArea.innerHTML = '';
+            updateCount();
+            loadedSnapshot = serializeForm();
+            return;
+          }
+          overviewEl.value = body.overview || '';
+          editArea.innerHTML = '';
+          (body.shikiho_comments || []).forEach(function (item, i) {
+            editArea.appendChild(makeEntry(i, item.period, item.comment));
+          });
+          updateCount();
+          loadedSnapshot = serializeForm();
+          setDoneMark(s ? s.has_current : false);
+        });
+    }
+
+    // 行追加 (period は今号を自動付与)。8 件超は末尾 (最古) を削除してから追加。
+    function addEntry() {
+      var entries = editArea.querySelectorAll('.shikiho-entry');
+      if (entries.length >= MAX_SHIKIHO) {
+        entries[entries.length - 1].remove();
+      }
+      var idx = editArea.querySelectorAll('.shikiho-entry').length;
+      var div = makeEntry(idx, CURRENT_PERIOD, '');
+      editArea.appendChild(div);
+      // name の index を振り直す (途中削除でズレないように)
+      reindex();
+      updateCount();
+      div.querySelector('textarea').focus();
+    }
+
+    // 各行の name index を 0..n に振り直す。
+    function reindex() {
+      editArea.querySelectorAll('.shikiho-entry').forEach(function (e, i) {
+        e.querySelector('input[type=hidden]').name = 'shikiho_periods_' + i;
+        e.querySelector('textarea').name = 'shikiho_comments_' + i;
+      });
+    }
+
+    // dirty があれば現フォームを POST。保存後にローカル has_current / 進捗を更新。Promise を返す。
+    function flushSave() {
+      if (!isDirty()) return Promise.resolve();
+      var code = (byCode(navIds[pos]) || {}).code_s || navIds[pos];
+      var fd = new FormData(form);
+      saveChain = saveChain.then(function () {
+        return fetch(form.action, { method: 'POST', body: fd }).then(function (resp) {
+          if (!resp.ok) return;
+          var s = byCode(code);
+          if (s) s.has_current = formHasCurrent();
+          loadedSnapshot = serializeForm();
+          refreshDoneCount();
+          setDoneMark(s ? s.has_current : false);
+        });
+      }).catch(function () { /* ネットワークエラーでもキュー継続 */ });
+      return saveChain;
+    }
+
+    function goPrev() {
+      if (pos <= 0) return;
+      flushSave().then(function () { pos--; renderForm(navIds[pos]); });
+    }
+    function goNext() {
+      if (pos >= navIds.length - 1) return;
+      flushSave().then(function () { pos++; renderForm(navIds[pos]); });
+    }
+
+    // トグル切替: 保存 flush → navIds をスナップショット再構築 → 先頭へ。
+    function applyFilter() {
+      flushSave().then(function () {
+        if (filterToggle.checked) {
+          navIds = STOCKS.filter(function (s) { return !s.has_current; })
+                         .map(function (s) { return s.code_s; });
+        } else {
+          navIds = STOCKS.map(function (s) { return s.code_s; });
+        }
+        pos = 0;
+        if (navIds.length === 0) {
+          nameLink.textContent = '今号未入力の銘柄なし';
+          nameLink.removeAttribute('href');
+          kabuLink.removeAttribute('href');
+          form.action = '';
+          overviewEl.value = '';
+          editArea.innerHTML = '';
+          updateCount();
+          navCountEl.textContent = '0 / 0';
+          setDoneMark(false);
+          loadedSnapshot = serializeForm();
+          return;
+        }
+        renderForm(navIds[pos]);
+      });
+    }
+
+    document.getElementById('prev-btn').addEventListener('click', goPrev);
+    document.getElementById('next-btn').addEventListener('click', goNext);
+    document.getElementById('btn-add-shikiho').addEventListener('click', addEntry);
+    filterToggle.addEventListener('change', applyFilter);
+
+    // キーボード: ← / → (k / j)。入力欄フォーカス中は無効。
+    document.addEventListener('keydown', function (e) {
+      var el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) {
+        return;
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'k' || e.key === 'K') { e.preventDefault(); goPrev(); }
+      else if (e.key === 'ArrowRight' || e.key === 'j' || e.key === 'J') { e.preventDefault(); goNext(); }
+    });
+
+    // ページ離脱時、未保存なら sendBeacon でベストエフォート保存。
+    window.addEventListener('beforeunload', function () {
+      if (isDirty() && form.action) {
+        navigator.sendBeacon(form.action, new FormData(form));
+      }
+    });
+
+    renderForm(navIds[pos]);
+  })();
+</script>
+{% endif %}
+{% endblock %}

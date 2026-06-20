@@ -21,6 +21,7 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 
 import portfolio
 import portfolio_shelve as ps
+import research_shelve
 from webapp.helpers import (
     THEME_SUMMARY_SORT_FIELDS,
     build_portfolio_theme_summary,
@@ -732,6 +733,100 @@ def charts():
         active_status_query=active_status_query,
         active_gyoutai_theme=active_gyoutai_theme or "",
     )
+
+
+@portfolio_bp.route("/portfolio/shikiho")
+def shikiho_page():
+    """四季報コメント順次更新ページ (issue #313)。
+
+    /portfolio/charts と同じ status / gyoutai_theme フィルタ・業態順で銘柄を抽出し、
+    四季報フォーム1セットをクライアント側で銘柄切替する。四季報本体は切替時に
+    都度 AJAX 取得 (GET /portfolio/shikiho/<code_s>/data) するため、ここでは
+    銘柄リストと「今号入力済みか」フラグだけを渡す。research 未登録銘柄は
+    保存 (save_shikiho) が失敗するため対象から除外する。
+    """
+    active_status = _parse_status_filter(request.args)
+    active_gyoutai_theme = _parse_gyoutai_theme(request.args)
+
+    # 銘柄抽出は charts() と同一規則 (issue #186 fallback / issue #215 フィルタ)。
+    all_records_inc = ps.list_records(include_excluded=True)
+    if not all_records_inc:
+        visible_records = _build_fallback_records()
+    else:
+        visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
+
+    if active_gyoutai_theme:
+        filtered_records = [
+            r for r in visible_records
+            if active_gyoutai_theme in ((r.get("memo") or {}).get("gyoutai_themes") or [])
+        ]
+    elif active_status is None:
+        filtered_records = visible_records
+    else:
+        filtered_records = [r for r in visible_records if r.get("status") == active_status]
+    rows = list_portfolio_with_indicators(filtered_records, sort_key="gyoutai")
+
+    current_period = research_shelve.current_shikiho_period()
+    # research 全件を1回の open で dict 化 (318銘柄ぶんの open/close を回避)。
+    all_research = {r["code_s"]: r for r in research_shelve.list_research_records()}
+
+    stocks = []
+    done_count = 0
+    for r in rows:
+        code_s = r["code_s"]
+        rec = all_research.get(code_s)
+        if rec is None:
+            continue  # research 未登録は save_shikiho が失敗するため対象外
+        # list_research_records() は正規化を通さないため、旧形式 (str要素) 混在に備えて正規化。
+        comments = research_shelve._normalize_shikiho_comments(rec.get("shikiho_comments") or [])
+        has_current = any(
+            (c.get("period") or "").strip() == current_period
+            and (c.get("comment") or "").strip()
+            for c in comments
+        )
+        if has_current:
+            done_count += 1
+        stocks.append({
+            "code_s": code_s,
+            "stock_name": r.get("stock_name") or "",
+            "has_current": has_current,
+        })
+
+    active_status_query = (
+        STATUS_VALUE_TO_QUERY[active_status] if active_status in STATUS_VALUE_TO_QUERY else ""
+    )
+    return render_template(
+        "portfolio_shikiho.html",
+        stocks=stocks,
+        total=len(stocks),
+        done_count=done_count,
+        current_period=current_period,
+        active_status_query=active_status_query,
+        active_gyoutai_theme=active_gyoutai_theme or "",
+    )
+
+
+@portfolio_bp.route("/portfolio/shikiho/<code_s>/data")
+def shikiho_data(code_s):
+    """四季報順次更新ページの1銘柄ぶん軽量データ (issue #313)。
+
+    overview + shikiho_comments (降順) を JSON で返す。get_research_record() は
+    正規化済みを返すので _normalize は不要。get_research_detail() は post_price_changes
+    バックフィル等が走るため使わない。shikiho_page が未登録を除外するため通常
+    404 には到達しないが、防御的に残す。
+    """
+    rec = research_shelve.get_research_record(code_s)
+    if rec is None:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    comments = research_shelve.sort_shikiho_comments_desc(rec.get("shikiho_comments") or [])
+    return jsonify({
+        "ok": True,
+        "overview": rec.get("overview") or "",
+        "shikiho_comments": [
+            {"period": c.get("period") or "", "comment": c.get("comment") or ""}
+            for c in comments
+        ],
+    })
 
 
 # ===========================================

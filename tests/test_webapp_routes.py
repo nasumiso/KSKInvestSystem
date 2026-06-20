@@ -1542,3 +1542,65 @@ class TestSuggestThemes:
         ps.update_memo("3496", {"gyoutai_themes": ["不動産"]})
         resp = suggest_app.test_client().post("/stock/3496/suggest_themes")
         assert resp.status_code == 409
+
+
+# ==================================================
+# /portfolio/shikiho (issue #313)
+# ==================================================
+class TestPortfolioShikihoRoute:
+    """四季報順次更新ページ (一覧ルート + 軽量 data エンドポイント) の統合テスト"""
+
+    @pytest.fixture
+    def shikiho_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        period = rs.current_shikiho_period()
+        # 3496: 今号コメントあり (=入力済み)。9999: research 未登録 (portfolio のみ)。
+        rec = rs.create_research_record(
+            "3496", "アズーム", overall_rating="A",
+            overview="駐車場サブリース",
+            shikiho_comments=[
+                {"period": "25.12", "comment": "旧号コメント"},
+                {"period": period, "comment": "今号コメント"},
+            ],
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        # _parse_status_filter は status 未指定時に保有 (1保) をデフォルトにするため、
+        # charts() と同じく ?status= (空="すべて") を付けてテストする。両銘柄は 3監 のまま。
+        ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)
+        ps.add_to_watch("9999", reason="未登録テスト", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app
+
+    def test_shikiho_page_renders_with_progress(self, shikiho_app):
+        period = rs.current_shikiho_period()
+        resp = shikiho_app.test_client().get("/portfolio/shikiho?status=")
+        html = resp.data.decode()
+        assert resp.status_code == 200
+        assert period in html  # 今号 period 表示
+        # research 登録済みの 3496 は対象、未登録の 9999 は除外される
+        assert "3496" in html
+        # done_count=1 (3496 が今号入力済み)、total=1 (9999 除外)
+        assert '<span id="done-count">1</span> / 1' in html
+
+    def test_shikiho_data_returns_overview_and_comments(self, shikiho_app):
+        period = rs.current_shikiho_period()
+        resp = shikiho_app.test_client().get("/portfolio/shikiho/3496/data")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["overview"] == "駐車場サブリース"
+        # 降順 (新しい period が先頭)
+        assert body["shikiho_comments"][0]["period"] == period
+
+    def test_shikiho_data_404_for_unregistered(self, shikiho_app):
+        resp = shikiho_app.test_client().get("/portfolio/shikiho/9999/data")
+        assert resp.status_code == 404
+        assert resp.get_json()["ok"] is False
