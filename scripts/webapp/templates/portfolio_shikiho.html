@@ -59,10 +59,12 @@
     <textarea id="sk-overview" name="overview" rows="3"></textarea>
   </div>
   <div class="memo-field">
-    <label>四季報コメント (<span id="shikiho-count">0</span>/8件)</label>
+    <div style="display:flex;align-items:center;gap:0.6em;">
+      <label style="margin:0;">四季報コメント (<span id="shikiho-count">0</span>/8件)</label>
+      <button type="button" id="btn-add-shikiho" class="outline"
+              style="padding:0.15em 0.6em;font-size:0.85em;">+ 追加</button>
+    </div>
     <div id="shikiho-edit-area"></div>
-    <button type="button" id="btn-add-shikiho" class="outline"
-            style="margin-top:0.3em;padding:0.2em 0.8em;font-size:0.85em;">+ 追加</button>
   </div>
 </form>
 
