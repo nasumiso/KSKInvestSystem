@@ -215,6 +215,7 @@
     background: #f5f7fa; border: 1px solid #d8dee6; border-radius: 4px;
     display: flex; flex-wrap: wrap; gap: 0.8em; align-items: center;
   }
+  #manage-panel > div { flex-basis: 100%; }
   #toggle-delete-mode { padding: 0.3em 0.8em; font-size: 0.85em; margin: 0; }
 </style>
 <div class="dashboard-header">
@@ -272,9 +273,6 @@
   <a href="{{ url_for('portfolio.charts') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
      style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
      title="現在のフィルタ結果をチャート一覧で確認">📊 チャート一覧</a>
-  <a href="{{ url_for('portfolio.shikiho_page') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
-     style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
-     title="四季報コメントを順次更新">📝 四季報更新</a>
 </form>
 
 <div style="display:flex;align-items:center;justify-content:space-between;gap:1em;flex-wrap:wrap;margin:0 0 0.4em 0;">
@@ -305,9 +303,14 @@
     <label>コード <input type="text" name="code_s" required pattern="[0-9A-Za-z]+" maxlength="4" style="width:6em;"></label>
     <button type="submit">追加</button>
   </form>
-  {% if delete_mode_allowed %}
-  <button type="button" id="toggle-delete-mode">削除モード</button>
-  {% endif %}
+  <div style="margin-top:0.4em;">
+    <a href="{{ url_for('portfolio.shikiho_page') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
+       style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
+       title="四季報コメントを順次更新">📝 四季報更新</a>
+    {% if delete_mode_allowed %}
+    <button type="button" id="toggle-delete-mode">削除モード</button>
+    {% endif %}
+  </div>
 </div>
 {% if delete_mode_allowed %}
 <div id="bulk-delete-bar" style="display:none;">
