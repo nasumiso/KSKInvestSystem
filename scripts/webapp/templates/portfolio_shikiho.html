@@ -165,6 +165,10 @@
       kabuLink.href = 'https://kabutan.jp/stock/chart?code=' + enc;
       form.action = '/stock/' + enc + '/shikiho';
       navCountEl.textContent = (pos + 1) + ' / ' + navIds.length;
+      // リロード時に銘柄を復元できるよう URL を更新。
+      var url = new URL(window.location.href);
+      url.searchParams.set('code', code);
+      history.replaceState(null, '', url.toString());
 
       return fetch('/portfolio/shikiho/' + enc + '/data')
         .then(function (resp) { return resp.json(); })
@@ -195,7 +199,7 @@
       }
       var idx = editArea.querySelectorAll('.shikiho-entry').length;
       var div = makeEntry(idx, CURRENT_PERIOD, '');
-      editArea.appendChild(div);
+      editArea.prepend(div);
       // name の index を振り直す (途中削除でズレないように)
       reindex();
       updateCount();
@@ -286,6 +290,12 @@
       }
     });
 
+    // リロード時: URLの code パラメータから pos を復元。
+    var initCode = new URL(window.location.href).searchParams.get('code');
+    if (initCode) {
+      var initIdx = navIds.indexOf(initCode);
+      if (initIdx !== -1) pos = initIdx;
+    }
     renderForm(navIds[pos]);
   })();
 </script>
