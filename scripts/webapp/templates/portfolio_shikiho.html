@@ -48,7 +48,7 @@
 </div>
 
 <div class="sk-header">
-  <span id="sk-code" style="cursor:pointer;font-weight:bold;" title="クリックでコードをコピー"></span>
+  <span id="sk-code" style="cursor:pointer;font-weight:bold;" title="クリックでコピー"></span>
   <a class="name" id="sk-name" target="_blank" rel="noopener" style="margin-left:0.3em;"></a>
   <a class="kabu" id="sk-kabu" target="_blank" rel="noopener">株探</a>
   <span class="done-mark" id="sk-done" style="display:none;">✓ 今号入力済</span>
@@ -87,9 +87,8 @@
       var code = codeEl.textContent;
       if (!code) return;
       navigator.clipboard.writeText(code).then(function () {
-        var orig = codeEl.title;
-        codeEl.title = 'コピーしました';
-        setTimeout(function () { codeEl.title = orig; }, 1500);
+        codeEl.title = 'コピーしました！';
+        setTimeout(function () { codeEl.title = 'クリックでコピー'; }, 1500);
       });
     });
     var doneMark = document.getElementById('sk-done');
