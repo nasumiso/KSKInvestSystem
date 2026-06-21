@@ -48,7 +48,8 @@
 </div>
 
 <div class="sk-header">
-  <a class="name" id="sk-name" target="_blank" rel="noopener"></a>
+  <span id="sk-code" style="cursor:pointer;font-weight:bold;" title="クリックでコードをコピー"></span>
+  <a class="name" id="sk-name" target="_blank" rel="noopener" style="margin-left:0.3em;"></a>
   <a class="kabu" id="sk-kabu" target="_blank" rel="noopener">株探</a>
   <span class="done-mark" id="sk-done" style="display:none;">✓ 今号入力済</span>
 </div>
@@ -78,8 +79,19 @@
     var overviewEl = document.getElementById('sk-overview');
     var editArea = document.getElementById('shikiho-edit-area');
     var countEl = document.getElementById('shikiho-count');
+    var codeEl = document.getElementById('sk-code');
     var nameLink = document.getElementById('sk-name');
     var kabuLink = document.getElementById('sk-kabu');
+
+    codeEl.addEventListener('click', function () {
+      var code = codeEl.textContent;
+      if (!code) return;
+      navigator.clipboard.writeText(code).then(function () {
+        var orig = codeEl.title;
+        codeEl.title = 'コピーしました';
+        setTimeout(function () { codeEl.title = orig; }, 1500);
+      });
+    });
     var doneMark = document.getElementById('sk-done');
     var navCountEl = document.getElementById('nav-count');
     var doneCountEl = document.getElementById('done-count');
@@ -160,7 +172,8 @@
     function renderForm(code) {
       var s = byCode(code);
       var enc = encodeURIComponent(code);
-      nameLink.textContent = code + (s ? ' ' + s.stock_name : '');
+      codeEl.textContent = code;
+      nameLink.textContent = s ? s.stock_name : '';
       nameLink.href = '/stock/' + enc;
       kabuLink.href = 'https://kabutan.jp/stock/chart?code=' + enc;
       form.action = '/stock/' + enc + '/shikiho';
@@ -252,6 +265,7 @@
         }
         pos = 0;
         if (navIds.length === 0) {
+          codeEl.textContent = '';
           nameLink.textContent = '今号未入力の銘柄なし';
           nameLink.removeAttribute('href');
           kabuLink.removeAttribute('href');
