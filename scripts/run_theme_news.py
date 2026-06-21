@@ -99,8 +99,29 @@ def _run_claude_skill() -> int:
     elapsed_sec = time.monotonic() - started
 
     if result.returncode != 0:
-        log_warning(f"[theme-news] claude -p 異常終了: rc={result.returncode}")
-        log_warning(f"stderr: {result.stderr[-500:]}")
+        # stdout の JSON から api_error_status を抽出して人間が読めるログを出す
+        api_status = None
+        api_msg = None
+        try:
+            for line in reversed((result.stdout or "").splitlines()):
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                if isinstance(obj, dict):
+                    api_status = obj.get("api_error_status")
+                    api_msg = obj.get("result") or obj.get("message")
+                    break
+        except Exception:
+            pass
+        if api_status == 429:
+            log_warning(
+                f"[theme-news] claude -p レート制限 (429): {api_msg}  "
+                f"→ セッション制限リセット後に再実行してください"
+            )
+        else:
+            log_warning(f"[theme-news] claude -p 異常終了: rc={result.returncode}")
+            log_warning(f"stderr: {result.stderr[-500:]}")
         return result.returncode
 
     history_file = _today_history_path()
