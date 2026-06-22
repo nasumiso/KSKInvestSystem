@@ -103,7 +103,7 @@ PF_KESSAN_PATH = os.path.join(DATA_DIR, "todays_kessan_data", "pf_kessan.pickle"
 def _save_kessan_db(pf_kessan_dict):
     """決算DBを保存する内部関数"""
     with _get_kessan_shelve_db() as db:
-        db.import_from_dict(pf_kessan_dict)
+        db.replace_from_dict(pf_kessan_dict)
 
 
 def _load_kessan_db():
