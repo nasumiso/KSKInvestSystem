@@ -11,8 +11,59 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 
 from ks_util import DATA_DIR
-from research_shelve import CODE_S_PATTERN
+from research_shelve import CODE_S_PATTERN, normalize_for_search
 from webapp.helpers import search_records, add_stock
+
+# snippet 生成: ヒットフィールド名ラベルと前後30文字
+_SNIPPET_CONTEXT = 30
+_SNIPPET_FIELDS = [
+    ("stock_name",           "銘柄名"),
+    ("stock_name_prev",      "旧名"),
+    ("overview",             "概要"),
+    ("memo",                 "メモ"),
+    ("institutional_comment","機関投資家"),
+    ("openwork",             "OpenWork"),
+    ("cramer",               "Cramer"),
+]
+
+
+def _make_snippet(rec: dict, keyword: str) -> str:
+    """keyword にヒットした最初のフィールドの前後 _SNIPPET_CONTEXT 文字を返す。
+
+    ヒットしない場合（コード検索ヒット等）は overview 先頭40文字にフォールバック。
+    """
+    from html_sanitizer import strip_html_tags
+
+    kw_norm = normalize_for_search(keyword)
+
+    def _extract(text: str, label: str):
+        plain = strip_html_tags(text or "")
+        norm = normalize_for_search(plain)
+        idx = norm.find(kw_norm)
+        if idx == -1:
+            return None
+        start = max(0, idx - _SNIPPET_CONTEXT)
+        end = min(len(plain), idx + len(keyword) + _SNIPPET_CONTEXT)
+        body = ("…" if start > 0 else "") + plain[start:end] + ("…" if end < len(plain) else "")
+        return f"[{label}] {body}"
+
+    for field, label in _SNIPPET_FIELDS:
+        result = _extract(rec.get(field, ""), label)
+        if result:
+            return result
+    for snap in rec.get("snapshots", []) or []:
+        result = _extract(snap.get("ir_comment", ""), "IR")
+        if result:
+            return result
+    for shikiho in rec.get("shikiho_comments", []) or []:
+        text = shikiho if isinstance(shikiho, str) else shikiho.get("comment", "")
+        result = _extract(text, "四季報")
+        if result:
+            return result
+
+    # フォールバック: overview 先頭40文字
+    overview = rec.get("overview", "") or ""
+    return overview[:40] + ("…" if len(overview) > 40 else "")
 
 search_bp = Blueprint("search", __name__)
 
@@ -99,6 +150,12 @@ def index():
         if code_s:
             code_s_norm = unicodedata.normalize("NFKC", code_s).upper()
             records = [r for r in records if code_s_norm in r.get("code_s", "")]
+
+    # キーワードがある場合はヒット箇所 snippet をレコードに付与
+    kw_for_snippet = keyword or (q if q else None)
+    if kw_for_snippet:
+        for r in records:
+            r["_snippet"] = _make_snippet(r, kw_for_snippet)
 
     # コード/銘柄名検索で1件のみヒットした場合は詳細ページへ直接ジャンプ
     if (q or code_s) and len(records) == 1:

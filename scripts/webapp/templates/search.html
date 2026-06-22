@@ -68,7 +68,7 @@
       </td>
       <td><a href="/stock/{{ rec.code_s }}">{% if rec.stock_name %}{{ macros.stock_name_with_prev(rec) }}{% else %}-{% endif %}</a></td>
       <td>{{ (rec.snapshots or [])|length }}</td>
-      <td>{{ (rec.overview or '')[:40] }}{% if (rec.overview or '')|length > 40 %}...{% endif %}</td>
+      <td>{% if rec._snippet is defined %}{{ rec._snippet }}{% else %}{{ (rec.overview or '')[:40] }}{% if (rec.overview or '')|length > 40 %}...{% endif %}{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
