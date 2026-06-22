@@ -1116,7 +1116,11 @@ class TestParsePriceTextFromList:
             price_list.append([date_str, close, close + 10, low, close, vol, close])
         result_dict, _ = price.parse_price_text_from_list(today_close, price_list)
         assert (len(result_dict["breakout"]) >= 1) == expect_regular
-        assert (len(result_dict["breakout_extended"]) >= 1) == expect_ext
+        ext = result_dict["breakout_extended"]
+        assert (len(ext) >= 1) == expect_ext
+        # extended は "MM/DD,kairi,per" の3要素形式 (per=出来高超過率、マーカー強度用)
+        if ext:
+            assert len(str(ext[0]).split(",")) == 3
 
     @pytest.mark.parametrize("bd,next_low,expected", [
         # 7カラム経路 (close=adj_close=[6], low=[3]) の porosity 回帰。割れ日 (bd) で

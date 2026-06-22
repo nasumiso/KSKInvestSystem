@@ -2025,11 +2025,11 @@ def _signal_freshness_alpha(delta: int) -> float:
 # ポ/ブシグナルの強度バケット (issue #253)。
 # tooltip 文言 (_build_signal_display) とチャートマーカーサイズ (項目3) で共有する。
 def _signal_strength_bucket(kind: str, num: int) -> str:
-    """シグナル種別と保存数値から強度ラベル 強/中/弱 を返す。
+    """シグナル種別と保存数値から強度ラベルを返す。
 
-    ポ: num = MA10乖離率% (小さい=MAに近い良い位置=強)。
-    ブ: num = 出来高超過率% (大きい=出来高急増=強)。
-    しきい値は暫定 (issue #253)、実データで要調整。
+    ポ: num = MA10乖離率% (小さい=MAに近い良い位置=強)。3段階 (強/中/弱)。
+    ブ: num = 出来高超過率% (大きい=出来高急増=強)。4段階 (特強/強/中/弱)。
+        しきい値 500/200/100 は DB全体3046件の分布で校正 (特強=上位約10%)。
     """
     if kind == "ポ":
         if num >= -1:
@@ -2038,6 +2038,8 @@ def _signal_strength_bucket(kind: str, num: int) -> str:
             return "中"
         return "弱"
     # ブ
+    if num >= 500:
+        return "特強"
     if num >= 200:
         return "強"
     if num >= 100:
@@ -2063,7 +2065,7 @@ def _build_signal_display(stock: Dict[str, Any]) -> Dict[str, str]:
         signals = extract_signals(stock)
     except Exception:  # noqa: BLE001
         return empty
-    strength_alpha = {"強": 0.85, "中": 0.55, "弱": 0.30}
+    strength_alpha = {"特強": 1.0, "強": 0.85, "中": 0.55, "弱": 0.30}
     tmpls = {
         "ポ": "[ポ] %s %s 押し目買い圧(MA10乖離 %d) / %d日前",
         "ブ": "[ブ] %s %s 出来高ブレイク(出来高+%d%%) / %d日前",
@@ -2626,6 +2628,21 @@ def _svg_circle(cx: float, cy: float, r: float, color: str) -> str:
     return f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{color}"/>'
 
 
+def _svg_hover_rect(cx: float, cy: float, half_w: float, half_h: float, title: str = "") -> str:
+    """透明 hover ターゲット矩形を返す。
+
+    SVG title は細い polygon だと hover しづらいことがあるため、見た目とは別に
+    マーカー周辺へ当たり判定を広げる。fill-opacity=0 だとブラウザによっては
+    hover 判定が不安定なため、ごく薄い不透明度を使う。
+    """
+    t = "<title>%s</title>" % html.escape(title) if title else ""
+    return (
+        '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" '
+        'fill="#fff" fill-opacity="0.001">%s</rect>'
+        % (cx - half_w, cy - half_h, half_w * 2, half_h * 2, t)
+    )
+
+
 def _svg_triangle(cx: float, cy: float, size: float, color: str,
                   opacity: float = 1.0, title: str = "") -> str:
     """上向き三角マーカー (issue #253: ポケットピボット用)。"""
@@ -2716,8 +2733,13 @@ def _resolve_signal_markers(stock, window_dates, xs):
             "sig_date": s["sig_date"],
         }
         if s.get("extended"):
-            # extended は強度を出さない (出来高の大きさを強調すると高値追い規律と逆行)。
             m["extended"] = True
+            # extended_per (出来高超過率) があれば通常ブレイクと同じ強度バケットで
+            # マーカーサイズを決める。旧2要素データは per なし → strength を付けず
+            # 描画側で固定サイズにフォールバックする。
+            per = s.get("extended_per")
+            if per is not None:
+                m["strength"] = _signal_strength_bucket("ブ", per)
         else:
             m["strength"] = _signal_strength_bucket(s["kind"], s["num"])
         markers.append(m)
@@ -3061,6 +3083,10 @@ def build_price_rs_chart_full(
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" style="display:block;">'
     ]
+    # 詳細チャートは親要素 title を使わず、SVG 内で hover 領域を分ける。
+    # 非シグナル要素は pointer-events を切り、チャート本体の透明 hover 面だけが
+    # RS 系 tooltip を出す。マーカーバンドはポ/ブ polygon の title のみ有効にする。
+    parts.append('<g pointer-events="none">')
 
     # 背景枠
     parts.append(
@@ -3165,41 +3191,6 @@ def build_price_rs_chart_full(
             f'fill="#1976d2" font-weight="bold" text-anchor="end">{_format_pct_axis(rs_pct[-1])}</text>'
         )
 
-    # ポ/ブ発生日マーカー (issue #253): ポ=緑三角 / ブ=橙ダイヤ。
-    # X は発生日を週幅で日割り按分、Y は X軸 + 日付ラベルの下に常設したマーカー専用バンド
-    # (騰落率Y軸と無関係) に配置し、株価線/RS線と完全分離する。サイズは強度バケット。
-    # 詳細チャートは発生日が X 位置で読めるため鮮度による半透明化は行わない。最前面に描く。
-    if window_dates:
-        markers = _resolve_signal_markers(stock, window_dates, xs)
-        size_map = {"強": 6.0, "中": 4.5, "弱": 3.0}
-        opa_map = {"強": 1.0, "中": 0.8, "弱": 0.6}
-        # ポは三角・ブは菱形。視認性調整: ポは控えめに縮小、ブは強調して拡大。
-        PO_SIZE_SCALE = 0.8
-        BU_SIZE_SCALE = 1.8
-        EXT_SIZE = 4.5  # extended は強度を持たないので固定サイズ
-        # マーカー専用バンド内: ポは下段、ブはその上の段 (同発生週の重なり回避)。
-        y_po = label_y + 16  # 日付ラベル baseline の下
-        y_bu = y_po - 6
-        for m in markers:
-            # 週足チャートに日足発生日を重ねるため、X位置だけでは発生日が読み取り
-            # づらい (週バーは月曜ラベルで週末終値を示すため視覚的にズレる)。
-            # 発生日 (M/D) を tooltip に明示して誤読を防ぐ。
-            sig_md = "%d/%d" % (m["sig_date"].month, m["sig_date"].day)
-            # extended (高値追い圏で正規ブレイクから弾かれた候補): strength を持たない
-            # ため size_map 参照より前に分岐。半透明・中抜きの橙ダイヤで弱く表示し、
-            # tooltip に乖離と「対象外」を明記する。num は MA10乖離%。
-            if m.get("extended"):
-                title = "ブ(extended) %s 乖離+%d%% 高値追い圏・対象外" % (sig_md, m["num"])
-                parts.append(_svg_diamond(
-                    m["x"], y_bu, EXT_SIZE * BU_SIZE_SCALE, "#f57c00", 0.3, title, filled=False))
-                continue
-            size = size_map[m["strength"]]
-            title = "%s %s (%s)" % (m["kind"], sig_md, m["strength"])
-            if m["kind"] == "ポ":
-                parts.append(_svg_triangle(m["x"], y_po, size * PO_SIZE_SCALE, "#2e7d32", 1.0, title))
-            else:  # ブ
-                parts.append(_svg_diamond(m["x"], y_bu, size * BU_SIZE_SCALE, "#f57c00", opa_map[m["strength"]], title))
-
     # RS(0~99)履歴を右Y軸 (0~99 固定) で右端側に重畳 (最前面)。
     # 横軸は週足スケールのまま、RS各点は実日付で週足軸 (window_dates/xs) にマップ。
     # 営業日カレンダー突き合わせは日足 price_log を使う (price_log 引数は週足台帳のため)。
@@ -3210,6 +3201,58 @@ def build_price_rs_chart_full(
         chart_top=chart_top, chart_h=chart_h,
         pad_x=pad_x, inner_w=inner_w, pad_right=pad_right,
     )
+
+    parts.append("</g>")
+
+    # ポ/ブ発生日マーカー (issue #253): ポ=緑三角 / ブ=橙ダイヤ。
+    # X は発生日を週幅で日割り按分、Y は X軸 + 日付ラベルの下に常設したマーカー専用バンド
+    # (騰落率Y軸と無関係) に配置し、株価線/RS線と完全分離する。サイズは強度バケット。
+    # 詳細チャートは発生日が X 位置で読めるため鮮度による半透明化は行わない。最前面に描く。
+    if window_dates:
+        markers = _resolve_signal_markers(stock, window_dates, xs)
+        # ブは4段階 (特強/強/中/弱)、ポは3段階 (強/中/弱) で特強は使わない。
+        # サイズは等差1.5。opacity は強で上限 (1.0) のため特強も 1.0。
+        size_map = {"特強": 7.5, "強": 6.0, "中": 4.5, "弱": 3.0}
+        opa_map = {"特強": 1.0, "強": 1.0, "中": 0.8, "弱": 0.6}
+        # ポは三角・ブは菱形。視認性調整: ポは控えめに縮小、ブは強調して拡大。
+        PO_SIZE_SCALE = 0.8
+        BU_SIZE_SCALE = 1.8
+        EXT_SIZE = 4.5  # extended の per 未保存 (旧データ) 時の固定サイズ
+        # マーカー専用バンド内: ポは下段、ブはその上の段 (同発生週の重なり回避)。
+        y_po = label_y + 16  # 日付ラベル baseline の下
+        y_bu = y_po - 6
+        for m in markers:
+            # 週足チャートに日足発生日を重ねるため、X位置だけでは発生日が読み取り
+            # づらい (週バーは月曜ラベルで週末終値を示すため視覚的にズレる)。
+            # 発生日 (M/D) を tooltip に明示して誤読を防ぐ。
+            sig_md = "%d/%d" % (m["sig_date"].month, m["sig_date"].day)
+            # extended (高値追い圏で正規ブレイクから弾かれた候補): 中抜き・半透明の
+            # 橙ダイヤで「対象外」を表しつつ、サイズは通常ブレイクと同じ強度バケット
+            # (出来高超過率) に連動させる。per 未保存の旧データは strength を持たない
+            # ため固定サイズ EXT_SIZE にフォールバック。num は MA10乖離% で tooltip に出す。
+            if m.get("extended"):
+                ext_size = size_map[m["strength"]] if m.get("strength") else EXT_SIZE
+                title = "ブ(extended) %s 乖離+%d%% 高値追い圏・対象外" % (sig_md, m["num"])
+                parts.append(_svg_hover_rect(m["x"], y_bu, 8.0, 8.0, title))
+                parts.append(_svg_diamond(
+                    m["x"], y_bu, ext_size * BU_SIZE_SCALE, "#f57c00", 0.5, title, filled=False))
+                continue
+            size = size_map[m["strength"]]
+            title = "%s %s (%s)" % (m["kind"], sig_md, m["strength"])
+            if m["kind"] == "ポ":
+                parts.append(_svg_hover_rect(m["x"], y_po, 8.0, 8.0, title))
+                parts.append(_svg_triangle(m["x"], y_po, size * PO_SIZE_SCALE, "#2e7d32", 1.0, title))
+            else:  # ブ
+                parts.append(_svg_hover_rect(m["x"], y_bu, 8.0, 8.0, title))
+                parts.append(_svg_diamond(m["x"], y_bu, size * BU_SIZE_SCALE, "#f57c00", opa_map[m["strength"]], title))
+
+    if tooltip:
+        chart_hover_h = chart_top + chart_h + 2
+        parts.append(
+            '<rect x="0" y="0" width="%d" height="%.1f" fill="#fff" fill-opacity="0">'
+            '<title>%s</title></rect>'
+            % (width, chart_hover_h, html.escape(tooltip))
+        )
 
     parts.append("</svg>")
     return ("".join(parts), tooltip)

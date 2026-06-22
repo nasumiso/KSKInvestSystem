@@ -1800,10 +1800,13 @@ def parse_price_text_from_list(price_current, price_list):
                 log_debug("ブレイク:%s,%d" % (day, per))
                 breaks.append("%s,%d" % (day, per))
             elif kairi <= BREAKOUT_EXTENDED_KAIRI_MAX:
-                # 高値追い圏 (規律上は買わない) の extended 候補。kairi を保存し
-                # 詳細チャートの tooltip で乖離を表示する (強度は出さない)。
-                log_debug("ブレイクext:%s,%d" % (day, round(kairi)))
-                breaks_ext.append("%s,%d" % (day, round(kairi)))
+                # 高値追い圏 (規律上は買わない) の extended 候補。kairi (乖離) に加え
+                # 出来高超過率 per も保存し、詳細チャートで乖離 tooltip を出しつつ
+                # マーカーサイズを通常ブレイクと同じ強度バケットで決められるようにする。
+                # 形式: "MM/DD,kairi,per" (既存 "MM/DD,kairi" との後方互換のため末尾追加)。
+                per = max(100 * vol / avg_vol - 100, 0)
+                log_debug("ブレイクext:%s,%d,%d" % (day, round(kairi), per))
+                breaks_ext.append("%s,%d,%d" % (day, round(kairi), per))
     price["breakout"] = breaks
     price["breakout_extended"] = breaks_ext
     # print breaks
