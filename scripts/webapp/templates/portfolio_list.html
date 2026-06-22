@@ -446,7 +446,7 @@
       <td data-page="1" title="{{ row.trend_template_tooltip }}" style="width:40px;padding:0;line-height:0;text-align:center;{{ row.styles.trend_template or '' }}">
         {% if row.kairi_gauge_svg %}{{ row.kairi_gauge_svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
       </td>
-      <td data-page="1" title="{{ row.tags if row.tags != '—' else '' }}"
+      <td data-page="1" title="{{ row.tags_tooltip or '' }}"
           style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
       <td data-page="1" title="{{ row.signal_full or '' }}"
           style="max-width:3em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.signal or '' }}">{{ row.signal_mark }}</td>

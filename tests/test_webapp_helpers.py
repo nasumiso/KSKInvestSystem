@@ -740,9 +740,16 @@ class TestSaveMemo:
         assert rec["overview"] == "駐車場サブリース"
         assert len(rec["snapshots"]) == 2
 
-    def test_save_memo_changed_updates_analysis_date(self, populated_db):
-        """メモ・総括の変更で分析日が当日 (暦日) に自動更新される"""
-        form = {"memo": "新しい総括", "analysis_date_raw": "11/13"}
+    @pytest.mark.parametrize("field,value", [
+        ("memo", "新しい総括"),
+        ("overall_rating", "S"),
+        ("institutional_comment", "更新コメント"),
+        ("openwork", "4.0"),
+        ("cramer", "Strong Buy"),
+    ])
+    def test_save_memo_changed_updates_analysis_date(self, populated_db, field, value):
+        """手動メモ各項目の変更で分析日が当日 (暦日) に自動更新される"""
+        form = {"analysis_date_raw": "11/13", field: value}
         helpers.save_memo("3496", form)
         rec = helpers.get_research_detail("3496")
         assert rec["analysis_date_raw"] == helpers._today_analysis_date()
@@ -750,8 +757,11 @@ class TestSaveMemo:
     def test_save_memo_unchanged_keeps_analysis_date(self, populated_db):
         """メモ・総括が無変更 (他フィールドのみ変更) なら分析日は触らない"""
         form = {
-            "overall_rating": "S",
+            "overall_rating": "A",
+            "institutional_comment": "成長性高い",
             "memo": "テストメモ",  # fixture と同値 = 無変更
+            "openwork": "3.72",
+            "cramer": "Buy推奨",
             "analysis_date_raw": "11/13",
         }
         helpers.save_memo("3496", form)
@@ -844,6 +854,27 @@ class TestSaveShikiho:
             {"period": "26.3", "comment": "有効"},
             {"period": "25.9", "comment": "有効2"},
         ]
+
+    @pytest.mark.parametrize("form,expect_today", [
+        ({
+            "overview": "更新概要",
+            "shikiho_comments_0": "コメント1",
+            "shikiho_periods_0": "26.3",
+        }, True),
+        ({
+            "overview": "駐車場サブリース",
+            "shikiho_comments_0": "最高益",
+            "shikiho_periods_0": "",
+            "shikiho_comments_1": "新規事業",
+            "shikiho_periods_1": "",
+        }, False),
+    ])
+    def test_save_shikiho_analysis_date(self, populated_db, form, expect_today):
+        """四季報の実変更時のみ分析日を当日へ自動更新する"""
+        helpers.save_shikiho("3496", form)
+        rec = helpers.get_research_detail("3496")
+        expected = helpers._today_analysis_date() if expect_today else "11/13"
+        assert rec["analysis_date_raw"] == expected
 
 
 class TestSaveIrComments:
@@ -1708,8 +1739,10 @@ class TestComputeCellStyles:
             ("最", f"background:{C['赤']};color:#fff"),
             ("警", f"background:{C['青']};color:#fff"),
             ("売", f"background:{C['青']};color:#fff"),
+            ("早売", f"background:{C['青']};color:#fff"),
             ("押", f"color:{C['青']}"),
             ("警/押", f"background:{C['青']};color:#fff"),     # 青背景 > 青文字
+            ("早売/押", f"background:{C['青']};color:#fff"),   # 売り系背景 > 押し目文字
             ("", None),
         ],
     )
@@ -1729,6 +1762,18 @@ class TestComputeCellStyles:
         )
         assert "tags" not in styles
         assert styles["signal"] == style
+
+
+class TestFormatTagsTooltip:
+    """タグ列 tooltip の補助文言"""
+
+    def test_early_sell_tooltip_adds_short_description(self):
+        tooltip = helpers._format_tags_tooltip("早売")
+        assert "早売" in tooltip
+        assert "急騰後の10ma利確ライン割れ" in tooltip
+
+    def test_non_early_sell_tooltip_keeps_plain_tags(self):
+        assert helpers._format_tags_tooltip("売/押") == "売/押"
 
     # ----- 進捗率乖離: <C3>=赤(注目) 単独 / eiri≧20 = 濃黄 単独 / 両該当=左右分割 -----
     def test_progress_diff_c3_only(self):

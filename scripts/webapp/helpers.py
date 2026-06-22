@@ -406,19 +406,31 @@ def save_memo(code_s: str, form_data: dict) -> None:
         if record is None:
             raise ValueError(f"レコード未登録: {normalized}")
 
+        old_rating = record.get("overall_rating", "")
+        old_institutional_comment = record.get("institutional_comment", "")
+        old_memo = record.get("memo", "")
+        old_openwork = record.get("openwork", "")
+        old_cramer = record.get("cramer", "")
+
         new_rating = form_data.get("overall_rating", "")
         validate_rating(new_rating)
         record["overall_rating"] = new_rating
         record["institutional_comment"] = form_data.get(
             "institutional_comment", ""
         )
-        old_memo = record.get("memo", "")
         record["memo"] = sanitize_html(_markdown_to_html(form_data.get("memo", "")))
         record["openwork"] = sanitize_html(_markdown_to_html(form_data.get("openwork", "")))
         record["cramer"] = form_data.get("cramer", "")
+        manual_fields_changed = any([
+            record["overall_rating"] != old_rating,
+            record["institutional_comment"] != old_institutional_comment,
+            record["memo"] != old_memo,
+            record["openwork"] != old_openwork,
+            record["cramer"] != old_cramer,
+        ])
 
         # 分析日: 手動編集 (フォーム値が既存値から変化) を最優先し、
-        # 触られていなければメモ・総括の変更時に当日へ自動更新する。
+        # 触られていなければ手動メモ各項目の実変更時に当日へ自動更新する。
         # 旧データは年なし形式 ("11/13") があり、フォーム往復の年補完だけで
         # 手動編集と誤判定しないよう、比較は両辺とも正規化後で行う
         submitted_date = (
@@ -430,7 +442,7 @@ def save_memo(code_s: str, form_data: dict) -> None:
         existing_date = _normalize_analysis_date(record.get("analysis_date_raw", "") or "")
         if date_dirty and submitted_date is not None and submitted_date != existing_date:
             record["analysis_date_raw"] = submitted_date
-        elif record["memo"] != old_memo:
+        elif manual_fields_changed:
             record["analysis_date_raw"] = _today_analysis_date()
 
         upsert_research_record(record)
@@ -469,6 +481,8 @@ def save_shikiho(code_s: str, form_data: dict) -> None:
         if record is None:
             raise ValueError(f"レコード未登録: {normalized}")
 
+        old_overview = record.get("overview", "")
+        old_comments = list(record.get("shikiho_comments") or [])
         record["overview"] = form_data.get("overview", "")
 
         comments: List[Dict[str, str]] = []
@@ -481,6 +495,8 @@ def save_shikiho(code_s: str, form_data: dict) -> None:
         if len(comments) > 8:
             comments = comments[-8:]
         record["shikiho_comments"] = comments
+        if record["overview"] != old_overview or comments != old_comments:
+            record["analysis_date_raw"] = _today_analysis_date()
 
         upsert_research_record(record)
 
@@ -1966,6 +1982,16 @@ def _format_tags(stock: Dict[str, Any], tags=None) -> str:
         except Exception:
             return "—"
     return "/".join(tags) if tags else "—"
+
+
+def _format_tags_tooltip(tags: str) -> str:
+    """portfolio 一覧のタグ列 tooltip 文言を返す。"""
+    if not tags or tags == "—":
+        return ""
+    lines = [tags]
+    if "早売" in tags:
+        lines.append("早売: 急騰後の10ma利確ライン割れ")
+    return "\n".join(lines)
 
 
 def _format_signal(stock: Dict[str, Any]) -> Tuple[str, str]:
@@ -3454,6 +3480,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "trend_template_tooltip": trend_info["tooltip"],
         "kairi_gauge_svg": trend_info["kairi_gauge_svg"],
         "tags": _format_tags(stock, _tags),
+        "tags_tooltip": _format_tags_tooltip(_format_tags(stock, _tags)),
         "signal_mark": signal_mark,
         "signal_full": signal_full,
         "signal_display": _build_signal_display(stock),  # issue #253: tooltip+背景色
