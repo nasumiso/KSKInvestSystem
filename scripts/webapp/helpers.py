@@ -326,7 +326,15 @@ def theme_news_md_to_html(text: str) -> str:
     html = re.sub(r"<h1>.*?</h1>\s*", "", html, count=1, flags=re.DOTALL)
     # 文の区切りで使われている全角中点を改行ポイントにする。
     # 先頭 `・` (li 直後) には br を入れないよう、`>・` の直後は対象外。
+    # blockquote 内（サマリー行）は列挙区切りの ・ が多く <br> が不要なので保護する。
+    _bq_blocks = []
+    def _stash_bq(m):
+        _bq_blocks.append(m.group(0))
+        return f"\x00BQ{len(_bq_blocks)-1}\x00"
+    html = re.sub(r"<blockquote>.*?</blockquote>", _stash_bq, html, flags=re.DOTALL)
     html = re.sub(r"(?<![>\s])・", "<br>・", html)
+    for i, block in enumerate(_bq_blocks):
+        html = html.replace(f"\x00BQ{i}\x00", block)
     # 「+」「→」の前に <wbr> を挟んで、文が長くても自然な位置で折り返せるようにする。
     # skill 出力で「日経+1.9%+KOSPI+4%+Samsungスト中止」のような連結が頻出するため。
     html = re.sub(r"(?<=[ぁ-んァ-ヶー一-龯%])([+→])", r"<wbr>\1", html)
