@@ -167,7 +167,7 @@ def get_from_kabutan(html):
 
     # ---- ROE, 売上営業利益率取得
     profit_html_m = re.search(
-        r'<table>.*?<th scope="col" class="fb_02">　ＲＯＥ</th>.*?<tbody>(.*?)</tbody>.*?</table>',
+        r'<table>.*?<th scope="col" class="fb_02">(?:<span[^>]*>)?　ＲＯＥ(?:<[^>]*>)*\s*</th>.*?<tbody>(.*?)</tbody>.*?</table>',
         html,
         re.S,
     )

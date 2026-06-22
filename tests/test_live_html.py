@@ -52,8 +52,8 @@ class TestLiveHtmlShihyou:
     """shihyou.py — kabutan財務指標HTML取得→パース"""
 
     def test_財務指標の抽出(self):
-        """kabutanから基本情報HTMLを取得し、財務指標がパースできること"""
-        html = rironkabuka.get_kabutan_base_html(TEST_CODE, upd=-1)
+        """kabutanからfinanceページHTMLを取得し、財務指標がパースできること"""
+        html = rironkabuka.get_kabutan_html(TEST_CODE, upd=-1)
         result = shihyou.get_from_kabutan(html)
         assert isinstance(result, dict)
         # 主要キーが存在すること
