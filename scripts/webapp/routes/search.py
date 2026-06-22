@@ -37,14 +37,19 @@ def _make_snippet(rec: dict, keyword: str) -> str:
     kw_norm = normalize_for_search(keyword)
 
     def _extract(text: str, label: str):
+        from markupsafe import escape
         plain = strip_html_tags(text or "")
         norm = normalize_for_search(plain)
         idx = norm.find(kw_norm)
         if idx == -1:
             return None
+        kw_len = len(kw_norm)
         start = max(0, idx - _SNIPPET_CONTEXT)
-        end = min(len(plain), idx + len(keyword) + _SNIPPET_CONTEXT)
-        body = ("…" if start > 0 else "") + plain[start:end] + ("…" if end < len(plain) else "")
+        end = min(len(plain), idx + kw_len + _SNIPPET_CONTEXT)
+        pre  = str(escape(plain[start:idx]))
+        hit  = str(escape(plain[idx:idx + kw_len]))
+        post = str(escape(plain[idx + kw_len:end]))
+        body = ("…" if start > 0 else "") + pre + f"<strong>{hit}</strong>" + post + ("…" if end < len(plain) else "")
         return f"[{label}] {body}"
 
     for field, label in _SNIPPET_FIELDS:
