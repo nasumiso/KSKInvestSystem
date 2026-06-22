@@ -57,7 +57,7 @@ STATUS_CHOICES = [
     ("watch", "3監", STATUS_VALUE_TO_LABEL["3監"]),
 ]
 DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 書き込み POST 後フォールバック先
-PORTFOLIO_SORT_KEYS = {"position", "rank", "gyoutai", "rs_change_1d"}  # rs_change_1d: issue #332
+PORTFOLIO_SORT_KEYS = {"position", "rank", "gyoutai", "rs_change_1d", "rating"}  # rs_change_1d: issue #332
 DEFAULT_SORT_KEY = "position"
 
 
@@ -566,7 +566,7 @@ def dashboard():
       status:        hold / semi / watch のいずれか単一 (省略時=hold、空文字=全ステータス)
       gyoutai_theme: 業態/テーマ名の完全一致 (省略時=全業態テーマ)
                      指定時は status を無視して全銘柄から該当業態/テーマを抽出。
-      sort:          position / rank / gyoutai (省略時=position)
+      sort:          position / rank / gyoutai / rating (省略時=position)
     `page` パラメータは silent に無視 (旧 URL 互換)。
     """
     active_status = _parse_status_filter(request.args)
@@ -640,7 +640,7 @@ def dashboard():
             k,
             include_empty_status=preserve_all_status,
         )
-        for k in ("position", "rank", "gyoutai", "rs_change_1d")  # rs_change_1d: issue #332
+        for k in ("position", "rank", "gyoutai", "rating", "rs_change_1d")  # rs_change_1d: issue #332
     }
 
     # 保有フィルタ表示時のみ、運用総額と PF 全体の qty 最終更新日を集計

@@ -35,6 +35,8 @@ from research_shelve import (
     KESSAN_REACTION_PERIODS,
 )
 
+_RATING_SORT_ORDER = {"S": 0, "A": 1, "B": 2, "C": 3, "D": 4, "E": 5}
+
 
 def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
     """1銘柄の調査レコードを取得する。
@@ -1845,7 +1847,8 @@ def list_portfolio_with_indicators(
 
     Args:
         records: portfolio_shelve.list_records の戻り値 (既に status 等で絞り込み済み)
-        sort_key: "position" / "rank" / "gyoutai" のいずれか。不正値は position 扱い。
+        sort_key: "position" / "rank" / "gyoutai" / "rating" のいずれか。
+                  不正値は position 扱い。
 
     Returns:
         各 dict: portfolio レコード + {stock_name, rank, kessanbi_md, per, market_cap,
@@ -1954,6 +1957,13 @@ def list_portfolio_with_indicators(
         rows.sort(key=lambda r: (
             r.get("rs_change_1d") is None,
             -(r.get("rs_change_1d") or 0.0),
+            r.get("code_s", ""),
+        ))
+    elif sort_key == "rating":
+        # 総合評価の降順ソート。S→A→…→E、未評価は末尾、同評価はコード順。
+        rows.sort(key=lambda r: (
+            (r.get("overall_rating") or "") == "",
+            _RATING_SORT_ORDER.get(r.get("overall_rating") or "", 999),
             r.get("code_s", ""),
         ))
     else:

@@ -2084,8 +2084,9 @@ class TestListPortfolioWithIndicators:
             ("position", ["0003", "0001", "0004", "0002"]),
             ("rank", ["0002", "0003", "0001", "0004"]),
             ("gyoutai", ["0003", "0001", "0002", "0004"]),
+            ("rating", ["0002", "0003", "0001", "0004"]),
         ],
-        ids=["position", "rank", "gyoutai"],
+        ids=["position", "rank", "gyoutai", "rating"],
     )
     def test_sort_key_switches_order(self, monkeypatch, sort_key, expected):
         prices = {"0001": 1000, "0003": 500, "0004": 10000}
@@ -2095,7 +2096,11 @@ class TestListPortfolioWithIndicators:
         )
         monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {c: "" for c in codes})
         monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {c: None for c in codes})
-        monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {c: "" for c in codes})
+        monkeypatch.setattr(
+            helpers,
+            "_bulk_resolve_overall_ratings",
+            lambda codes: {"0001": "B", "0002": "S", "0003": "A", "0004": ""},
+        )
         monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
         monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
 

@@ -1066,6 +1066,7 @@ class TestDashboardFilter:
         assert "sort=position" in html
         assert "sort=rank" in html
         assert "sort=gyoutai" in html
+        assert "sort=rating" in html
 
     def test_sort_links_preserve_all_status_filter(self, client):
         """issue #274: status= の全件表示から sort を変えても全件表示を維持する"""
