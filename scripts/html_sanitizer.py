@@ -22,7 +22,7 @@ from html.parser import HTMLParser
 ALLOWED_TAGS = frozenset({
     "b", "a", "span",
     # theme-news 表示用 (markdown 生成タグ + Sources 折りたたみ + 改行ヒント)
-    "h2", "h3", "h4", "ul", "ol", "li", "p", "strong", "em", "code", "br",
+    "h2", "h3", "h4", "ul", "ol", "li", "p", "strong", "em", "code", "br", "blockquote",
     "table", "thead", "tbody", "tr", "th", "td",
     "details", "summary", "wbr",
 })
