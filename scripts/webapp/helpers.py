@@ -3242,7 +3242,8 @@ def build_price_rs_chart_full(
             # ため固定サイズ EXT_SIZE にフォールバック。num は MA10乖離% で tooltip に出す。
             if m.get("extended"):
                 ext_size = size_map[m["strength"]] if m.get("strength") else EXT_SIZE
-                title = "ブ(extended) %s 乖離+%d%% 高値追い圏・対象外" % (sig_md, m["num"])
+                ext_label = "ex/%s" % m["strength"] if m.get("strength") else "ex"
+                title = "ブ(%s) %s 乖離+%d%% 高値追い圏・対象外" % (ext_label, sig_md, m["num"])
                 parts.append(_svg_hover_rect(m["x"], y_bu, 8.0, 8.0, title))
                 parts.append(_svg_diamond(
                     m["x"], y_bu, ext_size * BU_SIZE_SCALE, "#f57c00", 0.5, title, filled=False))
