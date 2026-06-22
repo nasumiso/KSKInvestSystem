@@ -332,7 +332,8 @@ def theme_news_md_to_html(text: str) -> str:
         _bq_blocks.append(m.group(0))
         return f"\x00BQ{len(_bq_blocks)-1}\x00"
     html = re.sub(r"<blockquote>.*?</blockquote>", _stash_bq, html, flags=re.DOTALL)
-    html = re.sub(r"(?<![>\s])・", "<br>・", html)
+    # カタカナ直後の・(固有名詞中点)は <br> を挿入しない
+    html = re.sub(r"(?<![>\sァ-ヶー])・(?![ァ-ヶー])", "<br>・", html)
     for i, block in enumerate(_bq_blocks):
         html = html.replace(f"\x00BQ{i}\x00", block)
     # 「+」「→」の前に <wbr> を挟んで、文が長くても自然な位置で折り返せるようにする。
