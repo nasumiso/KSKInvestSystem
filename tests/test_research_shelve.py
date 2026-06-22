@@ -617,7 +617,20 @@ class TestListFilter:
         )
         assert results_empty == []
 
-    # --- ケース29: code_s 昇順 ---
+    # --- ケース29: keyword (ir_comment / shikiho_comments) ---
+    @pytest.mark.parametrize("keyword,field_desc", [
+        ("増収増益予想", "ir_comment"),
+        ("物流DX", "shikiho_comments"),
+    ])
+    def test_filter_keyword_nested_fields(self, db_path, keyword, field_desc):
+        rec = rs.create_research_record("7777", "テスト銘柄")
+        rec["snapshots"] = [{"ir_comment": "増収増益予想で強気維持", "date_yy_m": "26.6.1"}]
+        rec["shikiho_comments"] = [{"period": "26春", "comment": "物流DX推進で受注拡大"}]
+        rs.upsert_research_record(rec, db_path=db_path)
+        hits = rs.list_research_records(keyword=keyword, db_path=db_path)
+        assert [r["code_s"] for r in hits] == ["7777"], f"{field_desc} でヒットすべき"
+
+    # --- ケース30: code_s 昇順 ---
     def test_result_sorted_by_code_s(self, populated_db):
         results = rs.list_research_records(db_path=populated_db)
         codes = [r["code_s"] for r in results]

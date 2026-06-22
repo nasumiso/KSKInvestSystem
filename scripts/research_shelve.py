@@ -876,6 +876,15 @@ def _matches_keyword(record: Dict[str, Any], keyword_norm: str) -> bool:
         plain = strip_html_tags(value)
         if keyword_norm in normalize_for_search(plain):
             return True
+    for snap in record.get("snapshots", []) or []:
+        val = snap.get("ir_comment", "") or ""
+        if keyword_norm in normalize_for_search(strip_html_tags(val)):
+            return True
+    for shikiho in record.get("shikiho_comments", []) or []:
+        # 古いデータは str のまま残っている場合がある（後方互換）
+        val = shikiho if isinstance(shikiho, str) else shikiho.get("comment", "") or ""
+        if keyword_norm in normalize_for_search(strip_html_tags(val)):
+            return True
     return False
 
 
