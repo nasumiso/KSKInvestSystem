@@ -2007,7 +2007,7 @@ def _collect_trigger_dates(stock, today):
     return list(dict.fromkeys(candidates))
 
 
-def update_research_snapshots(*, db_path=None, code_filter=None):
+def update_research_snapshots(*, db_path=None, code_filter=None, force=False):
     """ウォッチ銘柄のうち決算更新があったものにスナップショットを自動追記する。
 
     対象は `my_watch_list.txt` 記載のコード (通常 + H付き保有) の union に限定。
@@ -2021,6 +2021,8 @@ def update_research_snapshots(*, db_path=None, code_filter=None):
         db_path: research_shelve の DB パス上書き (テスト用)
         code_filter: 銘柄コード集合を渡すと、ウォッチ集合との積に限定する。
                      None の場合はウォッチ集合全体が対象。
+        force: True の場合、決算ウィンドウチェックをスキップして今日の日付で
+               強制追記する (再取得ボタンからの手動実行用)。
     """
     import research_shelve
     import portfolio
@@ -2062,9 +2064,13 @@ def update_research_snapshots(*, db_path=None, code_filter=None):
         if not stock:
             continue
 
-        trigger_dates = _collect_trigger_dates(stock, today)
-        if not trigger_dates:
-            continue  # 決算ウィンドウ外なので何もしない (未登録でも登録しない)
+        if force:
+            # 決算ウィンドウチェックをスキップして今日の日付で強制追記
+            trigger_dates = [today.strftime("%Y/%m/%d")]
+        else:
+            trigger_dates = _collect_trigger_dates(stock, today)
+            if not trigger_dates:
+                continue  # 決算ウィンドウ外なので何もしない (未登録でも登録しない)
 
         eligible_count += 1
 
@@ -2229,8 +2235,8 @@ def refresh_stock(code_list):
     log_print(f"[refresh_stock] 強制再取得を開始します: {codes}")
     update_db_rows(codes, upd=UPD_FORCE, tables=None)
     # stocks DB だけ最新化しても research_shelve のスナップショットは古い ir_quant のまま
-    # なので、決算ウィンドウ内銘柄については snapshot も上書き更新する
-    update_research_snapshots(code_filter=codes)
+    # なので、決算ウィンドウチェックをスキップして強制的にスナップショットを追記する
+    update_research_snapshots(code_filter=codes, force=True)
     log_print("[refresh_stock] 強制再取得を完了しました")
 
 
