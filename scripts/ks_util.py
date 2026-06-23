@@ -403,6 +403,16 @@ def get_price_day(dt):
     return need_dt.date()
 
 
+def recent_weekday(dt):
+    """17時境界適用後の日付を、土日なら直近金曜に丸める。"""
+    day = get_price_day(dt)
+    if day.weekday() == 5:
+        return day - timedelta(days=1)
+    if day.weekday() == 6:
+        return day - timedelta(days=2)
+    return day
+
+
 # ==================================================
 # 計算ユーティリティ
 # ==================================================

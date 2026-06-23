@@ -61,14 +61,10 @@ def is_latest_price(stocks, code_s):
     最新価格データかどうかを返す
     """
     # 当日なら
-    need_dt = get_price_day(datetime.today())
+    need_dt = recent_weekday(datetime.today())
     price_dt = get_price_day(stocks[code_s]["access_date_price"])
     price_day = date(price_dt.year, price_dt.month, price_dt.day)
     need_day = date(need_dt.year, need_dt.month, need_dt.day)
-    if need_day.weekday() == 5:
-        need_day -= timedelta(1)
-    elif need_day.weekday() == 6:
-        need_day -= timedelta(2)
     # print " 価格データ 必要:%s DB最新:%s"%(need_day, price_day)
     if need_day <= price_day:
         price_log = stocks[code_s].get("price_log", [])

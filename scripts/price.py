@@ -1011,13 +1011,13 @@ def _load_yfinance_cache(fname):
 
 
 def _is_daily_cache_fresh(price_list):
-    """日次キャッシュの先頭日付が必要営業日以上なら True。"""
+    """日次キャッシュの先頭日付が直近取引日相当以上なら True。"""
     if not price_list:
         return False
     latest_dt = parse_date_str(str(price_list[0][0]))
     if latest_dt is None:
         return False
-    need_dt = get_price_day(datetime.today())
+    need_dt = recent_weekday(datetime.today())
     return latest_dt >= need_dt
 
 

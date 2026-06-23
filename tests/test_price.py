@@ -657,6 +657,25 @@ class TestCalcDailyIndicators:
 
 
 # ==================================================
+# _is_daily_cache_fresh
+# ==================================================
+class TestIsDailyCacheFresh:
+    """日足キャッシュの鮮度判定テスト"""
+
+    def test_weekend_rolls_back_to_friday(self):
+        """土曜17時以降でも直近金曜の日次キャッシュを新鮮扱いする。"""
+        with patch("price.recent_weekday", return_value=date(2026, 6, 12)):
+            pl = [["2026年6月12日", 100, 110, 90, 105, 1000, 105]]
+            assert price._is_daily_cache_fresh(pl) is True
+
+    def test_stale_when_before_recent_friday(self):
+        """直近金曜より古い日次キャッシュは週末でも古い扱いする。"""
+        with patch("price.recent_weekday", return_value=date(2026, 6, 12)):
+            pl = [["2026年6月11日", 100, 110, 90, 105, 1000, 105]]
+            assert price._is_daily_cache_fresh(pl) is False
+
+
+# ==================================================
 # _is_weekly_cache_fresh
 # ==================================================
 class TestIsWeeklyCacheFresh:
