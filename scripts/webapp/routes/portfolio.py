@@ -4,10 +4,11 @@ GET  /portfolio?status=hold&gyoutai_theme=半導体 : フィルタ (issue #215)
 POST /portfolio/add                              : 3監 への新規追加 / 除外済みの復活
 POST /portfolio/<code_s>/transition              : ステータス変更
 POST /portfolio/bulk-exclude                     : 2準/3監 銘柄をユニバースから除外 (一括)
+POST /portfolio/bulk-transition                  : ステータスを一括変更
 POST /portfolio/<code_s>/memo                    : memo 部分更新 (issue #175)
 
 portfolio_shelve のレコードに stocks_shelve から指標を補完して表示する。
-書き込み API は txt 関連の状態を変えるもの (add/transition/bulk-exclude) のみ
+書き込み API は txt 関連の状態を変えるもの (add/transition/bulk-exclude/bulk-transition) のみ
 末尾で sync_to_my_watch_list_txt() を呼ぶ。memo 更新は txt 内容に影響しないため同期不要。
 
 issue #215: ページング/ソートを廃止し、status は単一選択化、業態テーマ select を追加。
@@ -285,6 +286,75 @@ def bulk_exclude():
     # 同じ詳細ページに戻す。除外後は未登録扱いで表示されるため、操作結果が画面に反映される。
     return_code = (request.form.get("return_code_s") or "").strip()
     return _redirect_with_return_query(code_s=return_code or None)
+
+
+@portfolio_bp.route("/portfolio/bulk-transition", methods=["POST"])
+def bulk_transition():
+    """表示中に選択した複数銘柄のステータスを一括変更する。
+
+    フォーム: codes=<code1>&codes=<code2>... / new_status=<1保|2準|3監> /
+           reason=<任意> / action_date=<任意> / return_query=<URLクエリ>
+    部分成功許容。個別 transition と同じ ALLOWED_TRANSITIONS を使い、不可な銘柄だけ
+    failure として報告する。
+    """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+
+    codes = [c.strip() for c in request.form.getlist("codes") if c and c.strip()]
+    new_status = (request.form.get("new_status") or "").strip()
+    reason = (request.form.get("reason") or "").strip()
+    action_date = (request.form.get("action_date") or "").strip() or None
+
+    if not codes:
+        flash("変更対象が指定されていません", "error")
+        return _redirect_with_return_query()
+    if new_status not in ps.VALID_STATUSES:
+        flash(f"不正なステータス: {new_status!r}", "error")
+        return _redirect_with_return_query()
+
+    success: list[str] = []
+    unchanged: list[str] = []
+    failures: list[str] = []
+    for raw in codes:
+        try:
+            ps.validate_code_s(raw)
+            normalized = ps.normalize_code_s(raw)
+        except (ValueError, TypeError) as e:
+            failures.append(f"{raw}: 不正なコード ({e})")
+            continue
+
+        before = ps.get_record(normalized)
+        if before is None:
+            failures.append(f"{normalized}: 未登録")
+            continue
+
+        old_status = before.get("status")
+        try:
+            ps.transition_status(
+                normalized,
+                new_status,
+                reason=reason,
+                action_date=action_date,
+            )
+        except (ValueError, TypeError, KeyError) as e:
+            failures.append(f"{normalized}: {e}")
+            continue
+
+        if old_status == new_status:
+            unchanged.append(normalized)
+        else:
+            success.append(normalized)
+
+    if success:
+        _sync_txt_safely()
+        new_label = STATUS_VALUE_TO_LABEL.get(new_status, new_status)
+        flash(f"{len(success)} 件のステータスを {new_label} に変更しました ({', '.join(success)})", "info")
+    if unchanged:
+        flash(f"{len(unchanged)} 件は既に同じステータスです ({', '.join(unchanged)})", "info")
+    if failures:
+        flash("変更できなかったコードがあります: " + " / ".join(failures), "error")
+    return _redirect_with_return_query()
 
 
 @portfolio_bp.route("/portfolio/<code_s>/transition", methods=["POST"])
@@ -608,11 +678,8 @@ def dashboard():
             [] if fallback_mode else _allowed_transitions_from(row.get("status", ""))
         )
 
-    # 削除モードの可否: 表示中の rows に 2準/3監 が含まれる時のみ
-    delete_mode_allowed = (
-        not fallback_mode
-        and any(row.get("status") in ("2準", "3監") for row in rows)
-    )
+    # 一括変更モードの可否: fallback でなければ表示行に対して有効
+    delete_mode_allowed = (not fallback_mode and bool(rows))
 
     # POST → リダイレクトの戻り先として使う現状クエリ (status/gyoutai_theme)
     preserve_all_status = "status" in request.args and active_status is None

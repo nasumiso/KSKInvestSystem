@@ -175,12 +175,13 @@
     border: 1px solid #c0392b;
   }
   .portfolio-exclude-button:hover { background: #a93226; border-color: #a93226; }
-  /* 一括削除アクションバー */
+  /* 一括変更アクションバー */
   #bulk-delete-bar {
     position: sticky; bottom: 0; z-index: 10;
-    background: #fff; border-top: 2px solid #c00;
+    background: #fff; border-top: 2px solid #4285f4;
     padding: 0.5em 1em; margin-top: 0.5em;
     display: flex; gap: 0.8em; align-items: center;
+    flex-wrap: wrap;
   }
   .portfolio-add-form {
     display: flex; gap: 0.5em; align-items: center;
@@ -308,14 +309,22 @@
        style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
        title="四季報コメントを順次更新">📝 四季報更新</a>
     {% if delete_mode_allowed %}
-    <button type="button" id="toggle-delete-mode">削除モード</button>
+    <button type="button" id="toggle-delete-mode">一括変更モード</button>
     {% endif %}
   </div>
 </div>
 {% if delete_mode_allowed %}
 <div id="bulk-delete-bar" style="display:none;">
   <span><strong id="selected-count">0</strong> 件選択中</span>
-  <button type="button" id="bulk-delete-execute" class="contrast">削除 (ユニバース除外)</button>
+  <label style="margin:0;">
+    変更先:
+    <select id="bulk-transition-status" style="width:auto;display:inline-block;margin-left:0.3em;">
+      {% for _query, status_value, label in status_choices %}
+      <option value="{{ status_value }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="button" id="bulk-delete-execute" class="contrast">一括変更</button>
   <button type="button" id="bulk-delete-cancel">キャンセル</button>
 </div>
 {% endif %}
@@ -367,11 +376,8 @@
        issue #274: 業態順以外では境界線を出さない。 #}
     <tr data-code="{{ row.code_s }}"{% if active_sort == "gyoutai" and not loop.first and loop.previtem.gyoutai_first != row.gyoutai_first %} class="gyoutai-boundary"{% endif %}>
       {% if delete_mode_allowed %}
-      {# codex 指摘 P2: 1保 は bulk_exclude() で reject されるため checkbox を出さない #}
       <td class="bulk-col">
-        {% if row.status in ('2準', '3監') %}
         <input type="checkbox" class="bulk-cb" value="{{ row.code_s }}" data-status="{{ row.status }}">
-        {% endif %}
       </td>
       {% endif %}
       <td><a href="https://kabutan.jp/stock/chart?code={{ row.code_s }}" target="_blank" rel="noopener noreferrer">{{ row.code_s }}</a></td>
@@ -1112,7 +1118,7 @@ function excludeFromUniverse(codeS) {
   });
 })();
 
-// ========== 削除モード = ユニバース除外一括 ==========
+// ========== 一括変更モード ==========
 (function() {
   var toggle = document.getElementById('toggle-delete-mode');
   if (!toggle) return;  // delete_mode_allowed=false のフィルタでは何もしない
@@ -1120,6 +1126,7 @@ function excludeFromUniverse(codeS) {
   var countEl = document.getElementById('selected-count');
   var execBtn = document.getElementById('bulk-delete-execute');
   var cancelBtn = document.getElementById('bulk-delete-cancel');
+  var statusSel = document.getElementById('bulk-transition-status');
   // issue #178: 現状のフィルタ/ソート/ページ全体 (return_query) を Jinja で埋め込んで JS から参照
   var returnQuery = {{ return_query | tojson }};
 
@@ -1146,17 +1153,23 @@ function excludeFromUniverse(codeS) {
   });
   if (execBtn) execBtn.addEventListener('click', function() {
     var codes = Array.prototype.slice.call(document.querySelectorAll('.bulk-cb:checked')).map(function(c) { return c.value; });
+    var newStatus = statusSel ? statusSel.value : '';
     if (!codes.length) return;
-    if (!confirm(codes.length + ' 件をユニバースから除外します。よろしいですか?')) return;
+    if (!newStatus) return;
+    var label = statusSel && statusSel.options[statusSel.selectedIndex]
+      ? statusSel.options[statusSel.selectedIndex].text
+      : newStatus;
+    if (!confirm(codes.length + ' 件のステータスを ' + label + ' に変更します。よろしいですか?')) return;
     var fd = new FormData();
     codes.forEach(function(c) { fd.append('codes', c); });
+    fd.append('new_status', newStatus);
     fd.append('return_query', returnQuery);
-    fetch('/portfolio/bulk-exclude', { method: 'POST', body: fd })
+    fetch('/portfolio/bulk-transition', { method: 'POST', body: fd })
       .then(function(r) {
         if (r.redirected) location.href = r.url;
         else location.reload();
       })
-      .catch(function(err) { alert('除外失敗: ' + err); });
+      .catch(function(err) { alert('一括変更失敗: ' + err); });
   });
   refresh();
 })();

@@ -1068,6 +1068,12 @@ class TestDashboardFilter:
         assert "sort=gyoutai" in html
         assert "sort=rating" in html
 
+    def test_bulk_transition_mode_button_visible_in_hold_filter(self, client):
+        """保有のみ表示でも一括変更モードを出す"""
+        html = client.get("/portfolio?status=hold").data.decode()
+        assert "一括変更モード" in html
+        assert 'id="bulk-transition-status"' in html
+
     def test_sort_links_preserve_all_status_filter(self, client):
         """issue #274: status= の全件表示から sort を変えても全件表示を維持する"""
         resp = client.get("/portfolio?status=&sort=rank")
@@ -1287,17 +1293,16 @@ class TestReturnToDetail:
 
 
 class TestDeleteCheckboxScope:
-    """削除モードのチェックボックスは 2準/3監 行のみに表示される (codex 指摘 P2)"""
+    """一括変更モードのチェックボックス表示範囲"""
 
-    def test_1ho_row_has_no_checkbox_in_mixed_filter(self, client):
-        """全件表示 (?status=) で、1保 (3496) 行には checkbox が無く、
-        2準 (7203) と 3監 (6324) 行には checkbox が出る"""
+    def test_all_rows_have_checkbox_in_mixed_filter(self, client):
+        """全件表示 (?status=) では 1保/2準/3監 すべて checkbox を出す"""
         import re
         resp = client.get("/portfolio?status=")
         html = resp.data.decode()
         # 各銘柄行を抽出 (data-code="XXXX" から次の </tr> まで)
         for code, has_checkbox in [
-            ("3496", False),  # 1保 → checkbox 無し
+            ("3496", True),   # 1保 → checkbox あり
             ("7203", True),   # 2準 → checkbox あり
             ("6324", True),   # 3監 → checkbox あり
         ]:
@@ -1311,14 +1316,40 @@ class TestDeleteCheckboxScope:
                 f"行 {code} の checkbox 期待値 {has_checkbox} だが実際は {checkbox_present}"
             )
 
-    def test_no_checkbox_when_only_hold_filter(self, client):
-        """status=hold のみ (削除可能ステータスなし) なら delete_mode_allowed=False で
-        bulk-col 列自体出ない"""
+    def test_checkbox_visible_when_only_hold_filter(self, client):
+        """status=hold のみでも一括変更用 checkbox 列を出す"""
         resp = client.get("/portfolio?status=hold")
         html = resp.data.decode()
-        assert 'class="bulk-cb"' not in html
-        # bulk-col の th も出ない (delete_mode_allowed が False)
-        assert 'class="bulk-col"' not in html
+        assert 'class="bulk-cb"' in html
+        assert 'class="bulk-col"' in html
+
+
+class TestBulkTransition:
+    """POST /portfolio/bulk-transition"""
+
+    def test_bulk_transition_multiple(self, client, portfolio_db_path):
+        resp = client.post(
+            "/portfolio/bulk-transition",
+            data={"codes": ["3496", "7203"], "new_status": "3監"},
+        )
+        assert resp.status_code == 302
+        assert ps.get_record("3496", db_path=portfolio_db_path)["status"] == "3監"
+        assert ps.get_record("7203", db_path=portfolio_db_path)["status"] == "3監"
+
+    def test_bulk_transition_partial_failure(self, client, portfolio_db_path):
+        resp = client.post(
+            "/portfolio/bulk-transition",
+            data={"codes": ["3496", "9999"], "new_status": "2準"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert ps.get_record("3496", db_path=portfolio_db_path)["status"] == "2準"
+        assert "変更できなかったコードがあります".encode("utf-8") in resp.data
+
+    def test_bulk_transition_empty_codes_flash_error(self, client):
+        resp = client.post("/portfolio/bulk-transition", data={"new_status": "3監"}, follow_redirects=True)
+        assert resp.status_code == 200
+        assert "変更対象が指定されていません".encode("utf-8") in resp.data
 
 
 class TestPortfolioCharts:
