@@ -1010,6 +1010,17 @@ def _load_yfinance_cache(fname):
         return None, None
 
 
+def _is_daily_cache_fresh(price_list):
+    """日次キャッシュの先頭日付が必要営業日以上なら True。"""
+    if not price_list:
+        return False
+    latest_dt = parse_date_str(str(price_list[0][0]))
+    if latest_dt is None:
+        return False
+    need_dt = get_price_day(datetime.today())
+    return latest_dt >= need_dt
+
+
 def _convert_df_to_price_list(df):
     """yfinance DataFrameを既存のprice_list形式に変換する
     auto_adjust=Trueで取得した場合、OHLCは分割・配当調整済み。
@@ -1074,9 +1085,10 @@ def get_daily_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
             cache_ok, cach_date = is_file_timestamp(cache_fname, INTERVAL_DAY_D)
             if cache_ok:
                 pc, pl = _load_yfinance_cache(cache_fname)
-                if pc is not None:
+                if pc is not None and _is_daily_cache_fresh(pl):
                     log_debug("yfinanceキャッシュ使用(UPD_INTERVAL): %s" % code_s)
                     return pc, pl
+                log_debug("yfinance日次キャッシュが古いため再取得します: %s" % code_s)
 
     # yfinance APIで取得
     ticker_symbol = _get_ticker_symbol(code_s, stock)
@@ -1452,7 +1464,9 @@ def prefetch_yfinance_batch(code_s_list, stocks=None):
         if os.path.exists(cache_fname):
             cache_ok, _ = is_file_timestamp(cache_fname, INTERVAL_DAY_D)
             if cache_ok:
-                continue
+                _, pl = _load_yfinance_cache(cache_fname)
+                if pl is not None and _is_daily_cache_fresh(pl):
+                    continue
         codes_to_fetch.append(code_s)
 
     if not codes_to_fetch:

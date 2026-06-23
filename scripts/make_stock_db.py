@@ -71,6 +71,9 @@ def is_latest_price(stocks, code_s):
         need_day -= timedelta(2)
     # print " 価格データ 必要:%s DB最新:%s"%(need_day, price_day)
     if need_day <= price_day:
+        price_log = stocks[code_s].get("price_log", [])
+        if price_log and price_log[0][0] < need_day:
+            return False, (need_day - price_log[0][0]).days
         return True, (need_day - price_day).days
     return False, (need_day - price_day).days
 
