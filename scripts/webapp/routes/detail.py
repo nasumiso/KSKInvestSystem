@@ -144,7 +144,7 @@ def stock_detail(code_s: str):
         disclosures=disclosures,
         disclosures_has_recent=disclosures_has_recent,
         indicator_snaps=indicator_snaps,
-        valid_ratings=sorted(VALID_RATINGS - {""}),
+        valid_ratings=[r for r in ("S", "A", "B", "C", "D", "E") if r in VALID_RATINGS],
         portfolio_status_label=portfolio_status_label,
         portfolio_status_query=portfolio_status_query,
         portfolio_fallback_mode=portfolio_fallback_mode,

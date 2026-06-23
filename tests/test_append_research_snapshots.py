@@ -512,6 +512,58 @@ class TestUpdateResearchSnapshots:
         loaded = rs.get_research_record("9999", db_path=db_path)
         assert len(loaded["snapshots"]) == 0
 
+    def test_force_reuses_latest_kessan_event_date(self, db_path, monkeypatch):
+        """force 再取得でも取得日ではなく直近決算イベント日を上書きする"""
+        stock = _make_stock(
+            "3496",
+            kessan_jisseki_date=_today_str(-5),
+            stock_name="アズーム",
+        )
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+        monkeypatch.setattr(portfolio, "parse_my_portforio", lambda: (["3496"], []))
+
+        rec = rs.create_research_record("3496", "アズーム")
+        old = rs.create_snapshot(
+            _today_yy_m_d(-5),
+            acquired_date=_today_yy_m_d(-5),
+            ir_quant="old",
+            data_source="auto",
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        rs.upsert_snapshot("3496", old, db_path=db_path)
+
+        make_stock_db.update_research_snapshots(db_path=db_path, code_filter=["3496"], force=True)
+
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert len(loaded["snapshots"]) == 1
+        assert loaded["snapshots"][0]["date_yy_m"] == _today_yy_m_d(-5)
+        assert loaded["snapshots"][0]["acquired_date"] == _today_yy_m_d()
+        assert loaded["snapshots"][0]["ir_quant"] != "old"
+
+    def test_force_falls_back_to_existing_snapshot_date_when_kessan_dates_missing(self, db_path, monkeypatch):
+        """実績日/修正日が無くても既存最新 snapshot 日を使って force 更新する"""
+        stock = _make_stock("3496", stock_name="アズーム")
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+        monkeypatch.setattr(portfolio, "parse_my_portforio", lambda: (["3496"], []))
+
+        rec = rs.create_research_record("3496", "アズーム")
+        old = rs.create_snapshot(
+            "26.4.15",
+            acquired_date="26.4.15",
+            ir_quant="old",
+            data_source="auto",
+        )
+        rs.upsert_research_record(rec, db_path=db_path)
+        rs.upsert_snapshot("3496", old, db_path=db_path)
+
+        make_stock_db.update_research_snapshots(db_path=db_path, code_filter=["3496"], force=True)
+
+        loaded = rs.get_research_record("3496", db_path=db_path)
+        assert len(loaded["snapshots"]) == 1
+        assert loaded["snapshots"][0]["date_yy_m"] == "26.4.15"
+        assert loaded["snapshots"][0]["acquired_date"] == _today_yy_m_d()
+        assert loaded["snapshots"][0]["ir_quant"] != "old"
+
 
 class TestUpdatePtsReactions:
     """update_pts_reactions のユニットテスト (issue #154)"""

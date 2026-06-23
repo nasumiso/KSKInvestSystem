@@ -2007,6 +2007,43 @@ def _collect_trigger_dates(stock, today):
     return list(dict.fromkeys(candidates))
 
 
+def _latest_force_snapshot_date_yy_m(stock, record, acquired_date):
+    """手動再取得(force)時に上書き対象とする date_yy_m を返す。
+
+    優先順位:
+    1. kessan_jisseki_date / kessan_mod_date のうち新しい方
+    2. 既存 snapshots の先頭 (最新) date_yy_m
+    3. acquired_date (どうしても決算イベント日が無い場合のフォールバック)
+
+    force 再取得は「存在しない新しい決算イベント」を追加する用途ではなく、
+    直近の決算イベント行の指標を最新値で取り直す用途なので、取得日 today を
+    そのまま date_yy_m にしない。
+    """
+    import research_shelve
+
+    latest = None
+    for field in ("kessan_jisseki_date", "kessan_mod_date"):
+        date_str = stock.get(field, "")
+        if not date_str:
+            continue
+        try:
+            dt = datetime.strptime(date_str, "%Y/%m/%d").date()
+        except ValueError:
+            continue
+        if latest is None or dt > latest:
+            latest = dt
+    if latest is not None:
+        return research_shelve.to_date_yy_m(latest)
+
+    snapshots = (record or {}).get("snapshots") or []
+    if snapshots:
+        existing_date_yy_m = snapshots[0].get("date_yy_m", "")
+        if existing_date_yy_m:
+            return existing_date_yy_m
+
+    return acquired_date
+
+
 def update_research_snapshots(*, db_path=None, code_filter=None, force=False):
     """ウォッチ銘柄のうち決算更新があったものにスナップショットを自動追記する。
 
@@ -2021,8 +2058,8 @@ def update_research_snapshots(*, db_path=None, code_filter=None, force=False):
         db_path: research_shelve の DB パス上書き (テスト用)
         code_filter: 銘柄コード集合を渡すと、ウォッチ集合との積に限定する。
                      None の場合はウォッチ集合全体が対象。
-        force: True の場合、決算ウィンドウチェックをスキップして今日の日付で
-               強制追記する (再取得ボタンからの手動実行用)。
+        force: True の場合、決算ウィンドウチェックをスキップして直近の
+               決算イベント行を強制更新する (再取得ボタンからの手動実行用)。
     """
     import research_shelve
     import portfolio
@@ -2065,8 +2102,7 @@ def update_research_snapshots(*, db_path=None, code_filter=None, force=False):
             continue
 
         if force:
-            # 決算ウィンドウチェックをスキップして今日の日付で強制追記
-            trigger_dates = [today.strftime("%Y/%m/%d")]
+            trigger_dates = None
         else:
             trigger_dates = _collect_trigger_dates(stock, today)
             if not trigger_dates:
@@ -2097,12 +2133,19 @@ def update_research_snapshots(*, db_path=None, code_filter=None, force=False):
 
         # 指標/理論株価は株価依存のため取得日 (today) をラベルにする
         acquired_date = research_shelve.to_date_yy_m(today)
+        if force:
+            date_yy_m_list = [_latest_force_snapshot_date_yy_m(stock, record, acquired_date)]
+        else:
+            date_yy_m_list = []
+            for trigger_date_str in trigger_dates:
+                try:
+                    dt = datetime.strptime(trigger_date_str, "%Y/%m/%d").date()
+                    date_yy_m_list.append(research_shelve.to_date_yy_m(dt))
+                except ValueError:
+                    continue
 
-        for trigger_date_str in trigger_dates:
+        for date_yy_m in date_yy_m_list:
             try:
-                dt = datetime.strptime(trigger_date_str, "%Y/%m/%d").date()
-                date_yy_m = research_shelve.to_date_yy_m(dt)
-
                 # 同日に1件でも非auto (manual/migration等) があれば、
                 # 後段の upsert_snapshot(overwrite_same_date=True) で消えてしまうため
                 # 上書きせずスキップする。auto 同士のみ上書き許可。
@@ -2230,7 +2273,7 @@ def refresh_pts_reactions():
 
 def refresh_stock(code_list):
     """指定銘柄の master/price/shihyo/gyoseki/rironkabuka を UPD_FORCE で強制再取得し、
-    research_shelve の当日スナップショットも最新値で上書きする。
+    research_shelve の直近決算イベント行も最新値で上書きする。
 
     `update CODE --snapshot` と内部処理はほぼ同じだが、引数必須で名前が直感的。
     決算速報 (kessan_quarter / kessan_mod_date) は別経路 (shintakane.update_todays_kessan)

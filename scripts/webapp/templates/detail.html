@@ -18,7 +18,7 @@
          手動メモの「総合評価」と双方向連動 (memo-form で同じ overall_rating を送信)。 #}
       <span class="rating-badge-edit rating-badge rating-{{ record.overall_rating or 'none' }}"
             id="rating-badge-wrap"
-            onclick="editRatingBadge()"
+            onclick="editRatingBadge(event)"
             title="クリックで総合評価を変更">{{ record.overall_rating or '—' }}</span>
       <select class="editable-select rating-badge-select hidden" id="rating-badge-select"
               name="overall_rating" data-form="memo" form="memo-form"
@@ -791,13 +791,27 @@
 // ===== 総合評価バッジ (左上) のインライン編集 =====
 // 送信は #rating-badge-select (name=overall_rating, form=memo-form) に一本化し、
 // 手動メモの #rating-memo-select とは双方向同期する。
-function editRatingBadge() {
+function _openRatingBadgePicker(sel) {
+  if (!sel) return;
+  sel.focus();
+  // 1クリック目でそのまま候補を開けるブラウザでは showPicker を優先する。
+  if (typeof sel.showPicker === 'function') {
+    try {
+      sel.showPicker();
+      return;
+    } catch (e) {}
+  }
+  // showPicker 非対応環境では click を同一ジェスチャ内で発火して開きやすくする。
+  try { sel.click(); } catch (e) {}
+}
+function editRatingBadge(event) {
   var wrap = document.getElementById('rating-badge-wrap');
   var sel = document.getElementById('rating-badge-select');
   if (!wrap || !sel) return;
+  if (event) event.preventDefault();
   wrap.classList.add('hidden');
   sel.classList.remove('hidden');
-  sel.focus();
+  _openRatingBadgePicker(sel);
 }
 function hideRatingBadge() {
   var wrap = document.getElementById('rating-badge-wrap');
@@ -821,6 +835,11 @@ document.addEventListener('DOMContentLoaded', function() {
     badgeSel.addEventListener('change', function() {
       _applyRatingToBadge(badgeSel.value);
       if (memoSel) memoSel.value = badgeSel.value;
+      // 変更確定時はその場で dirty 化して即保存し、再クリック不要にする。
+      badgeSel.dispatchEvent(new Event('input', { bubbles: true }));
+      var form = document.getElementById('memo-form');
+      if (form) submitFormAsync(form);
+      hideRatingBadge();
     });
   }
 });
