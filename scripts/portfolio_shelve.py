@@ -133,6 +133,19 @@ TRADE_IDEA_DESCRIPTIONS = {
 }
 TRADE_IDEA_OPTIONS = tuple(TRADE_IDEA_DESCRIPTIONS.keys())
 
+# issue #344: stage / jukyu_chart を自由記述から選択式へ寄せるための定型候補。
+# DB スキーマは変えず、UI 側で分解入力した値を route 層で 1 本の文字列に畳み込む。
+STAGE_OPTIONS = (
+    "1S", "2S", "3S", "4S", "1Sor3S",
+    "1S~2S", "2S~3S", "3S~4S", "4S~1S",
+)
+STAGE_T_OPTIONS = ("1", "2", "3", "4", "5")
+CHART_STYLE_OPTIONS = (
+    "週足低位", "週足CWH", "週足VCP", "週足高値",
+    "月足低位", "月足CWH", "月足VCP", "月足高値",
+)
+CHART_STATE_OPTIONS = ("形成", "ブレイク", "ブレイク済み", "ブレイク失敗", "再ブレイク")
+
 ACTION_LOG_FIELDS = frozenset(
     {
         "code_s",

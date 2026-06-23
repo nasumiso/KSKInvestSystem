@@ -193,13 +193,24 @@ class TestDashboardGet:
         html = resp.data.decode()
 
         # issue #327: 評価は指標ページ (ページ1) のみ、チャートパターンはページ2へ移設
-        assert '<th data-page="1">評価</th>' in html
-        assert '<th data-page="2">チャートパターン</th>' in html
-        assert '<td data-page="1" class="rating-cell" style="background:#fbbc04">S</td>' in html
-        assert 'data-field="jukyu_chart"' in html
-        assert 'data-multiline="1"' in html
+        assert '>評価<' in html
+        assert '>チャートパターン<' in html
+        assert 'class="rating-cell"' in html
+        assert '>S</td>' in html
+        assert 'class="chart-style-select"' in html
+        assert 'class="chart-state-select"' in html
         assert "月足低位ブレイク" in html
         assert 'name="jukyu_chart"' not in html
+
+    def test_dashboard_stage_t_select_uses_b_label_for_2s(self, client, portfolio_db_path):
+        ps.update_memo("3496", {"stage": "2S(3B)"}, db_path=portfolio_db_path)
+        html = client.get("/portfolio?status=hold").data.decode()
+        assert ">3B<" in html
+        assert ">Bなし<" in html
+
+    def test_dashboard_stage_select_includes_1s_or_3s(self, client):
+        html = client.get("/portfolio?status=hold").data.decode()
+        assert '>1Sor3S<' in html
 
 
 class TestAddPost:
@@ -629,6 +640,35 @@ class TestUpdateMemoPost:
         assert rec["memo"]["inago_origin"] == "twitter"
         assert rec["memo"]["jukyu_chart"] == "CWH"
 
+    def test_memo_structured_stage_and_chart_fields_are_folded(self, client, portfolio_db_path):
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={
+                "stage_s": "2S~3S",
+                "stage_t": "3",
+                "chart_style": "月足CWH",
+                "chart_state": "ブレイク",
+            },
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["fields"]["stage"] == "2S(3B)~3S"
+        assert body["fields"]["jukyu_chart"] == "月足CWHブレイク"
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["memo"]["stage"] == "2S(3B)~3S"
+        assert rec["memo"]["jukyu_chart"] == "月足CWHブレイク"
+
+    def test_memo_stage_1s_or_3s_saves_without_suffix(self, client, portfolio_db_path):
+        resp = client.post(
+            "/portfolio/6324/memo",
+            data={"stage_s": "1Sor3S", "stage_t": "3"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        rec = ps.get_record("6324", db_path=portfolio_db_path)
+        assert rec["memo"]["stage"] == "1Sor3S"
+
     def test_memo_empty_string_overwrites(self, client, portfolio_db_path):
         """空文字を明示送信したら "" に上書き (メモ削除扱い)"""
         ps.update_memo("6324", {"trade_idea": "GARP"}, db_path=portfolio_db_path)
@@ -701,7 +741,7 @@ class TestUpdateMemoAjax:
     def test_ajax_partial_update_returns_json(self, client, portfolio_db_path):
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"stage": "2S", "last_research_update": "5/10"},
+            data={"stage_s": "2S", "stage_t": "3", "last_research_update": "5/10"},
             headers={"X-Requested-With": "XMLHttpRequest"},
         )
         assert resp.status_code == 200
@@ -709,11 +749,11 @@ class TestUpdateMemoAjax:
         body = resp.get_json()
         assert body["ok"] is True
         assert body["code_s"] == "6324"
-        assert body["fields"]["stage"] == "2S"
+        assert body["fields"]["stage"] == "2S(3B)"
         assert body["fields"]["last_research_update"] == "5/10"
         # shelve に反映されている
         rec = ps.get_record("6324", db_path=portfolio_db_path)
-        assert rec["memo"]["stage"] == "2S"
+        assert rec["memo"]["stage"] == "2S(3B)"
         assert rec["memo"]["last_research_update"] == "5/10"
 
     def test_ajax_response_includes_styles_and_display(self, client, portfolio_db_path):
@@ -721,7 +761,7 @@ class TestUpdateMemoAjax:
         # サーバは styles と display を AJAX レスポンスに含める。
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"stage": "2S", "last_research_update": "5/10"},
+            data={"stage_s": "2S", "stage_t": "", "last_research_update": "5/10"},
             headers={"X-Requested-With": "XMLHttpRequest"},
         )
         assert resp.status_code == 200
@@ -733,19 +773,19 @@ class TestUpdateMemoAjax:
         assert body["display"]["stage"] == "2S"
         assert body["display"]["last_research_update"] == "5/10"
 
-    def test_ajax_updates_jukyu_chart_with_newline(self, client, portfolio_db_path):
+    def test_ajax_updates_jukyu_chart_from_structured_selects(self, client, portfolio_db_path):
         resp = client.post(
             "/portfolio/6324/memo",
-            data={"jukyu_chart": "月足低位ブレイク\nCWH"},
+            data={"chart_style": "月足低位", "chart_state": "ブレイク"},
             headers={"X-Requested-With": "XMLHttpRequest"},
         )
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["ok"] is True
-        assert body["display"]["jukyu_chart"] == "月足低位ブレイク\nCWH"
+        assert body["display"]["jukyu_chart"] == "月足低位ブレイク"
 
         rec = ps.get_record("6324", db_path=portfolio_db_path)
-        assert rec["memo"]["jukyu_chart"] == "月足低位ブレイク\nCWH"
+        assert rec["memo"]["jukyu_chart"] == "月足低位ブレイク"
 
     def test_ajax_display_includes_page2_memo_fields(self, client, portfolio_db_path):
         """issue #327: ページ2列の inline 編集同期用に display へ 4 フィールドを含める"""
@@ -1396,10 +1436,14 @@ class TestPortfolioCharts:
         """inline 編集の初期値として stage / 更新日が JSON 埋め込みに出る (issue #231)"""
         ps.update_memo(
             "3496",
-            {"stage": "2S", "last_research_update": "5/30"},
+            {"stage": "2S(3B)", "last_research_update": "5/30", "jukyu_chart": "月足CWHブレイク"},
             db_path=portfolio_db_path,
         )
         resp = client.get("/portfolio/charts?status=hold")
         html = resp.data.decode()
-        assert '"stage": "2S"' in html
+        assert '"stage": "2S(3B)"' in html
         assert '"last_research_update": "5/30"' in html
+        assert '"stage_struct"' in html
+        assert '"jukyu_chart_struct"' in html
+        assert 'class="stage-main-select"' in html
+        assert 'class="chart-style-select"' in html
