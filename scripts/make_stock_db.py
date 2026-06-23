@@ -966,7 +966,10 @@ def get_trend_template_expr(stock):
     """
     if "trend_template" not in stock:
         return "-"
-    miss_count = len(stock["trend_template"])
+    # None は週足データ欠損 (price.py calc_trend_template 例外時) を示す (issue #340 1-2)
+    if stock["trend_template"] is None:
+        return "—"
+    miss_count = len(stock["trend_template"])  # [] = 全通過(◎)、リスト = miss項目
     if miss_count == 0:
         return "◎"
     if miss_count <= 2:
@@ -990,6 +993,9 @@ def get_index_trend_template_expr(stock):
     """
     if "trend_template" not in stock:
         return ("-", "")
+    # None は週足データ欠損を示す (issue #340 1-2)
+    if stock["trend_template"] is None:
+        return ("—", "")
     misses = stock["trend_template"]
     miss_count = len(misses)
     pass_count = 7 - miss_count
@@ -1090,6 +1096,10 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
     out = []
     pocket_pivot = stock.get("pocket_pivot", "")
     trend_template = stock.get("trend_template", [])
+    # None = 週足データ欠損。未評価としてシグナル全無効 (issue #340 1-2)。
+    # [] (空リスト) = 全条件通過(◎) であり欠損とは別扱い。
+    if trend_template is None:
+        return out
     misses = set(trend_template) if isinstance(trend_template, (list, tuple, set)) else set()
     # Stage 4 崩壊 (7条件全 miss) ではポ/ブともに無効化 (issue #110/#111)。
     stage4 = _is_stage4(misses)
@@ -1187,8 +1197,11 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
     # Stage 4 崩壊銘柄ではポケットピポット/ブレイクを無効化する (issue #110/#111)。
     # trend_template (週足) の7条件を1つも満たさない (全 miss) 場合のみ崩壊とみなす。
     # 部分的な不通過 (下落途中・Stage 1 底値圏) は対象外。
-    # trend_template が空(◎)・キー欠落(週足取得失敗)ならベース形成中とみなし除外しない。
+    # None = 週足データ欠損 = 未評価としてシグナル全無効 (issue #340 1-2)。
+    # [] (空リスト) = 全条件通過(◎) でありキー欠落と同様にシグナルは通す。
     trend_template = stock.get("trend_template", [])
+    if trend_template is None:
+        return signal, tags
     misses = set(trend_template) if isinstance(trend_template, (list, tuple, set)) else set()
     stage4 = _is_stage4(misses)
     # ポケットピポット

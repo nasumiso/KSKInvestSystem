@@ -807,8 +807,9 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
         try:
             ma30 = sum(prices[0:30]) / len(prices[0:30])
             ma40 = sum(prices[0:40]) / len(prices[0:40])
-            if len(prices[1:41]) > 0:
-                ma40_b = sum(prices[1:41]) / len(prices[1:41])
+            # 1週前比較だと週次ノイズで乱れるため4週前(≈1ヶ月)と比較する (issue #340 1-1)
+            if len(prices[4:44]) > 0:
+                ma40_b = sum(prices[4:44]) / len(prices[4:44])
             else:
                 ma40_b = ma40
             ma10 = sum(prices[0:10]) / len(prices[0:10])
@@ -835,7 +836,9 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
             return misses
         except (ValueError, ZeroDivisionError, IndexError):
             log_warning(" 価格データがかけている")
-            return []
+            # [] (空=◎完璧) ではなく None (欠損) を返す。
+            # None のまま make_stock_db に渡すことでシグナル無効化される (issue #340 1-2)
+            return None
 
     price_dict["trend_template"] = calc_trend_template()
 

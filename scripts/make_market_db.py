@@ -1300,7 +1300,8 @@ def _adjust_index_trend_template(db):
     Returns:
         dict: trend_template だけ補正したコピー (元dictは破壊しない)
     """
-    misses = list(db.get("trend_template", []))
+    # None は週足データ欠損を示す (issue #340 1-2)。欠損時は補正不要でそのまま返す。
+    misses = list(db.get("trend_template") or [])
     if "RS" in misses and db.get("rs_raw", 0) > INDEX_RS_TREND_THRESHOLD:
         misses.remove("RS")
     adjusted = dict(db)
@@ -2026,7 +2027,7 @@ def _html_market(market_db):
             db = market_db[db_name]
             # 指数向けに trend_template の RS 基準を補正してから表示文字列を作る (issue #148 Part 1)
             adjusted_db = _adjust_index_trend_template(db)
-            trend_misses_list = adjusted_db.get("trend_template", [])
+            trend_misses_list = adjusted_db.get("trend_template") or []
             trend_expr = trend_symbol_from_misses(trend_misses_list)
             trend_misses = ",".join(trend_misses_list) if isinstance(trend_misses_list, list) else ""
 

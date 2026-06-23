@@ -191,7 +191,7 @@ class TestMakeSignal:
         "trend_template, expect_signal",
         [
             ([], True),  # 全通過(◎) → タグ付与
-            (None, True),  # legacy None → 空扱い
+            (None, False),  # 週足データ欠損(None) → シグナル無効 (issue #340 1-2)
             (["RS"], True),  # 1項目だけmiss → タグ付与
             (["pr>ma30,40", "ma40Up", "high(low)52"], True),  # 部分崩壊(旧3条件) → タグ付与
             (_ALL7[:6], True),  # 6項目miss(1つ通過) → タグ付与
