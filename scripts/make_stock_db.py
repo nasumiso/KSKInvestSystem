@@ -2106,12 +2106,20 @@ def update_research_snapshots(*, db_path=None, code_filter=None, force=False):
                 # 同日に1件でも非auto (manual/migration等) があれば、
                 # 後段の upsert_snapshot(overwrite_same_date=True) で消えてしまうため
                 # 上書きせずスキップする。auto 同士のみ上書き許可。
-                # force 時も同日 auto が既にあればスキップ (2回連続再取得の重複防止)。
                 same_date = existing_by_date.get(date_yy_m, [])
                 has_protected = any(
                     s.get("data_source") != "auto" for s in same_date
                 )
-                if has_protected or (force and same_date):
+                if has_protected:
+                    skipped_existing += 1
+                    continue
+                # force 時は同じ acquired_date (取得日まで一致) の auto が既にあれば
+                # 重複追記をスキップ。異なる日付なら上書き許可。
+                if force and any(
+                    s.get("acquired_date") == acquired_date
+                    and s.get("data_source") == "auto"
+                    for s in same_date
+                ):
                     skipped_existing += 1
                     continue
 
