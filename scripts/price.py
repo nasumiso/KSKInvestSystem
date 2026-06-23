@@ -1023,6 +1023,10 @@ def _convert_df_to_price_list(df):
     price_list = []
     for idx in reversed(df.index):
         row = df.loc[idx]
+        if any(row.get(col) != row.get(col) for col in ["Open", "High", "Low", "Close"]):
+            # yfinance は当日行に Volume だけ入り OHLC が NaN のことがある。
+            # repair=True でも復元できない行は、変換全体を落とさず除外する。
+            continue
         # 日付を"YYYY年M月D日"形式に変換
         if hasattr(idx, "date"):
             dt = idx.date() if callable(idx.date) else idx.date
@@ -1083,7 +1087,7 @@ def get_daily_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
             ticker = yf.Ticker(ticker_symbol)
             # 2mo: 決算反応20d (決算前 + 20営業日後) と rs_line 20日前比に必要な
             # 営業日 ~40日分を確保する (1mo だと暦日30日 ≒ 営業日19日で不足)
-            df = ticker.history(period="2mo", auto_adjust=True)
+            df = ticker.history(period="2mo", auto_adjust=True, repair=True)
     except Exception as e:
         log_warning("yfinance取得エラー(%s): %s" % (code_s, e))
         return None, None
@@ -1484,6 +1488,7 @@ def prefetch_yfinance_batch(code_s_list, stocks=None):
                 # 決算反応20d / rs_line 20日前比に必要な営業日 ~40日分を確保。
                 period="2mo",
                 auto_adjust=True,
+                repair=True,
                 threads=True,
                 progress=False,
             )
