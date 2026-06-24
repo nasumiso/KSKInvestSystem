@@ -27,6 +27,22 @@ class TestHasPriceData:
         stocks = {"1234": {"sell_pressure_ratio": [50, 60, 40, 2.5, 1.8]}}
         assert make_stock_db.has_price_data(stocks, "1234", latest=False) is True
 
+    def test_latest_uses_recent_weekday_for_price_log(self, monkeypatch):
+        """土曜実行でも直近金曜の price_log なら最新扱いする。"""
+        monkeypatch.setattr(
+            make_stock_db,
+            "recent_weekday",
+            lambda _dt: date(2026, 6, 12),
+        )
+        stocks = {
+            "1234": {
+                "sell_pressure_ratio": [50, 60, 40, 2.5, 1.8],
+                "access_date_price": datetime(2026, 6, 13, 20, 0),
+                "price_log": [(date(2026, 6, 12), 1000)],
+            }
+        }
+        assert make_stock_db.has_price_data(stocks, "1234", latest=True) is True
+
 
 # ==================================================
 # has_gyoseki_data

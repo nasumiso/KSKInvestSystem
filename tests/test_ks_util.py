@@ -139,6 +139,19 @@ class TestGetPriceDay:
         assert ks_util.get_price_day(dt) == date(2025, 6, 9)
 
 
+class TestRecentWeekday:
+    """17:00 境界 + 土日補正のテスト"""
+
+    @pytest.mark.parametrize("dt, expected", [
+        (datetime(2026, 6, 12, 20, 0), date(2026, 6, 12)),  # 金曜夜
+        (datetime(2026, 6, 13, 20, 0), date(2026, 6, 12)),  # 土曜夜 → 金曜
+        (datetime(2026, 6, 14, 12, 0), date(2026, 6, 12)),  # 日曜 → 金曜
+        (datetime(2026, 6, 15, 10, 0), date(2026, 6, 12)),  # 月曜17時前 → 前金曜
+    ])
+    def test_weekend_rolls_back_to_friday(self, dt, expected):
+        assert ks_util.recent_weekday(dt) == expected
+
+
 # ==================================================
 # get_db_code / set_db_code
 # ==================================================

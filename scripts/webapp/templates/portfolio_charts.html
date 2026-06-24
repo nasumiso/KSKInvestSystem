@@ -48,18 +48,31 @@
   .chart-cell-header .editable input {
     font-size: 0.85em; padding: 0 0.2em; margin: 0; height: auto; width: 6em;
   }
-  .chart-cell-header .edit-jukyu {
-    min-width: 4em; max-width: 18em; max-height: 2.6em;
-    overflow: auto; white-space: pre-wrap;
+  .chart-cell-header .stage-struct,
+  .chart-cell-header .chart-struct {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.15em;
+    align-items: center;
   }
-  .chart-cell-header .editable textarea {
-    font-size: 0.85em; padding: 0.15em 0.2em; margin: 0;
-    width: 18em; height: 4.5em; resize: vertical;
+  .chart-cell-header .stage-struct { flex-wrap: nowrap; }
+  .chart-cell-header .stage-struct select,
+  .chart-cell-header .chart-struct select {
+    margin: 0;
+    padding: 0 2px;
+    font-size: 0.85em;
+    height: auto;
   }
+  .chart-cell-header .stage-main-select { max-width: 6.2em; }
+  .chart-cell-header .stage-t-select { width: 4.1em; }
+  .chart-cell-header .chart-style-select { max-width: 6.8em; }
+  .chart-cell-header .chart-state-select { max-width: 5.8em; }
   /* プレースホルダー (空セル) では編集 UI も隠す */
   .chart-cell.placeholder .chart-cell-header .edit-sep,
   .chart-cell.placeholder .chart-cell-header .edit-label,
-  .chart-cell.placeholder .chart-cell-header .editable { display: none; }
+  .chart-cell.placeholder .chart-cell-header .editable,
+  .chart-cell.placeholder .chart-cell-header .stage-struct,
+  .chart-cell.placeholder .chart-cell-header .chart-struct { display: none; }
   /* 株探チャートページは上部にヘッダ・広告・銘柄サマリー、下部に注釈・広告バナーが
      乗るフルページ。iframe を窓 (.chart-viewport) でクリップし、--chart-offset 分だけ
      上にずらしてチャート本体だけを見せる。窓の高さ (--chart-window-h) でチャート下端
@@ -113,11 +126,37 @@
       <a class="kabu" target="_blank" rel="noopener">株探</a>
       <span class="edit-sep">|</span>
       <span class="edit-label">ステージ</span>
-      <span class="editable edit-stage" title="クリックで編集 (更新日も当日に自動補完)">—</span>
+      <span class="stage-struct" data-rescue="0">
+        <select class="stage-main-select" title="選択で保存 (更新日も当日に自動補完)">
+          <option value="">—</option>
+          {% for stage in stage_options %}
+          <option value="{{ stage }}">{{ stage }}</option>
+          {% endfor %}
+        </select>
+        <select class="stage-t-select" title="T/B" data-unit="T" disabled>
+          <option value="">Tなし</option>
+          {% for t in stage_t_options %}
+          <option value="{{ t }}">{{ t }}T</option>
+          {% endfor %}
+        </select>
+      </span>
       <span class="edit-label">更新日</span>
       <span class="editable edit-update" title="クリックで編集 (M/D)">—</span>
       <span class="edit-label">需給</span>
-      <span class="editable edit-jukyu" title="クリックで編集">—</span>
+      <span class="chart-struct" data-rescue="0">
+        <select class="chart-style-select" title="型">
+          <option value="">型なし</option>
+          {% for style in chart_style_options %}
+          <option value="{{ style }}">{{ style }}</option>
+          {% endfor %}
+        </select>
+        <select class="chart-state-select" title="状態" disabled>
+          <option value="">状態なし</option>
+          {% for state in chart_state_options %}
+          <option value="{{ state }}">{{ state }}</option>
+          {% endfor %}
+        </select>
+      </span>
     </div>
     <div class="chart-viewport">
       <iframe scrolling="no" tabindex="-1"></iframe>
@@ -156,9 +195,13 @@
         var iframe = cell.querySelector('iframe');
         var nameLink = cell.querySelector('.name');
         var kabuLink = cell.querySelector('.kabu');
-        var stageEl = cell.querySelector('.edit-stage');
+        var stageBox = cell.querySelector('.stage-struct');
+        var stageMain = cell.querySelector('.stage-main-select');
+        var stageT = cell.querySelector('.stage-t-select');
         var updateEl = cell.querySelector('.edit-update');
-        var jukyuEl = cell.querySelector('.edit-jukyu');
+        var chartBox = cell.querySelector('.chart-struct');
+        var chartStyle = cell.querySelector('.chart-style-select');
+        var chartState = cell.querySelector('.chart-state-select');
         var s = STOCKS[start + i];
         if (!s) {
           // ページ末尾の 1 件不足: 空セルをプレースホルダー表示 (グリッド維持)
@@ -177,10 +220,34 @@
         nameLink.textContent = s.code_s + ' ' + s.stock_name;
         nameLink.href = '/stock/' + code;
         kabuLink.href = 'https://kabutan.jp/stock/chart?code=' + code;
-        // stage / 更新日 / 需給チャートの初期値 (編集中でなければ最新値で再描画)
-        if (stageEl.dataset.editing !== '1') stageEl.textContent = s.stage || '—';
+        var stageStruct = s.stage_struct || {};
+        stageBox.dataset.rescue = stageStruct.rescue ? '1' : '0';
+        rebuildSelectOptions(
+          stageMain,
+          '—',
+          {{ stage_options|tojson }},
+          stageStruct.rescue || stageStruct.s || '',
+          stageStruct.rescue || ''
+        );
+        stageT.value = stageStruct.t || '';
+        relabelStageTSelect(stageT, stageStruct.s || '');
+        stageMain.dataset.prev = stageMain.value || '';
+        stageT.dataset.prev = stageT.value || '';
+        stageT.disabled = !stageMain.value || stageBox.dataset.rescue === '1';
         if (updateEl.dataset.editing !== '1') updateEl.textContent = s.last_research_update || '—';
-        if (jukyuEl.dataset.editing !== '1') jukyuEl.textContent = s.jukyu_chart || '—';
+        var chartStruct = s.jukyu_chart_struct || {};
+        chartBox.dataset.rescue = chartStruct.rescue ? '1' : '0';
+        rebuildSelectOptions(
+          chartStyle,
+          '型なし',
+          {{ chart_style_options|tojson }},
+          chartStruct.rescue || chartStruct.style || '',
+          chartStruct.rescue || ''
+        );
+        chartState.value = chartStruct.state || '';
+        chartStyle.dataset.prev = chartStyle.value || '';
+        chartState.dataset.prev = chartState.value || '';
+        chartState.disabled = chartBox.dataset.rescue === '1';
       }
       var dispStart = total === 0 ? 0 : start + 1;
       var dispEnd = Math.min(start + PER_PAGE, total);
@@ -219,7 +286,7 @@
       if (iframe) iframe.addEventListener('load', focusChartShortcuts);
     });
 
-    // ----- stage / 更新日 / 需給チャートの inline 編集 (portfolio 一覧と同仕様、issue #231 / #305) -----
+    // ----- stage / 更新日 / 需給チャートの inline 編集 (portfolio 一覧と同仕様、issue #231 / #344) -----
     function todayMD() {
       var d = new Date();
       return (d.getMonth() + 1) + '/' + d.getDate();
@@ -242,30 +309,58 @@
       return y + '-' + mm + '-' + dd;
     }
 
+    function stageUnit(stageValue) {
+      return (stageValue || '').split('~', 1)[0] === '2S' ? 'B' : 'T';
+    }
+
+    function allowsStageSuffix(stageValue) {
+      return !!stageValue && stageValue.indexOf('or') === -1;
+    }
+
+    function relabelStageTSelect(sel, stageValue) {
+      var unit = stageUnit(stageValue || '');
+      sel.dataset.unit = unit;
+      Array.prototype.forEach.call(sel.options, function(opt) {
+        opt.textContent = opt.value ? (opt.value + unit) : (unit + 'なし');
+      });
+    }
+
+    function rebuildSelectOptions(sel, emptyLabel, values, selectedValue, rescueValue) {
+      sel.innerHTML = '';
+      var emptyOpt = document.createElement('option');
+      emptyOpt.value = '';
+      emptyOpt.textContent = emptyLabel;
+      sel.appendChild(emptyOpt);
+      if (rescueValue) {
+        var rescueOpt = document.createElement('option');
+        rescueOpt.value = rescueValue;
+        rescueOpt.textContent = '⚠️ ' + rescueValue;
+        sel.appendChild(rescueOpt);
+      }
+      values.forEach(function(value) {
+        var opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;
+        sel.appendChild(opt);
+      });
+      sel.value = selectedValue || '';
+    }
+
     function startEdit(span) {
       if (span.dataset.editing === '1') return;
       var cell = span.closest('.chart-cell');
       var code = cell && cell.dataset.code;
       if (!code) return;  // プレースホルダーセルは編集不可
       span.dataset.editing = '1';
-      var isStage = span.classList.contains('edit-stage');
-      var isJukyu = span.classList.contains('edit-jukyu');
       var current = span.textContent === '—' ? '' : span.textContent;
 
       function isSameCell() {
         return cell && cell.dataset.code === code;
       }
 
-      var input = document.createElement(isJukyu ? 'textarea' : 'input');
-      if (isJukyu) {
-        input.value = current;
-      } else if (isStage) {
-        input.type = 'text';
-        input.value = current;
-      } else {
-        input.type = 'date';
-        input.value = mdToYMD(current);
-      }
+      var input = document.createElement('input');
+      input.type = 'date';
+      input.value = mdToYMD(current);
       span.textContent = '';
       span.appendChild(input);
       input.focus();
@@ -277,21 +372,15 @@
         span.dataset.editing = '';
 
         var newValue;
-        if (isStage || isJukyu) {
-          newValue = (input.value || '').trim();
-        } else {
-          newValue = toMD(input.value);
-          if (newValue === null) {
-            alert('日付として不正です (M/D 形式)');
-            if (isSameCell()) span.textContent = current || '—';
-            return;
-          }
+        newValue = toMD(input.value);
+        if (newValue === null) {
+          alert('日付として不正です (M/D 形式)');
+          if (isSameCell()) span.textContent = current || '—';
+          return;
         }
 
         var fields = {};
-        fields[isJukyu ? 'jukyu_chart' : (isStage ? 'stage' : 'last_research_update')] = newValue;
-        // ステージ編集時は更新日も当日に自動補完 (portfolio 一覧と同仕様)
-        if (isStage) fields['last_research_update'] = todayMD();
+        fields.last_research_update = newValue;
 
         var fd = new FormData();
         Object.keys(fields).forEach(function (k) { fd.append(k, fields[k]); });
@@ -310,29 +399,11 @@
           var disp = res.body.display || {};
           // STOCKS 側も更新しておく (ページ送りで戻った時に最新値を出すため)
           var s = STOCKS.filter(function (x) { return x.code_s === code; })[0];
-          var stageVal = (disp.stage !== undefined && disp.stage !== '—') ? disp.stage : fields.stage;
           var updVal = (disp.last_research_update !== undefined && disp.last_research_update !== '—')
             ? disp.last_research_update : fields.last_research_update;
-          var jukyuVal = (disp.jukyu_chart !== undefined) ? disp.jukyu_chart : fields.jukyu_chart;
-          if (isStage) {
-            if (s) s.stage = stageVal || '';
-            if (s) s.last_research_update = updVal || '';
-            if (!isSameCell()) return;
-            span.textContent = (stageVal || '') || '—';
-            // 同セルの更新日も自動補完値で同期
-            var updSpan = cell.querySelector('.edit-update');
-            if (updSpan && updSpan.dataset.editing !== '1') updSpan.textContent = (updVal || '') || '—';
-          } else {
-            if (isJukyu) {
-              if (s) s.jukyu_chart = jukyuVal || '';
-              if (!isSameCell()) return;
-              span.textContent = (jukyuVal || '') || '—';
-            } else {
-              if (s) s.last_research_update = updVal || '';
-              if (!isSameCell()) return;
-              span.textContent = (updVal || '') || '—';
-            }
-          }
+          if (s) s.last_research_update = updVal || '';
+          if (!isSameCell()) return;
+          span.textContent = (updVal || '') || '—';
         }).catch(function (err) {
           alert('保存失敗: ' + err);
           if (isSameCell()) span.textContent = current || '—';
@@ -341,13 +412,170 @@
 
       input.addEventListener('blur', commit);
       input.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' && (!isJukyu || e.ctrlKey || e.metaKey)) { e.preventDefault(); input.blur(); }
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
         else if (e.key === 'Escape') { finished = true; span.dataset.editing = ''; span.textContent = current || '—'; }
       });
     }
 
-    document.querySelectorAll('.chart-cell .editable').forEach(function (span) {
+    document.querySelectorAll('.chart-cell .edit-update').forEach(function (span) {
       span.addEventListener('click', function () { startEdit(span); });
+    });
+
+    function postMemo(code, payload) {
+      var fd = new FormData();
+      Object.keys(payload).forEach(function(k) { fd.append(k, payload[k]); });
+      return fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: fd,
+      }).then(function(resp) {
+        return resp.json().then(function(body) { return { ok: resp.ok, body: body }; });
+      });
+    }
+
+    function findStock(code) {
+      return STOCKS.filter(function(x) { return x.code_s === code; })[0];
+    }
+
+    document.querySelectorAll('.chart-cell').forEach(function(cell) {
+      var stageBox = cell.querySelector('.stage-struct');
+      var stageMain = cell.querySelector('.stage-main-select');
+      var stageT = cell.querySelector('.stage-t-select');
+      var chartBox = cell.querySelector('.chart-struct');
+      var chartStyle = cell.querySelector('.chart-style-select');
+      var chartState = cell.querySelector('.chart-state-select');
+
+      function syncStageDisabled() {
+        stageT.disabled = !allowsStageSuffix(stageMain.value || '') || stageBox.dataset.rescue === '1';
+      }
+
+      function syncChartDisabled() {
+        var disabled = chartBox.dataset.rescue === '1';
+        chartState.disabled = disabled;
+      }
+
+      function saveStage(prev) {
+        var code = cell.dataset.code;
+        if (!code) return;
+        var payload = {
+          stage_s: stageMain.value || '',
+          stage_t: stageT.disabled ? '' : (stageT.value || ''),
+          last_research_update: todayMD(),
+        };
+        postMemo(code, payload).then(function(res) {
+          if (!res.ok || !res.body || res.body.ok !== true) {
+            stageBox.dataset.rescue = prev.rescue;
+            stageMain.value = prev.s;
+            stageT.value = prev.t;
+            stageMain.dataset.prev = prev.s;
+            stageT.dataset.prev = prev.t;
+            relabelStageTSelect(stageT, prev.s || '');
+            syncStageDisabled();
+            alert((res.body && res.body.error) || 'ステージの保存に失敗しました');
+            return;
+          }
+          stageBox.dataset.rescue = '0';
+          stageMain.dataset.prev = payload.stage_s;
+          stageT.dataset.prev = payload.stage_t;
+          relabelStageTSelect(stageT, payload.stage_s || '');
+          var stock = findStock(code);
+          if (stock) {
+            stock.stage = (res.body.display && res.body.display.stage !== '—') ? (res.body.display.stage || '') : '';
+            stock.last_research_update = (res.body.display && res.body.display.last_research_update !== '—')
+              ? (res.body.display.last_research_update || '') : payload.last_research_update;
+            stock.stage_struct = { raw: stock.stage, s: payload.stage_s, t: payload.stage_t, structured: true, rescue: '' };
+          }
+          var upd = cell.querySelector('.edit-update');
+          if (upd && upd.dataset.editing !== '1') {
+            upd.textContent = (res.body.display && res.body.display.last_research_update) || payload.last_research_update || '—';
+          }
+          syncStageDisabled();
+        }).catch(function(err) {
+          stageBox.dataset.rescue = prev.rescue;
+          stageMain.value = prev.s;
+          stageT.value = prev.t;
+          stageMain.dataset.prev = prev.s;
+          stageT.dataset.prev = prev.t;
+          relabelStageTSelect(stageT, prev.s || '');
+          syncStageDisabled();
+          alert('保存失敗: ' + err);
+        });
+      }
+
+      function saveChart(prev) {
+        var code = cell.dataset.code;
+        if (!code) return;
+        var payload = {
+          chart_style: chartStyle.value || '',
+          chart_state: chartState.disabled ? '' : (chartState.value || ''),
+        };
+        postMemo(code, payload).then(function(res) {
+          if (!res.ok || !res.body || res.body.ok !== true) {
+            chartBox.dataset.rescue = prev.rescue;
+            chartStyle.value = prev.style;
+            chartState.value = prev.state;
+            chartStyle.dataset.prev = prev.style;
+            chartState.dataset.prev = prev.state;
+            syncChartDisabled();
+            alert((res.body && res.body.error) || '需給の保存に失敗しました');
+            return;
+          }
+          chartBox.dataset.rescue = '0';
+          chartStyle.dataset.prev = payload.chart_style;
+          chartState.dataset.prev = payload.chart_state;
+          var stock = findStock(code);
+          if (stock) {
+            stock.jukyu_chart = (res.body.display && res.body.display.jukyu_chart) || '';
+            stock.jukyu_chart_struct = {
+              raw: stock.jukyu_chart,
+              style: payload.chart_style,
+              state: payload.chart_state,
+              structured: true,
+              rescue: '',
+            };
+          }
+          syncChartDisabled();
+        }).catch(function(err) {
+          chartBox.dataset.rescue = prev.rescue;
+          chartStyle.value = prev.style;
+          chartState.value = prev.state;
+          chartStyle.dataset.prev = prev.style;
+          chartState.dataset.prev = prev.state;
+          syncChartDisabled();
+          alert('保存失敗: ' + err);
+        });
+      }
+
+      stageMain.addEventListener('change', function() {
+        var prev = { s: stageMain.dataset.prev || '', t: stageT.dataset.prev || '', rescue: stageBox.dataset.rescue || '0' };
+        if (stageBox.dataset.rescue === '1') stageBox.dataset.rescue = '0';
+        stageT.value = '';
+        relabelStageTSelect(stageT, stageMain.value || '');
+        syncStageDisabled();
+        saveStage(prev);
+      });
+      stageT.addEventListener('change', function() {
+        var prev = { s: stageMain.dataset.prev || '', t: stageT.dataset.prev || '', rescue: stageBox.dataset.rescue || '0' };
+        saveStage(prev);
+      });
+      chartStyle.addEventListener('change', function() {
+        var prev = {
+          style: chartStyle.dataset.prev || '',
+          state: chartState.dataset.prev || '',
+          rescue: chartBox.dataset.rescue || '0',
+        };
+        if (chartBox.dataset.rescue === '1') chartBox.dataset.rescue = '0';
+        syncChartDisabled();
+        saveChart(prev);
+      });
+      chartState.addEventListener('change', function() {
+        var prev = {
+          style: chartStyle.dataset.prev || '',
+          state: chartState.dataset.prev || '',
+          rescue: chartBox.dataset.rescue || '0',
+        };
+        saveChart(prev);
+      });
     });
 
     render();

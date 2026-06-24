@@ -36,18 +36,37 @@
   table.portfolio-list td.num { text-align: right; }
   table.portfolio-list td.rating-cell { text-align: center; white-space: nowrap; }
   table.portfolio-list td.stage-cell {
-    width: 5em;
-    max-width: 5em;
+    width: 11em;
+    max-width: 11em;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   table.portfolio-list td.jukyu-cell {
-    max-width: 6em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: pre-line;
+    max-width: 13em;
     line-height: 1.2;
+  }
+  .stage-struct,
+  .chart-struct {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.15em;
+    align-items: center;
+  }
+  .stage-struct { flex-wrap: nowrap; }
+  .stage-struct select,
+  .chart-struct select {
+    margin: 0;
+    padding: 0 2px;
+    font-size: 1em;
+    height: auto;
+  }
+  .stage-struct .stage-main-select { max-width: 6.4em; }
+  .stage-struct .stage-t-select { width: 4.1em; }
+  .chart-struct .chart-style-select { max-width: 6.8em; }
+  .chart-struct .chart-state-select { max-width: 5.8em; }
+  .stage-struct select:disabled,
+  .chart-struct select:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
   }
   /* issue #327: ページ切り替え (指標/メモ)。data-page="1" は指標ページ、
      data-page="2" は手動メモページ。属性なしの列は両ページ共通。 */
@@ -463,15 +482,56 @@
           data-style-field="last_research_update"
           {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="last_research_update"{% endif %}
           style="{{ row.styles.last_research_update or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.last_research_update or "—" }}</td>
-      <td data-page="2" title="クリックで編集 (ステージ変更時は更新日も自動で当日に) / Ctrl+クリックで株探チャート"
+      <td data-page="2" title="選択で保存 (ステージ変更時は更新日も当日に) / Ctrl+クリックで株探チャート"
           data-style-field="stage"
-          class="stage-cell{% if not fallback_mode %} editable{% endif %}"
-          {% if not fallback_mode %}data-code="{{ row.code_s }}" data-field="stage" data-touch-update="1"{% endif %}
-          style="{{ row.styles.stage or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.stage or "—" }}</td>
-      <td data-page="2" title="{{ ((row.memo.jukyu_chart or '') ~ ' (クリックで編集)') if (not fallback_mode and row.memo.jukyu_chart) else ('クリックで編集' if not fallback_mode else (row.memo.jukyu_chart or '')) }}"
-          data-full="{{ row.memo.jukyu_chart or '' }}"
-          {% if not fallback_mode %}class="editable jukyu-cell" data-code="{{ row.code_s }}" data-field="jukyu_chart" data-multiline="1" data-input-width="8em"{% else %}class="jukyu-cell"{% endif %}
-          style="{% if not fallback_mode %}cursor:pointer{% endif %}">{{ row.memo.jukyu_chart or "—" }}</td>
+          class="stage-cell stage-struct-cell"
+          {% if not fallback_mode %}data-code="{{ row.code_s }}"{% endif %}
+          style="{{ row.styles.stage or '' }}">
+        {% set stage_struct = row.memo.stage_struct %}
+        <div class="stage-struct"
+             data-code="{{ row.code_s }}"
+             data-rescue="{% if stage_struct.rescue %}1{% else %}0{% endif %}">
+          <select class="stage-main-select" {% if fallback_mode %}disabled{% endif %}>
+            <option value="">—</option>
+            {% if stage_struct.rescue %}
+            <option value="{{ stage_struct.rescue }}" selected>⚠️ {{ stage_struct.rescue }}</option>
+            {% endif %}
+            {% for stage in stage_options %}
+            <option value="{{ stage }}" {% if stage == stage_struct.s %}selected{% endif %}>{{ stage }}</option>
+            {% endfor %}
+          </select>
+          <select class="stage-t-select"
+                  data-unit="{{ stage_struct.unit or ('B' if stage_struct.s and stage_struct.s.startswith('2S') else 'T') }}"
+                  {% if fallback_mode or stage_struct.rescue %}disabled{% endif %}>
+            <option value="">{{ (stage_struct.unit or ('B' if stage_struct.s and stage_struct.s.startswith('2S') else 'T')) }}なし</option>
+            {% for t in stage_t_options %}
+            <option value="{{ t }}" {% if t == stage_struct.t %}selected{% endif %}>{{ t }}{{ stage_struct.unit or ('B' if stage_struct.s and stage_struct.s.startswith('2S') else 'T') }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </td>
+      <td data-page="2" title="選択で保存" class="jukyu-cell chart-struct-cell">
+        {% set chart_struct = row.memo.jukyu_chart_struct %}
+        <div class="chart-struct"
+             data-code="{{ row.code_s }}"
+             data-rescue="{% if chart_struct.rescue %}1{% else %}0{% endif %}">
+          <select class="chart-style-select" {% if fallback_mode %}disabled{% endif %}>
+            <option value="">型なし</option>
+            {% if chart_struct.rescue %}
+            <option value="{{ chart_struct.rescue }}" selected>⚠️ {{ chart_struct.rescue }}</option>
+            {% endif %}
+            {% for style in chart_style_options %}
+            <option value="{{ style }}" {% if style == chart_struct.style %}selected{% endif %}>{{ style }}</option>
+            {% endfor %}
+          </select>
+          <select class="chart-state-select" {% if fallback_mode or chart_struct.rescue %}disabled{% endif %}>
+            <option value="">状態なし</option>
+            {% for state in chart_state_options %}
+            <option value="{{ state }}" {% if state == chart_struct.state %}selected{% endif %}>{{ state }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </td>
       {# issue #327: 売買戦略 (定型リスト単一選択 + 色分けバッジ)。
          リスト外の旧自由記述値は ⚠️ 付き option を差し込んで保持し、再分類を促す #}
       {% set current_idea = row.memo.trade_idea or '' %}
@@ -751,7 +811,7 @@ function excludeFromUniverse(codeS) {
   }
 
   // 短縮表示 (data-full 全文保持 + 改行反映2行省略) する memo フィールド (issue #314 / #327)
-  var SHORT_TEXT_FIELDS = ['jukyu_chart', 'inago_origin', 'watch_in_reason', 'takaichi_sensitivity'];
+  var SHORT_TEXT_FIELDS = ['inago_origin', 'watch_in_reason', 'takaichi_sensitivity'];
 
   function renderJukyu(td, value) {
     td.dataset.full = value || '';
@@ -823,6 +883,7 @@ function excludeFromUniverse(codeS) {
       setCellColorStyle(td, styles[field] || '');
     });
   }
+  window.applyPortfolioRowStyles = applyStylesToRow;
 
   function startEdit(td) {
     if (td.dataset.editing === '1') return;
@@ -981,18 +1042,175 @@ function excludeFromUniverse(codeS) {
     td.addEventListener('click', function(e) {
       // セル内のリンク (銘柄詳細など) クリックは編集モードに入らない
       if (e.target.tagName === 'A') return;
-      // ステージセルで Ctrl/Cmd+クリックなら株探チャートを別タブで開く (編集はしない)
-      if (td.dataset.field === 'stage' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        var code = td.dataset.code;
-        if (code) {
-          window.open('https://kabutan.jp/stock/chart?code=' + encodeURIComponent(code), '_blank', 'noopener');
-        }
-        return;
-      }
       startEdit(td);
     });
   });
+})();
+
+// ========== stage / jukyu_chart structured 編集 (issue #344) ==========
+(function() {
+  function todayMD() {
+    var d = new Date();
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  }
+
+  function postMemo(code, payload) {
+    var fd = new FormData();
+    Object.keys(payload).forEach(function(k) { fd.append(k, payload[k]); });
+    return fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+    }).then(function(r) {
+      return r.json().then(function(json) { return { ok: r.ok, json: json }; });
+    });
+  }
+
+  function bindStageStruct(box) {
+    var code = box.dataset.code;
+    var main = box.querySelector('.stage-main-select');
+    var tSel = box.querySelector('.stage-t-select');
+    if (!code || !main || !tSel || main.disabled) return;
+    var prev = { s: main.value || '', t: tSel.value || '', rescue: box.dataset.rescue || '0' };
+
+    function stageUnit(stageValue) {
+      return (stageValue || '').split('~', 1)[0] === '2S' ? 'B' : 'T';
+    }
+
+    function allowsStageSuffix(stageValue) {
+      return !!stageValue && stageValue.indexOf('or') === -1;
+    }
+
+    function relabelTOptions() {
+      var unit = stageUnit(main.value || '');
+      tSel.dataset.unit = unit;
+      Array.prototype.forEach.call(tSel.options, function(opt) {
+        if (!opt.value) opt.textContent = unit + 'なし';
+        else opt.textContent = opt.value + unit;
+      });
+    }
+
+    function syncDisabled() {
+      tSel.disabled = !allowsStageSuffix(main.value || '') || box.dataset.rescue === '1';
+    }
+
+    function rollback() {
+      box.dataset.rescue = prev.rescue;
+      main.value = prev.s;
+      tSel.value = prev.t;
+      relabelTOptions();
+      syncDisabled();
+    }
+
+    function save() {
+      var payload = {
+        stage_s: main.value || '',
+        stage_t: tSel.disabled ? '' : (tSel.value || ''),
+        last_research_update: todayMD(),
+      };
+      box.classList.add('saving');
+      postMemo(code, payload).then(function(res) {
+        box.classList.remove('saving');
+        if (!res.ok || !res.json || res.json.ok !== true) {
+          rollback();
+          alert((res.json && res.json.error) || 'ステージの保存に失敗しました');
+          return;
+        }
+        box.dataset.rescue = '0';
+        prev = { s: payload.stage_s, t: payload.stage_t, rescue: '0' };
+        syncDisabled();
+        var tr = box.closest('tr');
+        var disp = res.json.display || {};
+        var dateTd = tr && tr.querySelector('td.editable[data-field="last_research_update"]');
+        if (dateTd) dateTd.textContent = disp.last_research_update || payload.last_research_update || '—';
+        if (window.applyPortfolioRowStyles) {
+          window.applyPortfolioRowStyles(tr, res.json.styles || {});
+        }
+      }).catch(function(err) {
+        box.classList.remove('saving');
+        rollback();
+        alert('通信エラー: ' + err);
+      });
+    }
+
+    main.addEventListener('change', function() {
+      if (box.dataset.rescue === '1') box.dataset.rescue = '0';
+      tSel.value = '';
+      relabelTOptions();
+      syncDisabled();
+      save();
+    });
+    tSel.addEventListener('change', save);
+    relabelTOptions();
+    syncDisabled();
+    box.closest('td').addEventListener('mousedown', function(e) {
+      if (e.button !== 0 || !(e.ctrlKey || e.metaKey)) return;
+      if (e.target.tagName === 'SELECT') return;
+      e.preventDefault();
+      window.open('https://kabutan.jp/stock/chart?code=' + encodeURIComponent(code), '_blank', 'noopener');
+    });
+  }
+
+  function bindChartStruct(box) {
+    var code = box.dataset.code;
+    var style = box.querySelector('.chart-style-select');
+    var state = box.querySelector('.chart-state-select');
+    if (!code || !style || !state || style.disabled) return;
+    var prev = {
+      style: style.value || '',
+      state: state.value || '',
+      rescue: box.dataset.rescue || '0',
+    };
+
+    function syncDisabled() {
+      var rescue = box.dataset.rescue === '1';
+      state.disabled = rescue;
+    }
+
+    function rollback() {
+      box.dataset.rescue = prev.rescue;
+      style.value = prev.style;
+      state.value = prev.state;
+      syncDisabled();
+    }
+
+    function save() {
+      var payload = {
+        chart_style: style.value || '',
+        chart_state: state.disabled ? '' : (state.value || ''),
+      };
+      box.classList.add('saving');
+      postMemo(code, payload).then(function(res) {
+        box.classList.remove('saving');
+        if (!res.ok || !res.json || res.json.ok !== true) {
+          rollback();
+          alert((res.json && res.json.error) || '需給の保存に失敗しました');
+          return;
+        }
+        box.dataset.rescue = '0';
+        prev = {
+          style: payload.chart_style,
+          state: payload.chart_state,
+          rescue: '0',
+        };
+        syncDisabled();
+      }).catch(function(err) {
+        box.classList.remove('saving');
+        rollback();
+        alert('通信エラー: ' + err);
+      });
+    }
+
+    style.addEventListener('change', function() {
+      if (box.dataset.rescue === '1') box.dataset.rescue = '0';
+      syncDisabled();
+      save();
+    });
+    state.addEventListener('change', save);
+  }
+
+  document.querySelectorAll('.stage-struct').forEach(bindStageStruct);
+  document.querySelectorAll('.chart-struct').forEach(bindChartStruct);
 })();
 
 // ========== 業態・テーマ inline 編集 (issue #187) ==========

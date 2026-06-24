@@ -15,6 +15,7 @@ issue #215: ページング/ソートを廃止し、status は単一選択化、
 業態テーマ指定時は status 無視で全銘柄から該当する業態/テーマだけを抽出する。
 """
 
+import re
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -60,6 +61,8 @@ STATUS_CHOICES = [
 DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 書き込み POST 後フォールバック先
 PORTFOLIO_SORT_KEYS = {"position", "rank", "gyoutai", "rs_change_1d", "rating"}  # rs_change_1d: issue #332
 DEFAULT_SORT_KEY = "position"
+_STAGE_SINGLE_RE = re.compile(r"^(?P<s>[1-4]S)(?:\((?P<t>[1-9])(?P<unit>[TB])\))?$")
+_STAGE_TRANSITION_RE = re.compile(r"^(?P<left>[1-4]S)(?:\((?P<t>[1-9])(?P<unit>[TB])\))?~(?P<right>[1-4]S)$")
 
 
 def _parse_status_filter(args) -> Optional[str]:
@@ -169,6 +172,101 @@ def _flash_stock_info(code_s: str, message_suffix: str) -> None:
         f'<a href="{detail_url}">{normalized}</a>{message_suffix}',
         "html_info",
     )
+
+
+def _parse_stage_value(raw: str) -> dict:
+    """保存済み stage 文字列を structured UI の初期値へ分解する。"""
+    value = (raw or "").strip()
+    parsed = {
+        "raw": value,
+        "s": "",
+        "t": "",
+        "unit": "T",
+        "structured": True,
+        "rescue": "",
+    }
+    if not value:
+        return parsed
+    if value in ps.STAGE_OPTIONS:
+        parsed["s"] = value
+        parsed["unit"] = "B" if value.split("~", 1)[0] == "2S" else "T"
+        return parsed
+    m = _STAGE_SINGLE_RE.match(value)
+    if m:
+        parsed["s"] = m.group("s") or ""
+        parsed["t"] = m.group("t") or ""
+        parsed["unit"] = m.group("unit") or ("B" if parsed["s"] == "2S" else "T")
+        return parsed
+    m = _STAGE_TRANSITION_RE.match(value)
+    if m:
+        parsed["s"] = f'{m.group("left")}~{m.group("right")}'
+        parsed["t"] = m.group("t") or ""
+        parsed["unit"] = m.group("unit") or ("B" if (m.group("left") or "") == "2S" else "T")
+        return parsed
+    parsed["structured"] = False
+    parsed["rescue"] = value
+    return parsed
+
+
+def _compose_stage_value(stage_s: str, stage_t: str) -> str:
+    """structured UI の値から保存用 stage 文字列を組み立てる。"""
+    s_value = (stage_s or "").strip()
+    t_value = (stage_t or "").strip()
+    if not s_value:
+        return ""
+    if "or" in s_value:
+        return s_value
+    left_stage = s_value.split("~", 1)[0]
+    unit = "B" if left_stage == "2S" else "T"
+    if t_value:
+        if "~" in s_value:
+            left, right = s_value.split("~", 1)
+            return f"{left}({t_value}{unit})~{right}"
+        return f"{s_value}({t_value}{unit})"
+    return s_value
+
+
+def _parse_chart_value(raw: str) -> dict:
+    """保存済み jukyu_chart を structured UI の 2 軸へ分解する。"""
+    value = (raw or "").strip()
+    parsed = {
+        "raw": value,
+        "style": "",
+        "state": "",
+        "structured": True,
+        "rescue": "",
+    }
+    if not value:
+        return parsed
+    states = sorted(ps.CHART_STATE_OPTIONS, key=len, reverse=True)
+    normalized = value.replace("週足月足", "月足", 1) if value.startswith("週足月足") else value
+    for style in ("", *ps.CHART_STYLE_OPTIONS):
+        if style and not normalized.startswith(style):
+            continue
+        rest = normalized[len(style):]
+        for state in ("", *states):
+            if state and not rest.endswith(state):
+                continue
+            middle = rest[: len(rest) - len(state)] if state else rest
+            if middle == "":
+                parsed["style"] = style
+                parsed["state"] = state
+                return parsed
+    parsed["structured"] = False
+    parsed["rescue"] = value
+    return parsed
+
+
+def _compose_chart_value(style: str, state: str) -> str:
+    """structured UI の 2 軸から保存用 jukyu_chart を組み立てる。"""
+    return "".join(((style or "").strip(), (state or "").strip()))
+
+
+def _augment_stage_chart_meta(memo: dict) -> dict:
+    """テンプレート用に stage / jukyu_chart の分解済みメタ情報を足す。"""
+    memo["stage_struct"] = _parse_stage_value(memo.get("stage") or "")
+    memo["jukyu_chart_struct"] = _parse_chart_value(memo.get("jukyu_chart") or "")
+    return memo
 
 
 def _redirect_with_return_query(
@@ -463,6 +561,18 @@ def _extract_memo_fields_from_form(form) -> dict:
                 themes.append(v)
         fields["gyoutai_themes"] = themes
 
+    stage_keys = ("stage_s", "stage_t")
+    if any(k in form for k in stage_keys):
+        stage_s = (form.get("stage_s") or "").strip()
+        stage_t = (form.get("stage_t") or "").strip()
+        fields["stage"] = _compose_stage_value(stage_s, stage_t)
+
+    chart_keys = ("chart_style", "chart_state")
+    if any(k in form for k in chart_keys):
+        chart_style = (form.get("chart_style") or "").strip()
+        chart_state = (form.get("chart_state") or "").strip()
+        fields["jukyu_chart"] = _compose_chart_value(chart_style, chart_state)
+
     return fields
 
 
@@ -677,6 +787,7 @@ def dashboard():
         row["transitions"] = (
             [] if fallback_mode else _allowed_transitions_from(row.get("status", ""))
         )
+        row["memo"] = _augment_stage_chart_meta(row.get("memo") or {})
 
     # 一括変更モードの可否: fallback でなければ表示行に対して有効
     delete_mode_allowed = (not fallback_mode and bool(rows))
@@ -741,6 +852,10 @@ def dashboard():
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
         trade_idea_options=ps.TRADE_IDEA_OPTIONS,
         trade_idea_descriptions=ps.TRADE_IDEA_DESCRIPTIONS,
+        stage_options=ps.STAGE_OPTIONS,
+        stage_t_options=ps.STAGE_T_OPTIONS,
+        chart_style_options=ps.CHART_STYLE_OPTIONS,
+        chart_state_options=ps.CHART_STATE_OPTIONS,
         hold_summary=hold_summary,
     )
 
@@ -787,6 +902,8 @@ def charts():
             "stage": (r.get("memo") or {}).get("stage") or "",
             "last_research_update": (r.get("memo") or {}).get("last_research_update") or "",
             "jukyu_chart": (r.get("memo") or {}).get("jukyu_chart") or "",
+            "stage_struct": _parse_stage_value((r.get("memo") or {}).get("stage") or ""),
+            "jukyu_chart_struct": _parse_chart_value((r.get("memo") or {}).get("jukyu_chart") or ""),
         }
         for r in rows
     ]
@@ -799,6 +916,10 @@ def charts():
         total=len(stocks),
         active_status_query=active_status_query,
         active_gyoutai_theme=active_gyoutai_theme or "",
+        stage_options=ps.STAGE_OPTIONS,
+        stage_t_options=ps.STAGE_T_OPTIONS,
+        chart_style_options=ps.CHART_STYLE_OPTIONS,
+        chart_state_options=ps.CHART_STATE_OPTIONS,
     )
 
 

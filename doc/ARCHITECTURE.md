@@ -216,9 +216,9 @@ python research_shelve.py backup                                 # DBバック�
 
 ### 営業日判定の方針（祝日カレンダーを持たない理由）
 
-営業日判定は `get_price_day()`（17時前は前日扱い）＋ `weekday()` 土日補正のみ。**祝日カレンダー（`jpholiday` 等）は導入しない**。`weekday()` 補正は実質3箇所（`is_latest_price` / `_is_weekly_cache_fresh` / `_recent_weekday`）のみで、価格・RS・MA は yfinance の営業日 index に乗るため祝日は元から不在。祝日を平日扱いする実害は「祝日に日次データを年数十回 余分取得する」軽量 HTTP のみで、データ破損は起きない。これを消すための依存追加は過剰（Simplicity First）。
+営業日判定は `get_price_day()`（17時前は前日扱い）＋ `recent_weekday()`（土日なら直近金曜に丸める）のみ。**祝日カレンダー（`jpholiday` 等）は導入しない**。価格・RS・MA は yfinance の営業日 index に乗るため祝日は元から不在。祝日を平日扱いする実害は「祝日に日次データを年数十回 余分取得する」軽量 HTTP のみで、データ破損は起きない。これを消すための依存追加は過剰（Simplicity First）。
 
-**再検討トリガー**: ①取得コストが課金・rate limit に当たる ②日付指定での営業日数演算が要る新機能（決算からN営業日後の反応 等。現状 `n_business_days` は配列インデックスで代用）③休場日の「未更新」誤警告が運用ノイズ化。導入時は `ks_util.py` に `prev_business_day(d)` を足し3箇所を集約。
+**再検討トリガー**: ①取得コストが課金・rate limit に当たる ②日付指定での営業日数演算が要る新機能（決算からN営業日後の反応 等。現状 `n_business_days` は配列インデックスで代用）③休場日の「未更新」誤警告が運用ノイズ化。導入時は `ks_util.py` に祝日対応版の営業日ヘルパーを追加し、`recent_weekday()` 利用箇所を置き換える。
 
 ## 価格データ取得 (`price.py`)
 

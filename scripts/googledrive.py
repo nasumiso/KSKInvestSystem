@@ -13,12 +13,14 @@
 スクリプトを直接実行することで、CSV ファイルを Google Drive に Google スプレッドシートとしてアップロードまたは更新できます。
 """  # noqa: E501
 import csv
+import time
 import threading
 
 from ks_util import *
 
 # 外部ライブラリ GoogleDriveAPI
 from apiclient.discovery import build  # type: ignore Pylanceが認識しない
+from apiclient.errors import HttpError  # type: ignore
 from apiclient.http import MediaFileUpload  # type: ignore
 
 # 外部ライブラリ 認証用API google-authへ移行すべきらしい
@@ -54,6 +56,25 @@ SHEETS_CONFIG = {
     "shintakane_result": {"sheet_name": "shintakane_result"},
     "code_rank": {"sheet_name": "code_rank"},
 }
+
+RETRYABLE_GOOGLE_STATUS = {429, 500, 502, 503, 504}
+
+
+def _execute_google_request(request, label, max_attempts=4):
+    """Google API の一時エラーだけ指数バックオフでリトライする。"""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return request.execute()
+        except HttpError as e:
+            status = getattr(e.resp, "status", None)
+            if status not in RETRYABLE_GOOGLE_STATUS or attempt >= max_attempts:
+                raise
+            wait_sec = min(30, 2 ** (attempt - 1))
+            log_warning(
+                "%s 一時エラー(%s)のためリトライします: %d/%d, wait=%ds"
+                % (label, status, attempt, max_attempts, wait_sec)
+            )
+            time.sleep(wait_sec)
 
 
 def get_drive_service():
@@ -171,10 +192,13 @@ def upload_csv_via_sheets(csv_name, up_file_name):
     sheet_name = SHEETS_CONFIG[up_file_name]["sheet_name"]
 
     # 対象タブの情報を取得（余剰データクリア用）
-    meta = sheets_service.spreadsheets().get(
-        spreadsheetId=spreadsheet_id,
-        fields="sheets.properties"
-    ).execute()
+    meta = _execute_google_request(
+        sheets_service.spreadsheets().get(
+            spreadsheetId=spreadsheet_id,
+            fields="sheets.properties"
+        ),
+        "Sheets APIメタ取得",
+    )
     target_sheet = None
     for s in meta["sheets"]:
         if s["properties"]["title"] == sheet_name:
@@ -187,12 +211,15 @@ def upload_csv_via_sheets(csv_name, up_file_name):
 
     # 1) データを上書き（失敗してもシートは空にならない）
     update_range = "'%s'!A1" % sheet_name
-    sheets_service.spreadsheets().values().update(
-        spreadsheetId=spreadsheet_id,
-        range=update_range,
-        valueInputOption="USER_ENTERED",
-        body={"values": values}
-    ).execute()
+    _execute_google_request(
+        sheets_service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=update_range,
+            valueInputOption="USER_ENTERED",
+            body={"values": values}
+        ),
+        "Sheets APIセル更新",
+    )
 
     # 2) 余剰データをクリア（行数・列数が減った場合に対応）
     new_row_count = len(values)
@@ -203,11 +230,14 @@ def upload_csv_via_sheets(csv_name, up_file_name):
         clear_range = "'%s'!A%d:ZZ%d" % (
             sheet_name, new_row_count + 1, total_rows
         )
-        sheets_service.spreadsheets().values().clear(
-            spreadsheetId=spreadsheet_id,
-            range=clear_range,
-            body={}
-        ).execute()
+        _execute_google_request(
+            sheets_service.spreadsheets().values().clear(
+                spreadsheetId=spreadsheet_id,
+                range=clear_range,
+                body={}
+            ),
+            "Sheets API余剰行クリア",
+        )
 
     # 余剰列をクリア（データ行の範囲内で、新データより右の列）
     if total_cols > new_col_count and new_row_count > 0:
@@ -215,11 +245,14 @@ def upload_csv_via_sheets(csv_name, up_file_name):
         clear_col_range = "'%s'!%s1:ZZ%d" % (
             sheet_name, from_col, new_row_count
         )
-        sheets_service.spreadsheets().values().clear(
-            spreadsheetId=spreadsheet_id,
-            range=clear_col_range,
-            body={}
-        ).execute()
+        _execute_google_request(
+            sheets_service.spreadsheets().values().clear(
+                spreadsheetId=spreadsheet_id,
+                range=clear_col_range,
+                body={}
+            ),
+            "Sheets API余剰列クリア",
+        )
 
     log_print("Sheets API更新完了: %s (%d行)" % (up_file_name, len(values)))
 
