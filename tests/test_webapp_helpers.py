@@ -1713,21 +1713,29 @@ class TestComputeCellStyles:
         else:
             assert styles["per"] == expected_color
 
-    # ----- トレンド (◎ 濃黄 / ◯ 薄黄 / × 青(全崩壊) / —, 空欄 赤(欠損) / ◎◯ で ◎優先) -----
+    # ----- トレンド (記号表示と背景色は独立。40週MA危険条件は青で上書き) -----
     @pytest.mark.parametrize(
-        "trend, expected",
+        "row, expected",
         [
-            ("◎pr>ma10", f"background:{C['濃黄']}"),
-            ("◯RS", f"background:{C['薄黄']}"),
-            ("×", f"background:{C['青']}"),       # 7件全miss = Stage4崩壊
-            ("—", f"background:{C['赤']}"),       # 未評価/データ欠損
-            ("", f"background:{C['赤']}"),
-            ("◎◯", f"background:{C['濃黄']}"),  # ◎優先
-            ("▲", None),                          # 対象外記号
+            ({"trend_template": "◎pr>ma10"}, f"background:{C['濃黄']}"),
+            ({"trend_template": "◯RS"}, f"background:{C['薄黄']}"),
+            (
+                {"trend_template": "◯", "trend_template_misses": ["pr>ma30,40", "ma40Up"]},
+                f"background:{C['青']}",
+            ),
+            (
+                {"trend_template": "", "trend_template_misses": ["pr>ma30,40", "ma40Up", "RS"]},
+                f"background:{C['青']}",
+            ),
+            ({"trend_template": "×"}, None),
+            ({"trend_template": "—"}, f"background:{C['赤']}"),       # 未評価/データ欠損
+            ({"trend_template": ""}, f"background:{C['赤']}"),
+            ({"trend_template": "◎◯", "trend_template_misses": ["pr>ma30,40", "ma40Up"]}, f"background:{C['青']}"),
+            ({"trend_template": "▲"}, None),                          # 対象外記号
         ],
     )
-    def test_trend_template_rule(self, trend, expected):
-        styles = helpers.compute_cell_styles({"trend_template": trend}, today=TODAY)
+    def test_trend_template_rule(self, row, expected):
+        styles = helpers.compute_cell_styles(row, today=TODAY)
         if expected is None:
             assert "trend_template" not in styles
         else:
@@ -2745,6 +2753,22 @@ class TestBuildTrendInfoMissing:
     def test_missing_trend_returns_em_dash_not_circle(self, stock, expected_expr):
         info = helpers.build_trend_info(stock)
         assert info["expr"] == expected_expr
+
+
+class TestExtractIndicatorsTrendTemplate:
+    """portfolio 一覧用のトレンド表示加工を検証する"""
+
+    def test_full_miss_x_is_blank_but_misses_are_kept(self):
+        misses = [
+            "pr>ma10", "pr>ma30,40", "ma30>ma40", "ma40Up",
+            "ma10>ma30,40", "high(low)52", "RS",
+        ]
+        indicators = helpers._extract_indicators_for_portfolio({"trend_template": misses})
+
+        assert indicators["trend_template"] == ""
+        assert indicators["trend_template_misses"] == misses
+        assert "表記: ◎全通過" in indicators["trend_template_tooltip"]
+        assert "青背景: 株価30/40WMA未達" in indicators["trend_template_tooltip"]
 
 
 class TestBuildTrendInfoGauge:

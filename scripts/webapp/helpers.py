@@ -3480,6 +3480,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
             "progress_diff": "—",
             "progress_diff_eiri_raw": None,
             "trend_template": "—",
+            "trend_template_misses": None,
             "trend_template_tooltip": "—",
             "kairi_gauge_svg": "",
             "tags": "—",
@@ -3509,6 +3510,13 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     quarter_label, progress_diff = _progress_quarter_and_diff(stock)
 
     trend_info = build_trend_info(stock)
+    trend_misses = stock.get("trend_template")
+    trend_expr = trend_info["expr"]
+    trend_tooltip = "\n".join(filter(None, [
+        "表記: ◎全通過 / ◯1-2件未達 / ▲3-4件未達 / △5-6件未達 / 空白7件未達",
+        "青背景: 株価30/40WMA未達 + 40WMA下向き",
+        trend_info["tooltip"],
+    ]))
 
     market_cap_raw = market_cap if isinstance(market_cap, (int, float)) else None
     gyoseki_quarity_expr = _gyoseki_quarity_expr_safe(stock)
@@ -3543,8 +3551,9 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "quarter": quarter_label,
         "progress_diff": progress_diff,
         "progress_diff_eiri_raw": _progress_diff_eiri_raw(stock),
-        "trend_template": trend_info["expr"],
-        "trend_template_tooltip": trend_info["tooltip"],
+        "trend_template": "" if trend_expr == "×" else trend_expr,
+        "trend_template_misses": trend_misses if isinstance(trend_misses, list) else None,
+        "trend_template_tooltip": trend_tooltip,
         "kairi_gauge_svg": trend_info["kairi_gauge_svg"],
         "tags": _format_tags(stock, _tags),
         "tags_tooltip": _format_tags_tooltip(_format_tags(stock, _tags)),
@@ -3723,17 +3732,19 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         elif rs_raw >= 70:
             styles["rs"] = bg("薄黄")
 
-    # --- トレンド (ルール 24, 25, 26): "◎" 濃黄 / "◯" 薄黄 / "×"(全miss=Stage4崩壊) 青 /
-    #     "—"(未評価/データ欠損) 赤。× と — は意味が異なるため別色 (issue #111)。
+    # --- トレンド: 記号表示 (◎〜△) と背景色は独立して扱う。
+    #     ◎/◯ は従来の黄系、株価30/40週MA未達かつ40週MA下向きは青で上書きする。
     trend = row.get("trend_template") or ""
+    trend_misses = row.get("trend_template_misses")
+    trend_miss_set = set(trend_misses) if isinstance(trend_misses, list) else set()
     if "◎" in trend:
         styles["trend_template"] = bg("濃黄")
     elif "◯" in trend:
         styles["trend_template"] = bg("薄黄")
-    elif "×" in trend:
-        styles["trend_template"] = bg("青")
     elif not trend or trend == "—":
         styles["trend_template"] = bg("赤")
+    if {"pr>ma30,40", "ma40Up"}.issubset(trend_miss_set):
+        styles["trend_template"] = bg("青")
 
     # --- シグナル (ルール 2-7): 強い色から順に評価
     tags = row.get("tags") or ""
