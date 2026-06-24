@@ -1109,6 +1109,7 @@ class TestDashboardFilter:
         assert "sort=rank" in html
         assert "sort=gyoutai" in html
         assert "sort=rating" in html
+        assert "sort=rs" in html
 
     def test_bulk_transition_mode_button_visible_in_hold_filter(self, client):
         """保有のみ表示でも一括変更モードを出す"""
@@ -1139,6 +1140,15 @@ class TestDashboardFilter:
         html = client.get("/portfolio?sort=rs_change_20d").data.decode()
         assert "sort=rs_change_1d" in html
         assert "▼20日比" in html
+
+    def test_rs_sort_header_active(self, client):
+        """RS数値列はクリックで rs_raw 降順ソートになる"""
+        resp = client.get("/portfolio?sort=rs")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert 'name="sort" value="rs"' in html
+        assert "RS (momentum_pt) で降順ソート" in html
+        assert "sort-active" in html
 
     def test_gyoutai_boundary_only_for_gyoutai_sort(self, client, portfolio_db_path):
         """issue #274: 業態境界線は gyoutai sort のときだけ出す"""

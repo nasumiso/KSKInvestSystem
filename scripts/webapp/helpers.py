@@ -1972,6 +1972,13 @@ def list_portfolio_with_indicators(
             -(r.get(sort_key) or 0.0),
             r.get("code_s", ""),
         ))
+    elif sort_key == "rs":
+        # RS (momentum_pt) 降順。None は末尾、同値はコード順。
+        rows.sort(key=lambda r: (
+            r.get("rs_raw") is None,
+            -(r.get("rs_raw") or 0),
+            r.get("code_s", ""),
+        ))
     elif sort_key == "rating":
         # 総合評価の降順ソート。S→A→…→E、未評価は末尾、同評価はコード順。
         rows.sort(key=lambda r: (

@@ -370,7 +370,7 @@
       <th data-page="1" title="決算Q (進行中の四半期)">決算Q</th>
       <th data-page="1" title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
       <th data-page="1">決算日</th>
-      <th data-page="1">RS</th>
+      <th data-page="1" class="{% if active_sort == 'rs' %}sort-active{% endif %}" title="RS (momentum_pt) で降順ソート"><a href="{{ sort_urls.rs }}">RS</a></th>
       {# RS列クリックで RSライン騰落率ソートを 1日→5日→20日 の順に切替。 #}
       {% set rs_sort_labels = {'rs_change_1d': '▼1日比', 'rs_change_5d': '▼5日比', 'rs_change_20d': '▼20日比'} %}
       <th data-page="1" class="{% if active_sort in rs_sort_labels %}sort-active{% endif %}"

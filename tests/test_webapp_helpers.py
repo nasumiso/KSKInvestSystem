@@ -2093,8 +2093,9 @@ class TestListPortfolioWithIndicators:
             ("rank", ["0002", "0003", "0001", "0004"]),
             ("gyoutai", ["0003", "0001", "0002", "0004"]),
             ("rating", ["0002", "0003", "0001", "0004"]),
+            ("rs", ["0003", "0001", "0002", "0004"]),
         ],
-        ids=["position", "rank", "gyoutai", "rating"],
+        ids=["position", "rank", "gyoutai", "rating", "rs"],
     )
     def test_sort_key_switches_order(self, monkeypatch, sort_key, expected):
         prices = {"0001": 1000, "0003": 500, "0004": 10000}
@@ -2113,10 +2114,10 @@ class TestListPortfolioWithIndicators:
         monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
 
         records = [
-            {**self._make("0001", "1保", rank=30, themes=["人材"]), "qty": 100},
-            {**self._make("0002", "2準", rank=5, themes=["半導体"]), "qty": 100},
-            {**self._make("0003", "1保", rank=10, themes=["AI"]), "qty": 300},
-            {**self._make("0004", "1保", rank=None, themes=[]), "qty": 0},
+            {**self._make("0001", "1保", rank=30, themes=["人材"]), "qty": 100, "rs_raw": 80},
+            {**self._make("0002", "2準", rank=5, themes=["半導体"]), "qty": 100, "rs_raw": 70},
+            {**self._make("0003", "1保", rank=10, themes=["AI"]), "qty": 300, "rs_raw": 90},
+            {**self._make("0004", "1保", rank=None, themes=[]), "qty": 0, "rs_raw": None},
         ]
         rows = helpers.list_portfolio_with_indicators(records, sort_key=sort_key)
         assert [r["code_s"] for r in rows] == expected

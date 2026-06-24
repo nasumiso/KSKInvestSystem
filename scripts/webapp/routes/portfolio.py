@@ -60,7 +60,7 @@ STATUS_CHOICES = [
 ]
 DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 書き込み POST 後フォールバック先
 PORTFOLIO_SORT_KEYS = {
-    "position", "rank", "gyoutai", "rating",
+    "position", "rank", "gyoutai", "rating", "rs",
     "rs_change_1d", "rs_change_5d", "rs_change_20d",
 }
 DEFAULT_SORT_KEY = "position"
@@ -822,7 +822,7 @@ def dashboard():
             include_empty_status=preserve_all_status,
         )
         for k in (
-            "position", "rank", "gyoutai", "rating",
+            "position", "rank", "gyoutai", "rating", "rs",
             "rs_change_1d", "rs_change_5d", "rs_change_20d",
         )
     }
