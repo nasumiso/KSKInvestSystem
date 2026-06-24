@@ -2771,8 +2771,6 @@ class TestExtractIndicatorsTrendTemplate:
         assert indicators["trend_template"] == ""
         assert indicators["trend_template_misses"] == misses
         assert ">×<" not in indicators["kairi_gauge_svg"]
-        assert "表記: ◎全通過" in indicators["trend_template_tooltip"]
-        assert "青背景: 株価30/40WMA未達" in indicators["trend_template_tooltip"]
 
 
 class TestBuildTrendInfoGauge:

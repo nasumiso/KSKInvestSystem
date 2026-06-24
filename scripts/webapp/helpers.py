@@ -3513,11 +3513,6 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     trend_info = build_trend_info(stock, hide_full_miss_symbol=True)
     trend_misses = stock.get("trend_template")
     trend_expr = trend_info["expr"]
-    trend_tooltip = "\n".join(filter(None, [
-        "表記: ◎全通過 / ◯1-2件未達 / ▲3-4件未達 / △5-6件未達 / 空白7件未達",
-        "青背景: 株価30/40WMA未達 + 40WMA下向き",
-        trend_info["tooltip"],
-    ]))
 
     market_cap_raw = market_cap if isinstance(market_cap, (int, float)) else None
     gyoseki_quarity_expr = _gyoseki_quarity_expr_safe(stock)
@@ -3554,7 +3549,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "progress_diff_eiri_raw": _progress_diff_eiri_raw(stock),
         "trend_template": "" if trend_expr == "×" else trend_expr,
         "trend_template_misses": trend_misses if isinstance(trend_misses, list) else None,
-        "trend_template_tooltip": trend_tooltip,
+        "trend_template_tooltip": trend_info["tooltip"],
         "kairi_gauge_svg": trend_info["kairi_gauge_svg"],
         "tags": _format_tags(stock, _tags),
         "tags_tooltip": _format_tags_tooltip(_format_tags(stock, _tags)),

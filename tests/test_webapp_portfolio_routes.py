@@ -180,6 +180,8 @@ class TestDashboardGet:
         # 売上成長%・利益成長% (アズーム fixture の gyoseki_current から計算: 50→100 は +100%)
         # 値の "%" は列ヘッダ側 ("利益成長(%)") に集約 (issue #177)
         assert ">100<" in html
+        assert "表記: ◎全通過 / ◯1-2件未達" in html
+        assert "青背景: 株価30/40WMA未達 + 40WMA下向き" in html
 
     def test_dashboard_shows_rating_and_jukyu_column(self, client, portfolio_db_path):
         """評価列とチャートパターン inline 編集列が一覧に出る (issue #199 / #314)"""
