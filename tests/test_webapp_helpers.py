@@ -2763,10 +2763,14 @@ class TestExtractIndicatorsTrendTemplate:
             "pr>ma10", "pr>ma30,40", "ma30>ma40", "ma40Up",
             "ma10>ma30,40", "high(low)52", "RS",
         ]
-        indicators = helpers._extract_indicators_for_portfolio({"trend_template": misses})
+        indicators = helpers._extract_indicators_for_portfolio({
+            "trend_template": misses,
+            "price_kairi_wma10": -5.0,
+        })
 
         assert indicators["trend_template"] == ""
         assert indicators["trend_template_misses"] == misses
+        assert ">×<" not in indicators["kairi_gauge_svg"]
         assert "表記: ◎全通過" in indicators["trend_template_tooltip"]
         assert "青背景: 株価30/40WMA未達" in indicators["trend_template_tooltip"]
 

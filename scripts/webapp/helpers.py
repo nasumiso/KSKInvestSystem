@@ -3411,7 +3411,7 @@ def _append_provisional_rs(rs_line, stock, market_db):
     return [(dt, rs_val)] + rest
 
 
-def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
+def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False) -> Dict[str, Any]:
     """portfolio_list / detail.html / 市場セクション共通のトレンド表示情報を組み立てる。
 
     返り値の各キー:
@@ -3426,6 +3426,7 @@ def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
     # 非 list を [] に変換せず、未評価として trend_symbol_from_misses に渡して "—" を返す。
     misses = (stock or {}).get("trend_template")
     expr = trend_symbol_from_misses(misses) if stock else "—"
+    gauge_symbol = "" if hide_full_miss_symbol and expr == "×" else expr
     # 不通過項目の tooltip は ◯ (1-2件不通過) のときだけ意味があるので、それ以外は空にする。
     # ◎=全通過で項目なし、▲/△=不通過項目が多くノイズ、—=未評価。
     tooltip_src = misses if (expr == "◯" and isinstance(misses, list)) else []
@@ -3447,7 +3448,7 @@ def build_trend_info(stock: Dict[str, Any]) -> Dict[str, Any]:
         "expr": expr,
         "tooltip": "\n".join(tooltip_lines),
         "kairi_gauge_svg": kairi_gauge_svg(
-            kairi_raw, expr, kairi_ma10=kairi_ma10, ma10_streak=ma10_streak,
+            kairi_raw, gauge_symbol, kairi_ma10=kairi_ma10, ma10_streak=ma10_streak,
         ),
     }
 
@@ -3509,7 +3510,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     sales_growth, profit_growth = _annual_growth(stock)
     quarter_label, progress_diff = _progress_quarter_and_diff(stock)
 
-    trend_info = build_trend_info(stock)
+    trend_info = build_trend_info(stock, hide_full_miss_symbol=True)
     trend_misses = stock.get("trend_template")
     trend_expr = trend_info["expr"]
     trend_tooltip = "\n".join(filter(None, [
