@@ -1122,13 +1122,21 @@ class TestDashboardFilter:
         assert "status=&amp;sort=gyoutai" in html
 
     def test_rs_change_1d_sort_header_active(self, client):
-        """issue #332: ?sort=rs_change_1d で 200・RS(20,5)ヘッダが ▼前日比 に切替・sort リンク存在"""
+        """RS列は 1日→5日→20日 の順にソートリンクを循環する"""
         resp = client.get("/portfolio?sort=rs_change_1d")
         assert resp.status_code == 200
         html = resp.data.decode()
-        assert "sort=rs_change_1d" in html  # 各ヘッダの sort リンク
-        assert "▼前日比" in html            # 適用中のソートキー明示
+        assert "sort=rs_change_5d" in html
+        assert "▼1日比" in html
         assert "sort-active" in html
+
+        html = client.get("/portfolio?sort=rs_change_5d").data.decode()
+        assert "sort=rs_change_20d" in html
+        assert "▼5日比" in html
+
+        html = client.get("/portfolio?sort=rs_change_20d").data.decode()
+        assert "sort=rs_change_1d" in html
+        assert "▼20日比" in html
 
     def test_gyoutai_boundary_only_for_gyoutai_sort(self, client, portfolio_db_path):
         """issue #274: 業態境界線は gyoutai sort のときだけ出す"""

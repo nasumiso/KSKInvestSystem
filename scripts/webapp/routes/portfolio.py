@@ -59,7 +59,10 @@ STATUS_CHOICES = [
     ("watch", "3監", STATUS_VALUE_TO_LABEL["3監"]),
 ]
 DEFAULT_STATUS_QUERY = STATUS_CHOICES[0][0]  # "hold" — 書き込み POST 後フォールバック先
-PORTFOLIO_SORT_KEYS = {"position", "rank", "gyoutai", "rs_change_1d", "rating"}  # rs_change_1d: issue #332
+PORTFOLIO_SORT_KEYS = {
+    "position", "rank", "gyoutai", "rating",
+    "rs_change_1d", "rs_change_5d", "rs_change_20d",
+}
 DEFAULT_SORT_KEY = "position"
 _STAGE_SINGLE_RE = re.compile(r"^(?P<s>[1-4]S)(?:\((?P<t>[1-9])(?P<unit>[TB])\))?$")
 _STAGE_TRANSITION_RE = re.compile(r"^(?P<left>[1-4]S)(?:\((?P<t>[1-9])(?P<unit>[TB])\))?~(?P<right>[1-4]S)$")
@@ -818,8 +821,17 @@ def dashboard():
             k,
             include_empty_status=preserve_all_status,
         )
-        for k in ("position", "rank", "gyoutai", "rating", "rs_change_1d")  # rs_change_1d: issue #332
+        for k in (
+            "position", "rank", "gyoutai", "rating",
+            "rs_change_1d", "rs_change_5d", "rs_change_20d",
+        )
     }
+    rs_change_sort_cycle = {
+        "rs_change_1d": sort_urls["rs_change_5d"],
+        "rs_change_5d": sort_urls["rs_change_20d"],
+        "rs_change_20d": sort_urls["rs_change_1d"],
+    }
+    rs_change_sort_url = rs_change_sort_cycle.get(active_sort, sort_urls["rs_change_1d"])
 
     # 保有フィルタ表示時のみ、運用総額と PF 全体の qty 最終更新日を集計
     hold_summary = None
@@ -841,6 +853,7 @@ def dashboard():
         active_gyoutai_theme=active_gyoutai_theme or "",
         active_sort=active_sort,
         sort_urls=sort_urls,
+        rs_change_sort_url=rs_change_sort_url,
         counts=counts,
         rows=rows,
         total=len(rows),

@@ -371,9 +371,10 @@
       <th data-page="1" title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
       <th data-page="1">決算日</th>
       <th data-page="1">RS</th>
-      {# issue #332: ヘッダクリックで前日比RSライン騰落率の降順ソート。適用中はソートキーを明示 (▼前日比) #}
-      <th data-page="1" class="{% if active_sort == 'rs_change_1d' %}sort-active{% endif %}"
-          title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸。クリックで前日比RSライン騰落率の降順ソート"><a href="{{ sort_urls['rs_change_1d'] }}">{% if active_sort == 'rs_change_1d' %}▼前日比{% else %}RS(20,5){% endif %}</a></th>
+      {# RS列クリックで RSライン騰落率ソートを 1日→5日→20日 の順に切替。 #}
+      {% set rs_sort_labels = {'rs_change_1d': '▼1日比', 'rs_change_5d': '▼5日比', 'rs_change_20d': '▼20日比'} %}
+      <th data-page="1" class="{% if active_sort in rs_sort_labels %}sort-active{% endif %}"
+          title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸。クリックでRSライン騰落率ソートを 1日→5日→20日 で切替"><a href="{{ rs_change_sort_url }}">{% if active_sort in rs_sort_labels %}{{ rs_sort_labels[active_sort] }}{% else %}RS(20,5){% endif %}</a></th>
       <th data-page="1">トレンド</th>
       <th data-page="1">タグ</th>
       <th data-page="1" title="ポ/ブ記号。ホバーで signal 全文 (発生日付含む)">シグナル</th>

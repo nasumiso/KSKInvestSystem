@@ -1834,6 +1834,20 @@ def _gyoutai_first_line(row: Dict[str, Any]) -> str:
     return head.strip()
 
 
+def _change_from_desc_series(series: List, days: int) -> Optional[float]:
+    """日付降順の系列から N 営業日前比の騰落率 (%) を返す。"""
+    if not series or len(series) <= days or days <= 0:
+        return None
+    try:
+        latest = float(series[0][1])
+        base = float(series[days][1])
+    except (TypeError, ValueError, IndexError):
+        return None
+    if base == 0:
+        return None
+    return (latest - base) / base * 100.0
+
+
 def list_portfolio_with_indicators(
     records: List[Dict[str, Any]],
     sort_key: str = "position",
@@ -1896,17 +1910,18 @@ def list_portfolio_with_indicators(
         row.update(_extract_indicators_for_portfolio(stock))
         # issue #227: 3点ミニチャート (svg + tooltip)
         row["price_rs_chart"] = build_stock_chart_payload(stock, market_db, mode="mini")
-        # issue #332: 前日比RSライン騰落率 (1日比) を RS(20,5) 列ソート用に格納。
-        # compute_rs_line_changes は (5日乖離A, 20日乖離B, 前日比D) を返す。D のみ使う。
+        # RSラインの 1/5/20営業日前比を RS(20,5) 列ソート用に格納。
         if topix_map:
             try:
-                from make_stock_db import compute_rs_line_changes  # 遅延 import
-                _a, _b, d = compute_rs_line_changes(stock, market_db, topix_map=topix_map)
+                from make_stock_db import compute_rs_line  # 遅延 import
+                rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
             except Exception:  # noqa: BLE001
-                d = None
+                rs_line = []
         else:
-            d = None
-        row["rs_change_1d"] = d
+            rs_line = []
+        row["rs_change_1d"] = _change_from_desc_series(rs_line, 1)
+        row["rs_change_5d"] = _change_from_desc_series(rs_line, 5)
+        row["rs_change_20d"] = _change_from_desc_series(rs_line, 20)
         row["styles"] = compute_cell_styles(row, today=today)
         # issue #178: ステータス列 (badge) 表示用の query / label を埋める
         status = rec.get("status", "")
@@ -1950,11 +1965,11 @@ def list_portfolio_with_indicators(
             r.get("rank") or 0,
             r.get("code_s", ""),
         ))
-    elif sort_key == "rs_change_1d":
-        # issue #332: 前日比RSライン騰落率 降順。None (算出不可) は末尾、同値はコード順。
+    elif sort_key in {"rs_change_1d", "rs_change_5d", "rs_change_20d"}:
+        # RSライン騰落率 降順。None (算出不可) は末尾、同値はコード順。
         rows.sort(key=lambda r: (
-            r.get("rs_change_1d") is None,
-            -(r.get("rs_change_1d") or 0.0),
+            r.get(sort_key) is None,
+            -(r.get(sort_key) or 0.0),
             r.get("code_s", ""),
         ))
     elif sort_key == "rating":

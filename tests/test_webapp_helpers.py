@@ -2117,15 +2117,19 @@ class TestListPortfolioWithIndicators:
         """issue #332: 前日比RSライン騰落率 降順、None は末尾、同値はコード順。"""
         import make_stock_db
         import make_market_db
-        # market_db / topix_map を truthy にして compute_rs_line_changes 経路を通す
+        # market_db / topix_map を truthy にして compute_rs_line 経路を通す
         # (helpers は make_market_db / make_stock_db から遅延 import するため両モジュールを差し替え)
         monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"_": 1})
         monkeypatch.setattr(make_stock_db, "_topix_close_map", lambda mdb: {"_": 1})
-        # 前日比 D をコード別に注入 (A, B は未使用なので None)
-        prev = {"0001": 2.0, "0002": -1.0, "0003": 2.0, "0004": None}
+        rs_lines = {
+            "0001": [(date(2026, 6, 23), 102.0), (date(2026, 6, 22), 100.0)],
+            "0002": [(date(2026, 6, 23), 99.0), (date(2026, 6, 22), 100.0)],
+            "0003": [(date(2026, 6, 23), 102.0), (date(2026, 6, 22), 100.0)],
+            "0004": [(date(2026, 6, 23), 100.0)],
+        }
         monkeypatch.setattr(
-            make_stock_db, "compute_rs_line_changes",
-            lambda stock, mdb, topix_map=None: (None, None, prev[stock["code_s"]]),
+            make_stock_db, "compute_rs_line",
+            lambda stock, mdb, topix_map=None: rs_lines[stock["code_s"]],
         )
         monkeypatch.setattr(
             helpers, "_bulk_get_stock_data",
@@ -2404,6 +2408,17 @@ class TestPriceRsSparkline:
     ])
     def test_format_prev_change(self, rs_values, expected):
         assert helpers._format_prev_change(rs_values) == expected
+
+    def test_change_from_desc_series_requires_exact_window(self):
+        """N日比ソートは N+1 本未満なら短い期間で代替しない。"""
+        series = [
+            (date(2026, 6, 23), 110.0),
+            (date(2026, 6, 22), 100.0),
+            (date(2026, 6, 19), 90.0),
+        ]
+        assert helpers._change_from_desc_series(series, 1) == pytest.approx(10.0)
+        assert helpers._change_from_desc_series(series, 2) == pytest.approx(22.2222222)
+        assert helpers._change_from_desc_series(series, 5) is None
 
     def test_full_chart_includes_date_labels(self):
         price_log = self._make_log(list(range(120, 100, -1)))
