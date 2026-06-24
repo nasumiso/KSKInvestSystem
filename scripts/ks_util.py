@@ -793,7 +793,7 @@ def kairi_gauge_svg(kairi, symbol,
     kairi が None で symbol も空なら "" を返す。
 
     kairi_ma10 を渡すと10日MA乖離を黒の点線で重ねて描く。
-    ma10_streak=True (保持データ内に30日連続10ma上回り期間あり = 利確基準有効)
+    ma10_streak=True (保持データ内に30日10ma維持期間あり = 利確基準有効)
     のときは赤の太点線に切替える。マーカーの横位置が現在の10ma乖離なので、
     中央より左 (株価が10maを割った) かどうかも位置で読み取れる。
     """
@@ -823,7 +823,7 @@ def kairi_gauge_svg(kairi, symbol,
             parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="%d"/>' % (mx, mx, height, halo_w))
             parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="%s" stroke-width="%d"/>' % (mx, mx, height, marker_color, marker_w))
 
-    # 10日MA乖離マーカー (通常は黒の点線。30日連続10ma上回りなら赤の太実線)
+    # 10日MA乖離マーカー (通常は黒の点線。30日10ma維持なら赤の太実線)
     if kairi_ma10 is not None:
         try:
             k10 = float(kairi_ma10)

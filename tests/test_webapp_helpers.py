@@ -3384,11 +3384,11 @@ class TestSignalDisplay:
 
 
 class TestBuildTrendInfoMa10:
-    """トレンド列の10日MA乖離マーカー (通常は黒点線、30日連続上回り期間ありで赤太点線)"""
+    """トレンド列の10日MA乖離マーカー (通常は黒点線、30日10ma維持期間ありで赤太点線)"""
 
     @pytest.mark.parametrize("kairi_ma10,streak,expect_marker,expect_red", [
         (5.0, False, True, False),    # 通常: 黒の点線
-        (5.0, True, True, True),      # 30日連続上回り期間あり: 赤の太点線
+        (5.0, True, True, True),      # 30日10ma維持期間あり: 赤の太点線
         (None, False, False, False),  # 10ma乖離なし: マーカー描かれない
     ])
     def test_ma10_marker(self, kairi_ma10, streak, expect_marker, expect_red):
@@ -3405,4 +3405,4 @@ class TestBuildTrendInfoMa10:
         assert ("#c62828" in svg) is expect_red  # 赤は streak のときだけ
         # tooltip に10日MA乖離行が入る
         assert "10日MA乖離:" in info["tooltip"]
-        assert ("30日連続10ma上 (利確基準)" in info["tooltip"]) is streak
+        assert ("30日10ma維持 (利確基準)" in info["tooltip"]) is streak

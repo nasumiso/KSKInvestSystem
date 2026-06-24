@@ -175,7 +175,7 @@ class TestMakeSignal:
         ],
     )
     def test_early_sell_tag(self, streak, kairi_ma10, expect):
-        """30日連続10日線上到達後の10日線割れで早売タグが付く"""
+        """30日10日線維持到達後の10日線割れで早売タグが付く"""
         stock = {
             "ma10_above_streak_30": streak,
             "price_kairi_ma10": kairi_ma10,

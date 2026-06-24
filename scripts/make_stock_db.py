@@ -1260,7 +1260,7 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
                 tags.append("売")
             elif warn == 1:
                 tags.append("警")
-    # 30日連続10日線上で一度利確基準に達した後、10日線割れに入った銘柄は早売タグ。
+    # 30日10日線維持で一度利確基準に達した後、10日線割れに入った銘柄は早売タグ。
     kairi_ma10 = stock.get("price_kairi_ma10")
     if bool(stock.get("ma10_above_streak_30")) and isinstance(kairi_ma10, (int, float)) and kairi_ma10 < 0:
         tags.append("早売")
