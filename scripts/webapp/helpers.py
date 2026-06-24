@@ -36,6 +36,10 @@ from research_shelve import (
 )
 
 _RATING_SORT_ORDER = {"S": 0, "A": 1, "B": 2, "C": 3, "D": 4, "E": 5}
+_TREND_TEMPLATE_CONDITIONS = [
+    "pr>ma10", "pr>ma30,40", "ma30>ma40", "ma40Up",
+    "ma10>ma30,40", "high(low)52", "RS",
+]
 
 
 def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
@@ -3423,7 +3427,7 @@ def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False)
 
     返り値の各キー:
         expr: ◎ / ◯ / ▲ / △ / — の単一記号
-        tooltip: 不通過項目 (◯のときのみ) + 10WMA乖離率を改行で結合した文字列
+        tooltip: 不通過/通過項目 + 10WMA乖離率を改行で結合した文字列
         kairi_gauge_svg: -25%〜+25% のバーゲージ + 中央記号オーバーレイ SVG
     """
     from ks_util import (
@@ -3434,9 +3438,13 @@ def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False)
     misses = (stock or {}).get("trend_template")
     expr = trend_symbol_from_misses(misses) if stock else "—"
     gauge_symbol = "" if hide_full_miss_symbol and expr == "×" else expr
-    # 不通過項目の tooltip は ◯ (1-2件不通過) のときだけ意味があるので、それ以外は空にする。
-    # ◎=全通過で項目なし、▲/△=不通過項目が多くノイズ、—=未評価。
+    # ◯ は不通過が少ないので不通過項目、△ は通過が少ないので通過項目を出す。
+    # ◎=全通過で項目なし、▲=中間帯でノイズ、—=未評価。
     tooltip_src = misses if (expr == "◯" and isinstance(misses, list)) else []
+    pass_src = []
+    if expr == "△" and isinstance(misses, list):
+        miss_set = set(misses)
+        pass_src = [c for c in _TREND_TEMPLATE_CONDITIONS if c not in miss_set]
     raw = (stock or {}).get("price_kairi_wma10")
     kairi_raw = raw if isinstance(raw, (int, float)) else None
     kairi_str = format_kairi_wma10(kairi_raw) or "—"
@@ -3447,6 +3455,8 @@ def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False)
     tooltip_lines = []
     if tooltip_src:
         tooltip_lines.append("不通過: " + ",".join(tooltip_src))
+    if pass_src:
+        tooltip_lines.append("通過: " + ",".join(pass_src))
     tooltip_lines.append("10WMA乖離: " + kairi_str)
     tooltip_lines.append("10日MA乖離: " + (format_kairi_wma10(kairi_ma10) or "—"))
     if ma10_streak:

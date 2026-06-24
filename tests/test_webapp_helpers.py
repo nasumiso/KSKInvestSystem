@@ -2826,6 +2826,15 @@ class TestBuildTrendInfoGauge:
         else:
             assert "不通過:" not in info["tooltip"]
 
+    def test_triangle_down_tooltip_shows_passed_conditions(self):
+        """△ は不通過ではなく、少数の通過項目を tooltip に出す"""
+        misses = ["pr>ma10", "pr>ma30,40", "ma30>ma40", "ma40Up", "RS"]
+        info = helpers.build_trend_info({"price_kairi_wma10": 0, "trend_template": misses})
+
+        assert info["expr"] == "△"
+        assert "通過: ma10>ma30,40,high(low)52" in info["tooltip"]
+        assert "不通過:" not in info["tooltip"]
+
 
 class TestBuildSprGaugeForStock:
     """個別銘柄 (price 形式の sell_pressure_ratio / stddev_volatility) から
