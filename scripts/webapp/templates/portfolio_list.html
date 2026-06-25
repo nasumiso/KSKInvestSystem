@@ -268,7 +268,9 @@
 {# issue #215: フィルタは status / gyoutai_theme の単一選択 select 2 つ。onchange で即送信。 #}
 <form id="portfolio-filter-form" action="/portfolio" method="GET"
       style="display:flex;flex-wrap:wrap;gap:1.2em;align-items:center;margin-bottom:0.6em;padding:0.5em 0.6em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;font-size:0.9em;">
+  {% if active_sort != default_sort %}
   <input type="hidden" name="sort" value="{{ active_sort }}">
+  {% endif %}
   <label style="display:inline-flex;align-items:center;gap:0.4em;margin:0;">
     <span style="color:#666;">ステータス</span>
     <select name="status" onchange="this.form.submit()" style="padding:0.2em 0.3em;font-size:0.9em;margin:0;">
@@ -375,7 +377,7 @@
       {% set rs_sort_labels = {'rs_change_1d': '▼1日比', 'rs_change_5d': '▼5日比', 'rs_change_20d': '▼20日比'} %}
       <th data-page="1" class="{% if active_sort in rs_sort_labels %}sort-active{% endif %}"
           title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸。クリックでRSライン騰落率ソートを 1日→5日→20日 で切替"><a href="{{ rs_change_sort_url }}">{% if active_sort in rs_sort_labels %}{{ rs_sort_labels[active_sort] }}{% else %}RS(20,5){% endif %}</a></th>
-      <th data-page="1" title="表記: ◎全通過 / ◯1-2件未達 / ▲3-4件未達 / △5-6件未達 / 空白7件未達&#10;青背景: 株価30/40WMA未達 + 40WMA下向き&#10;点線: 赤太=10ma 30日維持中 / 黒太=30日維持実績あり / 黒細=なし">トレンド</th>
+      <th data-page="1" title="表記: ◎全通過 / ◯1-2件未達 / ▲3-4件未達 / △5-6件未達 / 空白7件未達&#10;青背景: 株価30/40WMA未達 + 30WMA&lt;40WMA + 40WMA下向き&#10;点線: 赤太=10ma 30日維持中 / 黒太=30日維持実績あり / 黒細=なし">トレンド</th>
       <th data-page="1">タグ</th>
       <th data-page="1" title="ポ/ブ記号。ホバーで signal 全文 (発生日付含む)">シグナル</th>
       <th data-page="1" title="バー背景の濃淡で買い集め評価 (A=濃 / E=薄、左=緑 / 右=赤)">需給バランス</th>
@@ -788,6 +790,13 @@ function excludeFromUniverse(codeS) {
     return (d.getMonth() + 1) + '/' + d.getDate();  // M/D 形式
   }
 
+  function todayYMD() {
+    var d = new Date();
+    var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+    var dd = ('0' + d.getDate()).slice(-2);
+    return d.getFullYear() + '-' + mm + '-' + dd;
+  }
+
   function renderGyoutaiTheme(td, value) {
     // 改行で 2 行まで表示する既存ルールを再現
     td.innerHTML = '';
@@ -929,6 +938,7 @@ function excludeFromUniverse(codeS) {
     if (input.tagName === 'TEXTAREA' || input.type === 'text') {
       input.value = currentValue;
     }
+    var initialInputValue = input.value;
 
     td.innerHTML = '';
     td.appendChild(input);
@@ -1033,7 +1043,13 @@ function excludeFromUniverse(codeS) {
     input.addEventListener('blur', commit);
     input.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-      if (e.key === 'Enter' && input.tagName !== 'TEXTAREA') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Enter' && input.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        if (field === 'last_research_update' && input.value === initialInputValue) {
+          input.value = (input.type === 'date') ? todayYMD() : todayMD();
+        }
+        input.blur();
+      }
       // textarea (複数行セル) は素の Enter を改行に使うため Cmd/Ctrl+Enter で確定
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && input.tagName === 'TEXTAREA') { e.preventDefault(); input.blur(); }
     });
