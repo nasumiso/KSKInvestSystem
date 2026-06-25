@@ -458,7 +458,7 @@ def calc_ma10_kairi_indicators(closes, lows=None):
         closes: 終値 (int/float) のリスト、新しい日が先頭
         lows: 互換性維持用の引数。現在の streak 判定では参照しない。
     Returns:
-        dict: price_kairi_ma10 (float or None) / ma10_above_streak_30 (bool)
+        dict: price_kairi_ma10 (float or None) / ma10_above_streak_30 (bool) / ma10_streak_ever (bool)
     """
     res = {}
     # 乖離率は closes のみで計算する (安値の欠損に影響されない)
@@ -468,9 +468,9 @@ def calc_ma10_kairi_indicators(closes, lows=None):
     else:
         res["price_kairi_ma10"] = None
     # 保持している価格データ (日足~40日) の範囲内に「30営業日連続で 10ma を維持した」
-    # 期間があるか。利確基準 (10maを30日維持した) がこの窓内で一度でも成立していれば、
-    # その後10maを割って売りシグナルが出ても True のまま → トレンド列で赤太点線として表示
-    # する (達成期間が保持データ窓の外に流れたら False に戻る = 現状仕様)。
+    # 期間があるかを判定する。現在も維持中なら ma10_above_streak_30=True (赤太点線)、
+    # 達成実績はあるが現在は割れなら ma10_streak_ever=True (黒太点線)。
+    # 達成期間が窓の外に流れたら両方 False に戻る。
     #
     # 連続維持の判定は Morales/Kacher の violation (浸透許容=porosity) に準拠する:
     #   - 終値 > 10ma なら維持。
@@ -514,7 +514,11 @@ def calc_ma10_kairi_indicators(closes, lows=None):
             if all(_streak_holds(i) for i in range(s, s + STREAK_DAYS)):
                 had_streak = True
                 break
-    res["ma10_above_streak_30"] = had_streak  # データ不足時も False
+    # 現在も維持中 (最新日が10ma上) かどうかで赤太点線/黒太点線を分ける
+    currently_holding = had_streak and _streak_holds(0)
+    res["ma10_above_streak_30"] = currently_holding
+    # 達成実績はあるが現在は割れ → 黒太点線用
+    res["ma10_streak_ever"] = had_streak and not currently_holding
     return res
 
 
@@ -607,7 +611,7 @@ def _calc_daily_indicators(daily_price_list):
         except (ValueError, IndexError):
             lows.append(None)
     dic.update(calc_ma10_kairi_indicators(closes, lows))
-    log_debug("10日MA乖離率:", dic["price_kairi_ma10"], "30日10ma維持期間あり:", dic["ma10_above_streak_30"])
+    log_debug("10日MA乖離率:", dic["price_kairi_ma10"], "30日維持中:", dic["ma10_above_streak_30"], "維持実績あり:", dic["ma10_streak_ever"])
 
     # direction_signal は make_market_db.py が market_state を計算してから上書きする。
     # 計算前のデフォルト値として空文字を入れておく (後方互換のためフィールド自体は維持)。

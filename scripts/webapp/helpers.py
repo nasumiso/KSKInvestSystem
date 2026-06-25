@@ -3448,10 +3448,11 @@ def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False)
     raw = (stock or {}).get("price_kairi_wma10")
     kairi_raw = raw if isinstance(raw, (int, float)) else None
     kairi_str = format_kairi_wma10(kairi_raw) or "—"
-    # 10日MA乖離 (点線マーカー) + 30日10ma維持判定 (赤実線 = 利確基準有効)
+    # 10日MA乖離 (点線マーカー) + 30日10ma維持判定
     raw_ma10 = (stock or {}).get("price_kairi_ma10")
     kairi_ma10 = raw_ma10 if isinstance(raw_ma10, (int, float)) else None
     ma10_streak = bool((stock or {}).get("ma10_above_streak_30"))
+    ma10_streak_ever = bool((stock or {}).get("ma10_streak_ever"))
     tooltip_lines = []
     if tooltip_src:
         tooltip_lines.append("不通過: " + ",".join(tooltip_src))
@@ -3460,12 +3461,15 @@ def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False)
     tooltip_lines.append("10WMA乖離: " + kairi_str)
     tooltip_lines.append("10日MA乖離: " + (format_kairi_wma10(kairi_ma10) or "—"))
     if ma10_streak:
-        tooltip_lines.append("30日10ma維持 (利確基準)")
+        tooltip_lines.append("赤太点線: 10ma 30日維持中")
+    elif ma10_streak_ever:
+        tooltip_lines.append("黒太点線: 10ma 30日維持実績あり")
     return {
         "expr": expr,
         "tooltip": "\n".join(tooltip_lines),
         "kairi_gauge_svg": kairi_gauge_svg(
-            kairi_raw, gauge_symbol, kairi_ma10=kairi_ma10, ma10_streak=ma10_streak,
+            kairi_raw, gauge_symbol, kairi_ma10=kairi_ma10,
+            ma10_streak=ma10_streak, ma10_streak_ever=ma10_streak_ever,
         ),
     }
 

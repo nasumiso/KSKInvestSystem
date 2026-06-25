@@ -3405,4 +3405,4 @@ class TestBuildTrendInfoMa10:
         assert ("#c62828" in svg) is expect_red  # 赤は streak のときだけ
         # tooltip に10日MA乖離行が入る
         assert "10日MA乖離:" in info["tooltip"]
-        assert ("30日10ma維持 (利確基準)" in info["tooltip"]) is streak
+        assert ("赤太点線: 10ma 30日維持中" in info["tooltip"]) is streak

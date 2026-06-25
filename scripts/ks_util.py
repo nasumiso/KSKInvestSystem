@@ -786,16 +786,18 @@ def kairi_gauge_svg(kairi, symbol,
                     faint_threshold: float = _KAIRI_GAUGE_FAINT_THRESHOLD,
                     strong_threshold: float = _KAIRI_GAUGE_STRONG_THRESHOLD,
                     kairi_ma10=None,
-                    ma10_streak: bool = False):
+                    ma10_streak: bool = False,
+                    ma10_streak_ever: bool = False):
     """10WMA(=50日MA)乖離率を -range_pct〜+range_pct の縦線マーカーで描画する SVG を返す。
 
     kairi >= +range_pct はクランプ + strong 色のマーカー。
     kairi が None で symbol も空なら "" を返す。
 
     kairi_ma10 を渡すと10日MA乖離を黒の点線で重ねて描く。
-    ma10_streak=True (保持データ内に30日10ma維持期間あり = 利確基準有効)
-    のときは赤の太点線に切替える。マーカーの横位置が現在の10ma乖離なので、
-    中央より左 (株価が10maを割った) かどうかも位置で読み取れる。
+    ma10_streak=True (窓内に30日維持期間あり = 利確基準有効) → 赤の太点線。
+    ma10_streak_ever=True かつ ma10_streak=False (達成実績あり・現在は窓外/割れ) → 黒の太点線。
+    どちらも False → 黒の細点線。
+    マーカーの横位置が現在の10ma乖離なので中央より左なら株価が10maを割った状態。
     """
     width = 40
     height = 28
@@ -834,9 +836,13 @@ def kairi_gauge_svg(kairi, symbol,
             mx10 = (k10_clamped + range_pct) * px_per_pct
             mx10 = max(1.0, min(width - 1.0, mx10))
             if ma10_streak:
-                # 利確基準有効: 赤の太点線 + white halo (視認性確保)
+                # 利確基準有効 (現在も30日維持中): 赤の太点線 + white halo
                 parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="4" stroke-dasharray="3,2"/>' % (mx10, mx10, height))
                 parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="%s" stroke-width="3" stroke-dasharray="3,2"/>' % (mx10, mx10, height, _KAIRI_GAUGE_NEG_STRONG))
+            elif ma10_streak_ever:
+                # 達成実績あり・現在は割れ: 黒の太点線 + white halo (売り確認用)
+                parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="white" stroke-width="4" stroke-dasharray="3,2"/>' % (mx10, mx10, height))
+                parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="#000" stroke-width="3" stroke-dasharray="3,2"/>' % (mx10, mx10, height))
             else:
                 parts.append('<line x1="%g" y1="0" x2="%g" y2="%d" stroke="#000" stroke-width="1" stroke-dasharray="2,2"/>' % (mx10, mx10, height))
 

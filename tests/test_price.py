@@ -545,15 +545,18 @@ class TestCalcDailyIndicators:
         result = price._calc_daily_indicators(rows)
         assert len(result["price_log"]) == 30
 
-    @pytest.mark.parametrize("n,break_days,expected", [
-        (45, [], True),               # 全日 終値>10ma → 30日連続窓が存在
-        (50, [0, 1, 2], True),        # 直近を割り込み (売りシグナル中) でも古い側に達成窓あり → 残る
-        # 単発の飛び石割れは porosity (翌日終値が翌日10ma上に回復) で救済され連続維持。
-        (45, list(range(0, 45, 5)), True),
-        (30, [], False),              # 終値39本未満 (データ不足) → 未達成扱い
+    @pytest.mark.parametrize("n,break_days,exp_streak,exp_ever", [
+        # 全日 終値>10ma → 現在も維持中
+        (45, [], True, False),
+        # 直近 [0,1,2] を割込み → 古い側に達成窓あり、現在は割れ
+        (50, [0, 1, 2], False, True),
+        # 単発飛び石割れは porosity 救済 → 現在も維持中 (range(0,45,5) の最新日=0 は割れ→False)
+        (45, list(range(0, 45, 5)), False, True),
+        # データ不足 (39本未満) → 未達成
+        (30, [], False, False),
     ])
-    def test_ma10_above_streak_30(self, n, break_days, expected):
-        """保持データ内に30日連続10ma維持期間があるか。break_days はその日を急落させる。
+    def test_ma10_above_streak_30(self, n, break_days, exp_streak, exp_ever):
+        """ma10_above_streak_30 (現在も維持中) と ma10_streak_ever (実績あり・現在は割れ) の判定。
 
         break日は終値・安値とも極端に下げる。porosity 仕様では「終値割れ + 翌営業日の終値も
         10ma以下」で初めて連続切断 (violation)。単発の飛び石割れは翌日終値回復で救済される。
@@ -563,8 +566,8 @@ class TestCalcDailyIndicators:
             d, o, h, _l, _c, r5, r6, v = rows[bd]
             rows[bd] = (d, o, h, "0", "1", r5, r6, v)  # 終値1・安値0で10maを確実に割り込む
         result = price._calc_daily_indicators(rows)
-        assert result["ma10_above_streak_30"] is expected
-        # price_kairi_ma10 は数値 (10本以上あるため)
+        assert result["ma10_above_streak_30"] is exp_streak
+        assert result["ma10_streak_ever"] is exp_ever
         assert isinstance(result["price_kairi_ma10"], float)
 
     @pytest.mark.parametrize("bd,next_close,expected", [

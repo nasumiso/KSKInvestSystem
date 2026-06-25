@@ -451,6 +451,32 @@ class TestKairiGaugeSvg:
         assert expect_color in svg
 
 
+    @pytest.mark.parametrize(
+        "ma10_streak, ma10_streak_ever, expect_ma10_lines, expect_ma10_color",
+        [
+            # 細点線: streak も ever も False → ma10線 1本
+            (False, False, 1, "#000"),
+            # 黒太点線: ever=True かつ streak=False → halo+本体 2本、黒
+            (False, True,  2, "#000"),
+            # 赤太点線: streak=True が優先 → halo+本体 2本、赤
+            (True,  False, 2, "#c62828"),
+            (True,  True,  2, "#c62828"),
+        ],
+    )
+    def test_ma10_streak_ever_line_style(
+        self, ma10_streak, ma10_streak_ever, expect_ma10_lines, expect_ma10_color
+    ):
+        """ma10_streak_ever=True のとき黒太点線、ma10_streak=True のとき赤太点線が優先される。"""
+        # kairi=0 (WMAマーカーなし) で ma10 線だけを数える
+        svg = ks_util.kairi_gauge_svg(
+            None, "▲", kairi_ma10=-2.0,
+            ma10_streak=ma10_streak, ma10_streak_ever=ma10_streak_ever,
+        )
+        assert svg.startswith("<svg")
+        assert svg.count("<line") == expect_ma10_lines
+        assert expect_ma10_color in svg
+
+
 class TestTrendSymbolAndBgClass:
     """trend_symbol_from_misses / trend_bg_class: miss 数→記号→背景色クラスの対応。
 
