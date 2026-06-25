@@ -1719,24 +1719,18 @@ class TestComputeCellStyles:
         [
             ({"trend_template": "◎pr>ma10"}, f"background:{C['濃黄']}"),
             ({"trend_template": "◯RS"}, f"background:{C['薄黄']}"),
-            # 3条件すべてmiss → 青
-            (
-                {"trend_template": "◯", "trend_template_misses": ["pr>ma30,40", "ma30>ma40", "ma40Up"]},
-                f"background:{C['青']}",
-            ),
-            (
-                {"trend_template": "", "trend_template_misses": ["pr>ma30,40", "ma30>ma40", "ma40Up", "RS"]},
-                f"background:{C['青']}",
-            ),
-            # ma30>ma40 が通過 (missに含まれない) → 青にならない
             (
                 {"trend_template": "◯", "trend_template_misses": ["pr>ma30,40", "ma40Up"]},
-                f"background:{C['薄黄']}",
+                f"background:{C['青']}",
+            ),
+            (
+                {"trend_template": "", "trend_template_misses": ["pr>ma30,40", "ma40Up", "RS"]},
+                f"background:{C['青']}",
             ),
             ({"trend_template": "×"}, None),
             ({"trend_template": "—"}, f"background:{C['赤']}"),       # 未評価/データ欠損
             ({"trend_template": ""}, f"background:{C['赤']}"),
-            ({"trend_template": "◎◯", "trend_template_misses": ["pr>ma30,40", "ma30>ma40", "ma40Up"]}, f"background:{C['青']}"),
+            ({"trend_template": "◎◯", "trend_template_misses": ["pr>ma30,40", "ma40Up"]}, f"background:{C['青']}"),
             ({"trend_template": "▲"}, None),                          # 対象外記号
         ],
     )

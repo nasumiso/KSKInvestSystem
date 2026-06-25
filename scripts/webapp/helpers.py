@@ -3760,7 +3760,7 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         styles["trend_template"] = bg("薄黄")
     elif not trend or trend == "—":
         styles["trend_template"] = bg("赤")
-    if {"pr>ma30,40", "ma30>ma40", "ma40Up"}.issubset(trend_miss_set):
+    if {"pr>ma30,40", "ma40Up"}.issubset(trend_miss_set):
         styles["trend_template"] = bg("青")
 
     # --- シグナル (ルール 2-7): 強い色から順に評価

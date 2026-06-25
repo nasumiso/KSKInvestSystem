@@ -377,7 +377,7 @@
       {% set rs_sort_labels = {'rs_change_1d': '▼1日比', 'rs_change_5d': '▼5日比', 'rs_change_20d': '▼20日比'} %}
       <th data-page="1" class="{% if active_sort in rs_sort_labels %}sort-active{% endif %}"
           title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸。クリックでRSライン騰落率ソートを 1日→5日→20日 で切替"><a href="{{ rs_change_sort_url }}">{% if active_sort in rs_sort_labels %}{{ rs_sort_labels[active_sort] }}{% else %}RS(20,5){% endif %}</a></th>
-      <th data-page="1" title="表記: ◎全通過 / ◯1-2件未達 / ▲3-4件未達 / △5-6件未達 / 空白7件未達&#10;青背景: 株価30/40WMA未達 + 30WMA&lt;40WMA + 40WMA下向き&#10;点線: 赤太=10ma 30日維持中 / 黒太=30日維持実績あり / 黒細=なし">トレンド</th>
+      <th data-page="1" title="表記: ◎全通過 / ◯1-2件未達 / ▲3-4件未達 / △5-6件未達 / 空白7件未達&#10;青背景: 株価30/40WMA未達 + 40WMA下向き&#10;点線: 赤太=10ma 30日維持中 / 黒太=30日維持実績あり / 黒細=なし">トレンド</th>
       <th data-page="1">タグ</th>
       <th data-page="1" title="ポ/ブ記号。ホバーで signal 全文 (発生日付含む)">シグナル</th>
       <th data-page="1" title="バー背景の濃淡で買い集め評価 (A=濃 / E=薄、左=緑 / 右=赤)">需給バランス</th>
