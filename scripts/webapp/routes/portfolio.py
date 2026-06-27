@@ -64,8 +64,17 @@ PORTFOLIO_SORT_KEYS = {
     "rs_change_1d", "rs_change_5d", "rs_change_20d",
 }
 DEFAULT_SORT_KEY = "position"
+DEFAULT_SORT_KEY_BY_STATUS = {
+    "2準": "rank",
+    "3監": "rank",
+}
 _STAGE_SINGLE_RE = re.compile(r"^(?P<s>[1-4]S)(?:\((?P<t>[1-9])(?P<unit>[TB])\))?$")
 _STAGE_TRANSITION_RE = re.compile(r"^(?P<left>[1-4]S)(?:\((?P<t>[1-9])(?P<unit>[TB])\))?~(?P<right>[1-4]S)$")
+
+
+def _default_sort_key_for_status(active_status: Optional[str]) -> str:
+    """status ごとの portfolio 一覧デフォルト sort key を返す。"""
+    return DEFAULT_SORT_KEY_BY_STATUS.get(active_status, DEFAULT_SORT_KEY)
 
 
 def _parse_status_filter(args) -> Optional[str]:
@@ -97,12 +106,12 @@ def _parse_gyoutai_theme(args) -> Optional[str]:
     return raw or None
 
 
-def _parse_sort_key(args) -> str:
+def _parse_sort_key(args, active_status: Optional[str] = None) -> str:
     """request.args から portfolio 一覧の sort key を取り出す (issue #274)。"""
     raw = (args.get("sort") or "").strip().lower()
     if raw in PORTFOLIO_SORT_KEYS:
         return raw
-    return DEFAULT_SORT_KEY
+    return _default_sort_key_for_status(active_status)
 
 
 def _build_query_string(
@@ -749,12 +758,13 @@ def dashboard():
       status:        hold / semi / watch のいずれか単一 (省略時=hold、空文字=全ステータス)
       gyoutai_theme: 業態/テーマ名の完全一致 (省略時=全業態テーマ)
                      指定時は status を無視して全銘柄から該当業態/テーマを抽出。
-      sort:          position / rank / gyoutai / rating (省略時=position)
+      sort:          position / rank / gyoutai / rating
+                     (省略時=hold/all は position、semi/watch は rank)
     `page` パラメータは silent に無視 (旧 URL 互換)。
     """
     active_status = _parse_status_filter(request.args)
     active_gyoutai_theme = _parse_gyoutai_theme(request.args)
-    active_sort = _parse_sort_key(request.args)
+    active_sort = _parse_sort_key(request.args, active_status)
 
     # issue #186: fallback 判定は除外含む全件で行う (全件除外時の誤判定を避ける)。
     # 表示・件数カウントは除外を弾いた visible_records を使う。
@@ -852,6 +862,7 @@ def dashboard():
         active_status_query=active_status_query,
         active_gyoutai_theme=active_gyoutai_theme or "",
         active_sort=active_sort,
+        default_sort=_default_sort_key_for_status(active_status),
         sort_urls=sort_urls,
         rs_change_sort_url=rs_change_sort_url,
         counts=counts,
@@ -914,6 +925,7 @@ def charts():
             "stock_name": r.get("stock_name") or "",
             "stage": (r.get("memo") or {}).get("stage") or "",
             "last_research_update": (r.get("memo") or {}).get("last_research_update") or "",
+            "last_research_update_style": (r.get("styles") or {}).get("last_research_update") or "",
             "jukyu_chart": (r.get("memo") or {}).get("jukyu_chart") or "",
             "stage_struct": _parse_stage_value((r.get("memo") or {}).get("stage") or ""),
             "jukyu_chart_struct": _parse_chart_value((r.get("memo") or {}).get("jukyu_chart") or ""),

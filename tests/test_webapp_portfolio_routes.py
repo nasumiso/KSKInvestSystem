@@ -5,6 +5,7 @@ Flask テストクライアントで各エンドポイントを叩く。
 """
 
 import os
+import re
 
 import pytest
 
@@ -198,6 +199,7 @@ class TestDashboardGet:
         assert '>評価<' in html
         assert '>チャートパターン<' in html
         assert 'class="rating-cell"' in html
+        assert 'class="rating-cell" style="background:#ea4335;color:#fff">S</td>' in html
         assert '>S</td>' in html
         assert 'class="chart-style-select"' in html
         assert 'class="chart-state-select"' in html
@@ -1111,6 +1113,48 @@ class TestDashboardFilter:
         assert "sort=rating" in html
         assert "sort=rs" in html
 
+    def test_semi_default_sort_is_rank(self, client, portfolio_db_path, stocks_db_path):
+        """準保有タブは sort 未指定なら順位順にする。"""
+        ps.add_to_watch("1001", reason="順位順テスト", db_path=portfolio_db_path)
+        ps.transition_status("1001", "2準", db_path=portfolio_db_path)
+        with ShelveDB(stocks_db_path) as db:
+            db["1001"] = {
+                "code_s": "1001",
+                "stock_name": "順位順テスト準",
+                "stock_rank_log": [("2026-05-03", 900)],
+            }
+
+        html = client.get("/portfolio?status=semi").data.decode()
+
+        assert 'name="sort" value="rank"' not in html
+        assert re.findall(r'<tr data-code="([^"]+)"', html) == ["7203", "1001"]
+
+    def test_watch_default_sort_is_rank(self, client, portfolio_db_path, stocks_db_path):
+        """監視タブは sort 未指定なら順位順にする。"""
+        ps.add_to_watch("1000", reason="順位順テスト", db_path=portfolio_db_path)
+        with ShelveDB(stocks_db_path) as db:
+            db["1000"] = {
+                "code_s": "1000",
+                "stock_name": "順位順テスト監",
+                "stock_rank_log": [("2026-05-03", 900)],
+            }
+
+        html = client.get("/portfolio?status=watch").data.decode()
+
+        assert 'name="sort" value="rank"' not in html
+        assert re.findall(r'<tr data-code="([^"]+)"', html) == ["6324", "1000"]
+
+    def test_hold_default_sort_remains_position(self, client):
+        """保有タブのデフォルト sort は従来どおり状態/ポジション順。"""
+        html = client.get("/portfolio?status=hold").data.decode()
+        assert 'name="sort" value="position"' not in html
+
+    def test_default_sort_is_not_carried_when_switching_status_filter(self, client):
+        """デフォルト sort は status 切替時に hidden で持ち越さない。"""
+        html = client.get("/portfolio?status=hold").data.decode()
+        form_html = re.search(r'<form id="portfolio-filter-form".*?</form>', html, re.DOTALL).group(0)
+        assert 'name="sort"' not in form_html
+
     def test_bulk_transition_mode_button_visible_in_hold_filter(self, client):
         """保有のみ表示でも一括変更モードを出す"""
         html = client.get("/portfolio?status=hold").data.decode()
@@ -1456,13 +1500,14 @@ class TestPortfolioCharts:
         """inline 編集の初期値として stage / 更新日が JSON 埋め込みに出る (issue #231)"""
         ps.update_memo(
             "3496",
-            {"stage": "2S(3B)", "last_research_update": "5/30", "jukyu_chart": "月足CWHブレイク"},
+            {"stage": "2S(3B)", "last_research_update": "4/10", "jukyu_chart": "月足CWHブレイク"},
             db_path=portfolio_db_path,
         )
         resp = client.get("/portfolio/charts?status=hold")
         html = resp.data.decode()
         assert '"stage": "2S(3B)"' in html
-        assert '"last_research_update": "5/30"' in html
+        assert '"last_research_update": "4/10"' in html
+        assert '"last_research_update_style": "background:#999999"' in html
         assert '"stage_struct"' in html
         assert '"jukyu_chart_struct"' in html
         assert 'class="stage-main-select"' in html

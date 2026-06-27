@@ -149,15 +149,41 @@ def _write_cache(tmp_path, generated_at, latest_date="2026-05-15"):
 
 
 def test_update_credit_balance_skips_when_cache_fresh(tmp_path, monkeypatch):
-    """generated_at が today と同日なら fetch を呼ばずに return する。"""
-    _write_cache(tmp_path, generated_at="2026-05-26T22:00:00")
+    """generated_at が today と同日かつ latest が期待週に追いついていれば fetch しない。"""
+    _write_cache(
+        tmp_path,
+        generated_at="2026-05-27T22:00:00",
+        latest_date="2026-05-22",
+    )
 
     monkeypatch.setattr(shintakane, "DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(shintakane, "get_price_day", lambda dt: date(2026, 5, 26))
+    monkeypatch.setattr(shintakane, "get_price_day", lambda dt: date(2026, 5, 27))
 
     with patch("market_breadth.fetch_credit_balance_weekly") as fake_fetch:
         shintakane.update_credit_balance()
         fake_fetch.assert_not_called()
+
+
+def test_update_credit_balance_refetches_when_same_day_but_latest_stale(tmp_path, monkeypatch):
+    """同日生成キャッシュでも latest が期待金曜より古ければ fetch する。"""
+    cache = _write_cache(
+        tmp_path,
+        generated_at="2026-05-27T03:00:00",
+        latest_date="2026-05-15",
+    )
+
+    monkeypatch.setattr(shintakane, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(shintakane, "get_price_day", lambda dt: date(2026, 5, 27))
+
+    fake_rows = [
+        {"date": "2026-05-15", "credit_eval_rate": -4.47, "credit_bairitsu": 6.84},
+        {"date": "2026-05-22", "credit_eval_rate": -4.10, "credit_bairitsu": 6.66},
+    ]
+    with patch("market_breadth.fetch_credit_balance_weekly", return_value=fake_rows) as fake_fetch:
+        shintakane.update_credit_balance()
+        fake_fetch.assert_called_once()
+    payload = json.loads(cache.read_text(encoding="utf-8"))
+    assert payload["latest"]["date"] == "2026-05-22"
 
 
 def test_update_credit_balance_fetches_when_cache_stale(tmp_path, monkeypatch):

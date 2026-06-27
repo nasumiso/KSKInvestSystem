@@ -1568,11 +1568,26 @@ def update_pf_kessan_db(stocks):
     kessan.save_pf_kessan_db(stocks)
 
 
-def _credit_cache_is_fresh(out_path, today):
-    """credit_balance.json の generated_at が today と同日なら True (取得スキップ可)。
+def _credit_expected_latest_date(today):
+    """信用評価損益率で期待する latest.date を返す。
 
-    元データは週次更新 (公表ラグ含めて週1) のため、同一日に再取得する意味はない。
-    日付が変われば取りに行く。
+    元データは週次・金曜日付だが、公表は翌週水曜ごろまで遅れる。
+    そのため「直近金曜の翌水曜以降」になったら、その金曜を期待値にする。
+    祝日は考慮しない。
+    """
+    days_since_friday = (today.weekday() - 4) % 7
+    friday = today - timedelta(days=days_since_friday)
+    if today < friday + timedelta(days=5):
+        friday -= timedelta(days=7)
+    return friday.isoformat()
+
+
+def _credit_cache_is_fresh(out_path, today):
+    """credit_balance.json が today 時点で取得不要なら True。
+
+    generated_at が today と同日でも、latest.date が期待される金曜に追いついていなければ
+    再取得する。早朝に古い週次データでキャッシュし、同日中に元データが更新された場合の
+    取り逃しを避けるため。
     """
     if not os.path.exists(out_path):
         return False
@@ -1583,9 +1598,14 @@ def _credit_cache_is_fresh(out_path, today):
         if not gen_at:
             return False
         gen_date = datetime.fromisoformat(gen_at).date()
-    except (OSError, ValueError, KeyError):
+        latest_date = (payload.get("latest") or {}).get("date")
+        if not latest_date:
+            return False
+    except (OSError, ValueError, KeyError, AttributeError):
         return False
-    return gen_date == today
+    if gen_date != today:
+        return False
+    return latest_date >= _credit_expected_latest_date(today)
 
 
 def _saved_latest_date(out_path):
@@ -1635,7 +1655,12 @@ def update_credit_balance():
     out_path = os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json")
     today = get_price_day(datetime.today())
     if _credit_cache_is_fresh(out_path, today):
-        log_print(f"---- 信用評価損益率 キャッシュ有効のためスキップ (generated_at={today.isoformat()})")
+        latest = _saved_latest_date(out_path)
+        expected = _credit_expected_latest_date(today)
+        log_print(
+            "---- 信用評価損益率 キャッシュ有効のためスキップ "
+            f"(generated_at={today.isoformat()} latest={latest} expected={expected})"
+        )
         return
 
     log_print("----> 信用評価損益率 (2市場) 更新")
