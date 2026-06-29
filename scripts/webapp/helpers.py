@@ -2023,8 +2023,12 @@ def _format_tags_tooltip(tags: str) -> str:
     if not tags or tags == "—":
         return ""
     lines = [tags]
+    if "売" in tags:
+        lines.append("売: RS高いのに売り圧力比率<45 かつ wma10割れ（2条件同時成立）")
+    elif "警" in tags:
+        lines.append("警: RS高いのに売り圧力比率<45 または wma10割れ（1条件のみ）")
     if "早売" in tags:
-        lines.append("早売: 急騰後の10ma利確ライン割れ")
+        lines.append("早売: 10ma維持実績あり→10ma割れ後に、最初に10ma割れした日の安値をさらに下回って確定")
     return "\n".join(lines)
 
 

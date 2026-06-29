@@ -856,6 +856,7 @@ def dashboard():
                 "qty_updated_at": ps.get_qty_global_updated_at(),
             }
 
+    trade_idea_master = ps.list_trade_ideas()
     return render_template(
         "portfolio_list.html",
         status_choices=STATUS_CHOICES,
@@ -874,8 +875,8 @@ def dashboard():
         fallback_mode=fallback_mode,
         theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
-        trade_idea_options=ps.TRADE_IDEA_OPTIONS,
-        trade_idea_descriptions=ps.TRADE_IDEA_DESCRIPTIONS,
+        trade_idea_options=[t["name"] for t in trade_idea_master],
+        trade_idea_descriptions={t["name"]: t["description"] for t in trade_idea_master},
         stage_options=ps.STAGE_OPTIONS,
         stage_t_options=ps.STAGE_T_OPTIONS,
         chart_style_options=ps.CHART_STYLE_OPTIONS,
