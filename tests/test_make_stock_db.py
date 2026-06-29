@@ -166,20 +166,15 @@ class TestMakeSignal:
         assert "[売過]" in signal
 
     @pytest.mark.parametrize(
-        "streak,kairi_ma10,expect",
+        "confirmed,expect",
         [
-            (True, -0.1, True),
-            (True, 0.0, False),
-            (True, 1.0, False),
-            (False, -0.1, False),
+            (True, True),
+            (False, False),
         ],
     )
-    def test_early_sell_tag(self, streak, kairi_ma10, expect):
-        """30日10日線維持実績あり (ma10_streak_ever) かつ10日線割れで早売タグが付く"""
-        stock = {
-            "ma10_streak_ever": streak,
-            "price_kairi_ma10": kairi_ma10,
-        }
+    def test_early_sell_tag(self, confirmed, expect):
+        """ma10_break_confirmed=True のとき早売タグが付く"""
+        stock = {"ma10_break_confirmed": confirmed}
         _signal, tags = make_stock_db.make_signal(stock)
         assert ("早売" in tags) is expect
 
@@ -189,8 +184,7 @@ class TestMakeSignal:
             "sell_pressure_ratio": [40, 50, 40, 2.5, 1.8],
             "rs_raw": 1.2,
             "price_kairi_wma10": -1.0,
-            "ma10_streak_ever": True,
-            "price_kairi_ma10": -0.5,
+            "ma10_break_confirmed": True,
         }
         _signal, tags = make_stock_db.make_signal(stock)
         assert "売" in tags

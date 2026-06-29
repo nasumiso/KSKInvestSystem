@@ -456,9 +456,10 @@ def calc_ma10_kairi_indicators(closes, lows=None):
 
     Args:
         closes: 終値 (int/float) のリスト、新しい日が先頭
-        lows: 互換性維持用の引数。現在の streak 判定では参照しない。
+        lows: 安値 (int/float or None) のリスト、新しい日が先頭。ma10_break_confirmed の計算に使用。
     Returns:
         dict: price_kairi_ma10 (float or None) / ma10_above_streak_30 (bool) / ma10_streak_ever (bool)
+              / ma10_break_confirmed (bool)
     """
     res = {}
     # 乖離率は closes のみで計算する (安値の欠損に影響されない)
@@ -519,6 +520,35 @@ def calc_ma10_kairi_indicators(closes, lows=None):
     res["ma10_above_streak_30"] = currently_holding
     # 達成実績はあるが現在は割れ → 黒太点線用
     res["ma10_streak_ever"] = had_streak and not currently_holding
+
+    # 早売確定フラグ: ma10_streak_ever の状態で10ma割れ翌日以降に安値がA日安値を下回ったら True。
+    # 10maを回復した場合はリセット。lows が渡されない場合は判定不可として False。
+    res["ma10_break_confirmed"] = False
+    if res["ma10_streak_ever"] and lows and len(lows) >= 2:
+        # closes[0] < ma10 (streak_ever が True = 現在10ma割れ) は保証済み。
+        # 新しい順に走査し、最初に10ma割れした日 = A日を探す。
+        # A日の定義: 前日(i+1)は10ma上 or データ端、当日(i)は10ma以下。
+        a_day_idx = None
+        a_day_low = None
+        for i in range(len(closes)):
+            ma = _ma10(i)
+            if ma is None:
+                break
+            if closes[i] <= ma:
+                # i+1 が10ma上、またはデータ端ならここがA日
+                prev_ma = _ma10(i + 1)
+                if prev_ma is None or closes[i + 1] > prev_ma:
+                    a_day_idx = i
+                    a_day_low = lows[i]
+                    break
+        if a_day_idx is not None and a_day_low is not None:
+            # A日より新しい日（index 0 〜 a_day_idx-1）でA日安値を下回った日があれば確定
+            for j in range(a_day_idx):
+                low_j = lows[j]
+                if low_j is not None and low_j < a_day_low:
+                    res["ma10_break_confirmed"] = True
+                    break
+
     return res
 
 

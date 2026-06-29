@@ -616,6 +616,48 @@ class TestCalcDailyIndicators:
         assert isinstance(result["price_kairi_ma10"], float)
         assert result["ma10_above_streak_30"] is True
 
+    def test_ma10_break_confirmed_triggers_after_a_day_low_broken(self):
+        """A日(10ma割れ初日)の安値を翌日以降の安値が下回ったとき ma10_break_confirmed=True。
+
+        50本で streak_ever=True を確立するパターン: break_days=[0,1,2] で直近3日を割れさせる。
+        rows[2]=A日(最初に割れた日)、rows[1]/rows[0]が翌日以降。
+        A日安値=100、rows[0]の安値=50 にして A日安値を下回らせる。
+        """
+        rows = self._make_price_list(50)
+        # rows[2]: A日。close=1(割れ), low=100
+        d, o, h, _l, _c, r5, r6, v = rows[2]
+        rows[2] = (d, o, h, "100", "1", r5, r6, v)
+        # rows[1]: 翌日。安値100(A日と同値 → 未達)
+        d, o, h, _l, _c, r5, r6, v = rows[1]
+        rows[1] = (d, o, h, "100", "1", r5, r6, v)
+        # rows[0]: 最新日。安値50でA日安値(100)を下回る
+        d, o, h, _l, _c, r5, r6, v = rows[0]
+        rows[0] = (d, o, h, "50", "1", r5, r6, v)
+        result = price._calc_daily_indicators(rows)
+        assert result["ma10_streak_ever"] is True
+        assert result["ma10_break_confirmed"] is True
+
+    def test_ma10_break_confirmed_false_when_a_day_low_not_broken(self):
+        """A日安値を下回る日がなければ ma10_break_confirmed=False。"""
+        rows = self._make_price_list(50)
+        # rows[2]: A日。close=1, low=100
+        d, o, h, _l, _c, r5, r6, v = rows[2]
+        rows[2] = (d, o, h, "100", "1", r5, r6, v)
+        # rows[0]/rows[1]: 安値100(A日と同値) → A日安値を下回らない
+        for i in range(2):
+            d, o, h, _l, _c, r5, r6, v = rows[i]
+            rows[i] = (d, o, h, "100", "1", r5, r6, v)
+        result = price._calc_daily_indicators(rows)
+        assert result["ma10_streak_ever"] is True
+        assert result["ma10_break_confirmed"] is False
+
+    def test_ma10_break_confirmed_false_when_recovered(self):
+        """10maを回復している場合 (ma10_streak_ever=False) は ma10_break_confirmed=False。"""
+        rows = self._make_price_list(45)  # 全日終値>10ma → currently_holding=True, streak_ever=False
+        result = price._calc_daily_indicators(rows)
+        assert result["ma10_streak_ever"] is False
+        assert result["ma10_break_confirmed"] is False
+
     def test_price_log_tuple_format(self):
         """price_log の各要素は (date, int) タプル"""
         rows = self._make_price_list_with_real_dates(30)

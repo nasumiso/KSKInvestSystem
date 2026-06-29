@@ -1260,10 +1260,8 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
                 tags.append("売")
             elif warn == 1:
                 tags.append("警")
-    # 30日10日線維持実績あり (ma10_streak_ever) かつ現在10日線割れ → 早売タグ。
-    # ma10_above_streak_30 (現在も維持中) は条件を満たさないため ma10_streak_ever を参照する。
-    kairi_ma10 = stock.get("price_kairi_ma10")
-    if bool(stock.get("ma10_streak_ever")) and isinstance(kairi_ma10, (int, float)) and kairi_ma10 < 0:
+    # 早売確定フラグ: 30日10ma維持実績ありで10ma割れ後、翌日以降にA日安値を安値で下回った。
+    if bool(stock.get("ma10_break_confirmed")):
         tags.append("早売")
 
     # rs_line 新高値・ダイバージェンス（当日発生のみ）
