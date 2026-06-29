@@ -69,6 +69,7 @@ KEY_RECORD_PREFIX = "record:"
 KEY_ACTION_LOG_PREFIX = "action_log:"
 KEY_SEQ_PREFIX = "_seq:"
 KEY_THEME_PREFIX = "theme:"
+KEY_TRADE_IDEA_PREFIX = "trade_idea:"
 
 # テーママスター (issue #282)
 THEME_FIELDS = frozenset({"name", "description", "created_at"})
@@ -132,6 +133,20 @@ TRADE_IDEA_DESCRIPTIONS = {
     "大型高配当": "恒常: PF安定・信用代用",
 }
 TRADE_IDEA_OPTIONS = tuple(TRADE_IDEA_DESCRIPTIONS.keys())
+
+# 戦略マスター (issue #335: 定数 shelve 移行・編集画面)
+VALID_TIME_HORIZONS = ("短期", "中期", "中長期", "長期", "恒常", "")
+
+_TRADE_IDEA_SEED = [
+    {"name": "GARP",           "description": "安定成長株を押し目・一時的売り込まれ局面で拾う。業績成長シナリオが崩れたら売る",    "time_horizon": "中長期", "over_earnings": True},
+    {"name": "ピーターリンチ", "description": "身近な実感で好印象の銘柄を持つ。身近な実感・好印象が消えたら売る",                  "time_horizon": "中長期", "over_earnings": False},
+    {"name": "中期テーマ",     "description": "相場の物色テーマの波に乗る。物色が他テーマへ移ったら売る",                          "time_horizon": "中期",   "over_earnings": False},
+    {"name": "中期モメンタム", "description": "新高値ブレイク順張り 2〜3ヶ月保有。トレンド（チャート）が崩れたら売る",             "time_horizon": "中期",   "over_earnings": False},
+    {"name": "短期イベント",   "description": "決算・材料・政策などカタリスト狙い。イベント通過で手仕舞い",                        "time_horizon": "短期",   "over_earnings": True},
+    {"name": "底値リバ",       "description": "下げすぎリバ取り。MAタッチ/10%で機械的利確。サイズ小・損切り事前設定",             "time_horizon": "短期",   "over_earnings": False},
+    {"name": "夢枠",           "description": "2〜3年の夢に乗る。現物放置。売らない",                                              "time_horizon": "長期",   "over_earnings": True},
+    {"name": "大型高配当",     "description": "PF安定・信用代用を兼ねる。恒常保有。売らない",                                      "time_horizon": "恒常",   "over_earnings": True},
+]
 
 # issue #344: stage / jukyu_chart を自由記述から選択式へ寄せるための定型候補。
 # DB スキーマは変えず、UI 側で分解入力した値を route 層で 1 本の文字列に畳み込む。
@@ -1166,6 +1181,259 @@ def _rewrite_theme_in_records(
     return affected
 
 
+# ===========================================
+# 戦略マスター CRUD (issue #335)
+# ===========================================
+
+def _trade_idea_key(name: str) -> str:
+    return f"{KEY_TRADE_IDEA_PREFIX}{name}"
+
+
+def validate_strategy_name(name: Any) -> str:
+    """戦略 name を検証して正規化済み name を返す (validate_theme_name と同じルール)。"""
+    try:
+        return validate_theme_name(name)
+    except TypeError as e:
+        raise TypeError(str(e).replace("theme name", "strategy name")) from e
+    except ValueError as e:
+        raise ValueError(str(e).replace("theme name", "strategy name")) from e
+
+
+def list_trade_ideas(*, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """戦略マスターを name 昇順で取得する。"""
+    path = _resolve_db_path(db_path)
+    results: List[Dict[str, Any]] = []
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_TRADE_IDEA_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            results.append(dict(value))
+    results.sort(key=lambda r: r.get("name", ""))
+    return results
+
+
+def get_trade_idea(name: str, *, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """1件取得 (存在しなければ None)。"""
+    normalized = validate_strategy_name(name)
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        value = db.get(_trade_idea_key(normalized))
+    return dict(value) if isinstance(value, dict) else None
+
+
+def _validate_trade_idea_fields(
+    time_horizon: Any,
+    over_earnings: Any,
+) -> tuple:
+    """time_horizon / over_earnings の型・値チェック。正規化後の (time_horizon, over_earnings) を返す。"""
+    if time_horizon is None:
+        time_horizon = ""
+    if not isinstance(time_horizon, str):
+        raise TypeError(f"time_horizon must be str or None, got {type(time_horizon).__name__}")
+    if time_horizon not in VALID_TIME_HORIZONS:
+        raise ValueError(f"time_horizon {time_horizon!r} は無効です (許容値: {list(VALID_TIME_HORIZONS)})")
+    if over_earnings is None:
+        over_earnings = False
+    if not isinstance(over_earnings, bool):
+        raise TypeError(f"over_earnings must be bool or None, got {type(over_earnings).__name__}")
+    return time_horizon, over_earnings
+
+
+def create_trade_idea(
+    name: str,
+    description: str = "",
+    time_horizon: str = "",
+    over_earnings: bool = False,
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """戦略を新規作成する。重複は ValueError。"""
+    normalized = validate_strategy_name(name)
+    desc = _validate_theme_description(description)
+    th, oe = _validate_trade_idea_fields(time_horizon, over_earnings)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            key = _trade_idea_key(normalized)
+            if key in db:
+                raise ValueError(f"strategy {normalized!r} は既に存在します")
+            record = {
+                "name": normalized,
+                "description": desc,
+                "time_horizon": th,
+                "over_earnings": oe,
+                "created_at": now_iso(),
+            }
+            db[key] = record
+    log_print("portfolio_shelve: strategy 作成", normalized)
+    return dict(record)
+
+
+def update_trade_idea(
+    name: str,
+    new_name: Optional[str] = None,
+    description: Optional[str] = None,
+    time_horizon: Optional[str] = None,
+    over_earnings: Optional[bool] = None,
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """戦略を更新する (リネーム / 説明文 / 時間軸 / 決算またぎ編集)。
+
+    - new_name が現行と異なれば旧キー削除 + 新キー作成 + 全 record の memo[trade_idea] 書き換え
+    - 同 _flock + 同 ShelveDB セッション内で完結
+
+    戻り値: 更新後の strategy レコード
+    """
+    normalized = validate_strategy_name(name)
+    new_normalized = validate_strategy_name(new_name) if new_name is not None else None
+    desc_value = _validate_theme_description(description) if description is not None else None
+    if time_horizon is not None or over_earnings is not None:
+        th_value, oe_value = _validate_trade_idea_fields(
+            time_horizon if time_horizon is not None else "",
+            over_earnings if over_earnings is not None else False,
+        )
+    else:
+        th_value, oe_value = None, None
+
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            old_key = _trade_idea_key(normalized)
+            if old_key not in db:
+                raise KeyError(f"strategy {normalized!r} は存在しません")
+            current = dict(db[old_key])
+
+            renaming = new_normalized is not None and new_normalized != normalized
+            if renaming:
+                new_key = _trade_idea_key(new_normalized)
+                if new_key in db:
+                    raise ValueError(f"strategy {new_normalized!r} は既に存在します")
+                current["name"] = new_normalized
+            if desc_value is not None:
+                current["description"] = desc_value
+            if time_horizon is not None:
+                current["time_horizon"] = th_value
+            if over_earnings is not None:
+                current["over_earnings"] = oe_value
+
+            if renaming:
+                del db[old_key]
+                db[new_key] = current
+                affected_codes = _rewrite_trade_idea_in_records(db, normalized, new_normalized)
+            else:
+                db[old_key] = current
+                affected_codes = []
+
+            for code in affected_codes:
+                _append_action_log_inner(db, code, "メモ更新")
+    if renaming:
+        log_print(
+            "portfolio_shelve: strategy リネーム",
+            f"{normalized} -> {new_normalized}",
+            f"affected={len(affected_codes)}",
+        )
+    else:
+        log_print("portfolio_shelve: strategy 更新", normalized)
+    return dict(current)
+
+
+def delete_trade_idea(name: str, *, db_path: Optional[str] = None) -> int:
+    """戦略を削除する。全 record の memo[trade_idea] を空文字にリセット。
+
+    戻り値: 影響を受けた銘柄数
+    """
+    normalized = validate_strategy_name(name)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            key = _trade_idea_key(normalized)
+            if key not in db:
+                raise KeyError(f"strategy {normalized!r} は存在しません")
+            del db[key]
+            affected_codes = _rewrite_trade_idea_in_records(db, normalized, None)
+            for code in affected_codes:
+                _append_action_log_inner(db, code, "メモ更新")
+    log_print(
+        "portfolio_shelve: strategy 削除",
+        normalized,
+        f"affected={len(affected_codes)}",
+    )
+    return len(affected_codes)
+
+
+def count_trade_idea_usage(*, db_path: Optional[str] = None) -> Dict[str, int]:
+    """name -> 使用銘柄数 を返す (編集画面表示用)。"""
+    path = _resolve_db_path(db_path)
+    counts: Dict[str, int] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_RECORD_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            memo = value.get("memo") or {}
+            idea = memo.get("trade_idea") or ""
+            if idea:
+                counts[idea] = counts.get(idea, 0) + 1
+    return counts
+
+
+def seed_trade_ideas(*, db_path: Optional[str] = None) -> int:
+    """戦略マスターが空のときのみシードデータを投入する（冪等）。投入数を返す。"""
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            existing = [k for k in db.keys() if k.startswith(KEY_TRADE_IDEA_PREFIX)]
+            if existing:
+                return 0
+            for seed in _TRADE_IDEA_SEED:
+                record = {
+                    "name": seed["name"],
+                    "description": seed["description"],
+                    "time_horizon": seed["time_horizon"],
+                    "over_earnings": seed["over_earnings"],
+                    "created_at": now_iso(),
+                }
+                db[_trade_idea_key(seed["name"])] = record
+    log_print("portfolio_shelve: strategy シード投入", f"{len(_TRADE_IDEA_SEED)} 件")
+    return len(_TRADE_IDEA_SEED)
+
+
+def _rewrite_trade_idea_in_records(
+    db: ShelveDB,
+    old_name: str,
+    new_name: Optional[str],
+) -> List[str]:
+    """全 record:* を走査し、memo[trade_idea] が old_name の銘柄を new_name に書き換える。
+
+    - new_name=None なら空文字にリセット (削除時)
+    - 変更があった record は updated_at を更新
+    - 戻り値: 変更があった code_s のリスト
+
+    呼び出し側で _flock + ShelveDB セッションを保持していること前提。
+    """
+    affected: List[str] = []
+    record_keys = [k for k in db.keys() if k.startswith(KEY_RECORD_PREFIX)]
+    for key in record_keys:
+        record = db[key]
+        if not isinstance(record, dict):
+            continue
+        memo = record.get("memo") or {}
+        if memo.get("trade_idea") != old_name:
+            continue
+        new_memo = dict(memo)
+        new_memo["trade_idea"] = new_name if new_name is not None else ""
+        new_record = dict(record)
+        new_record["memo"] = new_memo
+        new_record["updated_at"] = now_iso()
+        db[key] = new_record
+        affected.append(record.get("code_s") or key[len(KEY_RECORD_PREFIX):])
+    return affected
+
+
 def _append_action_log_inner(
     db: ShelveDB,
     code_s: str,
@@ -1296,18 +1564,24 @@ def update_memo(
                     )
                 normalized_fields["gyoutai_themes"] = cleaned
 
-            # trade_idea の定型値チェック (issue #327)
-            # - 空文字 (未分類) と TRADE_IDEA_OPTIONS 内の値は採用
-            # - リスト外でも現行レコードに既に入っている値は保持を許可 (旧自由記述の救済)
-            # - 純新規のリスト外値は ValueError
+            # trade_idea の値チェック (issue #335: shelve マスター参照に移行)
+            # - 空文字 (未分類) は常に許容
+            # - 現行レコードに既に入っている値は保持を許可 (旧自由記述の救済)
+            # - 純新規でマスター未登録の値は ValueError
             if "trade_idea" in normalized_fields:
                 idea = normalized_fields["trade_idea"]
                 current_idea = current_memo.get("trade_idea", "")
-                if idea and idea not in TRADE_IDEA_OPTIONS and idea != current_idea:
-                    raise ValueError(
-                        f"portfolio_shelve: trade_idea {idea!r} は定型リスト外のため"
-                        f"新規付与できません (許容値: {list(TRADE_IDEA_OPTIONS)})"
-                    )
+                if idea and idea != current_idea:
+                    master_names = {
+                        k[len(KEY_TRADE_IDEA_PREFIX):]
+                        for k in db.keys()
+                        if k.startswith(KEY_TRADE_IDEA_PREFIX)
+                    }
+                    if idea not in master_names:
+                        raise ValueError(
+                            f"portfolio_shelve: trade_idea {idea!r} はマスター未登録のため"
+                            f"新規付与できません"
+                        )
 
             changed = any(
                 current_memo.get(k, _current_default(k)) != v

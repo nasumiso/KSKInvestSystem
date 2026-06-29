@@ -18,7 +18,10 @@
 
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6em;">
   <h2 style="margin:0;">テーマ管理</h2>
-  <a href="{{ url_for('portfolio.dashboard') }}" style="font-size:0.9em;">← ポートフォリオに戻る</a>
+  <div style="display:flex;gap:1em;align-items:center;font-size:0.9em;">
+    <a href="{{ url_for('portfolio.strategies_index') }}">戦略マスター管理</a>
+    <a href="{{ url_for('portfolio.dashboard') }}">← ポートフォリオに戻る</a>
+  </div>
 </div>
 
 {% with messages = get_flashed_messages(with_categories=true) %}

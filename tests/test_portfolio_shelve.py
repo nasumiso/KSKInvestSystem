@@ -400,6 +400,11 @@ class TestKeyNamespaceIsolation:
 # ==================================================
 class TestUpdateMemo:
 
+    @pytest.fixture(autouse=True)
+    def seed_strategies(self, db_path):
+        """trade_idea の shelve マスターをシード投入 (issue #335 移行後必須)"""
+        ps.seed_trade_ideas(db_path=db_path)
+
     def test_update_single_field(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
         rec = ps.update_memo("4377", {"trade_idea": "中期モメンタム"}, db_path=db_path)
@@ -434,7 +439,7 @@ class TestUpdateMemo:
             rec["memo"]["trade_idea"] = current
             ps.upsert_record(rec, db_path=db_path)
         if expect_error:
-            with pytest.raises(ValueError, match="定型リスト外"):
+            with pytest.raises(ValueError, match="マスター未登録"):
                 ps.update_memo("4377", {"trade_idea": new_value}, db_path=db_path)
         else:
             rec = ps.update_memo("4377", {"trade_idea": new_value}, db_path=db_path)
@@ -535,9 +540,10 @@ class TestGyoutaiThemesField:
 
     @pytest.fixture(autouse=True)
     def _seed_master(self, db_path):
-        """テストで使う name (半導体 / AI) をマスター登録しておく"""
+        """テストで使う name (半導体 / AI) をマスター登録し、戦略シードも投入する"""
         ps.create_theme("半導体", db_path=db_path)
         ps.create_theme("AI", db_path=db_path)
+        ps.seed_trade_ideas(db_path=db_path)
 
     def test_create_memo_defaults_empty_list(self):
         memo = ps.create_memo()
@@ -1076,3 +1082,93 @@ class TestThemeMaster:
         ps.update_memo("6324", {"gyoutai_themes": ["AI", "半導体"]}, db_path=db_path)
         ps.update_memo("9984", {"gyoutai_themes": ["AI"]}, db_path=db_path)
         assert ps.count_theme_usage(db_path=db_path) == {"AI": 2, "半導体": 1}
+
+
+@pytest.fixture
+def db_path_ti(tmp_path):
+    """戦略マスターテスト用の一時 DB パス。"""
+    return str(tmp_path / "test_portfolio_ti")
+
+
+class TestTradeIdeaMaster:
+    """戦略マスター CRUD + update_memo 整合性 (issue #335)"""
+
+    def test_create_and_list(self, db_path_ti):
+        """作成・一覧・get の基本動作。"""
+        ps.create_trade_idea("GARP", "説明A", "中長期", True, db_path=db_path_ti)
+        ps.create_trade_idea("夢枠", "説明B", "長期", False, db_path=db_path_ti)
+
+        items = ps.list_trade_ideas(db_path=db_path_ti)
+        assert len(items) == 2
+        names = [i["name"] for i in items]
+        assert names == sorted(names)
+
+        got = ps.get_trade_idea("GARP", db_path=db_path_ti)
+        assert got["time_horizon"] == "中長期"
+        assert got["over_earnings"] is True
+
+        # 重複は ValueError
+        with pytest.raises(ValueError):
+            ps.create_trade_idea("GARP", db_path=db_path_ti)
+
+    def test_update_renames_records(self, db_path_ti):
+        """リネームで全 record の memo[trade_idea] が追従し、delete で "" になること。"""
+        ps.create_trade_idea("中期モメンタム", "説明", "中期", False, db_path=db_path_ti)
+        ps.add_to_watch("6324", db_path=db_path_ti)
+        ps.update_memo("6324", {"trade_idea": "中期モメンタム"}, db_path=db_path_ti)
+
+        # リネーム
+        ps.update_trade_idea("中期モメンタム", new_name="モメンタム中期", db_path=db_path_ti)
+        rec = ps.get_record("6324", db_path=db_path_ti)
+        assert rec["memo"]["trade_idea"] == "モメンタム中期"
+
+        # 削除 → trade_idea が空文字にリセット
+        affected = ps.delete_trade_idea("モメンタム中期", db_path=db_path_ti)
+        assert affected == 1
+        rec = ps.get_record("6324", db_path=db_path_ti)
+        assert rec["memo"]["trade_idea"] == ""
+
+        # action_log に "メモ更新" が追記されている
+        logs = ps.list_action_logs("6324", db_path=db_path_ti)
+        memo_logs = [l for l in logs if l["action_type"] == "メモ更新"]
+        assert len(memo_logs) >= 2
+
+    @pytest.mark.parametrize(
+        "current_idea,posted,should_raise",
+        [
+            ("中期モメンタム", "中期モメンタム", False),  # マスター登録済み → OK
+            ("中期モメンタム", "",              False),  # 空文字（未分類）→ 常に許容
+            ("",              "未登録新規",     True),   # マスター未登録の純新規 → ValueError
+            ("旧自由記述",    "旧自由記述",     False),  # 現行レコードの未登録値は保持許可
+        ],
+    )
+    def test_update_memo_master_validation(
+        self, db_path_ti, current_idea, posted, should_raise
+    ):
+        """update_memo の trade_idea マスター未登録判定 (issue #335)"""
+        ps.create_trade_idea("中期モメンタム", db_path=db_path_ti)
+        ps.add_to_watch("6324", db_path=db_path_ti)
+        # 現行値を直書き込みで仕込む
+        rec = ps.get_record("6324", db_path=db_path_ti)
+        rec["memo"]["trade_idea"] = current_idea
+        ps.upsert_record(rec, db_path=db_path_ti)
+
+        if should_raise:
+            with pytest.raises(ValueError):
+                ps.update_memo("6324", {"trade_idea": posted}, db_path=db_path_ti)
+        else:
+            ps.update_memo("6324", {"trade_idea": posted}, db_path=db_path_ti)
+            after = ps.get_record("6324", db_path=db_path_ti)
+            assert after["memo"]["trade_idea"] == posted
+
+    def test_seed_trade_ideas_idempotent(self, db_path_ti):
+        """seed_trade_ideas() は空の場合のみ投入し、2回呼んでも件数が変わらないこと。"""
+        count = ps.seed_trade_ideas(db_path=db_path_ti)
+        assert count == len(ps._TRADE_IDEA_SEED)
+        items_after_first = ps.list_trade_ideas(db_path=db_path_ti)
+
+        # 2回目は 0 件投入（冪等）
+        count2 = ps.seed_trade_ideas(db_path=db_path_ti)
+        assert count2 == 0
+        items_after_second = ps.list_trade_ideas(db_path=db_path_ti)
+        assert len(items_after_first) == len(items_after_second)

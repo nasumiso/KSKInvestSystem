@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}戦略マスター管理 | Shintakane Research{% endblock %}
+
+{% block content %}
+<style>
+  table.strategies-table { width: 100%; font-size: 0.9em; }
+  table.strategies-table th, table.strategies-table td { padding: 0.4em 0.6em; vertical-align: middle; }
+  table.strategies-table td.name-cell { font-weight: 600; max-width: 10em; word-break: break-word; }
+  table.strategies-table td.desc-cell { color: #555; max-width: 24em; word-break: break-word; }
+  table.strategies-table td.horizon-cell { white-space: nowrap; width: 6em; }
+  table.strategies-table td.earnings-cell { text-align: center; width: 5em; }
+  table.strategies-table td.usage-cell { text-align: right; color: #666; width: 4em; }
+  table.strategies-table td.op-cell { width: 14em; white-space: nowrap; }
+  table.strategies-table input[type="text"] { font-size: 0.9em; padding: 0.2em 0.4em; margin: 0; height: auto; width: 100%; }
+  table.strategies-table select { font-size: 0.9em; padding: 0.2em 0.4em; margin: 0; height: auto; }
+  table.strategies-table button { font-size: 0.85em; padding: 0.2em 0.6em; margin: 0 0.2em 0 0; height: auto; }
+  .strategies-create-form { background: #f5f7fa; border: 1px solid #d8dee6; border-radius: 4px; padding: 0.6em 0.8em; margin-bottom: 1em; }
+  .strategies-create-form input[type="text"] { font-size: 0.9em; padding: 0.3em 0.5em; margin: 0; height: auto; }
+  .strategies-create-form select { font-size: 0.9em; padding: 0.3em 0.5em; margin: 0; height: auto; }
+  .strategies-create-form button { font-size: 0.9em; padding: 0.3em 0.8em; margin: 0; height: auto; }
+  .principle-note { background: #f0f4ff; border-left: 3px solid #4a7adc; padding: 0.6em 1em; margin-bottom: 1em; font-size: 0.9em; color: #333; }
+</style>
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6em;">
+  <h2 style="margin:0;">戦略マスター管理</h2>
+  <div style="display:flex;gap:1em;align-items:center;font-size:0.9em;">
+    <a href="{{ url_for('portfolio.themes_index') }}">テーマ管理</a>
+    <a href="{{ url_for('portfolio.dashboard') }}">← ポートフォリオに戻る</a>
+  </div>
+</div>
+
+<div class="principle-note">
+  <strong>運用原則:</strong> 戦略は「銘柄の性質ラベル」ではなく「この銘柄の主たる出口ルールの宣言」。
+  テーマ・モメンタム・イベントは 1 銘柄で両立しがちだが、「何が崩れたら売るか」は 1 つに決められる。
+  判定に迷ったら「<em>何が崩れたら売るか</em>」を自問する。
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  {% for category, message in messages %}
+  <div style="padding:0.5em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;{% if category == 'error' %}background:#ffeaea;color:#c00;border:1px solid #fcc;{% else %}background:#eaffea;color:#060;border:1px solid #cfc;{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+{% endwith %}
+
+<form method="POST" action="{{ url_for('portfolio.strategies_create') }}" class="strategies-create-form">
+  <div style="display:flex;gap:0.6em;align-items:center;flex-wrap:wrap;">
+    <label style="margin:0;">
+      <span style="color:#666;font-size:0.85em;">名前</span>
+      <input type="text" name="name" required maxlength="{{ strategy_name_max_len }}"
+             placeholder="例: 新戦略" style="width:10em;">
+    </label>
+    <label style="margin:0;flex:1;min-width:16em;">
+      <span style="color:#666;font-size:0.85em;">定義文</span>
+      <input type="text" name="description" placeholder="入口の例 + 出口基準" style="width:100%;">
+    </label>
+    <label style="margin:0;">
+      <span style="color:#666;font-size:0.85em;">時間軸</span>
+      <select name="time_horizon">
+        {% for h in valid_time_horizons %}
+        <option value="{{ h }}">{{ h if h else '(未設定)' }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label style="margin:0;">
+      <span style="color:#666;font-size:0.85em;">決算またぎ</span>
+      <select name="over_earnings">
+        <option value="false">不可</option>
+        <option value="true">可</option>
+      </select>
+    </label>
+    <button type="submit">+ 追加</button>
+  </div>
+</form>
+
+<p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">戦略 {{ strategies|length }} 件</p>
+
+{# 各行の編集 / 削除フォームは HTML5 の form="id" 属性でセル横断的に関連付ける。 #}
+{% for strategy in strategies %}
+<form id="strategy-update-{{ loop.index }}" method="POST"
+      action="{{ url_for('portfolio.strategies_update', name=strategy.name) }}" style="display:none;"></form>
+<form id="strategy-delete-{{ loop.index }}" method="POST"
+      action="{{ url_for('portfolio.strategies_delete', name=strategy.name) }}" style="display:none;"></form>
+{% endfor %}
+
+<table class="strategies-table">
+  <thead>
+    <tr>
+      <th style="text-align:left;">名前</th>
+      <th style="text-align:left;">定義文</th>
+      <th style="text-align:center;">時間軸</th>
+      <th style="text-align:center;">決算またぎ</th>
+      <th style="text-align:right;">使用</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for strategy in strategies %}
+    {% set uses = usage.get(strategy.name, 0) %}
+    {% set fid = 'strategy-update-' ~ loop.index %}
+    {% set did = 'strategy-delete-' ~ loop.index %}
+    <tr data-name="{{ strategy.name }}" data-delete-form="{{ did }}">
+      <td class="name-cell">
+        <span class="display-name">{{ strategy.name }}</span>
+        <input type="text" name="name" value="{{ strategy.name }}" form="{{ fid }}"
+               required maxlength="{{ strategy_name_max_len }}"
+               class="edit-input edit-name" style="display:none;">
+      </td>
+      <td class="desc-cell">
+        <span class="display-desc">{{ strategy.description or '' }}</span>
+        <input type="text" name="description" value="{{ strategy.description or '' }}" form="{{ fid }}"
+               class="edit-input edit-desc" style="display:none;">
+      </td>
+      <td class="horizon-cell">
+        <span class="display-horizon">{{ strategy.time_horizon or '—' }}</span>
+        <select name="time_horizon" form="{{ fid }}" class="edit-input edit-horizon" style="display:none;">
+          {% for h in valid_time_horizons %}
+          <option value="{{ h }}" {% if strategy.time_horizon == h %}selected{% endif %}>
+            {{ h if h else '(未設定)' }}
+          </option>
+          {% endfor %}
+        </select>
+      </td>
+      <td class="earnings-cell">
+        <span class="display-earnings">{{ '可' if strategy.over_earnings else '不可' }}</span>
+        <select name="over_earnings" form="{{ fid }}" class="edit-input edit-earnings" style="display:none;">
+          <option value="false" {% if not strategy.over_earnings %}selected{% endif %}>不可</option>
+          <option value="true" {% if strategy.over_earnings %}selected{% endif %}>可</option>
+        </select>
+      </td>
+      <td class="usage-cell">{{ uses }}</td>
+      <td class="op-cell">
+        <span class="display-ops">
+          <button type="button" class="edit-btn" onclick="toggleEdit(this, true)">編集</button>
+          <button type="button" class="delete-btn"
+                  onclick="confirmDeleteStrategy({{ strategy.name|tojson }}, {{ uses }})">削除</button>
+        </span>
+        <span class="edit-ops" style="display:none;">
+          <button type="submit" form="{{ fid }}">保存</button>
+          <button type="button" onclick="toggleEdit(this, false)">キャンセル</button>
+        </span>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" style="text-align:center;color:#999;padding:1em;">登録済み戦略がありません。上のフォームから追加してください。</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+function toggleEdit(btn, openEdit) {
+  var tr = btn.closest('tr');
+  if (!tr) return;
+  tr.querySelectorAll('.display-name, .display-desc, .display-horizon, .display-earnings, .display-ops').forEach(function(el) {
+    el.style.display = openEdit ? 'none' : '';
+  });
+  tr.querySelectorAll('.edit-input, .edit-ops').forEach(function(el) {
+    el.style.display = openEdit ? '' : 'none';
+  });
+}
+
+function confirmDeleteStrategy(name, uses) {
+  var msg = uses > 0
+    ? '戦略「' + name + '」を削除しますか?\n' + uses + ' 銘柄の売買戦略が未分類になります。'
+    : '戦略「' + name + '」を削除しますか?';
+  if (!confirm(msg)) return;
+  var tr = document.querySelector('tr[data-name="' + CSS.escape(name) + '"]');
+  if (!tr) return;
+  var formId = tr.dataset.deleteForm;
+  var form = document.getElementById(formId);
+  if (form) form.submit();
+}
+</script>
+{% endblock %}
