@@ -607,6 +607,34 @@
   {% endif %}
 </div>
 
+{# ===== 8. 振り返り (issue #172) ===== #}
+{% if action_logs %}
+<div class="memo-section" id="action-log-section">
+  <h3>振り返り</h3>
+  <table class="action-log-table">
+    <tbody>
+    {% for log in action_logs %}
+      {% if log.action_type != "メモ更新" %}
+      <tr>
+        <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ log.timestamp[:16] | replace("T", " ") }}</td>
+        <td>
+          {% if log.action_type == "ステータス変更" %}
+            ステータス変更 [{{ log.status_from or "—" }} → {{ log.status_to or "—" }}]
+          {% elif log.action_type == "売却" %}
+            <span style="color:#c00;">売却</span> [{{ log.status_from or "—" }} → {{ log.status_to or "—" }}]
+          {% else %}
+            {{ log.action_type }}{% if log.status_to %} [→ {{ log.status_to }}]{% endif %}
+          {% endif %}
+        </td>
+        <td style="color:#555;">{{ log.reason or "" }}</td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 {# ===== 保有ステータス変更モーダル (issue #195) ===== #}
 {% if not portfolio_fallback_mode %}
 <div id="portfolio-modal" class="portfolio-modal-overlay" style="display:none;" onclick="closePortfolioModalOnOverlay(event)">

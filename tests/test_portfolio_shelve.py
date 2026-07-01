@@ -409,12 +409,10 @@ class TestUpdateMemo:
         ps.add_to_watch("4377", db_path=db_path)
         rec = ps.update_memo("4377", {"trade_idea": "中期モメンタム"}, db_path=db_path)
         assert rec["memo"]["trade_idea"] == "中期モメンタム"
-        # action_log に "メモ更新" 1 件 (初回登録 1 件 + メモ更新 1 件 = 計 2 件)
+        # メモ更新は action_log を記録しない (初回登録の 1 件のみ)
         logs = ps.list_action_logs("4377", db_path=db_path)
-        assert len(logs) == 2
-        assert logs[1]["action_type"] == "メモ更新"
-        assert logs[1]["status_from"] is None
-        assert logs[1]["status_to"] is None
+        assert len(logs) == 1
+        assert logs[0]["action_type"] == "初回登録"
 
     @pytest.mark.parametrize(
         "current, new_value, expect_error",
@@ -465,9 +463,9 @@ class TestUpdateMemo:
         ps.update_memo("4377", {"trade_idea": "中期モメンタム"}, db_path=db_path)
         rec = ps.update_memo("4377", {"trade_idea": ""}, db_path=db_path)
         assert rec["memo"]["trade_idea"] == ""
-        # action_log: 初回登録 + メモ更新×2 = 3 件
+        # メモ更新は action_log を記録しない (初回登録の 1 件のみ)
         logs = ps.list_action_logs("4377", db_path=db_path)
-        assert len(logs) == 3
+        assert len(logs) == 1
 
     def test_update_with_none_normalizes_to_empty_string(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
@@ -484,7 +482,7 @@ class TestUpdateMemo:
         for k, v in all_fields.items():
             assert rec["memo"][k] == v
         logs = ps.list_action_logs("4377", db_path=db_path)
-        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 1
+        assert not any(log["action_type"] == "メモ更新" for log in logs)
 
     def test_update_no_diff_is_noop(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
@@ -494,9 +492,9 @@ class TestUpdateMemo:
         rec_after = ps.get_record("4377", db_path=db_path)
         # updated_at が変わらない (no-op)
         assert rec_before["updated_at"] == rec_after["updated_at"]
-        # action_log: 初回登録 + メモ更新×1 のみ (no-op で増えない)
+        # メモ更新は action_log を記録しない (初回登録の 1 件のみ)
         logs = ps.list_action_logs("4377", db_path=db_path)
-        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 1
+        assert not any(log["action_type"] == "メモ更新" for log in logs)
 
     def test_update_empty_dict_is_noop(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
@@ -504,7 +502,7 @@ class TestUpdateMemo:
         # KeyError なし、no-op として現行 record を返す
         assert rec["code_s"] == "4377"
         logs = ps.list_action_logs("4377", db_path=db_path)
-        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 0
+        assert not any(log["action_type"] == "メモ更新" for log in logs)
 
     def test_update_unknown_field_raises(self, db_path):
         ps.add_to_watch("4377", db_path=db_path)
@@ -594,9 +592,8 @@ class TestGyoutaiThemesField:
         ps.update_memo("4377", {"gyoutai_themes": ["AI"]}, db_path=db_path)
         ps.update_memo("4377", {"gyoutai_themes": ["AI"]}, db_path=db_path)
         logs = ps.list_action_logs("4377", db_path=db_path)
-        memo_logs = [log for log in logs if log["action_type"] == "メモ更新"]
-        # 同じ値の更新は no-op、ログ追記は 1 回のみ
-        assert len(memo_logs) == 1
+        # メモ更新は action_log を記録しない
+        assert not any(log["action_type"] == "メモ更新" for log in logs)
 
     def test_legacy_record_without_gyoutai_themes_loads_as_empty_list(
         self, db_path
@@ -879,32 +876,32 @@ class TestQty:
     """update_qty / get_record の qty 補完を集約テスト"""
 
     @pytest.mark.parametrize(
-        "new_qty, expected, expect_log_count",
+        "new_qty, expected",
         [
-            (100, 100, 1),    # 新規セット
-            (250, 250, 1),    # 上書き
-            (0, 0, 1),        # 0 株 (利確直後の枠取り)
-            (0, 0, 0),        # 差分なし (no-op): 初期 qty=0 のまま 0 を入れる → 変化なし
+            (100, 100),   # 新規セット
+            (250, 250),   # 上書き
         ],
-        ids=["set-100", "overwrite-250", "set-zero", "noop-same"],
+        ids=["set-100", "overwrite-250"],
     )
-    def test_update_qty_writes_value_and_no_action_log(
-        self, db_path, new_qty, expected, expect_log_count
-    ):
-        """update_qty は qty を更新し、action_log は追記しない。差分なしは no-op。"""
+    def test_update_qty_writes_value_and_action_log(self, db_path, new_qty, expected):
+        """update_qty は qty を更新し action_log に「株数変更」を記録する。"""
         ps.add_to_watch("4377", db_path=db_path)
         ps.transition_status("4377", "1保", db_path=db_path)
         log_count_before = len(ps.list_action_logs("4377", db_path=db_path))
 
-        if expect_log_count == 0:
-            # 差分なしケース: 一度 0 にしてから 0 を入れる → 2 回目が no-op
-            ps.update_qty("4377", 0, db_path=db_path)
-
         rec = ps.update_qty("4377", new_qty, db_path=db_path)
         assert rec["qty"] == expected
-        # action_log は qty 更新で増えない (1保 遷移ログ +「初回登録」のみ)
-        log_count_after = len(ps.list_action_logs("4377", db_path=db_path))
-        assert log_count_after == log_count_before
+        logs = ps.list_action_logs("4377", db_path=db_path)
+        assert len(logs) == log_count_before + 1
+        assert logs[-1]["action_type"] == "株数変更"
+
+    def test_update_qty_noop_no_action_log(self, db_path):
+        """差分なし (初期 qty=0 に 0 を入れる) は no-op でログが増えない。"""
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        log_count_before = len(ps.list_action_logs("4377", db_path=db_path))
+        ps.update_qty("4377", 0, db_path=db_path)  # 初期値=0 なので no-op
+        assert len(ps.list_action_logs("4377", db_path=db_path)) == log_count_before
 
     @pytest.mark.parametrize(
         "bad_qty, exc",
@@ -1030,10 +1027,9 @@ class TestThemeMaster:
         rec = ps.get_record("6324", db_path=db_path)
         assert rec["memo"]["gyoutai_themes"] == ["AI"]
 
-        # action_log に "メモ更新" が 2 回 (リネーム + 削除) 追記されている
+        # メモ更新は action_log を記録しない
         logs = ps.list_action_logs("6324", db_path=db_path)
-        memo_logs = [l for l in logs if l["action_type"] == "メモ更新"]
-        assert len(memo_logs) >= 2
+        assert not any(l["action_type"] == "メモ更新" for l in logs)
 
     @pytest.mark.parametrize(
         "current,posted,expected,should_raise",
@@ -1128,10 +1124,9 @@ class TestTradeIdeaMaster:
         rec = ps.get_record("6324", db_path=db_path_ti)
         assert rec["memo"]["trade_idea"] == ""
 
-        # action_log に "メモ更新" が追記されている
+        # メモ更新は action_log を記録しない
         logs = ps.list_action_logs("6324", db_path=db_path_ti)
-        memo_logs = [l for l in logs if l["action_type"] == "メモ更新"]
-        assert len(memo_logs) >= 2
+        assert not any(l["action_type"] == "メモ更新" for l in logs)
 
     @pytest.mark.parametrize(
         "current_idea,posted,should_raise",

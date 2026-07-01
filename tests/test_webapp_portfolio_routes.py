@@ -602,9 +602,9 @@ class TestUpdateMemoPost:
         rec = ps.get_record("6324", db_path=portfolio_db_path)
         for field, expected in form_data.items():
             assert rec["memo"][field] == expected
-        # action_log に "メモ更新" が 1 件追加 (初回登録 + メモ更新 = 2 件)
+        # メモ更新は action_log を記録しない
         logs = ps.list_action_logs("6324", db_path=portfolio_db_path)
-        assert len([log for log in logs if log["action_type"] == "メモ更新"]) == 1
+        assert not any(log["action_type"] == "メモ更新" for log in logs)
 
     def test_memo_shows_linked_success_flash(self, client):
         """メモ保存後、銘柄コードリンク付きの完了メッセージを表示する"""
