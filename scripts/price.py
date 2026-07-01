@@ -35,7 +35,7 @@ BREAKOUT_EXTENDED_KAIRI_MAX = 25
 
 # ブレイク検知の出来高平均日数 (issue #111)。20日では短期の急騰を平均が拾いやすく
 # 基準が緩むため、より長期の平常出来高を基準にする。検知ループは直近10日を判定し
-# 各日で前日から遡って平均を取るため、必要データは 10+30=40日。日足取得 period="2mo"
+# 各日で前日から遡って平均を取るため、必要データは 10+30=40日。30日streak判定バッファのため period="3mo"≒60日
 # (~41営業日) で全検知日が完全な30日平均を保てる上限値 (取得範囲は広げない)。
 BREAKOUT_AVG_VOLUME_DAYS = 30
 
@@ -483,7 +483,7 @@ def calc_ma10_kairi_indicators(closes, lows=None):
     # 監視窓は「割れ日の翌営業日のみ」に固定する。
     # 各日 i の10ma = closes[i:i+10] の平均 (要 i+10 本)。リスト先頭が最新日なので、
     # 日 i の「翌営業日」は index i-1。
-    # (原典は7週=35日だが日足取得が period="2mo"≒40日のため取得範囲で収まる30日に調整)
+    # (原典は7週=35日だが取得範囲で収まる30日に調整。period="3mo"≒60日で余裕をもって判定)
     STREAK_DAYS = 30
 
     def _ma10(i):
@@ -1123,9 +1123,9 @@ def get_daily_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
     try:
         with sema:
             ticker = yf.Ticker(ticker_symbol)
-            # 2mo: 決算反応20d (決算前 + 20営業日後) と rs_line 20日前比に必要な
-            # 営業日 ~40日分を確保する (1mo だと暦日30日 ≒ 営業日19日で不足)
-            df = ticker.history(period="2mo", auto_adjust=True, repair=True)
+            # 3mo: 30日streak判定には最大41本必要 (streak30日 + ma10算出9本 + 割れ日バッファ)。
+            # 2mo≒40本では割れ日数によって streak を取り損なうため 3mo≒60本に拡張。
+            df = ticker.history(period="3mo", auto_adjust=True, repair=True)
     except Exception as e:
         log_warning("yfinance取得エラー(%s): %s" % (code_s, e))
         return None, None
@@ -1524,9 +1524,9 @@ def prefetch_yfinance_batch(code_s_list, stocks=None):
         try:
             df = yf.download(
                 ticker_str,
-                # 2mo: 個別取得側 (get_daily_data_yfinance) と揃える。
-                # 決算反応20d / rs_line 20日前比に必要な営業日 ~40日分を確保。
-                period="2mo",
+                # 3mo: 個別取得側 (get_daily_data_yfinance) と揃える。
+                # 30日streak判定のバッファ確保のため 2mo→3mo に拡張。
+                period="3mo",
                 auto_adjust=True,
                 repair=True,
                 threads=True,
