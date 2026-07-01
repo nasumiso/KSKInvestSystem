@@ -856,6 +856,7 @@ def dashboard():
                 "qty_updated_at": ps.get_qty_global_updated_at(),
             }
 
+    trade_idea_master = ps.list_trade_ideas()
     return render_template(
         "portfolio_list.html",
         status_choices=STATUS_CHOICES,
@@ -874,8 +875,8 @@ def dashboard():
         fallback_mode=fallback_mode,
         theme_master=theme_master,
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
-        trade_idea_options=ps.TRADE_IDEA_OPTIONS,
-        trade_idea_descriptions=ps.TRADE_IDEA_DESCRIPTIONS,
+        trade_idea_options=[t["name"] for t in trade_idea_master],
+        trade_idea_descriptions={t["name"]: t["description"] for t in trade_idea_master},
         stage_options=ps.STAGE_OPTIONS,
         stage_t_options=ps.STAGE_T_OPTIONS,
         chart_style_options=ps.CHART_STYLE_OPTIONS,
@@ -1176,3 +1177,97 @@ def themes_delete(name: str):
         "info",
     )
     return redirect(url_for("portfolio.themes_index"))
+
+
+# ===========================================
+# 戦略マスター編集 (issue #335)
+# ===========================================
+
+@portfolio_bp.route("/portfolio/strategies", methods=["GET"])
+def strategies_index():
+    """戦略マスター一覧・編集画面を表示する。初回アクセス時にシードを自動投入する。"""
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    ps.seed_trade_ideas()
+    strategies = ps.list_trade_ideas()
+    usage = ps.count_trade_idea_usage()
+    return render_template(
+        "portfolio_strategies.html",
+        strategies=strategies,
+        usage=usage,
+        strategy_name_max_len=ps.THEME_NAME_MAX_LEN,
+        valid_time_horizons=ps.VALID_TIME_HORIZONS,
+    )
+
+
+@portfolio_bp.route("/portfolio/strategies/create", methods=["POST"])
+def strategies_create():
+    """戦略を新規作成して /portfolio/strategies に戻る (PRG)。"""
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    name = (request.form.get("name") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    time_horizon = (request.form.get("time_horizon") or "").strip()
+    over_earnings = request.form.get("over_earnings") == "true"
+    try:
+        ps.create_trade_idea(name, description, time_horizon, over_earnings)
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return redirect(url_for("portfolio.strategies_index"))
+    flash(f"戦略「{name}」を作成しました", "info")
+    return redirect(url_for("portfolio.strategies_index"))
+
+
+@portfolio_bp.route("/portfolio/strategies/<name>/update", methods=["POST"])
+def strategies_update(name: str):
+    """戦略のリネーム / 説明文 / 時間軸 / 決算またぎ編集。"""
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    new_name = (request.form.get("name") or "").strip()
+    description = request.form.get("description")
+    time_horizon = request.form.get("time_horizon")
+    over_earnings_raw = request.form.get("over_earnings")
+    over_earnings = (over_earnings_raw == "true") if over_earnings_raw is not None else None
+    try:
+        ps.update_trade_idea(
+            name,
+            new_name=new_name if new_name and new_name != name else None,
+            description=description if description is not None else None,
+            time_horizon=time_horizon if time_horizon is not None else None,
+            over_earnings=over_earnings,
+        )
+    except KeyError:
+        flash(f"戦略「{name}」が見つかりません", "error")
+        return redirect(url_for("portfolio.strategies_index"))
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return redirect(url_for("portfolio.strategies_index"))
+    if new_name and new_name != name:
+        flash(f"戦略を「{name}」→「{new_name}」にリネームしました", "info")
+    else:
+        flash(f"戦略「{name}」を更新しました", "info")
+    return redirect(url_for("portfolio.strategies_index"))
+
+
+@portfolio_bp.route("/portfolio/strategies/<name>/delete", methods=["POST"])
+def strategies_delete(name: str):
+    """戦略を削除し、全銘柄の trade_idea を空にリセットする。"""
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+    try:
+        affected = ps.delete_trade_idea(name)
+    except KeyError:
+        flash(f"戦略「{name}」が見つかりません", "error")
+        return redirect(url_for("portfolio.strategies_index"))
+    except (ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return redirect(url_for("portfolio.strategies_index"))
+    flash(
+        f"戦略「{name}」を削除しました (影響: {affected} 銘柄)",
+        "info",
+    )
+    return redirect(url_for("portfolio.strategies_index"))
