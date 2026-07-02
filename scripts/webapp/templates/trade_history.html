@@ -3,39 +3,29 @@
 {% block content %}
 
 <h2>売買履歴</h2>
-<p style="color:#888;font-size:0.85em;">実保有・売却ログを時系列降順で表示。</p>
+<p style="color:#888;font-size:0.85em;">保有エピソード単位で一覧表示。保有日降順。</p>
 
-{% if entries %}
+{% if episodes %}
 <table class="trade-history-table">
   <thead>
     <tr>
-      <th style="white-space:nowrap;">日時</th>
+      <th style="white-space:nowrap;">保有日</th>
       <th>銘柄</th>
-      <th style="white-space:nowrap;">アクション</th>
-      <th style="white-space:nowrap;">ステータス遷移</th>
-      <th>理由</th>
+      <th>保有理由</th>
+      <th style="white-space:nowrap;">売却日</th>
+      <th>売却理由</th>
     </tr>
   </thead>
   <tbody>
-  {% for entry in entries %}
+  {% for ep in episodes %}
     <tr>
-      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ entry.timestamp[:16] | replace("T", " ") }}</td>
+      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ ep.hold_date }}</td>
       <td style="white-space:nowrap;">
-        <a href="/stock/{{ entry.code_s }}">{{ entry.code_s }} {{ entry.stock_name }}</a>
+        <a href="/stock/{{ ep.code_s }}">{{ ep.code_s }} {{ ep.stock_name }}</a>
       </td>
-      <td>
-        {% if entry.action_type == "売却" %}
-          <span style="color:#c00;">売却</span>
-        {% else %}
-          実保有
-        {% endif %}
-      </td>
-      <td style="white-space:nowrap;color:#555;">
-        {% if entry.status_from %}{{ entry.status_from }}{% else %}—{% endif %}
-        →
-        {% if entry.status_to %}{{ entry.status_to }}{% else %}—{% endif %}
-      </td>
-      <td style="color:#555;">{{ entry.reason or "" }}</td>
+      <td style="color:#555;">{{ ep.hold_reason or "" }}</td>
+      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ ep.sell_date or "" }}</td>
+      <td style="color:#555;">{{ ep.sell_reason or "" }}</td>
     </tr>
   {% endfor %}
   </tbody>

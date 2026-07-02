@@ -20,13 +20,13 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", research_db)
     monkeypatch.setattr("portfolio_shelve.DATA_DIR", str(tmp_path))
 
-    # 銘柄 3496: 3監 → 1保 の遷移を記録
+    # 銘柄 3496: 3監 → 1保（未売却）
     rec = rs.create_research_record("3496", "アズーム", overall_rating="A")
     rs.upsert_research_record(rec, db_path=research_db)
     ps.add_to_watch("3496", reason="初回監視", db_path=portfolio_db)
     ps.transition_status("3496", "1保", reason="ブレイク確認", db_path=portfolio_db)
 
-    # 銘柄 6324: 3監 → 1保 → 売却
+    # 銘柄 6324: 3監 → 1保 → 売却（2準）
     rec2 = rs.create_research_record("6324", "ダイフク", overall_rating="B")
     rs.upsert_research_record(rec2, db_path=research_db)
     ps.add_to_watch("6324", db_path=portfolio_db)
@@ -46,30 +46,25 @@ def client(app):
 class TestTradeHistoryPage:
     def test_page_returns_200(self, client):
         """/trade-history が 200 を返す。"""
-        resp = client.get("/trade-history")
-        assert resp.status_code == 200
+        assert client.get("/trade-history").status_code == 200
 
-    def test_shows_hold_entry(self, client):
-        """実保有になったエントリが表示される。"""
+    def test_column_headers_shown(self, client):
+        """保有日・売却日ヘッダが表示される。"""
         html = client.get("/trade-history").data.decode()
-        assert "実保有" in html
+        assert "保有日" in html
+        assert "売却日" in html
+
+    def test_unsold_episode_has_hold_date_no_sell_date(self, client):
+        """未売却エピソード（3496）は保有日あり・売却日なし。"""
+        html = client.get("/trade-history").data.decode()
         assert "3496" in html
+        assert "ブレイク確認" in html
 
-    def test_shows_sell_entry(self, client):
-        """売却エントリが表示される。"""
+    def test_sold_episode_has_both_dates(self, client):
+        """売却済みエピソード（6324）は保有日・売却理由どちらも表示される。"""
         html = client.get("/trade-history").data.decode()
-        assert "売却" in html
         assert "6324" in html
-
-    def test_no_watch_only_entries(self, client):
-        """3監 のみのログ (実保有・売却なし) は表示されない。"""
-        html = client.get("/trade-history").data.decode()
-        # 初回登録 (3監 のみ) は status_to が "3監" なので表示対象外
-        # ただし 3496 は 1保 に遷移しているため 3496 自体は表示される
-        # 3監のみ = 別銘柄で確認する場合は別テストが必要だが、
-        # ここでは「3監への初回登録」が単独エントリとして現れていないことを確認
-        # (「初回登録」テキスト自体は action_log 種別だが UI には出ない)
-        assert "初回登録" not in html
+        assert "目標達成" in html
 
     def test_empty_portfolio_shows_no_entries(self, tmp_path, monkeypatch):
         """portfolio が空の場合はエントリなしメッセージが表示される。"""
@@ -85,5 +80,4 @@ class TestTradeHistoryPage:
         monkeypatch.setattr("portfolio_shelve.DATA_DIR", str(tmp_path))
         app2 = create_app()
         app2.config["TESTING"] = True
-        html = app2.test_client().get("/trade-history").data.decode()
-        assert "売買履歴がありません" in html
+        assert "売買履歴がありません" in app2.test_client().get("/trade-history").data.decode()
