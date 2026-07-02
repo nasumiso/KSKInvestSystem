@@ -35,7 +35,13 @@ def trade_history():
                 "sell_reason": "",
                 "sell_seq": None,
                 "review_memo": "",
+                "qty_changes": [],
             }
+        elif log.get("action_type") == "株数変更" and code_s in open_episodes:
+            open_episodes[code_s]["qty_changes"].append({
+                "date": log["timestamp"][:10],
+                "reason": log.get("reason", ""),
+            })
         elif log.get("action_type") == "売却" and code_s in open_episodes:
             ep = open_episodes.pop(code_s)
             ep["sell_date"] = log["timestamp"][:10]
@@ -64,6 +70,10 @@ def save_review_memo(code_s: str, seq: int):
     """売却ログの振り返りメモを上書き保存する (fetch POST / JSON レスポンス)。"""
     review_memo = request.form.get("review_memo", "")
     try:
+        logs = ps.list_action_logs(code_s)
+        target = next((l for l in logs if l["seq"] == seq), None)
+        if target is None or target.get("action_type") != "売却":
+            abort(404)
         ps.update_action_log_review_memo(code_s, seq, review_memo)
     except KeyError:
         abort(404)

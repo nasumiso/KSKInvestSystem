@@ -7,6 +7,14 @@
 
 {% if episodes %}
 <table class="trade-history-table">
+  <colgroup>
+    <col style="width:10em;">
+    <col style="width:7em;">
+    <col>
+    <col style="width:7em;">
+    <col>
+    <col style="width:22em;">
+  </colgroup>
   <thead>
     <tr>
       <th>銘柄</th>
@@ -21,7 +29,23 @@
   {% for ep in episodes %}
     <tr>
       <td style="white-space:nowrap;">
+        {% if ep.qty_changes %}
+        <details>
+          <summary style="cursor:pointer;"><a href="/stock/{{ ep.code_s }}">{{ ep.code_s }} {{ ep.stock_name }}</a></summary>
+          <table style="margin:0.4em 0 0 1em;font-size:0.85em;border:none;">
+            <tbody>
+            {% for qc in ep.qty_changes %}
+              <tr>
+                <td style="color:#888;white-space:nowrap;padding:0 0.6em 0 0;">{{ qc.date }}</td>
+                <td style="color:#555;">{{ qc.reason }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </details>
+        {% else %}
         <a href="/stock/{{ ep.code_s }}">{{ ep.code_s }} {{ ep.stock_name }}</a>
+        {% endif %}
       </td>
       <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ ep.hold_date }}</td>
       <td style="color:#555;">{{ ep.hold_reason or "" }}</td>
@@ -48,11 +72,12 @@
     var initial = ta.value;
     ta.addEventListener('blur', function () {
       if (ta.value === initial) return;
-      initial = ta.value;
+      var next = ta.value;
       var fd = new FormData();
-      fd.append('review_memo', ta.value);
+      fd.append('review_memo', next);
       fetch(ta.dataset.url, { method: 'POST', body: fd })
-        .catch(function () { /* ネットワーク失敗時は静かに無視 */ });
+        .then(function (r) { if (r.ok) initial = next; })
+        .catch(function () { /* ネットワーク失敗時は初期値を据え置き、再試行可能にする */ });
     });
   });
 }());
