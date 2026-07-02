@@ -61,7 +61,7 @@ VALID_STATUSES = frozenset({"1保", "2準", "3監"})
 
 # アクションログ種別
 VALID_ACTION_TYPES = frozenset(
-    {"初回登録", "ステータス変更", "売却", "削除", "メモ更新", "ユニバース除外"}
+    {"初回登録", "ステータス変更", "売却", "削除", "ユニバース除外", "株数変更"}
 )
 
 # キー名前空間プレフィックス
@@ -723,15 +723,17 @@ def update_qty(
     code_s: str,
     qty: int,
     *,
+    reason: str = "",
+    action_date: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """既存レコードの保有株数を更新する (issue #269)。
 
-    - 株数変更はアクションログを残さない (要件 §5)
-    - updated_at も触らない (株数変更は監査対象外、ファイル mtime の不要な変化を避ける)
     - 差分なしは no-op で early return (戻り値も現レコード)
     - レコード未登録は KeyError
     - 不正値 (非整数 / 負数) は TypeError / ValueError
+    - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
+      JST 12:00 の ISO 8601 文字列に変換して記録する
 
     Returns: 更新後のレコード。差分なしの場合は現レコードをそのまま返す。
     """
@@ -739,6 +741,7 @@ def update_qty(
     normalized = normalize_code_s(code_s)
     _validate_qty(qty)
     qty_int = int(qty)
+    action_ts = _parse_action_date_to_iso(action_date) if action_date else None
 
     path = _resolve_db_path(db_path)
     with _flock(db_path):
@@ -756,6 +759,13 @@ def update_qty(
             db[key] = record
             db[KEY_QTY_GLOBAL_UPDATED_AT] = now_iso()
     log_print("portfolio_shelve: 株数更新", normalized, f"{current_qty} -> {qty_int}")
+    append_action_log(
+        code_s,
+        "株数変更",
+        reason=f"{current_qty} → {qty_int}" + (f" ({reason})" if reason else ""),
+        timestamp=action_ts,
+        db_path=db_path,
+    )
     return _normalize_loaded_record(record)
 
 
@@ -1078,9 +1088,6 @@ def update_theme(
                 db[old_key] = current
                 affected_codes = []
 
-            # 影響を受けた record の action_log は flock 内で追記 (リエントラント対応済み)
-            for code in affected_codes:
-                _append_action_log_inner(db, code, "メモ更新")
     if renaming:
         log_print(
             "portfolio_shelve: theme リネーム",
@@ -1106,8 +1113,6 @@ def delete_theme(name: str, *, db_path: Optional[str] = None) -> int:
                 raise KeyError(f"theme {normalized!r} は存在しません")
             del db[key]
             affected_codes = _rewrite_theme_in_records(db, normalized, None)
-            for code in affected_codes:
-                _append_action_log_inner(db, code, "メモ更新")
     log_print(
         "portfolio_shelve: theme 削除",
         normalized,
@@ -1327,8 +1332,6 @@ def update_trade_idea(
                 db[old_key] = current
                 affected_codes = []
 
-            for code in affected_codes:
-                _append_action_log_inner(db, code, "メモ更新")
     if renaming:
         log_print(
             "portfolio_shelve: strategy リネーム",
@@ -1354,8 +1357,6 @@ def delete_trade_idea(name: str, *, db_path: Optional[str] = None) -> int:
                 raise KeyError(f"strategy {normalized!r} は存在しません")
             del db[key]
             affected_codes = _rewrite_trade_idea_in_records(db, normalized, None)
-            for code in affected_codes:
-                _append_action_log_inner(db, code, "メモ更新")
     log_print(
         "portfolio_shelve: strategy 削除",
         normalized,
@@ -1483,8 +1484,7 @@ def update_memo(
     差分判定:
     - fields の各 key について現行値と完全一致すれば no-op
       (action_log 追記なし、updated_at 据え置き)
-    - 1 つでも変更があれば action_log に "メモ更新" を 1 件追加
-      (差分内容は記録しない、reason は空文字)
+    - 1 つでも変更があれば updated_at を更新 (action_log は記録しない)
 
     Returns: 更新後のレコード dict (no-op 時も現行 record を返す)
     """
@@ -1596,11 +1596,6 @@ def update_memo(
             record["memo"] = {**current_memo, **normalized_fields}
             record["updated_at"] = now_iso()
             db[key] = record
-        append_action_log(
-            normalized,
-            "メモ更新",
-            db_path=db_path,
-        )
     log_print(
         "portfolio_shelve: メモ更新",
         normalized,

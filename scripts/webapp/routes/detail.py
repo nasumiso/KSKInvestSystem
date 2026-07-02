@@ -136,6 +136,9 @@ def stock_detail(code_s: str):
     except Exception:  # noqa: BLE001
         signal_display = {"tooltip": "", "style": ""}
 
+    # issue #172: 振り返りセクション用アクションログ (除外・削除済みでもログは表示する)
+    action_logs = list(reversed(ps.list_action_logs(code_s)))
+
     return render_template(
         "detail.html",
         record=record,
@@ -158,4 +161,5 @@ def stock_detail(code_s: str):
         signal_display=signal_display,
         gyoutai_themes_unset=gyoutai_themes_unset,
         has_business_text=has_business_text,
+        action_logs=action_logs,
     )

@@ -428,8 +428,8 @@ nav .quick-search {
 .kessan-history-table .col-date { width: 8em; white-space: nowrap; }
 .kessan-history-table .col-q { width: 3em; }
 .kessan-history-table .col-exp { width: 3.5em; }
-.kessan-history-table .col-change { width: 5em; white-space: nowrap; }
-.kessan-history-table .col-outlook { width: 18em; }
+.kessan-history-table .col-change { width: 12em; white-space: nowrap; }
+.kessan-history-table .col-outlook { width: 12em; }
 /* col-reaction は幅指定なし → 残り全幅に伸びる */
 /* Q セルは改行させず、1 行に収める */
 .kessan-history-table td.col-q { white-space: nowrap; color: #888; }
