@@ -111,7 +111,9 @@ def trade_history():
             ep["sell_qty"] = log.get("qty")       # 売却時の保有株数（旧ログは None）
             ep["sell_seq"] = log["seq"]
             ep["memo_seq"] = log["seq"]           # 売却済みはこちらがメモ保存先
-            ep["review_memo"] = log.get("review_memo", "")
+            # 保有中に入力したメモを引き継ぐ（売却ログ自体にメモがなければ1保ログのメモを使う）
+            sell_memo = log.get("review_memo", "")
+            ep["review_memo"] = sell_memo if sell_memo else ep.get("review_memo", "")
             episodes.append(ep)
 
     # 未売却（保有中）エピソードを追加

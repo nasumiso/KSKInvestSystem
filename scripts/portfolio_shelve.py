@@ -828,6 +828,7 @@ def transition_status(
     *,
     reason: str = "",
     action_date: Optional[str] = None,
+    qty: Optional[int] = None,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """既存レコードのステータスを変更する。
@@ -838,6 +839,7 @@ def transition_status(
     - レコードが存在しない場合は KeyError
     - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
       その日の JST 12:00 に固定する (issue #220)。未指定なら現在時刻
+    - qty: 1保遷移時のIN株数をログに記録する (issue #357)。売却時は record["qty"] を使用
 
     Returns: 更新後のレコード
     """
@@ -873,8 +875,14 @@ def transition_status(
             db[key] = record
         # アクションログ種別: 1保→2準 は売却、それ以外はステータス変更
         action_type = "売却" if old_status == "1保" and new_status == "2準" else "ステータス変更"
-        # 売却時は売却株数、1保遷移時はIN株数をログに記録 (issue #357)
-        log_qty = record.get("qty") if new_status in ("1保", "2準") else None
+        # 1保遷移は引数 qty を優先（update_qty より先に呼ばれるため record["qty"] は旧値）
+        # 売却時は record["qty"]（保有株数）をログに記録 (issue #357)
+        if new_status == "1保":
+            log_qty = qty
+        elif new_status == "2準":
+            log_qty = record.get("qty")
+        else:
+            log_qty = None
         append_action_log(
             normalized,
             action_type,

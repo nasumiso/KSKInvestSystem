@@ -513,7 +513,7 @@ def transition(code_s: str):
     try:
         before = ps.get_record(code_s)
         old_status = (before or {}).get("status")
-        ps.transition_status(code_s, new_status, reason=reason, action_date=action_date)
+        ps.transition_status(code_s, new_status, reason=reason, action_date=action_date, qty=qty if new_status == "1保" else None)
         # issue #269: 1保 のときだけ qty を反映する (他ステータスでは無視)
         if new_status == "1保" and qty is not None:
             ps.update_qty(code_s, qty, reason=reason, action_date=action_date)
