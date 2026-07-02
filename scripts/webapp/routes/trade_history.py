@@ -24,8 +24,8 @@ def _extract_initial_qty(qty_changes: list) -> str:
     # "→" の右側を取り、末尾の括弧注釈を除去
     if "→" not in reason:
         return ""
-    after = reason.split("→", 1)[1].strip()
-    return after.split("(")[0].strip()
+    before = reason.split("→", 1)[0].strip()
+    return before
 
 
 @trade_history_bp.route("/trade-history")
