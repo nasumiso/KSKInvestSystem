@@ -724,7 +724,7 @@ def update_qty(
     qty: int,
     *,
     reason: str = "",
-    timestamp: Optional[str] = None,
+    action_date: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """既存レコードの保有株数を更新する (issue #269)。
@@ -732,6 +732,8 @@ def update_qty(
     - 差分なしは no-op で early return (戻り値も現レコード)
     - レコード未登録は KeyError
     - 不正値 (非整数 / 負数) は TypeError / ValueError
+    - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
+      JST 12:00 の ISO 8601 文字列に変換して記録する
 
     Returns: 更新後のレコード。差分なしの場合は現レコードをそのまま返す。
     """
@@ -739,6 +741,7 @@ def update_qty(
     normalized = normalize_code_s(code_s)
     _validate_qty(qty)
     qty_int = int(qty)
+    action_ts = _parse_action_date_to_iso(action_date) if action_date else None
 
     path = _resolve_db_path(db_path)
     with _flock(db_path):
@@ -760,7 +763,7 @@ def update_qty(
         code_s,
         "株数変更",
         reason=f"{current_qty} → {qty_int}" + (f" ({reason})" if reason else ""),
-        timestamp=timestamp,
+        timestamp=action_ts,
         db_path=db_path,
     )
     return _normalize_loaded_record(record)

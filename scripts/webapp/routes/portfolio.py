@@ -516,7 +516,7 @@ def transition(code_s: str):
         ps.transition_status(code_s, new_status, reason=reason, action_date=action_date)
         # issue #269: 1保 のときだけ qty を反映する (他ステータスでは無視)
         if new_status == "1保" and qty is not None:
-            ps.update_qty(code_s, qty, reason=reason, timestamp=action_date)
+            ps.update_qty(code_s, qty, reason=reason, action_date=action_date)
     except KeyError as e:
         flash(f"レコード未登録: {e}", "error")
         return _redirect_with_return_query(code_s=code_s)
