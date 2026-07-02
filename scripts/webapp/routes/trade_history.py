@@ -1,10 +1,10 @@
 """売買履歴ページルート (issue #351)。
 
-GET /trade-history : 全銘柄のアクションログから保有エピソード単位で
-1行にまとめ、保有日降順で一覧表示する。
+GET  /trade-history                          : 保有エピソード単位で一覧表示
+POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
 """
 
-from flask import Blueprint, render_template
+from flask import Blueprint, abort, redirect, render_template, request, url_for
 
 import portfolio_shelve as ps
 from webapp.helpers import resolve_stock_name
@@ -33,11 +33,15 @@ def trade_history():
                 "sell_date": "",
                 "hold_reason": log.get("reason", ""),
                 "sell_reason": "",
+                "sell_seq": None,
+                "review_memo": "",
             }
         elif log.get("action_type") == "売却" and code_s in open_episodes:
             ep = open_episodes.pop(code_s)
             ep["sell_date"] = log["timestamp"][:10]
             ep["sell_reason"] = log.get("reason", "")
+            ep["sell_seq"] = log["seq"]
+            ep["review_memo"] = log.get("review_memo", "")
             episodes.append(ep)
 
     # 未売却（保有中）エピソードを追加
@@ -51,3 +55,16 @@ def trade_history():
         ep["stock_name"] = resolve_stock_name(ep["code_s"])
 
     return render_template("trade_history.html", episodes=episodes)
+
+
+@trade_history_bp.route(
+    "/trade-history/<code_s>/<int:seq>/review-memo", methods=["POST"]
+)
+def save_review_memo(code_s: str, seq: int):
+    """売却ログの振り返りメモを上書き保存する。"""
+    review_memo = request.form.get("review_memo", "")
+    try:
+        ps.update_action_log_review_memo(code_s, seq, review_memo)
+    except KeyError:
+        abort(404)
+    return redirect(url_for("trade_history.trade_history"))

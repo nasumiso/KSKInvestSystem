@@ -170,6 +170,7 @@ ACTION_LOG_FIELDS = frozenset(
         "status_from",
         "status_to",
         "reason",
+        "review_memo",
     }
 )
 
@@ -529,6 +530,7 @@ def append_action_log(
     status_from: Optional[str] = None,
     status_to: Optional[str] = None,
     reason: str = "",
+    review_memo: str = "",
     timestamp: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -549,6 +551,8 @@ def append_action_log(
         validate_status(status_to)
     if not isinstance(reason, str):
         raise TypeError(f"reason must be str, got {type(reason).__name__}")
+    if not isinstance(review_memo, str):
+        raise TypeError(f"review_memo must be str, got {type(review_memo).__name__}")
     ts = timestamp or now_iso()
 
     path = _resolve_db_path(db_path)
@@ -563,6 +567,7 @@ def append_action_log(
                 "status_from": status_from,
                 "status_to": status_to,
                 "reason": reason,
+                "review_memo": review_memo,
             }
             db[_action_log_key(normalized, seq)] = entry
     log_print(
@@ -598,11 +603,41 @@ def list_action_logs(
                 continue
             if not isinstance(value, dict):
                 continue
+            value.setdefault("review_memo", "")
             results.append(value)
     results.sort(
         key=lambda r: (r.get("code_s", ""), r.get("seq", 0)),
     )
     return results
+
+
+def update_action_log_review_memo(
+    code_s: str,
+    seq: int,
+    review_memo: str,
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """アクションログエントリの review_memo フィールドを上書きする (issue #351)。
+
+    - 対象エントリが存在しない場合は KeyError
+    - review_memo は str のみ許容
+    Returns: 更新後のログエントリ
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    if not isinstance(review_memo, str):
+        raise TypeError(f"review_memo must be str, got {type(review_memo).__name__}")
+    key = _action_log_key(normalized, seq)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            entry = db.get(key)
+            if entry is None:
+                raise KeyError(f"action_log not found: code_s={code_s!r}, seq={seq}")
+            entry["review_memo"] = review_memo
+            db[key] = entry
+    return entry
 
 
 # ===========================================

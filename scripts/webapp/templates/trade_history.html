@@ -9,23 +9,36 @@
 <table class="trade-history-table">
   <thead>
     <tr>
-      <th style="white-space:nowrap;">保有日</th>
       <th>銘柄</th>
+      <th style="white-space:nowrap;">保有日</th>
       <th>保有理由</th>
       <th style="white-space:nowrap;">売却日</th>
       <th>売却理由</th>
+      <th>振り返りメモ</th>
     </tr>
   </thead>
   <tbody>
   {% for ep in episodes %}
     <tr>
-      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ ep.hold_date }}</td>
       <td style="white-space:nowrap;">
         <a href="/stock/{{ ep.code_s }}">{{ ep.code_s }} {{ ep.stock_name }}</a>
       </td>
+      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ ep.hold_date }}</td>
       <td style="color:#555;">{{ ep.hold_reason or "" }}</td>
       <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ ep.sell_date or "" }}</td>
       <td style="color:#555;">{{ ep.sell_reason or "" }}</td>
+      <td>
+        {% if ep.sell_seq is not none %}
+        <form method="post"
+              action="/trade-history/{{ ep.code_s }}/{{ ep.sell_seq }}/review-memo"
+              style="display:flex;gap:0.3em;align-items:flex-start;">
+          <textarea name="review_memo" rows="2"
+                    style="flex:1;min-width:8em;font-size:0.9em;">{{ ep.review_memo or "" }}</textarea>
+          <button type="submit" class="outline"
+                  style="padding:0.2em 0.5em;font-size:0.85em;white-space:nowrap;">保存</button>
+        </form>
+        {% endif %}
+      </td>
     </tr>
   {% endfor %}
   </tbody>

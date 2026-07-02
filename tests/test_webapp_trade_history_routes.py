@@ -49,22 +49,40 @@ class TestTradeHistoryPage:
         assert client.get("/trade-history").status_code == 200
 
     def test_column_headers_shown(self, client):
-        """保有日・売却日ヘッダが表示される。"""
+        """銘柄・保有日・売却日・振り返りメモのヘッダが表示される。"""
         html = client.get("/trade-history").data.decode()
         assert "保有日" in html
         assert "売却日" in html
+        assert "振り返りメモ" in html
 
-    def test_unsold_episode_has_hold_date_no_sell_date(self, client):
-        """未売却エピソード（3496）は保有日あり・売却日なし。"""
+    def test_unsold_episode_shown(self, client):
+        """未売却エピソード（3496）が表示される。"""
         html = client.get("/trade-history").data.decode()
         assert "3496" in html
         assert "ブレイク確認" in html
 
-    def test_sold_episode_has_both_dates(self, client):
-        """売却済みエピソード（6324）は保有日・売却理由どちらも表示される。"""
+    def test_sold_episode_shown_with_review_memo_form(self, client):
+        """売却済みエピソード（6324）は売却理由と振り返りメモフォームが表示される。"""
         html = client.get("/trade-history").data.decode()
         assert "6324" in html
         assert "目標達成" in html
+        assert "review_memo" in html  # フォームフィールド名
+
+    def test_save_review_memo(self, client):
+        """振り返りメモを POST で保存し、次回表示に反映される。"""
+        # 6324 の売却ログ seq を特定
+        logs = ps.list_action_logs("6324")
+        sell_log = next(l for l in logs if l["action_type"] == "売却")
+        seq = sell_log["seq"]
+
+        resp = client.post(
+            f"/trade-history/6324/{seq}/review-memo",
+            data={"review_memo": "上値で薄く売り過ぎた"},
+        )
+        assert resp.status_code == 302  # redirect
+
+        html = client.get("/trade-history").data.decode()
+        assert "上値で薄く売り過ぎた" in html
 
     def test_empty_portfolio_shows_no_entries(self, tmp_path, monkeypatch):
         """portfolio が空の場合はエントリなしメッセージが表示される。"""
