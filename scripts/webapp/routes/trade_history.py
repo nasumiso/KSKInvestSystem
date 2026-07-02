@@ -12,6 +12,22 @@ from webapp.helpers import resolve_stock_name
 trade_history_bp = Blueprint("trade_history", __name__)
 
 
+def _extract_initial_qty(qty_changes: list) -> str:
+    """qty_changes の最初のエントリの reason から IN 時の株数を取り出す。
+
+    reason 形式: "0 → 100" or "0 → 100 (買い増し)" → "100"
+    取り出せない場合は空文字。
+    """
+    if not qty_changes:
+        return ""
+    reason = qty_changes[0].get("reason", "")
+    # "→" の右側を取り、末尾の括弧注釈を除去
+    if "→" not in reason:
+        return ""
+    after = reason.split("→", 1)[1].strip()
+    return after.split("(")[0].strip()
+
+
 @trade_history_bp.route("/trade-history")
 def trade_history():
     """売買履歴ページ — 銘柄×保有エピソード単位で1行表示。"""
@@ -56,9 +72,10 @@ def trade_history():
     # 保有日降順
     episodes.sort(key=lambda r: r["hold_date"], reverse=True)
 
-    # 銘柄名付与
+    # 銘柄名付与・初期株数抽出
     for ep in episodes:
         ep["stock_name"] = resolve_stock_name(ep["code_s"])
+        ep["initial_qty"] = _extract_initial_qty(ep["qty_changes"])
 
     return render_template("trade_history.html", episodes=episodes)
 

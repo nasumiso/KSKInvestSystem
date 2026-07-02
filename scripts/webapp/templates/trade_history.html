@@ -8,9 +8,10 @@
 {% if episodes %}
 <table class="trade-history-table">
   <colgroup>
-    <col style="width:10em;">
+    <col style="width:8em;">
     <col style="width:7em;">
-    <col>
+    <col style="width:4em;">
+    <col style="width:18em;">
     <col style="width:7em;">
     <col>
     <col style="width:22em;">
@@ -19,6 +20,7 @@
     <tr>
       <th>銘柄</th>
       <th style="white-space:nowrap;">保有日</th>
+      <th style="white-space:nowrap;">株数</th>
       <th>保有理由</th>
       <th style="white-space:nowrap;">売却日</th>
       <th>売却理由</th>
@@ -50,6 +52,7 @@
         {% endif %}
       </td>
       <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ ep.hold_date }}</td>
+      <td style="color:#888;font-size:0.85em;text-align:right;">{{ ep.initial_qty or "" }}</td>
       <td style="color:#555;">{{ ep.hold_reason or "" }}</td>
       <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ ep.sell_date or "" }}</td>
       <td style="color:#555;">{{ ep.sell_reason or "" }}</td>
