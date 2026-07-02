@@ -50,10 +50,11 @@ def _build_rows(ep: dict) -> list:
         })
 
     if ep["sell_date"]:
+        sell_qty = ep.get("sell_qty")
         rows.append({
             "kind":   "売却",
             "date":   ep["sell_date"],
-            "qty":    "",
+            "qty":    str(sell_qty) if sell_qty is not None else "",
             "reason": ep["sell_reason"],
         })
 
@@ -81,6 +82,7 @@ def trade_history():
                 "sell_date": "",
                 "hold_reason": log.get("reason", ""),
                 "sell_reason": "",
+                "sell_qty": None,
                 "memo_seq": log["seq"],           # 1保ログの seq（未売却時のメモ保存先）
                 "sell_seq": None,
                 "review_memo": log.get("review_memo", ""),
@@ -98,6 +100,7 @@ def trade_history():
             ep = open_episodes.pop(code_s)
             ep["sell_date"] = log["timestamp"][:10]
             ep["sell_reason"] = log.get("reason", "")
+            ep["sell_qty"] = log.get("qty")       # 売却時の保有株数（旧ログは None）
             ep["sell_seq"] = log["seq"]
             ep["memo_seq"] = log["seq"]           # 売却済みはこちらがメモ保存先
             ep["review_memo"] = log.get("review_memo", "")
