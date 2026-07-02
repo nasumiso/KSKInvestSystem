@@ -122,11 +122,11 @@ class TestTradeHistoryPage:
         html = client.get("/trade-history").data.decode()
         assert 'rowspan="2"' in html  # 保有+株数変更=2行
 
-    def test_qty_in_row_shows_after_value(self, client):
-        """保有時に 0→N の株数変更ログがあれば保有行に N が表示される。"""
-        ps.update_qty("3496", 100)  # 0 → 100 (左辺が0)
+    def test_qty_in_row_shows_initial_value(self, client):
+        """株数変更ログがあれば保有行に最初の変更前株数（→左辺）が表示される。"""
+        ps.update_qty("3496", 100)  # 0 → 100 → 左辺 "0" がIN時株数
         html = client.get("/trade-history").data.decode()
-        assert "100" in html  # 保有行の株数列に変更後株数が出る
+        assert "0" in html  # 保有行の株数列に変更前株数が出る
 
     def test_empty_portfolio_shows_no_entries(self, tmp_path, monkeypatch):
         """portfolio が空の場合はエントリなしメッセージが表示される。"""

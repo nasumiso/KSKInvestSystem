@@ -23,15 +23,14 @@ def _build_rows(ep: dict) -> list:
     """
     rows = []
 
-    # IN時株数: "0 → N" 形式（左辺が "0"）の株数変更ログがあれば N を使う
+    # IN時株数: 株数変更ログの最初のエントリの左辺（変更前株数）を使う
+    # 例: "500 → 700" → 左辺 "500" がIN時株数
     qty_changes = ep.get("qty_changes", [])
     in_qty = ""
     if qty_changes:
         first_reason = qty_changes[0].get("reason", "")
         if "→" in first_reason:
-            left, right = first_reason.split("→", 1)
-            if left.strip() == "0":
-                in_qty = right.strip()
+            in_qty = first_reason.split("→", 1)[0].strip()
 
     rows.append({
         "kind":   "保有",
