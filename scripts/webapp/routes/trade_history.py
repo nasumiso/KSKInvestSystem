@@ -4,7 +4,7 @@ GET  /trade-history                          : 保有エピソード単位で一
 POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
 """
 
-from flask import Blueprint, abort, redirect, render_template, request, url_for
+from flask import Blueprint, abort, jsonify, render_template, request
 
 import portfolio_shelve as ps
 from webapp.helpers import resolve_stock_name
@@ -61,10 +61,10 @@ def trade_history():
     "/trade-history/<code_s>/<int:seq>/review-memo", methods=["POST"]
 )
 def save_review_memo(code_s: str, seq: int):
-    """売却ログの振り返りメモを上書き保存する。"""
+    """売却ログの振り返りメモを上書き保存する (fetch POST / JSON レスポンス)。"""
     review_memo = request.form.get("review_memo", "")
     try:
         ps.update_action_log_review_memo(code_s, seq, review_memo)
     except KeyError:
         abort(404)
-    return redirect(url_for("trade_history.trade_history"))
+    return jsonify({"ok": True})

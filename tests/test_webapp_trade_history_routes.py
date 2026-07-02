@@ -61,16 +61,15 @@ class TestTradeHistoryPage:
         assert "3496" in html
         assert "ブレイク確認" in html
 
-    def test_sold_episode_shown_with_review_memo_form(self, client):
-        """売却済みエピソード（6324）は売却理由と振り返りメモフォームが表示される。"""
+    def test_sold_episode_shown_with_review_memo_textarea(self, client):
+        """売却済みエピソード（6324）は振り返りメモのテキストエリアが表示される。"""
         html = client.get("/trade-history").data.decode()
         assert "6324" in html
         assert "目標達成" in html
-        assert "review_memo" in html  # フォームフィールド名
+        assert "review-memo-ta" in html  # textarea の class
 
     def test_save_review_memo(self, client):
-        """振り返りメモを POST で保存し、次回表示に反映される。"""
-        # 6324 の売却ログ seq を特定
+        """振り返りメモを POST で保存（JSON 200）し、次回表示に反映される。"""
         logs = ps.list_action_logs("6324")
         sell_log = next(l for l in logs if l["action_type"] == "売却")
         seq = sell_log["seq"]
@@ -79,7 +78,8 @@ class TestTradeHistoryPage:
             f"/trade-history/6324/{seq}/review-memo",
             data={"review_memo": "上値で薄く売り過ぎた"},
         )
-        assert resp.status_code == 302  # redirect
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
 
         html = client.get("/trade-history").data.decode()
         assert "上値で薄く売り過ぎた" in html

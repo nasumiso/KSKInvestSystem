@@ -29,14 +29,9 @@
       <td style="color:#555;">{{ ep.sell_reason or "" }}</td>
       <td>
         {% if ep.sell_seq is not none %}
-        <form method="post"
-              action="/trade-history/{{ ep.code_s }}/{{ ep.sell_seq }}/review-memo"
-              style="display:flex;gap:0.3em;align-items:flex-start;">
-          <textarea name="review_memo" rows="2"
-                    style="flex:1;min-width:8em;font-size:0.9em;">{{ ep.review_memo or "" }}</textarea>
-          <button type="submit" class="outline"
-                  style="padding:0.2em 0.5em;font-size:0.85em;white-space:nowrap;">保存</button>
-        </form>
+        <textarea class="review-memo-ta" rows="2"
+                  data-url="/trade-history/{{ ep.code_s }}/{{ ep.sell_seq }}/review-memo"
+                  style="width:100%;font-size:0.9em;box-sizing:border-box;">{{ ep.review_memo or "" }}</textarea>
         {% endif %}
       </td>
     </tr>
@@ -46,5 +41,21 @@
 {% else %}
 <p style="color:#888;">売買履歴がありません。</p>
 {% endif %}
+
+<script>
+(function () {
+  document.querySelectorAll('.review-memo-ta').forEach(function (ta) {
+    var initial = ta.value;
+    ta.addEventListener('blur', function () {
+      if (ta.value === initial) return;
+      initial = ta.value;
+      var fd = new FormData();
+      fd.append('review_memo', ta.value);
+      fetch(ta.dataset.url, { method: 'POST', body: fd })
+        .catch(function () { /* ネットワーク失敗時は静かに無視 */ });
+    });
+  });
+}());
+</script>
 
 {% endblock %}
