@@ -40,9 +40,11 @@
       <td style="color:#555;">{{ row.reason }}</td>
       {% if loop.first %}
       <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;">
-        <textarea class="review-memo-ta" rows="{{ ep.rowspan + 1 }}"
-                  data-url="/trade-history/{{ ep.code_s }}/{{ ep.memo_seq }}/review-memo"
-                  style="width:100%;font-size:0.9em;box-sizing:border-box;">{{ ep.review_memo or "" }}</textarea>
+        <div class="review-memo-cell"
+             data-url="/trade-history/{{ ep.code_s }}/{{ ep.memo_seq }}/review-memo"
+             data-memo="{{ ep.review_memo or '' | e }}">
+          <span class="review-memo-display">{{ ep.review_memo or "クリックして入力" }}</span>
+        </div>
       </td>
       {% endif %}
     </tr>
@@ -56,16 +58,50 @@
 
 <script>
 (function () {
-  document.querySelectorAll('.review-memo-ta').forEach(function (ta) {
-    var initial = ta.value;
-    ta.addEventListener('blur', function () {
-      if (ta.value === initial) return;
+  document.querySelectorAll('.review-memo-cell').forEach(function (cell) {
+    var url = cell.dataset.url;
+    var display = cell.querySelector('.review-memo-display');
+
+    function save(ta) {
       var next = ta.value;
+      var initial = cell.dataset.memo;
+      if (next === initial) return;
       var fd = new FormData();
       fd.append('review_memo', next);
-      fetch(ta.dataset.url, { method: 'POST', body: fd })
-        .then(function (r) { if (r.ok) initial = next; })
-        .catch(function () { /* ネットワーク失敗時は初期値を据え置き、再試行可能にする */ });
+      fetch(url, { method: 'POST', body: fd })
+        .then(function (r) {
+          if (r.ok) {
+            cell.dataset.memo = next;
+            display.textContent = next || 'クリックして入力';
+          }
+        })
+        .catch(function () {});
+    }
+
+    function showEditor() {
+      var ta = document.createElement('textarea');
+      ta.value = cell.dataset.memo;
+      ta.rows = 4;
+      ta.style.cssText = 'width:100%;font-size:0.9em;box-sizing:border-box;';
+      ta.classList.add('review-memo-ta');
+      display.style.display = 'none';
+      cell.appendChild(ta);
+      ta.focus();
+      ta.addEventListener('blur', function () {
+        save(ta);
+        ta.remove();
+        display.style.display = '';
+      });
+    }
+
+    cell.style.cursor = 'pointer';
+    display.style.cssText = 'color:#aaa;font-size:0.85em;white-space:pre-wrap;';
+    if (cell.dataset.memo) {
+      display.style.color = '#555';
+    }
+    cell.addEventListener('click', function (e) {
+      if (cell.querySelector('textarea')) return;
+      showEditor();
     });
   });
 }());
