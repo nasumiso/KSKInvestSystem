@@ -764,6 +764,7 @@ def update_qty(
     *,
     reason: str = "",
     action_date: Optional[str] = None,
+    log_action: bool = True,
     db_path: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """既存レコードの保有株数を更新する (issue #269)。
@@ -773,6 +774,7 @@ def update_qty(
     - 不正値 (非整数 / 負数) は TypeError / ValueError
     - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
       JST 12:00 の ISO 8601 文字列に変換して記録する
+    - log_action=False のときは action_log を追記しない (1保遷移の初回セット用)
 
     Returns: 更新後のレコード。差分なしの場合は現レコードをそのまま返す。
     """
@@ -798,13 +800,14 @@ def update_qty(
             db[key] = record
             db[KEY_QTY_GLOBAL_UPDATED_AT] = now_iso()
     log_print("portfolio_shelve: 株数更新", normalized, f"{current_qty} -> {qty_int}")
-    append_action_log(
-        code_s,
-        "株数変更",
-        reason=f"{current_qty} → {qty_int}" + (f" ({reason})" if reason else ""),
-        timestamp=action_ts,
-        db_path=db_path,
-    )
+    if log_action:
+        append_action_log(
+            code_s,
+            "株数変更",
+            reason=f"{current_qty} → {qty_int}" + (f" ({reason})" if reason else ""),
+            timestamp=action_ts,
+            db_path=db_path,
+        )
     return _normalize_loaded_record(record)
 
 

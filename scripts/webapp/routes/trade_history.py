@@ -111,9 +111,11 @@ def trade_history():
             ep["sell_qty"] = log.get("qty")       # 売却時の保有株数（旧ログは None）
             ep["sell_seq"] = log["seq"]
             ep["memo_seq"] = log["seq"]           # 売却済みはこちらがメモ保存先
-            # 保有中に入力したメモを引き継ぐ（売却ログ自体にメモがなければ1保ログのメモを使う）
-            sell_memo = log.get("review_memo", "")
-            ep["review_memo"] = sell_memo if sell_memo else ep.get("review_memo", "")
+            # 保有中に入力したメモを引き継ぐ
+            # 売却ログの review_memo が None（未設定）のときのみ1保ログのメモを使う
+            # 空文字（明示削除）はそのまま優先する
+            sell_memo = log.get("review_memo")
+            ep["review_memo"] = sell_memo if sell_memo is not None else ep.get("review_memo", "")
             episodes.append(ep)
 
     # 未売却（保有中）エピソードを追加
@@ -144,6 +146,8 @@ def save_review_memo(code_s: str, seq: int):
     try:
         logs = ps.list_action_logs(code_s)
         target = next((l for l in logs if l["seq"] == seq), None)
+        if target is None:
+            abort(404)
         action_type = target.get("action_type")
         status_to = target.get("status_to")
         if not (action_type == "売却" or (action_type == "ステータス変更" and status_to == "1保")):
