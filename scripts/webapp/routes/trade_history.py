@@ -142,7 +142,9 @@ def save_review_memo(code_s: str, seq: int):
     try:
         logs = ps.list_action_logs(code_s)
         target = next((l for l in logs if l["seq"] == seq), None)
-        if target is None or target.get("action_type") not in ("売却", "ステータス変更"):
+        action_type = target.get("action_type")
+        status_to = target.get("status_to")
+        if not (action_type == "売却" or (action_type == "ステータス変更" and status_to == "1保")):
             abort(404)
         ps.update_action_log_review_memo(code_s, seq, review_memo)
     except KeyError:

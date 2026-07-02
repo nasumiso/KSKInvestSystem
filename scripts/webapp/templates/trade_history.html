@@ -62,22 +62,6 @@
     var url = cell.dataset.url;
     var display = cell.querySelector('.review-memo-display');
 
-    function save(ta) {
-      var next = ta.value;
-      var initial = cell.dataset.memo;
-      if (next === initial) return;
-      var fd = new FormData();
-      fd.append('review_memo', next);
-      fetch(url, { method: 'POST', body: fd })
-        .then(function (r) {
-          if (r.ok) {
-            cell.dataset.memo = next;
-            display.textContent = next || 'クリックして入力';
-          }
-        })
-        .catch(function () {});
-    }
-
     function showEditor() {
       var ta = document.createElement('textarea');
       ta.value = cell.dataset.memo;
@@ -88,9 +72,27 @@
       cell.appendChild(ta);
       ta.focus();
       ta.addEventListener('blur', function () {
-        save(ta);
-        ta.remove();
-        display.style.display = '';
+        var next = ta.value;
+        var initial = cell.dataset.memo;
+        if (next === initial) {
+          ta.remove();
+          display.style.display = '';
+          return;
+        }
+        var fd = new FormData();
+        fd.append('review_memo', next);
+        fetch(url, { method: 'POST', body: fd })
+          .then(function (r) {
+            if (r.ok) {
+              cell.dataset.memo = next;
+              display.textContent = next || 'クリックして入力';
+              display.style.color = next ? '#555' : '#aaa';
+              ta.remove();
+              display.style.display = '';
+            }
+            /* 失敗時は ta を残して再試行可能にする */
+          })
+          .catch(function () { /* ネットワーク失敗時も ta を残す */ });
       });
     }
 
