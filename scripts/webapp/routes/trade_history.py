@@ -54,9 +54,12 @@ def trade_history():
                 "qty_changes": [],
             }
         elif log.get("action_type") == "株数変更" and code_s in open_episodes:
+            # reason 形式 "500 → 700 (保有理由の流用)" の括弧内は除去して差分のみ表示
+            raw_reason = log.get("reason", "")
+            diff = raw_reason.split("(")[0].strip()
             open_episodes[code_s]["qty_changes"].append({
                 "date": log["timestamp"][:10],
-                "reason": log.get("reason", ""),
+                "reason": diff,
             })
         elif log.get("action_type") == "売却" and code_s in open_episodes:
             ep = open_episodes.pop(code_s)
