@@ -2,6 +2,7 @@
 
 GET  /trade-history                          : 保有エピソード単位でサブ行展開表示
 POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
+     seq は売却ログまたは1保遷移ログの seq。どちらも review_memo に保存可能。
 """
 
 from flask import Blueprint, abort, jsonify, render_template, request
@@ -81,8 +82,9 @@ def trade_history():
                 "sell_date": "",
                 "hold_reason": log.get("reason", ""),
                 "sell_reason": "",
+                "memo_seq": log["seq"],           # 1保ログの seq（未売却時のメモ保存先）
                 "sell_seq": None,
-                "review_memo": "",
+                "review_memo": log.get("review_memo", ""),
                 "qty_changes": [],
             }
         elif log.get("action_type") == "株数変更" and code_s in open_episodes:
@@ -98,6 +100,7 @@ def trade_history():
             ep["sell_date"] = log["timestamp"][:10]
             ep["sell_reason"] = log.get("reason", "")
             ep["sell_seq"] = log["seq"]
+            ep["memo_seq"] = log["seq"]           # 売却済みはこちらがメモ保存先
             ep["review_memo"] = log.get("review_memo", "")
             episodes.append(ep)
 
@@ -120,12 +123,16 @@ def trade_history():
     "/trade-history/<code_s>/<int:seq>/review-memo", methods=["POST"]
 )
 def save_review_memo(code_s: str, seq: int):
-    """売却ログの振り返りメモを上書き保存する (fetch POST / JSON レスポンス)。"""
+    """振り返りメモを上書き保存する (fetch POST / JSON レスポンス)。
+
+    seq は売却ログまたは1保遷移ログの seq。
+    どちらも review_memo を持つため同じエンドポイントで処理する。
+    """
     review_memo = request.form.get("review_memo", "")
     try:
         logs = ps.list_action_logs(code_s)
         target = next((l for l in logs if l["seq"] == seq), None)
-        if target is None or target.get("action_type") != "売却":
+        if target is None or target.get("action_type") not in ("売却", "ステータス変更"):
             abort(404)
         ps.update_action_log_review_memo(code_s, seq, review_memo)
     except KeyError:

@@ -40,11 +40,9 @@
       <td style="color:#555;">{{ row.reason }}</td>
       {% if loop.first %}
       <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;">
-        {% if ep.sell_seq is not none %}
         <textarea class="review-memo-ta" rows="{{ ep.rowspan + 1 }}"
-                  data-url="/trade-history/{{ ep.code_s }}/{{ ep.sell_seq }}/review-memo"
+                  data-url="/trade-history/{{ ep.code_s }}/{{ ep.memo_seq }}/review-memo"
                   style="width:100%;font-size:0.9em;box-sizing:border-box;">{{ ep.review_memo or "" }}</textarea>
-        {% endif %}
       </td>
       {% endif %}
     </tr>

@@ -72,13 +72,14 @@ class TestTradeHistoryPage:
         assert "目標達成" in html
         assert "売却" in html
 
-    def test_sold_episode_has_review_memo_textarea(self, client):
-        """売却済みエピソード（6324）は振り返りメモの textarea が表示される。"""
+    def test_all_episodes_have_review_memo_textarea(self, client):
+        """売却済み・未売却どちらのエピソードにも textarea が表示される。"""
         html = client.get("/trade-history").data.decode()
-        assert "review-memo-ta" in html
+        # 3496（未売却）と 6324（売却済み）の両方で data-url が出る（class は JS内にも1つ）
+        assert html.count("data-url=") == 2
 
-    def test_save_review_memo(self, client):
-        """振り返りメモを POST で保存（JSON 200）し、次回表示に反映される。"""
+    def test_save_review_memo_sold(self, client):
+        """売却済みエピソード（6324）の振り返りメモを POST で保存できる。"""
         logs = ps.list_action_logs("6324")
         sell_log = next(l for l in logs if l["action_type"] == "売却")
         seq = sell_log["seq"]
@@ -92,6 +93,22 @@ class TestTradeHistoryPage:
 
         html = client.get("/trade-history").data.decode()
         assert "上値で薄く売り過ぎた" in html
+
+    def test_save_review_memo_unsold(self, client):
+        """未売却エピソード（3496）の振り返りメモを POST で保存できる。"""
+        logs = ps.list_action_logs("3496")
+        hold_log = next(l for l in logs if l.get("status_to") == "1保")
+        seq = hold_log["seq"]
+
+        resp = client.post(
+            f"/trade-history/3496/{seq}/review-memo",
+            data={"review_memo": "保有中メモ"},
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+        html = client.get("/trade-history").data.decode()
+        assert "保有中メモ" in html
 
     def test_qty_changes_subrow(self, client):
         """株数変更があるエピソードは「株数変更」サブ行が出る。"""
