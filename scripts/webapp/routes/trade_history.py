@@ -23,14 +23,16 @@ def _build_rows(ep: dict) -> list:
     """
     rows = []
 
-    # IN時株数: 株数変更ログの最初のエントリの左辺（変更前株数）を使う
-    # 例: "500 → 700" → 左辺 "500" がIN時株数
     qty_changes = ep.get("qty_changes", [])
-    in_qty = ""
-    if qty_changes:
+
+    # IN時株数: 1保ログの qty を優先 (issue #357)、なければ株数変更ログの左辺で補填
+    if ep.get("hold_qty") is not None:
+        in_qty = str(ep["hold_qty"])
+    elif qty_changes:
         first_reason = qty_changes[0].get("reason", "")
-        if "→" in first_reason:
-            in_qty = first_reason.split("→", 1)[0].strip()
+        in_qty = first_reason.split("→", 1)[0].strip() if "→" in first_reason else ""
+    else:
+        in_qty = ""
 
     rows.append({
         "kind":   "保有",
@@ -42,11 +44,12 @@ def _build_rows(ep: dict) -> list:
     for qc in qty_changes:
         reason = qc.get("reason", "")
         after = reason.split("→", 1)[1].strip() if "→" in reason else ""
+        memo = qc.get("memo", "")
         rows.append({
             "kind":   "株数変更",
             "date":   qc["date"],
             "qty":    after,
-            "reason": "",  # issue #356 対応後に表示
+            "reason": memo,  # issue #356: 株数変更メモ（なければ空欄）
         })
 
     if ep["sell_date"]:
@@ -81,6 +84,7 @@ def trade_history():
                 "hold_date": log["timestamp"][:10],
                 "sell_date": "",
                 "hold_reason": log.get("reason", ""),
+                "hold_qty": log.get("qty"),       # 1保遷移時のIN株数 (issue #357)
                 "sell_reason": "",
                 "sell_qty": None,
                 "memo_seq": log["seq"],           # 1保ログの seq（未売却時のメモ保存先）
@@ -89,12 +93,16 @@ def trade_history():
                 "qty_changes": [],
             }
         elif log.get("action_type") == "株数変更" and code_s in open_episodes:
-            # reason 形式 "500 → 700 (保有理由の流用)" の括弧内は除去して差分のみ表示
+            # reason 形式 "500 → 700 (メモ)" → 差分と括弧内メモを分離
             raw_reason = log.get("reason", "")
             diff = raw_reason.split("(")[0].strip()
+            memo = ""
+            if "(" in raw_reason and raw_reason.endswith(")"):
+                memo = raw_reason[raw_reason.index("(") + 1:-1].strip()
             open_episodes[code_s]["qty_changes"].append({
                 "date": log["timestamp"][:10],
                 "reason": diff,
+                "memo": memo,
             })
         elif log.get("action_type") == "売却" and code_s in open_episodes:
             ep = open_episodes.pop(code_s)

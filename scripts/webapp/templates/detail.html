@@ -678,7 +678,7 @@
                class="portfolio-action-date" style="margin-left:0.4em;">
       </label>
       <label style="display:block;margin-bottom:0.6em;">
-        理由 (任意):
+        <span id="detail-portfolio-reason-label">理由 (任意):</span>
         <textarea name="reason" rows="2" style="width:100%;margin-top:0.2em;" placeholder="例: 業績下振れ"></textarea>
       </label>
       <div class="portfolio-modal-actions">
@@ -888,8 +888,11 @@ function syncRatingFromMemo() {
 function syncDetailPortfolioQtyVisibility() {
   var sel = document.getElementById('detail-portfolio-new-status');
   var row = document.getElementById('detail-portfolio-qty-row');
+  var label = document.getElementById('detail-portfolio-reason-label');
   if (!sel || !row) return;
+  var isQtyOnly = sel.value === '1保' && sel.options[sel.selectedIndex].text.indexOf('株数のみ変更') >= 0;
   row.style.display = (sel.value === '1保') ? '' : 'none';
+  if (label) label.textContent = isQtyOnly ? '変更メモ (任意):' : '理由 (任意):';
 }
 
 function openPortfolioModal() {

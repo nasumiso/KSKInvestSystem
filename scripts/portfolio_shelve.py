@@ -873,14 +873,15 @@ def transition_status(
             db[key] = record
         # アクションログ種別: 1保→2準 は売却、それ以外はステータス変更
         action_type = "売却" if old_status == "1保" and new_status == "2準" else "ステータス変更"
-        sell_qty = record.get("qty") if action_type == "売却" else None
+        # 売却時は売却株数、1保遷移時はIN株数をログに記録 (issue #357)
+        log_qty = record.get("qty") if new_status in ("1保", "2準") else None
         append_action_log(
             normalized,
             action_type,
             status_from=old_status,
             status_to=new_status,
             reason=reason,
-            qty=sell_qty,
+            qty=log_qty,
             timestamp=action_ts,
             db_path=db_path,
         )
