@@ -171,6 +171,7 @@ ACTION_LOG_FIELDS = frozenset(
         "status_to",
         "reason",
         "review_memo",
+        "qty",
     }
 )
 
@@ -531,6 +532,7 @@ def append_action_log(
     status_to: Optional[str] = None,
     reason: str = "",
     review_memo: str = "",
+    qty: Optional[int] = None,
     timestamp: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -568,6 +570,7 @@ def append_action_log(
                 "status_to": status_to,
                 "reason": reason,
                 "review_memo": review_memo,
+                "qty": qty,
             }
             db[_action_log_key(normalized, seq)] = entry
     log_print(
@@ -604,6 +607,7 @@ def list_action_logs(
             if not isinstance(value, dict):
                 continue
             value.setdefault("review_memo", "")
+            value.setdefault("qty", None)
             results.append(value)
     results.sort(
         key=lambda r: (r.get("code_s", ""), r.get("seq", 0)),
@@ -869,12 +873,14 @@ def transition_status(
             db[key] = record
         # アクションログ種別: 1保→2準 は売却、それ以外はステータス変更
         action_type = "売却" if old_status == "1保" and new_status == "2準" else "ステータス変更"
+        sell_qty = record.get("qty") if action_type == "売却" else None
         append_action_log(
             normalized,
             action_type,
             status_from=old_status,
             status_to=new_status,
             reason=reason,
+            qty=sell_qty,
             timestamp=action_ts,
             db_path=db_path,
         )
