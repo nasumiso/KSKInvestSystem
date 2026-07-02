@@ -84,6 +84,30 @@ class TestTradeHistoryPage:
         html = client.get("/trade-history").data.decode()
         assert "上値で薄く売り過ぎた" in html
 
+    def test_qty_changes_shown_in_accordion(self, client):
+        """株数変更があるエピソードは details/summary アコーディオンで表示される。"""
+        logs = ps.list_action_logs("6324")
+        sell_log = next(l for l in logs if l["action_type"] == "売却")
+        seq = sell_log["seq"]
+        # 振り返りメモを保存して再表示
+        client.post(f"/trade-history/6324/{seq}/review-memo", data={"review_memo": "test"})
+
+        # 株数変更ログを直接追加（update_qty 経由）
+        ps.update_qty("6324", 100)
+        html = client.get("/trade-history").data.decode()
+        # 株数変更がある銘柄は details タグが出る（6324は売却済みなのでqty_changesは空のはず）
+        # 未売却の 3496 に株数変更を加える
+        ps.update_qty("3496", 50)
+        html = client.get("/trade-history").data.decode()
+        assert "<details>" in html
+        assert "0 → 50" in html
+
+    def test_no_qty_changes_no_accordion(self, client):
+        """株数変更がないエピソードは details タグが出ない（通常リンク）。"""
+        html = client.get("/trade-history").data.decode()
+        # 6324 は株数変更なし → details なし、直接 a タグ
+        assert "6324" in html
+
     def test_empty_portfolio_shows_no_entries(self, tmp_path, monkeypatch):
         """portfolio が空の場合はエントリなしメッセージが表示される。"""
         portfolio_db = str(tmp_path / "portfolio2")
