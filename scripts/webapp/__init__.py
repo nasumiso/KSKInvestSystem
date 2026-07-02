@@ -30,6 +30,7 @@ def create_app() -> Flask:
     from webapp.routes.market import market_bp
     from webapp.routes.disclosure import disclosure_bp
     from webapp.routes.portfolio import portfolio_bp
+    from webapp.routes.trade_history import trade_history_bp
 
     app.register_blueprint(search_bp)
     app.register_blueprint(detail_bp)
@@ -38,6 +39,7 @@ def create_app() -> Flask:
     app.register_blueprint(market_bp)
     app.register_blueprint(disclosure_bp)
     app.register_blueprint(portfolio_bp)
+    app.register_blueprint(trade_history_bp)
 
     # issue #165: /market テンプレートで theme-news markdown を HTML 化するフィルタ
     from webapp.helpers import theme_news_md_to_html
