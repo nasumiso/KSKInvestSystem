@@ -515,9 +515,11 @@ def transition(code_s: str):
         old_status = (before or {}).get("status")
         ps.transition_status(code_s, new_status, reason=reason, action_date=action_date, qty=qty if new_status == "1保" else None)
         # issue #269: 1保 のときだけ qty を反映する (他ステータスでは無視)
-        # log_action=False: IN株数は transition_status のログに記録済みのため株数変更ログは不要
+        # log_action=False は「非1保 → 1保」の遷移時のみ（IN株数は遷移ログに記録済み）
+        # 既に1保の状態で株数のみ変更する場合は log_action=True のまま株数変更ログを残す
         if new_status == "1保" and qty is not None:
-            ps.update_qty(code_s, qty, reason=reason, action_date=action_date, log_action=False)
+            is_new_hold = old_status != "1保"
+            ps.update_qty(code_s, qty, reason=reason, action_date=action_date, log_action=not is_new_hold)
     except KeyError as e:
         flash(f"レコード未登録: {e}", "error")
         return _redirect_with_return_query(code_s=code_s)

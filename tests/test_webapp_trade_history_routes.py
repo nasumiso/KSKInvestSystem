@@ -128,6 +128,28 @@ class TestTradeHistoryPage:
         html = client.get("/trade-history").data.decode()
         assert "0" in html  # 保有行の株数列に変更前株数が出る
 
+    def test_qty_change_while_holding_generates_action_log(self, app):
+        """1保のまま株数変更すると株数変更ログが残る（メモ引数ありで変更メモも保存）。"""
+        with app.app_context():
+            ps.update_qty("3496", 200, reason="買い増し")
+        logs = ps.list_action_logs("3496")
+        qty_log = next((l for l in logs if l["action_type"] == "株数変更"), None)
+        assert qty_log is not None
+        assert "200" in qty_log["reason"]
+        assert "買い増し" in qty_log["reason"]
+
+    def test_sell_inherits_hold_review_memo(self, app):
+        """保有中に入力した振り返りメモは売却ログに引き継がれる。"""
+        with app.app_context():
+            # 3496: 1保ログに review_memo を保存
+            logs = ps.list_action_logs("3496")
+            hold_log = next(l for l in logs if l.get("status_to") == "1保")
+            ps.update_action_log_review_memo("3496", hold_log["seq"], "保有中メモ")
+            # 売却
+            ps.transition_status("3496", "2準", reason="利確")
+        sell_log = next(l for l in ps.list_action_logs("3496") if l["action_type"] == "売却")
+        assert sell_log["review_memo"] == "保有中メモ"
+
     def test_empty_portfolio_shows_no_entries(self, tmp_path, monkeypatch):
         """portfolio が空の場合はエントリなしメッセージが表示される。"""
         portfolio_db = str(tmp_path / "portfolio2")

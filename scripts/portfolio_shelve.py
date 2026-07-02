@@ -886,12 +886,23 @@ def transition_status(
             log_qty = record.get("qty")
         else:
             log_qty = None
+        # 売却時: 直前の1保ログに入力済みの振り返りメモを売却ログへ引き継ぐ
+        inherited_memo = ""
+        if action_type == "売却":
+            hold_logs = list_action_logs(normalized, db_path=db_path)
+            hold_log = next(
+                (l for l in reversed(hold_logs) if l.get("status_to") == "1保"),
+                None,
+            )
+            if hold_log:
+                inherited_memo = hold_log.get("review_memo", "")
         append_action_log(
             normalized,
             action_type,
             status_from=old_status,
             status_to=new_status,
             reason=reason,
+            review_memo=inherited_memo,
             qty=log_qty,
             timestamp=action_ts,
             db_path=db_path,
