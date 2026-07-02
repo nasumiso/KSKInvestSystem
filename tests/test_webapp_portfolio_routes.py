@@ -66,6 +66,9 @@ def app(portfolio_db_path, stocks_db_path, research_db_path, txt_path, monkeypat
         except ValueError:
             pass  # 重複は無視
 
+    # issue #335: 売買戦略マスターをシード (GARP 等の定型値を使うテストに必要)
+    ps.seed_trade_ideas(db_path=portfolio_db_path)
+
     # stocks_shelve にダミーデータ
     with ShelveDB(stocks_db_path) as db:
         db["6324"] = {
