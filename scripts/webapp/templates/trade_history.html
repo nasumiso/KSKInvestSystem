@@ -45,7 +45,7 @@
           <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#3a3a2e;color:#c8c070;">株数変更</span>
         {% endif %}
       </td>
-      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ row.date }}</td>
+      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ row.date[2:4] }}/{{ row.date[5:7] }}/{{ row.date[8:10] }}</td>
       <td style="text-align:right;color:#888;font-size:0.85em;">{{ row.qty }}</td>
       <td style="color:#555;">{{ row.reason }}</td>
       {% if loop.first %}
