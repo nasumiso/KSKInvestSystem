@@ -1,4 +1,4 @@
-"""売買履歴ページ (issue #351) ルートテスト。"""
+"""売買履歴ページ (issue #351, #357) ルートテスト。"""
 
 import pytest
 import portfolio_shelve as ps
@@ -49,27 +49,37 @@ class TestTradeHistoryPage:
         assert client.get("/trade-history").status_code == 200
 
     def test_column_headers_shown(self, client):
-        """銘柄・保有日・売却日・振り返りメモのヘッダが表示される。"""
+        """種類・日付・株数・理由・振り返りメモのヘッダが表示される。"""
         html = client.get("/trade-history").data.decode()
-        assert "保有日" in html
-        assert "売却日" in html
+        assert "種類" in html
+        assert "日付" in html
+        assert "株数" in html
+        assert "理由" in html
         assert "振り返りメモ" in html
 
     def test_unsold_episode_shown(self, client):
-        """未売却エピソード（3496）が表示される。"""
+        """未売却エピソード（3496）が保有サブ行で表示される。"""
         html = client.get("/trade-history").data.decode()
         assert "3496" in html
         assert "ブレイク確認" in html
+        assert "保有" in html
 
-    def test_sold_episode_shown_with_review_memo_textarea(self, client):
-        """売却済みエピソード（6324）は振り返りメモのテキストエリアが表示される。"""
+    def test_sold_episode_subrows(self, client):
+        """売却済みエピソード（6324）は保有・売却の2サブ行が出る。"""
         html = client.get("/trade-history").data.decode()
         assert "6324" in html
+        assert "GARP確認" in html
         assert "目標達成" in html
-        assert "review-memo-ta" in html  # textarea の class
+        assert "売却" in html
 
-    def test_save_review_memo(self, client):
-        """振り返りメモを POST で保存（JSON 200）し、次回表示に反映される。"""
+    def test_all_episodes_have_review_memo_textarea(self, client):
+        """売却済み・未売却どちらのエピソードにも textarea が表示される。"""
+        html = client.get("/trade-history").data.decode()
+        # 3496（未売却）と 6324（売却済み）の両方で data-url が出る（class は JS内にも1つ）
+        assert html.count("data-url=") == 2
+
+    def test_save_review_memo_sold(self, client):
+        """売却済みエピソード（6324）の振り返りメモを POST で保存できる。"""
         logs = ps.list_action_logs("6324")
         sell_log = next(l for l in logs if l["action_type"] == "売却")
         seq = sell_log["seq"]
@@ -84,29 +94,61 @@ class TestTradeHistoryPage:
         html = client.get("/trade-history").data.decode()
         assert "上値で薄く売り過ぎた" in html
 
-    def test_qty_changes_shown_in_accordion(self, client):
-        """株数変更があるエピソードは details/summary アコーディオンで表示される。"""
-        logs = ps.list_action_logs("6324")
-        sell_log = next(l for l in logs if l["action_type"] == "売却")
-        seq = sell_log["seq"]
-        # 振り返りメモを保存して再表示
-        client.post(f"/trade-history/6324/{seq}/review-memo", data={"review_memo": "test"})
+    def test_save_review_memo_unsold(self, client):
+        """未売却エピソード（3496）の振り返りメモを POST で保存できる。"""
+        logs = ps.list_action_logs("3496")
+        hold_log = next(l for l in logs if l.get("status_to") == "1保")
+        seq = hold_log["seq"]
 
-        # 株数変更ログを直接追加（update_qty 経由）
-        ps.update_qty("6324", 100)
+        resp = client.post(
+            f"/trade-history/3496/{seq}/review-memo",
+            data={"review_memo": "保有中メモ"},
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
         html = client.get("/trade-history").data.decode()
-        # 株数変更がある銘柄は details タグが出る（6324は売却済みなのでqty_changesは空のはず）
-        # 未売却の 3496 に株数変更を加える
+        assert "保有中メモ" in html
+
+    def test_qty_changes_subrow(self, client):
+        """株数変更があるエピソードは「株数変更」サブ行が出る。"""
         ps.update_qty("3496", 50)
         html = client.get("/trade-history").data.decode()
-        assert "<details>" in html
-        assert "0 → 50" in html
+        assert "株数変更" in html
 
-    def test_no_qty_changes_no_accordion(self, client):
-        """株数変更がないエピソードは details タグが出ない（通常リンク）。"""
+    def test_rowspan_present_when_qty_changes(self, client):
+        """株数変更があるエピソードは銘柄セルに rowspan="2" が付く（保有+株数変更=2行）。"""
+        ps.update_qty("3496", 50)
         html = client.get("/trade-history").data.decode()
-        # 6324 は株数変更なし → details なし、直接 a タグ
-        assert "6324" in html
+        assert 'rowspan="2"' in html  # 保有+株数変更=2行
+
+    def test_qty_in_row_shows_initial_value(self, client):
+        """株数変更ログがあれば保有行に最初の変更前株数（→左辺）が表示される。"""
+        ps.update_qty("3496", 100)  # 0 → 100 → 左辺 "0" がIN時株数
+        html = client.get("/trade-history").data.decode()
+        assert "0" in html  # 保有行の株数列に変更前株数が出る
+
+    def test_qty_change_while_holding_generates_action_log(self, app):
+        """1保のまま株数変更すると株数変更ログが残る（メモ引数ありで変更メモも保存）。"""
+        with app.app_context():
+            ps.update_qty("3496", 200, reason="買い増し")
+        logs = ps.list_action_logs("3496")
+        qty_log = next((l for l in logs if l["action_type"] == "株数変更"), None)
+        assert qty_log is not None
+        assert "200" in qty_log["reason"]
+        assert "買い増し" in qty_log["reason"]
+
+    def test_sell_inherits_hold_review_memo(self, app):
+        """保有中に入力した振り返りメモは売却ログに引き継がれる。"""
+        with app.app_context():
+            # 3496: 1保ログに review_memo を保存
+            logs = ps.list_action_logs("3496")
+            hold_log = next(l for l in logs if l.get("status_to") == "1保")
+            ps.update_action_log_review_memo("3496", hold_log["seq"], "保有中メモ")
+            # 売却
+            ps.transition_status("3496", "2準", reason="利確")
+        sell_log = next(l for l in ps.list_action_logs("3496") if l["action_type"] == "売却")
+        assert sell_log["review_memo"] == "保有中メモ"
 
     def test_empty_portfolio_shows_no_entries(self, tmp_path, monkeypatch):
         """portfolio が空の場合はエントリなしメッセージが表示される。"""

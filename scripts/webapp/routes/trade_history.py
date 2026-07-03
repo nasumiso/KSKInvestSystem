@@ -1,7 +1,8 @@
-"""売買履歴ページルート (issue #351)。
+"""売買履歴ページルート (issue #351, #357)。
 
-GET  /trade-history                          : 保有エピソード単位で一覧表示
+GET  /trade-history                          : 保有エピソード単位でサブ行展開表示
 POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
+     seq は売却ログまたは1保遷移ログの seq。どちらも review_memo に保存可能。
 """
 
 from flask import Blueprint, abort, jsonify, render_template, request
@@ -12,25 +13,60 @@ from webapp.helpers import resolve_stock_name
 trade_history_bp = Blueprint("trade_history", __name__)
 
 
-def _extract_initial_qty(qty_changes: list) -> str:
-    """qty_changes の最初のエントリの reason から IN 時の株数を取り出す。
+def _build_rows(ep: dict) -> list:
+    """エピソードからサブ行リストを組み立てる。
 
-    reason 形式: "0 → 100" or "0 → 100 (買い増し)" → "100"
-    取り出せない場合は空文字。
+    保有 → 株数変更（0個以上）→ 売却 の順に並べる。
+    株数列: 保有=IN株数（"0 → N" 形式のログがあれば N、なければ空）、
+            株数変更=変更後株数（→右辺）、売却=空。
+    株数変更の理由列は issue #356 対応まで空欄。
     """
-    if not qty_changes:
-        return ""
-    reason = qty_changes[0].get("reason", "")
-    # "→" の右側を取り、末尾の括弧注釈を除去
-    if "→" not in reason:
-        return ""
-    before = reason.split("→", 1)[0].strip()
-    return before
+    rows = []
+
+    qty_changes = ep.get("qty_changes", [])
+
+    # IN時株数: 1保ログの qty を優先 (issue #357)、なければ株数変更ログの左辺で補填
+    if ep.get("hold_qty") is not None:
+        in_qty = str(ep["hold_qty"])
+    elif qty_changes:
+        first_reason = qty_changes[0].get("reason", "")
+        in_qty = first_reason.split("→", 1)[0].strip() if "→" in first_reason else ""
+    else:
+        in_qty = ""
+
+    rows.append({
+        "kind":   "保有",
+        "date":   ep["hold_date"],
+        "qty":    in_qty,
+        "reason": ep["hold_reason"],
+    })
+
+    for qc in qty_changes:
+        reason = qc.get("reason", "")
+        after = reason.split("→", 1)[1].strip() if "→" in reason else ""
+        memo = qc.get("memo", "")
+        rows.append({
+            "kind":   "株数変更",
+            "date":   qc["date"],
+            "qty":    after,
+            "reason": memo,  # issue #356: 株数変更メモ（なければ空欄）
+        })
+
+    if ep["sell_date"]:
+        sell_qty = ep.get("sell_qty")
+        rows.append({
+            "kind":   "売却",
+            "date":   ep["sell_date"],
+            "qty":    str(sell_qty) if sell_qty is not None else "",
+            "reason": ep["sell_reason"],
+        })
+
+    return rows
 
 
 @trade_history_bp.route("/trade-history")
 def trade_history():
-    """売買履歴ページ — 銘柄×保有エピソード単位で1行表示。"""
+    """売買履歴ページ — 銘柄×保有エピソードをサブ行展開で表示。"""
     all_logs = ps.list_action_logs()  # (code_s, seq) 昇順
 
     episodes = []
@@ -48,25 +84,38 @@ def trade_history():
                 "hold_date": log["timestamp"][:10],
                 "sell_date": "",
                 "hold_reason": log.get("reason", ""),
+                "hold_qty": log.get("qty"),       # 1保遷移時のIN株数 (issue #357)
                 "sell_reason": "",
+                "sell_qty": None,
+                "memo_seq": log["seq"],           # 1保ログの seq（未売却時のメモ保存先）
                 "sell_seq": None,
-                "review_memo": "",
+                "review_memo": log.get("review_memo", ""),
                 "qty_changes": [],
             }
         elif log.get("action_type") == "株数変更" and code_s in open_episodes:
-            # reason 形式 "500 → 700 (保有理由の流用)" の括弧内は除去して差分のみ表示
+            # reason 形式 "500 → 700 (メモ)" → 差分と括弧内メモを分離
             raw_reason = log.get("reason", "")
             diff = raw_reason.split("(")[0].strip()
+            memo = ""
+            if "(" in raw_reason and raw_reason.endswith(")"):
+                memo = raw_reason[raw_reason.index("(") + 1:-1].strip()
             open_episodes[code_s]["qty_changes"].append({
                 "date": log["timestamp"][:10],
                 "reason": diff,
+                "memo": memo,
             })
         elif log.get("action_type") == "売却" and code_s in open_episodes:
             ep = open_episodes.pop(code_s)
             ep["sell_date"] = log["timestamp"][:10]
             ep["sell_reason"] = log.get("reason", "")
+            ep["sell_qty"] = log.get("qty")       # 売却時の保有株数（旧ログは None）
             ep["sell_seq"] = log["seq"]
-            ep["review_memo"] = log.get("review_memo", "")
+            ep["memo_seq"] = log["seq"]           # 売却済みはこちらがメモ保存先
+            # 保有中に入力したメモを引き継ぐ
+            # 売却ログの review_memo が None（未設定）のときのみ1保ログのメモを使う
+            # 空文字（明示削除）はそのまま優先する
+            sell_memo = log.get("review_memo")
+            ep["review_memo"] = sell_memo if sell_memo is not None else ep.get("review_memo", "")
             episodes.append(ep)
 
     # 未売却（保有中）エピソードを追加
@@ -75,10 +124,11 @@ def trade_history():
     # 保有日降順
     episodes.sort(key=lambda r: r["hold_date"], reverse=True)
 
-    # 銘柄名付与・初期株数抽出
+    # 銘柄名付与・サブ行組み立て
     for ep in episodes:
         ep["stock_name"] = resolve_stock_name(ep["code_s"])
-        ep["initial_qty"] = _extract_initial_qty(ep["qty_changes"])
+        ep["rows"] = _build_rows(ep)
+        ep["rowspan"] = len(ep["rows"])
 
     return render_template("trade_history.html", episodes=episodes)
 
@@ -87,12 +137,20 @@ def trade_history():
     "/trade-history/<code_s>/<int:seq>/review-memo", methods=["POST"]
 )
 def save_review_memo(code_s: str, seq: int):
-    """売却ログの振り返りメモを上書き保存する (fetch POST / JSON レスポンス)。"""
+    """振り返りメモを上書き保存する (fetch POST / JSON レスポンス)。
+
+    seq は売却ログまたは1保遷移ログの seq。
+    どちらも review_memo を持つため同じエンドポイントで処理する。
+    """
     review_memo = request.form.get("review_memo", "")
     try:
         logs = ps.list_action_logs(code_s)
         target = next((l for l in logs if l["seq"] == seq), None)
-        if target is None or target.get("action_type") != "売却":
+        if target is None:
+            abort(404)
+        action_type = target.get("action_type")
+        status_to = target.get("status_to")
+        if not (action_type == "売却" or (action_type == "ステータス変更" and status_to == "1保")):
             abort(404)
         ps.update_action_log_review_memo(code_s, seq, review_memo)
     except KeyError:

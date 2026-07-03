@@ -171,6 +171,7 @@ ACTION_LOG_FIELDS = frozenset(
         "status_to",
         "reason",
         "review_memo",
+        "qty",
     }
 )
 
@@ -531,6 +532,7 @@ def append_action_log(
     status_to: Optional[str] = None,
     reason: str = "",
     review_memo: str = "",
+    qty: Optional[int] = None,
     timestamp: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -568,6 +570,7 @@ def append_action_log(
                 "status_to": status_to,
                 "reason": reason,
                 "review_memo": review_memo,
+                "qty": qty,
             }
             db[_action_log_key(normalized, seq)] = entry
     log_print(
@@ -604,6 +607,7 @@ def list_action_logs(
             if not isinstance(value, dict):
                 continue
             value.setdefault("review_memo", "")
+            value.setdefault("qty", None)
             results.append(value)
     results.sort(
         key=lambda r: (r.get("code_s", ""), r.get("seq", 0)),
@@ -760,6 +764,7 @@ def update_qty(
     *,
     reason: str = "",
     action_date: Optional[str] = None,
+    log_action: bool = True,
     db_path: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """既存レコードの保有株数を更新する (issue #269)。
@@ -769,6 +774,7 @@ def update_qty(
     - 不正値 (非整数 / 負数) は TypeError / ValueError
     - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
       JST 12:00 の ISO 8601 文字列に変換して記録する
+    - log_action=False のときは action_log を追記しない (1保遷移の初回セット用)
 
     Returns: 更新後のレコード。差分なしの場合は現レコードをそのまま返す。
     """
@@ -794,13 +800,14 @@ def update_qty(
             db[key] = record
             db[KEY_QTY_GLOBAL_UPDATED_AT] = now_iso()
     log_print("portfolio_shelve: 株数更新", normalized, f"{current_qty} -> {qty_int}")
-    append_action_log(
-        code_s,
-        "株数変更",
-        reason=f"{current_qty} → {qty_int}" + (f" ({reason})" if reason else ""),
-        timestamp=action_ts,
-        db_path=db_path,
-    )
+    if log_action:
+        append_action_log(
+            code_s,
+            "株数変更",
+            reason=f"{current_qty} → {qty_int}" + (f" ({reason})" if reason else ""),
+            timestamp=action_ts,
+            db_path=db_path,
+        )
     return _normalize_loaded_record(record)
 
 
@@ -824,6 +831,7 @@ def transition_status(
     *,
     reason: str = "",
     action_date: Optional[str] = None,
+    qty: Optional[int] = None,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """既存レコードのステータスを変更する。
@@ -834,6 +842,7 @@ def transition_status(
     - レコードが存在しない場合は KeyError
     - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
       その日の JST 12:00 に固定する (issue #220)。未指定なら現在時刻
+    - qty: 1保遷移時のIN株数をログに記録する (issue #357)。売却時は record["qty"] を使用
 
     Returns: 更新後のレコード
     """
@@ -869,12 +878,32 @@ def transition_status(
             db[key] = record
         # アクションログ種別: 1保→2準 は売却、それ以外はステータス変更
         action_type = "売却" if old_status == "1保" and new_status == "2準" else "ステータス変更"
+        # 1保遷移は引数 qty を優先（update_qty より先に呼ばれるため record["qty"] は旧値）
+        # 売却時は record["qty"]（保有株数）をログに記録 (issue #357)
+        if new_status == "1保":
+            log_qty = qty
+        elif new_status == "2準":
+            log_qty = record.get("qty")
+        else:
+            log_qty = None
+        # 売却時: 直前の1保ログに入力済みの振り返りメモを売却ログへ引き継ぐ
+        inherited_memo = ""
+        if action_type == "売却":
+            hold_logs = list_action_logs(normalized, db_path=db_path)
+            hold_log = next(
+                (l for l in reversed(hold_logs) if l.get("status_to") == "1保"),
+                None,
+            )
+            if hold_log:
+                inherited_memo = hold_log.get("review_memo", "")
         append_action_log(
             normalized,
             action_type,
             status_from=old_status,
             status_to=new_status,
             reason=reason,
+            review_memo=inherited_memo,
+            qty=log_qty,
             timestamp=action_ts,
             db_path=db_path,
         )
