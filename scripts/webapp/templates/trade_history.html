@@ -5,6 +5,7 @@
 <h2>売買履歴</h2>
 <p style="color:#888;font-size:0.85em;">保有エピソード単位で表示。保有日降順。</p>
 
+{% macro episode_table(episodes) %}
 {% if episodes %}
 <table class="trade-history-table">
   <colgroup>
@@ -27,15 +28,24 @@
   </thead>
   <tbody>
   {% for ep in episodes %}
+    {% set is_holding = not ep.sell_date %}
     {% for row in ep.rows %}
-    <tr>
+    <tr{% if is_holding %} style="background:rgba(80,180,100,0.08);"{% endif %}>
       {% if loop.first %}
       <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;white-space:nowrap;">
         <a href="/stock/{{ ep.code_s }}">{{ ep.code_s }} {{ ep.stock_name }}</a>
       </td>
       {% endif %}
-      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ row.kind }}</td>
-      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ row.date }}</td>
+      <td style="white-space:nowrap;">
+        {% if row.kind == "保有" %}
+          <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#2e6e3e;color:#9ef0aa;">保有</span>
+        {% elif row.kind == "売却" %}
+          <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#5a2e2e;color:#f0a0a0;">売却</span>
+        {% else %}
+          <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#3a3a2e;color:#c8c070;">株数変更</span>
+        {% endif %}
+      </td>
+      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ row.date[2:4] }}/{{ row.date[5:7] }}/{{ row.date[8:10] }}</td>
       <td style="text-align:right;color:#888;font-size:0.85em;">{{ row.qty }}</td>
       <td style="color:#555;">{{ row.reason }}</td>
       {% if loop.first %}
@@ -52,12 +62,40 @@
   {% endfor %}
   </tbody>
 </table>
-{% else %}
+{% endif %}
+{% endmacro %}
+
+{% if not recent and not past_years %}
 <p style="color:#888;">売買履歴がありません。</p>
+{% else %}
+
+{# 直近30件 #}
+{{ episode_table(recent) }}
+
+{# 過去ログ（年グルーピング） #}
+{% if past_years %}
+<div style="margin-top:2em;">
+  <hr style="border:none;border-top:1px solid #333;margin-bottom:1.5em;">
+  {% for year, eps in past_years %}
+  <div class="year-group" style="margin-bottom:1em;">
+    <button class="year-toggle" data-target="year-{{ year }}"
+            style="background:none;border:none;color:#aaa;font-size:0.9em;cursor:pointer;padding:0.3em 0;display:flex;align-items:center;gap:0.4em;">
+      <span class="toggle-icon">▶</span>
+      <span>{{ year }}年（{{ eps|length }}件）</span>
+    </button>
+    <div id="year-{{ year }}" style="display:none;margin-top:0.5em;">
+      {{ episode_table(eps) }}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% endif %}
 
 <script>
 (function () {
+  // 振り返りメモ編集
   document.querySelectorAll('.review-memo-cell').forEach(function (cell) {
     var url = cell.dataset.url;
     var display = cell.querySelector('.review-memo-display');
@@ -90,9 +128,8 @@
               ta.remove();
               display.style.display = '';
             }
-            /* 失敗時は ta を残して再試行可能にする */
           })
-          .catch(function () { /* ネットワーク失敗時も ta を残す */ });
+          .catch(function () {});
       });
     }
 
@@ -104,6 +141,21 @@
     cell.addEventListener('click', function (e) {
       if (cell.querySelector('textarea')) return;
       showEditor();
+    });
+  });
+
+  // 年グルーピング 開閉
+  document.querySelectorAll('.year-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var target = document.getElementById(btn.dataset.target);
+      var icon = btn.querySelector('.toggle-icon');
+      if (target.style.display === 'none') {
+        target.style.display = '';
+        icon.textContent = '▼';
+      } else {
+        target.style.display = 'none';
+        icon.textContent = '▶';
+      }
     });
   });
 }());
