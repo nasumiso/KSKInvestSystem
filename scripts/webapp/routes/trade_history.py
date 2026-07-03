@@ -130,7 +130,19 @@ def trade_history():
         ep["rows"] = _build_rows(ep)
         ep["rowspan"] = len(ep["rows"])
 
-    return render_template("trade_history.html", episodes=episodes)
+    # 直近30件と過去ログに分割
+    recent = episodes[:30]
+    past = episodes[30:]
+
+    # 過去ログを保有年でグルーピング
+    past_by_year: dict[str, list] = {}
+    for ep in past:
+        year = ep["hold_date"][:4]
+        past_by_year.setdefault(year, []).append(ep)
+    # 年降順のリスト [(year, episodes), ...]
+    past_years = sorted(past_by_year.items(), key=lambda x: x[0], reverse=True)
+
+    return render_template("trade_history.html", recent=recent, past_years=past_years)
 
 
 @trade_history_bp.route(
