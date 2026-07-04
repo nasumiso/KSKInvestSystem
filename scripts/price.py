@@ -509,22 +509,47 @@ def calc_ma10_kairi_indicators(closes, lows=None):
 
     # 各起点 s から STREAK_DAYS 連続で維持が成立する s があれば True
     had_streak = False
+    streak_end_idx = None  # had_streak が成立した区間の末尾 (最新側) の index
     if len(closes) >= STREAK_DAYS + 9:
         max_start = len(closes) - (STREAK_DAYS + 9)  # s+STREAK_DAYS+9 が範囲内に収まる上限
         for s in range(max_start + 1):
             if all(_streak_holds(i) for i in range(s, s + STREAK_DAYS)):
                 had_streak = True
+                streak_end_idx = s  # リスト先頭が最新なので s が最新側
                 break
+
+    # 30日連続達成後に5日以上連続で10ma割れが発生していれば赤太点線をリセット。
+    # streak 達成区間の最新端 (streak_end_idx) から現在 (index 0) に向かって
+    # 連続割れ日数をカウントし、5日以上なら currently_holding を強制 False。
+    # 黒太点線 (had_streak) は残す。
+    BREAK_RESET_DAYS = 5
+    long_break_occurred = False
+    if had_streak and streak_end_idx is not None and streak_end_idx > 0:
+        max_break = 0
+        cur_break = 0
+        for i in range(streak_end_idx - 1, -1, -1):  # streak末尾の翌日(新しい方)から現在へ
+            ma = _ma10(i)
+            if ma and closes[i] <= ma:
+                cur_break += 1
+                max_break = max(max_break, cur_break)
+            else:
+                cur_break = 0
+        if max_break >= BREAK_RESET_DAYS:
+            long_break_occurred = True
+
     # 現在も維持中 (最新日が10ma上) かどうかで赤太点線/黒太点線を分ける
-    currently_holding = had_streak and _streak_holds(0)
+    # 5日以上の連続割れがあった場合は赤太点線を出さない
+    currently_holding = had_streak and _streak_holds(0) and not long_break_occurred
     res["ma10_above_streak_30"] = currently_holding
     # 達成実績はあるが現在は割れ → 黒太点線用
     res["ma10_streak_ever"] = had_streak and not currently_holding
 
     # 早売確定フラグ: ma10_streak_ever の状態で10ma割れ翌日以降に安値がA日安値を下回ったら True。
     # 10maを回復した場合はリセット。lows が渡されない場合は判定不可として False。
+    # long_break_occurred で streak_ever=True になった場合でも現在10ma上なら判定しない。
     res["ma10_break_confirmed"] = False
-    if res["ma10_streak_ever"] and lows and len(lows) >= 2:
+    currently_above_ma10 = _streak_holds(0)
+    if res["ma10_streak_ever"] and not currently_above_ma10 and lows and len(lows) >= 2:
         # closes[0] < ma10 (streak_ever が True = 現在10ma割れ) は保証済み。
         # 新しい順に走査し、最初に10ma割れした日 = A日を探す。
         # A日の定義: 前日(i+1)は10ma上 or データ端、当日(i)は10ma以下。

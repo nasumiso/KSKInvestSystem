@@ -554,6 +554,8 @@ class TestCalcDailyIndicators:
         (45, list(range(0, 45, 5)), False, True),
         # データ不足 (39本未満) → 未達成
         (30, [], False, False),
+        # 達成後に5日以上連続割れ → 赤太点線リセット(False)、黒太点線は残る(True)
+        (50, [0, 1, 2, 3, 4], False, True),
     ])
     def test_ma10_above_streak_30(self, n, break_days, exp_streak, exp_ever):
         """ma10_above_streak_30 (現在も維持中) と ma10_streak_ever (実績あり・現在は割れ) の判定。
