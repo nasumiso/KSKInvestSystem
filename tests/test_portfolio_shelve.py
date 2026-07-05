@@ -1,4 +1,5 @@
 """portfolio_shelve.py のテスト (tmp_path で一時DBを作成)"""
+import glob
 
 import pytest
 
@@ -9,6 +10,21 @@ import portfolio_shelve as ps
 def db_path(tmp_path):
     """テスト用一時DBパスを返す"""
     return str(tmp_path / "test_portfolio_shelve")
+
+
+def test_backup_portfolio_db_rotates_generations(db_path):
+    ps.add_to_watch("3496", db_path=db_path)
+    for day in ("260701", "260702", "260703"):
+        for ext in ps._SHELVE_EXTENSIONS:
+            with open(f"{db_path}_{day}{ext}", "w", encoding="utf-8") as f:
+                f.write(day)
+
+    created = ps.backup_portfolio_db(db_path=db_path, generations=2)
+
+    assert created
+    for ext in ps._SHELVE_EXTENSIONS:
+        backups = sorted(glob.glob(f"{db_path}_??????{ext}"))
+        assert len(backups) == 2
 
 
 # ==================================================

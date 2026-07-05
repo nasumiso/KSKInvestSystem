@@ -28,6 +28,7 @@ shelve ベースのラッパー。
 """
 
 import fcntl
+import glob
 import os
 import re
 import threading
@@ -38,8 +39,10 @@ from typing import Any, Dict, List, Optional
 from db_shelve import PORTFOLIO_SHELVE, ShelveDB
 
 try:
-    from ks_util import DATA_DIR, log_print, log_warning
+    from ks_util import DATA_DIR, backup_file, log_print, log_warning
 except ImportError:
+    import shutil as _shutil
+
     DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
     def log_print(*args, **kwargs):
@@ -47,6 +50,13 @@ except ImportError:
 
     def log_warning(*args, **kwargs):
         print("WARNING:", *args, **kwargs)
+
+    def backup_file(fname, day=0):  # type: ignore[override]
+        if not os.path.exists(fname):
+            return None
+        backup_fname = fname + ".bak_fallback"
+        _shutil.copy2(fname, backup_fname)
+        return backup_fname
 
 
 # ===========================================
@@ -80,6 +90,9 @@ _THEME_NAME_FORBIDDEN_RE = re.compile(r"[\/\?\#\&\%\+\<\>\"\'\\\x00-\x1F]")
 
 # PF 全体で 1 つだけ保持するメタキー (どこかの銘柄で qty が変化したら更新)
 KEY_QTY_GLOBAL_UPDATED_AT = "_meta:qty_global_updated_at"
+
+# shelve は .dat/.dir/.bak の3点セットで構成される (dbm.dumb)
+_SHELVE_EXTENSIONS = (".dat", ".dir", ".bak")
 
 # レコードの既知フィールド (銘柄名は持たない: 表示時に stocks_shelve / research_shelve から都度取得する)
 RECORD_FIELDS = frozenset(
@@ -1666,6 +1679,38 @@ def update_memo(
         f"keys={sorted(normalized_fields.keys())}",
     )
     return record
+
+
+# ===========================================
+# バックアップ層
+# ===========================================
+
+def backup_portfolio_db(
+    *, db_path: Optional[str] = None, generations: int = 14
+) -> List[str]:
+    """portfolio_shelve の実体ファイルを日付付きで世代バックアップする。"""
+    path = _resolve_db_path(db_path)
+    if generations < 1:
+        raise ValueError("generations は1以上を指定してください")
+
+    created: List[str] = []
+    log_print("portfolio_shelve: バックアップ開始", path)
+    with _flock(path):
+        for ext in _SHELVE_EXTENSIONS:
+            target = path + ext
+            if not os.path.exists(target):
+                continue
+            backup_fname = backup_file(target, 0)
+            if backup_fname:
+                created.append(backup_fname)
+            backups = sorted(
+                glob.glob(f"{path}_[0-9][0-9][0-9][0-9][0-9][0-9]{ext}"),
+                reverse=True,
+            )
+            for old_backup in backups[generations:]:
+                os.remove(old_backup)
+    log_print("portfolio_shelve: バックアップ完了", f"files={len(created)}")
+    return created
 
 
 # ===========================================
