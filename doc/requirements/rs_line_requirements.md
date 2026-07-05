@@ -223,4 +223,4 @@ Phase 1 と Phase 2 は同一PRで同時実装する（データ基盤とその�
 
 - 統合元: #103（RSライン評価ロジックの改良）、#105（オニール流RSライン週足20週新高値）
 - 独立並行: #104（momentum_pt 対数正規分布モデル化）
-- 関連ドキュメント: `doc/ARCHITECTURE.md` の RS計算周辺、`doc/review/SPEC_REVIEW.md` の弱点分析
+- 関連ドキュメント: `doc/ARCHITECTURE.md` の RS計算周辺、`doc/review/SPEC_REVIEW_0314.md` の弱点分析
