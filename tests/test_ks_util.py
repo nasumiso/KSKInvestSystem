@@ -1,9 +1,21 @@
 """ks_util.py の純粋関数テスト"""
 
 from datetime import datetime, date, timedelta
+from pathlib import Path
 import pytest
 
 import ks_util
+
+
+def test_backup_file_overwrites_same_day_backup(tmp_path):
+    source = tmp_path / "portfolio_shelve.dat"
+    source.write_text("old", encoding="utf-8")
+    backup_path = ks_util.backup_file(str(source))
+    source.write_text("latest", encoding="utf-8")
+
+    ks_util.backup_file(str(source), overwrite=True)
+
+    assert Path(backup_path).read_text(encoding="utf-8") == "latest"
 
 
 # ==================================================

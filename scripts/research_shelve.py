@@ -40,7 +40,7 @@ except ImportError:
     def log_warning(*args, **kwargs):
         print("WARNING:", *args, **kwargs)
 
-    def backup_file(fname, day=0):  # type: ignore[override]
+    def backup_file(fname, day=0, overwrite=False):  # type: ignore[override]
         # フォールバック版: ks_util がない環境での簡易実装
         if not os.path.exists(fname):
             return None
@@ -951,7 +951,7 @@ def backup_research_db(
             target = path + ext
             if not os.path.exists(target):
                 continue
-            backup_fname = backup_file(target, 0)
+            backup_fname = backup_file(target, 0, overwrite=True)
             if backup_fname:
                 created.append(backup_fname)
             backups = sorted(

@@ -28,6 +28,21 @@ def test_backup_irreplaceable_dbs_continues_after_failure(monkeypatch):
     assert called == [14]
 
 
+def test_run_main_with_backup_backs_up_after_main_failure(monkeypatch):
+    called = []
+    monkeypatch.setattr(
+        make_stock_db, "main", lambda: (_ for _ in ()).throw(RuntimeError("failed"))
+    )
+    monkeypatch.setattr(
+        make_stock_db, "backup_irreplaceable_dbs", lambda: called.append(True)
+    )
+
+    with pytest.raises(RuntimeError, match="failed"):
+        make_stock_db.run_main_with_backup()
+
+    assert called == [True]
+
+
 # ==================================================
 # has_price_data
 # ==================================================
