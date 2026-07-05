@@ -6,6 +6,28 @@ import pytest
 import make_stock_db
 
 
+def test_backup_irreplaceable_dbs_continues_after_failure(monkeypatch):
+    import portfolio_shelve
+    import research_shelve
+
+    called = []
+    monkeypatch.setattr(
+        research_shelve,
+        "backup_research_db",
+        lambda **kwargs: (_ for _ in ()).throw(OSError("broken")),
+    )
+    monkeypatch.setattr(
+        portfolio_shelve,
+        "backup_portfolio_db",
+        lambda **kwargs: called.append(kwargs["generations"]),
+    )
+    monkeypatch.setattr(make_stock_db, "log_error", lambda *args: None)
+
+    make_stock_db.backup_irreplaceable_dbs()
+
+    assert called == [14]
+
+
 # ==================================================
 # has_price_data
 # ==================================================

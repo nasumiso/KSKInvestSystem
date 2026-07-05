@@ -69,6 +69,12 @@ cd scripts && python research_shelve.py list --rating S,A --keyword 駐車場
 cd scripts && python research_shelve.py backup
 ```
 
+`make_stock_db.py` の各実行末尾では、不可逆データである `research_shelve` と
+`portfolio_shelve` の `.dat` / `.dir` / `.bak` を日付付きで自動保存し、各14世代を保持する。
+復元時は WebApp と日次バッチを停止し、復元したい同一日付の3ファイル
+（例: `research_shelve_260705.dat/.dir/.bak`）を `data/stock_data/` にコピーして、
+日付部分を除いた `research_shelve.dat/.dir/.bak`（portfolio も同様）へ戻す。
+
 ## Shintakane Research（銘柄調査WebApp）
 
 ```bash

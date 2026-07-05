@@ -18,6 +18,7 @@ delete_research_record 等) を経由して更新を行い、他のモジュー�
 """
 
 import fcntl
+import glob
 import os
 import re
 import threading
@@ -930,7 +931,9 @@ def list_research_records(
 _SHELVE_EXTENSIONS = (".dat", ".dir", ".bak")
 
 
-def backup_research_db(*, db_path: Optional[str] = None) -> List[str]:
+def backup_research_db(
+    *, db_path: Optional[str] = None, generations: int = 14
+) -> List[str]:
     """research_shelve の実体ファイルを3点セットでバックアップする。
 
     - .dat / .dir / .bak の各ファイルを ks_util.backup_file() に渡す
@@ -939,15 +942,24 @@ def backup_research_db(*, db_path: Optional[str] = None) -> List[str]:
       (既存のバックアップ名と同じ場合も含む)
     """
     path = _resolve_db_path(db_path)
+    if generations < 1:
+        raise ValueError("generations は1以上を指定してください")
     created: List[str] = []
     log_print("research_shelve: バックアップ開始", path)
-    for ext in _SHELVE_EXTENSIONS:
-        target = path + ext
-        if not os.path.exists(target):
-            continue
-        backup_fname = backup_file(target, 0)
-        if backup_fname:
-            created.append(backup_fname)
+    with _flock(path):
+        for ext in _SHELVE_EXTENSIONS:
+            target = path + ext
+            if not os.path.exists(target):
+                continue
+            backup_fname = backup_file(target, 0)
+            if backup_fname:
+                created.append(backup_fname)
+            backups = sorted(
+                glob.glob(f"{path}_[0-9][0-9][0-9][0-9][0-9][0-9]{ext}"),
+                reverse=True,
+            )
+            for old_backup in backups[generations:]:
+                os.remove(old_backup)
     log_print("research_shelve: バックアップ完了", f"files={len(created)}")
     return created
 

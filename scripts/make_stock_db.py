@@ -2323,6 +2323,25 @@ def refresh_price(code_list):
 # ==================================================
 # main
 # ==================================================
+BACKUP_GENERATIONS = 14
+
+
+def backup_irreplaceable_dbs():
+    """不可逆DBをバックアップする。失敗しても日次バッチは継続する。"""
+    import portfolio_shelve
+    import research_shelve
+
+    backup_targets = (
+        ("research_shelve", research_shelve.backup_research_db),
+        ("portfolio_shelve", portfolio_shelve.backup_portfolio_db),
+    )
+    for name, backup_func in backup_targets:
+        try:
+            backup_func(generations=BACKUP_GENERATIONS)
+        except Exception as exc:
+            log_error(f"{name}: 自動バックアップ失敗: {exc}")
+
+
 def main():
     """株価DBを更新するメインスクリプト"""
     # raise NotImplementedError("main関数は実装されていません")
@@ -2459,6 +2478,8 @@ def main():
             refresh_price(list(args.codes))
     elif command == "test":
         test()
+
+    backup_irreplaceable_dbs()
 
     # 非同期アップロードの完了を待つ（list_all_db等で起動されたスレッド）
     import googledrive
