@@ -2479,11 +2479,17 @@ def main():
     elif command == "test":
         test()
 
-    backup_irreplaceable_dbs()
-
     # 非同期アップロードの完了を待つ（list_all_db等で起動されたスレッド）
     import googledrive
     googledrive.wait_all_uploads()
+
+
+def run_main_with_backup():
+    """本処理の成否にかかわらず不可逆DBをバックアップする。"""
+    try:
+        main()
+    finally:
+        backup_irreplaceable_dbs()
 
 
 # TODO: エラーを記述するようにせんと・・
@@ -2498,7 +2504,7 @@ if __name__ == "__main__":
     with chdir(os.path.abspath(os.path.dirname(__file__))):
         # main()
         try:
-            main()
+            run_main_with_backup()
         except Exception as e:
             log_print("エラー発生", e)
             logger.exception(

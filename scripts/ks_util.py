@@ -291,10 +291,11 @@ def eprint(*args, **kwargs):
 # ==================================================
 # ファイルユーティリティ
 # ==================================================
-def backup_file(fname, day=0):
+def backup_file(fname, day=0, overwrite=False):
     """
     fnameのバックアップファイルを作成する
     fnameの日付が今日からday日間経過したものを作成
+    overwrite=True の場合は同日バックアップを最新内容で上書きする
     """
     if not os.path.exists(fname):
         log_print("backup対象ファイルがありません:", fname)
@@ -311,7 +312,7 @@ def backup_file(fname, day=0):
         date.day,
         os.path.splitext(fname)[1],
     )
-    if not os.path.exists(backup_fname):
+    if overwrite or not os.path.exists(backup_fname):
         if delta.days >= day:
             log_print(
                 "バックアップ:%s(%d) => %s"
