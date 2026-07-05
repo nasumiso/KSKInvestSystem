@@ -1281,6 +1281,78 @@ class TestTransitionWithQty:
         assert rec["qty"] == 0
 
 
+class TestTransitionRequiresStrategy:
+    """issue #363: 新規1保遷移 (2準/3監→1保) は売買戦略 (trade_idea) を必須化する"""
+
+    @pytest.fixture
+    def portfolio_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+
+        rec = rs.create_research_record("3496", "アズーム", overall_rating="A")
+        rs.upsert_research_record(rec, db_path=db_path)
+        # 3496 を 3監 で登録 (add_to_watch は 3監 で登録)
+        ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app, portfolio_db
+
+    @pytest.mark.parametrize(
+        "trade_idea_form, expect_status, expect_idea",
+        [
+            # 空 (未分類) のまま 1保 → 弾かれて 3監 のまま、戦略も空
+            ("", "3監", ""),
+            # 有効な戦略 (シードされる "GARP") → 1保 に遷移し戦略も保存
+            ("GARP", "1保", "GARP"),
+            # マスター未登録の戦略名 → update_memo が ValueError で弾き、3監 のまま
+            ("存在しない戦略", "3監", ""),
+        ],
+        ids=["empty-rejected", "valid-strategy-ok", "invalid-strategy-rejected"],
+    )
+    def test_new_hold_requires_strategy(
+        self, portfolio_app, trade_idea_form, expect_status, expect_idea
+    ):
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+        client = app.test_client()
+
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={"new_status": "1保", "trade_idea": trade_idea_form, "reason": ""},
+        )
+        assert resp.status_code in (200, 302)
+
+        rec = ps.get_record("3496", db_path=portfolio_db)
+        assert rec["status"] == expect_status
+        assert (rec["memo"].get("trade_idea") or "") == expect_idea
+
+    def test_existing_hold_qty_change_no_strategy_required(self, portfolio_app):
+        """既に1保の株数のみ変更は戦略必須化の対象外 (trade_idea なしでも成功)"""
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+        # 先に戦略マスターをシードし、戦略付きで 1保 にしておく
+        ps.seed_trade_ideas(db_path=portfolio_db)
+        ps.update_memo("3496", {"trade_idea": "GARP"}, db_path=portfolio_db)
+        ps.transition_status("3496", "1保", db_path=portfolio_db)
+        client = app.test_client()
+
+        # 1保 のまま株数のみ変更 (trade_idea 送信なし) → 成功、戦略は保持
+        resp = client.post(
+            "/portfolio/3496/transition",
+            data={"new_status": "1保", "qty": "300", "reason": ""},
+        )
+        assert resp.status_code in (200, 302)
+        rec = ps.get_record("3496", db_path=portfolio_db)
+        assert rec["status"] == "1保"
+        assert rec["qty"] == 300
+        assert rec["memo"].get("trade_idea") == "GARP"
+
+
 class TestPortfolioHoldSummary:
     """保有 (status=hold) フィルタ表示時の運用総額 / 保有株数更新日サマリーの統合テスト"""
 

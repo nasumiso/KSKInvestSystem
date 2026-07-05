@@ -80,6 +80,11 @@ def stock_detail(code_s: str):
     portfolio_transitions = (
         _allowed_transitions_from(portfolio_status) if portfolio_status else []
     )
+    # issue #363: 遷移モーダルの売買戦略 select 用。未シード環境ではシード (冪等)。
+    ps.seed_trade_ideas()
+    trade_idea_master = ps.list_trade_ideas()
+    trade_idea_options = [t["name"] for t in trade_idea_master]
+    trade_idea_descriptions = {t["name"]: t["description"] for t in trade_idea_master}
 
     # issue #205: 業態・テーマ inline 編集用の context
     # memo は None や非 dict (旧データ等) を許容する仕様 (_normalize_loaded_memo)
@@ -152,6 +157,9 @@ def stock_detail(code_s: str):
         portfolio_status_query=portfolio_status_query,
         portfolio_fallback_mode=portfolio_fallback_mode,
         portfolio_transitions=portfolio_transitions,
+        # issue #363: 遷移モーダルの売買戦略 select 用
+        trade_idea_options=trade_idea_options,
+        trade_idea_descriptions=trade_idea_descriptions,
         # モーダルの株数欄初期値 (保有中のみ意味を持つ。未登録/フォールバックは 0)
         portfolio_qty=(portfolio_record or {}).get("qty") or 0,
         gyoutai_themes=gyoutai_themes,

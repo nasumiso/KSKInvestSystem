@@ -485,6 +485,8 @@ def transition(code_s: str):
     new_status = (request.form.get("new_status") or "").strip()
     reason = (request.form.get("reason") or "").strip()
     action_date = (request.form.get("action_date") or "").strip() or None
+    # issue #363: 新規1保遷移時のエントリー宣言 (売買戦略を必須化)
+    trade_idea = (request.form.get("trade_idea") or "").strip()
 
     # issue #269: qty は任意。空文字/欠落は None (qty 変更なし)、
     # 整数パース失敗・負数は error flash で reject。
@@ -513,12 +515,23 @@ def transition(code_s: str):
     try:
         before = ps.get_record(code_s)
         old_status = (before or {}).get("status")
+        # issue #363: 新規1保遷移 (非1保→1保) は売買戦略の宣言を必須にする。
+        # 未分類のまま保有にできると出口ルール未宣言のポジションが生まれるため入口で弾く。
+        is_new_hold = new_status == "1保" and old_status != "1保"
+        if is_new_hold:
+            if not trade_idea:
+                flash("売買戦略を選択してください（未分類のまま保有にはできません）", "error")
+                return _redirect_with_return_query(code_s=code_s)
+            # 未シード環境でも transition POST 単体でバリデーションが成立するようシード (冪等)
+            ps.seed_trade_ideas()
+            # 戦略を先に保存 → 成功後に遷移。この順序なら戦略保存失敗時は元ステータスのままで
+            # 「1保かつ未分類」の中間状態が生まれない。マスター未登録値は update_memo が ValueError で弾く。
+            ps.update_memo(code_s, {"trade_idea": trade_idea})
         ps.transition_status(code_s, new_status, reason=reason, action_date=action_date, qty=qty if new_status == "1保" else None)
         # issue #269: 1保 のときだけ qty を反映する (他ステータスでは無視)
         # log_action=False は「非1保 → 1保」の遷移時のみ（IN株数は遷移ログに記録済み）
         # 既に1保の状態で株数のみ変更する場合は log_action=True のまま株数変更ログを残す
         if new_status == "1保" and qty is not None:
-            is_new_hold = old_status != "1保"
             ps.update_qty(code_s, qty, reason=reason, action_date=action_date, log_action=not is_new_hold)
     except KeyError as e:
         flash(f"レコード未登録: {e}", "error")
@@ -859,6 +872,8 @@ def dashboard():
                 "qty_updated_at": ps.get_qty_global_updated_at(),
             }
 
+    # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)
+    ps.seed_trade_ideas()
     trade_idea_master = ps.list_trade_ideas()
     return render_template(
         "portfolio_list.html",
