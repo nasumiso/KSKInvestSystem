@@ -3412,14 +3412,16 @@ class TestBuildTrendInfoMa10:
 # _classify_market_category (運用総額の市場別内訳)
 # ==================================================
 @pytest.mark.parametrize("market,is_nikkei225,expected", [
-    ("東証Ｐ", True, "日経225"),    # 225優先
-    ("東証Ｐ", False, "TOPIX"),      # プライム非225
-    ("東証Ｇ", False, "グロース"),   # グロース
-    ("東証Ｇ", True, "日経225"),     # 225はグロースより優先 (実際上はまず無いが仕様確認)
-    ("東証Ｓ", False, "その他"),     # スタンダード
-    ("名証Ｍ", False, "その他"),     # 地方市場
-    ("", False, "その他"),           # market 空
-    (None, False, "その他"),         # market None
+    ("東証Ｐ", True, "日経225"),        # 225優先
+    ("東証Ｐ", False, "TOPIX"),          # プライム非225 (実DB短縮形)
+    ("東証Ｇ", False, "グロース"),       # グロース (実DB短縮形)
+    ("東証Ｇ", True, "日経225"),         # 225はグロースより優先 (実際上はまず無いが仕様確認)
+    ("東証Ｓ", False, "その他"),         # スタンダード
+    ("名証Ｍ", False, "その他"),         # 地方市場
+    ("東証プライム", False, "TOPIX"),    # 長い表記も吸収
+    ("東証グロース", False, "グロース"), # 長い表記も吸収
+    ("", False, "その他"),               # market 空
+    (None, False, "その他"),             # market None
 ])
 def test_classify_market_category(market, is_nikkei225, expected):
     assert helpers._classify_market_category(market, is_nikkei225) == expected

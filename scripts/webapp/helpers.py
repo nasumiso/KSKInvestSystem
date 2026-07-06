@@ -3485,15 +3485,18 @@ def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False)
 def _classify_market_category(market: Optional[str], is_nikkei225: Any) -> str:
     """保有銘柄の運用総額内訳用に、市場カテゴリを判定する。
 
-    日経225 → グロース (東証Ｇ) → プライム/TOPIX (東証Ｐ, 225除外済み) → その他 の順。
-    市場名は株探由来の全角短縮形 (東証Ｐ/東証Ｇ) を前方一致で判定する。
+    日経225 → グロース → プライム/TOPIX (225除外済み) → その他 の順。
+
+    実DB (stocks_shelve) の market 値は株探由来の全角短縮形
+    (東証Ｐ / 東証Ｇ / 東証Ｓ 等) で保存される。念のため長い表記
+    (東証プライム / 東証グロース) も前方一致で吸収する。
     """
     market = market or ""
     if is_nikkei225:
         return "日経225"
-    if market.startswith("東証Ｇ"):
+    if market.startswith(("東証Ｇ", "東証グロース")):
         return "グロース"
-    if market.startswith("東証Ｐ"):
+    if market.startswith(("東証Ｐ", "東証プライム")):
         return "TOPIX"
     return "その他"
 
