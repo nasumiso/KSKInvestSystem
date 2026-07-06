@@ -308,20 +308,15 @@
   {% endif %}
 </div>
 
+{# 運用総額の市場別内訳: カテゴリ→色の固定マップ #}
+{% set market_cat_colors = {"日経225": "#1565c0", "TOPIX": "#42a5f5", "グロース": "#66bb6a", "その他": "#bdbdbd"} %}
+
 <div style="display:flex;align-items:center;justify-content:space-between;gap:1em;flex-wrap:wrap;margin:0 0 0.4em 0;">
   <p style="font-size:0.85em;color:#666;margin:0;">
     {% if total > 0 %}{{ total }} 件表示{% else %}0 件{% endif %}
     {% if hold_summary %}
     <span style="margin-left:1em;">
       運用総額: {{ '{:,}'.format(hold_summary.total_man) }} 万円
-      {% if hold_summary.breakdown %}
-      <span style="color:#888;">(
-        {%- for b in hold_summary.breakdown if b.man > 0 -%}
-          {%- if not loop.first %}, {% endif -%}
-          {{ b.category }} {{ '{:,}'.format(b.man) }}万 ({{ b.ratio }}%)
-        {%- endfor -%}
-      )</span>
-      {% endif %}
       /
       保有株数更新日:
       {% if hold_summary.qty_updated_at %}{{ hold_summary.qty_updated_at[:10] }}{% else %}未記録{% endif %}
@@ -334,6 +329,30 @@
     <button type="button" data-page-btn="2" title="ショートカット: 2">メモ</button>
   </div>
 </div>
+
+{% if hold_summary and hold_summary.breakdown %}
+{# 市場別内訳の積み上げ横棒バー + 凡例 #}
+<div style="margin:0 0 0.7em 0;max-width:640px;">
+  <div style="display:flex;height:22px;border-radius:3px;overflow:hidden;border:1px solid #e0e0e0;">
+    {%- for b in hold_summary.breakdown if b.man > 0 -%}
+    <div title="{{ b.category }} {{ '{:,}'.format(b.man) }}万円 ({{ b.ratio }}%)"
+         style="width:{{ b.ratio }}%;background:{{ market_cat_colors.get(b.category, '#bdbdbd') }};
+                display:flex;align-items:center;justify-content:center;color:#fff;
+                font-size:0.7em;white-space:nowrap;overflow:hidden;">
+      {%- if b.ratio >= 8 %}{{ b.ratio }}%{% endif -%}
+    </div>
+    {%- endfor -%}
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:0.8em;margin-top:0.35em;font-size:0.75em;color:#555;">
+    {%- for b in hold_summary.breakdown if b.man > 0 -%}
+    <span style="display:inline-flex;align-items:center;gap:0.3em;">
+      <span style="width:10px;height:10px;border-radius:2px;background:{{ market_cat_colors.get(b.category, '#bdbdbd') }};display:inline-block;"></span>
+      {{ b.category }} {{ '{:,}'.format(b.man) }}万 ({{ b.ratio }}%)
+    </span>
+    {%- endfor -%}
+  </div>
+</div>
+{% endif %}
 
 {% if not fallback_mode %}
 <div id="manage-panel" style="display:none;">
