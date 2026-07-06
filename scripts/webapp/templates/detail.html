@@ -672,6 +672,23 @@
           <span style="color:#888;font-size:0.85em;">株</span>
         </label>
       </div>
+      {# issue #363: 新規1保遷移 (現在=非1保→1保) のとき売買戦略を必須で選ばせ、出口基準を hint 表示 #}
+      {% if portfolio_status_query != 'hold' %}
+      <div id="detail-portfolio-strategy-row" style="display:none;margin-bottom:0.6em;">
+        <label style="display:block;">
+          売買戦略 (必須):
+          <select name="trade_idea" id="detail-portfolio-strategy"
+                  onchange="syncDetailPortfolioStrategyHint()" style="margin-left:0.4em;">
+            <option value="">-- 戦略を選択 --</option>
+            {% for idea in trade_idea_options %}
+            <option value="{{ idea }}">{{ idea }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div id="detail-portfolio-strategy-hint" style="margin-top:0.3em;color:#666;font-size:0.85em;"></div>
+      </div>
+      <script id="detail-trade-idea-descriptions" type="application/json">{{ trade_idea_descriptions | tojson }}</script>
+      {% endif %}
       <label style="display:block;margin-bottom:0.6em;">
         アクション日付:
         <input type="date" name="action_date" value="{{ today_jst }}" max="{{ today_jst }}" required
@@ -891,8 +908,30 @@ function syncDetailPortfolioQtyVisibility() {
   var label = document.getElementById('detail-portfolio-reason-label');
   if (!sel || !row) return;
   var isQtyOnly = sel.value === '1保' && sel.options[sel.selectedIndex].text.indexOf('株数のみ変更') >= 0;
-  row.style.display = (sel.value === '1保') ? '' : 'none';
+  var toHold = (sel.value === '1保');
+  row.style.display = toHold ? '' : 'none';
   if (label) label.textContent = isQtyOnly ? '変更メモ (任意):' : '理由 (任意):';
+
+  // issue #363: 戦略行は「変更先=1保」のときのみ表示・必須化 (現在=非1保 はテンプレ条件で担保済み)
+  var strategyRow = document.getElementById('detail-portfolio-strategy-row');
+  var strategySelect = document.getElementById('detail-portfolio-strategy');
+  if (strategyRow && strategySelect) {
+    strategyRow.style.display = toHold ? '' : 'none';
+    strategySelect.required = toHold;
+    if (!toHold) syncDetailPortfolioStrategyHint();
+  }
+}
+
+// issue #363: 選択した戦略の出口基準 (description) を hint に出す。
+function syncDetailPortfolioStrategyHint() {
+  var strategySelect = document.getElementById('detail-portfolio-strategy');
+  var hint = document.getElementById('detail-portfolio-strategy-hint');
+  if (!strategySelect || !hint) return;
+  var descEl = document.getElementById('detail-trade-idea-descriptions');
+  var descs = {};
+  try { descs = JSON.parse(descEl ? descEl.textContent : '{}') || {}; } catch (e) { descs = {}; }
+  var val = strategySelect.value;
+  hint.textContent = val && descs[val] ? '出口の目安: ' + descs[val] : '';
 }
 
 function openPortfolioModal() {

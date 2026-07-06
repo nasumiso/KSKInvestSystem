@@ -549,13 +549,16 @@
       {# issue #327: 売買戦略 (定型リスト単一選択 + 色分けバッジ)。
          リスト外の旧自由記述値は ⚠️ 付き option を差し込んで保持し、再分類を促す #}
       {% set current_idea = row.memo.trade_idea or '' %}
+      {# issue #363: 1保 かつ戦略未分類 (空) は出口ルール未宣言。「未分類」option に ⚠️ を付けて
+         棚卸しを促す。2準/3監 の未分類は正常なので付けない (row.status で限定)。 #}
+      {% set unclassified_hold = (row.status == '1保' and not current_idea) %}
       <td data-page="2" style="padding:0 2px;">
         <select class="trade-idea-select"
                 data-code="{{ row.code_s }}"
                 data-idea="{{ current_idea }}"
                 title="{{ trade_idea_descriptions[current_idea] if current_idea in trade_idea_descriptions else '売買戦略 (選択で即保存)' }}"
                 {% if fallback_mode %}disabled{% endif %}>
-          <option value="">未分類</option>
+          <option value="">{% if unclassified_hold %}⚠️ 未分類{% else %}未分類{% endif %}</option>
           {% if current_idea and current_idea not in trade_idea_options %}
           <option value="{{ current_idea }}" selected>⚠️ {{ current_idea }}</option>
           {% endif %}
@@ -608,6 +611,20 @@
             <span style="color:#888;font-size:0.85em;">株</span>
           </label>
         </div>
+        {# issue #363: 新規1保遷移 (非1保→1保) のときのみ表示。売買戦略を必須で選ばせ、
+           選択した戦略の出口基準 (description) を hint に出して「出口を意識した買い」を促す。 #}
+        <div id="portfolio-modal-strategy-row" style="display:none;margin-bottom:0.6em;">
+          <label style="display:block;">
+            売買戦略 (必須):
+            <select name="trade_idea" id="portfolio-modal-strategy" style="margin-left:0.4em;">
+              <option value="">-- 戦略を選択 --</option>
+              {% for idea in trade_idea_options %}
+              <option value="{{ idea }}">{{ idea }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div id="portfolio-modal-strategy-hint" style="margin-top:0.3em;color:#666;font-size:0.85em;"></div>
+        </div>
         <label style="display:block;margin-bottom:0.6em;">
           アクション日付:
           <input type="date" name="action_date" value="{{ today_jst }}" max="{{ today_jst }}" required
@@ -627,6 +644,8 @@
     </form>
   </div>
 </div>
+{# issue #363: 戦略の出口基準 (description) を JS の hint 表示に渡す #}
+<script id="trade-idea-descriptions" type="application/json">{{ trade_idea_descriptions | tojson }}</script>
 {% endif %}
 
 <style>
@@ -695,11 +714,35 @@
 {% if not fallback_mode %}
 // ========== 保有状態モーダル ==========
 // issue #269: qty 欄は「変更先=1保」のときのみ表示する。
+// issue #363: 売買戦略欄は「新規1保遷移 (現在=非1保 → 変更先=1保)」のときのみ表示・必須化する。
 function syncPortfolioQtyVisibility() {
   var select = document.getElementById('portfolio-modal-new-status');
   var qtyRow = document.getElementById('portfolio-modal-qty-row');
   if (!select || !qtyRow) return;
-  qtyRow.style.display = (select.value === '1保') ? '' : 'none';
+  var toHold = (select.value === '1保');
+  qtyRow.style.display = toHold ? '' : 'none';
+
+  var form = document.getElementById('portfolio-modal-form');
+  var strategyRow = document.getElementById('portfolio-modal-strategy-row');
+  var strategySelect = document.getElementById('portfolio-modal-strategy');
+  if (!strategyRow || !strategySelect) return;
+  // 現在が非1保 (statusQuery が 'hold' 以外) かつ 変更先=1保 のとき = 新規エントリー
+  var isNewHold = toHold && (form && form.dataset.statusQuery !== 'hold');
+  strategyRow.style.display = isNewHold ? '' : 'none';
+  strategySelect.required = isNewHold;
+  if (!isNewHold) syncPortfolioStrategyHint();  // 非表示時は hint もクリア
+}
+
+// issue #363: 選択した戦略の出口基準 (description) を hint に出す。
+function syncPortfolioStrategyHint() {
+  var strategySelect = document.getElementById('portfolio-modal-strategy');
+  var hint = document.getElementById('portfolio-modal-strategy-hint');
+  if (!strategySelect || !hint) return;
+  var descEl = document.getElementById('trade-idea-descriptions');
+  var descs = {};
+  try { descs = JSON.parse(descEl ? descEl.textContent : '{}') || {}; } catch (e) { descs = {}; }
+  var val = strategySelect.value;
+  hint.textContent = val && descs[val] ? '出口の目安: ' + descs[val] : '';
 }
 
 function openPortfolioModalFromBadge(btn) {
@@ -724,6 +767,8 @@ function openPortfolioModalFromBadge(btn) {
   var form = document.getElementById('portfolio-modal-form');
   form.action = '/portfolio/' + encodeURIComponent(code) + '/transition';
   form.dataset.code = code;
+  // issue #363: 戦略欄の表示判定 (新規1保遷移か) に現在ステータスを使う
+  form.dataset.statusQuery = statusQuery;
 
   var select = document.getElementById('portfolio-modal-new-status');
   select.innerHTML = '';
@@ -744,6 +789,9 @@ function openPortfolioModalFromBadge(btn) {
   if (qtyInput) {
     qtyInput.value = (statusQuery === 'hold' && currentQty > 0) ? currentQty : 100;
   }
+  // issue #363: 開くたびに戦略 select をリセット
+  var strategySelect = document.getElementById('portfolio-modal-strategy');
+  if (strategySelect) strategySelect.value = '';
   syncPortfolioQtyVisibility();
 
   var excludeBtn = document.getElementById('portfolio-modal-exclude');
@@ -757,6 +805,9 @@ function openPortfolioModalFromBadge(btn) {
 document.addEventListener('DOMContentLoaded', function() {
   var select = document.getElementById('portfolio-modal-new-status');
   if (select) select.addEventListener('change', syncPortfolioQtyVisibility);
+  // issue #363: 戦略選択で出口基準 hint を更新
+  var strategySelect = document.getElementById('portfolio-modal-strategy');
+  if (strategySelect) strategySelect.addEventListener('change', syncPortfolioStrategyHint);
 });
 function closePortfolioModal() {
   var modal = document.getElementById('portfolio-modal');
