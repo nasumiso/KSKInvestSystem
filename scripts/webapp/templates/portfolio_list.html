@@ -331,9 +331,9 @@
 </div>
 
 {% if hold_summary and hold_summary.breakdown %}
-{# 市場別内訳の積み上げ横棒バー + 凡例 #}
-<div style="margin:0 0 0.7em 0;max-width:640px;">
-  <div style="display:flex;height:22px;border-radius:3px;overflow:hidden;border:1px solid #e0e0e0;">
+{# 市場別内訳の積み上げ横棒バー + 凡例 (同一行) #}
+<div style="display:flex;align-items:center;gap:1em;flex-wrap:wrap;margin:0 0 0.7em 0;">
+  <div style="display:flex;height:22px;border-radius:3px;overflow:hidden;border:1px solid #e0e0e0;flex:1 1 360px;min-width:280px;max-width:500px;">
     {%- for b in hold_summary.breakdown if b.man > 0 -%}
     <div title="{{ b.category }} {{ '{:,}'.format(b.man) }}万円 ({{ b.ratio }}%)"
          style="width:{{ b.ratio }}%;background:{{ market_cat_colors.get(b.category, '#bdbdbd') }};
@@ -343,11 +343,12 @@
     </div>
     {%- endfor -%}
   </div>
-  <div style="display:flex;flex-wrap:wrap;gap:0.8em;margin-top:0.35em;font-size:0.75em;color:#555;">
+  <div style="display:flex;flex-wrap:wrap;gap:0.8em;font-size:0.75em;color:#555;">
     {%- for b in hold_summary.breakdown if b.man > 0 -%}
-    <span style="display:inline-flex;align-items:center;gap:0.3em;">
+    <span style="display:inline-flex;align-items:center;gap:0.3em;"
+          title="{{ b.category }} {{ '{:,}'.format(b.man) }}万円 ({{ b.ratio }}%)">
       <span style="width:10px;height:10px;border-radius:2px;background:{{ market_cat_colors.get(b.category, '#bdbdbd') }};display:inline-block;"></span>
-      {{ b.category }} {{ '{:,}'.format(b.man) }}万 ({{ b.ratio }}%)
+      {{ b.category }}
     </span>
     {%- endfor -%}
   </div>
