@@ -1912,6 +1912,10 @@ def list_portfolio_with_indicators(
         row["overall_rating"] = rating_map.get(code_s, "")  # issue #199
         stock = stock_map.get(code_s, {})
         row.update(_extract_indicators_for_portfolio(stock))
+        # 運用総額の市場別内訳用カテゴリ (日経225/TOPIX/グロース/その他)
+        row["market_category"] = _classify_market_category(
+            stock.get("market"), stock.get("is_nikkei225")
+        )
         # issue #227: 3点ミニチャート (svg + tooltip)
         row["price_rs_chart"] = build_stock_chart_payload(stock, market_db, mode="mini")
         # RSラインの 1/5/20営業日前比を RS(20,5) 列ソート用に格納。
@@ -3476,6 +3480,22 @@ def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False)
             ma10_streak=ma10_streak, ma10_streak_ever=ma10_streak_ever,
         ),
     }
+
+
+def _classify_market_category(market: Optional[str], is_nikkei225: Any) -> str:
+    """保有銘柄の運用総額内訳用に、市場カテゴリを判定する。
+
+    日経225 → グロース (東証Ｇ) → プライム/TOPIX (東証Ｐ, 225除外済み) → その他 の順。
+    市場名は株探由来の全角短縮形 (東証Ｐ/東証Ｇ) を前方一致で判定する。
+    """
+    market = market or ""
+    if is_nikkei225:
+        return "日経225"
+    if market.startswith("東証Ｇ"):
+        return "グロース"
+    if market.startswith("東証Ｐ"):
+        return "TOPIX"
+    return "その他"
 
 
 def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:

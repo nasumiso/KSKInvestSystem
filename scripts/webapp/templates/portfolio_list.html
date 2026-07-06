@@ -314,6 +314,14 @@
     {% if hold_summary %}
     <span style="margin-left:1em;">
       運用総額: {{ '{:,}'.format(hold_summary.total_man) }} 万円
+      {% if hold_summary.breakdown %}
+      <span style="color:#888;">(
+        {%- for b in hold_summary.breakdown if b.man > 0 -%}
+          {%- if not loop.first %}, {% endif -%}
+          {{ b.category }} {{ '{:,}'.format(b.man) }}万 ({{ b.ratio }}%)
+        {%- endfor -%}
+      )</span>
+      {% endif %}
       /
       保有株数更新日:
       {% if hold_summary.qty_updated_at %}{{ hold_summary.qty_updated_at[:10] }}{% else %}未記録{% endif %}
