@@ -3406,3 +3406,68 @@ class TestBuildTrendInfoMa10:
         # tooltip に10日MA乖離行が入る
         assert "10日MA乖離:" in info["tooltip"]
         assert ("赤太点線: 10ma 30日維持中" in info["tooltip"]) is streak
+
+
+# ==================================================
+# issue #361: 概算損益・成績サマリー
+# ==================================================
+
+def _ep(hold_date="2026-05-01", sell_date="2026-05-11", hold_price=1000,
+        hold_qty=100, sell_price=1200, sell_qty=100, qty_changes=None):
+    return {
+        "hold_date": hold_date, "sell_date": sell_date,
+        "hold_price": hold_price, "hold_qty": hold_qty,
+        "sell_price": sell_price, "sell_qty": sell_qty,
+        "qty_changes": qty_changes or [],
+    }
+
+
+@pytest.mark.parametrize("ep, expect", [
+    # 単純: 1000→1200 = +20%、暦日10日
+    (_ep(), {"return_pct": 20.0, "hold_days": 10}),
+    # 単一 IN で hold_qty=None (旧ログ救済): 株数なしでも損益率は出る
+    (_ep(hold_qty=None), {"return_pct": 20.0, "hold_days": 10}),
+    # 買い増し加重: 100株@1000 + 100株@1400 → 平均1200、売値1200 = 0%
+    (_ep(hold_qty=100, sell_price=1200, sell_qty=200,
+         qty_changes=[{"price": 1400, "after_qty": 200}]),
+     {"return_pct": 0.0, "hold_days": 10}),
+    # 減玉あり (200→100) → None
+    (_ep(hold_qty=200, qty_changes=[{"price": 1100, "after_qty": 100}]), None),
+    # 買い増しがあるのに hold_qty=None (加重不能) → None
+    (_ep(hold_qty=None, qty_changes=[{"price": 1400, "after_qty": 200}]), None),
+    # 買い増しの price 欠損 → None
+    (_ep(hold_qty=100, qty_changes=[{"price": None, "after_qty": 200}]), None),
+    # 売却価格なし → None
+    (_ep(sell_price=None), None),
+])
+def test_calc_episode_pl(ep, expect):
+    result = helpers.calc_episode_pl(ep)
+    if expect is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert round(result["return_pct"], 4) == expect["return_pct"]
+        assert result["hold_days"] == expect["hold_days"]
+
+
+@pytest.mark.parametrize("pls, checks", [
+    # 勝ち負け混在: +20%(amt100) 勝ち, -10%(amt100) 負け → win_rate50, payoff 20/10=2.0
+    ([{"return_pct": 20, "hold_days": 5, "amount": 100},
+      {"return_pct": -10, "hold_days": 15, "amount": 100}],
+     {"win_rate": 50.0, "payoff_ratio": 2.0, "n_win": 1, "n_lose": 1}),
+    # 0% は負け扱い
+    ([{"return_pct": 0, "hold_days": 3, "amount": 100}],
+     {"win_rate": 0.0, "n_win": 0, "n_lose": 1}),
+    # 負け0件 → payoff None
+    ([{"return_pct": 20, "hold_days": 5, "amount": 100}],
+     {"win_rate": 100.0, "payoff_ratio": None, "n_win": 1, "n_lose": 0}),
+])
+def test_calc_trade_summary(pls, checks):
+    s = helpers.calc_trade_summary(pls)
+    assert s is not None
+    for k, v in checks.items():
+        assert s[k] == v
+
+
+def test_calc_trade_summary_empty_returns_none():
+    assert helpers.calc_trade_summary([]) is None

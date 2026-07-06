@@ -8,7 +8,7 @@ POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
 from flask import Blueprint, abort, jsonify, render_template, request
 
 import portfolio_shelve as ps
-from webapp.helpers import resolve_stock_name
+from webapp.helpers import calc_episode_pl, calc_trade_summary, resolve_stock_name
 
 trade_history_bp = Blueprint("trade_history", __name__)
 
@@ -85,8 +85,10 @@ def trade_history():
                 "sell_date": "",
                 "hold_reason": log.get("reason", ""),
                 "hold_qty": log.get("qty"),       # 1保遷移時のIN株数 (issue #357)
+                "hold_price": log.get("price_proxy"),  # 保有開始日の終値プロキシ (issue #361)
                 "sell_reason": "",
                 "sell_qty": None,
+                "sell_price": None,
                 "memo_seq": log["seq"],           # 1保ログの seq（未売却時のメモ保存先）
                 "sell_seq": None,
                 "review_memo": log.get("review_memo", ""),
@@ -99,16 +101,25 @@ def trade_history():
             memo = ""
             if "(" in raw_reason and raw_reason.endswith(")"):
                 memo = raw_reason[raw_reason.index("(") + 1:-1].strip()
+            # 変更後株数 (右辺) を int パース。加重平均取得単価の計算に使う (issue #361)
+            after_qty = None
+            if "→" in diff:
+                right = diff.split("→", 1)[1].strip()
+                if right.isdigit():
+                    after_qty = int(right)
             open_episodes[code_s]["qty_changes"].append({
                 "date": log["timestamp"][:10],
                 "reason": diff,
                 "memo": memo,
+                "price": log.get("price_proxy"),  # 株数変更日の終値プロキシ (issue #361)
+                "after_qty": after_qty,
             })
         elif log.get("action_type") == "売却" and code_s in open_episodes:
             ep = open_episodes.pop(code_s)
             ep["sell_date"] = log["timestamp"][:10]
             ep["sell_reason"] = log.get("reason", "")
             ep["sell_qty"] = log.get("qty")       # 売却時の保有株数（旧ログは None）
+            ep["sell_price"] = log.get("price_proxy")  # 売却日の終値プロキシ (issue #361)
             ep["sell_seq"] = log["seq"]
             ep["memo_seq"] = log["seq"]           # 売却済みはこちらがメモ保存先
             # 保有中に入力したメモを引き継ぐ
@@ -124,11 +135,19 @@ def trade_history():
     # 保有日降順
     episodes.sort(key=lambda r: r["hold_date"], reverse=True)
 
-    # 銘柄名付与・サブ行組み立て
+    # 銘柄名付与・サブ行組み立て・概算損益 (issue #361)
+    episode_pls = []
     for ep in episodes:
         ep["stock_name"] = resolve_stock_name(ep["code_s"])
         ep["rows"] = _build_rows(ep)
         ep["rowspan"] = len(ep["rows"])
+        ep["pl"] = calc_episode_pl(ep)  # 算出不可なら None (行は「—」表示)
+        if ep["pl"] is not None:
+            episode_pls.append(ep["pl"])
+
+    # 売却済み全体の成績サマリー (issue #361)。母数0/算出不可のみなら None
+    closed_count = sum(1 for ep in episodes if ep["sell_date"])
+    summary = calc_trade_summary(episode_pls)
 
     # 直近30件と過去ログに分割
     recent = episodes[:30]
@@ -142,7 +161,13 @@ def trade_history():
     # 年降順のリスト [(year, episodes), ...]
     past_years = sorted(past_by_year.items(), key=lambda x: x[0], reverse=True)
 
-    return render_template("trade_history.html", recent=recent, past_years=past_years)
+    return render_template(
+        "trade_history.html",
+        recent=recent,
+        past_years=past_years,
+        summary=summary,
+        closed_count=closed_count,
+    )
 
 
 @trade_history_bp.route(

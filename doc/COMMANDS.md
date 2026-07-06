@@ -99,6 +99,15 @@ cd scripts && python migrate_kessan_comments_from_log.py ../data/kessan_comments
 cd scripts && python migrate_kessan_comments_from_log.py ../data/kessan_comments_log.txt                                             # 本番移行
 ```
 
+### action_log に売買日終値プロキシを付与 (issue #361)
+
+売買履歴の概算損益・成績サマリー用。既存 DB の price_log (直近30営業日) の範囲のみ終値を埋め、土日の売買日を直前営業日に補正する。夜間 price 更新後に叩くと当日 None が埋まる。
+
+```bash
+cd scripts && python backfill_price_proxy.py             # None のみ埋める (冪等)
+cd scripts && python backfill_price_proxy.py --overwrite # actual 以外を再取得
+```
+
 ## 自動実行
 
 `shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。

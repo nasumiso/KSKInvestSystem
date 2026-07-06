@@ -1183,3 +1183,113 @@ class TestTradeIdeaMaster:
         assert count2 == 0
         items_after_second = ps.list_trade_ideas(db_path=db_path_ti)
         assert len(items_after_first) == len(items_after_second)
+
+
+# ==================================================
+# issue #361: 終値プロキシ自動付与・バックフィル・土日補正
+# ==================================================
+
+from datetime import date as _date  # noqa: E402
+
+
+@pytest.fixture
+def stocks_with_price_log(tmp_path, monkeypatch):
+    """_fetch_price_proxy が引く stocks_shelve に price_log を仕込む。
+
+    price_log は [(date, int終値), ...]。5/8(金)=3000, 5/11(月)=3200。
+    5/9(土)・5/10(日) は無い → 土日補正で 5/8 の終値が引ける。
+    """
+    from db_shelve import ShelveDB
+
+    stocks_path = str(tmp_path / "test_stocks_shelve")
+    monkeypatch.setattr("db_shelve.STOCKS_SHELVE", stocks_path)
+    with ShelveDB(stocks_path) as db:
+        db["6324"] = {"price_log": [
+            (_date(2026, 5, 8), 3000),
+            (_date(2026, 5, 11), 3200),
+        ]}
+    return stocks_path
+
+
+@pytest.mark.parametrize("action, expect_proxy", [
+    ("hold", True),      # 1保遷移 → 付与
+    ("qty_change", True),  # 株数変更 → 付与
+    ("sell", True),      # 売却 → 付与
+    ("watch", False),    # 初回登録(3監) → 未付与
+])
+def test_append_action_log_price_proxy(db_path, stocks_with_price_log, action, expect_proxy):
+    """売買日イベントのみ price_proxy が自動付与される (issue #361)。"""
+    if action == "watch":
+        ps.add_to_watch("6324", db_path=db_path)
+        logs = ps.list_action_logs("6324", db_path=db_path)
+        assert logs[-1]["price_proxy"] is None
+        assert logs[-1]["price_source"] is None
+        return
+
+    ps.add_to_watch("6324", db_path=db_path)
+    ps.transition_status("6324", "2準", db_path=db_path)
+    ps.transition_status("6324", "1保", action_date="2026-05-11", qty=500, db_path=db_path)
+    if action == "qty_change":
+        ps.update_qty("6324", 700, action_date="2026-05-11", db_path=db_path)
+    if action == "sell":
+        ps.transition_status("6324", "2準", action_date="2026-05-11", db_path=db_path)
+
+    logs = ps.list_action_logs("6324", db_path=db_path)
+    latest = logs[-1]
+    assert latest["price_source"] == "close"
+    assert latest["price_proxy"] == 3200  # 5/11 の終値
+
+
+def test_append_action_log_weekend_normalized(db_path, stocks_with_price_log):
+    """土日 (5/9土) の売買日は直前営業日 (5/8金) に正規化され、終値も 5/8 のものになる。"""
+    ps.add_to_watch("6324", db_path=db_path)
+    ps.transition_status("6324", "2準", db_path=db_path)
+    ps.transition_status("6324", "1保", action_date="2026-05-09", qty=500, db_path=db_path)
+
+    logs = ps.list_action_logs("6324", db_path=db_path)
+    hold = [l for l in logs if l.get("status_to") == "1保"][0]
+    assert hold["timestamp"][:10] == "2026-05-08"  # 土→金に補正
+    assert hold["price_proxy"] == 3000             # 5/8 の終値
+
+
+@pytest.mark.parametrize("scenario", ["fill_none", "skip_existing", "protect_actual", "overwrite"])
+def test_backfill_price_proxies(db_path, stocks_with_price_log, monkeypatch, scenario):
+    """backfill の冪等/overwrite/actual保護/土日補正 (issue #361)。"""
+    ps.add_to_watch("6324", db_path=db_path)
+    ps.transition_status("6324", "2準", db_path=db_path)
+    ps.transition_status("6324", "1保", action_date="2026-05-11", qty=500, db_path=db_path)
+    hold = [l for l in ps.list_action_logs("6324", db_path=db_path) if l.get("status_to") == "1保"][0]
+    seq = hold["seq"]
+    key = ps._action_log_key("6324", seq)
+
+    if scenario == "fill_none":
+        # price_proxy を手動で None に戻して backfill で埋め直す
+        with ps.ShelveDB(db_path) as db:
+            e = db[key]; e["price_proxy"] = None; db[key] = e
+        stats = ps.backfill_price_proxies(db_path=db_path)
+        assert stats["updated"] == 1
+        after = [l for l in ps.list_action_logs("6324", db_path=db_path) if l["seq"] == seq][0]
+        assert after["price_proxy"] == 3200
+
+    elif scenario == "skip_existing":
+        # 既に付与済み → overwrite なしでスキップ
+        stats = ps.backfill_price_proxies(db_path=db_path)
+        assert stats["updated"] == 0
+        assert stats["skipped"] >= 1
+
+    elif scenario == "protect_actual":
+        # 実約定は overwrite でも触らない
+        with ps.ShelveDB(db_path) as db:
+            e = db[key]; e["price_source"] = "actual"; e["price_proxy"] = 9999; db[key] = e
+        ps.backfill_price_proxies(overwrite=True, db_path=db_path)
+        after = [l for l in ps.list_action_logs("6324", db_path=db_path) if l["seq"] == seq][0]
+        assert after["price_proxy"] == 9999
+        assert after["price_source"] == "actual"
+
+    elif scenario == "overwrite":
+        # price_log を書き換えて overwrite すると再取得される
+        with ps.ShelveDB(stocks_with_price_log) as db:
+            db["6324"] = {"price_log": [(_date(2026, 5, 11), 5555)]}
+        ps.backfill_price_proxies(overwrite=True, db_path=db_path)
+        after = [l for l in ps.list_action_logs("6324", db_path=db_path) if l["seq"] == seq][0]
+        assert after["price_proxy"] == 5555

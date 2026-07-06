@@ -4111,3 +4111,128 @@ def build_portfolio_theme_summary(
         r["theme"],
     ))
     return result
+
+
+# ===========================================
+# issue #361: 売買エピソードの概算損益・成績サマリー
+# ===========================================
+
+def calc_episode_pl(ep: dict) -> Optional[dict]:
+    """売却済みエピソードの概算実現損益を終値プロキシから計算する。
+
+    return_pct = (sell_price / avg_cost - 1) * 100
+    hold_days  = (sell_date - hold_date).days (暦日)
+    amount     = 金額加重ペイオフの重み
+
+    取得単価 avg_cost の求め方:
+    - 株数変更がない単一 IN: hold_price をそのまま取得単価とする。株数は損益率に
+      不要なので hold_qty=None でも算出する (旧ログは IN 株数を持たないため救済)。
+      amount は hold_qty があれば hold_price*hold_qty、なければ hold_price (1株相当)。
+    - 買い増し (株数変更) がある: 加重平均が必要。全 IN の株数と価格が揃っている
+      場合のみ Σ(IN終値×IN株数)/Σ(IN株数) を算出。数量不明を混ぜると取得単価が
+      逆方向に飛び符号反転しうるため、揃わなければ None (母数除外)。
+
+    None (母数除外) の条件:
+    - 未売却 / sell_price None / hold_price None
+    - 減玉 (株数変更の after_qty < 直前株数) がある
+    - 買い増しがあるのに IN の株数 (qty) or 価格 (price_proxy) が欠ける
+    - 取得単価が 0 以下
+    """
+    sell_date = ep.get("sell_date")
+    sell_price = ep.get("sell_price")
+    hold_price = ep.get("hold_price")
+    if not sell_date or sell_price is None or hold_price is None:
+        return None
+
+    hold_qty = ep.get("hold_qty")
+
+    # 買い増し (増加分) を収集。減玉があれば概算対象外。
+    buy_ups = []  # [(price, added), ...]
+    prev_qty = hold_qty
+    for qc in ep.get("qty_changes", []):
+        after_qty = qc.get("after_qty")
+        if after_qty is None or prev_qty is None:
+            # 株数変更があるのに数量が不明 → 加重平均が組めない
+            return None
+        if after_qty < prev_qty:
+            return None  # 減玉ありは概算対象外
+        added = after_qty - prev_qty
+        prev_qty = after_qty
+        if added == 0:
+            continue  # 数量据え置き (メモのみ変更) は取得に影響しない
+        price = qc.get("price")
+        if price is None:
+            return None  # 買い増しの終値が欠けると加重平均が歪む
+        buy_ups.append((price, added))
+
+    if buy_ups:
+        # 加重平均には 1保 IN の株数も必要
+        if hold_qty is None:
+            return None
+        in_price_qty = [(hold_price, hold_qty)] + buy_ups
+        total_in_qty = sum(q for _, q in in_price_qty)
+        if total_in_qty <= 0:
+            return None
+        avg_cost = sum(p * q for p, q in in_price_qty) / total_in_qty
+        amount = avg_cost * total_in_qty
+    else:
+        # 単一 IN: 株数不要で損益率が出せる
+        avg_cost = hold_price
+        amount = hold_price * hold_qty if hold_qty else hold_price
+
+    if avg_cost <= 0:
+        return None
+
+    return_pct = (sell_price / avg_cost - 1) * 100
+    try:
+        hold_days = (date.fromisoformat(sell_date) - date.fromisoformat(ep["hold_date"])).days
+    except (ValueError, TypeError, KeyError):
+        return None
+
+    return {
+        "return_pct": return_pct,
+        "hold_days": hold_days,
+        "avg_cost": avg_cost,
+        "amount": amount,
+    }
+
+
+def calc_trade_summary(episode_pls: list) -> Optional[dict]:
+    """calc_episode_pl の非 None 結果リストから成績サマリーを算出する。
+
+    勝ち = return_pct > 0、負け = return_pct <= 0 (0% は負け)。
+    ペイオフレシオは金額加重: 勝ち群 Σ(return_pct×amount)/Σamount ÷ |負け群同値|。
+    母数0 → None (サマリー非表示)。
+    """
+    if not episode_pls:
+        return None
+
+    wins = [p for p in episode_pls if p["return_pct"] > 0]
+    loses = [p for p in episode_pls if p["return_pct"] <= 0]
+    n_total = len(episode_pls)
+
+    def _weighted_avg_return(group):
+        total_amount = sum(p["amount"] for p in group)
+        if total_amount <= 0:
+            return None
+        return sum(p["return_pct"] * p["amount"] for p in group) / total_amount
+
+    def _avg_hold(group):
+        return sum(p["hold_days"] for p in group) / len(group) if group else None
+
+    win_weighted = _weighted_avg_return(wins)
+    lose_weighted = _weighted_avg_return(loses)
+    if win_weighted is None or lose_weighted is None or lose_weighted == 0:
+        payoff_ratio = None
+    else:
+        payoff_ratio = win_weighted / abs(lose_weighted)
+
+    return {
+        "win_rate": len(wins) / n_total * 100,
+        "payoff_ratio": payoff_ratio,
+        "avg_hold_win": _avg_hold(wins),
+        "avg_hold_lose": _avg_hold(loses),
+        "n_total": n_total,
+        "n_win": len(wins),
+        "n_lose": len(loses),
+    }

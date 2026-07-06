@@ -5,6 +5,25 @@
 <h2>売買履歴</h2>
 <p style="color:#888;font-size:0.85em;">保有エピソード単位で表示。保有日降順。</p>
 
+{# 成績サマリー (issue #361): 売却済みエピソードのうち終値プロキシで概算できた分 #}
+{% if summary %}
+<div style="display:flex;gap:1.5em;flex-wrap:wrap;align-items:baseline;margin:0.5em 0 1em;padding:0.7em 1em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:5px;">
+  <div><span style="color:#888;font-size:0.8em;">勝率</span>
+    <span style="font-size:1.1em;font-weight:600;color:#ddd;margin-left:0.3em;">{{ "%.0f"|format(summary.win_rate) }}%</span>
+    <span style="color:#888;font-size:0.8em;">({{ summary.n_win }}勝{{ summary.n_lose }}敗)</span></div>
+  <div><span style="color:#888;font-size:0.8em;">ペイオフレシオ</span>
+    <span style="font-size:1.1em;font-weight:600;color:#ddd;margin-left:0.3em;">{% if summary.payoff_ratio is not none %}{{ "%.2f"|format(summary.payoff_ratio) }}{% else %}—{% endif %}</span></div>
+  <div><span style="color:#888;font-size:0.8em;">平均保有(勝)</span>
+    <span style="color:#9ef0aa;margin-left:0.3em;">{% if summary.avg_hold_win is not none %}{{ "%.0f"|format(summary.avg_hold_win) }}日{% else %}—{% endif %}</span></div>
+  <div><span style="color:#888;font-size:0.8em;">平均保有(負)</span>
+    <span style="color:#f0a0a0;margin-left:0.3em;">{% if summary.avg_hold_lose is not none %}{{ "%.0f"|format(summary.avg_hold_lose) }}日{% else %}—{% endif %}</span></div>
+  <div style="color:#777;font-size:0.78em;margin-left:auto;">
+    算出 {{ summary.n_total }} 件 / 売却済み {{ closed_count }} 件<br>
+    ※終値プロキシによる概算（手数料・配当は無視）
+  </div>
+</div>
+{% endif %}
+
 {% macro episode_table(episodes) %}
 {% if episodes %}
 <table class="trade-history-table">
@@ -34,6 +53,16 @@
       {% if loop.first %}
       <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;white-space:nowrap;">
         <a href="/stock/{{ ep.code_s }}">{{ ep.code_s }} {{ ep.stock_name }}</a>
+        {# 概算損益 (issue #361): 算出できたエピソードのみ。None は非表示 #}
+        {% if ep.pl %}
+        <div style="font-size:0.82em;margin-top:2px;">
+          <span style="color:{{ '#9ef0aa' if ep.pl.return_pct >= 0 else '#f0a0a0' }};font-weight:600;">
+            {{ '+' if ep.pl.return_pct >= 0 else '' }}{{ "%.1f"|format(ep.pl.return_pct) }}%</span>
+          <span style="color:#888;margin-left:0.4em;">{{ ep.pl.hold_days }}日</span>
+        </div>
+        {% elif ep.sell_date %}
+        <div style="font-size:0.82em;margin-top:2px;color:#666;">損益 —</div>
+        {% endif %}
       </td>
       {% endif %}
       <td style="white-space:nowrap;">
