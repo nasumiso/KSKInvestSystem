@@ -30,6 +30,16 @@ screencapture -i .playwright-mcp/debug-screen.png
 - 比較用は `-v2`, `-v3`, `-fixed`, `-after` などの suffix
 - ad-hoc な検証は内容を短く表す名前 (例: `market-color-refresh.png`)
 
+## ライフサイクル (削除タイミング)
+
+スクリーンショットは作業確認用の一時ファイル。以下のタイミングで `.playwright-mcp/` 内を削除する:
+
+- **PR マージ後**: そのブランチで撮影したファイルを削除
+- **作業セッション終了時**: 確認が済んだファイルはその場で削除
+- 削除コマンド例: `rm .playwright-mcp/issue361-*.png`
+
+長期保存が必要な画像は `doc/` 等のドキュメント資産フォルダに移動してコミットする。
+
 ## 既存ファイル
 
 `.playwright-mcp/` 自体は `.gitignore` 済み。保険として `/*.png` (ルート直下 PNG) も `.gitignore` 済みだが、本ルールに従えばそちらは発動しない。
