@@ -90,5 +90,5 @@ ETFコードは `data/ETF_code.txt` から読み込み、株式分析対象外�
 - [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) — アーキテクチャ詳細（データフロー、DB構成、キャッシュ戦略、テクニカル指標）
 - [doc/TESTING.md](doc/TESTING.md) — テスト方針（ユニットテスト、統合テスト、HTMLパース変更時の検証）
 - [doc/システム概要.md](doc/システム概要.md) — システム概要（非エンジニア向け）
-- [doc/review/SPEC_REVIEW_0704.md](doc/review/SPEC_REVIEW_0704.md) — 投資システム評価レビュー（旧版: [SPEC_REVIEW_0314.md](doc/review/SPEC_REVIEW_0314.md)）
+- [doc/review/仕様レビュー_0704.md](doc/review/仕様レビュー_0704.md) — 投資システム評価レビュー（旧版: [仕様レビュー_0314.md](doc/review/仕様レビュー_0314.md)）
 - [doc/投資戦略.md](doc/投資戦略.md) — 投資スタイル分析

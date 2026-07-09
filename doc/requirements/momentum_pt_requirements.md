@@ -228,4 +228,4 @@ Phase 1 と Phase 2 は技術的には逆順でも実装可能だが、Phase 1 �
 
 - 関連 issue: #104（本要件はこのissueの実装仕様を定義する）
 - 独立並行: RSライン系指標の構築（`rs_line_requirements.md`）— 本要件と完全独立
-- 関連ドキュメント: `doc/ARCHITECTURE.md` のRS計算周辺、`doc/review/SPEC_REVIEW_0314.md` の弱点分析
+- 関連ドキュメント: `doc/ARCHITECTURE.md` のRS計算周辺、`doc/review/仕様レビュー_0314.md` の弱点分析
