@@ -8,7 +8,13 @@ POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
 from flask import Blueprint, abort, jsonify, render_template, request
 
 import portfolio_shelve as ps
-from webapp.helpers import calc_episode_pl, calc_trade_summary, resolve_stock_name
+from webapp.helpers import (
+    _bulk_price_logs,
+    calc_episode_pl,
+    calc_post_sell_returns,
+    calc_trade_summary,
+    resolve_stock_name,
+)
 
 trade_history_bp = Blueprint("trade_history", __name__)
 
@@ -157,6 +163,7 @@ def trade_history():
             # 空文字（明示削除）はそのまま優先する
             sell_memo = log.get("review_memo")
             ep["review_memo"] = sell_memo if sell_memo is not None else ep.get("review_memo", "")
+            ep["post_sell_returns"] = log.get("post_sell_returns") or {}
             episodes.append(ep)
 
     # 未売却（保有中）エピソードを追加
@@ -166,6 +173,8 @@ def trade_history():
     episodes.sort(key=_last_action_date, reverse=True)
 
     # 銘柄名付与・サブ行組み立て・概算損益 (issue #361)
+    # 売却後騰落率は表示時に計算し、確定した値だけ売却ログへ保存する (issue #366)。
+    price_logs = _bulk_price_logs([ep["code_s"] for ep in episodes if ep["sell_date"]])
     episode_pls = []
     for ep in episodes:
         ep["stock_name"] = resolve_stock_name(ep["code_s"])
@@ -174,6 +183,24 @@ def trade_history():
         ep["pl"] = calc_episode_pl(ep)  # 算出不可なら None (行は「—」表示)
         if ep["pl"] is not None:
             episode_pls.append(ep["pl"])
+        if ep["sell_date"]:
+            calculated = calc_post_sell_returns(ep, price_logs.get(ep["code_s"], []))
+            saved = ep.get("post_sell_returns", {})
+            newly_confirmed = {
+                key: value["return_pct"]
+                for key, value in calculated.items()
+                if value["return_pct"] is not None and key not in saved
+            }
+            if newly_confirmed:
+                ps.update_action_log_post_sell_returns(ep["code_s"], ep["sell_seq"], newly_confirmed)
+                saved = {**saved, **newly_confirmed}
+            for key, value in calculated.items():
+                if key in saved:
+                    value["return_pct"] = saved[key]
+            ep["post_sell"] = calculated
+            ep["review_prompt"] = any(
+                value["return_pct"] is not None for value in calculated.values()
+            ) and not ep["review_memo"]
 
     # 売却済み全体の成績サマリー (issue #361)。母数0/算出不可のみなら None
     closed_count = sum(1 for ep in episodes if ep["sell_date"])
