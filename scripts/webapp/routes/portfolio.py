@@ -867,9 +867,24 @@ def dashboard():
             total_position_value = sum(
                 (r.get("position_value") or 0) for r in hold_rows
             )
+            # 市場別内訳 (日経225/TOPIX/グロース/その他) を集計
+            cat_values = {"日経225": 0.0, "TOPIX": 0.0, "グロース": 0.0, "その他": 0.0}
+            for r in hold_rows:
+                cat = r.get("market_category", "その他")
+                cat_values[cat] = cat_values.get(cat, 0.0) + (r.get("position_value") or 0)
+            breakdown = [
+                {
+                    "category": cat,
+                    "man": int(round(val / 10000)),
+                    "ratio": round(val / total_position_value * 100, 1)
+                    if total_position_value else 0.0,
+                }
+                for cat, val in cat_values.items()
+            ]
             hold_summary = {
                 "total_man": int(round(total_position_value / 10000)),
                 "qty_updated_at": ps.get_qty_global_updated_at(),
+                "breakdown": breakdown,
             }
 
     # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)

@@ -17,12 +17,19 @@ class TestParseMasterHtmlKabutan:
                     jikasogaku="500", overview="テスト概要",
                     themes=None, relates=None,
                     kessan="2025/02/14", purchase="150,000",
-                    corporate_url="https://example.com"):
+                    corporate_url="https://example.com", nikkei225=False):
         """最小限の株探基本情報HTMLを生成"""
         if themes is None:
             themes = ["AI", "半導体"]
         if relates is None:
             relates = ["5678", "9012"]
+
+        # 日経225構成銘柄のみが持つ区分バッジ
+        nikkei225_html = (
+            '<div class="kubun_btn" data-win="#kubun_win2">'
+            '<a href="/warning/?mode=8_1" class="decoline">225</a></div>'
+            if nikkei225 else ""
+        )
 
         theme_html = "".join(
             '<li><a href="/themes?theme={t}">{t}</a></li>'.format(t=t)
@@ -51,6 +58,7 @@ class TestParseMasterHtmlKabutan:
         return (
             '{jika}'
             '{purchase}'
+            '{nikkei225_html}'
             '<h1 id="kobetsu">{name}({code})  </h1>'
             '<span class="market">{market}</span>'
             '<a href="/themes/?industry={sid}&market={mid}">{sector}</a>'
@@ -64,6 +72,7 @@ class TestParseMasterHtmlKabutan:
             market=market, sector=sector, sid=sector_id, mid=market_id,
             overview=overview_td, theme_html=theme_html,
             relate_html=relate_html, kessan=kessan,
+            nikkei225_html=nikkei225_html,
             purchase=purchase_td, url=corporate_url,
         )
 
@@ -116,6 +125,13 @@ class TestParseMasterHtmlKabutan:
         html = self._build_html(purchase=None)
         result = master.parse_master_html_kabutan(html)
         assert result["lowest_purchase_money"] == 0
+
+    @pytest.mark.parametrize("nikkei225", [True, False])
+    def test_is_nikkei225(self, nikkei225):
+        """225区分バッジの有無で is_nikkei225 が決まる"""
+        html = self._build_html(nikkei225=nikkei225)
+        result = master.parse_master_html_kabutan(html)
+        assert result["is_nikkei225"] is nikkei225
 
 
 # ==================================================

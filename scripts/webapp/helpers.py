@@ -10,6 +10,7 @@ import html
 import os
 import re
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 from db_shelve import STOCKS_SHELVE, ShelveDB
@@ -1912,6 +1913,10 @@ def list_portfolio_with_indicators(
         row["overall_rating"] = rating_map.get(code_s, "")  # issue #199
         stock = stock_map.get(code_s, {})
         row.update(_extract_indicators_for_portfolio(stock))
+        # 運用総額の市場別内訳用カテゴリ (日経225/TOPIX/グロース/その他)
+        row["market_category"] = _classify_market_category(
+            stock.get("market"), stock.get("is_nikkei225"), code_s=code_s
+        )
         # issue #227: 3点ミニチャート (svg + tooltip)
         row["price_rs_chart"] = build_stock_chart_payload(stock, market_db, mode="mini")
         # RSラインの 1/5/20営業日前比を RS(20,5) 列ソート用に格納。
@@ -3476,6 +3481,57 @@ def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False)
             ma10_streak=ma10_streak, ma10_streak_ever=ma10_streak_ever,
         ),
     }
+
+
+@lru_cache(maxsize=1024)
+def _is_nikkei225_from_cached_master_html(code_s: str) -> bool:
+    """既存 stocks_shelve 互換用に株探基本情報HTMLキャッシュから225区分を読む。"""
+    try:
+        from ks_util import DATA_DIR
+        from master import _NIKKEI225_RE  # 取得側と同じ判定式を使う
+    except Exception:  # noqa: BLE001
+        return False
+    path = os.path.join(
+        DATA_DIR,
+        "stock_data",
+        "kabutan",
+        "base",
+        f"https:__kabutanjp_stock_?code={code_s}.html",
+    )
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return bool(_NIKKEI225_RE.search(f.read()))
+    except OSError:
+        return False
+
+
+def _classify_market_category(
+    market: Optional[str],
+    is_nikkei225: Any,
+    *,
+    code_s: Optional[str] = None,
+) -> str:
+    """保有銘柄の運用総額内訳用に、市場カテゴリを判定する。
+
+    日経225 → グロース → プライム/TOPIX (225除外済み) → その他 の順。
+
+    is_nikkei225 が None の旧DBは、株探基本情報HTMLキャッシュから225区分を補完する。
+    明示的な False は更新済みデータとして尊重し、キャッシュ補完しない。
+
+    実DB (stocks_shelve) の market 値は株探由来の全角短縮形
+    (東証Ｐ / 東証Ｇ / 東証Ｓ 等) で保存される。念のため長い表記
+    (東証プライム / 東証グロース) も前方一致で吸収する。
+    """
+    market = market or ""
+    if is_nikkei225 is None and code_s:
+        is_nikkei225 = _is_nikkei225_from_cached_master_html(code_s)
+    if is_nikkei225:
+        return "日経225"
+    if market.startswith(("東証Ｇ", "東証グロース")):
+        return "グロース"
+    if market.startswith(("東証Ｐ", "東証プライム")):
+        return "TOPIX"
+    return "その他"
 
 
 def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:

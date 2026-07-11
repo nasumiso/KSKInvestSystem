@@ -11,6 +11,11 @@ import make_sector_data
 import make_market_db
 from datetime import datetime
 
+# 日経225構成銘柄の判定: 株探基本情報HTMLの区分バッジ (kubun_win2) に 225 リンクを持つ
+_NIKKEI225_RE = re.compile(
+    r'<div class="kubun_btn"\s+data-win="#kubun_win2">\s*<a[^>]*>225</a>'
+)
+
 
 def parse_master_html_kabutan(html):
     """株探基本情報htmlを解析し銘柄情報抽出
@@ -69,6 +74,9 @@ def parse_master_html_kabutan(html):
         market = m.group(1).strip()
         detail["market"] = market
     log_debug("市場:", market)
+    # 日経225構成銘柄か (区分バッジの有無で判定)
+    detail["is_nikkei225"] = bool(_NIKKEI225_RE.search(html))
+    log_debug("日経225:", detail["is_nikkei225"])
     # 業種
     m = re.search(r'<a href="/themes/\?industry=\d{1,2}&market=\d">(.*?)</a>', html)
     sector_name = "セクター名不明"
