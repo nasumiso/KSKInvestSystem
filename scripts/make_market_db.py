@@ -2339,6 +2339,27 @@ def _html_kessan(kessan_csv):
 # =HYPERLINK("url","text") パターン
 _RE_HYPERLINK = re.compile(r'^=HYPERLINK\("([^"]+)","([^"]+)"\)$')
 
+EXCLUDE_DISCLOSURE_KEYWORDS = [
+    "独立役員届出書",
+    "定時株主総会招集",
+    "コーポレート・ガバナンスに関する",
+]
+
+# ひらがな・カタカナ・漢字・全角英数/記号。含まなければ英文IRとして扱う。
+_RE_DISCLOSURE_CJK = re.compile(r'[\u3040-\u30ff\u3400-\u9fff\uff00-\uffef]')
+
+
+def _is_english_disclosure_heading(heading):
+    """見出しが英文IRか判定する。カーリークォート等の非ASCII約物は許容する。"""
+    return not _RE_DISCLOSURE_CJK.search(heading or "")
+
+
+def _should_exclude_disclosure_heading(heading):
+    """適時開示セクションから除外する見出しか判定する。"""
+    if _is_english_disclosure_heading(heading):
+        return True
+    return any(keyword in heading for keyword in EXCLUDE_DISCLOSURE_KEYWORDS)
+
 
 def _html_disclosure(disc_csv):
     """適宜開示セクションのHTMLを生成する
@@ -2364,10 +2385,9 @@ def _html_disclosure(disc_csv):
             continue
         if row[0] == "":  # 空行
             continue
-        # 見出しが ASCII のみ = 日本語IRの英語版重複なので除外
         body_match = _RE_HYPERLINK.match(str(row[4]))
         heading = body_match.group(2) if body_match else str(row[4])
-        if heading.isascii():
+        if _should_exclude_disclosure_heading(heading):
             continue
         data_rows.append(row)
 

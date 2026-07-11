@@ -1520,6 +1520,30 @@ class TestHtmlDisclosure:
         html = make_market_db._html_disclosure(rows)
         assert "Notice Concerning" not in html
 
+    @pytest.mark.parametrize("heading", [
+        "Notice Regarding Acquisition of Shares of Company’s Consolidated Subsidiary",
+        "(Correction) “Consolidated Financial Results for the Fiscal Year” (IFRS)",
+    ])
+    def test_非ASCII約物を含む英文見出しは除外される(self, heading):
+        rows = [self._row(heading)]
+        html = make_market_db._html_disclosure(rows)
+        assert html == ""
+
+    @pytest.mark.parametrize("heading", [
+        "独立役員届出書",
+        "第10回定時株主総会招集ご通知",
+        "コーポレート・ガバナンスに関する報告書",
+    ])
+    def test_定型キーワードを含む見出しは除外される(self, heading):
+        rows = [self._row(heading)]
+        html = make_market_db._html_disclosure(rows)
+        assert html == ""
+
+    def test_英字混在でも日本語を含む見出しは除外されない(self):
+        rows = [self._row("MUFGのIR資料")]
+        html = make_market_db._html_disclosure(rows)
+        assert "MUFGのIR資料" in html
+
     def test_日本語と英語混在で日本語のみ残る(self):
         rows = [
             self._row("決算短信"),
