@@ -17,9 +17,8 @@
     <span style="color:#9ef0aa;margin-left:0.3em;">{% if summary.avg_hold_win is not none %}{{ "%.0f"|format(summary.avg_hold_win) }}日{% else %}—{% endif %}</span></div>
   <div><span style="color:#888;font-size:0.8em;">平均保有(負)</span>
     <span style="color:#f0a0a0;margin-left:0.3em;">{% if summary.avg_hold_lose is not none %}{{ "%.0f"|format(summary.avg_hold_lose) }}日{% else %}—{% endif %}</span></div>
-  <div style="color:#777;font-size:0.78em;margin-left:auto;">
-    算出 {{ summary.n_total }} 件 / 売却済み {{ closed_count }} 件<br>
-    ※終値プロキシによる概算（手数料・配当は無視）
+  <div title="終値プロキシによる概算（手数料・配当は無視）" style="color:#777;font-size:0.78em;margin-left:auto;cursor:help;">
+    算出 {{ summary.n_total }} 件 / 売却済み {{ closed_count }} 件
   </div>
 </div>
 {% endif %}
@@ -72,6 +71,17 @@
         {% elif ep.sell_date %}
         <div style="font-size:0.82em;margin-top:2px;color:#666;">損益 —</div>
         {% endif %}
+        {% if ep.post_sell %}
+        <div style="font-size:0.78em;margin-top:3px;color:#888;">
+          {% for item in ep.post_sell.values() %}
+          <span style="margin-right:0.45em;">後{{ item.days }}:
+            {% if item.return_pct is not none %}<b style="color:{{ '#f0a0a0' if item.return_pct >= 0 else '#9ef0aa' }};">{{ '+' if item.return_pct >= 0 else '' }}{{ "%.1f"|format(item.return_pct) }}%</b>
+            {% elif item.elapsed_days is not none %}{{ item.elapsed_days }}/{{ item.days }}日
+            {% else %}—{% endif %}
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
       </td>
       {% endif %}
       <td style="white-space:nowrap;">
@@ -94,7 +104,7 @@
       </td>
       <td style="color:#555;">{{ row.reason }}</td>
       {% if loop.first %}
-      <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;">
+      <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;{% if ep.review_prompt %}background:rgba(210,170,70,0.10);{% endif %}">
         <div class="review-memo-cell"
              data-url="/trade-history/{{ ep.code_s }}/{{ ep.memo_seq }}/review-memo"
              data-memo="{{ ep.review_memo or '' | e }}">
