@@ -183,3 +183,30 @@ class TestTradeHistoryPage:
         app2 = create_app()
         app2.config["TESTING"] = True
         assert "売買履歴がありません" in app2.test_client().get("/trade-history").data.decode()
+
+
+class TestLastActionDate:
+    """エピソードの表示順キー: 最新アクション日 (保有/株数変更/売却の最大日付)。"""
+
+    @pytest.mark.parametrize(
+        "ep,expected",
+        [
+            # 売却済み: 売却日が最新
+            ({"hold_date": "2026-06-01", "qty_changes": [], "sell_date": "2026-07-02"},
+             "2026-07-02"),
+            # 保有中で一部売却あり: 株数変更日が最新
+            ({"hold_date": "2026-06-01",
+              "qty_changes": [{"date": "2026-07-02"}], "sell_date": ""},
+             "2026-07-02"),
+            # 遡り入力で株数変更日が売却日より後: max が勝つ
+            ({"hold_date": "2026-06-01",
+              "qty_changes": [{"date": "2026-07-05"}], "sell_date": "2026-07-02"},
+             "2026-07-05"),
+            # アクションなし: 保有日
+            ({"hold_date": "2026-06-01", "qty_changes": [], "sell_date": ""},
+             "2026-06-01"),
+        ],
+    )
+    def test_last_action_date(self, ep, expected):
+        from webapp.routes.trade_history import _last_action_date
+        assert _last_action_date(ep) == expected

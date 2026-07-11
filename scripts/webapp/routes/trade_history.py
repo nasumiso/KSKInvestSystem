@@ -82,6 +82,18 @@ def _build_rows(ep: dict) -> list:
     return rows
 
 
+def _last_action_date(ep: dict) -> str:
+    """エピソード内の最新アクション日 (保有/株数変更/売却の最大日付)。
+
+    timestamp は売買日であり遡り入力があり得るため、末尾要素ではなく max で取る。
+    """
+    dates = [ep["hold_date"]]
+    dates.extend(qc["date"] for qc in ep["qty_changes"])
+    if ep["sell_date"]:
+        dates.append(ep["sell_date"])
+    return max(dates)
+
+
 @trade_history_bp.route("/trade-history")
 def trade_history():
     """売買履歴ページ — 銘柄×保有エピソードをサブ行展開で表示。"""
@@ -150,8 +162,8 @@ def trade_history():
     # 未売却（保有中）エピソードを追加
     episodes.extend(open_episodes.values())
 
-    # 保有日降順
-    episodes.sort(key=lambda r: r["hold_date"], reverse=True)
+    # エピソード内の最新アクション日 (売却 > 株数変更 > 保有) 降順
+    episodes.sort(key=_last_action_date, reverse=True)
 
     # 銘柄名付与・サブ行組み立て・概算損益 (issue #361)
     episode_pls = []
@@ -171,10 +183,10 @@ def trade_history():
     recent = episodes[:30]
     past = episodes[30:]
 
-    # 過去ログを保有年でグルーピング
+    # 過去ログを最新アクション年でグルーピング (ソート基準と揃える)
     past_by_year: dict[str, list] = {}
     for ep in past:
-        year = ep["hold_date"][:4]
+        year = _last_action_date(ep)[:4]
         past_by_year.setdefault(year, []).append(ep)
     # 年降順のリスト [(year, episodes), ...]
     past_years = sorted(past_by_year.items(), key=lambda x: x[0], reverse=True)
