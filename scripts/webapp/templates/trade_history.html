@@ -32,6 +32,7 @@
     <col style="width:5em;">
     <col style="width:7em;">
     <col style="width:4em;">
+    <col style="width:6em;">
     <col>
     <col style="width:22em;">
   </colgroup>
@@ -41,6 +42,7 @@
       <th>種類</th>
       <th style="white-space:nowrap;">日付</th>
       <th style="white-space:nowrap;">株数</th>
+      <th style="white-space:nowrap;">株価</th>
       <th>理由</th>
       <th>振り返りメモ</th>
     </tr>
@@ -58,6 +60,13 @@
         <div style="font-size:0.82em;margin-top:2px;">
           <span style="color:{{ '#9ef0aa' if ep.pl.return_pct >= 0 else '#f0a0a0' }};font-weight:600;">
             {{ '+' if ep.pl.return_pct >= 0 else '' }}{{ "%.1f"|format(ep.pl.return_pct) }}%</span>
+          {% if ep.pl.profit_amount is not none %}
+          <span style="color:{{ '#9ef0aa' if ep.pl.profit_amount >= 0 else '#f0a0a0' }};margin-left:0.4em;">
+            {{ "{:+,}".format(ep.pl.profit_amount|round|int) }}円</span>
+          {% elif ep.pl.profit_per_share is not none %}
+          <span style="color:{{ '#9ef0aa' if ep.pl.profit_per_share >= 0 else '#f0a0a0' }};margin-left:0.4em;" title="株数不明のため1株あたり損益">
+            {{ "{:+,}".format(ep.pl.profit_per_share|round|int) }}円/株</span>
+          {% endif %}
           <span style="color:#888;margin-left:0.4em;">{{ ep.pl.hold_days }}日</span>
         </div>
         {% elif ep.sell_date %}
@@ -70,12 +79,19 @@
           <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#2e6e3e;color:#9ef0aa;">保有</span>
         {% elif row.kind == "売却" %}
           <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#5a2e2e;color:#f0a0a0;">売却</span>
+        {% elif row.kind == "一部売却" %}
+          <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#5a2e2e;color:#f0a0a0;">一部売却</span>
+        {% elif row.kind == "買増" %}
+          <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#2e5a6e;color:#9ed8f0;">買増</span>
         {% else %}
-          <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#3a3a2e;color:#c8c070;">株数変更</span>
+          <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#3a3a2e;color:#c8c070;">株数修正</span>
         {% endif %}
       </td>
       <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ row.date[2:4] }}/{{ row.date[5:7] }}/{{ row.date[8:10] }}</td>
       <td style="text-align:right;color:#888;font-size:0.85em;">{{ row.qty }}</td>
+      <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">
+        {% if row.price is not none %}{{ "{:,}".format(row.price|int) }}{% else %}—{% endif %}
+      </td>
       <td style="color:#555;">{{ row.reason }}</td>
       {% if loop.first %}
       <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;">

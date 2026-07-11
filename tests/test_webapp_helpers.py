@@ -3424,13 +3424,15 @@ def _ep(hold_date="2026-05-01", sell_date="2026-05-11", hold_price=1000,
 
 @pytest.mark.parametrize("ep, expect", [
     # 単純: 1000→1200 = +20%、暦日10日
-    (_ep(), {"return_pct": 20.0, "hold_days": 10}),
-    # 単一 IN で hold_qty=None (旧ログ救済): 株数なしでも損益率は出る
-    (_ep(hold_qty=None), {"return_pct": 20.0, "hold_days": 10}),
+    (_ep(), {"return_pct": 20.0, "hold_days": 10, "profit_amount": 20000, "profit_per_share": 200}),
+    # 単一 IN で hold_qty=None でも sell_qty があれば概算損益額を出す
+    (_ep(hold_qty=None), {"return_pct": 20.0, "hold_days": 10, "profit_amount": 20000, "profit_per_share": 200}),
+    # 株数が全く無い旧ログは損益率のみ出し、損益額は出さない
+    (_ep(hold_qty=None, sell_qty=None), {"return_pct": 20.0, "hold_days": 10, "profit_amount": None, "profit_per_share": 200}),
     # 買い増し加重: 100株@1000 + 100株@1400 → 平均1200、売値1200 = 0%
     (_ep(hold_qty=100, sell_price=1200, sell_qty=200,
          qty_changes=[{"price": 1400, "after_qty": 200}]),
-     {"return_pct": 0.0, "hold_days": 10}),
+     {"return_pct": 0.0, "hold_days": 10, "profit_amount": 0, "profit_per_share": 0}),
     # 減玉あり (200→100) → None
     (_ep(hold_qty=200, qty_changes=[{"price": 1100, "after_qty": 100}]), None),
     # 買い増しがあるのに hold_qty=None (加重不能) → None
@@ -3448,6 +3450,8 @@ def test_calc_episode_pl(ep, expect):
         assert result is not None
         assert round(result["return_pct"], 4) == expect["return_pct"]
         assert result["hold_days"] == expect["hold_days"]
+        assert result["profit_amount"] == expect["profit_amount"]
+        assert result["profit_per_share"] == expect["profit_per_share"]
 
 
 @pytest.mark.parametrize("pls, checks", [

@@ -4123,11 +4123,13 @@ def calc_episode_pl(ep: dict) -> Optional[dict]:
     return_pct = (sell_price / avg_cost - 1) * 100
     hold_days  = (sell_date - hold_date).days (暦日)
     amount     = 金額加重ペイオフの重み
+    profit_amount = 概算実現損益額。株数不明なら None
+    profit_per_share = 1株あたり概算損益。株数不明時の検算表示に使う
 
     取得単価 avg_cost の求め方:
     - 株数変更がない単一 IN: hold_price をそのまま取得単価とする。株数は損益率に
       不要なので hold_qty=None でも算出する (旧ログは IN 株数を持たないため救済)。
-      amount は hold_qty があれば hold_price*hold_qty、なければ hold_price (1株相当)。
+      amount は hold_qty/sell_qty があれば hold_price*qty、なければ hold_price (1株相当)。
     - 買い増し (株数変更) がある: 加重平均が必要。全 IN の株数と価格が揃っている
       場合のみ Σ(IN終値×IN株数)/Σ(IN株数) を算出。数量不明を混ぜると取得単価が
       逆方向に飛び符号反転しうるため、揃わなければ None (母数除外)。
@@ -4175,10 +4177,19 @@ def calc_episode_pl(ep: dict) -> Optional[dict]:
             return None
         avg_cost = sum(p * q for p, q in in_price_qty) / total_in_qty
         amount = avg_cost * total_in_qty
+        profit_per_share = sell_price - avg_cost
+        profit_amount = profit_per_share * total_in_qty
     else:
         # 単一 IN: 株数不要で損益率が出せる
         avg_cost = hold_price
-        amount = hold_price * hold_qty if hold_qty else hold_price
+        qty_for_profit = hold_qty if hold_qty is not None else ep.get("sell_qty")
+        profit_per_share = sell_price - avg_cost
+        if qty_for_profit and qty_for_profit > 0:
+            amount = hold_price * qty_for_profit
+            profit_amount = profit_per_share * qty_for_profit
+        else:
+            amount = hold_price
+            profit_amount = None
 
     if avg_cost <= 0:
         return None
@@ -4194,6 +4205,8 @@ def calc_episode_pl(ep: dict) -> Optional[dict]:
         "hold_days": hold_days,
         "avg_cost": avg_cost,
         "amount": amount,
+        "profit_amount": profit_amount,
+        "profit_per_share": profit_per_share,
     }
 
 

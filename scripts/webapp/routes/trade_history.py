@@ -38,17 +38,34 @@ def _build_rows(ep: dict) -> list:
         "kind":   "保有",
         "date":   ep["hold_date"],
         "qty":    in_qty,
+        "price":  ep.get("hold_price"),
         "reason": ep["hold_reason"],
     })
 
     for qc in qty_changes:
         reason = qc.get("reason", "")
-        after = reason.split("→", 1)[1].strip() if "→" in reason else ""
+        before = ""
+        after = ""
+        if "→" in reason:
+            before, after = [part.strip() for part in reason.split("→", 1)]
+        before_qty = int(before) if before.isdigit() else None
+        after_qty = qc.get("after_qty")
+        if after_qty is None and after.isdigit():
+            after_qty = int(after)
+        if before_qty is None or after_qty is None:
+            kind = "株数修正"
+        elif after_qty > before_qty:
+            kind = "買増"
+        elif after_qty < before_qty:
+            kind = "一部売却"
+        else:
+            kind = "株数修正"
         memo = qc.get("memo", "")
         rows.append({
-            "kind":   "株数変更",
+            "kind":   kind,
             "date":   qc["date"],
             "qty":    after,
+            "price":  qc.get("price"),
             "reason": memo,  # issue #356: 株数変更メモ（なければ空欄）
         })
 
@@ -58,6 +75,7 @@ def _build_rows(ep: dict) -> list:
             "kind":   "売却",
             "date":   ep["sell_date"],
             "qty":    str(sell_qty) if sell_qty is not None else "",
+            "price":  ep.get("sell_price"),
             "reason": ep["sell_reason"],
         })
 
