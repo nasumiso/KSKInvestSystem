@@ -240,14 +240,14 @@ class TestMakeSignal:
             ([], True),  # 全通過(◎) → タグ付与
             (None, False),  # 週足データ欠損(None) → シグナル無効 (issue #340 1-2)
             (["RS"], True),  # 1項目だけmiss → タグ付与
-            (["pr>ma30,40", "ma40Up", "high(low)52"], True),  # 部分崩壊(旧3条件) → タグ付与
-            (_ALL7[:6], True),  # 6項目miss(1つ通過) → タグ付与
+            (["pr>ma30,40", "ma40Up", "high(low)52"], False),  # Stage 2 コア未達
+            (_ALL7[:6], False),  # Stage 2 コア未達
             (_ALL7, False),  # 7項目全miss(完全Stage4崩壊) → 除外
             ("__missing__", True),  # trend_template キー欠落 → タグ付与
         ],
     )
-    def test_pocket_pivot_stage4_filter(self, trend_template, expect_signal):
-        """Stage 4 崩壊(7条件全miss)銘柄でのみポケットピポットを除外する (issue #110/#111)"""
+    def test_pocket_pivot_context_gate(self, trend_template, expect_signal):
+        """Stage 2 コア未達または欠損時はポケットピボットを除外する (issue #340)。"""
         today = datetime.today()
         recent = (today - timedelta(days=2)).strftime("%m/%d")
         stock = {
@@ -259,6 +259,22 @@ class TestMakeSignal:
         signal, tags = make_stock_db.make_signal(stock)
         assert ("[ポ]" in signal) is expect_signal
         assert "ポ" not in tags
+
+    @pytest.mark.parametrize("sig, expected", [
+        ("06/01,-2", True),
+        ("06/01,-2.1", False),
+        ("06/01,NaN", False),
+        ("06/01", False),
+    ])
+    def test_pocket_pivot_kairi_gate(self, sig, expected):
+        """MA10乖離は -2% を下限とし、不正履歴は安全に除外する。"""
+        stock = {"pocket_pivot": [sig], "trend_template": []}
+        assert make_stock_db._is_displayable_pocket_pivot(stock, sig) is expected
+
+    def test_pocket_pivot_invalid_trend_template_hidden(self):
+        """trend_template の不正型は未評価としてポケットを表示しない。"""
+        stock = {"pocket_pivot": ["06/01,0"], "trend_template": "◎"}
+        assert not make_stock_db._is_displayable_pocket_pivot(stock, "06/01,0")
 
     def test_pocket_pivot_year_boundary(self, monkeypatch):
         """項目3: 年初に年末シグナルを処理しても delta_day が正で「ポ」が付く"""
@@ -348,6 +364,22 @@ class TestMakeSignal:
         # 先頭3件のみ signal に出力、4件目は出ない
         assert days[2] in signal
         assert days[3] not in signal
+
+    def test_pocket_pivot_cap_applies_after_context_gate(self):
+        """除外された先頭候補を数えず、通過したポケットを3件表示する。"""
+        today = datetime.today()
+        days = [(today - timedelta(days=n)).strftime("%m/%d") for n in range(1, 6)]
+        stock = {
+            "pocket_pivot": [f"{days[0]},-3"] + [f"{day},0" for day in days[1:]],
+            "trend_template": [],
+            "access_date_price": today,
+            "breakout": [f"{days[0]},100"],
+        }
+        signal, _tags = make_stock_db.make_signal(stock)
+        assert f"{days[0]}(-3)" not in signal
+        assert all(day in signal for day in days[1:4])
+        assert days[4] not in signal
+        assert "[ブ]" in signal
 
     @pytest.mark.parametrize(
         "origin, days_ago, expected",

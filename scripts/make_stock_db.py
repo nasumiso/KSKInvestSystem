@@ -7,6 +7,7 @@ import csv
 from contextlib import contextmanager
 import io
 import traceback
+import math
 
 from ks_util import *
 import gyoseki
@@ -1028,6 +1029,37 @@ def _is_stage4(misses):
     return _TREND_TEMPLATE_ALL <= misses
 
 
+_POCKET_PIVOT_TREND_CORE = {
+    "pr>ma30,40", "ma30>ma40", "ma40Up",
+}
+_POCKET_PIVOT_KAIRI_FLOOR = -2.0
+
+
+def _is_displayable_pocket_pivot(stock, sig):
+    """ポケットピボット履歴を表示してよいか判定する (issue #340 Phase 1.5)。
+
+    検出結果は残したまま、Stage 2 相当のトレンドと MA10 乖離下限を解釈層で
+    ゲートする。旧データで trend_template キーが無い場合だけは従来互換で通す。
+    """
+    if "trend_template" in stock:
+        trend_template = stock["trend_template"]
+        if not isinstance(trend_template, (list, tuple, set)):
+            return False
+        if _POCKET_PIVOT_TREND_CORE & set(trend_template):
+            return False
+
+    if not isinstance(sig, str):
+        return False
+    spl = sig.split(",")
+    if len(spl) < 2:
+        return False
+    try:
+        kairi = float(spl[1])
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(kairi) and kairi >= _POCKET_PIVOT_KAIRI_FLOOR
+
+
 # シグナル表示で銘柄データ自体を stale とみなす上限 (access_date_price が今日からこの
 # 日数を超えて古い銘柄はシグナルを出さない)。他タグ (新高値/押し) の 30 日と揃える。
 _SIGNAL_STALE_DAYS = 30
@@ -1077,7 +1109,7 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
     max_delta_days=None で make_signal と同じ元シグナルをチャート窓内に描ける。
 
     フィルタ:
-      - ポ: trend_template に Stage4 崩壊系が含まれれば全除外、先頭最大3件走査。
+      - ポ: Stage 2 コア条件・MA10乖離下限を通過したものを先頭から最大3件走査。
       - ブ: 先頭1件のみ走査。
       - 各シグナル: access_date_price 基準で delta を計算し、
         max_delta_days が整数なら 0〜max_delta_days のものだけ採用。
@@ -1106,7 +1138,8 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
     # (kind, sigs, extended) の3要素。extended は描画側で半透明中抜き表示する目印。
     sources = []
     if pocket_pivot and not stage4:
-        sources.append(("ポ", list(pocket_pivot)[:3], False))  # 連続ポは最大3件
+        pockets = [sig for sig in pocket_pivot if _is_displayable_pocket_pivot(stock, sig)]
+        sources.append(("ポ", pockets[:3], False))  # 通過した連続ポは最大3件
     breakout = stock.get("breakout", [])
     if breakout and not stage4:
         sources.append(("ブ", list(breakout)[:1], False))  # ブは最新1件のみ
@@ -1206,8 +1239,11 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
     # ポケットピポット
     pocket_pivot = stock.get("pocket_pivot", "")
     if pocket_pivot and not stage4:
-        for i, sig in enumerate(pocket_pivot):
-            if i >= 3:  # 連続ポケットピポットは最大3件まで表示 (issue #110)
+        pocket_count = 0
+        for sig in pocket_pivot:
+            if not _is_displayable_pocket_pivot(stock, sig):
+                continue
+            if pocket_count >= 3:  # 通過した連続ポケットピポットは最大3件まで表示
                 break
             spl = sig.split(",")
             try:
@@ -1215,9 +1251,10 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
                 # mark = "★"  if delta_day < 3 else ""
             except ValueError:
                 log_warning("ポケットピポット日付エラー", spl[0])
-            if i == 0:
+            if pocket_count == 0:
                 signal += "\n[ポ]"
             signal += "%s(%s)," % (spl[0], spl[1])
+            pocket_count += 1
     # ブレイクアウト
     breakout = stock.get("breakout", [])
     if not stage4:

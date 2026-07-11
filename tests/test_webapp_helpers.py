@@ -3267,7 +3267,7 @@ class TestSignalDisplay:
             ("ブ", 200, 0, "強", True),    # per>=200 強・直近 → 濃い
             ("ブ", 199, 0, "中", False),   # per=199 中 → 強より薄い
             ("ポ", 0, 1, "強", True),      # MA10乖離0 強・直近
-            ("ポ", -5, 6, "弱", False),    # 乖離-5 弱・古い → 薄い
+            ("ポ", -2, 6, "中", False),    # 乖離-2 中・古い → 薄い
         ],
     )
     def test_strength_and_alpha(self, kind, num, days_ago,
