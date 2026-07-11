@@ -10,6 +10,7 @@ import html
 import os
 import re
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 from db_shelve import STOCKS_SHELVE, ShelveDB
@@ -1914,7 +1915,7 @@ def list_portfolio_with_indicators(
         row.update(_extract_indicators_for_portfolio(stock))
         # 運用総額の市場別内訳用カテゴリ (日経225/TOPIX/グロース/その他)
         row["market_category"] = _classify_market_category(
-            stock.get("market"), stock.get("is_nikkei225")
+            stock.get("market"), stock.get("is_nikkei225"), code_s=code_s
         )
         # issue #227: 3点ミニチャート (svg + tooltip)
         row["price_rs_chart"] = build_stock_chart_payload(stock, market_db, mode="mini")
@@ -3482,16 +3483,48 @@ def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False)
     }
 
 
-def _classify_market_category(market: Optional[str], is_nikkei225: Any) -> str:
+@lru_cache(maxsize=1024)
+def _is_nikkei225_from_cached_master_html(code_s: str) -> bool:
+    """既存 stocks_shelve 互換用に株探基本情報HTMLキャッシュから225区分を読む。"""
+    try:
+        from ks_util import DATA_DIR
+        from master import _NIKKEI225_RE  # 取得側と同じ判定式を使う
+    except Exception:  # noqa: BLE001
+        return False
+    path = os.path.join(
+        DATA_DIR,
+        "stock_data",
+        "kabutan",
+        "base",
+        f"https:__kabutanjp_stock_?code={code_s}.html",
+    )
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return bool(_NIKKEI225_RE.search(f.read()))
+    except OSError:
+        return False
+
+
+def _classify_market_category(
+    market: Optional[str],
+    is_nikkei225: Any,
+    *,
+    code_s: Optional[str] = None,
+) -> str:
     """保有銘柄の運用総額内訳用に、市場カテゴリを判定する。
 
     日経225 → グロース → プライム/TOPIX (225除外済み) → その他 の順。
+
+    is_nikkei225 が None の旧DBは、株探基本情報HTMLキャッシュから225区分を補完する。
+    明示的な False は更新済みデータとして尊重し、キャッシュ補完しない。
 
     実DB (stocks_shelve) の market 値は株探由来の全角短縮形
     (東証Ｐ / 東証Ｇ / 東証Ｓ 等) で保存される。念のため長い表記
     (東証プライム / 東証グロース) も前方一致で吸収する。
     """
     market = market or ""
+    if is_nikkei225 is None and code_s:
+        is_nikkei225 = _is_nikkei225_from_cached_master_html(code_s)
     if is_nikkei225:
         return "日経225"
     if market.startswith(("東証Ｇ", "東証グロース")):
@@ -4134,3 +4167,141 @@ def build_portfolio_theme_summary(
         r["theme"],
     ))
     return result
+
+
+# ===========================================
+# issue #361: 売買エピソードの概算損益・成績サマリー
+# ===========================================
+
+def calc_episode_pl(ep: dict) -> Optional[dict]:
+    """売却済みエピソードの概算実現損益を終値プロキシから計算する。
+
+    return_pct = (sell_price / avg_cost - 1) * 100
+    hold_days  = (sell_date - hold_date).days (暦日)
+    amount     = 金額加重ペイオフの重み
+    profit_amount = 概算実現損益額。株数不明なら None
+    profit_per_share = 1株あたり概算損益。株数不明時の検算表示に使う
+
+    取得単価 avg_cost の求め方:
+    - 株数変更がない単一 IN: hold_price をそのまま取得単価とする。株数は損益率に
+      不要なので hold_qty=None でも算出する (旧ログは IN 株数を持たないため救済)。
+      amount は hold_qty/sell_qty があれば hold_price*qty、なければ hold_price (1株相当)。
+    - 買い増し (株数変更) がある: 加重平均が必要。全 IN の株数と価格が揃っている
+      場合のみ Σ(IN終値×IN株数)/Σ(IN株数) を算出。数量不明を混ぜると取得単価が
+      逆方向に飛び符号反転しうるため、揃わなければ None (母数除外)。
+
+    None (母数除外) の条件:
+    - 未売却 / sell_price None / hold_price None
+    - 減玉 (株数変更の after_qty < 直前株数) がある
+    - 買い増しがあるのに IN の株数 (qty) or 価格 (price_proxy) が欠ける
+    - 取得単価が 0 以下
+    """
+    sell_date = ep.get("sell_date")
+    sell_price = ep.get("sell_price")
+    hold_price = ep.get("hold_price")
+    if not sell_date or sell_price is None or hold_price is None:
+        return None
+
+    hold_qty = ep.get("hold_qty")
+
+    # 買い増し (増加分) を収集。減玉があれば概算対象外。
+    buy_ups = []  # [(price, added), ...]
+    prev_qty = hold_qty
+    for qc in ep.get("qty_changes", []):
+        after_qty = qc.get("after_qty")
+        if after_qty is None or prev_qty is None:
+            # 株数変更があるのに数量が不明 → 加重平均が組めない
+            return None
+        if after_qty < prev_qty:
+            return None  # 減玉ありは概算対象外
+        added = after_qty - prev_qty
+        prev_qty = after_qty
+        if added == 0:
+            continue  # 数量据え置き (メモのみ変更) は取得に影響しない
+        price = qc.get("price")
+        if price is None:
+            return None  # 買い増しの終値が欠けると加重平均が歪む
+        buy_ups.append((price, added))
+
+    if buy_ups:
+        # 加重平均には 1保 IN の株数も必要
+        if hold_qty is None:
+            return None
+        in_price_qty = [(hold_price, hold_qty)] + buy_ups
+        total_in_qty = sum(q for _, q in in_price_qty)
+        if total_in_qty <= 0:
+            return None
+        avg_cost = sum(p * q for p, q in in_price_qty) / total_in_qty
+        amount = avg_cost * total_in_qty
+        profit_per_share = sell_price - avg_cost
+        profit_amount = profit_per_share * total_in_qty
+    else:
+        # 単一 IN: 株数不要で損益率が出せる
+        avg_cost = hold_price
+        qty_for_profit = hold_qty if hold_qty is not None else ep.get("sell_qty")
+        profit_per_share = sell_price - avg_cost
+        if qty_for_profit and qty_for_profit > 0:
+            amount = hold_price * qty_for_profit
+            profit_amount = profit_per_share * qty_for_profit
+        else:
+            amount = hold_price
+            profit_amount = None
+
+    if avg_cost <= 0:
+        return None
+
+    return_pct = (sell_price / avg_cost - 1) * 100
+    try:
+        hold_days = (date.fromisoformat(sell_date) - date.fromisoformat(ep["hold_date"])).days
+    except (ValueError, TypeError, KeyError):
+        return None
+
+    return {
+        "return_pct": return_pct,
+        "hold_days": hold_days,
+        "avg_cost": avg_cost,
+        "amount": amount,
+        "profit_amount": profit_amount,
+        "profit_per_share": profit_per_share,
+    }
+
+
+def calc_trade_summary(episode_pls: list) -> Optional[dict]:
+    """calc_episode_pl の非 None 結果リストから成績サマリーを算出する。
+
+    勝ち = return_pct > 0、負け = return_pct <= 0 (0% は負け)。
+    ペイオフレシオは金額加重: 勝ち群 Σ(return_pct×amount)/Σamount ÷ |負け群同値|。
+    母数0 → None (サマリー非表示)。
+    """
+    if not episode_pls:
+        return None
+
+    wins = [p for p in episode_pls if p["return_pct"] > 0]
+    loses = [p for p in episode_pls if p["return_pct"] <= 0]
+    n_total = len(episode_pls)
+
+    def _weighted_avg_return(group):
+        total_amount = sum(p["amount"] for p in group)
+        if total_amount <= 0:
+            return None
+        return sum(p["return_pct"] * p["amount"] for p in group) / total_amount
+
+    def _avg_hold(group):
+        return sum(p["hold_days"] for p in group) / len(group) if group else None
+
+    win_weighted = _weighted_avg_return(wins)
+    lose_weighted = _weighted_avg_return(loses)
+    if win_weighted is None or lose_weighted is None or lose_weighted == 0:
+        payoff_ratio = None
+    else:
+        payoff_ratio = win_weighted / abs(lose_weighted)
+
+    return {
+        "win_rate": len(wins) / n_total * 100,
+        "payoff_ratio": payoff_ratio,
+        "avg_hold_win": _avg_hold(wins),
+        "avg_hold_lose": _avg_hold(loses),
+        "n_total": n_total,
+        "n_win": len(wins),
+        "n_lose": len(loses),
+    }

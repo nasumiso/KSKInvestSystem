@@ -3408,7 +3408,6 @@ class TestBuildTrendInfoMa10:
         assert ("赤太点線: 10ma 30日維持中" in info["tooltip"]) is streak
 
 
-# ==================================================
 # _classify_market_category (運用総額の市場別内訳)
 # ==================================================
 @pytest.mark.parametrize("market,is_nikkei225,expected", [
@@ -3425,3 +3424,86 @@ class TestBuildTrendInfoMa10:
 ])
 def test_classify_market_category(market, is_nikkei225, expected):
     assert helpers._classify_market_category(market, is_nikkei225) == expected
+
+
+def test_classify_market_category_legacy_nikkei225_cache(monkeypatch):
+    """旧DBで is_nikkei225 が無い場合はHTMLキャッシュ判定で日経225に補完する。"""
+    monkeypatch.setattr(
+        helpers,
+        "_is_nikkei225_from_cached_master_html",
+        lambda code_s: code_s == "7203",
+    )
+
+    assert helpers._classify_market_category("東証Ｐ", None, code_s="7203") == "日経225"
+    assert helpers._classify_market_category("東証Ｐ", None, code_s="9999") == "TOPIX"
+    # 更新済みDBの明示 False は尊重し、キャッシュ補完しない
+    assert helpers._classify_market_category("東証Ｐ", False, code_s="7203") == "TOPIX"
+
+
+# ==================================================
+# issue #361: 概算損益・成績サマリー
+# ==================================================
+
+def _ep(hold_date="2026-05-01", sell_date="2026-05-11", hold_price=1000,
+        hold_qty=100, sell_price=1200, sell_qty=100, qty_changes=None):
+    return {
+        "hold_date": hold_date, "sell_date": sell_date,
+        "hold_price": hold_price, "hold_qty": hold_qty,
+        "sell_price": sell_price, "sell_qty": sell_qty,
+        "qty_changes": qty_changes or [],
+    }
+
+
+@pytest.mark.parametrize("ep, expect", [
+    # 単純: 1000→1200 = +20%、暦日10日
+    (_ep(), {"return_pct": 20.0, "hold_days": 10, "profit_amount": 20000, "profit_per_share": 200}),
+    # 単一 IN で hold_qty=None でも sell_qty があれば概算損益額を出す
+    (_ep(hold_qty=None), {"return_pct": 20.0, "hold_days": 10, "profit_amount": 20000, "profit_per_share": 200}),
+    # 株数が全く無い旧ログは損益率のみ出し、損益額は出さない
+    (_ep(hold_qty=None, sell_qty=None), {"return_pct": 20.0, "hold_days": 10, "profit_amount": None, "profit_per_share": 200}),
+    # 買い増し加重: 100株@1000 + 100株@1400 → 平均1200、売値1200 = 0%
+    (_ep(hold_qty=100, sell_price=1200, sell_qty=200,
+         qty_changes=[{"price": 1400, "after_qty": 200}]),
+     {"return_pct": 0.0, "hold_days": 10, "profit_amount": 0, "profit_per_share": 0}),
+    # 減玉あり (200→100) → None
+    (_ep(hold_qty=200, qty_changes=[{"price": 1100, "after_qty": 100}]), None),
+    # 買い増しがあるのに hold_qty=None (加重不能) → None
+    (_ep(hold_qty=None, qty_changes=[{"price": 1400, "after_qty": 200}]), None),
+    # 買い増しの price 欠損 → None
+    (_ep(hold_qty=100, qty_changes=[{"price": None, "after_qty": 200}]), None),
+    # 売却価格なし → None
+    (_ep(sell_price=None), None),
+])
+def test_calc_episode_pl(ep, expect):
+    result = helpers.calc_episode_pl(ep)
+    if expect is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert round(result["return_pct"], 4) == expect["return_pct"]
+        assert result["hold_days"] == expect["hold_days"]
+        assert result["profit_amount"] == expect["profit_amount"]
+        assert result["profit_per_share"] == expect["profit_per_share"]
+
+
+@pytest.mark.parametrize("pls, checks", [
+    # 勝ち負け混在: +20%(amt100) 勝ち, -10%(amt100) 負け → win_rate50, payoff 20/10=2.0
+    ([{"return_pct": 20, "hold_days": 5, "amount": 100},
+      {"return_pct": -10, "hold_days": 15, "amount": 100}],
+     {"win_rate": 50.0, "payoff_ratio": 2.0, "n_win": 1, "n_lose": 1}),
+    # 0% は負け扱い
+    ([{"return_pct": 0, "hold_days": 3, "amount": 100}],
+     {"win_rate": 0.0, "n_win": 0, "n_lose": 1}),
+    # 負け0件 → payoff None
+    ([{"return_pct": 20, "hold_days": 5, "amount": 100}],
+     {"win_rate": 100.0, "payoff_ratio": None, "n_win": 1, "n_lose": 0}),
+])
+def test_calc_trade_summary(pls, checks):
+    s = helpers.calc_trade_summary(pls)
+    assert s is not None
+    for k, v in checks.items():
+        assert s[k] == v
+
+
+def test_calc_trade_summary_empty_returns_none():
+    assert helpers.calc_trade_summary([]) is None

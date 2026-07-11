@@ -19,6 +19,10 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", research_db)
     monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", research_db)
     monkeypatch.setattr("portfolio_shelve.DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        "portfolio_shelve._fetch_price_proxy",
+        lambda code_s, timestamp: {"3496": 1234, "6324": 5678}.get(code_s),
+    )
 
     # 銘柄 3496: 3監 → 1保（未売却）
     rec = rs.create_research_record("3496", "アズーム", overall_rating="A")
@@ -49,13 +53,20 @@ class TestTradeHistoryPage:
         assert client.get("/trade-history").status_code == 200
 
     def test_column_headers_shown(self, client):
-        """種類・日付・株数・理由・振り返りメモのヘッダが表示される。"""
+        """種類・日付・株数・株価・理由・振り返りメモのヘッダが表示される。"""
         html = client.get("/trade-history").data.decode()
         assert "種類" in html
         assert "日付" in html
         assert "株数" in html
+        assert "株価" in html
         assert "理由" in html
         assert "振り返りメモ" in html
+
+    def test_price_proxy_column_shown(self, client):
+        """保有・売却イベント日の終値プロキシが株価列に表示される。"""
+        html = client.get("/trade-history").data.decode()
+        assert "1,234" in html
+        assert "5,678" in html
 
     def test_unsold_episode_shown(self, client):
         """未売却エピソード（3496）が保有サブ行で表示される。"""
@@ -111,10 +122,17 @@ class TestTradeHistoryPage:
         assert "保有中メモ" in html
 
     def test_qty_changes_subrow(self, client):
-        """株数変更があるエピソードは「株数変更」サブ行が出る。"""
+        """株数増加は「買増」サブ行として表示される。"""
         ps.update_qty("3496", 50)
         html = client.get("/trade-history").data.decode()
-        assert "株数変更" in html
+        assert "買増" in html
+
+    def test_qty_decrease_subrow(self, client):
+        """株数減少は「一部売却」サブ行として表示される。"""
+        ps.update_qty("3496", 100)
+        ps.update_qty("3496", 50)
+        html = client.get("/trade-history").data.decode()
+        assert "一部売却" in html
 
     def test_rowspan_present_when_qty_changes(self, client):
         """株数変更があるエピソードは銘柄セルに rowspan="2" が付く（保有+株数変更=2行）。"""

@@ -33,7 +33,7 @@ import os
 import re
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from db_shelve import PORTFOLIO_SHELVE, ShelveDB
@@ -185,6 +185,10 @@ ACTION_LOG_FIELDS = frozenset(
         "reason",
         "review_memo",
         "qty",
+        # issue #361: 売買イベント日の終値プロキシ。実約定価格 (#360 Phase2) が
+        # 入れば price_source="actual" で上書きできる構造。旧ログは list 側で None 補完。
+        "price_proxy",   # イベント日 (直前営業日) の終値 (int) or None
+        "price_source",  # "close" (終値プロキシ) / 将来 "actual" (実約定)
     }
 )
 
@@ -310,6 +314,97 @@ def _parse_action_date_to_iso(action_date: str) -> str:
             f"action_date に未来日は指定できません: {action_date} (今日={today.isoformat()})"
         )
     return datetime(parsed.year, parsed.month, parsed.day, 12, 0, 0, tzinfo=JST).isoformat()
+
+
+# ===========================================
+# issue #361: 売買日の営業日正規化 + 終値プロキシ取得
+# ===========================================
+
+def _weekday_date(d: date) -> date:
+    """土(weekday=5)/日(6)なら直前金曜に丸める。平日はそのまま。
+
+    ks_util.recent_weekday は内部の get_price_day が 17:00 境界で 12:00 の
+    timestamp を前日化してしまうため使わず、date だけを見て土日を丸める。
+    祝日は考慮しない (終値は _close_on_or_before が直前営業日を返すため概算許容)。
+    """
+    wd = d.weekday()
+    if wd == 5:
+        return d - timedelta(days=1)
+    if wd == 6:
+        return d - timedelta(days=2)
+    return d
+
+
+def _normalize_weekend_iso(iso_timestamp: str) -> str:
+    """timestamp の日付が土日なら直前金曜の JST 12:00 ISO 文字列を返す。平日は元のまま。
+
+    timestamp = ユーザーが意図した「売買日」。土日値は入力ミスであり、営業日への
+    正規化は改ざんではなく訂正 (issue #361)。新規記録・バックフィルで共有する。
+    """
+    try:
+        d = date.fromisoformat(iso_timestamp[:10])
+    except (ValueError, TypeError):
+        return iso_timestamp
+    fixed = _weekday_date(d)
+    if fixed == d:
+        return iso_timestamp
+    return datetime(fixed.year, fixed.month, fixed.day, 12, 0, 0, tzinfo=JST).isoformat()
+
+
+def _close_on_or_before(price_log: list, target_dt: date) -> Optional[int]:
+    """price_log から target_dt 以下の最新営業日終値を返す。無ければ None。
+
+    price_log: [(date, int終値), ...] (順序非依存)。
+    webapp.helpers._split_log_around_kessanbi と同ロジック (逆依存を避け内製)。
+    """
+    if not price_log:
+        return None
+    try:
+        sorted_log = sorted(price_log, key=lambda x: x[0])  # 昇順
+    except (TypeError, IndexError):
+        return None
+    before: Optional[int] = None
+    for entry in sorted_log:
+        try:
+            entry_dt, entry_pr = entry[0], entry[1]
+        except (IndexError, TypeError):
+            continue
+        if not isinstance(entry_dt, date):
+            continue
+        if entry_dt <= target_dt:
+            before = entry_pr  # 昇順なので最後に上書きされた値が「以下の最新営業日」
+    return before
+
+
+def _fetch_price_proxy(code_s: str, iso_timestamp: str) -> Optional[int]:
+    """stocks_shelve の price_log から timestamp 日付以下の最新営業日終値を引く。
+
+    price_log 窓外 (直近30営業日より古い) ・未取得 (当日終値未確定) なら None。
+    DB 無し等の例外は握りつぶして None。循環回避のため遅延 import。
+    """
+    try:
+        target_dt = date.fromisoformat(iso_timestamp[:10])
+    except (ValueError, TypeError):
+        return None
+    try:
+        from db_shelve import STOCKS_SHELVE
+        with ShelveDB(STOCKS_SHELVE) as db:
+            rec = db.get(normalize_code_s(code_s))
+        price_log = (rec or {}).get("price_log") or []
+    except Exception:
+        return None
+    return _close_on_or_before(price_log, target_dt)
+
+
+def _needs_price_proxy(action_type: Optional[str], status_to: Optional[str]) -> bool:
+    """終値プロキシ付与・土日補正の対象イベントか判定する。
+
+    対象 = 売買日の意味を持つ 1保 (保有開始) / 株数変更 / 売却。
+    初回登録(3監)・監視系ステータス変更・ユニバース除外は対象外。
+    """
+    if status_to == "1保":
+        return True
+    return action_type in {"株数変更", "売却"}
 
 
 # ===========================================
@@ -570,6 +665,14 @@ def append_action_log(
         raise TypeError(f"review_memo must be str, got {type(review_memo).__name__}")
     ts = timestamp or now_iso()
 
+    # issue #361: 売買日イベント (1保/株数変更/売却) は終値プロキシを自動付与する。
+    # 土日 timestamp は入力ミスとして直前営業日に正規化 (新規記録・バックフィルで統一)。
+    extra: Dict[str, Any] = {}
+    if _needs_price_proxy(action_type, status_to):
+        ts = _normalize_weekend_iso(ts)
+        extra["price_proxy"] = _fetch_price_proxy(normalized, ts)
+        extra["price_source"] = "close"
+
     path = _resolve_db_path(db_path)
     with _flock(db_path):
         with ShelveDB(path) as db:
@@ -584,6 +687,7 @@ def append_action_log(
                 "reason": reason,
                 "review_memo": review_memo,
                 "qty": qty,
+                **extra,
             }
             db[_action_log_key(normalized, seq)] = entry
     log_print(
@@ -621,6 +725,9 @@ def list_action_logs(
                 continue
             value.setdefault("review_memo", "")
             value.setdefault("qty", None)
+            # issue #361: 旧ログの後方互換補完 (物理スキーマ変更なし・マイグレーション不要)
+            value.setdefault("price_proxy", None)
+            value.setdefault("price_source", None)
             results.append(value)
     results.sort(
         key=lambda r: (r.get("code_s", ""), r.get("seq", 0)),
@@ -655,6 +762,75 @@ def update_action_log_review_memo(
             entry["review_memo"] = review_memo
             db[key] = entry
     return entry
+
+
+def backfill_price_proxies(
+    *,
+    overwrite: bool = False,
+    db_path: Optional[str] = None,
+) -> Dict[str, int]:
+    """全 action_log の売買日イベント (1保/株数変更/売却) に終値プロキシを一括付与する。
+
+    同時に土日 timestamp を直前営業日に正規化する (issue #361)。
+    終値は既存 DB の price_log (直近30営業日) の範囲のみ。窓外は price_proxy=None のまま。
+
+    overwrite=False: price_proxy が既に非 None のイベントはスキップ (冪等)。None のみ再取得。
+    overwrite=True:  price_source != "actual" のイベントを全て再取得。
+    実約定 (price_source="actual", #360 Phase2) は overwrite でも timestamp/proxy とも触らない。
+
+    Returns: {"updated", "skipped", "no_price", "date_fixed"}
+    """
+    path = _resolve_db_path(db_path)
+    stats = {"updated": 0, "skipped": 0, "no_price": 0, "date_fixed": 0}
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            for key in [k for k in db.keys() if k.startswith(KEY_ACTION_LOG_PREFIX)]:
+                entry = db[key]
+                if not isinstance(entry, dict):
+                    continue
+                if not _needs_price_proxy(entry.get("action_type"), entry.get("status_to")):
+                    continue
+                # 実約定は不可侵 (プロキシが実約定に負ける構造)
+                if entry.get("price_source") == "actual":
+                    stats["skipped"] += 1
+                    continue
+                # 冪等: overwrite でなければ既に埋まっているものはスキップ
+                if not overwrite and entry.get("price_proxy") is not None:
+                    stats["skipped"] += 1
+                    continue
+
+                ts = entry.get("timestamp", "")
+                fixed_ts = _normalize_weekend_iso(ts)
+                date_changed = fixed_ts != ts
+                proxy = _fetch_price_proxy(entry.get("code_s", ""), fixed_ts)
+
+                if not date_changed and proxy == entry.get("price_proxy") \
+                        and entry.get("price_source") == "close":
+                    # 変化なし (窓外で None のまま等)
+                    if proxy is None:
+                        stats["no_price"] += 1
+                    else:
+                        stats["skipped"] += 1
+                    continue
+
+                entry["timestamp"] = fixed_ts
+                entry["price_proxy"] = proxy
+                entry["price_source"] = "close"
+                db[key] = entry
+                if date_changed:
+                    stats["date_fixed"] += 1
+                if proxy is None:
+                    stats["no_price"] += 1
+                else:
+                    stats["updated"] += 1
+    log_print(
+        "portfolio_shelve: backfill_price_proxies",
+        f"updated={stats['updated']}",
+        f"skipped={stats['skipped']}",
+        f"no_price={stats['no_price']}",
+        f"date_fixed={stats['date_fixed']}",
+    )
+    return stats
 
 
 # ===========================================
