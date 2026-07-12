@@ -1507,3 +1507,58 @@ class TestBuildCodeRankRow:
         assert "9999" in decorated[idx_code]
         # 銘柄名は corporate_url が無いとプレーンテキストで返る
         assert decorated[idx_name] == "テスト銘柄"
+
+
+# ==================================================
+# 月足位置評価タグ 月低/月破/月高 (issue #53)
+# ==================================================
+class TestMonthlyPositionTags:
+    """judge_monthly_position のタグ判定テスト (make_signal 経由)"""
+
+    def _mp(self, **overrides):
+        """10年高安=3000/800 の基本特徴量 (較正前提の仮閾値に対応)"""
+        mp = {
+            "months": 120,
+            "high_10y": 3000.0,
+            "low_10y": 800.0,
+            "pos_10y_pct": 27.3,
+            "high_3y_prior": 1600.0,
+            "break_month": None,
+            "pos_3y_median_pct": 9.1,
+            "updated_at": datetime.today().strftime("%Y-%m-%d"),
+        }
+        mp.update(overrides)
+        return mp
+
+    def _this_month(self):
+        return datetime.today().strftime("%Y-%m")
+
+    @pytest.mark.parametrize(
+        "case, mp_overrides, price, expected",
+        [
+            # 現値がレンジ下位35%以下 (pos=27.3%、基準線未満でブレイクなし)
+            ("月低", {}, 1400, "月低"),
+            # 低位滞留 (中央値9.1%) + 当月ブレイク
+            ("月破_break_month", {"break_month": "THIS_MONTH"}, 1400, "月破"),
+            # 低位滞留 + 現値が基準線超え (月足バー確定前の日中ブレイク)
+            ("月破_intraday", {"high_3y_prior": 1200.0}, 1400, "月破"),
+            # レンジ上位30% (pos=90.9%。滞留なし=中央値50%なので月破にならない)
+            ("月高", {"pos_3y_median_pct": 50.0}, 2800, "月高"),
+            # 上場36ヶ月未満のIPOは対象外
+            ("IPO除外", {"months": 24}, 1400, None),
+            # 特徴量が45日超過で stale → 未評価
+            ("stale", {"updated_at": "2020-01-01"}, 1400, None),
+        ],
+    )
+    def test_monthly_tags(self, case, mp_overrides, price, expected):
+        if mp_overrides.get("break_month") == "THIS_MONTH":
+            mp_overrides["break_month"] = self._this_month()
+        stock = {"price": price, "monthly_position": self._mp(**mp_overrides)}
+        _signal, tags = make_stock_db.make_signal(stock)
+        monthly_tags = [t for t in tags if t in ("月低", "月破", "月高")]
+        assert monthly_tags == ([expected] if expected else [])
+
+    def test_no_monthly_position_key(self):
+        """monthly_position 未保存 (未更新の既存銘柄) では月足タグを出さない"""
+        _signal, tags = make_stock_db.make_signal({"price": 1000})
+        assert not any(t in ("月低", "月破", "月高") for t in tags)

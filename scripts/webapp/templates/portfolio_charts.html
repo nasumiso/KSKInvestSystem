@@ -68,11 +68,14 @@
   .chart-cell-header .stage-t-select { width: 4.1em; }
   .chart-cell-header .chart-style-select { max-width: 6.8em; }
   .chart-cell-header .chart-state-select { max-width: 5.8em; }
+  /* 自動判定タグ (参考表示、issue #53)。手入力の需給評価と見分けるため控えめな色 */
+  .chart-cell-header .cell-tags { color: #666; font-size: 0.85em; white-space: nowrap; }
   /* プレースホルダー (空セル) では編集 UI も隠す */
   .chart-cell.placeholder .chart-cell-header .edit-sep,
   .chart-cell.placeholder .chart-cell-header .edit-label,
   .chart-cell.placeholder .chart-cell-header .editable,
   .chart-cell.placeholder .chart-cell-header .stage-struct,
+  .chart-cell.placeholder .chart-cell-header .cell-tags,
   .chart-cell.placeholder .chart-cell-header .chart-struct { display: none; }
   /* 株探チャートページは上部にヘッダ・広告・銘柄サマリー、下部に注釈・広告バナーが
      乗るフルページ。iframe を窓 (.chart-viewport) でクリップし、--chart-offset 分だけ
@@ -158,6 +161,7 @@
           {% endfor %}
         </select>
       </span>
+      <span class="cell-tags" title="自動判定タグ (参考表示)"></span>
     </div>
     <div class="chart-viewport">
       <iframe scrolling="no" tabindex="-1"></iframe>
@@ -208,6 +212,7 @@
         var chartBox = cell.querySelector('.chart-struct');
         var chartStyle = cell.querySelector('.chart-style-select');
         var chartState = cell.querySelector('.chart-state-select');
+        var tagsEl = cell.querySelector('.cell-tags');
         var s = STOCKS[start + i];
         if (!s) {
           // ページ末尾の 1 件不足: 空セルをプレースホルダー表示 (グリッド維持)
@@ -255,6 +260,7 @@
         chartStyle.dataset.prev = chartStyle.value || '';
         chartState.dataset.prev = chartState.value || '';
         chartState.disabled = chartBox.dataset.rescue === '1';
+        tagsEl.textContent = (s.tags && s.tags !== '—') ? s.tags : '';
       }
       var dispStart = total === 0 ? 0 : start + 1;
       var dispEnd = Math.min(start + PER_PAGE, total);

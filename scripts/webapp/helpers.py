@@ -2033,6 +2033,12 @@ def _format_tags_tooltip(tags: str) -> str:
         lines.append("警: RS高いのに売り圧力比率<45 または wma10割れ（1条件のみ）")
     if "早売" in tags:
         lines.append("早売: 10ma維持実績あり→10ma割れ後に、最初に10ma割れした日の安値をさらに下回って確定")
+    if "月破" in tags:
+        lines.append("月破: 月足で低位滞留から直近3ヶ月内に3年高値をブレイク (Stage 1→2)")
+    elif "月高" in tags:
+        lines.append("月高: 月足で10年レンジの上位30%の高値圏 (戻り売り圧力が小さい)")
+    elif "月低" in tags:
+        lines.append("月低: 月足で10年レンジの下位35%以下の低位圏")
     return "\n".join(lines)
 
 

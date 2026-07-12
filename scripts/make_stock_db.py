@@ -1183,6 +1183,80 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
     return out
 
 
+# ---- 月足位置評価 (issue #53) の閾値。oneshots/calibrate_monthly_position.py で
+# 手入力 jukyu_chart ラベルと突き合わせて較正済み (2026-07)
+MONTHLY_MIN_MONTHS = 36          # 上場3年(36ヶ月)未満はIPOとして評価対象外
+MONTHLY_LOW_POS_PCT = 35         # 月低: 10年レンジ位置がこの%以下 (月破の滞留判定と共用)
+MONTHLY_HIGH_POS_PCT = 70        # 月高: 10年レンジ位置がこの%以上 (高値比0.9は手入力の感覚より厳しすぎた)
+MONTHLY_BREAK_RECENT_MONTHS = 3  # 月破: ブレイクからこのヶ月以内
+MONTHLY_STALE_DAYS = 45          # 特徴量がこの日数より古ければ未評価扱い (長期取得失敗対策)
+
+
+def judge_monthly_position(stock):
+    """monthly_position 特徴量から月足位置タグを判定する (issue #53)。
+
+    計算 (特徴量) は検出層 price._calc_monthly_position、閾値の解釈は本関数が持つ。
+    優先度: 月破 > 月高 > 月低 (相互排他で1タグのみ)。
+    Returns:
+        str: "月破" / "月高" / "月低" / "" (対象外・未評価)
+    """
+    mp = stock.get("monthly_position")
+    if not mp:
+        return ""
+    # 長期取得失敗で特徴量が古い場合は未評価扱い (古い根拠でタグを出し続けない)
+    try:
+        updated_dt = datetime.strptime(mp.get("updated_at", ""), "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return ""
+    if (datetime.today() - updated_dt).days > MONTHLY_STALE_DAYS:
+        return ""
+    if mp.get("months", 0) < MONTHLY_MIN_MONTHS:
+        return ""
+    high_10y = mp.get("high_10y")
+    low_10y = mp.get("low_10y")
+    if not high_10y or low_10y is None or high_10y <= low_10y:
+        return ""
+
+    # レンジ位置は日次更新の現値で再計算する (月足特徴量は月1更新でも判定は日次で追随)。
+    # price 欠落時のみ特徴量計算時のレンジ位置にフォールバック
+    price = stock.get("price")
+    if price:
+        p_eval = float(price)
+    else:
+        pos = mp.get("pos_10y_pct")
+        if pos is None:
+            return ""
+        p_eval = low_10y + (high_10y - low_10y) * pos / 100.0
+    pos_pct = (p_eval - low_10y) / (high_10y - low_10y) * 100
+
+    # 月破: 低位滞留 (3年間の位置中央値が低位) かつ 直近3ヶ月内の3年高値ブレイク
+    median_pct = mp.get("pos_3y_median_pct")
+    high_3y_prior = mp.get("high_3y_prior")
+    if median_pct is not None and median_pct <= MONTHLY_LOW_POS_PCT:
+        recent_break = False
+        bm = mp.get("break_month")
+        if bm:
+            try:
+                b_year, b_month = int(bm[:4]), int(bm[5:7])
+                months_ago = (date.today().year - b_year) * 12 + (date.today().month - b_month)
+                if months_ago <= MONTHLY_BREAK_RECENT_MONTHS:
+                    recent_break = True
+            except ValueError:
+                pass
+        # 当月の日中ブレイク (月足バー確定前) も現値で拾う
+        if not recent_break and high_3y_prior and p_eval > high_3y_prior:
+            recent_break = True
+        if recent_break:
+            return "月破"
+    # 月高: 10年レンジの高値圏 (戻り売り圧力が小さい)
+    if pos_pct >= MONTHLY_HIGH_POS_PCT:
+        return "月高"
+    # 月低: 10年レンジの低位
+    if pos_pct <= MONTHLY_LOW_POS_PCT:
+        return "月低"
+    return ""
+
+
 def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
     """銘柄DBデータから、シグナル情報を作成する。
 
@@ -1300,6 +1374,12 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
     # 早売確定フラグ: 30日10ma維持実績ありで10ma割れ後、翌日以降にA日安値を安値で下回った。
     if bool(stock.get("ma10_break_confirmed")):
         tags.append("早売")
+
+    # 月足位置評価 (issue #53)。trend_template None (週足欠損=未評価) の早期returnより
+    # 後にあるため、stale銘柄では月足タグも出ない (未評価銘柄はシグナル全無効の方針と整合)
+    m_tag = judge_monthly_position(stock)
+    if m_tag:
+        tags.append(m_tag)
 
     # rs_line 新高値・ダイバージェンス（当日発生のみ）
     # list_all_db は更新対象外の銘柄もCSVに出すため、price_log が数日〜数週間古い

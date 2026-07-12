@@ -1475,3 +1475,101 @@ class TestStallingDay:
         dic = {"distribution_days": [], "distribution_days_with_close": []}
         price.add_stalling_days(dic, daily_price_list, high52_weekly=None)
         assert dic["distribution_days"] == []
+
+
+# ==================================================
+# 月足位置評価 (issue #53)
+# ==================================================
+class TestCalcMonthlyPosition:
+    """月足特徴量計算のテスト"""
+
+    def _make_monthly_list(self, bars):
+        """(high, low, close) のリスト (新しい月が先頭) から月足リストを生成する。
+        日付は2026年6月から過去へ1ヶ月ずつ遡る月初ラベル。
+        """
+        rows = []
+        year, month = 2026, 6
+        for high, low, close in bars:
+            date_str = "%d年%d月1日" % (year, month)
+            rows.append((
+                date_str, "{:,}".format(low), "{:,}".format(high),
+                "{:,}".format(low), "{:,}".format(close), "0", "0", "1,000",
+            ))
+            month -= 1
+            if month == 0:
+                year, month = year - 1, 12
+        return rows
+
+    def _make_bars(self, break_high=1500):
+        """10年高安=3000/800、3年基準線=1200 の40ヶ月分バーを生成する。
+        先頭 (最新月) の高値 break_high で月破の有無を制御できる。
+        """
+        bars = [(break_high, 1000, 1400)]                # 最新月
+        bars += [(1200, 950, 1000) for _ in range(38)]   # 直近3年含む滞留期間
+        bars += [(3000, 800, 900)]                       # 10年高安 (基準線窓の外)
+        return bars
+
+    def test_basic_features(self):
+        """低位滞留からのブレイクシナリオで全特徴量を確認"""
+        ml = self._make_monthly_list(self._make_bars(break_high=1500))
+        mp = price._calc_monthly_position(ml, price_current=1400)
+        assert mp["months"] == 40
+        assert mp["high_10y"] == 3000
+        assert mp["low_10y"] == 800
+        assert mp["pos_10y_pct"] == 27.3  # (1400-800)/2200*100
+        assert mp["high_3y_prior"] == 1200  # 直近3ヶ月を除く3年窓の高値
+        assert mp["break_month"] == "2026-06"  # 最新月高値1500 > 1200
+        assert mp["pos_3y_median_pct"] == 9.1  # 終値1000のレンジ位置中央値
+
+    def test_no_break_month(self):
+        """基準線を超えなければ break_month は None"""
+        ml = self._make_monthly_list(self._make_bars(break_high=1100))
+        mp = price._calc_monthly_position(ml, price_current=1000)
+        assert mp["break_month"] is None
+
+    @pytest.mark.parametrize(
+        "ml, price_current",
+        [
+            ([], 1000),  # データなし
+            ([("2026年6月1日", "1,000", "1,000", "1,000", "1,000", "0", "0", "100")], 1000),  # レンジゼロ
+        ],
+    )
+    def test_returns_none(self, ml, price_current):
+        """計算不能 (データなし・レンジゼロ) は None"""
+        assert price._calc_monthly_position(ml, price_current) is None
+
+
+class TestMonthlyConvertAndCacheFresh:
+    """月足DataFrame変換 (当月バー除外) とキャッシュ鮮度判定のテスト"""
+
+    def test_current_month_bar_excluded(self):
+        """未確定の当月バーが除外されること"""
+        import pandas as pd
+        from datetime import datetime as _dt
+        dates = pd.date_range(start="2026-01-01", periods=7, freq="MS")  # 1月〜7月
+        df = pd.DataFrame({
+            "Open": [1000] * 7, "High": [1100] * 7, "Low": [900] * 7,
+            "Close": [1050] * 7, "Volume": [10000] * 7,
+        }, index=dates)
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 7, 12, 20, 0)
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            result = price._convert_monthly_df_to_kabutan_format(df)
+        assert len(result) == 6  # 当月 (2026-07) が除外される
+        assert result[0][0] == "2026年6月1日"  # 新しい月が先頭
+
+    @pytest.mark.parametrize(
+        "head_label, expected",
+        [
+            ("2026年6月1日", True),   # 先月バーあり = 新鮮
+            ("2026年5月1日", False),  # 先月バー欠落 = 古い
+        ],
+    )
+    def test_freshness(self, head_label, expected):
+        """先頭バーが先月の月初以降なら新鮮判定"""
+        from datetime import datetime as _dt
+        row = (head_label, "0", "0", "0", "0", "0", "0", "0")
+        with patch("price.datetime") as mock_dt:
+            mock_dt.now.return_value = _dt(2026, 7, 12, 20, 0)
+            mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
+            assert price._is_monthly_cache_fresh([row]) is expected
