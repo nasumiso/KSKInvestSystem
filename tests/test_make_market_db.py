@@ -1727,3 +1727,84 @@ class TestUpdateMarketDbSkipsOnFetchFailure:
             make_market_db.update_market_db()
 
         assert captured["saved"]["fear_and_greed"] == {}
+
+
+# ==================================================
+# get_market_db — mtime キャッシュ無効化
+# ==================================================
+class TestGetMarketDbMtimeCache:
+    """shelve mtime が変わるとキャッシュを再読み込みするテスト"""
+
+    def _setup_cache(self, tmp_path):
+        """テスト用 shelve を作成し、キャッシュをクリアする共通処理"""
+        import db_shelve
+
+        test_db_path = str(tmp_path / "test_market_db")
+        test_db = db_shelve.ShelveDB(test_db_path)
+        with test_db:
+            test_db["theme_rank"] = ["AI", "半導体"]
+
+        make_market_db._market_db_cache = None
+        make_market_db._market_db_cache_sig = None
+        original_db = db_shelve._market_db
+        db_shelve._market_db = db_shelve.ShelveDB(test_db_path)
+
+        return test_db_path, original_db
+
+    def test_cache_refreshed_when_mtime_changes(self, tmp_path):
+        """ファイル mtime が変わると get_market_db() が再読み込みする"""
+        import db_shelve
+
+        test_db_path, original_db = self._setup_cache(tmp_path)
+        try:
+            # 初回取得でキャッシュが作られる
+            result1 = make_market_db.get_market_db()
+            assert result1["theme_rank"] == ["AI", "半導体"]
+
+            # shelve の内容を更新（mtime が変わる）
+            with db_shelve.ShelveDB(test_db_path) as upd:
+                upd["theme_rank"] = ["EV", "防衛"]
+
+            # mtime 変化後は再読み込みされる
+            make_market_db._market_db_cache_sig = None  # mtime 変化をシミュレート
+            result2 = make_market_db.get_market_db()
+            assert result2["theme_rank"] == ["EV", "防衛"]
+        finally:
+            make_market_db._market_db_cache = None
+            make_market_db._market_db_cache_sig = None
+            db_shelve._market_db = original_db
+
+    def test_cache_reused_when_mtime_unchanged(self, tmp_path):
+        """mtime が変わらなければキャッシュを返す（shelve を開き直さない）"""
+        import db_shelve
+
+        test_db_path, original_db = self._setup_cache(tmp_path)
+        try:
+            # 初回取得
+            result1 = make_market_db.get_market_db()
+            assert result1 is not None
+
+            # _get_market_shelve_db をモックに差し替えて "開いたか" を検知
+            call_count = {"n": 0}
+            original_open = make_market_db._get_market_shelve_db
+
+            class _CountingCtx:
+                def __enter__(self_inner):
+                    call_count["n"] += 1
+                    return db_shelve._market_db.__enter__()
+
+                def __exit__(self_inner, *a):
+                    return db_shelve._market_db.__exit__(*a)
+
+            with patch.object(
+                make_market_db, "_get_market_shelve_db", return_value=_CountingCtx()
+            ):
+                result2 = make_market_db.get_market_db()
+
+            # mtime が変わっていないので shelve は再オープンされない
+            assert call_count["n"] == 0
+            assert result2 is result1
+        finally:
+            make_market_db._market_db_cache = None
+            make_market_db._market_db_cache_sig = None
+            db_shelve._market_db = original_db
