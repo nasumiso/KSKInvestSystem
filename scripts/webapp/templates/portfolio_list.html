@@ -230,6 +230,13 @@
     white-space: nowrap;
   }
   #toggle-manage-mode { padding: 0.3em 0.8em; font-size: 0.85em; margin: 0; }
+  #toggle-status-edit {
+    padding: 0; margin: 0; width: auto; border: none; background: transparent;
+    color: #555; font-size: 0.85em; font-weight: normal; text-decoration: underline;
+  }
+  #status-edit-panel {
+    display: flex; gap: 0.5em; align-items: center; flex-wrap: wrap;
+  }
   #manage-panel {
     padding: 0.6em 0.8em; margin: 0.4em 0 0.6em 0;
     background: #f5f7fa; border: 1px solid #d8dee6; border-radius: 4px;
@@ -295,16 +302,27 @@
        title="現在のフィルタ結果をチャート一覧で確認">📊 チャート一覧</a>
   </form>
   {% if not fallback_mode %}
-  {# 追加フォームには return_query を入れない。
-     現在のフィルタが保有のみだと、追加された 3監 銘柄が見えなくなるため、
-     add() 側の default_status_query="watch" フォールバックを効かせる (codex 指摘 P2)。 #}
-  <form action="/portfolio/add" method="POST" class="portfolio-add-form" style="margin:0;display:inline-flex;align-items:center;gap:0.4em;">
-    <label style="margin:0;">コード追加 <input type="text" name="code_s" required pattern="[0-9A-Za-z]+" maxlength="4" style="width:6em;"></label>
-    <button type="submit" style="width:auto;">追加</button>
+  <button type="button" id="toggle-status-edit" aria-expanded="false">▷ ステータス編集</button>
+  <div id="status-edit-panel" style="display:none;">
+  {% if active_status_query %}
+  {% set add_status = {'hold': '1保', 'semi': '2準', 'watch': '3監'}[active_status_query] %}
+  {% set add_label = {'hold': '保有に追加', 'semi': '準保有に追加', 'watch': '監視に追加'}[active_status_query] %}
+  <form action="/portfolio/status" method="POST" id="portfolio-add-form" class="portfolio-add-form" style="margin:0;display:inline-flex;align-items:center;gap:0.4em;flex-wrap:wrap;">
+    <label style="margin:0;">コード <input type="text" name="code_s" required pattern="[0-9A-Za-z]+" maxlength="4" style="width:6em;"></label>
+    <input type="hidden" name="new_status" value="{{ add_status }}">
+    {% if add_status == '1保' %}
+    <button type="button" onclick="openPortfolioAddHoldModal()" style="width:auto;">{{ add_label }}</button>
+    {% else %}
+    <button type="submit" style="width:auto;">{{ add_label }}</button>
+    {% endif %}
   </form>
+  {% else %}
+  <span class="portfolio-add-form hint">追加先のステータスを選択してください</span>
+  {% endif %}
   {% if delete_mode_allowed %}
   <button type="button" id="toggle-delete-mode">一括変更モード</button>
   {% endif %}
+  </div>
   {% endif %}
 </div>
 
@@ -612,6 +630,39 @@
 </div>
 
 {% if not fallback_mode %}
+<div id="portfolio-add-hold-modal" class="portfolio-modal-overlay" style="display:none;" onclick="closePortfolioAddHoldModalOnOverlay(event)">
+  <div class="portfolio-modal-content" role="dialog" aria-labelledby="portfolio-add-hold-modal-title">
+    <div class="portfolio-modal-header">
+      <strong id="portfolio-add-hold-modal-title">保有に追加</strong>
+      <button type="button" class="portfolio-modal-close" onclick="closePortfolioAddHoldModal()" aria-label="閉じる">×</button>
+    </div>
+    <form method="POST" action="/portfolio/status" class="portfolio-modal-body" novalidate>
+      <input type="hidden" name="return_query" value="{{ return_query }}">
+      <input type="hidden" name="new_status" value="1保">
+      <input type="hidden" name="code_s" id="portfolio-add-hold-code">
+      <p style="margin:0 0 0.6em 0;">コード: <strong id="portfolio-add-hold-code-label"></strong></p>
+      <label style="display:block;margin-bottom:0.6em;">
+        株数:
+        <input type="number" name="qty" min="0" step="100" value="100" required
+               style="margin-left:0.4em;width:6em;text-align:right;padding:0.2em 0.3em;">
+        <span style="color:#888;font-size:0.85em;">株</span>
+      </label>
+      <label style="display:block;margin-bottom:0.6em;">
+        売買戦略 (必須):
+        <select name="trade_idea" required style="margin-left:0.4em;">
+          <option value="">-- 戦略を選択 --</option>
+          {% for idea in trade_idea_options %}
+          <option value="{{ idea }}">{{ idea }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="portfolio-modal-actions">
+        <button type="button" class="secondary" onclick="closePortfolioAddHoldModal()">キャンセル</button>
+        <button type="submit">保有に追加</button>
+      </div>
+    </form>
+  </div>
+</div>
 <div id="portfolio-modal" class="portfolio-modal-overlay" style="display:none;" onclick="closePortfolioModalOnOverlay(event)">
   <div class="portfolio-modal-content" role="dialog" aria-labelledby="portfolio-modal-title">
     <div class="portfolio-modal-header">
@@ -740,6 +791,24 @@
 })();
 
 {% if not fallback_mode %}
+// ========== 表示ステータスへの追加 ==========
+function openPortfolioAddHoldModal() {
+  var addForm = document.getElementById('portfolio-add-form');
+  var codeInput = addForm ? addForm.querySelector('input[name="code_s"]') : null;
+  if (!codeInput || !codeInput.reportValidity()) return;
+  var code = codeInput.value.trim();
+  document.getElementById('portfolio-add-hold-code').value = code;
+  document.getElementById('portfolio-add-hold-code-label').textContent = code;
+  document.getElementById('portfolio-add-hold-modal').style.display = 'flex';
+}
+function closePortfolioAddHoldModal() {
+  var modal = document.getElementById('portfolio-add-hold-modal');
+  if (modal) modal.style.display = 'none';
+}
+function closePortfolioAddHoldModalOnOverlay(e) {
+  if (e.target.id === 'portfolio-add-hold-modal') closePortfolioAddHoldModal();
+}
+
 // ========== 保有状態モーダル ==========
 // issue #269: qty 欄は「変更先=1保」のときのみ表示する。
 // issue #363: 売買戦略欄は「新規1保遷移 (現在=非1保 → 変更先=1保)」のときのみ表示・必須化する。
@@ -1418,6 +1487,27 @@ function excludeFromUniverse(codeS) {
         alert('通信エラー: ' + err);
       });
     });
+  });
+})();
+
+// ========== ステータス編集パネル開閉 ==========
+(function() {
+  var toggle = document.getElementById('toggle-status-edit');
+  var panel = document.getElementById('status-edit-panel');
+  if (!toggle || !panel) return;
+  toggle.addEventListener('click', function() {
+    var open = panel.style.display !== 'none';
+    panel.style.display = open ? 'none' : '';
+    toggle.textContent = (open ? '▷' : '▽') + ' ステータス編集';
+    toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+    if (open) {
+      document.body.classList.remove('delete-mode');
+      document.querySelectorAll('.bulk-cb').forEach(function(c) { c.checked = false; });
+      var bar = document.getElementById('bulk-delete-bar');
+      if (bar) bar.style.display = 'none';
+      var cnt = document.getElementById('selected-count');
+      if (cnt) cnt.textContent = '0';
+    }
   });
 })();
 
