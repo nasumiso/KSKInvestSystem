@@ -1713,25 +1713,40 @@ class TestComputeCellStyles:
         else:
             assert styles["per"] == expected_color
 
-    # ----- トレンド (記号表示と背景色は独立。40週MA危険条件は青で上書き) -----
+    # ----- トレンド (Stage 2コア未達は記号表示より優先) -----
     @pytest.mark.parametrize(
         "row, expected",
         [
-            ({"trend_template": "◎pr>ma10"}, f"background:{C['濃黄']}"),
-            ({"trend_template": "◯RS"}, f"background:{C['薄黄']}"),
+            ({"trend_template": "◎pr>ma10", "trend_template_misses": []}, f"background:{C['濃黄']}"),
+            ({"trend_template": "◯RS", "trend_template_misses": []}, f"background:{C['薄黄']}"),
+            (
+                {"trend_template": "◯", "trend_template_misses": ["pr>ma30,40"]},
+                f"background:{C['水色']}",
+            ),
             (
                 {"trend_template": "◯", "trend_template_misses": ["pr>ma30,40", "ma40Up"]},
+                f"background:{C['水色']}",
+            ),
+            (
+                {"trend_template": "▲", "trend_template_misses": ["pr>ma30,40", "ma30>ma40", "ma40Up"]},
                 f"background:{C['青']}",
             ),
             (
-                {"trend_template": "", "trend_template_misses": ["pr>ma30,40", "ma40Up", "RS"]},
+                {"trend_template": "", "trend_template_misses": [
+                    "pr>ma10", "pr>ma30,40", "ma30>ma40", "ma40Up",
+                    "ma10>ma30,40", "high(low)52", "RS",
+                ]},
                 f"background:{C['青']}",
             ),
-            ({"trend_template": "×"}, None),
+            (
+                {"trend_template": "◯", "trend_template_misses": ["RS"]},
+                f"background:{C['薄黄']}",
+            ),
+            ({"trend_template": "×", "trend_template_misses": []}, None),
             ({"trend_template": "—"}, f"background:{C['赤']}"),       # 未評価/データ欠損
             ({"trend_template": ""}, f"background:{C['赤']}"),
-            ({"trend_template": "◎◯", "trend_template_misses": ["pr>ma30,40", "ma40Up"]}, f"background:{C['青']}"),
-            ({"trend_template": "▲"}, None),                          # 対象外記号
+            ({"trend_template": "◎◯", "trend_template_misses": ["pr>ma30,40", "ma40Up"]}, f"background:{C['水色']}"),
+            ({"trend_template": "▲", "trend_template_misses": []}, None),  # 対象外記号
         ],
     )
     def test_trend_template_rule(self, row, expected):
@@ -2833,7 +2848,15 @@ class TestBuildTrendInfoGauge:
 
         assert info["expr"] == "△"
         assert "通過: ma10>ma30,40,high(low)52" in info["tooltip"]
-        assert "不通過:" not in info["tooltip"]
+
+    def test_tooltip_shows_stage2_core_misses(self):
+        """Stage 2コア未達は記号にかかわらず tooltip で確認できる。"""
+        info = helpers.build_trend_info({
+            "price_kairi_wma10": 0,
+            "trend_template": ["pr>ma30,40", "ma30>ma40"],
+        })
+
+        assert "Stage2コア未達: pr>ma30,40,ma30>ma40" in info["tooltip"]
 
 
 class TestBuildSprGaugeForStock:
