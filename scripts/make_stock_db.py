@@ -1188,6 +1188,7 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
 MONTHLY_MIN_MONTHS = 36          # 上場3年(36ヶ月)未満はIPOとして評価対象外
 MONTHLY_LOW_POS_PCT = 35         # 月低: 10年レンジ位置がこの%以下 (月破の滞留判定と共用)
 MONTHLY_HIGH_POS_PCT = 70        # 月高: 10年レンジ位置がこの%以上 (高値比0.9は手入力の感覚より厳しすぎた)
+MONTHLY_BREAK_MAX_POS_PCT = 65   # 月破: ブレイク後も現値がこの%以下であること (上がりすぎた後の急落を除外)
 MONTHLY_BREAK_RECENT_MONTHS = 3  # 月破: ブレイクからこのヶ月以内
 MONTHLY_STALE_DAYS = 45          # 特徴量がこの日数より古ければ未評価扱い (長期取得失敗対策)
 
@@ -1230,9 +1231,11 @@ def judge_monthly_position(stock):
     pos_pct = (p_eval - low_10y) / (high_10y - low_10y) * 100
 
     # 月破: 低位滞留 (3年間の位置中央値が低位) かつ 直近3ヶ月内の3年高値ブレイク
+    #       かつ現値がまだ低〜中位 (ブレイク後に高値圏まで上がり急落した銘柄を除外)
     median_pct = mp.get("pos_3y_median_pct")
     high_3y_prior = mp.get("high_3y_prior")
-    if median_pct is not None and median_pct <= MONTHLY_LOW_POS_PCT:
+    if (median_pct is not None and median_pct <= MONTHLY_LOW_POS_PCT
+            and pos_pct <= MONTHLY_BREAK_MAX_POS_PCT):
         recent_break = False
         bm = mp.get("break_month")
         if bm:
