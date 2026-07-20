@@ -113,7 +113,7 @@ def test_match_single_and_ambiguous(tmp_path, db_path):
 
 
 def test_match_no_double_consume(tmp_path, db_path):
-    """1つの1保スロットに対し近接2 fill があっても、消費されるのは1件だけ。"""
+    """1つの1保スロットに対し近接2 fill があっても消費は1件、増分取込でも再マッチしない。"""
     ps.add_to_watch("6315", db_path=db_path)
     ps.transition_status("6315", "1保", action_date="2026-06-24", qty=100, db_path=db_path)
     # 別々の約定日 (曖昧集約は回避) だが両方が同じ1保スロットの±3日窓に入る buy 2 件
@@ -129,6 +129,15 @@ def test_match_no_double_consume(tmp_path, db_path):
     assert stats["matched"] == 1
     matched = [f for f in ps.list_fills("6315", db_path=db_path) if f["matched_seq"] is not None]
     assert len(matched) == 1
+
+    # 増分取込: 後日の別CSVで同スロット近傍の buy を追加し再マッチしても、既マッチ
+    # スロットは消費済みとして除外され二重マッチしない (P1)
+    rows2 = [_row("6315", "信用新規", "買建", "100", "3,410.0", trade_date="2026/6/26")]
+    csv2 = _write_csv(tmp_path / "t2.csv", rows2)
+    ir.import_csv_to_fills(csv2, db_path=db_path)
+    ir.match_fills_to_episodes(db_path=db_path)
+    matched2 = [f for f in ps.list_fills("6315", db_path=db_path) if f["matched_seq"] is not None]
+    assert len(matched2) == 1  # 増分後もマッチは1件のまま
 
 
 def test_match_two_episodes_no_cross(tmp_path, db_path):

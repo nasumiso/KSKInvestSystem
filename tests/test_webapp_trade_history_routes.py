@@ -101,6 +101,37 @@ class TestTradeHistoryPage:
         saved = next(l for l in ps.list_action_logs("6324") if l["action_type"] == "売却")
         assert saved["post_sell_returns"].keys() == {"5d", "20d"}
 
+    def test_matched_fill_overrides_price_qty_date(self, app, client):
+        """マッチ済み fill があると 6324 の売却済みエピソードの株価・株数・日付が実約定で上書き。
+
+        1保ログ・売却ログには手入力の株数プロキシが無い代わりに、fill を株数の真実源として
+        置換する (P2a)。日付も約定日で上書きされる。
+        """
+        with app.app_context():
+            logs = ps.list_action_logs("6324")
+            hold_seq = next(l["seq"] for l in logs if l.get("status_to") == "1保")
+            sell_seq = next(l["seq"] for l in logs if l["action_type"] == "売却")
+            # buy fill (hold) と sell fill を作成し、対応ログへマッチ済みにする
+            buy = ps.create_fill("6324", trade_date="2026-06-10", side="buy", qty=300,
+                                 price=6990.0, amount=-2097000, trade_kind="信用新規",
+                                 dedup_key="th-buy")
+            _, _ = ps.append_fill(buy)
+            sell = ps.create_fill("6324", trade_date="2026-06-20", side="sell", qty=300,
+                                  price=7810.0, amount=2343000, trade_kind="信用返済",
+                                  dedup_key="th-sell")
+            _, _ = ps.append_fill(sell)
+            for f in ps.list_fills("6324"):
+                seq = hold_seq if f["side"] == "buy" else sell_seq
+                ps.set_fill_matched_seq("6324", f["seq"], seq)
+
+        html = client.get("/trade-history").data.decode()
+        # 実約定価格・株数・約定日が反映される (proxy 5,678 ではなく 6,990/7,810)
+        assert "6,990" in html
+        assert "7,810" in html
+        assert "300" in html          # 実約定株数
+        assert "26/06/10" in html     # 約定日 (buy)
+        assert "26/06/20" in html     # 約定日 (sell)
+
     def test_all_episodes_have_review_memo_textarea(self, client):
         """売却済み・未売却どちらのエピソードにも textarea が表示される。"""
         html = client.get("/trade-history").data.decode()

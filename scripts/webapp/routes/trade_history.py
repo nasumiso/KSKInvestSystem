@@ -126,12 +126,12 @@ def _apply_fill_prices(episodes: list) -> None:
         if ep.get("qty_changes"):
             continue  # 買い増し混在は proxy のまま (§3 の限定)
         code_s = ep["code_s"]
-        # 保有開始 (buy fill) → hold_seq にマッチ
+        # 保有開始 (buy fill) → hold_seq にマッチ。
+        # fill を株数の真実源とするため、手入力 qty があっても実約定株数で置換する。
         buy = _aggregate_fill_price(fills_by_key.get((code_s, ep.get("hold_seq")), []))
         if buy is not None:
             ep["hold_price"] = buy["price"]
-            if ep.get("hold_qty") is None:
-                ep["hold_qty"] = buy["qty"]
+            ep["hold_qty"] = buy["qty"]
             if buy.get("date"):
                 ep["hold_date"] = buy["date"]
         # 売却 (sell fill) → sell_seq にマッチ
@@ -139,9 +139,12 @@ def _apply_fill_prices(episodes: list) -> None:
             sell = _aggregate_fill_price(fills_by_key.get((code_s, ep["sell_seq"]), []))
             if sell is not None:
                 ep["sell_price"] = sell["price"]
-                if ep.get("sell_qty") is None:
-                    ep["sell_qty"] = sell["qty"]
+                ep["sell_qty"] = sell["qty"]
                 if sell.get("date"):
+                    # 約定日で売却日を上書きした場合、保存済み売却後騰落率 (旧手動日基準)
+                    # を無効化する。後段で新約定日を起点に再計算される (issue #366 整合)
+                    if sell["date"] != ep.get("sell_date"):
+                        ep["post_sell_returns"] = {}
                     ep["sell_date"] = sell["date"]
 
 

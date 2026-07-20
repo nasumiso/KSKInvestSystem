@@ -387,7 +387,13 @@ def match_fills_to_episodes(*, db_path: Optional[str] = None) -> Dict[str, int]:
         group_count[key] = group_count.get(key, 0) + 1
 
     stats = {"matched": 0, "unmatched": 0, "ambiguous": 0}
-    consumed: set = set()  # (code_s, slot_seq) 消費済みスロット
+    # (code_s, slot_seq) 消費済みスロット。増分取込に備え、既にマッチ済みの fill が
+    # 占有するスロットを先に投入する (別CSVの後日 fill が同一スロットへ再マッチするのを防ぐ)
+    consumed: set = {
+        (f["code_s"], f["matched_seq"])
+        for f in all_fills
+        if f.get("matched_seq") is not None
+    }
 
     # 約定日昇順で処理 (早い約定を優先確定)
     for f in sorted(all_fills, key=lambda x: (x["code_s"], x["trade_date"], x["seq"])):
