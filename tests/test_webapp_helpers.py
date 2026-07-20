@@ -1794,10 +1794,13 @@ class TestFormatTagsTooltip:
     def test_early_sell_tooltip_adds_short_description(self):
         tooltip = helpers._format_tags_tooltip("早売")
         assert "早売" in tooltip
-        assert "急騰後の10ma利確ライン割れ" in tooltip
+        assert "10ma維持実績あり" in tooltip
 
     def test_non_early_sell_tooltip_keeps_plain_tags(self):
-        assert helpers._format_tags_tooltip("売/押") == "売/押"
+        # 「売」タグにも tooltip が付くため plain テキストではなくなった
+        tooltip = helpers._format_tags_tooltip("売/押")
+        assert "売" in tooltip
+        assert "RS高いのに売り圧力比率" in tooltip
 
     # ----- 進捗率乖離: <C3>=赤(注目) 単独 / eiri≧20 = 濃黄 単独 / 両該当=左右分割 -----
     def test_progress_diff_c3_only(self):
@@ -2916,14 +2919,13 @@ class TestThemeNewsMdToHtml:
         assert helpers.theme_news_md_to_html("") == ""
         assert helpers.theme_news_md_to_html(None) == ""
 
-    def test_inserts_br_before_zenkaku_middot(self):
-        """skill 出力で `・` (全角中点) 区切りの長文 li は読みづらいので、
-        テキスト中の `・` 前に <br> を挿入する。先頭 `・` (li 直後) には入れない。"""
+    def test_middot_no_br_inserted(self):
+        """・→<br> 変換は廃止 (SKILL.md 側で ・ 列挙禁止として根本解決)。
+        ・ は <br> なしでそのまま li 内テキストに含まれる。"""
         src = "- 地合い: 日経4日続落・6万円割れ達成・米10年金利4.68%\n"
         out = helpers.theme_news_md_to_html(src)
-        # 文中の ・ 前には <br> が入る
-        assert "日経4日続落<br>・6万円割れ達成" in out
-        assert "6万円割れ達成<br>・米10年金利" in out
+        assert "日経4日続落・6万円割れ達成" in out
+        assert "<br>" not in out
 
     def test_strips_leading_h1_title(self):
         """skill 出力先頭の `# 見出し` (h1) は /market summary 側で日付を出しているので
@@ -3324,7 +3326,7 @@ class TestSignalDisplay:
         assert "[買過]" in full
 
     def test_resolve_markers_x_interp_and_drop(self):
-        """発生日を週バー間で日割り按分し、10日超でも窓内なら描画、窓外はdrop"""
+        """発生日を週バー間で日割り按分し、窓内なら描画、窓外はdrop"""
         from datetime import timedelta
         anchor_now, anchor_day = self._anchor()
         # 週足バー日付 (昇順): 直近4週 (各週の代表日として週初の月曜)
@@ -3333,7 +3335,7 @@ class TestSignalDisplay:
         xs = [10.0, 20.0, 30.0, 40.0]
         # ポ: 先週の半ば (バー間の按分で xs[2]=30 と xs[3]=40 の中間付近)
         po_day = (monday - timedelta(days=3)).strftime("%m/%d")  # 先週金曜
-        # ブ: 11日前でもチャート窓内なら描画される
+        # ブ: 11日前 = 2週前月曜〜先週月曜の間 (xs[1]=20 と xs[2]=30 の間)
         old_day = (anchor_day - timedelta(days=11)).strftime("%m/%d")
         stock = {"pocket_pivot": ["%s,0" % po_day],
                  "breakout": ["%s,180" % old_day],
@@ -3344,7 +3346,8 @@ class TestSignalDisplay:
         assert "ブ" in kinds
         # 先週金曜は xs[2](先週月)と xs[3](今週月)の間 → 週バーにスナップせず按分
         assert 30.0 < kinds["ポ"]["x"] < 40.0
-        assert 30.0 <= kinds["ブ"]["x"] < 40.0
+        # 11日前は2週前〜先週の間に按分される
+        assert 20.0 <= kinds["ブ"]["x"] < 30.0
 
     def test_chart_markers_render_and_size(self):
         """build_price_rs_chart_full: ポ三角/ブダイヤが線より後 (前面) に描画・強度でサイズ可変"""

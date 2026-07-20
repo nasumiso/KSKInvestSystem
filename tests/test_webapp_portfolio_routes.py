@@ -185,7 +185,7 @@ class TestDashboardGet:
         # 値の "%" は列ヘッダ側 ("利益成長(%)") に集約 (issue #177)
         assert ">100<" in html
         assert "表記: ◎全通過 / ◯1-2件未達" in html
-        assert "青背景: 株価30/40WMA未達 + 40WMA下向き" in html
+        assert "Stage2コア: 株価30/40WMA上" in html
 
     def test_dashboard_shows_rating_and_jukyu_column(self, client, portfolio_db_path):
         """評価列とチャートパターン inline 編集列が一覧に出る (issue #199 / #314)"""
@@ -355,7 +355,8 @@ class TestTransitionPost:
         assert resp.status_code == 302
         logs = ps.list_action_logs(code_s="3496", db_path=portfolio_db_path)
         latest = logs[-1]
-        assert latest["timestamp"] == "2026-05-10T12:00:00+09:00"
+        # 2026-05-10 は土曜のため直前営業日 2026-05-08 (木) に正規化される (issue #361)
+        assert latest["timestamp"] == "2026-05-08T12:00:00+09:00"
         assert latest["action_type"] == "売却"
 
     def test_transition_future_action_date_flashes_error(self, client, portfolio_db_path):
@@ -1315,8 +1316,8 @@ class TestReturnQueryRedirect:
         import re
         resp = client.get("/portfolio?status=hold")
         html = resp.data.decode()
-        # 追加フォーム部分を抽出 (action="/portfolio/add" の form タグ)
-        m = re.search(r'<form[^>]*action="/portfolio/add"[^>]*>(.*?)</form>', html, re.DOTALL)
+        # 追加フォーム部分を抽出 (id="portfolio-add-form")
+        m = re.search(r'<form[^>]*id="portfolio-add-form"[^>]*>(.*?)</form>', html, re.DOTALL)
         assert m is not None, "追加フォームが見つからない"
         form_inner = m.group(1)
         assert 'name="return_query"' not in form_inner

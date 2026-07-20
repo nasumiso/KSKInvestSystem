@@ -18,6 +18,9 @@ YFINANCE_CACHE_FNAME = os.path.join(
 YFINANCE_WEEKLY_CACHE_FNAME = os.path.join(
     DATA_DIR, "stock_data/yahoo/price/yfinance_price_w_%s.json"
 )
+YFINANCE_MONTHLY_CACHE_FNAME = os.path.join(
+    DATA_DIR, "stock_data/yahoo/price/yfinance_price_m_%s.json"
+)
 
 URL_PRICE_D_KABUTAN = "https://kabutan.jp/stock/kabuka?code=%s&ashi=day&page=%d"
 PRICE_D_FNAME_KABUTAN = os.path.join(
@@ -26,6 +29,12 @@ PRICE_D_FNAME_KABUTAN = os.path.join(
 
 INTERVAL_DAY_D = 1
 INTERVAL_DAY_W = 7
+# 月足キャッシュのファイルTTL。_is_monthly_cache_fresh の内容判定と併用し実質月1更新 (issue #53)
+INTERVAL_DAY_M = 28
+
+# 月足評価 (issue #53) のブレイク判定窓。直近Nヶ月を除いた3年高値を基準線とし、
+# 直近Nヶ月内の高値がそれを上回った月を break_month として記録する
+MONTHLY_BREAK_WINDOW = 3
 
 # ブレイクアウト extended 候補 (詳細チャートのみ表示)。正規ブレイクは MA10乖離
 # +5%以内 (高値追いを避けるオニール/ミネルヴィニ規律) だが、出来高/急騰と上昇は
@@ -1254,6 +1263,60 @@ def _convert_weekly_df_to_kabutan_format(df):
     return weekly_price_list
 
 
+def _is_monthly_cache_fresh(monthly_price_list):
+    """月足キャッシュが最新確定月を含んでいるかを判定する (issue #53)。
+
+    yfinance月足バーは月初(1日)ラベル。当月は未確定として変換時に除外されるため、
+    先頭バーが「先月の月初」以降であればキャッシュは最新確定月を含んでいる。
+    Args:
+        monthly_price_list: _convert_monthly_df_to_kabutan_format形式のリスト
+    Returns:
+        bool: 確定月を含んでいればTrue
+    """
+    from datetime import timedelta
+    if not monthly_price_list:
+        return False
+    head_date = _parse_weekly_cache_date(monthly_price_list[0][0])
+    if head_date is None:
+        return False
+    price_day = get_price_day(datetime.now())
+    prev_month_first = (price_day.replace(day=1) - timedelta(days=1)).replace(day=1)
+    return head_date >= prev_month_first
+
+
+def _convert_monthly_df_to_kabutan_format(df):
+    """yfinance月足DataFrameをKabutan互換のmonthly_price_list形式に変換する (issue #53)
+    yfinance月足バーは月初(1日)ラベルで、当月が部分バーとして含まれるため除外する。
+    Args:
+        df: yfinance historyのDataFrame (interval="1mo")
+    Returns:
+        list[tuple[str, ...]]: 8要素タプルのリスト、新しい日付が先頭
+            (日付, 始値, 高値, 安値, 終値, 前月比, 前月比%, 売買高)
+            前月比/前月比%は指標計算で未使用のため"0"固定
+    """
+    # get_price_day()は17:00前なら前日扱い。月足判定でも同じ基準日を使う
+    price_day = get_price_day(datetime.now())
+
+    monthly_price_list = []
+    for idx in reversed(df.index):
+        row = df.loc[idx]
+        if hasattr(idx, "date"):
+            dt = idx.date() if callable(idx.date) else idx.date
+        else:
+            dt = idx
+        # 当月バーは未確定なので除外
+        if (dt.year, dt.month) == (price_day.year, price_day.month):
+            continue
+        date_str = "%d年%d月%d日" % (dt.year, dt.month, dt.day)
+        open_p = "{:,}".format(int(row["Open"]))
+        high_p = "{:,}".format(int(row["High"]))
+        low_p = "{:,}".format(int(row["Low"]))
+        close_p = "{:,}".format(int(row["Close"]))
+        volume = "{:,}".format(int(row["Volume"]))
+        monthly_price_list.append((date_str, open_p, high_p, low_p, close_p, "0", "0", volume))
+    return monthly_price_list
+
+
 def _convert_daily_df_to_kabutan_format(df):
     """yfinance日足DataFrameをKabutan互換のdaily_price_list形式に変換する
     Args:
@@ -1499,6 +1562,69 @@ def get_weekly_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
     _save_yfinance_cache(cache_fname, None, weekly_price_list)
     log_print("<---- yfinance週足取得完了: %s データ数=%d週" % (code_s, len(weekly_price_list)))
     return weekly_price_list
+
+
+def get_monthly_data_yfinance(code_s, stock={}, upd=UPD_INTERVAL):
+    """yfinance APIで月次価格データを取得する (issue #53)
+    Args:
+        code_s: 銘柄コード文字列
+        stock: 銘柄DB情報（マーケットコード判定用）
+        upd: 更新レベル
+    Returns:
+        list[tuple[str, ...]] | None: Kabutan互換のmonthly_price_list、失敗時None
+    """
+    cache_fname = YFINANCE_MONTHLY_CACHE_FNAME % code_s
+
+    # キャッシュチェック
+    if upd < UPD_FORCE and os.path.exists(cache_fname):
+        if upd < UPD_INTERVAL:
+            # UPD_CACHE: キャッシュがあればそのまま使用
+            _, pl = _load_yfinance_cache(cache_fname)
+            if pl is not None:
+                log_debug("yfinance月足キャッシュ使用(UPD_CACHE): %s" % code_s)
+                return [tuple(row) for row in pl]
+        else:
+            # UPD_INTERVAL: TTL内かつ内容が最新確定月を含んでいればキャッシュ使用
+            cache_ok, cach_date = is_file_timestamp(cache_fname, INTERVAL_DAY_M)
+            if cache_ok:
+                _, pl = _load_yfinance_cache(cache_fname)
+                if pl is not None and _is_monthly_cache_fresh([tuple(row) for row in pl]):
+                    log_debug("yfinance月足キャッシュ使用(UPD_INTERVAL): %s" % code_s)
+                    return [tuple(row) for row in pl]
+                elif pl is not None:
+                    log_debug("yfinance月足キャッシュ古い(最新確定月なし)、再取得: %s" % code_s)
+
+    # yfinance APIで取得
+    ticker_symbol = _get_ticker_symbol(code_s, stock)
+
+    log_print("----> %sの月次価格情報をyfinance(%s)から取得します" % (code_s, ticker_symbol))
+    try:
+        with sema:
+            ticker = yf.Ticker(ticker_symbol)
+            df = ticker.history(period="10y", interval="1mo", auto_adjust=True)
+    except Exception as e:
+        log_warning("yfinance月足取得エラー(%s): %s" % (code_s, e))
+        return None
+
+    if df is None or df.empty:
+        log_warning("yfinance月足データなし: %s" % code_s)
+        return None
+
+    # NaN行を除去
+    df = df.dropna(subset=["Close"])
+    if df.empty:
+        log_warning("yfinance月足データなし(NaN除去後): %s" % code_s)
+        return None
+
+    monthly_price_list = _convert_monthly_df_to_kabutan_format(df)
+    if not monthly_price_list:
+        log_warning("yfinance月足価格リスト変換失敗: %s" % code_s)
+        return None
+
+    # キャッシュに保存（price_currentは月足では不要だがスキーマ互換のためNone）
+    _save_yfinance_cache(cache_fname, None, monthly_price_list)
+    log_print("<---- yfinance月足取得完了: %s データ数=%dヶ月" % (code_s, len(monthly_price_list)))
+    return monthly_price_list
 
 
 def prefetch_yfinance_batch(code_s_list, stocks=None):
@@ -1994,6 +2120,102 @@ def get_weekly_price_data(code_s, stock={}, upd=UPD_INTERVAL, prices=[]):
     return parsed_data_w
 
 
+def _calc_monthly_position(monthly_price_list, price_current=0):
+    """月足リストから月足位置評価の特徴量を計算する (issue #53)
+
+    shelve には月足全系列でなく本特徴量のみ保存する (DB肥大防止)。
+    タグ判定 (月低/月破/月高) の閾値は解釈層 (make_stock_db.judge_monthly_position)
+    が持ち、本関数は事実 (高値・安値・位置・ブレイク月) のみを返す。
+
+    Args:
+        monthly_price_list: _convert_monthly_df_to_kabutan_format形式のリスト (新しい月が先頭)
+        price_current: 現在株価 (0なら最新月終値で代用)
+    Returns:
+        dict | None: 特徴量dict。計算不能 (データなし・レンジゼロ) 時はNone
+    """
+    from statistics import median
+    if not monthly_price_list:
+        return None
+    try:
+        highs = [float(p[2].replace(",", "")) for p in monthly_price_list]
+        lows = [float(p[3].replace(",", "")) for p in monthly_price_list]
+        closes = [float(p[4].replace(",", "")) for p in monthly_price_list]
+    except (ValueError, IndexError):
+        log_warning(" 月足価格データが欠けている")
+        return None
+
+    high_10y = max(highs)
+    low_10y = min(lows)
+    if high_10y <= low_10y:
+        return None
+    range_10y = high_10y - low_10y
+
+    p_cur = price_current if price_current else closes[0]
+    pos_10y_pct = round((p_cur - low_10y) / range_10y * 100, 1)
+
+    # ブレイク基準線: 直近3ヶ月を除く過去3年 (バー3〜35) の高値
+    w = MONTHLY_BREAK_WINDOW
+    prior_highs = highs[w:w + 36]
+    high_3y_prior = max(prior_highs) if prior_highs else None
+
+    # break_month: 直近3ヶ月内で月高値が基準線を上回った最新月 ("YYYY-MM")
+    break_month = None
+    if high_3y_prior is not None:
+        for i in range(min(w, len(highs))):
+            if highs[i] > high_3y_prior:
+                dt = _parse_weekly_cache_date(monthly_price_list[i][0])
+                if dt is not None:
+                    break_month = "%04d-%02d" % (dt.year, dt.month)
+                break
+
+    # 低位滞留度: 直近3年 (直近3ヶ月除く) の月終値レンジ位置%の中央値。
+    # 閾値は焼き込まず中央値スカラーで保存し、較正を解釈層の定数変更だけで済ませる
+    prior_closes = closes[w:w + 36]
+    pos_3y_median_pct = None
+    if prior_closes:
+        pos_3y_median_pct = round(
+            median((c - low_10y) / range_10y * 100 for c in prior_closes), 1
+        )
+
+    return {
+        "months": len(monthly_price_list),
+        "high_10y": high_10y,
+        "low_10y": low_10y,
+        "pos_10y_pct": pos_10y_pct,
+        "high_3y_prior": high_3y_prior,
+        "break_month": break_month,
+        "pos_3y_median_pct": pos_3y_median_pct,
+        "updated_at": datetime.now().strftime("%Y-%m-%d"),
+    }
+
+
+def get_monthly_price_data(code_s, stock={}, upd=UPD_INTERVAL, prices=[]):
+    """月足位置評価の特徴量を取得する (issue #53)
+
+    「取得失敗」と「計算不能」を区別する:
+    - 取得失敗 → {} を返しキーをemitしない → update_db が既存値を保持し次回リトライ
+    - 計算不能 → {"monthly_position": None} で明示的に無効化 (古い評価の残留防止)
+    update_db の保護キーには入れない (dictのキー単位マージだと古い break_month が
+    残留するため、スナップショット丸ごと置換が正)。
+    Args:
+        code_s: 銘柄コード文字列
+        stock: 銘柄DB情報（マーケットコード判定用）
+        upd: 更新レベル
+        prices: [終値, 高値, 安値] の現在価格リスト
+    Returns:
+        dict: {"monthly_position": dict | None} または {} (評価対象外・取得失敗)
+    """
+    # 市場指数は月足評価の対象外
+    if code_s in _MARKET_INDEX_CODES:
+        return {}
+    monthly_price_list = get_monthly_data_yfinance(code_s, stock, upd)
+    if monthly_price_list is None:
+        return {}
+    price_current = prices[0] if prices else 0
+    mp = _calc_monthly_position(monthly_price_list, price_current)
+    return {"monthly_position": mp}
+
+
 def get_daily_price_kabutan(code_s, upd=UPD_INTERVAL):
     """日次の価格データを取得する
     マーケットデータ作成時に呼ばれる
@@ -2019,6 +2241,8 @@ def get_price_data(code_s, stock={}, upd=UPD_INTERVAL):
     # 週次データを取得してRSを求める
     parsed_data_w = get_weekly_price_data(code_s, stock=stock, upd=upd, prices=cur_prices)
     parsed_data.update(parsed_data_w)
+    # 月足位置評価 (issue #53)
+    parsed_data.update(get_monthly_price_data(code_s, stock=stock, upd=upd, prices=cur_prices))
     return parsed_data
 
 

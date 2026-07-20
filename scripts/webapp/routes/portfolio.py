@@ -1042,6 +1042,7 @@ def charts():
             "jukyu_chart": (r.get("memo") or {}).get("jukyu_chart") or "",
             "stage_struct": _parse_stage_value((r.get("memo") or {}).get("stage") or ""),
             "jukyu_chart_struct": _parse_chart_value((r.get("memo") or {}).get("jukyu_chart") or ""),
+            "tags": r.get("tags") or "",
         }
         for r in rows
     ]
