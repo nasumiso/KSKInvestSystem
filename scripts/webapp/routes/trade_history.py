@@ -14,6 +14,7 @@ from webapp.helpers import (
     calc_episode_pl,
     calc_post_sell_returns,
     calc_trade_summary,
+    list_unmatched_fills,
     resolve_stock_name,
 )
 
@@ -274,12 +275,16 @@ def trade_history():
     # 年降順のリスト [(year, episodes), ...]
     past_years = sorted(past_by_year.items(), key=lambda x: x[0], reverse=True)
 
+    # issue #360 Phase2 (c): 取込済みで未マッチ (P/L 未反映) の fill を一覧表示 (閲覧のみ)
+    unmatched_fills = list_unmatched_fills()
+
     return render_template(
         "trade_history.html",
         recent=recent,
         past_years=past_years,
         summary=summary,
         closed_count=closed_count,
+        unmatched_fills=unmatched_fills,
     )
 
 
