@@ -10,6 +10,7 @@ import json
 import urllib.parse
 from datetime import datetime, timedelta
 import csv
+import glob
 import os
 import sys
 
@@ -21,7 +22,7 @@ from ks_util import *
 
 
 URL_THEME_RANK_KABUTAN = "https://kabutan.jp/info/accessranking/3_2"
-from db_shelve import get_market_db as _get_market_shelve_db
+from db_shelve import get_market_db as _get_market_shelve_db, MARKET_SHELVE
 
 THEME_STRENGTH_WINDOW_DAYS = 40
 
@@ -517,27 +518,48 @@ def make_fng_db():
 
 
 _market_db_cache = None
+_market_db_cache_sig = None
 _market_db_lock = threading.Lock()
 
 
+def _market_db_file_sig():
+    """market shelve 実ファイルの最終更新時刻を返す (キャッシュ世代判定用)。
+
+    dbm バックエンドによりサフィックスが異なる (.dat/.dir/.bak, .db 等) ため
+    glob で実ファイル群を拾い、最大の mtime を世代印とする。ファイルが
+    見つからなければ None。
+    """
+    mtimes = [os.path.getmtime(p) for p in glob.glob(MARKET_SHELVE + "*")]
+    return max(mtimes) if mtimes else None
+
+
 def get_market_db():
-    """マーケットDBを取得（dictとして返す、キャッシュあり・スレッドセーフ）"""
-    global _market_db_cache
-    if _market_db_cache is not None:
+    """マーケットDBを取得（dictとして返す、キャッシュあり・スレッドセーフ）。
+
+    別プロセス (日次バッチ) の更新を WebApp 側でも反映できるよう、shelve
+    実ファイルの mtime をキャッシュの世代印として保持し、変わっていたら
+    再読み込みする。
+    """
+    global _market_db_cache, _market_db_cache_sig
+    sig = _market_db_file_sig()
+    if _market_db_cache is not None and sig == _market_db_cache_sig:
         return _market_db_cache
     with _market_db_lock:
-        # ダブルチェックロッキング: ロック取得中に他スレッドがキャッシュ済みの場合
-        if _market_db_cache is not None:
+        # ダブルチェックロッキング: ロック取得中に他スレッドが読み込み済みの場合
+        sig = _market_db_file_sig()
+        if _market_db_cache is not None and sig == _market_db_cache_sig:
             return _market_db_cache
         with _get_market_shelve_db() as db:
             _market_db_cache = db.export_to_dict()
+        _market_db_cache_sig = sig
     return _market_db_cache
 
 
 def _save_market_db(market_db):
     """マーケットDBを保存"""
-    global _market_db_cache
+    global _market_db_cache, _market_db_cache_sig
     _market_db_cache = None  # キャッシュ無効化
+    _market_db_cache_sig = None
     with _get_market_shelve_db() as db:
         db.import_from_dict(market_db)
 

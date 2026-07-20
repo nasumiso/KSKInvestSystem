@@ -1352,6 +1352,61 @@ class TestTransitionRequiresStrategy:
         assert rec["qty"] == 300
         assert rec["memo"].get("trade_idea") == "GARP"
 
+    def test_code_status_endpoint_changes_watch_to_semi(self, portfolio_app):
+        """一覧上部のコード指定操作はユニバース追加でなくステータス変更を行う。"""
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+
+        resp = app.test_client().post(
+            "/portfolio/status",
+            data={"code_s": "3496", "new_status": "2準"},
+        )
+
+        assert resp.status_code == 302
+        assert ps.get_record("3496", db_path=portfolio_db)["status"] == "2準"
+
+    def test_code_status_endpoint_requires_strategy_for_hold(self, portfolio_app):
+        """コード指定の保有化でも売買戦略と株数を必須にする。"""
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+        client = app.test_client()
+
+        client.post("/portfolio/status", data={
+            "code_s": "3496", "new_status": "1保", "qty": "100",
+        })
+        assert ps.get_record("3496", db_path=portfolio_db)["status"] == "3監"
+
+        client.post("/portfolio/status", data={
+            "code_s": "3496", "new_status": "1保", "qty": "100",
+            "trade_idea": "GARP",
+        })
+        record = ps.get_record("3496", db_path=portfolio_db)
+        assert record["status"] == "1保"
+        assert record["qty"] == 100
+
+    @pytest.mark.parametrize(
+        "status_query, expected_label",
+        [
+            ("hold", "保有に追加"),
+            ("semi", "準保有に追加"),
+            ("watch", "監視に追加"),
+        ],
+    )
+    def test_code_add_button_follows_display_status(
+        self, portfolio_app, status_query, expected_label
+    ):
+        """コード追加の操作先は現在表示中のステータスに一致する。"""
+        app, _ = portfolio_app
+
+        html = app.test_client().get(
+            f"/portfolio?status={status_query}"
+        ).data.decode()
+
+        assert 'id="toggle-status-edit"' in html
+        assert '▷ ステータス編集</button>' in html
+        assert 'id="status-edit-panel" style="display:none;"' in html
+        assert f">{expected_label}</button>" in html
+
 
 class TestPortfolioHoldSummary:
     """保有 (status=hold) フィルタ表示時の運用総額 / 保有株数更新日サマリーの統合テスト"""

@@ -2,6 +2,7 @@
 
 GET  /portfolio?status=hold&gyoutai_theme=半導体 : フィルタ (issue #215)
 POST /portfolio/add                              : 3監 への新規追加 / 除外済みの復活
+POST /portfolio/status                           : コード指定の保有ステータス変更
 POST /portfolio/<code_s>/transition              : ステータス変更
 POST /portfolio/bulk-exclude                     : 2準/3監 銘柄をユニバースから除外 (一括)
 POST /portfolio/bulk-transition                  : ステータスを一括変更
@@ -743,6 +744,84 @@ def add():
     else:
         flash(f"{normalized} {name_for_flash} を監視に追加しました".rstrip(), "info")
     return _redirect_with_return_query(default_status_query="watch", code_s=normalized)
+
+
+@portfolio_bp.route("/portfolio/status", methods=["POST"])
+def set_status():
+    """コード指定で保有/準保有/監視へ変更する。
+
+    未登録コードは内部的に 3監 レコードを作ってから、選択された状態へ遷移する。
+    これにより画面上の操作を「ユニバース追加」ではなく状態の指定に統一する。
+    """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+
+    code_s = (request.form.get("code_s") or "").strip()
+    new_status = (request.form.get("new_status") or "").strip()
+    reason = (request.form.get("reason") or "").strip() or "WebApp ステータス変更"
+    trade_idea = (request.form.get("trade_idea") or "").strip()
+    qty_raw = (request.form.get("qty") or "").strip()
+    if new_status not in ps.VALID_STATUSES:
+        flash(f"不正なステータス: {new_status!r}", "error")
+        return _redirect_with_return_query()
+    try:
+        ps.validate_code_s(code_s)
+    except (ValueError, TypeError) as e:
+        flash(f"不正な銘柄コード: {e}", "error")
+        return _redirect_with_return_query()
+    normalized = ps.normalize_code_s(code_s)
+
+    qty = None
+    if new_status == "1保":
+        try:
+            qty = int(qty_raw)
+        except ValueError:
+            flash("保有に変更するには株数を整数で入力してください", "error")
+            return _redirect_with_return_query()
+        if qty < 0:
+            flash("株数は 0 以上で入力してください", "error")
+            return _redirect_with_return_query()
+
+    record = ps.get_record(normalized)
+    if record is None:
+        if not get_stock_data(normalized):
+            flash(f"{normalized} は stocks_shelve に未登録のコードです", "error")
+            return _redirect_with_return_query()
+        try:
+            ps.add_to_watch(normalized, reason=reason)
+        except ValueError as e:
+            flash(str(e), "error")
+            return _redirect_with_return_query()
+        record = ps.get_record(normalized)
+    elif record.get("excluded"):
+        try:
+            ps.add_to_watch(normalized, reason=reason)
+        except ValueError as e:
+            flash(str(e), "error")
+            return _redirect_with_return_query()
+        record = ps.get_record(normalized)
+
+    old_status = (record or {}).get("status")
+    try:
+        if new_status == "1保" and old_status != "1保":
+            if not trade_idea:
+                flash("保有に変更するには売買戦略を選択してください", "error")
+                return _redirect_with_return_query()
+            ps.seed_trade_ideas()
+            ps.update_memo(normalized, {"trade_idea": trade_idea})
+        ps.transition_status(normalized, new_status, reason=reason, qty=qty)
+        if new_status == "1保" and qty is not None:
+            ps.update_qty(normalized, qty, reason=reason, log_action=old_status == "1保")
+    except (KeyError, ValueError, TypeError) as e:
+        flash(str(e), "error")
+        return _redirect_with_return_query()
+
+    _sync_txt_safely()
+    label = STATUS_VALUE_TO_LABEL[new_status]
+    _flash_stock_info(normalized, f" のステータスを {label} に変更しました")
+    return _redirect_with_return_query(
+        default_status_query=STATUS_VALUE_TO_QUERY[new_status], code_s=normalized)
 
 
 def _build_fallback_records() -> list[dict]:

@@ -41,6 +41,9 @@ _TREND_TEMPLATE_CONDITIONS = [
     "pr>ma10", "pr>ma30,40", "ma30>ma40", "ma40Up",
     "ma10>ma30,40", "high(low)52", "RS",
 ]
+_STAGE2_CORE_MISSES = {
+    "pr>ma30,40", "ma30>ma40", "ma40Up",
+}
 
 
 def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
@@ -3468,6 +3471,12 @@ def build_trend_info(stock: Dict[str, Any], hide_full_miss_symbol: bool = False)
     ma10_streak = bool((stock or {}).get("ma10_above_streak_30"))
     ma10_streak_ever = bool((stock or {}).get("ma10_streak_ever"))
     tooltip_lines = []
+    core_misses = _STAGE2_CORE_MISSES & set(misses) if isinstance(misses, list) else set()
+    if core_misses:
+        tooltip_lines.append("Stage2コア未達: " + ",".join(
+            condition for condition in _TREND_TEMPLATE_CONDITIONS
+            if condition in core_misses
+        ))
     if tooltip_src:
         tooltip_lines.append("不通過: " + ",".join(tooltip_src))
     if pass_src:
@@ -3814,19 +3823,21 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         elif rs_raw >= 70:
             styles["rs"] = bg("薄黄")
 
-    # --- トレンド: 記号表示 (◎〜△) と背景色は独立して扱う。
-    #     ◎/◯ は従来の黄系、株価30/40週MA未達かつ40週MA下向きは青で上書きする。
+    # --- トレンド: Stage 2コア未達は黄系の記号表示より優先する。
     trend = row.get("trend_template") or ""
     trend_misses = row.get("trend_template_misses")
     trend_miss_set = set(trend_misses) if isinstance(trend_misses, list) else set()
-    if "◎" in trend:
+    core_miss_count = len(_STAGE2_CORE_MISSES & trend_miss_set)
+    if trend_misses is None:
+        styles["trend_template"] = bg("赤")
+    elif core_miss_count == len(_STAGE2_CORE_MISSES):
+        styles["trend_template"] = bg("青")
+    elif core_miss_count:
+        styles["trend_template"] = bg("水色")
+    elif "◎" in trend:
         styles["trend_template"] = bg("濃黄")
     elif "◯" in trend:
         styles["trend_template"] = bg("薄黄")
-    elif not trend or trend == "—":
-        styles["trend_template"] = bg("赤")
-    if {"pr>ma30,40", "ma40Up"}.issubset(trend_miss_set):
-        styles["trend_template"] = bg("青")
 
     # --- シグナル (ルール 2-7): 強い色から順に評価
     tags = row.get("tags") or ""
