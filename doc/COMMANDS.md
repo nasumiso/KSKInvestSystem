@@ -108,6 +108,16 @@ cd scripts && python backfill_price_proxy.py             # None のみ埋める 
 cd scripts && python backfill_price_proxy.py --overwrite # actual 以外を再取得
 ```
 
+### 楽天 取引履歴CSV → fill レイヤー取込 (issue #360 Phase2)
+
+楽天証券の取引履歴CSV (`tradehistory(JP)_YYYYMMDD.csv`, Shift-JIS) の実約定価格・株数を fill として取り込み、`--match` でエピソードへ自動マッチする。同一 dedup キーは冪等スキップ。曖昧なケース (同日同side複数注文・候補複数) は自動マッチせず確認リスト行き。
+
+```bash
+cd scripts && python import_rakuten_fills.py "<csv_path>" --dry-run                    # 読込・パース検証 (DB 非書込)
+cd scripts && python import_rakuten_fills.py "<csv_path>" --db-path /tmp/fills_verify   # 一時DBで取込確認
+cd scripts && python import_rakuten_fills.py "<csv_path>" --match                       # 本番取込 + 自動マッチ
+```
+
 ## 自動実行
 
 `shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。

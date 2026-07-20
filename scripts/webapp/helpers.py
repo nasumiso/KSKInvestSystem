@@ -4186,6 +4186,44 @@ def build_portfolio_theme_summary(
 
 
 # ===========================================
+# issue #360 Phase2: fill (実約定) の集約
+# ===========================================
+
+def _aggregate_fill_price(fills: list) -> Optional[dict]:
+    """マッチ済み fill 群を株数加重平均単価に畳む。
+
+    現状 (Phase2) は 1 イベント 1 fill だが、将来 (c) で分割約定の群マッチを許した際に
+    複数 fill を 1 価格へまとめられるよう前方互換な集約にする。要素1なら実質そのまま。
+
+    date は群の最も遅い約定日 (買い集め/売り切りの完了日) を代表日とする。
+    issue #360: 楽天の約定日を売買日の真実源として表示・保有日数計算に使う。
+
+    Returns: {"price": 加重平均単価, "qty": 合計株数, "date": 代表約定日} / 不正なら None
+    """
+    if not fills:
+        return None
+    total_qty = 0
+    total_amount = 0.0
+    dates = []
+    for f in fills:
+        qty = f.get("qty")
+        price = f.get("price")
+        if not isinstance(qty, int) or qty <= 0 or not isinstance(price, (int, float)) or price <= 0:
+            return None
+        total_qty += qty
+        total_amount += price * qty
+        if f.get("trade_date"):
+            dates.append(f["trade_date"])
+    if total_qty <= 0:
+        return None
+    return {
+        "price": total_amount / total_qty,
+        "qty": total_qty,
+        "date": max(dates) if dates else None,
+    }
+
+
+# ===========================================
 # issue #361: 売買エピソードの概算損益・成績サマリー
 # ===========================================
 
