@@ -1,7 +1,6 @@
 ---
 name: promote-to-command
 description: 開発中に繰り返し叩くワンショット処理を、再利用可能なCLIサブコマンド/関数/開発スクリプトに昇格させる。「この処理よく実行するな」と気づいたとき、または昇格を明示指示されたときに使用
-disable-model-invocation: true
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
