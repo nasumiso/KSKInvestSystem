@@ -1857,6 +1857,105 @@ def parse_date_str(s):
         return None
 
 
+# ---- 週ブ (volume_dryup_breakout, issue #384) の判定パラメータ
+# 「乾(出来高dry up)→増(5日間の出来高拡大)→抜(価格上抜け)」を検知する。
+# 日次「ブ」(単日の出来高急増) と別軸で、複数営業日にわたる出来高拡大局面を拾う。
+VDB_EXPAND_DAYS = 5          # 拡大期間 (直近営業日数): 出来高拡大・価格上抜けを評価
+VDB_SETUP_DAYS = 20          # セットアップ期間 (拡大期間の直前): 通常出来高・dry up を評価
+VDB_DRYUP_LOOKBACK = 10      # セットアップ期間のうち dry up を探す直近日数
+VDB_MIN_DAYS = VDB_EXPAND_DAYS + VDB_SETUP_DAYS  # 必要データ数 (25営業日)
+VDB_DRYUP_RATIO = 0.60       # dry up 判定 (基準比): この比率以下が2日以上
+VDB_DRYUP_STRONG_RATIO = 0.45  # 強い dry up (基準比): この比率以下が1日以上でも可
+VDB_EXPAND_AVG_RATIO = 1.5   # 増: 5日平均出来高が基準比この倍以上
+VDB_EXPAND_DAY_RATIO = 1.2   # 増: 5日中この倍以上の日が
+VDB_EXPAND_DAY_COUNT = 3     # 増: 上記を満たす日が3日以上
+
+
+def _vdb_check(price_list, offset):
+    """price_list[offset:] を最新日とみなし週ブ条件 (乾→増→抜) を判定する。
+
+    Args:
+        price_list: [date_str, open, high, low, close, volume, adj_close] (新しい日が先頭)
+        offset: 最新日とみなす起点インデックス
+    Returns:
+        (per, dryup_pct) | None: 成立時は (5日平均出来高の基準比%, 最小出来高の基準比%)。
+        不成立・データ不足・基準出来高0 なら None。
+    """
+    from statistics import median
+
+    seg = price_list[offset:]
+    if len(seg) < VDB_MIN_DAYS:
+        return None
+    expand = seg[:VDB_EXPAND_DAYS]                       # 直近5日
+    setup = seg[VDB_EXPAND_DAYS:VDB_EXPAND_DAYS + VDB_SETUP_DAYS]  # 直前20日
+    dryup_window = setup[:VDB_DRYUP_LOOKBACK]            # セットアップの直近10日
+
+    setup_vols = [row[5] for row in setup]
+    base_vol = median(setup_vols)                        # 基準出来高 (中央値)
+    if base_vol <= 0:
+        return None
+
+    # 1. dry up (乾): 基準×0.60以下が2日以上、or 基準×0.45以下が1日以上
+    dryup_vols = [row[5] for row in dryup_window]
+    n_dryup = sum(1 for v in dryup_vols if v <= base_vol * VDB_DRYUP_RATIO)
+    n_strong = sum(1 for v in dryup_vols if v <= base_vol * VDB_DRYUP_STRONG_RATIO)
+    if not (n_dryup >= 2 or n_strong >= 1):
+        return None
+
+    # 2. 出来高拡大 (増): 5日平均≥基準×1.5 かつ 5日中3日以上が基準×1.2以上
+    expand_vols = [row[5] for row in expand]
+    avg5 = sum(expand_vols) / len(expand_vols)
+    if avg5 < base_vol * VDB_EXPAND_AVG_RATIO:
+        return None
+    n_expand = sum(1 for v in expand_vols if v >= base_vol * VDB_EXPAND_DAY_RATIO)
+    if n_expand < VDB_EXPAND_DAY_COUNT:
+        return None
+
+    # 3. 価格上抜け (抜): 直近5日終値高値 > セットアップ20日終値高値 かつ 最新終値≥MA10
+    expand_close_high = max(row[6] for row in expand)
+    setup_close_high = max(row[6] for row in setup)
+    if expand_close_high <= setup_close_high:
+        return None
+    ma10 = sum(seg[i][6] for i in range(10)) / 10        # 直近10日終値平均
+    if seg[0][6] < ma10:
+        return None
+
+    per = int(round(100 * avg5 / base_vol))
+    dryup_pct = int(round(100 * min(dryup_vols) / base_vol))
+    return per, dryup_pct
+
+
+def calc_volume_dryup_breakout(price_list):
+    """週ブ (出来高dry up後の5日間出来高拡大ブレイクアウト) を検知する (issue #384)。
+
+    直近10日を走査し、当日 (offset) で全条件が成立し、かつ前日 (offset+1) では
+    成立していなかった「初成立日」だけを記録する (連日成立時の重複記録を防ぐ)。
+
+    Returns:
+        list[str]: ["MM/DD,per,dryup_pct"] (新しい日が先頭)。per=5日平均出来高の
+            基準中央値比%、dryup_pct=セットアップ直近10日の最小出来高の基準比%。
+    """
+    out = []
+    # 各 ind で当日 (ind) と前日 (ind+1) を判定する。隣接 ind 間で ind+1 の判定が
+    # 重複するため、直前反復の当日結果を prev_res として持ち回し再計算を避ける。
+    prev_res = _vdb_check(price_list, 0)  # ind=0 の当日結果 (最新日)
+    for ind in range(10):
+        res = prev_res  # = _vdb_check(price_list, ind)
+        next_res = _vdb_check(price_list, ind + 1)  # 前日 (次反復では当日になる)
+        prev_res = next_res
+        if res is None:
+            continue
+        # 前日も成立していれば同一局面として重複記録しない (初成立日のみ)。
+        if next_res is not None:
+            continue
+        per, dryup_pct = res
+        dt = parse_date_str(price_list[ind][0])
+        day = dt.strftime("%m/%d") if dt else price_list[ind][0]
+        log_debug("週ブ:%s,%d,%d" % (day, per, dryup_pct))
+        out.append("%s,%d,%d" % (day, per, dryup_pct))
+    return out
+
+
 def parse_price_text_from_list(price_current, price_list):
     """パース済みprice_listから各種指標を計算する
     yfinanceパスとHTMLパースパス共通で使用。
@@ -2009,6 +2108,10 @@ def parse_price_text_from_list(price_current, price_list):
     price["breakout"] = breaks
     price["breakout_extended"] = breaks_ext
     # print breaks
+
+    # ---- 週ブ (出来高dry up後の5日間出来高拡大ブレイクアウト, issue #384)
+    price["volume_dryup_breakout"] = calc_volume_dryup_breakout(price_list)
+
     # ---- 過去価格
     past_prices = []
     # 20日前比較に必要な 21件 + バッファ

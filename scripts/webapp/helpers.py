@@ -2088,6 +2088,13 @@ def _signal_strength_bucket(kind: str, num: int) -> str:
         if num >= -3:
             return "中"
         return "弱"
+    if kind == "週ブ":
+        # num = 5日平均出来高の基準中央値比% (成立条件上 150 以上)。未較正 (issue #384)。
+        if num >= 250:
+            return "強"
+        if num >= 200:
+            return "中"
+        return "弱"
     # ブ
     if num >= 500:
         return "特強"
@@ -2126,7 +2133,16 @@ def _build_signal_display(stock: Dict[str, Any]) -> Dict[str, str]:
     max_alpha = 0.0
     for s in signals:
         bucket = _signal_strength_bucket(s["kind"], s["num"])
-        lines.append(tmpls[s["kind"]] % (s["mmdd"], bucket, s["num"], s["delta"]))
+        if s["kind"] == "週ブ":
+            # 週ブは dry up 比率も出す (issue #384)。旧データで dryup 欠落時は ? 表示。
+            dryup = s.get("dryup")
+            dryup_str = "%d" % dryup if dryup is not None else "?"
+            lines.append(
+                "[週ブ] %s %s 乾%s%%→5日出来高 中央値比%d%% 20日高値上抜け / %d日前"
+                % (s["mmdd"], bucket, dryup_str, s["num"], s["delta"])
+            )
+        else:
+            lines.append(tmpls[s["kind"]] % (s["mmdd"], bucket, s["num"], s["delta"]))
         max_alpha = max(max_alpha,
                         strength_alpha[bucket] * _signal_freshness_alpha(s["delta"]))
 
@@ -3294,6 +3310,11 @@ def build_price_rs_chart_full(
             if m["kind"] == "ポ":
                 parts.append(_svg_hover_rect(m["x"], y_po, 8.0, 8.0, title))
                 parts.append(_svg_triangle(m["x"], y_po, size * PO_SIZE_SCALE, "#2e7d32", 1.0, title))
+            elif m["kind"] == "週ブ":
+                # 週ブは通常ブ (橙) と区別して紫ダイヤ。ブと同発生週で重ならないよう上段 (issue #384)。
+                y_wbu = y_bu - 6
+                parts.append(_svg_hover_rect(m["x"], y_wbu, 8.0, 8.0, title))
+                parts.append(_svg_diamond(m["x"], y_wbu, size * BU_SIZE_SCALE, "#8e24aa", opa_map[m["strength"]], title))
             else:  # ブ
                 parts.append(_svg_hover_rect(m["x"], y_bu, 8.0, 8.0, title))
                 parts.append(_svg_diamond(m["x"], y_bu, size * BU_SIZE_SCALE, "#f57c00", opa_map[m["strength"]], title))
