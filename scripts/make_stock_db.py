@@ -1143,6 +1143,9 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
     breakout = stock.get("breakout", [])
     if breakout and not stage4:
         sources.append(("ブ", list(breakout)[:1], False))  # ブは最新1件のみ
+    vol_dryup_bo = stock.get("volume_dryup_breakout", [])
+    if vol_dryup_bo and not stage4:
+        sources.append(("週ブ", list(vol_dryup_bo)[:1], False))  # 週ブも最新1件のみ (issue #384)
     if include_extended and not stage4:
         breakout_ext = stock.get("breakout_extended", [])
         if breakout_ext:
@@ -1170,6 +1173,12 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
                 "kind": kind, "mmdd": spl[0], "num": num,
                 "sig_date": sig_date, "delta": delta,
             }
+            # 週ブは3要素目に dry up 比率% を持つ (tooltip 用, issue #384)。
+            if kind == "週ブ" and len(spl) >= 3:
+                try:
+                    entry["dryup"] = int(spl[2])
+                except ValueError:
+                    pass
             if extended:
                 entry["extended"] = True
                 # 3要素目があれば出来高超過率 (描画側のマーカー強度バケット用)。
@@ -1344,6 +1353,18 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
                 log_warning("ブレイクアウト日付エラー", brkspl[0])
             signal += "[ブ]"
             signal += "%s(%s)," % (brkspl[0], brkspl[1])
+            break  # 一つにしておく(最新日)
+    # 週ブ (出来高dry up後の5日間出来高拡大ブレイクアウト, issue #384)
+    vol_dryup_bo = stock.get("volume_dryup_breakout", [])
+    if not stage4:
+        for vdb in vol_dryup_bo:
+            vdbspl = vdb.split(",")
+            try:
+                delta_day = get_recent_signal_delta(vdbspl[0])
+            except ValueError:
+                log_warning("週ブ日付エラー", vdbspl[0])
+            signal += "[週ブ]"
+            signal += "%s(%s)," % (vdbspl[0], vdbspl[1])
             break  # 一つにしておく(最新日)
     # 売り圧力レシオ(5日)による買われ過ぎ売われすぎ
     sell_ratio = stock.get("sell_pressure_ratio", [])

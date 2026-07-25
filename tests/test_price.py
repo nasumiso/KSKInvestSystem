@@ -1573,3 +1573,123 @@ class TestMonthlyConvertAndCacheFresh:
             mock_dt.now.return_value = _dt(2026, 7, 12, 20, 0)
             mock_dt.side_effect = lambda *a, **kw: _dt(*a, **kw)
             assert price._is_monthly_cache_fresh([row]) is expected
+
+
+# ==================================================
+# calc_volume_dryup_breakout (週ブ, issue #384)
+# ==================================================
+def _make_vdb_price_list(volumes, closes):
+    """出来高・終値リスト (新しい日が先頭) から price_list を組み立てる。
+
+    calc_volume_dryup_breakout が参照するのは [5]=出来高 と [6]=終値のみ。
+    日付は最新を先頭に 1日刻みで降順に振る。
+    """
+    price_list = []
+    for i, (vol, close) in enumerate(zip(volumes, closes)):
+        day = 30 - i  # 先頭ほど新しい日
+        date_str = "2025年6月%d日" % day
+        # [date, open, high, low, close, volume, adj_close]。判定は [5],[6] のみ使用。
+        price_list.append([date_str, close, close, close, close, vol, close])
+    return price_list
+
+
+class TestCalcVolumeDryupBreakout:
+    """週ブ (出来高dry up後の5日間出来高拡大ブレイクアウト) 検知テスト。"""
+
+    # 基準となる setup 出来高・終値 (中央値=1000, 終値フラット=1000)。
+    # 各ケースは先頭 (expand=直近5日 / dry up窓=直近10日) だけを差し替える。
+    BASE_VOL = [1000] * 30
+    BASE_CLOSE = [1000] * 30
+
+    def _case(self, vol_head=None, close_head=None, length=26):
+        """先頭を差し替えた (volumes, closes) を返す。length で末尾を切る。"""
+        vols = list(self.BASE_VOL)
+        closes = list(self.BASE_CLOSE)
+        if vol_head:
+            vols[: len(vol_head)] = vol_head
+        if close_head:
+            closes[: len(close_head)] = close_head
+        return vols[:length], closes[:length]
+
+    # 検出成立の基本形: expand=出来高拡大(3日以上≥1200,平均≥1500)、
+    # index5 を強dry up(400≤450)、終値は expand が setup 20日高値(1000)を上抜け。
+    DETECT_VOL = [1800, 1600, 1300, 1000, 1900] + [400] + [1000] * 20
+    DETECT_CLOSE = [1100, 1080, 1070, 1060, 1050] + [1000] * 21
+
+    def test_detects_dryup_then_expansion_breakout(self):
+        """ケース1: dry up後の5日拡大+価格上抜けで検出され per/dryup 値も正しい。"""
+        vols, closes = self._case(
+            vol_head=self.DETECT_VOL, close_head=self.DETECT_CLOSE, length=25
+        )
+        price_list = _make_vdb_price_list(vols, closes)
+        result = price.calc_volume_dryup_breakout(price_list)
+        assert len(result) == 1
+        mmdd, per, dryup = result[0].split(",")
+        assert mmdd == "06/30"  # 最新日
+        # per = 5日平均(1520)/中央値(1000)*100 = 152
+        assert int(per) == 152
+        # dryup = 直近10日最小(400)/中央値(1000)*100 = 40
+        assert int(dryup) == 40
+
+    def test_single_big_volume_not_detected(self):
+        """ケース2: 直近5日で1日だけ極端な大商いでは検出されない (3日以上条件)。"""
+        # index0 だけ突出、他 expand は基準以下。平均は 1.5 倍を超えるが ≥1200 は1日のみ。
+        vol_head = [6000, 1000, 1000, 1000, 1000] + [400]
+        vols, closes = self._case(
+            vol_head=vol_head, close_head=self.DETECT_CLOSE, length=25
+        )
+        price_list = _make_vdb_price_list(vols, closes)
+        assert price.calc_volume_dryup_breakout(price_list) == []
+
+    def test_no_dryup_not_detected(self):
+        """ケース3: 出来高拡大+上抜けがあっても dry up がなければ検出されない。"""
+        # dry up 窓 (index5..14) を基準比 0.6 超に保つ (全て 1000)。
+        vols, closes = self._case(
+            vol_head=[1800, 1600, 1300, 1000, 1900],  # dry up 差し替えなし
+            close_head=self.DETECT_CLOSE,
+            length=25,
+        )
+        price_list = _make_vdb_price_list(vols, closes)
+        assert price.calc_volume_dryup_breakout(price_list) == []
+
+    def test_no_price_breakout_not_detected(self):
+        """ケース4: dry up+出来高拡大があっても価格上抜けがなければ検出されない。"""
+        # 終値をフラット (1000) に保つ → 最新終値 == setup高値で上抜けなし。
+        vols, closes = self._case(
+            vol_head=self.DETECT_VOL, close_head=None, length=25
+        )
+        price_list = _make_vdb_price_list(vols, closes)
+        assert price.calc_volume_dryup_breakout(price_list) == []
+
+    def test_intraweek_breakout_but_latest_back_in_range_not_detected(self):
+        """ケース6: 5日内に瞬間ブレイクがあっても最新終値がレンジ内なら検出しない。
+
+        直近5日のどこか1日が20日高値を超えても、発生日 (最新終値) が
+        setup 高値以下ならレンジ内へ戻ったとみなす (Codex P2 指摘)。
+        """
+        # setup に古い高値 (index24=2000) を置き setup_close_high=2000。
+        # expand は index1 で瞬間ブレイク (2100>2000) するが、最新 index0=1500 は
+        # setup 高値未満。ただし MA10 (直近10日平均≒1179) は上回るため、上抜け条件
+        # だけで弾かれることを確認する (MA10 条件では落ちない構成)。
+        close_head = [1500, 2100, 1080, 1060, 1050]
+        vols, closes = self._case(
+            vol_head=self.DETECT_VOL, close_head=close_head, length=25
+        )
+        closes[24] = 2000  # setup 期間の古い高値
+        price_list = _make_vdb_price_list(vols, closes)
+        assert price.calc_volume_dryup_breakout(price_list) == []
+
+    def test_no_duplicate_on_consecutive_days(self):
+        """ケース5: 前日から条件継続でも重複発火せず、初成立日1件のみ記録される。"""
+        # 26本用意し index0,1 の両方が成立する構成にする。expand を1日ずらしても
+        # 拡大条件を満たすよう、先頭6日を出来高拡大帯にする。
+        vol_head = [1800, 1600, 1300, 1500, 1900, 1400] + [400] + [1000] * 19
+        close_head = [1120, 1100, 1080, 1070, 1060, 1050] + [1000] * 20
+        price_list = _make_vdb_price_list(vol_head, close_head[:26])
+        # index1 起点も成立することを確認 (前提の妥当性チェック)。
+        assert price._vdb_check(price_list, 1) is not None
+        assert price._vdb_check(price_list, 0) is not None
+        result = price.calc_volume_dryup_breakout(price_list)
+        # index0 は前日 (index1) も成立 → スキップ。index1 が初成立日として1件のみ。
+        assert len(result) == 1
+        assert result[0].split(",")[0] == "06/29"  # index1 の日付 (30-1)

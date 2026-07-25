@@ -3307,6 +3307,29 @@ class TestSignalDisplay:
         alpha = float(m.group(1))
         assert (alpha >= 0.8) is alpha_high
 
+    @pytest.mark.parametrize(
+        "num, expect_word, alpha_high",
+        [
+            (250, "強", True),    # 5日出来高中央値比>=250 強・直近 → 濃い
+            (200, "中", False),   # >=200 中 → 強より薄い
+            (168, "弱", False),   # 成立下限帯 弱
+        ],
+    )
+    def test_weekly_breakout_strength_and_tooltip(self, num, expect_word, alpha_high):
+        """週ブ (issue #384): 強度バケットと dry up 比率を含む tooltip。"""
+        anchor_now, anchor_day = self._anchor()
+        mmdd = anchor_day.strftime("%m/%d")  # 直近 (delta=0)
+        stock = {"volume_dryup_breakout": ["%s,%d,42" % (mmdd, num)],
+                 "trend_template": [], "access_date_price": anchor_now}
+        disp = helpers._build_signal_display(stock)
+        assert "[週ブ]" in disp["tooltip"]
+        assert expect_word in disp["tooltip"]
+        assert "乾42%" in disp["tooltip"]  # dry up 比率が出る
+        import re
+        m = re.search(r"rgba\(234,67,53,([0-9.]+)\)", disp["style"])
+        assert m is not None
+        assert (float(m.group(1)) >= 0.8) is alpha_high
+
     def test_format_signal_uses_recent_marks_only_but_keeps_full_title(self):
         """表示記号は直近ポ/ブのみ、title用全文は make_signal の signal を保持する"""
         from datetime import timedelta

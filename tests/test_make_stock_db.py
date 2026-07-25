@@ -436,6 +436,10 @@ class TestExtractSignals:
                 "breakout": ["%s,180" % d(1), "%s,200" % d(2)]}, ["ブ"]),
             # delta>10 は除外
             ("stale_drop", lambda d: {"pocket_pivot": ["%s,2" % d(12)]}, []),
+            # 週ブは最新1件のみ (issue #384)
+            ("wbo_cap1", lambda d: {
+                "volume_dryup_breakout": ["%s,168,42" % d(1), "%s,150,50" % d(5)]},
+             ["週ブ"]),
         ],
     )
     def test_filter_matches_tags(self, case, kw_factory, expect_kinds):
@@ -450,6 +454,17 @@ class TestExtractSignals:
         """access_date_price 無し → 日付基準が立たず空 (tags と同じ)"""
         stock = {"pocket_pivot": ["06/03,2"], "trend_template": []}
         assert make_stock_db.extract_signals(stock) == []
+
+    def test_weekly_breakout_dryup_parsed(self):
+        """週ブは3要素目 (dry up比率%) を entry["dryup"] に読む (issue #384 tooltip 用)。"""
+        today = datetime.today()
+        d = (today - timedelta(days=2)).strftime("%m/%d")
+        stock, _ = self._stock(volume_dryup_breakout=["%s,168,42" % d])
+        signals = make_stock_db.extract_signals(stock)
+        assert len(signals) == 1
+        assert signals[0]["kind"] == "週ブ"
+        assert signals[0]["num"] == 168  # 5日平均出来高の中央値比%
+        assert signals[0]["dryup"] == 42  # dry up 比率%
 
     @pytest.mark.parametrize("suffix, expect_per", [
         (",13,256", 256),  # 3要素: per あり (マーカー強度バケット用)
