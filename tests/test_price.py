@@ -1654,10 +1654,28 @@ class TestCalcVolumeDryupBreakout:
 
     def test_no_price_breakout_not_detected(self):
         """ケース4: dry up+出来高拡大があっても価格上抜けがなければ検出されない。"""
-        # 終値をフラット (1000) に保つ → expand高値 == setup高値で上抜けなし。
+        # 終値をフラット (1000) に保つ → 最新終値 == setup高値で上抜けなし。
         vols, closes = self._case(
             vol_head=self.DETECT_VOL, close_head=None, length=25
         )
+        price_list = _make_vdb_price_list(vols, closes)
+        assert price.calc_volume_dryup_breakout(price_list) == []
+
+    def test_intraweek_breakout_but_latest_back_in_range_not_detected(self):
+        """ケース6: 5日内に瞬間ブレイクがあっても最新終値がレンジ内なら検出しない。
+
+        直近5日のどこか1日が20日高値を超えても、発生日 (最新終値) が
+        setup 高値以下ならレンジ内へ戻ったとみなす (Codex P2 指摘)。
+        """
+        # setup に古い高値 (index24=2000) を置き setup_close_high=2000。
+        # expand は index1 で瞬間ブレイク (2100>2000) するが、最新 index0=1500 は
+        # setup 高値未満。ただし MA10 (直近10日平均≒1179) は上回るため、上抜け条件
+        # だけで弾かれることを確認する (MA10 条件では落ちない構成)。
+        close_head = [1500, 2100, 1080, 1060, 1050]
+        vols, closes = self._case(
+            vol_head=self.DETECT_VOL, close_head=close_head, length=25
+        )
+        closes[24] = 2000  # setup 期間の古い高値
         price_list = _make_vdb_price_list(vols, closes)
         assert price.calc_volume_dryup_breakout(price_list) == []
 

@@ -1911,10 +1911,11 @@ def _vdb_check(price_list, offset):
     if n_expand < VDB_EXPAND_DAY_COUNT:
         return None
 
-    # 3. 価格上抜け (抜): 直近5日終値高値 > セットアップ20日終値高値 かつ 最新終値≥MA10
-    expand_close_high = max(row[6] for row in expand)
+    # 3. 価格上抜け (抜): 最新終値 (発生日) がセットアップ20日終値高値を上回り、
+    # かつ MA10 以上。5日中どこか1日が高値超えでは、その後レンジ内へ戻った銘柄を
+    # 発生日 (最新日) の上抜けとして誤検知するため、最新終値そのもので判定する。
     setup_close_high = max(row[6] for row in setup)
-    if expand_close_high <= setup_close_high:
+    if seg[0][6] <= setup_close_high:
         return None
     ma10 = sum(seg[i][6] for i in range(10)) / 10        # 直近10日終値平均
     if seg[0][6] < ma10:
