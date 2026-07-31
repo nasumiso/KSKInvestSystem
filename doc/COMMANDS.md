@@ -52,6 +52,23 @@ cd scripts && python make_stock_db.py refresh_stock 421A 6324 3496  # 複数銘�
 cd scripts && python make_stock_db.py calibrate_momentum
 ```
 
+## 保有銘柄リスト取得 (`portfolio_list.py`)
+
+保有銘柄の code_s 一覧を他コマンドへ流し込むための CLI。ログは混ぜず stdout にコードのみスペース区切りで出す。
+
+```bash
+# 全ステータス (1保/2準/3監) のコードを出力
+cd scripts && python portfolio_list.py
+
+# ステータス絞り込み (1保=保有中 / 2準=準保有 / 3監=監視)
+cd scripts && python portfolio_list.py --status 1保
+
+# 保有中銘柄をまとめて update する例
+for c in $(python portfolio_list.py --status 1保); do
+    python make_stock_db.py update $c
+done
+```
+
 ## 市場DB操作
 
 ```bash
