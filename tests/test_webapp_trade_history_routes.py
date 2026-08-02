@@ -128,11 +128,11 @@ class TestTradeHistoryPage:
         # アクションログタブでは proxy が維持される
         assert "5,678" in actions
 
-    def test_trade_fills_listed_in_fills_tab(self, app, client):
-        """全 fill が売買履歴タブに一覧され、同日同side分割は加重平均で集約される (issue #387)。
+    def test_fill_episode_listed_in_fills_tab(self, app, client):
+        """fill が建玉ラウンドのエピソードとして売買履歴タブに表示され、実現損益が出る (Phase4b)。
 
-        matched_seq の有無を問わず全 fill を表示する (突合廃止)。同日同side2件は加重平均単価・
-        合計株数で1行に畳み「2件集約」バッジが出る。
+        現物買100@1234 → 売50@1500 + 売50@1510 で 1 現物ラウンドが閉じる。
+        平均取得単価1234, 実現 = (1500-1234)*50 + (1510-1234)*50 = 13300 + 13800 = 27100。
         """
         with app.app_context():
             ps.append_fill(ps.create_fill("3496", trade_date="2026-06-15", side="buy", qty=100,
@@ -147,34 +147,58 @@ class TestTradeHistoryPage:
 
         html = client.get("/trade-history").data.decode()
         fills_tab = html.split('id="tab-fills"')[1].split('id="tab-actions"')[0]
-        assert "1,234" in fills_tab       # 単発 buy の単価
-        assert "2件集約" in fills_tab      # 分割約定を集約したバッジ
-        assert "1,505" in fills_tab       # 集約後の加重平均単価 (50@1500 + 50@1510)
+        assert "+27,100円" in fills_tab   # 現物ラウンドの実現損益
+        assert "1,234" in fills_tab       # 内訳展開の取得単価
 
-    def test_different_trade_kind_not_aggregated(self, app, client):
-        """同一銘柄・同日・同 side でも取引区分が違えば集約せず別行にする (PR #388 レビュー)。
-
-        現物買 (@1000) と信用新規買 (@2000) を同日に足す。誤って集約されると加重平均で
-        混ざるが、区分別に別行なら両単価がそのまま出る。
-        """
+    def test_genbutsu_and_shinyo_are_separate_episodes(self, app, client):
+        """現物と信用は同一銘柄でも別エピソードになる (口座種別で分離、Phase4b)。"""
         with app.app_context():
             ps.append_fill(ps.create_fill("3496", trade_date="2026-06-15", side="buy", qty=100,
                                           price=1000.0, amount=-100000, trade_kind="現物",
-                                          dedup_key="tk-genbutsu"))
-            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-15", side="buy", qty=100,
+                                          dedup_key="tk-genbutsu-b"))
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-20", side="sell", qty=100,
+                                          price=1100.0, amount=110000, trade_kind="現物",
+                                          dedup_key="tk-genbutsu-s"))
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-16", side="buy", qty=100,
                                           price=2000.0, amount=-200000, trade_kind="信用新規",
-                                          dedup_key="tk-shinyo"))
+                                          dedup_key="tk-shinyo-b"))
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-21", side="sell", qty=100,
+                                          price=2200.0, amount=220000, trade_kind="信用返済",
+                                          tate_price=2000.0, dedup_key="tk-shinyo-s"))
 
         html = client.get("/trade-history").data.decode()
         fills_tab = html.split('id="tab-fills"')[1].split('id="tab-actions"')[0]
-        assert "1,000" in fills_tab       # 現物の単価
-        assert "2,000" in fills_tab       # 信用新規の単価 (加重平均 1,500 に潰れない)
-        assert "1,500" not in fills_tab   # 混ぜた加重平均は出ない
-        # 別区分なので集約バッジ (>N件集約<) は付かない (説明文の「N件集約」は除く)
-        assert "件集約</span>" not in fills_tab
+        # 現物ラウンド: (1100-1000)*100 = 10000、信用ラウンド: (2200-2000)*100 = 20000
+        assert "+10,000円" in fills_tab
+        assert "+20,000円" in fills_tab
+        # 現物・信用の区分バッジが両方出る
+        assert "現物" in fills_tab
+        assert "信用" in fills_tab
+
+    def test_fill_summary_on_fills_tab(self, app, client):
+        """成績サマリー (勝率/ペイオフ) が売買履歴タブに表示される (Phase4b で fill 側へ一本化)。"""
+        with app.app_context():
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-15", side="buy", qty=100,
+                                          price=1000.0, amount=-100000, trade_kind="現物",
+                                          dedup_key="sm-b"))
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-20", side="sell", qty=100,
+                                          price=1200.0, amount=120000, trade_kind="現物",
+                                          dedup_key="sm-s"))
+        html = client.get("/trade-history").data.decode()
+        fills_tab = html.split('id="tab-fills"')[1].split('id="tab-actions"')[0]
+        assert "勝率" in fills_tab
+        assert "ペイオフレシオ" in fills_tab
+
+    def test_action_log_summary_removed(self, client):
+        """旧 price_proxy 成績サマリーはアクションログタブから撤去された (Phase4b)。"""
+        html = client.get("/trade-history").data.decode()
+        actions = html.split('id="tab-actions"')[1]
+        # 成績サマリー・実現損益は売買履歴タブへ一本化。アクションログ側は判断の記録のみ
+        assert "終値プロキシによる概算" not in actions
+        assert "一本化" in actions  # 導線の説明文
 
     def test_fills_tab_shown_without_episodes(self, tmp_path, monkeypatch):
-        """action_log が空でも売買履歴タブに fill が表示される (issue #387)。"""
+        """action_log が空でも売買履歴タブに fill エピソードが表示される (issue #387)。"""
         portfolio_db = str(tmp_path / "pf_um")
         stocks_db = str(tmp_path / "st_um")
         research_db = str(tmp_path / "rs_um")
@@ -192,7 +216,7 @@ class TestTradeHistoryPage:
         app2.config["TESTING"] = True
         html = app2.test_client().get("/trade-history").data.decode()
         assert "アクションログがありません" in html
-        assert "5,000" in html
+        assert "5,000" in html  # 保有中エピソードの内訳に建単価が出る
 
     def test_all_episodes_have_review_memo_textarea(self, client):
         """売却済み・未売却どちらのエピソードにも textarea が表示される。"""

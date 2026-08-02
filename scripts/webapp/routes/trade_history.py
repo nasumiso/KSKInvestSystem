@@ -27,10 +27,9 @@ import portfolio_shelve as ps
 from ks_util import DATA_DIR
 from webapp.helpers import (
     _bulk_price_logs,
-    calc_episode_pl,
+    build_fill_episodes,
     calc_post_sell_returns,
     calc_trade_summary,
-    list_trade_fills,
     resolve_stock_name,
 )
 
@@ -198,17 +197,15 @@ def trade_history():
     # エピソード内の最新アクション日 (売却 > 株数変更 > 保有) 降順
     episodes.sort(key=_last_action_date, reverse=True)
 
-    # 銘柄名付与・サブ行組み立て・概算損益 (issue #361)
+    # 銘柄名付与・サブ行組み立て (issue #361)
+    # 成績サマリー・概算損益は fill 側 (売買履歴タブ) に一本化したため、
+    # アクションログ側では計算しない (issue #387 Phase4b)。
     # 売却後騰落率は表示時に計算し、確定した値だけ売却ログへ保存する (issue #366)。
     price_logs = _bulk_price_logs([ep["code_s"] for ep in episodes if ep["sell_date"]])
-    episode_pls = []
     for ep in episodes:
         ep["stock_name"] = resolve_stock_name(ep["code_s"])
         ep["rows"] = _build_rows(ep)
         ep["rowspan"] = len(ep["rows"])
-        ep["pl"] = calc_episode_pl(ep)  # 算出不可なら None (行は「—」表示)
-        if ep["pl"] is not None:
-            episode_pls.append(ep["pl"])
         if ep["sell_date"]:
             calculated = calc_post_sell_returns(ep, price_logs.get(ep["code_s"], []))
             saved = ep.get("post_sell_returns", {})
@@ -228,10 +225,6 @@ def trade_history():
                 value["return_pct"] is not None for value in calculated.values()
             ) and not ep["review_memo"]
 
-    # 売却済み全体の成績サマリー (issue #361)。母数0/算出不可のみなら None
-    closed_count = sum(1 for ep in episodes if ep["sell_date"])
-    summary = calc_trade_summary(episode_pls)
-
     # 直近30件と過去ログに分割
     recent = episodes[:30]
     past = episodes[30:]
@@ -244,16 +237,26 @@ def trade_history():
     # 年降順のリスト [(year, episodes), ...]
     past_years = sorted(past_by_year.items(), key=lambda x: x[0], reverse=True)
 
-    # issue #387: 売買履歴タブ用の実約定一覧 (楽天CSV=真実源、約定日降順)
-    trade_fills = list_trade_fills()
+    # issue #387 Phase4b: 売買履歴タブ = fill 基準の建玉ラウンド・エピソード。
+    # 成績サマリー (勝率/ペイオフ) はクローズ済みで損益算出できたエピソードから算出。
+    fill_episodes = build_fill_episodes()
+    fill_pls = [ep["pl"] for ep in fill_episodes if ep["closed"] and ep["pl"]]
+    fill_summary = calc_trade_summary(fill_pls)
+    fill_closed_count = sum(1 for ep in fill_episodes if ep["closed"])
+    fill_priced_count = len(fill_pls)
+    fill_total_pl = sum(
+        p["profit_amount"] for p in fill_pls if p["profit_amount"] is not None
+    )
 
     return render_template(
         "trade_history.html",
         recent=recent,
         past_years=past_years,
-        summary=summary,
-        closed_count=closed_count,
-        trade_fills=trade_fills,
+        fill_episodes=fill_episodes,
+        fill_summary=fill_summary,
+        fill_closed_count=fill_closed_count,
+        fill_priced_count=fill_priced_count,
+        fill_total_pl=fill_total_pl,
     )
 
 

@@ -4389,10 +4389,12 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
 
     各エピソード dict:
       code_s, stock_name, kind ("現物"/"信用"), open_date, close_date,
-      qty_peak (最大建玉), closed (bool), fills (内部の個別 fill 明細リスト),
+      last_trade_date (ラウンド内の最終約定日), qty_peak (最大建玉),
+      closed (bool), fills (内部の個別 fill 明細リスト),
       pl (クローズ済みのみ: _episode_pl_from_round の結果, 未クローズは None)
 
-    Returns: close_date (未クローズは open_date) 降順のエピソードリスト。
+    Returns: 最終約定日 (買い増し・部分売り含むラウンド内の最新の取引日) 降順の
+    エピソードリスト。保有中エピソードも最後に約定した日で並ぶ。
     """
     import portfolio_shelve as ps  # 遅延 import (循環回避)
 
@@ -4433,9 +4435,9 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
             # 未クローズ (保有中)
             episodes.append(_finalize_round(code_s, kind, names.get(code_s, ""), cur, qty_peak, closed=False))
 
-    # close_date (未クローズは open_date) 降順、同日は銘柄コード昇順
+    # 最終約定日 (最新の取引がある順) 降順、同日は銘柄コード昇順
     episodes.sort(key=lambda e: e["code_s"])
-    episodes.sort(key=lambda e: e.get("close_date") or e["open_date"], reverse=True)
+    episodes.sort(key=lambda e: e["last_trade_date"], reverse=True)
     return episodes
 
 
@@ -4450,6 +4452,7 @@ def _finalize_round(code_s: str, kind: str, stock_name: str,
         "kind": kind,
         "open_date": min(dates) if dates else "",
         "close_date": max(dates) if (dates and closed) else None,
+        "last_trade_date": max(dates) if dates else "",  # ラウンド内の最新約定日 (並び順の基準)
         "qty_peak": qty_peak,
         "closed": closed,
         "fills": [

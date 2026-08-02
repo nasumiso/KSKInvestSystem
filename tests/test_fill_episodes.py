@@ -165,6 +165,21 @@ class TestGenbutsuAndShinyoSeparate:
         assert kinds == ["信用", "現物"]
 
 
+class TestOrdering:
+    def test_sorted_by_last_trade_date(self, db_path):
+        # A: 建2026-01-01 売2026-01-05 (最終01-05)
+        _add(db_path, "5001", "2026-01-01", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "5001", "2026-01-05", "sell", 100, 1100.0, seq_salt="b")
+        # B: 建2026-01-02 のまま保有中で 2026-03-01 に買い増し (最終03-01)
+        _add(db_path, "5002", "2026-01-02", "buy", 100, 2000.0, seq_salt="c")
+        _add(db_path, "5002", "2026-03-01", "buy", 100, 2100.0, seq_salt="d")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        # 最終約定日降順 → 保有中(最終03-01)が先、クローズ済(最終01-05)が後
+        assert [e["code_s"] for e in eps] == ["5002", "5001"]
+        assert eps[0]["last_trade_date"] == "2026-03-01"
+        assert eps[0]["closed"] is False
+
+
 class TestEmpty:
     def test_no_fills(self, db_path):
         assert helpers.build_fill_episodes(db_path=db_path) == []
