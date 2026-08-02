@@ -148,6 +148,59 @@
 
 {% endif %}
 
+{# 取込済みで未反映の約定 (issue #360 Phase2 (c))。エピソードの有無に依存せず表示する #}
+{% if unmatched_fills %}
+<div style="margin-top:2em;">
+  <hr style="border:none;border-top:1px solid #333;margin-bottom:1em;">
+  <details>
+    <summary style="color:#c8a050;font-size:0.95em;cursor:pointer;">
+      取込済みで未反映の約定（{{ unmatched_fills|length }} 件）
+    </summary>
+    <p style="color:#888;font-size:0.82em;margin:0.5em 0;">
+      手動記録と対応付かなかった楽天の約定です。P/L には未反映です。
+      同じ日・同じ売買方向の分割約定は加重平均単価でまとめています（「N件集約」）。
+    </p>
+    <table class="trade-history-table">
+      <colgroup>
+        <col style="width:9em;"><col style="width:6em;"><col style="width:4em;">
+        <col style="width:5em;"><col style="width:6em;"><col>
+      </colgroup>
+      <thead>
+        <tr>
+          <th>銘柄</th>
+          <th style="white-space:nowrap;">約定日</th>
+          <th>売買</th>
+          <th style="white-space:nowrap;">株数</th>
+          <th style="white-space:nowrap;">単価</th>
+          <th>取引区分</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for f in unmatched_fills %}
+        <tr>
+          <td style="white-space:nowrap;"><a href="/stock/{{ f.code_s }}">{{ f.code_s }} {{ f.stock_name }}</a></td>
+          <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ f.trade_date[2:4] }}/{{ f.trade_date[5:7] }}/{{ f.trade_date[8:10] }}</td>
+          <td style="white-space:nowrap;">
+            {% if f.side == "buy" %}
+            <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#2e5a6e;color:#9ed8f0;">{{ f.side_label }}</span>
+            {% else %}
+            <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#5a2e2e;color:#f0a0a0;">{{ f.side_label }}</span>
+            {% endif %}
+            {% if f.aggregated %}
+            <span style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#3a3a2e;color:#c8c070;margin-left:0.2em;">{{ f.count }}件集約</span>
+            {% endif %}
+          </td>
+          <td style="text-align:right;color:#888;font-size:0.85em;">{{ f.qty }}</td>
+          <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}</td>
+          <td style="color:#777;font-size:0.85em;">{{ f.trade_kind }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</div>
+{% endif %}
+
 <script>
 (function () {
   // 振り返りメモ編集

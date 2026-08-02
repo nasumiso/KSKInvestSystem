@@ -9,10 +9,12 @@ from flask import Blueprint, abort, jsonify, render_template, request
 
 import portfolio_shelve as ps
 from webapp.helpers import (
+    _aggregate_fill_price,
     _bulk_price_logs,
     calc_episode_pl,
     calc_post_sell_returns,
     calc_trade_summary,
+    list_unmatched_fills,
     resolve_stock_name,
 )
 
@@ -100,6 +102,53 @@ def _last_action_date(ep: dict) -> str:
     return max(dates)
 
 
+def _apply_fill_prices(episodes: list) -> None:
+    """マッチ済み fill (実約定) で hold_price/sell_price/qty/日付をエピソードへ上書きする。
+
+    issue #360 Phase2: fill 側 matched_seq が action_log の seq を指す。seq は code_s ごとの
+    連番なので (code_s, matched_seq) を複合キーにする。買い増し (qty_changes) 混在エピソードは
+    加重平均が proxy と混ざり歪むため対象外 (単一 IN のみ)。上書きは episodes を破壊的に更新。
+
+    日付 (hold_date/sell_date) も楽天の約定日を真実源として上書きする。手動 action_log の
+    timestamp は操作履歴として DB 側にそのまま残し、表示・保有日数計算は約定日を優先する。
+    マッチした側のみ差し替え、未マッチ側は手動日のまま (価格の上書きポリシーと一致)。
+    """
+    fills_by_key: dict = {}  # (code_s, matched_seq) -> [fill, ...]
+    for f in ps.list_fills():
+        matched = f.get("matched_seq")
+        if matched is None:
+            continue
+        fills_by_key.setdefault((f["code_s"], matched), []).append(f)
+
+    if not fills_by_key:
+        return
+
+    for ep in episodes:
+        if ep.get("qty_changes"):
+            continue  # 買い増し混在は proxy のまま (§3 の限定)
+        code_s = ep["code_s"]
+        # 保有開始 (buy fill) → hold_seq にマッチ。
+        # fill を株数の真実源とするため、手入力 qty があっても実約定株数で置換する。
+        buy = _aggregate_fill_price(fills_by_key.get((code_s, ep.get("hold_seq")), []))
+        if buy is not None:
+            ep["hold_price"] = buy["price"]
+            ep["hold_qty"] = buy["qty"]
+            if buy.get("date"):
+                ep["hold_date"] = buy["date"]
+        # 売却 (sell fill) → sell_seq にマッチ
+        if ep.get("sell_seq") is not None:
+            sell = _aggregate_fill_price(fills_by_key.get((code_s, ep["sell_seq"]), []))
+            if sell is not None:
+                ep["sell_price"] = sell["price"]
+                ep["sell_qty"] = sell["qty"]
+                if sell.get("date"):
+                    # 約定日で売却日を上書きした場合、保存済み売却後騰落率 (旧手動日基準)
+                    # を無効化する。後段で新約定日を起点に再計算される (issue #366 整合)
+                    if sell["date"] != ep.get("sell_date"):
+                        ep["post_sell_returns"] = {}
+                    ep["sell_date"] = sell["date"]
+
+
 @trade_history_bp.route("/trade-history")
 def trade_history():
     """売買履歴ページ — 銘柄×保有エピソードをサブ行展開で表示。"""
@@ -126,6 +175,7 @@ def trade_history():
                 "sell_qty": None,
                 "sell_price": None,
                 "memo_seq": log["seq"],           # 1保ログの seq（未売却時のメモ保存先）
+                "hold_seq": log["seq"],           # 1保ログの seq（fill マッチ解決用、issue #360）
                 "sell_seq": None,
                 "review_memo": log.get("review_memo", ""),
                 "qty_changes": [],
@@ -170,6 +220,13 @@ def trade_history():
     episodes.extend(open_episodes.values())
 
     # エピソード内の最新アクション日 (売却 > 株数変更 > 保有) 降順
+    episodes.sort(key=_last_action_date, reverse=True)
+
+    # issue #360 Phase2: マッチ済み fill (実約定) で hold_price/sell_price/日付を上書きする。
+    # 買い増し (qty_changes) 混在エピソードは加重平均が proxy と混ざり歪むため対象外
+    # (単一 IN のみ)。未マッチ側は従来 price_proxy フォールバックのまま (既存挙動維持)。
+    _apply_fill_prices(episodes)
+    # 日付を約定日に上書きしたので、表示順を約定日基準に揃え直す
     episodes.sort(key=_last_action_date, reverse=True)
 
     # 銘柄名付与・サブ行組み立て・概算損益 (issue #361)
@@ -218,12 +275,16 @@ def trade_history():
     # 年降順のリスト [(year, episodes), ...]
     past_years = sorted(past_by_year.items(), key=lambda x: x[0], reverse=True)
 
+    # issue #360 Phase2 (c): 取込済みで未マッチ (P/L 未反映) の fill を一覧表示 (閲覧のみ)
+    unmatched_fills = list_unmatched_fills()
+
     return render_template(
         "trade_history.html",
         recent=recent,
         past_years=past_years,
         summary=summary,
         closed_count=closed_count,
+        unmatched_fills=unmatched_fills,
     )
 
 

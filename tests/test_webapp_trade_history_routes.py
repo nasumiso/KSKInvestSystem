@@ -101,6 +101,93 @@ class TestTradeHistoryPage:
         saved = next(l for l in ps.list_action_logs("6324") if l["action_type"] == "売却")
         assert saved["post_sell_returns"].keys() == {"5d", "20d"}
 
+    def test_matched_fill_overrides_price_qty_date(self, app, client):
+        """マッチ済み fill があると 6324 の売却済みエピソードの株価・株数・日付が実約定で上書き。
+
+        1保ログ・売却ログには手入力の株数プロキシが無い代わりに、fill を株数の真実源として
+        置換する (P2a)。日付も約定日で上書きされる。
+        """
+        with app.app_context():
+            logs = ps.list_action_logs("6324")
+            hold_seq = next(l["seq"] for l in logs if l.get("status_to") == "1保")
+            sell_seq = next(l["seq"] for l in logs if l["action_type"] == "売却")
+            # buy fill (hold) と sell fill を作成し、対応ログへマッチ済みにする
+            buy = ps.create_fill("6324", trade_date="2026-06-10", side="buy", qty=300,
+                                 price=6990.0, amount=-2097000, trade_kind="信用新規",
+                                 dedup_key="th-buy")
+            _, _ = ps.append_fill(buy)
+            sell = ps.create_fill("6324", trade_date="2026-06-20", side="sell", qty=300,
+                                  price=7810.0, amount=2343000, trade_kind="信用返済",
+                                  dedup_key="th-sell")
+            _, _ = ps.append_fill(sell)
+            for f in ps.list_fills("6324"):
+                seq = hold_seq if f["side"] == "buy" else sell_seq
+                ps.set_fill_matched_seq("6324", f["seq"], seq)
+
+        html = client.get("/trade-history").data.decode()
+        # 実約定価格・株数・約定日が反映される (proxy 5,678 ではなく 6,990/7,810)
+        assert "6,990" in html
+        assert "7,810" in html
+        assert "300" in html          # 実約定株数
+        assert "26/06/10" in html     # 約定日 (buy)
+        assert "26/06/20" in html     # 約定日 (sell)
+
+    def test_unmatched_fills_listed(self, app, client):
+        """未マッチ fill が未反映セクションに一覧・同日集約され、マッチ済みは出ない (issue #360 (c))。
+
+        3496 に未マッチ buy を1件 + 同日同side2件 (分割約定) を足し、6324 にはマッチ済み fill を
+        足す。同日同side2件は加重平均単価・合計株数で1行に集約され「2件集約」バッジが出る。
+        6324 のマッチ済み単価はセクションに出ないことを確認する。
+        """
+        with app.app_context():
+            logs = ps.list_action_logs("6324")
+            hold_seq = next(l["seq"] for l in logs if l.get("status_to") == "1保")
+            matched = ps.create_fill("6324", trade_date="2026-06-10", side="buy", qty=100,
+                                     price=6990.0, amount=-699000, trade_kind="信用新規",
+                                     dedup_key="um-matched")
+            ps.append_fill(matched)
+            ps.set_fill_matched_seq("6324", ps.list_fills("6324")[0]["seq"], hold_seq)
+            # 3496: 未マッチ buy 1件 + 同日同side2件 (分割約定 → 加重平均集約)
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-15", side="buy", qty=100,
+                                          price=1234.0, amount=-123400, trade_kind="現物",
+                                          dedup_key="um-a"))
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-18", side="sell", qty=50,
+                                          price=1500.0, amount=75000, trade_kind="現物",
+                                          dedup_key="um-b1"))
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-18", side="sell", qty=50,
+                                          price=1510.0, amount=75500, trade_kind="現物",
+                                          dedup_key="um-b2"))
+
+        html = client.get("/trade-history").data.decode()
+        section = html.split("取込済みで未反映")[1]
+        assert "取込済みで未反映の約定" in html
+        assert "1,234" in section        # 未マッチ単発 buy の単価
+        assert "2件集約" in section       # 分割約定を集約したバッジ
+        assert "1,505" in section        # 集約後の加重平均単価 (50@1500 + 50@1510)
+        assert "6,990" not in section     # マッチ済みはセクション外
+
+    def test_unmatched_fills_shown_without_episodes(self, tmp_path, monkeypatch):
+        """action_log が空でも未マッチ fill セクションは表示される (codexレビュー指摘)。"""
+        portfolio_db = str(tmp_path / "pf_um")
+        stocks_db = str(tmp_path / "st_um")
+        research_db = str(tmp_path / "rs_um")
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("db_shelve.STOCKS_SHELVE", stocks_db)
+        monkeypatch.setattr("webapp.helpers.STOCKS_SHELVE", stocks_db)
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", research_db)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", research_db)
+        monkeypatch.setattr("portfolio_shelve.DATA_DIR", str(tmp_path))
+        ps.append_fill(ps.create_fill("6324", trade_date="2026-06-10", side="buy", qty=100,
+                                      price=5000.0, amount=-500000, trade_kind="信用新規",
+                                      dedup_key="um-noep"), db_path=portfolio_db)
+        app2 = create_app()
+        app2.config["TESTING"] = True
+        html = app2.test_client().get("/trade-history").data.decode()
+        assert "売買履歴がありません" in html
+        assert "取込済みで未反映の約定" in html
+        assert "5,000" in html
+
     def test_all_episodes_have_review_memo_textarea(self, client):
         """売却済み・未売却どちらのエピソードにも textarea が表示される。"""
         html = client.get("/trade-history").data.decode()

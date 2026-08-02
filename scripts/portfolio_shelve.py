@@ -29,6 +29,7 @@ shelve ベースのラッパー。
 
 import fcntl
 import glob
+import hashlib
 import os
 import re
 import threading
@@ -80,6 +81,9 @@ KEY_ACTION_LOG_PREFIX = "action_log:"
 KEY_SEQ_PREFIX = "_seq:"
 KEY_THEME_PREFIX = "theme:"
 KEY_TRADE_IDEA_PREFIX = "trade_idea:"
+# issue #360 Phase2: 楽天CSV 由来の約定事実 (fill レイヤー、イミュータブル)
+KEY_FILL_PREFIX = "fill:"
+KEY_FILL_SEQ_PREFIX = "_fill_seq:"
 
 # テーママスター (issue #282)
 THEME_FIELDS = frozenset({"name", "description", "created_at"})
@@ -193,6 +197,29 @@ ACTION_LOG_FIELDS = frozenset(
         "post_sell_returns",
     }
 )
+
+# issue #360 Phase2: fill レコードの既知フィールド。
+# CSV 由来の約定事実 (価格・株数・約定日) の真実源。イミュータブルに追記のみ。
+FILL_FIELDS = frozenset(
+    {
+        "code_s",
+        "seq",
+        "trade_date",     # 約定日 "YYYY-MM-DD"
+        "side",           # "buy" / "sell" (建玉方向を正規化)
+        "qty",            # 数量[株] (>0)
+        "price",          # 単価[円] (>0, float)
+        "amount",         # 受渡金額[円] (楽天符号のまま int)
+        "trade_kind",     # 元の取引区分 (現物 / 信用新規 / 信用返済 / 現物(単元未満))
+        "dedup_key",      # 冪等取込用ハッシュ
+        "matched_seq",    # マッチした action_log の seq (未マッチは None)
+        "imported_at",    # 取込時刻 ISO8601
+    }
+)
+
+# 建玉方向の正規化 (楽天 売買区分 → side)
+SIDE_BUY = "buy"
+SIDE_SELL = "sell"
+
 
 # 許可されるステータス遷移 (status_from, status_to)
 # (None, "3監") は新規追加。それ以外は (from, to) の組
@@ -427,6 +454,18 @@ def _seq_key(code_s: str) -> str:
 
 def _action_log_prefix_for(code_s: str) -> str:
     return f"{KEY_ACTION_LOG_PREFIX}{code_s}:"
+
+
+def _fill_key(code_s: str, seq: int) -> str:
+    return f"{KEY_FILL_PREFIX}{code_s}:{seq:06d}"
+
+
+def _fill_seq_key(code_s: str) -> str:
+    return f"{KEY_FILL_SEQ_PREFIX}{code_s}"
+
+
+def _fill_prefix_for(code_s: str) -> str:
+    return f"{KEY_FILL_PREFIX}{code_s}:"
 
 
 # ===========================================
@@ -865,6 +904,190 @@ def backfill_price_proxies(
         f"date_fixed={stats['date_fixed']}",
     )
     return stats
+
+
+# ===========================================
+# issue #360 Phase2: fill レイヤー (楽天CSV 由来の約定事実)
+# ===========================================
+
+# 楽天 売買区分 → side 正規化テーブル。買付/買建=buy、売付/売埋=sell。
+_SIDE_BY_BUY_SELL = {
+    "買付": SIDE_BUY,
+    "買建": SIDE_BUY,
+    "売付": SIDE_SELL,
+    "売埋": SIDE_SELL,
+}
+
+
+def normalize_side(baibai_kubun: str) -> str:
+    """楽天 売買区分文字列を side ("buy"/"sell") に正規化する。
+
+    未知の区分は ValueError (取込時に弾いて確認リスト行きにする)。
+    """
+    side = _SIDE_BY_BUY_SELL.get((baibai_kubun or "").strip())
+    if side is None:
+        raise ValueError(f"未知の売買区分: {baibai_kubun!r}")
+    return side
+
+
+def make_dedup_key(
+    *,
+    trade_date: str,
+    code_s: str,
+    trade_kind: str,
+    baibai_kubun: str,
+    qty: int,
+    price: float,
+    amount: int,
+    occurrence: int,
+) -> str:
+    """fill の冪等取込用ハッシュを生成する。
+
+    楽天CSVには注文番号列が無いため、行の内容 + 同一CSV内の出現順 (occurrence) で
+    一意キーを作る。同日同単価の別注文 (正当な重複) は occurrence 違いで別 fill になり、
+    再ダウンロードでは順序が保たれ同じ occurrence になるため冪等。
+    """
+    raw = "|".join(
+        [
+            trade_date,
+            code_s,
+            trade_kind,
+            baibai_kubun,
+            str(qty),
+            f"{price:.4f}",
+            str(amount),
+            str(occurrence),
+        ]
+    )
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def create_fill(
+    code_s: str,
+    *,
+    trade_date: str,
+    side: str,
+    qty: int,
+    price: float,
+    amount: int,
+    trade_kind: str,
+    dedup_key: str,
+    matched_seq: Optional[int] = None,
+) -> Dict[str, Any]:
+    """fill レコード dict を生成する (バリデーション付き)。"""
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    if side not in (SIDE_BUY, SIDE_SELL):
+        raise ValueError(f"invalid side: {side!r} (許容値: {SIDE_BUY!r}/{SIDE_SELL!r})")
+    if not _ACTION_DATE_RE.match(trade_date):
+        raise ValueError(f"trade_date は YYYY-MM-DD 形式で指定してください: {trade_date!r}")
+    if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
+        raise ValueError(f"qty must be a positive int, got {qty!r}")
+    if not isinstance(price, (int, float)) or price <= 0:
+        raise ValueError(f"price must be > 0, got {price!r}")
+    return {
+        "code_s": normalized,
+        "seq": None,          # append_fill で採番
+        "trade_date": trade_date,
+        "side": side,
+        "qty": int(qty),
+        "price": float(price),
+        "amount": int(amount),
+        "trade_kind": trade_kind,
+        "dedup_key": dedup_key,
+        "matched_seq": matched_seq,
+        "imported_at": now_iso(),
+    }
+
+
+def _next_fill_seq(db: ShelveDB, code_s: str) -> int:
+    """指定銘柄の次の fill seq を返し、カウンタを進める (action_log とは別系統)。"""
+    seq_k = _fill_seq_key(code_s)
+    current = db.get(seq_k, 0)
+    nxt = int(current) + 1
+    db[seq_k] = nxt
+    return nxt
+
+
+def append_fill(
+    fill: Dict[str, Any],
+    *,
+    db_path: Optional[str] = None,
+) -> tuple:
+    """fill を1件追記する (dedup_key で冪等)。
+
+    同一 code_s に同じ dedup_key の fill が既にあればスキップ (取込済み)。
+    新規なら _fill_seq を採番して保存する。
+
+    Returns: (fill, is_new: bool) — is_new=False は重複スキップ (既存 fill を返す)
+    """
+    if not isinstance(fill, dict):
+        raise TypeError(f"fill must be dict, got {type(fill).__name__}")
+    code_s = normalize_code_s(fill["code_s"])
+    dedup_key = fill["dedup_key"]
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            prefix = _fill_prefix_for(code_s)
+            for key, value in db.items():
+                if not key.startswith(prefix):
+                    continue
+                if isinstance(value, dict) and value.get("dedup_key") == dedup_key:
+                    return value, False  # 既に取込済み (冪等)
+            seq = _next_fill_seq(db, code_s)
+            stored = dict(fill)
+            stored["seq"] = seq
+            db[_fill_key(code_s, seq)] = stored
+    return stored, True
+
+
+def list_fills(
+    code_s: Optional[str] = None,
+    *,
+    db_path: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """fill を取得する。code_s 指定でその銘柄のみ、None で全銘柄。(code_s, seq) 昇順。"""
+    if code_s is not None:
+        validate_code_s(code_s)
+        prefix = _fill_prefix_for(normalize_code_s(code_s))
+    else:
+        prefix = KEY_FILL_PREFIX
+    path = _resolve_db_path(db_path)
+    results: List[Dict[str, Any]] = []
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(prefix):
+                continue
+            if not isinstance(value, dict):
+                continue
+            results.append(value)
+    results.sort(key=lambda r: (r.get("code_s", ""), r.get("seq", 0)))
+    return results
+
+
+def set_fill_matched_seq(
+    code_s: str,
+    seq: int,
+    matched_seq: Optional[int],
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """fill の matched_seq を更新する (マッチング結果の書き戻し)。
+
+    対象が無ければ KeyError。action_log 側は触らず fill 側にリンクを持たせる設計。
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    key = _fill_key(normalized, seq)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            entry = db.get(key)
+            if entry is None:
+                raise KeyError(f"fill not found: code_s={code_s!r}, seq={seq}")
+            entry["matched_seq"] = matched_seq
+            db[key] = entry
+    return entry
 
 
 # ===========================================

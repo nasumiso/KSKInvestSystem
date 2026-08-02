@@ -4207,6 +4207,93 @@ def build_portfolio_theme_summary(
 
 
 # ===========================================
+# issue #360 Phase2: fill (実約定) の集約
+# ===========================================
+
+def _aggregate_fill_price(fills: list) -> Optional[dict]:
+    """マッチ済み fill 群を株数加重平均単価に畳む。
+
+    現状 (Phase2) は 1 イベント 1 fill だが、将来 (c) で分割約定の群マッチを許した際に
+    複数 fill を 1 価格へまとめられるよう前方互換な集約にする。要素1なら実質そのまま。
+
+    date は群の最も遅い約定日 (買い集め/売り切りの完了日) を代表日とする。
+    issue #360: 楽天の約定日を売買日の真実源として表示・保有日数計算に使う。
+
+    Returns: {"price": 加重平均単価, "qty": 合計株数, "date": 代表約定日} / 不正なら None
+    """
+    if not fills:
+        return None
+    total_qty = 0
+    total_amount = 0.0
+    dates = []
+    for f in fills:
+        qty = f.get("qty")
+        price = f.get("price")
+        if not isinstance(qty, int) or qty <= 0 or not isinstance(price, (int, float)) or price <= 0:
+            return None
+        total_qty += qty
+        total_amount += price * qty
+        if f.get("trade_date"):
+            dates.append(f["trade_date"])
+    if total_qty <= 0:
+        return None
+    return {
+        "price": total_amount / total_qty,
+        "qty": total_qty,
+        "date": max(dates) if dates else None,
+    }
+
+
+_SIDE_LABELS = {"buy": "買", "sell": "売"}
+
+
+def list_unmatched_fills() -> List[Dict[str, Any]]:
+    """取込済みで未マッチ (matched_seq is None) の fill を表示用にまとめて返す (issue #360)。
+
+    エピソードへ自動マッチできなかった約定を /trade-history で可視化するためのリスト。
+    P/L には反映されていない fill を銘柄ごとに一覧して気づけるようにする (閲覧のみ)。
+
+    同日集約: (code_s, side, trade_date) が同じ fill (分割約定) は加重平均単価・合計株数で
+    1 行に畳む。2 件以上を畳んだ行には count と aggregated=True を付ける (可視化)。
+    集約は表示のみで、自動マッチ判定 (b) には影響しない。
+
+    Returns: [{code_s, stock_name, trade_date, side, side_label, qty, price,
+               trade_kind, count, aggregated}, ...] を code_s 昇順 → trade_date 昇順で。
+    """
+    import portfolio_shelve as ps  # 遅延 import (循環回避)
+
+    unmatched = [f for f in ps.list_fills() if f.get("matched_seq") is None]
+    if not unmatched:
+        return []
+
+    # (code_s, side, trade_date) で分割約定をグループ化
+    groups: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
+    for f in unmatched:
+        key = (f["code_s"], f["side"], f["trade_date"])
+        groups.setdefault(key, []).append(f)
+
+    rows: List[Dict[str, Any]] = []
+    for (code_s, side, trade_date), fills in groups.items():
+        agg = _aggregate_fill_price(fills)
+        # 取引区分はグループ内で通常単一。複数種混在時は "/" で併記 (稀)
+        kinds = sorted({f.get("trade_kind", "") for f in fills if f.get("trade_kind")})
+        rows.append({
+            "code_s": code_s,
+            "stock_name": resolve_stock_name(code_s),
+            "trade_date": trade_date,
+            "side": side,
+            "side_label": _SIDE_LABELS.get(side, side),
+            "qty": agg["qty"] if agg else sum(f["qty"] for f in fills),
+            "price": agg["price"] if agg else fills[0]["price"],
+            "trade_kind": " / ".join(kinds),
+            "count": len(fills),
+            "aggregated": len(fills) >= 2,
+        })
+    rows.sort(key=lambda r: (r["code_s"], r["trade_date"]))
+    return rows
+
+
+# ===========================================
 # issue #361: 売買エピソードの概算損益・成績サマリー
 # ===========================================
 
