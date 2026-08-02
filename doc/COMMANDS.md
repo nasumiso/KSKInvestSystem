@@ -139,6 +139,15 @@ cd scripts && python import_sbi_fills.py "<csv_path>" --dry-run       # 読込�
 cd scripts && python import_sbi_fills.py "<csv_path>"                 # 本番取込
 ```
 
+取込後の建玉ラウンド (エピソード) 損益・保有中の含み損益・振り返りメモの紐付けをターミナルで確認する (DB 非更新)。
+
+```bash
+cd scripts && python show_fill_episodes.py            # 全エピソード (最新約定日降順)
+cd scripts && python show_fill_episodes.py 6324       # 特定銘柄のみ (内訳 fill も表示)
+cd scripts && python show_fill_episodes.py --open     # 保有中のみ (残株数・実現/含み損益)
+cd scripts && python show_fill_episodes.py --memo     # 振り返りメモ付きのみ
+```
+
 ## 自動実行
 
 `shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。
