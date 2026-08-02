@@ -4247,49 +4247,50 @@ def _aggregate_fill_price(fills: list) -> Optional[dict]:
 _SIDE_LABELS = {"buy": "買", "sell": "売"}
 
 
-def list_unmatched_fills() -> List[Dict[str, Any]]:
-    """取込済みで未マッチ (matched_seq is None) の fill を表示用にまとめて返す (issue #360)。
+def list_trade_fills() -> List[Dict[str, Any]]:
+    """取込済みの全 fill (実約定) を売買履歴タブ用にまとめて返す (issue #387)。
 
-    エピソードへ自動マッチできなかった約定を /trade-history で可視化するためのリスト。
-    P/L には反映されていない fill を銘柄ごとに一覧して気づけるようにする (閲覧のみ)。
+    楽天CSVを売買履歴の真実源とし、約定日降順で一覧表示する。matched_seq の有無は
+    問わない (突合を廃止したため。既存 DB の matched_seq 値は参照しない)。
 
     同日集約: (code_s, side, trade_date) が同じ fill (分割約定) は加重平均単価・合計株数で
     1 行に畳む。2 件以上を畳んだ行には count と aggregated=True を付ける (可視化)。
-    集約は表示のみで、自動マッチ判定 (b) には影響しない。
 
     Returns: [{code_s, stock_name, trade_date, side, side_label, qty, price,
-               trade_kind, count, aggregated}, ...] を code_s 昇順 → trade_date 昇順で。
+               trade_kind, count, aggregated}, ...] を約定日降順 → code_s 昇順で。
     """
     import portfolio_shelve as ps  # 遅延 import (循環回避)
 
-    unmatched = [f for f in ps.list_fills() if f.get("matched_seq") is None]
-    if not unmatched:
+    fills = ps.list_fills()
+    if not fills:
         return []
 
     # (code_s, side, trade_date) で分割約定をグループ化
     groups: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
-    for f in unmatched:
+    for f in fills:
         key = (f["code_s"], f["side"], f["trade_date"])
         groups.setdefault(key, []).append(f)
 
     rows: List[Dict[str, Any]] = []
-    for (code_s, side, trade_date), fills in groups.items():
-        agg = _aggregate_fill_price(fills)
+    for (code_s, side, trade_date), group in groups.items():
+        agg = _aggregate_fill_price(group)
         # 取引区分はグループ内で通常単一。複数種混在時は "/" で併記 (稀)
-        kinds = sorted({f.get("trade_kind", "") for f in fills if f.get("trade_kind")})
+        kinds = sorted({f.get("trade_kind", "") for f in group if f.get("trade_kind")})
         rows.append({
             "code_s": code_s,
             "stock_name": resolve_stock_name(code_s),
             "trade_date": trade_date,
             "side": side,
             "side_label": _SIDE_LABELS.get(side, side),
-            "qty": agg["qty"] if agg else sum(f["qty"] for f in fills),
-            "price": agg["price"] if agg else fills[0]["price"],
+            "qty": agg["qty"] if agg else sum(f["qty"] for f in group),
+            "price": agg["price"] if agg else group[0]["price"],
             "trade_kind": " / ".join(kinds),
-            "count": len(fills),
-            "aggregated": len(fills) >= 2,
+            "count": len(group),
+            "aggregated": len(group) >= 2,
         })
-    rows.sort(key=lambda r: (r["code_s"], r["trade_date"]))
+    # 約定日降順、同日内は銘柄コード昇順
+    rows.sort(key=lambda r: r["code_s"])
+    rows.sort(key=lambda r: r["trade_date"], reverse=True)
     return rows
 
 

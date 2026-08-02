@@ -1,6 +1,6 @@
 """import_rakuten_fills.py のテスト (issue #360 Phase2)。
 
-楽天 取引履歴CSV の fill 取込・冪等 dedup・エピソード自動マッチを検証する。
+楽天 取引履歴CSV の fill 取込・冪等 dedup を検証する (issue #387 で自動マッチは廃止)。
 """
 
 import csv
@@ -84,95 +84,3 @@ def test_dedup_idempotent(tmp_path, db_path):
     assert s2["imported"] == 0 and s2["skipped_dup"] == 3
     assert len(ps.list_fills(db_path=db_path)) == 3  # 総数不変 (冪等)
 
-
-def test_match_single_and_ambiguous(tmp_path, db_path):
-    """buy fill が ±5日内の1保ログに付く / 同日同side2行は曖昧で未マッチ。"""
-    # 6315: 単一 buy → 1保ログにマッチ確定
-    ps.add_to_watch("6315", db_path=db_path)
-    ps.transition_status("6315", "1保", action_date="2026-06-24", qty=100, db_path=db_path)
-    # 3496: 同日同side2行 → 曖昧で未マッチ
-    ps.add_to_watch("3496", db_path=db_path)
-    ps.transition_status("3496", "1保", action_date="2026-06-23", qty=100, db_path=db_path)
-
-    rows = [
-        _row("6315", "信用新規", "買建", "100", "3,390.0", trade_date="2026/6/23"),
-        _row("3496", "信用新規", "買建", "100", "4,140.0", trade_date="2026/6/23"),
-        _row("3496", "信用新規", "買建", "100", "4,200.0", trade_date="2026/6/23"),
-    ]
-    csv_path = _write_csv(tmp_path / "t.csv", rows)
-    ir.import_csv_to_fills(csv_path, db_path=db_path)
-
-    stats = ir.match_fills_to_episodes(db_path=db_path)
-    assert stats["matched"] == 1      # 6315 のみ
-    assert stats["ambiguous"] == 2    # 3496 の 2 行
-
-    matched = [f for f in ps.list_fills("6315", db_path=db_path) if f["matched_seq"] is not None]
-    assert len(matched) == 1
-    # 3496 は全て未マッチ
-    assert all(f["matched_seq"] is None for f in ps.list_fills("3496", db_path=db_path))
-
-
-def test_match_no_double_consume(tmp_path, db_path):
-    """1つの1保スロットに対し近接2 fill があっても消費は1件、増分取込でも再マッチしない。"""
-    ps.add_to_watch("6315", db_path=db_path)
-    ps.transition_status("6315", "1保", action_date="2026-06-24", qty=100, db_path=db_path)
-    # 別々の約定日 (曖昧集約は回避) だが両方が同じ1保スロットの±3日窓に入る buy 2 件
-    rows = [
-        _row("6315", "信用新規", "買建", "100", "3,390.0", trade_date="2026/6/23"),
-        _row("6315", "信用新規", "買建", "100", "3,400.0", trade_date="2026/6/25"),
-    ]
-    csv_path = _write_csv(tmp_path / "t.csv", rows)
-    ir.import_csv_to_fills(csv_path, db_path=db_path)
-
-    stats = ir.match_fills_to_episodes(db_path=db_path)
-    # 1保スロットは1つしかないので、マッチ確定は高々1件 (二重消費されない)
-    assert stats["matched"] == 1
-    matched = [f for f in ps.list_fills("6315", db_path=db_path) if f["matched_seq"] is not None]
-    assert len(matched) == 1
-
-    # 増分取込: 後日の別CSVで同スロット近傍の buy を追加し再マッチしても、既マッチ
-    # スロットは消費済みとして除外され二重マッチしない (P1)
-    rows2 = [_row("6315", "信用新規", "買建", "100", "3,410.0", trade_date="2026/6/26")]
-    csv2 = _write_csv(tmp_path / "t2.csv", rows2)
-    ir.import_csv_to_fills(csv2, db_path=db_path)
-    ir.match_fills_to_episodes(db_path=db_path)
-    matched2 = [f for f in ps.list_fills("6315", db_path=db_path) if f["matched_seq"] is not None]
-    assert len(matched2) == 1  # 増分後もマッチは1件のまま
-
-
-def test_match_two_episodes_no_cross(tmp_path, db_path):
-    """同一コードで近接2エピソード時、buy/sell が各エピソードの最近接スロットにのみ付き跨がない。
-
-    6227 縮図: 保有(6/20)→売却(6/25) と 保有(7/01)→売却(7/06) の2サイクル。
-    各サイクルの実約定 buy/sell が、隣サイクルに吸着せず自分の区間に収まる。
-    """
-    ps.add_to_watch("6227", db_path=db_path)
-    # サイクル1
-    ps.transition_status("6227", "1保", action_date="2026-06-20", qty=100, db_path=db_path)
-    ps.transition_status("6227", "2準", action_date="2026-06-25", db_path=db_path)
-    # サイクル2
-    ps.transition_status("6227", "1保", action_date="2026-07-01", qty=100, db_path=db_path)
-    ps.transition_status("6227", "2準", action_date="2026-07-06", db_path=db_path)
-
-    rows = [
-        _row("6227", "信用新規", "買建", "100", "7,000.0", trade_date="2026/6/21"),  # cyc1 buy
-        _row("6227", "信用返済", "売埋", "100", "7,300.0", trade_date="2026/6/24"),  # cyc1 sell
-        _row("6227", "信用新規", "買建", "100", "6,800.0", trade_date="2026/7/02"),  # cyc2 buy
-        _row("6227", "信用返済", "売埋", "100", "7,100.0", trade_date="2026/7/05"),  # cyc2 sell
-    ]
-    csv_path = _write_csv(tmp_path / "t.csv", rows)
-    ir.import_csv_to_fills(csv_path, db_path=db_path)
-    stats = ir.match_fills_to_episodes(db_path=db_path)
-
-    assert stats["matched"] == 4  # 4件すべてが自分のサイクルにマッチ
-
-    logs = ps.list_action_logs("6227", db_path=db_path)
-    hold_seqs = sorted(l["seq"] for l in logs if l.get("status_to") == "1保")
-    sell_seqs = sorted(l["seq"] for l in logs if l.get("action_type") == "売却")
-    fills = {(f["side"], f["trade_date"]): f["matched_seq"]
-             for f in ps.list_fills("6227", db_path=db_path)}
-    # cyc1 buy(6/21) は早い方の1保、cyc2 buy(7/02) は遅い方の1保 (跨がない)
-    assert fills[("buy", "2026-06-21")] == hold_seqs[0]
-    assert fills[("buy", "2026-07-02")] == hold_seqs[1]
-    assert fills[("sell", "2026-06-24")] == sell_seqs[0]
-    assert fills[("sell", "2026-07-05")] == sell_seqs[1]

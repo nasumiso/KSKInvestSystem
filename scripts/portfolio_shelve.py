@@ -1065,31 +1065,6 @@ def list_fills(
     return results
 
 
-def set_fill_matched_seq(
-    code_s: str,
-    seq: int,
-    matched_seq: Optional[int],
-    *,
-    db_path: Optional[str] = None,
-) -> Dict[str, Any]:
-    """fill の matched_seq を更新する (マッチング結果の書き戻し)。
-
-    対象が無ければ KeyError。action_log 側は触らず fill 側にリンクを持たせる設計。
-    """
-    validate_code_s(code_s)
-    normalized = normalize_code_s(code_s)
-    key = _fill_key(normalized, seq)
-    path = _resolve_db_path(db_path)
-    with _flock(db_path):
-        with ShelveDB(path) as db:
-            entry = db.get(key)
-            if entry is None:
-                raise KeyError(f"fill not found: code_s={code_s!r}, seq={seq}")
-            entry["matched_seq"] = matched_seq
-            db[key] = entry
-    return entry
-
-
 # ===========================================
 # 高レベル操作
 # ===========================================

@@ -3,7 +3,64 @@
 {% block content %}
 
 <h2>売買履歴</h2>
-<p style="color:#888;font-size:0.85em;">保有エピソード単位で表示。保有日降順。</p>
+
+{# issue #387: 2タブ構成。売買履歴=楽天CSVの実約定 / アクションログ=手動記録のエピソード #}
+<div class="th-tabs" style="display:flex;gap:0.5em;border-bottom:1px solid #333;margin-bottom:1.2em;">
+  <button class="th-tab-btn active" data-tab="tab-fills"
+          style="background:none;border:none;border-bottom:2px solid transparent;color:#aaa;font-size:0.95em;cursor:pointer;padding:0.5em 0.9em;">売買履歴</button>
+  <button class="th-tab-btn" data-tab="tab-actions"
+          style="background:none;border:none;border-bottom:2px solid transparent;color:#aaa;font-size:0.95em;cursor:pointer;padding:0.5em 0.9em;">アクションログ</button>
+</div>
+
+{# ============ タブ1: 売買履歴 (楽天CSVの実約定) ============ #}
+<div id="tab-fills" class="th-tab-panel">
+<p style="color:#888;font-size:0.85em;">楽天CSVの実約定。約定日降順。同じ日・同じ売買方向の分割約定は加重平均単価でまとめています（「N件集約」）。</p>
+{% if trade_fills %}
+<table class="trade-history-table">
+  <colgroup>
+    <col style="width:6em;"><col style="width:9em;"><col style="width:4em;">
+    <col style="width:5em;"><col style="width:6em;"><col>
+  </colgroup>
+  <thead>
+    <tr>
+      <th style="white-space:nowrap;">約定日</th>
+      <th>銘柄</th>
+      <th>売買</th>
+      <th style="white-space:nowrap;">株数</th>
+      <th style="white-space:nowrap;">株価</th>
+      <th>取引区分</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for f in trade_fills %}
+    <tr>
+      <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ f.trade_date[2:4] }}/{{ f.trade_date[5:7] }}/{{ f.trade_date[8:10] }}</td>
+      <td style="white-space:nowrap;"><a href="/stock/{{ f.code_s }}">{{ f.code_s }} {{ f.stock_name }}</a></td>
+      <td style="white-space:nowrap;">
+        {% if f.side == "buy" %}
+        <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#2e5a6e;color:#9ed8f0;">{{ f.side_label }}</span>
+        {% else %}
+        <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#5a2e2e;color:#f0a0a0;">{{ f.side_label }}</span>
+        {% endif %}
+        {% if f.aggregated %}
+        <span style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#3a3a2e;color:#c8c070;margin-left:0.2em;">{{ f.count }}件集約</span>
+        {% endif %}
+      </td>
+      <td style="text-align:right;color:#888;font-size:0.85em;">{{ f.qty }}</td>
+      <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}</td>
+      <td style="color:#777;font-size:0.85em;">{{ f.trade_kind }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:#888;">取り込まれた約定がありません。<code>import_rakuten_fills.py</code> で楽天CSVを取り込んでください。</p>
+{% endif %}
+</div>
+
+{# ============ タブ2: アクションログ (手動記録のエピソード) ============ #}
+<div id="tab-actions" class="th-tab-panel" style="display:none;">
+<p style="color:#888;font-size:0.85em;">保有エピソード単位で表示。保有日降順。株価は保有開始日の終値プロキシ（概算）。</p>
 
 {# 成績サマリー (issue #361): 売却済みエピソードのうち終値プロキシで概算できた分 #}
 {% if summary %}
@@ -121,7 +178,7 @@
 {% endmacro %}
 
 {% if not recent and not past_years %}
-<p style="color:#888;">売買履歴がありません。</p>
+<p style="color:#888;">アクションログがありません。</p>
 {% else %}
 
 {# 直近30件 #}
@@ -147,62 +204,35 @@
 {% endif %}
 
 {% endif %}
-
-{# 取込済みで未反映の約定 (issue #360 Phase2 (c))。エピソードの有無に依存せず表示する #}
-{% if unmatched_fills %}
-<div style="margin-top:2em;">
-  <hr style="border:none;border-top:1px solid #333;margin-bottom:1em;">
-  <details>
-    <summary style="color:#c8a050;font-size:0.95em;cursor:pointer;">
-      取込済みで未反映の約定（{{ unmatched_fills|length }} 件）
-    </summary>
-    <p style="color:#888;font-size:0.82em;margin:0.5em 0;">
-      手動記録と対応付かなかった楽天の約定です。P/L には未反映です。
-      同じ日・同じ売買方向の分割約定は加重平均単価でまとめています（「N件集約」）。
-    </p>
-    <table class="trade-history-table">
-      <colgroup>
-        <col style="width:9em;"><col style="width:6em;"><col style="width:4em;">
-        <col style="width:5em;"><col style="width:6em;"><col>
-      </colgroup>
-      <thead>
-        <tr>
-          <th>銘柄</th>
-          <th style="white-space:nowrap;">約定日</th>
-          <th>売買</th>
-          <th style="white-space:nowrap;">株数</th>
-          <th style="white-space:nowrap;">単価</th>
-          <th>取引区分</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for f in unmatched_fills %}
-        <tr>
-          <td style="white-space:nowrap;"><a href="/stock/{{ f.code_s }}">{{ f.code_s }} {{ f.stock_name }}</a></td>
-          <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ f.trade_date[2:4] }}/{{ f.trade_date[5:7] }}/{{ f.trade_date[8:10] }}</td>
-          <td style="white-space:nowrap;">
-            {% if f.side == "buy" %}
-            <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#2e5a6e;color:#9ed8f0;">{{ f.side_label }}</span>
-            {% else %}
-            <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#5a2e2e;color:#f0a0a0;">{{ f.side_label }}</span>
-            {% endif %}
-            {% if f.aggregated %}
-            <span style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#3a3a2e;color:#c8c070;margin-left:0.2em;">{{ f.count }}件集約</span>
-            {% endif %}
-          </td>
-          <td style="text-align:right;color:#888;font-size:0.85em;">{{ f.qty }}</td>
-          <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}</td>
-          <td style="color:#777;font-size:0.85em;">{{ f.trade_kind }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </details>
 </div>
-{% endif %}
 
 <script>
 (function () {
+  // タブ切替 (issue #387)
+  var tabBtns = document.querySelectorAll('.th-tab-btn');
+  var panels = document.querySelectorAll('.th-tab-panel');
+  tabBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      tabBtns.forEach(function (b) {
+        b.classList.remove('active');
+        b.style.borderBottomColor = 'transparent';
+        b.style.color = '#aaa';
+      });
+      panels.forEach(function (p) { p.style.display = 'none'; });
+      btn.classList.add('active');
+      btn.style.borderBottomColor = '#9ed8f0';
+      btn.style.color = '#ddd';
+      var panel = document.getElementById(btn.dataset.tab);
+      if (panel) panel.style.display = '';
+    });
+  });
+  // 初期タブ (売買履歴) のアクティブ表示
+  var first = document.querySelector('.th-tab-btn.active');
+  if (first) {
+    first.style.borderBottomColor = '#9ed8f0';
+    first.style.color = '#ddd';
+  }
+
   // 振り返りメモ編集
   document.querySelectorAll('.review-memo-cell').forEach(function (cell) {
     var url = cell.dataset.url;
