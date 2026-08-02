@@ -4471,18 +4471,105 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
     }
 
 
+def _build_code_episodes(code_s: str, stock_name: str,
+                         fills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """1銘柄の fill (信用+現物混在、約定日昇順) を建玉ラウンドのエピソードに分ける。
+
+    信用ラウンドと現物ラウンドを並行管理し、**現引で信用→現物へ建玉を振り替える**:
+      - 信用新規買 (buy): 信用建玉を積む
+      - 信用返済売 (sell): 信用建玉を減らし、建玉0で信用ラウンドをクローズ (損益確定)
+      - 現引 (buy): 信用建玉が残っていればその分を信用ラウンドから抜き (振替、信用側は
+        損益計上しない=現物へ持ち越し)、現物ラウンドに現引 buy を積む。信用建玉が0に
+        なれば信用ラウンドをクローズ
+      - 現物買 (buy): 現物建玉を積む
+      - 現物売 (sell): 現物建玉を減らし、建玉0で現物ラウンドをクローズ
+    保有0に戻らず残った建玉は保有中エピソードになる。
+    """
+    # 約定日昇順。同日内は 建玉を作る側 (buy=新規買・現引) を先に、玉を減らす側
+    # (sell=売り・返済) を後に処理する。現引で現物化してから同日に売るケースで、売りが
+    # 先に来て期首持ち越し扱いになる誤検出を防ぐ (6366 相当)。
+    def _sort_key(f):
+        return (f.get("trade_date") or "", 0 if f["side"] == "buy" else 1, f.get("seq") or 0)
+    fills = sorted(fills, key=_sort_key)
+    episodes: List[Dict[str, Any]] = []
+
+    shinyo_fills: List[Dict[str, Any]] = []  # 現ラウンドの信用 fill
+    shinyo_qty = 0
+    shinyo_peak = 0
+    genbutsu_fills: List[Dict[str, Any]] = []  # 現ラウンドの現物 fill
+    genbutsu_qty = 0
+    genbutsu_peak = 0
+
+    def close_shinyo():
+        nonlocal shinyo_fills, shinyo_qty, shinyo_peak
+        if shinyo_fills:
+            episodes.append(_finalize_round(code_s, "信用", stock_name, shinyo_fills, shinyo_peak))
+        shinyo_fills = []
+        shinyo_qty = 0
+        shinyo_peak = 0
+
+    def close_genbutsu():
+        nonlocal genbutsu_fills, genbutsu_qty, genbutsu_peak
+        if genbutsu_fills:
+            episodes.append(_finalize_round(code_s, "現物", stock_name, genbutsu_fills, genbutsu_peak))
+        genbutsu_fills = []
+        genbutsu_qty = 0
+        genbutsu_peak = 0
+
+    for f in fills:
+        tk = f.get("trade_kind") or ""
+        qty = f["qty"]
+        if tk == "現引":
+            # 信用建玉 → 現物へ振替。信用側は残っていれば現引分だけ減らす。
+            if shinyo_qty > 0:
+                shinyo_qty -= qty
+                if shinyo_qty <= 0:
+                    close_shinyo()  # 現引で信用建玉が尽きたらクローズ (損益は現物へ)
+            # 現物ラウンドに現引 buy を積む (price=実質取得原価)
+            genbutsu_fills.append(f)
+            genbutsu_qty += qty
+            genbutsu_peak = max(genbutsu_peak, genbutsu_qty)
+        elif tk.startswith("信用"):
+            shinyo_fills.append(f)
+            if f["side"] == "buy":
+                shinyo_qty += qty
+            else:
+                shinyo_qty -= qty
+            shinyo_peak = max(shinyo_peak, shinyo_qty)
+            if shinyo_qty <= 0:
+                close_shinyo()
+        else:  # 現物 / 現物(単元未満)
+            genbutsu_fills.append(f)
+            if f["side"] == "buy":
+                genbutsu_qty += qty
+            else:
+                genbutsu_qty -= qty
+            genbutsu_peak = max(genbutsu_peak, genbutsu_qty)
+            if genbutsu_qty <= 0:
+                close_genbutsu()
+
+    # 保有中 (残った建玉)
+    if shinyo_fills:
+        episodes.append(_finalize_round(code_s, "信用", stock_name, shinyo_fills, shinyo_peak, closed=False))
+    if genbutsu_fills:
+        episodes.append(_finalize_round(code_s, "現物", stock_name, genbutsu_fills, genbutsu_peak, closed=False))
+
+    return episodes
+
+
 def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """全 fill を建玉ラウンド単位のエピソードに再構成する (issue #387 Phase4b)。
 
-    銘柄コード × 口座種別 (現物/信用) ごとに約定日昇順で fill を並べ、保有 (建玉) 株数が
-    0 → 建 → 0 に戻る 1 サイクルを 1 エピソードとする。現引は現物ラウンドの buy として
-    合流させ (現引ブリッジ)、信用は返済 fill の建単価/決済損益で損益確定する。
+    銘柄ごとに信用・現物を同一時系列で処理し、保有 (建玉) 株数が 0 → 建 → 0 に戻る
+    1 サイクルを 1 エピソードとする。**現引は信用建玉を現物へ振り替える** (信用側の
+    建玉を減らし現物側に取得原価で積む)。信用は返済 fill の建単価/決済損益で損益確定。
 
     各エピソード dict:
       code_s, stock_name, kind ("現物"/"信用"), open_date, close_date,
       last_trade_date (ラウンド内の最終約定日), qty_peak (最大建玉),
       closed (bool), fills (内部の個別 fill 明細リスト),
-      pl (クローズ済みのみ: _episode_pl_from_round の結果, 未クローズは None)
+      pl (クローズ済みのみ: _episode_pl_from_round の結果, 未クローズは None),
+      open_pl (保有中のみ: realized/unrealized/held_qty/avg_cost)
 
     Returns: 最終約定日 (買い増し・部分売り含むラウンド内の最新の取引日) 降順の
     エピソードリスト。保有中エピソードも最後に約定した日で並ぶ。
@@ -4493,38 +4580,16 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     if not all_fills:
         return []
 
-    # (code_s, 口座種別) でグループ化し、約定日→seq 昇順に
-    groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    # 銘柄コードでグループ化 (信用・現物を同一時系列で処理するため口座種別で分けない)
+    by_code: Dict[str, List[Dict[str, Any]]] = {}
     for f in all_fills:
-        key = (f["code_s"], _fill_account_kind(f.get("trade_kind", "")))
-        groups.setdefault(key, []).append(f)
+        by_code.setdefault(f["code_s"], []).append(f)
 
-    names = _bulk_resolve_stock_names(list({k[0] for k in groups}))
+    names = _bulk_resolve_stock_names(list(by_code.keys()))
 
     episodes: List[Dict[str, Any]] = []
-    for (code_s, kind), fills in groups.items():
-        fills = sorted(fills, key=lambda f: (f.get("trade_date") or "", f.get("seq") or 0))
-        held_qty = 0
-        cur: List[Dict[str, Any]] = []  # 現ラウンドの fill
-        qty_peak = 0
-        for f in fills:
-            if not cur:
-                # ラウンド開始
-                qty_peak = 0
-            cur.append(f)
-            if f["side"] == "buy":
-                held_qty += f["qty"]
-            else:
-                held_qty -= f["qty"]
-            qty_peak = max(qty_peak, held_qty)
-            if held_qty <= 0 and cur:
-                # ラウンドクローズ (保有 0 以下に戻った)
-                episodes.append(_finalize_round(code_s, kind, names.get(code_s, ""), cur, qty_peak))
-                cur = []
-                held_qty = 0
-        if cur:
-            # 未クローズ (保有中)
-            episodes.append(_finalize_round(code_s, kind, names.get(code_s, ""), cur, qty_peak, closed=False))
+    for code_s, fills in by_code.items():
+        episodes.extend(_build_code_episodes(code_s, names.get(code_s, ""), fills))
 
     # 保有中エピソードに実現損益 (部分売り分) と含み損益 (残玉評価) を付与 (issue #387 Phase4b)。
     # 含みは price_log の直近終値を現在値とする。銘柄をバルク取得して N+1 を避ける。

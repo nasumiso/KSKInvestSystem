@@ -61,6 +61,58 @@ class TestGenbaiBridge:
         # 取得 844,221 / 売却 841,000 → -3,221
         assert ep["pl"]["profit_amount"] == -3221
 
+    def test_shinyo_to_genbiki_to_genbutsu_full_flow(self, db_path):
+        """信用新規買 → 現引 → 現物売 で、信用建玉が現引で現物へ振り替わる (1436相当)。
+
+        現引で信用建玉が尽きると信用ラウンドは損益なしでクローズ (保有中に残らない)。
+        現物ラウンドが現引取得原価 × 現物売で損益確定する。
+        """
+        _add(db_path, "1436", "2026-05-08", "buy", 300, 1440.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "1436", "2026-05-13", "buy", 100, 1810.0, trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "1436", "2026-06-08", "buy", 100, 1813.74, trade_kind="現引", seq_salt="c")
+        _add(db_path, "1436", "2026-06-08", "buy", 300, 1443.31, trade_kind="現引", seq_salt="d")
+        _add(db_path, "1436", "2026-06-09", "sell", 100, 1855.0, trade_kind="現物", seq_salt="e")
+        _add(db_path, "1436", "2026-06-16", "sell", 300, 1260.0, trade_kind="現物", seq_salt="f")
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        # 保有中は残らない (信用建玉は現引で全部振替、現物は全部売却)
+        assert all(e["closed"] for e in eps), [e for e in eps if not e["closed"]]
+        shinyo = [e for e in eps if e["kind"] == "信用"]
+        genbutsu = [e for e in eps if e["kind"] == "現物"]
+        assert len(shinyo) == 1
+        assert len(genbutsu) == 1
+        # 信用ラウンドは現引で閉じたため損益なし (信用として売っていない)
+        assert shinyo[0]["pl"] is None
+        # 現物: 取得 (1813.74*100 + 1443.31*300) / 売却 (1855*100 + 1260*300)
+        # = 181374 + 432993 = 614367 取得, 185500 + 378000 = 563500 売却 → -50,867
+        assert genbutsu[0]["pl"]["profit_amount"] == -50867
+
+    def test_genbiki_does_not_leave_open_shinyo(self, db_path):
+        """現引で信用建玉が尽きたら信用が保有中に残らない (誤保有バグの回帰)。"""
+        _add(db_path, "2001", "2026-01-10", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "2001", "2026-01-20", "buy", 100, 1050.0, trade_kind="現引", seq_salt="b")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        # 信用は現引で振替済み → 信用の保有中は無い。現物は現引100株を保有中
+        open_shinyo = [e for e in eps if not e["closed"] and e["kind"] == "信用"]
+        open_genbutsu = [e for e in eps if not e["closed"] and e["kind"] == "現物"]
+        assert open_shinyo == []
+        assert len(open_genbutsu) == 1
+        assert open_genbutsu[0]["open_pl"]["held_qty"] == 100
+
+    def test_genbiki_then_same_day_sell_not_open(self, db_path):
+        """同日に 現引(買) → 現物売 があるとき、現引を先に処理し保有中に残さない (6366相当)。
+
+        CSVの seq 上は現物売が先に来ても、同日は建玉を作る側 (現引) を先に処理する。
+        """
+        _add(db_path, "6366", "2026-03-16", "buy", 300, 1051.0, trade_kind="信用新規", seq_salt="a")
+        # 同日 05-11: 現物売300 (seq が現引より先) と 現引300
+        _add(db_path, "6366", "2026-05-11", "sell", 300, 753.1, trade_kind="現物", seq_salt="b")
+        _add(db_path, "6366", "2026-05-11", "buy", 300, 1061.62, trade_kind="現引", seq_salt="c")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        # 現引で現物化した300株を同日売却 → 現物は保有中に残らない
+        open_genbutsu = [e for e in eps if not e["closed"] and e["kind"] == "現物"]
+        assert open_genbutsu == [], open_genbutsu
+
 
 class TestGenbutsuRound:
     def test_simple_win(self, db_path):
