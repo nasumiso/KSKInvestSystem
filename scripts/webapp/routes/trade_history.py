@@ -1,13 +1,30 @@
-"""売買履歴ページルート (issue #351, #357)。
+"""売買履歴ページルート (issue #351, #357, #387)。
 
-GET  /trade-history                          : 保有エピソード単位でサブ行展開表示
+GET  /trade-history                          : 売買履歴/アクションログの2タブ表示
+POST /trade-history/import                    : 楽天/SBI CSV をアップロード取込 (issue #387 4a)
 POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
      seq は売却ログまたは1保遷移ログの seq。どちらも review_memo に保存可能。
 """
 
-from flask import Blueprint, abort, jsonify, render_template, request
+import os
+import shutil
+import tempfile
 
+from flask import (
+    Blueprint,
+    abort,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+
+import import_rakuten_fills as rakuten
+import import_sbi_fills as sbi
 import portfolio_shelve as ps
+from ks_util import DATA_DIR
 from webapp.helpers import (
     _bulk_price_logs,
     calc_episode_pl,
@@ -18,6 +35,9 @@ from webapp.helpers import (
 )
 
 trade_history_bp = Blueprint("trade_history", __name__)
+
+# 取込成功CSVの保存先 (取引履歴の原本置き場)。issue #387 4a
+TRADE_HISTORY_DIR = os.path.join(DATA_DIR, "trade_history")
 
 
 def _build_rows(ep: dict) -> list:
@@ -235,6 +255,58 @@ def trade_history():
         closed_count=closed_count,
         trade_fills=trade_fills,
     )
+
+
+@trade_history_bp.route("/trade-history/import", methods=["POST"])
+def import_trade_csv():
+    """楽天/SBI の約定CSVをアップロード取込する (issue #387 4a)。
+
+    ヘッダで証券会社を自動判定 → 該当パーサーで取込 → 成功時のみ原本を
+    TRADE_HISTORY_DIR へ同名上書きコピー。結果を flash して /trade-history へ戻る。
+    dedup があるため再取込は冪等 (重複はスキップされる)。
+    """
+    file = request.files.get("csv_file")
+    if file is None or not file.filename:
+        flash("CSVファイルが選択されていません。", "error")
+        return redirect(url_for("trade_history.trade_history"))
+
+    filename = os.path.basename(file.filename)
+    # 一時ファイルに保存 (パーサーはパス受け取りのため)
+    fd, tmp_path = tempfile.mkstemp(suffix=".csv")
+    os.close(fd)
+    try:
+        file.save(tmp_path)
+
+        # ヘッダ自動判定 (楽天=先頭行が約定日ヘッダ / SBI=冒頭メタ行+銘柄コード列)
+        if rakuten.is_rakuten_csv(tmp_path):
+            module = rakuten
+        elif sbi.is_sbi_csv(tmp_path):
+            module = sbi
+        else:
+            flash(f"楽天/SBI の取引履歴CSVとして認識できませんでした: {filename}", "error")
+            return redirect(url_for("trade_history.trade_history"))
+
+        try:
+            stats = module.import_csv_to_fills(tmp_path)
+        except Exception as e:  # noqa: BLE001 - パース例外はユーザーへ提示
+            flash(f"取込中にエラーが発生しました ({filename}): {e}", "error")
+            return redirect(url_for("trade_history.trade_history"))
+
+        # 成功: 原本を正式置き場へ同名上書きコピー
+        os.makedirs(TRADE_HISTORY_DIR, exist_ok=True)
+        shutil.copy2(tmp_path, os.path.join(TRADE_HISTORY_DIR, filename))
+
+        flash(
+            f"{module.BROKER} CSV 取込完了: {filename} — "
+            f"新規 {stats['imported']} 件 / 重複スキップ {stats['skipped_dup']} 件 / "
+            f"対象外 {stats['skipped_invalid']} 件",
+            "success",
+        )
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    return redirect(url_for("trade_history.trade_history"))
 
 
 @trade_history_bp.route(

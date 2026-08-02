@@ -61,11 +61,22 @@ COL_PRICE = 11         # 単価[円]
 COL_AMOUNT = 16        # 受渡金額[円]
 
 HEADER_FIRST_COL = "約定日"  # ヘッダ検証用
+BROKER = "楽天"
 
 
 # ===========================================
 # 1. CSV 読込層
 # ===========================================
+
+def is_rakuten_csv(csv_path: str) -> bool:
+    """CSV が楽天 取引履歴CSV 形式か判定する (先頭行が約定日ヘッダで28列)。"""
+    try:
+        with open(csv_path, "r", encoding=CSV_ENCODING, newline="") as f:
+            first = next(csv.reader(f), [])
+    except (OSError, UnicodeDecodeError):
+        return False
+    return bool(first) and first[0].strip() == HEADER_FIRST_COL and len(first) >= EXPECTED_COL_COUNT
+
 
 def read_csv_rows(csv_path: str) -> List[List[str]]:
     """楽天 取引履歴CSV を Shift-JIS で読み、ヘッダを除いたデータ行を返す。

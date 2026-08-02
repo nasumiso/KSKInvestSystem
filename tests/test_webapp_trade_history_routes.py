@@ -321,3 +321,90 @@ class TestLastActionDate:
     def test_last_action_date(self, ep, expected):
         from webapp.routes.trade_history import _last_action_date
         assert _last_action_date(ep) == expected
+
+
+class TestImportTradeCsv:
+    """CSVアップロード取込 (issue #387 4a): 楽天/SBI 自動判定・原本コピー・不正弾き。"""
+
+    @pytest.fixture
+    def env(self, tmp_path, monkeypatch):
+        portfolio_db = str(tmp_path / "portfolio")
+        stocks_db = str(tmp_path / "stocks")
+        research_db = str(tmp_path / "research")
+        save_dir = tmp_path / "trade_history"
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("db_shelve.STOCKS_SHELVE", stocks_db)
+        monkeypatch.setattr("webapp.helpers.STOCKS_SHELVE", stocks_db)
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", research_db)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", research_db)
+        monkeypatch.setattr("portfolio_shelve.DATA_DIR", str(tmp_path))
+        # 原本コピー先を tmp に差し替え (本番 trade_history を汚さない)
+        monkeypatch.setattr("webapp.routes.trade_history.TRADE_HISTORY_DIR", str(save_dir))
+        # 個別株を1件ウォッチリスト登録 (SBI ETF除外の対比用)
+        rec = rs.create_research_record("6324", "ダイフク", overall_rating="B")
+        rs.upsert_research_record(rec, db_path=research_db)
+        app = create_app()
+        app.config["TESTING"] = True
+        return app, save_dir
+
+    def _rakuten_csv(self):
+        header = ",".join(["約定日"] + ["c%d" % i for i in range(1, 28)])
+        # COL: 0約定日 2コード 6区分 7売買 10数量 11単価 16金額
+        row = ["0"] * 28
+        row[0], row[2], row[6], row[7], row[10], row[11], row[16] = \
+            "2026/6/22", "6324", "現物", "買付", "100", "5678", "-567800"
+        return (header + "\n" + ",".join(row) + "\n").encode("shift_jis")
+
+    def _sbi_csv(self):
+        lines = [
+            "", "約定履歴照会 ", "",
+            "約定日,銘柄,銘柄コード,市場,取引,期限,預り,課税,約定数量,約定単価,手数料/諸経費等,税額,受渡日,受渡金額/決済損益",
+            '"2026/07/16","ダイフク","6324","東証",株式現物買,"--"," 特定 ","--",100,5678,"--","--","2026/07/21",-567800',
+        ]
+        return ("\n".join(lines) + "\n").encode("shift_jis")
+
+    def test_rakuten_upload(self, env):
+        import io
+        app, save_dir = env
+        client = app.test_client()
+        data = {"csv_file": (io.BytesIO(self._rakuten_csv()), "tradehistory(JP)_20260622.csv")}
+        resp = client.post("/trade-history/import", data=data,
+                           content_type="multipart/form-data", follow_redirects=True)
+        html = resp.data.decode()
+        assert "楽天 CSV 取込完了" in html
+        assert "新規 1 件" in html
+        assert len(ps.list_fills("6324")) == 1
+        # 原本が保存先へコピーされている
+        assert (save_dir / "tradehistory(JP)_20260622.csv").exists()
+
+    def test_sbi_upload(self, env):
+        import io
+        app, save_dir = env
+        client = app.test_client()
+        data = {"csv_file": (io.BytesIO(self._sbi_csv()), "SaveFile_0001.csv")}
+        resp = client.post("/trade-history/import", data=data,
+                           content_type="multipart/form-data", follow_redirects=True)
+        html = resp.data.decode()
+        assert "SBI CSV 取込完了" in html
+        f = ps.list_fills("6324")
+        assert len(f) == 1 and f[0]["broker"] == "SBI"
+        assert (save_dir / "SaveFile_0001.csv").exists()
+
+    def test_unknown_csv_rejected(self, env):
+        import io
+        app, save_dir = env
+        client = app.test_client()
+        data = {"csv_file": (io.BytesIO("foo,bar\n1,2\n".encode("shift_jis")), "unknown.csv")}
+        resp = client.post("/trade-history/import", data=data,
+                           content_type="multipart/form-data", follow_redirects=True)
+        assert "認識できませんでした" in resp.data.decode()
+        # 不正ファイルは保存先へコピーしない
+        assert not (save_dir / "unknown.csv").exists()
+
+    def test_no_file_selected(self, env):
+        app, _ = env
+        resp = app.test_client().post("/trade-history/import", data={},
+                                      content_type="multipart/form-data",
+                                      follow_redirects=True)
+        assert "選択されていません" in resp.data.decode()

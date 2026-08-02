@@ -4,7 +4,20 @@
 
 <h2>売買履歴</h2>
 
-{# issue #387: 2タブ構成。売買履歴=楽天CSVの実約定 / アクションログ=手動記録のエピソード #}
+{# CSV取込の結果メッセージ (issue #387 4a) #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, msg in messages %}
+    <div style="margin:0.5em 0;padding:0.6em 0.9em;border-radius:5px;font-size:0.88em;
+      {% if category == 'error' %}background:rgba(200,80,80,0.12);border:1px solid #6a3030;color:#f0a0a0;
+      {% else %}background:rgba(80,180,100,0.10);border:1px solid #2e6e3e;color:#9ef0aa;{% endif %}">
+      {{ msg }}
+    </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+{# issue #387: 2タブ構成。売買履歴=楽天/SBI CSVの実約定 / アクションログ=手動記録のエピソード #}
 <div class="th-tabs" style="display:flex;gap:0.5em;border-bottom:1px solid #333;margin-bottom:1.2em;">
   <button class="th-tab-btn active" data-tab="tab-fills"
           style="background:none;border:none;border-bottom:2px solid transparent;color:#aaa;font-size:0.95em;cursor:pointer;padding:0.5em 0.9em;">売買履歴</button>
@@ -12,8 +25,20 @@
           style="background:none;border:none;border-bottom:2px solid transparent;color:#aaa;font-size:0.95em;cursor:pointer;padding:0.5em 0.9em;">アクションログ</button>
 </div>
 
-{# ============ タブ1: 売買履歴 (楽天CSVの実約定) ============ #}
+{# ============ タブ1: 売買履歴 (楽天/SBI CSVの実約定) ============ #}
 <div id="tab-fills" class="th-tab-panel">
+
+{# CSV取込フォーム (issue #387 4a): 楽天/SBI をヘッダ自動判定 #}
+<form method="post" action="/trade-history/import" enctype="multipart/form-data"
+      style="display:flex;align-items:center;gap:0.6em;margin-bottom:0.9em;padding:0.6em 0.8em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:5px;">
+  <span style="color:#aaa;font-size:0.85em;">CSV取込</span>
+  <input type="file" name="csv_file" accept=".csv" required
+         style="font-size:0.82em;color:#aaa;">
+  <button type="submit"
+          style="padding:0.3em 0.9em;font-size:0.85em;background:#2e5a6e;color:#9ed8f0;border:1px solid #3a6a80;border-radius:4px;cursor:pointer;">取り込む</button>
+  <span style="color:#666;font-size:0.78em;">楽天・SBI を自動判別</span>
+</form>
+
 <p style="color:#888;font-size:0.85em;">楽天・SBI証券CSVの実約定。約定日降順。同じ日・同じ売買方向・同じ取引区分の分割約定は加重平均単価でまとめています（「N件集約」）。</p>
 {% if trade_fills %}
 <table class="trade-history-table">

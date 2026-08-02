@@ -70,9 +70,35 @@ _ACTION_MAP = {
 _SETTLE_ACTIONS = frozenset({"信用返済買", "信用返済売"})
 
 
+BROKER = "SBI"
+
+
 # ===========================================
 # 1. CSV 読込層
 # ===========================================
+
+def _find_header_row(rows: List[List[str]]) -> int:
+    """ヘッダ行 (`約定日,...,銘柄コード,...`) の index を返す。無ければ -1。"""
+    for i, row in enumerate(rows):
+        if row and row[0].strip() == HEADER_FIRST_COL and HEADER_MARKER in [c.strip() for c in row]:
+            return i
+    return -1
+
+
+def is_sbi_csv(csv_path: str) -> bool:
+    """CSV が SBI 約定履歴CSV 形式か判定する。
+
+    SBI はヘッダの前に冒頭メタ行を持つ (ヘッダ行 index > 0)。楽天も同名の
+    銘柄コード列を持つがヘッダは先頭行 (index 0) なので、メタ行の有無で区別する。
+    """
+    try:
+        with open(csv_path, "r", encoding=CSV_ENCODING, newline="") as f:
+            rows = list(csv.reader(f))
+    except (OSError, UnicodeDecodeError):
+        return False
+    hi = _find_header_row(rows)
+    return hi > 0 and len(rows[hi]) == EXPECTED_COL_COUNT
+
 
 def read_csv_rows(csv_path: str) -> List[List[str]]:
     """SBI 約定履歴CSV を Shift-JIS で読み、ヘッダ行以降のデータ行を返す。
@@ -82,10 +108,10 @@ def read_csv_rows(csv_path: str) -> List[List[str]]:
     """
     with open(csv_path, "r", encoding=CSV_ENCODING, newline="") as f:
         rows = list(csv.reader(f))
-    for i, row in enumerate(rows):
-        if row and row[0].strip() == HEADER_FIRST_COL and HEADER_MARKER in [c.strip() for c in row]:
-            return rows[i + 1:]
-    raise ValueError(f"ヘッダ行 (約定日...銘柄コード) が見つかりません: {csv_path}")
+    hi = _find_header_row(rows)
+    if hi < 0:
+        raise ValueError(f"ヘッダ行 (約定日...銘柄コード) が見つかりません: {csv_path}")
+    return rows[hi + 1:]
 
 
 # ===========================================
