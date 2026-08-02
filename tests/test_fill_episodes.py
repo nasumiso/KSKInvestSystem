@@ -83,6 +83,9 @@ class TestGenbaiBridge:
         assert len(genbutsu) == 1
         # 信用ラウンドは現引で閉じたため損益なし (信用として売っていない)
         assert shinyo[0]["pl"] is None
+        # 信用ラウンドの終了日は最後の信用新規日 (05-13) ではなく現引日 (06-08) (P2)
+        assert shinyo[0]["close_date"] == "2026-06-08"
+        assert shinyo[0]["last_trade_date"] == "2026-06-08"
         # 現物: 取得 (1813.74*100 + 1443.31*300) / 売却 (1855*100 + 1260*300)
         # = 181374 + 432993 = 614367 取得, 185500 + 378000 = 563500 売却 → -50,867
         assert genbutsu[0]["pl"]["profit_amount"] == -50867
@@ -279,3 +282,24 @@ class TestOrdering:
 class TestEmpty:
     def test_no_fills(self, db_path):
         assert helpers.build_fill_episodes(db_path=db_path) == []
+
+
+class TestBrokerBackfill:
+    """既存の楽天取込 fill は broker 未設定 (None)。表示時に「楽天」で補完する (P2)。"""
+
+    def test_none_broker_shown_as_rakuten(self, db_path):
+        _add(db_path, "9001", "2026-01-10", "buy", 100, 1000.0, broker=None, seq_salt="a")
+        _add(db_path, "9001", "2026-01-20", "sell", 100, 1100.0, broker=None, seq_salt="b")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        assert len(eps) == 1
+        brokers = {f["broker"] for f in eps[0]["fills"]}
+        assert brokers == {"楽天"}
+
+    def test_sbi_broker_preserved(self, db_path):
+        _add(db_path, "9002", "2026-01-10", "buy", 100, 1000.0,
+             trade_kind="信用新規", broker="SBI", seq_salt="a")
+        _add(db_path, "9002", "2026-01-20", "sell", 100, 1250.0,
+             trade_kind="信用返済", broker="SBI", settle_pl=24000, seq_salt="b")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        brokers = {f["broker"] for f in eps[0]["fills"]}
+        assert brokers == {"SBI"}

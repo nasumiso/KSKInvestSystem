@@ -4522,6 +4522,11 @@ def _build_code_episodes(code_s: str, stock_name: str,
         if tk == "現引":
             # 信用建玉 → 現物へ振替。信用側は残っていれば現引分だけ減らす。
             if shinyo_qty > 0:
+                # 現引を信用ラウンドの「終了イベント」として明細・日付に反映する。
+                # 損益 (_episode_pl_from_round) は返済 sell のみ集計するので side=buy の
+                # 現引を加えても損益は不変。close_date/last_trade_date が最後の信用新規日
+                # ではなく現引日になる (P2 レビュー対応)。
+                shinyo_fills.append(f)
                 shinyo_qty -= qty
                 if shinyo_qty <= 0:
                     close_shinyo()  # 現引で信用建玉が尽きたらクローズ (損益は現物へ)
@@ -4633,7 +4638,9 @@ def _finalize_round(code_s: str, kind: str, stock_name: str,
                 "qty": f["qty"],
                 "price": f["price"],
                 "trade_kind": f.get("trade_kind", ""),
-                "broker": f.get("broker") or "",
+                # 既存の楽天取込 fill は broker 追加前で未設定 (None)。未設定は「楽天」で
+                # 補完する (SBI取込は必ず broker="SBI" を持つ、P2 レビュー対応)。
+                "broker": f.get("broker") or "楽天",
                 "tate_price": f.get("tate_price"),
                 "settle_pl": f.get("settle_pl"),
             }
