@@ -312,26 +312,17 @@ def import_trade_csv():
     return redirect(url_for("trade_history.trade_history"))
 
 
-@trade_history_bp.route(
-    "/trade-history/<code_s>/<int:seq>/review-memo", methods=["POST"]
-)
-def save_review_memo(code_s: str, seq: int):
-    """振り返りメモを上書き保存する (fetch POST / JSON レスポンス)。
+@trade_history_bp.route("/trade-history/fill-memo", methods=["POST"])
+def save_fill_memo():
+    """fill 建玉ラウンド (エピソード) の振り返りメモを保存する (issue #387 Phase2)。
 
-    seq は売却ログまたは1保遷移ログの seq。
-    どちらも review_memo を持つため同じエンドポイントで処理する。
+    エピソードキー (code_s|kind|open_date|close_date) を受け取り上書き保存する。
+    空文字は削除扱い。fetch POST / JSON レスポンス。
+    振り返りメモはアクションログ側から売買履歴 (fill=真実源) 側へ一本化した。
     """
+    episode_key = request.form.get("episode_key", "")
     review_memo = request.form.get("review_memo", "")
-    try:
-        logs = ps.list_action_logs(code_s)
-        target = next((l for l in logs if l["seq"] == seq), None)
-        if target is None:
-            abort(404)
-        action_type = target.get("action_type")
-        status_to = target.get("status_to")
-        if not (action_type == "売却" or (action_type == "ステータス変更" and status_to == "1保")):
-            abort(404)
-        ps.update_action_log_review_memo(code_s, seq, review_memo)
-    except KeyError:
-        abort(404)
+    if not episode_key:
+        abort(400)
+    ps.set_fill_memo(episode_key, review_memo)
     return jsonify({"ok": True})

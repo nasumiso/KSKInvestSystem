@@ -84,6 +84,10 @@ KEY_TRADE_IDEA_PREFIX = "trade_idea:"
 # issue #360 Phase2: 楽天CSV 由来の約定事実 (fill レイヤー、イミュータブル)
 KEY_FILL_PREFIX = "fill:"
 KEY_FILL_SEQ_PREFIX = "_fill_seq:"
+# issue #387 Phase2: fill 建玉ラウンド (エピソード) 単位の振り返りメモ。
+# fill は再取込で作り直されるため、メモは別レイヤーに独立保存し
+# エピソードキー (code_s|kind|open_date|close_date) で紐付ける。
+KEY_FILL_MEMO_PREFIX = "fill_memo:"
 
 # テーママスター (issue #282)
 THEME_FIELDS = frozenset({"name", "description", "created_at"})
@@ -1093,6 +1097,73 @@ def list_fills(
                 continue
             results.append(value)
     results.sort(key=lambda r: (r.get("code_s", ""), r.get("seq", 0)))
+    return results
+
+
+# ===========================================
+# fill 建玉ラウンド (エピソード) 単位の振り返りメモ (issue #387 Phase2)
+# ===========================================
+
+def fill_episode_key(code_s: str, kind: str, open_date: str,
+                     close_date: Optional[str]) -> str:
+    """fill エピソード (建玉ラウンド) を一意に識別するキーを組み立てる。
+
+    fill は再取込で作り直されるが、同一ラウンドは 銘柄+口座種別+建日+返済日 が
+    変わらないためメモが維持される。保有中 (close_date=None) は "open" を使う。
+    """
+    normalized = normalize_code_s(code_s)
+    close_part = close_date or "open"
+    return f"{normalized}|{kind}|{open_date}|{close_part}"
+
+
+def _fill_memo_storage_key(episode_key: str) -> str:
+    return f"{KEY_FILL_MEMO_PREFIX}{episode_key}"
+
+
+def get_fill_memo(episode_key: str, *, db_path: Optional[str] = None) -> str:
+    """fill エピソードの振り返りメモを取得する。未設定は空文字。"""
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        value = db.get(_fill_memo_storage_key(episode_key))
+    if isinstance(value, dict):
+        return value.get("review_memo", "") or ""
+    return ""
+
+
+def set_fill_memo(episode_key: str, review_memo: str, *,
+                  db_path: Optional[str] = None) -> None:
+    """fill エピソードの振り返りメモを上書き保存する。空文字は削除扱い。"""
+    if not isinstance(review_memo, str):
+        raise TypeError(f"review_memo must be str, got {type(review_memo).__name__}")
+    path = _resolve_db_path(db_path)
+    storage_key = _fill_memo_storage_key(episode_key)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            if review_memo.strip() == "":
+                if storage_key in db:
+                    del db[storage_key]
+            else:
+                db[storage_key] = {
+                    "episode_key": episode_key,
+                    "review_memo": review_memo,
+                    "updated_at": now_iso(),
+                }
+    log_print("portfolio_shelve: fill_memo 更新", episode_key)
+
+
+def list_fill_memos(*, db_path: Optional[str] = None) -> Dict[str, str]:
+    """全 fill エピソードメモを {episode_key: review_memo} で一括取得する。"""
+    path = _resolve_db_path(db_path)
+    results: Dict[str, str] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_FILL_MEMO_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            memo = value.get("review_memo", "") or ""
+            if memo:
+                results[value.get("episode_key", key[len(KEY_FILL_MEMO_PREFIX):])] = memo
     return results
 
 

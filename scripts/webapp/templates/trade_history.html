@@ -96,6 +96,9 @@
         {% if not ep.closed %}
         <span style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#3a3a4a;color:#a0a0d0;margin-left:0.2em;">保有中</span>
         {% endif %}
+        {% if ep.review_memo %}
+        <span title="振り返りメモあり" style="margin-left:0.2em;">📝</span>
+        {% endif %}
       </td>
       <td style="white-space:nowrap;color:#888;font-size:0.82em;">{{ ep.open_date[2:] }}{% if ep.close_date and ep.close_date != ep.open_date %} 〜 {{ ep.close_date[2:] }}{% endif %}</td>
       <td style="text-align:right;color:#888;font-size:0.85em;">{{ ep.qty_peak }}</td>
@@ -145,6 +148,16 @@
           </tr>
           {% endfor %}
         </table>
+        {# エピソード単位の振り返りメモ (issue #387 Phase2)。アクションログ側から一本化 #}
+        <div style="margin-top:0.6em;max-width:44em;">
+          <div style="color:#888;font-size:0.78em;margin-bottom:0.2em;">振り返りメモ</div>
+          <div class="review-memo-cell"
+               data-url="{{ url_for('trade_history.save_fill_memo') }}"
+               data-episode-key="{{ ep.episode_key }}"
+               data-memo="{{ ep.review_memo or '' | e }}">
+            <span class="review-memo-display">{{ ep.review_memo or "クリックして入力" }}</span>
+          </div>
+        </div>
       </td>
     </tr>
   {% endfor %}
@@ -157,7 +170,7 @@
 
 {# ============ タブ2: アクションログ (手動記録のエピソード) ============ #}
 <div id="tab-actions" class="th-tab-panel" style="display:none;">
-<p style="color:#888;font-size:0.85em;">判断の記録 (保有理由・売却理由・振り返りメモ)。保有日降順。成績・実現損益は「売買履歴」タブ (実約定=真実源) に一本化しました。</p>
+<p style="color:#888;font-size:0.85em;">判断の記録 (保有理由・売却理由)。保有日降順。成績・実現損益は「売買履歴」タブ (実約定=真実源) に一本化しました。振り返りメモも「売買履歴」タブのエピソード展開へ移行しました。</p>
 
 {% macro episode_table(episodes) %}
 {% if episodes %}
@@ -169,7 +182,6 @@
     <col style="width:4em;">
     <col style="width:6em;">
     <col>
-    <col style="width:22em;">
   </colgroup>
   <thead>
     <tr>
@@ -179,7 +191,6 @@
       <th style="white-space:nowrap;">株数</th>
       <th style="white-space:nowrap;">株価</th>
       <th>理由</th>
-      <th>振り返りメモ</th>
     </tr>
   </thead>
   <tbody>
@@ -224,15 +235,6 @@
         {% if row.price is not none %}{{ "{:,}".format(row.price|int) }}{% else %}—{% endif %}
       </td>
       <td style="color:#555;">{{ row.reason }}</td>
-      {% if loop.first %}
-      <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;{% if ep.review_prompt %}background:rgba(210,170,70,0.10);{% endif %}">
-        <div class="review-memo-cell"
-             data-url="/trade-history/{{ ep.code_s }}/{{ ep.memo_seq }}/review-memo"
-             data-memo="{{ ep.review_memo or '' | e }}">
-          <span class="review-memo-display">{{ ep.review_memo or "クリックして入力" }}</span>
-        </div>
-      </td>
-      {% endif %}
     </tr>
     {% endfor %}
   {% endfor %}
@@ -333,6 +335,10 @@
         }
         var fd = new FormData();
         fd.append('review_memo', next);
+        // 売買履歴タブ (fill エピソード) はエピソードキーで保存 (issue #387 Phase2)
+        if (cell.dataset.episodeKey) {
+          fd.append('episode_key', cell.dataset.episodeKey);
+        }
         fetch(url, { method: 'POST', body: fd })
           .then(function (r) {
             if (r.ok) {

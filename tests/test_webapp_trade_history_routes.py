@@ -54,14 +54,19 @@ class TestTradeHistoryPage:
         assert client.get("/trade-history").status_code == 200
 
     def test_column_headers_shown(self, client):
-        """種類・日付・株数・株価・理由・振り返りメモのヘッダが表示される。"""
+        """アクションログタブの種類・日付・株数・株価・理由ヘッダが表示される。
+
+        振り返りメモ列はアクションログ側から撤去し売買履歴タブへ一本化した
+        (issue #387 Phase2)。
+        """
         html = client.get("/trade-history").data.decode()
-        assert "種類" in html
-        assert "日付" in html
-        assert "株数" in html
-        assert "株価" in html
-        assert "理由" in html
-        assert "振り返りメモ" in html
+        actions = html.split('id="tab-actions"')[1]
+        assert "種類" in actions
+        assert "日付" in actions
+        assert "株数" in actions
+        assert "株価" in actions
+        assert "理由" in actions
+        assert "<th>振り返りメモ</th>" not in actions  # アクションログの列は撤去
 
     def test_price_proxy_column_shown(self, client):
         """保有・売却イベント日の終値プロキシが株価列に表示される。"""
@@ -218,21 +223,35 @@ class TestTradeHistoryPage:
         assert "アクションログがありません" in html
         assert "5,000" in html  # 保有中エピソードの内訳に建単価が出る
 
-    def test_all_episodes_have_review_memo_textarea(self, client):
-        """売却済み・未売却どちらのエピソードにも textarea が表示される。"""
+    def test_fill_episode_has_review_memo_cell(self, app, client):
+        """売買履歴タブの fill エピソード展開に振り返りメモ入力欄が出る (Phase2)。"""
+        with app.app_context():
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-06-10", side="buy", qty=300,
+                                          price=6990.0, amount=-2097000, trade_kind="信用新規",
+                                          dedup_key="rm-buy"))
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-06-20", side="sell", qty=300,
+                                          price=7810.0, amount=2343000, trade_kind="信用返済",
+                                          tate_price=6990.0, dedup_key="rm-sell"))
         html = client.get("/trade-history").data.decode()
-        # 3496（未売却）と 6324（売却済み）の両方で data-url が出る（class は JS内にも1つ）
-        assert html.count("data-url=") == 2
+        fills = html.split('id="tab-fills"')[1].split('id="tab-actions"')[0]
+        assert "data-episode-key=" in fills
+        assert 'save_fill_memo' not in fills  # url_for は解決済みのURLになる
+        assert "/trade-history/fill-memo" in fills
 
-    def test_save_review_memo_sold(self, client):
-        """売却済みエピソード（6324）の振り返りメモを POST で保存できる。"""
-        logs = ps.list_action_logs("6324")
-        sell_log = next(l for l in logs if l["action_type"] == "売却")
-        seq = sell_log["seq"]
+    def test_save_fill_memo(self, app, client):
+        """fill エピソードの振り返りメモをエピソードキーで保存・表示できる (Phase2)。"""
+        with app.app_context():
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-06-10", side="buy", qty=300,
+                                          price=6990.0, amount=-2097000, trade_kind="信用新規",
+                                          dedup_key="fm-buy"))
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-06-20", side="sell", qty=300,
+                                          price=7810.0, amount=2343000, trade_kind="信用返済",
+                                          tate_price=6990.0, dedup_key="fm-sell"))
+            key = ps.fill_episode_key("6324", "信用", "2026-06-10", "2026-06-20")
 
         resp = client.post(
-            f"/trade-history/6324/{seq}/review-memo",
-            data={"review_memo": "上値で薄く売り過ぎた"},
+            "/trade-history/fill-memo",
+            data={"episode_key": key, "review_memo": "上値で薄く売り過ぎた"},
         )
         assert resp.status_code == 200
         assert resp.get_json()["ok"] is True
@@ -240,21 +259,25 @@ class TestTradeHistoryPage:
         html = client.get("/trade-history").data.decode()
         assert "上値で薄く売り過ぎた" in html
 
-    def test_save_review_memo_unsold(self, client):
-        """未売却エピソード（3496）の振り返りメモを POST で保存できる。"""
-        logs = ps.list_action_logs("3496")
-        hold_log = next(l for l in logs if l.get("status_to") == "1保")
-        seq = hold_log["seq"]
+    def test_save_fill_memo_empty_deletes(self, app, client):
+        """空文字を送るとメモが削除される (Phase2)。"""
+        with app.app_context():
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-06-10", side="buy", qty=300,
+                                          price=6990.0, amount=-2097000, trade_kind="信用新規",
+                                          dedup_key="fd-buy"))
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-06-20", side="sell", qty=300,
+                                          price=7810.0, amount=2343000, trade_kind="信用返済",
+                                          tate_price=6990.0, dedup_key="fd-sell"))
+            key = ps.fill_episode_key("6324", "信用", "2026-06-10", "2026-06-20")
+            ps.set_fill_memo(key, "消す前")
+        client.post("/trade-history/fill-memo", data={"episode_key": key, "review_memo": ""})
+        with app.app_context():
+            assert ps.get_fill_memo(key) == ""
 
-        resp = client.post(
-            f"/trade-history/3496/{seq}/review-memo",
-            data={"review_memo": "保有中メモ"},
-        )
-        assert resp.status_code == 200
-        assert resp.get_json()["ok"] is True
-
-        html = client.get("/trade-history").data.decode()
-        assert "保有中メモ" in html
+    def test_save_fill_memo_requires_key(self, client):
+        """episode_key が空なら 400 (Phase2)。"""
+        resp = client.post("/trade-history/fill-memo", data={"review_memo": "x"})
+        assert resp.status_code == 400
 
     def test_qty_changes_subrow(self, client):
         """株数増加は「買増」サブ行として表示される。"""

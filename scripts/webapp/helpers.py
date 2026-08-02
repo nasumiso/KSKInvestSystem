@@ -4610,6 +4610,15 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         if not ep["closed"]:
             ep["open_pl"] = _episode_open_pl(ep, latest_prices.get(ep["code_s"]))
 
+    # 建玉ラウンド単位の振り返りメモ (issue #387 Phase2) を一括で紐付ける。
+    # メモは fill と独立レイヤーに保存され、エピソードキーで対応する。
+    memos = ps.list_fill_memos(db_path=db_path)
+    for ep in episodes:
+        ep["episode_key"] = ps.fill_episode_key(
+            ep["code_s"], ep["kind"], ep["open_date"], ep["close_date"]
+        )
+        ep["review_memo"] = memos.get(ep["episode_key"], "")
+
     # 最終約定日 (最新の取引がある順) 降順、同日は銘柄コード昇順
     episodes.sort(key=lambda e: e["code_s"])
     episodes.sort(key=lambda e: e["last_trade_date"], reverse=True)

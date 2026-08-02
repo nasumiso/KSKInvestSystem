@@ -303,3 +303,50 @@ class TestBrokerBackfill:
         eps = helpers.build_fill_episodes(db_path=db_path)
         brokers = {f["broker"] for f in eps[0]["fills"]}
         assert brokers == {"SBI"}
+
+
+class TestFillMemo:
+    """fill エピソード単位の振り返りメモ (issue #387 Phase2)。"""
+
+    def test_episode_key_is_stable(self, db_path):
+        # 同一ラウンドは 銘柄+口座種別+建日+返済日 でキーが決まる
+        k1 = ps.fill_episode_key("1001", "現物", "2026-01-10", "2026-01-20")
+        k2 = ps.fill_episode_key("1001", "現物", "2026-01-10", "2026-01-20")
+        assert k1 == k2 == "1001|現物|2026-01-10|2026-01-20"
+
+    def test_open_episode_key_uses_open_marker(self, db_path):
+        k = ps.fill_episode_key("1001", "現物", "2026-01-10", None)
+        assert k.endswith("|open")
+
+    def test_memo_attached_to_episode(self, db_path):
+        _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "1001", "2026-01-20", "sell", 100, 1200.0, seq_salt="b")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        key = eps[0]["episode_key"]
+        assert eps[0]["review_memo"] == ""  # 初期は空
+        ps.set_fill_memo(key, "利確成功、再現性の検証を", db_path=db_path)
+        eps2 = helpers.build_fill_episodes(db_path=db_path)
+        assert eps2[0]["review_memo"] == "利確成功、再現性の検証を"
+
+    def test_empty_memo_deletes(self, db_path):
+        _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "1001", "2026-01-20", "sell", 100, 1200.0, seq_salt="b")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        key = eps[0]["episode_key"]
+        ps.set_fill_memo(key, "メモ", db_path=db_path)
+        assert ps.get_fill_memo(key, db_path=db_path) == "メモ"
+        ps.set_fill_memo(key, "  ", db_path=db_path)  # 空白は削除扱い
+        assert ps.get_fill_memo(key, db_path=db_path) == ""
+        assert key not in ps.list_fill_memos(db_path=db_path)
+
+    def test_memo_survives_fill_reimport(self, db_path):
+        # メモは fill と独立レイヤー。fill を作り直しても同一キーなら残る
+        _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "1001", "2026-01-20", "sell", 100, 1200.0, seq_salt="b")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        key = eps[0]["episode_key"]
+        ps.set_fill_memo(key, "残るはず", db_path=db_path)
+        # 同一 dedup の fill を再追加 (重複スキップされる) してもメモは維持
+        _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
+        eps2 = helpers.build_fill_episodes(db_path=db_path)
+        assert eps2[0]["review_memo"] == "残るはず"
