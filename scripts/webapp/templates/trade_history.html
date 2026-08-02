@@ -14,12 +14,12 @@
 
 {# ============ タブ1: 売買履歴 (楽天CSVの実約定) ============ #}
 <div id="tab-fills" class="th-tab-panel">
-<p style="color:#888;font-size:0.85em;">楽天CSVの実約定。約定日降順。同じ日・同じ売買方向の分割約定は加重平均単価でまとめています（「N件集約」）。</p>
+<p style="color:#888;font-size:0.85em;">楽天・SBI証券CSVの実約定。約定日降順。同じ日・同じ売買方向・同じ取引区分の分割約定は加重平均単価でまとめています（「N件集約」）。</p>
 {% if trade_fills %}
 <table class="trade-history-table">
   <colgroup>
     <col style="width:6em;"><col style="width:9em;"><col style="width:4em;">
-    <col style="width:5em;"><col style="width:6em;"><col>
+    <col style="width:5em;"><col style="width:6em;"><col style="width:7em;"><col>
   </colgroup>
   <thead>
     <tr>
@@ -29,6 +29,7 @@
       <th style="white-space:nowrap;">株数</th>
       <th style="white-space:nowrap;">株価</th>
       <th>取引区分</th>
+      <th>証券</th>
     </tr>
   </thead>
   <tbody>
@@ -49,12 +50,13 @@
       <td style="text-align:right;color:#888;font-size:0.85em;">{{ f.qty }}</td>
       <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}</td>
       <td style="color:#777;font-size:0.85em;">{{ f.trade_kind }}</td>
+      <td style="color:#777;font-size:0.85em;">{{ f.broker }}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p style="color:#888;">取り込まれた約定がありません。<code>import_rakuten_fills.py</code> で楽天CSVを取り込んでください。</p>
+<p style="color:#888;">取り込まれた約定がありません。<code>import_rakuten_fills.py</code> / <code>import_sbi_fills.py</code> でCSVを取り込んでください。</p>
 {% endif %}
 </div>
 

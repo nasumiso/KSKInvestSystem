@@ -125,14 +125,18 @@ cd scripts && python backfill_price_proxy.py             # None のみ埋める 
 cd scripts && python backfill_price_proxy.py --overwrite # actual 以外を再取得
 ```
 
-### 楽天 取引履歴CSV → fill レイヤー取込 (issue #360, #387)
+### 証券会社CSV → fill レイヤー取込 (issue #360, #387)
 
-楽天証券の取引履歴CSV (`tradehistory(JP)_YYYYMMDD.csv`, Shift-JIS) の実約定価格・株数を fill として取り込む。同一 dedup キーは冪等スキップ。取り込んだ fill は `/trade-history` の「売買履歴」タブに約定日降順で一覧表示される (issue #387 で action_log との突合は廃止)。
+楽天・SBI証券の約定CSVの実約定価格・株数を fill として取り込む。同一 dedup キーは冪等スキップ。取り込んだ fill は `/trade-history` の「売買履歴」タブに約定日降順で一覧表示される (issue #387 で action_log との突合は廃止)。SBI は個別株のみ取込 (ETF/投信=ウォッチリスト外は自動除外)。信用返済行の決済損益は fill に保存する。
 
 ```bash
-cd scripts && python import_rakuten_fills.py "<csv_path>" --dry-run                    # 読込・パース検証 (DB 非書込)
-cd scripts && python import_rakuten_fills.py "<csv_path>" --db-path /tmp/fills_verify   # 一時DBで取込確認
-cd scripts && python import_rakuten_fills.py "<csv_path>"                               # 本番取込
+# 楽天 (tradehistory(JP)_YYYYMMDD.csv, Shift-JIS, 28列)
+cd scripts && python import_rakuten_fills.py "<csv_path>" --dry-run   # 読込・パース検証 (DB 非書込)
+cd scripts && python import_rakuten_fills.py "<csv_path>"             # 本番取込
+
+# SBI (SaveFile_*.csv, Shift-JIS, 冒頭メタ行あり)
+cd scripts && python import_sbi_fills.py "<csv_path>" --dry-run       # 読込・パース検証 (DB 非書込)
+cd scripts && python import_sbi_fills.py "<csv_path>"                 # 本番取込
 ```
 
 ## 自動実行
