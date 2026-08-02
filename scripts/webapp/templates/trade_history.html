@@ -28,15 +28,14 @@
 {# ============ タブ1: 売買履歴 (楽天/SBI CSVの実約定) ============ #}
 <div id="tab-fills" class="th-tab-panel">
 
-{# CSV取込フォーム (issue #387 4a): 楽天/SBI をヘッダ自動判定 #}
+{# CSV取込フォーム (issue #387 4a): 楽天/SBI をヘッダ自動判定。コンパクトに収める #}
 <form method="post" action="/trade-history/import" enctype="multipart/form-data"
-      style="display:flex;align-items:center;gap:0.6em;margin-bottom:0.9em;padding:0.6em 0.8em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:5px;">
-  <span style="color:#aaa;font-size:0.85em;">CSV取込</span>
+      title="楽天・SBI の取引履歴CSVを自動判別して取り込みます"
+      style="display:inline-flex;align-items:center;gap:0.5em;margin-bottom:0.9em;padding:0.35em 0.6em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:5px;">
   <input type="file" name="csv_file" accept=".csv" required
-         style="font-size:0.82em;color:#aaa;">
+         style="font-size:0.78em;color:#aaa;max-width:16em;">
   <button type="submit"
-          style="padding:0.3em 0.9em;font-size:0.85em;background:#2e5a6e;color:#9ed8f0;border:1px solid #3a6a80;border-radius:4px;cursor:pointer;">取り込む</button>
-  <span style="color:#666;font-size:0.78em;">楽天・SBI を自動判別</span>
+          style="padding:0.25em 0.7em;font-size:0.82em;white-space:nowrap;background:#2e5a6e;color:#9ed8f0;border:1px solid #3a6a80;border-radius:4px;cursor:pointer;">CSV取込</button>
 </form>
 
 <p style="color:#888;font-size:0.85em;">楽天・SBI証券CSVの実約定。約定日降順。同じ日・同じ売買方向・同じ取引区分の分割約定は加重平均単価でまとめています（「N件集約」）。</p>

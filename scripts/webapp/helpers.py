@@ -4274,12 +4274,15 @@ def list_trade_fills() -> List[Dict[str, Any]]:
                f.get("trade_kind", ""), f.get("broker") or "")
         groups.setdefault(key, []).append(f)
 
+    # 銘柄名は distinct code をバルク解決 (fill ごとに開くと N+1 で重い)
+    names = _bulk_resolve_stock_names(list({k[0] for k in groups}))
+
     rows: List[Dict[str, Any]] = []
     for (code_s, side, trade_date, trade_kind, broker), group in groups.items():
         agg = _aggregate_fill_price(group)
         rows.append({
             "code_s": code_s,
-            "stock_name": resolve_stock_name(code_s),
+            "stock_name": names.get(code_s, ""),
             "trade_date": trade_date,
             "side": side,
             "side_label": _SIDE_LABELS.get(side, side),
