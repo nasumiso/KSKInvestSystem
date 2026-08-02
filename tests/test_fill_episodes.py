@@ -27,13 +27,14 @@ def _stub_stock_names(monkeypatch):
 
 def _add(db_path, code_s, trade_date, side, qty, price, *,
          trade_kind="現物", broker="楽天", tate_price=None, settle_pl=None,
-         seq_salt=""):
+         tate_date=None, seq_salt=""):
     """テスト用に fill を1件追加する。dedup_key は一意化する。"""
     dedup_key = f"{code_s}|{trade_date}|{side}|{qty}|{price}|{trade_kind}|{seq_salt}"
     fill = ps.create_fill(
         code_s, trade_date=trade_date, side=side, qty=qty, price=price,
         amount=int(qty * price), trade_kind=trade_kind, dedup_key=dedup_key,
         broker=broker, tate_price=tate_price, settle_pl=settle_pl,
+        tate_date=tate_date,
     )
     ps.append_fill(fill, db_path=db_path)
 
@@ -195,6 +196,32 @@ class TestShinyoRound:
         credit = [e for e in eps if e["kind"] == "信用"]
         assert len(credit) == 1
         assert credit[0]["pl"] is None
+
+    def test_pre_import_repayment_does_not_close_current_round(self, db_path):
+        """取込前建玉の返済は、当期に新規で建てた信用玉と相殺しない。"""
+        _add(db_path, "7089", "2026-02-20", "buy", 200, 1339.0,
+             trade_kind="信用新規", seq_salt="new")
+        _add(db_path, "7089", "2026-02-20", "sell", 100, 1339.0,
+             trade_kind="信用返済", tate_date="2025-08-21", tate_price=955.0,
+             seq_salt="old-a")
+        _add(db_path, "7089", "2026-03-03", "sell", 100, 1304.0,
+             trade_kind="信用返済", tate_date="2025-12-29", tate_price=975.0,
+             seq_salt="old-b")
+        _add(db_path, "7089", "2026-05-12", "sell", 200, 1550.0,
+             trade_kind="信用返済", tate_date="2026-02-20", tate_price=1339.0,
+             seq_salt="settle")
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        current = [e for e in eps if e["kind"] == "信用" and not e["carry_over"]]
+        carry_over = [e for e in eps if e["kind"] == "信用" and e["carry_over"]]
+
+        assert len(current) == 1
+        assert current[0]["open_date"] == "2026-02-20"
+        assert current[0]["close_date"] == "2026-05-12"
+        assert current[0]["qty_peak"] == 200
+        assert current[0]["pl"]["profit_amount"] == 42200
+        assert len(carry_over) == 2
+        assert {e["open_date"] for e in carry_over} == {"2025-08-21", "2025-12-29"}
 
 
 class TestCarryOver:

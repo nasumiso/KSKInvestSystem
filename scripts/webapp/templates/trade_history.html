@@ -96,6 +96,9 @@
         {% if not ep.closed %}
         <span style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#3a3a4a;color:#a0a0d0;margin-left:0.2em;">保有中</span>
         {% endif %}
+        {% if ep.carry_over %}
+        <span title="取込対象期間より前に建てた信用玉の返済" style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#4a4a3a;color:#c8c890;margin-left:0.2em;">期首持越し</span>
+        {% endif %}
         {% if ep.review_memo %}
         <span title="振り返りメモあり" style="margin-left:0.2em;">📝</span>
         {% endif %}

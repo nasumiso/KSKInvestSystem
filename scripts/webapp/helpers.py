@@ -4483,7 +4483,8 @@ def _build_code_episodes(code_s: str, stock_name: str,
         なれば信用ラウンドをクローズ
       - 現物買 (buy): 現物建玉を積む
       - 現物売 (sell): 現物建玉を減らし、建玉0で現物ラウンドをクローズ
-    保有0に戻らず残った建玉は保有中エピソードになる。
+    保有0に戻らず残った建玉は保有中エピソードになる。取込対象期間より前に建てた
+    信用玉の返済は建約定日で判別し、当期の信用新規と相殺せず期首持越しとして分ける。
     """
     # 約定日昇順。同日内は 建玉を作る側 (buy=新規買・現引) を先に、玉を減らす側
     # (sell=売り・返済) を後に処理する。現引で現物化してから同日に売るケースで、売りが
@@ -4499,6 +4500,15 @@ def _build_code_episodes(code_s: str, stock_name: str,
     genbutsu_fills: List[Dict[str, Any]] = []  # 現ラウンドの現物 fill
     genbutsu_qty = 0
     genbutsu_peak = 0
+    # 取込済みの信用新規日。これに無い建約定日の返済は、取込前からの持越し玉である。
+    shinyo_open_dates = {
+        f.get("trade_date")
+        for f in fills
+        if (f.get("trade_kind") or "").startswith("信用新規")
+        and f["side"] == "buy"
+        and f.get("trade_date")
+    }
+    carry_over_shinyo: Dict[str, List[Dict[str, Any]]] = {}
 
     def close_shinyo():
         nonlocal shinyo_fills, shinyo_qty, shinyo_peak
@@ -4535,6 +4545,13 @@ def _build_code_episodes(code_s: str, stock_name: str,
             genbutsu_qty += qty
             genbutsu_peak = max(genbutsu_peak, genbutsu_qty)
         elif tk.startswith("信用"):
+            tate_date = f.get("tate_date")
+            if (tk.startswith("信用返済") and f["side"] == "sell"
+                    and tate_date and tate_date not in shinyo_open_dates):
+                # 当期に対応する信用新規が無い返済は、当期の建玉を減らしてはいけない。
+                # 同一建約定日の分割返済は一つの期首持越しエピソードにまとめる。
+                carry_over_shinyo.setdefault(tate_date, []).append(f)
+                continue
             shinyo_fills.append(f)
             if f["side"] == "buy":
                 shinyo_qty += qty
@@ -4558,6 +4575,11 @@ def _build_code_episodes(code_s: str, stock_name: str,
         episodes.append(_finalize_round(code_s, "信用", stock_name, shinyo_fills, shinyo_peak, closed=False))
     if genbutsu_fills:
         episodes.append(_finalize_round(code_s, "現物", stock_name, genbutsu_fills, genbutsu_peak, closed=False))
+    for tate_date, carry_over_fills in carry_over_shinyo.items():
+        episodes.append(_finalize_round(
+            code_s, "信用", stock_name, carry_over_fills, 0,
+            carry_over=True, open_date=tate_date,
+        ))
 
     return episodes
 
@@ -4573,6 +4595,7 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
       code_s, stock_name, kind ("現物"/"信用"), open_date, close_date,
       last_trade_date (ラウンド内の最終約定日), qty_peak (最大建玉),
       closed (bool), fills (内部の個別 fill 明細リスト),
+      carry_over (bool: 取込対象期間より前の信用建玉の返済),
       pl (クローズ済みのみ: _episode_pl_from_round の結果, 未クローズは None),
       open_pl (保有中のみ: realized/unrealized/held_qty/avg_cost)
 
@@ -4627,7 +4650,8 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
 
 def _finalize_round(code_s: str, kind: str, stock_name: str,
                     round_fills: List[Dict[str, Any]], qty_peak: int,
-                    closed: bool = True) -> Dict[str, Any]:
+                    closed: bool = True, carry_over: bool = False,
+                    open_date: Optional[str] = None) -> Dict[str, Any]:
     """建玉ラウンドの fill リストからエピソード dict を組み立てる。"""
     dates = [f["trade_date"] for f in round_fills if f.get("trade_date")]
     # ラウンド固有のキー用に先頭 fill の seq を取る (建玉開始時に確定し不変)。
@@ -4638,11 +4662,12 @@ def _finalize_round(code_s: str, kind: str, stock_name: str,
         "stock_name": stock_name,
         "kind": kind,
         "first_seq": first_seq,
-        "open_date": min(dates) if dates else "",
+        "open_date": open_date or (min(dates) if dates else ""),
         "close_date": max(dates) if (dates and closed) else None,
         "last_trade_date": max(dates) if dates else "",  # ラウンド内の最新約定日 (並び順の基準)
         "qty_peak": qty_peak,
         "closed": closed,
+        "carry_over": carry_over,
         "fills": [
             {
                 "trade_date": f.get("trade_date"),

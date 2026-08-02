@@ -44,10 +44,11 @@ def _fmt_pl(ep: Dict[str, Any]) -> str:
 
 def _print_episode(ep: Dict[str, Any], show_fills: bool) -> None:
     held = " [保有中]" if not ep["closed"] else ""
+    carry_over = " [期首持越し]" if ep.get("carry_over") else ""
     period = ep["open_date"]
     if ep.get("close_date") and ep["close_date"] != ep["open_date"]:
         period += f"〜{ep['close_date']}"
-    print(f"{ep['code_s']:>5} {ep['kind']}{held} {ep['stock_name']}")
+    print(f"{ep['code_s']:>5} {ep['kind']}{held}{carry_over} {ep['stock_name']}")
     print(f"      期間 {period}  最大建玉 {ep['qty_peak']}株  {_fmt_pl(ep)}")
     if ep.get("review_memo"):
         first_line = ep["review_memo"].splitlines()[0]
