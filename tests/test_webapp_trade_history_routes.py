@@ -151,6 +151,28 @@ class TestTradeHistoryPage:
         assert "2件集約" in fills_tab      # 分割約定を集約したバッジ
         assert "1,505" in fills_tab       # 集約後の加重平均単価 (50@1500 + 50@1510)
 
+    def test_different_trade_kind_not_aggregated(self, app, client):
+        """同一銘柄・同日・同 side でも取引区分が違えば集約せず別行にする (PR #388 レビュー)。
+
+        現物買 (@1000) と信用新規買 (@2000) を同日に足す。誤って集約されると加重平均で
+        混ざるが、区分別に別行なら両単価がそのまま出る。
+        """
+        with app.app_context():
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-15", side="buy", qty=100,
+                                          price=1000.0, amount=-100000, trade_kind="現物",
+                                          dedup_key="tk-genbutsu"))
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-15", side="buy", qty=100,
+                                          price=2000.0, amount=-200000, trade_kind="信用新規",
+                                          dedup_key="tk-shinyo"))
+
+        html = client.get("/trade-history").data.decode()
+        fills_tab = html.split('id="tab-fills"')[1].split('id="tab-actions"')[0]
+        assert "1,000" in fills_tab       # 現物の単価
+        assert "2,000" in fills_tab       # 信用新規の単価 (加重平均 1,500 に潰れない)
+        assert "1,500" not in fills_tab   # 混ぜた加重平均は出ない
+        # 別区分なので集約バッジ (>N件集約<) は付かない (説明文の「N件集約」は除く)
+        assert "件集約</span>" not in fills_tab
+
     def test_fills_tab_shown_without_episodes(self, tmp_path, monkeypatch):
         """action_log が空でも売買履歴タブに fill が表示される (issue #387)。"""
         portfolio_db = str(tmp_path / "pf_um")
