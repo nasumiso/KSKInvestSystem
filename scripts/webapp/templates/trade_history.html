@@ -28,17 +28,21 @@
 {# ============ タブ1: 売買履歴 (楽天/SBI CSVの実約定) ============ #}
 <div id="tab-fills" class="th-tab-panel">
 
-{# CSV取込フォーム (issue #387 4a): 楽天/SBI をヘッダ自動判定。コンパクトに収める #}
-<form method="post" action="/trade-history/import" enctype="multipart/form-data"
-      title="楽天・SBI の取引履歴CSVを自動判別して取り込みます"
-      style="display:inline-flex;align-items:center;gap:0.5em;margin-bottom:0.9em;padding:0.35em 0.6em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:5px;">
-  <input type="file" name="csv_file" accept=".csv" required
-         style="font-size:0.78em;color:#aaa;max-width:16em;">
-  <button type="submit"
-          style="padding:0.25em 0.7em;font-size:0.82em;white-space:nowrap;background:#2e5a6e;color:#9ed8f0;border:1px solid #3a6a80;border-radius:4px;cursor:pointer;">CSV取込</button>
-</form>
-
-<p style="color:#888;font-size:0.85em;">楽天・SBI証券CSVの実約定。約定日降順。同じ日・同じ売買方向・同じ取引区分の分割約定は加重平均単価でまとめています（「N件集約」）。</p>
+{# 説明 + CSV取込 (issue #387 4a): 普段は「＋CSV取込」リンクのみ、クリックで展開 (details) #}
+<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1em;margin-bottom:0.6em;">
+  <p style="color:#888;font-size:0.85em;margin:0;">楽天・SBI証券CSVの実約定。約定日降順。同じ日・同じ売買方向・同じ取引区分の分割約定は加重平均単価でまとめています（「N件集約」）。</p>
+  <details style="flex-shrink:0;">
+    <summary style="color:#9ed8f0;font-size:0.82em;cursor:pointer;white-space:nowrap;list-style:none;">＋ CSV取込</summary>
+    <form method="post" action="/trade-history/import" enctype="multipart/form-data"
+          title="楽天・SBI の取引履歴CSVを自動判別して取り込みます"
+          style="display:flex;align-items:center;gap:0.5em;margin-top:0.5em;padding:0.4em 0.6em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:5px;">
+      <input type="file" name="csv_file" accept=".csv" required
+             style="font-size:0.78em;color:#aaa;width:18em;">
+      <button type="submit"
+              style="padding:0.25em 0.7em;font-size:0.82em;white-space:nowrap;background:#2e5a6e;color:#9ed8f0;border:1px solid #3a6a80;border-radius:4px;cursor:pointer;">取込</button>
+    </form>
+  </details>
+</div>
 {% if trade_fills %}
 <table class="trade-history-table">
   <colgroup>
