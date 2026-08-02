@@ -36,6 +36,12 @@ def _closed_shinyo_round(db_path, code_s, open_date, close_date, tate=1000.0, se
               tate_price=tate, salt="s")
 
 
+def _episode_key(db_path, code_s, kind="信用"):
+    """build_fill_episodes から対象銘柄・区分のエピソードキーを取る。"""
+    eps = helpers.build_fill_episodes(db_path=db_path)
+    return next(e["episode_key"] for e in eps if e["code_s"] == code_s and e["kind"] == kind)
+
+
 class TestMigrate:
     def test_migrates_memo_to_matching_episode(self, db_path):
         _closed_shinyo_round(db_path, "6324", "2026-06-29", "2026-06-30")
@@ -46,9 +52,9 @@ class TestMigrate:
                              review_memo="強さを買うはあってる", reason="利確",
                              timestamp="2026-06-30T15:00:00+09:00", db_path=db_path)
 
+        key = _episode_key(db_path, "6324")
         summary = mig.migrate(db_path=db_path, dry_run=False)
         assert len(summary["migrated"]) == 1
-        key = ps.fill_episode_key("6324", "信用", "2026-06-29", "2026-06-30")
         assert ps.get_fill_memo(key, db_path=db_path) == "強さを買うはあってる"
 
     def test_dry_run_does_not_write(self, db_path):
@@ -56,9 +62,9 @@ class TestMigrate:
         ps.append_action_log("6324", "売却", status_from="1保", status_to="2準",
                              review_memo="メモ",
                              timestamp="2026-06-30T15:00:00+09:00", db_path=db_path)
+        key = _episode_key(db_path, "6324")
         summary = mig.migrate(db_path=db_path, dry_run=True)
         assert len(summary["migrated"]) == 1
-        key = ps.fill_episode_key("6324", "信用", "2026-06-29", "2026-06-30")
         assert ps.get_fill_memo(key, db_path=db_path) == ""  # 書いていない
 
     def test_existing_memo_not_overwritten(self, db_path):
@@ -66,7 +72,7 @@ class TestMigrate:
         ps.append_action_log("6324", "売却", status_from="1保", status_to="2準",
                              review_memo="ログ側メモ",
                              timestamp="2026-06-30T15:00:00+09:00", db_path=db_path)
-        key = ps.fill_episode_key("6324", "信用", "2026-06-29", "2026-06-30")
+        key = _episode_key(db_path, "6324")
         ps.set_fill_memo(key, "既にある", db_path=db_path)
         summary = mig.migrate(db_path=db_path, dry_run=False)
         assert len(summary["already"]) == 1

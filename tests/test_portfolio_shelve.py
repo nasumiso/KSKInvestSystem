@@ -1299,21 +1299,21 @@ class TestFillMemo:
     """fill 建玉ラウンド (エピソード) 単位の振り返りメモ (issue #387 Phase2)。"""
 
     def test_set_get_roundtrip(self, db_path):
-        key = ps.fill_episode_key("6324", "信用", "2026-06-10", "2026-06-20")
+        key = ps.fill_episode_key("6324", "信用", 3)
         assert ps.get_fill_memo(key, db_path=db_path) == ""
         ps.set_fill_memo(key, "利確できたが再現性は微妙", db_path=db_path)
         assert ps.get_fill_memo(key, db_path=db_path) == "利確できたが再現性は微妙"
 
     def test_empty_deletes(self, db_path):
-        key = ps.fill_episode_key("6324", "信用", "2026-06-10", "2026-06-20")
+        key = ps.fill_episode_key("6324", "信用", 3)
         ps.set_fill_memo(key, "メモ", db_path=db_path)
         ps.set_fill_memo(key, "", db_path=db_path)
         assert ps.get_fill_memo(key, db_path=db_path) == ""
         assert key not in ps.list_fill_memos(db_path=db_path)
 
     def test_list_returns_only_nonempty(self, db_path):
-        k1 = ps.fill_episode_key("1001", "現物", "2026-01-01", "2026-01-10")
-        k2 = ps.fill_episode_key("1002", "信用", "2026-02-01", "2026-02-10")
+        k1 = ps.fill_episode_key("1001", "現物", 1)
+        k2 = ps.fill_episode_key("1002", "信用", 1)
         ps.set_fill_memo(k1, "あり", db_path=db_path)
         ps.set_fill_memo(k2, "", db_path=db_path)
         memos = ps.list_fill_memos(db_path=db_path)
@@ -1321,22 +1321,25 @@ class TestFillMemo:
 
     def test_key_normalizes_code(self, db_path):
         # 全角/小文字コードは正規化される
-        k1 = ps.fill_episode_key("215a", "現物", "2026-01-01", "2026-01-10")
-        k2 = ps.fill_episode_key("215A", "現物", "2026-01-01", "2026-01-10")
+        k1 = ps.fill_episode_key("215a", "現物", 1)
+        k2 = ps.fill_episode_key("215A", "現物", 1)
         assert k1 == k2
 
-    def test_open_episode_marker(self, db_path):
-        k = ps.fill_episode_key("1001", "現物", "2026-01-01", None)
-        assert k.endswith("|open")
+    def test_key_is_seq_based(self, db_path):
+        # 同一銘柄・区分でも先頭 seq が異なればキーは別 (同日ラウンドトリップ対応)
+        k1 = ps.fill_episode_key("1001", "信用", 5)
+        k2 = ps.fill_episode_key("1001", "信用", 9)
+        assert k1 != k2
+        assert k1 == "1001|信用|5"
 
     def test_set_rejects_non_str(self, db_path):
-        key = ps.fill_episode_key("1001", "現物", "2026-01-01", "2026-01-10")
+        key = ps.fill_episode_key("1001", "現物", 1)
         with pytest.raises(TypeError):
             ps.set_fill_memo(key, 123, db_path=db_path)
 
     def test_fill_memo_does_not_leak_into_list_fills(self, db_path):
         # fill_memo: プレフィックスは fill: と衝突しない
-        key = ps.fill_episode_key("1001", "現物", "2026-01-01", "2026-01-10")
+        key = ps.fill_episode_key("1001", "現物", 1)
         ps.set_fill_memo(key, "メモ", db_path=db_path)
         f = ps.create_fill("1001", trade_date="2026-01-01", side="buy", qty=100,
                            price=1000.0, amount=100000, trade_kind="現物",

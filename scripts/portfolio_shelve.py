@@ -1104,16 +1104,19 @@ def list_fills(
 # fill 建玉ラウンド (エピソード) 単位の振り返りメモ (issue #387 Phase2)
 # ===========================================
 
-def fill_episode_key(code_s: str, kind: str, open_date: str,
-                     close_date: Optional[str]) -> str:
+def fill_episode_key(code_s: str, kind: str, first_seq: int) -> str:
     """fill エピソード (建玉ラウンド) を一意に識別するキーを組み立てる。
 
-    fill は再取込で作り直されるが、同一ラウンドは 銘柄+口座種別+建日+返済日 が
-    変わらないためメモが維持される。保有中 (close_date=None) は "open" を使う。
+    キーは 銘柄+口座種別+ラウンド先頭 fill の seq。first_seq は建玉開始時に
+    確定し、その後の買い増し・部分売り・返済・売却で fill が増えても不変。
+    これにより:
+      - 保有中に付けたメモが売却後 (close_date 確定) も同じキーで追える。
+      - 同一銘柄・同一区分で同日に複数回ラウンドトリップしても、各ラウンドの
+        先頭 seq は異なるためキーが衝突しない。
+    fill の seq は銘柄内で単調増加する固有値 (append_fill が採番)。
     """
     normalized = normalize_code_s(code_s)
-    close_part = close_date or "open"
-    return f"{normalized}|{kind}|{open_date}|{close_part}"
+    return f"{normalized}|{kind}|{first_seq}"
 
 
 def _fill_memo_storage_key(episode_key: str) -> str:

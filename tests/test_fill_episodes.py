@@ -308,15 +308,48 @@ class TestBrokerBackfill:
 class TestFillMemo:
     """fill エピソード単位の振り返りメモ (issue #387 Phase2)。"""
 
-    def test_episode_key_is_stable(self, db_path):
-        # 同一ラウンドは 銘柄+口座種別+建日+返済日 でキーが決まる
-        k1 = ps.fill_episode_key("1001", "現物", "2026-01-10", "2026-01-20")
-        k2 = ps.fill_episode_key("1001", "現物", "2026-01-10", "2026-01-20")
-        assert k1 == k2 == "1001|現物|2026-01-10|2026-01-20"
+    def test_episode_key_uses_first_seq(self, db_path):
+        # キーは 銘柄+口座種別+ラウンド先頭 fill の seq
+        k = ps.fill_episode_key("1001", "現物", 7)
+        assert k == "1001|現物|7"
 
-    def test_open_episode_key_uses_open_marker(self, db_path):
-        k = ps.fill_episode_key("1001", "現物", "2026-01-10", None)
-        assert k.endswith("|open")
+    def test_key_stable_from_open_to_closed(self, db_path, monkeypatch):
+        # P1-2: 保有中に付けたメモが売却後 (close_date 確定) も同じキーで追える
+        _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
+        monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {"1001": []})
+        eps_open = helpers.build_fill_episodes(db_path=db_path)
+        key_open = eps_open[0]["episode_key"]
+        assert eps_open[0]["closed"] is False
+        ps.set_fill_memo(key_open, "保有中に書いたメモ", db_path=db_path)
+        # 売却してラウンドをクローズ
+        _add(db_path, "1001", "2026-01-20", "sell", 100, 1200.0, seq_salt="b")
+        eps_closed = helpers.build_fill_episodes(db_path=db_path)
+        assert eps_closed[0]["closed"] is True
+        # キーが変わらずメモが引き継がれる
+        assert eps_closed[0]["episode_key"] == key_open
+        assert eps_closed[0]["review_memo"] == "保有中に書いたメモ"
+
+    def test_multiple_rounds_have_distinct_keys(self, db_path):
+        # P1-2: 同一銘柄・同一区分で複数ラウンドあってもキーが衝突せず別メモを持てる。
+        # date ベースの旧キーでは open/close が近いと衝突しうるが seq ベースなら一意。
+        _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "1001", "2026-01-11", "sell", 100, 1100.0, trade_kind="信用返済",
+             tate_price=1000.0, seq_salt="b")
+        _add(db_path, "1001", "2026-01-12", "buy", 100, 1050.0, trade_kind="信用新規", seq_salt="c")
+        _add(db_path, "1001", "2026-01-13", "sell", 100, 1200.0, trade_kind="信用返済",
+             tate_price=1050.0, seq_salt="d")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        code_eps = [e for e in eps if e["code_s"] == "1001"]
+        assert len(code_eps) == 2
+        keys = {e["episode_key"] for e in code_eps}
+        assert len(keys) == 2  # 衝突しない
+        # 別々のメモを持てる
+        k1, k2 = sorted(keys)
+        ps.set_fill_memo(k1, "1回目", db_path=db_path)
+        ps.set_fill_memo(k2, "2回目", db_path=db_path)
+        memos = ps.list_fill_memos(db_path=db_path)
+        assert memos[k1] == "1回目"
+        assert memos[k2] == "2回目"
 
     def test_memo_attached_to_episode(self, db_path):
         _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")

@@ -4615,7 +4615,7 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     memos = ps.list_fill_memos(db_path=db_path)
     for ep in episodes:
         ep["episode_key"] = ps.fill_episode_key(
-            ep["code_s"], ep["kind"], ep["open_date"], ep["close_date"]
+            ep["code_s"], ep["kind"], ep["first_seq"]
         )
         ep["review_memo"] = memos.get(ep["episode_key"], "")
 
@@ -4630,10 +4630,14 @@ def _finalize_round(code_s: str, kind: str, stock_name: str,
                     closed: bool = True) -> Dict[str, Any]:
     """建玉ラウンドの fill リストからエピソード dict を組み立てる。"""
     dates = [f["trade_date"] for f in round_fills if f.get("trade_date")]
+    # ラウンド固有のキー用に先頭 fill の seq を取る (建玉開始時に確定し不変)。
+    seqs = [f.get("seq") for f in round_fills if f.get("seq") is not None]
+    first_seq = min(seqs) if seqs else 0
     ep = {
         "code_s": code_s,
         "stock_name": stock_name,
         "kind": kind,
+        "first_seq": first_seq,
         "open_date": min(dates) if dates else "",
         "close_date": max(dates) if (dates and closed) else None,
         "last_trade_date": max(dates) if dates else "",  # ラウンド内の最新約定日 (並び順の基準)
