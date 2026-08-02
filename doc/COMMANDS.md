@@ -127,7 +127,7 @@ cd scripts && python backfill_price_proxy.py --overwrite # actual 以外を再�
 
 ### 証券会社CSV → fill レイヤー取込 (issue #360, #387)
 
-楽天・SBI証券の約定CSVの実約定価格・株数を fill として取り込む。同一 dedup キーは冪等スキップ。取り込んだ fill は `/trade-history` の「売買履歴」タブに約定日降順で一覧表示される (issue #387 で action_log との突合は廃止)。SBI は個別株のみ取込 (ETF/投信=ウォッチリスト外は自動除外)。信用返済行の決済損益は fill に保存する。
+楽天・SBI証券の約定CSVの実約定価格・株数を fill として取り込む。同一 dedup キーは冪等スキップ。取り込んだ fill は `/trade-history` の「売買履歴」タブに建玉ラウンド単位のエピソードとして表示され、勝率・ペイオフレシオも fill 側で計算される (issue #387 Phase4b)。SBI は個別株のみ取込 (ETF/投信=ウォッチリスト外は自動除外)。楽天は信用返済行の建約定日・建単価と現引行 (建玉の現物化) も取込む (信用/現物のエピソード損益計算に使用)。SBI 信用返済行の決済損益は fill に保存する。既存 fill への建単価・決済損益は再取込時に後付けされる (None→非None のみ)。
 
 ```bash
 # 楽天 (tradehistory(JP)_YYYYMMDD.csv, Shift-JIS, 28列)

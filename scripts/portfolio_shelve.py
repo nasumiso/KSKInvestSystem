@@ -215,6 +215,8 @@ FILL_FIELDS = frozenset(
         "imported_at",    # 取込時刻 ISO8601
         "broker",         # 取込元証券会社 ("楽天" / "SBI")。issue #387 Phase3
         "settle_pl",      # 決済損益[円] (SBI 信用返済行のみ。無ければ None)。issue #387 Phase3
+        "tate_date",      # 建約定日 "YYYY-MM-DD" (楽天 信用返済行のみ)。issue #387 Phase4b
+        "tate_price",     # 建単価[円] (楽天 信用返済行のみ、float)。issue #387 Phase4b
     }
 )
 
@@ -977,10 +979,13 @@ def create_fill(
     matched_seq: Optional[int] = None,
     broker: Optional[str] = None,
     settle_pl: Optional[int] = None,
+    tate_date: Optional[str] = None,
+    tate_price: Optional[float] = None,
 ) -> Dict[str, Any]:
     """fill レコード dict を生成する (バリデーション付き)。
 
     broker: 取込元証券会社 ("楽天"/"SBI")。settle_pl: 決済損益[円] (SBI 信用返済のみ)。
+    tate_date/tate_price: 建約定日/建単価 (楽天 信用返済のみ)。issue #387 Phase4b。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
@@ -1006,6 +1011,8 @@ def create_fill(
         "imported_at": now_iso(),
         "broker": broker,
         "settle_pl": int(settle_pl) if settle_pl is not None else None,
+        "tate_date": tate_date,
+        "tate_price": float(tate_price) if tate_price is not None else None,
     }
 
 
@@ -1018,6 +1025,11 @@ def _next_fill_seq(db: ShelveDB, code_s: str) -> int:
     return nxt
 
 
+# 再取込時に既存 fill へ後付けで埋めてよいフィールド (dedup_key に含まれず、
+# 古い取込では欠けている派生情報)。値が None→非None のときだけ埋める。issue #387 Phase4b
+_FILL_BACKFILL_FIELDS = ("tate_date", "tate_price", "settle_pl", "broker")
+
+
 def append_fill(
     fill: Dict[str, Any],
     *,
@@ -1025,7 +1037,9 @@ def append_fill(
 ) -> tuple:
     """fill を1件追記する (dedup_key で冪等)。
 
-    同一 code_s に同じ dedup_key の fill が既にあればスキップ (取込済み)。
+    同一 code_s に同じ dedup_key の fill が既にあればスキップ (取込済み)。ただし
+    tate_date/tate_price/settle_pl/broker が既存で None かつ新 fill で埋まっていれば
+    既存レコードに後付けする (Phase4b で列を追加したための移行、None→非None のみ)。
     新規なら _fill_seq を採番して保存する。
 
     Returns: (fill, is_new: bool) — is_new=False は重複スキップ (既存 fill を返す)
@@ -1042,6 +1056,14 @@ def append_fill(
                 if not key.startswith(prefix):
                     continue
                 if isinstance(value, dict) and value.get("dedup_key") == dedup_key:
+                    # 既存 fill に欠けた派生情報を後付け (None→非None のみ)
+                    updated = False
+                    for f in _FILL_BACKFILL_FIELDS:
+                        if value.get(f) is None and fill.get(f) is not None:
+                            value[f] = fill[f]
+                            updated = True
+                    if updated:
+                        db[key] = value
                     return value, False  # 既に取込済み (冪等)
             seq = _next_fill_seq(db, code_s)
             stored = dict(fill)

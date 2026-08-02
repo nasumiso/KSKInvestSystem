@@ -59,9 +59,16 @@ COL_BAIBAI = 7         # 売買区分 (買付 / 売付 / 買建 / 売埋)
 COL_QTY = 10           # 数量[株]
 COL_PRICE = 11         # 単価[円]
 COL_AMOUNT = 16        # 受渡金額[円]
+COL_TATE_DATE = 17     # 建約定日 (信用返済行のみ、それ以外は空) (issue #387 Phase4b)
+COL_TATE_PRICE = 18    # 建単価[円] (信用返済行のみ) (issue #387 Phase4b)
 
 HEADER_FIRST_COL = "約定日"  # ヘッダ検証用
 BROKER = "楽天"
+
+# 取引区分=現引 は建玉の現物化。売買区分が空 (買/売でない) だが、単価[円](COL_PRICE)
+# に現引時の実質取得原価が入るため buy 扱いで取込み、後続の現物売とラウンドを組む
+# (issue #387 Phase4b: 現引ブリッジ)。
+TRADE_KIND_GENBIKI = "現引"
 
 
 # ===========================================
@@ -148,11 +155,17 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
     if trade_date is None:
         raise RowSkip(f"約定日パース不可: {row[COL_TRADE_DATE]!r}")
 
+    trade_kind = (row[COL_TRADE_KIND] or "").strip()
     baibai = (row[COL_BAIBAI] or "").strip()
-    try:
-        side = ps.normalize_side(baibai)
-    except ValueError as e:
-        raise RowSkip(str(e))
+
+    # 現引 (建玉の現物化) は売買区分が空だが、buy 扱いで取込む (Phase4b 現引ブリッジ)。
+    if trade_kind == TRADE_KIND_GENBIKI:
+        side = "buy"
+    else:
+        try:
+            side = ps.normalize_side(baibai)
+        except ValueError as e:
+            raise RowSkip(str(e))
 
     qty_f = _parse_num(row[COL_QTY])
     price_f = _parse_num(row[COL_PRICE])
@@ -162,7 +175,10 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
         raise RowSkip(f"単価欠落/不正: {row[COL_PRICE]!r}")
     amount_f = _parse_num(row[COL_AMOUNT])
 
-    trade_kind = (row[COL_TRADE_KIND] or "").strip()
+    # 建約定日・建単価 (信用返済行のみ。信用P/Lのペアリングに使う) (Phase4b)
+    tate_date = _normalize_trade_date(row[COL_TATE_DATE]) if len(row) > COL_TATE_DATE else None
+    tate_price_f = _parse_num(row[COL_TATE_PRICE]) if len(row) > COL_TATE_PRICE else None
+    tate_price = tate_price_f if (tate_price_f is not None and tate_price_f > 0) else None
 
     return {
         "code_s": code_s,
@@ -173,6 +189,8 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
         "amount": int(amount_f) if amount_f is not None else 0,
         "trade_kind": trade_kind,
         "baibai": baibai,
+        "tate_date": tate_date,
+        "tate_price": tate_price,
     }
 
 
@@ -241,6 +259,8 @@ def import_csv_to_fills(
             trade_kind=parsed["trade_kind"],
             dedup_key=dedup_key,
             broker="楽天",
+            tate_date=parsed.get("tate_date"),
+            tate_price=parsed.get("tate_price"),
         )
 
         if dry_run:

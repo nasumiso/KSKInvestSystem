@@ -4300,6 +4300,178 @@ def list_trade_fills() -> List[Dict[str, Any]]:
 
 
 # ===========================================
+# issue #387 Phase4b: fill 基準の建玉ラウンド・エピソード再構成
+# ===========================================
+
+# trade_kind → 口座種別 ("現物" / "信用")。現引は現物ラウンドに合流させる。
+def _fill_account_kind(trade_kind: str) -> str:
+    tk = trade_kind or ""
+    if tk.startswith("信用"):
+        return "信用"
+    return "現物"  # 現物 / 現物(単元未満) / 現引
+
+
+def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
+    """クローズ済み建玉ラウンドから calc_trade_summary 互換の損益 dict を作る。
+
+    現物: 平均取得単価法。買い (buy=買付/現引) で加重平均取得単価を積み、売り (sell) で
+      実現損益 = Σ(sell_price - avg_cost) * sell_qty。amount = 総取得コスト (金額加重の重み)。
+    信用: 各返済 fill が単独で損益確定。楽天=約定単価-建単価(tate_price)、SBI=settle_pl。
+      amount = 建玉コスト (Σ tate_price*qty、無ければ約定金額)。
+
+    Returns: {return_pct, hold_days, avg_cost, amount, profit_amount, ...} / 算出不能なら None
+    """
+    fills = rnd["fills"]
+    if not fills:
+        return None
+    kind = rnd["kind"]
+    total_cost = 0.0        # 取得コスト合計 (現物=買い金額, 信用=建玉金額) → 金額加重の重み
+    realized = 0.0          # 実現損益額
+
+    if kind == "現物":
+        held_qty = 0
+        avg_cost = 0.0
+        cost_basis_total = 0.0  # 買いで積んだ延べ取得コスト (return_pct の分母 amount)
+        for f in fills:
+            qty = f["qty"]
+            price = f["price"]
+            if f["side"] == "buy":
+                new_qty = held_qty + qty
+                avg_cost = (avg_cost * held_qty + price * qty) / new_qty if new_qty else 0.0
+                held_qty = new_qty
+                cost_basis_total += price * qty
+            else:  # sell
+                sell_qty = min(qty, held_qty) if held_qty > 0 else qty
+                realized += (price - avg_cost) * sell_qty
+                held_qty -= qty
+        total_cost = cost_basis_total
+    else:  # 信用
+        for f in fills:
+            if f["side"] != "sell":
+                continue  # 信用新規買建は建玉、損益は返済 fill 側で確定
+            qty = f["qty"]
+            price = f["price"]
+            settle_pl = f.get("settle_pl")
+            tate_price = f.get("tate_price")
+            if settle_pl is not None:
+                realized += settle_pl
+                total_cost += (tate_price or price) * qty
+            elif tate_price is not None:
+                realized += (price - tate_price) * qty
+                total_cost += tate_price * qty
+            else:
+                # 建単価も決済損益も無い → 損益不能
+                return None
+
+    if total_cost <= 0:
+        return None
+    return_pct = realized / total_cost * 100
+    try:
+        hold_days = (date.fromisoformat(rnd["close_date"])
+                     - date.fromisoformat(rnd["open_date"])).days
+    except (ValueError, TypeError, KeyError):
+        hold_days = None
+    return {
+        "return_pct": return_pct,
+        "hold_days": hold_days if hold_days is not None else 0,
+        "avg_cost": total_cost / max(sum(f["qty"] for f in fills if f["side"] == "buy"), 1),
+        "amount": total_cost,
+        "profit_amount": round(realized),
+    }
+
+
+def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """全 fill を建玉ラウンド単位のエピソードに再構成する (issue #387 Phase4b)。
+
+    銘柄コード × 口座種別 (現物/信用) ごとに約定日昇順で fill を並べ、保有 (建玉) 株数が
+    0 → 建 → 0 に戻る 1 サイクルを 1 エピソードとする。現引は現物ラウンドの buy として
+    合流させ (現引ブリッジ)、信用は返済 fill の建単価/決済損益で損益確定する。
+
+    各エピソード dict:
+      code_s, stock_name, kind ("現物"/"信用"), open_date, close_date,
+      qty_peak (最大建玉), closed (bool), fills (内部の個別 fill 明細リスト),
+      pl (クローズ済みのみ: _episode_pl_from_round の結果, 未クローズは None)
+
+    Returns: close_date (未クローズは open_date) 降順のエピソードリスト。
+    """
+    import portfolio_shelve as ps  # 遅延 import (循環回避)
+
+    all_fills = ps.list_fills(db_path=db_path)
+    if not all_fills:
+        return []
+
+    # (code_s, 口座種別) でグループ化し、約定日→seq 昇順に
+    groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for f in all_fills:
+        key = (f["code_s"], _fill_account_kind(f.get("trade_kind", "")))
+        groups.setdefault(key, []).append(f)
+
+    names = _bulk_resolve_stock_names(list({k[0] for k in groups}))
+
+    episodes: List[Dict[str, Any]] = []
+    for (code_s, kind), fills in groups.items():
+        fills = sorted(fills, key=lambda f: (f.get("trade_date") or "", f.get("seq") or 0))
+        held_qty = 0
+        cur: List[Dict[str, Any]] = []  # 現ラウンドの fill
+        qty_peak = 0
+        for f in fills:
+            if not cur:
+                # ラウンド開始
+                qty_peak = 0
+            cur.append(f)
+            if f["side"] == "buy":
+                held_qty += f["qty"]
+            else:
+                held_qty -= f["qty"]
+            qty_peak = max(qty_peak, held_qty)
+            if held_qty <= 0 and cur:
+                # ラウンドクローズ (保有 0 以下に戻った)
+                episodes.append(_finalize_round(code_s, kind, names.get(code_s, ""), cur, qty_peak))
+                cur = []
+                held_qty = 0
+        if cur:
+            # 未クローズ (保有中)
+            episodes.append(_finalize_round(code_s, kind, names.get(code_s, ""), cur, qty_peak, closed=False))
+
+    # close_date (未クローズは open_date) 降順、同日は銘柄コード昇順
+    episodes.sort(key=lambda e: e["code_s"])
+    episodes.sort(key=lambda e: e.get("close_date") or e["open_date"], reverse=True)
+    return episodes
+
+
+def _finalize_round(code_s: str, kind: str, stock_name: str,
+                    round_fills: List[Dict[str, Any]], qty_peak: int,
+                    closed: bool = True) -> Dict[str, Any]:
+    """建玉ラウンドの fill リストからエピソード dict を組み立てる。"""
+    dates = [f["trade_date"] for f in round_fills if f.get("trade_date")]
+    ep = {
+        "code_s": code_s,
+        "stock_name": stock_name,
+        "kind": kind,
+        "open_date": min(dates) if dates else "",
+        "close_date": max(dates) if (dates and closed) else None,
+        "qty_peak": qty_peak,
+        "closed": closed,
+        "fills": [
+            {
+                "trade_date": f.get("trade_date"),
+                "side": f["side"],
+                "side_label": _SIDE_LABELS.get(f["side"], f["side"]),
+                "qty": f["qty"],
+                "price": f["price"],
+                "trade_kind": f.get("trade_kind", ""),
+                "broker": f.get("broker") or "",
+                "tate_price": f.get("tate_price"),
+                "settle_pl": f.get("settle_pl"),
+            }
+            for f in round_fills
+        ],
+    }
+    ep["pl"] = _episode_pl_from_round(ep) if closed else None
+    return ep
+
+
+# ===========================================
 # issue #361: 売買エピソードの概算損益・成績サマリー
 # ===========================================
 

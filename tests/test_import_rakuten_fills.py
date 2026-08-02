@@ -21,7 +21,8 @@ _HEADER = [
 ]
 
 
-def _row(code_s, trade_kind, baibai, qty, price, trade_date="2026/6/22", amount="0"):
+def _row(code_s, trade_kind, baibai, qty, price, trade_date="2026/6/22", amount="0",
+         tate_date="", tate_price=""):
     """28列の取引行を組み立てる (未使用列は '0' / '-' で埋める)。"""
     row = ["0"] * 28
     row[ir.COL_TRADE_DATE] = trade_date
@@ -31,6 +32,8 @@ def _row(code_s, trade_kind, baibai, qty, price, trade_date="2026/6/22", amount=
     row[ir.COL_QTY] = qty
     row[ir.COL_PRICE] = price
     row[ir.COL_AMOUNT] = amount
+    row[ir.COL_TATE_DATE] = tate_date
+    row[ir.COL_TATE_PRICE] = tate_price
     return row
 
 
@@ -63,6 +66,69 @@ def test_parse_row(trade_kind, baibai, qty, price, exp_side, exp_qty, exp_price)
     assert parsed["side"] == exp_side
     assert parsed["qty"] == exp_qty
     assert parsed["price"] == exp_price
+
+
+def test_parse_genbiki_row(tmp_path, db_path):
+    """現引 (売買区分が空) は buy 扱いで取込み、単価を取得原価とする (Phase4b)。"""
+    parsed = ir.parse_fill_row(
+        _row("4369", "現引", "", "100", "3,129.12", trade_date="2026/2/5")
+    )
+    assert parsed["side"] == "buy"
+    assert parsed["trade_kind"] == "現引"
+    assert parsed["qty"] == 100
+    assert parsed["price"] == 3129.12
+
+
+def test_parse_tate_price_on_credit_settle():
+    """信用返済行の建約定日・建単価をパースする (Phase4b)。"""
+    parsed = ir.parse_fill_row(
+        _row("9509", "信用返済", "売埋", "100", "1,065.0",
+             tate_date="2025/7/7", tate_price="795.0")
+    )
+    assert parsed["tate_date"] == "2025-07-07"
+    assert parsed["tate_price"] == 795.0
+
+
+def test_parse_no_tate_price_on_genbutsu():
+    """現物行は建約定日・建単価を持たない (None)。"""
+    parsed = ir.parse_fill_row(_row("6315", "現物", "買付", "100", "1,925.0"))
+    assert parsed["tate_date"] is None
+    assert parsed["tate_price"] is None
+
+
+def test_genbiki_imported_to_fill(tmp_path, db_path):
+    """現引行が fill として取込まれる (buy, trade_kind=現引)。"""
+    path = _write_csv(
+        tmp_path / "genbiki.csv",
+        [_row("4369", "現引", "", "100", "3,129.12", trade_date="2026/2/5")],
+    )
+    stats = ir.import_csv_to_fills(path, db_path=db_path)
+    assert stats["imported"] == 1
+    assert stats["skipped_invalid"] == 0
+    fills = ps.list_fills("4369", db_path=db_path)
+    assert len(fills) == 1
+    assert fills[0]["side"] == "buy"
+    assert fills[0]["trade_kind"] == "現引"
+
+
+def test_backfill_tate_price_on_reimport(tmp_path, db_path):
+    """建単価無しで取込済みの信用返済 fill に、再取込で建単価が後付けされる (Phase4b 移行)。"""
+    # 1回目: 建単価無し (旧取込を模す)
+    path1 = _write_csv(
+        tmp_path / "old.csv",
+        [_row("9509", "信用返済", "売埋", "100", "1,065.0")],
+    )
+    ir.import_csv_to_fills(path1, db_path=db_path)
+    assert ps.list_fills("9509", db_path=db_path)[0]["tate_price"] is None
+    # 2回目: 同一約定に建単価付き → dedup スキップだが tate_price が後付け
+    path2 = _write_csv(
+        tmp_path / "new.csv",
+        [_row("9509", "信用返済", "売埋", "100", "1,065.0",
+              tate_date="2025/7/7", tate_price="795.0")],
+    )
+    stats = ir.import_csv_to_fills(path2, db_path=db_path)
+    assert stats["skipped_dup"] == 1
+    assert ps.list_fills("9509", db_path=db_path)[0]["tate_price"] == 795.0
 
 
 def test_dedup_idempotent(tmp_path, db_path):
