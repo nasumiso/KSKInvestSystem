@@ -165,6 +165,50 @@ class TestGenbutsuAndShinyoSeparate:
         assert kinds == ["信用", "現物"]
 
 
+class TestOpenPositionPL:
+    """保有中エピソードの実現損益 (部分売り) と含み損益 (残玉評価)。"""
+
+    def test_genbutsu_partial_sell_realized_and_unrealized(self, db_path, monkeypatch):
+        # 現物 0→200 で100株@1500売却 (実現)、残100株、現在値1400 (含み)
+        _add(db_path, "7001", "2026-01-10", "buy", 200, 1000.0, seq_salt="a")
+        _add(db_path, "7001", "2026-01-20", "sell", 100, 1500.0, seq_salt="b")
+        # 現在値 = price_log 最新終値をモック
+        import datetime as _dt
+        monkeypatch.setattr(
+            helpers, "_bulk_price_logs",
+            lambda codes: {"7001": [(_dt.date(2026, 1, 31), 1400)]},
+        )
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        ep = eps[0]
+        assert ep["closed"] is False
+        op = ep["open_pl"]
+        assert op["realized"] == 50000     # (1500-1000)*100
+        assert op["held_qty"] == 100
+        assert op["unrealized"] == 40000   # (1400-1000)*100
+
+    def test_open_without_price_has_none_unrealized(self, db_path, monkeypatch):
+        _add(db_path, "7002", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
+        monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {"7002": []})
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        op = eps[0]["open_pl"]
+        assert op["realized"] == 0
+        assert op["unrealized"] is None    # 現在値なし
+        assert op["held_qty"] == 100
+
+    def test_shinyo_reverse_settle_disables_unrealized(self, db_path, monkeypatch):
+        # 信用返済 buy (建玉方向と逆) が混ざると含みは None (安全側)
+        _add(db_path, "7003", "2026-01-10", "buy", 100, 6000.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "7003", "2026-01-12", "buy", 100, 6100.0, trade_kind="信用返済", seq_salt="b")
+        import datetime as _dt
+        monkeypatch.setattr(
+            helpers, "_bulk_price_logs",
+            lambda codes: {"7003": [(_dt.date(2026, 1, 31), 6500)]},
+        )
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        op = eps[0]["open_pl"]
+        assert op["unrealized"] is None
+
+
 class TestOrdering:
     def test_sorted_by_last_trade_date(self, db_path):
         # A: 建2026-01-01 売2026-01-05 (最終01-05)

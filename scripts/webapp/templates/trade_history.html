@@ -67,7 +67,8 @@
 <table class="trade-history-table">
   <colgroup>
     <col style="width:1.5em;"><col style="width:11em;"><col style="width:4em;">
-    <col style="width:9em;"><col style="width:4.5em;"><col style="width:6em;"><col>
+    <col style="width:9em;"><col style="width:4.5em;"><col style="width:5em;">
+    <col style="width:7em;"><col style="width:7em;">
   </colgroup>
   <thead>
     <tr>
@@ -78,6 +79,7 @@
       <th style="text-align:right;white-space:nowrap;">株数</th>
       <th style="text-align:right;white-space:nowrap;">リターン</th>
       <th style="text-align:right;white-space:nowrap;">実現損益</th>
+      <th style="text-align:right;white-space:nowrap;">含み損益</th>
     </tr>
   </thead>
   <tbody>
@@ -100,21 +102,34 @@
       <td style="text-align:right;white-space:nowrap;">
         {% if ep.pl %}
         <span style="color:{{ '#9ef0aa' if ep.pl.return_pct >= 0 else '#f0a0a0' }};font-weight:600;">{{ '+' if ep.pl.return_pct >= 0 else '' }}{{ "%.1f"|format(ep.pl.return_pct) }}%</span>
+        {% elif not ep.closed and ep.open_pl and ep.open_pl.held_qty > 0 %}
+        <span style="color:#888;font-size:0.82em;">残 {{ ep.open_pl.held_qty }}株</span>
         {% elif ep.closed %}
         <span style="color:#666;" title="取得記録がCSVに無い(期首持越し等)または空売りのため損益算出対象外">—</span>
         {% else %}
-        <span style="color:#666;">保有中</span>
+        <span style="color:#666;">—</span>
         {% endif %}
       </td>
+      {# 実現損益列 #}
       <td style="text-align:right;white-space:nowrap;">
         {% if ep.pl and ep.pl.profit_amount is not none %}
         <span style="color:{{ '#9ef0aa' if ep.pl.profit_amount >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(ep.pl.profit_amount) }}円</span>
+        {% elif not ep.closed and ep.open_pl and ep.open_pl.realized %}
+        <span style="color:{{ '#9ef0aa' if ep.open_pl.realized >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(ep.open_pl.realized) }}円</span>
+        {% else %}<span style="color:#666;">—</span>{% endif %}
+      </td>
+      {# 含み損益列 (保有中のみ) #}
+      <td style="text-align:right;white-space:nowrap;">
+        {% if not ep.closed and ep.open_pl and ep.open_pl.unrealized is not none %}
+        <span style="color:{{ '#9ef0aa' if ep.open_pl.unrealized >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(ep.open_pl.unrealized) }}円</span>
+        {% elif not ep.closed %}
+        <span style="color:#666;" title="現在値が取得できないため含み損益は非表示">—</span>
         {% else %}<span style="color:#666;">—</span>{% endif %}
       </td>
     </tr>
     <tr class="th-ep-detail" id="ep-{{ loop.index }}" style="display:none;">
       <td></td>
-      <td colspan="6" style="padding:0.3em 0.5em 0.6em;">
+      <td colspan="7" style="padding:0.3em 0.5em 0.6em;">
         <table style="width:auto;font-size:0.82em;color:#999;border-collapse:collapse;">
           {% for f in ep.fills %}
           <tr>

@@ -4380,6 +4380,97 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
     }
 
 
+def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict]:
+    """保有中 (未クローズ) 建玉ラウンドの実現損益 (部分売り分) と含み損益を計算する。
+
+    実現損益: ラウンド内で既に売った分の確定損益 (現物=平均取得単価法、信用=建単価/settle_pl)。
+    含み損益: 残っている建玉 × (current_price - 取得基準単価)。current_price は price_log の
+      直近終値。取得基準は 現物=平均取得単価、信用=平均建単価。current_price が無ければ
+      含みは None (実現分は出す)。
+
+    Returns: {realized, unrealized, held_qty, avg_cost} / 建玉も売りも無ければ None。
+      unrealized は current_price 不明なら None。
+    """
+    fills = rnd["fills"]
+    if not fills:
+        return None
+    kind = rnd["kind"]
+
+    if kind == "現物":
+        held_qty = 0
+        avg_cost = 0.0
+        realized = 0.0
+        for f in fills:
+            qty = f["qty"]
+            price = f["price"]
+            if f["side"] == "buy":
+                new_qty = held_qty + qty
+                avg_cost = (avg_cost * held_qty + price * qty) / new_qty if new_qty else 0.0
+                held_qty = new_qty
+            else:  # sell (部分売り)
+                sell_qty = min(qty, held_qty) if held_qty > 0 else qty
+                realized += (price - avg_cost) * sell_qty
+                held_qty -= qty
+        cost_basis = avg_cost
+    else:  # 信用
+        # 建玉 (buy=信用新規) の平均建単価を取得基準に、返済 (sell=信用返済) 分を実現に。
+        # 信用返済 buy (建玉方向と逆の返済買=空売り決済等) が混ざると held_qty が実態とずれ
+        # 含み評価が不正確になるため、そのラウンドは含みを算出しない (安全側)。
+        has_reverse_settle = any(
+            f["side"] == "buy" and (f.get("trade_kind") or "").startswith("信用返済")
+            for f in fills
+        )
+        held_qty = 0
+        avg_cost = 0.0
+        realized = 0.0
+        for f in fills:
+            qty = f["qty"]
+            price = f["price"]
+            if f["side"] == "buy" and (f.get("trade_kind") or "").startswith("信用新規"):
+                new_qty = held_qty + qty
+                avg_cost = (avg_cost * held_qty + price * qty) / new_qty if new_qty else 0.0
+                held_qty = new_qty
+            elif f["side"] == "sell":  # 信用返済 (部分返済)
+                settle_pl = f.get("settle_pl")
+                tate_price = f.get("tate_price")
+                if settle_pl is not None:
+                    realized += settle_pl
+                elif tate_price is not None:
+                    realized += (price - tate_price) * qty
+                else:
+                    realized += (price - avg_cost) * qty  # 建単価不明時は平均建単価で近似
+                held_qty -= qty
+            # 信用返済 buy は held_qty を触らない (has_reverse_settle で含みは無効化)
+        cost_basis = avg_cost
+        if has_reverse_settle:
+            return {
+                "realized": round(realized),
+                "unrealized": None,  # 建玉方向が交錯し含み評価不能
+                "held_qty": held_qty if held_qty > 0 else 0,
+                "avg_cost": cost_basis,
+            }
+
+    if held_qty <= 0:
+        # 保有中扱いだが実質建玉が残っていない (空売り等) → 含み対象なし
+        return {
+            "realized": round(realized),
+            "unrealized": None,
+            "held_qty": held_qty if held_qty > 0 else 0,
+            "avg_cost": cost_basis,
+        }
+
+    unrealized = None
+    if current_price is not None and cost_basis > 0:
+        unrealized = round((current_price - cost_basis) * held_qty)
+
+    return {
+        "realized": round(realized),
+        "unrealized": unrealized,
+        "held_qty": held_qty,
+        "avg_cost": cost_basis,
+    }
+
+
 def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """全 fill を建玉ラウンド単位のエピソードに再構成する (issue #387 Phase4b)。
 
@@ -4434,6 +4525,20 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         if cur:
             # 未クローズ (保有中)
             episodes.append(_finalize_round(code_s, kind, names.get(code_s, ""), cur, qty_peak, closed=False))
+
+    # 保有中エピソードに実現損益 (部分売り分) と含み損益 (残玉評価) を付与 (issue #387 Phase4b)。
+    # 含みは price_log の直近終値を現在値とする。銘柄をバルク取得して N+1 を避ける。
+    open_codes = {e["code_s"] for e in episodes if not e["closed"]}
+    latest_prices: Dict[str, Optional[float]] = {}
+    if open_codes:
+        price_logs = _bulk_price_logs(list(open_codes))
+        for code_s, log in price_logs.items():
+            if log:
+                latest = max(log, key=lambda x: x[0])  # (date, close) の最新
+                latest_prices[code_s] = float(latest[1])
+    for ep in episodes:
+        if not ep["closed"]:
+            ep["open_pl"] = _episode_open_pl(ep, latest_prices.get(ep["code_s"]))
 
     # 最終約定日 (最新の取引がある順) 降順、同日は銘柄コード昇順
     episodes.sort(key=lambda e: e["code_s"])
