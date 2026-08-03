@@ -56,28 +56,39 @@
   </div>
 </div>
 
-{# 成績サマリー (issue #387 Phase4b): fill 基準。クローズ済みで損益算出できたエピソードから #}
+{# 成績サマリー (issue #387 Phase4b): fill 基準。クローズ済みで損益算出できたエピソードから。
+   主要指標を上段、勝ち/負けの内訳を下段の2段構成にまとめる #}
 {% if fill_summary %}
-<div style="display:flex;gap:1.4em;align-items:baseline;flex-wrap:wrap;padding:0.6em 0.8em;margin-bottom:0.8em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:6px;">
-  <div><span style="color:#888;font-size:0.8em;">勝率</span>
-    <span style="font-size:1.1em;font-weight:600;color:#ddd;margin-left:0.3em;">{{ "%.0f"|format(fill_summary.win_rate) }}%</span>
-    <span style="color:#888;font-size:0.8em;">({{ fill_summary.n_win }}勝{{ fill_summary.n_lose }}敗)</span></div>
-  <div title="勝ちトレードの平均リターン ÷ 負けトレードの平均リターン (金額加重)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">ペイオフレシオ</span>
-    <span style="font-size:1.1em;font-weight:600;color:#ddd;margin-left:0.3em;">{% if fill_summary.payoff_ratio is not none %}{{ "%.2f"|format(fill_summary.payoff_ratio) }}{% else %}—{% endif %}</span></div>
-  <div title="1トレードあたりの平均リターン% (勝率とペイオフを統合した総合的な優位性。プラスならトータルで優位)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">期待値</span>
-    <span style="font-size:1.1em;font-weight:600;color:{{ '#9ef0aa' if fill_summary.expectancy is not none and fill_summary.expectancy >= 0 else '#f0a0a0' }};margin-left:0.3em;">{% if fill_summary.expectancy is not none %}{{ '+' if fill_summary.expectancy >= 0 else '' }}{{ "%.1f"|format(fill_summary.expectancy) }}%{% else %}—{% endif %}</span></div>
-  <div title="勝ちトレードの平均リターン% (金額加重)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">平均リターン(勝)</span>
-    <span style="color:#9ef0aa;font-weight:600;margin-left:0.3em;">{% if fill_summary.avg_return_win is not none %}+{{ "%.1f"|format(fill_summary.avg_return_win) }}%{% else %}—{% endif %}</span></div>
-  <div title="負けトレードの平均リターン% (金額加重)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">平均リターン(負)</span>
-    <span style="color:#f0a0a0;font-weight:600;margin-left:0.3em;">{% if fill_summary.avg_return_lose is not none %}{{ "%.1f"|format(fill_summary.avg_return_lose) }}%{% else %}—{% endif %}</span></div>
-  <div><span style="color:#888;font-size:0.8em;">実現損益</span>
-    <span style="font-size:1.1em;font-weight:600;color:{{ '#9ef0aa' if fill_total_pl >= 0 else '#f0a0a0' }};margin-left:0.3em;">{{ "{:+,}".format(fill_total_pl) }}円</span></div>
-  <div><span style="color:#888;font-size:0.8em;">平均保有(勝)</span>
-    <span style="color:#9ef0aa;margin-left:0.3em;">{% if fill_summary.avg_hold_win is not none %}{{ "%.0f"|format(fill_summary.avg_hold_win) }}日{% else %}—{% endif %}</span></div>
-  <div><span style="color:#888;font-size:0.8em;">平均保有(負)</span>
-    <span style="color:#f0a0a0;margin-left:0.3em;">{% if fill_summary.avg_hold_lose is not none %}{{ "%.0f"|format(fill_summary.avg_hold_lose) }}日{% else %}—{% endif %}</span></div>
-  <div title="信用は建単価/決済損益、現物は平均取得単価法。期首持越し・空売りは損益算出対象外" style="color:#777;font-size:0.78em;margin-left:auto;cursor:help;">
-    算出 {{ fill_priced_count }} 件 / クローズ済 {{ fill_closed_count }} 件</div>
+<div style="padding:0.7em 0.9em;margin-bottom:0.8em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:6px;">
+  {# 上段: 主要指標 #}
+  <div style="display:flex;gap:1.8em;align-items:baseline;flex-wrap:wrap;">
+    <div><span style="color:#888;font-size:0.8em;">勝率</span>
+      <span style="font-size:1.15em;font-weight:600;color:#ddd;margin-left:0.35em;">{{ "%.0f"|format(fill_summary.win_rate) }}%</span>
+      <span style="color:#888;font-size:0.78em;">({{ fill_summary.n_win }}勝{{ fill_summary.n_lose }}敗)</span></div>
+    <div title="勝ちトレードの平均リターン ÷ 負けトレードの平均リターン (金額加重)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">ペイオフレシオ</span>
+      <span style="font-size:1.15em;font-weight:600;color:#ddd;margin-left:0.35em;">{% if fill_summary.payoff_ratio is not none %}{{ "%.2f"|format(fill_summary.payoff_ratio) }}{% else %}—{% endif %}</span></div>
+    <div title="1トレードあたりの平均リターン% (勝率とペイオフを統合した総合的な優位性。プラスならトータルで優位)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">期待値</span>
+      <span style="font-size:1.15em;font-weight:600;color:{{ '#9ef0aa' if fill_summary.expectancy is not none and fill_summary.expectancy >= 0 else '#f0a0a0' }};margin-left:0.35em;">{% if fill_summary.expectancy is not none %}{{ '+' if fill_summary.expectancy >= 0 else '' }}{{ "%.1f"|format(fill_summary.expectancy) }}%{% else %}—{% endif %}</span></div>
+    <div><span style="color:#888;font-size:0.8em;">実現損益</span>
+      <span style="font-size:1.15em;font-weight:600;color:{{ '#9ef0aa' if fill_total_pl >= 0 else '#f0a0a0' }};margin-left:0.35em;">{{ "{:+,}".format(fill_total_pl) }}円</span></div>
+    <div title="信用は建単価/決済損益、現物は平均取得単価法。期首持越し・空売りは損益算出対象外" style="color:#777;font-size:0.78em;margin-left:auto;cursor:help;">
+      算出 {{ fill_priced_count }} 件 / クローズ済 {{ fill_closed_count }} 件</div>
+  </div>
+  {# 下段: 勝ち/負けの内訳 (平均リターン・平均保有) #}
+  <div style="display:flex;gap:2em;align-items:baseline;flex-wrap:wrap;margin-top:0.5em;padding-top:0.5em;border-top:1px solid #2a2a2a;font-size:0.85em;">
+    <div title="勝ちトレードの平均リターン% (金額加重) と平均保有日数">
+      <span style="color:#9ef0aa;font-weight:600;">勝ち</span>
+      <span style="color:#888;margin-left:0.5em;">平均リターン</span>
+      <span style="color:#9ef0aa;font-weight:600;margin-left:0.25em;">{% if fill_summary.avg_return_win is not none %}+{{ "%.1f"|format(fill_summary.avg_return_win) }}%{% else %}—{% endif %}</span>
+      <span style="color:#888;margin-left:0.8em;">平均保有</span>
+      <span style="color:#9ef0aa;margin-left:0.25em;">{% if fill_summary.avg_hold_win is not none %}{{ "%.0f"|format(fill_summary.avg_hold_win) }}日{% else %}—{% endif %}</span></div>
+    <div title="負けトレードの平均リターン% (金額加重) と平均保有日数">
+      <span style="color:#f0a0a0;font-weight:600;">負け</span>
+      <span style="color:#888;margin-left:0.5em;">平均リターン</span>
+      <span style="color:#f0a0a0;font-weight:600;margin-left:0.25em;">{% if fill_summary.avg_return_lose is not none %}{{ "%.1f"|format(fill_summary.avg_return_lose) }}%{% else %}—{% endif %}</span>
+      <span style="color:#888;margin-left:0.8em;">平均保有</span>
+      <span style="color:#f0a0a0;margin-left:0.25em;">{% if fill_summary.avg_hold_lose is not none %}{{ "%.0f"|format(fill_summary.avg_hold_lose) }}日{% else %}—{% endif %}</span></div>
+  </div>
 </div>
 {% endif %}
 
