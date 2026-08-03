@@ -4839,9 +4839,14 @@ def calc_trade_summary(episode_pls: list) -> Optional[dict]:
     else:
         payoff_ratio = win_weighted / abs(lose_weighted)
 
+    # 期待値 = 1 トレードあたりの平均リターン% (全トレードの金額加重平均)。
+    # 勝率とペイオフを統合した手法の総合的な優位性。プラスならトータルで優位。
+    expectancy = _weighted_avg_return(episode_pls)
+
     return {
         "win_rate": len(wins) / n_total * 100,
         "payoff_ratio": payoff_ratio,
+        "expectancy": expectancy,
         # 勝ち/負けの金額加重平均リターン% (ペイオフレシオの分子・分母)
         "avg_return_win": win_weighted,
         "avg_return_lose": lose_weighted,
