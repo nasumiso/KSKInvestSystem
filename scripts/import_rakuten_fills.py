@@ -151,6 +151,10 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
         raise RowSkip(f"無効な銘柄コード: {code_raw!r}")
     code_s = ps.normalize_code_s(code_raw)
 
+    # ETF は株式分析の対象外なので取込まない (issue #387)
+    if ps.is_etf_code(code_s):
+        raise RowSkip(f"ETF のため対象外: {code_s}")
+
     trade_date = _normalize_trade_date(row[COL_TRADE_DATE])
     if trade_date is None:
         raise RowSkip(f"約定日パース不可: {row[COL_TRADE_DATE]!r}")

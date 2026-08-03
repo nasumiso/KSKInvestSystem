@@ -37,8 +37,11 @@
     {% if broker_ranges %}
     <div style="color:#888;font-size:0.76em;white-space:nowrap;">
       取込済み最新:
-      {% for broker in ["楽天", "SBI"] %}
-        {% if broker_ranges.get(broker) %}<span style="color:#aaa;" title="取込済み: {{ broker_ranges[broker].first }} 〜 {{ broker_ranges[broker].last }}">{{ broker }} {{ broker_ranges[broker].last[5:] }}</span>{% if not loop.last %} / {% endif %}{% endif %}
+      {# 取込済みの証券会社だけを先に絞ってから回す。固定リストで loop.last を見ると
+         楽天のみ取込のとき末尾に区切りの / が残る (レビュー対応) #}
+      {% set shown = ["楽天", "SBI"] | select("in", broker_ranges) | list %}
+      {% for broker in shown %}
+        <span style="color:#aaa;" title="取込済み: {{ broker_ranges[broker].first }} 〜 {{ broker_ranges[broker].last }}">{{ broker }} {{ broker_ranges[broker].last[5:] }}</span>{% if not loop.last %} / {% endif %}
       {% endfor %}
     </div>
     {% endif %}
@@ -119,6 +122,9 @@
       <td style="white-space:nowrap;">
         {% if ep.kind == "信用" %}
         <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.74em;background:#4a3a2e;color:#e0b070;">信用</span>
+        {% if ep.is_short %}
+        <span title="信用売建 (空売り)。新規売で建て、返済買で決済" style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#4a2e3a;color:#e090b0;margin-left:0.2em;">売建</span>
+        {% endif %}
         {% else %}
         <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.74em;background:#2e4a3a;color:#80c0a0;">現物</span>
         {% endif %}

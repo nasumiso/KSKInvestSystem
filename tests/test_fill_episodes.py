@@ -234,6 +234,57 @@ class TestCarryOver:
         assert eps[0]["pl"] is None
 
 
+class TestShortRound:
+    """信用売建 (空売り): 新規売で建て、返済買で閉じる。損益の符号は買建と逆。"""
+
+    @pytest.mark.parametrize("settle_pl,tate_price,expected", [
+        (None, 1500.0, 20000),    # 楽天形式: (建1500 - 買戻1300) * 100 = +20000
+        (-176534, None, -176534),  # SBI形式: settle_pl をそのまま採用
+    ])
+    def test_short_round_pl(self, db_path, settle_pl, tate_price, expected):
+        _add(db_path, "5001", "2026-01-05", "sell", 100, 1500.0,
+             trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "5001", "2026-01-09", "buy", 100, 1300.0,
+             trade_kind="信用返済", tate_price=tate_price, settle_pl=settle_pl,
+             seq_salt="b")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        assert len(eps) == 1
+        ep = eps[0]
+        assert ep["is_short"] is True
+        assert ep["closed"] is True
+        assert ep["qty_peak"] == 100
+        assert ep["pl"]["profit_amount"] == expected
+
+    def test_short_and_long_are_separate_rounds(self, db_path):
+        # 両建て: 売建が買建の建玉を打ち消してラウンドを誤って閉じないこと
+        _add(db_path, "5002", "2026-01-05", "sell", 100, 1500.0,
+             trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "5002", "2026-01-06", "buy", 100, 1000.0,
+             trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "5002", "2026-01-09", "buy", 100, 1300.0,
+             trade_kind="信用返済", tate_price=1500.0, seq_salt="c")
+        _add(db_path, "5002", "2026-01-10", "sell", 100, 1200.0,
+             trade_kind="信用返済", tate_price=1000.0, seq_salt="d")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        assert len(eps) == 2
+        short = [e for e in eps if e["is_short"]][0]
+        long_ = [e for e in eps if not e["is_short"]][0]
+        # 売建: (1500-1300)*100 / 買建: (1200-1000)*100
+        assert short["pl"]["profit_amount"] == 20000
+        assert long_["pl"]["profit_amount"] == 20000
+        assert short["closed"] is True and long_["closed"] is True
+
+    def test_open_short_unrealized_is_inverted(self, db_path):
+        # 保有中の売建: 現在値が建単価より下なら含み益
+        _add(db_path, "5003", "2026-01-05", "sell", 100, 1500.0,
+             trade_kind="信用新規", seq_salt="a")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        ep = eps[0]
+        assert ep["closed"] is False
+        assert helpers._episode_open_pl(ep, 1300.0)["unrealized"] == 20000
+        assert helpers._episode_open_pl(ep, 1700.0)["unrealized"] == -20000
+
+
 class TestGenbutsuAndShinyoSeparate:
     def test_genbutsu_and_shinyo_are_separate_rounds(self, db_path):
         # 同一銘柄で現物と信用が並行 → 別ラウンド

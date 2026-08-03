@@ -4346,9 +4346,13 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
                 held_qty -= qty
         total_cost = cost_basis_total
     else:  # 信用
+        # 買建は返済 sell で、売建 (空売り) は返済 buy で損益が確定する。
+        # 売建は「高く売って安く買い戻す」ので損益の符号が買建と逆になる。
+        is_short = rnd.get("is_short", False)
+        settle_side = "buy" if is_short else "sell"
         for f in fills:
-            if f["side"] != "sell":
-                continue  # 信用新規買建は建玉、損益は返済 fill 側で確定
+            if f["side"] != settle_side:
+                continue  # 建玉側の fill。損益は返済 fill 側で確定
             qty = f["qty"]
             price = f["price"]
             settle_pl = f.get("settle_pl")
@@ -4357,7 +4361,9 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
                 realized += settle_pl
                 total_cost += (tate_price or price) * qty
             elif tate_price is not None:
-                realized += (price - tate_price) * qty
+                # 売建は (建単価 - 買戻単価)、買建は (返済単価 - 建単価)
+                realized += ((tate_price - price) if is_short
+                             else (price - tate_price)) * qty
                 total_cost += tate_price * qty
             else:
                 # 建単価も決済損益も無い → 損益不能
@@ -4371,10 +4377,13 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
                      - date.fromisoformat(rnd["open_date"])).days
     except (ValueError, TypeError, KeyError):
         hold_days = None
+    # 建玉側の株数で割る (買建/現物=buy、売建=sell が建玉側)
+    open_side = "sell" if rnd.get("is_short") else "buy"
     return {
         "return_pct": return_pct,
         "hold_days": hold_days if hold_days is not None else 0,
-        "avg_cost": total_cost / max(sum(f["qty"] for f in fills if f["side"] == "buy"), 1),
+        "avg_cost": total_cost / max(
+            sum(f["qty"] for f in fills if f["side"] == open_side), 1),
         "amount": total_cost,
         "profit_amount": round(realized),
     }
@@ -4413,11 +4422,15 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 held_qty -= qty
         cost_basis = avg_cost
     else:  # 信用
-        # 建玉 (buy=信用新規) の平均建単価を取得基準に、返済 (sell=信用返済) 分を実現に。
-        # 信用返済 buy (建玉方向と逆の返済買=空売り決済等) が混ざると held_qty が実態とずれ
-        # 含み評価が不正確になるため、そのラウンドは含みを算出しない (安全側)。
+        # 建玉側と決済側は買建/売建で逆になる。売建 (空売り) は新規売で建て返済買で閉じる。
+        is_short = rnd.get("is_short", False)
+        open_side = "sell" if is_short else "buy"
+        settle_side = "buy" if is_short else "sell"
+        # 建玉方向と逆の返済が混ざると held_qty が実態とずれ含み評価が不正確になるため、
+        # そのラウンドは含みを算出しない (安全側)。売建ラウンドを分離した今、これは
+        # 「売建が無いのに返済買がある」等の想定外パターンのみが該当する。
         has_reverse_settle = any(
-            f["side"] == "buy" and (f.get("trade_kind") or "").startswith("信用返済")
+            f["side"] == open_side and (f.get("trade_kind") or "").startswith("信用返済")
             for f in fills
         )
         held_qty = 0
@@ -4426,21 +4439,24 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
         for f in fills:
             qty = f["qty"]
             price = f["price"]
-            if f["side"] == "buy" and (f.get("trade_kind") or "").startswith("信用新規"):
+            if f["side"] == open_side and (f.get("trade_kind") or "").startswith("信用新規"):
                 new_qty = held_qty + qty
                 avg_cost = (avg_cost * held_qty + price * qty) / new_qty if new_qty else 0.0
                 held_qty = new_qty
-            elif f["side"] == "sell":  # 信用返済 (部分返済)
+            elif f["side"] == settle_side:  # 信用返済 (部分返済)
                 settle_pl = f.get("settle_pl")
                 tate_price = f.get("tate_price")
                 if settle_pl is not None:
                     realized += settle_pl
                 elif tate_price is not None:
-                    realized += (price - tate_price) * qty
+                    # 売建は (建単価 - 買戻単価)、買建は (返済単価 - 建単価)
+                    realized += ((tate_price - price) if is_short
+                                 else (price - tate_price)) * qty
                 else:
-                    realized += (price - avg_cost) * qty  # 建単価不明時は平均建単価で近似
+                    # 建単価不明時は平均建単価で近似
+                    realized += ((avg_cost - price) if is_short
+                                 else (price - avg_cost)) * qty
                 held_qty -= qty
-            # 信用返済 buy は held_qty を触らない (has_reverse_settle で含みは無効化)
         cost_basis = avg_cost
         if has_reverse_settle:
             return {
@@ -4461,7 +4477,10 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
 
     unrealized = None
     if current_price is not None and cost_basis > 0:
-        unrealized = round((current_price - cost_basis) * held_qty)
+        # 売建 (空売り) は現在値が下がるほど含み益なので符号が逆になる
+        diff = ((cost_basis - current_price) if rnd.get("is_short")
+                else (current_price - cost_basis))
+        unrealized = round(diff * held_qty)
 
     return {
         "realized": round(realized),
@@ -4497,6 +4516,12 @@ def _build_code_episodes(code_s: str, stock_name: str,
     shinyo_fills: List[Dict[str, Any]] = []  # 現ラウンドの信用 fill
     shinyo_qty = 0
     shinyo_peak = 0
+    # 信用売建 (空売り) は買建とは別ラウンドで追跡する。新規売で建て、返済買で閉じる。
+    # 同一銘柄で買建と売建を同時に持ちうる (両建て) ため、状態を分けないと
+    # 売建が買建の建玉を打ち消してラウンドが誤って閉じる (issue #387 レビュー対応)。
+    short_fills: List[Dict[str, Any]] = []
+    short_qty = 0
+    short_peak = 0
     genbutsu_fills: List[Dict[str, Any]] = []  # 現ラウンドの現物 fill
     genbutsu_qty = 0
     genbutsu_peak = 0
@@ -4517,6 +4542,15 @@ def _build_code_episodes(code_s: str, stock_name: str,
         shinyo_fills = []
         shinyo_qty = 0
         shinyo_peak = 0
+
+    def close_short():
+        nonlocal short_fills, short_qty, short_peak
+        if short_fills:
+            episodes.append(_finalize_round(
+                code_s, "信用", stock_name, short_fills, short_peak, is_short=True))
+        short_fills = []
+        short_qty = 0
+        short_peak = 0
 
     def close_genbutsu():
         nonlocal genbutsu_fills, genbutsu_qty, genbutsu_peak
@@ -4546,6 +4580,24 @@ def _build_code_episodes(code_s: str, stock_name: str,
             genbutsu_peak = max(genbutsu_peak, genbutsu_qty)
         elif tk.startswith("信用"):
             tate_date = f.get("tate_date")
+            # 売建 (新規売) と、それを閉じる返済買は空売りラウンド側で処理する。
+            # ただし売建が一度も無い銘柄の返済買は、買建ラウンドの部分返済とみなす
+            # (旧来の挙動を維持。楽天の返済は原則 sell なのでここには来ない)。
+            is_short_side = (
+                (tk.startswith("信用新規") and f["side"] == "sell")
+                or (tk.startswith("信用返済") and f["side"] == "buy"
+                    and (short_qty > 0 or short_fills))
+            )
+            if is_short_side:
+                short_fills.append(f)
+                if f["side"] == "sell":
+                    short_qty += qty      # 新規売 = 建てる
+                else:
+                    short_qty -= qty      # 返済買 = 閉じる
+                short_peak = max(short_peak, short_qty)
+                if short_qty <= 0:
+                    close_short()
+                continue
             if (tk.startswith("信用返済") and f["side"] == "sell"
                     and tate_date and tate_date not in shinyo_open_dates):
                 # 当期に対応する信用新規が無い返済は、当期の建玉を減らしてはいけない。
@@ -4573,6 +4625,9 @@ def _build_code_episodes(code_s: str, stock_name: str,
     # 保有中 (残った建玉)
     if shinyo_fills:
         episodes.append(_finalize_round(code_s, "信用", stock_name, shinyo_fills, shinyo_peak, closed=False))
+    if short_fills:
+        episodes.append(_finalize_round(
+            code_s, "信用", stock_name, short_fills, short_peak, closed=False, is_short=True))
     if genbutsu_fills:
         episodes.append(_finalize_round(code_s, "現物", stock_name, genbutsu_fills, genbutsu_peak, closed=False))
     for tate_date, carry_over_fills in carry_over_shinyo.items():
@@ -4674,8 +4729,13 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
 def _finalize_round(code_s: str, kind: str, stock_name: str,
                     round_fills: List[Dict[str, Any]], qty_peak: int,
                     closed: bool = True, carry_over: bool = False,
-                    open_date: Optional[str] = None) -> Dict[str, Any]:
-    """建玉ラウンドの fill リストからエピソード dict を組み立てる。"""
+                    open_date: Optional[str] = None,
+                    is_short: bool = False) -> Dict[str, Any]:
+    """建玉ラウンドの fill リストからエピソード dict を組み立てる。
+
+    is_short=True は信用売建 (空売り) のラウンド。建玉は新規売、決済は返済買で、
+    損益の符号が買建と逆になる (_episode_pl_from_round で分岐)。
+    """
     dates = [f["trade_date"] for f in round_fills if f.get("trade_date")]
     # ラウンド固有のキー用に先頭 fill の seq を取る (建玉開始時に確定し不変)。
     seqs = [f.get("seq") for f in round_fills if f.get("seq") is not None]
@@ -4691,6 +4751,7 @@ def _finalize_round(code_s: str, kind: str, stock_name: str,
         "qty_peak": qty_peak,
         "closed": closed,
         "carry_over": carry_over,
+        "is_short": is_short,
         "fills": [
             {
                 "trade_date": f.get("trade_date"),

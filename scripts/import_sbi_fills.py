@@ -135,7 +135,11 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
         raise RowSkip(f"無効な銘柄コード: {code_raw!r}")
     code_s = ps.normalize_code_s(code_raw)
 
-    # ETF/投信除外: 成長株ウォッチリスト (stocks_shelve) に無い銘柄はスキップ (issue #387)
+    # ETF は株式分析の対象外なので取込まない (issue #387)
+    if ps.is_etf_code(code_s):
+        raise RowSkip(f"ETF のため対象外: {code_s}")
+
+    # 投信等の除外: 成長株ウォッチリスト (stocks_shelve) に無い銘柄はスキップ (issue #387)
     if not resolve_stock_name(code_s):
         raise RowSkip(f"ウォッチリスト外 (ETF/投信の可能性): {code_s}")
 

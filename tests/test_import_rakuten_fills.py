@@ -131,6 +131,22 @@ def test_backfill_tate_price_on_reimport(tmp_path, db_path):
     assert ps.list_fills("9509", db_path=db_path)[0]["tate_price"] == 795.0
 
 
+def test_etf_rows_are_excluded(tmp_path, db_path, monkeypatch):
+    """ETF (ETF_code.txt 掲載) の行は取込対象外 (issue #387)。個別株は通す。"""
+    monkeypatch.setattr(ps, "_etf_codes_cache", frozenset({"1357"}))
+    rows = [
+        _row("1357", "現物", "買付", "100", "4,862.0"),   # ETF → 除外
+        _row("6315", "現物", "買付", "100", "3,390.0"),   # 個別株 → 取込
+    ]
+    csv_path = _write_csv(tmp_path / "etf.csv", rows)
+
+    stats = ir.import_csv_to_fills(csv_path, db_path=db_path)
+    assert stats["imported"] == 1
+    assert stats["skipped_invalid"] == 1
+    assert len(ps.list_fills("1357", db_path=db_path)) == 0
+    assert len(ps.list_fills("6315", db_path=db_path)) == 1
+
+
 def test_dedup_idempotent(tmp_path, db_path):
     """同一CSVを2回取込→1回目 imported、2回目 skipped_dup。occurrence違いは別件。"""
     # 同日同単価の別注文 (occurrence 違い) を 2 行 + 別内容 1 行

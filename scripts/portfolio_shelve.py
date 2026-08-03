@@ -274,6 +274,36 @@ def validate_code_s(code_s: Any) -> None:
         )
 
 
+_etf_codes_cache: Optional[frozenset] = None
+
+
+def load_etf_code_set() -> frozenset:
+    """ETF コード集合を `DATA_DIR/ETF_code.txt` から読む (issue #387)。
+
+    ファイルはタブ区切り (`1357\t日経Ｄインバ`) でコードは先頭列。
+    株式売買の分析対象外なので、fill 取込時に除外するのに使う。
+    プロセス内でキャッシュする (取込ループから毎行呼ばれるため)。
+    """
+    global _etf_codes_cache
+    if _etf_codes_cache is None:
+        codes = set()
+        try:
+            with open(os.path.join(DATA_DIR, "ETF_code.txt"), "r") as f:
+                for line in f:
+                    code = line.strip().split("\t")[0].strip()
+                    if code:
+                        codes.add(normalize_code_s(code))
+        except OSError as e:
+            log_warning(f"ETF_code.txt を読めませんでした (ETF除外をスキップ): {e}")
+        _etf_codes_cache = frozenset(codes)
+    return _etf_codes_cache
+
+
+def is_etf_code(code_s: Any) -> bool:
+    """銘柄コードが ETF (ETF_code.txt 掲載) かどうか。"""
+    return normalize_code_s(code_s) in load_etf_code_set()
+
+
 def validate_status(status: Any) -> None:
     """ステータスを検証する。"""
     if status not in VALID_STATUSES:
