@@ -224,11 +224,14 @@ class TestTradeHistoryPage:
         assert "5,000" in html  # 保有中エピソードの内訳に建単価が出る
 
     def test_latest_import_date_shown_per_broker(self, app, client):
-        """取込済み最新約定日が証券会社別に表示される (issue #387)。"""
+        """取込済み最新約定日が証券会社別に表示され、title に最古〜最新が出る (issue #387)。"""
         with app.app_context():
-            ps.append_fill(ps.create_fill("6324", trade_date="2026-07-31", side="buy", qty=100,
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-01-05", side="buy", qty=100,
                                           price=6990.0, amount=-699000, trade_kind="信用新規",
-                                          broker="楽天", dedup_key="li-r"))
+                                          broker="楽天", dedup_key="li-r0"))
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-07-31", side="sell", qty=100,
+                                          price=7100.0, amount=710000, trade_kind="信用返済",
+                                          tate_price=6990.0, broker="楽天", dedup_key="li-r1"))
             ps.append_fill(ps.create_fill("6324", trade_date="2026-07-21", side="buy", qty=100,
                                           price=500.0, amount=-50000, trade_kind="信用新規",
                                           broker="SBI", dedup_key="li-s"))
@@ -237,6 +240,8 @@ class TestTradeHistoryPage:
         assert "取込済み最新" in fills
         assert "楽天 07-31" in fills
         assert "SBI 07-21" in fills
+        # ツールチップに最古〜最新のフルレンジ
+        assert "取込済み: 2026-01-05 〜 2026-07-31" in fills
 
     def test_latest_import_date_updates_after_import(self, app, client):
         """CSV取込後の再表示で最新約定日が更新される (取込のたびに再計算)。"""

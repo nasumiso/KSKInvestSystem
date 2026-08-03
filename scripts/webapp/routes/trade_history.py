@@ -30,7 +30,7 @@ from webapp.helpers import (
     build_fill_episodes,
     calc_post_sell_returns,
     calc_trade_summary,
-    latest_fill_dates_by_broker,
+    fill_date_range_by_broker,
     resolve_stock_name,
 )
 
@@ -249,8 +249,8 @@ def trade_history():
         p["profit_amount"] for p in fill_pls if p["profit_amount"] is not None
     )
 
-    # 証券会社別の取込済み最新約定日 (次回インポートの参考、取込のたびに更新される)
-    broker_latest = latest_fill_dates_by_broker()
+    # 証券会社別の取込済み約定日レンジ (次回インポートの参考、取込のたびに更新される)
+    broker_ranges = fill_date_range_by_broker()
 
     return render_template(
         "trade_history.html",
@@ -261,7 +261,7 @@ def trade_history():
         fill_closed_count=fill_closed_count,
         fill_priced_count=fill_priced_count,
         fill_total_pl=fill_total_pl,
-        broker_latest=broker_latest,
+        broker_ranges=broker_ranges,
     )
 
 

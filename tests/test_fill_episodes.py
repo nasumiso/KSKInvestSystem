@@ -306,26 +306,29 @@ class TestOrdering:
         assert eps[0]["closed"] is False
 
 
-class TestLatestFillDatesByBroker:
-    """証券会社別の取込済み最新約定日 (取込タイミング参考) issue #387。"""
+class TestFillDateRangeByBroker:
+    """証券会社別の取込済み約定日レンジ (最古〜最新、取込タイミング参考) issue #387。"""
 
-    def test_latest_per_broker(self, db_path):
+    def test_range_per_broker(self, db_path):
         _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, broker="楽天", seq_salt="a")
         _add(db_path, "1001", "2026-07-31", "sell", 100, 1200.0, broker="楽天", seq_salt="b")
         _add(db_path, "2002", "2026-03-04", "buy", 100, 500.0,
              trade_kind="信用新規", broker="SBI", seq_salt="c")
         _add(db_path, "2002", "2026-07-21", "sell", 100, 600.0,
              trade_kind="信用返済", broker="SBI", settle_pl=10000, seq_salt="d")
-        latest = helpers.latest_fill_dates_by_broker(db_path=db_path)
-        assert latest == {"楽天": "2026-07-31", "SBI": "2026-07-21"}
+        ranges = helpers.fill_date_range_by_broker(db_path=db_path)
+        assert ranges == {
+            "楽天": {"first": "2026-01-10", "last": "2026-07-31"},
+            "SBI": {"first": "2026-03-04", "last": "2026-07-21"},
+        }
 
     def test_none_broker_counts_as_rakuten(self, db_path):
         _add(db_path, "1001", "2026-05-01", "buy", 100, 1000.0, broker=None, seq_salt="a")
-        latest = helpers.latest_fill_dates_by_broker(db_path=db_path)
-        assert latest == {"楽天": "2026-05-01"}
+        ranges = helpers.fill_date_range_by_broker(db_path=db_path)
+        assert ranges == {"楽天": {"first": "2026-05-01", "last": "2026-05-01"}}
 
     def test_empty(self, db_path):
-        assert helpers.latest_fill_dates_by_broker(db_path=db_path) == {}
+        assert helpers.fill_date_range_by_broker(db_path=db_path) == {}
 
 
 class TestEmpty:

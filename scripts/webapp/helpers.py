@@ -4584,23 +4584,27 @@ def _build_code_episodes(code_s: str, stock_name: str,
     return episodes
 
 
-def latest_fill_dates_by_broker(db_path: Optional[str] = None) -> Dict[str, str]:
-    """証券会社別の取込済み fill の最新約定日を返す (issue #387、取込タイミング参考)。
+def fill_date_range_by_broker(db_path: Optional[str] = None) -> Dict[str, Dict[str, str]]:
+    """証券会社別の取込済み fill の最古・最新約定日を返す (issue #387、取込タイミング参考)。
 
-    Returns: {"楽天": "2026-07-31", "SBI": "2026-07-21", ...}。broker 未設定の
-    既存 fill は「楽天」に寄せる (表示補完と整合)。取込 fill が無ければ空 dict。
+    Returns: {"楽天": {"first": "2026-01-05", "last": "2026-07-31"}, "SBI": {...}}。
+    broker 未設定の既存 fill は「楽天」に寄せる (表示補完と整合)。
+    取込 fill が無ければ空 dict。
     """
     import portfolio_shelve as ps  # 遅延 import (循環回避)
 
-    latest: Dict[str, str] = {}
+    ranges: Dict[str, Dict[str, str]] = {}
     for f in ps.list_fills(db_path=db_path):
         td = f.get("trade_date")
         if not td:
             continue
         broker = f.get("broker") or "楽天"
-        if broker not in latest or td > latest[broker]:
-            latest[broker] = td
-    return latest
+        r = ranges.setdefault(broker, {"first": td, "last": td})
+        if td < r["first"]:
+            r["first"] = td
+        if td > r["last"]:
+            r["last"] = td
+    return ranges
 
 
 def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:

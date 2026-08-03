@@ -32,12 +32,13 @@
 <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1em;margin-bottom:0.6em;">
   <p style="color:#888;font-size:0.85em;margin:0;">楽天・SBI証券CSVの実約定を建玉ラウンド単位のエピソードにまとめています。行をクリックで内訳の個別約定を展開。損益は現物=平均取得単価法、信用=建単価/決済損益。</p>
   <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:0.3em;">
-    {# 取込済み最新約定日 (次回インポートの参考、取込のたびに更新) issue #387 #}
-    {% if broker_latest %}
-    <div title="取込済み約定の最新日。この翌営業日以降の約定をCSVで取り込む" style="color:#888;font-size:0.76em;white-space:nowrap;">
+    {# 取込済み最新約定日 (次回インポートの参考、取込のたびに更新) issue #387。
+       title に最古〜最新のフルレンジをツールチップ表示 #}
+    {% if broker_ranges %}
+    <div style="color:#888;font-size:0.76em;white-space:nowrap;">
       取込済み最新:
       {% for broker in ["楽天", "SBI"] %}
-        {% if broker_latest.get(broker) %}<span style="color:#aaa;">{{ broker }} {{ broker_latest[broker][5:] }}</span>{% if not loop.last %} / {% endif %}{% endif %}
+        {% if broker_ranges.get(broker) %}<span style="color:#aaa;" title="取込済み: {{ broker_ranges[broker].first }} 〜 {{ broker_ranges[broker].last }} (この翌営業日以降をCSVで取り込む)">{{ broker }} {{ broker_ranges[broker].last[5:] }}</span>{% if not loop.last %} / {% endif %}{% endif %}
       {% endfor %}
     </div>
     {% endif %}
