@@ -62,8 +62,12 @@
   <div><span style="color:#888;font-size:0.8em;">勝率</span>
     <span style="font-size:1.1em;font-weight:600;color:#ddd;margin-left:0.3em;">{{ "%.0f"|format(fill_summary.win_rate) }}%</span>
     <span style="color:#888;font-size:0.8em;">({{ fill_summary.n_win }}勝{{ fill_summary.n_lose }}敗)</span></div>
-  <div><span style="color:#888;font-size:0.8em;">ペイオフレシオ</span>
+  <div title="勝ちトレードの平均リターン ÷ 負けトレードの平均リターン (金額加重)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">ペイオフレシオ</span>
     <span style="font-size:1.1em;font-weight:600;color:#ddd;margin-left:0.3em;">{% if fill_summary.payoff_ratio is not none %}{{ "%.2f"|format(fill_summary.payoff_ratio) }}{% else %}—{% endif %}</span></div>
+  <div title="勝ちトレードの平均リターン% (金額加重)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">平均リターン(勝)</span>
+    <span style="color:#9ef0aa;font-weight:600;margin-left:0.3em;">{% if fill_summary.avg_return_win is not none %}+{{ "%.1f"|format(fill_summary.avg_return_win) }}%{% else %}—{% endif %}</span></div>
+  <div title="負けトレードの平均リターン% (金額加重)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">平均リターン(負)</span>
+    <span style="color:#f0a0a0;font-weight:600;margin-left:0.3em;">{% if fill_summary.avg_return_lose is not none %}{{ "%.1f"|format(fill_summary.avg_return_lose) }}%{% else %}—{% endif %}</span></div>
   <div><span style="color:#888;font-size:0.8em;">実現損益</span>
     <span style="font-size:1.1em;font-weight:600;color:{{ '#9ef0aa' if fill_total_pl >= 0 else '#f0a0a0' }};margin-left:0.3em;">{{ "{:+,}".format(fill_total_pl) }}円</span></div>
   <div><span style="color:#888;font-size:0.8em;">平均保有(勝)</span>

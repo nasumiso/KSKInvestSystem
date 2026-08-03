@@ -3537,15 +3537,24 @@ def test_calc_episode_pl(ep, expect):
 
 @pytest.mark.parametrize("pls, checks", [
     # 勝ち負け混在: +20%(amt100) 勝ち, -10%(amt100) 負け → win_rate50, payoff 20/10=2.0
+    # 勝ち平均リターン+20%, 負け平均リターン-10% (金額加重)
     ([{"return_pct": 20, "hold_days": 5, "amount": 100},
       {"return_pct": -10, "hold_days": 15, "amount": 100}],
-     {"win_rate": 50.0, "payoff_ratio": 2.0, "n_win": 1, "n_lose": 1}),
+     {"win_rate": 50.0, "payoff_ratio": 2.0, "n_win": 1, "n_lose": 1,
+      "avg_return_win": 20.0, "avg_return_lose": -10.0}),
     # 0% は負け扱い
     ([{"return_pct": 0, "hold_days": 3, "amount": 100}],
-     {"win_rate": 0.0, "n_win": 0, "n_lose": 1}),
-    # 負け0件 → payoff None
+     {"win_rate": 0.0, "n_win": 0, "n_lose": 1,
+      "avg_return_win": None, "avg_return_lose": 0.0}),
+    # 負け0件 → payoff None、負け平均は None
     ([{"return_pct": 20, "hold_days": 5, "amount": 100}],
-     {"win_rate": 100.0, "payoff_ratio": None, "n_win": 1, "n_lose": 0}),
+     {"win_rate": 100.0, "payoff_ratio": None, "n_win": 1, "n_lose": 0,
+      "avg_return_win": 20.0, "avg_return_lose": None}),
+    # 金額加重: 勝ち +10%(amt300) と +30%(amt100) → (10*300+30*100)/400 = 15%
+    ([{"return_pct": 10, "hold_days": 5, "amount": 300},
+      {"return_pct": 30, "hold_days": 5, "amount": 100},
+      {"return_pct": -20, "hold_days": 5, "amount": 100}],
+     {"avg_return_win": 15.0, "avg_return_lose": -20.0}),
 ])
 def test_calc_trade_summary(pls, checks):
     s = helpers.calc_trade_summary(pls)

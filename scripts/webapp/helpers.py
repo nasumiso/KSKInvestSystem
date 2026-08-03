@@ -4842,6 +4842,9 @@ def calc_trade_summary(episode_pls: list) -> Optional[dict]:
     return {
         "win_rate": len(wins) / n_total * 100,
         "payoff_ratio": payoff_ratio,
+        # 勝ち/負けの金額加重平均リターン% (ペイオフレシオの分子・分母)
+        "avg_return_win": win_weighted,
+        "avg_return_lose": lose_weighted,
         "avg_hold_win": _avg_hold(wins),
         "avg_hold_lose": _avg_hold(loses),
         "n_total": n_total,
