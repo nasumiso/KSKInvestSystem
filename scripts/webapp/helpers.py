@@ -4584,6 +4584,25 @@ def _build_code_episodes(code_s: str, stock_name: str,
     return episodes
 
 
+def latest_fill_dates_by_broker(db_path: Optional[str] = None) -> Dict[str, str]:
+    """証券会社別の取込済み fill の最新約定日を返す (issue #387、取込タイミング参考)。
+
+    Returns: {"楽天": "2026-07-31", "SBI": "2026-07-21", ...}。broker 未設定の
+    既存 fill は「楽天」に寄せる (表示補完と整合)。取込 fill が無ければ空 dict。
+    """
+    import portfolio_shelve as ps  # 遅延 import (循環回避)
+
+    latest: Dict[str, str] = {}
+    for f in ps.list_fills(db_path=db_path):
+        td = f.get("trade_date")
+        if not td:
+            continue
+        broker = f.get("broker") or "楽天"
+        if broker not in latest or td > latest[broker]:
+            latest[broker] = td
+    return latest
+
+
 def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """全 fill を建玉ラウンド単位のエピソードに再構成する (issue #387 Phase4b)。
 

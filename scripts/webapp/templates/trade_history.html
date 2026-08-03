@@ -31,7 +31,17 @@
 {# 説明 + CSV取込 (issue #387 4a): 普段は「＋CSV取込」リンクのみ、クリックで展開 (details) #}
 <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1em;margin-bottom:0.6em;">
   <p style="color:#888;font-size:0.85em;margin:0;">楽天・SBI証券CSVの実約定を建玉ラウンド単位のエピソードにまとめています。行をクリックで内訳の個別約定を展開。損益は現物=平均取得単価法、信用=建単価/決済損益。</p>
-  <details style="flex-shrink:0;">
+  <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:0.3em;">
+    {# 取込済み最新約定日 (次回インポートの参考、取込のたびに更新) issue #387 #}
+    {% if broker_latest %}
+    <div title="取込済み約定の最新日。この翌営業日以降の約定をCSVで取り込む" style="color:#888;font-size:0.76em;white-space:nowrap;">
+      取込済み最新:
+      {% for broker in ["楽天", "SBI"] %}
+        {% if broker_latest.get(broker) %}<span style="color:#aaa;">{{ broker }} {{ broker_latest[broker][5:] }}</span>{% if not loop.last %} / {% endif %}{% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  <details>
     <summary style="color:#9ed8f0;font-size:0.82em;cursor:pointer;white-space:nowrap;list-style:none;">＋ CSV取込</summary>
     <form method="post" action="/trade-history/import" enctype="multipart/form-data"
           title="楽天・SBI の取引履歴CSVを自動判別して取り込みます"
@@ -42,6 +52,7 @@
               style="padding:0.25em 0.7em;font-size:0.82em;white-space:nowrap;background:#2e5a6e;color:#9ed8f0;border:1px solid #3a6a80;border-radius:4px;cursor:pointer;">取込</button>
     </form>
   </details>
+  </div>
 </div>
 
 {# 成績サマリー (issue #387 Phase4b): fill 基準。クローズ済みで損益算出できたエピソードから #}

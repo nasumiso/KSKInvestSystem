@@ -223,6 +223,37 @@ class TestTradeHistoryPage:
         assert "アクションログがありません" in html
         assert "5,000" in html  # 保有中エピソードの内訳に建単価が出る
 
+    def test_latest_import_date_shown_per_broker(self, app, client):
+        """取込済み最新約定日が証券会社別に表示される (issue #387)。"""
+        with app.app_context():
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-07-31", side="buy", qty=100,
+                                          price=6990.0, amount=-699000, trade_kind="信用新規",
+                                          broker="楽天", dedup_key="li-r"))
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-07-21", side="buy", qty=100,
+                                          price=500.0, amount=-50000, trade_kind="信用新規",
+                                          broker="SBI", dedup_key="li-s"))
+        html = client.get("/trade-history").data.decode()
+        fills = html.split('id="tab-fills"')[1].split('id="tab-actions"')[0]
+        assert "取込済み最新" in fills
+        assert "楽天 07-31" in fills
+        assert "SBI 07-21" in fills
+
+    def test_latest_import_date_updates_after_import(self, app, client):
+        """CSV取込後の再表示で最新約定日が更新される (取込のたびに再計算)。"""
+        with app.app_context():
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-07-10", side="buy", qty=100,
+                                          price=6990.0, amount=-699000, trade_kind="信用新規",
+                                          broker="楽天", dedup_key="u1"))
+        html1 = client.get("/trade-history").data.decode()
+        assert "楽天 07-10" in html1
+        # 新しい約定を追加 (取込相当) → 再表示で最新日が更新
+        with app.app_context():
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-07-25", side="sell", qty=100,
+                                          price=7100.0, amount=710000, trade_kind="信用返済",
+                                          tate_price=6990.0, broker="楽天", dedup_key="u2"))
+        html2 = client.get("/trade-history").data.decode()
+        assert "楽天 07-25" in html2
+
     def test_fill_episode_has_review_memo_cell(self, app, client):
         """売買履歴タブの fill エピソード展開に振り返りメモ入力欄が出る (Phase2)。"""
         with app.app_context():
