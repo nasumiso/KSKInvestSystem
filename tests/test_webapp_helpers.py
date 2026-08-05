@@ -1802,6 +1802,21 @@ class TestFormatTagsTooltip:
         assert "売" in tooltip
         assert "RS高いのに売り圧力比率" in tooltip
 
+    @pytest.mark.parametrize(
+        "tags, expected_tags, expected_monthly",
+        [
+            # 月足タグはタグ列から除かれ、月足列に回る
+            (["押", "月破"], "押", "月破"),
+            (["月高"], "—", "月高"),
+            # 月足タグが無ければ月足列は "—"、タグ列はそのまま
+            (["押", "早売"], "押/早売", "—"),
+            ([], "—", "—"),
+        ],
+    )
+    def test_monthly_tags_split_out_of_tags_column(self, tags, expected_tags, expected_monthly):
+        assert helpers._format_tags({"code_s": "1234"}, tags) == expected_tags
+        assert helpers._format_monthly_tag(tags) == expected_monthly
+
     # ----- 進捗率乖離: <C3>=赤(注目) 単独 / eiri≧20 = 濃黄 単独 / 両該当=左右分割 -----
     def test_progress_diff_c3_only(self):
         """<C3> タグのみで eiri 不該当: 赤 (注目) 単色 + 白文字"""

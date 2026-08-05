@@ -22,7 +22,7 @@ import shintakane
 import make_market_db
 import market_breadth
 import rironkabuka
-from ks_util import http_get_html
+from ks_util import http_get_html, UPD_CACHE, UPD_FORCE
 
 # テスト用銘柄（大型株・安定して存在する）
 TEST_CODE = "7203"  # トヨタ自動車
@@ -90,6 +90,30 @@ class TestLiveHtmlShihyou:
         # トヨタは大型製造業なので EVR は正値で 1.0 前後の想定。
         # ネットキャッシュ企業の場合は負値もあり得るため範囲は緩めに見る。
         assert isinstance(result["EV_Sales"], float)
+        _sleep()
+
+    def test_通期業績テーブルからPER_PSRが算出できる(self):
+        """業績テーブル (売上高/経常益/最終益) から PER/MPER/PSR が算出できること。
+
+        2026-08 の株探フォーマット変更 (base ページは gyouseki_block 維持・
+        finance ページは fin_year_result_d へ) で MPER/PSR が全欠損したが、既存テストは
+        別関数のキーだけを見ていたため素通りした。
+        本番と同じ analyze_from_kabutan 経由 (= base ページ) で検証する。
+        値の存在に加えて桁 (単位換算ミス) も検証する。
+
+        取得は2段階にする。UPD_FORCE で最新HTMLをDLしてキャッシュを更新した上で、
+        判定は UPD_CACHE (=キャッシュ読み) で行う。ファイルキャッシュ経由では改行が
+        LF に正規化されるため、通信直後のHTML (CRLF) だけを見ると本番と条件が変わり、
+        CRLF 前提の正規表現バグを取りこぼす。
+        """
+        shihyou.analyze_from_kabutan(TEST_CODE, upd=UPD_FORCE)  # 最新HTMLをキャッシュへ
+        result = shihyou.analyze_from_kabutan(TEST_CODE, upd=UPD_CACHE)  # 本番と同じ読み方
+        for key in ("MPER", "PER", "PSR"):
+            assert key in result, f"{key} が欠損 (業績テーブルのフォーマット変更疑い)"
+        # 単位換算ミス (100倍/1/100) を検知する。トヨタは PER 10 前後・PSR 1 前後。
+        assert 1 < result["PER"] < 200, f"PER の桁が異常: {result['PER']}"
+        assert 1 < result["MPER"] < 200, f"MPER の桁が異常: {result['MPER']}"
+        assert 0.1 < result["PSR"] < 20, f"PSR の桁が異常: {result['PSR']}"
         _sleep()
 
 

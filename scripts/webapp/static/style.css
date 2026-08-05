@@ -474,5 +474,8 @@ nav .quick-search {
 .trend-bg-missing  { background: #ea4335; }
 
 /* 需給バランスセル (issue #247): SPR/rv の横バー 2 本縦積み */
-.spr-gauge-cell { padding: 4px; vertical-align: middle; white-space: nowrap; width: 80px; }
-.spr-gauge-cell svg { display: block; width: 80px; height: auto; }
+.spr-gauge-cell { padding: 4px; vertical-align: middle; white-space: nowrap; width: 104px; }
+.spr-gauge-cell svg { display: block; width: 104px; height: 31px; }
+/* トレンド列: 乖離ゲージ SVG は 40x28 固定生成。viewBox があるので CSS で横だけ広げる。
+   height を auto にすると縦も比例拡大して行高が増え、指標タブだけ背が高くなるため固定する。 */
+.kairi-gauge-cell svg { width: 56px; height: 28px; margin: 0 auto; }

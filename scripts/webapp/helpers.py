@@ -2007,12 +2007,23 @@ def list_portfolio_with_indicators(
     return rows
 
 
+# 月足位置タグ (issue #53)。portfolio 一覧ではタグ列から外し、メモページの月足列に出す。
+# タグ種別は make_stock_db.judge_monthly_position が返す 月破/月高/月低 と対応。
+MONTHLY_TAG_DESCRIPTIONS = {
+    "月破": "月破: 月足で低位滞留から直近3ヶ月内に3年高値をブレイク (Stage 1→2)",
+    "月高": "月高: 月足で10年レンジの上位30%の高値圏 (戻り売り圧力が小さい)",
+    "月低": "月低: 月足で10年レンジの下位35%以下の低位圏",
+}
+MONTHLY_TAGS = tuple(MONTHLY_TAG_DESCRIPTIONS)
+
+
 def _format_tags(stock: Dict[str, Any], tags=None) -> str:
-    """code_rank.csv「タグ」列と同じ表記を返す。
+    """code_rank.csv「タグ」列と同じ表記から月足タグを除いて返す。
 
     make_stock_db.make_signal() の tags リストを "/" join する。
     market_db を渡さないので 強乖/弱乖 タグは出ない (Phase 4 送り)。
     tags を渡すと make_signal の再呼び出しを省略する (一覧の二重計算回避)。
+    月足タグ (月破/月高/月低) は専用の月足列に出すためここでは除外する。
     """
     if not stock:
         return "—"
@@ -2022,7 +2033,16 @@ def _format_tags(stock: Dict[str, Any], tags=None) -> str:
             _signal, tags = make_signal(stock)
         except Exception:
             return "—"
+    tags = [t for t in (tags or []) if t not in MONTHLY_TAGS]
     return "/".join(tags) if tags else "—"
+
+
+def _format_monthly_tag(tags=None) -> str:
+    """portfolio メモページの月足列に出すタグ (月破/月高/月低) を返す。"""
+    for tag in (tags or []):
+        if tag in MONTHLY_TAGS:
+            return tag
+    return "—"
 
 
 def _format_tags_tooltip(tags: str) -> str:
@@ -2036,12 +2056,6 @@ def _format_tags_tooltip(tags: str) -> str:
         lines.append("警: RS高いのに売り圧力比率<45 または wma10割れ（1条件のみ）")
     if "早売" in tags:
         lines.append("早売: 10ma維持実績あり→10ma割れ後に、最初に10ma割れした日の安値をさらに下回って確定")
-    if "月破" in tags:
-        lines.append("月破: 月足で低位滞留から直近3ヶ月内に3年高値をブレイク (Stage 1→2)")
-    elif "月高" in tags:
-        lines.append("月高: 月足で10年レンジの上位30%の高値圏 (戻り売り圧力が小さい)")
-    elif "月低" in tags:
-        lines.append("月低: 月足で10年レンジの下位35%以下の低位圏")
     return "\n".join(lines)
 
 
@@ -3640,6 +3654,9 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:  # noqa: BLE001
         _tags = None
     signal_mark, signal_full = _format_signal(stock)
+    # tags / monthly_tag は表示値と tooltip の両方で使うため1回だけ組み立てる
+    tags_expr = _format_tags(stock, _tags)
+    monthly_tag = _format_monthly_tag(_tags)
 
     return {
         "rank": rank if isinstance(rank, int) else None,
@@ -3667,8 +3684,11 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "trend_template_misses": trend_misses if isinstance(trend_misses, list) else None,
         "trend_template_tooltip": trend_info["tooltip"],
         "kairi_gauge_svg": trend_info["kairi_gauge_svg"],
-        "tags": _format_tags(stock, _tags),
-        "tags_tooltip": _format_tags_tooltip(_format_tags(stock, _tags)),
+        "tags": tags_expr,
+        "tags_tooltip": _format_tags_tooltip(tags_expr),
+        # 月足位置タグ (issue #53) はタグ列から分離し、メモページの月足列に出す
+        "monthly_tag": monthly_tag,
+        "monthly_tag_tooltip": MONTHLY_TAG_DESCRIPTIONS.get(monthly_tag, ""),
         "signal_mark": signal_mark,
         "signal_full": signal_full,
         "signal_display": _build_signal_display(stock),  # issue #253: tooltip+背景色
@@ -3872,6 +3892,10 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
     if signal_mark and signal_mark != "—":
         sig_style = (row.get("signal_display") or {}).get("style")
         styles["signal"] = sig_style or bg_with_white("赤")
+
+    # --- 月足: 月破 (低位滞留からのブレイク) だけ薄赤でやや目立たせる
+    if row.get("monthly_tag") == "月破":
+        styles["monthly_tag"] = bg("薄赤")
 
     # --- 時価総額 (ルール 29, 30): カテゴリ "中" / "大" → 薄黄 (極小/小/特大は色なし)
     cat = row.get("market_cap_category")

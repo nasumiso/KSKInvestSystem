@@ -368,47 +368,59 @@ def get_from_kabutan_base(html, shiyo_data):
 
     # ---- PSR
     psr = 0.0
+    # 通期業績テーブル。株探の2ページでレイアウトが異なるため両対応する。
+    #   finance ページ: <div class="fin_year_t0_d fin_year_result_d">
+    #       列= 決算期/売上高/営業益/経常益/最終益/...、単位=百万円 (2026-08 に旧形式から変更)
+    #   base ページ:    <div class="gyouseki_block">
+    #       列= 決算期/売上高/経常益/最終益/...、単位=億円
+    # kubun1 (単/連/予 等) を持つ行だけが決算期行で、前期比 行は kubun1 が無いので除外される。
+    # 時価総額が億円なので、百万円のページだけ 100 で割って単位を揃える。
     gyoseki_m = re.search(
-        r'<div class="gyouseki_block">\r\n<div class="title">(.*?)</table>\r\n</div>',
+        r'<div class="fin_year_t0_d fin_year_result_d">\s*<table>(.*?)</table>',
         html,
         re.DOTALL,
     )
+    if gyoseki_m:
+        keijo_idx, profit_idx, unit_divisor = 2, 3, 100.0  # 営業益列あり・百万円
+    else:
+        gyoseki_m = re.search(
+            r'<div class="gyouseki_block">\s*<div class="title">(.*?)</table>',
+            html,
+            re.DOTALL,
+        )
+        keijo_idx, profit_idx, unit_divisor = 1, 2, 1.0  # 営業益列なし・億円
     uriage_lst = []
     profit = 0
     if gyoseki_m:
-        # print gyoseki_m.group(0)
         latest_term = ""
         for row_m in re.finditer(
-            r'<tr>\r\n    <th scope=\'row\'><span class="kubun1">(.*?)</span>(.*?)</th>(.*?)</tr>',
+            # scope='row' (base) と scope="row" (finance) の両方を許容
+            r'<th scope=[\'"]row[\'"][^>]*><span class="kubun1">(.*?)</span>(.*?)</th>(.*?)</tr>',
             gyoseki_m.group(1),
             re.DOTALL,
         ):
-            # print row_m.group(1), row_m.group(2)
-            # 一列目が売上高なので最初に見つかった<td></td>
-            # print row_m.group(1), row_m.group(2)
-            uriage_m = re.search(
-                r"<td>(.*?)</td>\r\n    <td>(.*?)</td>\r\n    <td>(.*?)</td>",
-                row_m.group(3),
-            )
+            # 値セルは class 付き (<td class="high">) もあるため属性を許容して順に拾う。
+            # 売上高は常に index 0、経常益/最終益の位置はページごとに異なる。
+            tds = re.findall(r"<td[^>]*>(.*?)</td>", row_m.group(3), re.DOTALL)
+            if len(tds) <= profit_idx:
+                continue
             cur_term = row_m.group(2).replace("&nbsp;", "")
             try:
-                uriage = float(uriage_m.group(1).replace(",", ""))
+                uriage = float(tds[0].replace(",", "")) / unit_divisor
                 latest_term = cur_term
                 uriage_lst.append(uriage)
             except ValueError:
-                log_debug("  売上高取得できず:", uriage_m.group(1), cur_term)
+                log_debug("  売上高取得できず:", tds[0], cur_term)
 
             try:
-                profit = float(uriage_m.group(3))  # 最終益
-                # latest_term = cur_term
+                profit = float(tds[profit_idx].replace(",", "")) / unit_divisor  # 最終益
             except ValueError:
-                log_debug("  最終益取得できず:", uriage_m.group(3), cur_term)
+                log_debug("  最終益取得できず:", tds[profit_idx], cur_term)
             try:
-                keijo = float(uriage_m.group(2))  # 経常益
+                keijo = float(tds[keijo_idx].replace(",", "")) / unit_divisor  # 経常益
             except ValueError:
                 keijo = 0
-                log_debug("   経常益取得できず", uriage_m.group(2), cur_term)
-            # print uriage
+                log_debug("   経常益取得できず", tds[keijo_idx], cur_term)
         if uriage_lst:
             uriage = uriage_lst[-1]  # 直近
             if uriage > 0:
