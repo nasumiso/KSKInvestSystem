@@ -18,6 +18,9 @@
     padding: 0.25em 0.35em;
     white-space: normal;  /* ヘッダの折り返しを許可してセル幅を縮める */
   }
+  /* ゲージ SVG のセルは縦 padding を持たせない。SVG 自体が背が高いため、
+     指標タブ (ページ1) だけ行高が伸びてメモタブと表示件数がズレるのを防ぐ。 */
+  table.portfolio-list td.spr-gauge-cell { padding-top: 0; padding-bottom: 0; }
   /* 長いヘッダラベル ("RSライン(20,5)" 等) が列幅を引っ張らないよう、
      ヘッダ側に max-width を設けて強制改行させる。データセル幅優先。 */
   table.portfolio-list thead th {
@@ -442,6 +445,8 @@
       <th data-page="2">更新日</th>
       <th data-page="2">ステージ</th>
       <th data-page="2">チャートパターン</th>
+      {# tooltip 文言は helpers.MONTHLY_TAG_DESCRIPTIONS を単一の出典にする (セル側と共通) #}
+      <th data-page="2" title="月足位置の自動判定。&#10;{{ monthly_tag_descriptions.values()|join('\n') }}">月足</th>
       <th data-page="2" title="定型リストから単一選択。未分類は警告色">売買戦略</th>
       <th data-page="2">イナゴ元</th>
       <th data-page="2">IN理由</th>
@@ -528,13 +533,14 @@
       <td data-page="1" title="{{ row.price_rs_chart.tooltip }}" style="padding:0 2px;line-height:0;">
         {% if row.price_rs_chart.svg %}{{ row.price_rs_chart.svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
       </td>
-      <td data-page="1" title="{{ row.trend_template_tooltip }}" style="width:40px;padding:0;line-height:0;text-align:center;{{ row.styles.trend_template or '' }}">
+      <td data-page="1" class="kairi-gauge-cell" title="{{ row.trend_template_tooltip }}" style="width:56px;padding:0;line-height:0;text-align:center;{{ row.styles.trend_template or '' }}">
         {% if row.kairi_gauge_svg %}{{ row.kairi_gauge_svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
       </td>
       <td data-page="1" title="{{ row.tags_tooltip or '' }}"
-          style="max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
+          style="max-width:4em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
+      {# シグナルは「ポ/ブ/週ブ」まで出るため見切れない幅を確保 #}
       <td data-page="1" title="{{ row.signal_full or '' }}"
-          style="max-width:3em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.signal or '' }}">{{ row.signal_mark }}</td>
+          style="max-width:5.4em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.signal or '' }}">{{ row.signal_mark }}</td>
       <td data-page="1" class="spr-gauge-cell" title="{{ row.spr_gauge.tooltip }}">{{ row.spr_gauge.svg|safe }}</td>
       <td data-page="1" style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>
       {# issue #327: ページ2 (手動入力)。更新日/ステージ/チャートパターンをページ1から移設 #}
@@ -592,6 +598,9 @@
           </select>
         </div>
       </td>
+      {# 月足位置タグ (issue #53)。自動判定のためチャートパターンと違い編集不可 #}
+      <td data-page="2" title="{{ row.monthly_tag_tooltip or '' }}"
+          style="white-space:nowrap;text-align:center;{{ row.styles.monthly_tag or '' }}">{{ row.monthly_tag }}</td>
       {# issue #327: 売買戦略 (定型リスト単一選択 + 色分けバッジ)。
          リスト外の旧自由記述値は ⚠️ 付き option を差し込んで保持し、再分類を促す #}
       {% set current_idea = row.memo.trade_idea or '' %}

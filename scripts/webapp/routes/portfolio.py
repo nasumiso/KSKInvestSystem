@@ -26,6 +26,7 @@ import portfolio
 import portfolio_shelve as ps
 import research_shelve
 from webapp.helpers import (
+    MONTHLY_TAG_DESCRIPTIONS,
     THEME_SUMMARY_SORT_FIELDS,
     build_portfolio_theme_summary,
     compute_cell_styles,
@@ -993,6 +994,7 @@ def dashboard():
         stage_t_options=ps.STAGE_T_OPTIONS,
         chart_style_options=ps.CHART_STYLE_OPTIONS,
         chart_state_options=ps.CHART_STATE_OPTIONS,
+        monthly_tag_descriptions=MONTHLY_TAG_DESCRIPTIONS,
         hold_summary=hold_summary,
     )
 
@@ -1059,6 +1061,7 @@ def charts():
         stage_t_options=ps.STAGE_T_OPTIONS,
         chart_style_options=ps.CHART_STYLE_OPTIONS,
         chart_state_options=ps.CHART_STATE_OPTIONS,
+        monthly_tag_descriptions=MONTHLY_TAG_DESCRIPTIONS,
     )
 
 
