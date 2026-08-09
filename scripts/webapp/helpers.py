@@ -4276,6 +4276,10 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
                 cost_basis_total += price * qty
             else:  # sell
                 sell_qty = min(qty, held_qty) if held_qty > 0 else qty
+                if held_qty > 0 and avg_cost > 0:
+                    fill_pl = (price - avg_cost) * sell_qty
+                    f["fill_pl"] = round(fill_pl)
+                    f["fill_return_pct"] = fill_pl / (avg_cost * sell_qty) * 100
                 realized += (price - avg_cost) * sell_qty
                 held_qty -= qty
         total_cost = cost_basis_total
@@ -4293,15 +4297,26 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
             tate_price = f.get("tate_price")
             if settle_pl is not None:
                 realized += settle_pl
+                f["fill_pl"] = settle_pl
                 total_cost += (tate_price or price) * qty
             elif tate_price is not None:
                 # 売建は (建単価 - 買戻単価)、買建は (返済単価 - 建単価)
-                realized += ((tate_price - price) if is_short
-                             else (price - tate_price)) * qty
+                fill_pl = ((tate_price - price) if is_short
+                           else (price - tate_price)) * qty
+                realized += fill_pl
+                f["fill_pl"] = round(fill_pl)
                 total_cost += tate_price * qty
             else:
                 # 建単価も決済損益も無い → 損益不能
                 return None
+            if tate_price is not None:
+                f["fill_return_pct"] = f["fill_pl"] / (tate_price * qty) * 100
+            tate_date = f.get("tate_date")
+            if tate_date:
+                try:
+                    f["hold_days"] = (date.fromisoformat(f["trade_date"]) - date.fromisoformat(tate_date)).days
+                except (ValueError, TypeError):
+                    pass
 
     if total_cost <= 0:
         return None
@@ -4352,6 +4367,10 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 held_qty = new_qty
             else:  # sell (部分売り)
                 sell_qty = min(qty, held_qty) if held_qty > 0 else qty
+                if held_qty > 0 and avg_cost > 0:
+                    fill_pl = (price - avg_cost) * sell_qty
+                    f["fill_pl"] = round(fill_pl)
+                    f["fill_return_pct"] = fill_pl / (avg_cost * sell_qty) * 100
                 realized += (price - avg_cost) * sell_qty
                 held_qty -= qty
         cost_basis = avg_cost
@@ -4382,14 +4401,27 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 tate_price = f.get("tate_price")
                 if settle_pl is not None:
                     realized += settle_pl
+                    f["fill_pl"] = settle_pl
                 elif tate_price is not None:
                     # 売建は (建単価 - 買戻単価)、買建は (返済単価 - 建単価)
-                    realized += ((tate_price - price) if is_short
-                                 else (price - tate_price)) * qty
+                    fill_pl = ((tate_price - price) if is_short
+                               else (price - tate_price)) * qty
+                    realized += fill_pl
+                    f["fill_pl"] = round(fill_pl)
                 else:
                     # 建単価不明時は平均建単価で近似
-                    realized += ((avg_cost - price) if is_short
-                                 else (price - avg_cost)) * qty
+                    fill_pl = ((avg_cost - price) if is_short
+                               else (price - avg_cost)) * qty
+                    realized += fill_pl
+                    f["fill_pl"] = round(fill_pl)
+                if tate_price is not None:
+                    f["fill_return_pct"] = f["fill_pl"] / (tate_price * qty) * 100
+                tate_date = f.get("tate_date")
+                if tate_date:
+                    try:
+                        f["hold_days"] = (date.fromisoformat(f["trade_date"]) - date.fromisoformat(tate_date)).days
+                    except (ValueError, TypeError):
+                        pass
                 held_qty -= qty
         cost_basis = avg_cost
         if has_reverse_settle:
@@ -4733,6 +4765,7 @@ def _finalize_round(code_s: str, kind: str, stock_name: str,
                 # 補完する (SBI取込は必ず broker="SBI" を持つ、P2 レビュー対応)。
                 "broker": f.get("broker") or "楽天",
                 "tate_price": f.get("tate_price"),
+                "tate_date": f.get("tate_date"),
                 "settle_pl": f.get("settle_pl"),
             }
             for f in round_fills
