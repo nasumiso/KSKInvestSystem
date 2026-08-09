@@ -125,9 +125,9 @@ cd scripts && python backfill_price_proxy.py             # None のみ埋める 
 cd scripts && python backfill_price_proxy.py --overwrite # actual 以外を再取得
 ```
 
-### 証券会社CSV → fill レイヤー取込 (issue #360, #387)
+### 証券会社CSV → fill レイヤー取込 (issue #360, #387, #390)
 
-楽天・SBI証券の約定CSVの実約定価格・株数を fill として取り込む。同一 dedup キーは冪等スキップ。取り込んだ fill は `/trade-history` の「売買履歴」タブに建玉ラウンド単位のエピソードとして表示され、勝率・ペイオフレシオも fill 側で計算される (issue #387 Phase4b)。SBI は個別株のみ取込 (ETF/投信=ウォッチリスト外は自動除外)。楽天は信用返済行の建約定日・建単価と現引行 (建玉の現物化) も取込む (信用/現物のエピソード損益計算に使用)。SBI 信用返済行の決済損益は fill に保存する。既存 fill への建単価・決済損益は再取込時に後付けされる (None→非None のみ)。
+楽天・SBI・マネックス証券の約定CSVの実約定価格・株数を fill として取り込む。同一 dedup キーは冪等スキップ。取り込んだ fill は `/trade-history` の「売買履歴」タブに建玉ラウンド単位のエピソードとして表示され、勝率・ペイオフレシオも fill 側で計算される (issue #387 Phase4b)。SBI は個別株のみ取込 (ETF/投信=ウォッチリスト外は自動除外)。楽天は信用返済行の建約定日・建単価と現引行 (建玉の現物化) も取込む (信用/現物のエピソード損益計算に使用)。SBI 信用返済行の決済損益は fill に保存する。既存 fill への建単価・決済損益は再取込時に後付けされる (None→非None のみ)。
 
 ```bash
 # 楽天 (tradehistory(JP)_YYYYMMDD.csv, Shift-JIS, 28列)
@@ -137,7 +137,15 @@ cd scripts && python import_rakuten_fills.py "<csv_path>"             # 本番�
 # SBI (SaveFile_*.csv, Shift-JIS, 冒頭メタ行あり)
 cd scripts && python import_sbi_fills.py "<csv_path>" --dry-run       # 読込・パース検証 (DB 非書込)
 cd scripts && python import_sbi_fills.py "<csv_path>"                 # 本番取込
+
+# マネックス (YYYYMMDD-YYYYMMDD.csv, Shift-JIS, 冒頭メタ行あり25列)
+cd scripts && python import_monex_fills.py "<csv_path>" --dry-run     # 読込・パース検証 (DB 非書込)
+cd scripts && python import_monex_fills.py "<csv_path>"               # 本番取込
 ```
+
+マネックスは過去データのバックフィル用途 (現在は未使用)。銘柄コードが5桁 (`54710`) なので末尾の付加桁を落として4文字 `code_s` に正規化する。信用返済行は建約定日・建単価 (楽天と同じ) と受渡金額=諸経費控除後の決済損益 (SBI と同じ) の両方を持つ。税金・入出金・入出庫・配当金の行はスキップする。過去に売買したが現在ウォッチリストに無い銘柄を欠落させないため、除外は ETF のみ (SBI のようなウォッチリスト外除外はしない)。
+
+いずれも `/trade-history` の取込UIからアップロードすれば、ヘッダの列数で証券会社を自動判別する (楽天=28列 / SBI=14列 / マネックス=25列)。
 
 取込後の建玉ラウンド (エピソード) 損益・保有中の含み損益・振り返りメモの紐付けをターミナルで確認する (DB 非更新)。
 
