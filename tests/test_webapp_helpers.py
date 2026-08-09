@@ -3373,8 +3373,10 @@ class TestSignalDisplay:
         xs = [10.0, 20.0, 30.0, 40.0]
         # ポ: 先週の半ば (バー間の按分で xs[2]=30 と xs[3]=40 の中間付近)
         po_day = (monday - timedelta(days=3)).strftime("%m/%d")  # 先週金曜
-        # ブ: 11日前 = 2週前月曜〜先週月曜の間 (xs[1]=20 と xs[2]=30 の間)
-        old_day = (anchor_day - timedelta(days=11)).strftime("%m/%d")
+        # ブ: 2週前月曜の3日後 = 2週前月曜〜先週月曜の間 (xs[1]=20 と xs[2]=30 の間)
+        # anchor からの日数で指定すると実行曜日次第で週バー日付と一致し、
+        # 按分ではなくスナップして境界アサートが崩れるため、週バー基準で取る。
+        old_day = (window_dates[1] + timedelta(days=3)).strftime("%m/%d")
         stock = {"pocket_pivot": ["%s,0" % po_day],
                  "breakout": ["%s,180" % old_day],
                  "trend_template": [], "access_date_price": anchor_now}
@@ -3384,8 +3386,8 @@ class TestSignalDisplay:
         assert "ブ" in kinds
         # 先週金曜は xs[2](先週月)と xs[3](今週月)の間 → 週バーにスナップせず按分
         assert 30.0 < kinds["ポ"]["x"] < 40.0
-        # 11日前は2週前〜先週の間に按分される
-        assert 20.0 <= kinds["ブ"]["x"] < 30.0
+        # 2週前月曜+3日は2週前〜先週の間に按分される (週バーにスナップしない)
+        assert 20.0 < kinds["ブ"]["x"] < 30.0
 
     def test_chart_markers_render_and_size(self):
         """build_price_rs_chart_full: ポ三角/ブダイヤが線より後 (前面) に描画・強度でサイズ可変"""

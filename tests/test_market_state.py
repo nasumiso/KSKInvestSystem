@@ -270,30 +270,17 @@ class TestDeriveState:
 class TestIsBelow10maClearly:
     """週足10MA 明確割れ判定"""
 
-    def test_kairi_above_threshold(self):
-        """kairi = -0.5% (閾値より上) → False"""
-        assert ms.is_below_10ma_clearly(-0.5) is False
-
-    def test_kairi_at_threshold(self):
-        """kairi = -1.0% (境界) → True"""
-        assert ms.is_below_10ma_clearly(-1.0) is True
-
-    def test_kairi_below_threshold(self):
-        """kairi = -1.5% → True"""
-        assert ms.is_below_10ma_clearly(-1.5) is True
-
-    def test_kairi_positive(self):
-        """kairi = 1.0% (上) → False"""
-        assert ms.is_below_10ma_clearly(1.0) is False
-
-    def test_kairi_zero(self):
-        assert ms.is_below_10ma_clearly(0) is False
-
-    def test_kairi_none(self):
-        assert ms.is_below_10ma_clearly(None) is False
-
-    def test_kairi_invalid(self):
-        assert ms.is_below_10ma_clearly("foo") is False
+    @pytest.mark.parametrize("kairi,expected", [
+        (-0.5, False),   # 閾値より上
+        (-1.0, True),    # 境界 (-1.0% で明確割れ)
+        (-1.5, True),
+        (1.0, False),
+        (0, False),
+        (None, False),   # 欠損・不正値は False
+        ("foo", False),
+    ])
+    def test_is_below_10ma_clearly(self, kairi, expected):
+        assert ms.is_below_10ma_clearly(kairi) is expected
 
 
 # ==================================================
@@ -442,20 +429,15 @@ class TestToDirectionSignal:
 class TestFormatStateLabel:
     """state を日本語ラベルに変換"""
 
-    def test_confirmed(self):
-        assert ms.format_state_label(ms.CONFIRMED_UPTREND) == "上昇トレンド"
-
-    def test_pressure(self):
-        assert ms.format_state_label(ms.UPTREND_UNDER_PRESSURE) == "圧力下"
-
-    def test_correction(self):
-        assert ms.format_state_label(ms.MARKET_IN_CORRECTION) == "調整相場"
-
-    def test_none(self):
-        assert ms.format_state_label(None) == ""
-
-    def test_unknown_returns_original(self):
-        assert ms.format_state_label("foo_bar") == "foo_bar"
+    @pytest.mark.parametrize("state,expected", [
+        (ms.CONFIRMED_UPTREND, "上昇トレンド"),
+        (ms.UPTREND_UNDER_PRESSURE, "圧力下"),
+        (ms.MARKET_IN_CORRECTION, "調整相場"),
+        (None, ""),
+        ("foo_bar", "foo_bar"),   # 未知の state はそのまま返す
+    ])
+    def test_format_state_label(self, state, expected):
+        assert ms.format_state_label(state) == expected
 
 
 # ==================================================
