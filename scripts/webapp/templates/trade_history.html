@@ -3,25 +3,212 @@
 {% block content %}
 
 <h2>売買履歴</h2>
-<p style="color:#888;font-size:0.85em;">保有エピソード単位で表示。保有日降順。</p>
 
-{# 成績サマリー (issue #361): 売却済みエピソードのうち終値プロキシで概算できた分 #}
-{% if summary %}
-<div style="display:flex;gap:1.5em;flex-wrap:wrap;align-items:baseline;margin:0.5em 0 1em;padding:0.7em 1em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:5px;">
-  <div><span style="color:#888;font-size:0.8em;">勝率</span>
-    <span style="font-size:1.1em;font-weight:600;color:#ddd;margin-left:0.3em;">{{ "%.0f"|format(summary.win_rate) }}%</span>
-    <span style="color:#888;font-size:0.8em;">({{ summary.n_win }}勝{{ summary.n_lose }}敗)</span></div>
-  <div><span style="color:#888;font-size:0.8em;">ペイオフレシオ</span>
-    <span style="font-size:1.1em;font-weight:600;color:#ddd;margin-left:0.3em;">{% if summary.payoff_ratio is not none %}{{ "%.2f"|format(summary.payoff_ratio) }}{% else %}—{% endif %}</span></div>
-  <div><span style="color:#888;font-size:0.8em;">平均保有(勝)</span>
-    <span style="color:#9ef0aa;margin-left:0.3em;">{% if summary.avg_hold_win is not none %}{{ "%.0f"|format(summary.avg_hold_win) }}日{% else %}—{% endif %}</span></div>
-  <div><span style="color:#888;font-size:0.8em;">平均保有(負)</span>
-    <span style="color:#f0a0a0;margin-left:0.3em;">{% if summary.avg_hold_lose is not none %}{{ "%.0f"|format(summary.avg_hold_lose) }}日{% else %}—{% endif %}</span></div>
-  <div title="終値プロキシによる概算（手数料・配当は無視）" style="color:#777;font-size:0.78em;margin-left:auto;cursor:help;">
-    算出 {{ summary.n_total }} 件 / 売却済み {{ closed_count }} 件
+{# CSV取込の結果メッセージ (issue #387 4a) #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, msg in messages %}
+    <div style="margin:0.5em 0;padding:0.6em 0.9em;border-radius:5px;font-size:0.88em;
+      {% if category == 'error' %}background:rgba(200,80,80,0.12);border:1px solid #6a3030;color:#f0a0a0;
+      {% else %}background:rgba(80,180,100,0.10);border:1px solid #2e6e3e;color:#9ef0aa;{% endif %}">
+      {{ msg }}
+    </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+{# issue #387: 2タブ構成。売買履歴=楽天/SBI CSVの実約定 / アクションログ=手動記録のエピソード #}
+<div class="th-tabs" style="display:flex;gap:0.5em;border-bottom:1px solid #333;margin-bottom:1.2em;">
+  <button class="th-tab-btn active" data-tab="tab-fills"
+          style="background:none;border:none;border-bottom:2px solid transparent;color:#aaa;font-size:0.95em;cursor:pointer;padding:0.5em 0.9em;">売買履歴</button>
+  <button class="th-tab-btn" data-tab="tab-actions"
+          style="background:none;border:none;border-bottom:2px solid transparent;color:#aaa;font-size:0.95em;cursor:pointer;padding:0.5em 0.9em;">アクションログ</button>
+</div>
+
+{# ============ タブ1: 売買履歴 (楽天/SBI CSVの実約定) ============ #}
+<div id="tab-fills" class="th-tab-panel">
+
+{# 説明 + CSV取込 (issue #387 4a): 普段は「＋CSV取込」リンクのみ、クリックで展開 (details) #}
+<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1em;margin-bottom:0.6em;">
+  <p style="color:#888;font-size:0.85em;margin:0;cursor:help;" title="損益は現物=平均取得単価法、信用=建単価/決済損益。">楽天・SBI証券CSVの実約定を建玉ラウンド単位のエピソードにまとめています。行をクリックで内訳の個別約定を展開。</p>
+  <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:0.3em;">
+    {# 取込済み最新約定日 (次回インポートの参考、取込のたびに更新) issue #387。
+       title に最古〜最新のフルレンジをツールチップ表示 #}
+    {% if broker_ranges %}
+    <div style="color:#888;font-size:0.76em;white-space:nowrap;">
+      取込済み最新:
+      {# 取込済みの証券会社だけを先に絞ってから回す。固定リストで loop.last を見ると
+         楽天のみ取込のとき末尾に区切りの / が残る (レビュー対応) #}
+      {% set shown = ["楽天", "SBI"] | select("in", broker_ranges) | list %}
+      {% for broker in shown %}
+        <span style="color:#aaa;" title="取込済み: {{ broker_ranges[broker].first }} 〜 {{ broker_ranges[broker].last }}">{{ broker }} {{ broker_ranges[broker].last[5:] }}</span>{% if not loop.last %} / {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  <details>
+    <summary style="color:#9ed8f0;font-size:0.82em;cursor:pointer;white-space:nowrap;list-style:none;">＋ CSV取込</summary>
+    <form method="post" action="/trade-history/import" enctype="multipart/form-data"
+          title="楽天・SBI の取引履歴CSVを自動判別して取り込みます"
+          style="display:flex;align-items:center;gap:0.5em;margin-top:0.5em;padding:0.4em 0.6em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:5px;">
+      <input type="file" name="csv_file" accept=".csv" required
+             style="font-size:0.78em;color:#aaa;width:18em;">
+      <button type="submit"
+              style="padding:0.25em 0.7em;font-size:0.82em;white-space:nowrap;background:#2e5a6e;color:#9ed8f0;border:1px solid #3a6a80;border-radius:4px;cursor:pointer;">取込</button>
+    </form>
+  </details>
+  </div>
+</div>
+
+{# 成績サマリー (issue #387 Phase4b): fill 基準。クローズ済みで損益算出できたエピソードから。
+   主要指標を上段、勝ち/負けの内訳を下段の2段構成にまとめる #}
+{% if fill_summary %}
+<div style="padding:0.7em 0.9em;margin-bottom:0.8em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:6px;">
+  {# 上段: 主要指標 #}
+  <div style="display:flex;gap:1.8em;align-items:baseline;flex-wrap:wrap;">
+    <div><span style="color:#888;font-size:0.8em;">勝率</span>
+      <span style="font-size:1.15em;font-weight:600;color:#ddd;margin-left:0.35em;">{{ "%.0f"|format(fill_summary.win_rate) }}%</span>
+      <span style="color:#888;font-size:0.78em;">({{ fill_summary.n_win }}勝{{ fill_summary.n_lose }}敗)</span></div>
+    <div title="勝ちトレードの平均リターン ÷ 負けトレードの平均リターン (金額加重)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">ペイオフレシオ</span>
+      <span style="font-size:1.15em;font-weight:600;color:#ddd;margin-left:0.35em;">{% if fill_summary.payoff_ratio is not none %}{{ "%.2f"|format(fill_summary.payoff_ratio) }}{% else %}—{% endif %}</span></div>
+    <div title="1トレードあたりの平均リターン% (勝率とペイオフを統合した総合的な優位性。プラスならトータルで優位)" style="cursor:help;"><span style="color:#888;font-size:0.8em;">期待値</span>
+      <span style="font-size:1.15em;font-weight:600;color:{{ '#9ef0aa' if fill_summary.expectancy is not none and fill_summary.expectancy >= 0 else '#f0a0a0' }};margin-left:0.35em;">{% if fill_summary.expectancy is not none %}{{ '+' if fill_summary.expectancy >= 0 else '' }}{{ "%.1f"|format(fill_summary.expectancy) }}%{% else %}—{% endif %}</span></div>
+    <div><span style="color:#888;font-size:0.8em;">実現損益</span>
+      <span style="font-size:1.15em;font-weight:600;color:{{ '#9ef0aa' if fill_total_pl >= 0 else '#f0a0a0' }};margin-left:0.35em;">{{ "{:+,}".format(fill_total_pl) }}円</span></div>
+    <div title="信用は建単価/決済損益、現物は平均取得単価法。期首持越し・空売りは損益算出対象外" style="color:#777;font-size:0.78em;margin-left:auto;cursor:help;">
+      算出 {{ fill_priced_count }} 件 / クローズ済 {{ fill_closed_count }} 件</div>
+  </div>
+  {# 下段: 勝ち/負けの内訳 (平均リターン・平均保有) #}
+  <div style="display:flex;gap:2em;align-items:baseline;flex-wrap:wrap;margin-top:0.5em;padding-top:0.5em;border-top:1px solid #2a2a2a;font-size:0.85em;">
+    <div title="勝ちトレードの平均リターン% (金額加重) と平均保有日数">
+      <span style="color:#9ef0aa;font-weight:600;">勝ち</span>
+      <span style="color:#888;margin-left:0.5em;">平均リターン</span>
+      <span style="color:#9ef0aa;font-weight:600;margin-left:0.25em;">{% if fill_summary.avg_return_win is not none %}+{{ "%.1f"|format(fill_summary.avg_return_win) }}%{% else %}—{% endif %}</span>
+      <span style="color:#888;margin-left:0.8em;">平均保有</span>
+      <span style="color:#9ef0aa;margin-left:0.25em;">{% if fill_summary.avg_hold_win is not none %}{{ "%.0f"|format(fill_summary.avg_hold_win) }}日{% else %}—{% endif %}</span></div>
+    <div title="負けトレードの平均リターン% (金額加重) と平均保有日数">
+      <span style="color:#f0a0a0;font-weight:600;">負け</span>
+      <span style="color:#888;margin-left:0.5em;">平均リターン</span>
+      <span style="color:#f0a0a0;font-weight:600;margin-left:0.25em;">{% if fill_summary.avg_return_lose is not none %}{{ "%.1f"|format(fill_summary.avg_return_lose) }}%{% else %}—{% endif %}</span>
+      <span style="color:#888;margin-left:0.8em;">平均保有</span>
+      <span style="color:#f0a0a0;margin-left:0.25em;">{% if fill_summary.avg_hold_lose is not none %}{{ "%.0f"|format(fill_summary.avg_hold_lose) }}日{% else %}—{% endif %}</span></div>
   </div>
 </div>
 {% endif %}
+
+{% if fill_episodes %}
+<table class="trade-history-table">
+  <colgroup>
+    <col style="width:1.5em;"><col style="width:11em;"><col style="width:4em;">
+    <col style="width:9em;"><col style="width:4.5em;"><col style="width:5em;">
+    <col style="width:7em;"><col style="width:7em;">
+  </colgroup>
+  <thead>
+    <tr>
+      <th></th>
+      <th>銘柄</th>
+      <th>区分</th>
+      <th style="white-space:nowrap;">期間</th>
+      <th style="text-align:right;white-space:nowrap;">株数</th>
+      <th style="text-align:right;white-space:nowrap;">リターン</th>
+      <th style="text-align:right;white-space:nowrap;">実現損益</th>
+      <th style="text-align:right;white-space:nowrap;">含み損益</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for ep in fill_episodes %}
+    <tr class="th-ep-row" data-ep="ep-{{ loop.index }}" style="cursor:pointer;">
+      <td style="color:#666;text-align:center;font-size:0.8em;"><span class="th-ep-caret">▸</span></td>
+      <td style="white-space:nowrap;"><a href="/stock/{{ ep.code_s }}" onclick="event.stopPropagation();">{{ ep.code_s }} {{ ep.stock_name }}</a></td>
+      <td style="white-space:nowrap;">
+        {% if ep.kind == "信用" %}
+        <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.74em;background:#4a3a2e;color:#e0b070;">信用</span>
+        {% if ep.is_short %}
+        <span title="信用売建 (空売り)。新規売で建て、返済買で決済" style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#4a2e3a;color:#e090b0;margin-left:0.2em;">売建</span>
+        {% endif %}
+        {% else %}
+        <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.74em;background:#2e4a3a;color:#80c0a0;">現物</span>
+        {% endif %}
+        {% if not ep.closed %}
+        <span style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#3a3a4a;color:#a0a0d0;margin-left:0.2em;">保有中</span>
+        {% endif %}
+        {% if ep.carry_over %}
+        <span title="取込対象期間より前に建てた信用玉の返済" style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#4a4a3a;color:#c8c890;margin-left:0.2em;">期首持越し</span>
+        {% endif %}
+        {% if ep.review_memo %}
+        <span title="振り返りメモあり" style="margin-left:0.2em;">📝</span>
+        {% endif %}
+      </td>
+      <td style="white-space:nowrap;color:#888;font-size:0.82em;">{{ ep.open_date[2:] }}{% if ep.close_date and ep.close_date != ep.open_date %} 〜 {{ ep.close_date[2:] }}{% endif %}</td>
+      <td style="text-align:right;color:#888;font-size:0.85em;">{{ ep.qty_peak }}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        {% if ep.pl %}
+        <span style="color:{{ '#9ef0aa' if ep.pl.return_pct >= 0 else '#f0a0a0' }};font-weight:600;">{{ '+' if ep.pl.return_pct >= 0 else '' }}{{ "%.1f"|format(ep.pl.return_pct) }}%</span>
+        {% elif not ep.closed and ep.open_pl and ep.open_pl.held_qty > 0 %}
+        <span style="color:#888;font-size:0.82em;">残 {{ ep.open_pl.held_qty }}株</span>
+        {% elif ep.closed %}
+        <span style="color:#666;" title="取得記録がCSVに無い(期首持越し等)または空売りのため損益算出対象外">—</span>
+        {% else %}
+        <span style="color:#666;">—</span>
+        {% endif %}
+      </td>
+      {# 実現損益列 #}
+      <td style="text-align:right;white-space:nowrap;">
+        {% if ep.pl and ep.pl.profit_amount is not none %}
+        <span style="color:{{ '#9ef0aa' if ep.pl.profit_amount >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(ep.pl.profit_amount) }}円</span>
+        {% elif not ep.closed and ep.open_pl and ep.open_pl.realized %}
+        <span style="color:{{ '#9ef0aa' if ep.open_pl.realized >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(ep.open_pl.realized) }}円</span>
+        {% else %}<span style="color:#666;">—</span>{% endif %}
+      </td>
+      {# 含み損益列 (保有中のみ) #}
+      <td style="text-align:right;white-space:nowrap;">
+        {% if not ep.closed and ep.open_pl and ep.open_pl.unrealized is not none %}
+        <span style="color:{{ '#9ef0aa' if ep.open_pl.unrealized >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(ep.open_pl.unrealized) }}円</span>
+        {% elif not ep.closed %}
+        <span style="color:#666;" title="現在値が取得できないため含み損益は非表示">—</span>
+        {% else %}<span style="color:#666;">—</span>{% endif %}
+      </td>
+    </tr>
+    <tr class="th-ep-detail" id="ep-{{ loop.index }}" style="display:none;">
+      <td></td>
+      <td colspan="7" style="padding:0.3em 0.5em 0.6em;">
+        <table style="width:auto;font-size:0.82em;color:#999;border-collapse:collapse;">
+          {% for f in ep.fills %}
+          <tr>
+            <td style="padding:1px 0.8em 1px 0;white-space:nowrap;color:#888;">{{ f.trade_date[2:4] }}/{{ f.trade_date[5:7] }}/{{ f.trade_date[8:10] }}</td>
+            <td style="padding:1px 0.8em;white-space:nowrap;">
+              {% if f.side == "buy" %}<span style="color:#9ed8f0;">{{ f.side_label }}</span>{% else %}<span style="color:#f0a0a0;">{{ f.side_label }}</span>{% endif %}
+            </td>
+            <td style="padding:1px 0.8em;color:#777;white-space:nowrap;">{{ f.trade_kind }}</td>
+            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ f.qty }}株</td>
+            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}円</td>
+            {% if f.tate_price %}<td style="padding:1px 0.8em;text-align:right;white-space:nowrap;color:#888;">建 {{ "{:,}".format(f.tate_price|round|int) }}</td>{% else %}<td></td>{% endif %}
+            <td style="padding:1px 0.8em;color:#666;white-space:nowrap;">{{ f.broker }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+        {# エピソード単位の振り返りメモ (issue #387 Phase2)。アクションログ側から一本化 #}
+        <div style="margin-top:0.6em;max-width:44em;">
+          <div style="color:#888;font-size:0.78em;margin-bottom:0.2em;">振り返りメモ</div>
+          <div class="review-memo-cell"
+               data-url="{{ url_for('trade_history.save_fill_memo') }}"
+               data-episode-key="{{ ep.episode_key }}"
+               data-memo="{{ ep.review_memo or '' | e }}">
+            <span class="review-memo-display">{{ ep.review_memo or "クリックして入力" }}</span>
+          </div>
+        </div>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:#888;">取り込まれた約定がありません。CSV取込、または <code>import_rakuten_fills.py</code> / <code>import_sbi_fills.py</code> でCSVを取り込んでください。</p>
+{% endif %}
+</div>
+
+{# ============ タブ2: アクションログ (手動記録のエピソード) ============ #}
+<div id="tab-actions" class="th-tab-panel" style="display:none;">
+<p style="color:#888;font-size:0.85em;">判断の記録 (保有理由・売却理由)。保有日降順。成績・実現損益は「売買履歴」タブ (実約定=真実源) に一本化しました。振り返りメモも「売買履歴」タブのエピソード展開へ移行しました。</p>
 
 {% macro episode_table(episodes) %}
 {% if episodes %}
@@ -33,7 +220,6 @@
     <col style="width:4em;">
     <col style="width:6em;">
     <col>
-    <col style="width:22em;">
   </colgroup>
   <thead>
     <tr>
@@ -43,7 +229,6 @@
       <th style="white-space:nowrap;">株数</th>
       <th style="white-space:nowrap;">株価</th>
       <th>理由</th>
-      <th>振り返りメモ</th>
     </tr>
   </thead>
   <tbody>
@@ -54,23 +239,8 @@
       {% if loop.first %}
       <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;white-space:nowrap;">
         <a href="/stock/{{ ep.code_s }}">{{ ep.code_s }} {{ ep.stock_name }}</a>
-        {# 概算損益 (issue #361): 算出できたエピソードのみ。None は非表示 #}
-        {% if ep.pl %}
-        <div style="font-size:0.82em;margin-top:2px;">
-          <span style="color:{{ '#9ef0aa' if ep.pl.return_pct >= 0 else '#f0a0a0' }};font-weight:600;">
-            {{ '+' if ep.pl.return_pct >= 0 else '' }}{{ "%.1f"|format(ep.pl.return_pct) }}%</span>
-          {% if ep.pl.profit_amount is not none %}
-          <span style="color:{{ '#9ef0aa' if ep.pl.profit_amount >= 0 else '#f0a0a0' }};margin-left:0.4em;">
-            {{ "{:+,}".format(ep.pl.profit_amount|round|int) }}円</span>
-          {% elif ep.pl.profit_per_share is not none %}
-          <span style="color:{{ '#9ef0aa' if ep.pl.profit_per_share >= 0 else '#f0a0a0' }};margin-left:0.4em;" title="株数不明のため1株あたり損益">
-            {{ "{:+,}".format(ep.pl.profit_per_share|round|int) }}円/株</span>
-          {% endif %}
-          <span style="color:#888;margin-left:0.4em;">{{ ep.pl.hold_days }}日</span>
-        </div>
-        {% elif ep.sell_date %}
-        <div style="font-size:0.82em;margin-top:2px;color:#666;">損益 —</div>
-        {% endif %}
+        {# 実現損益は売買履歴タブ (fill=真実源) に一本化 (issue #387 Phase4b)。
+           ここは売却後騰落率 (issue #366、振り返りの参考) のみ残す #}
         {% if ep.post_sell %}
         <div style="font-size:0.78em;margin-top:3px;color:#888;">
           {% for item in ep.post_sell.values() %}
@@ -103,15 +273,6 @@
         {% if row.price is not none %}{{ "{:,}".format(row.price|int) }}{% else %}—{% endif %}
       </td>
       <td style="color:#555;">{{ row.reason }}</td>
-      {% if loop.first %}
-      <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;{% if ep.review_prompt %}background:rgba(210,170,70,0.10);{% endif %}">
-        <div class="review-memo-cell"
-             data-url="/trade-history/{{ ep.code_s }}/{{ ep.memo_seq }}/review-memo"
-             data-memo="{{ ep.review_memo or '' | e }}">
-          <span class="review-memo-display">{{ ep.review_memo or "クリックして入力" }}</span>
-        </div>
-      </td>
-      {% endif %}
     </tr>
     {% endfor %}
   {% endfor %}
@@ -121,7 +282,7 @@
 {% endmacro %}
 
 {% if not recent and not past_years %}
-<p style="color:#888;">売買履歴がありません。</p>
+<p style="color:#888;">アクションログがありません。</p>
 {% else %}
 
 {# 直近30件 #}
@@ -147,62 +308,47 @@
 {% endif %}
 
 {% endif %}
-
-{# 取込済みで未反映の約定 (issue #360 Phase2 (c))。エピソードの有無に依存せず表示する #}
-{% if unmatched_fills %}
-<div style="margin-top:2em;">
-  <hr style="border:none;border-top:1px solid #333;margin-bottom:1em;">
-  <details>
-    <summary style="color:#c8a050;font-size:0.95em;cursor:pointer;">
-      取込済みで未反映の約定（{{ unmatched_fills|length }} 件）
-    </summary>
-    <p style="color:#888;font-size:0.82em;margin:0.5em 0;">
-      手動記録と対応付かなかった楽天の約定です。P/L には未反映です。
-      同じ日・同じ売買方向の分割約定は加重平均単価でまとめています（「N件集約」）。
-    </p>
-    <table class="trade-history-table">
-      <colgroup>
-        <col style="width:9em;"><col style="width:6em;"><col style="width:4em;">
-        <col style="width:5em;"><col style="width:6em;"><col>
-      </colgroup>
-      <thead>
-        <tr>
-          <th>銘柄</th>
-          <th style="white-space:nowrap;">約定日</th>
-          <th>売買</th>
-          <th style="white-space:nowrap;">株数</th>
-          <th style="white-space:nowrap;">単価</th>
-          <th>取引区分</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for f in unmatched_fills %}
-        <tr>
-          <td style="white-space:nowrap;"><a href="/stock/{{ f.code_s }}">{{ f.code_s }} {{ f.stock_name }}</a></td>
-          <td style="white-space:nowrap;color:#888;font-size:0.85em;">{{ f.trade_date[2:4] }}/{{ f.trade_date[5:7] }}/{{ f.trade_date[8:10] }}</td>
-          <td style="white-space:nowrap;">
-            {% if f.side == "buy" %}
-            <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#2e5a6e;color:#9ed8f0;">{{ f.side_label }}</span>
-            {% else %}
-            <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;background:#5a2e2e;color:#f0a0a0;">{{ f.side_label }}</span>
-            {% endif %}
-            {% if f.aggregated %}
-            <span style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#3a3a2e;color:#c8c070;margin-left:0.2em;">{{ f.count }}件集約</span>
-            {% endif %}
-          </td>
-          <td style="text-align:right;color:#888;font-size:0.85em;">{{ f.qty }}</td>
-          <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}</td>
-          <td style="color:#777;font-size:0.85em;">{{ f.trade_kind }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </details>
 </div>
-{% endif %}
 
 <script>
 (function () {
+  // タブ切替 (issue #387)
+  var tabBtns = document.querySelectorAll('.th-tab-btn');
+  var panels = document.querySelectorAll('.th-tab-panel');
+  tabBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      tabBtns.forEach(function (b) {
+        b.classList.remove('active');
+        b.style.borderBottomColor = 'transparent';
+        b.style.color = '#aaa';
+      });
+      panels.forEach(function (p) { p.style.display = 'none'; });
+      btn.classList.add('active');
+      btn.style.borderBottomColor = '#9ed8f0';
+      btn.style.color = '#ddd';
+      var panel = document.getElementById(btn.dataset.tab);
+      if (panel) panel.style.display = '';
+    });
+  });
+  // 初期タブ (売買履歴) のアクティブ表示
+  var first = document.querySelector('.th-tab-btn.active');
+  if (first) {
+    first.style.borderBottomColor = '#9ed8f0';
+    first.style.color = '#ddd';
+  }
+
+  // 売買履歴エピソード行のクリック展開 (issue #387 Phase4b)
+  document.querySelectorAll('.th-ep-row').forEach(function (row) {
+    row.addEventListener('click', function () {
+      var detail = document.getElementById(row.dataset.ep);
+      if (!detail) return;
+      var open = detail.style.display !== 'none';
+      detail.style.display = open ? 'none' : '';
+      var caret = row.querySelector('.th-ep-caret');
+      if (caret) caret.textContent = open ? '▸' : '▾';
+    });
+  });
+
   // 振り返りメモ編集
   document.querySelectorAll('.review-memo-cell').forEach(function (cell) {
     var url = cell.dataset.url;
@@ -227,6 +373,10 @@
         }
         var fd = new FormData();
         fd.append('review_memo', next);
+        // 売買履歴タブ (fill エピソード) はエピソードキーで保存 (issue #387 Phase2)
+        if (cell.dataset.episodeKey) {
+          fd.append('episode_key', cell.dataset.episodeKey);
+        }
         fetch(url, { method: 'POST', body: fd })
           .then(function (r) {
             if (r.ok) {

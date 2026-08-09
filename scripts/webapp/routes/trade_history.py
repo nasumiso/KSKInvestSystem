@@ -1,24 +1,43 @@
-"""売買履歴ページルート (issue #351, #357)。
+"""売買履歴ページルート (issue #351, #357, #387)。
 
-GET  /trade-history                          : 保有エピソード単位でサブ行展開表示
+GET  /trade-history                          : 売買履歴/アクションログの2タブ表示
+POST /trade-history/import                    : 楽天/SBI CSV をアップロード取込 (issue #387 4a)
 POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
      seq は売却ログまたは1保遷移ログの seq。どちらも review_memo に保存可能。
 """
 
-from flask import Blueprint, abort, jsonify, render_template, request
+import os
+import shutil
+import tempfile
 
+from flask import (
+    Blueprint,
+    abort,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+
+import import_rakuten_fills as rakuten
+import import_sbi_fills as sbi
 import portfolio_shelve as ps
+from ks_util import DATA_DIR
 from webapp.helpers import (
-    _aggregate_fill_price,
     _bulk_price_logs,
-    calc_episode_pl,
+    build_fill_episodes,
     calc_post_sell_returns,
     calc_trade_summary,
-    list_unmatched_fills,
+    fill_date_range_by_broker,
     resolve_stock_name,
 )
 
 trade_history_bp = Blueprint("trade_history", __name__)
+
+# 取込成功CSVの保存先 (取引履歴の原本置き場)。issue #387 4a
+TRADE_HISTORY_DIR = os.path.join(DATA_DIR, "trade_history")
 
 
 def _build_rows(ep: dict) -> list:
@@ -102,56 +121,13 @@ def _last_action_date(ep: dict) -> str:
     return max(dates)
 
 
-def _apply_fill_prices(episodes: list) -> None:
-    """マッチ済み fill (実約定) で hold_price/sell_price/qty/日付をエピソードへ上書きする。
-
-    issue #360 Phase2: fill 側 matched_seq が action_log の seq を指す。seq は code_s ごとの
-    連番なので (code_s, matched_seq) を複合キーにする。買い増し (qty_changes) 混在エピソードは
-    加重平均が proxy と混ざり歪むため対象外 (単一 IN のみ)。上書きは episodes を破壊的に更新。
-
-    日付 (hold_date/sell_date) も楽天の約定日を真実源として上書きする。手動 action_log の
-    timestamp は操作履歴として DB 側にそのまま残し、表示・保有日数計算は約定日を優先する。
-    マッチした側のみ差し替え、未マッチ側は手動日のまま (価格の上書きポリシーと一致)。
-    """
-    fills_by_key: dict = {}  # (code_s, matched_seq) -> [fill, ...]
-    for f in ps.list_fills():
-        matched = f.get("matched_seq")
-        if matched is None:
-            continue
-        fills_by_key.setdefault((f["code_s"], matched), []).append(f)
-
-    if not fills_by_key:
-        return
-
-    for ep in episodes:
-        if ep.get("qty_changes"):
-            continue  # 買い増し混在は proxy のまま (§3 の限定)
-        code_s = ep["code_s"]
-        # 保有開始 (buy fill) → hold_seq にマッチ。
-        # fill を株数の真実源とするため、手入力 qty があっても実約定株数で置換する。
-        buy = _aggregate_fill_price(fills_by_key.get((code_s, ep.get("hold_seq")), []))
-        if buy is not None:
-            ep["hold_price"] = buy["price"]
-            ep["hold_qty"] = buy["qty"]
-            if buy.get("date"):
-                ep["hold_date"] = buy["date"]
-        # 売却 (sell fill) → sell_seq にマッチ
-        if ep.get("sell_seq") is not None:
-            sell = _aggregate_fill_price(fills_by_key.get((code_s, ep["sell_seq"]), []))
-            if sell is not None:
-                ep["sell_price"] = sell["price"]
-                ep["sell_qty"] = sell["qty"]
-                if sell.get("date"):
-                    # 約定日で売却日を上書きした場合、保存済み売却後騰落率 (旧手動日基準)
-                    # を無効化する。後段で新約定日を起点に再計算される (issue #366 整合)
-                    if sell["date"] != ep.get("sell_date"):
-                        ep["post_sell_returns"] = {}
-                    ep["sell_date"] = sell["date"]
-
-
 @trade_history_bp.route("/trade-history")
 def trade_history():
-    """売買履歴ページ — 銘柄×保有エピソードをサブ行展開で表示。"""
+    """売買履歴ページ — 2タブ構成 (issue #387)。
+
+    - 売買履歴タブ: 楽天CSVの実約定 (fill) を約定日降順で一覧
+    - アクションログタブ: 手動記録の保有エピソードをサブ行展開で表示
+    """
     all_logs = ps.list_action_logs()  # (code_s, seq) 昇順
 
     episodes = []
@@ -222,24 +198,15 @@ def trade_history():
     # エピソード内の最新アクション日 (売却 > 株数変更 > 保有) 降順
     episodes.sort(key=_last_action_date, reverse=True)
 
-    # issue #360 Phase2: マッチ済み fill (実約定) で hold_price/sell_price/日付を上書きする。
-    # 買い増し (qty_changes) 混在エピソードは加重平均が proxy と混ざり歪むため対象外
-    # (単一 IN のみ)。未マッチ側は従来 price_proxy フォールバックのまま (既存挙動維持)。
-    _apply_fill_prices(episodes)
-    # 日付を約定日に上書きしたので、表示順を約定日基準に揃え直す
-    episodes.sort(key=_last_action_date, reverse=True)
-
-    # 銘柄名付与・サブ行組み立て・概算損益 (issue #361)
+    # 銘柄名付与・サブ行組み立て (issue #361)
+    # 成績サマリー・概算損益は fill 側 (売買履歴タブ) に一本化したため、
+    # アクションログ側では計算しない (issue #387 Phase4b)。
     # 売却後騰落率は表示時に計算し、確定した値だけ売却ログへ保存する (issue #366)。
     price_logs = _bulk_price_logs([ep["code_s"] for ep in episodes if ep["sell_date"]])
-    episode_pls = []
     for ep in episodes:
         ep["stock_name"] = resolve_stock_name(ep["code_s"])
         ep["rows"] = _build_rows(ep)
         ep["rowspan"] = len(ep["rows"])
-        ep["pl"] = calc_episode_pl(ep)  # 算出不可なら None (行は「—」表示)
-        if ep["pl"] is not None:
-            episode_pls.append(ep["pl"])
         if ep["sell_date"]:
             calculated = calc_post_sell_returns(ep, price_logs.get(ep["code_s"], []))
             saved = ep.get("post_sell_returns", {})
@@ -259,10 +226,6 @@ def trade_history():
                 value["return_pct"] is not None for value in calculated.values()
             ) and not ep["review_memo"]
 
-    # 売却済み全体の成績サマリー (issue #361)。母数0/算出不可のみなら None
-    closed_count = sum(1 for ep in episodes if ep["sell_date"])
-    summary = calc_trade_summary(episode_pls)
-
     # 直近30件と過去ログに分割
     recent = episodes[:30]
     past = episodes[30:]
@@ -275,39 +238,96 @@ def trade_history():
     # 年降順のリスト [(year, episodes), ...]
     past_years = sorted(past_by_year.items(), key=lambda x: x[0], reverse=True)
 
-    # issue #360 Phase2 (c): 取込済みで未マッチ (P/L 未反映) の fill を一覧表示 (閲覧のみ)
-    unmatched_fills = list_unmatched_fills()
+    # issue #387 Phase4b: 売買履歴タブ = fill 基準の建玉ラウンド・エピソード。
+    # 成績サマリー (勝率/ペイオフ) はクローズ済みで損益算出できたエピソードから算出。
+    fill_episodes = build_fill_episodes()
+    fill_pls = [ep["pl"] for ep in fill_episodes if ep["closed"] and ep["pl"]]
+    fill_summary = calc_trade_summary(fill_pls)
+    fill_closed_count = sum(1 for ep in fill_episodes if ep["closed"])
+    fill_priced_count = len(fill_pls)
+    fill_total_pl = sum(
+        p["profit_amount"] for p in fill_pls if p["profit_amount"] is not None
+    )
+
+    # 証券会社別の取込済み約定日レンジ (次回インポートの参考、取込のたびに更新される)
+    broker_ranges = fill_date_range_by_broker()
 
     return render_template(
         "trade_history.html",
         recent=recent,
         past_years=past_years,
-        summary=summary,
-        closed_count=closed_count,
-        unmatched_fills=unmatched_fills,
+        fill_episodes=fill_episodes,
+        fill_summary=fill_summary,
+        fill_closed_count=fill_closed_count,
+        fill_priced_count=fill_priced_count,
+        fill_total_pl=fill_total_pl,
+        broker_ranges=broker_ranges,
     )
 
 
-@trade_history_bp.route(
-    "/trade-history/<code_s>/<int:seq>/review-memo", methods=["POST"]
-)
-def save_review_memo(code_s: str, seq: int):
-    """振り返りメモを上書き保存する (fetch POST / JSON レスポンス)。
+@trade_history_bp.route("/trade-history/import", methods=["POST"])
+def import_trade_csv():
+    """楽天/SBI の約定CSVをアップロード取込する (issue #387 4a)。
 
-    seq は売却ログまたは1保遷移ログの seq。
-    どちらも review_memo を持つため同じエンドポイントで処理する。
+    ヘッダで証券会社を自動判定 → 該当パーサーで取込 → 成功時のみ原本を
+    TRADE_HISTORY_DIR へ同名上書きコピー。結果を flash して /trade-history へ戻る。
+    dedup があるため再取込は冪等 (重複はスキップされる)。
     """
-    review_memo = request.form.get("review_memo", "")
+    file = request.files.get("csv_file")
+    if file is None or not file.filename:
+        flash("CSVファイルが選択されていません。", "error")
+        return redirect(url_for("trade_history.trade_history"))
+
+    filename = os.path.basename(file.filename)
+    # 一時ファイルに保存 (パーサーはパス受け取りのため)
+    fd, tmp_path = tempfile.mkstemp(suffix=".csv")
+    os.close(fd)
     try:
-        logs = ps.list_action_logs(code_s)
-        target = next((l for l in logs if l["seq"] == seq), None)
-        if target is None:
-            abort(404)
-        action_type = target.get("action_type")
-        status_to = target.get("status_to")
-        if not (action_type == "売却" or (action_type == "ステータス変更" and status_to == "1保")):
-            abort(404)
-        ps.update_action_log_review_memo(code_s, seq, review_memo)
-    except KeyError:
-        abort(404)
+        file.save(tmp_path)
+
+        # ヘッダ自動判定 (楽天=先頭行が約定日ヘッダ / SBI=冒頭メタ行+銘柄コード列)
+        if rakuten.is_rakuten_csv(tmp_path):
+            module = rakuten
+        elif sbi.is_sbi_csv(tmp_path):
+            module = sbi
+        else:
+            flash(f"楽天/SBI の取引履歴CSVとして認識できませんでした: {filename}", "error")
+            return redirect(url_for("trade_history.trade_history"))
+
+        try:
+            stats = module.import_csv_to_fills(tmp_path)
+        except Exception as e:  # noqa: BLE001 - パース例外はユーザーへ提示
+            flash(f"取込中にエラーが発生しました ({filename}): {e}", "error")
+            return redirect(url_for("trade_history.trade_history"))
+
+        # 成功: 原本を正式置き場へ同名上書きコピー
+        os.makedirs(TRADE_HISTORY_DIR, exist_ok=True)
+        shutil.copy2(tmp_path, os.path.join(TRADE_HISTORY_DIR, filename))
+
+        flash(
+            f"{module.BROKER} CSV 取込完了: {filename} — "
+            f"新規 {stats['imported']} 件 / 重複スキップ {stats['skipped_dup']} 件 / "
+            f"対象外 {stats['skipped_invalid']} 件",
+            "success",
+        )
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    return redirect(url_for("trade_history.trade_history"))
+
+
+@trade_history_bp.route("/trade-history/fill-memo", methods=["POST"])
+def save_fill_memo():
+    """fill 建玉ラウンド (エピソード) の振り返りメモを保存する (issue #387 Phase2)。
+
+    エピソードキー (code_s|kind|open_date|close_date) を受け取り上書き保存する。
+    空文字は削除扱い。fetch POST / JSON レスポンス。
+    振り返りメモはアクションログ側から売買履歴 (fill=真実源) 側へ一本化した。
+    """
+    episode_key = request.form.get("episode_key", "")
+    review_memo = request.form.get("review_memo", "")
+    if not episode_key:
+        abort(400)
+    ps.set_fill_memo(episode_key, review_memo)
     return jsonify({"ok": True})

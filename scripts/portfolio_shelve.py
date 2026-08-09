@@ -84,6 +84,10 @@ KEY_TRADE_IDEA_PREFIX = "trade_idea:"
 # issue #360 Phase2: 楽天CSV 由来の約定事実 (fill レイヤー、イミュータブル)
 KEY_FILL_PREFIX = "fill:"
 KEY_FILL_SEQ_PREFIX = "_fill_seq:"
+# issue #387 Phase2: fill 建玉ラウンド (エピソード) 単位の振り返りメモ。
+# fill は再取込で作り直されるため、メモは別レイヤーに独立保存し
+# エピソードキー (code_s|kind|open_date|close_date) で紐付ける。
+KEY_FILL_MEMO_PREFIX = "fill_memo:"
 
 # テーママスター (issue #282)
 THEME_FIELDS = frozenset({"name", "description", "created_at"})
@@ -213,6 +217,10 @@ FILL_FIELDS = frozenset(
         "dedup_key",      # 冪等取込用ハッシュ
         "matched_seq",    # マッチした action_log の seq (未マッチは None)
         "imported_at",    # 取込時刻 ISO8601
+        "broker",         # 取込元証券会社 ("楽天" / "SBI")。issue #387 Phase3
+        "settle_pl",      # 決済損益[円] (SBI 信用返済行のみ。無ければ None)。issue #387 Phase3
+        "tate_date",      # 建約定日 "YYYY-MM-DD" (楽天 信用返済行のみ)。issue #387 Phase4b
+        "tate_price",     # 建単価[円] (楽天 信用返済行のみ、float)。issue #387 Phase4b
     }
 )
 
@@ -264,6 +272,36 @@ def validate_code_s(code_s: Any) -> None:
             f"invalid code_s: {code_s!r} (正規化後={normalized!r}、"
             "期待形式は4文字の数字または3桁数字+大文字1文字)"
         )
+
+
+_etf_codes_cache: Optional[frozenset] = None
+
+
+def load_etf_code_set() -> frozenset:
+    """ETF コード集合を `DATA_DIR/ETF_code.txt` から読む (issue #387)。
+
+    ファイルはタブ区切り (`1357\t日経Ｄインバ`) でコードは先頭列。
+    株式売買の分析対象外なので、fill 取込時に除外するのに使う。
+    プロセス内でキャッシュする (取込ループから毎行呼ばれるため)。
+    """
+    global _etf_codes_cache
+    if _etf_codes_cache is None:
+        codes = set()
+        try:
+            with open(os.path.join(DATA_DIR, "ETF_code.txt"), "r") as f:
+                for line in f:
+                    code = line.strip().split("\t")[0].strip()
+                    if code:
+                        codes.add(normalize_code_s(code))
+        except OSError as e:
+            log_warning(f"ETF_code.txt を読めませんでした (ETF除外をスキップ): {e}")
+        _etf_codes_cache = frozenset(codes)
+    return _etf_codes_cache
+
+
+def is_etf_code(code_s: Any) -> bool:
+    """銘柄コードが ETF (ETF_code.txt 掲載) かどうか。"""
+    return normalize_code_s(code_s) in load_etf_code_set()
 
 
 def validate_status(status: Any) -> None:
@@ -973,8 +1011,16 @@ def create_fill(
     trade_kind: str,
     dedup_key: str,
     matched_seq: Optional[int] = None,
+    broker: Optional[str] = None,
+    settle_pl: Optional[int] = None,
+    tate_date: Optional[str] = None,
+    tate_price: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """fill レコード dict を生成する (バリデーション付き)。"""
+    """fill レコード dict を生成する (バリデーション付き)。
+
+    broker: 取込元証券会社 ("楽天"/"SBI")。settle_pl: 決済損益[円] (SBI 信用返済のみ)。
+    tate_date/tate_price: 建約定日/建単価 (楽天 信用返済のみ)。issue #387 Phase4b。
+    """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
     if side not in (SIDE_BUY, SIDE_SELL):
@@ -997,6 +1043,10 @@ def create_fill(
         "dedup_key": dedup_key,
         "matched_seq": matched_seq,
         "imported_at": now_iso(),
+        "broker": broker,
+        "settle_pl": int(settle_pl) if settle_pl is not None else None,
+        "tate_date": tate_date,
+        "tate_price": float(tate_price) if tate_price is not None else None,
     }
 
 
@@ -1009,6 +1059,11 @@ def _next_fill_seq(db: ShelveDB, code_s: str) -> int:
     return nxt
 
 
+# 再取込時に既存 fill へ後付けで埋めてよいフィールド (dedup_key に含まれず、
+# 古い取込では欠けている派生情報)。値が None→非None のときだけ埋める。issue #387 Phase4b
+_FILL_BACKFILL_FIELDS = ("tate_date", "tate_price", "settle_pl", "broker")
+
+
 def append_fill(
     fill: Dict[str, Any],
     *,
@@ -1016,7 +1071,9 @@ def append_fill(
 ) -> tuple:
     """fill を1件追記する (dedup_key で冪等)。
 
-    同一 code_s に同じ dedup_key の fill が既にあればスキップ (取込済み)。
+    同一 code_s に同じ dedup_key の fill が既にあればスキップ (取込済み)。ただし
+    tate_date/tate_price/settle_pl/broker が既存で None かつ新 fill で埋まっていれば
+    既存レコードに後付けする (Phase4b で列を追加したための移行、None→非None のみ)。
     新規なら _fill_seq を採番して保存する。
 
     Returns: (fill, is_new: bool) — is_new=False は重複スキップ (既存 fill を返す)
@@ -1033,6 +1090,14 @@ def append_fill(
                 if not key.startswith(prefix):
                     continue
                 if isinstance(value, dict) and value.get("dedup_key") == dedup_key:
+                    # 既存 fill に欠けた派生情報を後付け (None→非None のみ)
+                    updated = False
+                    for f in _FILL_BACKFILL_FIELDS:
+                        if value.get(f) is None and fill.get(f) is not None:
+                            value[f] = fill[f]
+                            updated = True
+                    if updated:
+                        db[key] = value
                     return value, False  # 既に取込済み (冪等)
             seq = _next_fill_seq(db, code_s)
             stored = dict(fill)
@@ -1065,29 +1130,74 @@ def list_fills(
     return results
 
 
-def set_fill_matched_seq(
-    code_s: str,
-    seq: int,
-    matched_seq: Optional[int],
-    *,
-    db_path: Optional[str] = None,
-) -> Dict[str, Any]:
-    """fill の matched_seq を更新する (マッチング結果の書き戻し)。
+# ===========================================
+# fill 建玉ラウンド (エピソード) 単位の振り返りメモ (issue #387 Phase2)
+# ===========================================
 
-    対象が無ければ KeyError。action_log 側は触らず fill 側にリンクを持たせる設計。
+def fill_episode_key(code_s: str, kind: str, first_seq: int) -> str:
+    """fill エピソード (建玉ラウンド) を一意に識別するキーを組み立てる。
+
+    キーは 銘柄+口座種別+ラウンド先頭 fill の seq。first_seq は建玉開始時に
+    確定し、その後の買い増し・部分売り・返済・売却で fill が増えても不変。
+    これにより:
+      - 保有中に付けたメモが売却後 (close_date 確定) も同じキーで追える。
+      - 同一銘柄・同一区分で同日に複数回ラウンドトリップしても、各ラウンドの
+        先頭 seq は異なるためキーが衝突しない。
+    fill の seq は銘柄内で単調増加する固有値 (append_fill が採番)。
     """
-    validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
-    key = _fill_key(normalized, seq)
+    return f"{normalized}|{kind}|{first_seq}"
+
+
+def _fill_memo_storage_key(episode_key: str) -> str:
+    return f"{KEY_FILL_MEMO_PREFIX}{episode_key}"
+
+
+def get_fill_memo(episode_key: str, *, db_path: Optional[str] = None) -> str:
+    """fill エピソードの振り返りメモを取得する。未設定は空文字。"""
     path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        value = db.get(_fill_memo_storage_key(episode_key))
+    if isinstance(value, dict):
+        return value.get("review_memo", "") or ""
+    return ""
+
+
+def set_fill_memo(episode_key: str, review_memo: str, *,
+                  db_path: Optional[str] = None) -> None:
+    """fill エピソードの振り返りメモを上書き保存する。空文字は削除扱い。"""
+    if not isinstance(review_memo, str):
+        raise TypeError(f"review_memo must be str, got {type(review_memo).__name__}")
+    path = _resolve_db_path(db_path)
+    storage_key = _fill_memo_storage_key(episode_key)
     with _flock(db_path):
         with ShelveDB(path) as db:
-            entry = db.get(key)
-            if entry is None:
-                raise KeyError(f"fill not found: code_s={code_s!r}, seq={seq}")
-            entry["matched_seq"] = matched_seq
-            db[key] = entry
-    return entry
+            if review_memo.strip() == "":
+                if storage_key in db:
+                    del db[storage_key]
+            else:
+                db[storage_key] = {
+                    "episode_key": episode_key,
+                    "review_memo": review_memo,
+                    "updated_at": now_iso(),
+                }
+    log_print("portfolio_shelve: fill_memo 更新", episode_key)
+
+
+def list_fill_memos(*, db_path: Optional[str] = None) -> Dict[str, str]:
+    """全 fill エピソードメモを {episode_key: review_memo} で一括取得する。"""
+    path = _resolve_db_path(db_path)
+    results: Dict[str, str] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_FILL_MEMO_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            memo = value.get("review_memo", "") or ""
+            if memo:
+                results[value.get("episode_key", key[len(KEY_FILL_MEMO_PREFIX):])] = memo
+    return results
 
 
 # ===========================================
