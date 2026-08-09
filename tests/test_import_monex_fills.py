@@ -10,6 +10,7 @@ import pytest
 
 import import_monex_fills as imf
 import portfolio_shelve as ps
+from import_rakuten_fills import RowSkip
 
 # マネックス CSV の冒頭メタ行 + 本ヘッダ (実ファイル構造の縮図)
 _META = [["データ作成日：2026/08/09 15:15:44"]]
@@ -37,6 +38,16 @@ def _write_csv(path, data_rows):
         for r in data_rows:
             w.writerow(r)
     return str(path)
+
+
+@pytest.fixture(autouse=True)
+def etf_codes(monkeypatch):
+    """ETF 判定を固定する。
+
+    `data/ETF_code.txt` は git 管理外で CI には存在しないため、実ファイルに依存すると
+    ETF 除外が効かずテストが落ちる。1540 (純金信託) を ETF として固定する。
+    """
+    monkeypatch.setattr(ps, "_etf_codes_cache", frozenset({"1540"}))
 
 
 @pytest.fixture
@@ -76,11 +87,20 @@ def test_parse_side_kind_and_tate(product, action, exp_side, exp_kind, exp_tate)
         ("54710    ", "5471"),  # 数字4桁+付加桁 (実CSVは空白パディング付き)
         ("471A0", "471A"),      # 英字混じり4文字+付加桁
         ("5471", "5471"),       # 5桁でなければそのまま
+        # 末尾が 0 以外の5桁は切り詰めない。切り詰めると 5471 として
+        # validate_code_s を通り、別銘柄の fill になってしまう
+        ("54711", "54711"),
     ],
 )
 def test_code_normalization(raw_code, exp_code_s):
     """5桁銘柄コードの末尾付加桁を落として4文字 code_s にする。"""
     assert imf._normalize_monex_code(raw_code) == exp_code_s
+
+
+def test_unexpected_5digit_code_is_skipped():
+    """末尾が 0 以外の5桁コードは無効として弾く (別銘柄への誤取込を防ぐ)。"""
+    with pytest.raises(RowSkip):
+        imf.parse_fill_row(_row("54711", "信用新規", "半年新規買い", "100", "1,000", "0"))
 
 
 def test_etf_excluded_but_non_watchlist_stock_imported(tmp_path, db_path):

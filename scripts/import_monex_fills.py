@@ -129,11 +129,13 @@ def read_csv_rows(csv_path: str) -> List[List[str]]:
 def _normalize_monex_code(raw: str) -> str:
     """マネックスの5桁銘柄コード (`54710    `) を4桁 code_s (`5471`) に変換する。
 
-    末尾1桁は付加桁 (`471A0` → `471A`)。5桁以外はそのまま返し、
-    正否の判定は後段の validate_code_s に委ねる。
+    末尾1桁は付加桁で、確認済みのマネックス形式では常に `0` (`471A0` → `471A`)。
+    末尾が `0` の5桁のときだけ落とす。`54711` のような想定外の値まで切り詰めると
+    `5471` として validate_code_s を通り、別銘柄の fill として保存されてしまうため、
+    そのまま返して無効コードとしてスキップさせる。
     """
     s = (raw or "").strip().upper()
-    return s[:-1] if len(s) == 5 else s
+    return s[:-1] if len(s) == 5 and s.endswith("0") else s
 
 
 def parse_fill_row(row: List[str]) -> Dict[str, Any]:
