@@ -215,7 +215,6 @@ FILL_FIELDS = frozenset(
         "amount",         # 受渡金額[円] (楽天符号のまま int)
         "trade_kind",     # 元の取引区分 (現物 / 信用新規 / 信用返済 / 現物(単元未満))
         "dedup_key",      # 冪等取込用ハッシュ
-        "matched_seq",    # マッチした action_log の seq (未マッチは None)
         "imported_at",    # 取込時刻 ISO8601
         "broker",         # 取込元証券会社 ("楽天" / "SBI")。issue #387 Phase3
         "settle_pl",      # 決済損益[円] (SBI 信用返済行のみ。無ければ None)。issue #387 Phase3
@@ -1010,7 +1009,6 @@ def create_fill(
     amount: int,
     trade_kind: str,
     dedup_key: str,
-    matched_seq: Optional[int] = None,
     broker: Optional[str] = None,
     settle_pl: Optional[int] = None,
     tate_date: Optional[str] = None,
@@ -1041,7 +1039,6 @@ def create_fill(
         "amount": int(amount),
         "trade_kind": trade_kind,
         "dedup_key": dedup_key,
-        "matched_seq": matched_seq,
         "imported_at": now_iso(),
         "broker": broker,
         "settle_pl": int(settle_pl) if settle_pl is not None else None,

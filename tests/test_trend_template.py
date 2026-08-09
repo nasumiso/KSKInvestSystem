@@ -4,7 +4,7 @@ from datetime import datetime
 import pytest
 import make_stock_db
 
-_TODAY = datetime(2026, 6, 20, 18, 0)
+_TODAY = datetime.now()
 
 
 def _make_stock(trend_template, pocket_pivot=None, breakout=None):

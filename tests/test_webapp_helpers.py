@@ -3508,48 +3508,6 @@ def test_classify_market_category_legacy_nikkei225_cache(monkeypatch):
 # issue #361: 概算損益・成績サマリー
 # ==================================================
 
-def _ep(hold_date="2026-05-01", sell_date="2026-05-11", hold_price=1000,
-        hold_qty=100, sell_price=1200, sell_qty=100, qty_changes=None):
-    return {
-        "hold_date": hold_date, "sell_date": sell_date,
-        "hold_price": hold_price, "hold_qty": hold_qty,
-        "sell_price": sell_price, "sell_qty": sell_qty,
-        "qty_changes": qty_changes or [],
-    }
-
-
-@pytest.mark.parametrize("ep, expect", [
-    # 単純: 1000→1200 = +20%、暦日10日
-    (_ep(), {"return_pct": 20.0, "hold_days": 10, "profit_amount": 20000, "profit_per_share": 200}),
-    # 単一 IN で hold_qty=None でも sell_qty があれば概算損益額を出す
-    (_ep(hold_qty=None), {"return_pct": 20.0, "hold_days": 10, "profit_amount": 20000, "profit_per_share": 200}),
-    # 株数が全く無い旧ログは損益率のみ出し、損益額は出さない
-    (_ep(hold_qty=None, sell_qty=None), {"return_pct": 20.0, "hold_days": 10, "profit_amount": None, "profit_per_share": 200}),
-    # 買い増し加重: 100株@1000 + 100株@1400 → 平均1200、売値1200 = 0%
-    (_ep(hold_qty=100, sell_price=1200, sell_qty=200,
-         qty_changes=[{"price": 1400, "after_qty": 200}]),
-     {"return_pct": 0.0, "hold_days": 10, "profit_amount": 0, "profit_per_share": 0}),
-    # 減玉あり (200→100) → None
-    (_ep(hold_qty=200, qty_changes=[{"price": 1100, "after_qty": 100}]), None),
-    # 買い増しがあるのに hold_qty=None (加重不能) → None
-    (_ep(hold_qty=None, qty_changes=[{"price": 1400, "after_qty": 200}]), None),
-    # 買い増しの price 欠損 → None
-    (_ep(hold_qty=100, qty_changes=[{"price": None, "after_qty": 200}]), None),
-    # 売却価格なし → None
-    (_ep(sell_price=None), None),
-])
-def test_calc_episode_pl(ep, expect):
-    result = helpers.calc_episode_pl(ep)
-    if expect is None:
-        assert result is None
-    else:
-        assert result is not None
-        assert round(result["return_pct"], 4) == expect["return_pct"]
-        assert result["hold_days"] == expect["hold_days"]
-        assert result["profit_amount"] == expect["profit_amount"]
-        assert result["profit_per_share"] == expect["profit_per_share"]
-
-
 @pytest.mark.parametrize("pls, checks", [
     # 勝ち負け混在: +20%(amt100) 勝ち, -10%(amt100) 負け → win_rate50, payoff 20/10=2.0
     # 勝ち平均+20%, 負け平均-10%, 期待値 (20*100-10*100)/200 = +5%

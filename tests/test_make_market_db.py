@@ -1766,7 +1766,7 @@ class TestGetMarketDbMtimeCache:
                 upd["theme_rank"] = ["EV", "防衛"]
 
             # mtime 変化後は再読み込みされる
-            make_market_db._market_db_cache_sig = None  # mtime 変化をシミュレート
+            make_market_db._market_db_cache_sig = object()  # mtime 変化をシミュレート
             result2 = make_market_db.get_market_db()
             assert result2["theme_rank"] == ["EV", "防衛"]
         finally:
