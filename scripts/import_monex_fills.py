@@ -21,7 +21,7 @@ import argparse
 import csv
 import os
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
@@ -74,14 +74,9 @@ _ACTION_MAP = {
     ("株式", "ご売却"): ("sell", "現物"),
 }
 
-# 受渡金額列が決済損益になる取引 (信用返済のみ)。
-# 現引は建玉の現物化で損益確定しないため含めない。
-_SETTLE_ACTIONS = frozenset({
-    ("信用返済", "半年返済売り"),
-    ("信用返済", "半年返済買い"),
-})
-
-# 現引 (建玉の現物化)。損益は確定しないが建約定日・建単価は持つ
+# 商品列の値。_ACTION_MAP を通った後は商品だけで取引の性質が決まる。
+# 信用返済 = 受渡金額列が決済損益。現引 = 建玉の現物化 (損益は確定しないが建単価は持つ)。
+PRODUCT_SETTLE = "信用返済"
 PRODUCT_GENBIKI = "現引"
 
 BROKER = "マネックス"
@@ -134,11 +129,11 @@ def read_csv_rows(csv_path: str) -> List[List[str]]:
 def _normalize_monex_code(raw: str) -> str:
     """マネックスの5桁銘柄コード (`54710    `) を4桁 code_s (`5471`) に変換する。
 
-    末尾1桁は付加桁 (`471A0` → `471A`)。5桁かつ末尾が 0 のときだけ落とし、
-    それ以外はそのまま返して後段の validate_code_s に判定を委ねる。
+    末尾1桁は付加桁 (`471A0` → `471A`)。5桁以外はそのまま返し、
+    正否の判定は後段の validate_code_s に委ねる。
     """
     s = (raw or "").strip().upper()
-    return s[:-1] if len(s) == 5 and s.endswith("0") else s
+    return s[:-1] if len(s) == 5 else s
 
 
 def parse_fill_row(row: List[str]) -> Dict[str, Any]:
@@ -184,19 +179,19 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
 
     amount_f = _parse_num(row[COL_AMOUNT])
     amount = int(amount_f) if amount_f is not None else 0
-    # 信用返済行の受渡金額列は諸経費控除後の「決済損益」。P/L の真実源として持たせる
-    settle_pl = amount if (product, action) in _SETTLE_ACTIONS else None
+    # 信用返済行の受渡金額列は諸経費控除後の「決済損益」。P/L の真実源として持たせる。
+    # パース不能時は 0 (損益ゼロ) と区別できないので None (不明) のままにする。
+    settle_pl = int(amount_f) if (product == PRODUCT_SETTLE and amount_f is not None) else None
 
     # 建約定日・建単価 (信用返済/現引行のみ)。信用ラウンドの建玉コスト算出に使う。
     # 信用新規行にも同じ列が埋まっているが、そこは自身の約定日・単価のエコーで情報量が無く、
     # 「建玉を持っていた」という誤った意味を持たせないため決済側の行に限って取り込む。
-    if (product, action) in _SETTLE_ACTIONS or product == PRODUCT_GENBIKI:
+    tate_date = tate_price = None
+    if product in (PRODUCT_SETTLE, PRODUCT_GENBIKI):
         tate_date = _normalize_trade_date(row[COL_TATE_DATE])
         tate_price_f = _parse_num(row[COL_TATE_PRICE])
-        tate_price = tate_price_f if (tate_price_f is not None and tate_price_f > 0) else None
-    else:
-        tate_date = None
-        tate_price = None
+        if tate_price_f is not None and tate_price_f > 0:
+            tate_price = tate_price_f
 
     return {
         "code_s": code_s,
@@ -206,7 +201,9 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
         "price": price_f,
         "amount": amount,
         "trade_kind": trade_kind,
-        "action": f"{product}/{action}",  # dedup 素材 (元の区分)
+        # dedup 素材。side が dedup キーに入らないため、同日同数量同単価の
+        # 新規買 / 新規売 を区別できるよう商品と取引を連結した元区分を持たせる
+        "kubun": f"{product}/{action}",
         "settle_pl": settle_pl,
         "tate_date": tate_date,
         "tate_price": tate_price,
@@ -246,7 +243,7 @@ def import_csv_to_fills(
                 parsed["trade_date"],
                 parsed["code_s"],
                 parsed["trade_kind"],
-                parsed["action"],
+                parsed["kubun"],
                 str(parsed["qty"]),
                 f"{parsed['price']:.4f}",
                 str(parsed["amount"]),
@@ -260,7 +257,7 @@ def import_csv_to_fills(
             trade_date=parsed["trade_date"],
             code_s=parsed["code_s"],
             trade_kind=parsed["trade_kind"],
-            baibai_kubun=parsed["action"],
+            baibai_kubun=parsed["kubun"],
             qty=parsed["qty"],
             price=parsed["price"],
             amount=parsed["amount"],

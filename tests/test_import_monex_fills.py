@@ -45,44 +45,42 @@ def db_path(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "product,action,exp_side,exp_kind",
+    "product,action,exp_side,exp_kind,exp_tate",
     [
-        ("信用新規", "半年新規買い", "buy", "信用新規"),
-        ("信用新規", "半年新規売り", "sell", "信用新規"),
-        ("信用返済", "半年返済売り", "sell", "信用返済"),
-        ("信用返済", "半年返済買い", "buy", "信用返済"),
-        ("現引", "半年現引", "buy", "現引"),
-        ("株式", "お買付", "buy", "現物"),
-        ("株式", "ご売却", "sell", "現物"),
+        # 建約定日・建単価は決済側 (信用返済/現引) の行だけ取り込む。信用新規行では
+        # 同じ列に自身の約定日・単価がエコーされているだけなので捨てる。
+        ("信用新規", "半年新規買い", "buy", "信用新規", False),
+        ("信用新規", "半年新規売り", "sell", "信用新規", False),
+        ("信用返済", "半年返済売り", "sell", "信用返済", True),
+        ("信用返済", "半年返済買い", "buy", "信用返済", True),
+        ("現引", "半年現引", "buy", "現引", True),
+        ("株式", "お買付", "buy", "現物", False),
+        ("株式", "ご売却", "sell", "現物", False),
     ],
 )
-def test_parse_side_and_kind(product, action, exp_side, exp_kind):
-    """(商品,取引) の組から side と楽天互換 trade_kind を正規化する。
-
-    信用新規行は建約定日・建単価の列が自身の約定日・単価のエコーになっているため、
-    決済側の行以外では取り込まないことも確認する。
-    """
+def test_parse_side_kind_and_tate(product, action, exp_side, exp_kind, exp_tate):
+    """(商品,取引) の組から side / trade_kind / 建単価の取込可否を正規化する。"""
     parsed = imf.parse_fill_row(
         _row("54710", product, action, "200", "1,888", "0",
              tate_date="2026/01/09", tate_price="1,888")
     )
     assert parsed["side"] == exp_side
     assert parsed["trade_kind"] == exp_kind
-    if exp_kind == "信用新規":
-        assert parsed["tate_price"] is None and parsed["tate_date"] is None
+    assert (parsed["tate_price"] is not None) is exp_tate
+    assert (parsed["tate_date"] is not None) is exp_tate
 
 
 @pytest.mark.parametrize(
     "raw_code,exp_code_s",
     [
-        ("54710", "5471"),   # 数字4桁+付加桁
-        ("471A0", "471A"),   # 英字混じり4文字+付加桁
+        ("54710    ", "5471"),  # 数字4桁+付加桁 (実CSVは空白パディング付き)
+        ("471A0", "471A"),      # 英字混じり4文字+付加桁
+        ("5471", "5471"),       # 5桁でなければそのまま
     ],
 )
 def test_code_normalization(raw_code, exp_code_s):
     """5桁銘柄コードの末尾付加桁を落として4文字 code_s にする。"""
-    parsed = imf.parse_fill_row(_row(raw_code, "信用新規", "半年新規買い", "100", "1,000", "0"))
-    assert parsed["code_s"] == exp_code_s
+    assert imf._normalize_monex_code(raw_code) == exp_code_s
 
 
 def test_etf_excluded_but_non_watchlist_stock_imported(tmp_path, db_path):
