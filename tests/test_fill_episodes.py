@@ -284,6 +284,30 @@ class TestShortRound:
         assert helpers._episode_open_pl(ep, 1300.0)["unrealized"] == 20000
         assert helpers._episode_open_pl(ep, 1700.0)["unrealized"] == -20000
 
+    def test_pre_import_short_repayment_is_closed_carry_over(self, db_path):
+        """新規売が取込範囲に無い返済買は、保有中の買建にしない。"""
+        _add(db_path, "5004", "2026-01-05", "buy", 100, 1300.0,
+             trade_kind="信用返済", settle_pl=20000, broker="SBI", seq_salt="a")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        assert len(eps) == 1
+        ep = eps[0]
+        assert ep["closed"] is True
+        assert ep["carry_over"] is True
+        assert ep["is_short"] is True
+        assert ep["pl"]["profit_amount"] == 20000
+
+    def test_same_day_short_open_is_processed_before_settlement(self, db_path):
+        """同日の新規売→返済買は、返済買を期首持越し扱いにしない。"""
+        _add(db_path, "5005", "2026-01-05", "sell", 100, 1500.0,
+             trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "5005", "2026-01-05", "buy", 100, 1300.0,
+             trade_kind="信用返済", settle_pl=20000, broker="SBI", seq_salt="b")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        assert len(eps) == 1
+        assert eps[0]["closed"] is True
+        assert eps[0]["carry_over"] is False
+        assert eps[0]["is_short"] is True
+
 
 class TestGenbutsuAndShinyoSeparate:
     def test_genbutsu_and_shinyo_are_separate_rounds(self, db_path):

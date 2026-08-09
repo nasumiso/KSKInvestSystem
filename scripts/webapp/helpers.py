@@ -4439,11 +4439,17 @@ def _build_code_episodes(code_s: str, stock_name: str,
     保有0に戻らず残った建玉は保有中エピソードになる。取込対象期間より前に建てた
     信用玉の返済は建約定日で判別し、当期の信用新規と相殺せず期首持越しとして分ける。
     """
-    # 約定日昇順。同日内は 建玉を作る側 (buy=新規買・現引) を先に、玉を減らす側
-    # (sell=売り・返済) を後に処理する。現引で現物化してから同日に売るケースで、売りが
-    # 先に来て期首持ち越し扱いになる誤検出を防ぐ (6366 相当)。
+    # 約定日昇順。同日内は建玉を作る側 (信用新規・現引・現物買) を先に、玉を減らす側
+    # (売り・返済) を後に処理する。信用売建の新規売も先にし、同日の返済買より前に
+    # 建玉を作る。現引で現物化してから同日に売るケースにも対応する (6366 相当)。
     def _sort_key(f):
-        return (f.get("trade_date") or "", 0 if f["side"] == "buy" else 1, f.get("seq") or 0)
+        tk = f.get("trade_kind") or ""
+        opens_position = (
+            tk.startswith("信用新規")
+            or tk == "現引"
+            or (f["side"] == "buy" and not tk.startswith("信用返済"))
+        )
+        return (f.get("trade_date") or "", 0 if opens_position else 1, f.get("seq") or 0)
     fills = sorted(fills, key=_sort_key)
     episodes: List[Dict[str, Any]] = []
 
@@ -4467,7 +4473,16 @@ def _build_code_episodes(code_s: str, stock_name: str,
         and f["side"] == "buy"
         and f.get("trade_date")
     }
+    short_open_dates = {
+        f.get("trade_date")
+        for f in fills
+        if (f.get("trade_kind") or "").startswith("信用新規")
+        and f["side"] == "sell"
+        and f.get("trade_date")
+    }
     carry_over_shinyo: Dict[str, List[Dict[str, Any]]] = {}
+    carry_over_short_by_tate: Dict[str, List[Dict[str, Any]]] = {}
+    carry_over_short_unknown: List[List[Dict[str, Any]]] = []
 
     def close_shinyo():
         nonlocal shinyo_fills, shinyo_qty, shinyo_peak
@@ -4515,12 +4530,22 @@ def _build_code_episodes(code_s: str, stock_name: str,
         elif tk.startswith("信用"):
             tate_date = f.get("tate_date")
             # 売建 (新規売) と、それを閉じる返済買は空売りラウンド側で処理する。
-            # ただし売建が一度も無い銘柄の返済買は、買建ラウンドの部分返済とみなす
-            # (旧来の挙動を維持。楽天の返済は原則 sell なのでここには来ない)。
+            # 対応する新規売が取込範囲に無い返済買は、期首持越しの売建を閉じたもの。
+            if tk.startswith("信用返済") and f["side"] == "buy":
+                # 建約定日があれば対応する新規売の有無で確定できる。SBI のように
+                # 建約定日が無い場合は、買建が残っていれば従来どおり想定外の混在として
+                # 買建側に残し含み評価を無効化する。両方の建玉が無いときだけ持越し売建。
+                if ((tate_date and tate_date not in short_open_dates)
+                        or (not tate_date and short_qty <= 0 and shinyo_qty <= 0)):
+                    if tate_date:
+                        carry_over_short_by_tate.setdefault(tate_date, []).append(f)
+                    else:
+                        # SBI は建約定日を持たないため、返済ごとに独立した期首持越しとする。
+                        carry_over_short_unknown.append([f])
+                    continue
             is_short_side = (
                 (tk.startswith("信用新規") and f["side"] == "sell")
-                or (tk.startswith("信用返済") and f["side"] == "buy"
-                    and (short_qty > 0 or short_fills))
+                or (tk.startswith("信用返済") and f["side"] == "buy" and short_qty > 0)
             )
             if is_short_side:
                 short_fills.append(f)
@@ -4568,6 +4593,16 @@ def _build_code_episodes(code_s: str, stock_name: str,
         episodes.append(_finalize_round(
             code_s, "信用", stock_name, carry_over_fills, 0,
             carry_over=True, open_date=tate_date,
+        ))
+    for tate_date, carry_over_fills in carry_over_short_by_tate.items():
+        episodes.append(_finalize_round(
+            code_s, "信用", stock_name, carry_over_fills, 0,
+            carry_over=True, open_date=tate_date, is_short=True,
+        ))
+    for carry_over_fills in carry_over_short_unknown:
+        episodes.append(_finalize_round(
+            code_s, "信用", stock_name, carry_over_fills, 0,
+            carry_over=True, is_short=True,
         ))
 
     return episodes
