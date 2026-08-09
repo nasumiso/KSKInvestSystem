@@ -30,7 +30,7 @@
 
 {# 説明 + CSV取込 (issue #387 4a): 普段は「＋CSV取込」リンクのみ、クリックで展開 (details) #}
 <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1em;margin-bottom:0.6em;">
-  <p style="color:#888;font-size:0.85em;margin:0;cursor:help;" title="損益は現物=平均取得単価法、信用=建単価/決済損益。">楽天・SBI証券CSVの実約定を建玉ラウンド単位のエピソードにまとめています。行をクリックで内訳の個別約定を展開。</p>
+  <p style="color:#888;font-size:0.85em;margin:0;cursor:help;" title="損益は現物=平均取得単価法、信用=建単価/決済損益。">楽天・SBI・マネックス証券CSVの実約定を建玉ラウンド単位のエピソードにまとめています。行をクリックで内訳の個別約定を展開。</p>
   <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:0.3em;">
     {# 取込済み最新約定日 (次回インポートの参考、取込のたびに更新) issue #387。
        title に最古〜最新のフルレンジをツールチップ表示 #}
@@ -39,7 +39,7 @@
       取込済み最新:
       {# 取込済みの証券会社だけを先に絞ってから回す。固定リストで loop.last を見ると
          楽天のみ取込のとき末尾に区切りの / が残る (レビュー対応) #}
-      {% set shown = ["楽天", "SBI"] | select("in", broker_ranges) | list %}
+      {% set shown = ["楽天", "SBI", "マネックス"] | select("in", broker_ranges) | list %}
       {% for broker in shown %}
         <span style="color:#aaa;" title="取込済み: {{ broker_ranges[broker].first }} 〜 {{ broker_ranges[broker].last }}">{{ broker }} {{ broker_ranges[broker].last[5:] }}</span>{% if not loop.last %} / {% endif %}
       {% endfor %}
@@ -48,7 +48,7 @@
   <details>
     <summary style="color:#9ed8f0;font-size:0.82em;cursor:pointer;white-space:nowrap;list-style:none;">＋ CSV取込</summary>
     <form method="post" action="/trade-history/import" enctype="multipart/form-data"
-          title="楽天・SBI の取引履歴CSVを自動判別して取り込みます"
+          title="楽天・SBI・マネックス の取引履歴CSVを自動判別して取り込みます"
           style="display:flex;align-items:center;gap:0.5em;margin-top:0.5em;padding:0.4em 0.6em;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:5px;">
       <input type="file" name="csv_file" accept=".csv" required
              style="font-size:0.78em;color:#aaa;width:18em;">
