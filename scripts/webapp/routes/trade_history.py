@@ -21,6 +21,7 @@ from flask import (
     url_for,
 )
 
+import import_monex_fills as monex
 import import_rakuten_fills as rakuten
 import import_sbi_fills as sbi
 import portfolio_shelve as ps
@@ -285,13 +286,19 @@ def import_trade_csv():
     try:
         file.save(tmp_path)
 
-        # ヘッダ自動判定 (楽天=先頭行が約定日ヘッダ / SBI=冒頭メタ行+銘柄コード列)
+        # ヘッダ自動判定 (楽天=先頭行が約定日ヘッダ28列 / SBI=メタ行+14列 /
+        # マネックス=メタ行+25列+建単価列)。列数が異なるので3者は排他。
         if rakuten.is_rakuten_csv(tmp_path):
             module = rakuten
         elif sbi.is_sbi_csv(tmp_path):
             module = sbi
+        elif monex.is_monex_csv(tmp_path):
+            module = monex
         else:
-            flash(f"楽天/SBI の取引履歴CSVとして認識できませんでした: {filename}", "error")
+            flash(
+                f"楽天/SBI/マネックス の取引履歴CSVとして認識できませんでした: {filename}",
+                "error",
+            )
             return redirect(url_for("trade_history.trade_history"))
 
         try:
