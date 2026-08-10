@@ -12,10 +12,12 @@ build_fill_episodes (webapp.helpers) を呼んで、取込後の検算・保有�
     cd scripts && python show_fill_episodes.py --fills 6324  # 内訳 fill も表示 (DB非更新)
     cd scripts && python show_fill_episodes.py --check-splits          # 分割・併合の疑いを診断 (issue #398)
     cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05  # 換算比率を登録
+    cd scripts && python show_fill_episodes.py --reject-split 1491 2025-09-29  # 誤検知を解除
 
 --check-splits は fill 本体・split_adj を更新しないが、未登録の発見を
 split_pending_review (拒否リスト) に記録する。これにより webapp 表示 (yfinance を
-呼ばない) でも同じ疑いを検知できる。--register-split で登録すれば解除される。
+呼ばない) でも同じ疑いを検知できる。--register-split で登録、または
+--reject-split で誤検知として却下すれば解除される。
 """
 
 import argparse
@@ -95,13 +97,14 @@ def _yfinance_splits(code_s: str, stock_db: Dict[str, Any]):
 def _report_split_candidate(code_s: str, splits, reason: str, db_path: Optional[str]) -> None:
     """未登録の分割・併合イベントを pending_review に記録し、登録コマンドを案内する。
 
-    (a) 単価ジャンプ検知・(b) 保有中総当たりチェックの両方から呼ぶ共通処理。
+    (a) 単価ジャンプ検知・(b) エピソード期間総当たりチェックの両方から呼ぶ共通処理。
     ex_date が分かるイベントごとに pending へ積む (PRレビュー #405 P1 対応:
     複数の未登録イベントがあっても登録済みの日付だけが解除されるようにするため)。
     """
     if splits is None or splits.empty:
         ps.mark_split_pending_review(code_s, reason=reason, db_path=db_path)
         print("      split_adj 未登録。yfinance に該当データなし (要手動判断)")
+        print(f"      却下: python show_fill_episodes.py --reject-split {code_s}")
         return
     for ex_date, ratio in splits.items():
         ps.mark_split_pending_review(
@@ -109,18 +112,20 @@ def _report_split_candidate(code_s: str, splits, reason: str, db_path: Optional[
         print(f"      split_adj 未登録。yfinance suggests: {ex_date.date()} ratio={ratio}")
     print(f"      登録: python show_fill_episodes.py --register-split {code_s} "
           f"<ex_date> <ratio>")
+    print(f"      却下: python show_fill_episodes.py --reject-split {code_s} <ex_date>")
 
 
 def _check_splits(db_path: Optional[str]) -> int:
     """分割・併合の疑いを診断する。issue #398。
 
     (a) 単価ジャンプ検知: 全銘柄の fill を約定日順に見て単価が急変する箇所を検出。
-    (b) 保有中現物の総当たり: 単価ジャンプが無くても、保有継続中で売買が発生していない
-        銘柄は yfinance で open_date 以降の split イベントの有無を直接確認する。
+    (b) 現物エピソード期間の総当たり: 単価ジャンプが無くても、エピソード期間中の
+        split イベントの有無を yfinance で直接確認する。
 
     fill 本体・split_adj は更新しないが、未登録の発見は split_pending_review
     (拒否リスト) に記録する。build_fill_episodes は yfinance を呼ばないため、
-    (b) でのみ見つかるケース (9252相当) を webapp 表示でも検知できるようにするため。
+    (b) でのみ見つかるケース (9252相当、2:1分割など) を webapp 表示でも
+    検知できるようにするため。
     """
     import make_stock_db
 
@@ -168,27 +173,36 @@ def _check_splits(db_path: Optional[str]) -> int:
                 splits = splits[mask]
             _report_split_candidate(code_s, splits, "単価ジャンプ検出", db_path)
 
-    open_genbutsu_dates = {
-        ep["code_s"]: ep["open_date"] for ep in helpers.build_fill_episodes(db_path=db_path)
-        if not ep["closed"] and ep["kind"] == "現物"
-    }
-    for code_s, open_date in sorted(open_genbutsu_dates.items()):
+    genbutsu_ranges: Dict[str, List[Dict[str, str]]] = {}
+    for ep in helpers.build_fill_episodes(db_path=db_path):
+        if ep["kind"] != "現物":
+            continue
+        genbutsu_ranges.setdefault(ep["code_s"], []).append({
+            "open_date": ep["open_date"],
+            "close_date": ep.get("close_date") or "9999-12-31",
+        })
+    for code_s, ranges in sorted(genbutsu_ranges.items()):
         splits = _yfinance_splits(code_s, stock_db)
         if splits is None or splits.empty:
             continue
         registered_dates = {ev["ex_date"] for ev in registered.get(code_s, [])}
-        # open_date より後に権利落ちし、かつ未登録のイベントのみが今の保有に影響する
-        # (銘柄単位の in registered だけだと、登録後に発生した別イベントを見逃す)
-        relevant_dates = [ex_date for ex_date in splits.index
-                          if ex_date.strftime("%Y-%m-%d") >= open_date
-                          and ex_date.strftime("%Y-%m-%d") not in registered_dates]
+        # エピソード期間中に権利落ちし、かつ未登録のイベントのみが当該ラウンドに影響する。
+        # 保有中だけに限定すると、pending 検出後に売却でクローズした瞬間に警告が外れ、
+        # 2:1 分割など単価ジャンプ閾値未満の誤損益が集計へ戻ってしまう。
+        relevant_dates = []
+        for ex_date in splits.index:
+            ex_date_s = ex_date.strftime("%Y-%m-%d")
+            if ex_date_s in registered_dates:
+                continue
+            if any(r["open_date"] <= ex_date_s <= r["close_date"] for r in ranges):
+                relevant_dates.append(ex_date)
         if not relevant_dates:
             continue
         found += 1
-        print(f" {code_s:>5} {names.get(code_s, ''):<12} 保有中チェック (open_date={open_date}): "
+        print(f" {code_s:>5} {names.get(code_s, ''):<12} エピソード期間チェック: "
               f"split イベントあり (未登録)")
         _report_split_candidate(
-            code_s, splits.loc[relevant_dates], "保有中総当たりチェック", db_path)
+            code_s, splits.loc[relevant_dates], "エピソード期間総当たりチェック", db_path)
 
     if found == 0:
         print("分割・併合の疑いは検出されませんでした。")
@@ -199,6 +213,23 @@ def _register_split(code_s: str, ex_date: str, ratio: str, db_path: Optional[str
     """split_adj イベントを1件登録する (issue #398)。"""
     stored = ps.add_split_adjustment(code_s, ex_date, float(ratio), db_path=db_path)
     print(f"登録しました: {code_s} {stored['events']}")
+    return 0
+
+
+def _reject_split(args: List[str], db_path: Optional[str]) -> int:
+    """分割・併合ではないと判断した pending_review を解除する。"""
+    if len(args) not in (1, 2):
+        print("--reject-split は CODE または CODE EX_DATE を指定してください。")
+        return 2
+    code_s = args[0]
+    ex_date = args[1] if len(args) == 2 else None
+    changed = ps.clear_split_pending_review(code_s, ex_date=ex_date, db_path=db_path)
+    if changed:
+        target = ex_date or "全pending"
+        print(f"却下しました: {code_s} {target}")
+    else:
+        target = ex_date or "pending"
+        print(f"該当する pending はありません: {code_s} {target}")
     return 0
 
 
@@ -216,10 +247,14 @@ def main() -> int:
                         help="分割・併合の疑いを診断する (issue #398、DB非更新)")
     parser.add_argument("--register-split", nargs=3, metavar=("CODE", "EX_DATE", "RATIO"),
                         help="分割・併合の換算比率を登録する (例: 1491 2025-09-29 0.05)")
+    parser.add_argument("--reject-split", nargs="+", metavar=("CODE_OR_EX_DATE"),
+                        help="分割・併合ではない pending を解除する (例: 1491 [2025-09-29])")
     args = parser.parse_args()
 
     if args.register_split:
         return _register_split(*args.register_split, db_path=args.db_path)
+    if args.reject_split:
+        return _reject_split(args.reject_split, db_path=args.db_path)
     if args.check_splits:
         return _check_splits(args.db_path)
 

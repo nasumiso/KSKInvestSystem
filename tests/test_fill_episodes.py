@@ -6,8 +6,11 @@ build_fill_episodes / _episode_pl_from_round のロジックを合成 fill で�
 """
 
 import pytest
+import pandas as pd
 
+import make_stock_db
 import portfolio_shelve as ps
+import show_fill_episodes
 from webapp import helpers
 
 
@@ -642,7 +645,7 @@ class TestSplitAdjustment:
 
     def test_pending_review_marks_suspect_without_price_jump(self, db_path):
         # 9252相当: 現物fillの単価変化が小さく単価ジャンプ検知には引っかからないが、
-        # --check-splits の保有中総当たりチェックでのみ見つかるケース。
+        # --check-splits のエピソード期間総当たりチェックでのみ見つかるケース。
         # build_fill_episodes は yfinance を呼ばないため、pending_review 経由で伝播する。
         _add(db_path, "9252", "2025-08-06", "buy", 100, 3270, seq_salt="a")
         _add(db_path, "9252", "2025-08-08", "sell", 83, 4250, trade_kind="現物(単元未満)", seq_salt="b")
@@ -659,6 +662,68 @@ class TestSplitAdjustment:
         # add_split_adjustment で同一 ex_date を登録すれば pending は自動解除される
         ps.add_split_adjustment("9252", "2025-08-07", 0.833333, db_path=db_path)
         assert "9252" not in ps.list_pending_review_codes(db_path=db_path)
+
+    def test_fractional_residual_after_split_keeps_suspect(self, db_path):
+        # PRレビュー #405 (4周目 P1): 100株 * 0.833333 = 83.3333株に対して
+        # CSVの売却が83株だけの場合、0.3333株は端株精算とみなして残高は閉じる。
+        # ただし精算額はCSV上確認できないため、比率登録後も suspect は維持する。
+        _add(db_path, "9498", "2025-08-06", "buy", 100, 3270, seq_salt="a")
+        _add(db_path, "9498", "2025-08-08", "sell", 83, 4250, seq_salt="b")
+        ps.mark_split_pending_review(
+            "9498", reason="エピソード期間総当たりチェック", ex_date="2025-08-07",
+            db_path=db_path)
+        ps.add_split_adjustment("9498", "2025-08-07", 0.833333, db_path=db_path)
+        assert "9498" not in ps.list_pending_review_codes(db_path=db_path)
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        ep = [e for e in eps if e["code_s"] == "9498" and e["kind"] == "現物"][0]
+        assert ep["closed"] is True
+        assert ep["split_fractional_residual"] is True
+        assert ep["split_suspect"] is True
+
+    def test_pending_review_keeps_closed_episode_suspect(self, db_path):
+        # PRレビュー #405 (3周目 P1): pending が日付を持つ場合、後日売却でクローズしても
+        # その ex_date をまたぐエピソードは split_suspect を維持する。
+        _add(db_path, "9496", "2025-01-01", "buy", 100, 1000, seq_salt="a")
+        _add(db_path, "9496", "2025-06-01", "sell", 200, 600, seq_salt="b")
+        ps.mark_split_pending_review(
+            "9496", reason="エピソード期間総当たりチェック", ex_date="2025-03-01",
+            db_path=db_path)
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        ep = [e for e in eps if e["code_s"] == "9496" and e["kind"] == "現物"][0]
+        assert ep["closed"] is True
+        assert ep["split_suspect"] is True
+
+    def test_check_splits_marks_closed_two_for_one_split(self, db_path, monkeypatch):
+        # PRレビュー #405 (3周目 P1): 2:1 分割は単価ジャンプ閾値(3倍)未満なので、
+        # クローズ済み現物エピソード期間も corporate action と照合する必要がある。
+        _add(db_path, "9497", "2025-01-01", "buy", 100, 1000, seq_salt="a")
+        _add(db_path, "9497", "2025-06-01", "sell", 200, 600, seq_salt="b")
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {})
+        monkeypatch.setattr(
+            show_fill_episodes.helpers,
+            "_bulk_resolve_stock_names",
+            lambda codes: {c: f"銘柄{c}" for c in codes},
+        )
+        monkeypatch.setattr(
+            show_fill_episodes,
+            "_yfinance_splits",
+            lambda code_s, stock_db: pd.Series(
+                [2.0], index=pd.to_datetime(["2025-03-01"])
+            ) if code_s == "9497" else pd.Series(dtype=float),
+        )
+
+        assert show_fill_episodes._check_splits(db_path) == 0
+        assert ps.list_pending_review_events(db_path=db_path)["9497"] == ["2025-03-01"]
+
+    def test_reject_split_cli_clears_pending(self, db_path):
+        # PRレビュー #405 (4周目 P2): 誤検知は CLI から pending 解除できる。
+        ps.mark_split_pending_review(
+            "9499", reason="単価ジャンプ検出", ex_date="2025-03-01", db_path=db_path)
+
+        assert show_fill_episodes._reject_split(["9499", "2025-03-01"], db_path) == 0
+        assert "9499" not in ps.list_pending_review_codes(db_path=db_path)
 
     def test_merger_ratio_closes_without_residual_qty(self, db_path):
         # 20:1併合相当の比率で浮動小数の残差が出てもクローズ判定を妨げない

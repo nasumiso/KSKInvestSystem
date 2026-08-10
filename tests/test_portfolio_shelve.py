@@ -1393,3 +1393,13 @@ class TestSplitAdjustment:
         assert "9495" in ps.list_pending_review_codes(db_path=db_path)
         ps.add_split_adjustment("9495", "2025-06-01", 0.5, db_path=db_path)
         assert "9495" not in ps.list_pending_review_codes(db_path=db_path)
+
+    def test_clear_pending_review_for_false_positive(self, db_path):
+        # PRレビュー #405 (4周目 P2): 分割ではない誤検知は比率を捏造せず解除できる。
+        ps.mark_split_pending_review("9496", reason="単価ジャンプ検出", ex_date="2025-06-01", db_path=db_path)
+        ps.mark_split_pending_review("9496", reason="単価ジャンプ検出", ex_date="2025-09-01", db_path=db_path)
+        assert ps.clear_split_pending_review("9496", ex_date="2025-06-01", db_path=db_path) is True
+        assert ps.list_pending_review_events(db_path=db_path)["9496"] == ["2025-09-01"]
+
+        assert ps.clear_split_pending_review("9496", db_path=db_path) is True
+        assert "9496" not in ps.list_pending_review_codes(db_path=db_path)

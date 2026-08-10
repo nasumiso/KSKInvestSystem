@@ -1332,6 +1332,36 @@ def mark_split_pending_review(code_s: str, *, reason: str, ex_date: Optional[str
             }
 
 
+def clear_split_pending_review(code_s: str, *, ex_date: Optional[str] = None,
+                               db_path: Optional[str] = None) -> bool:
+    """split_pending_review を手動解除する。
+
+    ex_date 指定時はその日付だけを解除し、未指定なら同銘柄の pending を全解除する。
+    分割・併合ではないと判断した誤検知を解除するための操作。
+    """
+    if ex_date is not None and ex_date != "unknown" and not _ACTION_DATE_RE.match(ex_date):
+        raise ValueError(f"ex_date は YYYY-MM-DD 形式で指定してください: {ex_date!r}")
+    path = _resolve_db_path(db_path)
+    pending_key = _split_pending_review_storage_key(code_s)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            value = db.get(pending_key)
+            if not isinstance(value, dict):
+                return False
+            if ex_date is None:
+                del db[pending_key]
+                return True
+            remaining = [d for d in value.get("ex_dates", []) if d != ex_date]
+            if len(remaining) == len(value.get("ex_dates", [])):
+                return False
+            if remaining:
+                value["ex_dates"] = remaining
+                db[pending_key] = value
+            else:
+                del db[pending_key]
+            return True
+
+
 def list_pending_review_codes(*, db_path: Optional[str] = None) -> List[str]:
     """split_pending_review が付いている銘柄コードの一覧を返す。"""
     path = _resolve_db_path(db_path)
@@ -1341,6 +1371,25 @@ def list_pending_review_codes(*, db_path: Optional[str] = None) -> List[str]:
             if key.startswith(KEY_SPLIT_PENDING_REVIEW_PREFIX) and isinstance(value, dict):
                 codes.append(value.get("code_s", key[len(KEY_SPLIT_PENDING_REVIEW_PREFIX):]))
     return codes
+
+
+def list_pending_review_events(*, db_path: Optional[str] = None) -> Dict[str, List[str]]:
+    """split_pending_review の未登録イベント日を銘柄別に返す。
+
+    ex_date 不明時の "unknown" もそのまま含める。呼び出し側は日付範囲で
+    絞れるものだけ絞り、不明分は従来どおり安全側で扱う。
+    """
+    path = _resolve_db_path(db_path)
+    results: Dict[str, List[str]] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_SPLIT_PENDING_REVIEW_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            code_s = value.get("code_s", key[len(KEY_SPLIT_PENDING_REVIEW_PREFIX):])
+            results[code_s] = list(value.get("ex_dates", []))
+    return results
 
 
 # ===========================================

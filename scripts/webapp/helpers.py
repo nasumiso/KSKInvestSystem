@@ -4474,6 +4474,21 @@ def _is_qty_closed(qty: float) -> bool:
     return qty <= _SPLIT_QTY_ZERO_TOL
 
 
+def _is_fractional_residual(qty: float) -> bool:
+    """分割・併合後の端株精算で消える想定の1株未満残高か判定する。"""
+    return _SPLIT_QTY_ZERO_TOL < qty < 1.0
+
+
+def _is_genbutsu_qty_closed(qty: float) -> bool:
+    """現物残高が実質クローズ済みか判定する。
+
+    分割・併合比率によって 0.3333 株のような端株が残る場合、証券会社CSVには
+    整数株の売却だけが出て端株精算が fill として入らないことがある。残高上は
+    クローズ扱いにするが、損益は精算額を確認できないため別途 suspect にする。
+    """
+    return _is_qty_closed(qty) or _is_fractional_residual(qty)
+
+
 def _detect_price_jumps(fills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """現物 fill を約定日順に見て、建玉が継続したまま隣接単価が3倍以上/1/3以下に
     飛ぶ箇所を検出する。
@@ -4497,7 +4512,7 @@ def _detect_price_jumps(fills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for a, b in zip(genbutsu, genbutsu[1:]):
         held_qty += a["qty"] if a["side"] == "buy" else -a["qty"]
         pa, pb = a.get("price"), b.get("price")
-        if pa and pb and not _is_qty_closed(held_qty):
+        if pa and pb and not _is_genbutsu_qty_closed(held_qty):
             ratio = pb / pa
             if ratio >= _SPLIT_PRICE_JUMP_RATIO or ratio <= 1 / _SPLIT_PRICE_JUMP_RATIO:
                 jumps.append({
@@ -4533,6 +4548,12 @@ def _jump_affects_episode(jump: Dict[str, Any], ep: Dict[str, Any]) -> bool:
     """
     close_date = ep.get("close_date") or "9999-12-31"  # 保有中は無期限
     return jump["before_date"] < close_date and jump["after_date"] >= ep["open_date"]
+
+
+def _split_event_affects_episode(ex_date: str, ep: Dict[str, Any]) -> bool:
+    """pending の ex_date がエピソード期間に含まれるか判定する。"""
+    close_date = ep.get("close_date") or "9999-12-31"  # 保有中は無期限
+    return ep["open_date"] <= ex_date <= close_date
 
 
 def _apply_split_adjustments(fills: List[Dict[str, Any]],
@@ -4621,6 +4642,7 @@ def _build_code_episodes(code_s: str, stock_name: str,
     genbutsu_fills: List[Dict[str, Any]] = []  # 現ラウンドの現物 fill
     genbutsu_qty = 0
     genbutsu_peak = 0
+    genbutsu_fractional_residual = False
     # 取込済みの信用新規日。これに無い建約定日の返済は、取込前からの持越し玉である。
     shinyo_open_dates = {
         f.get("trade_date")
@@ -4658,12 +4680,16 @@ def _build_code_episodes(code_s: str, stock_name: str,
         short_peak = 0
 
     def close_genbutsu():
-        nonlocal genbutsu_fills, genbutsu_qty, genbutsu_peak
+        nonlocal genbutsu_fills, genbutsu_qty, genbutsu_peak, genbutsu_fractional_residual
         if genbutsu_fills:
-            episodes.append(_finalize_round(code_s, "現物", stock_name, genbutsu_fills, genbutsu_peak))
+            ep = _finalize_round(code_s, "現物", stock_name, genbutsu_fills, genbutsu_peak)
+            if genbutsu_fractional_residual:
+                ep["split_fractional_residual"] = True
+            episodes.append(ep)
         genbutsu_fills = []
         genbutsu_qty = 0
         genbutsu_peak = 0
+        genbutsu_fractional_residual = False
 
     for f in fills:
         tk = f.get("trade_kind") or ""
@@ -4734,7 +4760,8 @@ def _build_code_episodes(code_s: str, stock_name: str,
             else:
                 genbutsu_qty -= qty
             genbutsu_peak = max(genbutsu_peak, genbutsu_qty)
-            if _is_qty_closed(genbutsu_qty):
+            if _is_genbutsu_qty_closed(genbutsu_qty):
+                genbutsu_fractional_residual = _is_fractional_residual(genbutsu_qty)
                 close_genbutsu()
 
     # 保有中 (残った建玉)
@@ -4827,12 +4854,13 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     # 「登録済みイベントが1件でもあれば安全」という銘柄単位の判定は粗く、同一銘柄で
     # 後日発生した別の分割・併合を見逃す。また銘柄単位で全エピソードに付けると、
     # 分割前に完結した無関係なラウンドの正しい損益まで隠してしまう)。
-    # pending_review は --check-splits の (a)単価ジャンプ/(b)保有中総当たりの両方の検知結果を
+    # pending_review は --check-splits の (a)単価ジャンプ/(b)エピソード期間総当たりの検知結果を
     # 拒否リストとして反映する (webapp は yfinance を呼ばないため (b) を自力では検知できない)。
-    # pending_review は銘柄単位のフラグなので、pending 該当銘柄は保有中エピソードのみに
-    # 限定して付与する (保有中総当たりチェックは常に保有中エピソードが対象のため)。
+    # pending_review の ex_dates がエピソード期間に含まれる場合は、クローズ済みでも
+    # split_suspect を維持する。2:1 分割など単価ジャンプ閾値未満のイベントは
+    # クローズ後に警告が外れると誤った実現損益が集計へ戻ってしまうため。
     all_split_adj = ps.list_all_split_adjustments(db_path=db_path)
-    pending_codes = set(ps.list_pending_review_codes(db_path=db_path))
+    pending_events = ps.list_pending_review_events(db_path=db_path)
     episodes: List[Dict[str, Any]] = []
     for code_s, fills in by_code.items():
         events = all_split_adj.get(code_s, [])
@@ -4844,13 +4872,18 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         jumps = _detect_price_jumps(fills)
         code_episodes = _build_code_episodes(code_s, names.get(code_s, ""), fills)
         uncovered = _uncovered_jumps(jumps, events)
-        is_pending = code_s in pending_codes
+        pending_dates = pending_events.get(code_s, [])
         for ep in code_episodes:
             if ep["kind"] != "現物":
                 continue
-            if any(_jump_affects_episode(j, ep) for j in uncovered):
+            if ep.get("split_fractional_residual"):
                 ep["split_suspect"] = True
-            elif is_pending and not ep["closed"]:
+            elif any(_jump_affects_episode(j, ep) for j in uncovered):
+                ep["split_suspect"] = True
+            elif any(d != "unknown" and _split_event_affects_episode(d, ep)
+                     for d in pending_dates):
+                ep["split_suspect"] = True
+            elif "unknown" in pending_dates and not ep["closed"]:
                 ep["split_suspect"] = True
         episodes.extend(code_episodes)
 
