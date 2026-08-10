@@ -17,6 +17,7 @@ import sys
 import price
 import make_stock_db
 import fng
+import disclosure
 
 from ks_util import *
 
@@ -1048,6 +1049,17 @@ details summary:hover { background: #d5dbdb; }
 .disc-table a { color: #2980b9; text-decoration: none; }
 .disc-table a:hover { text-decoration: underline; }
 .disc-row-gyoseki { background: #e8f5e9; }
+.disc-impact-strong-positive { background: #ffe7e0; border-left: 3px solid #c0392b; }
+.disc-impact-strong-negative { background: #eaf3ff; border-left: 3px solid #2980b9; }
+.disc-impact-weak-positive { background: #fff3e8; border-left: 3px solid #e67e22; }
+.disc-impact-weak-negative { background: #f1f6ff; border-left: 3px solid #5d8cc1; }
+.disc-impact-label, .disc-impact-surprise {
+  display: inline-block; margin-right: 4px; padding: 1px 5px;
+  border-radius: 3px; font-size: 0.82em; font-weight: bold;
+}
+.disc-impact-label.positive { background: #c0392b; color: #fff; }
+.disc-impact-label.negative { background: #2980b9; color: #fff; }
+.disc-impact-surprise { background: #6c3483; color: #fff; }
 
 /* ランキング履歴 */
 .rank-history { font-size: 0.83em; overflow-x: auto; }
@@ -2477,23 +2489,37 @@ def _html_disclosure(disc_csv):
                 body_text = body_match.group(2)
                 body_html = '<a href="%s">%s</a>' % (body_url, html_mod.escape(body_text))
             else:
+                body_text = str(row[4])
                 body_html = html_mod.escape(str(row[4]))
 
             # 決算・修正行は背景色を変える
             row_class = ""
+            impact_html = ""
             if type_label in ("決算", "修正"):
-                row_class = ' class="disc-row-gyoseki"'
+                classes = ["disc-row-gyoseki"]
+                impact = disclosure.classify_disclosure_impact(body_text)
+                if impact:
+                    classes.append("disc-impact-%s-%s" % (impact["strength"], impact["tone"]))
+                    impact_html = (
+                        '<span class="disc-impact-label %s">%s</span>' % (
+                            html_mod.escape(impact["tone"]),
+                            html_mod.escape(impact["label"]),
+                        )
+                    )
+                    if impact.get("surprise"):
+                        impact_html += '<span class="disc-impact-surprise">一転</span>'
+                row_class = ' class="%s"' % " ".join(classes)
 
             lines.append(
                 '<tr%s><td>%s</td><td>%s %s</td><td>%s</td><td>%s</td></tr>' % (
                     row_class, date_display, code_html, stock_name,
-                    type_label, body_html,
+                    type_label, impact_html + body_html,
                 )
             )
         lines.append('</table>')
         return '\n'.join(lines)
 
-    parts = ['<h2>適宜開示</h2>']
+    parts = ['<h2 id="disclosure-section">適宜開示</h2>']
 
     if recent_rows:
         parts.append('<details open>')
@@ -2597,11 +2623,11 @@ def create_disclosure_html(disc_csv):
         '<html lang="ja">\n'
         '<head>\n'
         '<meta charset="UTF-8">\n'
-        '<title>適宜開示 - %s</title>\n'
+        '<title>決算日・適宜開示 - %s</title>\n'
         '<style>\n%s</style>\n'
         '</head>\n'
         '<body>\n\n'
-        '<h1>適宜開示 <span class="date">%s</span></h1>\n\n'
+        '<h1>決算日・適宜開示 <span class="date">%s</span></h1>\n\n'
         '%s\n\n'
         '<footer style="margin-top: 40px; padding-top: 12px; border-top: 1px solid #ddd; '
         'font-size: 0.8em; color: #999;">\n'

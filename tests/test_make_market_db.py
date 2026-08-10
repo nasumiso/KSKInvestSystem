@@ -1050,14 +1050,20 @@ class TestHtmlDisclosure:
         assert result == ""
 
     def test_gyoseki_row_class(self):
-        """決算・修正行にdisc-row-gyosekiクラスが付く"""
+        """決算・修正行に従来クラスと影響度クラスが付く"""
         today_str = make_market_db.get_price_day(datetime.today()).strftime("%Y%m%d")
         disc_csv = [
             ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
             [today_str, "1234", "テスト", "決算", "決算発表"],
+            [today_str, "1234", "テスト", "修正",
+             '=HYPERLINK("https://example.com/up","今期最終を一転増益に上方修正")'],
         ]
         result = make_market_db._html_disclosure(disc_csv)
+        assert '<h2 id="disclosure-section">適宜開示</h2>' in result
         assert 'disc-row-gyoseki' in result
+        assert 'disc-impact-strong-positive' in result
+        assert '<span class="disc-impact-label positive">上方</span>' in result
+        assert '<span class="disc-impact-surprise">一転</span>' in result
 
 
 class TestUpdateIndexMarketStateFTD:
@@ -1239,6 +1245,7 @@ class TestCreateDisclosureHtml:
             with open(html_path, encoding="utf-8") as f:
                 content = f.read()
             assert '<!DOCTYPE html>' in content
+            assert '<h1>決算日・適宜開示 <span class="date">2026-04-25 (土)</span></h1>' in content
             assert '適宜開示' in content
             assert '6324' in content
 

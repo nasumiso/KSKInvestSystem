@@ -1,5 +1,6 @@
 """webapp/helpers.py のテスト (tmp_path で一時DBを作成)"""
 
+import csv
 import html
 import os
 
@@ -265,6 +266,52 @@ class TestGetMarketKessanData:
         assert "2026/04/27" in today_keys
         assert "2026/04/27" not in past_keys
         assert "2026/04/27" not in future_keys
+
+    def test_disclosure_impacts_linked_by_kessan_window(self, kessan_env, tmp_path, monkeypatch):
+        """決算日前14日〜翌日の重要開示を、ポジ/ネガ両方見える形で紐付ける"""
+        from datetime import datetime as _dt
+        import disclosure as _disclosure
+
+        csv_path = tmp_path / "disclosure_db.csv"
+        rows = [
+            ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
+            ["20260429", '=HYPERLINK("u","6501")', "日立", "修正",
+             '=HYPERLINK("https://example.com/excluded-after","除外後の増配")'],
+            ["20260428", '=HYPERLINK("u","6501")', "日立", "修正",
+             '=HYPERLINK("https://example.com/divdown","配当予想を減額修正、減配へ")'],
+            ["20260427", '=HYPERLINK("u","6501")', "日立", "決算",
+             '=HYPERLINK("https://example.com/high","今期経常は3期ぶり最高益へ")'],
+            ["20260426", '=HYPERLINK("u","6501")', "日立", "修正",
+             '=HYPERLINK("https://example.com/up","今期最終を一転増益に上方修正")'],
+            ["20260413", '=HYPERLINK("u","6501")', "日立", "修正",
+             '=HYPERLINK("https://example.com/down","今期経常を一転赤字に下方修正")'],
+            ["20260412", '=HYPERLINK("u","6501")', "日立", "修正",
+             '=HYPERLINK("https://example.com/excluded-before","除外前の下方修正")'],
+        ]
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerows(rows)
+        monkeypatch.setattr(_disclosure, "DISCLOSURE_CSV", str(csv_path))
+
+        today_dt = _dt(2026, 4, 27, 19, 0)
+        pf_dict = {
+            "6501": {
+                "code_s": "6501",
+                "stock_name": "日立製作所",
+                "kessanbi": "2026/04/27",
+                "kessan_quarter": 4,
+            },
+        }
+        kessan_env(pf_dict, today_dt)
+        result = helpers.get_market_kessan_data()
+        stock = result["today_entries"][0][1][0]
+
+        selected_kinds = {impact["kind"] for impact in stock["disclosure_impacts"]}
+        assert {"upward", "downward"} == selected_kinds
+        assert [impact["strength"] for impact in stock["disclosure_impacts"]] == ["strong", "strong"]
+        assert stock["disclosure_impact_extra_count"] == 2
+        assert "除外前の下方修正" not in stock["disclosure_impact_tooltip"]
+        assert "除外後の増配" not in stock["disclosure_impact_tooltip"]
+        assert "最高益" in stock["disclosure_impact_tooltip"]
 
     def test_yesterday_kessan_in_recent_past(self, kessan_env):
         """base_day より前の決算は recent_past_entries"""

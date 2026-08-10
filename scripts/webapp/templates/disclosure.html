@@ -9,16 +9,22 @@
 {{ disclosure_parts.css | safe }}
 </style>
 {{ disclosure_parts.header | safe }}
+<nav class="disclosure-toc" aria-label="ページ内目次">
+  <a href="#kessan-section">決算日</a><a href="#disclosure-section">適宜開示</a>
+</nav>
 {% else %}
 <div style="padding:12px;margin:12px 0;background:#fef3e6;border:1px solid #f5c37c;border-radius:6px;">
   決算・開示データ (<code>disclosure_data.html</code>) が未生成です。<br>
   <small>scripts/make_market_db.py を実行すると生成されます。決算カレンダーは以下の通り利用できます。</small>
 </div>
+<nav class="disclosure-toc" aria-label="ページ内目次">
+  <a href="#kessan-section">決算日</a><span>適宜開示</span>
+</nav>
 {% endif %}
 
 {# 動的決算セクション (市場ページから移設) #}
-<h2 title="株価変動率の表記: 翌営業日 | 5営業日後 20営業日後 / 例: +16.2% | +51% +30%">決算日 <span style="font-size:0.55em; color:#888; cursor:help;">[?]</span></h2>
-<div id="kessan-section">
+<h2 id="kessan-section" title="株価変動率の表記: 翌営業日 | 5営業日後 20営業日後 / 例: +16.2% | +51% +30%">決算日 <span style="font-size:0.55em; color:#888; cursor:help;">[?]</span></h2>
+<div>
   {% macro render_kessan_editor(s, is_past) -%}
     <div class="kessan-editor" style="display:none;" data-loaded="0">
       <div class="kessan-editor-row">
@@ -76,6 +82,20 @@
       <a href="/stock/{{ s.code_s }}">{% if s.stock_name %}{{ macros.stock_name_with_prev(s) }}{% else %}-{% endif %}</a>
       {% if s.quarter %}<span class="kessan-q-label">[{{ s.quarter }}Q]</span>{% endif %}
       {% if s.pre_expectation %}<span class="kessan-expectation-badge exp-{{ s.pre_expectation }}">{{ s.pre_expectation }}</span>{% endif %}
+      {% if s.disclosure_impacts %}
+        <span class="kessan-disclosure-impacts" title="{{ s.disclosure_impact_tooltip }}">
+          {% for impact in s.disclosure_impacts %}
+            <a class="kessan-impact-badge impact-{{ impact.strength }}-{{ impact.tone }}"
+               href="{{ impact.url }}"
+               target="_blank"
+               onclick="event.stopPropagation();">{{ impact.label }}</a>
+            {% if impact.surprise %}<span class="kessan-impact-surprise">一転</span>{% endif %}
+          {% endfor %}
+          {% if s.disclosure_impact_extra_count %}
+            <span class="kessan-impact-extra">+{{ s.disclosure_impact_extra_count }}</span>
+          {% endif %}
+        </span>
+      {% endif %}
       {% if is_past and (s.post_price_changes['pts'] or s.post_price_changes['1d'] or s.post_price_changes['5d'] or s.post_price_changes['20d']) %}
         {% set pcp = s.post_price_changes['pts'] %}
         {% set pc1 = s.post_price_changes['1d'] %}

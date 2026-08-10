@@ -317,6 +317,55 @@ nav .quick-search {
 .kessan-expectation-badge.exp-△ { background: #bdc3c7; color: #333; border-color: #95a5a6; }
 .kessan-expectation-badge.exp-× { background: #3498db; color: #fff; border-color: #2874a6; }
 
+.disclosure-toc {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: -6px 0 6px;
+  color: #666;
+  font-size: 0.95em;
+  line-height: 1.2;
+}
+.disclosure-toc a {
+  color: #2980b9;
+  text-decoration: none;
+  font-weight: bold;
+}
+.disclosure-toc a:hover {
+  text-decoration: underline;
+}
+.kessan-disclosure-impacts {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.kessan-impact-badge,
+.kessan-impact-surprise,
+.kessan-impact-extra {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 0.78em;
+  font-weight: bold;
+  line-height: 1.5;
+}
+.kessan-impact-badge {
+  color: #fff;
+  text-decoration: none;
+}
+.kessan-impact-badge:hover {
+  text-decoration: none;
+  filter: brightness(0.95);
+}
+.kessan-impact-badge.impact-strong-positive { background: #c0392b; }
+.kessan-impact-badge.impact-strong-negative { background: #2980b9; }
+.kessan-impact-badge.impact-weak-positive { background: #e67e22; }
+.kessan-impact-badge.impact-weak-negative { background: #5d8cc1; }
+.kessan-impact-surprise { background: #6c3483; color: #fff; }
+.kessan-impact-extra { background: #ecf0f1; color: #555; }
+
 .kessan-editor {
   margin: 4px 0 6px 14px;
   padding: 6px 8px;

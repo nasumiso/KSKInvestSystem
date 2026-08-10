@@ -19,8 +19,8 @@ UPD_FORCE = 2  # html取得から強制
 HEAD_TYPE_DIC = {
     # 新HTML形式（2026年3月〜）: <div class="newslist_ctg newsctgXX_b">
     "newsctg5_b": "special",     # 特集
-    "newsctg3_kk_b": "modify",   # 決算・修正下方
-    "newsctg3_ks_b": "modify",   # 修正上方
+    "newsctg3_kk_b": "modify",   # 決算・修正
+    "newsctg3_ks_b": "modify",   # 決算・修正
     "newsctg12_b": "5per",       # 5%
     "newsctg9_b": "kessan",      # 注目/決算
     "newsctg1_b": "zairyo",      # 市況 → 材料扱い
@@ -33,6 +33,64 @@ HEAD_TYPE_DIC = {
     "ctg12": "5per",
     "ctg9": "kessan",
 }
+
+DISCLOSURE_IMPACT_RULES = [
+    {
+        "kind": "downward",
+        "label": "下方",
+        "tone": "negative",
+        "strength": "strong",
+        "keywords": ("下方修正",),
+    },
+    {
+        "kind": "upward",
+        "label": "上方",
+        "tone": "positive",
+        "strength": "strong",
+        "keywords": ("上方修正",),
+    },
+    {
+        "kind": "profit_high",
+        "label": "最高益",
+        "tone": "positive",
+        "strength": "weak",
+        "keywords": ("最高益",),
+    },
+    {
+        "kind": "dividend_positive",
+        "label": "増配",
+        "tone": "positive",
+        "strength": "weak",
+        "keywords": ("増額修正", "増配", "復配"),
+    },
+    {
+        "kind": "dividend_negative",
+        "label": "減配",
+        "tone": "negative",
+        "strength": "weak",
+        "keywords": ("減配", "減額修正", "無配"),
+    },
+]
+
+
+def classify_disclosure_impact(heading):
+    """開示見出しから株価インパクトの大きいキーワードを分類する。
+
+    株探のカテゴリタグではなく見出し本文だけを見る。増益/減益の着地見出しは
+    上方/下方修正ではないため、明示キーワードが無い限り分類しない。
+    """
+    heading = heading or ""
+    for rule in DISCLOSURE_IMPACT_RULES:
+        if any(keyword in heading for keyword in rule["keywords"]):
+            result = {
+                "kind": rule["kind"],
+                "label": rule["label"],
+                "tone": rule["tone"],
+                "strength": rule["strength"],
+                "surprise": "一転" in heading,
+            }
+            return result
+    return None
 
 HEAD_TYPE_EXPR = {
     "kaiji": "開示",
