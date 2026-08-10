@@ -1348,3 +1348,73 @@ class TestFillMemo:
         fills = ps.list_fills(db_path=db_path)
         assert len(fills) == 1
         assert all("review_memo" not in fl for fl in fills)
+
+
+class TestSplitAdjustment:
+    """分割・併合の換算比率キャッシュ (issue #398)。"""
+
+    def test_add_and_get_multiple_events_sorted(self, db_path):
+        assert ps.get_split_adjustments("1491", db_path=db_path) == []
+        ps.add_split_adjustment("1491", "2025-09-29", 0.05, db_path=db_path)
+        ps.add_split_adjustment("1491", "2020-01-01", 0.5, db_path=db_path)
+        events = ps.get_split_adjustments("1491", db_path=db_path)
+        assert events == [
+            {"ex_date": "2020-01-01", "ratio": 0.5},
+            {"ex_date": "2025-09-29", "ratio": 0.05},
+        ]
+        # 同一 ex_date は上書き (dedup)
+        ps.add_split_adjustment("1491", "2025-09-29", 0.1, db_path=db_path)
+        events2 = ps.get_split_adjustments("1491", db_path=db_path)
+        assert len(events2) == 2
+        assert {"ex_date": "2025-09-29", "ratio": 0.1} in events2
+        # list_all_split_adjustments は build_fill_episodes の N+1 回避用一括取得
+        all_adj = ps.list_all_split_adjustments(db_path=db_path)
+        assert all_adj["1491"] == events2
+
+    def test_rejects_non_finite_ratio(self, db_path):
+        # PRレビュー #405 (5周目 P2): nan/inf は float 変換できても保存してはいけない。
+        with pytest.raises(ValueError):
+            ps.add_split_adjustment("1491", "2025-09-29", float("nan"), db_path=db_path)
+        with pytest.raises(ValueError):
+            ps.add_split_adjustment("1491", "2025-09-29", float("inf"), db_path=db_path)
+        assert ps.get_split_adjustments("1491", db_path=db_path) == []
+
+    def test_pending_review_cleared_per_event_not_per_code(self, db_path):
+        # PRレビュー #405 (P1) 指摘: 同一銘柄に複数の未登録イベントがある状態で
+        # 1件だけ登録すると、銘柄単位で pending を丸ごと消してはいけない
+        # (残りの未登録イベントの警告が消えてしまう)。
+        ps.mark_split_pending_review("9493", reason="テスト", ex_date="2025-06-01", db_path=db_path)
+        ps.mark_split_pending_review("9493", reason="テスト", ex_date="2025-09-01", db_path=db_path)
+        assert "9493" in ps.list_pending_review_codes(db_path=db_path)
+
+        ps.add_split_adjustment("9493", "2025-06-01", 0.5, db_path=db_path)
+        assert "9493" in ps.list_pending_review_codes(db_path=db_path)  # 残り1件はまだ未解決
+
+        ps.add_split_adjustment("9493", "2025-09-01", 0.8, db_path=db_path)
+        assert "9493" not in ps.list_pending_review_codes(db_path=db_path)  # 全件解決
+
+    def test_unknown_pending_cleared_on_any_registration(self, db_path):
+        # PRレビュー #405 (2周目 P2) 指摘: yfinance 取得失敗時に ex_date 不明のまま
+        # "unknown" マーカーで積まれた pending は、通常の ex_date 一致判定では
+        # 永久に解除されない。以後 ex_date が判明して登録できた時点で解除する。
+        ps.mark_split_pending_review("9495", reason="yfinance取得失敗", db_path=db_path)
+        assert "9495" in ps.list_pending_review_codes(db_path=db_path)
+        ps.add_split_adjustment("9495", "2025-06-01", 0.5, db_path=db_path)
+        assert "9495" not in ps.list_pending_review_codes(db_path=db_path)
+
+    def test_clear_pending_review_for_false_positive(self, db_path):
+        # PRレビュー #405 (4周目 P2): 分割ではない誤検知は比率を捏造せず解除できる。
+        ps.mark_split_pending_review("9496", reason="単価ジャンプ検出", ex_date="2025-06-01", db_path=db_path)
+        ps.mark_split_pending_review("9496", reason="単価ジャンプ検出", ex_date="2025-09-01", db_path=db_path)
+        assert ps.clear_split_pending_review("9496", ex_date="2025-06-01", db_path=db_path) is True
+        assert ps.list_pending_review_events(db_path=db_path)["9496"] == ["2025-09-01"]
+
+        assert ps.clear_split_pending_review("9496", db_path=db_path) is True
+        assert "9496" not in ps.list_pending_review_codes(db_path=db_path)
+
+    def test_reject_pending_review_records_suppression(self, db_path):
+        # PRレビュー #405 (5周目 P2): 却下済みイベントは再検出抑止リストに残す。
+        ps.mark_split_pending_review("9497", reason="単価ジャンプ検出", ex_date="2025-06-01", db_path=db_path)
+        assert ps.reject_split_pending_review("9497", ex_date="2025-06-01", db_path=db_path) is True
+        assert "9497" not in ps.list_pending_review_codes(db_path=db_path)
+        assert ps.list_rejected_review_events(db_path=db_path)["9497"] == ["2025-06-01"]

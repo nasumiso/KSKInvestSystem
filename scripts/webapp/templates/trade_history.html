@@ -138,14 +138,19 @@
         {% if ep.carry_over %}
         <span title="取込対象期間より前に建てた信用玉の返済" style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#4a4a3a;color:#c8c890;margin-left:0.2em;">期首持越し</span>
         {% endif %}
+        {% if ep.split_suspect %}
+        <span title="株式分割・併合をまたぐ可能性 (単価が急変)。換算未登録のため残高・損益は非表示。show_fill_episodes.py --check-splits で確認" style="display:inline-block;padding:1px 5px;border-radius:3px;font-size:0.72em;background:#4a2e2e;color:#e08080;margin-left:0.2em;">⚠ 分割・併合の疑い</span>
+        {% endif %}
         {% if ep.review_memo %}
         <span title="振り返りメモあり" style="margin-left:0.2em;">📝</span>
         {% endif %}
       </td>
       <td style="white-space:nowrap;color:#888;font-size:0.82em;">{{ ep.open_date[2:] }}{% if ep.close_date and ep.close_date != ep.open_date %} 〜 {{ ep.close_date[2:] }}{% endif %}</td>
-      <td style="text-align:right;color:#888;font-size:0.85em;">{{ ep.qty_peak }}</td>
+      <td style="text-align:right;color:#888;font-size:0.85em;">{{ "%g"|format(ep.qty_peak) }}</td>
       <td style="text-align:right;white-space:nowrap;">
-        {% if ep.pl %}
+        {% if ep.split_suspect %}
+        <span style="color:#e08080;font-size:0.82em;" title="分割・併合をまたぐため残高・リターンは非表示">要確認</span>
+        {% elif ep.pl %}
         <span style="color:{{ '#9ef0aa' if ep.pl.return_pct >= 0 else '#f0a0a0' }};font-weight:600;">{{ '+' if ep.pl.return_pct >= 0 else '' }}{{ "%.1f"|format(ep.pl.return_pct) }}%</span>
         {% elif not ep.closed and ep.open_pl and ep.open_pl.held_qty > 0 %}
         <span style="color:#888;font-size:0.82em;">残 {{ ep.open_pl.held_qty }}株</span>
@@ -157,7 +162,9 @@
       </td>
       {# 実現損益列 #}
       <td style="text-align:right;white-space:nowrap;">
-        {% if ep.pl and ep.pl.profit_amount is not none %}
+        {% if ep.split_suspect %}
+        <span style="color:#666;">—</span>
+        {% elif ep.pl and ep.pl.profit_amount is not none %}
         <span style="color:{{ '#9ef0aa' if ep.pl.profit_amount >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(ep.pl.profit_amount) }}円</span>
         {% elif not ep.closed and ep.open_pl and ep.open_pl.realized %}
         <span style="color:{{ '#9ef0aa' if ep.open_pl.realized >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(ep.open_pl.realized) }}円</span>
@@ -165,7 +172,9 @@
       </td>
       {# 含み損益列 (保有中のみ) #}
       <td style="text-align:right;white-space:nowrap;">
-        {% if not ep.closed and ep.open_pl and ep.open_pl.unrealized is not none %}
+        {% if ep.split_suspect %}
+        <span style="color:#666;">—</span>
+        {% elif not ep.closed and ep.open_pl and ep.open_pl.unrealized is not none %}
         <span style="color:{{ '#9ef0aa' if ep.open_pl.unrealized >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(ep.open_pl.unrealized) }}円</span>
         {% elif not ep.closed %}
         <span style="color:#666;" title="現在値が取得できないため含み損益は非表示">—</span>
@@ -197,7 +206,7 @@
               {% if f.side == "buy" %}<span style="color:#9ed8f0;">{{ f.side_label }}</span>{% else %}<span style="color:#f0a0a0;">{{ f.side_label }}</span>{% endif %}
             </td>
             <td style="padding:1px 0.8em;color:#777;white-space:nowrap;">{{ f.trade_kind }}</td>
-            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ f.qty }}株</td>
+            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "%g"|format(f.qty) }}株</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}円</td>
             {% if f.tate_price %}<td style="padding:1px 0.8em;text-align:right;white-space:nowrap;color:#888;">建 {{ "{:,}".format(f.tate_price|round|int) }}</td>{% else %}<td></td>{% endif %}
             {% if f.hold_days is defined %}<td style="padding:1px 0.8em;color:#777;white-space:nowrap;">{{ f.tate_date[2:] }} 建 → {{ f.hold_days }}日</td>{% else %}<td></td>{% endif %}

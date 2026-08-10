@@ -156,6 +156,13 @@ cd scripts && python show_fill_episodes.py --open     # 保有中のみ (残株�
 cd scripts && python show_fill_episodes.py --memo     # 振り返りメモ付きのみ
 ```
 
+株式分割・併合をまたぐ現物銘柄の診断・換算比率の登録 (issue #398)。証券会社CSVは分割・併合を調整してくれない (信用は建単価/決済損益で調整済みのため対象外、現物のみ)。`--check-splits` は fill 本体・換算比率 (split_adj) は更新しないが、未登録の発見を拒否リスト (split_pending_review) に記録する (webapp は yfinance を呼ばないため、単価変化が小さく保有中総当たりチェックでのみ見つかるケースを検知できるようにするため)。`--register-split` で登録すれば拒否リストは自動解除される。
+
+```bash
+cd scripts && python show_fill_episodes.py --check-splits                       # 分割・併合の疑いを診断・拒否リスト記録
+cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05  # 換算比率を登録 (新株数/旧株数、0.05=20株->1株併合)
+```
+
 ## 自動実行
 
 `shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。
