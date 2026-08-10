@@ -434,44 +434,6 @@ def compute_rs_line_new_high(stock, market_db, topix_map=None, lookback=20, rs_l
     return current > max(v for _, v in rs_line[1:lookback + 1])
 
 
-def compute_rs_line_divergence(stock, market_db, topix_map=None,
-                               offset=20, threshold=3.0, rs_line=None):
-    """株価と rs_line の同期間騰落率の食い違い（ダイバージェンス）を判定する。
-
-    rs_line[0] と rs_line[offset] の日付を基準に、銘柄 price_log から
-    同日終値を引いて騰落率を算出する。インデックスではなく日付で揃えるのは、
-    rs_line が TOPIX と日付一致した日だけ残るため、price_log と rs_line の
-    [offset] 番目が同じ日とは限らないため。
-
-    rs_line を渡せば再計算をスキップする。
-
-    Returns:
-        str: "bullish"（強気: 株価↓ rs_line↑）/ "bearish"（弱気: 株価↑ rs_line↓）/ ""
-    """
-    if rs_line is None:
-        rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
-    if len(rs_line) <= offset:
-        return ""
-    dt_now, rs_now = rs_line[0]
-    dt_past, rs_past = rs_line[offset]
-    if rs_past == 0:
-        return ""
-    rs_change = (rs_now - rs_past) / rs_past * 100
-
-    price_map = _build_close_map(stock.get("price_log", []))
-    price_now = price_map.get(dt_now)
-    price_past = price_map.get(dt_past)
-    if not price_now or not price_past:
-        return ""
-    price_change = (price_now - price_past) / price_past * 100
-
-    if price_change <= -threshold and rs_change >= threshold:
-        return "bullish"
-    if price_change >= threshold and rs_change <= -threshold:
-        return "bearish"
-    return ""
-
-
 def get_rank_log_expr(stock):
     """RSログを表示用に整形"""
     rs_rank_log = stock.get("rs_rank_log", [])
@@ -1292,12 +1254,8 @@ def judge_monthly_position(stock):
     return ""
 
 
-def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
+def make_signal(stock):
     """銘柄DBデータから、シグナル情報を作成する。
-
-    market_db を渡すと rs_line ベースのタグ (強乖 / 弱乖) も付与される。
-    後方互換のため market_db=None ならスキップ。
-    rs_line を渡せば再計算をスキップする。
     """
     today = datetime.today()
     signal = ""
@@ -1428,21 +1386,19 @@ def make_signal(stock, market_db=None, topix_map=None, rs_line=None):
     if m_tag:
         tags.append(m_tag)
 
-    # rs_line 新高値・ダイバージェンス（当日発生のみ）
-    # list_all_db は更新対象外の銘柄もCSVに出すため、price_log が数日〜数週間古い
-    # 銘柄が混じる。rs_line[0] が当日 (= 最新営業日 = TOPIX price_log[0]の日付) で
-    # ある場合だけタグを立てる。古いキャッシュで連日タグが残るのを防ぐため。
-    if market_db is not None:
-        if rs_line is None:
-            rs_line = compute_rs_line(stock, market_db, topix_map=topix_map)
-        topix_log = market_db.get("topix", {}).get("price_log", [])
-        latest_date = topix_log[0][0] if topix_log else None
-        if rs_line and latest_date and rs_line[0][0] == latest_date:
-            div = compute_rs_line_divergence(stock, market_db, rs_line=rs_line)
-            if div == "bullish":
-                tags.append("強乖")
-            elif div == "bearish":
-                tags.append("弱乖")
+    # 順位急上昇。rank_log の最新日が直近営業日と一致する場合だけ表示し、
+    # 更新停止した銘柄の古い順位変動タグが残り続けるのを防ぐ。
+    rank0 = get_rank_log(stock, "stock_rank_log", 0)
+    rank1 = get_rank_log(stock, "stock_rank_log", 1)
+    rank5 = get_rank_log(stock, "stock_rank_log", 5)
+    latest_day = recent_weekday(datetime.today())
+    if rank0 and rank1 and rank5 and rank0[0] == latest_day:
+        rank1_0 = rank1[1] - rank0[1]
+        rank5_0 = rank5[1] - rank0[1]
+        if rank1[1] and rank1_0 > rank1[1] * 0.30:
+            tags.append("急")
+        elif rank5[1] and rank5_0 > rank5[1] * 0.30:
+            tags.append("昇")
 
     # print signal, tags
     return signal, tags
@@ -1517,10 +1473,9 @@ def get_vola_and_sell_press_expr(stock_data):
     return vola, sell_press
 
 
-def get_signal_tags_prevrank_expr(stock_data, market_db=None, topix_map=None, rs_line=None):
+def get_signal_tags_prevrank_expr(stock_data):
     tags = []  # タグ
-    signal, tags = make_signal(stock_data, market_db=market_db,
-                               topix_map=topix_map, rs_line=rs_line)
+    signal, tags = make_signal(stock_data)
 
     # ---- 過去順位と株価上昇率
     try:
@@ -1546,11 +1501,6 @@ def get_signal_tags_prevrank_expr(stock_data, market_db=None, topix_map=None, rs
         rank5_s = "%s%d" % (get_arrow(rank5_0), abs(rank5_0))
         prev_rank = "%s(%s)|%s(%s)" % (rank1_s, ratio1, rank5_s, ratio5)
 
-        # 急上昇をタグに入れる急
-        if rank1_0 > rank1[1] * 0.30:
-            tags.append("急")
-        elif rank5_0 > rank5[1] * 0.30:
-            tags.append("昇")
     except IndexError:
         prev_rank = ""
 
@@ -1755,9 +1705,7 @@ def build_code_rank_row(
     # ---- rs_line を1回だけ計算して下流で使い回す
     rs_line = compute_rs_line(stock_data, market_db, topix_map=topix_map)
     # ---- タグ、シグナル、過去順位
-    signal, tags, prev_rank = get_signal_tags_prevrank_expr(
-        stock_data, market_db=market_db, topix_map=topix_map, rs_line=rs_line
-    )
+    signal, tags, prev_rank = get_signal_tags_prevrank_expr(stock_data)
     # ---- 指標・業績・理論株価
     indicator_expr = shihyou.get_shihyo_expr(stock_data)
     credit_expr = shihyou.get_credit_expr(stock_data)

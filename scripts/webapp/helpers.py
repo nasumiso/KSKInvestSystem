@@ -2021,7 +2021,6 @@ def _format_tags(stock: Dict[str, Any], tags=None) -> str:
     """code_rank.csv「タグ」列と同じ表記から月足タグを除いて返す。
 
     make_stock_db.make_signal() の tags リストを "/" join する。
-    market_db を渡さないので 強乖/弱乖 タグは出ない (Phase 4 送り)。
     tags を渡すと make_signal の再呼び出しを省略する (一覧の二重計算回避)。
     月足タグ (月破/月高/月低) は専用の月足列に出すためここでは除外する。
     """
