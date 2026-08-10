@@ -7,6 +7,7 @@ research_shelve のデータ取得・更新をWebアプリ用にラップする�
 """
 
 import html
+import csv
 import os
 import re
 from datetime import date, datetime, timedelta
@@ -1424,6 +1425,107 @@ def _select_market_kessan_winner(
     return cur
 
 
+_DISCLOSURE_LINK_RE = re.compile(r'^=HYPERLINK\("([^"]+)","([^"]+)"\)$')
+
+
+def _parse_disclosure_csv_link(value: Any) -> Tuple[str, str]:
+    """disclosure_db.csv の HYPERLINK セルを (url, text) に分解する。"""
+    m = _DISCLOSURE_LINK_RE.match(str(value))
+    if not m:
+        return "", str(value)
+    return m.group(1), m.group(2)
+
+
+def _attach_market_kessan_disclosure_impacts(entries: List[Dict[str, Any]]) -> None:
+    """決算カレンダーの各エントリに、近傍の重要開示バッジ情報を付与する。"""
+    if not entries:
+        return
+    targets: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for entry in entries:
+        entry["disclosure_impacts"] = []
+        entry["disclosure_impact_extra_count"] = 0
+        entry["disclosure_impact_tooltip"] = ""
+        code_s = entry.get("code_s", "")
+        kessanbi = entry.get("kessanbi", "")
+        if code_s and _parse_kessanbi(kessanbi) is not None:
+            targets[(code_s, kessanbi)] = entry
+    if not targets:
+        return
+
+    try:
+        import disclosure
+    except Exception as e:
+        log_warning(f"[market] disclosure import 失敗: {e}")
+        return
+    if not os.path.exists(disclosure.DISCLOSURE_CSV):
+        return
+
+    by_entry: Dict[Tuple[str, str], List[Dict[str, Any]]] = {key: [] for key in targets}
+    try:
+        with open(disclosure.DISCLOSURE_CSV, newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) < 5 or row[0] in ("", "日付"):
+                    continue
+                if str(row[3]) not in ("決算", "修正"):
+                    continue
+                try:
+                    disclosure_day = datetime.strptime(str(row[0]), "%Y%m%d").date()
+                except (ValueError, TypeError):
+                    continue
+                _, code_s = _parse_disclosure_csv_link(row[1])
+                if not code_s:
+                    continue
+                url, heading = _parse_disclosure_csv_link(row[4])
+                impact = disclosure.classify_disclosure_impact(heading)
+                if impact is None:
+                    continue
+                for (target_code, kessanbi), entry in targets.items():
+                    if target_code != code_s:
+                        continue
+                    kessan_day = _parse_kessanbi(kessanbi)
+                    if kessan_day is None:
+                        continue
+                    if kessan_day - timedelta(days=14) <= disclosure_day <= kessan_day + timedelta(days=1):
+                        rec = dict(impact)
+                        rec.update({
+                            "heading": heading,
+                            "url": url,
+                            "date": disclosure_day.strftime("%Y/%m/%d"),
+                        })
+                        by_entry[(target_code, kessanbi)].append(rec)
+    except OSError as e:
+        log_warning(f"[market] disclosure_db.csv 読み込み失敗: {e}")
+        return
+
+    for key, impacts in by_entry.items():
+        entry = targets[key]
+        unique_impacts: List[Dict[str, Any]] = []
+        seen_kinds = set()
+        headlines = []
+        for impact in impacts:
+            headlines.append("%s %s" % (impact.get("date", ""), impact.get("heading", "")))
+            kind = impact.get("kind")
+            if kind in seen_kinds:
+                continue
+            seen_kinds.add(kind)
+            unique_impacts.append(impact)
+        if not unique_impacts:
+            continue
+
+        selected: List[Dict[str, Any]] = []
+        positives = [i for i in unique_impacts if i.get("tone") == "positive"]
+        negatives = [i for i in unique_impacts if i.get("tone") == "negative"]
+        if positives and negatives:
+            selected = [positives[0], negatives[0]]
+        else:
+            selected = unique_impacts[:2]
+
+        entry["disclosure_impacts"] = selected
+        entry["disclosure_impact_extra_count"] = max(0, len(unique_impacts) - len(selected))
+        entry["disclosure_impact_tooltip"] = "\n".join(headlines)
+
+
 def get_market_kessan_data() -> Dict[str, Any]:
     """決算カレンダー表示用データを構築する。
 
@@ -1449,7 +1551,7 @@ def get_market_kessan_data() -> Dict[str, Any]:
         各 stock dict:
           code_s, stock_name, kessanbi, quarter,
           pre_expectation, pre_outlook, post_price_changes, post_comment,
-          has_comment (bool)
+          has_comment (bool), disclosure_impacts
         post_price_changes は {"1d": str, "5d": str} の dict。取得不可期間は ""
     """
     import kessan  # 遅延 import (sys.path 解決後)
@@ -1565,6 +1667,8 @@ def get_market_kessan_data() -> Dict[str, Any]:
                         winner.setdefault("post_price_changes", {})["pts"] = src_pts
                         break
             merged[merged_key] = winner
+
+    _attach_market_kessan_disclosure_impacts(list(merged.values()))
 
     # 過去エントリで post_price_changes のいずれかの期間が空のものだけ
     # 一括で price_log を取得し補完計算する

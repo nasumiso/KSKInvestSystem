@@ -9,6 +9,30 @@ import pytest
 import disclosure
 
 
+class TestClassifyDisclosureImpact:
+    """開示見出しの株価インパクト分類テスト"""
+
+    @pytest.mark.parametrize("heading, expected", [
+        ("今期経常を一転赤字に下方修正", ("downward", "negative", "strong", True)),
+        ("今期最終を一転増益に上方修正", ("upward", "positive", "strong", True)),
+        ("今期経常は3期ぶり最高益へ", ("profit_high", "positive", "weak", False)),
+        ("配当予想を増額修正、増配へ", ("dividend_positive", "positive", "weak", False)),
+        ("配当予想を減額修正、減配へ", ("dividend_negative", "negative", "weak", False)),
+        ("今期経常は10％増益で着地", None),
+        ("前期経常は25％減益で着地", None),
+    ])
+    def test_見出しキーワードで分類する(self, heading, expected):
+        result = disclosure.classify_disclosure_impact(heading)
+        if expected is None:
+            assert result is None
+        else:
+            kind, tone, strength, surprise = expected
+            assert result["kind"] == kind
+            assert result["tone"] == tone
+            assert result["strength"] == strength
+            assert result["surprise"] is surprise
+
+
 class TestFilterRecentNews:
     """filter_recent_news のテスト"""
 
