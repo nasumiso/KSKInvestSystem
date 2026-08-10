@@ -129,6 +129,9 @@ class TestGenbutsuRound:
         assert ep["pl"]["profit_amount"] == 20000
         assert round(ep["pl"]["return_pct"], 2) == 20.0
         assert ep["pl"]["hold_days"] == 10
+        sell = next(f for f in ep["fills"] if f["side"] == "sell")
+        assert sell["fill_pl"] == 20000
+        assert sell["fill_return_pct"] == 20.0
 
     def test_average_cost_partial_sells(self, db_path):
         # 0→200→300→0: 100@1000, 100@1200, 売100@1300, 売200@1400
@@ -144,6 +147,11 @@ class TestGenbutsuRound:
         # avg_cost = (1000+1200+1100)/3 = 1100
         # 実現 = (1300-1100)*100 + (1400-1100)*200 = 20000 + 60000 = 80000
         assert ep["pl"]["profit_amount"] == 80000
+        sells = [f for f in ep["fills"] if f["side"] == "sell"]
+        assert [f["fill_pl"] for f in sells] == [20000, 60000]
+        assert [f["fill_return_pct"] for f in sells] == pytest.approx(
+            [1300 / 1100 * 100 - 100, 1400 / 1100 * 100 - 100]
+        )
 
     def test_two_rounds_separate(self, db_path):
         # 0→100→0→100→0 で2エピソード
@@ -171,12 +179,16 @@ class TestShinyoRound:
         # 信用新規買建 100@1000 → 信用返済売埋 100@1300 (tate_price=1000)
         _add(db_path, "2001", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
         _add(db_path, "2001", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済",
-             tate_price=1000.0, seq_salt="b")
+             tate_date="2026-01-01", tate_price=1000.0, seq_salt="b")
         eps = helpers.build_fill_episodes(db_path=db_path)
         credit = [e for e in eps if e["kind"] == "信用"]
         assert len(credit) == 1
         # (1300-1000)*100 = 30000
         assert credit[0]["pl"]["profit_amount"] == 30000
+        settle = next(f for f in credit[0]["fills"] if f["trade_kind"] == "信用返済")
+        assert settle["fill_pl"] == 30000
+        assert settle["fill_return_pct"] == 30.0
+        assert settle["hold_days"] == 9
 
     def test_sbi_credit_uses_settle_pl(self, db_path):
         _add(db_path, "2002", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規",
@@ -187,6 +199,10 @@ class TestShinyoRound:
         credit = [e for e in eps if e["kind"] == "信用"]
         assert len(credit) == 1
         assert credit[0]["pl"]["profit_amount"] == 24000
+        settle = next(f for f in credit[0]["fills"] if f["trade_kind"] == "信用返済")
+        assert settle["fill_pl"] == 24000
+        assert "fill_return_pct" not in settle
+        assert "hold_days" not in settle
 
     def test_credit_without_pl_source_is_none(self, db_path):
         # 建単価も決済損益も無い信用返済 → 損益不能
@@ -254,6 +270,12 @@ class TestShortRound:
         assert ep["closed"] is True
         assert ep["qty_peak"] == 100
         assert ep["pl"]["profit_amount"] == expected
+        settle = next(f for f in ep["fills"] if f["trade_kind"] == "信用返済")
+        assert settle["fill_pl"] == expected
+        if tate_price is not None:
+            assert settle["fill_return_pct"] == expected / (tate_price * 100) * 100
+        else:
+            assert "fill_return_pct" not in settle
 
     def test_short_and_long_are_separate_rounds(self, db_path):
         # 両建て: 売建が買建の建玉を打ち消してラウンドを誤って閉じないこと

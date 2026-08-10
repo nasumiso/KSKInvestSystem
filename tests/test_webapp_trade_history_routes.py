@@ -154,6 +154,9 @@ class TestTradeHistoryPage:
         fills_tab = html.split('id="tab-fills"')[1].split('id="tab-actions"')[0]
         assert "+27,100円" in fills_tab   # 現物ラウンドの実現損益
         assert "1,234" in fills_tab       # 内訳展開の取得単価
+        assert "損益率" in fills_tab
+        assert "+13,300円" in fills_tab
+        assert "+13,800円" in fills_tab
 
     def test_genbutsu_and_shinyo_are_separate_episodes(self, app, client):
         """現物と信用は同一銘柄でも別エピソードになる (口座種別で分離、Phase4b)。"""

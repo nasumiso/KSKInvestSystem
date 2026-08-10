@@ -172,6 +172,20 @@
       <td></td>
       <td colspan="7" style="padding:0.3em 0.5em 0.6em;">
         <table style="width:auto;font-size:0.82em;color:#999;border-collapse:collapse;">
+          <thead style="color:#666;font-size:0.9em;">
+            <tr>
+              <th style="padding:1px 0.8em 1px 0;text-align:left;">日付</th>
+              <th style="padding:1px 0.8em;text-align:left;">売買</th>
+              <th style="padding:1px 0.8em;text-align:left;">区分</th>
+              <th style="padding:1px 0.8em;text-align:right;">株数</th>
+              <th style="padding:1px 0.8em;text-align:right;">単価</th>
+              <th style="padding:1px 0.8em;text-align:right;">建単価</th>
+              <th style="padding:1px 0.8em;">建日・保有</th>
+              <th style="padding:1px 0.8em;text-align:right;">損益率</th>
+              <th style="padding:1px 0.8em;text-align:right;">損益額</th>
+              <th style="padding:1px 0.8em;">証券会社</th>
+            </tr>
+          </thead>
           {% for f in ep.fills %}
           <tr>
             <td style="padding:1px 0.8em 1px 0;white-space:nowrap;color:#888;">{{ f.trade_date[2:4] }}/{{ f.trade_date[5:7] }}/{{ f.trade_date[8:10] }}</td>
@@ -182,6 +196,15 @@
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ f.qty }}株</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}円</td>
             {% if f.tate_price %}<td style="padding:1px 0.8em;text-align:right;white-space:nowrap;color:#888;">建 {{ "{:,}".format(f.tate_price|round|int) }}</td>{% else %}<td></td>{% endif %}
+            {% if f.hold_days is defined %}<td style="padding:1px 0.8em;color:#777;white-space:nowrap;">{{ f.tate_date[2:] }} 建 → {{ f.hold_days }}日</td>{% else %}<td></td>{% endif %}
+            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
+              {% if f.fill_return_pct is defined %}<span style="color:{{ '#9ef0aa' if f.fill_return_pct >= 0 else '#f0a0a0' }};">{{ '+' if f.fill_return_pct >= 0 else '' }}{{ "%.2f"|format(f.fill_return_pct) }}%</span>
+              {% elif f.fill_pl is defined %}<span style="color:#666;" title="建単価または平均取得単価がないため損益率は算出できません">—</span>{% endif %}
+            </td>
+            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
+              {% if f.fill_pl is defined %}<span style="color:{{ '#9ef0aa' if f.fill_pl >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(f.fill_pl) }}円</span>
+              {% elif f.side == 'sell' and f.trade_kind == '現物' %}<span style="color:#666;" title="取得記録がCSVに無いため損益は算出できません">—</span>{% endif %}
+            </td>
             <td style="padding:1px 0.8em;color:#666;white-space:nowrap;">{{ f.broker }}</td>
           </tr>
           {% endfor %}
