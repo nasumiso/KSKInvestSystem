@@ -29,6 +29,7 @@ from ks_util import DATA_DIR
 from webapp.helpers import (
     _bulk_price_logs,
     build_fill_episodes,
+    build_stock_rollups,
     calc_post_sell_returns,
     calc_trade_summary,
     fill_date_range_by_broker,
@@ -250,6 +251,14 @@ def trade_history():
         p["profit_amount"] for p in fill_pls if p["profit_amount"] is not None
     )
 
+    # issue #391: 銘柄単位の集約ビュー。実現損益合計・期待値はエピソード単位と
+    # 完全一致する (calc_trade_summary が金額加重のためグループ化に依存しない)。
+    stock_rollups = build_stock_rollups(fill_episodes)
+    stock_pls = [r["pl"] for r in stock_rollups if r["pl"]]
+    stock_summary = calc_trade_summary(stock_pls)
+    stock_priced_count = len(stock_pls)
+    stock_closed_count = sum(1 for r in stock_rollups if not r["has_open"])
+
     # 証券会社別の取込済み約定日レンジ (次回インポートの参考、取込のたびに更新される)
     broker_ranges = fill_date_range_by_broker()
 
@@ -262,6 +271,10 @@ def trade_history():
         fill_closed_count=fill_closed_count,
         fill_priced_count=fill_priced_count,
         fill_total_pl=fill_total_pl,
+        stock_rollups=stock_rollups,
+        stock_summary=stock_summary,
+        stock_priced_count=stock_priced_count,
+        stock_closed_count=stock_closed_count,
         broker_ranges=broker_ranges,
     )
 
