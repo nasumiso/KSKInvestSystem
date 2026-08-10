@@ -156,6 +156,25 @@ cd scripts && python show_fill_episodes.py --open     # 保有中のみ (残株�
 cd scripts && python show_fill_episodes.py --memo     # 振り返りメモ付きのみ
 ```
 
+### 証券会社ポートフォリオCSV → position レイヤー取込 (issue #397 Phase1)
+
+保有ステータス・保有株数の手入力に代えて、証券会社の残高CSVを真実源として自動同期するための取込コマンド。fill (約定の事実) とは別の position レイヤーに残高スナップショットを保存する。Phase1 は可視化のみで、`--apply` でも `qty`/`status` (record) には一切触れない。
+
+楽天・SBI とも現物・信用が別ファイルで降ってくる (SBI は同名 `SaveFile*.csv` で連番)。ファイル名に依存せず中身の構造から4ソース (楽天現物/楽天信用/SBI現物/SBI信用) を判別するため、順不同でまとめて渡す。4ソースが揃わない実行は既定でエラー停止する。
+
+```bash
+cd scripts && python import_portfolio_csv.py \
+    "assetbalance(all)_YYYYMMDD_HHMMSS.csv" \
+    "marginbalance(JP)_YYYYMMDD_HHMMSS.csv" \
+    "SaveFile.csv" "SaveFile (1).csv" \
+    --as-of YYYY-MM-DD --dry-run           # 読込・差分プレビューのみ (DB 非書込)
+
+cd scripts && python import_portfolio_csv.py <同上4ファイル> \
+    --as-of YYYY-MM-DD --apply             # position/position_source を保存 (record は変更しない)
+```
+
+差分プレビューは「一致」「株数変更候補」「売却候補」「新規IN候補」等を表示する (Phase2 で実際の自動反映を解禁予定)。`covered` (全4ソースが同一基準日で揃っているか) が偽の銘柄は判定不能として除外する。
+
 ## 自動実行
 
 `shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。

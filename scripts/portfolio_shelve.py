@@ -75,6 +75,9 @@ VALID_ACTION_TYPES = frozenset(
     {"初回登録", "ステータス変更", "売却", "削除", "ユニバース除外", "株数変更"}
 )
 
+# issue #397: action_log の反映元。手入力 (デフォルト) / CSV取込を区別する。
+VALID_ACTION_SOURCES = frozenset({"manual", "csv_import"})
+
 # キー名前空間プレフィックス
 KEY_RECORD_PREFIX = "record:"
 KEY_ACTION_LOG_PREFIX = "action_log:"
@@ -88,6 +91,11 @@ KEY_FILL_SEQ_PREFIX = "_fill_seq:"
 # fill は再取込で作り直されるため、メモは別レイヤーに独立保存し
 # エピソードキー (code_s|kind|open_date|close_date) で紐付ける。
 KEY_FILL_MEMO_PREFIX = "fill_memo:"
+# issue #397: 証券会社ポートフォリオCSV 由来の保有残高スナップショット。
+# (broker, account, kind, code_s) 単位で最新のみ保持 (上書き、fill と違い履歴を持たない)。
+KEY_POSITION_PREFIX = "position:"
+# ソース単位 (broker, account, kind) の取込メタ。covered 判定 (全ソース同一 as_of) に使う。
+KEY_POSITION_SOURCE_PREFIX = "position_source:"
 
 # テーママスター (issue #282)
 THEME_FIELDS = frozenset({"name", "description", "created_at"})
@@ -197,6 +205,9 @@ ACTION_LOG_FIELDS = frozenset(
         # 入れば price_source="actual" で上書きできる構造。旧ログは list 側で None 補完。
         "price_proxy",   # イベント日 (直前営業日) の終値 (int) or None
         "price_source",  # "close" (終値プロキシ) / 将来 "actual" (実約定)
+        # issue #397: 反映元。旧ログは list 側で "manual" 補完 (後方互換)。
+        "source",         # "manual" (既定) / "csv_import"
+        "source_detail",  # 取込元の識別子 (例 "楽天/信用/2026-08-10")
     }
 )
 
@@ -315,6 +326,14 @@ def validate_action_type(action_type: Any) -> None:
         raise ValueError(
             f"invalid action_type: {action_type!r} "
             f"(許容値: {sorted(VALID_ACTION_TYPES)})"
+        )
+
+
+def validate_action_source(source: Any) -> None:
+    """アクションログ反映元 (issue #397) を検証する。"""
+    if source not in VALID_ACTION_SOURCES:
+        raise ValueError(
+            f"invalid source: {source!r} (許容値: {sorted(VALID_ACTION_SOURCES)})"
         )
 
 
@@ -718,6 +737,8 @@ def append_action_log(
     review_memo: str = "",
     qty: Optional[int] = None,
     timestamp: Optional[str] = None,
+    source: str = "manual",
+    source_detail: str = "",
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """アクションログを1件追加する。
@@ -725,6 +746,8 @@ def append_action_log(
     内部利用および移行スクリプトからの直接利用を想定。
     transition_status / add_to_watch / delete_record からも呼ばれる。
     レコードを物理削除した後でもログ追記は可能 (ログだけ残す要件のため)。
+
+    source: 反映元 ("manual" 既定 / "csv_import"、issue #397)。
 
     Returns: 追記したログエントリ
     """
@@ -739,6 +762,9 @@ def append_action_log(
         raise TypeError(f"reason must be str, got {type(reason).__name__}")
     if not isinstance(review_memo, str):
         raise TypeError(f"review_memo must be str, got {type(review_memo).__name__}")
+    validate_action_source(source)
+    if not isinstance(source_detail, str):
+        raise TypeError(f"source_detail must be str, got {type(source_detail).__name__}")
     ts = timestamp or now_iso()
 
     # issue #361: 売買日イベント (1保/株数変更/売却) は終値プロキシを自動付与する。
@@ -763,6 +789,8 @@ def append_action_log(
                 "reason": reason,
                 "review_memo": review_memo,
                 "qty": qty,
+                "source": source,
+                "source_detail": source_detail,
                 **extra,
             }
             db[_action_log_key(normalized, seq)] = entry
@@ -804,6 +832,9 @@ def list_action_logs(
             # issue #361: 旧ログの後方互換補完 (物理スキーマ変更なし・マイグレーション不要)
             value.setdefault("price_proxy", None)
             value.setdefault("price_source", None)
+            # issue #397: 旧ログは手入力扱い
+            value.setdefault("source", "manual")
+            value.setdefault("source_detail", "")
             results.append(value)
     results.sort(
         key=lambda r: (r.get("code_s", ""), r.get("seq", 0)),
@@ -1164,6 +1195,189 @@ def list_fill_memos(*, db_path: Optional[str] = None) -> Dict[str, str]:
 
 
 # ===========================================
+# issue #397: ポートフォリオCSV由来の保有スナップショット (position レイヤー)
+# ===========================================
+
+# 期待するソース一式 (broker, kind)。1ファイルがその (broker, kind) の
+# 全口座区分を網羅する前提 (楽天現物は実データで確認済み、SBI現物はユーザー確認済み)。
+EXPECTED_POSITION_SOURCES = (
+    ("楽天", "現物"),
+    ("楽天", "信用"),
+    ("SBI", "現物"),
+    ("SBI", "信用"),
+)
+
+POSITION_KINDS = frozenset({"現物", "信用", "信用売建"})
+
+
+def _position_key(broker: str, account: str, kind: str, code_s: str) -> str:
+    return f"{KEY_POSITION_PREFIX}{broker}:{account}:{kind}:{normalize_code_s(code_s)}"
+
+
+def _position_source_key(broker: str, account: str, kind: str) -> str:
+    return f"{KEY_POSITION_SOURCE_PREFIX}{broker}:{account}:{kind}"
+
+
+def upsert_position(
+    broker: str,
+    account: str,
+    kind: str,
+    code_s: str,
+    qty: int,
+    *,
+    avg_price: Optional[float] = None,
+    as_of: str,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """CSV由来の保有残高スナップショットを (broker, account, kind, code_s) 単位で上書き保存する。
+
+    fill と異なり履歴を持たない (最新のみ)。kind="信用売建" は merged_qty の
+    集計対象から除外される (issue #397 §2-0: 空売りは検出のみ)。
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    if kind not in POSITION_KINDS:
+        raise ValueError(f"invalid kind: {kind!r} (許容値: {sorted(POSITION_KINDS)})")
+    if not isinstance(qty, int) or qty < 0:
+        raise ValueError(f"qty must be int >= 0, got {qty!r}")
+    if not _ACTION_DATE_RE.match(as_of):
+        raise ValueError(f"as_of は YYYY-MM-DD 形式で指定してください: {as_of!r}")
+    entry = {
+        "code_s": normalized,
+        "broker": broker,
+        "account": account,
+        "kind": kind,
+        "qty": qty,
+        "avg_price": float(avg_price) if avg_price is not None else None,
+        "as_of": as_of,
+        "imported_at": now_iso(),
+    }
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            db[_position_key(broker, account, kind, normalized)] = entry
+    return entry
+
+
+def list_positions(
+    code_s: Optional[str] = None,
+    *,
+    db_path: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """position を取得する。code_s 指定でその銘柄のみ、None で全件。"""
+    if code_s is not None:
+        validate_code_s(code_s)
+    normalized = normalize_code_s(code_s) if code_s is not None else None
+    path = _resolve_db_path(db_path)
+    results: List[Dict[str, Any]] = []
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_POSITION_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            if normalized is not None and value.get("code_s") != normalized:
+                continue
+            results.append(value)
+    results.sort(key=lambda r: (r.get("code_s", ""), r.get("broker", ""), r.get("account", ""), r.get("kind", "")))
+    return results
+
+
+def upsert_position_source(
+    broker: str,
+    account: str,
+    kind: str,
+    *,
+    as_of: str,
+    row_count: int,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """ソース単位 (broker, account, kind) の取込メタを上書き保存する。
+
+    covered 判定 (§5-2) の材料。銘柄が0件のソース (全部売った口座) も
+    row_count=0 で記録できる。
+    """
+    if not _ACTION_DATE_RE.match(as_of):
+        raise ValueError(f"as_of は YYYY-MM-DD 形式で指定してください: {as_of!r}")
+    entry = {
+        "broker": broker,
+        "account": account,
+        "kind": kind,
+        "as_of": as_of,
+        "row_count": row_count,
+        "imported_at": now_iso(),
+    }
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            db[_position_source_key(broker, account, kind)] = entry
+    return entry
+
+
+def list_position_sources(*, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """全 position_source を取得する。"""
+    path = _resolve_db_path(db_path)
+    results: List[Dict[str, Any]] = []
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_POSITION_SOURCE_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            results.append(value)
+    results.sort(key=lambda r: (r.get("broker", ""), r.get("account", ""), r.get("kind", "")))
+    return results
+
+
+def compute_merged_qty(
+    code_s: str,
+    *,
+    db_path: Optional[str] = None,
+) -> int:
+    """指定銘柄の position を合算した総保有株数を返す (issue #397 §5-2)。
+
+    kind="信用売建" (空売り) は合算から除外する。
+    """
+    total = 0
+    for pos in list_positions(code_s, db_path=db_path):
+        if pos.get("kind") == "信用売建":
+            continue
+        total += pos.get("qty", 0)
+    return total
+
+
+def is_covered(
+    code_s: str,
+    *,
+    expected_sources: tuple = EXPECTED_POSITION_SOURCES,
+    db_path: Optional[str] = None,
+) -> bool:
+    """指定銘柄が covered (全ソース同一 as_of で揃っている) かどうかを判定する。
+
+    - 期待する (broker, kind) それぞれについて position_source が存在すること
+    - 全ての position_source の as_of が同一であること
+    - 当該銘柄が「信用売建」の position を持つ場合は強制的に False
+      (空売りは自動更新対象外、issue #397 §2-0)
+
+    位置情報の有無 (position) 自体はソース側に銘柄が無い (=保有ゼロ) 場合も
+    正常なので判定に使わない。判定材料は position_source (ソースが取り込まれたか) のみ。
+    """
+    positions = list_positions(code_s, db_path=db_path)
+    if any(p.get("kind") == "信用売建" for p in positions):
+        return False
+
+    sources = list_position_sources(db_path=db_path)
+    source_map = {(s["broker"], s["kind"]): s for s in sources}
+    as_of_values = set()
+    for broker, kind in expected_sources:
+        source = source_map.get((broker, kind))
+        if source is None:
+            return False
+        as_of_values.add(source["as_of"])
+    return len(as_of_values) == 1
+
+
+# ===========================================
 # 高レベル操作
 # ===========================================
 
@@ -1173,6 +1387,8 @@ def add_to_watch(
     memo: Optional[Dict[str, str]] = None,
     reason: str = "",
     action_date: Optional[str] = None,
+    source: str = "manual",
+    source_detail: str = "",
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """銘柄を 3監 として登録、または除外済みレコードをユニバース復活させる。
@@ -1187,6 +1403,7 @@ def add_to_watch(
     - 既存レコードあり & excluded=False → ValueError (重複登録防止)
     - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
       その日の JST 12:00 に固定する (issue #220)。未指定なら現在時刻
+    - source: 反映元 ("manual" 既定 / "csv_import"、issue #397)
 
     Returns: 追加または復活したレコード
     """
@@ -1221,6 +1438,8 @@ def add_to_watch(
                 "ユニバース除外",
                 reason="復活",
                 timestamp=action_ts,
+                source=source,
+                source_detail=source_detail,
                 db_path=db_path,
             )
             log_print("portfolio_shelve: ユニバース復活", normalized)
@@ -1232,6 +1451,8 @@ def add_to_watch(
                 status_to="3監",
                 reason=reason,
                 timestamp=action_ts,
+                source=source,
+                source_detail=source_detail,
                 db_path=db_path,
             )
             log_print("portfolio_shelve: 3監 追加", normalized)
@@ -1284,6 +1505,8 @@ def update_qty(
     reason: str = "",
     action_date: Optional[str] = None,
     log_action: bool = True,
+    source: str = "manual",
+    source_detail: str = "",
     db_path: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """既存レコードの保有株数を更新する (issue #269)。
@@ -1294,6 +1517,7 @@ def update_qty(
     - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
       JST 12:00 の ISO 8601 文字列に変換して記録する
     - log_action=False のときは action_log を追記しない (1保遷移の初回セット用)
+    - source: 反映元 ("manual" 既定 / "csv_import"、issue #397)
 
     Returns: 更新後のレコード。差分なしの場合は現レコードをそのまま返す。
     """
@@ -1325,6 +1549,8 @@ def update_qty(
             "株数変更",
             reason=f"{current_qty} → {qty_int}" + (f" ({reason})" if reason else ""),
             timestamp=action_ts,
+            source=source,
+            source_detail=source_detail,
             db_path=db_path,
         )
     return _normalize_loaded_record(record)
@@ -1351,6 +1577,8 @@ def transition_status(
     reason: str = "",
     action_date: Optional[str] = None,
     qty: Optional[int] = None,
+    source: str = "manual",
+    source_detail: str = "",
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """既存レコードのステータスを変更する。
@@ -1362,6 +1590,7 @@ def transition_status(
     - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
       その日の JST 12:00 に固定する (issue #220)。未指定なら現在時刻
     - qty: 1保遷移時のIN株数をログに記録する (issue #357)。売却時は record["qty"] を使用
+    - source: 反映元 ("manual" 既定 / "csv_import"、issue #397)
 
     Returns: 更新後のレコード
     """
@@ -1424,6 +1653,8 @@ def transition_status(
             review_memo=inherited_memo,
             qty=log_qty,
             timestamp=action_ts,
+            source=source,
+            source_detail=source_detail,
             db_path=db_path,
         )
     log_print(
