@@ -61,53 +61,19 @@ class TestCalcSellPressureRatio:
 class TestParseDateStr:
     """日付文字列パースのテスト"""
 
-    def test_japanese_format(self):
-        """YYYY年M月D日 形式"""
-        result = price.parse_date_str("2025年1月15日")
-        assert result == date(2025, 1, 15)
-
-    def test_slash_format(self):
-        """YYYY/MM/DD 形式"""
-        result = price.parse_date_str("2025/06/10")
-        assert result == date(2025, 6, 10)
-
-    def test_hyphen_format(self):
-        """YYYY-MM-DD 形式"""
-        result = price.parse_date_str("2025-12-31")
-        assert result == date(2025, 12, 31)
-
-    def test_empty_string(self):
-        """空文字列"""
-        assert price.parse_date_str("") is None
-
-    def test_none(self):
-        """None"""
-        assert price.parse_date_str(None) is None
-
-    def test_invalid_string(self):
-        """無効な文字列"""
-        assert price.parse_date_str("hoge") is None
-
-    def test_embedded_japanese(self):
-        """周辺テキスト付きの日本語日付"""
-        result = price.parse_date_str("決算日: 2025年 3月 1日 発表")
-        assert result == date(2025, 3, 1)
-
-    def test_yy_slash_format(self):
-        """YY/MM/DD 形式 (Kabutan の2桁年表記、20YY と解釈)"""
-        result = price.parse_date_str("26/04/28")
-        assert result == date(2026, 4, 28)
-
-    def test_yy_hyphen_format(self):
-        """YY-MM-DD 形式"""
-        result = price.parse_date_str("26-04-28")
-        assert result == date(2026, 4, 28)
-
-    def test_yy_format_does_not_match_4digit(self):
-        """4桁年は YY 形式の正規表現に引っかからない (回帰防止)"""
-        # 4桁年は規則 (2) でパースされるため、YY 規則がうっかり動作しないこと
-        result = price.parse_date_str("2025/06/10")
-        assert result == date(2025, 6, 10)
+    @pytest.mark.parametrize("text,expected", [
+        ("2025年1月15日", date(2025, 1, 15)),          # YYYY年M月D日
+        ("2025/06/10", date(2025, 6, 10)),             # YYYY/MM/DD (4桁年が YY 規則に食われないことの回帰防止も兼ねる)
+        ("2025-12-31", date(2025, 12, 31)),            # YYYY-MM-DD
+        ("26/04/28", date(2026, 4, 28)),               # YY/MM/DD (Kabutan の2桁年表記、20YY と解釈)
+        ("26-04-28", date(2026, 4, 28)),               # YY-MM-DD
+        ("決算日: 2025年 3月 1日 発表", date(2025, 3, 1)),  # 周辺テキスト付き
+        ("", None),
+        (None, None),
+        ("hoge", None),
+    ])
+    def test_parse_date_str(self, text, expected):
+        assert price.parse_date_str(text) == expected
 
 
 # ==================================================
