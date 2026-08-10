@@ -156,9 +156,9 @@ cd scripts && python show_fill_episodes.py --open     # 保有中のみ (残株�
 cd scripts && python show_fill_episodes.py --memo     # 振り返りメモ付きのみ
 ```
 
-### 証券会社ポートフォリオCSV → position レイヤー取込 (issue #397 Phase1)
+### 証券会社ポートフォリオCSV → position レイヤー取込・record自動同期 (issue #397)
 
-保有ステータス・保有株数の手入力に代えて、証券会社の残高CSVを真実源として自動同期するための取込コマンド。fill (約定の事実) とは別の position レイヤーに残高スナップショットを保存する。Phase1 は可視化のみで、`--apply` でも `qty`/`status` (record) には一切触れない。
+保有ステータス・保有株数の手入力に代えて、証券会社の残高CSVを真実源として自動同期するための取込コマンド。fill (約定の事実) とは別の position レイヤーに残高スナップショットを保存する。`--apply` のみだと position/position_source の保存のみ (Phase1、可視化)。`--apply-records` を足すと covered な銘柄 (4ソース全てが同一基準日で揃っている銘柄) の `qty`/`status` を実際に同期する (Phase2)。
 
 楽天・SBI とも現物・信用が別ファイルで降ってくる (SBI は同名 `SaveFile*.csv` で連番)。ファイル名に依存せず中身の構造から4ソース (楽天現物/楽天信用/SBI現物/SBI信用) を判別するため、順不同でまとめて渡す。4ソースが揃わない実行は既定でエラー停止する。
 
@@ -167,13 +167,27 @@ cd scripts && python import_portfolio_csv.py \
     "assetbalance(all)_YYYYMMDD_HHMMSS.csv" \
     "marginbalance(JP)_YYYYMMDD_HHMMSS.csv" \
     "SaveFile.csv" "SaveFile (1).csv" \
-    --as-of YYYY-MM-DD --dry-run           # 読込・差分プレビューのみ (DB 非書込)
+    --as-of YYYY-MM-DD --dry-run                    # 読込・差分プレビューのみ (DB 非書込)
 
 cd scripts && python import_portfolio_csv.py <同上4ファイル> \
-    --as-of YYYY-MM-DD --apply             # position/position_source を保存 (record は変更しない)
+    --as-of YYYY-MM-DD --apply                       # Phase1: position/position_source を保存 (record は変更しない)
+
+cd scripts && python import_portfolio_csv.py <同上4ファイル> \
+    --as-of YYYY-MM-DD --apply --apply-records       # Phase2: covered な銘柄の qty/status を実際に反映
 ```
 
-差分プレビューは「一致」「株数変更候補」「売却候補」「新規IN候補」等を表示する (Phase2 で実際の自動反映を解禁予定)。`covered` (全4ソースが同一基準日で揃っているか) が偽の銘柄は判定不能として除外する。
+差分プレビューは「一致」「株数変更候補」「売却候補」「新規IN候補」等を表示する。`covered` が偽の銘柄は判定不能として除外する (位置情報が部分的な銘柄は Phase2 でも一切触らない)。
+
+Phase2 の反映内容:
+- **株数変更**: 1保 かつ `merged_qty != db_qty` → `update_qty` のみ
+- **売却 (自動OUT)**: 1保 かつ `merged_qty == 0` → 2準へ (3監にはしない。売買履歴の集計から漏れるため)
+- **新規IN**: 2準 かつ `trade_idea` 設定済み → 自動で1保へ遷移。**2準で戦略未設定・3監はいずれも保留キュー (`pending_in`) へ**、未登録銘柄は `add_to_watch()` で3監登録した上で保留キューへ (人が戦略を選んで確定するまで自動INしない)
+
+保留キューの内容確認:
+
+```bash
+cd scripts && python -c "import portfolio_shelve as ps; print(ps.list_pending_in())"
+```
 
 ## 自動実行
 

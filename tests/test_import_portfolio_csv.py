@@ -195,3 +195,128 @@ def test_import_csvs_apply_writes_position_only_not_record(tmp_path, db_path):
     assert ps.is_covered("402A", db_path=db_path) is True
     diff = next(d for d in result["diffs"] if d["code_s"] == "402A")
     assert diff["judgement"] == "未登録+保有検出 (Phase2で登録)"
+
+
+class TestPhase2ApplyRecords:
+    """apply_records=True (issue #397 Phase2) の record 同期を検証する。
+
+    402A: 現物600+信用900=1500 (merged_qty)。4970: SBI信用100 (merged_qty)。
+    いずれも4ソース全てが揃っているので covered=True になる (RAKUTEN_SPOT_ROWS /
+    SBI_SPOT_ROWS には元々登場しない銘柄なので、DB側の初期状態だけで判定を作れる)。
+    """
+
+    def _paths(self, tmp_path):
+        return [
+            _write_csv(tmp_path / "r_spot.csv", RAKUTEN_SPOT_ROWS),
+            _write_csv(tmp_path / "r_margin.csv", RAKUTEN_MARGIN_ROWS),
+            _write_csv(tmp_path / "s_spot.csv", SBI_SPOT_ROWS),
+            _write_csv(tmp_path / "s_margin.csv", SBI_MARGIN_ROWS),
+        ]
+
+    def test_qty_change_on_existing_1poh(self, tmp_path, db_path):
+        """1保 かつ merged_qty != db_qty -> 株数変更のみ (§5-3)。"""
+        ps.add_to_watch("402A", db_path=db_path)
+        ps.transition_status("402A", "2準", db_path=db_path)
+        ps.seed_trade_ideas(db_path=db_path)
+        ps.update_memo("402A", {"trade_idea": "GARP"}, db_path=db_path)
+        ps.transition_status("402A", "1保", qty=1000, db_path=db_path)
+        ps.update_qty("402A", 1000, log_action=False, db_path=db_path)
+
+        result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
+                                apply_records=True, db_path=db_path)
+
+        record = ps.get_record("402A", db_path=db_path)
+        assert record["status"] == "1保"
+        assert record["qty"] == 1500  # 現物600+信用900
+        applied = next(a for a in result["applied"] if a["code_s"] == "402A")
+        assert applied["action"] == "株数変更"
+        log = ps.list_action_logs("402A", db_path=db_path)[-1]
+        assert log["source"] == "csv_import"
+
+    def test_sell_when_merged_qty_zero(self, tmp_path, db_path):
+        """1保 かつ merged_qty=0 -> 2準へ自動OUT。3監にはしない (§5-4)。"""
+        ps.add_to_watch("8888", db_path=db_path)  # CSVに一切登場しないコード
+        ps.transition_status("8888", "2準", db_path=db_path)
+        ps.seed_trade_ideas(db_path=db_path)
+        ps.update_memo("8888", {"trade_idea": "GARP"}, db_path=db_path)
+        ps.transition_status("8888", "1保", qty=100, db_path=db_path)
+        ps.update_qty("8888", 100, log_action=False, db_path=db_path)
+
+        result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
+                                apply_records=True, allow_partial=False, db_path=db_path)
+
+        record = ps.get_record("8888", db_path=db_path)
+        assert record["status"] == "2準"
+        applied = next(a for a in result["applied"] if a["code_s"] == "8888")
+        assert applied["action"] == "売却(OUT)"
+        log = ps.list_action_logs("8888", db_path=db_path)[-1]
+        assert log["action_type"] == "売却"
+        assert log["source"] == "csv_import"
+
+    def test_new_in_auto_when_trade_idea_set(self, tmp_path, db_path):
+        """2準 かつ trade_idea 設定済み -> 自動で1保に遷移 (§6-2)。
+
+        402A は CSV に登場するが本テストの DB には未登録なので、別途
+        「登録+保留キューへ」の対象になる (想定通り、§5-3b)。4970 の
+        挙動のみを検証する。
+        """
+        ps.add_to_watch("4970", db_path=db_path)
+        ps.transition_status("4970", "2準", db_path=db_path)
+        ps.seed_trade_ideas(db_path=db_path)
+        ps.update_memo("4970", {"trade_idea": "GARP"}, db_path=db_path)
+
+        result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
+                                apply_records=True, db_path=db_path)
+
+        record = ps.get_record("4970", db_path=db_path)
+        assert record["status"] == "1保"
+        assert record["qty"] == 100  # SBI信用のみ
+        assert not any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
+        applied = next(a for a in result["applied"] if a["code_s"] == "4970")
+        assert applied["action"] == "新規IN(自動)"
+
+    def test_new_in_queued_when_trade_idea_missing(self, tmp_path, db_path):
+        """2準 かつ trade_idea 未設定 -> 保留キューへ (§6-2)。record は変更しない。"""
+        ps.add_to_watch("4970", db_path=db_path)
+        ps.transition_status("4970", "2準", db_path=db_path)
+
+        result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
+                                apply_records=True, db_path=db_path)
+
+        record = ps.get_record("4970", db_path=db_path)
+        assert record["status"] == "2準"
+        pending = ps.list_pending_in(db_path=db_path)
+        assert any(p["code_s"] == "4970" for p in pending)
+        applied = next(a for a in result["applied"] if a["code_s"] == "4970")
+        assert applied["action"] == "保留キューへ"
+
+    def test_new_in_never_auto_from_3kan_even_with_trade_idea(self, tmp_path, db_path):
+        """3監 は trade_idea があっても自動INしない、必ず保留キュー (§6-2)。"""
+        ps.add_to_watch("4970", db_path=db_path)  # 3監のまま
+        ps.seed_trade_ideas(db_path=db_path)
+        ps.update_memo("4970", {"trade_idea": "GARP"}, db_path=db_path)
+
+        result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
+                                apply_records=True, db_path=db_path)
+
+        record = ps.get_record("4970", db_path=db_path)
+        assert record["status"] == "3監"
+        assert any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
+        applied = next(a for a in result["applied"] if a["code_s"] == "4970")
+        assert applied["action"] == "保留キューへ"
+
+    def test_unregistered_code_registers_then_queues(self, tmp_path, db_path):
+        """未登録銘柄は add_to_watch() で3監登録した上で保留キューへ (§5-3b)。"""
+        assert ps.get_record("402A", db_path=db_path) is None
+
+        result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
+                                apply_records=True, db_path=db_path)
+
+        record = ps.get_record("402A", db_path=db_path)
+        assert record is not None and record["status"] == "3監"
+        log = ps.list_action_logs("402A", db_path=db_path)[0]
+        assert log["action_type"] == "初回登録" and log["source"] == "csv_import"
+        pending = ps.list_pending_in(db_path=db_path)
+        assert any(p["code_s"] == "402A" and p["qty"] == 1500 for p in pending)
+        applied = next(a for a in result["applied"] if a["code_s"] == "402A")
+        assert applied["action"] == "登録+保留キューへ"

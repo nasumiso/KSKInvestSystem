@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""証券会社ポートフォリオCSV → portfolio_shelve position レイヤー 取込 (issue #397 Phase1)。
+"""証券会社ポートフォリオCSV → portfolio_shelve position レイヤー 取込 (issue #397)。
 
 保有ステータス・保有株数の手入力をやめ、証券会社の残高CSVを真実源として
 自動同期するための取込コマンド。4ソース (楽天現物/楽天信用/SBI現物/SBI信用) を
 まとめて渡し、position / position_source レイヤーへ反映する。
 
-Phase 1 はこのコマンドの --apply でも record (qty/status) には一切触れず、
-position の保存と差分プレビューの表示のみ行う (可視化フェーズ)。
-qty/status への自動反映は Phase 2 で別途解禁する。
+--apply のみ: position/position_source を保存するが record (qty/status) には
+一切触れない (Phase1、可視化フェーズ)。
+--apply --apply-records: 上記に加え、covered な銘柄 (4ソース全てが同一基準日で
+揃っている銘柄) の qty更新・自動OUT・戦略ありの自動IN を実際に反映する (Phase2)。
+戦略未設定の新規保有は pending_in (保留キュー) に積み、自動反映しない。
 
 ファイル判別はファイル名に依存しない (SBI は現物・信用が同名 SaveFile*.csv で
 降ってくるため)。中身の構造から4ソースいずれかを機械的に特定する。
@@ -351,14 +353,17 @@ def import_csvs(
     *,
     dry_run: bool = False,
     allow_partial: bool = False,
+    apply_records: bool = False,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """複数CSVをまとめて読み、position/position_source を差分プレビュー・反映する。
 
-    Phase 1: --apply でも position/position_source の保存のみ行い、
-    record (qty/status) には一切触れない (可視化フェーズ)。
+    apply_records=False (既定): --apply でも position/position_source の保存のみ行い、
+    record (qty/status) には一切触れない (issue #397 Phase1、可視化フェーズ)。
+    apply_records=True かつ dry_run=False のときのみ、covered な銘柄について
+    qty更新・自動OUT・戦略ありの自動IN を実際に反映する (issue #397 Phase2)。
 
-    Returns: {"sources": {...}, "diffs": [...], "missing_sources": [...]}
+    Returns: {"sources": {...}, "diffs": [...], "missing_sources": [...], "applied": [...]}
     """
     detected: Dict[Tuple[str, str], Dict[str, Any]] = {}
     for path in csv_paths:
@@ -423,10 +428,15 @@ def import_csvs(
         all_sources_present=not missing_sources,
     )
 
+    applied = []
+    if apply_records and not dry_run:
+        applied = _sync_records(diffs, as_of, db_path=db_path)
+
     return {
         "sources": {f"{b}/{k}": len(v) for (b, k), v in aggregated.items()},
         "missing_sources": missing_sources,
         "diffs": diffs,
+        "applied": applied,
     }
 
 
@@ -504,6 +514,83 @@ def _judge(status: str, covered: bool, merged_qty: int, db_qty: Optional[int]) -
     return "-"
 
 
+def _sync_records(diffs: List[Dict[str, Any]], as_of: str, *, db_path: Optional[str]) -> List[Dict[str, Any]]:
+    """covered な銘柄について実際に record (qty/status) を CSV に同期する
+    (issue #397 Phase2)。§5-3 の判定表・§5-4 の売却・§6-2 の新規IN分岐を実装する。
+
+    - covered=false の銘柄は一切触らない (§5-2)
+    - 「一致」「対象外」は no-op
+    - `source="csv_import"` を全ての反映操作に付与する
+
+    Returns: 実際に反映した内容のログ (dry-run では呼ばれない)
+    """
+    source_detail = f"ポートフォリオCSV/{as_of}"
+    applied = []
+    for d in diffs:
+        code_s, status, covered = d["code_s"], d["status"], d["covered"]
+        merged_qty, db_qty = d["merged_qty"], d["db_qty"]
+        if not covered:
+            continue
+
+        if status == "1保":
+            if merged_qty == db_qty:
+                continue
+            if merged_qty == 0:
+                # 売却: 2準 に落とす (issue #397 §5-4)。3監にはしない
+                # (売買履歴の集計から漏れるため。既存フローと同じ action_type=売却 で記録)
+                reason = f"CSV取込による売却検出 ({source_detail}、実売却日不明の可能性あり)"
+                ps.transition_status(
+                    code_s, "2準", reason=reason, action_date=as_of,
+                    source="csv_import", source_detail=source_detail, db_path=db_path,
+                )
+                applied.append({"code_s": code_s, "action": "売却(OUT)", "detail": f"{db_qty}→0"})
+            else:
+                # 株数変更のみ (既に1保なので log_action=True で株数変更ログを残す)
+                reason = f"CSV取込 ({source_detail})"
+                ps.update_qty(
+                    code_s, merged_qty, reason=reason, action_date=as_of,
+                    source="csv_import", source_detail=source_detail, db_path=db_path,
+                )
+                applied.append({"code_s": code_s, "action": "株数変更", "detail": f"{db_qty}→{merged_qty}"})
+            continue
+
+        if status in ("2準", "3監") and merged_qty > 0:
+            record = ps.get_record(code_s, db_path=db_path)
+            trade_idea = (record.get("memo") or {}).get("trade_idea") if record else ""
+            if status == "2準" and trade_idea:
+                # 戦略あり: webapp/routes/portfolio.py:520-537 と同じ順序で自動IN (issue #397 §6-2)
+                # 1. 戦略は既存値のまま (再保存不要) -> 2. 遷移 -> 3. record の qty を更新
+                reason = f"CSV取込による新規保有検出 ({source_detail})"
+                ps.transition_status(
+                    code_s, "1保", reason=reason, action_date=as_of, qty=merged_qty,
+                    source="csv_import", source_detail=source_detail, db_path=db_path,
+                )
+                ps.update_qty(
+                    code_s, merged_qty, reason=reason, action_date=as_of, log_action=False,
+                    source="csv_import", source_detail=source_detail, db_path=db_path,
+                )
+                ps.remove_pending_in(code_s, db_path=db_path)
+                applied.append({"code_s": code_s, "action": "新規IN(自動)", "detail": f"qty={merged_qty}"})
+            else:
+                # 3監、または 2準 でも戦略未設定 -> 保留キュー (issue #397 §6-2)
+                ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
+                applied.append({"code_s": code_s, "action": "保留キューへ", "detail": f"qty={merged_qty}"})
+            continue
+
+        if status == "未登録" and merged_qty > 0:
+            # 登録は必ず3監から (issue #397 §5-3b)。1保への遷移は保留キュー経由で人が確定する
+            reason = f"CSV取込で保有を検出 ({source_detail})"
+            ps.add_to_watch(
+                code_s, reason=reason, action_date=as_of,
+                source="csv_import", source_detail=source_detail, db_path=db_path,
+            )
+            ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
+            applied.append({"code_s": code_s, "action": "登録+保留キューへ", "detail": f"qty={merged_qty}"})
+
+    log_print("import_portfolio_csv: record 反映完了", f"件数={len(applied)}")
+    return applied
+
+
 # ===========================================
 # 4. 実行層
 # ===========================================
@@ -511,7 +598,9 @@ def _judge(status: str, covered: bool, merged_qty: int, db_qty: Optional[int]) -
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="証券会社ポートフォリオCSV (4ソース) を position レイヤーへ取込 "
-                    "(issue #397 Phase1: 可視化のみ、record は変更しない)",
+                    "(issue #397)。既定 (--apply のみ) は Phase1: 可視化のみで "
+                    "record は変更しない。--apply-records を足すと Phase2: covered な "
+                    "銘柄の qty/status を実際に同期する",
     )
     parser.add_argument("csv_paths", nargs="+", help="取込むCSVファイル (複数指定可、順不同)")
     parser.add_argument(
@@ -520,6 +609,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dry-run", action="store_true", help="読込・差分算出のみ、DBへは書かない")
     parser.add_argument("--apply", action="store_true", help="position/position_source をDBへ保存する")
+    parser.add_argument(
+        "--apply-records", action="store_true",
+        help="Phase2: covered な銘柄の qty更新・自動OUT・戦略ありの自動INを実際に反映する "
+             "(--apply と併用必須。--dry-run とは併用不可)",
+    )
     parser.add_argument(
         "--allow-partial", action="store_true",
         help="4ソースが揃っていなくても実行を続行する (既定はエラー停止)",
@@ -539,12 +633,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.dry_run and not args.apply:
         log_warning("--dry-run か --apply のどちらかを指定してください")
         return 1
+    if args.apply_records and not args.apply:
+        log_warning("--apply-records は --apply と併用してください")
+        return 1
+    if args.apply_records and args.dry_run:
+        log_warning("--apply-records は --dry-run と併用できません")
+        return 1
 
     try:
         result = import_csvs(
             args.csv_paths, args.as_of,
             dry_run=args.dry_run or not args.apply,
             allow_partial=args.allow_partial,
+            apply_records=args.apply_records,
             db_path=args.db_path,
         )
     except ValueError as e:
@@ -555,14 +656,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     if result["missing_sources"]:
         log_print("import_portfolio_csv: 不足ソース (--allow-partial で続行)", result["missing_sources"])
 
-    log_print("import_portfolio_csv: 差分プレビュー (Phase1は可視化のみ、DBのqty/statusは変更しません)")
-    for d in result["diffs"]:
-        if d["judgement"] in ("一致", "対象外"):
-            continue
-        log_print(
-            f"  {d['code_s']} status={d['status']} db_qty={d['db_qty']} "
-            f"merged_qty={d['merged_qty']} covered={d['covered']} -> {d['judgement']}"
-        )
+    if args.apply_records:
+        log_print("import_portfolio_csv: record 反映結果 (Phase2)")
+        for a in result["applied"]:
+            log_print(f"  {a['code_s']} {a['action']} {a['detail']}")
+    else:
+        log_print("import_portfolio_csv: 差分プレビュー (Phase1は可視化のみ、DBのqty/statusは変更しません)")
+        for d in result["diffs"]:
+            if d["judgement"] in ("一致", "対象外"):
+                continue
+            log_print(
+                f"  {d['code_s']} status={d['status']} db_qty={d['db_qty']} "
+                f"merged_qty={d['merged_qty']} covered={d['covered']} -> {d['judgement']}"
+            )
 
     return 0
 

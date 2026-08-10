@@ -96,6 +96,9 @@ KEY_FILL_MEMO_PREFIX = "fill_memo:"
 KEY_POSITION_PREFIX = "position:"
 # ソース単位 (broker, account, kind) の取込メタ。covered 判定 (全ソース同一 as_of) に使う。
 KEY_POSITION_SOURCE_PREFIX = "position_source:"
+# issue #397 Phase2: CSV取込で検出したが trade_idea 未設定のため 1保 に上げられない
+# 新規保有の保留キュー (code_s 単位、1件のみ保持)。
+KEY_PENDING_IN_PREFIX = "pending_in:"
 
 # テーママスター (issue #282)
 THEME_FIELDS = frozenset({"name", "description", "created_at"})
@@ -1375,6 +1378,65 @@ def is_covered(
             return False
         as_of_values.add(source["as_of"])
     return len(as_of_values) == 1
+
+
+def _pending_in_key(code_s: str) -> str:
+    return f"{KEY_PENDING_IN_PREFIX}{normalize_code_s(code_s)}"
+
+
+def upsert_pending_in(
+    code_s: str,
+    qty: int,
+    as_of: str,
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """CSV取込で検出したが trade_idea 未設定の新規保有を保留キューに積む (issue #397 Phase2)。
+
+    同一銘柄は最新の qty/as_of で上書き (複数回の取込で同じ銘柄が検出され続けても重複しない)。
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    entry = {
+        "code_s": normalized,
+        "qty": int(qty),
+        "as_of": as_of,
+        "detected_at": now_iso(),
+    }
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            db[_pending_in_key(normalized)] = entry
+    return entry
+
+
+def list_pending_in(*, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """保留キュー全件を返す (issue #397 Phase2)。"""
+    path = _resolve_db_path(db_path)
+    results: List[Dict[str, Any]] = []
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_PENDING_IN_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            results.append(value)
+    results.sort(key=lambda r: r.get("code_s", ""))
+    return results
+
+
+def remove_pending_in(code_s: str, *, db_path: Optional[str] = None) -> bool:
+    """保留キューから1件削除する (確定して 1保 に遷移したとき、または CSV側で
+    merged_qty が0に戻ったときに呼ぶ)。存在しなければ False。"""
+    validate_code_s(code_s)
+    key = _pending_in_key(code_s)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            if key not in db:
+                return False
+            del db[key]
+    return True
 
 
 # ===========================================
