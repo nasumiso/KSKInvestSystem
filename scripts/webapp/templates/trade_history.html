@@ -582,6 +582,21 @@
               display.style.color = next ? '#555' : '#aaa';
               ta.remove();
               display.style.display = '';
+              // issue #391: エピソード単位/銘柄単位の両ビューに同じ episode_key の
+              // セルが存在するため、非表示側の dataset.memo と表示も揃える
+              if (cell.dataset.episodeKey) {
+                document.querySelectorAll(
+                  '.review-memo-cell[data-episode-key="' + cell.dataset.episodeKey + '"]'
+                ).forEach(function (other) {
+                  if (other === cell) return;
+                  other.dataset.memo = next;
+                  var otherDisplay = other.querySelector('.review-memo-display');
+                  if (otherDisplay) {
+                    otherDisplay.textContent = next || 'クリックして入力';
+                    otherDisplay.style.color = next ? '#555' : '#aaa';
+                  }
+                });
+              }
             }
           })
           .catch(function () {});

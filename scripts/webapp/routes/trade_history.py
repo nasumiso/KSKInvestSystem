@@ -257,7 +257,12 @@ def trade_history():
     stock_pls = [r["pl"] for r in stock_rollups if r["pl"]]
     stock_summary = calc_trade_summary(stock_pls)
     stock_priced_count = len(stock_pls)
-    stock_closed_count = sum(1 for r in stock_rollups if not r["has_open"])
+    # クローズ済みエピソードを1件以上持つ銘柄数。has_open (全エピソードのうち
+    # 1件でも保有中があるか) とは独立: 6227 のように closed 12 + open 1 の
+    # 混在銘柄は has_open=True だが、クローズ済みエピソードを持つのでここに含める。
+    stock_closed_count = sum(
+        1 for r in stock_rollups if any(ep["closed"] for ep in r["episodes"])
+    )
 
     # 証券会社別の取込済み約定日レンジ (次回インポートの参考、取込のたびに更新される)
     broker_ranges = fill_date_range_by_broker()
