@@ -1371,6 +1371,14 @@ class TestSplitAdjustment:
         all_adj = ps.list_all_split_adjustments(db_path=db_path)
         assert all_adj["1491"] == events2
 
+    def test_rejects_non_finite_ratio(self, db_path):
+        # PRレビュー #405 (5周目 P2): nan/inf は float 変換できても保存してはいけない。
+        with pytest.raises(ValueError):
+            ps.add_split_adjustment("1491", "2025-09-29", float("nan"), db_path=db_path)
+        with pytest.raises(ValueError):
+            ps.add_split_adjustment("1491", "2025-09-29", float("inf"), db_path=db_path)
+        assert ps.get_split_adjustments("1491", db_path=db_path) == []
+
     def test_pending_review_cleared_per_event_not_per_code(self, db_path):
         # PRレビュー #405 (P1) 指摘: 同一銘柄に複数の未登録イベントがある状態で
         # 1件だけ登録すると、銘柄単位で pending を丸ごと消してはいけない
@@ -1403,3 +1411,10 @@ class TestSplitAdjustment:
 
         assert ps.clear_split_pending_review("9496", db_path=db_path) is True
         assert "9496" not in ps.list_pending_review_codes(db_path=db_path)
+
+    def test_reject_pending_review_records_suppression(self, db_path):
+        # PRレビュー #405 (5周目 P2): 却下済みイベントは再検出抑止リストに残す。
+        ps.mark_split_pending_review("9497", reason="単価ジャンプ検出", ex_date="2025-06-01", db_path=db_path)
+        assert ps.reject_split_pending_review("9497", ex_date="2025-06-01", db_path=db_path) is True
+        assert "9497" not in ps.list_pending_review_codes(db_path=db_path)
+        assert ps.list_rejected_review_events(db_path=db_path)["9497"] == ["2025-06-01"]

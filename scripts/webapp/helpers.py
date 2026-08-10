@@ -4553,7 +4553,7 @@ def _jump_affects_episode(jump: Dict[str, Any], ep: Dict[str, Any]) -> bool:
 def _split_event_affects_episode(ex_date: str, ep: Dict[str, Any]) -> bool:
     """pending の ex_date がエピソード期間に含まれるか判定する。"""
     close_date = ep.get("close_date") or "9999-12-31"  # 保有中は無期限
-    return ep["open_date"] <= ex_date <= close_date
+    return ep["open_date"] < ex_date <= close_date
 
 
 def _apply_split_adjustments(fills: List[Dict[str, Any]],

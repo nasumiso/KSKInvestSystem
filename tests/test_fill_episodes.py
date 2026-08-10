@@ -695,6 +695,18 @@ class TestSplitAdjustment:
         assert ep["closed"] is True
         assert ep["split_suspect"] is True
 
+    def test_pending_review_ignores_ex_date_opening_buy(self, db_path):
+        # PRレビュー #405 (5周目 P2): pending 日付が open_date 当日なら分割後基準の新規買い。
+        _add(db_path, "9488", "2025-03-01", "buy", 100, 500, seq_salt="a")
+        _add(db_path, "9488", "2025-06-01", "sell", 100, 600, seq_salt="b")
+        ps.mark_split_pending_review(
+            "9488", reason="エピソード期間総当たりチェック", ex_date="2025-03-01",
+            db_path=db_path)
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        ep = [e for e in eps if e["code_s"] == "9488" and e["kind"] == "現物"][0]
+        assert not ep.get("split_suspect")
+
     def test_check_splits_marks_closed_two_for_one_split(self, db_path, monkeypatch):
         # PRレビュー #405 (3周目 P1): 2:1 分割は単価ジャンプ閾値(3倍)未満なので、
         # クローズ済み現物エピソード期間も corporate action と照合する必要がある。
@@ -717,6 +729,27 @@ class TestSplitAdjustment:
         assert show_fill_episodes._check_splits(db_path) == 0
         assert ps.list_pending_review_events(db_path=db_path)["9497"] == ["2025-03-01"]
 
+    def test_check_splits_ignores_ex_date_opening_buy(self, db_path, monkeypatch):
+        # PRレビュー #405 (5周目 P2): 権利落ち日当日の新規買いは分割後基準なので対象外。
+        _add(db_path, "9490", "2025-03-01", "buy", 100, 500, seq_salt="a")
+        _add(db_path, "9490", "2025-06-01", "sell", 100, 600, seq_salt="b")
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {})
+        monkeypatch.setattr(
+            show_fill_episodes.helpers,
+            "_bulk_resolve_stock_names",
+            lambda codes: {c: f"銘柄{c}" for c in codes},
+        )
+        monkeypatch.setattr(
+            show_fill_episodes,
+            "_yfinance_splits",
+            lambda code_s, stock_db: pd.Series(
+                [2.0], index=pd.to_datetime(["2025-03-01"])
+            ) if code_s == "9490" else pd.Series(dtype=float),
+        )
+
+        assert show_fill_episodes._check_splits(db_path) == 0
+        assert "9490" not in ps.list_pending_review_codes(db_path=db_path)
+
     def test_reject_split_cli_clears_pending(self, db_path):
         # PRレビュー #405 (4周目 P2): 誤検知は CLI から pending 解除できる。
         ps.mark_split_pending_review(
@@ -724,6 +757,29 @@ class TestSplitAdjustment:
 
         assert show_fill_episodes._reject_split(["9499", "2025-03-01"], db_path) == 0
         assert "9499" not in ps.list_pending_review_codes(db_path=db_path)
+        assert ps.list_rejected_review_events(db_path=db_path)["9499"] == ["2025-03-01"]
+
+    def test_rejected_split_is_not_detected_again(self, db_path, monkeypatch):
+        # PRレビュー #405 (5周目 P2): 却下済みイベントは次回診断で pending に戻さない。
+        _add(db_path, "9489", "2025-01-01", "buy", 100, 1000, seq_salt="a")
+        _add(db_path, "9489", "2025-06-01", "sell", 200, 600, seq_salt="b")
+        ps.reject_split_pending_review("9489", ex_date="2025-03-01", db_path=db_path)
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {})
+        monkeypatch.setattr(
+            show_fill_episodes.helpers,
+            "_bulk_resolve_stock_names",
+            lambda codes: {c: f"銘柄{c}" for c in codes},
+        )
+        monkeypatch.setattr(
+            show_fill_episodes,
+            "_yfinance_splits",
+            lambda code_s, stock_db: pd.Series(
+                [2.0], index=pd.to_datetime(["2025-03-01"])
+            ) if code_s == "9489" else pd.Series(dtype=float),
+        )
+
+        assert show_fill_episodes._check_splits(db_path) == 0
+        assert "9489" not in ps.list_pending_review_codes(db_path=db_path)
 
     def test_merger_ratio_closes_without_residual_qty(self, db_path):
         # 20:1併合相当の比率で浮動小数の残差が出てもクローズ判定を妨げない

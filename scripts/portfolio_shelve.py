@@ -30,6 +30,7 @@ shelve ベースのラッパー。
 import fcntl
 import glob
 import hashlib
+import math
 import os
 import re
 import threading
@@ -95,6 +96,8 @@ KEY_SPLIT_ADJ_PREFIX = "split_adj:"
 # build_fill_episodes は yfinance を呼ばないため、単価ジャンプが無く保有中の
 # 総当たりチェックでのみ見つかるケースを検知できない。ここに記録して埋める。
 KEY_SPLIT_PENDING_REVIEW_PREFIX = "split_pending_review:"
+# --reject-split で分割・併合ではないと判断したイベント (再検出抑止リスト)。
+KEY_SPLIT_REJECTED_REVIEW_PREFIX = "split_rejected_review:"
 
 # テーママスター (issue #282)
 THEME_FIELDS = frozenset({"name", "description", "created_at"})
@@ -1255,7 +1258,7 @@ def add_split_adjustment(code_s: str, ex_date: str, ratio: float, *,
     """
     if not _ACTION_DATE_RE.match(ex_date):
         raise ValueError(f"ex_date は YYYY-MM-DD 形式で指定してください: {ex_date!r}")
-    if not isinstance(ratio, (int, float)) or ratio <= 0:
+    if not isinstance(ratio, (int, float)) or not math.isfinite(ratio) or ratio <= 0:
         raise ValueError(f"ratio must be > 0, got {ratio!r}")
     path = _resolve_db_path(db_path)
     storage_key = _split_adj_storage_key(code_s)
@@ -1298,12 +1301,16 @@ def _split_pending_review_storage_key(code_s: str) -> str:
     return f"{KEY_SPLIT_PENDING_REVIEW_PREFIX}{normalize_code_s(code_s)}"
 
 
+def _split_rejected_review_storage_key(code_s: str) -> str:
+    return f"{KEY_SPLIT_REJECTED_REVIEW_PREFIX}{normalize_code_s(code_s)}"
+
+
 def mark_split_pending_review(code_s: str, *, reason: str, ex_date: Optional[str] = None,
                               db_path: Optional[str] = None) -> None:
     """--check-splits の (a)/(b) 検知結果を、webapp からも見える形で残す。
 
     build_fill_episodes は yfinance を呼ばないため、単価ジャンプが無く
-    保有中の総当たりチェックでのみ見つかったケース (9252 相当) を検知できない。
+    エピソード期間総当たりチェックでのみ見つかったケース (9252 相当) を検知できない。
     この拒否リストに載せておけば、次回 webapp 表示時にも split_suspect を
     付与できる (yfinance 呼び出しなし)。
 
@@ -1325,6 +1332,28 @@ def mark_split_pending_review(code_s: str, *, reason: str, ex_date: Optional[str
             if marker not in ex_dates:
                 ex_dates.append(marker)
             db[pending_key] = {
+                "code_s": normalize_code_s(code_s),
+                "reason": reason,
+                "ex_dates": ex_dates,
+                "marked_at": now_iso(),
+            }
+
+
+def mark_split_rejected_review(code_s: str, *, reason: str, ex_date: Optional[str] = None,
+                               db_path: Optional[str] = None) -> None:
+    """分割・併合ではないと判断した検知結果を再検出抑止用に保存する。"""
+    if ex_date is not None and ex_date != "unknown" and not _ACTION_DATE_RE.match(ex_date):
+        raise ValueError(f"ex_date は YYYY-MM-DD 形式で指定してください: {ex_date!r}")
+    path = _resolve_db_path(db_path)
+    rejected_key = _split_rejected_review_storage_key(code_s)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            value = db.get(rejected_key)
+            ex_dates = list(value.get("ex_dates", [])) if isinstance(value, dict) else []
+            marker = ex_date or "unknown"
+            if marker not in ex_dates:
+                ex_dates.append(marker)
+            db[rejected_key] = {
                 "code_s": normalize_code_s(code_s),
                 "reason": reason,
                 "ex_dates": ex_dates,
@@ -1362,6 +1391,25 @@ def clear_split_pending_review(code_s: str, *, ex_date: Optional[str] = None,
             return True
 
 
+def reject_split_pending_review(code_s: str, *, ex_date: Optional[str] = None,
+                                reason: str = "分割ではないと判断",
+                                db_path: Optional[str] = None) -> bool:
+    """pending_review を却下し、同じイベントを再検出しないよう保存する。"""
+    if ex_date is not None:
+        mark_split_rejected_review(code_s, reason=reason, ex_date=ex_date, db_path=db_path)
+        clear_split_pending_review(code_s, ex_date=ex_date, db_path=db_path)
+        return True
+
+    pending_events = list_pending_review_events(db_path=db_path).get(normalize_code_s(code_s), [])
+    if pending_events:
+        for marker in pending_events:
+            mark_split_rejected_review(code_s, reason=reason, ex_date=marker, db_path=db_path)
+    else:
+        mark_split_rejected_review(code_s, reason=reason, db_path=db_path)
+        return True
+    return clear_split_pending_review(code_s, db_path=db_path)
+
+
 def list_pending_review_codes(*, db_path: Optional[str] = None) -> List[str]:
     """split_pending_review が付いている銘柄コードの一覧を返す。"""
     path = _resolve_db_path(db_path)
@@ -1388,6 +1436,21 @@ def list_pending_review_events(*, db_path: Optional[str] = None) -> Dict[str, Li
             if not isinstance(value, dict):
                 continue
             code_s = value.get("code_s", key[len(KEY_SPLIT_PENDING_REVIEW_PREFIX):])
+            results[code_s] = list(value.get("ex_dates", []))
+    return results
+
+
+def list_rejected_review_events(*, db_path: Optional[str] = None) -> Dict[str, List[str]]:
+    """却下済みの分割・併合検知イベント日を銘柄別に返す。"""
+    path = _resolve_db_path(db_path)
+    results: Dict[str, List[str]] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_SPLIT_REJECTED_REVIEW_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            code_s = value.get("code_s", key[len(KEY_SPLIT_REJECTED_REVIEW_PREFIX):])
             results[code_s] = list(value.get("ex_dates", []))
     return results
 

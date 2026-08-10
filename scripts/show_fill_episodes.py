@@ -30,7 +30,7 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 import portfolio_shelve as ps  # noqa: E402
-from ks_util import log_warning  # noqa: E402
+from ks_util import log_print, log_warning  # noqa: E402
 from webapp import helpers  # noqa: E402
 
 
@@ -103,16 +103,26 @@ def _report_split_candidate(code_s: str, splits, reason: str, db_path: Optional[
     """
     if splits is None or splits.empty:
         ps.mark_split_pending_review(code_s, reason=reason, db_path=db_path)
-        print("      split_adj 未登録。yfinance に該当データなし (要手動判断)")
-        print(f"      却下: python show_fill_episodes.py --reject-split {code_s}")
+        log_warning("      split_adj 未登録。yfinance に該当データなし (要手動判断)")
+        log_print(f"      却下: python show_fill_episodes.py --reject-split {code_s}")
         return
     for ex_date, ratio in splits.items():
         ps.mark_split_pending_review(
             code_s, reason=reason, ex_date=str(ex_date.date()), db_path=db_path)
-        print(f"      split_adj 未登録。yfinance suggests: {ex_date.date()} ratio={ratio}")
-    print(f"      登録: python show_fill_episodes.py --register-split {code_s} "
-          f"<ex_date> <ratio>")
-    print(f"      却下: python show_fill_episodes.py --reject-split {code_s} <ex_date>")
+        log_warning(f"      split_adj 未登録。yfinance suggests: {ex_date.date()} ratio={ratio}")
+    log_print(f"      登録: python show_fill_episodes.py --register-split {code_s} "
+              f"<ex_date> <ratio>")
+    log_print(f"      却下: python show_fill_episodes.py --reject-split {code_s} <ex_date>")
+
+
+def _filter_rejected_splits(code_s: str, splits, rejected_dates: set):
+    """却下済み ex_date を yfinance splits から除外する。"""
+    if splits is None or splits.empty:
+        return splits
+    if not rejected_dates:
+        return splits
+    mask = [ex_date.strftime("%Y-%m-%d") not in rejected_dates for ex_date in splits.index]
+    return splits[mask]
 
 
 def _check_splits(db_path: Optional[str]) -> int:
@@ -136,28 +146,27 @@ def _check_splits(db_path: Optional[str]) -> int:
 
     names = helpers._bulk_resolve_stock_names(list(by_code.keys()))
     registered = ps.list_all_split_adjustments(db_path=db_path)
+    rejected = ps.list_rejected_review_events(db_path=db_path)
     stock_db = make_stock_db.load_stock_db()  # ticker symbol の市場区分解決用 (1回だけロード)
     found = 0
 
     for code_s, fills in sorted(by_code.items()):
         events = registered.get(code_s, [])
+        rejected_dates = set(rejected.get(code_s, []))
         # ジャンプ検知は換算後の fills に対して行う (build_fill_episodes と同じ理由:
         # 未換算のまま検知すると、登録済みイベントで残高の基準が変わった後の
         # 残高追跡が崩れ、別の未登録イベントのジャンプを見逃す)。
         adjusted_fills = helpers._apply_split_adjustments(fills, events) if events else fills
         jumps = helpers._detect_price_jumps(adjusted_fills)
         for jump in jumps:
-            found += 1
-            print(f" {code_s:>5} {names.get(code_s, ''):<12} 単価ジャンプ検出: "
-                  f"{jump['before_date']} @{jump['before_price']:,.0f} -> "
-                  f"{jump['after_date']} @{jump['after_price']:,.0f} "
-                  f"(x{jump['after_price'] / jump['before_price']:.1f})")
             # このジャンプの日付範囲をカバーする登録済みイベントがあるかで判定する
             # (銘柄単位の in registered だけだと、後日発生した別イベントを見逃す)
             covering = [ev for ev in events
                        if jump["before_date"] < ev["ex_date"] <= jump["after_date"]]
             if covering:
-                print(f"      split_adj 登録済み: {covering}")
+                log_print(f"      split_adj 登録済み: {covering}")
+                continue
+            if "unknown" in rejected_dates:
                 continue
             splits = _yfinance_splits(code_s, stock_db)
             # yfinance の全履歴をそのまま渡すと、登録済みの古い日付まで再度
@@ -168,9 +177,17 @@ def _check_splits(db_path: Optional[str]) -> int:
                 mask = [
                     jump["before_date"] < ex_date.strftime("%Y-%m-%d") <= jump["after_date"]
                     and ex_date.strftime("%Y-%m-%d") not in registered_dates
+                    and ex_date.strftime("%Y-%m-%d") not in rejected_dates
                     for ex_date in splits.index
                 ]
                 splits = splits[mask]
+                if splits.empty:
+                    continue
+            found += 1
+            log_warning(f" {code_s:>5} {names.get(code_s, ''):<12} 単価ジャンプ検出: "
+                        f"{jump['before_date']} @{jump['before_price']:,.0f} -> "
+                        f"{jump['after_date']} @{jump['after_price']:,.0f} "
+                        f"(x{jump['after_price'] / jump['before_price']:.1f})")
             _report_split_candidate(code_s, splits, "単価ジャンプ検出", db_path)
 
     genbutsu_ranges: Dict[str, List[Dict[str, str]]] = {}
@@ -186,6 +203,10 @@ def _check_splits(db_path: Optional[str]) -> int:
         if splits is None or splits.empty:
             continue
         registered_dates = {ev["ex_date"] for ev in registered.get(code_s, [])}
+        rejected_dates = set(rejected.get(code_s, []))
+        splits = _filter_rejected_splits(code_s, splits, rejected_dates)
+        if splits.empty:
+            continue
         # エピソード期間中に権利落ちし、かつ未登録のイベントのみが当該ラウンドに影響する。
         # 保有中だけに限定すると、pending 検出後に売却でクローズした瞬間に警告が外れ、
         # 2:1 分割など単価ジャンプ閾値未満の誤損益が集計へ戻ってしまう。
@@ -194,42 +215,42 @@ def _check_splits(db_path: Optional[str]) -> int:
             ex_date_s = ex_date.strftime("%Y-%m-%d")
             if ex_date_s in registered_dates:
                 continue
-            if any(r["open_date"] <= ex_date_s <= r["close_date"] for r in ranges):
+            if any(r["open_date"] < ex_date_s <= r["close_date"] for r in ranges):
                 relevant_dates.append(ex_date)
         if not relevant_dates:
             continue
         found += 1
-        print(f" {code_s:>5} {names.get(code_s, ''):<12} エピソード期間チェック: "
-              f"split イベントあり (未登録)")
+        log_warning(f" {code_s:>5} {names.get(code_s, ''):<12} エピソード期間チェック: "
+                    f"split イベントあり (未登録)")
         _report_split_candidate(
             code_s, splits.loc[relevant_dates], "エピソード期間総当たりチェック", db_path)
 
     if found == 0:
-        print("分割・併合の疑いは検出されませんでした。")
+        log_print("分割・併合の疑いは検出されませんでした。")
     return 0
 
 
 def _register_split(code_s: str, ex_date: str, ratio: str, db_path: Optional[str]) -> int:
     """split_adj イベントを1件登録する (issue #398)。"""
     stored = ps.add_split_adjustment(code_s, ex_date, float(ratio), db_path=db_path)
-    print(f"登録しました: {code_s} {stored['events']}")
+    log_print(f"登録しました: {code_s} {stored['events']}")
     return 0
 
 
 def _reject_split(args: List[str], db_path: Optional[str]) -> int:
     """分割・併合ではないと判断した pending_review を解除する。"""
     if len(args) not in (1, 2):
-        print("--reject-split は CODE または CODE EX_DATE を指定してください。")
+        log_warning("--reject-split は CODE または CODE EX_DATE を指定してください。")
         return 2
     code_s = args[0]
     ex_date = args[1] if len(args) == 2 else None
-    changed = ps.clear_split_pending_review(code_s, ex_date=ex_date, db_path=db_path)
+    changed = ps.reject_split_pending_review(code_s, ex_date=ex_date, db_path=db_path)
     if changed:
         target = ex_date or "全pending"
-        print(f"却下しました: {code_s} {target}")
+        log_print(f"却下しました: {code_s} {target}")
     else:
         target = ex_date or "pending"
-        print(f"該当する pending はありません: {code_s} {target}")
+        log_print(f"該当する pending はありません: {code_s} {target}")
     return 0
 
 
