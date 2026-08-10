@@ -1274,8 +1274,17 @@ def add_split_adjustment(code_s: str, ex_date: str, ratio: float, *,
                 "source": "yfinance",
             }
             db[storage_key] = stored
-            if pending_key in db:
-                del db[pending_key]
+            # pending は銘柄単位ではなくイベント日単位で解除する。同一銘柄に複数の
+            # 未登録イベントがある状態で1件だけ登録した場合、残りのイベントの
+            # pending フラグは消さない (PRレビュー #405 P1 対応)。
+            pending_value = db.get(pending_key)
+            if isinstance(pending_value, dict):
+                remaining = [d for d in pending_value.get("ex_dates", []) if d != ex_date]
+                if remaining:
+                    pending_value["ex_dates"] = remaining
+                    db[pending_key] = pending_value
+                else:
+                    del db[pending_key]
     log_print("portfolio_shelve: split_adj 登録", code_s, ex_date, ratio)
     return stored
 
@@ -1284,21 +1293,36 @@ def _split_pending_review_storage_key(code_s: str) -> str:
     return f"{KEY_SPLIT_PENDING_REVIEW_PREFIX}{normalize_code_s(code_s)}"
 
 
-def mark_split_pending_review(code_s: str, *, reason: str,
+def mark_split_pending_review(code_s: str, *, reason: str, ex_date: Optional[str] = None,
                               db_path: Optional[str] = None) -> None:
     """--check-splits の (a)/(b) 検知結果を、webapp からも見える形で残す。
 
     build_fill_episodes は yfinance を呼ばないため、単価ジャンプが無く
     保有中の総当たりチェックでのみ見つかったケース (9252 相当) を検知できない。
     この拒否リストに載せておけば、次回 webapp 表示時にも split_suspect を
-    付与できる (yfinance 呼び出しなし)。add_split_adjustment で登録すれば解除される。
+    付与できる (yfinance 呼び出しなし)。
+
+    ex_date (yfinance が示す権利落ち日) が分かれば ex_dates リストに積む。
+    add_split_adjustment はイベント単位で ex_dates から解除するため、同一銘柄に
+    複数の未登録イベントがあっても、登録済みの日付だけが解除される
+    (PRレビュー #405 P1 対応: 銘柄単位で丸ごと解除すると、他の未登録イベントの
+    警告が消えてしまう)。ex_date 不明 (単価ジャンプ検知は yfinance 未参照でも
+    呼ばれる) の場合は "unknown" として積み、build_fill_episodes 側は
+    ex_dates の有無に関わらず銘柄が pending なら警告する (安全側)。
     """
     path = _resolve_db_path(db_path)
+    pending_key = _split_pending_review_storage_key(code_s)
     with _flock(db_path):
         with ShelveDB(path) as db:
-            db[_split_pending_review_storage_key(code_s)] = {
+            value = db.get(pending_key)
+            ex_dates = list(value.get("ex_dates", [])) if isinstance(value, dict) else []
+            marker = ex_date or "unknown"
+            if marker not in ex_dates:
+                ex_dates.append(marker)
+            db[pending_key] = {
                 "code_s": normalize_code_s(code_s),
                 "reason": reason,
+                "ex_dates": ex_dates,
                 "marked_at": now_iso(),
             }
 

@@ -96,12 +96,16 @@ def _report_split_candidate(code_s: str, splits, reason: str, db_path: Optional[
     """未登録の分割・併合イベントを pending_review に記録し、登録コマンドを案内する。
 
     (a) 単価ジャンプ検知・(b) 保有中総当たりチェックの両方から呼ぶ共通処理。
+    ex_date が分かるイベントごとに pending へ積む (PRレビュー #405 P1 対応:
+    複数の未登録イベントがあっても登録済みの日付だけが解除されるようにするため)。
     """
-    ps.mark_split_pending_review(code_s, reason=reason, db_path=db_path)
     if splits is None or splits.empty:
+        ps.mark_split_pending_review(code_s, reason=reason, db_path=db_path)
         print("      split_adj 未登録。yfinance に該当データなし (要手動判断)")
         return
     for ex_date, ratio in splits.items():
+        ps.mark_split_pending_review(
+            code_s, reason=reason, ex_date=str(ex_date.date()), db_path=db_path)
         print(f"      split_adj 未登録。yfinance suggests: {ex_date.date()} ratio={ratio}")
     print(f"      登録: python show_fill_episodes.py --register-split {code_s} "
           f"<ex_date> <ratio>")

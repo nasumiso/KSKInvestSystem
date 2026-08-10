@@ -4475,10 +4475,16 @@ def _is_qty_closed(qty: float) -> bool:
 
 
 def _detect_price_jumps(fills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """現物 fill を約定日順に見て、隣接単価が3倍以上/1/3以下に飛ぶ箇所を検出する。
+    """現物 fill を約定日順に見て、建玉が継続したまま隣接単価が3倍以上/1/3以下に
+    飛ぶ箇所を検出する。
 
     分割・併合は取引として記録されないため、単価の断絶が唯一の痕跡になる。
     133件の実データで検証済み (誤検出0件、1491 中外鉱業のみ検出、issue #398)。
+
+    建玉を一度売り切ってから (残高0) 数年後に買い直した場合、その間の株価変動は
+    分割・併合と無関係な通常の値上がり・値下がりであり分割候補ではない
+    (PRレビュー対応)。残高を追跡し、直前の fill で残高が0になっていた場合は
+    ジャンプ判定をスキップする。
 
     Returns: [{"before_date", "before_price", "after_date", "after_price"}]
     """
@@ -4487,37 +4493,46 @@ def _detect_price_jumps(fills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         key=lambda f: (f.get("trade_date") or "", f.get("seq") or 0),
     )
     jumps = []
+    held_qty = 0.0
     for a, b in zip(genbutsu, genbutsu[1:]):
+        held_qty += a["qty"] if a["side"] == "buy" else -a["qty"]
         pa, pb = a.get("price"), b.get("price")
-        if not pa or not pb:
-            continue
-        ratio = pb / pa
-        if ratio >= _SPLIT_PRICE_JUMP_RATIO or ratio <= 1 / _SPLIT_PRICE_JUMP_RATIO:
-            jumps.append({
-                "before_date": a.get("trade_date"),
-                "before_price": pa,
-                "after_date": b.get("trade_date"),
-                "after_price": pb,
-            })
+        if pa and pb and not _is_qty_closed(held_qty):
+            ratio = pb / pa
+            if ratio >= _SPLIT_PRICE_JUMP_RATIO or ratio <= 1 / _SPLIT_PRICE_JUMP_RATIO:
+                jumps.append({
+                    "before_date": a.get("trade_date"),
+                    "before_price": pa,
+                    "after_date": b.get("trade_date"),
+                    "after_price": pb,
+                })
     return jumps
 
 
-def _has_uncovered_jump(jumps: List[Dict[str, Any]],
-                        events: List[Dict[str, Any]]) -> bool:
-    """検知した単価ジャンプのうち、登録済みイベントでカバーされていないものがあるか。
+def _uncovered_jumps(jumps: List[Dict[str, Any]],
+                     events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """検知した単価ジャンプのうち、登録済みイベントでカバーされていないものを返す。
 
     「登録済みイベントが1件でもあれば安全」という判定は粗く、同一銘柄で後日
     発生した別の分割・併合を見逃す (PRレビュー対応)。ジャンプの日付境界
     (before_date, after_date] に ex_date が入る登録イベントがあればカバー済み。
     """
-    for jump in jumps:
-        covered = any(
-            jump["before_date"] < ev["ex_date"] <= jump["after_date"]
-            for ev in events
-        )
-        if not covered:
-            return True
-    return False
+    return [
+        jump for jump in jumps
+        if not any(jump["before_date"] < ev["ex_date"] <= jump["after_date"]
+                   for ev in events)
+    ]
+
+
+def _jump_affects_episode(jump: Dict[str, Any], ep: Dict[str, Any]) -> bool:
+    """未カバーの単価ジャンプが、このエピソードの残高・損益に影響するか。
+
+    ジャンプの (before_date, after_date] がエピソードの期間 [open_date, close_date]
+    (保有中は close_date なし=無期限) と重なる場合のみ影響する。分割前に完結した
+    無関係なラウンドまで split_suspect で隠さないため (PRレビュー対応)。
+    """
+    close_date = ep.get("close_date") or "9999-12-31"  # 保有中は無期限
+    return jump["before_date"] < close_date and jump["after_date"] >= ep["open_date"]
 
 
 def _apply_split_adjustments(fills: List[Dict[str, Any]],
@@ -4807,11 +4822,15 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
 
     # issue #398: 分割・併合の疑いがある銘柄を検知し、登録済みイベントがあれば
     # 現物 fill を換算したコピーに差し替えてからエピソード再構成に渡す。
-    # 未カバーのジャンプがあれば換算せず既存動作を維持し、該当銘柄のエピソードに
-    # split_suspect を付与する (PRレビュー対応: 「登録済みイベントが1件でもあれば
-    # 安全」という判定は粗く、同一銘柄で後日発生した別の分割・併合を見逃す)。
+    # 未カバーのジャンプがあれば換算せず既存動作を維持し、その期間と重なる
+    # エピソードにのみ split_suspect を付与する (PRレビュー対応:
+    # 「登録済みイベントが1件でもあれば安全」という銘柄単位の判定は粗く、同一銘柄で
+    # 後日発生した別の分割・併合を見逃す。また銘柄単位で全エピソードに付けると、
+    # 分割前に完結した無関係なラウンドの正しい損益まで隠してしまう)。
     # pending_review は --check-splits の (a)単価ジャンプ/(b)保有中総当たりの両方の検知結果を
     # 拒否リストとして反映する (webapp は yfinance を呼ばないため (b) を自力では検知できない)。
+    # pending_review は銘柄単位のフラグなので、pending 該当銘柄は保有中エピソードのみに
+    # 限定して付与する (保有中総当たりチェックは常に保有中エピソードが対象のため)。
     all_split_adj = ps.list_all_split_adjustments(db_path=db_path)
     pending_codes = set(ps.list_pending_review_codes(db_path=db_path))
     episodes: List[Dict[str, Any]] = []
@@ -4821,11 +4840,15 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         if events:
             fills = _apply_split_adjustments(fills, events)
         code_episodes = _build_code_episodes(code_s, names.get(code_s, ""), fills)
-        uncovered = _has_uncovered_jump(jumps, events)
-        if (uncovered or code_s in pending_codes):
-            for ep in code_episodes:
-                if ep["kind"] == "現物":
-                    ep["split_suspect"] = True
+        uncovered = _uncovered_jumps(jumps, events)
+        is_pending = code_s in pending_codes
+        for ep in code_episodes:
+            if ep["kind"] != "現物":
+                continue
+            if any(_jump_affects_episode(j, ep) for j in uncovered):
+                ep["split_suspect"] = True
+            elif is_pending and not ep["closed"]:
+                ep["split_suspect"] = True
         episodes.extend(code_episodes)
 
     # 保有中エピソードに実現損益 (部分売り分) と含み損益 (残玉評価) を付与 (issue #387 Phase4b)。

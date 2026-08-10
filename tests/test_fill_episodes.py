@@ -627,11 +627,14 @@ class TestSplitAdjustment:
                          and e["pl"] and not e.get("split_suspect")]
         assert fill_pls_1491 == []
 
-        # クローズ済みでも split_suspect が付くこと (closed/open 双方への伝播確認)
+        # クローズ済みでも split_suspect が付くこと (closed/open 双方への伝播確認)。
+        # 建玉を保有継続したまま分割をまたいで売り切るケース (P2-2レビュー対応で
+        # 「保有していない期間の変動」を誤検知しないよう修正したため、単純な
+        # 売り切り→買い直しではなく同一保有内でジャンプが起きる形にする)。
         _add(db_path, "5491", "2025-01-01", "buy", 8000, 45, seq_salt="a")
-        _add(db_path, "5491", "2025-06-01", "sell", 8000, 60, seq_salt="b")  # 未換算のまま0株で完結
-        _add(db_path, "5491", "2025-09-01", "buy", 100, 900, seq_salt="c")   # 単価ジャンプ
-        _add(db_path, "5491", "2025-09-15", "sell", 100, 950, seq_salt="d")
+        _add(db_path, "5491", "2025-06-01", "sell", 4000, 60, seq_salt="b")   # 残4000株、保有継続
+        _add(db_path, "5491", "2025-09-01", "buy", 100, 900, seq_salt="c")    # 単価ジャンプ (同一保有内)
+        _add(db_path, "5491", "2025-09-15", "sell", 4100, 950, seq_salt="d")  # 残高0でクローズ
         eps2 = helpers.build_fill_episodes(db_path=db_path)
         closed_ep = [e for e in eps2 if e["code_s"] == "5491" and e["kind"] == "現物"][0]
         assert closed_ep["closed"] is True
@@ -647,12 +650,13 @@ class TestSplitAdjustment:
         ep = [e for e in eps if e["code_s"] == "9252" and e["kind"] == "現物"][0]
         assert not ep.get("split_suspect")  # pending_review 未登録ならフラグは付かない
 
-        ps.mark_split_pending_review("9252", reason="保有中総当たりチェック", db_path=db_path)
+        ps.mark_split_pending_review(
+            "9252", reason="保有中総当たりチェック", ex_date="2025-08-07", db_path=db_path)
         eps2 = helpers.build_fill_episodes(db_path=db_path)
         ep2 = [e for e in eps2 if e["code_s"] == "9252" and e["kind"] == "現物"][0]
         assert ep2["split_suspect"] is True
 
-        # add_split_adjustment で登録すれば pending は自動解除される
+        # add_split_adjustment で同一 ex_date を登録すれば pending は自動解除される
         ps.add_split_adjustment("9252", "2025-08-07", 0.833333, db_path=db_path)
         assert "9252" not in ps.list_pending_review_codes(db_path=db_path)
 
@@ -677,3 +681,28 @@ class TestSplitAdjustment:
         eps = helpers.build_fill_episodes(db_path=db_path)
         ep = [e for e in eps if e["code_s"] == "8491" and e["kind"] == "現物"][0]
         assert ep["split_suspect"] is True  # 登録済みでも新規ジャンプがあれば要確認扱い
+
+    def test_price_gap_across_holding_gap_is_not_a_split(self, db_path):
+        # PRレビュー #405 (P2) 指摘: 建玉を売り切ってから数年後に買い直した場合の
+        # 価格変動は分割・併合と無関係な通常の値上がり・値下がり。誤検知しない。
+        _add(db_path, "9492", "2022-01-01", "buy", 100, 500, seq_salt="a")
+        _add(db_path, "9492", "2022-02-01", "sell", 100, 550, seq_salt="b")   # 完結
+        _add(db_path, "9492", "2025-06-01", "buy", 100, 2000, seq_salt="c")  # 数年後の買い直し(3.6倍)
+        _add(db_path, "9492", "2025-12-01", "sell", 100, 2200, seq_salt="d")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        for ep in eps:
+            if ep["code_s"] == "9492":
+                assert not ep.get("split_suspect")
+
+    def test_split_suspect_scoped_to_affected_episode_only(self, db_path):
+        # PRレビュー #405 (P2) 指摘: 未登録ジャンプが1件あっても、その期間と無関係な
+        # (分割前に完結した) 過去ラウンドまで split_suspect で隠してはいけない。
+        _add(db_path, "9491", "2025-01-01", "buy", 100, 1000, seq_salt="a")
+        _add(db_path, "9491", "2025-02-01", "sell", 100, 1100, seq_salt="b")  # 無関係ラウンド、完結
+        _add(db_path, "9491", "2025-06-01", "buy", 100, 900, seq_salt="c")
+        _add(db_path, "9491", "2025-12-01", "sell", 100, 3000, seq_salt="d")  # 単価ジャンプ (900->3000)
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        genbutsu = {e["open_date"]: e for e in eps if e["code_s"] == "9491"}
+        assert not genbutsu["2025-01-01"].get("split_suspect")  # 無関係ラウンドは隠さない
+        assert genbutsu["2025-01-01"]["pl"]["profit_amount"] == 10000
+        assert genbutsu["2025-06-01"]["split_suspect"] is True  # 影響を受けるラウンドのみ

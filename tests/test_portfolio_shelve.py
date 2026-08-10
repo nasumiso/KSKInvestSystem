@@ -1370,3 +1370,17 @@ class TestSplitAdjustment:
         # list_all_split_adjustments は build_fill_episodes の N+1 回避用一括取得
         all_adj = ps.list_all_split_adjustments(db_path=db_path)
         assert all_adj["1491"] == events2
+
+    def test_pending_review_cleared_per_event_not_per_code(self, db_path):
+        # PRレビュー #405 (P1) 指摘: 同一銘柄に複数の未登録イベントがある状態で
+        # 1件だけ登録すると、銘柄単位で pending を丸ごと消してはいけない
+        # (残りの未登録イベントの警告が消えてしまう)。
+        ps.mark_split_pending_review("9493", reason="テスト", ex_date="2025-06-01", db_path=db_path)
+        ps.mark_split_pending_review("9493", reason="テスト", ex_date="2025-09-01", db_path=db_path)
+        assert "9493" in ps.list_pending_review_codes(db_path=db_path)
+
+        ps.add_split_adjustment("9493", "2025-06-01", 0.5, db_path=db_path)
+        assert "9493" in ps.list_pending_review_codes(db_path=db_path)  # 残り1件はまだ未解決
+
+        ps.add_split_adjustment("9493", "2025-09-01", 0.8, db_path=db_path)
+        assert "9493" not in ps.list_pending_review_codes(db_path=db_path)  # 全件解決
