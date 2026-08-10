@@ -241,10 +241,17 @@ def trade_history():
 
     # issue #387 Phase4b: 売買履歴タブ = fill 基準の建玉ラウンド・エピソード。
     # 成績サマリー (勝率/ペイオフ) はクローズ済みで損益算出できたエピソードから算出。
+    # issue #398: split_suspect (分割・併合の疑いだが未換算) は残高・損益が誤っている
+    # 可能性があるため、成績サマリーの集計から一貫して除外する。
     fill_episodes = build_fill_episodes()
-    fill_pls = [ep["pl"] for ep in fill_episodes if ep["closed"] and ep["pl"]]
+    fill_pls = [
+        ep["pl"] for ep in fill_episodes
+        if ep["closed"] and ep["pl"] and not ep.get("split_suspect")
+    ]
     fill_summary = calc_trade_summary(fill_pls)
-    fill_closed_count = sum(1 for ep in fill_episodes if ep["closed"])
+    fill_closed_count = sum(
+        1 for ep in fill_episodes if ep["closed"] and not ep.get("split_suspect")
+    )
     fill_priced_count = len(fill_pls)
     fill_total_pl = sum(
         p["profit_amount"] for p in fill_pls if p["profit_amount"] is not None

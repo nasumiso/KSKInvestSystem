@@ -88,6 +88,13 @@ KEY_FILL_SEQ_PREFIX = "_fill_seq:"
 # fill は再取込で作り直されるため、メモは別レイヤーに独立保存し
 # エピソードキー (code_s|kind|open_date|close_date) で紐付ける。
 KEY_FILL_MEMO_PREFIX = "fill_memo:"
+# issue #398: 株式分割・併合の換算比率 (yfinance corporate actions 由来のキャッシュ)。
+# fill 本体は不変のまま、エピソード再構成時にのみ適用する派生情報として分離保存する。
+KEY_SPLIT_ADJ_PREFIX = "split_adj:"
+# --check-splits で検知したが split_adj 未登録の銘柄コード (拒否リスト)。
+# build_fill_episodes は yfinance を呼ばないため、単価ジャンプが無く保有中の
+# 総当たりチェックでのみ見つかるケースを検知できない。ここに記録して埋める。
+KEY_SPLIT_PENDING_REVIEW_PREFIX = "split_pending_review:"
 
 # テーママスター (issue #282)
 THEME_FIELDS = frozenset({"name", "description", "created_at"})
@@ -1195,6 +1202,116 @@ def list_fill_memos(*, db_path: Optional[str] = None) -> Dict[str, str]:
             if memo:
                 results[value.get("episode_key", key[len(KEY_FILL_MEMO_PREFIX):])] = memo
     return results
+
+
+# ===========================================
+# 株式分割・併合の換算比率キャッシュ (issue #398)
+# ===========================================
+
+def _split_adj_storage_key(code_s: str) -> str:
+    return f"{KEY_SPLIT_ADJ_PREFIX}{normalize_code_s(code_s)}"
+
+
+def get_split_adjustments(code_s: str, *, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """銘柄の分割・併合イベントを ex_date 昇順で返す (未登録なら空リスト)。
+
+    各要素は {"ex_date": "YYYY-MM-DD", "ratio": float}。ratio は新株数/旧株数
+    (0.05 = 20株->1株併合、2.0 = 1株->2株分割)。
+    """
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        value = db.get(_split_adj_storage_key(code_s))
+    if not isinstance(value, dict):
+        return []
+    events = value.get("events") or []
+    return sorted(events, key=lambda e: e["ex_date"])
+
+
+def list_all_split_adjustments(*, db_path: Optional[str] = None) -> Dict[str, List[Dict[str, Any]]]:
+    """全銘柄の分割・併合イベントを {code_s: [events...]} で一括取得する。
+
+    build_fill_episodes の全銘柄ループで銘柄ごとに DB を開き直す N+1 を避けるため。
+    """
+    path = _resolve_db_path(db_path)
+    results: Dict[str, List[Dict[str, Any]]] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_SPLIT_ADJ_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            events = value.get("events") or []
+            if events:
+                code_s = value.get("code_s", key[len(KEY_SPLIT_ADJ_PREFIX):])
+                results[code_s] = sorted(events, key=lambda e: e["ex_date"])
+    return results
+
+
+def add_split_adjustment(code_s: str, ex_date: str, ratio: float, *,
+                         db_path: Optional[str] = None) -> Dict[str, Any]:
+    """分割・併合イベントを1件追加する (同一 ex_date は上書き、dedup)。
+
+    登録すると同銘柄の split_pending_review (未登録の疑いマーク) も解除する。
+    """
+    if not _ACTION_DATE_RE.match(ex_date):
+        raise ValueError(f"ex_date は YYYY-MM-DD 形式で指定してください: {ex_date!r}")
+    if not isinstance(ratio, (int, float)) or ratio <= 0:
+        raise ValueError(f"ratio must be > 0, got {ratio!r}")
+    path = _resolve_db_path(db_path)
+    storage_key = _split_adj_storage_key(code_s)
+    pending_key = _split_pending_review_storage_key(code_s)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            value = db.get(storage_key)
+            events = list(value.get("events", [])) if isinstance(value, dict) else []
+            events = [e for e in events if e["ex_date"] != ex_date]
+            events.append({"ex_date": ex_date, "ratio": float(ratio)})
+            events.sort(key=lambda e: e["ex_date"])
+            stored = {
+                "code_s": normalize_code_s(code_s),
+                "events": events,
+                "updated_at": now_iso(),
+                "source": "yfinance",
+            }
+            db[storage_key] = stored
+            if pending_key in db:
+                del db[pending_key]
+    log_print("portfolio_shelve: split_adj 登録", code_s, ex_date, ratio)
+    return stored
+
+
+def _split_pending_review_storage_key(code_s: str) -> str:
+    return f"{KEY_SPLIT_PENDING_REVIEW_PREFIX}{normalize_code_s(code_s)}"
+
+
+def mark_split_pending_review(code_s: str, *, reason: str,
+                              db_path: Optional[str] = None) -> None:
+    """--check-splits の (a)/(b) 検知結果を、webapp からも見える形で残す。
+
+    build_fill_episodes は yfinance を呼ばないため、単価ジャンプが無く
+    保有中の総当たりチェックでのみ見つかったケース (9252 相当) を検知できない。
+    この拒否リストに載せておけば、次回 webapp 表示時にも split_suspect を
+    付与できる (yfinance 呼び出しなし)。add_split_adjustment で登録すれば解除される。
+    """
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            db[_split_pending_review_storage_key(code_s)] = {
+                "code_s": normalize_code_s(code_s),
+                "reason": reason,
+                "marked_at": now_iso(),
+            }
+
+
+def list_pending_review_codes(*, db_path: Optional[str] = None) -> List[str]:
+    """split_pending_review が付いている銘柄コードの一覧を返す。"""
+    path = _resolve_db_path(db_path)
+    codes = []
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if key.startswith(KEY_SPLIT_PENDING_REVIEW_PREFIX) and isinstance(value, dict):
+                codes.append(value.get("code_s", key[len(KEY_SPLIT_PENDING_REVIEW_PREFIX):]))
+    return codes
 
 
 # ===========================================

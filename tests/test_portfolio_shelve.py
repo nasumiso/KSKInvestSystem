@@ -1348,3 +1348,25 @@ class TestFillMemo:
         fills = ps.list_fills(db_path=db_path)
         assert len(fills) == 1
         assert all("review_memo" not in fl for fl in fills)
+
+
+class TestSplitAdjustment:
+    """分割・併合の換算比率キャッシュ (issue #398)。"""
+
+    def test_add_and_get_multiple_events_sorted(self, db_path):
+        assert ps.get_split_adjustments("1491", db_path=db_path) == []
+        ps.add_split_adjustment("1491", "2025-09-29", 0.05, db_path=db_path)
+        ps.add_split_adjustment("1491", "2020-01-01", 0.5, db_path=db_path)
+        events = ps.get_split_adjustments("1491", db_path=db_path)
+        assert events == [
+            {"ex_date": "2020-01-01", "ratio": 0.5},
+            {"ex_date": "2025-09-29", "ratio": 0.05},
+        ]
+        # 同一 ex_date は上書き (dedup)
+        ps.add_split_adjustment("1491", "2025-09-29", 0.1, db_path=db_path)
+        events2 = ps.get_split_adjustments("1491", db_path=db_path)
+        assert len(events2) == 2
+        assert {"ex_date": "2025-09-29", "ratio": 0.1} in events2
+        # list_all_split_adjustments は build_fill_episodes の N+1 回避用一括取得
+        all_adj = ps.list_all_split_adjustments(db_path=db_path)
+        assert all_adj["1491"] == events2

@@ -532,3 +532,136 @@ class TestFillMemo:
         _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
         eps2 = helpers.build_fill_episodes(db_path=db_path)
         assert eps2[0]["review_memo"] == "残るはず"
+
+
+class TestSplitAdjustment:
+    """株式分割・併合をまたぐ現物エピソードの換算 (issue #398)。
+
+    1491 中外鉱業の実データ相当 (2025-09-29 権利落ち、20株->1株併合)。
+    """
+
+    def _add_1491_fills(self, db_path):
+        # 併合前 (20:1)
+        _add(db_path, "1491", "2025-02-17", "buy", 8000, 45, seq_salt="a")
+        _add(db_path, "1491", "2025-04-03", "buy", 3000, 60, seq_salt="b")
+        _add(db_path, "1491", "2025-07-11", "sell", 3000, 63, seq_salt="c")
+        _add(db_path, "1491", "2025-07-22", "sell", 2000, 65, seq_salt="d")
+        _add(db_path, "1491", "2025-09-03", "sell", 2000, 62, seq_salt="e")
+        # 併合後
+        _add(db_path, "1491", "2025-09-30", "buy", 300, 925, seq_salt="f")
+        _add(db_path, "1491", "2025-10-06", "buy", 300, 936, seq_salt="g")
+        _add(db_path, "1491", "2025-10-16", "buy", 300, 950, seq_salt="h")
+        _add(db_path, "1491", "2025-12-02", "sell", 400, 738, seq_salt="i")
+        _add(db_path, "1491", "2025-12-17", "sell", 400, 702, seq_salt="j")
+        _add(db_path, "1491", "2025-12-18", "buy", 100, 757, seq_salt="k")
+        _add(db_path, "1491", "2025-12-25", "buy", 100, 869, seq_salt="l")
+        _add(db_path, "1491", "2025-12-25", "buy", 100, 896, seq_salt="m")
+        _add(db_path, "1491", "2026-02-16", "sell", 100, 1118, seq_salt="n")
+        _add(db_path, "1491", "2026-02-16", "sell", 100, 1118, seq_salt="o")
+        _add(db_path, "1491", "2026-02-25", "sell", 400, 1050, seq_salt="p")
+
+    def test_split_adjustment_closes_episode_at_zero(self, db_path):
+        self._add_1491_fills(db_path)
+        ps.add_split_adjustment("1491", "2025-09-29", 0.05, db_path=db_path)
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        genbutsu = [e for e in eps if e["code_s"] == "1491" and e["kind"] == "現物"]
+        assert len(genbutsu) == 1
+        ep = genbutsu[0]
+        assert ep["closed"] is True  # 換算後は残高0株でクローズする
+        assert ep["pl"]["profit_amount"] == 27100  # キャッシュフロー検算と一致 (issue #398)
+
+    def test_multiple_split_events_apply_cumulative_ratio(self, db_path):
+        # 最古の fill (2025-01-01) は2回のイベント両方の累積比率、
+        # 中間の fill (2025-06-01) は2回目のイベントのみ適用される
+        _add(db_path, "2491", "2025-01-01", "buy", 100, 10000, seq_salt="a")
+        _add(db_path, "2491", "2025-06-01", "buy", 100, 500, seq_salt="b")
+        _add(db_path, "2491", "2025-12-01", "sell", 1200, 100, seq_salt="c")
+        ps.add_split_adjustment("2491", "2025-03-01", 0.1, db_path=db_path)   # 10:1併合
+        ps.add_split_adjustment("2491", "2025-09-01", 2.0, db_path=db_path)   # 1:2分割
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        ep = [e for e in eps if e["code_s"] == "2491"][0]
+        fills = {f["trade_date"]: f for f in ep["fills"]}
+        # 2025-01-01: 100株@10000 -> ×0.1×2.0 = ×0.2 -> 20株@50000
+        assert fills["2025-01-01"]["qty"] == pytest.approx(20)
+        assert fills["2025-01-01"]["price"] == pytest.approx(50000)
+        # 2025-06-01: 100株@500 -> ×2.0 (03-01イベントより後なので対象外) -> 200株@250
+        assert fills["2025-06-01"]["qty"] == pytest.approx(200)
+        assert fills["2025-06-01"]["price"] == pytest.approx(250)
+        # 2025-12-01 の売りは両イベントより後なので換算なし
+        assert fills["2025-12-01"]["qty"] == 1200
+
+    def test_shinyo_round_not_affected_by_split_adjustment(self, db_path):
+        # 同一銘柄に信用ラウンドを混在させ、split_adj 登録後も settle_pl 側の損益が不変
+        _add(db_path, "3491", "2025-01-01", "buy", 100, 1000, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "3491", "2025-02-01", "sell", 100, 1100, trade_kind="信用返済",
+             settle_pl=9500, seq_salt="b")
+        ps.add_split_adjustment("3491", "2025-06-01", 0.5, db_path=db_path)  # 1:2併合
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        shinyo = [e for e in eps if e["code_s"] == "3491" and e["kind"] == "信用"][0]
+        assert shinyo["pl"]["profit_amount"] == 9500  # settle_pl のまま、換算されない
+        assert shinyo["fills"][0]["qty"] == 100  # 信用 fill の qty も不変
+
+    def test_genbiki_not_adjusted_so_shinyo_round_closes(self, db_path):
+        # 現引の qty は信用新規側の減算にも使われるため、現引だけ換算すると
+        # shinyo_qty が0に戻らずクローズを取り逃す (simplifyレビューで発見した回帰)。
+        # 現引を換算対象から除外すれば、信用新規と現引が同じ株数基準のままクローズできる。
+        _add(db_path, "6491", "2025-01-01", "buy", 300, 1000, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "6491", "2025-06-01", "buy", 300, 1000, trade_kind="現引", seq_salt="b")
+        _add(db_path, "6491", "2025-12-01", "sell", 100, 900, seq_salt="c")
+        ps.add_split_adjustment("6491", "2025-09-01", 0.833333, db_path=db_path)
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        shinyo = [e for e in eps if e["code_s"] == "6491" and e["kind"] == "信用"][0]
+        assert shinyo["closed"] is True
+        assert shinyo["fills"][0]["qty"] == 300  # 現引は換算されず信用新規と同じ基準
+
+    def test_price_jump_detected_without_registration_marks_suspect(self, db_path):
+        # 1491相当 (保有中): 未換算のまま既存ロジックで処理すると併合前4,000株が
+        # 未消化のまま残り保有中になる (issue #398 の背景そのもの)。
+        self._add_1491_fills(db_path)  # split_adj は登録しない
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        open_ep = [e for e in eps if e["code_s"] == "1491" and e["kind"] == "現物"][0]
+        assert open_ep["closed"] is False
+        assert open_ep["split_suspect"] is True
+        # サマリー集計 (calc_trade_summary 相当) から除外されることを確認 (route側と同じ条件式)
+        fill_pls_1491 = [e["pl"] for e in eps if e["code_s"] == "1491" and e["closed"]
+                         and e["pl"] and not e.get("split_suspect")]
+        assert fill_pls_1491 == []
+
+        # クローズ済みでも split_suspect が付くこと (closed/open 双方への伝播確認)
+        _add(db_path, "5491", "2025-01-01", "buy", 8000, 45, seq_salt="a")
+        _add(db_path, "5491", "2025-06-01", "sell", 8000, 60, seq_salt="b")  # 未換算のまま0株で完結
+        _add(db_path, "5491", "2025-09-01", "buy", 100, 900, seq_salt="c")   # 単価ジャンプ
+        _add(db_path, "5491", "2025-09-15", "sell", 100, 950, seq_salt="d")
+        eps2 = helpers.build_fill_episodes(db_path=db_path)
+        closed_ep = [e for e in eps2 if e["code_s"] == "5491" and e["kind"] == "現物"][0]
+        assert closed_ep["closed"] is True
+        assert closed_ep["split_suspect"] is True
+
+    def test_pending_review_marks_suspect_without_price_jump(self, db_path):
+        # 9252相当: 現物fillの単価変化が小さく単価ジャンプ検知には引っかからないが、
+        # --check-splits の保有中総当たりチェックでのみ見つかるケース。
+        # build_fill_episodes は yfinance を呼ばないため、pending_review 経由で伝播する。
+        _add(db_path, "9252", "2025-08-06", "buy", 100, 3270, seq_salt="a")
+        _add(db_path, "9252", "2025-08-08", "sell", 83, 4250, trade_kind="現物(単元未満)", seq_salt="b")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        ep = [e for e in eps if e["code_s"] == "9252" and e["kind"] == "現物"][0]
+        assert not ep.get("split_suspect")  # pending_review 未登録ならフラグは付かない
+
+        ps.mark_split_pending_review("9252", reason="保有中総当たりチェック", db_path=db_path)
+        eps2 = helpers.build_fill_episodes(db_path=db_path)
+        ep2 = [e for e in eps2 if e["code_s"] == "9252" and e["kind"] == "現物"][0]
+        assert ep2["split_suspect"] is True
+
+        # add_split_adjustment で登録すれば pending は自動解除される
+        ps.add_split_adjustment("9252", "2025-08-07", 0.833333, db_path=db_path)
+        assert "9252" not in ps.list_pending_review_codes(db_path=db_path)
+
+    def test_merger_ratio_closes_without_residual_qty(self, db_path):
+        # 20:1併合相当の比率で浮動小数の残差が出てもクローズ判定を妨げない
+        _add(db_path, "4491", "2025-01-01", "buy", 4000, 45, seq_salt="a")
+        _add(db_path, "4491", "2025-06-01", "sell", 3000, 60, seq_salt="b")
+        _add(db_path, "4491", "2025-06-15", "sell", 1000, 70, seq_salt="c")
+        ps.add_split_adjustment("4491", "2025-03-01", 0.05, db_path=db_path)
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        ep = [e for e in eps if e["code_s"] == "4491"][0]
+        assert ep["closed"] is True  # 200株 - 200株 = 残差はあっても0扱い
