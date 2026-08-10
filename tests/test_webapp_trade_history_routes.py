@@ -197,6 +197,22 @@ class TestTradeHistoryPage:
         assert "勝率" in fills_tab
         assert "ペイオフレシオ" in fills_tab
 
+    def test_both_episode_and_stock_views_rendered(self, app, client):
+        """issue #391: エピソード単位/銘柄単位を両方サーバがレンダリングする (CSSでの出し分け)。"""
+        with app.app_context():
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-15", side="buy", qty=100,
+                                          price=1000.0, amount=-100000, trade_kind="現物",
+                                          dedup_key="bv-b"))
+            ps.append_fill(ps.create_fill("3496", trade_date="2026-06-20", side="sell", qty=100,
+                                          price=1200.0, amount=120000, trade_kind="現物",
+                                          dedup_key="bv-s"))
+        html = client.get("/trade-history").data.decode()
+        fills_tab = html.split('id="tab-fills"')[1].split('id="tab-actions"')[0]
+        assert 'class="th-ep-row"' in fills_tab
+        assert 'class="th-stock-row"' in fills_tab
+        assert 'id="th-view-episode"' in fills_tab
+        assert 'id="th-view-stock"' in fills_tab
+
     def test_action_log_summary_removed(self, client):
         """旧 price_proxy 成績サマリーはアクションログタブから撤去された (Phase4b)。"""
         html = client.get("/trade-history").data.decode()

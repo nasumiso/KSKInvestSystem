@@ -4852,6 +4852,71 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     return episodes
 
 
+def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """建玉ラウンド・エピソードを銘柄単位に集約する (issue #391)。
+
+    build_fill_episodes() の結果を code_s でグループ化し、銘柄ごとに畳んだ
+    集約 dict を返す。損益は各エピソードが持つ pl / open_pl を足し合わせるだけで、
+    fill からの再計算はしない (計算ロジックの二重化を避ける)。
+
+    pl の対象は calc_trade_summary の母数定義 (ep["closed"] and ep["pl"]) と完全に
+    一致させる。これにより実現損益合計・期待値がエピソード単位と銘柄単位で厳密に
+    一致する (金額加重ゆえグループ化に依存しない)。
+    """
+    by_code: Dict[str, List[Dict[str, Any]]] = {}
+    for ep in episodes:
+        by_code.setdefault(ep["code_s"], []).append(ep)
+
+    rollups: List[Dict[str, Any]] = []
+    for code_s, eps in by_code.items():
+        priced = [ep["pl"] for ep in eps if ep["closed"] and ep["pl"]]
+        if priced:
+            amount = sum(p["amount"] for p in priced)
+            profit_amount = sum(p["profit_amount"] for p in priced)
+            pl = {
+                "return_pct": profit_amount / amount * 100,
+                "hold_days": sum(p["hold_days"] for p in priced),
+                "amount": amount,
+                "profit_amount": profit_amount,
+            }
+        else:
+            pl = None
+
+        open_pls = [ep["open_pl"] for ep in eps if not ep["closed"] and ep.get("open_pl")]
+        open_realized = sum(op["realized"] for op in open_pls)
+        unrealized_values = [op["unrealized"] for op in open_pls if op["unrealized"] is not None]
+        if not open_pls or not unrealized_values:
+            open_unrealized = None
+        else:
+            open_unrealized = sum(unrealized_values)
+        open_unrealized_partial = bool(unrealized_values) and len(unrealized_values) < len(open_pls)
+        held_qty = sum(op["held_qty"] for op in open_pls)
+
+        eps_sorted = sorted(eps, key=lambda e: e["last_trade_date"], reverse=True)
+        rollups.append({
+            "code_s": code_s,
+            "stock_name": eps[0]["stock_name"],
+            "episodes": eps_sorted,
+            "episode_count": len(eps),
+            "kinds": sorted({ep["kind"] for ep in eps}),
+            "first_open_date": min(ep["open_date"] for ep in eps),
+            "last_trade_date": max(ep["last_trade_date"] for ep in eps),
+            "qty_peak": max(ep["qty_peak"] for ep in eps),
+            "has_open": any(not ep["closed"] for ep in eps),
+            "has_carry_over": any(ep.get("carry_over") for ep in eps),
+            "memo_count": sum(1 for ep in eps if ep.get("review_memo")),
+            "pl": pl,
+            "open_realized": open_realized,
+            "open_unrealized": open_unrealized,
+            "open_unrealized_partial": open_unrealized_partial,
+            "held_qty": held_qty,
+        })
+
+    rollups.sort(key=lambda r: r["code_s"])
+    rollups.sort(key=lambda r: r["last_trade_date"], reverse=True)
+    return rollups
+
+
 def _finalize_round(code_s: str, kind: str, stock_name: str,
                     round_fills: List[Dict[str, Any]], qty_peak: int,
                     closed: bool = True, carry_over: bool = False,

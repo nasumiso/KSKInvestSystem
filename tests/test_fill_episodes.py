@@ -403,6 +403,123 @@ class TestOrdering:
         assert eps[0]["closed"] is False
 
 
+class TestStockRollups:
+    """build_stock_rollups: エピソードを銘柄単位に集約する (issue #391)。"""
+
+    @pytest.mark.parametrize(
+        "setup, expect",
+        [
+            pytest.param(
+                "genbutsu_two_eps",
+                {"episode_count": 2, "kinds": ["現物"], "profit_amount": 15000 + 5000, "pl_is_none": False},
+                id="現物のみ2エピソード合算",
+            ),
+            pytest.param(
+                "mixed_kind",
+                {"episode_count": 2, "kinds": ["信用", "現物"], "pl_is_none": False},
+                id="現物+信用混在",
+            ),
+            pytest.param(
+                "all_open_no_price",
+                {"episode_count": 1, "pl_is_none": True, "open_unrealized": None, "open_unrealized_partial": False},
+                id="保有中のみ(価格なし)_plはNoneであり0でない",
+            ),
+        ],
+    )
+    def test_rollup_aggregation(self, db_path, monkeypatch, setup, expect):
+        monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {c: [] for c in codes})
+        if setup == "genbutsu_two_eps":
+            # ラウンド1: +15000, ラウンド2: +5000
+            _add(db_path, "8001", "2026-01-01", "buy", 100, 1000.0, seq_salt="a")
+            _add(db_path, "8001", "2026-01-05", "sell", 100, 1150.0, seq_salt="b")
+            _add(db_path, "8001", "2026-02-01", "buy", 100, 1000.0, seq_salt="c")
+            _add(db_path, "8001", "2026-02-05", "sell", 100, 1050.0, seq_salt="d")
+        elif setup == "mixed_kind":
+            _add(db_path, "8002", "2026-01-01", "buy", 100, 1000.0, trade_kind="現物", seq_salt="a")
+            _add(db_path, "8002", "2026-01-05", "sell", 100, 1100.0, trade_kind="現物", seq_salt="b")
+            _add(db_path, "8002", "2026-02-01", "buy", 100, 2000.0, trade_kind="信用新規", seq_salt="c")
+            _add(db_path, "8002", "2026-02-05", "sell", 100, 2200.0, trade_kind="信用返済",
+                 tate_price=2000.0, seq_salt="d")
+        elif setup == "all_open_no_price":
+            _add(db_path, "8003", "2026-01-01", "buy", 100, 1000.0, seq_salt="a")
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        rollups = helpers.build_stock_rollups(eps)
+        r = rollups[0]
+
+        if "episode_count" in expect:
+            assert r["episode_count"] == expect["episode_count"]
+        if "kinds" in expect:
+            assert r["kinds"] == expect["kinds"]
+        if expect["pl_is_none"]:
+            assert r["pl"] is None
+        else:
+            assert r["pl"] is not None
+            if "profit_amount" in expect:
+                assert r["pl"]["profit_amount"] == expect["profit_amount"]
+        if "open_unrealized" in expect:
+            assert r["open_unrealized"] == expect["open_unrealized"]
+        if "open_unrealized_partial" in expect:
+            assert r["open_unrealized_partial"] == expect["open_unrealized_partial"]
+
+    def test_open_unrealized_partial_true_when_some_prices_missing(self, db_path, monkeypatch):
+        # 銘柄8004: 現物と信用を同時保有 (2 open エピソード)。現物は現在値あり (含み算出可)、
+        # 信用は信用返済buy(逆方向決済)が混ざり unrealized=None を強制する既存挙動を利用。
+        _add(db_path, "8004", "2026-01-01", "buy", 100, 1000.0, trade_kind="現物", seq_salt="a")
+        _add(db_path, "8004", "2026-01-02", "buy", 100, 6000.0, trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "8004", "2026-01-03", "buy", 100, 6100.0, trade_kind="信用返済", seq_salt="c")
+        import datetime as _dt
+        monkeypatch.setattr(
+            helpers, "_bulk_price_logs",
+            lambda codes: {"8004": [(_dt.date(2026, 1, 31), 1200)]},
+        )
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        rollups = helpers.build_stock_rollups(eps)
+        r = rollups[0]
+        assert r["open_unrealized"] == 20000   # (1200-1000)*100 (現物のみ、信用側はNone)
+        assert r["open_unrealized_partial"] is True
+
+    def test_invariant_profit_and_expectancy_match_episode_level(self, db_path, monkeypatch):
+        """不変条件: エピソード単位と銘柄単位で実現損益合計・期待値が完全一致する。
+
+        calc_trade_summary が金額加重 (Σ(return_pct×amount)/Σamount) なので、
+        グループ化の仕方に依存せず Σprofit/Σamount が保たれる。将来
+        _episode_pl_from_round の計算方法を変えたときの回帰も同時に検知する。
+        """
+        monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {c: [] for c in codes})
+        # 複数銘柄・複数ラウンド・勝ち負け混在
+        _add(db_path, "8101", "2026-01-01", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "8101", "2026-01-05", "sell", 100, 1200.0, seq_salt="b")  # 勝ち
+        _add(db_path, "8101", "2026-02-01", "buy", 100, 1000.0, seq_salt="c")
+        _add(db_path, "8101", "2026-02-05", "sell", 100, 900.0, seq_salt="d")   # 負け
+        _add(db_path, "8102", "2026-01-10", "buy", 200, 500.0, trade_kind="信用新規", seq_salt="e")
+        _add(db_path, "8102", "2026-01-15", "sell", 200, 480.0, trade_kind="信用返済",
+             tate_price=500.0, seq_salt="f")  # 負け
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        rollups = helpers.build_stock_rollups(eps)
+
+        ep_pls = [e["pl"] for e in eps if e["closed"] and e["pl"]]
+        stk_pls = [r["pl"] for r in rollups if r["pl"]]
+
+        assert sum(p["profit_amount"] for p in ep_pls) == sum(p["profit_amount"] for p in stk_pls)
+        s_ep = helpers.calc_trade_summary(ep_pls)
+        s_stk = helpers.calc_trade_summary(stk_pls)
+        assert s_ep["expectancy"] == pytest.approx(s_stk["expectancy"])
+
+    def test_sorted_by_last_trade_date_desc_then_code(self, db_path, monkeypatch):
+        monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {c: [] for c in codes})
+        # 8202: 最終取引 2026-03-01 (先)
+        _add(db_path, "8202", "2026-01-02", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "8202", "2026-03-01", "sell", 100, 1100.0, seq_salt="b")
+        # 8201: 最終取引 2026-01-05 (後)
+        _add(db_path, "8201", "2026-01-01", "buy", 100, 1000.0, seq_salt="c")
+        _add(db_path, "8201", "2026-01-05", "sell", 100, 1100.0, seq_salt="d")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        rollups = helpers.build_stock_rollups(eps)
+        assert [r["code_s"] for r in rollups] == ["8202", "8201"]
+
+
 class TestFillDateRangeByBroker:
     """証券会社別の取込済み約定日レンジ (最古〜最新、取込タイミング参考) issue #387。"""
 
