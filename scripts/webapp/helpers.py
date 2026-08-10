@@ -4502,6 +4502,24 @@ def _detect_price_jumps(fills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return jumps
 
 
+def _has_uncovered_jump(jumps: List[Dict[str, Any]],
+                        events: List[Dict[str, Any]]) -> bool:
+    """検知した単価ジャンプのうち、登録済みイベントでカバーされていないものがあるか。
+
+    「登録済みイベントが1件でもあれば安全」という判定は粗く、同一銘柄で後日
+    発生した別の分割・併合を見逃す (PRレビュー対応)。ジャンプの日付境界
+    (before_date, after_date] に ex_date が入る登録イベントがあればカバー済み。
+    """
+    for jump in jumps:
+        covered = any(
+            jump["before_date"] < ev["ex_date"] <= jump["after_date"]
+            for ev in events
+        )
+        if not covered:
+            return True
+    return False
+
+
 def _apply_split_adjustments(fills: List[Dict[str, Any]],
                              events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """現物 fill のうち各イベントの ex_date より前のものを比率換算したコピーを返す。
@@ -4514,8 +4532,15 @@ def _apply_split_adjustments(fills: List[Dict[str, Any]],
     現引は「信用建玉の現物化」で、qty は信用新規側の shinyo_qty 減算と現物側の
     genbutsu_qty 加算の両方に同じ値で使われる (_build_code_episodes)。現引だけ
     換算すると信用新規(未換算)と現引(換算後)で株数基準がずれ、shinyo_qty が
-    0に戻らずクローズを取り逃す。現引を除外し分割前基準のまま扱う (簡易な安全策、
-    現引を挟んで分割をまたぐ複雑なケースは単価ジャンプ検知の split_suspect に委ねる)。
+    0に戻らずクローズを取り逃す。現引を除外し分割前基準のまま扱う (簡易な安全策)。
+
+    既知の限界 (PRレビュー #405 で指摘、対応複雑度とのバランスで見送り): 現引後に
+    現物のまま分割・併合をまたいで売却すると、現引 fill (未換算) と売却 fill (換算後)
+    の株数基準がずれ、端数が誤って保有中に残る可能性がある。現時点の実データでは
+    分割検知銘柄 (1491, 9252) に現引が絡むケースは無い。単価変化が3倍以上/1/3以下なら
+    _detect_price_jumps が検知するが、それ未満の比率では split_suspect も付かず
+    残高が誤ったまま表示されうる。再発したら現引 fill に現物側専用の換算済み
+    qty/price を別キーで持たせ、_build_code_episodes 側で使い分ける対応が必要。
     """
     if not events:
         return fills
@@ -4782,7 +4807,9 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
 
     # issue #398: 分割・併合の疑いがある銘柄を検知し、登録済みイベントがあれば
     # 現物 fill を換算したコピーに差し替えてからエピソード再構成に渡す。
-    # 未登録なら換算せず既存動作を維持し、該当銘柄のエピソードに split_suspect を付与する。
+    # 未カバーのジャンプがあれば換算せず既存動作を維持し、該当銘柄のエピソードに
+    # split_suspect を付与する (PRレビュー対応: 「登録済みイベントが1件でもあれば
+    # 安全」という判定は粗く、同一銘柄で後日発生した別の分割・併合を見逃す)。
     # pending_review は --check-splits の (a)単価ジャンプ/(b)保有中総当たりの両方の検知結果を
     # 拒否リストとして反映する (webapp は yfinance を呼ばないため (b) を自力では検知できない)。
     all_split_adj = ps.list_all_split_adjustments(db_path=db_path)
@@ -4794,7 +4821,8 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         if events:
             fills = _apply_split_adjustments(fills, events)
         code_episodes = _build_code_episodes(code_s, names.get(code_s, ""), fills)
-        if (jumps or code_s in pending_codes) and not events:
+        uncovered = _has_uncovered_jump(jumps, events)
+        if (uncovered or code_s in pending_codes):
             for ep in code_episodes:
                 if ep["kind"] == "現物":
                     ep["split_suspect"] = True

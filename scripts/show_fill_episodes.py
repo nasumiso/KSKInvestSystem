@@ -132,14 +132,19 @@ def _check_splits(db_path: Optional[str]) -> int:
 
     for code_s, fills in sorted(by_code.items()):
         jumps = helpers._detect_price_jumps(fills)
+        events = registered.get(code_s, [])
         for jump in jumps:
             found += 1
             print(f" {code_s:>5} {names.get(code_s, ''):<12} 単価ジャンプ検出: "
                   f"{jump['before_date']} @{jump['before_price']:,.0f} -> "
                   f"{jump['after_date']} @{jump['after_price']:,.0f} "
                   f"(x{jump['after_price'] / jump['before_price']:.1f})")
-            if code_s in registered:
-                print(f"      split_adj 登録済み: {registered[code_s]}")
+            # このジャンプの日付範囲をカバーする登録済みイベントがあるかで判定する
+            # (銘柄単位の in registered だけだと、後日発生した別イベントを見逃す)
+            covering = [ev for ev in events
+                       if jump["before_date"] < ev["ex_date"] <= jump["after_date"]]
+            if covering:
+                print(f"      split_adj 登録済み: {covering}")
                 continue
             _report_split_candidate(
                 code_s, _yfinance_splits(code_s, stock_db), "単価ジャンプ検出", db_path)
@@ -149,14 +154,15 @@ def _check_splits(db_path: Optional[str]) -> int:
         if not ep["closed"] and ep["kind"] == "現物"
     }
     for code_s, open_date in sorted(open_genbutsu_dates.items()):
-        if code_s in registered:
-            continue
         splits = _yfinance_splits(code_s, stock_db)
         if splits is None or splits.empty:
             continue
-        # open_date より後に権利落ちしたイベントのみが今の保有に影響する
+        registered_dates = {ev["ex_date"] for ev in registered.get(code_s, [])}
+        # open_date より後に権利落ちし、かつ未登録のイベントのみが今の保有に影響する
+        # (銘柄単位の in registered だけだと、登録後に発生した別イベントを見逃す)
         relevant_dates = [ex_date for ex_date in splits.index
-                          if ex_date.strftime("%Y-%m-%d") >= open_date]
+                          if ex_date.strftime("%Y-%m-%d") >= open_date
+                          and ex_date.strftime("%Y-%m-%d") not in registered_dates]
         if not relevant_dates:
             continue
         found += 1
