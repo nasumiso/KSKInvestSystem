@@ -673,11 +673,13 @@ class TestSplitAdjustment:
     def test_second_split_after_registration_still_marks_suspect(self, db_path):
         # PRレビュー #405 指摘: 「登録済みイベントが1件でもあれば安全」という判定は
         # 粗く、同一銘柄で後日発生した別の分割・併合 (未登録) を見逃す。
-        # 1回目 (登録済み) の後、単価が急変する2回目のジャンプが検知されるはず。
-        _add(db_path, "8491", "2025-01-01", "buy", 1000, 100, seq_salt="a")
-        _add(db_path, "8491", "2025-06-01", "sell", 500, 110, seq_salt="b")
+        # 1回目 (登録済み、1:2分割) の後、単価が急変する2回目のジャンプが検知されるはず。
+        # 換算後基準で残高が継続する構成にする (2回目レビュー対応: 未換算のまま検知
+        # すると残高追跡が崩れ、換算後の値で検知しないとジャンプを見逃す回帰がある)。
+        _add(db_path, "8491", "2025-01-01", "buy", 1000, 100, seq_salt="a")   # 分割前 (換算後500株)
         ps.add_split_adjustment("8491", "2025-03-01", 0.5, db_path=db_path)  # 1回目登録済み
-        _add(db_path, "8491", "2025-12-01", "sell", 100, 900, seq_salt="c")  # 2回目 (未登録) の痕跡
+        _add(db_path, "8491", "2025-06-01", "sell", 400, 220, seq_salt="b")  # 分割後基準、残100株
+        _add(db_path, "8491", "2025-12-01", "sell", 100, 900, seq_salt="c")  # 2回目 (未登録) ジャンプ
         eps = helpers.build_fill_episodes(db_path=db_path)
         ep = [e for e in eps if e["code_s"] == "8491" and e["kind"] == "現物"][0]
         assert ep["split_suspect"] is True  # 登録済みでも新規ジャンプがあれば要確認扱い

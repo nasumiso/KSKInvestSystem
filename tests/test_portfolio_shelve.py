@@ -1384,3 +1384,12 @@ class TestSplitAdjustment:
 
         ps.add_split_adjustment("9493", "2025-09-01", 0.8, db_path=db_path)
         assert "9493" not in ps.list_pending_review_codes(db_path=db_path)  # 全件解決
+
+    def test_unknown_pending_cleared_on_any_registration(self, db_path):
+        # PRレビュー #405 (2周目 P2) 指摘: yfinance 取得失敗時に ex_date 不明のまま
+        # "unknown" マーカーで積まれた pending は、通常の ex_date 一致判定では
+        # 永久に解除されない。以後 ex_date が判明して登録できた時点で解除する。
+        ps.mark_split_pending_review("9495", reason="yfinance取得失敗", db_path=db_path)
+        assert "9495" in ps.list_pending_review_codes(db_path=db_path)
+        ps.add_split_adjustment("9495", "2025-06-01", 0.5, db_path=db_path)
+        assert "9495" not in ps.list_pending_review_codes(db_path=db_path)

@@ -4835,10 +4835,13 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     pending_codes = set(ps.list_pending_review_codes(db_path=db_path))
     episodes: List[Dict[str, Any]] = []
     for code_s, fills in by_code.items():
-        jumps = _detect_price_jumps(fills)
         events = all_split_adj.get(code_s, [])
         if events:
             fills = _apply_split_adjustments(fills, events)
+        # ジャンプ検知は換算後の fills に対して行う (PRレビュー対応: 未換算のまま
+        # 検知すると、登録済みイベントで残高の基準が変わった後の残高追跡が崩れ、
+        # 別の未登録イベントのジャンプを見逃す)。
+        jumps = _detect_price_jumps(fills)
         code_episodes = _build_code_episodes(code_s, names.get(code_s, ""), fills)
         uncovered = _uncovered_jumps(jumps, events)
         is_pending = code_s in pending_codes

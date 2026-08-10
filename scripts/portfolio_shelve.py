@@ -1276,10 +1276,15 @@ def add_split_adjustment(code_s: str, ex_date: str, ratio: float, *,
             db[storage_key] = stored
             # pending は銘柄単位ではなくイベント日単位で解除する。同一銘柄に複数の
             # 未登録イベントがある状態で1件だけ登録した場合、残りのイベントの
-            # pending フラグは消さない (PRレビュー #405 P1 対応)。
+            # pending フラグは消さない (PRレビュー #405 P1 対応)。"unknown" は
+            # yfinance 取得失敗時に ex_date 不明のまま積まれたマーカーで、以後
+            # ex_date が判明して登録できた時点で「不明だった」状態は解消したとみなし
+            # 合わせて解除する (PRレビュー対応: unknown は ex_date と一致しないため
+            # 残り続け、以後も保有中エピソードの残高・損益が非表示のままになる)。
             pending_value = db.get(pending_key)
             if isinstance(pending_value, dict):
-                remaining = [d for d in pending_value.get("ex_dates", []) if d != ex_date]
+                remaining = [d for d in pending_value.get("ex_dates", [])
+                            if d != ex_date and d != "unknown"]
                 if remaining:
                     pending_value["ex_dates"] = remaining
                     db[pending_key] = pending_value

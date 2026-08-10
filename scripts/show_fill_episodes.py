@@ -135,8 +135,12 @@ def _check_splits(db_path: Optional[str]) -> int:
     found = 0
 
     for code_s, fills in sorted(by_code.items()):
-        jumps = helpers._detect_price_jumps(fills)
         events = registered.get(code_s, [])
+        # ジャンプ検知は換算後の fills に対して行う (build_fill_episodes と同じ理由:
+        # 未換算のまま検知すると、登録済みイベントで残高の基準が変わった後の
+        # 残高追跡が崩れ、別の未登録イベントのジャンプを見逃す)。
+        adjusted_fills = helpers._apply_split_adjustments(fills, events) if events else fills
+        jumps = helpers._detect_price_jumps(adjusted_fills)
         for jump in jumps:
             found += 1
             print(f" {code_s:>5} {names.get(code_s, ''):<12} 単価ジャンプ検出: "
@@ -150,8 +154,19 @@ def _check_splits(db_path: Optional[str]) -> int:
             if covering:
                 print(f"      split_adj 登録済み: {covering}")
                 continue
-            _report_split_candidate(
-                code_s, _yfinance_splits(code_s, stock_db), "単価ジャンプ検出", db_path)
+            splits = _yfinance_splits(code_s, stock_db)
+            # yfinance の全履歴をそのまま渡すと、登録済みの古い日付まで再度
+            # pending に積んでしまう (PRレビュー対応)。このジャンプの日付範囲を
+            # カバーする未登録イベントだけに絞り込む。
+            if splits is not None and not splits.empty:
+                registered_dates = {ev["ex_date"] for ev in events}
+                mask = [
+                    jump["before_date"] < ex_date.strftime("%Y-%m-%d") <= jump["after_date"]
+                    and ex_date.strftime("%Y-%m-%d") not in registered_dates
+                    for ex_date in splits.index
+                ]
+                splits = splits[mask]
+            _report_split_candidate(code_s, splits, "単価ジャンプ検出", db_path)
 
     open_genbutsu_dates = {
         ep["code_s"]: ep["open_date"] for ep in helpers.build_fill_episodes(db_path=db_path)
