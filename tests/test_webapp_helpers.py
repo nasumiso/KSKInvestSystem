@@ -275,18 +275,18 @@ class TestGetMarketKessanData:
         csv_path = tmp_path / "disclosure_db.csv"
         rows = [
             ["日付", "銘柄コード", "銘柄名", "種類", "本文"],
-            ["20260412", '=HYPERLINK("u","6501")', "日立", "修正",
-             '=HYPERLINK("https://example.com/excluded-before","除外前の下方修正")'],
-            ["20260413", '=HYPERLINK("u","6501")', "日立", "修正",
-             '=HYPERLINK("https://example.com/down","今期経常を一転赤字に下方修正")'],
-            ["20260426", '=HYPERLINK("u","6501")', "日立", "修正",
-             '=HYPERLINK("https://example.com/up","今期最終を一転増益に上方修正")'],
-            ["20260427", '=HYPERLINK("u","6501")', "日立", "決算",
-             '=HYPERLINK("https://example.com/high","今期経常は3期ぶり最高益へ")'],
-            ["20260428", '=HYPERLINK("u","6501")', "日立", "修正",
-             '=HYPERLINK("https://example.com/divdown","配当予想を減額修正、減配へ")'],
             ["20260429", '=HYPERLINK("u","6501")', "日立", "修正",
              '=HYPERLINK("https://example.com/excluded-after","除外後の増配")'],
+            ["20260428", '=HYPERLINK("u","6501")', "日立", "修正",
+             '=HYPERLINK("https://example.com/divdown","配当予想を減額修正、減配へ")'],
+            ["20260427", '=HYPERLINK("u","6501")', "日立", "決算",
+             '=HYPERLINK("https://example.com/high","今期経常は3期ぶり最高益へ")'],
+            ["20260426", '=HYPERLINK("u","6501")', "日立", "修正",
+             '=HYPERLINK("https://example.com/up","今期最終を一転増益に上方修正")'],
+            ["20260413", '=HYPERLINK("u","6501")', "日立", "修正",
+             '=HYPERLINK("https://example.com/down","今期経常を一転赤字に下方修正")'],
+            ["20260412", '=HYPERLINK("u","6501")', "日立", "修正",
+             '=HYPERLINK("https://example.com/excluded-before","除外前の下方修正")'],
         ]
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             csv.writer(f).writerows(rows)
@@ -307,6 +307,7 @@ class TestGetMarketKessanData:
 
         selected_kinds = {impact["kind"] for impact in stock["disclosure_impacts"]}
         assert {"upward", "downward"} == selected_kinds
+        assert [impact["strength"] for impact in stock["disclosure_impacts"]] == ["strong", "strong"]
         assert stock["disclosure_impact_extra_count"] == 2
         assert "除外前の下方修正" not in stock["disclosure_impact_tooltip"]
         assert "除外後の増配" not in stock["disclosure_impact_tooltip"]

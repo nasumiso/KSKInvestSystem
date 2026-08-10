@@ -1436,6 +1436,24 @@ def _parse_disclosure_csv_link(value: Any) -> Tuple[str, str]:
     return m.group(1), m.group(2)
 
 
+def _sort_disclosure_impacts_for_badge(impacts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """決算カードのバッジ表示順: 強い開示を優先し、同強度なら新しい日付を優先する。"""
+    strength_rank = {"strong": 0, "weak": 1}
+
+    def sort_key(impact: Dict[str, Any]) -> Tuple[int, int]:
+        date_key = str(impact.get("date", "")).replace("/", "")
+        try:
+            date_rank = -int(date_key)
+        except ValueError:
+            date_rank = 0
+        return (
+            strength_rank.get(impact.get("strength", ""), 9),
+            date_rank,
+        )
+
+    return sorted(impacts, key=sort_key)
+
+
 def _attach_market_kessan_disclosure_impacts(entries: List[Dict[str, Any]]) -> None:
     """決算カレンダーの各エントリに、近傍の重要開示バッジ情報を付与する。"""
     if not entries:
@@ -1514,12 +1532,16 @@ def _attach_market_kessan_disclosure_impacts(entries: List[Dict[str, Any]]) -> N
             continue
 
         selected: List[Dict[str, Any]] = []
-        positives = [i for i in unique_impacts if i.get("tone") == "positive"]
-        negatives = [i for i in unique_impacts if i.get("tone") == "negative"]
+        positives = _sort_disclosure_impacts_for_badge([
+            i for i in unique_impacts if i.get("tone") == "positive"
+        ])
+        negatives = _sort_disclosure_impacts_for_badge([
+            i for i in unique_impacts if i.get("tone") == "negative"
+        ])
         if positives and negatives:
             selected = [positives[0], negatives[0]]
         else:
-            selected = unique_impacts[:2]
+            selected = _sort_disclosure_impacts_for_badge(unique_impacts)[:2]
 
         entry["disclosure_impacts"] = selected
         entry["disclosure_impact_extra_count"] = max(0, len(unique_impacts) - len(selected))
