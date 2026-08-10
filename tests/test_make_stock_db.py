@@ -1579,3 +1579,43 @@ class TestMonthlyPositionTags:
         """monthly_position 未保存 (未更新の既存銘柄) では月足タグを出さない"""
         _signal, tags = make_stock_db.make_signal({"price": 1000})
         assert not any(t in ("月低", "月破", "月高") for t in tags)
+
+
+class TestUpdateRsRankIfFresh:
+    """rs_rank_log の全銘柄ループ記録 (鮮度ガード付き)。
+
+    momentum_pt は価格更新時にしか再計算されないため、価格未更新の銘柄で記録すると
+    古い値が水平な実線として描かれてしまう。当日更新済みの銘柄のみ記録すること。
+    """
+
+    @staticmethod
+    def _today():
+        return make_stock_db.get_price_day(datetime.today())
+
+    @pytest.mark.parametrize(
+        "case, access_delta_days, momentum_pt, expect_recorded",
+        [
+            ("当日更新かつ有効値は記録", 0, 77, True),
+            ("価格未更新(古いmomentum_pt)は記録しない", 20, 55, False),
+            ("momentum_pt未算出(None)は記録しない", 0, None, False),
+            ("momentum_pt算出失敗(0)は記録しない", 0, 0, False),
+            ("access_date_price欠損では落ちず記録しない", None, 60, False),
+        ],
+    )
+    def test_freshness_guard(self, case, access_delta_days, momentum_pt, expect_recorded):
+        stock = {"momentum_pt": momentum_pt, "rs_rank_log": []}
+        if access_delta_days is not None:
+            stock["access_date_price"] = datetime.today() - timedelta(days=access_delta_days)
+        make_stock_db.update_rs_rank_if_fresh(stock)
+        assert (stock["rs_rank_log"] == [(self._today(), momentum_pt)]) is expect_recorded
+
+    def test_same_day_rerun_does_not_duplicate(self):
+        """同日に2回実行しても点が重複しない (cron再実行・手動再実行時)"""
+        stock = {
+            "access_date_price": datetime.today(),
+            "momentum_pt": 80,
+            "rs_rank_log": [],
+        }
+        make_stock_db.update_rs_rank_if_fresh(stock)
+        make_stock_db.update_rs_rank_if_fresh(stock)
+        assert stock["rs_rank_log"] == [(self._today(), 80)]

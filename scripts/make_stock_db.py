@@ -151,16 +151,39 @@ def update_stock_rank(stock, rank):
     stock.update(rank_dict)  # 更新
 
 
+def append_rs_rank_log(stock):
+    """stock の momentum_pt を rs_rank_log に追記して返す。
+
+    rs_rank_log への書き込み規則をここに一本化する (get_price_data 経路と
+    list_all_db の全銘柄ループ経路の両方から使う)。
+    """
+    rs_rank_log = stock.get("rs_rank_log", [])
+    rs_rank = stock.get("momentum_pt")
+    # 未算出(None)/算出失敗(0以下)は描画側でも除外される値なので記録しない
+    if not rs_rank or rs_rank <= 0:
+        return rs_rank_log
+    return update_stock_log(rs_rank_log, rs_rank)
+
+
 def update_rs_rank(stocks, code_s):
     """RSとRSログを更新"""
     if code_s not in stocks:
         return []
-    stock = stocks[code_s]
-    rs_rank_log = stock.get("rs_rank_log", [])
-    # print "rs_rank_log:", rs_rank_log
-    rs_rank = stock.get("momentum_pt")
+    return append_rs_rank_log(stocks[code_s])
 
-    return update_stock_log(rs_rank_log, rs_rank)
+
+def update_rs_rank_if_fresh(stock):
+    """価格が当日更新済みの銘柄のみ rs_rank_log に momentum_pt を追記する。
+
+    momentum_pt は price.get_price_data 内でしか再計算されないため、価格未更新の銘柄は
+    古い値のまま。記録すると横ばいの実線として描かれ、欠損より誤認を招く。
+    """
+    access_date = stock.get("access_date_price")
+    if not access_date:
+        return
+    if get_price_day(access_date) != get_price_day(datetime.today()):
+        return
+    stock["rs_rank_log"] = append_rs_rank_log(stock)
 
 
 # ==================================================
@@ -1869,6 +1892,8 @@ def list_all_db(upload_csv=True, update_portforio=True):
         stock = stocks[elem[0]]
         rank = i + 1
         update_stock_rank(stock, rank)
+        # RS(0~99)履歴も全銘柄ループで記録する (価格更新済み銘柄のみ)
+        update_rs_rank_if_fresh(stock)
     save_stock_db(stocks)  # 更新した順位のDB保存
 
     # ---- テーマ別株価騰落率を計算してmarket_dbに保存
