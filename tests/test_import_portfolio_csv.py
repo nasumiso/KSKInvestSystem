@@ -135,6 +135,38 @@ def test_parse_sbi_spot_excludes_etf(db_path):
     assert codes == {"6501"}  # 1681 (ETF) は除外
 
 
+def test_parse_sbi_spot_handles_multiple_account_sections(db_path, monkeypatch):
+    """特定・NISA等の複数セクションが同一CSVに存在する場合、それぞれ正しい
+    account に紐付け、想定外の口座区分として警告する (issue #397 §5-2)。
+
+    旧実装は最初のヘッダ行しか見ないため、2セクション目のデータ行を
+    1セクション目 (特定) の続きとして誤って合算していた (実データでは
+    未発生だが、SBIでNISA/一般の保有が発生した場合に効く回帰テスト)。
+    """
+    rows = [
+        [], ["保有証券一覧"], [],
+        ["株式（特定預り）合計"], [], ["評価額合計", "評価損益合計"], ["100000", "+5000"], [],
+        ["株式（特定預り）"], [],
+        ["銘柄コード", "銘柄名称", "保有株数", "売却注文中", "取得単価", "現在値",
+         "取得金額", "評価額", "評価損益"],
+        ["6501", "日立", "100", "", "4750", "5634", "475000", "563400", "+88400"],
+        [],
+        ["株式（NISA預り）合計"], [], ["評価額合計", "評価損益合計"], ["50000", "+2000"], [],
+        ["株式（NISA預り）"], [],
+        ["銘柄コード", "銘柄名称", "保有株数", "売却注文中", "取得単価", "現在値",
+         "取得金額", "評価額", "評価損益"],
+        ["4970", "東洋合成", "50", "", "11000", "13540", "550000", "677000", "+127000"],
+    ]
+    warnings = []
+    monkeypatch.setattr(ic, "log_warning", lambda msg: warnings.append(msg))
+
+    parsed = ic.parse_sbi_spot(rows)
+    by_code = {p["code_s"]: p for p in parsed}
+    assert by_code["6501"]["account"] == "特定"
+    assert by_code["4970"]["account"] == "NISA"  # 特定に誤合算されないこと
+    assert any("想定外の口座区分" in w for w in warnings)
+
+
 def test_import_csvs_requires_all_sources_unless_allow_partial(tmp_path, db_path):
     """4ソース不足時はエラー、--allow-partial 相当の引数で続行できる (issue #397 §5-1)。"""
     path = _write_csv(tmp_path / "rakuten_spot.csv", RAKUTEN_SPOT_ROWS)

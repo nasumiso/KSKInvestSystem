@@ -201,56 +201,80 @@ def parse_rakuten_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
     return parsed
 
 
-def parse_sbi_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
-    """SBI保有証券CSV をパースする。ETF が混在するため除外必須 (issue #397 §2-1b)。
+def _iter_sbi_spot_section_headers(rows: List[List[str]]) -> List[Tuple[int, str]]:
+    """SBI保有証券CSV 内の全ヘッダ行 index と、直前のセクション見出しから
+    導出した account を列挙する (複数口座区分セクションへの対応、issue #397)。
 
-    口座区分の列が無く、セクション見出し (例: "株式（特定預り）") で表現される。
+    `_find_header_row` は最初の1件しか返さないため、特定/NISA/一般など
+    セクションが複数あるCSVでは後続セクションのデータ行を取りこぼす
+    (または直前のヘッダ行の続きとして誤って同一セクション扱いされる)。
+    実データの各セクションが空行で区切られる構造を前提に、ヘッダ行の
+    出現ごとに直前の "株式（...）" 見出し (合計行を除く) から account を取る。
     """
-    hi = _find_header_row(rows, SBI_HEADER_FIRST_COL, "保有株数")
-    if hi < 0:
-        raise ValueError("SBI現物CSV: ヘッダ行 (銘柄コード...保有株数) が見つかりません")
-
-    # セクション見出し (例: "株式（特定預り）") から account を取る。
-    # 冒頭の合計行 ("株式（特定預り）合計") はセクション見出しではないため除外し、
-    # hi より前で最も近い純粋な "株式（...）" 行を探す。
-    account = "特定"
-    for row in rows[:hi]:
+    results = []
+    current_account = "特定"
+    for i, row in enumerate(rows):
         cell = (row[0].strip() if row else "")
         if cell.startswith(SBI_SPOT_SECTION_PREFIX) and cell.endswith("）"):
             # "株式（特定預り）" -> "特定" のように「特定」「一般」等を抜き出す
             inner = cell[len(SBI_SPOT_SECTION_PREFIX):-1]
-            account = inner.replace("預り", "") or "特定"
-            if account != "特定":
-                log_warning(f"SBI現物CSV: 想定外の口座区分を検出 ({cell})。account 網羅性の前提を再確認してください")
+            current_account = inner.replace("預り", "") or "特定"
+            continue
+        if row and cell == SBI_HEADER_FIRST_COL and "保有株数" in [c.strip() for c in row]:
+            results.append((i, current_account))
+    return results
+
+
+def parse_sbi_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
+    """SBI保有証券CSV をパースする。ETF が混在するため除外必須 (issue #397 §2-1b)。
+
+    口座区分の列が無く、セクション見出し (例: "株式（特定預り）") で表現される。
+    特定/NISA/一般など**複数のセクションが存在し得る**ため、全セクションを
+    走査してそれぞれの account でデータ行を紐付ける。1セクションしか無い
+    (実データで確認済みの通常ケース) 場合も同じロジックで動く。
+    """
+    headers = _iter_sbi_spot_section_headers(rows)
+    if not headers:
+        raise ValueError("SBI現物CSV: ヘッダ行 (銘柄コード...保有株数) が見つかりません")
+
+    accounts_found = {account for _, account in headers}
+    if accounts_found != {"特定"}:
+        log_warning(
+            f"SBI現物CSV: 想定外の口座区分を検出 ({sorted(accounts_found)})。"
+            "account 網羅性の前提 (issue #397 §5-2) を再確認してください"
+        )
 
     parsed = []
-    for row in rows[hi + 1:]:
-        if len(row) < 3 or not (row[0] or "").strip():
-            continue
-        code_raw = (row[0] or "").strip()
-        try:
-            ps.validate_code_s(code_raw)
-        except (ValueError, TypeError):
-            continue
-        code_s = ps.normalize_code_s(code_raw)
-        if ps.is_etf_code(code_s):
-            continue
-        if not resolve_stock_name(code_s):
-            continue
-        qty_raw = (row[2] or "").strip().replace(",", "")
-        try:
-            qty = int(float(qty_raw))
-        except ValueError:
-            continue
-        avg_price_raw = (row[4] or "").strip().replace(",", "") if len(row) > 4 else ""
-        try:
-            avg_price = float(avg_price_raw)
-        except ValueError:
-            avg_price = None
-        parsed.append({
-            "code_s": code_s, "account": account, "kind": "現物",
-            "qty": qty, "avg_price": avg_price,
-        })
+    for idx, (hi, account) in enumerate(headers):
+        # このセクションのデータ行は、次のヘッダ行 (次セクション) の手前まで
+        section_end = headers[idx + 1][0] if idx + 1 < len(headers) else len(rows)
+        for row in rows[hi + 1:section_end]:
+            if len(row) < 3 or not (row[0] or "").strip():
+                continue
+            code_raw = (row[0] or "").strip()
+            try:
+                ps.validate_code_s(code_raw)
+            except (ValueError, TypeError):
+                continue
+            code_s = ps.normalize_code_s(code_raw)
+            if ps.is_etf_code(code_s):
+                continue
+            if not resolve_stock_name(code_s):
+                continue
+            qty_raw = (row[2] or "").strip().replace(",", "")
+            try:
+                qty = int(float(qty_raw))
+            except ValueError:
+                continue
+            avg_price_raw = (row[4] or "").strip().replace(",", "") if len(row) > 4 else ""
+            try:
+                avg_price = float(avg_price_raw)
+            except ValueError:
+                avg_price = None
+            parsed.append({
+                "code_s": code_s, "account": account, "kind": "現物",
+                "qty": qty, "avg_price": avg_price,
+            })
     return parsed
 
 
