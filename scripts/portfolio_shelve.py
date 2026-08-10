@@ -197,8 +197,6 @@ ACTION_LOG_FIELDS = frozenset(
         # 入れば price_source="actual" で上書きできる構造。旧ログは list 側で None 補完。
         "price_proxy",   # イベント日 (直前営業日) の終値 (int) or None
         "price_source",  # "close" (終値プロキシ) / 将来 "actual" (実約定)
-        # issue #366: 売却後5/20営業日の騰落率。売買履歴表示時に確定分のみ保存する。
-        "post_sell_returns",
     }
 )
 
@@ -806,7 +804,6 @@ def list_action_logs(
             # issue #361: 旧ログの後方互換補完 (物理スキーマ変更なし・マイグレーション不要)
             value.setdefault("price_proxy", None)
             value.setdefault("price_source", None)
-            value.setdefault("post_sell_returns", {})
             results.append(value)
     results.sort(
         key=lambda r: (r.get("code_s", ""), r.get("seq", 0)),
@@ -839,37 +836,6 @@ def update_action_log_review_memo(
             if entry is None:
                 raise KeyError(f"action_log not found: code_s={code_s!r}, seq={seq}")
             entry["review_memo"] = review_memo
-            db[key] = entry
-    return entry
-
-
-def update_action_log_post_sell_returns(
-    code_s: str,
-    seq: int,
-    returns: Dict[str, float],
-    *,
-    db_path: Optional[str] = None,
-) -> Dict[str, Any]:
-    """売却ログの確定済み売却後騰落率を保存する (issue #366)。"""
-    validate_code_s(code_s)
-    normalized = normalize_code_s(code_s)
-    if not isinstance(returns, dict) or not all(
-        key in {"5d", "20d"} and isinstance(value, (int, float))
-        for key, value in returns.items()
-    ):
-        raise TypeError("returns must be a dict of 5d/20d numeric values")
-    key = _action_log_key(normalized, seq)
-    path = _resolve_db_path(db_path)
-    with _flock(db_path):
-        with ShelveDB(path) as db:
-            entry = db.get(key)
-            if entry is None:
-                raise KeyError(f"action_log not found: code_s={code_s!r}, seq={seq}")
-            if entry.get("action_type") != "売却":
-                raise ValueError("post_sell_returns can only be saved for sell logs")
-            saved = entry.get("post_sell_returns") or {}
-            saved.update(returns)
-            entry["post_sell_returns"] = saved
             db[key] = entry
     return entry
 
