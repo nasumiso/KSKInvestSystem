@@ -135,6 +135,21 @@ def test_parse_sbi_spot_excludes_etf(db_path):
     assert codes == {"6501"}  # 1681 (ETF) は除外
 
 
+@pytest.mark.parametrize("invalid_qty", ["--", "1.5"])
+def test_parse_sbi_spot_keeps_unknown_code_and_rejects_invalid_qty(db_path, invalid_qty):
+    """銘柄名未解決の保有行は残し、株数異常は取込全体を停止する。"""
+    unknown_rows = SBI_SPOT_ROWS + [
+        ["9999", "新規上場", "50", "", "1000", "1100", "50000", "55000", "+5000"],
+    ]
+    assert {p["code_s"] for p in ic.parse_sbi_spot(unknown_rows)} == {"6501", "9999"}
+
+    invalid_rows = SBI_SPOT_ROWS + [
+        ["9999", "新規上場", invalid_qty, "", "1000", "1100", "", "", ""],
+    ]
+    with pytest.raises(ValueError, match="9999.*保有株数"):
+        ic.parse_sbi_spot(invalid_rows)
+
+
 def test_parse_sbi_spot_handles_multiple_account_sections(db_path, monkeypatch):
     """特定・NISA等の複数セクションが同一CSVに存在する場合、それぞれ正しい
     account に紐付け、想定外の口座区分として警告する (issue #397 §5-2)。

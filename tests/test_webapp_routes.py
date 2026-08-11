@@ -1600,6 +1600,24 @@ class TestPortfolioCsvImport:
         assert resp.status_code == 200
         assert "プレビューが期限切れです" in resp.data.decode()
 
+    def test_cancel_removes_uploaded_csvs(self, csv_import_app, tmp_path):
+        import re
+
+        client = csv_import_app.test_client()
+        resp = client.post(
+            "/portfolio/csv-import/preview",
+            data=self._upload_files(),
+            content_type="multipart/form-data",
+        )
+        token = re.search(r'name="token" value="([0-9a-f]+)"', resp.data.decode()).group(1)
+        tmp_dir = tmp_path / "csv_import_tmp" / token
+        assert tmp_dir.is_dir()
+
+        resp = client.post("/portfolio/csv-import/cancel", data={"token": token})
+
+        assert resp.status_code == 302
+        assert not tmp_dir.exists()
+
 
 # ==================================================
 # /portfolio/themes (issue #282)

@@ -426,6 +426,15 @@ def csv_import_preview():
     )
 
 
+@portfolio_bp.route("/portfolio/csv-import/cancel", methods=["POST"])
+def csv_import_cancel():
+    """CSV差分プレビューを中止し、一時保存したアップロードファイルを削除する。"""
+    token = (request.form.get("token") or "").strip()
+    if re.fullmatch(r"[0-9a-f]{32}", token):
+        shutil.rmtree(os.path.join(PORTFOLIO_CSV_IMPORT_TMP_DIR, token), ignore_errors=True)
+    return redirect(url_for("portfolio.dashboard"))
+
+
 @portfolio_bp.route("/portfolio/csv-import/apply", methods=["POST"])
 def csv_import_apply():
     """プレビュー画面の「この内容で反映」実行 (issue #397 Phase3/Phase3b)。

@@ -1775,6 +1775,8 @@ def transition_status(
             source_detail=source_detail,
             db_path=db_path,
         )
+        if new_status == "1保":
+            remove_pending_in(normalized, db_path=db_path)
     log_print(
         "portfolio_shelve: ステータス変更",
         normalized,

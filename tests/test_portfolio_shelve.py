@@ -192,6 +192,14 @@ class TestTransitionStatus:
         rec = ps.transition_status("4377", "1保", db_path=db_path)
         assert rec["status"] == "1保"
 
+    def test_transition_to_1ho_removes_pending_in(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.upsert_pending_in("4377", 100, "2026-08-11", db_path=db_path)
+
+        ps.transition_status("4377", "1保", db_path=db_path)
+
+        assert ps.list_pending_in(db_path=db_path) == []
+
     def test_transition_invalid_path_rejected(self, db_path):
         """禁止遷移は ValueError"""
         ps.add_to_watch("4377", db_path=db_path)

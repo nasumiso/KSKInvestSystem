@@ -28,6 +28,7 @@ position_source があればそのまま引き継いで covered 判定に使う 
 
 import argparse
 import csv
+import math
 import os
 import sys
 from typing import Any, Dict, List, Optional, Tuple
@@ -37,7 +38,6 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 import portfolio_shelve as ps  # noqa: E402
-from webapp.helpers import resolve_stock_name  # noqa: E402
 
 try:
     from ks_util import log_print, log_warning
@@ -266,13 +266,18 @@ def parse_sbi_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
             code_s = ps.normalize_code_s(code_raw)
             if ps.is_etf_code(code_s):
                 continue
-            if not resolve_stock_name(code_s):
-                continue
             qty_raw = (row[2] or "").strip().replace(",", "")
             try:
-                qty = int(float(qty_raw))
-            except ValueError:
-                continue
+                qty_float = float(qty_raw)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"SBI現物CSV: {code_s} の保有株数を数値として読めません: {qty_raw!r}"
+                )
+            if not math.isfinite(qty_float) or not qty_float.is_integer() or qty_float < 0:
+                raise ValueError(
+                    f"SBI現物CSV: {code_s} の保有株数が0以上の整数ではありません: {qty_raw!r}"
+                )
+            qty = int(qty_float)
             avg_price_raw = (row[4] or "").strip().replace(",", "") if len(row) > 4 else ""
             try:
                 avg_price = float(avg_price_raw)
