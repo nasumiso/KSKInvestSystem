@@ -27,8 +27,10 @@ import import_sbi_fills as sbi
 import portfolio_shelve as ps
 from ks_util import DATA_DIR
 from webapp.helpers import (
+    _bulk_price_logs,
     build_fill_episodes,
     build_stock_rollups,
+    calc_post_sell_returns,
     calc_trade_summary,
     fill_date_range_by_broker,
     resolve_stock_name,
@@ -189,6 +191,7 @@ def trade_history():
             # 空文字（明示削除）はそのまま優先する
             sell_memo = log.get("review_memo")
             ep["review_memo"] = sell_memo if sell_memo is not None else ep.get("review_memo", "")
+            ep["post_sell_returns"] = log.get("post_sell_returns") or {}
             episodes.append(ep)
 
     # 未売却（保有中）エピソードを追加
@@ -200,10 +203,26 @@ def trade_history():
     # 銘柄名付与・サブ行組み立て (issue #361)
     # 成績サマリー・概算損益は fill 側 (売買履歴タブ) に一本化したため、
     # アクションログ側では計算しない (issue #387 Phase4b)。
+    price_logs = _bulk_price_logs([ep["code_s"] for ep in episodes if ep["sell_date"]])
     for ep in episodes:
         ep["stock_name"] = resolve_stock_name(ep["code_s"])
         ep["rows"] = _build_rows(ep)
         ep["rowspan"] = len(ep["rows"])
+        if ep["sell_date"]:
+            calculated = calc_post_sell_returns(ep, price_logs.get(ep["code_s"], []))
+            saved = ep.get("post_sell_returns", {})
+            newly_confirmed = {
+                key: value["return_pct"]
+                for key, value in calculated.items()
+                if value["return_pct"] is not None and key not in saved
+            }
+            if newly_confirmed:
+                ps.update_action_log_post_sell_returns(ep["code_s"], ep["sell_seq"], newly_confirmed)
+                saved = {**saved, **newly_confirmed}
+            for key, value in calculated.items():
+                if key in saved:
+                    value["return_pct"] = saved[key]
+            ep["post_sell"] = calculated
 
     # 直近30件と過去ログに分割
     recent = episodes[:30]

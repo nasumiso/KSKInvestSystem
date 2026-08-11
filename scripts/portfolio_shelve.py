@@ -208,6 +208,7 @@ ACTION_LOG_FIELDS = frozenset(
         # 入れば price_source="actual" で上書きできる構造。旧ログは list 側で None 補完。
         "price_proxy",   # イベント日 (直前営業日) の終値 (int) or None
         "price_source",  # "close" (終値プロキシ) / 将来 "actual" (実約定)
+        "post_sell_returns",
         # issue #397: 反映元。旧ログは list 側で "manual" 補完 (後方互換)。
         "source",         # "manual" (既定) / "csv_import"
         "source_detail",  # 取込元の識別子 (例 "楽天/信用/2026-08-10")
@@ -835,6 +836,7 @@ def list_action_logs(
             # issue #361: 旧ログの後方互換補完 (物理スキーマ変更なし・マイグレーション不要)
             value.setdefault("price_proxy", None)
             value.setdefault("price_source", None)
+            value.setdefault("post_sell_returns", {})
             # issue #397: 旧ログは手入力扱い
             value.setdefault("source", "manual")
             value.setdefault("source_detail", "")
@@ -870,6 +872,37 @@ def update_action_log_review_memo(
             if entry is None:
                 raise KeyError(f"action_log not found: code_s={code_s!r}, seq={seq}")
             entry["review_memo"] = review_memo
+            db[key] = entry
+    return entry
+
+
+def update_action_log_post_sell_returns(
+    code_s: str,
+    seq: int,
+    returns: Dict[str, float],
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """売却ログの確定済み売却後騰落率を保存する (issue #366)。"""
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    if not isinstance(returns, dict) or not all(
+        key in {"5d", "20d"} and isinstance(value, (int, float))
+        for key, value in returns.items()
+    ):
+        raise TypeError("returns must be a dict of 5d/20d numeric values")
+    key = _action_log_key(normalized, seq)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            entry = db.get(key)
+            if entry is None:
+                raise KeyError(f"action_log not found: code_s={code_s!r}, seq={seq}")
+            if entry.get("action_type") != "売却":
+                raise ValueError("post_sell_returns can only be saved for sell logs")
+            saved = entry.get("post_sell_returns") or {}
+            saved.update(returns)
+            entry["post_sell_returns"] = saved
             db[key] = entry
     return entry
 
@@ -1284,6 +1317,31 @@ def list_positions(
             results.append(value)
     results.sort(key=lambda r: (r.get("code_s", ""), r.get("broker", ""), r.get("account", ""), r.get("kind", "")))
     return results
+
+
+def delete_positions_for_source(
+    broker: str,
+    kind: str,
+    *,
+    db_path: Optional[str] = None,
+) -> int:
+    """指定 broker/kind の前回 position スナップショットを削除する。"""
+    target_kinds = {kind}
+    if kind == "信用":
+        target_kinds.add("信用売建")
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            keys = [
+                key for key, value in db.items()
+                if key.startswith(KEY_POSITION_PREFIX)
+                and isinstance(value, dict)
+                and value.get("broker") == broker
+                and value.get("kind") in target_kinds
+            ]
+            for key in keys:
+                del db[key]
+    return len(keys)
 
 
 def upsert_position_source(

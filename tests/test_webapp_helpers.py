@@ -3588,3 +3588,15 @@ def test_calc_trade_summary(pls, checks):
 
 def test_calc_trade_summary_empty_returns_none():
     assert helpers.calc_trade_summary([]) is None
+
+
+def test_calc_post_sell_returns_uses_business_day_count():
+    ep = {"sell_date": "2026-05-01", "sell_price": 1000}
+    log = [(date(2026, 5, 1), 1000)] + [
+        (date(2026, 5, day), 1000 + day * 10) for day in range(2, 23)
+    ]
+
+    result = helpers.calc_post_sell_returns(ep, log)
+
+    assert result["5d"] == {"days": 5, "return_pct": 6.0, "elapsed_days": 5}
+    assert result["20d"] == {"days": 20, "return_pct": 21.0, "elapsed_days": 20}

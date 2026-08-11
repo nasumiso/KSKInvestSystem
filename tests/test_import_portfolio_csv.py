@@ -243,6 +243,26 @@ def test_import_csvs_partial_dry_run_previews_carried_over_merged_qty(tmp_path, 
     assert diff["merged_qty"] == 100
 
 
+def test_import_csvs_replaces_positions_of_uploaded_source(tmp_path, db_path):
+    """再取込したソースから消えた銘柄は前回 position に残さない。"""
+    all_paths = [
+        _write_csv(tmp_path / "r_spot.csv", RAKUTEN_SPOT_ROWS),
+        _write_csv(tmp_path / "r_margin.csv", RAKUTEN_MARGIN_ROWS),
+        _write_csv(tmp_path / "s_spot.csv", SBI_SPOT_ROWS),
+        _write_csv(tmp_path / "s_margin.csv", SBI_MARGIN_ROWS),
+    ]
+    ic.import_csvs(all_paths, "2026-08-03", dry_run=False, db_path=db_path)
+
+    empty_rakuten_spot = RAKUTEN_SPOT_ROWS[:6]
+    result = ic.import_csvs([
+        _write_csv(tmp_path / "r_spot_empty.csv", empty_rakuten_spot),
+        _write_csv(tmp_path / "r_margin2.csv", RAKUTEN_MARGIN_ROWS),
+    ], "2026-08-10", dry_run=False, db_path=db_path)
+
+    assert ps.compute_merged_qty("402A", db_path=db_path) == 900
+    assert next(d for d in result["diffs"] if d["code_s"] == "402A")["merged_qty"] == 900
+
+
 class TestPhase2ApplyRecords:
     """apply_records=True (issue #397 Phase2) の record 同期を検証する。
 
@@ -360,6 +380,22 @@ class TestPhase2ApplyRecords:
         assert any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
         applied = next(a for a in result["applied"] if a["code_s"] == "4970")
         assert applied["action"] == "保留キューへ"
+
+    def test_zero_qty_removes_pending_in(self, tmp_path, db_path):
+        """保有ゼロになった準保有・監視銘柄は保留キューからも取り除く。"""
+        ps.add_to_watch("4970", db_path=db_path)
+        ps.upsert_pending_in("4970", 100, "2026-08-03", db_path=db_path)
+        empty_sbi_margin = SBI_MARGIN_ROWS[:9]
+
+        result = ic.import_csvs([
+            _write_csv(tmp_path / "r_spot.csv", RAKUTEN_SPOT_ROWS),
+            _write_csv(tmp_path / "r_margin.csv", RAKUTEN_MARGIN_ROWS),
+            _write_csv(tmp_path / "s_spot.csv", SBI_SPOT_ROWS),
+            _write_csv(tmp_path / "s_margin_empty.csv", empty_sbi_margin),
+        ], "2026-08-10", dry_run=False, apply_records=True, db_path=db_path)
+
+        assert not any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
+        assert any(a["action"] == "保留キューから削除" for a in result["applied"])
 
     def test_unregistered_code_registers_then_queues(self, tmp_path, db_path):
         """未登録銘柄は add_to_watch() で3監登録した上で保留キューへ (§5-3b)。"""

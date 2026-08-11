@@ -1,5 +1,7 @@
 """売買履歴ページ (issue #351, #357) ルートテスト。"""
 
+from datetime import date, timedelta
+
 import pytest
 import portfolio_shelve as ps
 import research_shelve as rs
@@ -87,6 +89,23 @@ class TestTradeHistoryPage:
         assert "GARP確認" in html
         assert "目標達成" in html
         assert "売却" in html
+
+    def test_post_sell_returns_are_displayed_and_saved(self, client, monkeypatch):
+        """売却後5/20営業日騰落率を表示時に確定・保存する。"""
+        sell_log = next(l for l in ps.list_action_logs("6324") if l["action_type"] == "売却")
+        sell_day = date.fromisoformat(sell_log["timestamp"][:10])
+        log = [(sell_day, 5678)] + [
+            (sell_day + timedelta(days=offset), 5678 + offset * 10)
+            for offset in range(1, 22)
+        ]
+        monkeypatch.setattr("webapp.routes.trade_history._bulk_price_logs", lambda codes: {"6324": log})
+
+        html = client.get("/trade-history").data.decode()
+
+        assert "後5:" in html
+        assert "後20:" in html
+        saved = next(l for l in ps.list_action_logs("6324") if l["action_type"] == "売却")
+        assert saved["post_sell_returns"].keys() == {"5d", "20d"}
 
     def test_two_tabs_present(self, client):
         """売買履歴タブとアクションログタブの両方が1ページに存在する (issue #387)。"""

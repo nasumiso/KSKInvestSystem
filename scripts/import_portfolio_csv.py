@@ -439,6 +439,7 @@ def import_csvs(
     if not dry_run:
         for source, agg in aggregated.items():
             broker, kind = source
+            ps.delete_positions_for_source(broker, kind, db_path=db_path)
             for (account, k, code_s), entry in agg.items():
                 ps.upsert_position(
                     broker, account, k, code_s, entry["qty"],
@@ -650,6 +651,11 @@ def _sync_records(
                     source="csv_import", source_detail=source_detail, db_path=db_path,
                 )
                 applied.append({"code_s": code_s, "action": "株数変更", "detail": f"{db_qty}→{merged_qty}"})
+            continue
+
+        if status in ("2準", "3監") and merged_qty == 0:
+            if ps.remove_pending_in(code_s, db_path=db_path):
+                applied.append({"code_s": code_s, "action": "保留キューから削除", "detail": "qty=0"})
             continue
 
         if status in ("2準", "3監") and merged_qty > 0:
