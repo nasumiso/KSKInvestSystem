@@ -538,9 +538,17 @@ def _sync_records(diffs: List[Dict[str, Any]], as_of: str, *, db_path: Optional[
             if merged_qty == 0:
                 # 売却: 2準 に落とす (issue #397 §5-4)。3監にはしない
                 # (売買履歴の集計から漏れるため。既存フローと同じ action_type=売却 で記録)
+                # transition_status は遷移前の record["qty"] を売却ログに残すため、
+                # 先に遷移させてから qty=0 に更新する (順序が逆だと「何株売ったか」の
+                # 記録が失われる)。record 自体の qty は CSV=真実源の方針 (§3) に沿って
+                # 0 に同期し、2準/3監なのに旧qtyが残る矛盾状態を避ける。
                 reason = f"CSV取込による売却検出 ({source_detail}、実売却日不明の可能性あり)"
                 ps.transition_status(
                     code_s, "2準", reason=reason, action_date=as_of,
+                    source="csv_import", source_detail=source_detail, db_path=db_path,
+                )
+                ps.update_qty(
+                    code_s, 0, reason=reason, action_date=as_of, log_action=False,
                     source="csv_import", source_detail=source_detail, db_path=db_path,
                 )
                 applied.append({"code_s": code_s, "action": "売却(OUT)", "detail": f"{db_qty}→0"})

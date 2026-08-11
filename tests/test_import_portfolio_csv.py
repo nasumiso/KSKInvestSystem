@@ -234,7 +234,11 @@ class TestPhase2ApplyRecords:
         assert log["source"] == "csv_import"
 
     def test_sell_when_merged_qty_zero(self, tmp_path, db_path):
-        """1保 かつ merged_qty=0 -> 2準へ自動OUT。3監にはしない (§5-4)。"""
+        """1保 かつ merged_qty=0 -> 2準へ自動OUT。3監にはしない (§5-4)。
+
+        record["qty"] も 0 に同期する (2準なのに旧qtyが残る矛盾状態を避ける)。
+        売却ログには「遷移前」の qty (=売った株数) が残ること (log_qty) も検証する。
+        """
         ps.add_to_watch("8888", db_path=db_path)  # CSVに一切登場しないコード
         ps.transition_status("8888", "2準", db_path=db_path)
         ps.seed_trade_ideas(db_path=db_path)
@@ -247,11 +251,16 @@ class TestPhase2ApplyRecords:
 
         record = ps.get_record("8888", db_path=db_path)
         assert record["status"] == "2準"
+        assert record["qty"] == 0
         applied = next(a for a in result["applied"] if a["code_s"] == "8888")
         assert applied["action"] == "売却(OUT)"
-        log = ps.list_action_logs("8888", db_path=db_path)[-1]
-        assert log["action_type"] == "売却"
-        assert log["source"] == "csv_import"
+        logs = ps.list_action_logs("8888", db_path=db_path)
+        sell_log = logs[-1]
+        assert sell_log["action_type"] == "売却"
+        assert sell_log["source"] == "csv_import"
+        assert sell_log["qty"] == 100  # 遷移前の保有株数 (売った株数) がログに残る
+        # qty=0 への更新は log_action=False なので、追加の「株数変更」ログは残らない
+        assert not any(l["action_type"] == "株数変更" for l in logs)
 
     def test_new_in_auto_when_trade_idea_set(self, tmp_path, db_path):
         """2準 かつ trade_idea 設定済み -> 自動で1保に遷移 (§6-2)。
