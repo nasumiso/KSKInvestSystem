@@ -8,7 +8,7 @@
   table.strategies-table td.name-cell { font-weight: 600; max-width: 10em; word-break: break-word; }
   table.strategies-table td.desc-cell { color: #555; max-width: 24em; word-break: break-word; }
   table.strategies-table td.horizon-cell { white-space: nowrap; width: 6em; }
-  table.strategies-table td.earnings-cell { text-align: center; width: 5em; }
+  table.strategies-table td.exit-cell { min-width: 15em; }
   table.strategies-table td.usage-cell { text-align: right; color: #666; width: 4em; }
   table.strategies-table td.op-cell { width: 14em; white-space: nowrap; }
   table.strategies-table input[type="text"] { font-size: 0.9em; padding: 0.2em 0.4em; margin: 0; height: auto; width: 100%; }
@@ -50,6 +50,34 @@
       <input type="text" name="name" required maxlength="{{ strategy_name_max_len }}"
              placeholder="例: 新戦略" style="width:10em;">
     </label>
+    <label style="margin:0;">
+      <span title="終値が下回ったときに防御判定に使う移動平均" style="color:#666;font-size:0.85em;">MA基準</span>
+      <select name="ma_kind" class="ma-kind" onchange="syncExitRule(this.form)">
+        <option value="">なし</option>
+        <option value="day">日足</option>
+        <option value="week">週足</option>
+      </select>
+    </label>
+    <label style="margin:0;">
+      <span title="日足は50、週足は30または40を選択" style="color:#666;font-size:0.85em;">MA期間</span>
+      <select name="ma_window" class="ma-window">
+        <option value="">—</option>
+        <option value="50" data-kinds="day">50</option>
+        <option value="30" data-kinds="week">30</option>
+        <option value="40" data-kinds="week">40</option>
+      </select>
+    </label>
+    <label style="margin:0;">
+      <span title="平均取得単価からの下落率。空欄なら損切りラインを使わない" style="color:#666;font-size:0.85em;">損切り%</span>
+      <input type="text" name="stop_loss_pct" inputmode="decimal" placeholder="なし" style="width:4.5em;">
+    </label>
+    <label style="margin:0;">
+      <span title="下げない: 既存の損切りラインを維持。下げ可: 買い増し後の平均取得単価に連動して下げる" style="color:#666;font-size:0.85em;">買増し時</span>
+      <select name="allow_dca_lower">
+        <option value="false">下げない</option>
+        <option value="true">下げ可</option>
+      </select>
+    </label>
     <label style="margin:0;flex:1;min-width:16em;">
       <span style="color:#666;font-size:0.85em;">定義文</span>
       <input type="text" name="description" placeholder="入口の例 + 出口基準" style="width:100%;">
@@ -60,13 +88,6 @@
         {% for h in valid_time_horizons %}
         <option value="{{ h }}">{{ h if h else '(未設定)' }}</option>
         {% endfor %}
-      </select>
-    </label>
-    <label style="margin:0;">
-      <span style="color:#666;font-size:0.85em;">決算またぎ</span>
-      <select name="over_earnings">
-        <option value="false">不可</option>
-        <option value="true">可</option>
       </select>
     </label>
     <button type="submit">+ 追加</button>
@@ -89,7 +110,7 @@
       <th style="text-align:left;">名前</th>
       <th style="text-align:left;">定義文</th>
       <th style="text-align:center;">時間軸</th>
-      <th style="text-align:center;">決算またぎ</th>
+      <th style="text-align:left;" title="MA基準 / 損切り率 / 買い増し時の損切りライン方針。下げないは既存ラインを維持し、下げ可は買い増し後の平均取得単価に連動する。">出口ルール</th>
       <th style="text-align:right;">使用</th>
       <th>操作</th>
     </tr>
@@ -99,6 +120,7 @@
     {% set uses = usage.get(strategy.name, 0) %}
     {% set fid = 'strategy-update-' ~ loop.index %}
     {% set did = 'strategy-delete-' ~ loop.index %}
+    {% set rule = strategy.exit_rule or {} %}
     <tr data-name="{{ strategy.name }}" data-delete-form="{{ did }}">
       <td class="name-cell">
         <span class="display-name">{{ strategy.name }}</span>
@@ -121,12 +143,30 @@
           {% endfor %}
         </select>
       </td>
-      <td class="earnings-cell">
-        <span class="display-earnings">{{ '可' if strategy.over_earnings else '不可' }}</span>
-        <select name="over_earnings" form="{{ fid }}" class="edit-input edit-earnings" style="display:none;">
-          <option value="false" {% if not strategy.over_earnings %}selected{% endif %}>不可</option>
-          <option value="true" {% if strategy.over_earnings %}selected{% endif %}>可</option>
-        </select>
+      <td class="exit-cell">
+        {% if rule.ma_kind == 'day' %}{% set ma_label = '日' ~ rule.ma_window ~ 'MA' %}
+        {% elif rule.ma_kind == 'week' %}{% set ma_label = '週' ~ rule.ma_window ~ 'MA' %}
+        {% else %}{% set ma_label = 'MAなし' %}{% endif %}
+        <span class="display-exit">{{ ma_label }} / {{ rule.stop_loss_pct|string ~ '%' if rule.stop_loss_pct is not none else '損切りなし' }} / {{ '下げ可' if rule.allow_dca_lower else '下げない' }}</span>
+        <span class="edit-input edit-exit" style="display:none;">
+          <select name="ma_kind" form="{{ fid }}" class="ma-kind" onchange="syncExitRule(this.form)">
+            <option value="" {% if not rule.ma_kind %}selected{% endif %}>なし</option>
+            <option value="day" {% if rule.ma_kind == 'day' %}selected{% endif %}>日足</option>
+            <option value="week" {% if rule.ma_kind == 'week' %}selected{% endif %}>週足</option>
+          </select>
+          <select name="ma_window" form="{{ fid }}" class="ma-window">
+            <option value="">—</option>
+            <option value="50" data-kinds="day" {% if rule.ma_window == 50 %}selected{% endif %}>50</option>
+            <option value="30" data-kinds="week" {% if rule.ma_window == 30 %}selected{% endif %}>30</option>
+            <option value="40" data-kinds="week" {% if rule.ma_window == 40 %}selected{% endif %}>40</option>
+          </select>
+          <input type="text" name="stop_loss_pct" form="{{ fid }}" inputmode="decimal"
+                 value="{{ rule.stop_loss_pct if rule.stop_loss_pct is not none else '' }}" placeholder="なし" style="width:4.5em;">
+          <select name="allow_dca_lower" form="{{ fid }}">
+            <option value="false" {% if not rule.allow_dca_lower %}selected{% endif %}>下げない</option>
+            <option value="true" {% if rule.allow_dca_lower %}selected{% endif %}>下げ可</option>
+          </select>
+        </span>
       </td>
       <td class="usage-cell">{{ uses }}</td>
       <td class="op-cell">
@@ -151,13 +191,31 @@
 function toggleEdit(btn, openEdit) {
   var tr = btn.closest('tr');
   if (!tr) return;
-  tr.querySelectorAll('.display-name, .display-desc, .display-horizon, .display-earnings, .display-ops').forEach(function(el) {
+  tr.querySelectorAll('.display-name, .display-desc, .display-horizon, .display-exit, .display-ops').forEach(function(el) {
     el.style.display = openEdit ? 'none' : '';
   });
   tr.querySelectorAll('.edit-input, .edit-ops').forEach(function(el) {
     el.style.display = openEdit ? '' : 'none';
   });
 }
+
+function syncExitRule(form) {
+  if (!form) return;
+  var kind = form.elements['ma_kind'];
+  var windowSelect = form.elements['ma_window'];
+  if (!kind || !windowSelect) return;
+  var enabled = kind.value !== '';
+  windowSelect.disabled = !enabled;
+  Array.prototype.forEach.call(windowSelect.options, function(option) {
+    if (!option.dataset.kinds) return;
+    var allowed = option.dataset.kinds === kind.value;
+    option.hidden = !allowed;
+    option.disabled = !allowed;
+    if (!allowed && option.selected) windowSelect.value = '';
+  });
+}
+
+document.querySelectorAll('form').forEach(function(form) { syncExitRule(form); });
 
 function confirmDeleteStrategy(name, uses) {
   var msg = uses > 0
