@@ -565,6 +565,27 @@ def calc_ma10_kairi_indicators(closes, lows=None, window=10):
     return res
 
 
+def calc_daily_ma_violation(daily_price_list, window=50):
+    """日足の生系列から指定期間MAの違反状態を返す。
+
+    株探の8列形式と yfinance の7列形式は、ともに安値が3列目・終値が4列目
+    なので同じ処理で扱う。データ不足・数値欠損時は誤警告を避けて判定しない。
+    """
+    from exit_line import calc_ma_violation, calc_sma_at
+
+    try:
+        closes = [float(str(row[4]).replace(",", "")) for row in daily_price_list]
+    except (ValueError, IndexError, TypeError):
+        closes = []
+    lows = []
+    for row in daily_price_list:
+        try:
+            lows.append(float(str(row[3]).replace(",", "")))
+        except (ValueError, IndexError, TypeError):
+            lows.append(None)
+    return calc_ma_violation(closes, lows, lambda i: calc_sma_at(closes, window, i))
+
+
 def calc_weekly_ma_violation(daily_price_list, weekly_price_list, window):
     """確定週だけの週足MAを基準に、日足系列で違反状態を判定する。"""
     from exit_line import calc_ma_violation
@@ -710,10 +731,7 @@ def _calc_daily_indicators(daily_price_list):
         except (ValueError, IndexError):
             lows.append(None)
     dic.update(calc_ma10_kairi_indicators(closes, lows))
-    from exit_line import calc_ma_violation, calc_sma_at
-    dic["ma50_violation"] = calc_ma_violation(
-        closes, lows, lambda i: calc_sma_at(closes, 50, i)
-    )
+    dic["ma50_violation"] = calc_daily_ma_violation(daily_price_list, 50)
     log_debug("10日MA乖離率:", dic["price_kairi_ma10"], "30日維持中:", dic["ma10_above_streak_30"], "維持実績あり:", dic["ma10_streak_ever"])
 
     # direction_signal は make_market_db.py が market_state を計算してから上書きする。
@@ -2210,6 +2228,7 @@ def get_price_data_yahoo(code_s, stock, upd=UPD_INTERVAL):
         parsed_data, cur_prices = parse_price_text_from_list(
             price_current, price_list
         )
+        parsed_data["ma50_violation"] = calc_daily_ma_violation(price_list, 50)
         parsed_data["_daily_price_list_raw"] = price_list
         price_val = parsed_data.get("price", 0)
         # キャッシュの更新日時を取得

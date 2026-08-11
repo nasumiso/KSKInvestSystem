@@ -1056,6 +1056,29 @@ class TestParsePriceTextFromList:
         result_dict, _ = price.parse_price_text_from_list(1050, price_list)
         assert result_dict["price"] == 1050
 
+    def test_daily_ma_violation_accepts_yfinance_rows(self):
+        """yfinanceの7列日足から50MA違反状態を計算できること。"""
+        price_list = self._make_price_list_7col(count=55)
+        result = price.calc_daily_ma_violation(price_list, 50)
+        assert result["ma_value"] is not None
+        assert result["confirmed"] is False
+
+    def test_yahoo_price_data_saves_daily_ma_violation(self, monkeypatch):
+        """通常のyfinance更新結果にも50MA違反状態を保存すること。"""
+        price_list = self._make_price_list_7col(count=55)
+        monkeypatch.setattr(
+            price, "get_daily_data_yfinance",
+            lambda _code_s, _stock, _upd: (1050, price_list),
+        )
+        monkeypatch.setattr(price, "set_db_code", lambda _record, _code_s: None)
+        monkeypatch.setattr(price.os.path, "exists", lambda _path: False)
+
+        result_dict, _ = price.get_price_data_yahoo("1234", {})
+
+        assert result_dict["ma50_violation"] == price.calc_daily_ma_violation(
+            price_list, 50
+        )
+
     def test_cur_prices_format(self):
         """cur_pricesが[終値, 高値, 安値]の3要素であること"""
         price_list = self._make_price_list_7col()

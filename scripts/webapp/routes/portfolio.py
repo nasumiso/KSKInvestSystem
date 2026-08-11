@@ -1358,7 +1358,7 @@ def strategies_create():
 
 @portfolio_bp.route("/portfolio/strategies/<name>/update", methods=["POST"])
 def strategies_update(name: str):
-    """戦略のリネーム / 説明文 / 時間軸 / 決算またぎ編集。"""
+    """戦略のリネーム / 説明文 / 時間軸 / 出口ルールを更新する。"""
     rejected = _reject_when_fallback()
     if rejected is not None:
         return rejected

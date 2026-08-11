@@ -2379,8 +2379,8 @@ def seed_trade_ideas(*, db_path: Optional[str] = None) -> int:
                     "name": seed["name"],
                     "description": seed["description"],
                     "time_horizon": seed["time_horizon"],
-                "over_earnings": seed["over_earnings"],
-                "exit_rule": _validate_exit_rule(_EXIT_RULES_BY_STRATEGY.get(seed["name"])),
+                    "over_earnings": seed["over_earnings"],
+                    "exit_rule": _validate_exit_rule(_EXIT_RULES_BY_STRATEGY.get(seed["name"])),
                     "created_at": now_iso(),
                 }
                 db[_trade_idea_key(seed["name"])] = record
