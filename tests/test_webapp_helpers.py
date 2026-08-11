@@ -10,6 +10,38 @@ import research_shelve as rs
 from webapp import helpers
 
 
+def test_stop_loss_replay_includes_sell_fill():
+    """部分売却後の買い増しは買いだけの平均と異なる損切りラインになる。"""
+    from exit_line import calc_stop_loss_line
+
+    rule = {"stop_loss_pct": 10, "allow_dca_lower": True}
+    full_fills = [
+        {"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 100, "price": 100, "trade_kind": "現物"},
+        {"trade_date": "2026-01-02", "seq": 2, "side": "sell", "qty": 50, "price": 110, "trade_kind": "現物"},
+        {"trade_date": "2026-01-03", "seq": 3, "side": "buy", "qty": 50, "price": 80, "trade_kind": "現物"},
+    ]
+    buy_only = [full_fills[0], full_fills[2]]
+    assert calc_stop_loss_line(rule, full_fills, kind="現物") == 81.0
+    assert calc_stop_loss_line(rule, full_fills, kind="現物") != calc_stop_loss_line(rule, buy_only, kind="現物")
+
+
+def test_margin_only_holding_can_calculate_defensive_line():
+    """信用買い建玉だけでも防御ラインを数量加重で算出できる。"""
+    episode = {
+        "code_s": "4377", "kind": "信用", "episode_key": "4377|信用|2026-01-01|",
+        "closed": False, "is_short": False, "split_suspect": False,
+        "open_pl": {"held_qty": 100, "avg_cost": 1000.0},
+        "fills": [{"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 100,
+                   "price": 1000, "trade_kind": "信用新規"}],
+    }
+    position = helpers._build_exit_position_map([episode])["4377"]
+    line = helpers._weighted_stop_loss_line(
+        {"stop_loss_pct": 10, "allow_dca_lower": False}, position["episodes"]
+    )
+    assert position["held_qty"] == 100
+    assert line == 900.0
+
+
 @pytest.fixture
 def db_path(tmp_path):
     """テスト用一時DBパスを返す"""

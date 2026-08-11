@@ -457,7 +457,7 @@ def add_stalling_days(dic, daily_price_list, high52_weekly):
     return dic
 
 
-def calc_ma10_kairi_indicators(closes, lows=None):
+def calc_ma10_kairi_indicators(closes, lows=None, window=10):
     """終値リスト (新しい日が先頭) から 10日MA乖離率と30日10ma維持判定を計算する。
 
     Kabutan/yfinance 両系統で共通利用する。トレンド列の点線マーカー用。
@@ -472,8 +472,8 @@ def calc_ma10_kairi_indicators(closes, lows=None):
     """
     res = {}
     # 乖離率は closes のみで計算する (安値の欠損に影響されない)
-    if len(closes) >= 10:
-        ma10 = sum(closes[:10]) / 10
+    if len(closes) >= window:
+        ma10 = sum(closes[:window]) / window
         res["price_kairi_ma10"] = (closes[0] - ma10) * 100 / ma10 if ma10 else None
     else:
         res["price_kairi_ma10"] = None
@@ -496,7 +496,7 @@ def calc_ma10_kairi_indicators(closes, lows=None):
     STREAK_DAYS = 30
 
     def _ma10(i):
-        return sum(closes[i:i + 10]) / 10 if len(closes) >= i + 10 else None
+        return sum(closes[i:i + window]) / window if len(closes) >= i + window else None
 
     def _streak_holds(i):
         ma = _ma10(i)
@@ -559,29 +559,8 @@ def calc_ma10_kairi_indicators(closes, lows=None):
     res["ma10_break_confirmed"] = False
     currently_above_ma10 = _streak_holds(0)
     if res["ma10_streak_ever"] and not currently_above_ma10 and lows and len(lows) >= 2:
-        # closes[0] < ma10 (streak_ever が True = 現在10ma割れ) は保証済み。
-        # 新しい順に走査し、最初に10ma割れした日 = A日を探す。
-        # A日の定義: 前日(i+1)は10ma上 or データ端、当日(i)は10ma以下。
-        a_day_idx = None
-        a_day_low = None
-        for i in range(len(closes)):
-            ma = _ma10(i)
-            if ma is None:
-                break
-            if closes[i] <= ma:
-                # i+1 が10ma上、またはデータ端ならここがA日
-                prev_ma = _ma10(i + 1)
-                if prev_ma is None or closes[i + 1] > prev_ma:
-                    a_day_idx = i
-                    a_day_low = lows[i]
-                    break
-        if a_day_idx is not None and a_day_low is not None:
-            # A日より新しい日（index 0 〜 a_day_idx-1）でA日安値を下回った日があれば確定
-            for j in range(a_day_idx):
-                low_j = lows[j]
-                if low_j is not None and low_j < a_day_low:
-                    res["ma10_break_confirmed"] = True
-                    break
+        from exit_line import calc_ma_violation
+        res["ma10_break_confirmed"] = bool(calc_ma_violation(closes, lows, _ma10)["confirmed"])
 
     return res
 
@@ -675,6 +654,10 @@ def _calc_daily_indicators(daily_price_list):
         except (ValueError, IndexError):
             lows.append(None)
     dic.update(calc_ma10_kairi_indicators(closes, lows))
+    from exit_line import calc_ma_violation, calc_sma_at
+    dic["ma50_violation"] = calc_ma_violation(
+        closes, lows, lambda i: calc_sma_at(closes, 50, i)
+    )
     log_debug("10日MA乖離率:", dic["price_kairi_ma10"], "30日維持中:", dic["ma10_above_streak_30"], "維持実績あり:", dic["ma10_streak_ever"])
 
     # direction_signal は make_market_db.py が market_state を計算してから上書きする。

@@ -605,6 +605,22 @@ class TestCalcDailyIndicators:
         assert result["ma10_streak_ever"] is True
         assert result["ma10_break_confirmed"] is True
 
+    def test_generic_ma_violation_matches_ma10_break_confirmed(self):
+        """汎用 MA 違反判定は既存 10MA 確定判定と同じ結果になる。"""
+        from exit_line import calc_ma_violation
+
+        rows = self._make_price_list(50)
+        for i, low in ((2, "100"), (1, "100"), (0, "50")):
+            d, o, h, _l, _c, r5, r6, v = rows[i]
+            rows[i] = (d, o, h, low, "1", r5, r6, v)
+        closes = [int(float(r[4].replace(",", ""))) for r in rows]
+        lows = [int(float(r[3].replace(",", ""))) for r in rows]
+        generic = calc_ma_violation(
+            closes, lows,
+            lambda i: sum(closes[i:i + 10]) / 10 if len(closes) >= i + 10 else None,
+        )
+        assert generic["confirmed"] is price._calc_daily_indicators(rows)["ma10_break_confirmed"]
+
     def test_ma10_break_confirmed_false_when_a_day_low_not_broken(self):
         """A日安値を下回る日がなければ ma10_break_confirmed=False。"""
         rows = self._make_price_list(50)
