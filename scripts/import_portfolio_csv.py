@@ -7,9 +7,14 @@
 
 --apply のみ: position/position_source を保存するが record (qty/status) には
 一切触れない (Phase1、可視化フェーズ)。
---apply --apply-records: 上記に加え、covered な銘柄 (4ソース全てが同一基準日で
-揃っている銘柄) の qty更新・自動OUT・戦略ありの自動IN を実際に反映する (Phase2)。
-戦略未設定の新規保有は pending_in (保留キュー) に積み、自動反映しない。
+--apply --apply-records: 上記に加え、covered な銘柄 (4ソース全てが取込済みの
+銘柄。基準日の一致は要求しない) の qty更新・自動OUT・戦略ありの自動IN を実際に
+反映する (Phase2)。戦略未設定の新規保有は pending_in (保留キュー) に積み、
+自動反映しない。
+
+4ファイル全てを毎回揃える必要はない。今回渡さなかったソースは、DB に前回の
+position_source があればそのまま引き継いで covered 判定に使う (Phase3b、
+実運用では楽天のみ更新することが多いための部分更新対応)。
 
 ファイル判別はファイル名に依存しない (SBI は現物・信用が同名 SaveFile*.csv で
 降ってくるため)。中身の構造から4ソースいずれかを機械的に特定する。
@@ -354,6 +359,7 @@ def import_csvs(
     dry_run: bool = False,
     allow_partial: bool = False,
     apply_records: bool = False,
+    overrides: Optional[Dict[str, Dict[str, str]]] = None,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """複数CSVをまとめて読み、position/position_source を差分プレビュー・反映する。
@@ -363,7 +369,13 @@ def import_csvs(
     apply_records=True かつ dry_run=False のときのみ、covered な銘柄について
     qty更新・自動OUT・戦略ありの自動IN を実際に反映する (issue #397 Phase2)。
 
-    Returns: {"sources": {...}, "diffs": [...], "missing_sources": [...], "applied": [...]}
+    今回アップロードされなかったソースは、DB に既存の position_source が
+    あればそれを「引き継ぎ」として扱い、今回アップロード分だけの部分更新を許容する
+    (issue #397 Phase3b: 実運用では楽天のみ更新することが多いため)。
+    DB にも既存データが無いソースのみ missing_sources として報告する。
+
+    Returns: {"sources": {...}, "carried_over_sources": {...}, "missing_sources": [...],
+              "diffs": [...], "applied": [...]}
     """
     detected: Dict[Tuple[str, str], Dict[str, Any]] = {}
     for path in csv_paths:
@@ -385,18 +397,33 @@ def import_csvs(
             f"rows={len(parsed_rows)}",
         )
 
-    missing_sources = [
-        f"{broker}/{kind}" for broker, kind in ps.EXPECTED_POSITION_SOURCES
+    # 今回アップロードされなかったソースは、DB の既存 position_source で
+    # 引き継げるか確認する (issue #397 Phase3b)。引き継げないものだけ missing。
+    existing_sources = {(s["broker"], s["kind"]): s for s in ps.list_position_sources(db_path=db_path)}
+    not_uploaded = [
+        (broker, kind) for broker, kind in ps.EXPECTED_POSITION_SOURCES
         if (broker, kind) not in detected
+    ]
+    carried_over_sources = {
+        f"{broker}/{kind}": existing_sources[(broker, kind)]["as_of"]
+        for broker, kind in not_uploaded if (broker, kind) in existing_sources
+    }
+    missing_sources = [
+        f"{broker}/{kind}" for broker, kind in not_uploaded
+        if (broker, kind) not in existing_sources
     ]
     if missing_sources and not allow_partial:
         raise ValueError(
-            f"必要なソースが不足しています: {missing_sources}。"
+            f"必要なソースが不足しています (DBに引き継ぎ可能な前回分もありません): {missing_sources}。"
             f"--allow-partial を指定すると不足のまま続行できます"
         )
 
     # 差分プレビュー用に、既存 DB の状態と比較する
     existing_records = {r["code_s"]: r for r in ps.list_records(db_path=db_path)}
+    # list_positions() は DB を open して全件走査するので1回だけ呼び、
+    # all_codes の補完と code_s ごとのグルーピングの両方に使い回す
+    # (issue #397 Phase3b: 銘柄ごとに呼ぶと N×M の計算量になり実データ規模で致命的に遅い)
+    all_positions = ps.list_positions(db_path=db_path)
     all_codes = set()
     aggregated: Dict[Tuple[str, str], Dict[Tuple[str, str, str], Dict[str, Any]]] = {}
     for source, data in detected.items():
@@ -405,6 +432,9 @@ def import_csvs(
         for (account, kind, code_s) in agg:
             all_codes.add(code_s)
     all_codes |= set(existing_records.keys())
+    # 部分更新 (issue #397 Phase3b): 引き継ぎソース由来で record が未登録の銘柄
+    # (例: SBI現物のみに存在し楽天CSVには登場しない銘柄) も対象に含める
+    all_codes |= {p["code_s"] for p in all_positions}
 
     if not dry_run:
         for source, agg in aggregated.items():
@@ -421,19 +451,34 @@ def import_csvs(
                     broker, account, kind, as_of=as_of, row_count=row_count, db_path=db_path,
                 )
         log_print("import_portfolio_csv: position 保存完了", f"銘柄数={len(all_codes)}")
+        # 書き込み後の状態を1回だけ再取得する (compute_merged_qty/is_covered を
+        # 銘柄ごとに呼ぶと DB を都度 open して全件走査するため、実データ規模
+        # (数百銘柄) では致命的に遅い。issue #397 Phase3b で実測・修正済み)
+        all_positions = ps.list_positions(db_path=db_path)
+        existing_sources = {(s["broker"], s["kind"]): s for s in ps.list_position_sources(db_path=db_path)}
 
+    carried_over_keys = {
+        (broker, kind) for broker, kind in not_uploaded if (broker, kind) in existing_sources
+    }  # carried_over_sources と同じ集合 (キーが "broker/kind" 文字列か tuple かの違いのみ)
+    positions_by_code: Dict[str, List[Dict[str, Any]]] = {}
+    for pos in all_positions:
+        positions_by_code.setdefault(pos["code_s"], []).append(pos)
     diffs = _build_diff_preview(
-        all_codes, existing_records, db_path=db_path if not dry_run else None,
+        all_codes, existing_records,
         dry_run_aggregated=aggregated if dry_run else None,
+        carried_over_sources=carried_over_keys if dry_run else None,
+        positions_by_code=positions_by_code,
+        source_map=existing_sources,
         all_sources_present=not missing_sources,
     )
 
     applied = []
     if apply_records and not dry_run:
-        applied = _sync_records(diffs, as_of, db_path=db_path)
+        applied = _sync_records(diffs, as_of, db_path=db_path, overrides=overrides)
 
     return {
         "sources": {f"{b}/{k}": len(v) for (b, k), v in aggregated.items()},
+        "carried_over_sources": carried_over_sources,
         "missing_sources": missing_sources,
         "diffs": diffs,
         "applied": applied,
@@ -444,8 +489,10 @@ def _build_diff_preview(
     all_codes: set,
     existing_records: Dict[str, Dict[str, Any]],
     *,
-    db_path: Optional[str],
     dry_run_aggregated: Optional[Dict] = None,
+    carried_over_sources: Optional[set] = None,
+    positions_by_code: Dict[str, List[Dict[str, Any]]],
+    source_map: Dict[Tuple[str, str], Dict[str, Any]],
     all_sources_present: bool = True,
 ) -> List[Dict[str, Any]]:
     """差分プレビュー行を組み立てる (issue #397 §5-3 の判定表)。
@@ -454,14 +501,28 @@ def _build_diff_preview(
     今回の取込対象として揃っているか」で決まる (issue #397 §5-2: ソース側に
     銘柄が無い=保有ゼロも正常なので、銘柄単位の登場有無では判定しない)。
     dry_run 時は DB に position を書いていないので、aggregated から
-    その場で merged_qty を計算する (covered は all_sources_present を使う。
-    apply 後の正式な判定は is_covered() を使う)。
+    その場で merged_qty を計算する (covered は all_sources_present を使う)。
+    apply 後は positions_by_code/source_map (呼び出し元で書き込み後に1回だけ
+    取得済み) から compute_merged_qty/is_covered 相当を計算する。
+    銘柄ごとに DB を呼ぶ (compute_merged_qty/is_covered/list_positions(code_s))
+    と都度 open して全件走査するため N×M の計算量になり、実データ規模
+    (数百銘柄) では致命的に遅くなる (issue #397 Phase3b で実測・修正済み)。
+
+    carried_over_sources は今回アップロードされず DB の前回分を引き継ぐ
+    (broker, kind) の集合 (issue #397 Phase3b の部分更新)。dry_run 時、
+    この分の merged_qty は positions_by_code から補って合算する。
     """
     diffs = []
+    carried_pos_keys = set(carried_over_sources or set())
+    carried_pos_keys |= {
+        (broker, "信用売建") for broker, kind in (carried_over_sources or set())
+        if kind == "信用"
+    }
     for code_s in sorted(all_codes):
         record = existing_records.get(code_s)
         status = record.get("status") if record else "未登録"
         db_qty = record.get("qty") if record else None
+        code_positions = positions_by_code.get(code_s, [])
 
         if dry_run_aggregated is not None:
             merged_qty = 0
@@ -474,10 +535,26 @@ def _build_diff_preview(
                         has_short = True
                     else:
                         merged_qty += entry["qty"]
+            # DB position の kind は "現物"/"信用"/"信用売建" の3種。carried_over_sources
+            # (broker, kind) の kind は PARSERS キー相当の "現物"/"信用" のみなので、
+            # "信用" ソースを引き継ぐ場合は同一 broker の "信用売建" position も対象に含める。
+            for pos in code_positions:
+                if (pos.get("broker"), pos.get("kind")) not in carried_pos_keys:
+                    continue
+                if pos.get("kind") == "信用売建":
+                    has_short = True
+                else:
+                    merged_qty += pos.get("qty", 0)
             covered = all_sources_present and not has_short
         else:
-            merged_qty = ps.compute_merged_qty(code_s, db_path=db_path)
-            covered = ps.is_covered(code_s, db_path=db_path)
+            # compute_merged_qty(code_s) / is_covered(code_s) 相当をインライン計算
+            merged_qty = sum(
+                p.get("qty", 0) for p in code_positions if p.get("kind") != "信用売建"
+            )
+            has_short = any(p.get("kind") == "信用売建" for p in code_positions)
+            covered = not has_short and all(
+                (broker, kind) in source_map for broker, kind in ps.EXPECTED_POSITION_SOURCES
+            )
 
         judgement = _judge(status, covered, merged_qty, db_qty)
         diffs.append({
@@ -502,19 +579,23 @@ def _judge(status: str, covered: bool, merged_qty: int, db_qty: Optional[int]) -
     if status == "未登録" and merged_qty == 0:
         return "対象外"
     if not covered:
-        return "判定不能 (covered=false)"
+        return "判定不能 (ソース不足のため反映されません)"
     if status == "1保":
         if merged_qty == 0:
-            return "売却候補 (Phase2でOUT)"
-        return f"株数変更候補 {db_qty}→{merged_qty} (Phase2で反映)"
+            return "売却候補 (反映すると準保有へ)"
+        return f"株数変更候補 {db_qty}→{merged_qty}"
     if status in ("2準", "3監"):
-        return "新規IN候補 (Phase2で保留キュー/自動IN)"
+        return "新規IN候補 (反映すると保留キューまたは自動INへ)"
     if status == "未登録":
-        return "未登録+保有検出 (Phase2で登録)"
+        return "未登録+保有検出 (反映すると監視へ登録)"
     return "-"
 
 
-def _sync_records(diffs: List[Dict[str, Any]], as_of: str, *, db_path: Optional[str]) -> List[Dict[str, Any]]:
+def _sync_records(
+    diffs: List[Dict[str, Any]], as_of: str, *,
+    db_path: Optional[str],
+    overrides: Optional[Dict[str, Dict[str, str]]] = None,
+) -> List[Dict[str, Any]]:
     """covered な銘柄について実際に record (qty/status) を CSV に同期する
     (issue #397 Phase2)。§5-3 の判定表・§5-4 の売却・§6-2 の新規IN分岐を実装する。
 
@@ -522,15 +603,22 @@ def _sync_records(diffs: List[Dict[str, Any]], as_of: str, *, db_path: Optional[
     - 「一致」「対象外」は no-op
     - `source="csv_import"` を全ての反映操作に付与する
 
+    overrides は {code_s: {"trade_idea": ..., "note": ...}} (issue #397 Phase3b:
+    確認画面でユーザーが入力した内容)。新規IN では trade_idea が指定されていれば
+    既存の戦略より優先し、record にも保存し直す。note は生成した reason の末尾に
+    追記する (機械生成分は消さない)。両方省略可 (既定の自動反映のみ行う)。
+
     Returns: 実際に反映した内容のログ (dry-run では呼ばれない)
     """
     source_detail = f"ポートフォリオCSV/{as_of}"
+    overrides = overrides or {}
     applied = []
     for d in diffs:
         code_s, status, covered = d["code_s"], d["status"], d["covered"]
         merged_qty, db_qty = d["merged_qty"], d["db_qty"]
         if not covered:
             continue
+        note = (overrides.get(code_s, {}).get("note") or "").strip()
 
         if status == "1保":
             if merged_qty == db_qty:
@@ -542,7 +630,9 @@ def _sync_records(diffs: List[Dict[str, Any]], as_of: str, *, db_path: Optional[
                 # 先に遷移させてから qty=0 に更新する (順序が逆だと「何株売ったか」の
                 # 記録が失われる)。record 自体の qty は CSV=真実源の方針 (§3) に沿って
                 # 0 に同期し、2準/3監なのに旧qtyが残る矛盾状態を避ける。
-                reason = f"CSV取込による売却検出 ({source_detail}、実売却日不明の可能性あり)"
+                reason = "CSV取込による売却検出"
+                if note:
+                    reason = f"{reason} / {note}"
                 ps.transition_status(
                     code_s, "2準", reason=reason, action_date=as_of,
                     source="csv_import", source_detail=source_detail, db_path=db_path,
@@ -554,7 +644,7 @@ def _sync_records(diffs: List[Dict[str, Any]], as_of: str, *, db_path: Optional[
                 applied.append({"code_s": code_s, "action": "売却(OUT)", "detail": f"{db_qty}→0"})
             else:
                 # 株数変更のみ (既に1保なので log_action=True で株数変更ログを残す)
-                reason = f"CSV取込 ({source_detail})"
+                reason = "CSV取込"
                 ps.update_qty(
                     code_s, merged_qty, reason=reason, action_date=as_of,
                     source="csv_import", source_detail=source_detail, db_path=db_path,
@@ -564,11 +654,16 @@ def _sync_records(diffs: List[Dict[str, Any]], as_of: str, *, db_path: Optional[
 
         if status in ("2準", "3監") and merged_qty > 0:
             record = ps.get_record(code_s, db_path=db_path)
-            trade_idea = (record.get("memo") or {}).get("trade_idea") if record else ""
-            if status == "2準" and trade_idea:
+            existing_trade_idea = (record.get("memo") or {}).get("trade_idea") if record else ""
+            chosen_trade_idea = (overrides.get(code_s, {}).get("trade_idea") or "").strip() or existing_trade_idea
+            if status == "2準" and chosen_trade_idea:
                 # 戦略あり: webapp/routes/portfolio.py:520-537 と同じ順序で自動IN (issue #397 §6-2)
-                # 1. 戦略は既存値のまま (再保存不要) -> 2. 遷移 -> 3. record の qty を更新
-                reason = f"CSV取込による新規保有検出 ({source_detail})"
+                # 確認画面で戦略が変更されていれば先に記録し直す (§ Phase3b)
+                if chosen_trade_idea != existing_trade_idea:
+                    ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, db_path=db_path)
+                reason = "CSV取込による新規保有検出"
+                if note:
+                    reason = f"{reason} / {note}"
                 ps.transition_status(
                     code_s, "1保", reason=reason, action_date=as_of, qty=merged_qty,
                     source="csv_import", source_detail=source_detail, db_path=db_path,
@@ -578,7 +673,10 @@ def _sync_records(diffs: List[Dict[str, Any]], as_of: str, *, db_path: Optional[
                     source="csv_import", source_detail=source_detail, db_path=db_path,
                 )
                 ps.remove_pending_in(code_s, db_path=db_path)
-                applied.append({"code_s": code_s, "action": "新規IN(自動)", "detail": f"qty={merged_qty}"})
+                applied.append({
+                    "code_s": code_s, "action": "新規IN(自動)",
+                    "detail": f"株数{merged_qty} / 戦略「{chosen_trade_idea}」",
+                })
             else:
                 # 3監、または 2準 でも戦略未設定 -> 保留キュー (issue #397 §6-2)
                 ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
@@ -587,7 +685,7 @@ def _sync_records(diffs: List[Dict[str, Any]], as_of: str, *, db_path: Optional[
 
         if status == "未登録" and merged_qty > 0:
             # 登録は必ず3監から (issue #397 §5-3b)。1保への遷移は保留キュー経由で人が確定する
-            reason = f"CSV取込で保有を検出 ({source_detail})"
+            reason = "CSV取込で保有を検出"
             ps.add_to_watch(
                 code_s, reason=reason, action_date=as_of,
                 source="csv_import", source_detail=source_detail, db_path=db_path,
@@ -624,7 +722,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--allow-partial", action="store_true",
-        help="4ソースが揃っていなくても実行を続行する (既定はエラー停止)",
+        help="未アップロードソースがDBに前回分もなく引き継げない場合でも実行を続行する "
+             "(既定はエラー停止。DBに前回分があれば自動で引き継ぐため指定不要)",
     )
     parser.add_argument("--db-path", default=None, help="portfolio_shelve のパス上書き (検証用)")
     return parser
@@ -661,6 +760,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     log_print("import_portfolio_csv: ソース内訳", result["sources"])
+    if result["carried_over_sources"]:
+        log_print("import_portfolio_csv: 前回分を引き継ぎ (未アップロード)", result["carried_over_sources"])
     if result["missing_sources"]:
         log_print("import_portfolio_csv: 不足ソース (--allow-partial で続行)", result["missing_sources"])
 

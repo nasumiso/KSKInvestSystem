@@ -158,9 +158,11 @@ cd scripts && python show_fill_episodes.py --memo     # 振り返りメモ付き
 
 ### 証券会社ポートフォリオCSV → position レイヤー取込・record自動同期 (issue #397)
 
-保有ステータス・保有株数の手入力に代えて、証券会社の残高CSVを真実源として自動同期するための取込コマンド。fill (約定の事実) とは別の position レイヤーに残高スナップショットを保存する。`--apply` のみだと position/position_source の保存のみ (Phase1、可視化)。`--apply-records` を足すと covered な銘柄 (4ソース全てが同一基準日で揃っている銘柄) の `qty`/`status` を実際に同期する (Phase2)。
+保有ステータス・保有株数の手入力に代えて、証券会社の残高CSVを真実源として自動同期するための取込コマンド。fill (約定の事実) とは別の position レイヤーに残高スナップショットを保存する。`--apply` のみだと position/position_source の保存のみ (Phase1、可視化)。`--apply-records` を足すと covered な銘柄 (4ソース全てが取込済みの銘柄) の `qty`/`status` を実際に同期する (Phase2)。
 
-楽天・SBI とも現物・信用が別ファイルで降ってくる (SBI は同名 `SaveFile*.csv` で連番)。ファイル名に依存せず中身の構造から4ソース (楽天現物/楽天信用/SBI現物/SBI信用) を判別するため、順不同でまとめて渡す。4ソースが揃わない実行は既定でエラー停止する。
+楽天・SBI とも現物・信用が別ファイルで降ってくる (SBI は同名 `SaveFile*.csv` で連番)。ファイル名に依存せず中身の構造から4ソース (楽天現物/楽天信用/SBI現物/SBI信用) を判別するため、順不同でまとめて渡す。
+
+**部分更新 (issue #397 Phase3b)**: 4ファイル全部を毎回揃える必要はない。今回渡さなかったソースは、DB に前回の position_source があればそのまま引き継いで covered 判定に使う (実運用では楽天のみ更新することが多いため)。DB にも前回分が無いソースのみ `missing_sources` として報告され、既定ではエラー停止する (`--allow-partial` で続行可能)。covered 判定は基準日 (as_of) の一致を要求しない — 楽天は今日、SBI は前回のまま、でも4ソース揃っていれば自動反映される。
 
 ```bash
 cd scripts && python import_portfolio_csv.py \
@@ -188,6 +190,10 @@ Phase2 の反映内容:
 ```bash
 cd scripts && python -c "import portfolio_shelve as ps; print(ps.list_pending_in())"
 ```
+
+WebApp からも取込可能 (issue #397 Phase3/Phase3b)。保有銘柄タブ (`/portfolio`) の「管理」→「＋ ポートフォリオCSV取込」から1〜4ファイルを選択すると (`--allow-partial` 相当が既定)、差分プレビュー画面 (`/portfolio/csv-import/preview`) を経由して「この内容で反映」ボタンで Phase2 相当 (`--apply --apply-records`) を実行する。基準日 (as_of) はアップロード当日の日付を自動設定する。CLI と異なり `--dry-run` のみの実行はできない (プレビュー画面自体が dry-run 相当)。プレビュー画面には「今回取込」と「前回分を引き継ぎ (未アップロード)」のソース内訳・前回取込日を表示する。
+
+売却候補・新規IN候補の行には反映前に入力できる列が付く: 新規INは戦略 (`trade_idea`) を選び直せる (初期値は現在設定済みの戦略、変更すれば反映時にそちらが使われる)。両方とも振り返りメモを任意入力でき、反映時に生成される機械的な reason の末尾に追記される (issue #397 Phase3b)。
 
 ## 自動実行
 

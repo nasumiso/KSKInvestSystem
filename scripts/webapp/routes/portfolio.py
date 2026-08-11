@@ -7,6 +7,8 @@ POST /portfolio/<code_s>/transition              : ステータス変更
 POST /portfolio/bulk-exclude                     : 2準/3監 銘柄をユニバースから除外 (一括)
 POST /portfolio/bulk-transition                  : ステータスを一括変更
 POST /portfolio/<code_s>/memo                    : memo 部分更新 (issue #175)
+POST /portfolio/csv-import/preview               : ポートフォリオCSV差分プレビュー (issue #397 Phase3)
+POST /portfolio/csv-import/apply                 : ポートフォリオCSV反映
 
 portfolio_shelve のレコードに stocks_shelve から指標を補完して表示する。
 書き込み API は txt 関連の状態を変えるもの (add/transition/bulk-exclude/bulk-transition) のみ
@@ -16,15 +18,21 @@ issue #215: ページング/ソートを廃止し、status は単一選択化、
 業態テーマ指定時は status 無視で全銘柄から該当する業態/テーマだけを抽出する。
 """
 
+import datetime
+import os
 import re
+import shutil
+import uuid
 from typing import Optional
 from urllib.parse import urlencode
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
+import import_portfolio_csv as csv_import
 import portfolio
 import portfolio_shelve as ps
 import research_shelve
+from ks_util import DATA_DIR
 from webapp.helpers import (
     MONTHLY_TAG_DESCRIPTIONS,
     THEME_SUMMARY_SORT_FIELDS,
@@ -349,6 +357,130 @@ def _reject_when_fallback():
         )
         return _redirect_with_return_query()
     return None
+
+
+# ポートフォリオCSV取込 (issue #397 Phase3): アップロードした4CSVをプレビュー→反映の
+# 2ステップ間で使い回すための一時保存先。トークン (uuid) 単位でサブディレクトリを分ける。
+PORTFOLIO_CSV_IMPORT_TMP_DIR = os.path.join(DATA_DIR, "portfolio_csv_import_tmp")
+
+
+@portfolio_bp.route("/portfolio/csv-import/preview", methods=["POST"])
+def csv_import_preview():
+    """ポートフォリオCSV (楽天/SBI 現物・信用 計4ファイル) の差分プレビュー (issue #397 Phase3)。
+
+    アップロードされたCSVを一時ディレクトリに保存し、dry-run で差分を計算して
+    プレビュー画面を表示する。反映 (apply) は保存済みの一時ファイルを再利用する。
+    """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+
+    files = [f for f in request.files.getlist("csv_files") if f and f.filename]
+    if not files:
+        flash("CSVファイルが選択されていません。4ファイル (楽天現物/楽天信用/SBI現物/SBI信用) を選択してください。", "error")
+        return redirect(url_for("portfolio.dashboard"))
+
+    os.makedirs(PORTFOLIO_CSV_IMPORT_TMP_DIR, exist_ok=True)
+    token = uuid.uuid4().hex
+    tmp_dir = os.path.join(PORTFOLIO_CSV_IMPORT_TMP_DIR, token)
+    os.makedirs(tmp_dir)
+    saved_paths = []
+    for i, f in enumerate(files):
+        # SBI 現物・信用は同名 "SaveFile*.csv" で降ってくることがあるため、
+        # ファイル名衝突による上書きを避け連番接頭辞を付けて保存する。
+        path = os.path.join(tmp_dir, f"{i}_{os.path.basename(f.filename)}")
+        f.save(path)
+        saved_paths.append(path)
+
+    as_of = datetime.date.today().isoformat()
+
+    try:
+        result = csv_import.import_csvs(saved_paths, as_of, dry_run=True, allow_partial=True)
+    except ValueError as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        flash(f"CSV取込でエラーが発生しました: {e}", "error")
+        return redirect(url_for("portfolio.dashboard"))
+
+    diffs = [d for d in result["diffs"] if d["judgement"] not in ("一致", "対象外")]
+    for d in diffs:
+        d["stock_name"] = resolve_stock_name(d["code_s"])
+        # 新規IN候補は確認画面で戦略を選び直せるようにするため、現在の戦略を渡す
+        # (issue #397 Phase3b)。未設定なら空文字のまま (select の初期値なし)。
+        if "新規IN候補" in d["judgement"]:
+            record = ps.get_record(d["code_s"])
+            d["current_trade_idea"] = (record.get("memo") or {}).get("trade_idea", "") if record else ""
+    out_count = sum(1 for d in diffs if "売却候補" in d["judgement"])
+
+    ps.seed_trade_ideas()
+    trade_idea_master = ps.list_trade_ideas()
+    return render_template(
+        "portfolio_csv_import.html",
+        token=token,
+        as_of=as_of,
+        sources=result["sources"],
+        carried_over_sources=result["carried_over_sources"],
+        missing_sources=result["missing_sources"],
+        diffs=diffs,
+        out_count=out_count,
+        trade_idea_options=[t["name"] for t in trade_idea_master],
+    )
+
+
+@portfolio_bp.route("/portfolio/csv-import/apply", methods=["POST"])
+def csv_import_apply():
+    """プレビュー画面の「この内容で反映」実行 (issue #397 Phase3/Phase3b)。
+
+    preview で保存した一時ファイル (token で特定) を使い、covered な銘柄の
+    qty/status を実際に同期する (apply_records=True, Phase2ロジックを呼ぶだけ)。
+    売却・新規IN の行に入力された戦略・振り返りメモ (フォーム: trade_idea_<code_s> /
+    note_<code_s>) を overrides として渡し、_sync_records に反映させる。
+    """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+
+    token = (request.form.get("token") or "").strip()
+    as_of = (request.form.get("as_of") or "").strip()
+    # token は uuid4().hex (32桁16進) 前提。パストラバーサル対策として形式検証する。
+    if not re.fullmatch(r"[0-9a-f]{32}", token or ""):
+        flash("プレビューが期限切れです。もう一度CSVを選択してください。", "error")
+        return redirect(url_for("portfolio.dashboard"))
+    tmp_dir = os.path.join(PORTFOLIO_CSV_IMPORT_TMP_DIR, token)
+    if not as_of or not os.path.isdir(tmp_dir):
+        flash("プレビューが期限切れです。もう一度CSVを選択してください。", "error")
+        return redirect(url_for("portfolio.dashboard"))
+
+    overrides: dict = {}
+    for key, value in request.form.items():
+        if key.startswith("trade_idea_"):
+            code_s = key[len("trade_idea_"):]
+            if value.strip():
+                overrides.setdefault(code_s, {})["trade_idea"] = value.strip()
+        elif key.startswith("note_"):
+            code_s = key[len("note_"):]
+            if value.strip():
+                overrides.setdefault(code_s, {})["note"] = value.strip()
+
+    csv_paths = [os.path.join(tmp_dir, name) for name in os.listdir(tmp_dir)]
+    try:
+        result = csv_import.import_csvs(
+            csv_paths, as_of, dry_run=False, allow_partial=True, apply_records=True,
+            overrides=overrides,
+        )
+    except ValueError as e:
+        flash(f"CSV取込でエラーが発生しました: {e}", "error")
+        return redirect(url_for("portfolio.dashboard"))
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    _sync_txt_safely()
+    applied = result["applied"]
+    if applied:
+        summary = " / ".join(f"{a['code_s']} {a['action']} ({a['detail']})" for a in applied)
+        flash(f"ポートフォリオCSV反映完了 ({len(applied)}件): {summary}", "success")
+    else:
+        flash("ポートフォリオCSV反映完了: 反映対象の変更はありませんでした。", "info")
+    return redirect(url_for("portfolio.dashboard"))
 
 
 @portfolio_bp.route("/portfolio/bulk-exclude", methods=["POST"])
@@ -970,6 +1102,14 @@ def dashboard():
     # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)
     ps.seed_trade_ideas()
     trade_idea_master = ps.list_trade_ideas()
+
+    # issue #397 Phase3b: CSV取込フォーム展開時に前回の各ソース取込日を出すための一覧
+    # (broker/kind -> as_of)。件数はごく少数 (最大4件) なので毎回取得しても軽量。
+    csv_import_sources = {}
+    if not fallback_mode:
+        for s in ps.list_position_sources():
+            csv_import_sources[f"{s['broker']}/{s['kind']}"] = s["as_of"]
+
     return render_template(
         "portfolio_list.html",
         status_choices=STATUS_CHOICES,
@@ -996,6 +1136,7 @@ def dashboard():
         chart_state_options=ps.CHART_STATE_OPTIONS,
         monthly_tag_descriptions=MONTHLY_TAG_DESCRIPTIONS,
         hold_summary=hold_summary,
+        csv_import_sources=csv_import_sources,
     )
 
 

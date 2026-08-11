@@ -1415,9 +1415,10 @@ class TestPositionLayer:
             ps.upsert_position("楽天", "特定", "信用売建", "1001", 100, as_of="2026-08-10", db_path=db_path)
         assert ps.is_covered("1001", db_path=db_path) is expected
 
-    def test_is_covered_false_when_as_of_differs(self, db_path):
-        # 基準日が揃っていないソースがあると covered=false (issue #397 §5-2)
+    def test_is_covered_true_even_when_as_of_differs(self, db_path):
+        # 基準日が揃っていなくても4ソース全てあれば covered=true
+        # (issue #397 Phase3b: 楽天のみ更新・SBIは前回分を引き継ぐ部分更新を許容するため)
         for broker, kind in ps.EXPECTED_POSITION_SOURCES:
             as_of = "2026-08-09" if (broker, kind) == ("楽天", "信用") else "2026-08-10"
             ps.upsert_position_source(broker, "特定", kind, as_of=as_of, row_count=1, db_path=db_path)
-        assert ps.is_covered("1001", db_path=db_path) is False
+        assert ps.is_covered("1001", db_path=db_path) is True

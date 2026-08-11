@@ -1355,13 +1355,14 @@ def is_covered(
     expected_sources: tuple = EXPECTED_POSITION_SOURCES,
     db_path: Optional[str] = None,
 ) -> bool:
-    """指定銘柄が covered (全ソース同一 as_of で揃っている) かどうかを判定する。
+    """指定銘柄が covered (4ソース全てが取込済み) かどうかを判定する。
 
     - 期待する (broker, kind) それぞれについて position_source が存在すること
-    - 全ての position_source の as_of が同一であること
     - 当該銘柄が「信用売建」の position を持つ場合は強制的に False
       (空売りは自動更新対象外、issue #397 §2-0)
 
+    position_source の as_of は一致を要求しない (issue #397 Phase3b:
+    楽天だけ今回更新し SBI は前回分を引き継ぐ、といった部分更新を許容するため)。
     位置情報の有無 (position) 自体はソース側に銘柄が無い (=保有ゼロ) 場合も
     正常なので判定に使わない。判定材料は position_source (ソースが取り込まれたか) のみ。
     """
@@ -1371,13 +1372,10 @@ def is_covered(
 
     sources = list_position_sources(db_path=db_path)
     source_map = {(s["broker"], s["kind"]): s for s in sources}
-    as_of_values = set()
     for broker, kind in expected_sources:
-        source = source_map.get((broker, kind))
-        if source is None:
+        if (broker, kind) not in source_map:
             return False
-        as_of_values.add(source["as_of"])
-    return len(as_of_values) == 1
+    return True
 
 
 def _pending_in_key(code_s: str) -> str:

@@ -194,7 +194,53 @@ def test_import_csvs_apply_writes_position_only_not_record(tmp_path, db_path):
     assert ps.compute_merged_qty("402A", db_path=db_path) == 1500
     assert ps.is_covered("402A", db_path=db_path) is True
     diff = next(d for d in result["diffs"] if d["code_s"] == "402A")
-    assert diff["judgement"] == "未登録+保有検出 (Phase2で登録)"
+    assert diff["judgement"] == "未登録+保有検出 (反映すると監視へ登録)"
+
+
+def test_import_csvs_partial_update_carries_over_db_sources(tmp_path, db_path):
+    """楽天のみ再取込した場合、SBI分はDBの前回分を引き継いで covered=True のまま
+    merged_qty・自動反映が機能する (issue #397 Phase3b の部分更新)。"""
+    all_paths = [
+        _write_csv(tmp_path / "r_spot.csv", RAKUTEN_SPOT_ROWS),
+        _write_csv(tmp_path / "r_margin.csv", RAKUTEN_MARGIN_ROWS),
+        _write_csv(tmp_path / "s_spot.csv", SBI_SPOT_ROWS),
+        _write_csv(tmp_path / "s_margin.csv", SBI_MARGIN_ROWS),
+    ]
+    ic.import_csvs(all_paths, "2026-08-03", dry_run=False, db_path=db_path)
+
+    # 2回目: 楽天2ファイルのみ (SBIは未アップロード)
+    rakuten_only = [
+        _write_csv(tmp_path / "r_spot2.csv", RAKUTEN_SPOT_ROWS),
+        _write_csv(tmp_path / "r_margin2.csv", RAKUTEN_MARGIN_ROWS),
+    ]
+    result = ic.import_csvs(rakuten_only, "2026-08-10", dry_run=False, apply_records=True, db_path=db_path)
+
+    assert result["missing_sources"] == []
+    assert result["carried_over_sources"] == {"SBI/現物": "2026-08-03", "SBI/信用": "2026-08-03"}
+    # 6501 は SBI現物のみに存在 (楽天CSVには登場しない) -> SBI分を引き継いで covered のまま
+    assert ps.is_covered("6501", db_path=db_path) is True
+    assert ps.compute_merged_qty("6501", db_path=db_path) == 100
+
+
+def test_import_csvs_partial_dry_run_previews_carried_over_merged_qty(tmp_path, db_path):
+    """部分更新の dry-run でも、DBに前回分があれば merged_qty に合算して表示する。"""
+    all_paths = [
+        _write_csv(tmp_path / "r_spot.csv", RAKUTEN_SPOT_ROWS),
+        _write_csv(tmp_path / "r_margin.csv", RAKUTEN_MARGIN_ROWS),
+        _write_csv(tmp_path / "s_spot.csv", SBI_SPOT_ROWS),
+        _write_csv(tmp_path / "s_margin.csv", SBI_MARGIN_ROWS),
+    ]
+    ic.import_csvs(all_paths, "2026-08-03", dry_run=False, db_path=db_path)
+
+    rakuten_only = [
+        _write_csv(tmp_path / "r_spot2.csv", RAKUTEN_SPOT_ROWS),
+        _write_csv(tmp_path / "r_margin2.csv", RAKUTEN_MARGIN_ROWS),
+    ]
+    result = ic.import_csvs(rakuten_only, "2026-08-10", dry_run=True, db_path=db_path)
+
+    diff = next(d for d in result["diffs"] if d["code_s"] == "6501")
+    assert diff["covered"] is True
+    assert diff["merged_qty"] == 100
 
 
 class TestPhase2ApplyRecords:
@@ -283,6 +329,7 @@ class TestPhase2ApplyRecords:
         assert not any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
         applied = next(a for a in result["applied"] if a["code_s"] == "4970")
         assert applied["action"] == "新規IN(自動)"
+        assert "GARP" in applied["detail"]  # 適用した戦略が分かるようにする (issue #397)
 
     def test_new_in_queued_when_trade_idea_missing(self, tmp_path, db_path):
         """2準 かつ trade_idea 未設定 -> 保留キューへ (§6-2)。record は変更しない。"""
