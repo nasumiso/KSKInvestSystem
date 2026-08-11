@@ -3,6 +3,7 @@
 import csv
 import html
 import os
+from datetime import date
 
 import pytest
 
@@ -40,6 +41,21 @@ def test_margin_only_holding_can_calculate_defensive_line():
     )
     assert position["held_qty"] == 100
     assert line == 900.0
+
+
+def test_weekly_ma_pending_displays_defensive_notice():
+    """週足MAの未確定割れは防予として扱う。"""
+    from exit_line import evaluate_exit_signal
+
+    stock = {
+        "price_log": [(date(2026, 2, 9), 900)],
+        "wma30_violation": {"pending": True, "confirmed": False, "ma_value": 1000},
+    }
+    signal = evaluate_exit_signal(
+        {"ma_kind": "week", "ma_window": 30, "stop_loss_pct": None}, stock, {}, {}
+    )
+    assert signal["level"] == "防予"
+    assert signal["reasons"] == ["週足30MA割れ予兆"]
 
 
 @pytest.fixture

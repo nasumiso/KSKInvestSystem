@@ -2218,7 +2218,11 @@ def _apply_exit_signal_display(row: Dict[str, Any], signal: Dict[str, Any]) -> N
     row["signal_full"] = "\n".join(x for x in (text, row.get("signal_full") or "") if x)
     row["signal_display"] = {
         "tooltip": row["signal_full"],
-        "style": "background:#fee2e2;color:#991b1b;font-weight:700" if level == "防" else "background:#fff7ed;color:#9a3412;font-weight:700",
+        "style": (
+            "background:#4285f4;color:#fff;font-weight:700" if level == "防"
+            else "background:#6fa8dc;color:#fff;font-weight:700" if level == "防予"
+            else "background:#e8f0fe;color:#174ea6;font-weight:700"
+        ),
     }
 
 

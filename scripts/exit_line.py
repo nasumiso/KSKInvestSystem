@@ -118,7 +118,7 @@ def evaluate_exit_signal(
     position: Dict[str, Any],
     previous_state: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Phase 1 の防御シグナルを評価する。"""
+    """防御シグナルを評価する。"""
     if not isinstance(exit_rule, dict):
         return None
     price_log = stock.get("price_log") or []
@@ -134,13 +134,25 @@ def evaluate_exit_signal(
     stop_line = position.get("stop_loss_line")
     if isinstance(stop_line, (int, float)) and close < stop_line:
         reasons.append("損切りライン割れ")
-    violation = stock.get("ma50_violation") or {}
-    if exit_rule.get("ma_kind") == "day" and exit_rule.get("ma_window") == 50:
-        if isinstance(violation, dict) and violation.get("confirmed"):
-            reasons.append("日足50MA割れ確定")
+    ma_kind = exit_rule.get("ma_kind")
+    ma_window = exit_rule.get("ma_window")
+    violation = {}
+    ma_label = ""
+    if ma_kind == "day" and ma_window == 50:
+        violation = stock.get("ma50_violation") or {}
+        ma_label = "日足50MA"
+    elif ma_kind == "week" and ma_window in (30, 40):
+        violation = stock.get(f"wma{ma_window}_violation") or {}
+        ma_label = f"週足{ma_window}MA"
+    if isinstance(violation, dict) and violation.get("confirmed"):
+        reasons.append(f"{ma_label}割れ確定")
     if reasons:
         return {"level": "防", "date": str(signal_date), "close": close, "reasons": reasons,
                 "stop_loss_line": stop_line, "ma_value": violation.get("ma_value") if isinstance(violation, dict) else None}
+    if isinstance(violation, dict) and violation.get("pending"):
+        return {"level": "防予", "date": str(signal_date), "close": close,
+                "reasons": [f"{ma_label}割れ予兆"], "stop_loss_line": stop_line,
+                "ma_value": violation.get("ma_value")}
     if isinstance(previous_state, dict) and previous_state.get("triggered"):
         return {"level": "防歴", "date": str(signal_date), "close": close, "reasons": []}
     return None

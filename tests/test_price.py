@@ -621,6 +621,21 @@ class TestCalcDailyIndicators:
         )
         assert generic["confirmed"] is price._calc_daily_indicators(rows)["ma10_break_confirmed"]
 
+    def test_weekly_ma_violation_uses_prior_week_value_at_week_boundary(self):
+        """前週のA日は前週までのWMA、今週の確定日は今週のWMAで判定する。"""
+        from datetime import timedelta
+
+        def row(dt, low, close):
+            return (dt.strftime("%Y/%m/%d"), "0", "0", str(low), str(close), "0", "0", "0")
+
+        daily = [row(date(2026, 2, 9), 80, 90), row(date(2026, 2, 6), 90, 99)]
+        # 2/2週の終値40を含む今週の30WMAは98、前週時点の30WMAは100。
+        weekly = [row(date(2026, 2, 2), 0, 40)]
+        weekly.extend(row(date(2026, 1, 26) - timedelta(days=7 * i), 0, 100) for i in range(30))
+        result = price.calc_weekly_ma_violation(daily, weekly, 30)
+        assert result["confirmed"] is True
+        assert result["ma_value"] == pytest.approx(98.0)
+
     def test_ma10_break_confirmed_false_when_a_day_low_not_broken(self):
         """A日安値を下回る日がなければ ma10_break_confirmed=False。"""
         rows = self._make_price_list(50)

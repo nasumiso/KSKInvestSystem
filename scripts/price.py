@@ -2,7 +2,7 @@
 
 from ks_util import *
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import json
 import os
 import os.path
@@ -565,6 +565,62 @@ def calc_ma10_kairi_indicators(closes, lows=None, window=10):
     return res
 
 
+def calc_weekly_ma_violation(daily_price_list, weekly_price_list, window):
+    """確定週だけの週足MAを基準に、日足系列で違反状態を判定する。"""
+    from exit_line import calc_ma_violation
+
+    if window not in (30, 40):
+        raise ValueError("window must be 30 or 40")
+    daily_dates = []
+    closes = []
+    lows = []
+    for row in daily_price_list:
+        dt = parse_date_str(row[0])
+        if dt is None:
+            return {"breached": False, "pending": False, "confirmed": False,
+                    "ma_value": None, "a_day_low": None}
+        try:
+            closes.append(float(row[4].replace(",", "")))
+            lows.append(float(row[3].replace(",", "")))
+        except (ValueError, IndexError, AttributeError):
+            return {"breached": False, "pending": False, "confirmed": False,
+                    "ma_value": None, "a_day_low": None}
+        daily_dates.append(dt)
+    weekly = []
+    for row in weekly_price_list:
+        dt = parse_date_str(row[0])
+        try:
+            close = float(row[4].replace(",", ""))
+        except (ValueError, IndexError, AttributeError):
+            continue
+        if dt is not None:
+            weekly.append((dt, close))
+    weekly.sort(reverse=True)
+
+    def ma_at(index):
+        if index >= len(daily_dates):
+            return None
+        week_start = daily_dates[index] - timedelta(days=daily_dates[index].weekday())
+        # 当週足は未確定なので、日付ラベルが当週以前のバーは除外する。
+        prior_closes = [close for dt, close in weekly if dt < week_start]
+        if len(prior_closes) < window:
+            return None
+        return sum(prior_closes[:window]) / window
+
+    return calc_ma_violation(closes, lows, ma_at)
+
+
+def add_weekly_ma_violations(parsed_data, daily_price_list, weekly_price_list):
+    """30/40週MAの違反結果を価格指標へ追加する。"""
+    parsed_data["wma30_violation"] = calc_weekly_ma_violation(
+        daily_price_list, weekly_price_list, 30
+    )
+    parsed_data["wma40_violation"] = calc_weekly_ma_violation(
+        daily_price_list, weekly_price_list, 40
+    )
+    return parsed_data
+
+
 def _calc_daily_indicators(daily_price_list):
     """daily_price_listから日次指標を計算する
     parse_price_d_html_kabutanから指標計算部分を分離。
@@ -1020,7 +1076,9 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
         return weekly_price_list
 
     weekly_price_list = calc_weekly_price_list()
-    return _calc_weekly_indicators(weekly_price_list, cur_prices)
+    parsed_data = _calc_weekly_indicators(weekly_price_list, cur_prices)
+    parsed_data["_weekly_price_list_raw"] = weekly_price_list
+    return parsed_data
 
 
 
@@ -2152,6 +2210,7 @@ def get_price_data_yahoo(code_s, stock, upd=UPD_INTERVAL):
         parsed_data, cur_prices = parse_price_text_from_list(
             price_current, price_list
         )
+        parsed_data["_daily_price_list_raw"] = price_list
         price_val = parsed_data.get("price", 0)
         # キャッシュの更新日時を取得
         cache_fname = YFINANCE_CACHE_FNAME % code_s
@@ -2192,6 +2251,7 @@ def get_weekly_price_data(code_s, stock={}, upd=UPD_INTERVAL, prices=[]):
             log_print(">>>>> %sの週次価格データを解析(yfinance) " % code_s)
             parsed_data_w = _calc_weekly_indicators(weekly_price_list, prices)
             log_print("<<<<< 解析完了(yfinance) ")
+            parsed_data_w["_weekly_price_list_raw"] = weekly_price_list
             return parsed_data_w
         log_print("yfinance週足取得失敗、Kabutanフォールバック: %s" % code_s)
 
@@ -2327,6 +2387,10 @@ def get_price_data(code_s, stock={}, upd=UPD_INTERVAL):
     parsed_data, cur_prices = get_price_data_yahoo(code_s, stock, upd)
     # 週次データを取得してRSを求める
     parsed_data_w = get_weekly_price_data(code_s, stock=stock, upd=upd, prices=cur_prices)
+    daily_price_list = parsed_data.pop("_daily_price_list_raw", None)
+    weekly_price_list = parsed_data_w.pop("_weekly_price_list_raw", None)
+    if daily_price_list and weekly_price_list:
+        add_weekly_ma_violations(parsed_data, daily_price_list, weekly_price_list)
     parsed_data.update(parsed_data_w)
     # 月足位置評価 (issue #53)
     parsed_data.update(get_monthly_price_data(code_s, stock=stock, upd=upd, prices=cur_prices))
