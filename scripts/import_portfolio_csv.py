@@ -127,6 +127,21 @@ def _find_header_row(rows: List[List[str]], first_col: str, marker: str) -> int:
     return -1
 
 
+def _parse_qty(qty_raw: str, source_name: str, code_s: str, column_name: str) -> int:
+    """CSVの株数を0以上の整数として検証して返す。"""
+    try:
+        qty_float = float(qty_raw)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"{source_name}CSV: {code_s} の{column_name}を数値として読めません: {qty_raw!r}"
+        )
+    if not math.isfinite(qty_float) or not qty_float.is_integer() or qty_float < 0:
+        raise ValueError(
+            f"{source_name}CSV: {code_s} の{column_name}が0以上の整数ではありません: {qty_raw!r}"
+        )
+    return int(qty_float)
+
+
 def parse_rakuten_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
     """楽天現物CSV (assetbalance(all)_*.csv) をパースする。
 
@@ -152,10 +167,7 @@ def parse_rakuten_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
             continue
         account = (row[3] or "").strip() or "特定"
         qty_raw = (row[4] or "").strip().replace(",", "")
-        try:
-            qty = int(float(qty_raw))
-        except ValueError:
-            continue
+        qty = _parse_qty(qty_raw, "楽天現物", code_s, "保有数量")
         avg_price_raw = (row[6] or "").strip().replace(",", "") if len(row) > 6 else ""
         try:
             avg_price = float(avg_price_raw)
@@ -188,13 +200,12 @@ def parse_rakuten_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
         except (ValueError, TypeError):
             continue
         code_s = ps.normalize_code_s(code_raw)
+        if ps.is_etf_code(code_s):
+            continue
         account = (row[0] or "").strip() or "特定"
         side = (row[4] or "").strip()  # 買建 / 売建
         qty_raw = (row[7] or "").strip().replace(",", "")
-        try:
-            qty = int(float(qty_raw))
-        except ValueError:
-            continue
+        qty = _parse_qty(qty_raw, "楽天信用", code_s, "建玉数量")
         tate_price_raw = (row[9] or "").strip().replace(",", "") if len(row) > 9 else ""
         try:
             tate_price = float(tate_price_raw)
@@ -267,17 +278,7 @@ def parse_sbi_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
             if ps.is_etf_code(code_s):
                 continue
             qty_raw = (row[2] or "").strip().replace(",", "")
-            try:
-                qty_float = float(qty_raw)
-            except (TypeError, ValueError):
-                raise ValueError(
-                    f"SBI現物CSV: {code_s} の保有株数を数値として読めません: {qty_raw!r}"
-                )
-            if not math.isfinite(qty_float) or not qty_float.is_integer() or qty_float < 0:
-                raise ValueError(
-                    f"SBI現物CSV: {code_s} の保有株数が0以上の整数ではありません: {qty_raw!r}"
-                )
-            qty = int(qty_float)
+            qty = _parse_qty(qty_raw, "SBI現物", code_s, "保有株数")
             avg_price_raw = (row[4] or "").strip().replace(",", "") if len(row) > 4 else ""
             try:
                 avg_price = float(avg_price_raw)
@@ -306,13 +307,12 @@ def parse_sbi_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
         except (ValueError, TypeError):
             continue
         code_s = ps.normalize_code_s(code_raw)
+        if ps.is_etf_code(code_s):
+            continue
         side = (row[2] or "").strip()  # 買建 / 売建
         account = (row[7] or "").strip() or "特定"
         qty_raw = (row[8] or "").strip().replace(",", "")
-        try:
-            qty = int(float(qty_raw))
-        except ValueError:
-            continue
+        qty = _parse_qty(qty_raw, "SBI信用", code_s, "建株数")
         tate_price_raw = (row[10] or "").strip().replace(",", "") if len(row) > 10 else ""
         try:
             tate_price = float(tate_price_raw)
@@ -382,6 +382,7 @@ def import_csvs(
     Returns: {"sources": {...}, "carried_over_sources": {...}, "missing_sources": [...],
               "diffs": [...], "applied": [...]}
     """
+    ps.validate_as_of(as_of)
     detected: Dict[Tuple[str, str], Dict[str, Any]] = {}
     for path in csv_paths:
         rows = read_csv_rows(path)
@@ -445,6 +446,7 @@ def import_csvs(
         for source, agg in aggregated.items():
             broker, kind = source
             ps.delete_positions_for_source(broker, kind, db_path=db_path)
+            ps.delete_position_sources_for_source(broker, kind, db_path=db_path)
             for (account, k, code_s), entry in agg.items():
                 ps.upsert_position(
                     broker, account, k, code_s, entry["qty"],

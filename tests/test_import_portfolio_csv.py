@@ -128,6 +128,34 @@ def test_parse_rakuten_margin_separates_buy_and_sell(db_path):
     assert agg[("特定", "信用", "402A")]["qty"] == 900  # 500+400
 
 
+@pytest.mark.parametrize(
+    "parser,rows,row_index,qty_index",
+    [
+        (ic.parse_rakuten_spot, RAKUTEN_SPOT_ROWS, 6, 4),
+        (ic.parse_rakuten_margin, RAKUTEN_MARGIN_ROWS, 6, 7),
+        (ic.parse_sbi_margin, SBI_MARGIN_ROWS, 9, 8),
+    ],
+)
+@pytest.mark.parametrize("invalid_qty", ["--", "1.5"])
+def test_other_parsers_reject_invalid_qty(db_path, parser, rows, row_index, qty_index, invalid_qty):
+    """全ソースで不正な株数を検出したら取込を停止する。"""
+    invalid_rows = [row.copy() for row in rows]
+    invalid_rows[row_index][qty_index] = invalid_qty
+    with pytest.raises(ValueError, match="0以上の整数|数値として読めません"):
+        parser(invalid_rows)
+
+
+def test_margin_parsers_exclude_etf(db_path):
+    """信用建玉に混在するETFも株式分析の取込対象から除外する。"""
+    rakuten_rows = [row.copy() for row in RAKUTEN_MARGIN_ROWS]
+    rakuten_rows.append(["特定", "1681", "ETF", "東証", "買建", "制度", "6ヶ月", "100", "0", "1000"])
+    sbi_rows = [row.copy() for row in SBI_MARGIN_ROWS]
+    sbi_rows.append(["1681", "ETF", "買建", "東証", "6ヶ月", "", "", "特定", "100", "", "1000"])
+
+    assert "1681" not in {p["code_s"] for p in ic.parse_rakuten_margin(rakuten_rows)}
+    assert "1681" not in {p["code_s"] for p in ic.parse_sbi_margin(sbi_rows)}
+
+
 def test_parse_sbi_spot_excludes_etf(db_path):
     """SBI現物CSVに混在するETFを除外する (issue #397 §2-1b)。"""
     parsed = ic.parse_sbi_spot(SBI_SPOT_ROWS)
@@ -276,6 +304,39 @@ def test_import_csvs_replaces_positions_of_uploaded_source(tmp_path, db_path):
 
     assert ps.compute_merged_qty("402A", db_path=db_path) == 900
     assert next(d for d in result["diffs"] if d["code_s"] == "402A")["merged_qty"] == 900
+
+
+def test_import_csvs_replaces_position_sources_of_uploaded_source(tmp_path, db_path):
+    """再取込したソースの古い口座メタデータは残さない。"""
+    paths = [
+        _write_csv(tmp_path / "r_spot.csv", RAKUTEN_SPOT_ROWS),
+        _write_csv(tmp_path / "r_margin.csv", RAKUTEN_MARGIN_ROWS),
+        _write_csv(tmp_path / "s_spot.csv", SBI_SPOT_ROWS),
+        _write_csv(tmp_path / "s_margin.csv", SBI_MARGIN_ROWS),
+    ]
+    ic.import_csvs(paths, "2026-08-03", dry_run=False, db_path=db_path)
+    ps.upsert_position_source("楽天", "NISA", "現物", as_of="2026-08-03", row_count=1, db_path=db_path)
+
+    ic.import_csvs([
+        _write_csv(tmp_path / "r_spot2.csv", RAKUTEN_SPOT_ROWS),
+        _write_csv(tmp_path / "r_margin2.csv", RAKUTEN_MARGIN_ROWS),
+    ], "2026-08-10", dry_run=False, db_path=db_path)
+
+    sources = [s for s in ps.list_position_sources(db_path=db_path)
+               if (s["broker"], s["kind"]) == ("楽天", "現物")]
+    assert len(sources) == 1
+    assert sources[0]["account"] == "特定"
+    assert sources[0]["as_of"] == "2026-08-10"
+    assert sources[0]["row_count"] == 1
+
+
+@pytest.mark.parametrize("as_of", ["2026-02-30", "2026-08-10suffix"])
+def test_import_csvs_rejects_invalid_as_of_before_writing(tmp_path, db_path, as_of):
+    """不正な基準日では position を書き換えない。"""
+    path = _write_csv(tmp_path / "r_spot.csv", RAKUTEN_SPOT_ROWS)
+    with pytest.raises(ValueError, match="as_of"):
+        ic.import_csvs([path], as_of, dry_run=False, allow_partial=True, db_path=db_path)
+    assert ps.list_positions(db_path=db_path) == []
 
 
 class TestPhase2ApplyRecords:

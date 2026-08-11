@@ -376,6 +376,16 @@ def now_iso() -> str:
 _ACTION_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+def validate_as_of(as_of: str) -> None:
+    """ポジション取込の基準日を実在する YYYY-MM-DD として検証する。"""
+    if not isinstance(as_of, str) or not _ACTION_DATE_RE.fullmatch(as_of):
+        raise ValueError(f"as_of は YYYY-MM-DD 形式で指定してください: {as_of!r}")
+    try:
+        date.fromisoformat(as_of)
+    except ValueError as e:
+        raise ValueError(f"as_of のパースに失敗: {as_of!r} ({e})") from e
+
+
 def _parse_action_date_to_iso(action_date: str) -> str:
     """YYYY-MM-DD を JST 12:00 の ISO 8601 文字列に変換する。
 
@@ -1276,8 +1286,7 @@ def upsert_position(
         raise ValueError(f"invalid kind: {kind!r} (許容値: {sorted(POSITION_KINDS)})")
     if not isinstance(qty, int) or qty < 0:
         raise ValueError(f"qty must be int >= 0, got {qty!r}")
-    if not _ACTION_DATE_RE.match(as_of):
-        raise ValueError(f"as_of は YYYY-MM-DD 形式で指定してください: {as_of!r}")
+    validate_as_of(as_of)
     entry = {
         "code_s": normalized,
         "broker": broker,
@@ -1344,6 +1353,28 @@ def delete_positions_for_source(
     return len(keys)
 
 
+def delete_position_sources_for_source(
+    broker: str,
+    kind: str,
+    *,
+    db_path: Optional[str] = None,
+) -> int:
+    """指定 broker/kind の前回 position_source メタデータを全口座分削除する。"""
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            keys = [
+                key for key, value in db.items()
+                if key.startswith(KEY_POSITION_SOURCE_PREFIX)
+                and isinstance(value, dict)
+                and value.get("broker") == broker
+                and value.get("kind") == kind
+            ]
+            for key in keys:
+                del db[key]
+    return len(keys)
+
+
 def upsert_position_source(
     broker: str,
     account: str,
@@ -1358,8 +1389,7 @@ def upsert_position_source(
     covered 判定 (§5-2) の材料。銘柄が0件のソース (全部売った口座) も
     row_count=0 で記録できる。
     """
-    if not _ACTION_DATE_RE.match(as_of):
-        raise ValueError(f"as_of は YYYY-MM-DD 形式で指定してください: {as_of!r}")
+    validate_as_of(as_of)
     entry = {
         "broker": broker,
         "account": account,
