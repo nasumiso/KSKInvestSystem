@@ -692,6 +692,10 @@ def _sync_records(
                 })
             else:
                 # 3監、または 2準 でも戦略未設定 -> 保留キュー (issue #397 §6-2)
+                # 3監は自動INしないが、確認画面で選択された戦略は手動確定時にも
+                # 使えるよう record に保存する。
+                if status == "3監" and chosen_trade_idea != existing_trade_idea:
+                    ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, db_path=db_path)
                 ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
                 applied.append({"code_s": code_s, "action": "保留キューへ", "detail": f"qty={merged_qty}"})
             continue

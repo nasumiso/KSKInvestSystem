@@ -392,7 +392,7 @@ def csv_import_preview():
         f.save(path)
         saved_paths.append(path)
 
-    as_of = datetime.date.today().isoformat()
+    as_of = datetime.datetime.now(ps.JST).date().isoformat()
 
     try:
         result = csv_import.import_csvs(saved_paths, as_of, dry_run=True, allow_partial=True)

@@ -377,13 +377,18 @@ _ACTION_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def validate_as_of(as_of: str) -> None:
-    """ポジション取込の基準日を実在する YYYY-MM-DD として検証する。"""
+    """ポジション取込の基準日を実在する当日以前の YYYY-MM-DD として検証する。"""
     if not isinstance(as_of, str) or not _ACTION_DATE_RE.fullmatch(as_of):
         raise ValueError(f"as_of は YYYY-MM-DD 形式で指定してください: {as_of!r}")
     try:
-        date.fromisoformat(as_of)
+        parsed = date.fromisoformat(as_of)
     except ValueError as e:
         raise ValueError(f"as_of のパースに失敗: {as_of!r} ({e})") from e
+    today = datetime.now(JST).date()
+    if parsed > today:
+        raise ValueError(
+            f"as_of に未来日は指定できません: {as_of} (今日={today.isoformat()})"
+        )
 
 
 def _parse_action_date_to_iso(action_date: str) -> str:

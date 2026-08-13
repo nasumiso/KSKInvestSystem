@@ -5,6 +5,7 @@
 """
 
 import csv
+import datetime
 
 import pytest
 
@@ -339,6 +340,15 @@ def test_import_csvs_rejects_invalid_as_of_before_writing(tmp_path, db_path, as_
     assert ps.list_positions(db_path=db_path) == []
 
 
+def test_import_csvs_rejects_future_as_of_before_writing(tmp_path, db_path):
+    """未来の基準日では position を書き換えない。"""
+    path = _write_csv(tmp_path / "r_spot.csv", RAKUTEN_SPOT_ROWS)
+    future_as_of = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+    with pytest.raises(ValueError, match="未来日"):
+        ic.import_csvs([path], future_as_of, dry_run=False, allow_partial=True, db_path=db_path)
+    assert ps.list_positions(db_path=db_path) == []
+
+
 class TestPhase2ApplyRecords:
     """apply_records=True (issue #397 Phase2) の record 同期を検証する。
 
@@ -456,6 +466,22 @@ class TestPhase2ApplyRecords:
         assert any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
         applied = next(a for a in result["applied"] if a["code_s"] == "4970")
         assert applied["action"] == "保留キューへ"
+
+    def test_new_in_from_3kan_saves_selected_trade_idea(self, tmp_path, db_path):
+        """3監では自動INせず、確認画面で選んだ戦略だけ保存する。"""
+        ps.add_to_watch("4970", db_path=db_path)
+        ps.seed_trade_ideas(db_path=db_path)
+
+        result = ic.import_csvs(
+            self._paths(tmp_path), "2026-08-10", dry_run=False, apply_records=True,
+            overrides={"4970": {"trade_idea": "GARP"}}, db_path=db_path,
+        )
+
+        record = ps.get_record("4970", db_path=db_path)
+        assert record["status"] == "3監"
+        assert record["memo"]["trade_idea"] == "GARP"
+        assert any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
+        assert next(a for a in result["applied"] if a["code_s"] == "4970")["action"] == "保留キューへ"
 
     def test_zero_qty_removes_pending_in(self, tmp_path, db_path):
         """保有ゼロになった準保有・監視銘柄は保留キューからも取り除く。"""
