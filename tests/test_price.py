@@ -678,6 +678,38 @@ class TestCalcDailyIndicators:
         assert result["confirmed"] is True
         assert result["ma_value"] == pytest.approx(98.0)
 
+    def test_weekly_ma_violation_accepts_numeric_rows(self):
+        """yfinance 経路の int 行でも str 行と同じ判定になる。
+
+        _convert_df_to_price_list() は安値・終値を int で返すため、str 前提で
+        .replace() を呼ぶと AttributeError で握り潰され、週足MAを使う戦略の
+        防御アラートが一切点灯しなくなる (PR #409 レビュー P1)。
+        """
+        from datetime import timedelta
+
+        def row(dt, low, close, as_str):
+            values = (low, close) if not as_str else (str(low), str(close))
+            return (dt.strftime("%Y/%m/%d"), 0, 0, values[0], values[1], 0, 0, 0)
+
+        def build(as_str):
+            daily = [
+                row(date(2026, 2, 9), 80, 90, as_str),
+                row(date(2026, 2, 6), 90, 99, as_str),
+                row(date(2026, 2, 5), 100, 101, as_str),
+            ]
+            weekly = [row(date(2026, 2, 2), 0, 40, as_str)]
+            weekly.extend(
+                row(date(2026, 1, 26) - timedelta(days=7 * i), 0, 100, as_str)
+                for i in range(30)
+            )
+            return daily, weekly
+
+        numeric = price.calc_weekly_ma_violation(*build(as_str=False), 30)
+        text = price.calc_weekly_ma_violation(*build(as_str=True), 30)
+        assert numeric == text
+        assert numeric["confirmed"] is True
+        assert numeric["ma_value"] == pytest.approx(98.0)
+
     def test_ma10_break_confirmed_false_when_a_day_low_not_broken(self):
         """A日安値を下回る日がなければ ma10_break_confirmed=False。"""
         rows = self._make_price_list(50)

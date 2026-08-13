@@ -601,9 +601,11 @@ def calc_weekly_ma_violation(daily_price_list, weekly_price_list, window):
             return {"breached": False, "pending": False, "confirmed": False,
                     "ma_value": None, "a_day_low": None}
         try:
-            closes.append(float(row[4].replace(",", "")))
-            lows.append(float(row[3].replace(",", "")))
-        except (ValueError, IndexError, AttributeError):
+            # yfinance 経路は int、株探 HTML 経路は "1,234" 形式の str で来るので
+            # str() を挟んで両方受ける (calc_daily_ma_violation と同じ扱い)
+            closes.append(float(str(row[4]).replace(",", "")))
+            lows.append(float(str(row[3]).replace(",", "")))
+        except (ValueError, IndexError, TypeError):
             return {"breached": False, "pending": False, "confirmed": False,
                     "ma_value": None, "a_day_low": None}
         daily_dates.append(dt)
@@ -611,8 +613,8 @@ def calc_weekly_ma_violation(daily_price_list, weekly_price_list, window):
     for row in weekly_price_list:
         dt = parse_date_str(row[0])
         try:
-            close = float(row[4].replace(",", ""))
-        except (ValueError, IndexError, AttributeError):
+            close = float(str(row[4]).replace(",", ""))
+        except (ValueError, IndexError, TypeError):
             continue
         if dt is not None:
             weekly.append((dt, close))
