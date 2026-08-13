@@ -8,6 +8,7 @@ research_shelve のデータ取得・更新をWebアプリ用にラップする�
 
 import html
 import csv
+import json
 import os
 import re
 from datetime import date, datetime, timedelta
@@ -2011,6 +2012,7 @@ def list_portfolio_with_indicators(
     ) else {}
     try:
         import portfolio_shelve as ps
+        ps.seed_trade_ideas()
         exit_rules = {
             item.get("name"): item.get("exit_rule")
             for item in ps.list_trade_ideas()
@@ -2061,18 +2063,20 @@ def list_portfolio_with_indicators(
             exit_rule = exit_rules.get(strategy)
             if isinstance(exit_rule, dict):
                 from exit_line import evaluate_exit_signal
+                rule_id = json.dumps(exit_rule, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                 if position:
                     position = dict(position)
                     position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["episodes"])
-                    state = ps.get_exit_alert_state(code_s, position["cycle_id"])
+                    cycle_id = f"{position['cycle_id']}|{strategy}|{rule_id}"
                 else:
                     # CSV期間外からの保有など、約定履歴がない銘柄もMAは評価する。
                     position = {}
-                    state = None
+                    cycle_id = f"manual:{rec.get('created_at') or code_s}|{strategy}|{rule_id}"
+                state = ps.get_exit_alert_state(code_s, cycle_id)
                 signal = evaluate_exit_signal(exit_rule, stock, position, state)
                 if signal:
-                    if signal["level"] == "防" and position:
-                        ps.record_exit_alert_event(code_s, position["cycle_id"], signal)
+                    if signal["level"] == "防":
+                        ps.record_exit_alert_event(code_s, cycle_id, signal)
                     _apply_exit_signal_display(row, signal)
         # 運用総額の市場別内訳用カテゴリ (日経225/TOPIX/グロース/その他)
         row["market_category"] = _classify_market_category(

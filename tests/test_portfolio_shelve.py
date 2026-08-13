@@ -1184,6 +1184,28 @@ class TestTradeIdeaMaster:
         items_after_second = ps.list_trade_ideas(db_path=db_path_ti)
         assert len(items_after_first) == len(items_after_second)
 
+    def test_seed_trade_ideas_adds_missing_default_to_existing_master(self, db_path_ti):
+        """既存マスターにも、後から追加された既定戦略を補完する。"""
+        ps.create_trade_idea("独自戦略", db_path=db_path_ti)
+        count = ps.seed_trade_ideas(db_path=db_path_ti)
+        assert count == len(ps._NEW_TRADE_IDEA_SEED_NAMES)
+        assert ps.get_trade_idea("中長期ファンダ", db_path=db_path_ti) is not None
+
+    def test_seed_trade_ideas_does_not_restore_deleted_default(self, db_path_ti):
+        """初回補完後に削除した既定戦略は、次回表示で復活しない。"""
+        ps.seed_trade_ideas(db_path=db_path_ti)
+        ps.delete_trade_idea("GARP", db_path=db_path_ti)
+        assert ps.seed_trade_ideas(db_path=db_path_ti) == 0
+        assert ps.get_trade_idea("GARP", db_path=db_path_ti) is None
+
+    def test_seed_trade_ideas_does_not_restore_all_deleted_defaults(self, db_path_ti):
+        """全戦略を削除しても、初回補完済みなら既定戦略を復活させない。"""
+        ps.seed_trade_ideas(db_path=db_path_ti)
+        for item in ps.list_trade_ideas(db_path=db_path_ti):
+            ps.delete_trade_idea(item["name"], db_path=db_path_ti)
+        assert ps.seed_trade_ideas(db_path=db_path_ti) == 0
+        assert ps.list_trade_ideas(db_path=db_path_ti) == []
+
 
 # ==================================================
 # issue #361: 終値プロキシ自動付与・バックフィル・土日補正

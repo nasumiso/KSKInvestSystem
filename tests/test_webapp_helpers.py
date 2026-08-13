@@ -98,6 +98,7 @@ def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
     monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
     monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
     monkeypatch.setattr(helpers, "build_stock_chart_payload", lambda stock, market_db, mode: {})
+    monkeypatch.setattr(ps, "seed_trade_ideas", lambda: 0)
     monkeypatch.setattr(ps, "list_trade_ideas", lambda: [{"name": "成長", "exit_rule": {
         "ma_kind": "day", "ma_window": 50}}])
 
@@ -106,6 +107,35 @@ def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
         "memo": {"trade_idea": "成長"},
     }])
     assert rows[0]["signal_mark"] == "防予"
+
+
+def test_manual_holding_records_confirmed_ma_alert(monkeypatch):
+    """約定履歴のない保有も安定したIDで防御履歴を保存する。"""
+    import portfolio_shelve as ps
+
+    recorded = []
+    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {
+        "4377": {"price": 900, "price_log": [(date(2026, 2, 9), 900)],
+                 "ma50_violation": {"pending": False, "confirmed": True, "ma_value": 1000}}
+    })
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {"4377": "テスト"})
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {"4377": None})
+    monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {"4377": ""})
+    monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
+    monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
+    monkeypatch.setattr(helpers, "build_stock_chart_payload", lambda stock, market_db, mode: {})
+    monkeypatch.setattr(ps, "seed_trade_ideas", lambda: 0)
+    monkeypatch.setattr(ps, "list_trade_ideas", lambda: [{"name": "成長", "exit_rule": {
+        "ma_kind": "day", "ma_window": 50}}])
+    monkeypatch.setattr(ps, "get_exit_alert_state", lambda code, cycle: {"cycle_id": cycle, "triggered": False})
+    monkeypatch.setattr(ps, "record_exit_alert_event", lambda code, cycle, event: recorded.append((code, cycle, event)))
+
+    helpers.list_portfolio_with_indicators([{
+        "code_s": "4377", "status": "1保", "qty": 100, "created_at": "2026-01-01T00:00:00",
+        "memo": {"trade_idea": "成長"},
+    }])
+    assert recorded and recorded[0][1].startswith("manual:2026-01-01T00:00:00|成長|")
 
 
 def test_weekly_ma_pending_displays_defensive_notice():

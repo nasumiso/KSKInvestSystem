@@ -82,6 +82,7 @@ KEY_ACTION_LOG_PREFIX = "action_log:"
 KEY_SEQ_PREFIX = "_seq:"
 KEY_THEME_PREFIX = "theme:"
 KEY_TRADE_IDEA_PREFIX = "trade_idea:"
+KEY_TRADE_IDEA_SEED_VERSION = "trade_idea_seed_version"
 KEY_EXIT_ALERT_PREFIX = "exit_alert:"
 # issue #360 Phase2: 楽天CSV 由来の約定事実 (fill レイヤー、イミュータブル)
 KEY_FILL_PREFIX = "fill:"
@@ -184,6 +185,7 @@ _TRADE_IDEA_SEED = [
     {"name": "大型高配当",     "description": "PF安定・信用代用を兼ねる。恒常保有。売らない",                                      "time_horizon": "恒常",   "over_earnings": True},
     {"name": "中期底値リバ",   "description": "底値圏からのトレンド転換を狙う。トレンドが崩れたら売る",                            "time_horizon": "中期",   "over_earnings": False},
 ]
+_NEW_TRADE_IDEA_SEED_NAMES = {"中長期ファンダ", "中期底値リバ"}
 
 _EXIT_RULES_BY_STRATEGY = {
     "GARP": {"ma_kind": "week", "ma_window": 30, "stop_loss_pct": 20, "allow_dca_lower": False},
@@ -2362,19 +2364,32 @@ def count_trade_idea_usage(*, db_path: Optional[str] = None) -> Dict[str, int]:
 
 
 def seed_trade_ideas(*, db_path: Optional[str] = None) -> int:
-    """戦略マスターが空のときのみシードデータを投入する（冪等）。投入数を返す。"""
+    """不足している既定戦略と出口ルールを補完する（冪等）。投入数を返す。"""
     path = _resolve_db_path(db_path)
     with _flock(db_path):
         with ShelveDB(path) as db:
             existing = [k for k in db.keys() if k.startswith(KEY_TRADE_IDEA_PREFIX)]
+            seeded = 0
             if existing:
                 for key in existing:
                     record = dict(db[key])
                     if not record.get("exit_rule") and record.get("name") in _EXIT_RULES_BY_STRATEGY:
                         record["exit_rule"] = _validate_exit_rule(_EXIT_RULES_BY_STRATEGY[record["name"]])
                         db[key] = record
-                return 0
-            for seed in _TRADE_IDEA_SEED:
+                if db.get(KEY_TRADE_IDEA_SEED_VERSION):
+                    seeds = []
+                else:
+                    existing_names = {key[len(KEY_TRADE_IDEA_PREFIX):] for key in existing}
+                    # 旧DBでは既定戦略を意図的に削除済みか判別できないため、今回新設した
+                    # 戦略だけを補完し、既存の削除・改名操作は保持する。
+                    seeds = [
+                        seed for seed in _TRADE_IDEA_SEED
+                        if seed["name"] in _NEW_TRADE_IDEA_SEED_NAMES
+                        and seed["name"] not in existing_names
+                    ]
+            else:
+                seeds = [] if db.get(KEY_TRADE_IDEA_SEED_VERSION) else _TRADE_IDEA_SEED
+            for seed in seeds:
                 record = {
                     "name": seed["name"],
                     "description": seed["description"],
@@ -2384,8 +2399,11 @@ def seed_trade_ideas(*, db_path: Optional[str] = None) -> int:
                     "created_at": now_iso(),
                 }
                 db[_trade_idea_key(seed["name"])] = record
-    log_print("portfolio_shelve: strategy シード投入", f"{len(_TRADE_IDEA_SEED)} 件")
-    return len(_TRADE_IDEA_SEED)
+                seeded += 1
+            db[KEY_TRADE_IDEA_SEED_VERSION] = 1
+    if seeded:
+        log_print("portfolio_shelve: strategy シード投入", f"{seeded} 件")
+    return seeded
 
 
 def _rewrite_trade_idea_in_records(
