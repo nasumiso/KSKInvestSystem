@@ -2071,7 +2071,9 @@ def list_portfolio_with_indicators(
                 else:
                     # CSV期間外からの保有など、約定履歴がない銘柄もMAは評価する。
                     position = {}
-                    cycle_id = f"manual:{rec.get('created_at') or code_s}|{strategy}|{rule_id}"
+                    # レコードの登録時刻は registered_at (created_at は theme/trade_idea 用)。
+                    # 削除→再登録を別サイクルとして扱わないと旧「防歴」を引き継ぐ。
+                    cycle_id = f"manual:{rec.get('registered_at') or code_s}|{strategy}|{rule_id}"
                 state = ps.get_exit_alert_state(code_s, cycle_id)
                 signal = evaluate_exit_signal(exit_rule, stock, position, state)
                 if signal:

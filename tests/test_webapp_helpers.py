@@ -131,11 +131,24 @@ def test_manual_holding_records_confirmed_ma_alert(monkeypatch):
     monkeypatch.setattr(ps, "get_exit_alert_state", lambda code, cycle: {"cycle_id": cycle, "triggered": False})
     monkeypatch.setattr(ps, "record_exit_alert_event", lambda code, cycle, event: recorded.append((code, cycle, event)))
 
+    # 実レコードが持つのは registered_at (created_at は theme/trade_idea 用)。
+    # created_at を見ていると常に code_s へフォールバックし、削除→再登録しても
+    # 同じ cycle_id になって旧「防歴」を引き継ぐ (PR #409 レビュー)。
     helpers.list_portfolio_with_indicators([{
-        "code_s": "4377", "status": "1保", "qty": 100, "created_at": "2026-01-01T00:00:00",
+        "code_s": "4377", "status": "1保", "qty": 100,
+        "registered_at": "2026-01-01T00:00:00",
         "memo": {"trade_idea": "成長"},
     }])
     assert recorded and recorded[0][1].startswith("manual:2026-01-01T00:00:00|成長|")
+
+    # 再登録 (registered_at が変わる) は別サイクルとして扱う
+    recorded.clear()
+    helpers.list_portfolio_with_indicators([{
+        "code_s": "4377", "status": "1保", "qty": 100,
+        "registered_at": "2026-06-01T00:00:00",
+        "memo": {"trade_idea": "成長"},
+    }])
+    assert recorded and recorded[0][1].startswith("manual:2026-06-01T00:00:00|成長|")
 
 
 def test_weekly_ma_pending_displays_defensive_notice():
