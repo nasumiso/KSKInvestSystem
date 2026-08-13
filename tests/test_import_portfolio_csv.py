@@ -139,6 +139,22 @@ def test_parse_rakuten_margin_separates_buy_and_sell(db_path):
 
 
 @pytest.mark.parametrize(
+    "parser,rows,row_index,code_index",
+    [
+        (ic.parse_rakuten_margin, RAKUTEN_MARGIN_ROWS, 6, 1),
+        (ic.parse_sbi_spot, SBI_SPOT_ROWS, 11, 0),
+        (ic.parse_sbi_margin, SBI_MARGIN_ROWS, 9, 0),
+    ],
+)
+def test_parsers_reject_invalid_position_code(db_path, parser, rows, row_index, code_index):
+    """保有・建玉行の不正な銘柄コードは、行を捨てず取込を停止する。"""
+    invalid_rows = [row.copy() for row in rows]
+    invalid_rows[row_index][code_index] = "12X34"
+    with pytest.raises(ValueError, match="銘柄コードが不正"):
+        parser(invalid_rows)
+
+
+@pytest.mark.parametrize(
     "parser,rows,row_index,qty_index",
     [
         (ic.parse_rakuten_spot, RAKUTEN_SPOT_ROWS, 6, 4),
@@ -378,6 +394,22 @@ class TestPhase2ApplyRecords:
             _write_csv(tmp_path / "s_spot.csv", SBI_SPOT_ROWS),
             _write_csv(tmp_path / "s_margin.csv", SBI_MARGIN_ROWS),
         ]
+
+    @pytest.mark.parametrize(
+        "overrides,match",
+        [
+            ({"12X34": {"note": "確認"}}, "code_s"),
+            ({"4970": {"trade_idea": "未登録戦略"}}, "マスター未登録"),
+        ],
+    )
+    def test_invalid_override_is_rejected_before_writing(self, tmp_path, db_path, overrides, match):
+        """不正な確認画面入力では position を書き換えない。"""
+        with pytest.raises(ValueError, match=match):
+            ic.import_csvs(
+                self._paths(tmp_path), "2026-08-10", dry_run=False,
+                apply_records=True, overrides=overrides, db_path=db_path,
+            )
+        assert ps.list_positions(db_path=db_path) == []
 
     def test_qty_change_on_existing_1poh(self, tmp_path, db_path):
         """1保 かつ merged_qty != db_qty -> 株数変更のみ (§5-3)。"""

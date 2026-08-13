@@ -199,8 +199,10 @@ def parse_rakuten_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
         code_raw = (row[1] or "").strip()
         try:
             ps.validate_code_s(code_raw)
-        except (ValueError, TypeError):
-            continue
+        except (ValueError, TypeError) as e:
+            raise ValueError(
+                f"楽天信用CSV: 建玉行の銘柄コードが不正です: {code_raw!r}"
+            ) from e
         code_s = ps.normalize_code_s(code_raw)
         if ps.is_etf_code(code_s):
             continue
@@ -274,8 +276,10 @@ def parse_sbi_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
             code_raw = (row[0] or "").strip()
             try:
                 ps.validate_code_s(code_raw)
-            except (ValueError, TypeError):
-                continue
+            except (ValueError, TypeError) as e:
+                raise ValueError(
+                    f"SBI現物CSV: 保有行の銘柄コードが不正です: {code_raw!r}"
+                ) from e
             code_s = ps.normalize_code_s(code_raw)
             if ps.is_etf_code(code_s):
                 continue
@@ -306,8 +310,10 @@ def parse_sbi_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
         code_raw = (row[0] or "").strip()
         try:
             ps.validate_code_s(code_raw)
-        except (ValueError, TypeError):
-            continue
+        except (ValueError, TypeError) as e:
+            raise ValueError(
+                f"SBI信用CSV: 建玉行の銘柄コードが不正です: {code_raw!r}"
+            ) from e
         code_s = ps.normalize_code_s(code_raw)
         if ps.is_etf_code(code_s):
             continue
@@ -355,6 +361,21 @@ def _aggregate_by_account_kind_code(rows: List[Dict[str, Any]]) -> Dict[Tuple[st
     return agg
 
 
+def _validate_overrides(
+    overrides: Optional[Dict[str, Dict[str, str]]], *, db_path: Optional[str],
+) -> None:
+    """確認画面の上書き内容を、DBを書き換える前に検証する。"""
+    for code_s, override in (overrides or {}).items():
+        ps.validate_code_s(code_s)
+        if "trade_idea" not in override:
+            continue
+        trade_idea = (override["trade_idea"] or "").strip()
+        if trade_idea and ps.get_trade_idea(trade_idea, db_path=db_path) is None:
+            raise ValueError(
+                f"CSV取込: trade_idea {trade_idea!r} はマスター未登録です"
+            )
+
+
 # ===========================================
 # 3. 統合層
 # ===========================================
@@ -385,6 +406,7 @@ def import_csvs(
               "diffs": [...], "applied": [...]}
     """
     ps.validate_as_of(as_of)
+    _validate_overrides(overrides, db_path=db_path)
     detected: Dict[Tuple[str, str], Dict[str, Any]] = {}
     for path in csv_paths:
         rows = read_csv_rows(path)
