@@ -2059,14 +2059,19 @@ def list_portfolio_with_indicators(
             position = exit_positions.get(code_s)
             strategy = (rec.get("memo") or {}).get("trade_idea")
             exit_rule = exit_rules.get(strategy)
-            if position and isinstance(exit_rule, dict):
+            if isinstance(exit_rule, dict):
                 from exit_line import evaluate_exit_signal
-                position = dict(position)
-                position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["episodes"])
-                state = ps.get_exit_alert_state(code_s, position["cycle_id"])
+                if position:
+                    position = dict(position)
+                    position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["episodes"])
+                    state = ps.get_exit_alert_state(code_s, position["cycle_id"])
+                else:
+                    # CSV期間外からの保有など、約定履歴がない銘柄もMAは評価する。
+                    position = {}
+                    state = None
                 signal = evaluate_exit_signal(exit_rule, stock, position, state)
                 if signal:
-                    if signal["level"] == "防":
+                    if signal["level"] == "防" and position:
                         ps.record_exit_alert_event(code_s, position["cycle_id"], signal)
                     _apply_exit_signal_display(row, signal)
         # 運用総額の市場別内訳用カテゴリ (日経225/TOPIX/グロース/その他)
@@ -2174,7 +2179,9 @@ def _build_exit_position_map(episodes: List[Dict[str, Any]]) -> Dict[str, Dict[s
             if code_s:
                 blocked.add(code_s)
             continue
-        if not isinstance(open_pl.get("held_qty"), int) or open_pl["held_qty"] <= 0:
+        held_qty = open_pl.get("held_qty")
+        if (not isinstance(held_qty, (int, float)) or isinstance(held_qty, bool)
+                or held_qty <= 0):
             continue
         if not isinstance(open_pl.get("avg_cost"), (int, float)) or open_pl["avg_cost"] <= 0:
             continue

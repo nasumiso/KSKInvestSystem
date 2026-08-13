@@ -36,7 +36,7 @@ def calc_ma_violation(
     if ma0 is None or ma0 == 0:
         return result
     result["ma_value"] = ma0
-    if closes[0] > ma0:
+    if closes[0] >= ma0:
         return result
     result["breached"] = True
 
@@ -45,13 +45,13 @@ def calc_ma_violation(
         ma = ma_at(i)
         if ma is None:
             break
-        if close > ma:
+        if close >= ma:
             continue
         if i + 1 >= len(closes):
             a_day_idx = i
             break
         previous_ma = ma_at(i + 1)
-        if previous_ma is not None and closes[i + 1] > previous_ma:
+        if previous_ma is not None and closes[i + 1] >= previous_ma:
             a_day_idx = i
             break
     if a_day_idx is None or a_day_idx >= len(lows):

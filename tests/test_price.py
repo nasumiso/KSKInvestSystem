@@ -621,6 +621,23 @@ class TestCalcDailyIndicators:
         )
         assert generic["confirmed"] is price._calc_daily_indicators(rows)["ma10_break_confirmed"]
 
+    def test_generic_ma_violation_does_not_breach_when_close_equals_ma(self):
+        """終値がMAと同値なら、下抜けではなく維持として扱う。"""
+        from exit_line import calc_ma_violation
+
+        result = calc_ma_violation([100.0] * 50, [100.0] * 50, lambda i: 100.0)
+        assert result["breached"] is False
+
+    def test_generic_ma_violation_finds_break_after_close_equals_ma(self):
+        """MA同値の翌日に割れた場合も、割れ日をA日として確定判定する。"""
+        from exit_line import calc_ma_violation
+
+        result = calc_ma_violation(
+            [80.0, 90.0, 90.0, 100.0], [50.0, 100.0, 100.0, 100.0],
+            lambda i: 100.0,
+        )
+        assert result["confirmed"] is True
+
     def test_weekly_ma_violation_uses_prior_week_value_at_week_boundary(self):
         """前週のA日は前週までのWMA、今週の確定日は今週のWMAで判定する。"""
         from datetime import timedelta

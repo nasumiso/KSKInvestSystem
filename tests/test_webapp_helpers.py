@@ -43,6 +43,44 @@ def test_margin_only_holding_can_calculate_defensive_line():
     assert line == 900.0
 
 
+def test_split_adjusted_float_holding_is_included_in_exit_position():
+    """分割調整後にfloatとなる保有数量も建玉として防御ラインを算出する。"""
+    episode = {
+        "code_s": "4377", "kind": "現物", "episode_key": "4377|現物|2026-01-01|",
+        "closed": False, "is_short": False, "split_suspect": False,
+        "open_pl": {"held_qty": 200.0, "avg_cost": 500.0},
+        "fills": [{"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 100,
+                   "price": 1000, "trade_kind": "現物"}],
+    }
+    position = helpers._build_exit_position_map([episode])["4377"]
+    assert position["held_qty"] == 200.0
+
+
+def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
+    """約定履歴のない手入力保有でもMA違反を防御シグナルとして表示する。"""
+    import portfolio_shelve as ps
+
+    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {
+        "4377": {"price": 900, "price_log": [(date(2026, 2, 9), 900)],
+                 "ma50_violation": {"pending": True, "confirmed": False, "ma_value": 1000}}
+    })
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {"4377": "テスト"})
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {"4377": None})
+    monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {"4377": ""})
+    monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
+    monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
+    monkeypatch.setattr(helpers, "build_stock_chart_payload", lambda stock, market_db, mode: {})
+    monkeypatch.setattr(ps, "list_trade_ideas", lambda: [{"name": "成長", "exit_rule": {
+        "ma_kind": "day", "ma_window": 50}}])
+
+    rows = helpers.list_portfolio_with_indicators([{
+        "code_s": "4377", "status": "1保", "qty": 100,
+        "memo": {"trade_idea": "成長"},
+    }])
+    assert rows[0]["signal_mark"] == "防予"
+
+
 def test_weekly_ma_pending_displays_defensive_notice():
     """週足MAの未確定割れは防予として扱う。"""
     from exit_line import evaluate_exit_signal
