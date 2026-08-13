@@ -4557,8 +4557,8 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 "avg_cost": cost_basis,
             }
 
-    if held_qty <= 0:
-        # 保有中扱いだが実質建玉が残っていない (空売り等) → 含み対象なし
+    if _is_qty_closed(held_qty):
+        # 保有中扱いだが実質建玉が残っていない (空売り等・分割換算後の丸め誤差含む) → 含み対象なし
         return {
             "realized": round(realized),
             "unrealized": None,
@@ -4579,6 +4579,151 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
         "held_qty": held_qty,
         "avg_cost": cost_basis,
     }
+
+
+# ===========================================
+# issue #398: 株式分割・併合対応
+# ===========================================
+
+_SPLIT_PRICE_JUMP_RATIO = 3.0  # 隣接単価がこの倍数以上/以下に飛べば分割・併合の疑い
+_SPLIT_QTY_ZERO_TOL = 1e-6  # 換算後 float qty のクローズ判定許容誤差
+
+
+def _is_qty_closed(qty: float) -> bool:
+    """建玉が0に戻ったとみなせるか判定する (qty <= 0 の許容誤差付き版)。
+
+    分割・併合換算で qty が float になった場合、丸め誤差で厳密な0にならず
+    5.55e-17 のような残差が残ってクローズ判定を取り逃す (issue #398)。
+    整数 fill のみの既存経路では qty <= 0 と等価に振る舞う。
+    """
+    return qty <= _SPLIT_QTY_ZERO_TOL
+
+
+def _is_fractional_residual(qty: float) -> bool:
+    """分割・併合後の端株精算で消える想定の1株未満残高か判定する。"""
+    return _SPLIT_QTY_ZERO_TOL < qty < 1.0
+
+
+def _is_genbutsu_qty_closed(qty: float) -> bool:
+    """現物残高が実質クローズ済みか判定する。
+
+    分割・併合比率によって 0.3333 株のような端株が残る場合、証券会社CSVには
+    整数株の売却だけが出て端株精算が fill として入らないことがある。残高上は
+    クローズ扱いにするが、損益は精算額を確認できないため別途 suspect にする。
+    """
+    return _is_qty_closed(qty) or _is_fractional_residual(qty)
+
+
+def _detect_price_jumps(fills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """現物 fill を約定日順に見て、建玉が継続したまま隣接単価が3倍以上/1/3以下に
+    飛ぶ箇所を検出する。
+
+    分割・併合は取引として記録されないため、単価の断絶が唯一の痕跡になる。
+    133件の実データで検証済み (誤検出0件、1491 中外鉱業のみ検出、issue #398)。
+
+    建玉を一度売り切ってから (残高0) 数年後に買い直した場合、その間の株価変動は
+    分割・併合と無関係な通常の値上がり・値下がりであり分割候補ではない
+    (PRレビュー対応)。残高を追跡し、直前の fill で残高が0になっていた場合は
+    ジャンプ判定をスキップする。
+
+    Returns: [{"before_date", "before_price", "after_date", "after_price"}]
+    """
+    genbutsu = sorted(
+        (f for f in fills if not (f.get("trade_kind") or "").startswith("信用")),
+        key=lambda f: (f.get("trade_date") or "", f.get("seq") or 0),
+    )
+    jumps = []
+    held_qty = 0.0
+    for a, b in zip(genbutsu, genbutsu[1:]):
+        held_qty += a["qty"] if a["side"] == "buy" else -a["qty"]
+        pa, pb = a.get("price"), b.get("price")
+        if pa and pb and not _is_genbutsu_qty_closed(held_qty):
+            ratio = pb / pa
+            if ratio >= _SPLIT_PRICE_JUMP_RATIO or ratio <= 1 / _SPLIT_PRICE_JUMP_RATIO:
+                jumps.append({
+                    "before_date": a.get("trade_date"),
+                    "before_price": pa,
+                    "after_date": b.get("trade_date"),
+                    "after_price": pb,
+                })
+    return jumps
+
+
+def _uncovered_jumps(jumps: List[Dict[str, Any]],
+                     events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """検知した単価ジャンプのうち、登録済みイベントでカバーされていないものを返す。
+
+    「登録済みイベントが1件でもあれば安全」という判定は粗く、同一銘柄で後日
+    発生した別の分割・併合を見逃す (PRレビュー対応)。ジャンプの日付境界
+    (before_date, after_date] に ex_date が入る登録イベントがあればカバー済み。
+    """
+    return [
+        jump for jump in jumps
+        if not any(jump["before_date"] < ev["ex_date"] <= jump["after_date"]
+                   for ev in events)
+    ]
+
+
+def _jump_affects_episode(jump: Dict[str, Any], ep: Dict[str, Any]) -> bool:
+    """未カバーの単価ジャンプが、このエピソードの残高・損益に影響するか。
+
+    ジャンプの (before_date, after_date] がエピソードの期間 [open_date, close_date]
+    (保有中は close_date なし=無期限) と重なる場合のみ影響する。分割前に完結した
+    無関係なラウンドまで split_suspect で隠さないため (PRレビュー対応)。
+    """
+    close_date = ep.get("close_date") or "9999-12-31"  # 保有中は無期限
+    return jump["before_date"] < close_date and jump["after_date"] >= ep["open_date"]
+
+
+def _split_event_affects_episode(ex_date: str, ep: Dict[str, Any]) -> bool:
+    """pending の ex_date がエピソード期間に含まれるか判定する。"""
+    close_date = ep.get("close_date") or "9999-12-31"  # 保有中は無期限
+    return ep["open_date"] < ex_date <= close_date
+
+
+def _apply_split_adjustments(fills: List[Dict[str, Any]],
+                             events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """現物 fill のうち各イベントの ex_date より前のものを比率換算したコピーを返す。
+
+    events は ex_date 昇順。各 fill には、自身の trade_date より後の ex_date を
+    持つ全イベントの比率を掛け合わせた累積比率を適用する (古いイベントから順に)。
+    数量 = qty * cum_ratio、単価 = price / cum_ratio、amount は不変。
+    信用 fill・現引は素通しする (元の fill dict は変更しない)。
+
+    現引は「信用建玉の現物化」で、qty は信用新規側の shinyo_qty 減算と現物側の
+    genbutsu_qty 加算の両方に同じ値で使われる (_build_code_episodes)。現引だけ
+    換算すると信用新規(未換算)と現引(換算後)で株数基準がずれ、shinyo_qty が
+    0に戻らずクローズを取り逃す。現引を除外し分割前基準のまま扱う (簡易な安全策)。
+
+    既知の限界 (PRレビュー #405 で指摘、対応複雑度とのバランスで見送り): 現引後に
+    現物のまま分割・併合をまたいで売却すると、現引 fill (未換算) と売却 fill (換算後)
+    の株数基準がずれ、端数が誤って保有中に残る可能性がある。現時点の実データでは
+    分割検知銘柄 (1491, 9252) に現引が絡むケースは無い。単価変化が3倍以上/1/3以下なら
+    _detect_price_jumps が検知するが、それ未満の比率では split_suspect も付かず
+    残高が誤ったまま表示されうる。再発したら現引 fill に現物側専用の換算済み
+    qty/price を別キーで持たせ、_build_code_episodes 側で使い分ける対応が必要。
+    """
+    if not events:
+        return fills
+    adjusted = []
+    for f in fills:
+        tk = f.get("trade_kind") or ""
+        if tk.startswith("信用") or tk == "現引":
+            adjusted.append(f)
+            continue
+        trade_date = f.get("trade_date") or ""
+        cum_ratio = 1.0
+        for ev in events:
+            if trade_date < ev["ex_date"]:
+                cum_ratio *= ev["ratio"]
+        if cum_ratio == 1.0:
+            adjusted.append(f)
+            continue
+        g = dict(f)
+        g["qty"] = f["qty"] * cum_ratio
+        g["price"] = f["price"] / cum_ratio
+        adjusted.append(g)
+    return adjusted
 
 
 def _build_code_episodes(code_s: str, stock_name: str,
@@ -4622,6 +4767,7 @@ def _build_code_episodes(code_s: str, stock_name: str,
     genbutsu_fills: List[Dict[str, Any]] = []  # 現ラウンドの現物 fill
     genbutsu_qty = 0
     genbutsu_peak = 0
+    genbutsu_fractional_residual = False
     # 取込済みの信用新規日。これに無い建約定日の返済は、取込前からの持越し玉である。
     shinyo_open_dates = {
         f.get("trade_date")
@@ -4659,12 +4805,16 @@ def _build_code_episodes(code_s: str, stock_name: str,
         short_peak = 0
 
     def close_genbutsu():
-        nonlocal genbutsu_fills, genbutsu_qty, genbutsu_peak
+        nonlocal genbutsu_fills, genbutsu_qty, genbutsu_peak, genbutsu_fractional_residual
         if genbutsu_fills:
-            episodes.append(_finalize_round(code_s, "現物", stock_name, genbutsu_fills, genbutsu_peak))
+            ep = _finalize_round(code_s, "現物", stock_name, genbutsu_fills, genbutsu_peak)
+            if genbutsu_fractional_residual:
+                ep["split_fractional_residual"] = True
+            episodes.append(ep)
         genbutsu_fills = []
         genbutsu_qty = 0
         genbutsu_peak = 0
+        genbutsu_fractional_residual = False
 
     for f in fills:
         tk = f.get("trade_kind") or ""
@@ -4735,7 +4885,8 @@ def _build_code_episodes(code_s: str, stock_name: str,
             else:
                 genbutsu_qty -= qty
             genbutsu_peak = max(genbutsu_peak, genbutsu_qty)
-            if genbutsu_qty <= 0:
+            if _is_genbutsu_qty_closed(genbutsu_qty):
+                genbutsu_fractional_residual = _is_fractional_residual(genbutsu_qty)
                 close_genbutsu()
 
     # 保有中 (残った建玉)
@@ -4801,7 +4952,9 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
       closed (bool), fills (内部の個別 fill 明細リスト),
       carry_over (bool: 取込対象期間より前の信用建玉の返済),
       pl (クローズ済みのみ: _episode_pl_from_round の結果, 未クローズは None),
-      open_pl (保有中のみ: realized/unrealized/held_qty/avg_cost)
+      open_pl (保有中のみ: realized/unrealized/held_qty/avg_cost),
+      split_suspect (bool, 現物のみ: 単価ジャンプ検知だが split_adj 未登録、issue #398。
+        残高・損益が分割・併合未換算で誤っている可能性があるため画面上は数値を隠す)
 
     Returns: 最終約定日 (買い増し・部分売り含むラウンド内の最新の取引日) 降順の
     エピソードリスト。保有中エピソードも最後に約定した日で並ぶ。
@@ -4819,9 +4972,45 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
 
     names = _bulk_resolve_stock_names(list(by_code.keys()))
 
+    # issue #398: 分割・併合の疑いがある銘柄を検知し、登録済みイベントがあれば
+    # 現物 fill を換算したコピーに差し替えてからエピソード再構成に渡す。
+    # 未カバーのジャンプがあれば換算せず既存動作を維持し、その期間と重なる
+    # エピソードにのみ split_suspect を付与する (PRレビュー対応:
+    # 「登録済みイベントが1件でもあれば安全」という銘柄単位の判定は粗く、同一銘柄で
+    # 後日発生した別の分割・併合を見逃す。また銘柄単位で全エピソードに付けると、
+    # 分割前に完結した無関係なラウンドの正しい損益まで隠してしまう)。
+    # pending_review は --check-splits の (a)単価ジャンプ/(b)エピソード期間総当たりの検知結果を
+    # 拒否リストとして反映する (webapp は yfinance を呼ばないため (b) を自力では検知できない)。
+    # pending_review の ex_dates がエピソード期間に含まれる場合は、クローズ済みでも
+    # split_suspect を維持する。2:1 分割など単価ジャンプ閾値未満のイベントは
+    # クローズ後に警告が外れると誤った実現損益が集計へ戻ってしまうため。
+    all_split_adj = ps.list_all_split_adjustments(db_path=db_path)
+    pending_events = ps.list_pending_review_events(db_path=db_path)
     episodes: List[Dict[str, Any]] = []
     for code_s, fills in by_code.items():
-        episodes.extend(_build_code_episodes(code_s, names.get(code_s, ""), fills))
+        events = all_split_adj.get(code_s, [])
+        if events:
+            fills = _apply_split_adjustments(fills, events)
+        # ジャンプ検知は換算後の fills に対して行う (PRレビュー対応: 未換算のまま
+        # 検知すると、登録済みイベントで残高の基準が変わった後の残高追跡が崩れ、
+        # 別の未登録イベントのジャンプを見逃す)。
+        jumps = _detect_price_jumps(fills)
+        code_episodes = _build_code_episodes(code_s, names.get(code_s, ""), fills)
+        uncovered = _uncovered_jumps(jumps, events)
+        pending_dates = pending_events.get(code_s, [])
+        for ep in code_episodes:
+            if ep["kind"] != "現物":
+                continue
+            if ep.get("split_fractional_residual"):
+                ep["split_suspect"] = True
+            elif any(_jump_affects_episode(j, ep) for j in uncovered):
+                ep["split_suspect"] = True
+            elif any(d != "unknown" and _split_event_affects_episode(d, ep)
+                     for d in pending_dates):
+                ep["split_suspect"] = True
+            elif "unknown" in pending_dates and not ep["closed"]:
+                ep["split_suspect"] = True
+        episodes.extend(code_episodes)
 
     # 保有中エピソードに実現損益 (部分売り分) と含み損益 (残玉評価) を付与 (issue #387 Phase4b)。
     # 含みは price_log の直近終値を現在値とする。銘柄をバルク取得して N+1 を避ける。

@@ -195,6 +195,13 @@ WebApp からも取込可能 (issue #397 Phase3/Phase3b)。保有銘柄タブ (`
 
 売却候補・新規IN候補の行には反映前に入力できる列が付く: 新規INは戦略 (`trade_idea`) を選び直せる (初期値は現在設定済みの戦略、変更すれば反映時にそちらが使われる)。両方とも振り返りメモを任意入力でき、反映時に生成される機械的な reason の末尾に追記される (issue #397 Phase3b)。
 
+株式分割・併合をまたぐ現物銘柄の診断・換算比率の登録 (issue #398)。証券会社CSVは分割・併合を調整してくれない (信用は建単価/決済損益で調整済みのため対象外、現物のみ)。`--check-splits` は fill 本体・換算比率 (split_adj) は更新しないが、未登録の発見を拒否リスト (split_pending_review) に記録する (webapp は yfinance を呼ばないため、単価変化が小さく保有中総当たりチェックでのみ見つかるケースを検知できるようにするため)。`--register-split` で登録すれば拒否リストは自動解除される。
+
+```bash
+cd scripts && python show_fill_episodes.py --check-splits                       # 分割・併合の疑いを診断・拒否リスト記録
+cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05  # 換算比率を登録 (新株数/旧株数、0.05=20株->1株併合)
+```
+
 ## 自動実行
 
 `shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。

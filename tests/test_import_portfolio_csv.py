@@ -90,6 +90,9 @@ def db_path(tmp_path, monkeypatch):
     rs_db = str(tmp_path / "research")
     monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", rs_db)
     monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", rs_db)
+    # テスト共通fixtureは DATA_DIR を隔離するため、実ファイルではなく明示的な
+    # ETF集合を使う。CSVパーサーのETF除外をテスト環境でも検証する。
+    monkeypatch.setattr(ps, "_etf_codes_cache", frozenset({"1681"}))
     for code, nm in [("6501", "日立"), ("4970", "東洋合成"), ("402A", "アクセルスペース")]:
         rec = rs.create_research_record(code, nm, overall_rating="B")
         rs.upsert_research_record(rec, db_path=rs_db)

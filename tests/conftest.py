@@ -50,3 +50,21 @@ def _suppress_file_logging():
             logger.addHandler(fh)
     except Exception:
         yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_shelve_and_portfolio_output(tmp_path, monkeypatch):
+    """テスト中の shelve と監視リスト出力を一時領域へ隔離する。"""
+    import db_shelve
+    import portfolio_shelve
+    from webapp import helpers as webapp_helpers
+
+    data_dir = str(tmp_path / "data")
+    stocks_shelve = str(tmp_path / "stocks_shelve")
+    portfolio_shelve_path = str(tmp_path / "portfolio_shelve")
+
+    monkeypatch.setattr(db_shelve, "STOCKS_SHELVE", stocks_shelve)
+    monkeypatch.setattr(webapp_helpers, "STOCKS_SHELVE", stocks_shelve)
+    monkeypatch.setattr(db_shelve, "PORTFOLIO_SHELVE", portfolio_shelve_path)
+    monkeypatch.setattr(portfolio_shelve, "PORTFOLIO_SHELVE", portfolio_shelve_path)
+    monkeypatch.setattr(portfolio_shelve, "DATA_DIR", data_dir)
