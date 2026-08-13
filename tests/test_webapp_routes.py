@@ -1618,6 +1618,30 @@ class TestPortfolioCsvImport:
         assert resp.status_code == 302
         assert not tmp_dir.exists()
 
+    def test_apply_is_available_when_preview_has_no_diffs(self, csv_import_app):
+        """差分ゼロでもCSVスナップショットを反映できる。"""
+        import portfolio_shelve as ps
+        import re
+
+        ps.transition_status("6501", "1保", qty=100)
+        ps.update_qty("6501", 100, log_action=False)
+        client = csv_import_app.test_client()
+        resp = client.post(
+            "/portfolio/csv-import/preview",
+            data=self._upload_files(),
+            content_type="multipart/form-data",
+        )
+        html = resp.data.decode()
+        assert "差分はありません" in html
+        assert 'action="/portfolio/csv-import/apply"' in html
+        token = re.search(r'name="token" value="([0-9a-f]+)"', html).group(1)
+        as_of = re.search(r'name="as_of" value="([\d-]+)"', html).group(1)
+
+        resp = client.post("/portfolio/csv-import/apply", data={"token": token, "as_of": as_of})
+
+        assert resp.status_code == 302
+        assert ps.compute_merged_qty("6501") == 100
+
 
 # ==================================================
 # /portfolio/themes (issue #282)

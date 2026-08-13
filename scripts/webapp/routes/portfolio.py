@@ -463,8 +463,9 @@ def csv_import_apply():
     for key, value in request.form.items():
         if key.startswith("trade_idea_"):
             code_s = key[len("trade_idea_"):]
-            if value.strip():
-                overrides.setdefault(code_s, {})["trade_idea"] = value.strip()
+            # 未送信と明示的な空選択を区別する。空選択は既存戦略を外して
+            # 自動INではなく保留キューへ送る指示として扱う。
+            overrides.setdefault(code_s, {})["trade_idea"] = value.strip()
         elif key.startswith("note_"):
             code_s = key[len("note_"):]
             if value.strip():

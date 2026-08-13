@@ -580,6 +580,8 @@ def _judge(status: str, covered: bool, merged_qty: int, db_qty: Optional[int]) -
     偽なのは他の銘柄のソース欠落が原因であって、この銘柄自体に差分があるとは
     限らないため (issue #397 §5-2)。
     """
+    if status == "1保" and merged_qty == 0 and covered:
+        return "売却候補 (反映すると準保有へ)"
     if status == "1保" and merged_qty == db_qty:
         return "一致"
     if status in ("2準", "3監") and merged_qty == 0:
@@ -589,8 +591,6 @@ def _judge(status: str, covered: bool, merged_qty: int, db_qty: Optional[int]) -
     if not covered:
         return "判定不能 (ソース不足のため反映されません)"
     if status == "1保":
-        if merged_qty == 0:
-            return "売却候補 (反映すると準保有へ)"
         return f"株数変更候補 {db_qty}→{merged_qty}"
     if status in ("2準", "3監"):
         return "新規IN候補 (反映すると保留キューまたは自動INへ)"
@@ -668,12 +668,17 @@ def _sync_records(
         if status in ("2準", "3監") and merged_qty > 0:
             record = ps.get_record(code_s, db_path=db_path)
             existing_trade_idea = (record.get("memo") or {}).get("trade_idea") if record else ""
-            chosen_trade_idea = (overrides.get(code_s, {}).get("trade_idea") or "").strip() or existing_trade_idea
+            override = overrides.get(code_s, {})
+            has_trade_idea_override = "trade_idea" in override
+            chosen_trade_idea = (
+                (override.get("trade_idea") or "").strip()
+                if has_trade_idea_override else existing_trade_idea
+            )
+            if has_trade_idea_override and chosen_trade_idea != existing_trade_idea:
+                ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, db_path=db_path)
             if status == "2準" and chosen_trade_idea:
                 # 戦略あり: webapp/routes/portfolio.py:520-537 と同じ順序で自動IN (issue #397 §6-2)
                 # 確認画面で戦略が変更されていれば先に記録し直す (§ Phase3b)
-                if chosen_trade_idea != existing_trade_idea:
-                    ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, db_path=db_path)
                 reason = "CSV取込による新規保有検出"
                 if note:
                     reason = f"{reason} / {note}"
@@ -692,10 +697,6 @@ def _sync_records(
                 })
             else:
                 # 3監、または 2準 でも戦略未設定 -> 保留キュー (issue #397 §6-2)
-                # 3監は自動INしないが、確認画面で選択された戦略は手動確定時にも
-                # 使えるよう record に保存する。
-                if status == "3監" and chosen_trade_idea != existing_trade_idea:
-                    ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, db_path=db_path)
                 ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
                 applied.append({"code_s": code_s, "action": "保留キューへ", "detail": f"qty={merged_qty}"})
             continue

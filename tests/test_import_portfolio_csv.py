@@ -349,6 +349,11 @@ def test_import_csvs_rejects_future_as_of_before_writing(tmp_path, db_path):
     assert ps.list_positions(db_path=db_path) == []
 
 
+def test_judge_sell_when_held_qty_is_missing_but_csv_qty_is_zero():
+    """1保はDB qtyが0でも、全ソースで保有ゼロなら売却候補にする。"""
+    assert ic._judge("1保", True, 0, 0) == "売却候補 (反映すると準保有へ)"
+
+
 class TestPhase2ApplyRecords:
     """apply_records=True (issue #397 Phase2) の record 同期を検証する。
 
@@ -451,6 +456,23 @@ class TestPhase2ApplyRecords:
         assert any(p["code_s"] == "4970" for p in pending)
         applied = next(a for a in result["applied"] if a["code_s"] == "4970")
         assert applied["action"] == "保留キューへ"
+
+    def test_new_in_queued_when_trade_idea_is_explicitly_cleared(self, tmp_path, db_path):
+        """既存戦略を明示解除した2準銘柄は自動INせず保留する。"""
+        ps.add_to_watch("4970", db_path=db_path)
+        ps.transition_status("4970", "2準", db_path=db_path)
+        ps.seed_trade_ideas(db_path=db_path)
+        ps.update_memo("4970", {"trade_idea": "GARP"}, db_path=db_path)
+
+        result = ic.import_csvs(
+            self._paths(tmp_path), "2026-08-10", dry_run=False, apply_records=True,
+            overrides={"4970": {"trade_idea": ""}}, db_path=db_path,
+        )
+
+        record = ps.get_record("4970", db_path=db_path)
+        assert record["status"] == "2準"
+        assert record["memo"]["trade_idea"] == ""
+        assert next(a for a in result["applied"] if a["code_s"] == "4970")["action"] == "保留キューへ"
 
     def test_new_in_never_auto_from_3kan_even_with_trade_idea(self, tmp_path, db_path):
         """3監 は trade_idea があっても自動INしない、必ず保留キュー (§6-2)。"""

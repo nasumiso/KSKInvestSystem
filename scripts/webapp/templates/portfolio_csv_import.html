@@ -30,9 +30,11 @@
 
 {% if not diffs %}
 <p style="color:#666;">差分はありません（全銘柄が一致、または対象外です）。</p>
-<form method="post" action="{{ url_for('portfolio.csv_import_cancel') }}">
+<form method="post" action="{{ url_for('portfolio.csv_import_apply') }}">
   <input type="hidden" name="token" value="{{ token }}">
-  <button type="submit">保有銘柄一覧に戻る</button>
+  <input type="hidden" name="as_of" value="{{ as_of }}">
+  <button type="submit">この内容で反映</button>
+  <button type="submit" formaction="{{ url_for('portfolio.csv_import_cancel') }}" style="width:auto;margin-left:1em;">キャンセル</button>
 </form>
 {% else %}
 <form method="post" action="{{ url_for('portfolio.csv_import_apply') }}">
