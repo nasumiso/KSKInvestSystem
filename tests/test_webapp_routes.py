@@ -1410,7 +1410,7 @@ class TestTransitionRequiresStrategy:
 
 
 class TestPortfolioHoldSummary:
-    """保有 (status=hold) フィルタ表示時の運用総額 / 保有株数更新日サマリーの統合テスト"""
+    """保有 (status=hold) フィルタ表示時の運用総額 / 保有株数基準日サマリーの統合テスト"""
 
     @pytest.fixture
     def portfolio_app(self, db_path, tmp_path, monkeypatch):
@@ -1426,6 +1426,10 @@ class TestPortfolioHoldSummary:
         ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)
         ps.transition_status("3496", "1保", db_path=portfolio_db)
         ps.update_qty("3496", 100, db_path=portfolio_db)
+        # 保有株数の基準日はCSV取込 (position_source) の as_of から出す
+        ps.upsert_position_source(
+            "楽天", "特定", "現物", as_of="2026-08-13", row_count=1, db_path=portfolio_db,
+        )
 
         # 一覧画面は _bulk_get_stock_data 経由で stocks_shelve を読むので、
         # こちらを差し替えて price を固定 (position_value 計算用)
@@ -1447,9 +1451,9 @@ class TestPortfolioHoldSummary:
         assert resp.status_code == 200
         assert "運用総額:" in html
         assert "25 万円" in html  # 2500 × 100 / 10000 = 25
-        assert "保有株数更新日:" in html
-        # update_qty を呼んでいるので「未記録」ではない
-        assert "未記録" not in html
+        # position_source を登録済みなので as_of がそのまま出る
+        # (「未取込」は CSV 取込フォーム側でも使う文言なので、サマリー部分を丸ごと照合する)
+        assert "保有株数基準日:\n      2026-08-13" in html
 
     def test_other_filters_hide_summary(self, portfolio_app):
         client = portfolio_app.test_client()

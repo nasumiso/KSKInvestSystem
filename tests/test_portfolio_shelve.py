@@ -999,6 +999,15 @@ class TestQtyGlobalUpdatedAt:
         ts_after = ps.get_qty_global_updated_at(db_path=db_path)
         assert ts_after == ts_before
 
+    def test_position_latest_as_of(self, db_path):
+        """保有株数の基準日は取込済み position_source の as_of 最大値 (未取込なら None)"""
+        assert ps.get_position_latest_as_of(db_path=db_path) is None
+
+        ps.upsert_position_source("楽天", "特定", "現物", as_of="2026-08-10", row_count=3, db_path=db_path)
+        ps.upsert_position_source("SBI", "特定", "現物", as_of="2026-08-13", row_count=1, db_path=db_path)
+        # 部分更新 (片方だけ新しいCSV) でも最新の基準日を返す
+        assert ps.get_position_latest_as_of(db_path=db_path) == "2026-08-13"
+
 
 # ==================================================
 # テーママスター (issue #282)

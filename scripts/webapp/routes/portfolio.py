@@ -1081,7 +1081,14 @@ def dashboard():
     }
     rs_change_sort_url = rs_change_sort_cycle.get(active_sort, sort_urls["rs_change_1d"])
 
-    # 保有フィルタ表示時のみ、運用総額と PF 全体の qty 最終更新日を集計
+    # issue #397 Phase3b: CSV取込フォーム展開時に前回の各ソース取込日を出すための一覧
+    # (broker/kind -> as_of)。件数はごく少数 (最大4件) なので毎回取得しても軽量。
+    position_sources = [] if fallback_mode else ps.list_position_sources()
+    csv_import_sources = {
+        f"{s['broker']}/{s['kind']}": s["as_of"] for s in position_sources
+    }
+
+    # 保有フィルタ表示時のみ、運用総額と保有株数の基準日を集計
     hold_summary = None
     if not fallback_mode and active_status == "1保":
         hold_rows = [r for r in rows if r.get("status") == "1保"]
@@ -1105,20 +1112,18 @@ def dashboard():
             ]
             hold_summary = {
                 "total_man": int(round(total_position_value / 10000)),
-                "qty_updated_at": ps.get_qty_global_updated_at(),
+                # 保有株数の真実源は証券会社CSVなので、手動更新時刻ではなく
+                # 取込済み position_source の最新 as_of (残高基準日) を出す
+                "qty_as_of": max(
+                    (s["as_of"] for s in position_sources if s.get("as_of")),
+                    default=None,
+                ),
                 "breakdown": breakdown,
             }
 
     # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)
     ps.seed_trade_ideas()
     trade_idea_master = ps.list_trade_ideas()
-
-    # issue #397 Phase3b: CSV取込フォーム展開時に前回の各ソース取込日を出すための一覧
-    # (broker/kind -> as_of)。件数はごく少数 (最大4件) なので毎回取得しても軽量。
-    csv_import_sources = {}
-    if not fallback_mode:
-        for s in ps.list_position_sources():
-            csv_import_sources[f"{s['broker']}/{s['kind']}"] = s["as_of"]
 
     return render_template(
         "portfolio_list.html",
