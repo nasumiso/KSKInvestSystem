@@ -118,6 +118,15 @@ def test_parse_rakuten_spot_skips_summary_row_and_foreign_stock(db_path):
                          "qty": 600, "avg_price": 765.21}
 
 
+@pytest.mark.parametrize("invalid_code", ["", "12X34"])
+def test_parse_rakuten_spot_rejects_invalid_domestic_stock_code(db_path, invalid_code):
+    """国内株式の保有行で不正なコードを検出したら取込を停止する。"""
+    invalid_rows = [row.copy() for row in RAKUTEN_SPOT_ROWS]
+    invalid_rows[6][1] = invalid_code
+    with pytest.raises(ValueError, match="国内株式行の銘柄コードが不正"):
+        ic.parse_rakuten_spot(invalid_rows)
+
+
 def test_parse_rakuten_margin_separates_buy_and_sell(db_path):
     """買建は kind=信用、売建は kind=信用売建 に分けて返す (issue #397 §2-0)。"""
     parsed = ic.parse_rakuten_margin(RAKUTEN_MARGIN_ROWS)

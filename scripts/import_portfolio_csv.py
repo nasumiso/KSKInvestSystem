@@ -160,8 +160,10 @@ def parse_rakuten_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
         code_raw = (row[1] or "").strip()
         try:
             ps.validate_code_s(code_raw)
-        except (ValueError, TypeError):
-            continue
+        except (ValueError, TypeError) as e:
+            raise ValueError(
+                f"楽天現物CSV: 国内株式行の銘柄コードが不正です: {code_raw!r}"
+            ) from e
         code_s = ps.normalize_code_s(code_raw)
         if ps.is_etf_code(code_s):
             continue
