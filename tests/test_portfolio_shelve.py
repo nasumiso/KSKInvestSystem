@@ -192,6 +192,14 @@ class TestTransitionStatus:
         rec = ps.transition_status("4377", "1保", db_path=db_path)
         assert rec["status"] == "1保"
 
+    def test_transition_to_1ho_removes_pending_in(self, db_path):
+        ps.add_to_watch("4377", db_path=db_path)
+        ps.upsert_pending_in("4377", 100, "2026-08-11", db_path=db_path)
+
+        ps.transition_status("4377", "1保", db_path=db_path)
+
+        assert ps.list_pending_in(db_path=db_path) == []
+
     def test_transition_invalid_path_rejected(self, db_path):
         """禁止遷移は ValueError"""
         ps.add_to_watch("4377", db_path=db_path)
@@ -1252,6 +1260,28 @@ def test_append_action_log_weekend_normalized(db_path, stocks_with_price_log):
     assert hold["price_proxy"] == 3000             # 5/8 の終値
 
 
+def test_action_log_source_defaults_manual_and_can_be_csv_import(db_path):
+    """反映元 (issue #397) は既定で manual、CSV取込時のみ csv_import になる。
+
+    既存ログ (source フィールドが無い旧データ相当) は list 側で manual 補完される。
+    """
+    ps.add_to_watch("6324", db_path=db_path)  # source 未指定 -> manual
+    ps.transition_status("6324", "2準", db_path=db_path)
+    ps.transition_status(
+        "6324", "1保", qty=500,
+        source="csv_import", source_detail="楽天/信用/2026-08-10",
+        db_path=db_path,
+    )
+    logs = ps.list_action_logs("6324", db_path=db_path)
+    assert logs[0]["source"] == "manual"
+    hold = [l for l in logs if l.get("status_to") == "1保"][0]
+    assert hold["source"] == "csv_import"
+    assert hold["source_detail"] == "楽天/信用/2026-08-10"
+
+    with pytest.raises(ValueError):
+        ps.append_action_log("6324", "株数変更", source="invalid")
+
+
 @pytest.mark.parametrize("scenario", ["fill_none", "skip_existing", "protect_actual", "overwrite"])
 def test_backfill_price_proxies(db_path, stocks_with_price_log, monkeypatch, scenario):
     """backfill の冪等/overwrite/actual保護/土日補正 (issue #361)。"""
@@ -1350,6 +1380,56 @@ class TestFillMemo:
         assert all("review_memo" not in fl for fl in fills)
 
 
+class TestPositionLayer:
+    """position/position_source レイヤーのテスト (issue #397 Phase1)。
+
+    merged_qty の合算・売建の除外・covered 判定 (全ソース同一 as_of で揃うか) を検証する。
+    """
+
+    def _fill_all_sources(self, db_path, as_of="2026-08-10"):
+        for broker, kind in ps.EXPECTED_POSITION_SOURCES:
+            ps.upsert_position_source(broker, "特定", kind, as_of=as_of, row_count=1, db_path=db_path)
+
+    def test_merged_qty_sums_and_excludes_short(self, db_path):
+        # 402A: 楽天現物600 + 楽天信用900 = 1500 (実データ相当、issue #397 §2-3)
+        ps.upsert_position("楽天", "特定", "現物", "402A", 600, as_of="2026-08-10", db_path=db_path)
+        ps.upsert_position("楽天", "特定", "信用", "402A", 900, as_of="2026-08-10", db_path=db_path)
+        assert ps.compute_merged_qty("402A", db_path=db_path) == 1500
+        # 信用売建 (空売り) は集計から除外する (issue #397 §2-0)
+        ps.upsert_position("楽天", "特定", "信用売建", "1001", 100, as_of="2026-08-10", db_path=db_path)
+        assert ps.compute_merged_qty("1001", db_path=db_path) == 0
+
+    def test_upsert_position_overwrites_not_accumulates(self, db_path):
+        # position はスナップショットなので同一キーは最新で上書き (fill と違い履歴を持たない)
+        ps.upsert_position("楽天", "特定", "現物", "1001", 100, as_of="2026-08-09", db_path=db_path)
+        ps.upsert_position("楽天", "特定", "現物", "1001", 150, as_of="2026-08-10", db_path=db_path)
+        assert ps.compute_merged_qty("1001", db_path=db_path) == 150
+        assert len(ps.list_positions("1001", db_path=db_path)) == 1
+
+    @pytest.mark.parametrize(
+        "setup_sources,setup_short,expected",
+        [
+            ("all", False, True),      # 全4ソース揃い・売建なし -> covered
+            ("partial", False, False),  # ソース不足 -> covered=false
+            ("all", True, False),       # 全ソース揃っていても売建があれば covered=false
+        ],
+    )
+    def test_is_covered(self, db_path, setup_sources, setup_short, expected):
+        if setup_sources == "all":
+            self._fill_all_sources(db_path)
+        else:
+            ps.upsert_position_source("楽天", "特定", "現物", as_of="2026-08-10", row_count=1, db_path=db_path)
+        if setup_short:
+            ps.upsert_position("楽天", "特定", "信用売建", "1001", 100, as_of="2026-08-10", db_path=db_path)
+        assert ps.is_covered("1001", db_path=db_path) is expected
+
+    def test_is_covered_true_even_when_as_of_differs(self, db_path):
+        # 基準日が揃っていなくても4ソース全てあれば covered=true
+        # (issue #397 Phase3b: 楽天のみ更新・SBIは前回分を引き継ぐ部分更新を許容するため)
+        for broker, kind in ps.EXPECTED_POSITION_SOURCES:
+            as_of = "2026-08-09" if (broker, kind) == ("楽天", "信用") else "2026-08-10"
+            ps.upsert_position_source(broker, "特定", kind, as_of=as_of, row_count=1, db_path=db_path)
+        assert ps.is_covered("1001", db_path=db_path) is True
 class TestSplitAdjustment:
     """分割・併合の換算比率キャッシュ (issue #398)。"""
 

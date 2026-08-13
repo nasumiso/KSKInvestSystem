@@ -5203,31 +5203,22 @@ def calc_trade_summary(episode_pls: list) -> Optional[dict]:
     }
 
 
-# ===========================================
-# issue #366: 売却後騰落率
-# ===========================================
-
 POST_SELL_RETURN_PERIODS = (("5d", 5), ("20d", 20))
 
 
 def calc_post_sell_returns(ep: dict, price_log: List) -> Dict[str, dict]:
-    """売却日終値から5/20営業日後の騰落率と経過営業日数を返す。
-
-    売却日以前の価格履歴が窓外なら、後続日数を正確に数えられないため未計測扱いにする。
-    """
+    """売却日終値から5/20営業日後の騰落率と経過営業日数を返す。"""
     result = {
         key: {"days": days, "return_pct": None, "elapsed_days": None}
         for key, days in POST_SELL_RETURN_PERIODS
     }
-    sell_price = ep.get("sell_price")
     try:
         sell_date = date.fromisoformat(ep.get("sell_date", ""))
-        sell_price = float(sell_price)
+        sell_price = float(ep.get("sell_price"))
     except (TypeError, ValueError):
         return result
     if sell_price <= 0:
         return result
-
     try:
         sorted_log = sorted(
             (entry[0], entry[1]) for entry in price_log
@@ -5237,7 +5228,6 @@ def calc_post_sell_returns(ep: dict, price_log: List) -> Dict[str, dict]:
         return result
     if not any(entry_date <= sell_date for entry_date, _ in sorted_log):
         return result
-
     after_entries = [entry for entry in sorted_log if entry[0] > sell_date]
     for key, days in POST_SELL_RETURN_PERIODS:
         result[key]["elapsed_days"] = min(len(after_entries), days)

@@ -203,7 +203,6 @@ def trade_history():
     # 銘柄名付与・サブ行組み立て (issue #361)
     # 成績サマリー・概算損益は fill 側 (売買履歴タブ) に一本化したため、
     # アクションログ側では計算しない (issue #387 Phase4b)。
-    # 売却後騰落率は表示時に計算し、確定した値だけ売却ログへ保存する (issue #366)。
     price_logs = _bulk_price_logs([ep["code_s"] for ep in episodes if ep["sell_date"]])
     for ep in episodes:
         ep["stock_name"] = resolve_stock_name(ep["code_s"])
@@ -224,9 +223,6 @@ def trade_history():
                 if key in saved:
                     value["return_pct"] = saved[key]
             ep["post_sell"] = calculated
-            ep["review_prompt"] = any(
-                value["return_pct"] is not None for value in calculated.values()
-            ) and not ep["review_memo"]
 
     # 直近30件と過去ログに分割
     recent = episodes[:30]

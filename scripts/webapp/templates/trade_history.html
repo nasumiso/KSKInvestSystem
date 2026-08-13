@@ -403,8 +403,6 @@
       {% if loop.first %}
       <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;white-space:nowrap;">
         <a href="/stock/{{ ep.code_s }}">{{ ep.code_s }} {{ ep.stock_name }}</a>
-        {# 実現損益は売買履歴タブ (fill=真実源) に一本化 (issue #387 Phase4b)。
-           ここは売却後騰落率 (issue #366、振り返りの参考) のみ残す #}
         {% if ep.post_sell %}
         <div style="font-size:0.78em;margin-top:3px;color:#888;">
           {% for item in ep.post_sell.values() %}

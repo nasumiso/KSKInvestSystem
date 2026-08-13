@@ -393,6 +393,30 @@
        style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
        title="四季報コメントを順次更新">四季報更新</a>
   </div>
+  <div>
+    {# issue #397 Phase3: 楽天/SBI 現物・信用 計4ファイルをまとめて選択し、差分プレビューへ遷移する #}
+    <details style="display:inline-block;">
+      <summary style="font-size:0.85em;color:#555;cursor:pointer;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;list-style:none;"
+                title="楽天/SBI のポートフォリオCSV(現物・信用 最大4ファイル)を取込み、保有株数・ステータスを自動同期">＋ ポートフォリオCSV取込</summary>
+      <form method="post" action="{{ url_for('portfolio.csv_import_preview') }}" enctype="multipart/form-data"
+            style="display:flex;flex-direction:column;gap:0.3em;margin-top:0.4em;padding:0.4em 0.6em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;">
+        <span style="font-size:0.75em;color:#888;">楽天現物/楽天信用/SBI現物/SBI信用のうち更新分を選択 (ダイアログでCmdまたはShiftを押しながらクリックで複数選択、未選択分は前回取込を引き継ぎ)</span>
+        {% if csv_import_sources %}
+        <span style="font-size:0.72em;color:#999;">
+          前回取込日:
+          {% for key in ["楽天/現物", "楽天/信用", "SBI/現物", "SBI/信用"] %}
+            {{ key }}={{ csv_import_sources.get(key, '未取込') }}{% if not loop.last %} / {% endif %}
+          {% endfor %}
+        </span>
+        {% endif %}
+        <div style="display:flex;align-items:center;gap:0.5em;">
+          <input type="file" name="csv_files" accept=".csv" multiple required
+                 style="font-size:0.78em;width:22em;">
+          <button type="submit" style="width:auto;font-size:0.85em;">差分プレビュー</button>
+        </div>
+      </form>
+    </details>
+  </div>
 </div>
 {% if delete_mode_allowed %}
 <div id="bulk-delete-bar" style="display:none;">

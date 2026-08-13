@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}ポートフォリオCSV取込 | Shintakane Research{% endblock %}
+{% block content %}
+
+<h2>ポートフォリオCSV取込 — 差分プレビュー</h2>
+
+<p style="color:#666;font-size:0.9em;">
+  基準日: {{ as_of }} /
+  今回取込:
+  {% if sources %}
+    {% for key, count in sources.items() %}{{ key }} ({{ count }}件){% if not loop.last %} / {% endif %}{% endfor %}
+  {% else %}
+    なし
+  {% endif %}
+</p>
+
+{% if carried_over_sources %}
+<p style="color:#888;font-size:0.85em;">
+  前回分を引き継ぎ (未アップロード):
+  {% for key, prev_as_of in carried_over_sources.items() %}{{ key }} (前回取込日 {{ prev_as_of }}){% if not loop.last %} / {% endif %}{% endfor %}
+</p>
+{% endif %}
+
+{% if missing_sources %}
+<div style="padding:0.6em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;background:#fff8e0;color:#a07000;border:1px solid #ecd07a;">
+  <strong>ソース不足</strong>: {{ missing_sources | join(' / ') }} は今回未アップロードで、DBに引き継げる前回分もありません。
+  不足ソースが原因で「判定不能」になる銘柄があります。一度は4ファイル揃えて取込むことを推奨します。
+</div>
+{% endif %}
+
+{% if not diffs %}
+<p style="color:#666;">差分はありません（全銘柄が一致、または対象外です）。</p>
+<form method="post" action="{{ url_for('portfolio.csv_import_apply') }}">
+  <input type="hidden" name="token" value="{{ token }}">
+  <input type="hidden" name="as_of" value="{{ as_of }}">
+  <button type="submit">この内容で反映</button>
+  <button type="submit" formaction="{{ url_for('portfolio.csv_import_cancel') }}" style="width:auto;margin-left:1em;">キャンセル</button>
+</form>
+{% else %}
+<form method="post" action="{{ url_for('portfolio.csv_import_apply') }}">
+  <input type="hidden" name="token" value="{{ token }}">
+  <input type="hidden" name="as_of" value="{{ as_of }}">
+  <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
+    <thead>
+      <tr style="border-bottom:2px solid #d8dee6;text-align:left;">
+        <th style="padding:0.35em 0.5em;">コード</th>
+        <th style="padding:0.35em 0.5em;">銘柄名</th>
+        <th style="padding:0.35em 0.5em;">現ステータス</th>
+        <th style="padding:0.35em 0.5em;">DB qty</th>
+        <th style="padding:0.35em 0.5em;">CSV合算 qty</th>
+        <th style="padding:0.35em 0.5em;">判定</th>
+        <th style="padding:0.35em 0.5em;">戦略 / 振り返りメモ</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in diffs %}
+      {% set is_out = '売却候補' in d.judgement %}
+      {% set is_in = '新規IN候補' in d.judgement %}
+      {% set is_unresolved = '判定不能' in d.judgement %}
+      <tr style="border-bottom:1px solid #eee;
+        {% if is_out %}background:#ffeaea;
+        {% elif is_in %}background:#eaffef;
+        {% elif is_unresolved %}background:#f5f5f5;color:#999;
+        {% endif %}">
+        <td style="padding:0.35em 0.5em;">{{ d.code_s }}</td>
+        <td style="padding:0.35em 0.5em;">{{ d.stock_name }}</td>
+        <td style="padding:0.35em 0.5em;">{{ d.status }}</td>
+        <td style="padding:0.35em 0.5em;">{{ d.db_qty if d.db_qty is not none else '-' }}</td>
+        <td style="padding:0.35em 0.5em;">{{ d.merged_qty }}</td>
+        <td style="padding:0.35em 0.5em;
+          {%- if is_out %}font-weight:bold;color:#c00;
+          {%- elif is_in %}font-weight:bold;color:#0a7a2f;
+          {%- endif %}">{{ d.judgement }}</td>
+        <td style="padding:0.35em 0.5em;">
+          {% if is_in %}
+          {# issue #397 Phase3b: 新規IN対象は自動INで使う戦略を選び直せる。
+             初期値は現在設定済みの戦略 (未設定なら空)。 #}
+          <select name="trade_idea_{{ d.code_s }}" style="width:100%;margin-bottom:0.2em;">
+            <option value="">-- 戦略を選択 --</option>
+            {% for idea in trade_idea_options %}
+            <option value="{{ idea }}" {% if idea == d.current_trade_idea %}selected{% endif %}>{{ idea }}</option>
+            {% endfor %}
+          </select>
+          <input type="text" name="note_{{ d.code_s }}" placeholder="振り返りメモ (任意)" style="width:100%;padding:0.2em 0.4em;">
+          {% elif is_out %}
+          <input type="text" name="note_{{ d.code_s }}" placeholder="例: 業績下振れで撤退" style="width:100%;padding:0.2em 0.4em;">
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if out_count > 0 %}
+  <p style="margin-top:0.8em;padding:0.6em 1em;border-radius:4px;font-size:0.9em;background:#ffeaea;color:#c00;border:1px solid #f0b0b0;">
+    <strong>注意</strong>: この反映には売却候補 (自動OUT) が {{ out_count }} 件含まれます。
+    保有から準保有へ変更する破壊的操作です。内容を確認のうえ反映してください。
+  </p>
+  {% endif %}
+
+  <div style="margin-top:1em;">
+    <button type="submit" style="width:auto;">この内容で反映</button>
+    <button type="submit" formaction="{{ url_for('portfolio.csv_import_cancel') }}" style="width:auto;margin-left:1em;">キャンセル</button>
+  </div>
+</form>
+{% endif %}
+
+{% endblock %}
