@@ -638,6 +638,27 @@ class TestCalcDailyIndicators:
         )
         assert result["confirmed"] is True
 
+    def test_generic_ma_violation_keeps_pending_without_observed_cross(self):
+        """取得期間の最古日まで割れていても、A日は確定しない。"""
+        from exit_line import calc_ma_violation
+
+        result = calc_ma_violation([90.0, 90.0], [80.0, 100.0], lambda i: 100.0)
+        assert result["pending"] is True
+        assert result["confirmed"] is False
+
+    def test_weekly_ma_violation_is_reset_when_weekly_fetch_fails(self, monkeypatch):
+        """週足の取得失敗時は古い違反状態を残さず中立値で更新する。"""
+        daily = [("2026/02/09", "0", "0", "90", "100", "0", "0", "0")]
+        monkeypatch.setattr(price, "get_price_data_yahoo", lambda *args: (
+            {"_daily_price_list_raw": daily}, [100, 100, 100]
+        ))
+        monkeypatch.setattr(price, "get_weekly_price_data", lambda *args, **kwargs: {})
+        monkeypatch.setattr(price, "get_monthly_price_data", lambda *args, **kwargs: {})
+
+        result = price.get_price_data("1234")
+        assert result["wma30_violation"]["confirmed"] is False
+        assert result["wma40_violation"]["pending"] is False
+
     def test_weekly_ma_violation_uses_prior_week_value_at_week_boundary(self):
         """前週のA日は前週までのWMA、今週の確定日は今週のWMAで判定する。"""
         from datetime import timedelta
@@ -645,7 +666,11 @@ class TestCalcDailyIndicators:
         def row(dt, low, close):
             return (dt.strftime("%Y/%m/%d"), "0", "0", str(low), str(close), "0", "0", "0")
 
-        daily = [row(date(2026, 2, 9), 80, 90), row(date(2026, 2, 6), 90, 99)]
+        daily = [
+            row(date(2026, 2, 9), 80, 90),
+            row(date(2026, 2, 6), 90, 99),
+            row(date(2026, 2, 5), 100, 101),
+        ]
         # 2/2週の終値40を含む今週の30WMAは98、前週時点の30WMAは100。
         weekly = [row(date(2026, 2, 2), 0, 40)]
         weekly.extend(row(date(2026, 1, 26) - timedelta(days=7 * i), 0, 100) for i in range(30))

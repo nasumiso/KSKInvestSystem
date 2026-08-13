@@ -2408,8 +2408,9 @@ def get_price_data(code_s, stock={}, upd=UPD_INTERVAL):
     parsed_data_w = get_weekly_price_data(code_s, stock=stock, upd=upd, prices=cur_prices)
     daily_price_list = parsed_data.pop("_daily_price_list_raw", None)
     weekly_price_list = parsed_data_w.pop("_weekly_price_list_raw", None)
-    if daily_price_list and weekly_price_list:
-        add_weekly_ma_violations(parsed_data, daily_price_list, weekly_price_list)
+    if daily_price_list:
+        # 週足取得失敗時も中立値を保存し、過去の違反判定を残さない。
+        add_weekly_ma_violations(parsed_data, daily_price_list, weekly_price_list or [])
     parsed_data.update(parsed_data_w)
     # 月足位置評価 (issue #53)
     parsed_data.update(get_monthly_price_data(code_s, stock=stock, upd=upd, prices=cur_prices))

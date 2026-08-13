@@ -56,6 +56,16 @@ def test_split_adjusted_float_holding_is_included_in_exit_position():
     assert position["held_qty"] == 200.0
 
 
+def test_stop_loss_replay_accepts_split_adjusted_float_qty():
+    """分割調整済みのfloat数量を損切りライン再生でも反映する。"""
+    from exit_line import calc_stop_loss_line
+
+    rule = {"stop_loss_pct": 10, "allow_dca_lower": False}
+    fills = [{"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 200.0,
+              "price": 500, "trade_kind": "現物"}]
+    assert calc_stop_loss_line(rule, fills, kind="現物") == 450.0
+
+
 def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
     """約定履歴のない手入力保有でもMA違反を防御シグナルとして表示する。"""
     import portfolio_shelve as ps

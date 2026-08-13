@@ -48,7 +48,6 @@ def calc_ma_violation(
         if close >= ma:
             continue
         if i + 1 >= len(closes):
-            a_day_idx = i
             break
         previous_ma = ma_at(i + 1)
         if previous_ma is not None and closes[i + 1] >= previous_ma:
@@ -93,7 +92,8 @@ def calc_stop_loss_line(
         price = fill.get("price")
         side = fill.get("side")
         trade_kind = fill.get("trade_kind") or ""
-        if not isinstance(qty, int) or qty <= 0 or not isinstance(price, (int, float)) or price <= 0:
+        if (not isinstance(qty, (int, float)) or isinstance(qty, bool) or qty <= 0
+                or not isinstance(price, (int, float)) or price <= 0):
             continue
         if kind == "信用":
             is_open = side == "buy" and trade_kind.startswith("信用新規")
