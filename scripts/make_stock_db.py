@@ -1281,7 +1281,7 @@ def make_signal(stock, reasons=None):
             dt = get_price_day(dt)
             if (date.today() - dt).days <= 30:
                 tags.append("".join(new_high))
-    # 株探リスト掲載（本日のみ）
+    # 株探リスト掲載（前日分まで許容。夜間保存分を翌日も出すため days <= 1）
     kabutan_origin = stock.get("kabutan_origin", "")
     if kabutan_origin and stock.get("kabutan_origin_date"):
         dt = get_price_day(stock.get("kabutan_origin_date"))
