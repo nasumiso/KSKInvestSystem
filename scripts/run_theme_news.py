@@ -1,10 +1,10 @@
 """theme-news skill のラッパー実行スクリプト。
 
-/market ボタンからの手動実行用 (cron 経由は撤回、issue #165)。
-同一営業日の重複実行を完了マーカーで防ぐ。
+/market ボタンからの手動実行、および shintakane_cron.sh の日次実行用。
+完了マーカーは /market 表示判定に使う。
 
 Usage:
-    python run_theme_news.py                # 手動: 履歴あっても再実行
+    python run_theme_news.py                # 手動/cron: 履歴あっても再実行
     python run_theme_news.py --force        # 重複ガード無視 (=履歴あっても再実行と同等、明示用)
     python run_theme_news.py --web-trigger  # /market ボタン経由。.running マーカーを管理
 """

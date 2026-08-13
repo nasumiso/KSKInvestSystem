@@ -4,6 +4,19 @@
 cd "$(dirname "$0")" || exit 1
 mkdir -p logs
 
+RUN_THEME_NEWS=1
+for arg in "$@"; do
+  case "$arg" in
+    --skip-theme-news|--no-theme-news)
+      RUN_THEME_NEWS=0
+      ;;
+    *)
+      echo "Usage: $0 [--skip-theme-news]"
+      exit 2
+      ;;
+  esac
+done
+
 # launchd 経由の起動 (TTYなし) のみ「19時前ならスキップ」を適用。
 # 朝マシンを開いた時に RunAtLoad=true で発火しても、株価終値が揃ってない時間帯では
 # 走らせたくない。一方、手動で `bash shintakane_cron.sh` を打った時は時刻問わず実行する。
@@ -60,13 +73,26 @@ echo "===== $(date '+%Y-%m-%d %H:%M:%S') make_stock_db.py 開始 =====" >> ../lo
 python make_stock_db.py >> ../logs/make_stock_db.log 2>&1
 RET2=$?
 
-# theme-news 調査は /market のボタンから手動実行する運用 (issue #165)。
-# claude -p が将来従量課金化される可能性 + 1 回 5〜15 分かかる重い処理のため、
-# 毎日 cron で走らせず、必要な日だけユーザー判断で起動する。
-
-# --- 結果サマリー ---
+# --- ここまでの結果サマリー ---
 echo ""
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行結果 ====="
 report "shintakane.py" $RET1 ../logs/shintakane.log
 report "make_stock_db.py" $RET2 ../logs/make_stock_db.log
 echo "================================================"
+
+# --- theme-news ---
+# 数分かかるため、当日分のシステム更新データを先に閲覧できるよう、
+# make_stock_db.py 成功ログを出した後に実行する。
+RET3=0
+if [ "$RUN_THEME_NEWS" -eq 0 ]; then
+  echo "theme-news は --skip-theme-news 指定のため実行しません"
+elif [ "$RET2" -ne 0 ]; then
+  echo "theme-news は make_stock_db.py 失敗のため実行しません"
+else
+  rotate_log ../logs/theme_news.log
+  echo "===== $(date '+%Y-%m-%d %H:%M:%S') theme-news 開始 =====" >> ../logs/theme_news.log
+  echo "theme-news を実行します (数分かかります)"
+  python run_theme_news.py >> ../logs/theme_news.log 2>&1
+  RET3=$?
+  report "theme-news" $RET3 ../logs/theme_news.log
+fi

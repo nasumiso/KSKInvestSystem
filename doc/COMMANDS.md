@@ -204,14 +204,15 @@ cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05
 
 ## 自動実行
 
-`shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。
+`shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` → `run_theme_news.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。
 
 詳細仕様:
 - 平日(月〜金)19:00 の `StartCalendarInterval` が定刻発火
 - `StartInterval=1800` (30分ごと) でスリープ復帰後の最初のwakeも補完
 - `RunAtLoad=true` でログイン/再起動時にも起動
-- shintakane_cron.sh の冒頭ガードで「19時以降」「当日未実行」の最初の起動でのみ Python 起動 (`~/.shintakane_cron_last_run` フラグ管理)
-- 両プロセス (shintakane.py / make_stock_db.py) 成功時のみフラグを更新
+- shintakane_cron.sh の冒頭ガードで、launchd 経由かつ19時前の起動はスキップ
+- `make_stock_db.py` の結果サマリーをコンソールに出した後、`make_stock_db.py` 成功時のみ theme-news を実行
+- 開発時に theme-news を飛ばす場合: `bash shintakane_cron.sh --skip-theme-news` (`--no-theme-news` も同義)
 
 ## テスト
 

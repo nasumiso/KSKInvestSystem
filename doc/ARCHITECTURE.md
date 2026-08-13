@@ -285,7 +285,7 @@ export KS_DATA_DIR=/path/to/new/data
 
 ### cron実行 (`shintakane_cron.sh`)
 
-`shintakane.py` → `make_stock_db.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で定期実行。
+`shintakane.py` → `make_stock_db.py` → `run_theme_news.py` を逐次実行。theme-news は `make_stock_db.py` の結果サマリーを出した後、`make_stock_db.py` 成功時のみ実行する。開発時は `bash shintakane_cron.sh --skip-theme-news` で theme-news を省略できる。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で定期実行。
 
 ## データ保存場所
 
