@@ -1,16 +1,21 @@
 ---
-name: pr-review-fix
-description: GitHub PR のレビューコメント (Codex 等) を取得して修正し、修正コメントと再レビュー依頼を投稿する。新規コメントが尽きるまで cron で定期確認を繰り返す。「PRのレビュー対応して」「レビューコメント直して」と指示されたとき、または PR 作成後にレビューを反映したいときに使用
+name: github-review-fix
+description: GitHub 上の PR レビューコメント (Codex 自動レビュー等) を取得して修正し、修正コメントと @codex 再レビュー依頼を投稿する。新規コメントが尽きるまで cron で定期確認を繰り返す。「PRのレビュー対応して」「レビューコメント直して」「codexの指摘を直して」と指示されたとき、または PR 作成後にレビューを反映したいときに使用。ローカルの codex exec によるプランレビュー (.claude/rules/codex-plan-review.md) とは別物
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
-# PR レビューコメント対応 (pr-review-fix)
+# GitHub PR レビュー対応 (github-review-fix)
 
-GitHub PR のレビューコメントを **取得 → 検証 → 修正 → セルフレビュー → 投稿** し、
+**GitHub 上の** PR レビューコメントを **取得 → 検証 → 修正 → セルフレビュー → 投稿** し、
 新規コメントが尽きるまで cron ループで繰り返す。
 
 対象は Codex (`chatgpt-codex-connector`) の自動レビューを想定しているが、人間の
 レビューコメントも同じ手順で扱える。
+
+> **ローカルの `codex exec` によるプランレビューとは別物。**
+> 実装プランを提示する前のレビューは `.claude/rules/codex-plan-review.md` が担当で、
+> そちらはプロンプトで粒度を指定できる。本スキルは PR がある状態で、GitHub 上に
+> 投稿されたコメントを相手にする。
 
 ## 基本方針
 
@@ -233,7 +238,7 @@ CronCreate:
   prompt: |
     PR #NNN の新しいレビューコメント（前回確認以降のもの）を確認する。
 
-    コメントがあれば pr-review-fix スキルの手順3以降で対応する:
+    コメントがあれば github-review-fix スキルの手順3以降で対応する:
     - レアケース・費用対効果が見合わないものは見送りでよい
     - 迷うものはユーザーに相談する
     - 修正したらセルフレビューし、指摘がなくなるまで修正を繰り返す
