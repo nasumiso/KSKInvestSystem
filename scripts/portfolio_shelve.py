@@ -274,6 +274,10 @@ ALLOWED_TRANSITIONS = frozenset(
     }
 )
 
+# 出口ルールで指定できるMA期間。exit_line.evaluate_exit_signal() が実際に
+# 判定できる組み合わせと一致させること (日足50MA / 週足30・40MA)。
+EXIT_RULE_MA_WINDOWS = {"day": (50,), "week": (30, 40)}
+
 
 # ===========================================
 # バリデーション・正規化
@@ -1709,7 +1713,9 @@ def transition_status(
             record["status"] = new_status
             record["updated_at"] = now_iso()
             db[key] = record
-            if old_status == "1保" and new_status == "2準":
+            # 1保 を離れたら防御履歴は破棄する。1保→3監 も許可されているため
+            # 2準 だけ消すと 1保→3監→1保 で旧「防歴」を引き継ぐ (PR #409 レビュー)
+            if old_status == "1保" and new_status != "1保":
                 alert_key = _exit_alert_key(normalized)
                 if alert_key in db:
                     del db[alert_key]
@@ -2113,8 +2119,11 @@ def _validate_exit_rule(exit_rule: Any) -> Dict[str, Any]:
         raise ValueError("exit_rule.ma_kind must be day, week or None")
     if ma_kind is None and ma_window is not None:
         raise ValueError("exit_rule.ma_window requires ma_kind")
-    if ma_kind is not None and (not isinstance(ma_window, int) or ma_window <= 0):
-        raise ValueError("exit_rule.ma_window must be positive int")
+    # evaluate_exit_signal() が見るのは日足50MAと週足30/40MAだけ。それ以外を
+    # 保存できるとMAアラートが黙って無効になるので、実装済みの組み合わせに限る
+    if ma_kind is not None and ma_window not in EXIT_RULE_MA_WINDOWS.get(ma_kind, ()):
+        allowed = "/".join(str(w) for w in EXIT_RULE_MA_WINDOWS[ma_kind])
+        raise ValueError(f"exit_rule.ma_window for {ma_kind} must be {allowed}")
     if stop_loss_pct is not None and (not isinstance(stop_loss_pct, (int, float)) or not 0 < stop_loss_pct < 100):
         raise ValueError("exit_rule.stop_loss_pct must be 0-100 or None")
     if not isinstance(allow_dca_lower, bool):

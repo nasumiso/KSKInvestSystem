@@ -1440,3 +1440,39 @@ class TestSplitAdjustment:
         assert ps.reject_split_pending_review("9497", ex_date="2025-06-01", db_path=db_path) is True
         assert "9497" not in ps.list_pending_review_codes(db_path=db_path)
         assert ps.list_rejected_review_events(db_path=db_path)["9497"] == ["2025-06-01"]
+
+
+class TestExitAlertLifecycle:
+    """出口アラート状態の保持・破棄 (PR #409 レビュー)"""
+
+    @pytest.mark.parametrize("leave_status", ["2準", "3監"])
+    def test_exit_alert_state_cleared_when_leaving_hold(self, db_path, leave_status):
+        # 1保→3監 も許可されているため、2準 だけ消すと 1保→3監→1保 で
+        # 旧「防歴」を引き継いでしまう。1保 を離れる全遷移で破棄する。
+        ps.add_to_watch("4377", reason="テスト", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        ps.record_exit_alert_event(
+            "4377", "cycle-1", {"date": "2026-02-09", "level": "防"}, db_path=db_path
+        )
+        assert ps.get_exit_alert_state("4377", "cycle-1", db_path=db_path)["triggered"] is True
+
+        ps.transition_status("4377", leave_status, db_path=db_path)
+        assert ps.get_exit_alert_state("4377", "cycle-1", db_path=db_path)["triggered"] is False
+
+    @pytest.mark.parametrize(
+        "ma_kind, ma_window, allowed",
+        [
+            ("day", 50, True),
+            ("week", 30, True),
+            ("week", 40, True),
+            ("day", 20, False),   # evaluate_exit_signal が見ないので黙って無効になる
+            ("week", 50, False),
+        ],
+    )
+    def test_exit_rule_ma_window_limited_to_implemented(self, ma_kind, ma_window, allowed):
+        rule = {"ma_kind": ma_kind, "ma_window": ma_window}
+        if allowed:
+            assert ps._validate_exit_rule(rule)["ma_window"] == ma_window
+        else:
+            with pytest.raises(ValueError, match="ma_window"):
+                ps._validate_exit_rule(rule)
