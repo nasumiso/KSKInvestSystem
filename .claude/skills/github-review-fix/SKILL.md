@@ -60,13 +60,16 @@ PR が見つからない場合はユーザーに確認する。勝手に番号�
 gh api graphql -f query='
 { repository(owner:"OWNER", name:"REPO") { pullRequest(number:NNN) {
   reviewThreads(first:100){ nodes {
-    isResolved isOutdated path line
+    id isResolved isOutdated path line
     comments(first:3){ nodes { author{login} createdAt body } }
   } } } } }' \
 --jq '.data.repository.pullRequest.reviewThreads.nodes[]
       | select(.isResolved==false and .isOutdated==false)
-      | "########## \(.path):\(.line) ##########\n\(.comments.nodes[0].body)"'
+      | "########## \(.path):\(.line) | thread=\(.id) ##########\n\(.comments.nodes[0].body)"'
 ```
+
+**`id` (スレッドID) も一緒に取っておく。** 手順8で個別返信するのに必要で、
+後から取り直すと修正コミットで `isOutdated=true` に変わって拾えなくなる。
 
 issue コメント (PR 全体への `@codex review` の返答等) も併せて確認する:
 
@@ -193,37 +196,72 @@ sleep 8 && curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5001/
 修正内容と **なぜそう直したか** をコミットメッセージに書く。実データで再現した
 事実があればそれも書く (レビュアーが妥当性を判断できる)。
 
-### 8. 修正コメントと再レビュー依頼を投稿する
+### 8. 各レビューへ個別に返信し、再レビューを依頼する
 
-**2つに分けて投稿する** (`@codex review` は単独コメントにしないと拾われないことがある):
+**指摘ごとにスレッド返信する。** PR 全体への1本のコメントにまとめると、どの指摘への
+回答か対応関係が読み取れない。返信はスレッド内に並ぶので、レビュアーが指摘と回答を
+突き合わせられる。
+
+手順2で控えた `threadId` を使う:
+
+```bash
+reply() {
+  gh api graphql -f query='
+mutation($threadId: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $threadId, body: $body}) {
+    comment { url }
+  }
+}' -f threadId="$1" -f body="$2" --jq '.data.addPullRequestReviewThreadReply.comment.url'
+}
+
+# 対応した指摘
+reply "PRRT_xxx" '✅ **対応しました** (コミットハッシュ)
+
+<何が問題だったか / どう直したか。実データで再現した事実があれば書く>
+
+```
+変更前: ...
+変更後: ...
+```'
+
+# 見送った指摘
+reply "PRRT_yyy" '⏭️ **見送りました** (<理由の一言: 既に対応済み / nitpick と判断 / レアケース>)
+
+<根拠。既に対応済みなら該当コードを引用して示す>'
+```
+
+**`isOutdated=true` のスレッドにも返信できる。** 自分の修正コミットで outdated に
+変わるので、返信時点で取り直すと対象が見つからない。手順2で控えた ID を使う。
+
+シングルクォートの本文に `'` を含める場合は `'"'"'` でエスケープする
+(Python の `'int'` を引用するときなど)。
+
+#### 全体コメントは要約だけ
+
+指摘が多い、または全体の判断を伝えたいときのみ、サマリを1本足す。
+個別返信と同じ内容を繰り返さない:
 
 ```bash
 gh pr comment NNN --body "$(cat <<'EOF'
 ## レビュー対応 (コミットハッシュ)
 
-### ✅ 対応: <指摘の要約> (P1/P2)
+生きている指摘N件を検証し、実在したM件のみ対応しました。詳細は各スレッドに返信済みです。
 
-<何が問題だったか / どう直したか>
-
-```
-変更前: ...
-変更後: ...
-```
-
-<実データで再現した事実があれば書く>
-
-### ⏭️ 見送り: <指摘の要約>
-
-<なぜ見送ったか。nitpick と判断 / レアケース / 費用対効果 / 意図的な設計。
-複数あるならまとめて箇条書きにする>
+- ✅ <対応した指摘の1行要約>
+- ⏭️ <見送った指摘の1行要約> (理由)
 
 ### テスト
-
 - pytest ... → N passed
 - <実機確認の内容>
 EOF
 )"
+```
 
+#### 再レビュー依頼は単独コメントで
+
+`@codex review` は他の文と混ぜると拾われないことがあるため、必ず単独で投稿する:
+
+```bash
 gh pr comment NNN --body "@codex review"
 ```
 
