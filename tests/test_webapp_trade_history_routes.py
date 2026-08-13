@@ -1,7 +1,8 @@
 """売買履歴ページ (issue #351, #357) ルートテスト。"""
 
-import pytest
 from datetime import date, timedelta
+
+import pytest
 import portfolio_shelve as ps
 import research_shelve as rs
 from webapp import create_app

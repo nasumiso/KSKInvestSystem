@@ -1,5 +1,6 @@
 """webapp ルートの統合テスト (Flaskテストクライアント使用)"""
 
+import io
 import os
 
 import pytest
@@ -1457,6 +1458,189 @@ class TestPortfolioHoldSummary:
             html = resp.data.decode()
             assert "運用総額:" not in html, f"status={status} でサマリーが漏れている"
             assert "保有株数更新日:" not in html, f"status={status} でサマリーが漏れている"
+
+
+# ==================================================
+# /portfolio/csv-import (issue #397 Phase3)
+# ==================================================
+class TestPortfolioCsvImport:
+    """ポートフォリオCSV取込 (プレビュー→反映) の統合テスト"""
+
+    @pytest.fixture
+    def csv_import_app(self, db_path, tmp_path, monkeypatch):
+        import portfolio_shelve as ps
+        portfolio_db = str(tmp_path / "test_portfolio_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
+        # _sync_txt_safely() が my_watch_list.txt を書く先、resolve_stock_name が
+        # 参照する stocks_shelve を隔離する (本番データを誤って上書きしないため)。
+        stocks_db = str(tmp_path / "test_stocks_shelve")
+        monkeypatch.setattr("db_shelve.STOCKS_SHELVE", stocks_db)
+        monkeypatch.setattr("webapp.helpers.STOCKS_SHELVE", stocks_db)
+        monkeypatch.setattr("portfolio_shelve.DATA_DIR", str(tmp_path))
+
+        import webapp.routes.portfolio as portfolio_routes
+        monkeypatch.setattr(
+            portfolio_routes, "PORTFOLIO_CSV_IMPORT_TMP_DIR", str(tmp_path / "csv_import_tmp")
+        )
+
+        rec = rs.create_research_record("6501", "日立", overall_rating="A")
+        rs.upsert_research_record(rec, db_path=db_path)
+        ps.add_to_watch("6501", reason="テスト", db_path=portfolio_db)
+        ps.transition_status("6501", "2準", db_path=portfolio_db)
+        ps.seed_trade_ideas(db_path=portfolio_db)
+        ps.update_memo("6501", {"trade_idea": "GARP"}, db_path=portfolio_db)
+
+        app = create_app()
+        app.config["TESTING"] = True
+        return app
+
+    def _csv_bytes(self, rows):
+        import csv
+        import io
+        buf = io.StringIO()
+        csv.writer(buf).writerows(rows)
+        return buf.getvalue().encode("shift_jis")
+
+    def _upload_files(self):
+        # 6501 (2準+trade_idea) を保有100株として検出させ、新規IN自動反映を発火させる縮図データ
+        return {
+            "csv_files": [
+                (
+                    io.BytesIO(self._csv_bytes([
+                        ["■ 保有商品詳細 (すべて）"],
+                        ["種別", "銘柄コード・ティッカー", "銘柄", "口座", "保有数量", "［単位］",
+                         "平均取得価額", "［単位］"],
+                        ["国内株式", "6501", "日立", "特定", "100", "株", "4750", "円"],
+                    ])),
+                    "rakuten_spot.csv",
+                ),
+                (
+                    io.BytesIO(self._csv_bytes([
+                        ["■表示形式", "個別銘柄"],
+                        ["口座区分", "銘柄コード", "銘柄名", "市場名称", "売買", "信用区分", "弁済期限",
+                         "建玉数量［株］", "執行中［株］", "建単価[円]"],
+                    ])),
+                    "rakuten_margin.csv",
+                ),
+                (
+                    io.BytesIO(self._csv_bytes([
+                        [],
+                        ["保有証券一覧"],
+                        ["株式（特定預り）"],
+                        ["銘柄コード", "銘柄名称", "保有株数", "売却注文中", "取得単価", "現在値",
+                         "取得金額", "評価額", "評価損益"],
+                    ])),
+                    "SaveFile.csv",
+                ),
+                (
+                    io.BytesIO(self._csv_bytes([
+                        [],
+                        ["信用建玉一覧"],
+                        ["個別表示"],
+                        ["銘柄コード", "銘柄名称", "売/買建", "市場", "期限", "建日", "返済期限", "預り",
+                         "建株数", "注文中", "建単価"],
+                    ])),
+                    "SaveFile (1).csv",
+                ),
+            ],
+        }
+
+    def test_preview_then_apply_auto_in(self, csv_import_app):
+        import portfolio_shelve as ps
+        client = csv_import_app.test_client()
+        resp = client.post(
+            "/portfolio/csv-import/preview",
+            data=self._upload_files(),
+            content_type="multipart/form-data",
+        )
+        html = resp.data.decode()
+        assert resp.status_code == 200
+        assert "6501" in html
+        assert "新規IN候補" in html
+        # 新規IN対象は反映前に戦略を選び直せる (issue #397 Phase3b)。
+        # 初期値は現在設定済みの GARP が selected になっている。
+        assert 'name="trade_idea_6501"' in html
+        assert 'value="GARP" selected' in html
+        assert 'name="note_6501"' in html
+
+        # プレビュー画面から token/as_of を抜き出す
+        import re
+        token = re.search(r'name="token" value="([0-9a-f]+)"', html).group(1)
+        as_of = re.search(r'name="as_of" value="([\d-]+)"', html).group(1)
+
+        # 確認画面で戦略を GARP から 中期モメンタム に変更し、振り返りメモも入力して反映する
+        resp = client.post(
+            "/portfolio/csv-import/apply",
+            data={
+                "token": token, "as_of": as_of,
+                "trade_idea_6501": "中期モメンタム", "note_6501": "テスト用の振り返りメモ",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        record = ps.get_record("6501")
+        assert record["status"] == "1保"
+        assert record["qty"] == 100
+        assert record["memo"]["trade_idea"] == "中期モメンタム"
+
+        logs = ps.list_action_logs("6501")
+        hold_log = next(l for l in logs if l.get("status_to") == "1保")
+        assert "テスト用の振り返りメモ" in hold_log["reason"]
+
+    def test_apply_rejects_invalid_token(self, csv_import_app):
+        client = csv_import_app.test_client()
+        resp = client.post(
+            "/portfolio/csv-import/apply",
+            data={"token": "../../etc", "as_of": "2026-08-11"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "プレビューが期限切れです" in resp.data.decode()
+
+    def test_cancel_removes_uploaded_csvs(self, csv_import_app, tmp_path):
+        import re
+
+        client = csv_import_app.test_client()
+        resp = client.post(
+            "/portfolio/csv-import/preview",
+            data=self._upload_files(),
+            content_type="multipart/form-data",
+        )
+        token = re.search(r'name="token" value="([0-9a-f]+)"', resp.data.decode()).group(1)
+        tmp_dir = tmp_path / "csv_import_tmp" / token
+        assert tmp_dir.is_dir()
+
+        resp = client.post("/portfolio/csv-import/cancel", data={"token": token})
+
+        assert resp.status_code == 302
+        assert not tmp_dir.exists()
+
+    def test_apply_is_available_when_preview_has_no_diffs(self, csv_import_app):
+        """差分ゼロでもCSVスナップショットを反映できる。"""
+        import portfolio_shelve as ps
+        import re
+
+        ps.transition_status("6501", "1保", qty=100)
+        ps.update_qty("6501", 100, log_action=False)
+        client = csv_import_app.test_client()
+        resp = client.post(
+            "/portfolio/csv-import/preview",
+            data=self._upload_files(),
+            content_type="multipart/form-data",
+        )
+        html = resp.data.decode()
+        assert "差分はありません" in html
+        assert 'action="/portfolio/csv-import/apply"' in html
+        token = re.search(r'name="token" value="([0-9a-f]+)"', html).group(1)
+        as_of = re.search(r'name="as_of" value="([\d-]+)"', html).group(1)
+
+        resp = client.post("/portfolio/csv-import/apply", data={"token": token, "as_of": as_of})
+
+        assert resp.status_code == 302
+        assert ps.compute_merged_qty("6501") == 100
 
 
 # ==================================================
