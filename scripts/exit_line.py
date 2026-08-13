@@ -87,7 +87,9 @@ def calc_stop_loss_line(
     held_qty = 0
     avg_cost = 0.0
     line = None
-    for fill in sorted(fills, key=lambda f: (str(f.get("trade_date", "")), int(f.get("seq", 0)))):
+    # エピソード側で建玉を作る約定を同日中の返済・売却より先に正規化済み。
+    # ここで seq 順に並べ直すと、その建玉順と残存原価が変わってしまう。
+    for fill in fills:
         qty = fill.get("qty")
         price = fill.get("price")
         side = fill.get("side")

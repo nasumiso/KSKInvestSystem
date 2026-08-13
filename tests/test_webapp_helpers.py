@@ -66,6 +66,23 @@ def test_stop_loss_replay_accepts_split_adjusted_float_qty():
     assert calc_stop_loss_line(rule, fills, kind="現物") == 450.0
 
 
+def test_stop_loss_replay_preserves_episode_same_day_order():
+    """同日中の建玉優先順を保ち、残存分の損切りラインを再生する。"""
+    from exit_line import calc_stop_loss_line
+
+    rule = {"stop_loss_pct": 10, "allow_dca_lower": True}
+    fills = [
+        {"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 100,
+         "price": 1000, "trade_kind": "現物"},
+        # エピソード正規化では、同日の買い増しを売却より先に処理する。
+        {"trade_date": "2026-01-02", "seq": 2, "side": "buy", "qty": 100,
+         "price": 800, "trade_kind": "現物"},
+        {"trade_date": "2026-01-02", "seq": 1, "side": "sell", "qty": 100,
+         "price": 900, "trade_kind": "現物"},
+    ]
+    assert calc_stop_loss_line(rule, fills, kind="現物") == 810.0
+
+
 def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
     """約定履歴のない手入力保有でもMA違反を防御シグナルとして表示する。"""
     import portfolio_shelve as ps
