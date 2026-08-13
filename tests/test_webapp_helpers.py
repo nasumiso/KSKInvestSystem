@@ -1872,6 +1872,29 @@ class TestFormatTagsTooltip:
         assert tags == expected_tags
         assert helpers._format_tags_tooltip(reasons) == expected_tooltip
 
+    def test_rank_jump_reason_shows_actual_compared_date(self):
+        """昇の比較相手は「5日以上前の最初のログ」なので、実日付を出す。
+
+        get_rank_log(.., 5) はちょうど5日前とは限らず、ログが飛ぶと7日前等になる。
+        「5日前」固定表記だと誤った比較期間を伝えるため日付で出す (PR #413 レビュー)。
+        """
+        from make_stock_db import make_signal, recent_weekday
+
+        latest = recent_weekday(_dt.datetime.today())
+        old_day = latest - _dt.timedelta(days=7)  # 5日前のログが欠けている状況
+        stock = {
+            "trend_template": [],
+            "stock_rank_log": [
+                (latest, 50), (latest - _dt.timedelta(days=1), 55), (old_day, 200),
+            ],
+        }
+        reasons = {}
+        _signal, tags = make_signal(stock, reasons=reasons)
+        assert tags == ["昇"]
+        assert helpers._format_tags_tooltip(reasons) == (
+            "昇: 順位 200位(%s) → 50位" % old_day.strftime("%m/%d")
+        )
+
     @pytest.mark.parametrize(
         "tags, expected_tags, expected_monthly",
         [

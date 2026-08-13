@@ -1411,12 +1411,18 @@ def make_signal(stock, reasons=None):
     if rank0 and rank1 and rank5 and rank0[0] == latest_day:
         rank1_0 = rank1[1] - rank0[1]
         rank5_0 = rank5[1] - rank0[1]
+        # get_rank_log は「diff_day 以上前の最初のログ」を返すので、比較相手が
+        # 常にちょうど1日/5日前とは限らない。tooltip には実際の日付を出す。
         if rank1[1] and rank1_0 > rank1[1] * 0.30:
             tags.append("急")
-            reasons["急"] = "順位 %d位(前日) → %d位" % (rank1[1], rank0[1])
+            reasons["急"] = "順位 %d位(%s) → %d位" % (
+                rank1[1], rank1[0].strftime("%m/%d"), rank0[1],
+            )
         elif rank5[1] and rank5_0 > rank5[1] * 0.30:
             tags.append("昇")
-            reasons["昇"] = "順位 %d位(5日前) → %d位" % (rank5[1], rank0[1])
+            reasons["昇"] = "順位 %d位(%s) → %d位" % (
+                rank5[1], rank5[0].strftime("%m/%d"), rank0[1],
+            )
 
     # print signal, tags
     return signal, tags
