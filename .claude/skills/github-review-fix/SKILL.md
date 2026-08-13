@@ -61,7 +61,7 @@ gh api graphql -f query='
 { repository(owner:"OWNER", name:"REPO") { pullRequest(number:NNN) {
   reviewThreads(first:100){ nodes {
     id isResolved isOutdated path line
-    comments(first:3){ nodes { author{login} createdAt body } }
+    comments(first:10){ nodes { author{login} createdAt body } }
   } } } } }' \
 --jq '.data.repository.pullRequest.reviewThreads.nodes[]
       | select(.isResolved==false and .isOutdated==false)
@@ -78,8 +78,26 @@ gh pr view NNN --json comments \
   --jq '.comments[] | "\(.createdAt) | \(.author.login) | \(.body[0:150]|gsub("\n";" "))"'
 ```
 
-**2周目以降は前回確認時刻で絞る** (`select(.comments.nodes[0].createdAt > "...")`)。
-そうしないと対応済みの指摘を何度も読み直すことになる。
+#### 2周目以降は「最終コメントが Codex か」で絞る (時刻で絞らない)
+
+未対応の指摘は **スレッドの最終コメントがレビュアーのまま** という性質を使う。
+自分が返信すれば最終コメントは自分になるので、返信漏れがそのまま検出条件になる:
+
+```bash
+gh api graphql -f query='...同上...' \
+--jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+       | select(.comments.nodes[-1].author.login=="chatgpt-codex-connector")]
+      | "未返信: \(length)件",
+        (.[] | "--- \(.path):\(.line) thread=\(.id) ---\n\(.comments.nodes[-1].body)")'
+```
+
+`comments(first:N)` の N は最終コメントまで届く数にする (返信が増えるので 10 程度)。
+
+**時刻フィルタ (`createdAt > "..."`) は使わない。** 実際に取りこぼした:
+`> 16:00:00Z` で絞ったのに `16:00:41Z` の指摘を3周連続で「新規なし」と誤報告し、
+終了直前の全件確認でようやく気づいた。件数を数えるクエリと詳細を出すクエリで
+条件がずれる、スレッド内の何番目のコメントを見るかを間違える、といった事故が
+起きやすく、しかも**取りこぼしても「0件」に見える**ので失敗に気づけない。
 
 #### フィルタの意味
 
@@ -274,18 +292,25 @@ CronCreate:
   cron: "*/3 * * * *"
   recurring: true
   prompt: |
-    PR #NNN の新しいレビューコメント（前回確認以降のもの）を確認する。
+    PR #NNN の未返信レビューコメントを確認する。作業対象は <worktree パス> (branch: <名前>)。
 
-    コメントがあれば github-review-fix スキルの手順3以降で対応する:
-    - レアケース・費用対効果が見合わないものは見送りでよい
+    「未返信」= reviewThreads のうち最終コメントが chatgpt-codex-connector のもの。
+    時刻では絞らない (取りこぼしても0件に見えて失敗に気づけないため)。
+
+    あれば github-review-fix スキルの手順3以降で対応する:
+    - 現行コードで裏を取ってから修正する（既に対応済みの指摘が混ざる）
+    - nitpick・レアケース・費用対効果が見合わないものは見送りでよい
     - 迷うものはユーザーに相談する
     - 修正したらセルフレビューし、指摘がなくなるまで修正を繰り返す
-    - 修正完了後、修正内容のコメントと @codex review を投稿する
+    - 修正完了後、各スレッドへ個別返信して @codex review を投稿する
 
-    新しいコメントが無ければ「N回目: 新規コメントなし」とだけ簡潔に報告する。
-    新規コメントなしが3回連続に達したら、CronDelete でジョブを削除して完了する
-    （ジョブIDは CronList で確認）。
+    未返信が無ければ「N回目: 新規コメントなし」とだけ簡潔に報告する。
+    3回連続で0件なら CronDelete でジョブを削除して完了する（IDは CronList で確認）。
 ```
+
+worktree で作業する PR なら、**cron プロンプトにパスとブランチ名を書く**。
+別セッションが本体リポジトリを触っていることがあり、作業場所を毎回書いておかないと
+次の firing で取り違える。
 
 登録後、**1回目は待たずに即実行する**。
 
@@ -294,15 +319,25 @@ CronCreate:
 **再レビューの反映には遅延がある。** 「N回連続なし」で打ち切った直後に指摘が
 現れたことがある (5回連続なしで終了した2分後に2件届いていた)。
 
-そのため `CronDelete` の**直前にもう一度フルで取得**し、時刻フィルタを外した
-「未解決 かつ not outdated」の全件を数える。0件でなければループを続行する。
+`CronDelete` の直前にもう一度フルで取得し、次の2つをどちらも確認する:
 
 ```bash
-# 終了判定の最終確認: 時刻で絞らず現存する生きた指摘を数える
-gh api graphql -f query='...' \
---jq '[.data.repository.pullRequest.reviewThreads.nodes[]
-       | select(.isResolved==false and .isOutdated==false)] | length'
+gh api graphql -f query='...' > /tmp/threads.json   # 1回だけ取って両方に使う
+
+# (a) 未返信 = 最終コメントがレビュアーのまま → 0件でなければ続行
+jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+     | select(.comments.nodes[-1].author.login=="chatgpt-codex-connector")] | length' /tmp/threads.json
+
+# (b) 生きた指摘 = unresolved かつ not outdated (参考値)
+jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+     | select(.isResolved==false and .isOutdated==false)] | length' /tmp/threads.json
 ```
+
+判定は **(a) で行う**。(b) は自分が返信済みでも Codex が解決マークを付けないため
+0 にならないことが多く、これを終了条件にすると永久に終わらない。(b) が残っていても
+(a) が 0 なら、返信済みで再指摘が来ていない状態なので完了してよい。
+
+**同じ JSON から両方を数える。** クエリを分けると条件がずれて取りこぼす。
 
 終了条件に達したら `CronDelete` でジョブを削除し、対応内容を要約して報告する。
 
@@ -314,6 +349,8 @@ gh api graphql -f query='...' \
 - **勝手にマージしない**。マージはユーザー判断
 - **PR 番号を推測しない**。特定できなければ聞く
 - **裏取りせずに修正しない**。既に直っている指摘に「対応しました」と報告するのは嘘になる
+- **未対応の指摘を時刻で探さない**。「最終コメントがレビュアーか」で判定する。
+  時刻フィルタは取りこぼしても 0 件に見えるので、失敗が失敗として現れない
 
 ## 注意
 
