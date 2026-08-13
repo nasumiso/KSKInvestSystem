@@ -35,6 +35,7 @@ import research_shelve
 from ks_util import DATA_DIR
 from webapp.helpers import (
     MONTHLY_TAG_DESCRIPTIONS,
+    TAG_DESCRIPTIONS,
     THEME_SUMMARY_SORT_FIELDS,
     build_portfolio_theme_summary,
     compute_cell_styles,
@@ -1145,6 +1146,7 @@ def dashboard():
         chart_style_options=ps.CHART_STYLE_OPTIONS,
         chart_state_options=ps.CHART_STATE_OPTIONS,
         monthly_tag_descriptions=MONTHLY_TAG_DESCRIPTIONS,
+        tag_descriptions=TAG_DESCRIPTIONS,
         hold_summary=hold_summary,
         csv_import_sources=csv_import_sources,
     )

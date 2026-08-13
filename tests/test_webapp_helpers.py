@@ -1,6 +1,7 @@
 """webapp/helpers.py のテスト (tmp_path で一時DBを作成)"""
 
 import csv
+import datetime as _dt
 import html
 import os
 
@@ -1808,11 +1809,12 @@ class TestComputeCellStyles:
         "tags, expected",
         [
             ("最", f"background:{C['赤']};color:#fff"),
-            ("警", f"background:{C['青']};color:#fff"),
+            # 売 (2条件成立) は青、警 (1条件のみ) は弱い水色
             ("売", f"background:{C['青']};color:#fff"),
-            ("早売", f"background:{C['青']};color:#fff"),
+            ("警", f"background:{C['水色']};color:#fff"),
+            ("早売", f"background:{C['青']};color:#fff"),      # 「売」を含むので青
             ("押", f"color:{C['青']}"),
-            ("警/押", f"background:{C['青']};color:#fff"),     # 青背景 > 青文字
+            ("警/押", f"background:{C['水色']};color:#fff"),   # 背景 > 青文字
             ("早売/押", f"background:{C['青']};color:#fff"),   # 売り系背景 > 押し目文字
             ("", None),
         ],
@@ -1838,16 +1840,37 @@ class TestComputeCellStyles:
 class TestFormatTagsTooltip:
     """タグ列 tooltip の補助文言"""
 
-    def test_early_sell_tooltip_adds_short_description(self):
-        tooltip = helpers._format_tags_tooltip("早売")
-        assert "早売" in tooltip
-        assert "10ma維持実績あり" in tooltip
+    # tooltip の理由は make_signal が判定時点で書き出すので、表示側だけでなく
+    # 判定側を通して「タグが出た条件と文言が一致するか」まで検証する。
+    @pytest.mark.parametrize(
+        "stock, expected_tags, expected_tooltip",
+        [
+            # 警: 成立した1条件だけを値付きで出す (wma10 は正なので出ない)。
+            # RS は成立条件ではなく前提なので "※" の注記側に回る
+            (
+                {"rs_raw": 1.35, "sell_pressure_ratio": [38, 50], "price_kairi_wma10": 2.5},
+                ["警"],
+                "警: 売り圧力比率(20日) 38 < 45　※RS 1.35 の強い銘柄が1条件のみ悪化",
+            ),
+            # 売: 2条件とも成立しているので両方並ぶ
+            (
+                {"rs_raw": 1.5, "sell_pressure_ratio": [30, 50], "price_kairi_wma10": -4.2},
+                ["売"],
+                "売: 売り圧力比率(20日) 30 < 45 / wma10割れ (乖離 -4.2%)"
+                "　※RS 1.50 の強い銘柄が2条件とも悪化",
+            ),
+            # 理由を持たないタグ (押) は tooltip に行が出ない
+            ({"pullback_20": "○", "access_date_price": _dt.datetime.now()}, ["押"], ""),
+        ],
+    )
+    def test_tooltip_matches_make_signal_decision(self, stock, expected_tags, expected_tooltip):
+        from make_stock_db import make_signal
 
-    def test_non_early_sell_tooltip_keeps_plain_tags(self):
-        # 「売」タグにも tooltip が付くため plain テキストではなくなった
-        tooltip = helpers._format_tags_tooltip("売/押")
-        assert "売" in tooltip
-        assert "RS高いのに売り圧力比率" in tooltip
+        stock.setdefault("trend_template", [])
+        reasons = {}
+        _signal, tags = make_signal(stock, reasons=reasons)
+        assert tags == expected_tags
+        assert helpers._format_tags_tooltip(reasons) == expected_tooltip
 
     @pytest.mark.parametrize(
         "tags, expected_tags, expected_monthly",

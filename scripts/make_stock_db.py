@@ -1254,12 +1254,19 @@ def judge_monthly_position(stock):
     return ""
 
 
-def make_signal(stock):
+def make_signal(stock, reasons=None):
     """銘柄DBデータから、シグナル情報を作成する。
+
+    reasons に dict を渡すと、タグごとの発生理由 (成立した条件と実際の値) を
+    {タグ: 理由文字列} で書き込む。webapp のタグ列 tooltip がこれを使う。
+    しきい値を表示側で再現すると判定側の変更でtooltipが嘘をつくため、
+    値が手元にある判定時点で理由を組み立てる。
     """
     today = datetime.today()
     signal = ""
     tags = []
+    if reasons is None:
+        reasons = {}
 
     def get_recent_signal_delta(mmdd):
         """価格更新日に紐づく直近シグナルだけ日数差を返す (共通関数に委譲)。"""
@@ -1279,12 +1286,11 @@ def make_signal(stock):
     if kabutan_origin and stock.get("kabutan_origin_date"):
         dt = get_price_day(stock.get("kabutan_origin_date"))
         if (date.today() - dt).days <= 1:
-            if "高" in kabutan_origin:
-                tags.append("高")
-            if "出" in kabutan_origin:
-                tags.append("出")
-            if "P" in kabutan_origin:
-                tags.append("P")
+            kabutan_tags = [t for t in ("高", "出", "P") if t in kabutan_origin]
+            tags.extend(kabutan_tags)
+            if kabutan_tags:
+                # 3タグとも出典は同じ掲載日なので、tooltip では1行にまとめる
+                reasons["/".join(kabutan_tags)] = "株探リスト掲載 %s" % dt
     # 20MA押し
     pb20 = stock.get("pullback_20", "")
     if pb20:
@@ -1367,15 +1373,25 @@ def make_signal(stock):
         if sell_ratio:
             sell_ratio_20 = sell_ratio[0]
             warn = 0
+            warn_parts = []  # tooltip 用: 成立した条件を実際の値で残す
             if sell_ratio_20 < 45:
                 warn += 1
+                warn_parts.append("売り圧力比率(20日) %.0f < 45" % sell_ratio_20)
             kairi_wma10 = stock.get("price_kairi_wma10", 0)
             if kairi_wma10 < 0:
                 warn += 1
+                warn_parts.append("wma10割れ (乖離 %+.1f%%)" % kairi_wma10)
             if warn >= 2:
                 tags.append("売")
             elif warn == 1:
                 tags.append("警")
+            if warn:
+                # RS は成立条件ではなく判定に入る前提 (強かった銘柄に限定) なので注記に回す
+                reasons[tags[-1]] = "%s　※RS %.2f の強い銘柄が%s悪化" % (
+                    " / ".join(warn_parts),
+                    rs_raw,
+                    "2条件とも" if warn >= 2 else "1条件のみ",
+                )
     # 早売確定フラグ: 30日10ma維持実績ありで10ma割れ後、翌日以降にA日安値を安値で下回った。
     if bool(stock.get("ma10_break_confirmed")):
         tags.append("早売")
@@ -1397,8 +1413,10 @@ def make_signal(stock):
         rank5_0 = rank5[1] - rank0[1]
         if rank1[1] and rank1_0 > rank1[1] * 0.30:
             tags.append("急")
+            reasons["急"] = "順位 %d位(前日) → %d位" % (rank1[1], rank0[1])
         elif rank5[1] and rank5_0 > rank5[1] * 0.30:
             tags.append("昇")
+            reasons["昇"] = "順位 %d位(5日前) → %d位" % (rank5[1], rank0[1])
 
     # print signal, tags
     return signal, tags

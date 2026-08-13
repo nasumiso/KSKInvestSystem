@@ -2170,18 +2170,33 @@ def _format_monthly_tag(tags=None) -> str:
     return "—"
 
 
-def _format_tags_tooltip(tags: str) -> str:
-    """portfolio 一覧のタグ列 tooltip 文言を返す。"""
-    if not tags or tags == "—":
-        return ""
-    lines = [tags]
-    if "売" in tags:
-        lines.append("売: RS高いのに売り圧力比率<45 かつ wma10割れ（2条件同時成立）")
-    elif "警" in tags:
-        lines.append("警: RS高いのに売り圧力比率<45 または wma10割れ（1条件のみ）")
-    if "早売" in tags:
-        lines.append("早売: 10ma維持実績あり→10ma割れ後に、最初に10ma割れした日の安値をさらに下回って確定")
-    return "\n".join(lines)
+# タグ列ヘッダの凡例 (issue #53 の月足列と同じく、種別の意味はヘッダに集約する)。
+# セル側の tooltip は「そのタグが出ている理由」を実際の値で出すため、ここは説明のみ。
+# タグ種別は make_stock_db.make_signal() が返すものと対応。
+TAG_DESCRIPTIONS = {
+    "新": "新: 1年以上前の高値から5%以内",
+    "直": "直: 3ヶ月以上前の高値から5%以内",
+    "最": "最: 上場来高値を更新",
+    "高": "高: 株探の新高値リストに本日掲載",
+    "出": "出: 株探の出来高急増リストに本日掲載",
+    "P": "P: 株探のポケットピボットリストに本日掲載",
+    "押": "押: 20MA押し目",
+    "売": "売: RS高いのに売り圧力比率<45 と wma10割れが同時成立",
+    "警": "警: RS高いのに売り圧力比率<45 か wma10割れのどちらかが成立",
+    "早売": "早売: 10ma維持実績あり→10ma割れ後、最初に割れた日の安値を下回って確定",
+    "急": "急: 順位が前日比で30%以上上昇",
+    "昇": "昇: 順位が5日比で30%以上上昇",
+}
+
+
+def _format_tags_tooltip(reasons: Dict[str, str]) -> str:
+    """portfolio 一覧のタグ列 tooltip 文言を返す。
+
+    タグ種別の説明は列ヘッダ (TAG_DESCRIPTIONS) に集約済みなので、ここは
+    make_signal が判定時点で書き出した「タグが出ている理由」を並べるだけ。
+    理由を持たないタグ (新/直/最/押/早売) は行ごと出ない。
+    """
+    return "\n".join(f"{tag}: {reason}" for tag, reason in (reasons or {}).items())
 
 
 def _format_signal(stock: Dict[str, Any]) -> Tuple[str, str]:
@@ -3773,9 +3788,11 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     gyoseki_quarity_expr = _gyoseki_quarity_expr_safe(stock)
 
     # make_signal は tags 列とシグナル表示の両方で使うため1回だけ呼ぶ (issue #253)
+    # tag_reasons はタグ列 tooltip 用の発生理由 (判定時点の値で make_signal が書き込む)
+    tag_reasons: Dict[str, str] = {}
     try:
         from make_stock_db import make_signal  # 遅延 import
-        _signal, _tags = make_signal(stock)
+        _signal, _tags = make_signal(stock, reasons=tag_reasons)
     except Exception:  # noqa: BLE001
         _tags = None
     signal_mark, signal_full = _format_signal(stock)
@@ -3810,7 +3827,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         "trend_template_tooltip": trend_info["tooltip"],
         "kairi_gauge_svg": trend_info["kairi_gauge_svg"],
         "tags": tags_expr,
-        "tags_tooltip": _format_tags_tooltip(tags_expr),
+        "tags_tooltip": _format_tags_tooltip(tag_reasons),
         # 月足位置タグ (issue #53) はタグ列から分離し、メモページの月足列に出す
         "monthly_tag": monthly_tag,
         "monthly_tag_tooltip": MONTHLY_TAG_DESCRIPTIONS.get(monthly_tag, ""),
@@ -4009,8 +4026,11 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
     tags = row.get("tags") or ""
     if "最" in tags:
         styles["tags"] = bg_with_white("赤")
-    elif any(c in tags for c in ("警", "売")):
+    elif "売" in tags:
+        # 売 (2条件成立) は青、警 (1条件のみ) は水色。トレンド列の強弱と同じ対応。
         styles["tags"] = bg_with_white("青")
+    elif "警" in tags:
+        styles["tags"] = bg_with_white("水色")
     elif "押" in tags:
         styles["tags"] = f"color:{PORTFOLIO_COLORS['青']}"
     signal_mark = row.get("signal_mark") or ""
