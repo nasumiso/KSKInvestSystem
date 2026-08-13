@@ -1978,6 +1978,22 @@ def get_qty_global_updated_at(
         return db.get(KEY_QTY_GLOBAL_UPDATED_AT)
 
 
+def get_position_latest_as_of(
+    *,
+    db_path: Optional[str] = None,
+) -> Optional[str]:
+    """CSV取込済み position_source の as_of (残高基準日) の最新値を返す。
+
+    保有株数の真実源は証券会社CSVなので、「保有株数がいつ時点のものか」は
+    qty の変化時刻ではなくこの基準日で表す (issue #397)。
+    まだ一度も取り込んでいなければ None。
+    """
+    as_ofs = [
+        s["as_of"] for s in list_position_sources(db_path=db_path) if s.get("as_of")
+    ]
+    return max(as_ofs) if as_ofs else None
+
+
 def transition_status(
     code_s: str,
     new_status: str,

@@ -339,8 +339,8 @@
     <span style="margin-left:1em;">
       運用総額: {{ '{:,}'.format(hold_summary.total_man) }} 万円
       /
-      保有株数更新日:
-      {% if hold_summary.qty_updated_at %}{{ hold_summary.qty_updated_at[:10] }}{% else %}未記録{% endif %}
+      <span title="保有株数の真実源である証券会社CSVの残高基準日 (最新ソース)">保有株数基準日:
+      {% if hold_summary.qty_as_of %}{{ hold_summary.qty_as_of }}{% else %}未取込{% endif %}</span>
     </span>
     {% endif %}
   </p>
