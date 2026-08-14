@@ -1459,6 +1459,17 @@ class TestExitAlertLifecycle:
         ps.transition_status("4377", leave_status, db_path=db_path)
         assert ps.get_exit_alert_state("4377", "cycle-1", db_path=db_path)["triggered"] is False
 
+    def test_exit_alert_state_discarded_on_cycle_mismatch(self, db_path):
+        # 戦略A(防記録)→戦略B(違反なし)→戦略A で cycle_id が元へ戻ると、
+        # 不一致レコードを消していないと旧 triggered が復活する (PR #409 レビュー)。
+        ps.record_exit_alert_event(
+            "4377", "pos1|戦略A", {"date": "2026-02-09", "level": "防"}, db_path=db_path
+        )
+        assert ps.get_exit_alert_state("4377", "pos1|戦略A", db_path=db_path)["triggered"] is True
+
+        ps.get_exit_alert_state("4377", "pos1|戦略B", db_path=db_path)  # 不一致参照で破棄
+        assert ps.get_exit_alert_state("4377", "pos1|戦略A", db_path=db_path)["triggered"] is False
+
     @pytest.mark.parametrize(
         "ma_kind, ma_window, allowed",
         [

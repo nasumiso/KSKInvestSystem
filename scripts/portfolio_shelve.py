@@ -2133,12 +2133,19 @@ def _validate_exit_rule(exit_rule: Any) -> Dict[str, Any]:
 
 
 def get_exit_alert_state(code_s: str, cycle_id: str, *, db_path: Optional[str] = None) -> Dict[str, Any]:
-    """現在の建玉サイクルに対応する出口アラート状態を取得する。"""
+    """現在の建玉サイクルに対応する出口アラート状態を取得する。
+
+    サイクル不一致のレコードは既定値を返すだけでなく削除する。残しておくと
+    戦略A(防記録)→戦略B(違反なし)→戦略A のように cycle_id が元へ戻ったとき、
+    旧 triggered が復活して「防歴」を誤表示する (PR #409 レビュー)。
+    """
     normalized = normalize_code_s(code_s)
     path = _resolve_db_path(db_path)
     with ShelveDB(path) as db:
         state = db.get(_exit_alert_key(normalized))
     if not isinstance(state, dict) or state.get("cycle_id") != cycle_id:
+        if state is not None:
+            reset_exit_alert_state(normalized, db_path=db_path)
         return {"cycle_id": cycle_id, "triggered": False, "events": []}
     return dict(state)
 
