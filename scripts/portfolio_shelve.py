@@ -85,6 +85,8 @@ KEY_ACTION_LOG_PREFIX = "action_log:"
 KEY_SEQ_PREFIX = "_seq:"
 KEY_THEME_PREFIX = "theme:"
 KEY_TRADE_IDEA_PREFIX = "trade_idea:"
+KEY_TRADE_IDEA_SEED_VERSION = "trade_idea_seed_version"
+KEY_EXIT_ALERT_PREFIX = "exit_alert:"
 # issue #360 Phase2: 楽天CSV 由来の約定事実 (fill レイヤー、イミュータブル)
 KEY_FILL_PREFIX = "fill:"
 KEY_FILL_SEQ_PREFIX = "_fill_seq:"
@@ -169,6 +171,9 @@ TRADE_IDEA_DESCRIPTIONS = {
     "ピーターリンチ": "中長期: 身近な実感で好印象の銘柄を持つ",
     "中期テーマ": "中期: 相場の物色テーマの波に乗る",
     "中期モメンタム": "中期: 新高値ブレイク順張り 2〜3ヶ月保有 (メイン戦略)",
+    "中長期ファンダ": "中長期: ファンダメンタルズの改善を軸に保有する",
+    "中期底値リバ": "中期: 底値圏からのトレンド転換を狙う",
+    "短期底値リバ": "短期: 下げすぎリバ。サイズ小・機械的利確損切り",
     "短期イベント": "短期: 決算・材料・政策などカタリスト狙い",
     "底値リバ": "短期: 下げすぎリバ。サイズ小・機械的利確損切り",
     "夢枠": "長期: 2〜3年の夢に乗る。現物放置",
@@ -184,11 +189,28 @@ _TRADE_IDEA_SEED = [
     {"name": "ピーターリンチ", "description": "身近な実感で好印象の銘柄を持つ。身近な実感・好印象が消えたら売る",                  "time_horizon": "中長期", "over_earnings": False},
     {"name": "中期テーマ",     "description": "相場の物色テーマの波に乗る。物色が他テーマへ移ったら売る",                          "time_horizon": "中期",   "over_earnings": False},
     {"name": "中期モメンタム", "description": "新高値ブレイク順張り 2〜3ヶ月保有。トレンド（チャート）が崩れたら売る",             "time_horizon": "中期",   "over_earnings": False},
+    {"name": "中長期ファンダ", "description": "ファンダメンタルズの改善を軸に保有。投資仮説が崩れたら売る",                         "time_horizon": "中長期", "over_earnings": True},
     {"name": "短期イベント",   "description": "決算・材料・政策などカタリスト狙い。イベント通過で手仕舞い",                        "time_horizon": "短期",   "over_earnings": True},
     {"name": "底値リバ",       "description": "下げすぎリバ取り。MAタッチ/10%で機械的利確。サイズ小・損切り事前設定",             "time_horizon": "短期",   "over_earnings": False},
     {"name": "夢枠",           "description": "2〜3年の夢に乗る。現物放置。売らない",                                              "time_horizon": "長期",   "over_earnings": True},
     {"name": "大型高配当",     "description": "PF安定・信用代用を兼ねる。恒常保有。売らない",                                      "time_horizon": "恒常",   "over_earnings": True},
+    {"name": "中期底値リバ",   "description": "底値圏からのトレンド転換を狙う。トレンドが崩れたら売る",                            "time_horizon": "中期",   "over_earnings": False},
 ]
+_NEW_TRADE_IDEA_SEED_NAMES = {"中長期ファンダ", "中期底値リバ"}
+
+_EXIT_RULES_BY_STRATEGY = {
+    "GARP": {"ma_kind": "week", "ma_window": 30, "stop_loss_pct": 20, "allow_dca_lower": False},
+    "中期テーマ": {"ma_kind": "day", "ma_window": 50, "stop_loss_pct": 10, "allow_dca_lower": False},
+    "中長期ファンダ": {"ma_kind": "week", "ma_window": 40, "stop_loss_pct": 25, "allow_dca_lower": True},
+    "中期モメンタム": {"ma_kind": "day", "ma_window": 50, "stop_loss_pct": 10, "allow_dca_lower": False},
+    "短期底値リバ": {"ma_kind": None, "ma_window": None, "stop_loss_pct": 7, "allow_dca_lower": False},
+    "底値リバ": {"ma_kind": None, "ma_window": None, "stop_loss_pct": 7, "allow_dca_lower": False},
+    "短期イベント": {"ma_kind": None, "ma_window": None, "stop_loss_pct": 7, "allow_dca_lower": False},
+    "ピーターリンチ": {"ma_kind": "week", "ma_window": 30, "stop_loss_pct": 20, "allow_dca_lower": False},
+    "夢枠": {"ma_kind": None, "ma_window": None, "stop_loss_pct": None, "allow_dca_lower": False},
+    "大型高配当": {"ma_kind": None, "ma_window": None, "stop_loss_pct": None, "allow_dca_lower": False},
+    "中期底値リバ": {"ma_kind": "day", "ma_window": 50, "stop_loss_pct": 10, "allow_dca_lower": False},
+}
 
 # issue #344: stage / jukyu_chart を自由記述から選択式へ寄せるための定型候補。
 # DB スキーマは変えず、UI 側で分解入力した値を route 層で 1 本の文字列に畳み込む。
@@ -264,6 +286,10 @@ ALLOWED_TRANSITIONS = frozenset(
         ("1保", "3監"),
     }
 )
+
+# 出口ルールで指定できるMA期間。exit_line.evaluate_exit_signal() が実際に
+# 判定できる組み合わせと一致させること (日足50MA / 週足30・40MA)。
+EXIT_RULE_MA_WINDOWS = {"day": (50,), "week": (30, 40)}
 
 
 # ===========================================
@@ -2048,6 +2074,12 @@ def transition_status(
             record["status"] = new_status
             record["updated_at"] = now_iso()
             db[key] = record
+            # 1保 を離れたら防御履歴は破棄する。1保→3監 も許可されているため
+            # 2準 だけ消すと 1保→3監→1保 で旧「防歴」を引き継ぐ (PR #409 レビュー)
+            if old_status == "1保" and new_status != "1保":
+                alert_key = _exit_alert_key(normalized)
+                if alert_key in db:
+                    del db[alert_key]
         # アクションログ種別: 1保→2準 は売却、それ以外はステータス変更
         action_type = "売却" if old_status == "1保" and new_status == "2準" else "ステータス変更"
         # 1保遷移は引数 qty を優先（update_qty より先に呼ばれるため record["qty"] は旧値）
@@ -2434,6 +2466,89 @@ def _trade_idea_key(name: str) -> str:
     return f"{KEY_TRADE_IDEA_PREFIX}{name}"
 
 
+def _exit_alert_key(code_s: str) -> str:
+    return f"{KEY_EXIT_ALERT_PREFIX}{code_s}"
+
+
+def _validate_exit_rule(exit_rule: Any) -> Dict[str, Any]:
+    """出口ルールを正規化する。"""
+    if exit_rule is None:
+        return {"ma_kind": None, "ma_window": None, "stop_loss_pct": None, "allow_dca_lower": False}
+    if not isinstance(exit_rule, dict):
+        raise TypeError("exit_rule must be dict or None")
+    ma_kind = exit_rule.get("ma_kind")
+    ma_window = exit_rule.get("ma_window")
+    stop_loss_pct = exit_rule.get("stop_loss_pct")
+    allow_dca_lower = exit_rule.get("allow_dca_lower", False)
+    if ma_kind not in (None, "day", "week"):
+        raise ValueError("exit_rule.ma_kind must be day, week or None")
+    if ma_kind is None and ma_window is not None:
+        raise ValueError("exit_rule.ma_window requires ma_kind")
+    # evaluate_exit_signal() が見るのは日足50MAと週足30/40MAだけ。それ以外を
+    # 保存できるとMAアラートが黙って無効になるので、実装済みの組み合わせに限る
+    if ma_kind is not None and ma_window not in EXIT_RULE_MA_WINDOWS.get(ma_kind, ()):
+        allowed = "/".join(str(w) for w in EXIT_RULE_MA_WINDOWS[ma_kind])
+        raise ValueError(f"exit_rule.ma_window for {ma_kind} must be {allowed}")
+    if stop_loss_pct is not None and (not isinstance(stop_loss_pct, (int, float)) or not 0 < stop_loss_pct < 100):
+        raise ValueError("exit_rule.stop_loss_pct must be 0-100 or None")
+    if not isinstance(allow_dca_lower, bool):
+        raise TypeError("exit_rule.allow_dca_lower must be bool")
+    return {"ma_kind": ma_kind, "ma_window": ma_window, "stop_loss_pct": stop_loss_pct,
+            "allow_dca_lower": allow_dca_lower}
+
+
+def get_exit_alert_state(code_s: str, cycle_id: str, *, db_path: Optional[str] = None) -> Dict[str, Any]:
+    """現在の建玉サイクルに対応する出口アラート状態を取得する。
+
+    サイクル不一致のレコードは既定値を返すだけでなく削除する。残しておくと
+    戦略A(防記録)→戦略B(違反なし)→戦略A のように cycle_id が元へ戻ったとき、
+    旧 triggered が復活して「防歴」を誤表示する (PR #409 レビュー)。
+    """
+    normalized = normalize_code_s(code_s)
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        state = db.get(_exit_alert_key(normalized))
+    if not isinstance(state, dict) or state.get("cycle_id") != cycle_id:
+        if state is not None:
+            reset_exit_alert_state(normalized, db_path=db_path)
+        return {"cycle_id": cycle_id, "triggered": False, "events": []}
+    return dict(state)
+
+
+def record_exit_alert_event(code_s: str, cycle_id: str, event: Dict[str, Any], *, db_path: Optional[str] = None) -> Dict[str, Any]:
+    """出口アラートを日付単位で重複なく記録する。"""
+    normalized = normalize_code_s(code_s)
+    if not isinstance(cycle_id, str) or not cycle_id:
+        raise ValueError("cycle_id must be non-empty str")
+    if not isinstance(event, dict) or not event.get("date"):
+        raise ValueError("event.date is required")
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            key = _exit_alert_key(normalized)
+            current = db.get(key)
+            if not isinstance(current, dict) or current.get("cycle_id") != cycle_id:
+                current = {"cycle_id": cycle_id, "triggered": False, "events": []}
+            events = list(current.get("events") or [])
+            if not any(e.get("date") == event["date"] for e in events if isinstance(e, dict)):
+                events.append(dict(event))
+            current["events"] = events
+            current["triggered"] = True
+            db[key] = current
+    return dict(current)
+
+
+def reset_exit_alert_state(code_s: str, *, db_path: Optional[str] = None) -> None:
+    """銘柄の出口アラート履歴を削除する。"""
+    normalized = normalize_code_s(code_s)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            key = _exit_alert_key(normalized)
+            if key in db:
+                del db[key]
+
+
 def validate_strategy_name(name: Any) -> str:
     """戦略 name を検証して正規化済み name を返す (validate_theme_name と同じルール)。"""
     try:
@@ -2491,6 +2606,7 @@ def create_trade_idea(
     description: str = "",
     time_horizon: str = "",
     over_earnings: bool = False,
+    exit_rule: Any = None,
     *,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -2498,6 +2614,7 @@ def create_trade_idea(
     normalized = validate_strategy_name(name)
     desc = _validate_theme_description(description)
     th, oe = _validate_trade_idea_fields(time_horizon, over_earnings)
+    rule = _validate_exit_rule(exit_rule)
     path = _resolve_db_path(db_path)
     with _flock(db_path):
         with ShelveDB(path) as db:
@@ -2509,6 +2626,7 @@ def create_trade_idea(
                 "description": desc,
                 "time_horizon": th,
                 "over_earnings": oe,
+                "exit_rule": rule,
                 "created_at": now_iso(),
             }
             db[key] = record
@@ -2522,6 +2640,7 @@ def update_trade_idea(
     description: Optional[str] = None,
     time_horizon: Optional[str] = None,
     over_earnings: Optional[bool] = None,
+    exit_rule: Any = None,
     *,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -2543,6 +2662,7 @@ def update_trade_idea(
     else:
         th_value, oe_value = None, None
 
+    rule_value = _validate_exit_rule(exit_rule) if exit_rule is not None else None
     path = _resolve_db_path(db_path)
     with _flock(db_path):
         with ShelveDB(path) as db:
@@ -2563,6 +2683,8 @@ def update_trade_idea(
                 current["time_horizon"] = th_value
             if over_earnings is not None:
                 current["over_earnings"] = oe_value
+            if rule_value is not None:
+                current["exit_rule"] = rule_value
 
             if renaming:
                 del db[old_key]
@@ -2623,24 +2745,46 @@ def count_trade_idea_usage(*, db_path: Optional[str] = None) -> Dict[str, int]:
 
 
 def seed_trade_ideas(*, db_path: Optional[str] = None) -> int:
-    """戦略マスターが空のときのみシードデータを投入する（冪等）。投入数を返す。"""
+    """不足している既定戦略と出口ルールを補完する（冪等）。投入数を返す。"""
     path = _resolve_db_path(db_path)
     with _flock(db_path):
         with ShelveDB(path) as db:
             existing = [k for k in db.keys() if k.startswith(KEY_TRADE_IDEA_PREFIX)]
+            seeded = 0
             if existing:
-                return 0
-            for seed in _TRADE_IDEA_SEED:
+                for key in existing:
+                    record = dict(db[key])
+                    if not record.get("exit_rule") and record.get("name") in _EXIT_RULES_BY_STRATEGY:
+                        record["exit_rule"] = _validate_exit_rule(_EXIT_RULES_BY_STRATEGY[record["name"]])
+                        db[key] = record
+                if db.get(KEY_TRADE_IDEA_SEED_VERSION):
+                    seeds = []
+                else:
+                    existing_names = {key[len(KEY_TRADE_IDEA_PREFIX):] for key in existing}
+                    # 旧DBでは既定戦略を意図的に削除済みか判別できないため、今回新設した
+                    # 戦略だけを補完し、既存の削除・改名操作は保持する。
+                    seeds = [
+                        seed for seed in _TRADE_IDEA_SEED
+                        if seed["name"] in _NEW_TRADE_IDEA_SEED_NAMES
+                        and seed["name"] not in existing_names
+                    ]
+            else:
+                seeds = [] if db.get(KEY_TRADE_IDEA_SEED_VERSION) else _TRADE_IDEA_SEED
+            for seed in seeds:
                 record = {
                     "name": seed["name"],
                     "description": seed["description"],
                     "time_horizon": seed["time_horizon"],
                     "over_earnings": seed["over_earnings"],
+                    "exit_rule": _validate_exit_rule(_EXIT_RULES_BY_STRATEGY.get(seed["name"])),
                     "created_at": now_iso(),
                 }
                 db[_trade_idea_key(seed["name"])] = record
-    log_print("portfolio_shelve: strategy シード投入", f"{len(_TRADE_IDEA_SEED)} 件")
-    return len(_TRADE_IDEA_SEED)
+                seeded += 1
+            db[KEY_TRADE_IDEA_SEED_VERSION] = 1
+    if seeded:
+        log_print("portfolio_shelve: strategy シード投入", f"{seeded} 件")
+    return seeded
 
 
 def _rewrite_trade_idea_in_records(

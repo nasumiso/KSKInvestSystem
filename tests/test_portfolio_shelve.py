@@ -1201,6 +1201,28 @@ class TestTradeIdeaMaster:
         items_after_second = ps.list_trade_ideas(db_path=db_path_ti)
         assert len(items_after_first) == len(items_after_second)
 
+    def test_seed_trade_ideas_adds_missing_default_to_existing_master(self, db_path_ti):
+        """既存マスターにも、後から追加された既定戦略を補完する。"""
+        ps.create_trade_idea("独自戦略", db_path=db_path_ti)
+        count = ps.seed_trade_ideas(db_path=db_path_ti)
+        assert count == len(ps._NEW_TRADE_IDEA_SEED_NAMES)
+        assert ps.get_trade_idea("中長期ファンダ", db_path=db_path_ti) is not None
+
+    def test_seed_trade_ideas_does_not_restore_deleted_default(self, db_path_ti):
+        """初回補完後に削除した既定戦略は、次回表示で復活しない。"""
+        ps.seed_trade_ideas(db_path=db_path_ti)
+        ps.delete_trade_idea("GARP", db_path=db_path_ti)
+        assert ps.seed_trade_ideas(db_path=db_path_ti) == 0
+        assert ps.get_trade_idea("GARP", db_path=db_path_ti) is None
+
+    def test_seed_trade_ideas_does_not_restore_all_deleted_defaults(self, db_path_ti):
+        """全戦略を削除しても、初回補完済みなら既定戦略を復活させない。"""
+        ps.seed_trade_ideas(db_path=db_path_ti)
+        for item in ps.list_trade_ideas(db_path=db_path_ti):
+            ps.delete_trade_idea(item["name"], db_path=db_path_ti)
+        assert ps.seed_trade_ideas(db_path=db_path_ti) == 0
+        assert ps.list_trade_ideas(db_path=db_path_ti) == []
+
 
 # ==================================================
 # issue #361: 終値プロキシ自動付与・バックフィル・土日補正
@@ -1507,3 +1529,50 @@ class TestSplitAdjustment:
         assert ps.reject_split_pending_review("9497", ex_date="2025-06-01", db_path=db_path) is True
         assert "9497" not in ps.list_pending_review_codes(db_path=db_path)
         assert ps.list_rejected_review_events(db_path=db_path)["9497"] == ["2025-06-01"]
+
+
+class TestExitAlertLifecycle:
+    """出口アラート状態の保持・破棄 (PR #409 レビュー)"""
+
+    @pytest.mark.parametrize("leave_status", ["2準", "3監"])
+    def test_exit_alert_state_cleared_when_leaving_hold(self, db_path, leave_status):
+        # 1保→3監 も許可されているため、2準 だけ消すと 1保→3監→1保 で
+        # 旧「防歴」を引き継いでしまう。1保 を離れる全遷移で破棄する。
+        ps.add_to_watch("4377", reason="テスト", db_path=db_path)
+        ps.transition_status("4377", "1保", db_path=db_path)
+        ps.record_exit_alert_event(
+            "4377", "cycle-1", {"date": "2026-02-09", "level": "防"}, db_path=db_path
+        )
+        assert ps.get_exit_alert_state("4377", "cycle-1", db_path=db_path)["triggered"] is True
+
+        ps.transition_status("4377", leave_status, db_path=db_path)
+        assert ps.get_exit_alert_state("4377", "cycle-1", db_path=db_path)["triggered"] is False
+
+    def test_exit_alert_state_discarded_on_cycle_mismatch(self, db_path):
+        # 戦略A(防記録)→戦略B(違反なし)→戦略A で cycle_id が元へ戻ると、
+        # 不一致レコードを消していないと旧 triggered が復活する (PR #409 レビュー)。
+        ps.record_exit_alert_event(
+            "4377", "pos1|戦略A", {"date": "2026-02-09", "level": "防"}, db_path=db_path
+        )
+        assert ps.get_exit_alert_state("4377", "pos1|戦略A", db_path=db_path)["triggered"] is True
+
+        ps.get_exit_alert_state("4377", "pos1|戦略B", db_path=db_path)  # 不一致参照で破棄
+        assert ps.get_exit_alert_state("4377", "pos1|戦略A", db_path=db_path)["triggered"] is False
+
+    @pytest.mark.parametrize(
+        "ma_kind, ma_window, allowed",
+        [
+            ("day", 50, True),
+            ("week", 30, True),
+            ("week", 40, True),
+            ("day", 20, False),   # evaluate_exit_signal が見ないので黙って無効になる
+            ("week", 50, False),
+        ],
+    )
+    def test_exit_rule_ma_window_limited_to_implemented(self, ma_kind, ma_window, allowed):
+        rule = {"ma_kind": ma_kind, "ma_window": ma_window}
+        if allowed:
+            assert ps._validate_exit_rule(rule)["ma_window"] == ma_window
+        else:
+            with pytest.raises(ValueError, match="ma_window"):
+                ps._validate_exit_rule(rule)

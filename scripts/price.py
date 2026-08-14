@@ -2,7 +2,7 @@
 
 from ks_util import *
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import json
 import os
 import os.path
@@ -457,7 +457,7 @@ def add_stalling_days(dic, daily_price_list, high52_weekly):
     return dic
 
 
-def calc_ma10_kairi_indicators(closes, lows=None):
+def calc_ma10_kairi_indicators(closes, lows=None, window=10):
     """終値リスト (新しい日が先頭) から 10日MA乖離率と30日10ma維持判定を計算する。
 
     Kabutan/yfinance 両系統で共通利用する。トレンド列の点線マーカー用。
@@ -472,8 +472,8 @@ def calc_ma10_kairi_indicators(closes, lows=None):
     """
     res = {}
     # 乖離率は closes のみで計算する (安値の欠損に影響されない)
-    if len(closes) >= 10:
-        ma10 = sum(closes[:10]) / 10
+    if len(closes) >= window:
+        ma10 = sum(closes[:window]) / window
         res["price_kairi_ma10"] = (closes[0] - ma10) * 100 / ma10 if ma10 else None
     else:
         res["price_kairi_ma10"] = None
@@ -496,7 +496,7 @@ def calc_ma10_kairi_indicators(closes, lows=None):
     STREAK_DAYS = 30
 
     def _ma10(i):
-        return sum(closes[i:i + 10]) / 10 if len(closes) >= i + 10 else None
+        return sum(closes[i:i + window]) / window if len(closes) >= i + window else None
 
     def _streak_holds(i):
         ma = _ma10(i)
@@ -559,31 +559,89 @@ def calc_ma10_kairi_indicators(closes, lows=None):
     res["ma10_break_confirmed"] = False
     currently_above_ma10 = _streak_holds(0)
     if res["ma10_streak_ever"] and not currently_above_ma10 and lows and len(lows) >= 2:
-        # closes[0] < ma10 (streak_ever が True = 現在10ma割れ) は保証済み。
-        # 新しい順に走査し、最初に10ma割れした日 = A日を探す。
-        # A日の定義: 前日(i+1)は10ma上 or データ端、当日(i)は10ma以下。
-        a_day_idx = None
-        a_day_low = None
-        for i in range(len(closes)):
-            ma = _ma10(i)
-            if ma is None:
-                break
-            if closes[i] <= ma:
-                # i+1 が10ma上、またはデータ端ならここがA日
-                prev_ma = _ma10(i + 1)
-                if prev_ma is None or closes[i + 1] > prev_ma:
-                    a_day_idx = i
-                    a_day_low = lows[i]
-                    break
-        if a_day_idx is not None and a_day_low is not None:
-            # A日より新しい日（index 0 〜 a_day_idx-1）でA日安値を下回った日があれば確定
-            for j in range(a_day_idx):
-                low_j = lows[j]
-                if low_j is not None and low_j < a_day_low:
-                    res["ma10_break_confirmed"] = True
-                    break
+        from exit_line import calc_ma_violation
+        res["ma10_break_confirmed"] = bool(calc_ma_violation(closes, lows, _ma10)["confirmed"])
 
     return res
+
+
+def calc_daily_ma_violation(daily_price_list, window=50):
+    """日足の生系列から指定期間MAの違反状態を返す。
+
+    株探の8列形式と yfinance の7列形式は、ともに安値が3列目・終値が4列目
+    なので同じ処理で扱う。データ不足・数値欠損時は誤警告を避けて判定しない。
+    """
+    from exit_line import calc_ma_violation, calc_sma_at
+
+    try:
+        closes = [float(str(row[4]).replace(",", "")) for row in daily_price_list]
+    except (ValueError, IndexError, TypeError):
+        closes = []
+    lows = []
+    for row in daily_price_list:
+        try:
+            lows.append(float(str(row[3]).replace(",", "")))
+        except (ValueError, IndexError, TypeError):
+            lows.append(None)
+    return calc_ma_violation(closes, lows, lambda i: calc_sma_at(closes, window, i))
+
+
+def calc_weekly_ma_violation(daily_price_list, weekly_price_list, window):
+    """確定週だけの週足MAを基準に、日足系列で違反状態を判定する。"""
+    from exit_line import calc_ma_violation
+
+    if window not in (30, 40):
+        raise ValueError("window must be 30 or 40")
+    daily_dates = []
+    closes = []
+    lows = []
+    for row in daily_price_list:
+        dt = parse_date_str(row[0])
+        if dt is None:
+            return {"breached": False, "pending": False, "confirmed": False,
+                    "ma_value": None, "a_day_low": None}
+        try:
+            # yfinance 経路は int、株探 HTML 経路は "1,234" 形式の str で来るので
+            # str() を挟んで両方受ける (calc_daily_ma_violation と同じ扱い)
+            closes.append(float(str(row[4]).replace(",", "")))
+            lows.append(float(str(row[3]).replace(",", "")))
+        except (ValueError, IndexError, TypeError):
+            return {"breached": False, "pending": False, "confirmed": False,
+                    "ma_value": None, "a_day_low": None}
+        daily_dates.append(dt)
+    weekly = []
+    for row in weekly_price_list:
+        dt = parse_date_str(row[0])
+        try:
+            close = float(str(row[4]).replace(",", ""))
+        except (ValueError, IndexError, TypeError):
+            continue
+        if dt is not None:
+            weekly.append((dt, close))
+    weekly.sort(reverse=True)
+
+    def ma_at(index):
+        if index >= len(daily_dates):
+            return None
+        week_start = daily_dates[index] - timedelta(days=daily_dates[index].weekday())
+        # 当週足は未確定なので、日付ラベルが当週以前のバーは除外する。
+        prior_closes = [close for dt, close in weekly if dt < week_start]
+        if len(prior_closes) < window:
+            return None
+        return sum(prior_closes[:window]) / window
+
+    return calc_ma_violation(closes, lows, ma_at)
+
+
+def add_weekly_ma_violations(parsed_data, daily_price_list, weekly_price_list):
+    """30/40週MAの違反結果を価格指標へ追加する。"""
+    parsed_data["wma30_violation"] = calc_weekly_ma_violation(
+        daily_price_list, weekly_price_list, 30
+    )
+    parsed_data["wma40_violation"] = calc_weekly_ma_violation(
+        daily_price_list, weekly_price_list, 40
+    )
+    return parsed_data
 
 
 def _calc_daily_indicators(daily_price_list):
@@ -675,6 +733,7 @@ def _calc_daily_indicators(daily_price_list):
         except (ValueError, IndexError):
             lows.append(None)
     dic.update(calc_ma10_kairi_indicators(closes, lows))
+    dic["ma50_violation"] = calc_daily_ma_violation(daily_price_list, 50)
     log_debug("10日MA乖離率:", dic["price_kairi_ma10"], "30日維持中:", dic["ma10_above_streak_30"], "維持実績あり:", dic["ma10_streak_ever"])
 
     # direction_signal は make_market_db.py が market_state を計算してから上書きする。
@@ -1037,7 +1096,9 @@ def parse_pricew_htmls_kabutan(htmls, cur_prices=[]):
         return weekly_price_list
 
     weekly_price_list = calc_weekly_price_list()
-    return _calc_weekly_indicators(weekly_price_list, cur_prices)
+    parsed_data = _calc_weekly_indicators(weekly_price_list, cur_prices)
+    parsed_data["_weekly_price_list_raw"] = weekly_price_list
+    return parsed_data
 
 
 
@@ -2169,6 +2230,8 @@ def get_price_data_yahoo(code_s, stock, upd=UPD_INTERVAL):
         parsed_data, cur_prices = parse_price_text_from_list(
             price_current, price_list
         )
+        parsed_data["ma50_violation"] = calc_daily_ma_violation(price_list, 50)
+        parsed_data["_daily_price_list_raw"] = price_list
         price_val = parsed_data.get("price", 0)
         # キャッシュの更新日時を取得
         cache_fname = YFINANCE_CACHE_FNAME % code_s
@@ -2209,6 +2272,7 @@ def get_weekly_price_data(code_s, stock={}, upd=UPD_INTERVAL, prices=[]):
             log_print(">>>>> %sの週次価格データを解析(yfinance) " % code_s)
             parsed_data_w = _calc_weekly_indicators(weekly_price_list, prices)
             log_print("<<<<< 解析完了(yfinance) ")
+            parsed_data_w["_weekly_price_list_raw"] = weekly_price_list
             return parsed_data_w
         log_print("yfinance週足取得失敗、Kabutanフォールバック: %s" % code_s)
 
@@ -2344,6 +2408,11 @@ def get_price_data(code_s, stock={}, upd=UPD_INTERVAL):
     parsed_data, cur_prices = get_price_data_yahoo(code_s, stock, upd)
     # 週次データを取得してRSを求める
     parsed_data_w = get_weekly_price_data(code_s, stock=stock, upd=upd, prices=cur_prices)
+    daily_price_list = parsed_data.pop("_daily_price_list_raw", None)
+    weekly_price_list = parsed_data_w.pop("_weekly_price_list_raw", None)
+    if daily_price_list:
+        # 週足取得失敗時も中立値を保存し、過去の違反判定を残さない。
+        add_weekly_ma_violations(parsed_data, daily_price_list, weekly_price_list or [])
     parsed_data.update(parsed_data_w)
     # 月足位置評価 (issue #53)
     parsed_data.update(get_monthly_price_data(code_s, stock=stock, upd=upd, prices=cur_prices))

@@ -605,6 +605,111 @@ class TestCalcDailyIndicators:
         assert result["ma10_streak_ever"] is True
         assert result["ma10_break_confirmed"] is True
 
+    def test_generic_ma_violation_matches_ma10_break_confirmed(self):
+        """汎用 MA 違反判定は既存 10MA 確定判定と同じ結果になる。"""
+        from exit_line import calc_ma_violation
+
+        rows = self._make_price_list(50)
+        for i, low in ((2, "100"), (1, "100"), (0, "50")):
+            d, o, h, _l, _c, r5, r6, v = rows[i]
+            rows[i] = (d, o, h, low, "1", r5, r6, v)
+        closes = [int(float(r[4].replace(",", ""))) for r in rows]
+        lows = [int(float(r[3].replace(",", ""))) for r in rows]
+        generic = calc_ma_violation(
+            closes, lows,
+            lambda i: sum(closes[i:i + 10]) / 10 if len(closes) >= i + 10 else None,
+        )
+        assert generic["confirmed"] is price._calc_daily_indicators(rows)["ma10_break_confirmed"]
+
+    def test_generic_ma_violation_does_not_breach_when_close_equals_ma(self):
+        """終値がMAと同値なら、下抜けではなく維持として扱う。"""
+        from exit_line import calc_ma_violation
+
+        result = calc_ma_violation([100.0] * 50, [100.0] * 50, lambda i: 100.0)
+        assert result["breached"] is False
+
+    def test_generic_ma_violation_finds_break_after_close_equals_ma(self):
+        """MA同値の翌日に割れた場合も、割れ日をA日として確定判定する。"""
+        from exit_line import calc_ma_violation
+
+        result = calc_ma_violation(
+            [80.0, 90.0, 90.0, 100.0], [50.0, 100.0, 100.0, 100.0],
+            lambda i: 100.0,
+        )
+        assert result["confirmed"] is True
+
+    def test_generic_ma_violation_keeps_pending_without_observed_cross(self):
+        """取得期間の最古日まで割れていても、A日は確定しない。"""
+        from exit_line import calc_ma_violation
+
+        result = calc_ma_violation([90.0, 90.0], [80.0, 100.0], lambda i: 100.0)
+        assert result["pending"] is True
+        assert result["confirmed"] is False
+
+    def test_weekly_ma_violation_is_reset_when_weekly_fetch_fails(self, monkeypatch):
+        """週足の取得失敗時は古い違反状態を残さず中立値で更新する。"""
+        daily = [("2026/02/09", "0", "0", "90", "100", "0", "0", "0")]
+        monkeypatch.setattr(price, "get_price_data_yahoo", lambda *args: (
+            {"_daily_price_list_raw": daily}, [100, 100, 100]
+        ))
+        monkeypatch.setattr(price, "get_weekly_price_data", lambda *args, **kwargs: {})
+        monkeypatch.setattr(price, "get_monthly_price_data", lambda *args, **kwargs: {})
+
+        result = price.get_price_data("1234")
+        assert result["wma30_violation"]["confirmed"] is False
+        assert result["wma40_violation"]["pending"] is False
+
+    def test_weekly_ma_violation_uses_prior_week_value_at_week_boundary(self):
+        """前週のA日は前週までのWMA、今週の確定日は今週のWMAで判定する。"""
+        from datetime import timedelta
+
+        def row(dt, low, close):
+            return (dt.strftime("%Y/%m/%d"), "0", "0", str(low), str(close), "0", "0", "0")
+
+        daily = [
+            row(date(2026, 2, 9), 80, 90),
+            row(date(2026, 2, 6), 90, 99),
+            row(date(2026, 2, 5), 100, 101),
+        ]
+        # 2/2週の終値40を含む今週の30WMAは98、前週時点の30WMAは100。
+        weekly = [row(date(2026, 2, 2), 0, 40)]
+        weekly.extend(row(date(2026, 1, 26) - timedelta(days=7 * i), 0, 100) for i in range(30))
+        result = price.calc_weekly_ma_violation(daily, weekly, 30)
+        assert result["confirmed"] is True
+        assert result["ma_value"] == pytest.approx(98.0)
+
+    def test_weekly_ma_violation_accepts_numeric_rows(self):
+        """yfinance 経路の int 行でも str 行と同じ判定になる。
+
+        _convert_df_to_price_list() は安値・終値を int で返すため、str 前提で
+        .replace() を呼ぶと AttributeError で握り潰され、週足MAを使う戦略の
+        防御アラートが一切点灯しなくなる (PR #409 レビュー P1)。
+        """
+        from datetime import timedelta
+
+        def row(dt, low, close, as_str):
+            values = (low, close) if not as_str else (str(low), str(close))
+            return (dt.strftime("%Y/%m/%d"), 0, 0, values[0], values[1], 0, 0, 0)
+
+        def build(as_str):
+            daily = [
+                row(date(2026, 2, 9), 80, 90, as_str),
+                row(date(2026, 2, 6), 90, 99, as_str),
+                row(date(2026, 2, 5), 100, 101, as_str),
+            ]
+            weekly = [row(date(2026, 2, 2), 0, 40, as_str)]
+            weekly.extend(
+                row(date(2026, 1, 26) - timedelta(days=7 * i), 0, 100, as_str)
+                for i in range(30)
+            )
+            return daily, weekly
+
+        numeric = price.calc_weekly_ma_violation(*build(as_str=False), 30)
+        text = price.calc_weekly_ma_violation(*build(as_str=True), 30)
+        assert numeric == text
+        assert numeric["confirmed"] is True
+        assert numeric["ma_value"] == pytest.approx(98.0)
+
     def test_ma10_break_confirmed_false_when_a_day_low_not_broken(self):
         """A日安値を下回る日がなければ ma10_break_confirmed=False。"""
         rows = self._make_price_list(50)
@@ -1024,6 +1129,29 @@ class TestParsePriceTextFromList:
         price_list = self._make_price_list_7col()
         result_dict, _ = price.parse_price_text_from_list(1050, price_list)
         assert result_dict["price"] == 1050
+
+    def test_daily_ma_violation_accepts_yfinance_rows(self):
+        """yfinanceの7列日足から50MA違反状態を計算できること。"""
+        price_list = self._make_price_list_7col(count=55)
+        result = price.calc_daily_ma_violation(price_list, 50)
+        assert result["ma_value"] is not None
+        assert result["confirmed"] is False
+
+    def test_yahoo_price_data_saves_daily_ma_violation(self, monkeypatch):
+        """通常のyfinance更新結果にも50MA違反状態を保存すること。"""
+        price_list = self._make_price_list_7col(count=55)
+        monkeypatch.setattr(
+            price, "get_daily_data_yfinance",
+            lambda _code_s, _stock, _upd: (1050, price_list),
+        )
+        monkeypatch.setattr(price, "set_db_code", lambda _record, _code_s: None)
+        monkeypatch.setattr(price.os.path, "exists", lambda _path: False)
+
+        result_dict, _ = price.get_price_data_yahoo("1234", {})
+
+        assert result_dict["ma50_violation"] == price.calc_daily_ma_violation(
+            price_list, 50
+        )
 
     def test_cur_prices_format(self):
         """cur_pricesが[終値, 高値, 安値]の3要素であること"""

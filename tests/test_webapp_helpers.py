@@ -4,11 +4,195 @@ import csv
 import datetime as _dt
 import html
 import os
+from datetime import date
 
 import pytest
 
 import research_shelve as rs
 from webapp import helpers
+
+
+def test_stop_loss_replay_includes_sell_fill():
+    """部分売却後の買い増しは買いだけの平均と異なる損切りラインになる。"""
+    from exit_line import calc_stop_loss_line
+
+    rule = {"stop_loss_pct": 10, "allow_dca_lower": True}
+    full_fills = [
+        {"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 100, "price": 100, "trade_kind": "現物"},
+        {"trade_date": "2026-01-02", "seq": 2, "side": "sell", "qty": 50, "price": 110, "trade_kind": "現物"},
+        {"trade_date": "2026-01-03", "seq": 3, "side": "buy", "qty": 50, "price": 80, "trade_kind": "現物"},
+    ]
+    buy_only = [full_fills[0], full_fills[2]]
+    assert calc_stop_loss_line(rule, full_fills, kind="現物") == 81.0
+    assert calc_stop_loss_line(rule, full_fills, kind="現物") != calc_stop_loss_line(rule, buy_only, kind="現物")
+
+
+def test_margin_only_holding_can_calculate_defensive_line():
+    """信用買い建玉だけでも防御ラインを数量加重で算出できる。"""
+    episode = {
+        "code_s": "4377", "kind": "信用", "episode_key": "4377|信用|2026-01-01|",
+        "closed": False, "is_short": False, "split_suspect": False,
+        "open_pl": {"held_qty": 100, "avg_cost": 1000.0},
+        "fills": [{"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 100,
+                   "price": 1000, "trade_kind": "信用新規"}],
+    }
+    position = helpers._build_exit_position_map([episode])["4377"]
+    line = helpers._weighted_stop_loss_line(
+        {"stop_loss_pct": 10, "allow_dca_lower": False}, position["episodes"]
+    )
+    assert position["held_qty"] == 100
+    assert line == 900.0
+
+
+@pytest.mark.parametrize(
+    "episodes, expected",
+    [
+        # 現物のみ
+        ([("現物", "2026-04-21")], "2026-04-21"),
+        # 現物保有中に信用建玉を追加 → 追加前と同じサイクル (PR #409 レビュー)
+        ([("現物", "2026-04-21"), ("信用", "2026-04-22")], "2026-04-21"),
+        # 最古以外を部分解消しても不変
+        ([("現物", "2026-04-21"), ("信用", "2026-05-01")], "2026-04-21"),
+        # 全解消して建て直すと新しいサイクルになる
+        ([("現物", "2026-07-01")], "2026-07-01"),
+    ],
+)
+def test_exit_cycle_id_survives_position_additions(episodes, expected):
+    """建玉の追加・部分解消では防御履歴のサイクルを変えない。
+
+    エピソードキーを連結していると、保有継続中でも建玉を1本足しただけで
+    cycle_id が変わり「防歴」が消える (PR #409 レビュー)。
+    """
+    eps = [
+        {"code_s": "402A", "kind": kind, "episode_key": f"402A|{kind}|{i}",
+         "open_date": open_date, "closed": False, "is_short": False, "split_suspect": False,
+         "open_pl": {"held_qty": 100, "avg_cost": 1000.0}, "fills": []}
+        for i, (kind, open_date) in enumerate(episodes)
+    ]
+    assert helpers._build_exit_position_map(eps)["402A"]["cycle_id"] == expected
+
+
+def test_split_adjusted_float_holding_is_included_in_exit_position():
+    """分割調整後にfloatとなる保有数量も建玉として防御ラインを算出する。"""
+    episode = {
+        "code_s": "4377", "kind": "現物", "episode_key": "4377|現物|2026-01-01|",
+        "closed": False, "is_short": False, "split_suspect": False,
+        "open_pl": {"held_qty": 200.0, "avg_cost": 500.0},
+        "fills": [{"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 100,
+                   "price": 1000, "trade_kind": "現物"}],
+    }
+    position = helpers._build_exit_position_map([episode])["4377"]
+    assert position["held_qty"] == 200.0
+
+
+def test_stop_loss_replay_accepts_split_adjusted_float_qty():
+    """分割調整済みのfloat数量を損切りライン再生でも反映する。"""
+    from exit_line import calc_stop_loss_line
+
+    rule = {"stop_loss_pct": 10, "allow_dca_lower": False}
+    fills = [{"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 200.0,
+              "price": 500, "trade_kind": "現物"}]
+    assert calc_stop_loss_line(rule, fills, kind="現物") == 450.0
+
+
+def test_stop_loss_replay_preserves_episode_same_day_order():
+    """同日中の建玉優先順を保ち、残存分の損切りラインを再生する。"""
+    from exit_line import calc_stop_loss_line
+
+    rule = {"stop_loss_pct": 10, "allow_dca_lower": True}
+    fills = [
+        {"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 100,
+         "price": 1000, "trade_kind": "現物"},
+        # エピソード正規化では、同日の買い増しを売却より先に処理する。
+        {"trade_date": "2026-01-02", "seq": 2, "side": "buy", "qty": 100,
+         "price": 800, "trade_kind": "現物"},
+        {"trade_date": "2026-01-02", "seq": 1, "side": "sell", "qty": 100,
+         "price": 900, "trade_kind": "現物"},
+    ]
+    assert calc_stop_loss_line(rule, fills, kind="現物") == 810.0
+
+
+def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
+    """約定履歴のない手入力保有でもMA違反を防御シグナルとして表示する。"""
+    import portfolio_shelve as ps
+
+    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {
+        "4377": {"price": 900, "price_log": [(date(2026, 2, 9), 900)],
+                 "ma50_violation": {"pending": True, "confirmed": False, "ma_value": 1000}}
+    })
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {"4377": "テスト"})
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {"4377": None})
+    monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {"4377": ""})
+    monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
+    monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
+    monkeypatch.setattr(helpers, "build_stock_chart_payload", lambda stock, market_db, mode: {})
+    monkeypatch.setattr(ps, "seed_trade_ideas", lambda: 0)
+    monkeypatch.setattr(ps, "list_trade_ideas", lambda: [{"name": "成長", "exit_rule": {
+        "ma_kind": "day", "ma_window": 50}}])
+
+    rows = helpers.list_portfolio_with_indicators([{
+        "code_s": "4377", "status": "1保", "qty": 100,
+        "memo": {"trade_idea": "成長"},
+    }])
+    assert rows[0]["signal_mark"] == "防予"
+
+
+def test_manual_holding_records_confirmed_ma_alert(monkeypatch):
+    """約定履歴のない保有も安定したIDで防御履歴を保存する。"""
+    import portfolio_shelve as ps
+
+    recorded = []
+    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {
+        "4377": {"price": 900, "price_log": [(date(2026, 2, 9), 900)],
+                 "ma50_violation": {"pending": False, "confirmed": True, "ma_value": 1000}}
+    })
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {"4377": "テスト"})
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {"4377": None})
+    monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {"4377": ""})
+    monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
+    monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
+    monkeypatch.setattr(helpers, "build_stock_chart_payload", lambda stock, market_db, mode: {})
+    monkeypatch.setattr(ps, "seed_trade_ideas", lambda: 0)
+    monkeypatch.setattr(ps, "list_trade_ideas", lambda: [{"name": "成長", "exit_rule": {
+        "ma_kind": "day", "ma_window": 50}}])
+    monkeypatch.setattr(ps, "get_exit_alert_state", lambda code, cycle: {"cycle_id": cycle, "triggered": False})
+    monkeypatch.setattr(ps, "record_exit_alert_event", lambda code, cycle, event: recorded.append((code, cycle, event)))
+
+    # 実レコードが持つのは registered_at (created_at は theme/trade_idea 用)。
+    # created_at を見ていると常に code_s へフォールバックし、削除→再登録しても
+    # 同じ cycle_id になって旧「防歴」を引き継ぐ (PR #409 レビュー)。
+    helpers.list_portfolio_with_indicators([{
+        "code_s": "4377", "status": "1保", "qty": 100,
+        "registered_at": "2026-01-01T00:00:00",
+        "memo": {"trade_idea": "成長"},
+    }])
+    assert recorded and recorded[0][1].startswith("manual:2026-01-01T00:00:00|成長|")
+
+    # 再登録 (registered_at が変わる) は別サイクルとして扱う
+    recorded.clear()
+    helpers.list_portfolio_with_indicators([{
+        "code_s": "4377", "status": "1保", "qty": 100,
+        "registered_at": "2026-06-01T00:00:00",
+        "memo": {"trade_idea": "成長"},
+    }])
+    assert recorded and recorded[0][1].startswith("manual:2026-06-01T00:00:00|成長|")
+
+
+def test_weekly_ma_pending_displays_defensive_notice():
+    """週足MAの未確定割れは防予として扱う。"""
+    from exit_line import evaluate_exit_signal
+
+    stock = {
+        "price_log": [(date(2026, 2, 9), 900)],
+        "wma30_violation": {"pending": True, "confirmed": False, "ma_value": 1000},
+    }
+    signal = evaluate_exit_signal(
+        {"ma_kind": "week", "ma_window": 30, "stop_loss_pct": None}, stock, {}, {}
+    )
+    assert signal["level"] == "防予"
+    assert signal["reasons"] == ["週足30MA割れ予兆"]
 
 
 @pytest.fixture

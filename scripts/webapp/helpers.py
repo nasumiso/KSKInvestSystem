@@ -8,6 +8,7 @@ research_shelve のデータ取得・更新をWebアプリ用にラップする�
 
 import html
 import csv
+import json
 import os
 import re
 from datetime import date, datetime, timedelta
@@ -2006,6 +2007,21 @@ def list_portfolio_with_indicators(
     if not records:
         return []
 
+    exit_positions = _build_exit_position_map(build_fill_episodes()) if any(
+        r.get("status") == "1保" for r in records
+    ) else {}
+    try:
+        import portfolio_shelve as ps
+        ps.seed_trade_ideas()
+        exit_rules = {
+            item.get("name"): item.get("exit_rule")
+            for item in ps.list_trade_ideas()
+            if item.get("name")
+        }
+    except Exception:  # noqa: BLE001
+        ps = None
+        exit_rules = {}
+
     code_list = [r.get("code_s", "") for r in records]
     stock_map = _bulk_get_stock_data(code_list)
     name_map = _bulk_resolve_stock_names(code_list)
@@ -2041,6 +2057,29 @@ def list_portfolio_with_indicators(
         row["overall_rating"] = rating_map.get(code_s, "")  # issue #199
         stock = stock_map.get(code_s, {})
         row.update(_extract_indicators_for_portfolio(stock))
+        if rec.get("status") == "1保" and ps is not None:
+            position = exit_positions.get(code_s)
+            strategy = (rec.get("memo") or {}).get("trade_idea")
+            exit_rule = exit_rules.get(strategy)
+            if isinstance(exit_rule, dict):
+                from exit_line import evaluate_exit_signal
+                rule_id = json.dumps(exit_rule, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                if position:
+                    position = dict(position)
+                    position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["episodes"])
+                    cycle_id = f"{position['cycle_id']}|{strategy}|{rule_id}"
+                else:
+                    # CSV期間外からの保有など、約定履歴がない銘柄もMAは評価する。
+                    position = {}
+                    # レコードの登録時刻は registered_at (created_at は theme/trade_idea 用)。
+                    # 削除→再登録を別サイクルとして扱わないと旧「防歴」を引き継ぐ。
+                    cycle_id = f"manual:{rec.get('registered_at') or code_s}|{strategy}|{rule_id}"
+                state = ps.get_exit_alert_state(code_s, cycle_id)
+                signal = evaluate_exit_signal(exit_rule, stock, position, state)
+                if signal:
+                    if signal["level"] == "防":
+                        ps.record_exit_alert_event(code_s, cycle_id, signal)
+                    _apply_exit_signal_display(row, signal)
         # 運用総額の市場別内訳用カテゴリ (日経225/TOPIX/グロース/その他)
         row["market_category"] = _classify_market_category(
             stock.get("market"), stock.get("is_nikkei225"), code_s=code_s
@@ -2131,6 +2170,77 @@ def list_portfolio_with_indicators(
             r.get("code_s", ""),
         ))
     return rows
+
+
+def _build_exit_position_map(episodes: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """未決済の現物・信用買いエピソードを銘柄単位で数量加重する。"""
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    blocked = set()
+    for ep in episodes:
+        if ep.get("closed") or ep.get("is_short") or not ep.get("open_pl"):
+            continue
+        code_s = ep.get("code_s")
+        open_pl = ep["open_pl"]
+        if not code_s or ep.get("split_suspect"):
+            if code_s:
+                blocked.add(code_s)
+            continue
+        held_qty = open_pl.get("held_qty")
+        if (not isinstance(held_qty, (int, float)) or isinstance(held_qty, bool)
+                or held_qty <= 0):
+            continue
+        if not isinstance(open_pl.get("avg_cost"), (int, float)) or open_pl["avg_cost"] <= 0:
+            continue
+        grouped.setdefault(code_s, []).append(ep)
+    result = {}
+    for code_s, code_episodes in grouped.items():
+        if code_s in blocked:
+            continue
+        held_qty = sum(ep["open_pl"]["held_qty"] for ep in code_episodes)
+        avg_cost = sum(ep["open_pl"]["held_qty"] * ep["open_pl"]["avg_cost"] for ep in code_episodes) / held_qty
+        # 未決済エピソードの最古 open_date をサイクルIDにする。エピソードキーを
+        # 全部連結すると、現物保有中に信用建玉を足しただけで別サイクル扱いになり
+        # 防御履歴が消える (PR #409 レビュー)。買い増しは必ず後の日付になるので
+        # 最小値は変わらず、全解消して建て直したときだけ新しいサイクルになる。
+        cycle_id = min(str(ep.get("open_date") or "") for ep in code_episodes)
+        result[code_s] = {"held_qty": held_qty, "avg_cost": avg_cost, "cycle_id": cycle_id,
+                          "episodes": code_episodes, "stop_loss_line": None}
+    return result
+
+
+def _weighted_stop_loss_line(exit_rule: Dict[str, Any], episodes: List[Dict[str, Any]]) -> Optional[float]:
+    """エピソードごとの損切りラインを保有数量で加重する。"""
+    from exit_line import calc_stop_loss_line
+
+    weighted = 0.0
+    qty_total = 0
+    for ep in episodes:
+        qty = ep["open_pl"]["held_qty"]
+        line = calc_stop_loss_line(
+            exit_rule, ep.get("fills") or [], kind=ep.get("kind"), is_short=bool(ep.get("is_short"))
+        )
+        if line is not None:
+            weighted += line * qty
+            qty_total += qty
+    return weighted / qty_total if qty_total else None
+
+
+def _apply_exit_signal_display(row: Dict[str, Any], signal: Dict[str, Any]) -> None:
+    """既存シグナル列へ防御シグナルと tooltip を重ねる。"""
+    level = signal["level"]
+    existing = row.get("signal_mark")
+    row["signal_mark"] = level if not existing or existing == "—" else f"{level}/{existing}"
+    reasons = "、".join(signal.get("reasons") or [])
+    text = f"[{level}] {reasons}" if reasons else f"[{level}] 過去に防御シグナルあり"
+    row["signal_full"] = "\n".join(x for x in (text, row.get("signal_full") or "") if x)
+    row["signal_display"] = {
+        "tooltip": row["signal_full"],
+        "style": (
+            "background:#4285f4;color:#fff;font-weight:700" if level == "防"
+            else "background:#6fa8dc;color:#fff;font-weight:700" if level == "防予"
+            else "background:#e8f0fe;color:#174ea6;font-weight:700"
+        ),
+    }
 
 
 # 月足位置タグ (issue #53)。portfolio 一覧ではタグ列から外し、メモページの月足列に出す。

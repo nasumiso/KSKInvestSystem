@@ -1457,6 +1457,23 @@ def themes_delete(name: str):
 # 戦略マスター編集 (issue #335)
 # ===========================================
 
+def _exit_rule_from_form():
+    """戦略マスター画面の出口ルール入力を shelve 用 dict に正規化する。"""
+    ma_kind = (request.form.get("ma_kind") or "").strip() or None
+    ma_window_raw = (request.form.get("ma_window") or "").strip()
+    stop_loss_raw = (request.form.get("stop_loss_pct") or "").strip()
+    try:
+        ma_window = int(ma_window_raw) if ma_window_raw else None
+        stop_loss_pct = float(stop_loss_raw) if stop_loss_raw else None
+    except ValueError as e:
+        raise ValueError("MA期間と損切り率は数値で入力してください") from e
+    return {
+        "ma_kind": ma_kind,
+        "ma_window": ma_window,
+        "stop_loss_pct": stop_loss_pct,
+        "allow_dca_lower": request.form.get("allow_dca_lower") == "true",
+    }
+
 @portfolio_bp.route("/portfolio/strategies", methods=["GET"])
 def strategies_index():
     """戦略マスター一覧・編集画面を表示する。初回アクセス時にシードを自動投入する。"""
@@ -1484,9 +1501,12 @@ def strategies_create():
     name = (request.form.get("name") or "").strip()
     description = (request.form.get("description") or "").strip()
     time_horizon = (request.form.get("time_horizon") or "").strip()
-    over_earnings = request.form.get("over_earnings") == "true"
     try:
-        ps.create_trade_idea(name, description, time_horizon, over_earnings)
+        # over_earnings は既存DBとの後方互換のため保持するが、運用に未接続のためUIでは編集しない。
+        ps.create_trade_idea(
+            name, description, time_horizon,
+            exit_rule=_exit_rule_from_form(),
+        )
     except (ValueError, TypeError) as e:
         flash(str(e), "error")
         return redirect(url_for("portfolio.strategies_index"))
@@ -1496,22 +1516,21 @@ def strategies_create():
 
 @portfolio_bp.route("/portfolio/strategies/<name>/update", methods=["POST"])
 def strategies_update(name: str):
-    """戦略のリネーム / 説明文 / 時間軸 / 決算またぎ編集。"""
+    """戦略のリネーム / 説明文 / 時間軸 / 出口ルールを更新する。"""
     rejected = _reject_when_fallback()
     if rejected is not None:
         return rejected
     new_name = (request.form.get("name") or "").strip()
     description = request.form.get("description")
     time_horizon = request.form.get("time_horizon")
-    over_earnings_raw = request.form.get("over_earnings")
-    over_earnings = (over_earnings_raw == "true") if over_earnings_raw is not None else None
     try:
         ps.update_trade_idea(
             name,
             new_name=new_name if new_name and new_name != name else None,
             description=description if description is not None else None,
             time_horizon=time_horizon if time_horizon is not None else None,
-            over_earnings=over_earnings,
+            # over_earnings は既存値を維持する（後方互換のみ。現行UIからは編集しない）。
+            exit_rule=_exit_rule_from_form(),
         )
     except KeyError:
         flash(f"戦略「{name}」が見つかりません", "error")

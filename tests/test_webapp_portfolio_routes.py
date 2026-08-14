@@ -1516,3 +1516,37 @@ class TestPortfolioCharts:
         assert '"jukyu_chart_struct"' in html
         assert 'class="stage-main-select"' in html
         assert 'class="chart-style-select"' in html
+
+
+class TestStrategyExitRule:
+    """戦略マスターの出口ルール編集 (issue #386 Phase 3)。"""
+
+    def test_strategy_page_displays_and_updates_exit_rule(self, client, portfolio_db_path):
+        resp = client.get("/portfolio/strategies")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "出口ルール" in html
+        assert "決算またぎ" not in html
+
+        resp = client.post(
+            "/portfolio/strategies/GARP/update",
+            data={
+                "name": "GARP",
+                "description": "安定成長株",
+                "time_horizon": "中長期",
+                "over_earnings": "true",
+                "ma_kind": "week",
+                "ma_window": "40",
+                "stop_loss_pct": "18",
+                "allow_dca_lower": "true",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        rule = ps.get_trade_idea("GARP", db_path=portfolio_db_path)["exit_rule"]
+        assert rule == {
+            "ma_kind": "week", "ma_window": 40, "stop_loss_pct": 18.0,
+            "allow_dca_lower": True,
+        }
+        # UIから除去した互換フィールドは、既存値を変更しない。
+        assert ps.get_trade_idea("GARP", db_path=portfolio_db_path)["over_earnings"] is True
