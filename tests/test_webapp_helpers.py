@@ -43,6 +43,34 @@ def test_margin_only_holding_can_calculate_defensive_line():
     assert line == 900.0
 
 
+@pytest.mark.parametrize(
+    "episodes, expected",
+    [
+        # 現物のみ
+        ([("現物", "2026-04-21")], "2026-04-21"),
+        # 現物保有中に信用建玉を追加 → 追加前と同じサイクル (PR #409 レビュー)
+        ([("現物", "2026-04-21"), ("信用", "2026-04-22")], "2026-04-21"),
+        # 最古以外を部分解消しても不変
+        ([("現物", "2026-04-21"), ("信用", "2026-05-01")], "2026-04-21"),
+        # 全解消して建て直すと新しいサイクルになる
+        ([("現物", "2026-07-01")], "2026-07-01"),
+    ],
+)
+def test_exit_cycle_id_survives_position_additions(episodes, expected):
+    """建玉の追加・部分解消では防御履歴のサイクルを変えない。
+
+    エピソードキーを連結していると、保有継続中でも建玉を1本足しただけで
+    cycle_id が変わり「防歴」が消える (PR #409 レビュー)。
+    """
+    eps = [
+        {"code_s": "402A", "kind": kind, "episode_key": f"402A|{kind}|{i}",
+         "open_date": open_date, "closed": False, "is_short": False, "split_suspect": False,
+         "open_pl": {"held_qty": 100, "avg_cost": 1000.0}, "fills": []}
+        for i, (kind, open_date) in enumerate(episodes)
+    ]
+    assert helpers._build_exit_position_map(eps)["402A"]["cycle_id"] == expected
+
+
 def test_split_adjusted_float_holding_is_included_in_exit_position():
     """分割調整後にfloatとなる保有数量も建玉として防御ラインを算出する。"""
     episode = {

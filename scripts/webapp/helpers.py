@@ -2198,7 +2198,11 @@ def _build_exit_position_map(episodes: List[Dict[str, Any]]) -> Dict[str, Dict[s
             continue
         held_qty = sum(ep["open_pl"]["held_qty"] for ep in code_episodes)
         avg_cost = sum(ep["open_pl"]["held_qty"] * ep["open_pl"]["avg_cost"] for ep in code_episodes) / held_qty
-        cycle_id = "|".join(sorted(str(ep.get("episode_key") or ep.get("open_date") or "") for ep in code_episodes))
+        # 未決済エピソードの最古 open_date をサイクルIDにする。エピソードキーを
+        # 全部連結すると、現物保有中に信用建玉を足しただけで別サイクル扱いになり
+        # 防御履歴が消える (PR #409 レビュー)。買い増しは必ず後の日付になるので
+        # 最小値は変わらず、全解消して建て直したときだけ新しいサイクルになる。
+        cycle_id = min(str(ep.get("open_date") or "") for ep in code_episodes)
         result[code_s] = {"held_qty": held_qty, "avg_cost": avg_cost, "cycle_id": cycle_id,
                           "episodes": code_episodes, "stop_loss_line": None}
     return result
