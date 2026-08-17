@@ -9,6 +9,7 @@ POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
 import os
 import shutil
 import tempfile
+import uuid
 
 from flask import (
     Blueprint,
@@ -289,18 +290,67 @@ def trade_history():
 
 @trade_history_bp.route("/trade-history/import", methods=["POST"])
 def import_trade_csv():
-    """楽天/SBI の約定CSVをアップロード取込する (issue #387 4a)。
+    """楽天/SBI/マネックス の約定CSVをアップロード取込する (issue #387 4a)。
 
-    ヘッダで証券会社を自動判定 → 該当パーサーで取込 → 成功時のみ原本を
-    TRADE_HISTORY_DIR へ同名上書きコピー。結果を flash して /trade-history へ戻る。
-    dedup があるため再取込は冪等 (重複はスキップされる)。
+    複数ファイルをまとめて選択できる。楽天の期間分割CSV (上期/下期など) のように
+    同じ証券会社のファイルが複数あっても構わない — 残高CSVと違い約定履歴は累積の
+    ため、1証券会社1ファイルに定まらない。dedup があるので重複はスキップされる。
+
+    ファイルごとに独立して処理し、1つが失敗しても残りの取込は続行する
+    (失敗したファイルだけ直して再アップロードすれば済むため)。ヘッダで証券会社を
+    自動判定 → 該当パーサーで取込 → 成功したものだけ原本を TRADE_HISTORY_DIR へ
+    同名上書きコピー。結果をファイルごとに flash して /trade-history へ戻る。
     """
-    file = request.files.get("csv_file")
-    if file is None or not file.filename:
+    files = [f for f in request.files.getlist("csv_files") if f and f.filename]
+    if not files:
         flash("CSVファイルが選択されていません。", "error")
         return redirect(url_for("trade_history.trade_history"))
 
-    filename = os.path.basename(file.filename)
+    used_names = set()
+    for file in files:
+        filename = _safe_csv_filename(file.filename)
+        # 同一リクエスト内で原本の保存名が衝突すると後勝ちで上書きされ、
+        # 先のファイルの原本が失われる (SBIは同名 SaveFile.csv で降ってくる)。
+        filename = _dedupe_filename(filename, used_names)
+        used_names.add(filename)
+        try:
+            _import_one_csv(file, filename)
+        except Exception as e:  # noqa: BLE001 - 1ファイルの失敗で他を巻き込まない
+            flash(f"取込中にエラーが発生しました ({filename}): {e}", "error")
+
+    return redirect(url_for("trade_history.trade_history"))
+
+
+def _safe_csv_filename(raw: str) -> str:
+    """アップロード名から保存用の安全なファイル名を作る。
+
+    原本は TRADE_HISTORY_DIR へこの名前で保存するため、basename だけでは
+    ".." のような名前でディレクトリ外へ逃げられる。区切り文字を除いた上で
+    危険な名前を弾き、空になったら既定名にフォールバックする。
+    """
+    name = os.path.basename((raw or "").replace("\\", "/").strip())
+    if name in ("", ".", "..") or "/" in name:
+        return "uploaded.csv"
+    return name
+
+
+def _dedupe_filename(filename: str, used: set) -> str:
+    """同一リクエスト内で既に使った保存名なら連番を付けて衝突を避ける。"""
+    if filename not in used:
+        return filename
+    stem, ext = os.path.splitext(filename)
+    for i in range(2, 100):
+        candidate = f"{stem}_{i}{ext}"
+        if candidate not in used:
+            return candidate
+    return f"{stem}_{uuid.uuid4().hex[:8]}{ext}"
+
+
+def _import_one_csv(file, filename: str) -> None:
+    """CSV 1ファイルを判別・取込し、成功なら原本を保存して flash する。
+
+    呼び出し側が例外を握って次のファイルへ進むため、ここでは失敗を隠さない。
+    """
     # 一時ファイルに保存 (パーサーはパス受け取りのため)
     fd, tmp_path = tempfile.mkstemp(suffix=".csv")
     os.close(fd)
@@ -320,13 +370,9 @@ def import_trade_csv():
                 f"楽天/SBI/マネックス の取引履歴CSVとして認識できませんでした: {filename}",
                 "error",
             )
-            return redirect(url_for("trade_history.trade_history"))
+            return
 
-        try:
-            stats = module.import_csv_to_fills(tmp_path)
-        except Exception as e:  # noqa: BLE001 - パース例外はユーザーへ提示
-            flash(f"取込中にエラーが発生しました ({filename}): {e}", "error")
-            return redirect(url_for("trade_history.trade_history"))
+        stats = module.import_csv_to_fills(tmp_path)
 
         # 成功: 原本を正式置き場へ同名上書きコピー
         os.makedirs(TRADE_HISTORY_DIR, exist_ok=True)
@@ -341,8 +387,6 @@ def import_trade_csv():
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-
-    return redirect(url_for("trade_history.trade_history"))
 
 
 @trade_history_bp.route("/trade-history/fill-memo", methods=["POST"])
