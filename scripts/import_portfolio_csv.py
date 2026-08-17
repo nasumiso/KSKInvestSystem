@@ -67,6 +67,9 @@ RAKUTEN_JP_FIRST_ROW_MARKER = "■現在の評価額合計"
 RAKUTEN_JP_HEADER_FIRST_COL = "銘柄コード"
 RAKUTEN_JP_HEADER_MARKER = "保有数量［株］"
 RAKUTEN_JP_SECTION_SUFFIX = "口座"
+# 口座区分の見出しではない ■ 行 (冒頭のサマリー)。これ以外の ■ 行は
+# 末尾が "口座" でなくても口座見出しとして扱う (未知表記の黙殺を防ぐ)。
+RAKUTEN_JP_NON_SECTION_MARKERS = ("■現在の評価額合計", "■評価損益合計")
 
 # SBI CSV の2行目見出し
 SBI_SPOT_MARKER = "保有証券一覧"
@@ -259,15 +262,24 @@ def _iter_rakuten_jp_section_headers(rows: List[List[str]]) -> List[Tuple[int, s
     JP版は口座列を持たず、"■特定口座" のようなセクション見出しが口座区分を表す。
     見出し文字列は先頭の "■" と末尾の "口座" を除いて account とする
     ("■特定口座" -> "特定")。実物が未確認の NISA 等でも取り込めるよう、
-    ホワイトリストではなく機械的に抽出する。"■現在の評価額合計［円］" のような
-    "口座" で終わらない ■ 行は見出しとして扱わない。
+    ホワイトリストではなく機械的に抽出する。
+
+    冒頭のサマリー行 (RAKUTEN_JP_NON_SECTION_MARKERS) 以外の ■ 行は、
+    末尾が "口座" でなくても見出しとして扱う。"■NISA成長投資枠" のような
+    未知の表記を見出しと認識できないと、そのセクションの銘柄が直前の口座
+    (既定では "特定") に黙って誤分類され、そのまま position の account として
+    保存されてしまうため。
     """
     results = []
     current_account = "特定"
     for i, row in enumerate(rows):
         cell = (row[0].strip() if row else "")
-        if cell.startswith("■") and cell.endswith(RAKUTEN_JP_SECTION_SUFFIX):
-            inner = cell[1:-len(RAKUTEN_JP_SECTION_SUFFIX)].strip()
+        if cell.startswith("■"):
+            if any(cell.startswith(m) for m in RAKUTEN_JP_NON_SECTION_MARKERS):
+                continue
+            inner = cell[1:].strip()
+            if inner.endswith(RAKUTEN_JP_SECTION_SUFFIX):
+                inner = inner[:-len(RAKUTEN_JP_SECTION_SUFFIX)].strip()
             current_account = inner or "特定"
             continue
         if (cell == RAKUTEN_JP_HEADER_FIRST_COL

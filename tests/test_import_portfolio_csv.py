@@ -153,6 +153,20 @@ def test_parse_rakuten_jp_spot_sections_and_summary_row(db_path):
     ]
 
 
+def test_parse_rakuten_jp_spot_recognizes_section_without_kouza_suffix(db_path):
+    """"口座" で終わらない見出しも口座区分として扱い、直前口座への誤分類を防ぐ。
+
+    "■NISA成長投資枠" のような未知表記を見出しと認識できないと、その配下の
+    銘柄が黙って "特定" として保存される (静かなデータ破損)。
+    """
+    rows = [row.copy() for row in RAKUTEN_JP_SPOT_ROWS]
+    rows[9] = ["■NISA成長投資枠"]
+    parsed = ic.parse_rakuten_jp_spot(rows)
+    assert [(p["code_s"], p["account"]) for p in parsed] == [
+        ("402A", "特定"), ("6501", "NISA成長投資枠"),
+    ]
+
+
 def test_select_parser_switches_rakuten_spot_format(db_path):
     """同じ ("楽天", "現物") でも (all)版と(JP)版で別パーサーを選ぶ。"""
     source = ("楽天", "現物")
