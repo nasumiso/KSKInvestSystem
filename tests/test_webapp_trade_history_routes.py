@@ -473,7 +473,7 @@ class TestImportTradeCsv:
         import io
         app, save_dir = env
         client = app.test_client()
-        data = {"csv_file": (io.BytesIO(self._rakuten_csv()), "tradehistory(JP)_20260622.csv")}
+        data = {"csv_files": (io.BytesIO(self._rakuten_csv()), "tradehistory(JP)_20260622.csv")}
         resp = client.post("/trade-history/import", data=data,
                            content_type="multipart/form-data", follow_redirects=True)
         html = resp.data.decode()
@@ -487,7 +487,7 @@ class TestImportTradeCsv:
         import io
         app, save_dir = env
         client = app.test_client()
-        data = {"csv_file": (io.BytesIO(self._sbi_csv()), "SaveFile_0001.csv")}
+        data = {"csv_files": (io.BytesIO(self._sbi_csv()), "SaveFile_0001.csv")}
         resp = client.post("/trade-history/import", data=data,
                            content_type="multipart/form-data", follow_redirects=True)
         html = resp.data.decode()
@@ -500,12 +500,62 @@ class TestImportTradeCsv:
         import io
         app, save_dir = env
         client = app.test_client()
-        data = {"csv_file": (io.BytesIO("foo,bar\n1,2\n".encode("shift_jis")), "unknown.csv")}
+        data = {"csv_files": (io.BytesIO("foo,bar\n1,2\n".encode("shift_jis")), "unknown.csv")}
         resp = client.post("/trade-history/import", data=data,
                            content_type="multipart/form-data", follow_redirects=True)
         assert "認識できませんでした" in resp.data.decode()
         # 不正ファイルは保存先へコピーしない
         assert not (save_dir / "unknown.csv").exists()
+
+    def test_multiple_csv_upload_continues_after_failure(self, env):
+        """複数ファイルを一括取込し、1つ失敗しても残りは取り込む。
+
+        楽天の期間分割CSVのように同一証券会社が複数あってもよい (約定履歴は
+        残高と違い累積のため)。失敗したファイルだけ再アップロードすれば済むよう、
+        エラーで全体を止めない。
+        """
+        import io
+        app, save_dir = env
+        client = app.test_client()
+        # 楽天2件 (別日=別約定なので dedup されない) + SBI1件 + 不正1件
+        rakuten2 = self._rakuten_csv().replace(b"2026/6/22", b"2026/6/23")
+        data = {"csv_files": [
+            (io.BytesIO(self._rakuten_csv()), "tradehistory(JP)_a.csv"),
+            (io.BytesIO(rakuten2), "tradehistory(JP)_b.csv"),
+            (io.BytesIO(self._sbi_csv()), "SaveFile_0001.csv"),
+            (io.BytesIO("foo,bar\n1,2\n".encode("shift_jis")), "unknown.csv"),
+        ]}
+        resp = client.post("/trade-history/import", data=data,
+                           content_type="multipart/form-data", follow_redirects=True)
+        html = resp.data.decode()
+        assert "楽天 CSV 取込完了" in html and "SBI CSV 取込完了" in html
+        assert "認識できませんでした" in html
+        # 楽天2件 + SBI1件が取り込まれ、不正ファイルは保存されない
+        assert len(ps.list_fills("6324")) == 3
+        assert (save_dir / "tradehistory(JP)_b.csv").exists()
+        assert not (save_dir / "unknown.csv").exists()
+
+    def test_same_basename_files_do_not_overwrite_original(self, env):
+        """同名ファイルを同時に上げても、原本が後勝ちで失われない。
+
+        SBIは現物・信用が同名 SaveFile.csv で降ってくるため、複数選択を
+        許可した以上この衝突は実際に起きる (codexレビュー指摘)。
+        """
+        import io
+        app, save_dir = env
+        client = app.test_client()
+        rakuten2 = self._rakuten_csv().replace(b"2026/6/22", b"2026/6/24")
+        data = {"csv_files": [
+            (io.BytesIO(self._rakuten_csv()), "SaveFile.csv"),
+            (io.BytesIO(rakuten2), "SaveFile.csv"),
+        ]}
+        resp = client.post("/trade-history/import", data=data,
+                           content_type="multipart/form-data", follow_redirects=True)
+        assert resp.status_code == 200
+        # 2件とも取り込まれ、原本も別名で2つ残る
+        assert len(ps.list_fills("6324")) == 2
+        assert (save_dir / "SaveFile.csv").exists()
+        assert (save_dir / "SaveFile_2.csv").exists()
 
     def test_no_file_selected(self, env):
         app, _ = env
