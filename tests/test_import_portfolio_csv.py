@@ -48,6 +48,26 @@ RAKUTEN_MARGIN_ROWS = [
     ["特定", "9999", "空売り銘柄", "東証", "売建", "制度", "6ヶ月", "100", "0", "1000"],
 ]
 
+# 楽天現物の JP版 (assetbalance(JP): 国内株式のみ)。種別列・口座列が無く、
+# 口座区分は "■特定口座" のようなセクション見出しで表現される。
+RAKUTEN_JP_SPOT_ROWS = [
+    ["■現在の評価額合計［円］", "", "10,365,050"],
+    ["■評価損益合計", "前日比［円］", "776,850"],
+    ["■特定口座"],
+    [],
+    ["銘柄コード", "銘柄名", "保有数量［株］", "執行中［株］", "(内訳　通常数量[株])",
+     "(内訳　積立数量[株])", "平均取得価額［円］", "取得総額［円］"],
+    ["402A", "アクセルスペース", "600", "600", "600", "0", "765.21", "459,129"],
+    ["1681", "上場ＭＳエマ", "550", "0", "550", "0", "2,326.00", "1,279,300"],  # ETF
+    ["", "", "", "", "", "", "特定口座合計", "9,166,700"],  # 合計行 (スキップ対象)
+    [],
+    ["■NISA口座"],
+    [],
+    ["銘柄コード", "銘柄名", "保有数量［株］", "執行中［株］", "(内訳　通常数量[株])",
+     "(内訳　積立数量[株])", "平均取得価額［円］", "取得総額［円］"],
+    ["6501", "日立", "100", "0", "100", "0", "4,750.00", "475,000"],
+]
+
 SBI_SPOT_ROWS = [
     [],
     ["保有証券一覧"],
@@ -103,6 +123,7 @@ def db_path(tmp_path, monkeypatch):
     "rows,expected",
     [
         (RAKUTEN_SPOT_ROWS, ("楽天", "現物")),
+        (RAKUTEN_JP_SPOT_ROWS, ("楽天", "現物")),
         (RAKUTEN_MARGIN_ROWS, ("楽天", "信用")),
         (SBI_SPOT_ROWS, ("SBI", "現物")),
         (SBI_MARGIN_ROWS, ("SBI", "信用")),
@@ -119,6 +140,38 @@ def test_parse_rakuten_spot_skips_summary_row_and_foreign_stock(db_path):
     assert len(parsed) == 1
     assert parsed[0] == {"code_s": "402A", "account": "特定", "kind": "現物",
                          "qty": 600, "avg_price": 765.21}
+
+
+def test_parse_rakuten_jp_spot_sections_and_summary_row(db_path):
+    """JP版は口座区分をセクション見出しから取り、合計行とETFを除外する。"""
+    parsed = ic.parse_rakuten_jp_spot(RAKUTEN_JP_SPOT_ROWS)
+    assert parsed == [
+        {"code_s": "402A", "account": "特定", "kind": "現物",
+         "qty": 600, "avg_price": 765.21},
+        {"code_s": "6501", "account": "NISA", "kind": "現物",
+         "qty": 100, "avg_price": 4750.0},
+    ]
+
+
+def test_parse_rakuten_jp_spot_recognizes_section_without_kouza_suffix(db_path):
+    """"口座" で終わらない見出しも口座区分として扱い、直前口座への誤分類を防ぐ。
+
+    "■NISA成長投資枠" のような未知表記を見出しと認識できないと、その配下の
+    銘柄が黙って "特定" として保存される (静かなデータ破損)。
+    """
+    rows = [row.copy() for row in RAKUTEN_JP_SPOT_ROWS]
+    rows[9] = ["■NISA成長投資枠"]
+    parsed = ic.parse_rakuten_jp_spot(rows)
+    assert [(p["code_s"], p["account"]) for p in parsed] == [
+        ("402A", "特定"), ("6501", "NISA成長投資枠"),
+    ]
+
+
+def test_select_parser_switches_rakuten_spot_format(db_path):
+    """同じ ("楽天", "現物") でも (all)版と(JP)版で別パーサーを選ぶ。"""
+    source = ("楽天", "現物")
+    assert ic.select_parser(source, RAKUTEN_SPOT_ROWS) is ic.parse_rakuten_spot
+    assert ic.select_parser(source, RAKUTEN_JP_SPOT_ROWS) is ic.parse_rakuten_jp_spot
 
 
 @pytest.mark.parametrize("invalid_code", ["", "12X34"])

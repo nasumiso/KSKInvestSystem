@@ -60,6 +60,17 @@ RAKUTEN_SPOT_HEADER_MARKER = "銘柄コード・ティッカー"
 RAKUTEN_MARGIN_FIRST_ROW_MARKER = "■表示形式"
 RAKUTEN_MARGIN_HEADER_MARKER = "建玉数量［株］"
 
+# 楽天現物 (JP版: 国内株式のみ) CSV のマーカー。
+# assetbalance(all) と違い種別列・口座列が無く、口座区分は "■特定口座" のような
+# セクション見出しで表現される。単位表記の揺れに引きずられないよう前方一致で判定。
+RAKUTEN_JP_FIRST_ROW_MARKER = "■現在の評価額合計"
+RAKUTEN_JP_HEADER_FIRST_COL = "銘柄コード"
+RAKUTEN_JP_HEADER_MARKER = "保有数量［株］"
+RAKUTEN_JP_SECTION_SUFFIX = "口座"
+# 口座区分の見出しではない ■ 行 (冒頭のサマリー)。これ以外の ■ 行は
+# 末尾が "口座" でなくても口座見出しとして扱う (未知表記の黙殺を防ぐ)。
+RAKUTEN_JP_NON_SECTION_MARKERS = ("■現在の評価額合計", "■評価損益合計")
+
 # SBI CSV の2行目見出し
 SBI_SPOT_MARKER = "保有証券一覧"
 SBI_MARGIN_MARKER = "信用建玉一覧"
@@ -87,6 +98,22 @@ def read_csv_rows(csv_path: str) -> List[List[str]]:
         return list(csv.reader(f))
 
 
+def _is_rakuten_jp_spot(rows: List[List[str]]) -> bool:
+    """楽天現物CSV の JP版 (assetbalance(JP): 国内株式のみ) かどうかを判定する。
+
+    判別条件は detect_source とパーサー選択の両方で使うため、ここに一本化する。
+    """
+    if not rows or not (rows[0][0] if rows[0] else "").strip().startswith(
+        RAKUTEN_JP_FIRST_ROW_MARKER
+    ):
+        return False
+    return any(
+        row and row[0].strip() == RAKUTEN_JP_HEADER_FIRST_COL
+        and RAKUTEN_JP_HEADER_MARKER in [c.strip() for c in row]
+        for row in rows
+    )
+
+
 def detect_source(rows: List[List[str]]) -> Optional[Tuple[str, str]]:
     """CSV の中身から (broker, kind) を判別する。判別できなければ None。
 
@@ -111,6 +138,11 @@ def detect_source(rows: List[List[str]]) -> Optional[Tuple[str, str]]:
         for row in rows:
             if RAKUTEN_MARGIN_HEADER_MARKER in [c.strip() for c in row]:
                 return ("楽天", "信用")
+
+    # 5: 楽天/現物 の JP版 (assetbalance(JP): 国内株式のみ)。
+    # (all)版と同じ ("楽天", "現物") を返し、パーサーは select_parser で使い分ける。
+    if _is_rakuten_jp_spot(rows):
+        return ("楽天", "現物")
 
     return None
 
@@ -220,6 +252,80 @@ def parse_rakuten_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
             "code_s": code_s, "account": account, "kind": kind,
             "qty": qty, "avg_price": tate_price,
         })
+    return parsed
+
+
+def _iter_rakuten_jp_section_headers(rows: List[List[str]]) -> List[Tuple[int, str]]:
+    """楽天現物 JP版CSV 内の全ヘッダ行 index と、直前のセクション見出しから
+    導出した account を列挙する。
+
+    JP版は口座列を持たず、"■特定口座" のようなセクション見出しが口座区分を表す。
+    見出し文字列は先頭の "■" と末尾の "口座" を除いて account とする
+    ("■特定口座" -> "特定")。実物が未確認の NISA 等でも取り込めるよう、
+    ホワイトリストではなく機械的に抽出する。
+
+    冒頭のサマリー行 (RAKUTEN_JP_NON_SECTION_MARKERS) 以外の ■ 行は、
+    末尾が "口座" でなくても見出しとして扱う。"■NISA成長投資枠" のような
+    未知の表記を見出しと認識できないと、そのセクションの銘柄が直前の口座
+    (既定では "特定") に黙って誤分類され、そのまま position の account として
+    保存されてしまうため。
+    """
+    results = []
+    current_account = "特定"
+    for i, row in enumerate(rows):
+        cell = (row[0].strip() if row else "")
+        if cell.startswith("■"):
+            if any(cell.startswith(m) for m in RAKUTEN_JP_NON_SECTION_MARKERS):
+                continue
+            inner = cell[1:].strip()
+            if inner.endswith(RAKUTEN_JP_SECTION_SUFFIX):
+                inner = inner[:-len(RAKUTEN_JP_SECTION_SUFFIX)].strip()
+            current_account = inner or "特定"
+            continue
+        if (cell == RAKUTEN_JP_HEADER_FIRST_COL
+                and RAKUTEN_JP_HEADER_MARKER in [c.strip() for c in row]):
+            results.append((i, current_account))
+    return results
+
+
+def parse_rakuten_jp_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
+    """楽天現物CSV の JP版 (assetbalance(JP)_*.csv) をパースする。
+
+    国内株式のみのCSVなので種別による絞り込みは不要。口座区分はセクション見出しから
+    取る (SBI現物と同じ構造)。末尾の "特定口座合計" 行は先頭列が空なのでスキップされる。
+    """
+    headers = _iter_rakuten_jp_section_headers(rows)
+    if not headers:
+        raise ValueError("楽天現物CSV(JP): ヘッダ行 (銘柄コード...保有数量［株］) が見つかりません")
+
+    parsed = []
+    for idx, (hi, account) in enumerate(headers):
+        # このセクションのデータ行は、次のヘッダ行 (次セクション) の手前まで
+        section_end = headers[idx + 1][0] if idx + 1 < len(headers) else len(rows)
+        for row in rows[hi + 1:section_end]:
+            if len(row) < 3 or not (row[0] or "").strip():
+                continue
+            code_raw = (row[0] or "").strip()
+            try:
+                ps.validate_code_s(code_raw)
+            except (ValueError, TypeError) as e:
+                raise ValueError(
+                    f"楽天現物CSV(JP): 保有行の銘柄コードが不正です: {code_raw!r}"
+                ) from e
+            code_s = ps.normalize_code_s(code_raw)
+            if ps.is_etf_code(code_s):
+                continue
+            qty_raw = (row[2] or "").strip().replace(",", "")
+            qty = _parse_qty(qty_raw, "楽天現物(JP)", code_s, "保有数量")
+            avg_price_raw = (row[6] or "").strip().replace(",", "") if len(row) > 6 else ""
+            try:
+                avg_price = float(avg_price_raw)
+            except ValueError:
+                avg_price = None
+            parsed.append({
+                "code_s": code_s, "account": account, "kind": "現物",
+                "qty": qty, "avg_price": avg_price,
+            })
     return parsed
 
 
@@ -342,6 +448,17 @@ PARSERS = {
 }
 
 
+def select_parser(source: Tuple[str, str], rows: List[List[str]]):
+    """(broker, kind) と行内容からパーサーを選ぶ。
+
+    楽天現物は (all)版 と (JP)版 の2フォーマットがあり、どちらも ("楽天", "現物")
+    なので、PARSERS のキーだけでは決まらない。行内容で使い分ける。
+    """
+    if source == ("楽天", "現物") and _is_rakuten_jp_spot(rows):
+        return parse_rakuten_jp_spot
+    return PARSERS[source]
+
+
 def _aggregate_by_account_kind_code(rows: List[Dict[str, Any]]) -> Dict[Tuple[str, str, str], Dict[str, Any]]:
     """パース結果を (account, kind, code_s) 単位で合算する。
 
@@ -418,7 +535,7 @@ def import_csvs(
                 f"同一ソース ({source[0]}/{source[1]}) のファイルが複数渡されました: "
                 f"{detected[source]['path']} / {path}"
             )
-        parser = PARSERS[source]
+        parser = select_parser(source, rows)
         parsed_rows = parser(rows)
         detected[source] = {"path": path, "rows": parsed_rows}
         log_print(
