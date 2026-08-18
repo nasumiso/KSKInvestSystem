@@ -4508,6 +4508,13 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
     信用: 各返済 fill が単独で損益確定。楽天=約定単価-建単価(tate_price)、SBI=settle_pl。
       amount = 建玉コスト (Σ tate_price*qty、無ければ約定金額)。
 
+    保有日数は2レイヤーある:
+      - ラウンド単位 (戻り値の hold_days): open_date〜close_date。現物・信用とも算出する。
+      - fill 単位 (f["hold_days"]): 建日〜決済日。**信用のみ**。信用は返済 fill と建玉が
+        tate_date/tate_price で1対1に対応するため個別に出せるが、現物は売却 fill が
+        どの買いに対応するかCSVに情報が無く、平均取得単価法で損益を近似するため
+        建日を紐付けられない。テンプレート側も現物行は日数列を空欄にする。
+
     Returns: {return_pct, hold_days, avg_cost, amount, profit_amount, ...} / 算出不能なら None
     """
     fills = rnd["fills"]

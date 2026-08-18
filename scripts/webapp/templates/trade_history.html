@@ -209,6 +209,7 @@
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "%g"|format(f.qty) }}株</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}円</td>
             {% if f.tate_price %}<td style="padding:1px 0.8em;text-align:right;white-space:nowrap;color:#888;">建 {{ "{:,}".format(f.tate_price|round|int) }}</td>{% else %}<td></td>{% endif %}
+            {# fill 単位の保有日数は信用のみ。現物は売却fillと買いfillの対応がCSVに無く建日を紐付けられないため空欄 #}
             {% if f.hold_days is defined %}<td style="padding:1px 0.8em;color:#777;white-space:nowrap;">{{ f.tate_date[2:] }} 建 → {{ f.hold_days }}日</td>{% else %}<td></td>{% endif %}
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
               {% if f.fill_return_pct is defined %}<span style="color:{{ '#9ef0aa' if f.fill_return_pct >= 0 else '#f0a0a0' }};">{{ '+' if f.fill_return_pct >= 0 else '' }}{{ "%.2f"|format(f.fill_return_pct) }}%</span>
