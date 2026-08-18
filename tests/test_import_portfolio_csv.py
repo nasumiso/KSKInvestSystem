@@ -571,8 +571,8 @@ class TestPhase2ApplyRecords:
         assert record["memo"]["trade_idea"] == ""
         assert next(a for a in result["applied"] if a["code_s"] == "4970")["action"] == "保留キューへ"
 
-    def test_new_in_never_auto_from_3kan_even_with_trade_idea(self, tmp_path, db_path):
-        """3監 は trade_idea があっても自動INしない、必ず保留キュー (§6-2)。"""
+    def test_new_in_auto_from_3kan_with_existing_trade_idea(self, tmp_path, db_path):
+        """3監 も 2準 と同じく、既存 trade_idea があれば自動INする (issue #397 仕様変更)。"""
         ps.add_to_watch("4970", db_path=db_path)  # 3監のまま
         ps.seed_trade_ideas(db_path=db_path)
         ps.update_memo("4970", {"trade_idea": "GARP"}, db_path=db_path)
@@ -581,13 +581,13 @@ class TestPhase2ApplyRecords:
                                 apply_records=True, db_path=db_path)
 
         record = ps.get_record("4970", db_path=db_path)
-        assert record["status"] == "3監"
-        assert any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
+        assert record["status"] == "1保"
+        assert not any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
         applied = next(a for a in result["applied"] if a["code_s"] == "4970")
-        assert applied["action"] == "保留キューへ"
+        assert applied["action"] == "新規IN(自動)"
 
-    def test_new_in_from_3kan_saves_selected_trade_idea(self, tmp_path, db_path):
-        """3監では自動INせず、確認画面で選んだ戦略だけ保存する。"""
+    def test_new_in_from_3kan_uses_selected_trade_idea(self, tmp_path, db_path):
+        """戦略未設定の3監でも、確認画面で戦略を選べば自動INする。"""
         ps.add_to_watch("4970", db_path=db_path)
         ps.seed_trade_ideas(db_path=db_path)
 
@@ -597,10 +597,10 @@ class TestPhase2ApplyRecords:
         )
 
         record = ps.get_record("4970", db_path=db_path)
-        assert record["status"] == "3監"
+        assert record["status"] == "1保"
         assert record["memo"]["trade_idea"] == "GARP"
-        assert any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
-        assert next(a for a in result["applied"] if a["code_s"] == "4970")["action"] == "保留キューへ"
+        assert not any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
+        assert next(a for a in result["applied"] if a["code_s"] == "4970")["action"] == "新規IN(自動)"
 
     def test_zero_qty_removes_pending_in(self, tmp_path, db_path):
         """保有ゼロになった準保有・監視銘柄は保留キューからも取り除く。"""

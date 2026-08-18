@@ -734,7 +734,7 @@ def _judge(status: str, covered: bool, merged_qty: int, db_qty: Optional[int]) -
     if status == "1保":
         return f"株数変更候補 {db_qty}→{merged_qty}"
     if status in ("2準", "3監"):
-        return "新規IN候補 (反映すると保留キューまたは自動INへ)"
+        return "新規IN候補 (戦略ありで1保へ / 空欄なら保留キューへ)"
     if status == "未登録":
         return "未登録+保有検出 (反映すると監視へ登録)"
     return "-"
@@ -817,9 +817,12 @@ def _sync_records(
             )
             if has_trade_idea_override and chosen_trade_idea != existing_trade_idea:
                 ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, db_path=db_path)
-            if status == "2準" and chosen_trade_idea:
+            if chosen_trade_idea:
                 # 戦略あり: webapp/routes/portfolio.py:520-537 と同じ順序で自動IN (issue #397 §6-2)
                 # 確認画面で戦略が変更されていれば先に記録し直す (§ Phase3b)
+                # 3監も2準と同じ扱いにする (issue #397 起票時は「3監の戦略は古い保有の
+                # 残骸の可能性がある」として除外していたが、実運用で 3監→買い直し が
+                # 発生し、戦略があっても永久に保留キューに積まれ続けたため)
                 reason = "CSV取込による新規保有検出"
                 if note:
                     reason = f"{reason} / {note}"
@@ -837,7 +840,7 @@ def _sync_records(
                     "detail": f"株数{merged_qty} / 戦略「{chosen_trade_idea}」",
                 })
             else:
-                # 3監、または 2準 でも戦略未設定 -> 保留キュー (issue #397 §6-2)
+                # 戦略未設定 (確認画面で空欄を選んだ場合を含む) -> 保留キュー (issue #397 §6-2)
                 ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
                 applied.append({"code_s": code_s, "action": "保留キューへ", "detail": f"qty={merged_qty}"})
             continue
