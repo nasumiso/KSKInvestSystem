@@ -106,6 +106,56 @@ class TestGenbaiBridge:
         assert len(open_genbutsu) == 1
         assert open_genbutsu[0]["open_pl"]["held_qty"] == 100
 
+    def test_genbiki_with_remaining_shinyo_qty(self, db_path, monkeypatch):
+        """現引後も信用建玉が残る場合、信用の held_qty が現引分だけ減る (4377/9880 回帰)。
+
+        現引は side=buy だが建玉を作らず現物へ振り替える。_episode_open_pl が
+        「信用新規でも返済でもない」として現引を読み飛ばすと、建玉が減らず
+        held_qty が実態より多く出ていた。
+        """
+        _add(db_path, "4377", "2026-02-13", "buy", 100, 3000.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "4377", "2026-02-13", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "4377", "2026-08-12", "buy", 100, 2100.0, trade_kind="現引",
+             tate_price=3000.0, tate_date="2026-02-13", seq_salt="c")
+        import datetime as _dt
+        monkeypatch.setattr(
+            helpers, "_bulk_price_logs",
+            lambda codes: {"4377": [(_dt.date(2026, 8, 20), 2500)]},
+        )
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        open_shinyo = [e for e in eps if not e["closed"] and e["kind"] == "信用"]
+        open_genbutsu = [e for e in eps if not e["closed"] and e["kind"] == "現物"]
+        # 信用200株のうち100株を現引 → 信用100株・現物100株がそれぞれ保有中
+        assert len(open_shinyo) == 1
+        assert len(open_genbutsu) == 1
+        op = open_shinyo[0]["open_pl"]
+        assert op["held_qty"] == 100
+        # 現引で振り替えた分は信用側の分母から抜く (現物ラウンドで積み直されるため。
+        # 抜かないと銘柄単位の通算で同じ取得コストを二重計上する)。
+        # 新規買 400,000円 − 平均建単価2,000円 × 現引100株 = 200,000円
+        assert op["cost_basis_total"] == pytest.approx(200000.0)
+        # 含み = (2500 - 2000) * 100 = 50,000 → 50,000 / 200,000 = +25%
+        assert op["return_pct"] == pytest.approx(25.0)
+        assert open_genbutsu[0]["open_pl"]["held_qty"] == 100
+
+    def test_genbiki_excluded_from_closed_avg_cost(self, db_path):
+        """クローズ済み信用ラウンドの avg_cost が建単価水準になる (6366 相当)。
+
+        信用の amount は返済 fill の建玉コストのみ。分母を建玉株数にすると現引で
+        現物へ振り替えた分だけ粒度が食い違い、avg_cost が実態より低く出ていた。
+        """
+        _add(db_path, "6367", "2026-01-10", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "6367", "2026-01-11", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "6367", "2026-02-01", "buy", 100, 1010.0, trade_kind="現引",
+             tate_price=1000.0, tate_date="2026-01-10", seq_salt="c")
+        _add(db_path, "6367", "2026-02-02", "sell", 100, 1200.0, trade_kind="信用返済",
+             tate_price=1000.0, tate_date="2026-01-11", seq_salt="d")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        closed_shinyo = [e for e in eps if e["closed"] and e["kind"] == "信用"]
+        assert len(closed_shinyo) == 1
+        # 返済した建玉コスト 100,000円 ÷ 返済100株 = 建単価 1,000円
+        assert closed_shinyo[0]["pl"]["avg_cost"] == pytest.approx(1000.0)
+
     def test_genbiki_then_same_day_sell_not_open(self, db_path):
         """同日に 現引(買) → 現物売 があるとき、現引を先に処理し保有中に残さない (6366相当)。
 
@@ -367,6 +417,9 @@ class TestOpenPositionPL:
         assert op["realized"] == 50000     # (1500-1000)*100
         assert op["held_qty"] == 100
         assert op["unrealized"] == 40000   # (1400-1000)*100
+        # 保有中の暫定リターン = (実現 + 含み) / 延べ取得コスト = 90,000 / 200,000
+        assert op["cost_basis_total"] == pytest.approx(200000.0)
+        assert op["return_pct"] == pytest.approx(45.0)
 
     def test_open_without_price_has_none_unrealized(self, db_path, monkeypatch):
         _add(db_path, "7002", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
@@ -376,6 +429,7 @@ class TestOpenPositionPL:
         assert op["realized"] == 0
         assert op["unrealized"] is None    # 現在値なし
         assert op["held_qty"] == 100
+        assert op["return_pct"] is None    # 含みが出せないので暫定リターンも出せない
 
     def test_shinyo_reverse_settle_disables_unrealized(self, db_path, monkeypatch):
         # 信用返済 buy (建玉方向と逆) が混ざると含みは None (安全側)
@@ -509,6 +563,39 @@ class TestStockRollups:
         s_ep = helpers.calc_trade_summary(ep_pls)
         s_stk = helpers.calc_trade_summary(stk_pls)
         assert s_ep["expectancy"] == pytest.approx(s_stk["expectancy"])
+
+    @pytest.mark.parametrize(
+        "fills, expected_peak",
+        [
+            pytest.param(
+                [("2026-01-10", "buy", "現物"), ("2026-01-11", "buy", "信用新規")],
+                200, id="現物と信用を同時保有=合算",
+            ),
+            pytest.param(
+                [("2026-01-10", "buy", "現物"), ("2026-01-12", "sell", "現物"),
+                 ("2026-01-15", "buy", "信用新規")],
+                100, id="現物クローズ後に信用=合算しない",
+            ),
+            pytest.param(
+                [("2026-01-10", "buy", "現物"), ("2026-01-11", "buy", "信用新規"),
+                 ("2026-01-20", "sell", "信用返済")],
+                200, id="信用がクローズ済みでも同時保有ピークを拾う",
+            ),
+        ],
+    )
+    def test_qty_peak_counts_concurrent_holdings(self, db_path, monkeypatch,
+                                                 fills, expected_peak):
+        """銘柄単位の qty_peak は信用+現物の同時保有ピーク (ラウンド単位 max では不足)。
+
+        ラウンド単位の qty_peak の max では、信用と現物を同時に持つ銘柄でピークを
+        取り逃す。時系列走査中に実測した code_qty_peak を使う。
+        """
+        monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {c: [] for c in codes})
+        for i, (dt, side, tk) in enumerate(fills):
+            _add(db_path, "8301", dt, side, 100, 1000.0, trade_kind=tk, seq_salt=str(i))
+        rollups = helpers.build_stock_rollups(
+            helpers.build_fill_episodes(db_path=db_path))
+        assert rollups[0]["qty_peak"] == expected_peak
 
     def test_sorted_by_last_trade_date_desc_then_code(self, db_path, monkeypatch):
         monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {c: [] for c in codes})

@@ -4588,13 +4588,19 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
                      - date.fromisoformat(rnd["open_date"])).days
     except (ValueError, TypeError, KeyError):
         hold_days = None
-    # 建玉側の株数で割る (買建/現物=buy、売建=sell が建玉側)
-    open_side = "sell" if rnd.get("is_short") else "buy"
+    # avg_cost = amount (取得/建玉コスト) ÷ その コストに対応する株数。
+    # 現物は買い株数、信用は「返済した建玉」の株数で割る。信用の amount は返済 fill の
+    # 建玉コストだけを積むため、現引で現物へ振り替えた分は amount に入らない。分母を
+    # 建玉株数にすると現引がある銘柄で粒度が食い違い avg_cost が実態より低く出る。
+    if kind == "信用":
+        settle_side = "buy" if rnd.get("is_short") else "sell"
+        open_qty = sum(f["qty"] for f in fills if f["side"] == settle_side)
+    else:
+        open_qty = sum(f["qty"] for f in fills if f["side"] == "buy")
     return {
         "return_pct": return_pct,
         "hold_days": hold_days if hold_days is not None else 0,
-        "avg_cost": total_cost / max(
-            sum(f["qty"] for f in fills if f["side"] == open_side), 1),
+        "avg_cost": total_cost / max(open_qty, 1),
         "amount": total_cost,
         "profit_amount": round(realized),
     }
@@ -4608,14 +4614,19 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
       直近終値。取得基準は 現物=平均取得単価、信用=平均建単価。current_price が無ければ
       含みは None (実現分は出す)。
 
-    Returns: {realized, unrealized, held_qty, avg_cost} / 建玉も売りも無ければ None。
-      unrealized は current_price 不明なら None。
+    Returns: {realized, unrealized, held_qty, avg_cost, cost_basis_total, return_pct}
+      / 建玉も売りも無ければ None。unrealized は current_price 不明なら None。
+
+    return_pct は保有中ラウンドの暫定リターン = (実現 + 含み) / 延べ取得コスト。
+    クローズ済みの pl.return_pct と分母の考え方を揃えてあり、同じ列に並べて比較できる。
+    含みが出せない (現在値不明・建玉方向が交錯) 場合は None。
     """
     fills = rnd["fills"]
     if not fills:
         return None
     kind = rnd["kind"]
 
+    cost_basis_total = 0.0  # 延べ取得コスト (return_pct の分母、クローズ済み amount と同義)
     if kind == "現物":
         held_qty = 0
         avg_cost = 0.0
@@ -4627,6 +4638,7 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 new_qty = held_qty + qty
                 avg_cost = (avg_cost * held_qty + price * qty) / new_qty if new_qty else 0.0
                 held_qty = new_qty
+                cost_basis_total += price * qty
             else:  # sell (部分売り)
                 sell_qty = min(qty, held_qty) if held_qty > 0 else qty
                 if held_qty > 0 and avg_cost > 0:
@@ -4658,6 +4670,15 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 new_qty = held_qty + qty
                 avg_cost = (avg_cost * held_qty + price * qty) / new_qty if new_qty else 0.0
                 held_qty = new_qty
+                cost_basis_total += price * qty
+            elif (f.get("trade_kind") or "") == "現引" and not is_short:
+                # 現引は建玉を現物へ振り替える。信用側では建玉が減るだけで損益は
+                # 確定しない (取得原価ごと現物ラウンドへ持ち越す)。ここで減算しないと
+                # 現引後も建玉が残るラウンドで held_qty が実態より多くなる。
+                # 振り替えた分の取得コストも現物ラウンド側で積み直されるので、信用側の
+                # 分母から抜く (抜かないと銘柄単位の通算で同じコストを二重計上する)。
+                held_qty -= qty
+                cost_basis_total -= avg_cost * qty
             elif f["side"] == settle_side:  # 信用返済 (部分返済)
                 settle_pl = f.get("settle_pl")
                 tate_price = f.get("tate_price")
@@ -4692,6 +4713,8 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 "unrealized": None,  # 建玉方向が交錯し含み評価不能
                 "held_qty": held_qty if held_qty > 0 else 0,
                 "avg_cost": cost_basis,
+                "cost_basis_total": cost_basis_total,
+                "return_pct": None,  # 含みが出せないので暫定リターンも出せない
             }
 
     if _is_qty_closed(held_qty):
@@ -4701,6 +4724,9 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
             "unrealized": None,
             "held_qty": held_qty if held_qty > 0 else 0,
             "avg_cost": cost_basis,
+            "cost_basis_total": cost_basis_total,
+            # 建玉が残っていないので実現分だけで暫定リターンが確定する
+            "return_pct": (realized / cost_basis_total * 100) if cost_basis_total > 0 else None,
         }
 
     unrealized = None
@@ -4710,11 +4736,17 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 else (current_price - cost_basis))
         unrealized = round(diff * held_qty)
 
+    return_pct = None
+    if unrealized is not None and cost_basis_total > 0:
+        return_pct = (realized + unrealized) / cost_basis_total * 100
+
     return {
         "realized": round(realized),
         "unrealized": unrealized,
         "held_qty": held_qty,
         "avg_cost": cost_basis,
+        "cost_basis_total": cost_basis_total,
+        "return_pct": return_pct,
     }
 
 
@@ -4953,7 +4985,14 @@ def _build_code_episodes(code_s: str, stock_name: str,
         genbutsu_peak = 0
         genbutsu_fractional_residual = False
 
+    # 銘柄全体の同時保有ピーク (信用買建 + 現物)。ラウンド単位の qty_peak は口座ごと・
+    # ラウンドごとの最大なので、信用と現物を同時に持つ銘柄の実際のピークを表せない。
+    # 建玉を増減させる各分岐が continue を使うため、次の fill を処理する前に前回の
+    # 反映結果を拾う (ループ末尾では拾えない)。
+    code_qty_peak = 0
+
     for f in fills:
+        code_qty_peak = max(code_qty_peak, shinyo_qty + genbutsu_qty)
         tk = f.get("trade_kind") or ""
         qty = f["qty"]
         if tk == "現引":
@@ -5026,6 +5065,8 @@ def _build_code_episodes(code_s: str, stock_name: str,
                 genbutsu_fractional_residual = _is_fractional_residual(genbutsu_qty)
                 close_genbutsu()
 
+    code_qty_peak = max(code_qty_peak, shinyo_qty + genbutsu_qty)  # 最後の fill の反映分
+
     # 保有中 (残った建玉)
     if shinyo_fills:
         episodes.append(_finalize_round(code_s, "信用", stock_name, shinyo_fills, shinyo_peak, closed=False))
@@ -5049,6 +5090,10 @@ def _build_code_episodes(code_s: str, stock_name: str,
             code_s, "信用", stock_name, carry_over_fills, 0,
             carry_over=True, is_short=True,
         ))
+
+    # 銘柄単位ビューが使う同時保有ピーク。全エピソードで同じ値 (銘柄の属性)。
+    for ep in episodes:
+        ep["code_qty_peak"] = code_qty_peak
 
     return episodes
 
@@ -5218,6 +5263,21 @@ def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         open_unrealized_partial = bool(unrealized_values) and len(unrealized_values) < len(open_pls)
         held_qty = sum(op["held_qty"] for op in open_pls)
 
+        # 保有中も含めた通算リターン。クローズ済み (pl) と保有中 (open_pl) の損益・
+        # 分母を足して1つの % にする。エピソード単位の保有中リターンと定義を揃えてあり、
+        # 銘柄単位でもリターン列が「残N株」で潰れず数値で読める。
+        # 保有中エピソードは全件の含みが出せるときだけ通算に混ぜる。1件でも欠けると
+        # その分の取得コストだけが分母に乗って過小評価になる (9252 のように価格が
+        # 取れない銘柄が該当)。保有中が無い場合は 0 == 0 で成立し確定値と一致する。
+        total_amount = (pl["amount"] if pl else 0.0) + sum(
+            op.get("cost_basis_total") or 0.0 for op in open_pls)
+        total_profit = (pl["profit_amount"] if pl else 0.0) + open_realized + sum(
+            unrealized_values)
+        if total_amount > 0 and len(unrealized_values) == len(open_pls):
+            total_return_pct = total_profit / total_amount * 100
+        else:
+            total_return_pct = None
+
         eps_sorted = sorted(eps, key=lambda e: e["last_trade_date"], reverse=True)
         rollups.append({
             "code_s": code_s,
@@ -5227,7 +5287,10 @@ def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "kinds": sorted({ep["kind"] for ep in eps}),
             "first_open_date": min(ep["open_date"] for ep in eps),
             "last_trade_date": max(ep["last_trade_date"] for ep in eps),
-            "qty_peak": max(ep["qty_peak"] for ep in eps),
+            # 銘柄の同時保有ピーク (信用買建 + 現物)。_build_code_episodes が時系列
+            # 走査中に実測した値を使う。ラウンド単位の qty_peak の max では、信用と
+            # 現物を同時に持つ銘柄 (6890: 現物100+信用100) でピークを取り逃す。
+            "qty_peak": max([ep.get("code_qty_peak") or ep["qty_peak"] for ep in eps]),
             "has_open": any(not ep["closed"] for ep in eps),
             "has_carry_over": any(ep.get("carry_over") for ep in eps),
             "memo_count": sum(1 for ep in eps if ep.get("review_memo")),
@@ -5236,6 +5299,7 @@ def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "open_unrealized": open_unrealized,
             "open_unrealized_partial": open_unrealized_partial,
             "held_qty": held_qty,
+            "total_return_pct": total_return_pct,
         })
 
     rollups.sort(key=lambda r: r["code_s"])
