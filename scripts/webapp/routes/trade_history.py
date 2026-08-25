@@ -6,6 +6,7 @@ POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
      seq は売却ログまたは1保遷移ログの seq。どちらも review_memo に保存可能。
 """
 
+import datetime
 import os
 import shutil
 import tempfile
@@ -122,6 +123,31 @@ def _last_action_date(ep: dict) -> str:
     if ep["sell_date"]:
         dates.append(ep["sell_date"])
     return max(dates)
+
+
+def _split_current_and_past_years(items, keep_open):
+    """売買履歴の一覧を「初期表示分」と「年ごとの過去分」に分ける (issue #406)。
+
+    エピソード数は増え続けるため、全件を初期HTMLに出すと描画コストが嵩む。
+    今年の分と、`keep_open` が真のもの (保有中) を初期表示に残し、それ以外を
+    最終約定年ごとにまとめて折りたたむ。保有中を年で畳まないのは、古い建玉が
+    過去年に埋もれて見落とされるのを防ぐため。
+
+    items は last_trade_date の降順に並んでいる前提 (build_fill_episodes /
+    build_stock_rollups と同じ順序)。返り値もその順序を保つ。
+
+    Returns: (初期表示分, [(年, 件数分のリスト), ...] 年降順)
+    """
+    current_year = datetime.datetime.now(ps.JST).strftime("%Y")
+    current, past_by_year = [], {}
+    for item in items:
+        year = (item["last_trade_date"] or "")[:4]
+        if year >= current_year or keep_open(item):
+            current.append(item)
+        else:
+            past_by_year.setdefault(year, []).append(item)
+    past_years = sorted(past_by_year.items(), key=lambda x: x[0], reverse=True)
+    return current, past_years
 
 
 @trade_history_bp.route("/trade-history")
@@ -268,6 +294,15 @@ def trade_history():
         1 for r in stock_rollups if any(ep["closed"] for ep in r["episodes"])
     )
 
+    # issue #406: 売買履歴の2ビューを年単位アコーディオン化して初期HTML量を減らす。
+    # 保有中は年に関係なく常に初期表示する (古い建玉が畳まれて見落とされるのを防ぐ)。
+    fill_current, fill_past_years = _split_current_and_past_years(
+        fill_episodes, lambda ep: not ep["closed"]
+    )
+    stock_current, stock_past_years = _split_current_and_past_years(
+        stock_rollups, lambda r: r["has_open"]
+    )
+
     # 証券会社別の取込済み約定日レンジ (次回インポートの参考、取込のたびに更新される)
     broker_ranges = fill_date_range_by_broker()
 
@@ -281,6 +316,10 @@ def trade_history():
         fill_priced_count=fill_priced_count,
         fill_total_pl=fill_total_pl,
         stock_rollups=stock_rollups,
+        fill_current=fill_current,
+        fill_past_years=fill_past_years,
+        stock_current=stock_current,
+        stock_past_years=stock_past_years,
         stock_summary=stock_summary,
         stock_priced_count=stock_priced_count,
         stock_closed_count=stock_closed_count,

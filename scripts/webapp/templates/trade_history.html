@@ -263,7 +263,9 @@
     </tr>
 {% endmacro %}
 
-{% if fill_episodes %}
+{# issue #406: 今年分と保有中を初期表示し、過去年は折りたたんで初期HTML量を抑える。
+   詳細行の id が年グループ間で衝突しないよう、マクロに uid 接頭辞を渡す #}
+{% macro fill_episode_table(episodes, uid) %}
 <table class="trade-history-table">
   <colgroup>
     <col style="width:1.5em;"><col style="width:11em;"><col style="width:4em;">
@@ -283,11 +285,27 @@
     </tr>
   </thead>
   <tbody>
-  {% for ep in fill_episodes %}
-    {{ episode_rows(ep, "ep-" ~ loop.index) }}
+  {% for ep in episodes %}
+    {{ episode_rows(ep, uid ~ "-ep-" ~ loop.index) }}
   {% endfor %}
   </tbody>
 </table>
+{% endmacro %}
+
+{% if fill_episodes %}
+{{ fill_episode_table(fill_current, "cur") }}
+{% for year, items in fill_past_years %}
+<div class="year-group" style="margin-top:1em;">
+  <button class="year-toggle" data-target="fill-year-{{ year }}"
+          style="background:none;border:none;color:#aaa;font-size:0.9em;cursor:pointer;padding:0.3em 0;display:flex;align-items:center;gap:0.4em;">
+    <span class="toggle-icon">▶</span>
+    <span>{{ year }}年（{{ items|length }}件）</span>
+  </button>
+  <div id="fill-year-{{ year }}" style="display:none;margin-top:0.5em;">
+    {{ fill_episode_table(items, "y" ~ year) }}
+  </div>
+</div>
+{% endfor %}
 {% else %}
 <p style="color:#888;">取り込まれた約定がありません。CSV取込、または <code>import_rakuten_fills.py</code> / <code>import_sbi_fills.py</code> でCSVを取り込んでください。</p>
 {% endif %}
@@ -298,7 +316,7 @@
 
 {{ fill_summary_block(stock_summary, fill_total_pl, stock_priced_count, stock_closed_count, "銘柄", "平均通算保有") }}
 
-{% if stock_rollups %}
+{% macro stock_rollup_table(rollups, uid) %}
 <table class="trade-history-table">
   <colgroup>
     <col style="width:1.5em;"><col style="width:11em;"><col style="width:4em;">
@@ -318,8 +336,8 @@
     </tr>
   </thead>
   <tbody>
-  {% for r in stock_rollups %}
-    {% set stock_idx = loop.index %}
+  {% for r in rollups %}
+    {% set stock_idx = uid ~ "-" ~ loop.index %}
     <tr class="th-stock-row" data-stock="stock-{{ stock_idx }}" style="cursor:pointer;">
       <td style="color:#666;text-align:center;font-size:0.8em;"><span class="th-stock-caret">▸</span></td>
       <td style="white-space:nowrap;">
@@ -397,6 +415,22 @@
   {% endfor %}
   </tbody>
 </table>
+{% endmacro %}
+
+{% if stock_rollups %}
+{{ stock_rollup_table(stock_current, "cur") }}
+{% for year, items in stock_past_years %}
+<div class="year-group" style="margin-top:1em;">
+  <button class="year-toggle" data-target="stock-year-{{ year }}"
+          style="background:none;border:none;color:#aaa;font-size:0.9em;cursor:pointer;padding:0.3em 0;display:flex;align-items:center;gap:0.4em;">
+    <span class="toggle-icon">▶</span>
+    <span>{{ year }}年（{{ items|length }}銘柄）</span>
+  </button>
+  <div id="stock-year-{{ year }}" style="display:none;margin-top:0.5em;">
+    {{ stock_rollup_table(items, "y" ~ year) }}
+  </div>
+</div>
+{% endfor %}
 {% else %}
 <p style="color:#888;">取り込まれた約定がありません。</p>
 {% endif %}
