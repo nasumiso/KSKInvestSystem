@@ -405,6 +405,9 @@ class TestOpenPositionPL:
         assert op["realized"] == 50000     # (1500-1000)*100
         assert op["held_qty"] == 100
         assert op["unrealized"] == 40000   # (1400-1000)*100
+        # 保有中の暫定リターン = (実現 + 含み) / 延べ取得コスト = 90,000 / 200,000
+        assert op["cost_basis_total"] == pytest.approx(200000.0)
+        assert op["return_pct"] == pytest.approx(45.0)
 
     def test_open_without_price_has_none_unrealized(self, db_path, monkeypatch):
         _add(db_path, "7002", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
@@ -414,6 +417,7 @@ class TestOpenPositionPL:
         assert op["realized"] == 0
         assert op["unrealized"] is None    # 現在値なし
         assert op["held_qty"] == 100
+        assert op["return_pct"] is None    # 含みが出せないので暫定リターンも出せない
 
     def test_shinyo_reverse_settle_disables_unrealized(self, db_path, monkeypatch):
         # 信用返済 buy (建玉方向と逆) が混ざると含みは None (安全側)

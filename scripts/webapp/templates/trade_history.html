@@ -145,15 +145,21 @@
         <span title="振り返りメモあり" style="margin-left:0.2em;">📝</span>
         {% endif %}
       </td>
-      <td style="white-space:nowrap;color:#888;font-size:0.82em;">{{ ep.open_date[2:] }}{% if ep.close_date and ep.close_date != ep.open_date %} 〜 {{ ep.close_date[2:] }}{% endif %}</td>
-      <td style="text-align:right;color:#888;font-size:0.85em;">{{ "%g"|format(ep.qty_peak) }}</td>
+      {# 保有中は close_date が無いので最終約定日を右端に出す (期間が open_date だけに
+         潰れて「いつまで動いていたラウンドか」が読めなくなるため) #}
+      {% set ep_end = ep.close_date or ep.last_trade_date %}
+      <td style="white-space:nowrap;color:#888;font-size:0.82em;">{{ ep.open_date[2:] }}{% if ep_end and ep_end != ep.open_date %} 〜 {{ ep_end[2:] }}{% endif %}</td>
+      {# 保有中で建玉が残っていれば「ピーク(残N)」。残株数はリターン列ではなく株数列で示す #}
+      <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ "%g"|format(ep.qty_peak) }}{% if not ep.closed and not ep.split_suspect and ep.open_pl and ep.open_pl.held_qty > 0 %}<span style="color:#a0a0d0;font-size:0.92em;" title="現在も保有している株数 (左はラウンド中の最大建玉)">(残{{ "%g"|format(ep.open_pl.held_qty) }})</span>{% endif %}</td>
       <td style="text-align:right;white-space:nowrap;">
         {% if ep.split_suspect %}
         <span style="color:#e08080;font-size:0.82em;" title="分割・併合をまたぐため残高・リターンは非表示">要確認</span>
         {% elif ep.pl %}
         <span style="color:{{ '#9ef0aa' if ep.pl.return_pct >= 0 else '#f0a0a0' }};font-weight:600;">{{ '+' if ep.pl.return_pct >= 0 else '' }}{{ "%.1f"|format(ep.pl.return_pct) }}%</span>
-        {% elif not ep.closed and ep.open_pl and ep.open_pl.held_qty > 0 %}
-        <span style="color:#888;font-size:0.82em;">残 {{ ep.open_pl.held_qty }}株</span>
+        {# 保有中は (実現+含み)/延べ取得コスト の暫定リターン。確定値と区別できるよう
+           やや淡い色にし、含みを含む旨を title に出す #}
+        {% elif not ep.closed and ep.open_pl and ep.open_pl.return_pct is not none %}
+        <span style="color:{{ '#7ec48a' if ep.open_pl.return_pct >= 0 else '#c88585' }};font-weight:600;" title="保有中の暫定リターン (実現損益 + 含み損益) ÷ 延べ取得コスト">{{ '+' if ep.open_pl.return_pct >= 0 else '' }}{{ "%.1f"|format(ep.open_pl.return_pct) }}%</span>
         {% elif ep.closed %}
         <span style="color:#666;" title="取得記録がCSVに無い(期首持越し等)または空売りのため損益算出対象外">—</span>
         {% else %}
@@ -199,7 +205,10 @@
               <th style="padding:1px 0.8em;">証券会社</th>
             </tr>
           </thead>
-          {% for f in ep.fills %}
+          {# 明細は最新が上。損益計算 (平均取得単価法) は時系列昇順の ep.fills に依存する
+             ため、表示時だけ反転する。同日内の並びも逆転するが、建玉を作る側→減らす側の
+             順で処理した結果を裏返した形になり、日付降順としては一貫している #}
+          {% for f in ep.fills | reverse %}
           <tr>
             <td style="padding:1px 0.8em 1px 0;white-space:nowrap;color:#888;">{{ f.trade_date[2:4] }}/{{ f.trade_date[5:7] }}/{{ f.trade_date[8:10] }}</td>
             <td style="padding:1px 0.8em;white-space:nowrap;">

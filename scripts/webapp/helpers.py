@@ -4614,14 +4614,19 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
       直近終値。取得基準は 現物=平均取得単価、信用=平均建単価。current_price が無ければ
       含みは None (実現分は出す)。
 
-    Returns: {realized, unrealized, held_qty, avg_cost} / 建玉も売りも無ければ None。
-      unrealized は current_price 不明なら None。
+    Returns: {realized, unrealized, held_qty, avg_cost, cost_basis_total, return_pct}
+      / 建玉も売りも無ければ None。unrealized は current_price 不明なら None。
+
+    return_pct は保有中ラウンドの暫定リターン = (実現 + 含み) / 延べ取得コスト。
+    クローズ済みの pl.return_pct と分母の考え方を揃えてあり、同じ列に並べて比較できる。
+    含みが出せない (現在値不明・建玉方向が交錯) 場合は None。
     """
     fills = rnd["fills"]
     if not fills:
         return None
     kind = rnd["kind"]
 
+    cost_basis_total = 0.0  # 延べ取得コスト (return_pct の分母、クローズ済み amount と同義)
     if kind == "現物":
         held_qty = 0
         avg_cost = 0.0
@@ -4633,6 +4638,7 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 new_qty = held_qty + qty
                 avg_cost = (avg_cost * held_qty + price * qty) / new_qty if new_qty else 0.0
                 held_qty = new_qty
+                cost_basis_total += price * qty
             else:  # sell (部分売り)
                 sell_qty = min(qty, held_qty) if held_qty > 0 else qty
                 if held_qty > 0 and avg_cost > 0:
@@ -4664,6 +4670,7 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 new_qty = held_qty + qty
                 avg_cost = (avg_cost * held_qty + price * qty) / new_qty if new_qty else 0.0
                 held_qty = new_qty
+                cost_basis_total += price * qty
             elif (f.get("trade_kind") or "") == "現引" and not is_short:
                 # 現引は建玉を現物へ振り替える。信用側では建玉が減るだけで損益は
                 # 確定しない (取得原価ごと現物ラウンドへ持ち越す)。ここで減算しないと
@@ -4703,6 +4710,8 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 "unrealized": None,  # 建玉方向が交錯し含み評価不能
                 "held_qty": held_qty if held_qty > 0 else 0,
                 "avg_cost": cost_basis,
+                "cost_basis_total": cost_basis_total,
+                "return_pct": None,  # 含みが出せないので暫定リターンも出せない
             }
 
     if _is_qty_closed(held_qty):
@@ -4712,6 +4721,9 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
             "unrealized": None,
             "held_qty": held_qty if held_qty > 0 else 0,
             "avg_cost": cost_basis,
+            "cost_basis_total": cost_basis_total,
+            # 建玉が残っていないので実現分だけで暫定リターンが確定する
+            "return_pct": (realized / cost_basis_total * 100) if cost_basis_total > 0 else None,
         }
 
     unrealized = None
@@ -4721,11 +4733,17 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 else (current_price - cost_basis))
         unrealized = round(diff * held_qty)
 
+    return_pct = None
+    if unrealized is not None and cost_basis_total > 0:
+        return_pct = (realized + unrealized) / cost_basis_total * 100
+
     return {
         "realized": round(realized),
         "unrealized": unrealized,
         "held_qty": held_qty,
         "avg_cost": cost_basis,
+        "cost_basis_total": cost_basis_total,
+        "return_pct": return_pct,
     }
 
 
