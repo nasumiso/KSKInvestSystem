@@ -4675,7 +4675,10 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 # 現引は建玉を現物へ振り替える。信用側では建玉が減るだけで損益は
                 # 確定しない (取得原価ごと現物ラウンドへ持ち越す)。ここで減算しないと
                 # 現引後も建玉が残るラウンドで held_qty が実態より多くなる。
+                # 振り替えた分の取得コストも現物ラウンド側で積み直されるので、信用側の
+                # 分母から抜く (抜かないと銘柄単位の通算で同じコストを二重計上する)。
                 held_qty -= qty
+                cost_basis_total -= avg_cost * qty
             elif f["side"] == settle_side:  # 信用返済 (部分返済)
                 settle_pl = f.get("settle_pl")
                 tate_price = f.get("tate_price")
@@ -4982,7 +4985,14 @@ def _build_code_episodes(code_s: str, stock_name: str,
         genbutsu_peak = 0
         genbutsu_fractional_residual = False
 
+    # 銘柄全体の同時保有ピーク (信用買建 + 現物)。ラウンド単位の qty_peak は口座ごと・
+    # ラウンドごとの最大なので、信用と現物を同時に持つ銘柄の実際のピークを表せない。
+    # 建玉を増減させる各分岐が continue を使うため、次の fill を処理する前に前回の
+    # 反映結果を拾う (ループ末尾では拾えない)。
+    code_qty_peak = 0
+
     for f in fills:
+        code_qty_peak = max(code_qty_peak, shinyo_qty + genbutsu_qty)
         tk = f.get("trade_kind") or ""
         qty = f["qty"]
         if tk == "現引":
@@ -5055,6 +5065,8 @@ def _build_code_episodes(code_s: str, stock_name: str,
                 genbutsu_fractional_residual = _is_fractional_residual(genbutsu_qty)
                 close_genbutsu()
 
+    code_qty_peak = max(code_qty_peak, shinyo_qty + genbutsu_qty)  # 最後の fill の反映分
+
     # 保有中 (残った建玉)
     if shinyo_fills:
         episodes.append(_finalize_round(code_s, "信用", stock_name, shinyo_fills, shinyo_peak, closed=False))
@@ -5078,6 +5090,10 @@ def _build_code_episodes(code_s: str, stock_name: str,
             code_s, "信用", stock_name, carry_over_fills, 0,
             carry_over=True, is_short=True,
         ))
+
+    # 銘柄単位ビューが使う同時保有ピーク。全エピソードで同じ値 (銘柄の属性)。
+    for ep in episodes:
+        ep["code_qty_peak"] = code_qty_peak
 
     return episodes
 
@@ -5247,6 +5263,21 @@ def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         open_unrealized_partial = bool(unrealized_values) and len(unrealized_values) < len(open_pls)
         held_qty = sum(op["held_qty"] for op in open_pls)
 
+        # 保有中も含めた通算リターン。クローズ済み (pl) と保有中 (open_pl) の損益・
+        # 分母を足して1つの % にする。エピソード単位の保有中リターンと定義を揃えてあり、
+        # 銘柄単位でもリターン列が「残N株」で潰れず数値で読める。
+        # 保有中エピソードは全件の含みが出せるときだけ通算に混ぜる。1件でも欠けると
+        # その分の取得コストだけが分母に乗って過小評価になる (9252 のように価格が
+        # 取れない銘柄が該当)。保有中が無い場合は 0 == 0 で成立し確定値と一致する。
+        total_amount = (pl["amount"] if pl else 0.0) + sum(
+            op.get("cost_basis_total") or 0.0 for op in open_pls)
+        total_profit = (pl["profit_amount"] if pl else 0.0) + open_realized + sum(
+            unrealized_values)
+        if total_amount > 0 and len(unrealized_values) == len(open_pls):
+            total_return_pct = total_profit / total_amount * 100
+        else:
+            total_return_pct = None
+
         eps_sorted = sorted(eps, key=lambda e: e["last_trade_date"], reverse=True)
         rollups.append({
             "code_s": code_s,
@@ -5256,7 +5287,10 @@ def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "kinds": sorted({ep["kind"] for ep in eps}),
             "first_open_date": min(ep["open_date"] for ep in eps),
             "last_trade_date": max(ep["last_trade_date"] for ep in eps),
-            "qty_peak": max(ep["qty_peak"] for ep in eps),
+            # 銘柄の同時保有ピーク (信用買建 + 現物)。_build_code_episodes が時系列
+            # 走査中に実測した値を使う。ラウンド単位の qty_peak の max では、信用と
+            # 現物を同時に持つ銘柄 (6890: 現物100+信用100) でピークを取り逃す。
+            "qty_peak": max([ep.get("code_qty_peak") or ep["qty_peak"] for ep in eps]),
             "has_open": any(not ep["closed"] for ep in eps),
             "has_carry_over": any(ep.get("carry_over") for ep in eps),
             "memo_count": sum(1 for ep in eps if ep.get("review_memo")),
@@ -5265,6 +5299,7 @@ def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "open_unrealized": open_unrealized,
             "open_unrealized_partial": open_unrealized_partial,
             "held_qty": held_qty,
+            "total_return_pct": total_return_pct,
         })
 
     rollups.sort(key=lambda r: r["code_s"])
