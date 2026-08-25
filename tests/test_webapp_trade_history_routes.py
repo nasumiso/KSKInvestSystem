@@ -198,6 +198,41 @@ class TestTradeHistoryPage:
         assert "勝率" in fills_tab
         assert "ペイオフレシオ" in fills_tab
 
+    def test_fill_summary_split_by_year(self, app, client):
+        """成績サマリーが決済年ごとに分かれ、年セレクタで選べる。
+
+        年は last_trade_date (= 手仕舞い日) の年。2025年決済 +10,000円 /
+        2026年決済 +20,000円 が別々のサマリーとして描画され、初期表示は今年
+        (テストの app fixture は 2026年基準) が選択されている。
+        """
+        with app.app_context():
+            # 2025年に決済したラウンド (+10,000円)
+            ps.append_fill(ps.create_fill("3496", trade_date="2025-06-15", side="buy", qty=100,
+                                          price=1000.0, amount=-100000, trade_kind="現物",
+                                          dedup_key="y25-b"))
+            ps.append_fill(ps.create_fill("3496", trade_date="2025-06-20", side="sell", qty=100,
+                                          price=1100.0, amount=110000, trade_kind="現物",
+                                          dedup_key="y25-s"))
+            # 2026年に決済したラウンド (+20,000円)
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-06-15", side="buy", qty=100,
+                                          price=2000.0, amount=-200000, trade_kind="現物",
+                                          dedup_key="y26-b"))
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-06-20", side="sell", qty=100,
+                                          price=2200.0, amount=220000, trade_kind="現物",
+                                          dedup_key="y26-s"))
+        html = client.get("/trade-history").data.decode()
+        fills_tab = html.split('id="tab-fills"')[1].split('id="tab-actions"')[0]
+        # 両年が選択肢に出る。初期選択は今年 (2026)
+        assert '<option value="2025"' in fills_tab
+        assert '<option value="2026" selected>' in fills_tab
+        # 年ごとに独立したサマリーブロックが描画される (エピソード単位/銘柄単位で各1つ)
+        assert fills_tab.count('data-year="2025"') == 2
+        assert fills_tab.count('data-year="2026"') == 2
+        # 実現損益は通算 (+30,000円) ではなく年ごとに分かれる
+        assert "+10,000円" in fills_tab
+        assert "+20,000円" in fills_tab
+        assert "+30,000円" not in fills_tab
+
     def test_both_episode_and_stock_views_rendered(self, app, client):
         """issue #391: エピソード単位/銘柄単位を両方サーバがレンダリングする (CSSでの出し分け)。"""
         with app.app_context():

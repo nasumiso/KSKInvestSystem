@@ -125,7 +125,7 @@ def _last_action_date(ep: dict) -> str:
     return max(dates)
 
 
-def _split_current_and_past_years(items, keep_open):
+def _split_current_and_past_years(items, keep_open, current_year):
     """売買履歴の一覧を「初期表示分」と「年ごとの過去分」に分ける (issue #406)。
 
     エピソード数は増え続けるため、全件を初期HTMLに出すと描画コストが嵩む。
@@ -136,9 +136,11 @@ def _split_current_and_past_years(items, keep_open):
     items は last_trade_date の降順に並んでいる前提 (build_fill_episodes /
     build_stock_rollups と同じ順序)。返り値もその順序を保つ。
 
+    current_year は呼び出し側で1回だけ求めた値を渡す (1リクエスト内で年の基準が
+    ずれると、年境界でアコーディオンとサマリーの年が食い違いうる)。
+
     Returns: (初期表示分, [(年, 件数分のリスト), ...] 年降順)
     """
-    current_year = datetime.datetime.now(ps.JST).strftime("%Y")
     current, past_by_year = [], {}
     for item in items:
         year = (item["last_trade_date"] or "")[:4]
@@ -148,6 +150,42 @@ def _split_current_and_past_years(items, keep_open):
             past_by_year.setdefault(year, []).append(item)
     past_years = sorted(past_by_year.items(), key=lambda x: x[0], reverse=True)
     return current, past_years
+
+
+def _summarize_fill_episodes(episodes):
+    """エピソード群から (エピソード単位サマリー, 銘柄単位サマリー) を返す。
+
+    issue #398: split_suspect (分割・併合の疑いだが未換算) は残高・損益が誤っている
+    可能性があるため、エピソード単位・銘柄単位のどちらの集計からも一貫して除外する。
+    build_stock_rollups() 側も同じ方針で除外するが、ここでは母数のカウント
+    (closed_count) も除外後で数えたいので先に絞ってから渡す。除外後に集約すれば
+    実現損益・期待値はエピソード単位と厳密に一致する (calc_trade_summary が
+    金額加重のためグループ化に依存しない)。
+    """
+    valid = [ep for ep in episodes if not ep.get("split_suspect")]
+    pls = [ep["pl"] for ep in valid if ep["closed"] and ep["pl"]]
+    total_pl = sum(p["profit_amount"] for p in pls if p["profit_amount"] is not None)
+    episode_part = {
+        "summary": calc_trade_summary(pls),
+        "total_pl": total_pl,
+        "priced_count": len(pls),
+        "closed_count": sum(1 for ep in valid if ep["closed"]),
+    }
+
+    rollups = build_stock_rollups(valid)
+    stock_pls = [r["pl"] for r in rollups if r["pl"]]
+    # クローズ済みエピソードを1件以上持つ銘柄数。has_open (全エピソードのうち
+    # 1件でも保有中があるか) とは独立: 6227 のように closed 12 + open 1 の
+    # 混在銘柄は has_open=True だが、クローズ済みエピソードを持つのでここに含める。
+    stock_part = {
+        "summary": calc_trade_summary(stock_pls),
+        "total_pl": total_pl,  # 実現損益はエピソード単位と一致する
+        "priced_count": len(stock_pls),
+        "closed_count": sum(
+            1 for r in rollups if any(ep["closed"] for ep in r["episodes"])
+        ),
+    }
+    return episode_part, stock_part
 
 
 @trade_history_bp.route("/trade-history")
@@ -265,42 +303,45 @@ def trade_history():
 
     # issue #387 Phase4b: 売買履歴タブ = fill 基準の建玉ラウンド・エピソード。
     # 成績サマリー (勝率/ペイオフ) はクローズ済みで損益算出できたエピソードから算出。
-    # issue #398: split_suspect (分割・併合の疑いだが未換算) は残高・損益が誤っている
-    # 可能性があるため、成績サマリーの集計から一貫して除外する。
     fill_episodes = build_fill_episodes()
-    fill_pls = [
-        ep["pl"] for ep in fill_episodes
-        if ep["closed"] and ep["pl"] and not ep.get("split_suspect")
-    ]
-    fill_summary = calc_trade_summary(fill_pls)
-    fill_closed_count = sum(
-        1 for ep in fill_episodes if ep["closed"] and not ep.get("split_suspect")
-    )
-    fill_priced_count = len(fill_pls)
-    fill_total_pl = sum(
-        p["profit_amount"] for p in fill_pls if p["profit_amount"] is not None
-    )
 
-    # issue #391: 銘柄単位の集約ビュー。実現損益合計・期待値はエピソード単位と
-    # 完全一致する (calc_trade_summary が金額加重のためグループ化に依存しない)。
+    # 年の基準はこの1箇所で決め、サマリーとアコーディオンで共有する。
+    current_year = datetime.datetime.now(ps.JST).strftime("%Y")
+
+    # 成績サマリーを年単位で出す。年は last_trade_date の年 = 手仕舞い年
+    # (クローズ済みエピソードでは最終約定日が決済日)。「その年に決済した取引の成績」
+    # になる。母数はクローズ済みのみなので保有中エピソードはどの年にも入らない。
+    eps_by_year: dict[str, list] = {}
+    for ep in fill_episodes:
+        if not ep["closed"]:
+            continue
+        year = (ep["last_trade_date"] or "")[:4]
+        if year:
+            eps_by_year.setdefault(year, []).append(ep)
+
+    # 粒度ごとに [(年, サマリー), ...] 年降順。テンプレート側でどちらを描くか
+    # 分岐させず、そのまま同じマクロに渡せる形にしておく。
+    episode_summary_years, stock_summary_years = [], []
+    for year in sorted(eps_by_year, reverse=True):
+        ep_part, stock_part = _summarize_fill_episodes(eps_by_year[year])
+        episode_summary_years.append((year, ep_part))
+        stock_summary_years.append((year, stock_part))
+
+    # 初期選択年は今年。今年の決済がまだ無ければ最新年にフォールバックする
+    # (年初など、今年の決済ゼロで空サマリーが出るのを防ぐ)。
+    selected_summary_year = current_year if current_year in eps_by_year else (
+        episode_summary_years[0][0] if episode_summary_years else "")
+
+    # issue #391: 銘柄単位の集約ビュー (一覧テーブル用、全期間)。
     stock_rollups = build_stock_rollups(fill_episodes)
-    stock_pls = [r["pl"] for r in stock_rollups if r["pl"]]
-    stock_summary = calc_trade_summary(stock_pls)
-    stock_priced_count = len(stock_pls)
-    # クローズ済みエピソードを1件以上持つ銘柄数。has_open (全エピソードのうち
-    # 1件でも保有中があるか) とは独立: 6227 のように closed 12 + open 1 の
-    # 混在銘柄は has_open=True だが、クローズ済みエピソードを持つのでここに含める。
-    stock_closed_count = sum(
-        1 for r in stock_rollups if any(ep["closed"] for ep in r["episodes"])
-    )
 
     # issue #406: 売買履歴の2ビューを年単位アコーディオン化して初期HTML量を減らす。
     # 保有中は年に関係なく常に初期表示する (古い建玉が畳まれて見落とされるのを防ぐ)。
     fill_current, fill_past_years = _split_current_and_past_years(
-        fill_episodes, lambda ep: not ep["closed"]
+        fill_episodes, lambda ep: not ep["closed"], current_year
     )
     stock_current, stock_past_years = _split_current_and_past_years(
-        stock_rollups, lambda r: r["has_open"]
+        stock_rollups, lambda r: r["has_open"], current_year
     )
 
     # 証券会社別の取込済み約定日レンジ (次回インポートの参考、取込のたびに更新される)
@@ -311,18 +352,14 @@ def trade_history():
         recent=recent,
         past_years=past_years,
         fill_episodes=fill_episodes,
-        fill_summary=fill_summary,
-        fill_closed_count=fill_closed_count,
-        fill_priced_count=fill_priced_count,
-        fill_total_pl=fill_total_pl,
+        episode_summary_years=episode_summary_years,
+        stock_summary_years=stock_summary_years,
+        selected_summary_year=selected_summary_year,
         stock_rollups=stock_rollups,
         fill_current=fill_current,
         fill_past_years=fill_past_years,
         stock_current=stock_current,
         stock_past_years=stock_past_years,
-        stock_summary=stock_summary,
-        stock_priced_count=stock_priced_count,
-        stock_closed_count=stock_closed_count,
         broker_ranges=broker_ranges,
     )
 

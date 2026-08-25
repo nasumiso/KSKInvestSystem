@@ -564,6 +564,46 @@ class TestStockRollups:
         s_stk = helpers.calc_trade_summary(stk_pls)
         assert s_ep["expectancy"] == pytest.approx(s_stk["expectancy"])
 
+    def test_realized_total_sums_closed_and_partial_sell(self, db_path, monkeypatch):
+        """realized_total = クローズ済み確定分 + 部分売り確定分。
+
+        消費側が r["pl"] だけを見ると部分売り分を取りこぼす (4258 が過少表示、
+        6890 が — になっていたバグ)。合算の定義を rollup 側に1本化した契約を守る。
+        """
+        monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {c: [] for c in codes})
+        # クローズ済みラウンド (+20,000円)
+        _add(db_path, "8103", "2026-01-05", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "8103", "2026-01-08", "sell", 100, 1200.0, seq_salt="b")
+        # 保有中ラウンドの部分売り (100株買い→40株売り = +20,000円)
+        _add(db_path, "8103", "2026-02-10", "buy", 100, 1000.0, seq_salt="c")
+        _add(db_path, "8103", "2026-02-20", "sell", 40, 1500.0, seq_salt="d")
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        r = helpers.build_stock_rollups(eps)[0]
+        assert r["pl"]["profit_amount"] == 20000      # クローズ済み分のみ
+        assert r["open_realized"] == 20000            # 部分売り分のみ
+        assert r["realized_total"] == 40000           # 合算
+
+    def test_split_suspect_excluded_from_all_aggregates(self, db_path, monkeypatch):
+        """split_suspect は銘柄集計の金額・株数から一貫して除外される。
+
+        実現損益だけ除外して含み損益・保有株数は含める半端な状態だと、9252 の
+        ように1つの銘柄行の中で基準が食い違う (issue #398)。
+        """
+        monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {c: [] for c in codes})
+        _add(db_path, "8104", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "8104", "2026-01-20", "sell", 40, 1500.0, seq_salt="b")
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        assert helpers.build_stock_rollups(eps)[0]["realized_total"] == 20000
+
+        for e in eps:
+            e["split_suspect"] = True
+        r = helpers.build_stock_rollups(eps)[0]
+        assert r["realized_total"] is None
+        assert r["open_realized"] == 0
+        assert r["held_qty"] == 0
+
     @pytest.mark.parametrize(
         "fills, expected_peak",
         [

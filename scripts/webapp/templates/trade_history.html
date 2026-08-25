@@ -99,6 +99,28 @@
 {% endif %}
 {% endmacro %}
 
+{# 成績サマリーの年単位表示。年ごとのサマリーをすべて描画しておき、リストボックスの
+   選択に応じて CSS の display で出し分ける (ビュー切替と同じクライアント側方式で
+   再読込不要)。years は [(年, サマリー), ...] 年降順。 #}
+{% macro year_summary_group(years, count_label, hold_label) %}
+{% if years %}
+<div style="display:flex;align-items:center;gap:0.5em;margin-bottom:0.5em;">
+  <span style="color:#888;font-size:0.82em;white-space:nowrap;">成績年</span>
+  <select class="th-year-select">
+    {% for year, part in years %}
+    <option value="{{ year }}"{% if year == selected_summary_year %} selected{% endif %}>{{ year }}年</option>
+    {% endfor %}
+  </select>
+</div>
+{% for year, part in years %}
+<div class="th-year-summary" data-year="{{ year }}"
+     style="display:{% if year != selected_summary_year %}none{% endif %};">
+  {{ fill_summary_block(part.summary, part.total_pl, part.priced_count, part.closed_count, count_label, hold_label) }}
+</div>
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
 {# issue #391: エピソード単位/銘柄単位のビュー切替。サーバは常に両方をレンダリングし、
    CSSのdisplayで切り替える (2つの独立したテーブルの丸ごと出し分けなので状態が壊れない)。
    数値が粒度で変わることを明示するためチェックボックスでなくセグメントボタンを使う。 #}
@@ -114,7 +136,7 @@
 
 <div id="th-view-episode">
 
-{{ fill_summary_block(fill_summary, fill_total_pl, fill_priced_count, fill_closed_count, "件", "平均保有") }}
+{{ year_summary_group(episode_summary_years, "件", "平均保有") }}
 
 {# リターン%セルと株数セル。エピソード単位/銘柄単位の両ビューで色・書式を揃えるため
    マクロ化する (色リテラルが散らばると2ビューの見た目がずれる)。
@@ -314,7 +336,7 @@
 {# ============ 銘柄単位ビュー (issue #391) ============ #}
 <div id="th-view-stock" style="display:none;">
 
-{{ fill_summary_block(stock_summary, fill_total_pl, stock_priced_count, stock_closed_count, "銘柄", "平均通算保有") }}
+{{ year_summary_group(stock_summary_years, "銘柄", "平均通算保有") }}
 
 {% macro stock_rollup_table(rollups, uid) %}
 <table class="trade-history-table">
@@ -381,15 +403,23 @@
         <span style="color:#666;">—</span>
         {% endif %}
       </td>
-      {# 実現損益列: クローズ済みのみ (open_realized は含み損益列のtitleに併記) #}
+      {# 実現損益列: クローズ済み確定分 + 部分売り確定分 (合算は realized_total 側で定義)。
+         内訳が2種あるときだけ title で分解して見せる。 #}
       <td style="text-align:right;white-space:nowrap;">
-        {% if r.pl and r.pl.profit_amount is not none %}
-        <span style="color:{{ '#9ef0aa' if r.pl.profit_amount >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(r.pl.profit_amount) }}円</span>
+        {% if r.realized_total is not none %}
+        {% set closed_pl = r.pl.profit_amount if r.pl and r.pl.profit_amount is not none else none %}
+        {% if closed_pl is not none and r.open_realized %}
+          {% set breakdown = "クローズ済み %s円 + 部分売り確定 %s円"|format('{:+,}'.format(closed_pl), '{:+,}'.format(r.open_realized)) %}
+        {% elif r.open_realized %}
+          {% set breakdown = "保有中エピソードの部分売り確定分" %}
+        {% else %}
+          {% set breakdown = "" %}
+        {% endif %}
+        <span style="color:{{ '#9ef0aa' if r.realized_total >= 0 else '#f0a0a0' }};"{% if breakdown %} title="{{ breakdown }}"{% endif %}>{{ "{:+,}".format(r.realized_total) }}円</span>
         {% else %}<span style="color:#666;">—</span>{% endif %}
       </td>
-      {# 含み損益列: 保有分の評価。部分売り確定分は title に併記 #}
-      <td style="text-align:right;white-space:nowrap;"
-          {% if r.open_realized %}title="うち部分売り確定 {{ '{:+,}'.format(r.open_realized) }}円"{% endif %}>
+      {# 含み損益列: 保有分の評価 (部分売り確定分は実現損益列に合算済み) #}
+      <td style="text-align:right;white-space:nowrap;">
         {% if r.open_unrealized is not none %}
         <span style="color:{{ '#9ef0aa' if r.open_unrealized >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(r.open_unrealized) }}円{% if r.open_unrealized_partial %}*{% endif %}</span>
         {% else %}<span style="color:#666;">—</span>{% endif %}
@@ -620,6 +650,20 @@
     if (savedView && viewPanels[savedView]) initialView = savedView;
   } catch (e) {}
   selectView(initialView);
+
+  // 成績サマリーの年切替。エピソード単位/銘柄単位で select が2つあるので値を同期し、
+  // ビューを切り替えても選択年が食い違わないようにする。localStorage には残さない
+  // (年は毎回意識して選ぶもので、古い年が固定されて残るほうが害が大きい)。
+  var yearSelects = document.querySelectorAll('.th-year-select');
+  function selectSummaryYear(year) {
+    yearSelects.forEach(function (s) { s.value = year; });
+    document.querySelectorAll('.th-year-summary').forEach(function (el) {
+      el.style.display = (el.dataset.year === year) ? '' : 'none';
+    });
+  }
+  yearSelects.forEach(function (s) {
+    s.addEventListener('change', function () { selectSummaryYear(s.value); });
+  });
 
   // 振り返りメモ編集
   document.querySelectorAll('.review-memo-cell').forEach(function (cell) {

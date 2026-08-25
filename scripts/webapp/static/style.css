@@ -39,6 +39,19 @@
 }
 .rating-badge-select.hidden { display: none; }
 
+/* 売買履歴の成績年セレクタ。Pico の select{width:100%} / margin-bottom による
+   全幅化・行送りを打ち消し、ラベルと同じ行に inline で収める。 */
+.th-year-select {
+  display: inline-block;
+  width: auto !important;
+  font-size: 0.85em;
+  padding: 0.2em 1.8em 0.2em 0.5em;
+  margin: 0;
+  height: auto;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
 /* 保有状態バッジ (保有/準保有/監視) */
 .portfolio-badge {
   display: inline-block;

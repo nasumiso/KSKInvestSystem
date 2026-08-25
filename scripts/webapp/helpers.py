@@ -5240,7 +5240,12 @@ def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     rollups: List[Dict[str, Any]] = []
     for code_s, eps in by_code.items():
-        priced = [ep["pl"] for ep in eps if ep["closed"] and ep["pl"]]
+        # split_suspect (分割・併合の疑いだが未換算) は残高・損益が誤っている可能性が
+        # あるため、この銘柄の全集計から一貫して除外する (issue #398)。実現損益だけ
+        # 除外して含み損益は含める、といった半端な状態にすると 9252 のように銘柄行の
+        # 中で基準が食い違う。エピソード単位ビューも split_suspect の数値は — にする。
+        agg_eps = [ep for ep in eps if not ep.get("split_suspect")]
+        priced = [ep["pl"] for ep in agg_eps if ep["closed"] and ep["pl"]]
         if priced:
             amount = sum(p["amount"] for p in priced)
             profit_amount = sum(p["profit_amount"] for p in priced)
@@ -5253,7 +5258,8 @@ def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         else:
             pl = None
 
-        open_pls = [ep["open_pl"] for ep in eps if not ep["closed"] and ep.get("open_pl")]
+        open_pls = [ep["open_pl"] for ep in agg_eps
+                    if not ep["closed"] and ep.get("open_pl")]
         open_realized = sum(op["realized"] for op in open_pls)
         unrealized_values = [op["unrealized"] for op in open_pls if op["unrealized"] is not None]
         if not open_pls or not unrealized_values:
@@ -5295,6 +5301,15 @@ def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "has_carry_over": any(ep.get("carry_over") for ep in eps),
             "memo_count": sum(1 for ep in eps if ep.get("review_memo")),
             "pl": pl,
+            # 実現損益の総額 = クローズ済み確定分 + 保有中エピソードの部分売り確定分。
+            # 消費側 (銘柄単位ビュー・CLI) がこの合算を各自で書くと、片方を足し忘れて
+            # 過少表示になる (4258 が確定分のみで +103,847 円、6890 が — になっていた
+            # バグ)。定義をここ1箇所に置く。確定分も部分売りも無ければ None。
+            "realized_total": (
+                (pl["profit_amount"] if pl else 0) + open_realized
+                if (pl and pl["profit_amount"] is not None) or open_realized
+                else None
+            ),
             "open_realized": open_realized,
             "open_unrealized": open_unrealized,
             "open_unrealized_partial": open_unrealized_partial,
