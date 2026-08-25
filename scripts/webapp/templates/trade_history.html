@@ -205,7 +205,9 @@
             <td style="padding:1px 0.8em;white-space:nowrap;">
               {% if f.side == "buy" %}<span style="color:#9ed8f0;">{{ f.side_label }}</span>{% else %}<span style="color:#f0a0a0;">{{ f.side_label }}</span>{% endif %}
             </td>
-            <td style="padding:1px 0.8em;color:#777;white-space:nowrap;">{{ f.trade_kind }}</td>
+            {# 現引は信用建玉を現物へ振り替える取引。信用側・現物側の両エピソードに
+               同じ約定が出るため、どちら側の記録かを行に添えて重複と誤読させない #}
+            <td style="padding:1px 0.8em;color:#777;white-space:nowrap;">{{ f.trade_kind }}{% if f.trade_kind == '現引' %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="現引は信用建玉を現物へ振り替える取引です。信用エピソードでは建玉の減少、現物エピソードでは取得として同じ約定が表示されます">{{ '→現物へ振替' if ep.kind == '信用' else '←信用から振替' }}</span>{% endif %}</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "%g"|format(f.qty) }}株</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}円</td>
             {% if f.tate_price %}<td style="padding:1px 0.8em;text-align:right;white-space:nowrap;color:#888;">建 {{ "{:,}".format(f.tate_price|round|int) }}</td>{% else %}<td></td>{% endif %}

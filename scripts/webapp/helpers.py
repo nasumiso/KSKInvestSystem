@@ -4588,13 +4588,19 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
                      - date.fromisoformat(rnd["open_date"])).days
     except (ValueError, TypeError, KeyError):
         hold_days = None
-    # 建玉側の株数で割る (買建/現物=buy、売建=sell が建玉側)
-    open_side = "sell" if rnd.get("is_short") else "buy"
+    # avg_cost = amount (取得/建玉コスト) ÷ その コストに対応する株数。
+    # 現物は買い株数、信用は「返済した建玉」の株数で割る。信用の amount は返済 fill の
+    # 建玉コストだけを積むため、現引で現物へ振り替えた分は amount に入らない。分母を
+    # 建玉株数にすると現引がある銘柄で粒度が食い違い avg_cost が実態より低く出る。
+    if kind == "信用":
+        settle_side = "buy" if rnd.get("is_short") else "sell"
+        open_qty = sum(f["qty"] for f in fills if f["side"] == settle_side)
+    else:
+        open_qty = sum(f["qty"] for f in fills if f["side"] == "buy")
     return {
         "return_pct": return_pct,
         "hold_days": hold_days if hold_days is not None else 0,
-        "avg_cost": total_cost / max(
-            sum(f["qty"] for f in fills if f["side"] == open_side), 1),
+        "avg_cost": total_cost / max(open_qty, 1),
         "amount": total_cost,
         "profit_amount": round(realized),
     }
@@ -4658,6 +4664,11 @@ def _episode_open_pl(rnd: dict, current_price: Optional[float]) -> Optional[dict
                 new_qty = held_qty + qty
                 avg_cost = (avg_cost * held_qty + price * qty) / new_qty if new_qty else 0.0
                 held_qty = new_qty
+            elif (f.get("trade_kind") or "") == "現引" and not is_short:
+                # 現引は建玉を現物へ振り替える。信用側では建玉が減るだけで損益は
+                # 確定しない (取得原価ごと現物ラウンドへ持ち越す)。ここで減算しないと
+                # 現引後も建玉が残るラウンドで held_qty が実態より多くなる。
+                held_qty -= qty
             elif f["side"] == settle_side:  # 信用返済 (部分返済)
                 settle_pl = f.get("settle_pl")
                 tate_price = f.get("tate_price")

@@ -106,6 +106,44 @@ class TestGenbaiBridge:
         assert len(open_genbutsu) == 1
         assert open_genbutsu[0]["open_pl"]["held_qty"] == 100
 
+    def test_genbiki_with_remaining_shinyo_qty(self, db_path):
+        """現引後も信用建玉が残る場合、信用の held_qty が現引分だけ減る (4377/9880 回帰)。
+
+        現引は side=buy だが建玉を作らず現物へ振り替える。_episode_open_pl が
+        「信用新規でも返済でもない」として現引を読み飛ばすと、建玉が減らず
+        held_qty が実態より多く出ていた。
+        """
+        _add(db_path, "4377", "2026-02-13", "buy", 100, 2591.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "4377", "2026-02-13", "buy", 100, 2000.0, trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "4377", "2026-08-12", "buy", 100, 2629.32, trade_kind="現引",
+             tate_price=2591.0, tate_date="2026-02-13", seq_salt="c")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        open_shinyo = [e for e in eps if not e["closed"] and e["kind"] == "信用"]
+        open_genbutsu = [e for e in eps if not e["closed"] and e["kind"] == "現物"]
+        # 信用200株のうち100株を現引 → 信用100株・現物100株がそれぞれ保有中
+        assert len(open_shinyo) == 1
+        assert open_shinyo[0]["open_pl"]["held_qty"] == 100
+        assert len(open_genbutsu) == 1
+        assert open_genbutsu[0]["open_pl"]["held_qty"] == 100
+
+    def test_genbiki_excluded_from_closed_avg_cost(self, db_path):
+        """クローズ済み信用ラウンドの avg_cost が建単価水準になる (6366 相当)。
+
+        信用の amount は返済 fill の建玉コストのみ。分母を建玉株数にすると現引で
+        現物へ振り替えた分だけ粒度が食い違い、avg_cost が実態より低く出ていた。
+        """
+        _add(db_path, "6367", "2026-01-10", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "6367", "2026-01-11", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "6367", "2026-02-01", "buy", 100, 1010.0, trade_kind="現引",
+             tate_price=1000.0, tate_date="2026-01-10", seq_salt="c")
+        _add(db_path, "6367", "2026-02-02", "sell", 100, 1200.0, trade_kind="信用返済",
+             tate_price=1000.0, tate_date="2026-01-11", seq_salt="d")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        closed_shinyo = [e for e in eps if e["closed"] and e["kind"] == "信用"]
+        assert len(closed_shinyo) == 1
+        # 返済した建玉コスト 100,000円 ÷ 返済100株 = 建単価 1,000円
+        assert closed_shinyo[0]["pl"]["avg_cost"] == pytest.approx(1000.0)
+
     def test_genbiki_then_same_day_sell_not_open(self, db_path):
         """同日に 現引(買) → 現物売 があるとき、現引を先に処理し保有中に残さない (6366相当)。
 
