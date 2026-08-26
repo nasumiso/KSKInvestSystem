@@ -500,17 +500,6 @@
       {% if loop.first %}
       <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;white-space:nowrap;">
         <a href="/stock/{{ ep.code_s }}">{{ ep.code_s }} {{ ep.stock_name }}</a>
-        {% if ep.post_sell %}
-        <div style="font-size:0.78em;margin-top:3px;color:#888;">
-          {% for item in ep.post_sell.values() %}
-          <span style="margin-right:0.45em;">後{{ item.days }}:
-            {% if item.return_pct is not none %}<b style="color:{{ '#f0a0a0' if item.return_pct >= 0 else '#9ef0aa' }};">{{ '+' if item.return_pct >= 0 else '' }}{{ "%.1f"|format(item.return_pct) }}%</b>
-            {% elif item.elapsed_days is not none %}{{ item.elapsed_days }}/{{ item.days }}日
-            {% else %}—{% endif %}
-          </span>
-          {% endfor %}
-        </div>
-        {% endif %}
       </td>
       {% endif %}
       <td style="white-space:nowrap;">
