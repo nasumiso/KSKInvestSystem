@@ -945,6 +945,7 @@ class TestSaveMemo:
             "overall_rating": "S",
             "institutional_comment": "更新コメント",
             "memo": "更新メモ",
+            "inago_origin": "ゆーさく",
             "openwork": "4.0",
             "cramer": "Strong Buy",
         }
@@ -953,6 +954,7 @@ class TestSaveMemo:
         rec = helpers.get_research_detail("3496")
         assert rec["overall_rating"] == "S"
         assert rec["memo"] == "更新メモ"
+        assert rec["inago_origin"] == "ゆーさく"
         assert rec["openwork"] == "4.0"
         assert rec["cramer"] == "Strong Buy"
         assert rec["institutional_comment"] == "更新コメント"

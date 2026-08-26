@@ -819,11 +819,10 @@ def update_memo(code_s: str):
                     "jukyu_chart": (row.get("memo") or {}).get("jukyu_chart") or "",
                     "gyoutai_theme": (row.get("memo") or {}).get("gyoutai_theme") or "",
                     "gyoutai_themes": list((row.get("memo") or {}).get("gyoutai_themes") or []),
-                    # issue #327: ページ2列 (売買戦略 / IN理由 / イナゴ元 / 売買メモ) の
+                    # issue #327: ページ2列 (売買戦略 / IN理由 / 売買メモ) の
                     # inline 編集後の表示同期に使う
                     "trade_idea": (row.get("memo") or {}).get("trade_idea") or "",
                     "watch_in_reason": (row.get("memo") or {}).get("watch_in_reason") or "",
-                    "inago_origin": (row.get("memo") or {}).get("inago_origin") or "",
                     "takaichi_sensitivity": (row.get("memo") or {}).get("takaichi_sensitivity") or "",
                 }
         return jsonify(body)

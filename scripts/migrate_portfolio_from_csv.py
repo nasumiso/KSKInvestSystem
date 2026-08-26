@@ -16,8 +16,8 @@
   保有リスト列は code_rank.csv からの VLOOKUP 表示値 → 移行対象外
 - ステータスは my_watch_list.txt のみで決定するため、本スクリプトでは設定しない
   (仮で "3監" を埋めて、後段の migrate_my_watch_list_to_shelve.py で上書き)
-- 移行対象は計 7 列: 銘柄コード / 銘柄名 / 業態テーマ / IN理由 / 売買アイデア
-  / イナゴ元 / 高市感応度
+- 移行対象は計 6 列: 銘柄コード / 銘柄名 / 業態テーマ / IN理由 / 売買アイデア
+  / 高市感応度 (イナゴ元は research_shelve へ移設済み)
 """
 
 import argparse
@@ -57,7 +57,9 @@ COL_LAST_UPDATE = 18     # 銘柄調査の更新日 (M/D 形式)
 COL_STAGE = 20           # ステージ (例: "1S", "2S(3T)", "3S")
 COL_WATCH_REASON = 31    # ウォッチ・IN理由
 COL_JUKYU_CHART = 32     # 需給チャートメモ (例: "月足低位ブレイク CWH")
-COL_INAGO = 33           # イナゴ元・きっかけ
+# イナゴ元は research_shelve へ移設したため portfolio へは取り込まない。
+# 列位置は後続列の対応確認用に残す (未使用)。
+COL_INAGO = 33           # イナゴ元・きっかけ (未使用)
 COL_TRADE_IDEA = 34      # 投資売買アイデア
 COL_TAKAICHI = 35        # 高市感応度
 
@@ -131,7 +133,6 @@ def parse_memo_columns(row: List[str]) -> Tuple[Dict[str, str], List[str]]:
         gyoutai_theme=(row[COL_GYOUTAI] or "").strip(),
         watch_in_reason=(row[COL_WATCH_REASON] or "").strip(),
         trade_idea=(row[COL_TRADE_IDEA] or "").strip(),
-        inago_origin=(row[COL_INAGO] or "").strip(),
         takaichi_sensitivity=(row[COL_TAKAICHI] or "").strip(),
         last_research_update=(row[COL_LAST_UPDATE] or "").strip(),
         stage=(row[COL_STAGE] or "").strip(),

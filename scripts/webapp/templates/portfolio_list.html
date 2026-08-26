@@ -86,7 +86,7 @@
   .page-toggle button:first-child { border-radius: 4px 0 0 4px; }
   .page-toggle button:last-child { border-radius: 0 4px 4px 0; border-left: none; }
   .page-toggle button.active { background: #4285f4; border-color: #4285f4; color: #fff; }
-  /* issue #327: IN理由・イナゴ元・売買メモの短縮表示セル (改行反映で2行まで、ホバーで全文)。
+  /* issue #327: IN理由・売買メモの短縮表示セル (改行反映で2行まで、ホバーで全文)。
      td に max-height は効かないため内側の .memo-clamp で line-clamp する */
   table.portfolio-list td.memo-short-cell {
     max-width: 12em;
@@ -474,7 +474,6 @@
       {# tooltip 文言は helpers.MONTHLY_TAG_DESCRIPTIONS を単一の出典にする (セル側と共通) #}
       <th data-page="2" title="月足位置の自動判定。&#10;{{ monthly_tag_descriptions.values()|join('\n') }}">月足</th>
       <th data-page="2" title="定型リストから単一選択。未分類は警告色">売買戦略</th>
-      <th data-page="2">イナゴ元</th>
       <th data-page="2">IN理由</th>
       <th data-page="2" title="旧: 高市感応度">売買メモ</th>
     </tr>
@@ -648,8 +647,9 @@
           {% endfor %}
         </select>
       </td>
-      {# issue #327: イナゴ元 / IN理由 / 売買メモ (旧: 高市感応度) は短縮表示 + inline 編集 #}
-      {% for memo_field, input_width in [("inago_origin", "10em"), ("watch_in_reason", "14em"), ("takaichi_sensitivity", "14em")] %}
+      {# issue #327: IN理由 / 売買メモ (旧: 高市感応度) は短縮表示 + inline 編集。
+         イナゴ元は銘柄ページの手動メモ (research) へ移設した #}
+      {% for memo_field, input_width in [("watch_in_reason", "14em"), ("takaichi_sensitivity", "14em")] %}
       {% set memo_value = row.memo[memo_field] or '' %}
       <td data-page="2"
           title="{{ (memo_value ~ ' (クリックで編集)') if (not fallback_mode and memo_value) else ('クリックで編集' if not fallback_mode else memo_value) }}"
@@ -1015,7 +1015,7 @@ function excludeFromUniverse(codeS) {
   }
 
   // 短縮表示 (data-full 全文保持 + 改行反映2行省略) する memo フィールド (issue #314 / #327)
-  var SHORT_TEXT_FIELDS = ['inago_origin', 'watch_in_reason', 'takaichi_sensitivity'];
+  var SHORT_TEXT_FIELDS = ['watch_in_reason', 'takaichi_sensitivity'];
 
   function renderJukyu(td, value) {
     td.dataset.full = value || '';

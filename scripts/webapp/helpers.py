@@ -403,7 +403,7 @@ def _today_analysis_date() -> str:
 def save_memo(code_s: str, form_data: dict) -> None:
     """手動メモフィールドを更新する。
 
-    対象: overall_rating, institutional_comment, memo, openwork, cramer
+    対象: overall_rating, institutional_comment, memo, inago_origin, openwork, cramer
     read-modify-write サイクル全体を _flock で排他する。
     upsert_research_record 内部でも _flock を取るが、fcntl.flock は
     同一プロセス・同一スレッドからの再取得をブロックしないため問題ない。
@@ -419,6 +419,7 @@ def save_memo(code_s: str, form_data: dict) -> None:
         old_rating = record.get("overall_rating", "")
         old_institutional_comment = record.get("institutional_comment", "")
         old_memo = record.get("memo", "")
+        old_inago_origin = record.get("inago_origin", "")
         old_openwork = record.get("openwork", "")
         old_cramer = record.get("cramer", "")
 
@@ -429,12 +430,14 @@ def save_memo(code_s: str, form_data: dict) -> None:
             "institutional_comment", ""
         )
         record["memo"] = sanitize_html(_markdown_to_html(form_data.get("memo", "")))
+        record["inago_origin"] = form_data.get("inago_origin", "")
         record["openwork"] = sanitize_html(_markdown_to_html(form_data.get("openwork", "")))
         record["cramer"] = form_data.get("cramer", "")
         manual_fields_changed = any([
             record["overall_rating"] != old_rating,
             record["institutional_comment"] != old_institutional_comment,
             record["memo"] != old_memo,
+            record["inago_origin"] != old_inago_origin,
             record["openwork"] != old_openwork,
             record["cramer"] != old_cramer,
         ])
