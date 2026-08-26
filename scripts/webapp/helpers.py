@@ -5417,39 +5417,3 @@ def calc_trade_summary(episode_pls: list) -> Optional[dict]:
         "n_win": len(wins),
         "n_lose": len(loses),
     }
-
-
-POST_SELL_RETURN_PERIODS = (("5d", 5), ("20d", 20))
-
-
-def calc_post_sell_returns(ep: dict, price_log: List) -> Dict[str, dict]:
-    """売却日終値から5/20営業日後の騰落率と経過営業日数を返す。"""
-    result = {
-        key: {"days": days, "return_pct": None, "elapsed_days": None}
-        for key, days in POST_SELL_RETURN_PERIODS
-    }
-    try:
-        sell_date = date.fromisoformat(ep.get("sell_date", ""))
-        sell_price = float(ep.get("sell_price"))
-    except (TypeError, ValueError):
-        return result
-    if sell_price <= 0:
-        return result
-    try:
-        sorted_log = sorted(
-            (entry[0], entry[1]) for entry in price_log
-            if isinstance(entry[0], date) and entry[1] is not None
-        )
-    except (IndexError, TypeError):
-        return result
-    if not any(entry_date <= sell_date for entry_date, _ in sorted_log):
-        return result
-    after_entries = [entry for entry in sorted_log if entry[0] > sell_date]
-    for key, days in POST_SELL_RETURN_PERIODS:
-        result[key]["elapsed_days"] = min(len(after_entries), days)
-        if len(after_entries) >= days:
-            result[key]["return_pct"] = round(
-                (float(after_entries[days - 1][1]) / sell_price - 1.0) * 100.0,
-                6,
-            )
-    return result
