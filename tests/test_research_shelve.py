@@ -1053,3 +1053,20 @@ class TestChatLinks:
         rs.upsert_research_record(rec, db_path=db_path)
         loaded = rs.get_research_record("3496", db_path=db_path)
         assert loaded["chat_links"] == []
+
+
+class TestInagoOrigin:
+    """イナゴ元 (情報源) — portfolio から移設したフィールド。"""
+
+    def test_roundtrip_and_backward_compat(self, db_path):
+        """保存・読み出しでき、フィールドを持たない旧レコードは空文字で読める。"""
+        rec = rs.create_research_record("3496", "アズーム", inago_origin="ゆーさく")
+        rs.upsert_research_record(rec, db_path=db_path)
+        assert rs.get_research_record("3496", db_path=db_path)["inago_origin"] == "ゆーさく"
+
+        # 旧レコード (inago_origin キー無し) を直接書き込んでも読めること
+        old = rs.create_research_record("6324", "ダイフク")
+        del old["inago_origin"]
+        rs.upsert_research_record(old, db_path=db_path)
+        loaded = rs.get_research_record("6324", db_path=db_path)
+        assert (loaded.get("inago_origin") or "") == ""

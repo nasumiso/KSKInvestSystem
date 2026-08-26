@@ -80,6 +80,7 @@ RECORD_FIELDS = frozenset(
         "overall_rating",
         "institutional_comment",
         "memo",
+        "inago_origin",
         "openwork",
         "cramer",
         "shikiho_comments",
@@ -261,6 +262,7 @@ def create_research_record(
     overall_rating: str = "",
     institutional_comment: str = "",
     memo: str = "",
+    inago_origin: str = "",
     openwork: str = "",
     cramer: str = "",
     shikiho_comments: Optional[List[str]] = None,
@@ -310,6 +312,7 @@ def create_research_record(
         "overall_rating": overall_rating,
         "institutional_comment": institutional_comment,
         "memo": memo,
+        "inago_origin": inago_origin,
         "openwork": openwork,
         "cramer": cramer,
         "shikiho_comments": shikiho,
@@ -1003,6 +1006,7 @@ def format_record_full(record: Dict[str, Any]) -> str:
     overview = record.get("overview", "")
     inst = record.get("institutional_comment", "")
     memo = record.get("memo", "")
+    inago_origin = record.get("inago_origin", "")
     openwork = record.get("openwork", "")
     cramer = record.get("cramer", "")
     shikiho = record.get("shikiho_comments") or []
@@ -1027,6 +1031,7 @@ def format_record_full(record: Dict[str, Any]) -> str:
     # --- 手動メモ群ブロック ---
     lines.append("-- 手動メモ --")
     lines.append(f"メモ・総括     : {_indent_multiline(memo, ' ' * 17)}")
+    lines.append(f"イナゴ元       : {_value_or_dash(inago_origin)}")
     lines.append(f"OpenWork      : {_indent_multiline(openwork, ' ' * 16)}")
     lines.append(f"ジムクレイマー : {_indent_multiline(cramer, ' ' * 17)}")
     if shikiho:

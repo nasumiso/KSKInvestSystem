@@ -124,6 +124,33 @@ class TestSchema:
 # ==================================================
 class TestAddToWatch:
 
+    @pytest.mark.parametrize("preexisting_origin", ["", "ゆーさく"])
+    def test_add_to_watch_ensures_research_record(
+        self, db_path, tmp_path, monkeypatch, preexisting_origin
+    ):
+        """監視登録すると research レコードも作られ、既存レコードは上書きされない。
+
+        research 未登録だと銘柄ページがメモ編集に入れず (追加プロンプトが出るだけ)、
+        イナゴ元の保存先が存在しなくなるため、ここで不変条件を担保する。
+        """
+        import research_shelve as rs
+
+        research_path = str(tmp_path / "ensure_research_shelve")
+        monkeypatch.setattr("db_shelve.RESEARCH_SHELVE", research_path)
+        monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", research_path)
+
+        if preexisting_origin:
+            rec = rs.create_research_record("4377", "ワンキャリア",
+                                            inago_origin=preexisting_origin)
+            rs.upsert_research_record(rec, db_path=research_path)
+
+        ps.add_to_watch("4377", db_path=db_path)
+
+        research = rs.get_research_record("4377", db_path=research_path)
+        assert research is not None
+        # 既存があれば値は保たれ、無ければ空で作られる
+        assert (research.get("inago_origin") or "") == preexisting_origin
+
     def test_add_to_watch_creates_record(self, db_path):
         rec = ps.add_to_watch("4377", db_path=db_path)
         assert rec["code_s"] == "4377"
@@ -635,7 +662,6 @@ class TestGyoutaiThemesField:
                 "gyoutai_theme": "半導体\nAI",
                 "trade_idea": "",
                 "watch_in_reason": "",
-                "inago_origin": "",
                 "takaichi_sensitivity": "",
                 "last_research_update": "",
                 "stage": "",

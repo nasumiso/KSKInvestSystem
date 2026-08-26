@@ -1888,7 +1888,10 @@ class TestPortfolioShikihoRoute:
         # _parse_status_filter は status 未指定時に保有 (1保) をデフォルトにするため、
         # charts() と同じく ?status= (空="すべて") を付けてテストする。両銘柄は 3監 のまま。
         ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)
-        ps.add_to_watch("9999", reason="未登録テスト", db_path=portfolio_db)
+        # 9999 は research 未登録のまま portfolio にだけ置きたい。add_to_watch は
+        # research レコードを自動作成するようになったため (イナゴ元の保存先確保)、
+        # ここでは upsert_record で直接書き込んで「未登録」状態を作る。
+        ps.upsert_record(ps.create_record("9999", status="3監"), db_path=portfolio_db)
 
         app = create_app()
         app.config["TESTING"] = True

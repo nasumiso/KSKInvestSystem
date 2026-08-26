@@ -147,7 +147,6 @@ MEMO_FIELDS = frozenset(
         "gyoutai_themes",         # 新: 業態・テーマ (list[str]、UI では最大2件)
         "watch_in_reason",        # ウォッチ・IN理由
         "trade_idea",             # 売買戦略 (旧: 投資売買アイデア)
-        "inago_origin",           # イナゴ元・きっかけ
         "takaichi_sensitivity",   # 売買メモ (旧: 高市感応度)
         "last_research_update",   # 銘柄調査スプシでの更新日 (M/D 形式、年なし)
         "stage",                  # ステージ評価 (例: "1S", "2S(3T)", "3S")
@@ -633,7 +632,6 @@ def create_memo(
     gyoutai_themes: Optional[List[str]] = None,
     watch_in_reason: str = "",
     trade_idea: str = "",
-    inago_origin: str = "",
     takaichi_sensitivity: str = "",
     last_research_update: str = "",
     stage: str = "",
@@ -645,7 +643,6 @@ def create_memo(
         "gyoutai_themes": list(gyoutai_themes) if gyoutai_themes else [],
         "watch_in_reason": watch_in_reason,
         "trade_idea": trade_idea,
-        "inago_origin": inago_origin,
         "takaichi_sensitivity": takaichi_sensitivity,
         "last_research_update": last_research_update,
         "stage": stage,
@@ -1855,7 +1852,41 @@ def add_to_watch(
                 db_path=db_path,
             )
             log_print("portfolio_shelve: 3監 追加", normalized)
+            _ensure_research_record(normalized)
     return revived_record
+
+
+def _ensure_research_record(code_s: str) -> None:
+    """監視登録した銘柄に research レコードが無ければ最小限のものを作る。
+
+    「監視する銘柄には調査レコードがある」という不変条件を成立させる。
+    これが無いと、銘柄ページは research 未登録時に追加プロンプトを出すだけで
+    メモ編集に入れず (webapp/routes/detail.py)、save_memo() も未登録なら
+    ValueError になるため、イナゴ元などの手動メモの保存先が存在しなくなる。
+
+    銘柄名は stocks_shelve から引く。取れなければ空文字で作る (表示時に解決される)。
+    既に research レコードがあれば何もしない (上書きしない)。
+    失敗しても監視登録自体は成立させたいので、例外は握って警告に留める。
+    """
+    try:
+        import research_shelve as rs  # 遅延 import (読み込み順の結合を避ける)
+
+        if rs.get_research_record(code_s) is not None:
+            return
+        stock_name = ""
+        try:
+            from db_shelve import STOCKS_SHELVE, ShelveDB as _ShelveDB
+
+            with _ShelveDB(STOCKS_SHELVE) as sdb:
+                stock = sdb.get(code_s)
+            if isinstance(stock, dict):
+                stock_name = stock.get("stock_name") or ""
+        except Exception:  # noqa: BLE001 - 銘柄名が引けなくても空で登録する
+            stock_name = ""
+        rs.upsert_research_record(rs.create_research_record(code_s, stock_name))
+        log_print("portfolio_shelve: research レコード自動作成", code_s)
+    except Exception as e:  # noqa: BLE001 - 監視登録自体は成立させる
+        log_warning(f"portfolio_shelve: research レコード自動作成に失敗 {code_s}: {e}")
 
 
 def upsert_record(

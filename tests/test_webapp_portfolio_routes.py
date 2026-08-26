@@ -627,7 +627,7 @@ class TestUpdateMemoPost:
             "trade_idea": "GARP",
             "watch_in_reason": "Y",
             "stage": "1S",
-            "inago_origin": "twitter",
+            "takaichi_sensitivity": "決算前に半分利確",
             "jukyu_chart": "CWH",
         }
         ps.update_memo("6324", prefilled, db_path=portfolio_db_path)
@@ -645,7 +645,7 @@ class TestUpdateMemoPost:
         assert rec["memo"]["watch_in_reason"] == "Y2"
         assert rec["memo"]["stage"] == "2S"
         # 送られなかった 2 項目は据え置き
-        assert rec["memo"]["inago_origin"] == "twitter"
+        assert rec["memo"]["takaichi_sensitivity"] == "決算前に半分利確"
         assert rec["memo"]["jukyu_chart"] == "CWH"
 
     def test_memo_structured_stage_and_chart_fields_are_folded(self, client, portfolio_db_path):
@@ -802,7 +802,6 @@ class TestUpdateMemoAjax:
             data={
                 "trade_idea": "GARP",
                 "watch_in_reason": "新製品サイクル",
-                "inago_origin": "X@foo",
                 "takaichi_sensitivity": "決算前に半分利確",
             },
             headers={"X-Requested-With": "XMLHttpRequest"},
@@ -811,7 +810,6 @@ class TestUpdateMemoAjax:
         body = resp.get_json()
         assert body["display"]["trade_idea"] == "GARP"
         assert body["display"]["watch_in_reason"] == "新製品サイクル"
-        assert body["display"]["inago_origin"] == "X@foo"
         assert body["display"]["takaichi_sensitivity"] == "決算前に半分利確"
 
     def test_ajax_unknown_code_returns_404_json(self, client):

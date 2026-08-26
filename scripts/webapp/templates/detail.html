@@ -370,6 +370,14 @@
       <textarea class="editable-field rich-edit" name="memo" rows="6" data-form="memo" style="display:none;">{{ record.memo or '' }}</textarea>
     </div>
 
+    {# イナゴ元・きっかけ (旧: ポートフォリオ一覧の列から移設)。
+       保有・監視状態と無関係に銘柄へ恒久的に紐づく属性なので research 側で持つ。 #}
+    <div class="memo-field">
+      <label>イナゴ元</label>
+      <input class="editable-field" type="text" name="inago_origin" data-form="memo"
+             value="{{ record.inago_origin or '' }}" placeholder="情報源・きっかけ">
+    </div>
+
     {# issue #265: 外部チャット (ChatGPT/Claude) リンク。AJAX で個別保存するため
        memo フォーム送信対象になる name 付き input は置かない。 #}
     <div class="memo-field">
