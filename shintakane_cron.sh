@@ -73,11 +73,21 @@ echo "===== $(date '+%Y-%m-%d %H:%M:%S') make_stock_db.py 開始 =====" >> ../lo
 python make_stock_db.py >> ../logs/make_stock_db.log 2>&1
 RET2=$?
 
+# --- エクスポージャーログ (issue #362) ---
+# 市場ステート・各指標が更新済みである必要があるため make_stock_db.py の後に置く。
+# 終了コードでは実行可否を判定しない (指標の鮮度は exposure_guide 側の
+# read_* が個別にチェックしており、RET1/RET2 は鮮度の証明にならないため)。
+rotate_log ../logs/exposure_guide.log
+echo "===== $(date '+%Y-%m-%d %H:%M:%S') exposure_guide.py 開始 =====" >> ../logs/exposure_guide.log
+python exposure_guide.py log >> ../logs/exposure_guide.log 2>&1
+RET_EXPOSURE=$?
+
 # --- ここまでの結果サマリー ---
 echo ""
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行結果 ====="
 report "shintakane.py" $RET1 ../logs/shintakane.log
 report "make_stock_db.py" $RET2 ../logs/make_stock_db.log
+report "exposure_guide.py" $RET_EXPOSURE ../logs/exposure_guide.log
 echo "================================================"
 
 # --- theme-news ---

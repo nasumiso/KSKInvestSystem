@@ -338,6 +338,11 @@
     {% if hold_summary %}
     <span style="margin-left:1em;">
       運用総額: {{ '{:,}'.format(hold_summary.total_man) }} 万円
+      {%- set ex = hold_summary.exposure %}
+      {%- if ex and ex.ratio_pct is not none %}
+      <span title="基準運用額 {{ '{:,}'.format((ex.base_amount / 10000)|round|int) }}万円 (市場中立時の標準運用総額) に対する比率。基準運用額はユーザーが宣言する値で、システムが正しさを保証するものではない。"
+            style="font-weight:600;color:#333;">(基準比 {{ '%.0f'|format(ex.ratio_pct) }}%)</span>
+      {%- endif %}
       /
       <span title="保有株数の真実源である証券会社CSVの残高基準日 (最新ソース)">保有株数基準日:
       {% if hold_summary.qty_as_of %}{{ hold_summary.qty_as_of }}{% else %}未取込{% endif %}</span>
@@ -350,6 +355,35 @@
     <button type="button" data-page-btn="2" title="ショートカット: 2">メモ</button>
   </div>
 </div>
+
+{% if hold_summary and hold_summary.exposure and hold_summary.exposure.range_lower is not none %}
+{# issue #362: 市場状態連動の運用比率ガイド (宣言したレンジと現実の乖離を毎日見せる) #}
+{%- set ex = hold_summary.exposure %}
+{%- set pos_colors = {"within": "#2e7d32", "over": "#c62828", "under": "#ef6c00"} %}
+<div style="display:flex;align-items:center;gap:0.8em;flex-wrap:wrap;margin:0 0 0.6em 0;font-size:0.8em;">
+  <span style="color:#555;">エクスポージャー目安:</span>
+  <span title="保有額で加重した市場ステート ({{ ex.state }})。{% if ex.state_is_fallback %}保有が無いため TOPIX とグロース250 の悪い方で判定。{% else %}各保有銘柄の市場 (日経225/TOPIX/グロース) のステートを保有額で加重平均。{% endif %}"
+        style="padding:0.1em 0.5em;border-radius:3px;background:#eceff1;color:#333;">
+    {{ ex.state_label }}{% if ex.state_is_fallback %} (ノーポジ判定){% endif %}
+  </span>
+  <span title="このステートの目標運用比率レンジ{% if ex.modifier_labels %} ({{ ex.modifier_labels|join('・') }}のため上限を引き下げ){% endif %}">
+    目標 {{ ex.range_lower|int }}〜{{ ex.range_upper|int }}%
+    <span style="color:#888;">({{ '{:,}'.format(ex.range_lower_man) }}〜{{ '{:,}'.format(ex.range_upper_man) }}万円)</span>
+  </span>
+  {%- if ex.deviation_pct is not none %}
+  <span style="font-weight:600;color:{{ pos_colors.get(ex.position, '#555') }};"
+        title="{% if ex.position == 'within' %}目標レンジ内{% elif ex.position == 'over' %}目標レンジの上限を超過{% else %}目標レンジの下限を下回る{% endif %}">
+    {%- if ex.position == 'within' %}レンジ内
+    {%- else %}{{ '%+.0f'|format(ex.deviation_pct) }}pt{% endif -%}
+  </span>
+  {%- endif %}
+  {%- if ex.modifier_labels %}
+  <span style="color:#c62828;font-size:0.95em;" title="過熱指標により目標レンジの上限を引き下げている">
+    ⚠ {{ ex.modifier_labels|join('・') }}
+  </span>
+  {%- endif %}
+</div>
+{% endif %}
 
 {% if hold_summary and hold_summary.breakdown %}
 {# 市場別内訳の積み上げ横棒バー + 凡例 (同一行) #}

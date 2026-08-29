@@ -3836,6 +3836,43 @@ def _classify_market_category(
     return "その他"
 
 
+def summarize_hold_positions(
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """保有 (1保) の運用総額と市場別内訳を集計する (issue #362)。
+
+    list_portfolio_with_indicators の position_value と同一条件
+    (1保 かつ qty > 0 かつ price > 0) で集計する。指標計算・チャート生成を
+    伴わないため、日次バッチからも軽量に呼べる。
+
+    Returns:
+        {"total_value": float, "category_values": {"日経225": float, ...}}
+    """
+    import portfolio_shelve as ps  # 遅延 import (循環回避)
+
+    records = ps.list_records(status="1保", db_path=db_path)
+    code_list = [r.get("code_s", "") for r in records]
+    stock_map = _bulk_get_stock_data(code_list)
+
+    category_values = {"日経225": 0.0, "TOPIX": 0.0, "グロース": 0.0, "その他": 0.0}
+    total_value = 0.0
+    for rec in records:
+        code_s = rec.get("code_s", "")
+        qty = rec.get("qty", 0) or 0
+        stock = stock_map.get(code_s) or {}
+        price = stock.get("price") if isinstance(stock, dict) else None
+        if qty <= 0 or not isinstance(price, (int, float)) or price <= 0:
+            continue
+        value = float(price) * qty
+        category = _classify_market_category(
+            stock.get("market"), stock.get("is_nikkei225"), code_s=code_s
+        )
+        category_values[category] = category_values.get(category, 0.0) + value
+        total_value += value
+    return {"total_value": total_value, "category_values": category_values}
+
+
 def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
     """stocks_shelve の dict から portfolio 一覧表示用の指標を抽出する。
 

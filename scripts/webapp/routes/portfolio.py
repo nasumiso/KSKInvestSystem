@@ -187,6 +187,64 @@ def _sync_txt_safely() -> None:
         flash(f"my_watch_list.txt 同期に失敗: {e}", "error")
 
 
+# issue #362: 目標レンジ上限を削った理由の表示名
+_EXPOSURE_MODIFIER_LABELS = {
+    "credit_eval_rate": "信用評価損益率が過熱",
+    "fng_jp": "日本版F&Gが過熱",
+}
+
+
+def _build_exposure_summary(total_position_value: float, cat_values: dict) -> Optional[dict]:
+    """運用比率と市場状態連動の目標レンジを組み立てる (issue #362)。
+
+    指標が揃わない日はガイドを出さない (None を返す) が、運用総額の表示は
+    呼び出し側でそのまま続ける。取得失敗でページを落とさないよう例外は握る。
+    """
+    try:
+        import exposure_guide
+        import market_state
+
+        from make_market_db import get_market_db
+
+        market_db = get_market_db()
+        index_states, _ = exposure_guide.read_index_states(market_db)
+        if not index_states:
+            return None
+        credit_eval_rate, _ = exposure_guide.read_credit_eval_rate()
+        fng_jp, _ = exposure_guide.read_fng_jp()
+        evaluation = exposure_guide.evaluate_exposure(
+            total_position_value,
+            cat_values,
+            index_states,
+            credit_eval_rate,
+            fng_jp,
+            ps.get_exposure_settings(),
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if evaluation["state"] is None:
+        return None
+    # テンプレートで円換算を出すため、レンジの万円換算を添える
+    base_amount = evaluation["base_amount"]
+    evaluation["range_lower_man"] = (
+        int(round(evaluation["range_lower"] / 100 * base_amount / 10000))
+        if evaluation["range_lower"] is not None else None
+    )
+    evaluation["range_upper_man"] = (
+        int(round(evaluation["range_upper"] / 100 * base_amount / 10000))
+        if evaluation["range_upper"] is not None else None
+    )
+    evaluation["state_label"] = market_state.STATE_LABEL.get(
+        evaluation["state"], evaluation["state"]
+    )
+    evaluation["state_css"] = market_state.STATE_CSS_CLASS.get(evaluation["state"], "")
+    evaluation["modifier_labels"] = [
+        _EXPOSURE_MODIFIER_LABELS.get(name, name)
+        for name in evaluation["modifiers_applied"]
+    ]
+    return evaluation
+
+
 def _flash_stock_info(code_s: str, message_suffix: str) -> None:
     """銘柄コードに詳細ページリンクを付けて info flash する。"""
     normalized = ps.normalize_code_s(code_s)
@@ -1119,6 +1177,10 @@ def dashboard():
                     default=None,
                 ),
                 "breakdown": breakdown,
+                # issue #362: 基準運用額に対する運用比率と市場状態連動の目標レンジ
+                "exposure": _build_exposure_summary(
+                    total_position_value, cat_values
+                ),
             }
 
     # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)

@@ -122,6 +122,28 @@ _THEME_NAME_FORBIDDEN_RE = re.compile(r"[\/\?\#\&\%\+\<\>\"\'\\\x00-\x1F]")
 # PF 全体で 1 つだけ保持するメタキー (どこかの銘柄で qty が変化したら更新)
 KEY_QTY_GLOBAL_UPDATED_AT = "_meta:qty_global_updated_at"
 
+# issue #362: エクスポージャーガイドの設定 (PF 全体で 1 つ)。
+KEY_EXPOSURE_SETTINGS = "_meta:exposure_settings"
+
+# 基準運用額は「市場中立時の標準運用総額」でユーザーが宣言する値。
+# レンジは基準運用額に対する % で、ユーザーの感情スコア式レバレッジ管理
+# (通常1.2倍を中立とし 0.8〜1.4倍で調整) を客観指標側に写したもの。
+# modifiers は過熱時に上限のみを削る (恐怖側での自動増枠はしない)。
+EXPOSURE_DEFAULTS = {
+    "base_amount": 26_500_000,
+    "ranges": {
+        "confirmed_uptrend": [100, 120],
+        "uptrend_under_pressure": [80, 100],
+        "market_in_correction": [65, 80],
+    },
+    "modifiers": {
+        # 信用評価損益率は 0% に近いほど過熱 (threshold 以上で発動)
+        "credit_eval_rate": {"threshold": -3.0, "penalty": 10},
+        # 日本版 F&G は高いほど過熱 (threshold 以上で発動)
+        "fng_jp": {"threshold": 75.0, "penalty": 10},
+    },
+}
+
 # shelve は .dat/.dir/.bak の3点セットで構成される (dbm.dumb)
 _SHELVE_EXTENSIONS = (".dat", ".dir", ".bak")
 
@@ -1998,6 +2020,115 @@ def get_qty_global_updated_at(
     path = _resolve_db_path(db_path)
     with ShelveDB(path) as db:
         return db.get(KEY_QTY_GLOBAL_UPDATED_AT)
+
+
+def get_exposure_settings(
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """エクスポージャーガイドの設定を返す (issue #362)。
+
+    保存されていないキーは EXPOSURE_DEFAULTS で補完する
+    (設定項目を後から増やしても既存 DB がそのまま動くようにするため)。
+    """
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        saved = db.get(KEY_EXPOSURE_SETTINGS) or {}
+    if not isinstance(saved, dict):
+        saved = {}
+    settings = {
+        "base_amount": saved.get("base_amount", EXPOSURE_DEFAULTS["base_amount"]),
+        "ranges": dict(EXPOSURE_DEFAULTS["ranges"]),
+        "modifiers": {k: dict(v) for k, v in EXPOSURE_DEFAULTS["modifiers"].items()},
+    }
+    saved_ranges = saved.get("ranges")
+    if isinstance(saved_ranges, dict):
+        for state, rng in saved_ranges.items():
+            if state in settings["ranges"]:
+                settings["ranges"][state] = list(rng)
+    saved_modifiers = saved.get("modifiers")
+    if isinstance(saved_modifiers, dict):
+        for name, mod in saved_modifiers.items():
+            if name in settings["modifiers"] and isinstance(mod, dict):
+                settings["modifiers"][name].update(mod)
+    return settings
+
+
+def _validate_exposure_settings(settings: Any) -> Dict[str, Any]:
+    """エクスポージャー設定を検証して正規化する。不正なら例外。"""
+    if not isinstance(settings, dict):
+        raise TypeError("exposure settings must be dict")
+
+    base_amount = settings.get("base_amount", EXPOSURE_DEFAULTS["base_amount"])
+    if not isinstance(base_amount, (int, float)) or isinstance(base_amount, bool):
+        raise TypeError("base_amount must be a number")
+    if base_amount <= 0:
+        raise ValueError("base_amount must be positive")
+
+    ranges = settings.get("ranges", EXPOSURE_DEFAULTS["ranges"])
+    if not isinstance(ranges, dict):
+        raise TypeError("ranges must be dict")
+    normalized_ranges = {}
+    for state, rng in ranges.items():
+        if state not in EXPOSURE_DEFAULTS["ranges"]:
+            raise ValueError(f"unknown market state in ranges: {state}")
+        if not isinstance(rng, (list, tuple)) or len(rng) != 2:
+            raise ValueError(f"ranges[{state}] must be [lower, upper]")
+        lower, upper = rng
+        for v in (lower, upper):
+            if not isinstance(v, (int, float)) or isinstance(v, bool):
+                raise TypeError(f"ranges[{state}] must contain numbers")
+        if lower < 0 or upper < 0:
+            raise ValueError(f"ranges[{state}] must be non-negative")
+        if lower > upper:
+            raise ValueError(f"ranges[{state}] lower must be <= upper")
+        normalized_ranges[state] = [lower, upper]
+
+    modifiers = settings.get("modifiers", EXPOSURE_DEFAULTS["modifiers"])
+    if not isinstance(modifiers, dict):
+        raise TypeError("modifiers must be dict")
+    normalized_modifiers = {}
+    for name, mod in modifiers.items():
+        if name not in EXPOSURE_DEFAULTS["modifiers"]:
+            raise ValueError(f"unknown modifier: {name}")
+        if not isinstance(mod, dict):
+            raise TypeError(f"modifiers[{name}] must be dict")
+        threshold = mod.get("threshold")
+        penalty = mod.get("penalty")
+        if not isinstance(threshold, (int, float)) or isinstance(threshold, bool):
+            raise TypeError(f"modifiers[{name}].threshold must be a number")
+        if not isinstance(penalty, (int, float)) or isinstance(penalty, bool):
+            raise TypeError(f"modifiers[{name}].penalty must be a number")
+        if penalty < 0:
+            raise ValueError(f"modifiers[{name}].penalty must be non-negative")
+        normalized_modifiers[name] = {"threshold": threshold, "penalty": penalty}
+
+    return {
+        "base_amount": base_amount,
+        "ranges": normalized_ranges,
+        "modifiers": normalized_modifiers,
+    }
+
+
+def set_exposure_settings(
+    settings: Dict[str, Any],
+    *,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """エクスポージャーガイドの設定を保存する (issue #362)。
+
+    未指定のキーは現在の設定 (無ければデフォルト) を引き継ぐ。
+    """
+    current = get_exposure_settings(db_path=db_path)
+    merged = dict(current)
+    merged.update(settings)
+    validated = _validate_exposure_settings(merged)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            db[KEY_EXPOSURE_SETTINGS] = validated
+    log_print("portfolio_shelve: エクスポージャー設定更新", validated)
+    return validated
 
 
 def get_position_latest_as_of(

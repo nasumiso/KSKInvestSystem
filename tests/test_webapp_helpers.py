@@ -112,6 +112,53 @@ def test_stop_loss_replay_preserves_episode_same_day_order():
     assert calc_stop_loss_line(rule, fills, kind="現物") == 810.0
 
 
+def test_summarize_hold_positions_matches_row_aggregation(monkeypatch, tmp_path):
+    """バッチ用の軽量集計が WebApp 側の row ベース集計と一致する (issue #362)。
+
+    運用比率の分子は 2 経路 (summarize_hold_positions / list_portfolio_with_indicators の
+    position_value) で計算されるため、集計条件がずれたら気付けるようにする。
+    """
+    import portfolio_shelve as ps
+
+    stocks = {
+        "4377": {"price": 1000, "market": "東証Ｐ", "is_nikkei225": False},
+        "285A": {"price": 500, "market": "東証Ｇ", "is_nikkei225": False},
+        # price 欠損 / qty=0 は両経路とも除外される (除外条件のズレを検出する材料)
+        "9999": {"price": None, "market": "東証Ｐ", "is_nikkei225": False},
+        "6324": {"price": 700, "market": "東証Ｐ", "is_nikkei225": False},
+    }
+    records = [
+        {"code_s": "4377", "status": "1保", "qty": 100},
+        {"code_s": "285A", "status": "1保", "qty": 200},
+        {"code_s": "9999", "status": "1保", "qty": 300},  # price 欠損
+        {"code_s": "6324", "status": "1保", "qty": 0},    # 売却済みで qty=0
+    ]
+    monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stocks)
+    monkeypatch.setattr(ps, "list_records", lambda status=None, **kw: records)
+
+    summary = helpers.summarize_hold_positions(db_path=str(tmp_path / "dummy"))
+
+    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {})
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {})
+    monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {})
+    monkeypatch.setattr(helpers, "_extract_indicators_for_portfolio", lambda stock: {})
+    monkeypatch.setattr(helpers, "compute_cell_styles", lambda row, today: {})
+    monkeypatch.setattr(helpers, "build_stock_chart_payload", lambda stock, market_db, mode: {})
+    monkeypatch.setattr(ps, "seed_trade_ideas", lambda: 0)
+    monkeypatch.setattr(ps, "list_trade_ideas", lambda: [])
+    rows = helpers.list_portfolio_with_indicators(records)
+
+    row_total = sum((r.get("position_value") or 0) for r in rows if r["status"] == "1保")
+    assert summary["total_value"] == row_total == 200_000  # 100株×1000 + 200株×500
+    row_cats = {}
+    for r in rows:
+        cat = r.get("market_category", "その他")
+        row_cats[cat] = row_cats.get(cat, 0.0) + (r.get("position_value") or 0)
+    assert summary["category_values"]["TOPIX"] == row_cats["TOPIX"]
+    assert summary["category_values"]["グロース"] == row_cats["グロース"]
+
+
 def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
     """約定履歴のない手入力保有でもMA違反を防御シグナルとして表示する。"""
     import portfolio_shelve as ps

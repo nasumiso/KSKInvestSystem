@@ -156,6 +156,24 @@ cd scripts && python show_fill_episodes.py --open     # 保有中のみ (残株�
 cd scripts && python show_fill_episodes.py --memo     # 振り返りメモ付きのみ
 ```
 
+### 運用比率 (エクスポージャー) ガイド (issue #362)
+
+基準運用額 (市場中立時の標準運用総額) に対する運用比率と、市場ステートから導いた目標レンジを扱う。
+日次ログは `shintakane_cron.sh` から自動実行されるため、通常は手動実行不要。
+
+```bash
+cd scripts && python exposure_guide.py show                        # 直近の記録 + 現在の評価
+cd scripts && python exposure_guide.py log                         # 当日分を記録 (同一日付は上書き)
+cd scripts && python exposure_guide.py settings                    # 現在の設定を表示
+cd scripts && python exposure_guide.py settings --set-base-amount 26500000  # 基準運用額を更新
+```
+
+基準運用額はユーザーが宣言する値。信用維持率から見直す場合の目安は
+「現在の運用総額 ÷ 体感の稼働率」(例: 2253万 ÷ 0.85 ≒ 2650万)。
+目標レンジは上昇トレンド 100〜120% / 圧力下 80〜100% / 調整相場 65〜80% で、
+過熱時 (信用評価損益率 ≥ -3% / 日本版F&G ≥ 75) は上限のみ引き下げる。
+日次ログは `$KS_DATA_DIR/code_rank_data/exposure_log.json`。
+
 ### 証券会社ポートフォリオCSV → position レイヤー取込・record自動同期 (issue #397)
 
 保有ステータス・保有株数の手入力に代えて、証券会社の残高CSVを真実源として自動同期するための取込コマンド。fill (約定の事実) とは別の position レイヤーに残高スナップショットを保存する。`--apply` のみだと position/position_source の保存のみ (Phase1、可視化)。`--apply-records` を足すと covered な銘柄 (4ソース全てが取込済みの銘柄) の `qty`/`status` を実際に同期する (Phase2)。

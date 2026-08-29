@@ -42,6 +42,7 @@ HTMLパーサー変更時は追加で `cd scripts && python shintakane.py --forc
 | `googledrive.py` | `pytest tests/test_googledrive.py -v` |
 | `disclosure.py` | `pytest tests/test_disclosure.py -v` |
 | `portfolio_shelve.py` | `pytest tests/test_portfolio_shelve.py -v` |
+| `exposure_guide.py` | `pytest tests/test_exposure_guide.py -v` |
 | `import_portfolio_csv.py` | `pytest tests/test_import_portfolio_csv.py -v` |
 
 スコアリング・ランキングのロジック変更時は追加で `cd scripts && python make_stock_db.py list_all_db` で統合テスト。
