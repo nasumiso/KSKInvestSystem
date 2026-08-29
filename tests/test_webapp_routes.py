@@ -1421,11 +1421,23 @@ class TestPortfolioHoldSummary:
         monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
         monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
 
+        ps.create_theme("半導体", db_path=portfolio_db)
+        ps.create_theme("ロボット", db_path=portfolio_db)
+
         rec = rs.create_research_record("3496", "アズーム", overall_rating="A")
         rs.upsert_research_record(rec, db_path=db_path)
         ps.add_to_watch("3496", reason="テスト", db_path=portfolio_db)
         ps.transition_status("3496", "1保", db_path=portfolio_db)
         ps.update_qty("3496", 100, db_path=portfolio_db)
+        ps.update_memo("3496", {"gyoutai_themes": ["半導体"]}, db_path=portfolio_db)
+        # gyoutai_theme フィルタでの絞り込み対象外になる別銘柄 (テーマ不一致)。
+        # 全保有からの集計がフィルタの影響を受けないことを検証するために使う
+        rec2 = rs.create_research_record("6324", "ハーモニック", overall_rating="B")
+        rs.upsert_research_record(rec2, db_path=db_path)
+        ps.add_to_watch("6324", reason="テスト", db_path=portfolio_db)
+        ps.transition_status("6324", "1保", db_path=portfolio_db)
+        ps.update_qty("6324", 100, db_path=portfolio_db)
+        ps.update_memo("6324", {"gyoutai_themes": ["ロボット"]}, db_path=portfolio_db)
         # 保有株数の基準日はCSV取込 (position_source) の as_of から出す
         ps.upsert_position_source(
             "楽天", "特定", "現物", as_of="2026-08-13", row_count=1, db_path=portfolio_db,
@@ -1436,7 +1448,8 @@ class TestPortfolioHoldSummary:
         from webapp import helpers as _h
 
         def patched_bulk(code_list):
-            return {c: ({"price": 2500} if c == "3496" else {}) for c in code_list}
+            prices = {"3496": 2500, "6324": 1000}
+            return {c: ({"price": prices[c]} if c in prices else {}) for c in code_list}
 
         monkeypatch.setattr(_h, "_bulk_get_stock_data", patched_bulk)
 
@@ -1450,10 +1463,30 @@ class TestPortfolioHoldSummary:
         html = resp.data.decode()
         assert resp.status_code == 200
         assert "運用総額" in html
-        assert "25</b> 万円" in html  # 2500 × 100 / 10000 = 25
+        # 3496: 2500×100=25万 + 6324: 1000×100=10万 = 35万
+        assert "35</b> 万円" in html
         # position_source を登録済みなので as_of がそのまま出る
         # (「未取込」は CSV 取込フォーム側でも使う文言なので、サマリー部分を丸ごと照合する)
         assert "株数基準日\n      2026-08-13" in html
+
+    def test_hold_summary_ignores_gyoutai_theme_filter(self, portfolio_app):
+        """運用比率ガイドはテーマ絞り込みの影響を受けず、常に全保有で集計する。
+
+        gyoutai_theme 指定時は表の行 (rows) がテーマ一致銘柄だけに絞られるが、
+        運用比率ガイドはポートフォリオ全体の話なので、絞り込みで運用総額が
+        小さく出たり、テーマに保有が無ければノーポジ扱いになってはいけない
+        (PR #423 レビュー指摘)。
+        """
+        client = portfolio_app.test_client()
+        resp_all = client.get("/portfolio?status=hold")
+        resp_filtered = client.get("/portfolio?status=hold&gyoutai_theme=半導体")
+        html_all = resp_all.data.decode()
+        html_filtered = resp_filtered.data.decode()
+
+        assert "1 件表示" in html_filtered or "1件表示" in html_filtered  # 半導体は3496のみ
+        # 全保有 (35万円) がテーマ絞り込み後も同じ値で出る
+        assert "35</b> 万円" in html_all
+        assert "35</b> 万円" in html_filtered
 
     def test_other_filters_hide_summary(self, portfolio_app):
         client = portfolio_app.test_client()

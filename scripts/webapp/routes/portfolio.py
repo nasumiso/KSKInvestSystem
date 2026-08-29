@@ -42,6 +42,7 @@ from webapp.helpers import (
     get_stock_data,
     list_portfolio_with_indicators,
     resolve_stock_name,
+    summarize_hold_positions,
 )
 
 portfolio_bp = Blueprint("portfolio", __name__)
@@ -1190,18 +1191,18 @@ def dashboard():
         f"{s['broker']}/{s['kind']}": s["as_of"] for s in position_sources
     }
 
-    # 保有フィルタ表示時のみ、運用総額と保有株数の基準日を集計
+    # 保有フィルタ表示時のみ、運用総額と保有株数の基準日を集計。
+    # gyoutai_theme 指定時は表の行 (rows) がテーマで絞り込まれるが、運用比率ガイドは
+    # ポートフォリオ全体の話なので、絞り込みの影響を受けない全保有から集計する
+    # (PR #423 レビュー指摘: rows から集計するとテーマ別の一部保有しか見えず、
+    # 実際より低い比率やノーポジ判定を表示してしまう)。summarize_hold_positions は
+    # 日次ログ (exposure_guide) が使うものと同じ集計関数で、表示とログの数値を
+    # 一致させる意味もある。
     hold_summary = None
     if not fallback_mode and active_status == "1保":
-        hold_rows = [r for r in rows if r.get("status") == "1保"]
-        total_position_value = sum(
-            (r.get("position_value") or 0) for r in hold_rows
-        )
-        # 市場別内訳 (日経225/TOPIX/グロース/その他) を集計
-        cat_values = {"日経225": 0.0, "TOPIX": 0.0, "グロース": 0.0, "その他": 0.0}
-        for r in hold_rows:
-            cat = r.get("market_category", "その他")
-            cat_values[cat] = cat_values.get(cat, 0.0) + (r.get("position_value") or 0)
+        hold_totals = summarize_hold_positions()
+        total_position_value = hold_totals["total_value"]
+        cat_values = hold_totals["category_values"]
         breakdown = [
             {
                 "category": cat,
