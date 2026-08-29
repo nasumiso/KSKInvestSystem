@@ -253,19 +253,22 @@
               {#- 建玉を特定できない決済 (建情報なしの信用返済など)。? マーカーと同じ条件で駆動する #}
               {%- if r.closed and not r.open_date %}<span style="color:#8a6a5a;font-size:0.88em;margin-left:0.4em;" title="建玉情報がCSVに無いため建値・保有日数を表示できません">建玉不明</span>{% endif %}
             </td>
-            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "%g"|format(r.qty) }}株</td>
+            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{% if ep.split_suspect %}<span style="color:#666;">—</span>{% else %}{{ "%g"|format(r.qty) }}株{% endif %}</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
+              {%- if ep.split_suspect %}<span style="color:#666;">—</span>
+              {%- else %}
               {%- if r.open_price %}{{ "{:,}".format(r.open_price|round|int) }}{% else %}<span style="color:#666;">—</span>{% endif %}
               <span style="color:#666;">→</span>
               {% if r.close_price %}{{ "{:,}".format(r.close_price|round|int) }}{% else %}<span style="color:#666;">—</span>{% endif %}
+              {%- endif %}
             </td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;color:#777;">{% if r.hold_days is not none %}{{ r.hold_days }}日{% else %}<span style="color:#666;">—</span>{% endif %}</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
-              {%- if r.return_pct is not none %}{{ return_pct_cell(r.return_pct, false, "", 2, false) }}
+              {%- if r.return_pct is not none and not ep.split_suspect %}{{ return_pct_cell(r.return_pct, false, "", 2, false) }}
               {%- else %}<span style="color:#666;">—</span>{% endif %}
             </td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
-              {%- if r.pl is not none %}<span style="color:{{ '#9ef0aa' if r.pl >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(r.pl) }}円</span>
+              {%- if r.pl is not none and not ep.split_suspect %}<span style="color:{{ '#9ef0aa' if r.pl >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(r.pl) }}円</span>
               {%- else %}<span style="color:#666;">—</span>{% endif %}
             </td>
             <td style="padding:1px 0.8em;color:#666;white-space:nowrap;">{{ r.broker }}</td>

@@ -5276,21 +5276,17 @@ def _match_open_lots(open_pool: List[Dict[str, Any]], tate_date: Optional[str],
     broker を渡すと同じ証券会社の建玉だけを対象にする。同一銘柄を複数社で同時保有
     しているとき (実データで22エピソード)、他社の建玉と突き合わせると誤った建値の
     リターンを出し、残っている証券会社も逆になる (PRレビュー指摘)。
+    他社へのフォールバックはしない — 建玉が取込範囲外の決済が別の証券会社の建玉を
+    消費すると、架空の損益を出したうえでその建玉の保有株数まで消えるため。
     """
-    def _avail(strict_broker: bool) -> List[Dict[str, Any]]:
-        return [c for c in open_pool if c["remain"] > 0
-                and (not strict_broker or c["fill"].get("broker") == broker)]
-
-    for pool in ([_avail(True), _avail(False)] if broker else [_avail(False)]):
-        matched = [c for c in pool
-                   if (not tate_date or c["fill"].get("trade_date") == tate_date)
-                   and (tate_price is None or c["fill"].get("price") == tate_price)]
-        if matched:
-            return matched
-        # 建情報で引き当てられない場合も、残っている建玉は消費する (幽霊の保有中行を防ぐ)
-        if pool:
-            return pool
-    return []
+    pool = [c for c in open_pool if c["remain"] > 0
+            and (not broker or c["fill"].get("broker") == broker)]
+    matched = [c for c in pool
+               if (not tate_date or c["fill"].get("trade_date") == tate_date)
+               and (tate_price is None or c["fill"].get("price") == tate_price)]
+    # 建情報で引き当てられない場合も、同社に建玉が残っていれば消費する
+    # (幽霊の保有中行を防ぐ)
+    return matched or pool
 
 
 def _consume_open_lots(open_pool: List[Dict[str, Any]], qty: float,
@@ -5410,17 +5406,20 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def _oldest_lot(lots: List[Dict[str, Any]], broker: Optional[str]) -> Dict[str, Any]:
+def _oldest_lot(lots: List[Dict[str, Any]],
+                broker: Optional[str]) -> Optional[Dict[str, Any]]:
     """FIFO キューから充当対象のロットを選ぶ (issue #421)。
 
-    同じ証券会社の最古ロットを優先し、無ければ全体の最古ロットを返す。
+    同じ証券会社の最古ロットを返す。無ければ None (他社ロットへは充当しない)。
+    他社へフォールバックすると、買付が取込範囲外の売却が別の証券会社の建玉を
+    消費し、架空の損益を出したうえでその建玉の保有株数まで消える
+    (楽天100株保有 + SBI売却のみ → 楽天の建値で +150,000円 と誤表示、PRレビュー指摘)。
     lots は買付順に並んでいる前提 (先頭が最古)。
     """
-    if broker:
-        for lot in lots:
-            if lot["fill"].get("broker") == broker:
-                return lot
-    return lots[0]
+    for lot in lots:
+        if not broker or lot["fill"].get("broker") == broker:
+            return lot
+    return None
 
 
 def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -5449,6 +5448,8 @@ def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
         remain = f["qty"]
         while remain > 0 and lots:
             lot = _oldest_lot(lots, f.get("broker"))
+            if lot is None:
+                break  # 同社の買いロットが無い → 建玉不明の売りとして下で処理
             take = min(remain, lot["remain"])
             bf = lot["fill"]
             row = _make_round_trip(bf, f, take, bf.get("trade_date"), bf.get("price"))

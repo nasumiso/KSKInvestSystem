@@ -3939,3 +3939,23 @@ def test_build_round_trips_lot_allocation(ep, expected):
     got = [(r["open_date"], r["close_date"], r["qty"], r["open_price"],
             r["close_price"], r["hold_days"], r["pl"]) for r in rows]
     assert got == expected
+
+
+def test_build_round_trips_no_cross_broker_fallback():
+    """同社の建玉が無い売却は他社ロットを消費しない (PR #422 レビュー指摘)。
+
+    買付が取込範囲外の売却が別の証券会社の建玉を消費すると、架空の損益を出した
+    うえでその建玉の保有株数まで消える。楽天100株保有 + SBI売却のみ のケースで、
+    フォールバックすると楽天の建値で +150,000円 と誤表示していた。
+    """
+    ep = _ep("現物", [
+        _f("2026-01-05", "buy", 100, 1000.0, "現物", broker="楽天"),
+        _f("2026-02-05", "sell", 100, 2500.0, "現物", broker="SBI"),
+    ], closed=False)
+    rows = helpers.build_round_trips(ep)
+    # 楽天の100株は保有中のまま / SBI売却は建値を伏せた売りのみ行
+    assert [(r["open_date"], r["open_price"], r["qty"], r["closed"], r["pl"])
+            for r in rows] == [
+        ("2026-01-05", 1000.0, 100, False, None),
+        (None, None, 100, True, None),
+    ]
