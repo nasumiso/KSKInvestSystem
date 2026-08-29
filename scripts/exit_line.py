@@ -100,6 +100,17 @@ def calc_stop_loss_line(
         if kind == "信用":
             is_open = side == "buy" and trade_kind.startswith("信用新規")
             is_close = side == "sell" or trade_kind == "現引"
+        elif kind is None:
+            # 銘柄全体の再生では、現引は信用→現物の振替なので保有数を変えない。
+            # 信用売建・買戻しもロング保有の損切り対象外とする。
+            if trade_kind == "現引":
+                continue
+            if trade_kind.startswith("信用"):
+                is_open = side == "buy" and trade_kind.startswith("信用新規")
+                is_close = side == "sell" and trade_kind.startswith("信用返済")
+            else:
+                is_open = side == "buy"
+                is_close = side == "sell"
         else:
             is_open = side == "buy" and not trade_kind.startswith("信用返済")
             is_close = side == "sell"
