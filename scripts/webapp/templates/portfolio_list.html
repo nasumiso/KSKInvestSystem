@@ -400,7 +400,8 @@
 </div>
 {% endif %}
 
-{% if hold_summary and hold_summary.breakdown %}
+{# ノーポジ時は内訳が全て0なので空の枠だけが残る。バーごと出さない #}
+{% if hold_summary and hold_summary.total_man > 0 and hold_summary.breakdown %}
 {# 市場別内訳の積み上げ横棒バー + 凡例 (同一行) #}
 <div style="display:flex;align-items:center;gap:1em;flex-wrap:wrap;margin:0 0 0.7em 0;">
   <div style="display:flex;height:22px;border-radius:3px;overflow:hidden;border:1px solid #e0e0e0;flex:1 1 360px;min-width:280px;max-width:500px;">

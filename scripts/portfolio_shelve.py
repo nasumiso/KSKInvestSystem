@@ -2118,10 +2118,24 @@ def set_exposure_settings(
     """エクスポージャーガイドの設定を保存する (issue #362)。
 
     未指定のキーは現在の設定 (無ければデフォルト) を引き継ぐ。
+    ranges / modifiers は項目単位でマージするため、1ステートだけ更新しても
+    他ステートのカスタム値は保持される (PR #423 レビュー指摘)。
     """
     current = get_exposure_settings(db_path=db_path)
     merged = dict(current)
-    merged.update(settings)
+    for key, value in settings.items():
+        if key in ("ranges", "modifiers") and isinstance(value, dict):
+            nested = dict(current.get(key) or {})
+            for name, item in value.items():
+                # modifiers は threshold/penalty 単位でも部分更新できるようにする
+                if (key == "modifiers" and isinstance(item, dict)
+                        and isinstance(nested.get(name), dict)):
+                    nested[name] = {**nested[name], **item}
+                else:
+                    nested[name] = item
+            merged[key] = nested
+        else:
+            merged[key] = value
     validated = _validate_exposure_settings(merged)
     path = _resolve_db_path(db_path)
     with _flock(db_path):

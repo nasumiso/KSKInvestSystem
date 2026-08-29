@@ -190,6 +190,29 @@ def test_exposure_settings_roundtrip_and_validation(tmp_path):
         )
 
 
+def test_exposure_settings_merges_nested_dicts(tmp_path):
+    """1項目だけ更新しても他のカスタム値が消えない (PR #423 レビュー指摘)。
+
+    浅い update だと ranges / modifiers 全体が差し替わり、未指定項目が
+    デフォルトへ巻き戻る (docstring の「未指定は現在値を引き継ぐ」に反する)。
+    """
+    db_path = str(tmp_path / "portfolio_shelve")
+
+    ps.set_exposure_settings({"ranges": {PRESSURE: [85, 95]}}, db_path=db_path)
+    ps.set_exposure_settings({"ranges": {CONFIRMED: [110, 130]}}, db_path=db_path)
+    ranges = ps.get_exposure_settings(db_path=db_path)["ranges"]
+    assert ranges[PRESSURE] == [85, 95]      # 先に入れたカスタム値が残る
+    assert ranges[CONFIRMED] == [110, 130]
+
+    # modifiers は threshold だけ更新しても penalty が残る
+    ps.set_exposure_settings(
+        {"modifiers": {"fng_jp": {"threshold": 70.0}}}, db_path=db_path
+    )
+    modifiers = ps.get_exposure_settings(db_path=db_path)["modifiers"]
+    assert modifiers["fng_jp"] == {"threshold": 70.0, "penalty": 10}
+    assert modifiers["credit_eval_rate"] == {"threshold": -3.0, "penalty": 10}
+
+
 @pytest.mark.parametrize(
     "state, ratio, lower, upper, expected_side",
     [
@@ -252,6 +275,54 @@ def test_exposure_bar_penalty_hatch_and_shared_scale():
     assert capped["bar_penalty_left"] + capped["bar_penalty_width"] == pytest.approx(
         normal["bar_range_left"] + normal["bar_range_width"], abs=0.1
     )
+
+
+@pytest.mark.parametrize(
+    "topix_date, mothers_date, expected_indexes",
+    [
+        # 両方新しい → 両方採用
+        ("2026-08-28", "2026-08-28", {"topix", "mothers"}),
+        # topix だけ取得失敗で据え置き → topix のみ除外し mothers は生かす
+        ("2026-08-10", "2026-08-28", {"mothers"}),
+        # 両方古い → 全除外 (ガイドを出さない)
+        ("2026-08-10", "2026-08-10", set()),
+    ],
+)
+def test_read_index_states_uses_per_index_date(
+    topix_date, mothers_date, expected_indexes
+):
+    """指数ごとの最新日足で鮮度を判定する (PR #423 レビュー指摘)。
+
+    market_db のファイル mtime は指数取得が失敗した日も更新される
+    (失敗時は前日データを保持したまま DB 全体を保存するため) ので、
+    mtime では古いステートを鮮度内と誤認する。
+    """
+    market_db = {
+        "topix": {"market_state": CORRECTION,
+                  "price_log": [(date.fromisoformat(topix_date), 4000)]},
+        "mothers": {"market_state": CONFIRMED,
+                    "price_log": [(date.fromisoformat(mothers_date), 700)]},
+    }
+    states, _ = exposure_guide.read_index_states(market_db, today=date(2026, 8, 29))
+    assert set(states) == expected_indexes
+
+
+def test_read_index_states_reads_newest_end_of_price_log():
+    """price_log は日付降順なので [0] が最新 (末尾は1ヶ月以上前になりうる)。"""
+    market_db = {
+        "topix": {
+            "market_state": CORRECTION,
+            "price_log": [
+                (date(2026, 8, 28), 4000),  # 最新
+                (date(2026, 7, 16), 3900),  # 古い端
+            ],
+        }
+    }
+    states, latest = exposure_guide.read_index_states(
+        market_db, today=date(2026, 8, 29)
+    )
+    assert states == {"topix": CORRECTION}
+    assert latest == "2026-08-28"
 
 
 def _stub_entry(entry):

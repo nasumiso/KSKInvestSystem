@@ -60,7 +60,7 @@ FRESHNESS_DAYS = {
     "credit_balance": 10,
     "fng_jp": 3,
     "fng_us": 3,
-    "market_db": 3,
+    "index": 3,
 }
 
 EXPOSURE_LOG_PATH = os.path.join(DATA_DIR, "code_rank_data", "exposure_log.json")
@@ -304,37 +304,49 @@ def read_fng_us(market_db, *, today=None):
     return value, date_str
 
 
-def _market_db_mtime_date():
-    """market_db shelve ファイルの mtime を日付で返す。無ければ None。
+def _index_latest_date(entry):
+    """指数エントリの最新日足の日付を "YYYY-MM-DD" で返す。無ければ None。
 
-    指数エントリは指数ごとの更新日を持たない (price_log 等の append-only 履歴は
-    更新条件が違い市場ステートと乖離する) ため、DB ファイルの更新時刻を
-    ステート鮮度の代理とする (make_market_db のキャッシュ世代印と同じ考え方)。
+    price_log は日付降順 (`[0]` が最新) で、日次取得が失敗した指数は
+    make_market_db 側で前日データを保持したままになるため、ここが据え置かれる。
+    DB ファイルの mtime は取得失敗時も更新される (全指数まとめて保存するため)
+    ので鮮度判定には使えない。
     """
-    import glob
-
-    mtimes = [os.path.getmtime(p) for p in glob.glob(MARKET_SHELVE + "*")]
-    if not mtimes:
+    price_log = (entry or {}).get("price_log") or []
+    if not price_log:
         return None
-    return datetime.fromtimestamp(max(mtimes)).date().isoformat()
+    latest = price_log[0][0]
+    if isinstance(latest, str):
+        return latest[:10]
+    return latest.isoformat()  # date / datetime
 
 
 def read_index_states(market_db, *, today=None):
-    """指数別の market_state を返す (states, date)。鮮度切れなら states={}。"""
-    date_str = _market_db_mtime_date()
-    if not _is_fresh(date_str, "market_db", today=today):
-        log_warning(
-            "[exposure] market_db が鮮度切れのため市場ステートを判定から除外 (mtime=%s)"
-            % date_str
-        )
-        return {}, date_str
+    """指数別の market_state を返す (states, date)。
+
+    鮮度は指数ごとに判定し、古い指数だけを個別に除外する
+    (一部の指数が取得失敗しても、生きている指数の判定は続ける)。
+    date は採用した指数の最新日付 (無ければ最も新しい候補日) を返す。
+    """
     states = {}
+    dates = []
     for index_name in set(CATEGORY_TO_INDEX.values()) | set(FALLBACK_INDEXES):
         entry = (market_db or {}).get(index_name) or {}
         state = entry.get("market_state")
-        if state in STATE_SCORES:
-            states[index_name] = state
-    return states, date_str
+        if state not in STATE_SCORES:
+            continue
+        date_str = _index_latest_date(entry)
+        dates.append(date_str)
+        if not _is_fresh(date_str, "index", today=today):
+            log_warning(
+                "[exposure] %s が鮮度切れのため判定から除外 (最新日足=%s)"
+                % (index_name, date_str)
+            )
+            continue
+        states[index_name] = state
+    adopted = [_index_latest_date((market_db or {}).get(n) or {}) for n in states]
+    valid = [d for d in (adopted or dates) if d]
+    return states, max(valid) if valid else None
 
 
 # ==================================================
@@ -370,7 +382,7 @@ def build_daily_entry(*, db_path=None, today=None):
     with ShelveDB(MARKET_SHELVE) as db:
         market_db = {k: db.get(k) for k in ("topix", "mothers", "nikkei225", "fear_and_greed")}
 
-    index_states, market_db_date = read_index_states(market_db, today=base_day)
+    index_states, index_date = read_index_states(market_db, today=base_day)
     if not index_states:
         # ガイドの主軸が無く state=null だけの行には監査価値がないためスキップ
         log_warning("[exposure] 市場ステートを取得できないため日次ログをスキップ")
@@ -399,7 +411,7 @@ def build_daily_entry(*, db_path=None, today=None):
     entry["fng_jp"] = fng_jp
     entry["fng_us"] = fng_us
     entry["source_dates"] = {
-        "market_db": market_db_date,
+        "index": index_date,
         "credit_balance": credit_date,
         "fng_jp": fng_jp_date,
         "fng_us": fng_us_date,

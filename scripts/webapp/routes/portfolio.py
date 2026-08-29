@@ -1194,38 +1194,39 @@ def dashboard():
     hold_summary = None
     if not fallback_mode and active_status == "1保":
         hold_rows = [r for r in rows if r.get("status") == "1保"]
-        if hold_rows:
-            total_position_value = sum(
-                (r.get("position_value") or 0) for r in hold_rows
-            )
-            # 市場別内訳 (日経225/TOPIX/グロース/その他) を集計
-            cat_values = {"日経225": 0.0, "TOPIX": 0.0, "グロース": 0.0, "その他": 0.0}
-            for r in hold_rows:
-                cat = r.get("market_category", "その他")
-                cat_values[cat] = cat_values.get(cat, 0.0) + (r.get("position_value") or 0)
-            breakdown = [
-                {
-                    "category": cat,
-                    "man": int(round(val / 10000)),
-                    "ratio": round(val / total_position_value * 100, 1)
-                    if total_position_value else 0.0,
-                }
-                for cat, val in cat_values.items()
-            ]
-            hold_summary = {
-                "total_man": int(round(total_position_value / 10000)),
-                # 保有株数の真実源は証券会社CSVなので、手動更新時刻ではなく
-                # 取込済み position_source の最新 as_of (残高基準日) を出す
-                "qty_as_of": max(
-                    (s["as_of"] for s in position_sources if s.get("as_of")),
-                    default=None,
-                ),
-                "breakdown": breakdown,
-                # issue #362: 基準運用額に対する運用比率と市場状態連動の目標レンジ
-                "exposure": _build_exposure_summary(
-                    total_position_value, cat_values
-                ),
+        total_position_value = sum(
+            (r.get("position_value") or 0) for r in hold_rows
+        )
+        # 市場別内訳 (日経225/TOPIX/グロース/その他) を集計
+        cat_values = {"日経225": 0.0, "TOPIX": 0.0, "グロース": 0.0, "その他": 0.0}
+        for r in hold_rows:
+            cat = r.get("market_category", "その他")
+            cat_values[cat] = cat_values.get(cat, 0.0) + (r.get("position_value") or 0)
+        breakdown = [
+            {
+                "category": cat,
+                "man": int(round(val / 10000)),
+                "ratio": round(val / total_position_value * 100, 1)
+                if total_position_value else 0.0,
             }
+            for cat, val in cat_values.items()
+        ]
+        # ノーポジ (全売却) でもガイドは出す。市場ステートに対して「今はゼロ」と
+        # 分かることに意味があるため (fallback_state で TOPIX/グロースの悪い方を使う)
+        hold_summary = {
+            "total_man": int(round(total_position_value / 10000)),
+            # 保有株数の真実源は証券会社CSVなので、手動更新時刻ではなく
+            # 取込済み position_source の最新 as_of (残高基準日) を出す
+            "qty_as_of": max(
+                (s["as_of"] for s in position_sources if s.get("as_of")),
+                default=None,
+            ),
+            "breakdown": breakdown,
+            # issue #362: 基準運用額に対する運用比率と市場状態連動の目標レンジ
+            "exposure": _build_exposure_summary(
+                total_position_value, cat_values
+            ),
+        }
 
     # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)
     ps.seed_trade_ideas()
