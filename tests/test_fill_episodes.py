@@ -65,6 +65,24 @@ class TestGenbaiBridge:
         # 取得 844,221 / 売却 841,000 → -3,221
         assert ep["pl"]["profit_amount"] == -3221
 
+    def test_episode_fills_carry_seq_and_dedup_key(self, db_path):
+        """エピソードの fills は seq/dedup_key を保持する (銘柄全体サイクル再生の dedup 用)。
+
+        _finalize_round が転記を落とすと、_current_hold_cycle 側のフォールバック
+        キーが (None, trade_date, trade_kind) に潰れ、同日同種の fill が
+        dedup で握りつぶされる (issue #414)。
+        """
+        _add(db_path, "4369", "2026-02-05", "buy", 100, 1000.0, trade_kind="現物", seq_salt="a")
+        _add(db_path, "4369", "2026-02-05", "buy", 100, 1000.0, trade_kind="現物", seq_salt="b")
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        genbutsu = [e for e in eps if e["code_s"] == "4369" and e["kind"] == "現物"]
+        fills = genbutsu[0]["fills"]
+        assert len(fills) == 2
+        assert all(f.get("seq") is not None for f in fills)
+        assert len({f["seq"] for f in fills}) == 2
+        assert len({f.get("dedup_key") for f in fills}) == 2
+
     def test_shinyo_to_genbiki_to_genbutsu_full_flow(self, db_path):
         """信用新規買 → 現引 → 現物売 で、信用建玉が現引で現物へ振り替わる (1436相当)。
 

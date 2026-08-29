@@ -2234,6 +2234,7 @@ def _current_hold_cycle(episodes: List[Dict[str, Any]]) -> tuple:
     held_qty = 0
     started_at = None
     cycle_fills = []
+    genbiki_pending = 0  # 現引で振り替えた未決済分。対応する現物売却とペアで無視する。
     for fill in sorted(fills_by_key.values(), key=_sort_key):
         trade_kind = fill.get("trade_kind") or ""
         side = fill.get("side")
@@ -2241,12 +2242,20 @@ def _current_hold_cycle(episodes: List[Dict[str, Any]]) -> tuple:
         if not isinstance(qty, (int, float)) or isinstance(qty, bool) or qty <= 0:
             continue
         if trade_kind == "現引":
-            continue  # 銘柄全体では信用から現物への振替であり、保有数は変わらない。
+            # 銘柄全体では信用から現物への振替であり、保有数は変わらない。ただし
+            # 振り替えた現物を後で売却した fill も、対応する分だけペアで無視しないと
+            # 「現引 buy は無視・現物 sell は減算」で保有数が実態よりズレる (issue #414)。
+            genbiki_pending += qty
+            continue
         if trade_kind.startswith("信用"):
             delta = qty if trade_kind.startswith("信用新規") and side == "buy" else (
                 -qty if trade_kind.startswith("信用返済") and side == "sell" else 0)
         else:
             delta = qty if side == "buy" else -qty if side == "sell" else 0
+            if side == "sell" and genbiki_pending > 0:
+                offset = min(genbiki_pending, qty)
+                genbiki_pending -= offset
+                delta += offset  # 振替分の売却を相殺 (例: -qty + offset)
         if not delta:
             continue
         if held_qty <= 0 and delta > 0:
@@ -5717,6 +5726,9 @@ def _finalize_round(code_s: str, kind: str, stock_name: str,
                 "tate_price": f.get("tate_price"),
                 "tate_date": f.get("tate_date"),
                 "settle_pl": f.get("settle_pl"),
+                # 銘柄全体の保有サイクル再生 (_current_hold_cycle) の dedup キーに必要。
+                "seq": f.get("seq"),
+                "dedup_key": f.get("dedup_key"),
             }
             for f in round_fills
         ],
