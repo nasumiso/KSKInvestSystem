@@ -5209,7 +5209,9 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
                 latest_prices[code_s] = float(latest[1])
     for ep in episodes:
         if not ep["closed"]:
-            ep["open_pl"] = _episode_open_pl(ep, latest_prices.get(ep["code_s"]))
+            # 往復行 (issue #421) の保有中ロットも現在値で含みを出すため保持する
+            ep["current_price"] = latest_prices.get(ep["code_s"])
+            ep["open_pl"] = _episode_open_pl(ep, ep["current_price"])
 
     # 建玉ラウンド単位の振り返りメモ (issue #387 Phase2) を一括で紐付ける。
     # メモは fill と独立レイヤーに保存され、エピソードキーで対応する。
@@ -5224,6 +5226,316 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     episodes.sort(key=lambda e: e["code_s"])
     episodes.sort(key=lambda e: e["last_trade_date"], reverse=True)
     return episodes
+
+
+def _round_trip_days(open_date: Optional[str], close_date: Optional[str]) -> Optional[int]:
+    """建日〜決済日の保有日数。どちらか欠けるか不正な日付なら None。"""
+    if not open_date or not close_date:
+        return None
+    try:
+        return (date.fromisoformat(close_date) - date.fromisoformat(open_date)).days
+    except (ValueError, TypeError):
+        return None
+
+
+def _make_round_trip(open_fill: Optional[Dict[str, Any]], close_fill: Optional[Dict[str, Any]],
+                     qty: float, open_date: Optional[str],
+                     open_price: Optional[float]) -> Dict[str, Any]:
+    """往復1行を組み立てる (issue #421)。
+
+    open 側 (建て) と close 側 (決済) のどちらかが欠ける行もある:
+      - close_fill=None: 未決済で残っている建玉 → 「保有中」行
+      - open_fill=None:  建玉を特定できない決済 (建情報なしの信用返済、期首持越し)
+                         → 売りのみ行
+    損益は呼び出し側が close_fill の fill_pl / fill_return_pct から埋めるか、
+    現物 FIFO のようにロット単位で計算した値を渡す。
+    """
+    close_date = close_fill.get("trade_date") if close_fill else None
+    return {
+        "open_date": open_date,
+        "close_date": close_date,
+        "qty": qty,
+        "open_price": open_price,
+        "close_price": close_fill.get("price") if close_fill else None,
+        "hold_days": _round_trip_days(open_date, close_date),
+        "broker": (close_fill or open_fill or {}).get("broker", ""),
+        "closed": close_fill is not None,
+        "genbiki": False,  # 現引による現物への振替 (決済ではないので損益を出さない)
+        "unrealized": False,  # pl が含み損益 (未確定) かどうか
+        "pl": None,
+        "return_pct": None,
+    }
+
+
+def _match_open_lots(open_pool: List[Dict[str, Any]], tate_date: Optional[str],
+                     tate_price: Optional[float],
+                     broker: Optional[str] = None) -> List[Dict[str, Any]]:
+    """建日・建単価に一致する建玉を古い順に返す (issue #421)。
+
+    証券会社CSVの建玉情報 (tate_date/tate_price) で引き当てる。同じ建日に複数の
+    新規がある場合は建単価でも絞る (4258 の 02-13 に 3,200/3,100 の2本があるなど)。
+
+    **建情報が指定されているのに一致しなければ未照合として扱う** (空リストを返す)。
+    別ロットへフォールバックすると、CSVが指定した建玉ではない玉が「決済済み」になり、
+    実際に残っている建玉が逆になる (PRレビュー指摘)。建情報が無い場合のみ、残っている
+    建玉を古い順に返す (FIFO フォールバック)。
+
+    broker を渡すと同じ証券会社の建玉だけを対象にする。同一銘柄を複数社で同時保有
+    しているとき (実データで22エピソード)、他社の建玉と突き合わせると誤った建値の
+    リターンを出し、残っている証券会社も逆になる (PRレビュー指摘)。
+    他社へのフォールバックはしない — 建玉が取込範囲外の決済が別の証券会社の建玉を
+    消費すると、架空の損益を出したうえでその建玉の保有株数まで消えるため。
+    """
+    pool = [c for c in open_pool if c["remain"] > 0
+            and (not broker or c["fill"].get("broker") == broker)]
+    if tate_date is None and tate_price is None:
+        return pool  # 建情報なし → FIFO で古い順に充当
+    return [c for c in pool
+            if (not tate_date or c["fill"].get("trade_date") == tate_date)
+            and (tate_price is None or c["fill"].get("price") == tate_price)]
+
+
+def _consume_open_lots(open_pool: List[Dict[str, Any]], qty: float,
+                       tate_date: Optional[str] = None,
+                       tate_price: Optional[float] = None,
+                       broker: Optional[str] = None) -> List[tuple]:
+    """建玉プールから qty 株を引き当て、[(建玉fill, 引当株数), ...] を返す (issue #421)。
+
+    1本の返済が複数ロットにまたがる場合は順に按分する。先頭ロットから全数量を
+    引くと残数が負になり、決済済みのロットが「保有中」として残る。
+    引き当てきれなかった分 (取込範囲外の建玉など) は返り値に含めない。
+    broker を渡すと同じ証券会社の建玉を優先して引き当てる。
+    """
+    taken: List[tuple] = []
+    remain = qty
+    for cand in _match_open_lots(open_pool, tate_date, tate_price, broker):
+        if remain <= 0:
+            break
+        take = min(remain, cand["remain"])
+        cand["remain"] -= take
+        remain -= take
+        taken.append((cand["fill"], take))
+    if remain > 0 and (tate_date is not None or tate_price is not None):
+        # 建情報に一致する建玉が取込範囲内で足りない。建玉の総数は釣り合っているのに
+        # CSVの建情報が実際の建玉と対応しないことがある (4377: 建1000/返済900+現引100
+        # で差0なのに、一部の返済の tate_date が別の建玉を指す)。ここで消費しないと
+        # 決済済みの建玉が「保有中」として残る。**建値は CSV の値を使う**ので、
+        # どのロットを消費したかは表示に影響しない。
+        for cand in _match_open_lots(open_pool, None, None, broker):
+            if remain <= 0:
+                break
+            take = min(remain, cand["remain"])
+            cand["remain"] -= take
+            remain -= take
+    return taken
+
+
+def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """信用エピソードの往復行を作る (issue #421)。
+
+    信用返済 fill は証券会社CSV由来の tate_date / tate_price を持つため、
+    **FIFO 等で推定せずこの対応をそのまま使う**。これが証券会社が実際に決済した
+    建玉の対応であり、推定するとリターンが実態とずれる (4258 の 07/06 返済は
+    04/08 建 → 89日 → +54.43% だが、FIFO では 06/16 の返済に当たってしまう)。
+
+    建情報を持たない返済 (SBI 等で 17/487 本) は建玉を特定できないため、
+    推測でペアを作らず売りのみ行として出す (誤った建値でリターンを出すほうが有害)。
+    ただし建玉自体は消費するので、決済済みの玉が「保有中」行として残ることはない。
+    """
+    is_short = ep.get("is_short", False)
+    settle_side = "buy" if is_short else "sell"
+    # 建玉側 fill を建日ごとに残株数付きで保持し、返済の tate_date と突き合わせる。
+    # 同じ建日に複数の新規がある場合は建単価でも絞る (4258 02/13 の 3,200/3,100 など)。
+    open_pool: List[Dict[str, Any]] = []
+    for f in ep["fills"]:
+        if f["side"] != settle_side and f.get("trade_kind", "").startswith("信用新規"):
+            open_pool.append({"fill": f, "remain": f["qty"]})
+
+    rows: List[Dict[str, Any]] = []
+    for f in ep["fills"]:
+        # 現引は信用建玉を現物へ振り替える取引。side="buy" なので返済側の分岐に
+        # 入らないが、建玉は消える。ここで建玉を減らさないと振替済みの玉が
+        # 「保有中」行として残り続ける (4258 の 2025-03-19 建玉が該当)。
+        # 損益は現物側へ持ち越すため、信用側では計上しない。
+        if f.get("trade_kind") == "現引":
+            # 現引もCSVの建玉情報を持つ (6366 の 05-11 現引は 04-22 建玉が対象)。
+            # 先頭から機械的に消費すると別の建玉を消してしまい、実際に振り替えた
+            # 玉が「保有中」行として残る。建情報があればそれで引き当てる。
+            taken = _consume_open_lots(open_pool, f["qty"], f.get("tate_date"),
+                                       f.get("tate_price"), f.get("broker"))
+            for cf, take in taken:
+                row = _make_round_trip(cf, f, take,
+                                       f.get("tate_date") or cf.get("trade_date"),
+                                       f.get("tate_price") or cf.get("price"))
+                row["genbiki"] = True  # 決済ではなく現物への振替
+                rows.append(row)
+            remain = f["qty"] - sum(t for _, t in taken)
+            if remain > 0:
+                # 対応する建玉が取込範囲に無い現引 (期首持越し玉の現引)
+                row = _make_round_trip(None, f, remain, f.get("tate_date"),
+                                       f.get("tate_price"))
+                row["genbiki"] = True
+                rows.append(row)
+            continue
+        if f["side"] != settle_side:
+            continue
+        tate_date = f.get("tate_date")
+        tate_price = f.get("tate_price")
+        # 建情報 (tate_date/tate_price) が無い返済は建玉を特定できない (SBI 等で
+        # 17/487 本)。ただし取込範囲内に建玉が残っていれば、その玉を決済したのは
+        # 明らかなので FIFO で引き当てて建玉を消費する。消費しないと決済済みの玉が
+        # 「保有中」行として残り続ける (9984 売建の 2026-05-22 返済買が該当)。
+        # 建値・保有日数は推測せず伏せる (誤った建値でリターンを出すほうが有害)。
+        if tate_date is None and tate_price is None:
+            # 建玉は消費するが建値は伏せる
+            _consume_open_lots(open_pool, f["qty"], broker=f.get("broker"))
+            row = _make_round_trip(None, f, f["qty"], None, None)
+            if "fill_pl" in f:
+                row["pl"] = f["fill_pl"]
+            rows.append(row)
+            continue
+        # 対応する建玉 fill を建日 (+建単価) で引き当て、残株数を減らす。
+        # 表示上の建日はCSVの tate_date を正とする (建玉 fill が取込範囲外でも出せる)。
+        # 同じ建日・建単価の新規が複数本あり返済が先頭ロットの残数を超える場合は、
+        # 候補ロットへ順に按分する。先頭から全数量を引くと残数が負になり、後続ロットが
+        # 決済済みなのに「保有中」として残る (PRレビュー指摘)。
+        matched = _consume_open_lots(open_pool, f["qty"], tate_date, tate_price,
+                                     f.get("broker"))
+        first = matched[0][0] if matched else None
+        open_price = tate_price if tate_price is not None else (
+            first["price"] if first else None)
+        open_date = tate_date or (first.get("trade_date") if first else None)
+        row = _make_round_trip(first, f, f["qty"], open_date, open_price)
+        # 損益は既存の fill 単位計算をそのまま使う (計算ロジックを二重化しない)。
+        if "fill_pl" in f:
+            row["pl"] = f["fill_pl"]
+        if "fill_return_pct" in f:
+            row["return_pct"] = f["fill_return_pct"]
+        if "hold_days" in f:
+            row["hold_days"] = f["hold_days"]
+        rows.append(row)
+
+    # 決済されずに残った建玉は「保有中」行
+    for cand in open_pool:
+        if cand["remain"] > 0:
+            cf = cand["fill"]
+            rows.append(_make_round_trip(cf, None, cand["remain"],
+                                         cf.get("trade_date"), cf.get("price")))
+    return rows
+
+
+def _oldest_lot(lots: List[Dict[str, Any]],
+                broker: Optional[str]) -> Optional[Dict[str, Any]]:
+    """FIFO キューから充当対象のロットを選ぶ (issue #421)。
+
+    同じ証券会社の最古ロットを返す。無ければ None (他社ロットへは充当しない)。
+    他社へフォールバックすると、買付が取込範囲外の売却が別の証券会社の建玉を
+    消費し、架空の損益を出したうえでその建玉の保有株数まで消える
+    (楽天100株保有 + SBI売却のみ → 楽天の建値で +150,000円 と誤表示、PRレビュー指摘)。
+    lots は買付順に並んでいる前提 (先頭が最古)。
+    """
+    for lot in lots:
+        if not broker or lot["fill"].get("broker") == broker:
+            return lot
+    return None
+
+
+def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """現物エピソードの往復行を FIFO (先入先出) で作る (issue #421)。
+
+    現物の売り fill には建単価・建日が無く、どの買いに対応するかCSVに情報が無い。
+    FIFO で古い買いから順に充当する (税務・証券会社の考え方に近く、ロットごとの
+    リターンが実際の建値を反映するため)。
+
+    **注意**: エピソードの実現損益 (_episode_pl_from_round) は平均取得単価法で
+    計算されており、部分売却で建玉が残るラウンドでは往復行の損益合計と一致しない
+    (100@100買→100@200買→100@150売100株 で FIFO +5,000 / 平均法 0)。
+    全株売却されれば総額は一致する。振り返り目的では実際の建値を反映する FIFO を
+    優先し、不一致は許容する方針 (issue #421)。
+    """
+    lots: List[Dict[str, Any]] = []  # FIFO キュー: {fill, remain}
+    rows: List[Dict[str, Any]] = []
+    for f in ep["fills"]:
+        if f["side"] == "buy":
+            lots.append({"fill": f, "remain": f["qty"]})
+            continue
+        # 売り: 古いロットから充当。1つの売りが複数ロットにまたがる場合は行を分ける。
+        # 同一銘柄を複数社で同時保有していると、他社の買いロットと突き合わせて誤った
+        # 建値のリターンを出してしまう (実データで7行該当)。同じ証券会社のロットを
+        # 優先し、無ければ従来どおり最古のロットへ充当する (PRレビュー指摘)。
+        remain = f["qty"]
+        while remain > 0 and lots:
+            lot = _oldest_lot(lots, f.get("broker"))
+            if lot is None:
+                break  # 同社の買いロットが無い → 建玉不明の売りとして下で処理
+            take = min(remain, lot["remain"])
+            bf = lot["fill"]
+            row = _make_round_trip(bf, f, take, bf.get("trade_date"), bf.get("price"))
+            cost = bf["price"] * take
+            profit = (f["price"] - bf["price"]) * take
+            row["pl"] = round(profit)
+            row["return_pct"] = (profit / cost * 100) if cost else None
+            rows.append(row)
+            remain -= take
+            lot["remain"] -= take
+            if lot["remain"] <= 0:
+                lots.remove(lot)
+        if remain > 0:
+            # 充当できる買いが無い (取込範囲外で取得した株の売却など)
+            rows.append(_make_round_trip(None, f, remain, None, None))
+
+    # 売られずに残ったロットは「保有中」行
+    for lot in lots:
+        if lot["remain"] > 0:
+            bf = lot["fill"]
+            rows.append(_make_round_trip(bf, None, lot["remain"],
+                                         bf.get("trade_date"), bf.get("price")))
+    return rows
+
+
+def _set_unrealized(open_rows: List[Dict[str, Any]], current_price: Optional[float],
+                    is_short: bool) -> None:
+    """保有中ロットに含み損益を設定する (issue #421)。
+
+    残数量 × (現在値 - 建値)。売建 (空売り) は「高く売って安く買い戻す」ので符号が逆。
+    現在値が取れない、建値が不明 (取込範囲外の建玉) の行は None のままにする。
+    エピソード行の含み損益 (_episode_open_pl) と定義を揃えてある。
+    """
+    if current_price is None:
+        return
+    for r in open_rows:
+        if r["open_price"] is None or not r["open_price"]:
+            continue
+        diff = ((r["open_price"] - current_price) if is_short
+                else (current_price - r["open_price"]))
+        r["pl"] = round(diff * r["qty"])
+        r["return_pct"] = diff / r["open_price"] * 100
+        r["unrealized"] = True  # 確定損益ではなく評価額 (テンプレートで淡く出す)
+
+
+def build_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """エピソードの fill を「買→売」の往復1行に畳む (issue #421)。
+
+    実際に下した売買判断の単位で明細を読めるようにするのが目的。
+    信用は証券会社CSVの建玉対応 (tate_date/tate_price)、現物は FIFO で対応づける。
+
+    並び順: 保有中 (未決済) を先頭に、続いて決済済みを決済日の降順 (最新が上)。
+    保有中はまだ決済日が無く「最新」の側なので、決済済みより上に置く。
+    保有中どうし・決済済みどうしは買付日/決済日の降順。
+
+    保有中ロットには現在値 (ep["current_price"]) から含み損益を付ける。
+    エピソード行の含み損益と定義を揃える (残数量 × (現在値 - 建値)、売建は符号が逆)。
+    """
+    if ep["kind"] == "信用":
+        rows = _build_shinyo_round_trips(ep)
+    else:
+        rows = _build_genbutsu_round_trips(ep)
+    closed = [r for r in rows if r["closed"]]
+    open_rows = [r for r in rows if not r["closed"]]
+    _set_unrealized(open_rows, ep.get("current_price"), ep.get("is_short", False))
+    closed.sort(key=lambda r: (r["close_date"] or "", r["open_date"] or ""), reverse=True)
+    open_rows.sort(key=lambda r: r["open_date"] or "", reverse=True)
+    return open_rows + closed
 
 
 def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

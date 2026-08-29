@@ -1073,3 +1073,32 @@ class TestSplitAdjustment:
         assert not genbutsu["2025-01-01"].get("split_suspect")  # 無関係ラウンドは隠さない
         assert genbutsu["2025-01-01"]["pl"]["profit_amount"] == 10000
         assert genbutsu["2025-06-01"]["split_suspect"] is True  # 影響を受けるラウンドのみ
+
+
+class TestRoundTripsAgreeWithOpenPl:
+    """往復行の残株数と open_pl.held_qty が食い違わないこと (issue #421)。
+
+    保有株数は独立に2回導出される: open_pl は建玉をスカラーで追跡し、往復行は
+    ロット単位で追跡する。画面ではサマリー行が open_pl.held_qty を、展開した明細が
+    往復行の「保有中」行を出すため、両者がずれると同じ画面で数字が矛盾する。
+    新しい trade_kind を足したときに片方だけ直す事故を防ぐ。
+    """
+
+    def test_open_qty_matches_between_round_trips_and_open_pl(self, db_path):
+        # 信用: 200建 → 100返済 (100株残) / 現物: 100買 → 買増100 → 50売 (150株残)
+        _add(db_path, "1234", "2026-04-08", "buy", 200, 3050.0,
+             trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "1234", "2026-07-06", "sell", 100, 4710.0, trade_kind="信用返済",
+             tate_price=3050.0, tate_date="2026-04-08", seq_salt="b")
+        _add(db_path, "5678", "2026-05-01", "buy", 100, 1000.0, seq_salt="c")
+        _add(db_path, "5678", "2026-05-10", "buy", 100, 1200.0, seq_salt="d")
+        _add(db_path, "5678", "2026-06-01", "sell", 50, 1300.0, seq_salt="e")
+
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        open_eps = [e for e in eps if not e["closed"]]
+        assert open_eps, "保有中エピソードが無いとこのテストは意味がない"
+        for ep in open_eps:
+            rt_open = sum(r["qty"] for r in helpers.build_round_trips(ep)
+                          if not r["closed"])
+            assert rt_open == ep["open_pl"]["held_qty"], (
+                f"{ep['code_s']} {ep['kind']}: 往復行={rt_open} open_pl={ep['open_pl']['held_qty']}")

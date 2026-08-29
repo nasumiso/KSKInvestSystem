@@ -3820,3 +3820,180 @@ def test_calc_trade_summary(pls, checks):
 
 def test_calc_trade_summary_empty_returns_none():
     assert helpers.calc_trade_summary([]) is None
+
+
+# --- 往復行 (買→売の1行化, issue #421) ---------------------------------------
+
+def _ep(kind, fills, closed=True, is_short=False):
+    """往復行テスト用の最小エピソード。build_round_trips は fills だけ見る。"""
+    return {"kind": kind, "fills": fills, "closed": closed, "is_short": is_short}
+
+
+def _f(date_s, side, qty, price, trade_kind="", **kw):
+    f = {"trade_date": date_s, "side": side, "qty": qty, "price": price,
+         "trade_kind": trade_kind, "broker": "楽天"}
+    f.update(kw)
+    return f
+
+
+@pytest.mark.parametrize("ep, expected", [
+    # 信用の1:1往復: CSVの建玉情報 (tate_date/tate_price) から建値・保有日数が入る
+    (_ep("信用", [
+        _f("2026-04-08", "buy", 100, 3050.0, "信用新規"),
+        _f("2026-07-06", "sell", 100, 4710.0, "信用返済",
+           tate_price=3050.0, tate_date="2026-04-08", fill_pl=166000,
+           fill_return_pct=54.43, hold_days=89),
+     ]),
+     [("2026-04-08", "2026-07-06", 100, 3050.0, 4710.0, 89, 166000)]),
+    # 買い1本が複数売りに分割される (4258 04/08 200株相当)。
+    # 100株は決済済み、残り100株は保有中行になる。
+    # 保有中はまだ決済していない=最新なので決済済みより上に並ぶ。
+    (_ep("信用", [
+        _f("2026-04-08", "buy", 200, 3050.0, "信用新規"),
+        _f("2026-07-06", "sell", 100, 4710.0, "信用返済",
+           tate_price=3050.0, tate_date="2026-04-08", fill_pl=166000, hold_days=89),
+     ], closed=False),
+     [("2026-04-08", None, 100, 3050.0, None, None, None),
+      ("2026-04-08", "2026-07-06", 100, 3050.0, 4710.0, 89, 166000)]),
+    # 現物の FIFO 充当 (6479相当): 古い買いから順に売りへ充当する
+    (_ep("現物", [
+        _f("2026-02-26", "buy", 100, 3350.0, "現物"),
+        _f("2026-03-04", "buy", 100, 3025.0, "現物"),
+        _f("2026-06-12", "sell", 100, 4408.0, "現物"),
+        _f("2026-08-21", "sell", 100, 3359.0, "現物"),
+     ]),
+     [("2026-03-04", "2026-08-21", 100, 3025.0, 3359.0, 170, 33400),
+      ("2026-02-26", "2026-06-12", 100, 3350.0, 4408.0, 106, 105800)]),
+    # 建情報なしの信用返済は建値・保有日数を推測せず伏せる (売りのみ行)。
+    # ただし建玉は消費するので「保有中」行は残らない (9984 売建の返済買が該当)。
+    (_ep("信用", [
+        _f("2026-04-08", "buy", 100, 3050.0, "信用新規"),
+        _f("2026-08-25", "sell", 100, 4230.0, "信用返済", settle_pl=-2760, fill_pl=-2760),
+     ]),
+     [(None, "2026-08-25", 100, None, 4230.0, None, -2760)]),
+    # 現引はCSVの建玉情報で引き当てる。先頭から機械的に消費すると別の建玉を消し、
+    # 実際に振り替えた玉が「保有中」行として残ってしまう (6366 相当)。
+    (_ep("信用", [
+        _f("2026-04-14", "buy", 400, 1125.0, "信用新規"),
+        _f("2026-04-22", "buy", 300, 1060.0, "信用新規"),
+        _f("2026-05-11", "buy", 300, 1061.62, "現引",
+           tate_price=1060.0, tate_date="2026-04-22"),
+        _f("2026-05-11", "sell", 400, 960.0, "信用返済",
+           tate_price=1125.0, tate_date="2026-04-14", fill_pl=-66000, hold_days=27),
+     ]),
+     # 同日決済なので建日の降順 (04-22 の現引が先、04-14 の返済が後)
+     [("2026-04-22", "2026-05-11", 300, 1060.0, 1061.62, 19, None),
+      ("2026-04-14", "2026-05-11", 400, 1125.0, 960.0, 27, -66000)]),
+])
+def test_build_round_trips(ep, expected):
+    rows = helpers.build_round_trips(ep)
+    got = [(r["open_date"], r["close_date"], r["qty"], r["open_price"],
+            r["close_price"], r["hold_days"], r["pl"]) for r in rows]
+    assert got == expected
+
+
+def test_build_round_trips_genbutsu_partial_sell_diverges_from_average_cost():
+    """現物の未クローズ部分売却では FIFO と平均取得単価法が一致しない (issue #421)。
+
+    100@100買 → 100@200買 → 100@150売 (100株残) で FIFO +5,000 / 平均法 0。
+    これは意図的な差異なので、一致を期待するテストにはしない。全株売却されれば
+    総額は一致する (test_build_round_trips の現物ケースが実現損益と一致する)。
+    """
+    ep = _ep("現物", [
+        _f("2026-01-01", "buy", 100, 100.0, "現物"),
+        _f("2026-01-02", "buy", 100, 200.0, "現物"),
+        _f("2026-01-03", "sell", 100, 150.0, "現物"),
+    ], closed=False)
+    rows = helpers.build_round_trips(ep)
+    closed = [r for r in rows if r["closed"]]
+    assert sum(r["pl"] for r in closed) == 5000  # FIFO: 100円の玉を150円で売った
+    # 残った100株 (200円の玉) は保有中行として出る
+    assert [(r["open_price"], r["qty"]) for r in rows if not r["closed"]] == [(200.0, 100)]
+
+
+@pytest.mark.parametrize("ep, expected", [
+    # 返済が複数ロットにまたがる場合は按分する (PR #422 レビュー指摘)。
+    # 先頭ロットから全数量を引くと残数が負になり、決済済みの2本目が
+    # 「保有中」として残ってしまう。
+    (_ep("信用", [
+        _f("2026-01-05", "buy", 100, 1000.0, "信用新規"),
+        _f("2026-01-05", "buy", 100, 1000.0, "信用新規"),
+        _f("2026-02-05", "sell", 200, 1200.0, "信用返済",
+           tate_price=1000.0, tate_date="2026-01-05", fill_pl=40000),
+     ]),
+     [("2026-01-05", "2026-02-05", 200, 1000.0, 1200.0, 31, 40000)]),
+    # 現物FIFOは同じ証券会社のロットを優先する (PR #422 レビュー指摘)。
+    # 他社の買いと突き合わせると誤った建値のリターンになる。
+    # SBI売(2,500)はSBI買(2,000)と、楽天売(1,500)は楽天買(1,000)と対応する。
+    (_ep("現物", [
+        _f("2026-01-05", "buy", 100, 1000.0, "現物", broker="楽天"),
+        _f("2026-01-06", "buy", 100, 2000.0, "現物", broker="SBI"),
+        _f("2026-02-05", "sell", 100, 2500.0, "現物", broker="SBI"),
+        _f("2026-02-06", "sell", 100, 1500.0, "現物", broker="楽天"),
+     ]),
+     [("2026-01-05", "2026-02-06", 100, 1000.0, 1500.0, 32, 50000),
+      ("2026-01-06", "2026-02-05", 100, 2000.0, 2500.0, 30, 50000)]),
+])
+def test_build_round_trips_lot_allocation(ep, expected):
+    rows = helpers.build_round_trips(ep)
+    got = [(r["open_date"], r["close_date"], r["qty"], r["open_price"],
+            r["close_price"], r["hold_days"], r["pl"]) for r in rows]
+    assert got == expected
+
+
+def test_build_round_trips_no_cross_broker_fallback():
+    """同社の建玉が無い売却は他社ロットを消費しない (PR #422 レビュー指摘)。
+
+    買付が取込範囲外の売却が別の証券会社の建玉を消費すると、架空の損益を出した
+    うえでその建玉の保有株数まで消える。楽天100株保有 + SBI売却のみ のケースで、
+    フォールバックすると楽天の建値で +150,000円 と誤表示していた。
+    """
+    ep = _ep("現物", [
+        _f("2026-01-05", "buy", 100, 1000.0, "現物", broker="楽天"),
+        _f("2026-02-05", "sell", 100, 2500.0, "現物", broker="SBI"),
+    ], closed=False)
+    rows = helpers.build_round_trips(ep)
+    # 楽天の100株は保有中のまま / SBI売却は建値を伏せた売りのみ行
+    assert [(r["open_date"], r["open_price"], r["qty"], r["closed"], r["pl"])
+            for r in rows] == [
+        ("2026-01-05", 1000.0, 100, False, None),
+        (None, None, 100, True, None),
+    ]
+
+
+def test_build_round_trips_open_rows_get_unrealized_pl():
+    """保有中ロットに含み損益を設定する (PR #422 レビュー指摘)。
+
+    残数量 × (現在値 - 建値)。エピソード行の含み損益と定義を揃える。
+    確定損益と区別できるよう unrealized=True を立てる。
+    """
+    ep = _ep("現物", [
+        _f("2026-01-05", "buy", 100, 1000.0, "現物"),
+        _f("2026-01-06", "buy", 100, 2000.0, "現物"),
+    ], closed=False)
+    ep["current_price"] = 3000.0
+    rows = helpers.build_round_trips(ep)
+    assert [(r["open_price"], r["pl"], round(r["return_pct"]), r["unrealized"])
+            for r in rows] == [
+        (2000.0, 100000, 50, True),
+        (1000.0, 200000, 200, True),
+    ]
+
+
+def test_build_round_trips_keeps_csv_tate_price_when_lot_missing():
+    """建情報が一致する建玉が無くても、建値はCSVの値を使う (PR #422 レビュー指摘)。
+
+    別ロットを「CSVが指定した建玉」として割り当てると、実際に残る建玉が逆になる。
+    建玉が余っていれば数量だけ消費するが、表示する建値はCSV由来のままにする。
+    """
+    ep = _ep("信用", [
+        _f("2026-02-01", "buy", 200, 2000.0, "信用新規"),
+        _f("2026-03-01", "sell", 100, 1200.0, "信用返済",
+           tate_price=1000.0, tate_date="2026-01-05", fill_pl=20000),
+    ], closed=False)
+    rows = helpers.build_round_trips(ep)
+    # 決済行の建値は CSV の 1,000 (02-01 の 2,000 を流用しない)
+    closed = [r for r in rows if r["closed"]]
+    assert [(r["open_date"], r["open_price"]) for r in closed] == [("2026-01-05", 1000.0)]
+    # 02-01 の建玉は 100株が保有中として残る
+    assert [(r["open_date"], r["qty"]) for r in rows if not r["closed"]] == [("2026-02-01", 100)]
