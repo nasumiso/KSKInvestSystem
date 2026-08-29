@@ -3909,3 +3909,33 @@ def test_build_round_trips_genbutsu_partial_sell_diverges_from_average_cost():
     assert sum(r["pl"] for r in closed) == 5000  # FIFO: 100円の玉を150円で売った
     # 残った100株 (200円の玉) は保有中行として出る
     assert [(r["open_price"], r["qty"]) for r in rows if not r["closed"]] == [(200.0, 100)]
+
+
+@pytest.mark.parametrize("ep, expected", [
+    # 返済が複数ロットにまたがる場合は按分する (PR #422 レビュー指摘)。
+    # 先頭ロットから全数量を引くと残数が負になり、決済済みの2本目が
+    # 「保有中」として残ってしまう。
+    (_ep("信用", [
+        _f("2026-01-05", "buy", 100, 1000.0, "信用新規"),
+        _f("2026-01-05", "buy", 100, 1000.0, "信用新規"),
+        _f("2026-02-05", "sell", 200, 1200.0, "信用返済",
+           tate_price=1000.0, tate_date="2026-01-05", fill_pl=40000),
+     ]),
+     [("2026-01-05", "2026-02-05", 200, 1000.0, 1200.0, 31, 40000)]),
+    # 現物FIFOは同じ証券会社のロットを優先する (PR #422 レビュー指摘)。
+    # 他社の買いと突き合わせると誤った建値のリターンになる。
+    # SBI売(2,500)はSBI買(2,000)と、楽天売(1,500)は楽天買(1,000)と対応する。
+    (_ep("現物", [
+        _f("2026-01-05", "buy", 100, 1000.0, "現物", broker="楽天"),
+        _f("2026-01-06", "buy", 100, 2000.0, "現物", broker="SBI"),
+        _f("2026-02-05", "sell", 100, 2500.0, "現物", broker="SBI"),
+        _f("2026-02-06", "sell", 100, 1500.0, "現物", broker="楽天"),
+     ]),
+     [("2026-01-05", "2026-02-06", 100, 1000.0, 1500.0, 32, 50000),
+      ("2026-01-06", "2026-02-05", 100, 2000.0, 2500.0, 30, 50000)]),
+])
+def test_build_round_trips_lot_allocation(ep, expected):
+    rows = helpers.build_round_trips(ep)
+    got = [(r["open_date"], r["close_date"], r["qty"], r["open_price"],
+            r["close_price"], r["hold_days"], r["pl"]) for r in rows]
+    assert got == expected

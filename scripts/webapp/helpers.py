@@ -5265,20 +5265,55 @@ def _make_round_trip(open_fill: Optional[Dict[str, Any]], close_fill: Optional[D
 
 
 def _match_open_lots(open_pool: List[Dict[str, Any]], tate_date: Optional[str],
-                     tate_price: Optional[float]) -> List[Dict[str, Any]]:
+                     tate_price: Optional[float],
+                     broker: Optional[str] = None) -> List[Dict[str, Any]]:
     """建日・建単価に一致する建玉を古い順に返す (issue #421)。
 
     証券会社CSVの建玉情報 (tate_date/tate_price) で引き当てる。同じ建日に複数の
     新規がある場合は建単価でも絞る (4258 の 02-13 に 3,200/3,100 の2本があるなど)。
     建情報が無ければ残っている建玉を古い順に返す (FIFO フォールバック)。
+
+    broker を渡すと同じ証券会社の建玉だけを対象にする。同一銘柄を複数社で同時保有
+    しているとき (実データで22エピソード)、他社の建玉と突き合わせると誤った建値の
+    リターンを出し、残っている証券会社も逆になる (PRレビュー指摘)。
     """
-    matched = [c for c in open_pool if c["remain"] > 0
-               and (not tate_date or c["fill"].get("trade_date") == tate_date)
-               and (tate_price is None or c["fill"].get("price") == tate_price)]
-    if matched:
-        return matched
-    # 建情報で引き当てられない場合も、残っている建玉は消費する (幽霊の保有中行を防ぐ)
-    return [c for c in open_pool if c["remain"] > 0]
+    def _avail(strict_broker: bool) -> List[Dict[str, Any]]:
+        return [c for c in open_pool if c["remain"] > 0
+                and (not strict_broker or c["fill"].get("broker") == broker)]
+
+    for pool in ([_avail(True), _avail(False)] if broker else [_avail(False)]):
+        matched = [c for c in pool
+                   if (not tate_date or c["fill"].get("trade_date") == tate_date)
+                   and (tate_price is None or c["fill"].get("price") == tate_price)]
+        if matched:
+            return matched
+        # 建情報で引き当てられない場合も、残っている建玉は消費する (幽霊の保有中行を防ぐ)
+        if pool:
+            return pool
+    return []
+
+
+def _consume_open_lots(open_pool: List[Dict[str, Any]], qty: float,
+                       tate_date: Optional[str] = None,
+                       tate_price: Optional[float] = None,
+                       broker: Optional[str] = None) -> List[tuple]:
+    """建玉プールから qty 株を引き当て、[(建玉fill, 引当株数), ...] を返す (issue #421)。
+
+    1本の返済が複数ロットにまたがる場合は順に按分する。先頭ロットから全数量を
+    引くと残数が負になり、決済済みのロットが「保有中」として残る。
+    引き当てきれなかった分 (取込範囲外の建玉など) は返り値に含めない。
+    broker を渡すと同じ証券会社の建玉を優先して引き当てる。
+    """
+    taken: List[tuple] = []
+    remain = qty
+    for cand in _match_open_lots(open_pool, tate_date, tate_price, broker):
+        if remain <= 0:
+            break
+        take = min(remain, cand["remain"])
+        cand["remain"] -= take
+        remain -= take
+        taken.append((cand["fill"], take))
+    return taken
 
 
 def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -5312,19 +5347,15 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
             # 現引もCSVの建玉情報を持つ (6366 の 05-11 現引は 04-22 建玉が対象)。
             # 先頭から機械的に消費すると別の建玉を消してしまい、実際に振り替えた
             # 玉が「保有中」行として残る。建情報があればそれで引き当てる。
-            remain = f["qty"]
-            for cand in _match_open_lots(open_pool, f.get("tate_date"), f.get("tate_price")):
-                if remain <= 0:
-                    break
-                take = min(remain, cand["remain"])
-                cand["remain"] -= take
-                remain -= take
-                cf = cand["fill"]
+            taken = _consume_open_lots(open_pool, f["qty"], f.get("tate_date"),
+                                       f.get("tate_price"), f.get("broker"))
+            for cf, take in taken:
                 row = _make_round_trip(cf, f, take,
                                        f.get("tate_date") or cf.get("trade_date"),
                                        f.get("tate_price") or cf.get("price"))
                 row["genbiki"] = True  # 決済ではなく現物への振替
                 rows.append(row)
+            remain = f["qty"] - sum(t for _, t in taken)
             if remain > 0:
                 # 対応する建玉が取込範囲に無い現引 (期首持越し玉の現引)
                 row = _make_round_trip(None, f, remain, f.get("tate_date"),
@@ -5342,13 +5373,8 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
         # 「保有中」行として残り続ける (9984 売建の 2026-05-22 返済買が該当)。
         # 建値・保有日数は推測せず伏せる (誤った建値でリターンを出すほうが有害)。
         if tate_date is None and tate_price is None:
-            remain = f["qty"]
-            for cand in _match_open_lots(open_pool, None, None):
-                if remain <= 0:
-                    break
-                take = min(remain, cand["remain"])
-                cand["remain"] -= take
-                remain -= take
+            # 建玉は消費するが建値は伏せる
+            _consume_open_lots(open_pool, f["qty"], broker=f.get("broker"))
             row = _make_round_trip(None, f, f["qty"], None, None)
             if "fill_pl" in f:
                 row["pl"] = f["fill_pl"]
@@ -5356,15 +5382,16 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
             continue
         # 対応する建玉 fill を建日 (+建単価) で引き当て、残株数を減らす。
         # 表示上の建日はCSVの tate_date を正とする (建玉 fill が取込範囲外でも出せる)。
-        candidates = _match_open_lots(open_pool, tate_date, tate_price)
-        matched = candidates[0] if candidates else None
-        if matched is not None:
-            matched["remain"] -= f["qty"]
+        # 同じ建日・建単価の新規が複数本あり返済が先頭ロットの残数を超える場合は、
+        # 候補ロットへ順に按分する。先頭から全数量を引くと残数が負になり、後続ロットが
+        # 決済済みなのに「保有中」として残る (PRレビュー指摘)。
+        matched = _consume_open_lots(open_pool, f["qty"], tate_date, tate_price,
+                                     f.get("broker"))
+        first = matched[0][0] if matched else None
         open_price = tate_price if tate_price is not None else (
-            matched["fill"]["price"] if matched else None)
-        open_date = tate_date or (matched["fill"].get("trade_date") if matched else None)
-        row = _make_round_trip(matched["fill"] if matched else None, f, f["qty"],
-                               open_date, open_price)
+            first["price"] if first else None)
+        open_date = tate_date or (first.get("trade_date") if first else None)
+        row = _make_round_trip(first, f, f["qty"], open_date, open_price)
         # 損益は既存の fill 単位計算をそのまま使う (計算ロジックを二重化しない)。
         if "fill_pl" in f:
             row["pl"] = f["fill_pl"]
@@ -5381,6 +5408,19 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
             rows.append(_make_round_trip(cf, None, cand["remain"],
                                          cf.get("trade_date"), cf.get("price")))
     return rows
+
+
+def _oldest_lot(lots: List[Dict[str, Any]], broker: Optional[str]) -> Dict[str, Any]:
+    """FIFO キューから充当対象のロットを選ぶ (issue #421)。
+
+    同じ証券会社の最古ロットを優先し、無ければ全体の最古ロットを返す。
+    lots は買付順に並んでいる前提 (先頭が最古)。
+    """
+    if broker:
+        for lot in lots:
+            if lot["fill"].get("broker") == broker:
+                return lot
+    return lots[0]
 
 
 def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -5402,10 +5442,13 @@ def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
         if f["side"] == "buy":
             lots.append({"fill": f, "remain": f["qty"]})
             continue
-        # 売り: 古いロットから充当。1つの売りが複数ロットにまたがる場合は行を分ける
+        # 売り: 古いロットから充当。1つの売りが複数ロットにまたがる場合は行を分ける。
+        # 同一銘柄を複数社で同時保有していると、他社の買いロットと突き合わせて誤った
+        # 建値のリターンを出してしまう (実データで7行該当)。同じ証券会社のロットを
+        # 優先し、無ければ従来どおり最古のロットへ充当する (PRレビュー指摘)。
         remain = f["qty"]
         while remain > 0 and lots:
-            lot = lots[0]
+            lot = _oldest_lot(lots, f.get("broker"))
             take = min(remain, lot["remain"])
             bf = lot["fill"]
             row = _make_round_trip(bf, f, take, bf.get("trade_date"), bf.get("price"))
@@ -5417,7 +5460,7 @@ def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
             remain -= take
             lot["remain"] -= take
             if lot["remain"] <= 0:
-                lots.pop(0)
+                lots.remove(lot)
         if remain > 0:
             # 充当できる買いが無い (取込範囲外で取得した株の売却など)
             rows.append(_make_round_trip(None, f, remain, None, None))
