@@ -42,6 +42,7 @@ from webapp.helpers import (
     get_stock_data,
     list_portfolio_with_indicators,
     resolve_stock_name,
+    summarize_hold_positions,
 )
 
 portfolio_bp = Blueprint("portfolio", __name__)
@@ -185,6 +186,108 @@ def _sync_txt_safely() -> None:
         ps.sync_to_my_watch_list_txt()
     except Exception as e:
         flash(f"my_watch_list.txt 同期に失敗: {e}", "error")
+
+
+# issue #362: 目標レンジ上限を削った理由の表示名
+_EXPOSURE_MODIFIER_LABELS = {
+    "credit_eval_rate": "信用評価損益率が過熱",
+    "fng_jp": "日本版F&Gが過熱",
+}
+
+
+def _build_exposure_summary(total_position_value: float, cat_values: dict) -> Optional[dict]:
+    """運用比率と市場状態連動の目標レンジを組み立てる (issue #362)。
+
+    指標が揃わない日はガイドを出さない (None を返す) が、運用総額の表示は
+    呼び出し側でそのまま続ける。取得失敗でページを落とさないよう例外は握る。
+    """
+    try:
+        import exposure_guide
+        import market_state
+
+        from make_market_db import get_market_db
+
+        market_db = get_market_db()
+        index_states, _ = exposure_guide.read_index_states(market_db)
+        if not index_states:
+            return None
+        credit_eval_rate, _ = exposure_guide.read_credit_eval_rate()
+        fng_jp, _ = exposure_guide.read_fng_jp()
+        settings = ps.get_exposure_settings()
+        evaluation = exposure_guide.evaluate_exposure(
+            total_position_value,
+            cat_values,
+            index_states,
+            credit_eval_rate,
+            fng_jp,
+            settings,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if evaluation["state"] is None:
+        return None
+    # テンプレートで円換算を出すため、レンジの万円換算を添える
+    base_amount = evaluation["base_amount"]
+    evaluation["range_lower_man"] = (
+        int(round(evaluation["range_lower"] / 100 * base_amount / 10000))
+        if evaluation["range_lower"] is not None else None
+    )
+    evaluation["range_upper_man"] = (
+        int(round(evaluation["range_upper"] / 100 * base_amount / 10000))
+        if evaluation["range_upper"] is not None else None
+    )
+    evaluation["state_label"] = market_state.STATE_LABEL.get(
+        evaluation["state"], evaluation["state"]
+    )
+    evaluation["state_css"] = market_state.STATE_CSS_CLASS.get(evaluation["state"], "")
+    evaluation["modifier_labels"] = [
+        _EXPOSURE_MODIFIER_LABELS.get(name, name)
+        for name in evaluation["modifiers_applied"]
+    ]
+    evaluation.update(_exposure_bar_geometry(evaluation, settings))
+    return evaluation
+
+
+def _exposure_bar_geometry(evaluation: dict, settings: dict) -> dict:
+    """比率バーの描画位置 (0-100 の %) を算出する (issue #362)。
+
+    描画範囲は全ステートのレンジと現在比率を含むよう決め、針がバーから
+    はみ出さないようにする。過熱で削られた枠は元の上限まで別描画する。
+    """
+    ranges = settings.get("ranges") or {}
+    base_upper = (ranges.get(evaluation["state"]) or [None, None])[1]
+    # 全ステートのレンジ境界を描画範囲に含めることで、目盛りが日々のステート変化で
+    # 動かないようにする (針の位置を日毎に見比べられる)。実際に描く値
+    # (現在比率・適用中のレンジ・削る前の上限) も必ず含め、はみ出しを防ぐ。
+    bounds = [v for rng in ranges.values() for v in rng]
+    bounds += [evaluation["range_lower"], evaluation["range_upper"]]
+    ratio = evaluation.get("ratio_pct")
+    if ratio is not None:
+        bounds.append(ratio)
+    if base_upper is not None:
+        bounds.append(base_upper)
+    lo, hi = min(bounds), max(bounds)
+    margin = max((hi - lo) * 0.1, 5)
+    lo, hi = lo - margin, hi + margin
+    span = hi - lo
+
+    def pos(value):
+        """値をバー上の 0-100 位置に変換する。"""
+        return round((value - lo) / span * 100, 1)
+
+    left, right = pos(evaluation["range_lower"]), pos(evaluation["range_upper"])
+    geometry = {
+        "bar_range_left": left,
+        "bar_range_width": round(right - left, 1),
+        "bar_marker_left": pos(ratio) if ratio is not None else 0,
+        "bar_penalty_left": 0,
+        "bar_penalty_width": 0,
+    }
+    if base_upper is not None and base_upper > evaluation["range_upper"]:
+        penalty_right = pos(base_upper)
+        geometry["bar_penalty_left"] = right
+        geometry["bar_penalty_width"] = round(penalty_right - right, 1)
+    return geometry
 
 
 def _flash_stock_info(code_s: str, message_suffix: str) -> None:
@@ -1088,38 +1191,43 @@ def dashboard():
         f"{s['broker']}/{s['kind']}": s["as_of"] for s in position_sources
     }
 
-    # 保有フィルタ表示時のみ、運用総額と保有株数の基準日を集計
+    # 保有フィルタ表示時のみ、運用総額と保有株数の基準日を集計。
+    # gyoutai_theme 指定時は表の行 (rows) がテーマで絞り込まれるが、運用比率ガイドは
+    # ポートフォリオ全体の話なので、絞り込みの影響を受けない全保有から集計する
+    # (PR #423 レビュー指摘: rows から集計するとテーマ別の一部保有しか見えず、
+    # 実際より低い比率やノーポジ判定を表示してしまう)。summarize_hold_positions は
+    # 日次ログ (exposure_guide) が使うものと同じ集計関数で、表示とログの数値を
+    # 一致させる意味もある。
     hold_summary = None
     if not fallback_mode and active_status == "1保":
-        hold_rows = [r for r in rows if r.get("status") == "1保"]
-        if hold_rows:
-            total_position_value = sum(
-                (r.get("position_value") or 0) for r in hold_rows
-            )
-            # 市場別内訳 (日経225/TOPIX/グロース/その他) を集計
-            cat_values = {"日経225": 0.0, "TOPIX": 0.0, "グロース": 0.0, "その他": 0.0}
-            for r in hold_rows:
-                cat = r.get("market_category", "その他")
-                cat_values[cat] = cat_values.get(cat, 0.0) + (r.get("position_value") or 0)
-            breakdown = [
-                {
-                    "category": cat,
-                    "man": int(round(val / 10000)),
-                    "ratio": round(val / total_position_value * 100, 1)
-                    if total_position_value else 0.0,
-                }
-                for cat, val in cat_values.items()
-            ]
-            hold_summary = {
-                "total_man": int(round(total_position_value / 10000)),
-                # 保有株数の真実源は証券会社CSVなので、手動更新時刻ではなく
-                # 取込済み position_source の最新 as_of (残高基準日) を出す
-                "qty_as_of": max(
-                    (s["as_of"] for s in position_sources if s.get("as_of")),
-                    default=None,
-                ),
-                "breakdown": breakdown,
+        hold_totals = summarize_hold_positions()
+        total_position_value = hold_totals["total_value"]
+        cat_values = hold_totals["category_values"]
+        breakdown = [
+            {
+                "category": cat,
+                "man": int(round(val / 10000)),
+                "ratio": round(val / total_position_value * 100, 1)
+                if total_position_value else 0.0,
             }
+            for cat, val in cat_values.items()
+        ]
+        # ノーポジ (全売却) でもガイドは出す。市場ステートに対して「今はゼロ」と
+        # 分かることに意味があるため (fallback_state で TOPIX/グロースの悪い方を使う)
+        hold_summary = {
+            "total_man": int(round(total_position_value / 10000)),
+            # 保有株数の真実源は証券会社CSVなので、手動更新時刻ではなく
+            # 取込済み position_source の最新 as_of (残高基準日) を出す
+            "qty_as_of": max(
+                (s["as_of"] for s in position_sources if s.get("as_of")),
+                default=None,
+            ),
+            "breakdown": breakdown,
+            # issue #362: 基準運用額に対する運用比率と市場状態連動の目標レンジ
+            "exposure": _build_exposure_summary(
+                total_position_value, cat_values
+            ),
+        }
 
     # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)
     ps.seed_trade_ideas()
