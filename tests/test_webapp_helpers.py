@@ -38,7 +38,7 @@ def test_margin_only_holding_can_calculate_defensive_line():
     }
     position = helpers._build_exit_position_map([episode])["4377"]
     line = helpers._weighted_stop_loss_line(
-        {"stop_loss_pct": 10, "allow_dca_lower": False}, position["episodes"]
+        {"stop_loss_pct": 10, "allow_dca_lower": False}, position["fills"]
     )
     assert position["held_qty"] == 100
     assert line == 900.0
@@ -70,6 +70,61 @@ def test_exit_cycle_id_survives_position_additions(episodes, expected):
         for i, (kind, open_date) in enumerate(episodes)
     ]
     assert helpers._build_exit_position_map(eps)["402A"]["cycle_id"] == expected
+
+
+def test_exit_position_uses_cross_account_hold_cycle():
+    """口座をまたぐ買い増しと古い口座の決済で防御基準を下げない。"""
+    closed_genbutsu = {
+        "code_s": "4970", "kind": "現物", "closed": True, "is_short": False,
+        "split_suspect": False, "open_date": "2026-04-21",
+        "fills": [
+            {"seq": 1, "trade_date": "2026-04-21", "side": "buy", "qty": 100,
+             "price": 1000, "trade_kind": "現物"},
+            {"seq": 3, "trade_date": "2026-04-23", "side": "sell", "qty": 100,
+             "price": 900, "trade_kind": "現物"},
+        ],
+    }
+    open_shinyo = {
+        "code_s": "4970", "kind": "信用", "closed": False, "is_short": False,
+        "split_suspect": False, "open_date": "2026-04-22",
+        "open_pl": {"held_qty": 100, "avg_cost": 500.0},
+        "fills": [{"seq": 2, "trade_date": "2026-04-22", "side": "buy", "qty": 100,
+                   "price": 500, "trade_kind": "信用新規"}],
+    }
+    position = helpers._build_exit_position_map([closed_genbutsu, open_shinyo])["4970"]
+    assert position["cycle_id"] == "2026-04-21"
+    assert helpers._weighted_stop_loss_line(
+        {"stop_loss_pct": 10, "allow_dca_lower": False}, position["fills"]
+    ) == 900.0
+
+
+def test_exit_position_ignores_genbiki_and_its_paired_sell():
+    """現引で信用→現物へ振り替えた分の後続売却は、現引とペアで保有数計算から除く。
+
+    現引 buy を無視するだけだと、振り替え後の現物 sell だけが減算されてしまい、
+    まだ保有継続中の信用新規分まで cycle が途切れる (issue #414, 9337 相当)。
+    """
+    genbiki_closed = {
+        "code_s": "9337", "kind": "現物", "closed": True, "is_short": False,
+        "split_suspect": False, "open_date": "2026-08-07",
+        "fills": [
+            {"seq": 1, "trade_date": "2026-08-07", "side": "buy", "qty": 200,
+             "price": 1700, "trade_kind": "現引"},
+            {"seq": 3, "trade_date": "2026-08-12", "side": "sell", "qty": 200,
+             "price": 1600, "trade_kind": "現物"},
+        ],
+    }
+    open_shinyo = {
+        "code_s": "9337", "kind": "信用", "closed": False, "is_short": False,
+        "split_suspect": False, "open_date": "2026-08-07",
+        "open_pl": {"held_qty": 200, "avg_cost": 1738.0},
+        "fills": [{"seq": 2, "trade_date": "2026-08-07", "side": "buy", "qty": 200,
+                   "price": 1738, "trade_kind": "信用新規"}],
+    }
+    position = helpers._build_exit_position_map([genbiki_closed, open_shinyo])["9337"]
+    assert position["cycle_id"] == "2026-08-07"
+    assert len(position["fills"]) == 1
+    assert position["fills"][0]["trade_kind"] == "信用新規"
 
 
 def test_split_adjusted_float_holding_is_included_in_exit_position():

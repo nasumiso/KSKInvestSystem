@@ -2069,7 +2069,7 @@ def list_portfolio_with_indicators(
                 rule_id = json.dumps(exit_rule, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                 if position:
                     position = dict(position)
-                    position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["episodes"])
+                    position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["fills"])
                     cycle_id = f"{position['cycle_id']}|{strategy}|{rule_id}"
                 else:
                     # CSV期間外からの保有など、約定履歴がない銘柄もMAは評価する。
@@ -2178,11 +2178,14 @@ def list_portfolio_with_indicators(
 def _build_exit_position_map(episodes: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """未決済の現物・信用買いエピソードを銘柄単位で数量加重する。"""
     grouped: Dict[str, List[Dict[str, Any]]] = {}
+    all_by_code: Dict[str, List[Dict[str, Any]]] = {}
     blocked = set()
     for ep in episodes:
+        code_s = ep.get("code_s")
+        if code_s:
+            all_by_code.setdefault(code_s, []).append(ep)
         if ep.get("closed") or ep.get("is_short") or not ep.get("open_pl"):
             continue
-        code_s = ep.get("code_s")
         open_pl = ep["open_pl"]
         if not code_s or ep.get("split_suspect"):
             if code_s:
@@ -2201,31 +2204,77 @@ def _build_exit_position_map(episodes: List[Dict[str, Any]]) -> Dict[str, Dict[s
             continue
         held_qty = sum(ep["open_pl"]["held_qty"] for ep in code_episodes)
         avg_cost = sum(ep["open_pl"]["held_qty"] * ep["open_pl"]["avg_cost"] for ep in code_episodes) / held_qty
-        # 未決済エピソードの最古 open_date をサイクルIDにする。エピソードキーを
-        # 全部連結すると、現物保有中に信用建玉を足しただけで別サイクル扱いになり
-        # 防御履歴が消える (PR #409 レビュー)。買い増しは必ず後の日付になるので
-        # 最小値は変わらず、全解消して建て直したときだけ新しいサイクルになる。
-        cycle_id = min(str(ep.get("open_date") or "") for ep in code_episodes)
+        hold_started_at, cycle_fills = _current_hold_cycle(all_by_code[code_s])
+        # 現物・信用をまたいだ銘柄全体の連続保有をサイクルにする。最古の口座だけを
+        # 先に決済しても hold_started_at は変わらないため、防御履歴を維持できる。
+        cycle_id = hold_started_at or min(str(ep.get("open_date") or "") for ep in code_episodes)
         result[code_s] = {"held_qty": held_qty, "avg_cost": avg_cost, "cycle_id": cycle_id,
-                          "episodes": code_episodes, "stop_loss_line": None}
+                          "episodes": code_episodes, "fills": cycle_fills,
+                          "stop_loss_line": None}
     return result
 
 
-def _weighted_stop_loss_line(exit_rule: Dict[str, Any], episodes: List[Dict[str, Any]]) -> Optional[float]:
-    """エピソードごとの損切りラインを保有数量で加重する。"""
+def _current_hold_cycle(episodes: List[Dict[str, Any]]) -> tuple:
+    """銘柄全体で現在も続く買い保有サイクルの開始日と fill を返す。"""
+    fills_by_key = {}
+    for ep in episodes:
+        for fill in ep.get("fills") or []:
+            key = fill.get("dedup_key") or (fill.get("seq"), fill.get("trade_date"), fill.get("trade_kind"))
+            fills_by_key[key] = fill
+
+    def _sort_key(fill):
+        trade_kind = fill.get("trade_kind") or ""
+        opens_position = (
+            trade_kind.startswith("信用新規")
+            or trade_kind == "現引"
+            or (fill.get("side") == "buy" and not trade_kind.startswith("信用返済"))
+        )
+        return (fill.get("trade_date") or "", 0 if opens_position else 1, fill.get("seq") or 0)
+
+    held_qty = 0
+    started_at = None
+    cycle_fills = []
+    genbiki_pending = 0  # 現引で振り替えた未決済分。対応する現物売却とペアで無視する。
+    for fill in sorted(fills_by_key.values(), key=_sort_key):
+        trade_kind = fill.get("trade_kind") or ""
+        side = fill.get("side")
+        qty = fill.get("qty")
+        if not isinstance(qty, (int, float)) or isinstance(qty, bool) or qty <= 0:
+            continue
+        if trade_kind == "現引":
+            # 銘柄全体では信用から現物への振替であり、保有数は変わらない。ただし
+            # 振り替えた現物を後で売却した fill も、対応する分だけペアで無視しないと
+            # 「現引 buy は無視・現物 sell は減算」で保有数が実態よりズレる (issue #414)。
+            genbiki_pending += qty
+            continue
+        if trade_kind.startswith("信用"):
+            delta = qty if trade_kind.startswith("信用新規") and side == "buy" else (
+                -qty if trade_kind.startswith("信用返済") and side == "sell" else 0)
+        else:
+            delta = qty if side == "buy" else -qty if side == "sell" else 0
+            if side == "sell" and genbiki_pending > 0:
+                offset = min(genbiki_pending, qty)
+                genbiki_pending -= offset
+                delta += offset  # 振替分の売却を相殺 (例: -qty + offset)
+        if not delta:
+            continue
+        if held_qty <= 0 and delta > 0:
+            started_at = str(fill.get("trade_date") or "")
+            cycle_fills = []
+        if held_qty > 0 or delta > 0:
+            cycle_fills.append(fill)
+        held_qty = max(0, held_qty + delta)
+        if held_qty <= 0:
+            started_at = None
+            cycle_fills = []
+    return started_at, cycle_fills
+
+
+def _weighted_stop_loss_line(exit_rule: Dict[str, Any], fills: List[Dict[str, Any]]) -> Optional[float]:
+    """銘柄全体の連続保有 fill を再生して損切りラインを求める。"""
     from exit_line import calc_stop_loss_line
 
-    weighted = 0.0
-    qty_total = 0
-    for ep in episodes:
-        qty = ep["open_pl"]["held_qty"]
-        line = calc_stop_loss_line(
-            exit_rule, ep.get("fills") or [], kind=ep.get("kind"), is_short=bool(ep.get("is_short"))
-        )
-        if line is not None:
-            weighted += line * qty
-            qty_total += qty
-    return weighted / qty_total if qty_total else None
+    return calc_stop_loss_line(exit_rule, fills)
 
 
 def _apply_exit_signal_display(row: Dict[str, Any], signal: Dict[str, Any]) -> None:
@@ -5714,6 +5763,9 @@ def _finalize_round(code_s: str, kind: str, stock_name: str,
                 "tate_price": f.get("tate_price"),
                 "tate_date": f.get("tate_date"),
                 "settle_pl": f.get("settle_pl"),
+                # 銘柄全体の保有サイクル再生 (_current_hold_cycle) の dedup キーに必要。
+                "seq": f.get("seq"),
+                "dedup_key": f.get("dedup_key"),
             }
             for f in round_fills
         ],
