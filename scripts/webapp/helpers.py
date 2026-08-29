@@ -5437,8 +5437,9 @@ def build_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     実際に下した売買判断の単位で明細を読めるようにするのが目的。
     信用は証券会社CSVの建玉対応 (tate_date/tate_price)、現物は FIFO で対応づける。
 
-    並び順: 決済済みは決済日の降順 (最新が上、現行明細と揃える)、
-    未決済 (保有中) は買付日の降順で末尾にまとめる。
+    並び順: 保有中 (未決済) を先頭に、続いて決済済みを決済日の降順 (最新が上)。
+    保有中はまだ決済日が無く「最新」の側なので、決済済みより上に置く。
+    保有中どうし・決済済みどうしは買付日/決済日の降順。
     """
     if ep["kind"] == "信用":
         rows = _build_shinyo_round_trips(ep)
@@ -5448,7 +5449,7 @@ def build_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     open_rows = [r for r in rows if not r["closed"]]
     closed.sort(key=lambda r: (r["close_date"] or "", r["open_date"] or ""), reverse=True)
     open_rows.sort(key=lambda r: r["open_date"] or "", reverse=True)
-    return closed + open_rows
+    return open_rows + closed
 
 
 def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
