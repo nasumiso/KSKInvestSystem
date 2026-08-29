@@ -141,8 +141,10 @@
 {# リターン%セルと株数セル。エピソード単位/銘柄単位の両ビューで色・書式を揃えるため
    マクロ化する (色リテラルが散らばると2ビューの見た目がずれる)。
    provisional=true は含み損益を含む暫定値で、確定値と区別できるよう淡い色にする。 #}
-{% macro return_pct_cell(pct, provisional=false, title="") %}
-<span style="color:{{ ('#7ec48a' if pct >= 0 else '#c88585') if provisional else ('#9ef0aa' if pct >= 0 else '#f0a0a0') }};font-weight:600;"{% if title %} title="{{ title }}"{% endif %}>{{ '+' if pct >= 0 else '' }}{{ "%.1f"|format(pct) }}%</span>
+{# digits/bold は明細テーブル (往復行) 用。明細は %.2f・非太字で、エピソード行より
+   細かい粒度を出す (issue #421 で往復行に置き換わる前の fill 明細と同じ書式)。 #}
+{% macro return_pct_cell(pct, provisional=false, title="", digits=1, bold=true) %}
+<span style="color:{{ ('#7ec48a' if pct >= 0 else '#c88585') if provisional else ('#9ef0aa' if pct >= 0 else '#f0a0a0') }};{% if bold %}font-weight:600;{% endif %}"{% if title %} title="{{ title }}"{% endif %}>{{ '+' if pct >= 0 else '' }}{{ ("%." ~ digits ~ "f")|format(pct) }}%</span>
 {%- endmacro %}
 
 {# 株数セル。保有中は「ピーク(残N)」形式で現在の保有株数を併記する。 #}
@@ -244,11 +246,12 @@
           {% for r in ep.round_trips %}
           <tr{% if not r.closed %} style="color:#7a7a95;"{% endif %}>
             <td style="padding:1px 0.8em 1px 0;white-space:nowrap;color:#888;">
-              {%- if r.open_date %}{{ r.open_date[2:] }}{% else %}<span style="color:#666;" title="建玉を特定できる情報がCSVに無いため、対応する買いを表示できません">?</span>{% endif %}
+              {%- if r.open_date %}{{ r.open_date[2:] }}{% else %}<span style="color:#666;">?</span>{% endif %}
               <span style="color:#666;">→</span>
               {% if r.closed %}{{ r.close_date[2:] }}{% else %}<span style="color:#a0a0d0;">保有中</span>{% endif %}
               {%- if r.genbiki %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="現引は信用建玉を現物へ振り替える取引です。決済ではないため損益は計上せず、現物エピソード側へ引き継がれます">現引→現物</span>{% endif %}
-              {%- if r.orphan_close %}<span style="color:#8a6a5a;font-size:0.88em;margin-left:0.4em;" title="建玉情報がCSVに無いため建値・保有日数を表示できません">建玉不明</span>{% endif %}
+              {#- 建玉を特定できない決済 (建情報なしの信用返済など)。? マーカーと同じ条件で駆動する #}
+              {%- if r.closed and not r.open_date %}<span style="color:#8a6a5a;font-size:0.88em;margin-left:0.4em;" title="建玉情報がCSVに無いため建値・保有日数を表示できません">建玉不明</span>{% endif %}
             </td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "%g"|format(r.qty) }}株</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
@@ -258,7 +261,7 @@
             </td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;color:#777;">{% if r.hold_days is not none %}{{ r.hold_days }}日{% else %}<span style="color:#666;">—</span>{% endif %}</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
-              {%- if r.return_pct is not none %}<span style="color:{{ '#9ef0aa' if r.return_pct >= 0 else '#f0a0a0' }};">{{ '+' if r.return_pct >= 0 else '' }}{{ "%.2f"|format(r.return_pct) }}%</span>
+              {%- if r.return_pct is not none %}{{ return_pct_cell(r.return_pct, false, "", 2, false) }}
               {%- else %}<span style="color:#666;">—</span>{% endif %}
             </td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">

@@ -30,6 +30,7 @@ import portfolio_shelve as ps
 from ks_util import DATA_DIR
 from webapp.helpers import (
     build_fill_episodes,
+    build_round_trips,
     build_stock_rollups,
     calc_trade_summary,
     fill_date_range_by_broker,
@@ -285,6 +286,12 @@ def trade_history():
     # issue #387 Phase4b: 売買履歴タブ = fill 基準の建玉ラウンド・エピソード。
     # 成績サマリー (勝率/ペイオフ) はクローズ済みで損益算出できたエピソードから算出。
     fill_episodes = build_fill_episodes()
+
+    # 往復行 (issue #421) は明細表示専用のため、共有の build_fill_episodes() ではなく
+    # 描画側で付与する。ポートフォリオ画面や CLI・移行スクリプトも
+    # build_fill_episodes() を呼ぶが、往復行は使わない。
+    for ep in fill_episodes:
+        ep["round_trips"] = build_round_trips(ep)
 
     # 年の基準はこの1箇所で決め、サマリーとアコーディオンで共有する。
     current_year = datetime.datetime.now(ps.JST).strftime("%Y")

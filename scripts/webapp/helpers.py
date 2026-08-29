@@ -5220,11 +5220,6 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         )
         ep["review_memo"] = memos.get(ep["episode_key"], "")
 
-    # 往復行 (issue #421)。fill 単位の損益 (fill_pl/fill_return_pct) は
-    # _episode_pl_from_round が付けるため、pl/open_pl 算出後に組み立てる。
-    for ep in episodes:
-        ep["round_trips"] = build_round_trips(ep)
-
     # 最終約定日 (最新の取引がある順) 降順、同日は銘柄コード昇順
     episodes.sort(key=lambda e: e["code_s"])
     episodes.sort(key=lambda e: e["last_trade_date"], reverse=True)
@@ -5242,8 +5237,8 @@ def _round_trip_days(open_date: Optional[str], close_date: Optional[str]) -> Opt
 
 
 def _make_round_trip(open_fill: Optional[Dict[str, Any]], close_fill: Optional[Dict[str, Any]],
-                     qty: float, open_date: Optional[str], open_price: Optional[float],
-                     is_short: bool = False) -> Dict[str, Any]:
+                     qty: float, open_date: Optional[str],
+                     open_price: Optional[float]) -> Dict[str, Any]:
     """往復1行を組み立てる (issue #421)。
 
     open 側 (建て) と close 側 (決済) のどちらかが欠ける行もある:
@@ -5262,10 +5257,7 @@ def _make_round_trip(open_fill: Optional[Dict[str, Any]], close_fill: Optional[D
         "close_price": close_fill.get("price") if close_fill else None,
         "hold_days": _round_trip_days(open_date, close_date),
         "broker": (close_fill or open_fill or {}).get("broker", ""),
-        "is_short": is_short,
         "closed": close_fill is not None,
-        # 建玉を特定できなかった決済 (建値・保有日数が出せない)
-        "orphan_close": close_fill is not None and open_fill is None and open_price is None,
         "genbiki": False,  # 現引による現物への振替 (決済ではないので損益を出さない)
         "pl": None,
         "return_pct": None,
@@ -5330,13 +5322,13 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
                 cf = cand["fill"]
                 row = _make_round_trip(cf, f, take,
                                        f.get("tate_date") or cf.get("trade_date"),
-                                       f.get("tate_price") or cf.get("price"), is_short)
+                                       f.get("tate_price") or cf.get("price"))
                 row["genbiki"] = True  # 決済ではなく現物への振替
                 rows.append(row)
             if remain > 0:
                 # 対応する建玉が取込範囲に無い現引 (期首持越し玉の現引)
                 row = _make_round_trip(None, f, remain, f.get("tate_date"),
-                                       f.get("tate_price"), is_short)
+                                       f.get("tate_price"))
                 row["genbiki"] = True
                 rows.append(row)
             continue
@@ -5357,7 +5349,7 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
                 take = min(remain, cand["remain"])
                 cand["remain"] -= take
                 remain -= take
-            row = _make_round_trip(None, f, f["qty"], None, None, is_short)
+            row = _make_round_trip(None, f, f["qty"], None, None)
             if "fill_pl" in f:
                 row["pl"] = f["fill_pl"]
             rows.append(row)
@@ -5372,7 +5364,7 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
             matched["fill"]["price"] if matched else None)
         open_date = tate_date or (matched["fill"].get("trade_date") if matched else None)
         row = _make_round_trip(matched["fill"] if matched else None, f, f["qty"],
-                               open_date, open_price, is_short)
+                               open_date, open_price)
         # 損益は既存の fill 単位計算をそのまま使う (計算ロジックを二重化しない)。
         if "fill_pl" in f:
             row["pl"] = f["fill_pl"]
@@ -5387,7 +5379,7 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
         if cand["remain"] > 0:
             cf = cand["fill"]
             rows.append(_make_round_trip(cf, None, cand["remain"],
-                                         cf.get("trade_date"), cf.get("price"), is_short))
+                                         cf.get("trade_date"), cf.get("price")))
     return rows
 
 
