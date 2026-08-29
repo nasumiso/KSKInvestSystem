@@ -212,13 +212,14 @@ def _build_exposure_summary(total_position_value: float, cat_values: dict) -> Op
             return None
         credit_eval_rate, _ = exposure_guide.read_credit_eval_rate()
         fng_jp, _ = exposure_guide.read_fng_jp()
+        settings = ps.get_exposure_settings()
         evaluation = exposure_guide.evaluate_exposure(
             total_position_value,
             cat_values,
             index_states,
             credit_eval_rate,
             fng_jp,
-            ps.get_exposure_settings(),
+            settings,
         )
     except Exception:  # noqa: BLE001
         return None
@@ -242,7 +243,50 @@ def _build_exposure_summary(total_position_value: float, cat_values: dict) -> Op
         _EXPOSURE_MODIFIER_LABELS.get(name, name)
         for name in evaluation["modifiers_applied"]
     ]
+    evaluation.update(_exposure_bar_geometry(evaluation, settings))
     return evaluation
+
+
+def _exposure_bar_geometry(evaluation: dict, settings: dict) -> dict:
+    """比率バーの描画位置 (0-100 の %) を算出する (issue #362)。
+
+    描画範囲は全ステートのレンジと現在比率を含むよう決め、針がバーから
+    はみ出さないようにする。過熱で削られた枠は元の上限まで別描画する。
+    """
+    ranges = settings.get("ranges") or {}
+    base_upper = (ranges.get(evaluation["state"]) or [None, None])[1]
+    # 全ステートのレンジ境界を描画範囲に含めることで、目盛りが日々のステート変化で
+    # 動かないようにする (針の位置を日毎に見比べられる)。実際に描く値
+    # (現在比率・適用中のレンジ・削る前の上限) も必ず含め、はみ出しを防ぐ。
+    bounds = [v for rng in ranges.values() for v in rng]
+    bounds += [evaluation["range_lower"], evaluation["range_upper"]]
+    ratio = evaluation.get("ratio_pct")
+    if ratio is not None:
+        bounds.append(ratio)
+    if base_upper is not None:
+        bounds.append(base_upper)
+    lo, hi = min(bounds), max(bounds)
+    margin = max((hi - lo) * 0.1, 5)
+    lo, hi = lo - margin, hi + margin
+    span = hi - lo
+
+    def pos(value):
+        """値をバー上の 0-100 位置に変換する。"""
+        return round((value - lo) / span * 100, 1)
+
+    left, right = pos(evaluation["range_lower"]), pos(evaluation["range_upper"])
+    geometry = {
+        "bar_range_left": left,
+        "bar_range_width": round(right - left, 1),
+        "bar_marker_left": pos(ratio) if ratio is not None else 0,
+        "bar_penalty_left": 0,
+        "bar_penalty_width": 0,
+    }
+    if base_upper is not None and base_upper > evaluation["range_upper"]:
+        penalty_right = pos(base_upper)
+        geometry["bar_penalty_left"] = right
+        geometry["bar_penalty_width"] = round(penalty_right - right, 1)
+    return geometry
 
 
 def _flash_stock_info(code_s: str, message_suffix: str) -> None:

@@ -190,6 +190,70 @@ def test_exposure_settings_roundtrip_and_validation(tmp_path):
         )
 
 
+@pytest.mark.parametrize(
+    "state, ratio, lower, upper, expected_side",
+    [
+        ("uptrend_under_pressure", 85.0, 80, 100, "within"),
+        ("market_in_correction", 130.0, 65, 80, "right"),   # 超過は帯の右
+        ("confirmed_uptrend", 70.0, 100, 120, "left"),      # 不足は帯の左
+    ],
+)
+def test_exposure_bar_marker_side(state, ratio, lower, upper, expected_side):
+    """針が目標帯に対して正しい側に立つ (issue #362 案A)。
+
+    バーは「レンジのどこにいるか」を数値でなく位置で見せるものなので、
+    超過・不足と針の位置が食い違うと表示として意味を成さない。
+    """
+    from webapp.routes.portfolio import _exposure_bar_geometry
+
+    g = _exposure_bar_geometry(
+        {"state": state, "ratio_pct": ratio,
+         "range_lower": lower, "range_upper": upper},
+        ps.EXPOSURE_DEFAULTS,
+    )
+    left = g["bar_range_left"]
+    right = left + g["bar_range_width"]
+    marker = g["bar_marker_left"]
+    if expected_side == "within":
+        assert left <= marker <= right
+    elif expected_side == "right":
+        assert marker > right
+    else:
+        assert marker < left
+
+
+def test_exposure_bar_penalty_hatch_and_shared_scale():
+    """過熱で削られた枠を帯の右隣にハッチで残し、目盛りは削る前後で不変。
+
+    目盛りが動くと日々の針の位置を見比べられなくなるため、描画スケールは
+    モディファイア発動の有無で変わってはいけない。
+    """
+    from webapp.routes.portfolio import _exposure_bar_geometry
+
+    normal = _exposure_bar_geometry(
+        {"state": "uptrend_under_pressure", "ratio_pct": 85.0,
+         "range_lower": 80, "range_upper": 100},
+        ps.EXPOSURE_DEFAULTS,
+    )
+    capped = _exposure_bar_geometry(
+        {"state": "uptrend_under_pressure", "ratio_pct": 85.0,
+         "range_lower": 80, "range_upper": 90},  # 過熱で 100→90
+        ps.EXPOSURE_DEFAULTS,
+    )
+    # 同じ比率なら針の位置は変わらない (スケール共有)
+    assert capped["bar_marker_left"] == normal["bar_marker_left"]
+    assert capped["bar_range_left"] == normal["bar_range_left"]
+    # 削られた分がハッチとして帯の右隣に出て、元の上限まで届く
+    assert normal["bar_penalty_width"] == 0
+    assert capped["bar_penalty_width"] > 0
+    assert capped["bar_penalty_left"] == pytest.approx(
+        capped["bar_range_left"] + capped["bar_range_width"], abs=0.1
+    )
+    assert capped["bar_penalty_left"] + capped["bar_penalty_width"] == pytest.approx(
+        normal["bar_range_left"] + normal["bar_range_width"], abs=0.1
+    )
+
+
 def _stub_entry(entry):
     """build_daily_entry の差し替え用スタブを返す。"""
     def _build(**kwargs):

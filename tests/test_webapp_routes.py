@@ -1449,19 +1449,19 @@ class TestPortfolioHoldSummary:
         resp = client.get("/portfolio?status=hold")
         html = resp.data.decode()
         assert resp.status_code == 200
-        assert "運用総額:" in html
-        assert "25 万円" in html  # 2500 × 100 / 10000 = 25
+        assert "運用総額" in html
+        assert "25</b> 万円" in html  # 2500 × 100 / 10000 = 25
         # position_source を登録済みなので as_of がそのまま出る
         # (「未取込」は CSV 取込フォーム側でも使う文言なので、サマリー部分を丸ごと照合する)
-        assert "保有株数基準日:\n      2026-08-13" in html
+        assert "株数基準日\n      2026-08-13" in html
 
     def test_other_filters_hide_summary(self, portfolio_app):
         client = portfolio_app.test_client()
         for status in ("semi", "watch", ""):
             resp = client.get(f"/portfolio?status={status}")
             html = resp.data.decode()
-            assert "運用総額:" not in html, f"status={status} でサマリーが漏れている"
-            assert "保有株数更新日:" not in html, f"status={status} でサマリーが漏れている"
+            assert "運用総額" not in html, f"status={status} でサマリーが漏れている"
+            assert "株数基準日" not in html, f"status={status} でサマリーが漏れている"
 
 
 # ==================================================
