@@ -2062,6 +2062,8 @@ def _validate_exposure_settings(settings: Any) -> Dict[str, Any]:
     base_amount = settings.get("base_amount", EXPOSURE_DEFAULTS["base_amount"])
     if not isinstance(base_amount, (int, float)) or isinstance(base_amount, bool):
         raise TypeError("base_amount must be a number")
+    if not math.isfinite(base_amount):
+        raise ValueError("base_amount must be finite")
     if base_amount <= 0:
         raise ValueError("base_amount must be positive")
 
@@ -2078,6 +2080,8 @@ def _validate_exposure_settings(settings: Any) -> Dict[str, Any]:
         for v in (lower, upper):
             if not isinstance(v, (int, float)) or isinstance(v, bool):
                 raise TypeError(f"ranges[{state}] must contain numbers")
+            if not math.isfinite(v):
+                raise ValueError(f"ranges[{state}] must be finite")
         if lower < 0 or upper < 0:
             raise ValueError(f"ranges[{state}] must be non-negative")
         if lower > upper:
@@ -2099,6 +2103,8 @@ def _validate_exposure_settings(settings: Any) -> Dict[str, Any]:
             raise TypeError(f"modifiers[{name}].threshold must be a number")
         if not isinstance(penalty, (int, float)) or isinstance(penalty, bool):
             raise TypeError(f"modifiers[{name}].penalty must be a number")
+        if not math.isfinite(threshold) or not math.isfinite(penalty):
+            raise ValueError(f"modifiers[{name}] must be finite")
         if penalty < 0:
             raise ValueError(f"modifiers[{name}].penalty must be non-negative")
         normalized_modifiers[name] = {"threshold": threshold, "penalty": penalty}

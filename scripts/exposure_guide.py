@@ -166,6 +166,11 @@ def evaluate_exposure(
     ranges = settings.get("ranges") or {}
     modifiers = settings.get("modifiers") or {}
 
+    # ノーポジかどうかは保有額の合計で機械的に判定する。weighted_state が None を
+    # 返すのは「ノーポジ」と「保有はあるが該当指数が鮮度切れ」の両方がありうり、
+    # 後者を「(ノーポジ)」と表示すると誤情報になる (PR #423 レビュー指摘)。
+    is_no_position = sum((category_values or {}).values()) <= 0
+
     state, score = weighted_state(category_values, index_states)
     state_is_fallback = False
     if state is None:
@@ -183,6 +188,7 @@ def evaluate_exposure(
         "state": state,
         "state_score": score,
         "state_is_fallback": state_is_fallback if state is not None else False,
+        "is_no_position": is_no_position,
         "range_lower": None,
         "range_upper": None,
         "modifiers_applied": [],
@@ -322,21 +328,23 @@ def _index_latest_date(entry):
 
 
 def read_index_states(market_db, *, today=None):
-    """指数別の market_state を返す (states, date)。
+    """指数別の market_state を返す (states, dates)。
 
     鮮度は指数ごとに判定し、古い指数だけを個別に除外する
     (一部の指数が取得失敗しても、生きている指数の判定は続ける)。
-    date は採用した指数の最新日付 (無ければ最も新しい候補日) を返す。
+    dates は指数ごとの最新日足 {index_name: date_str} を返す (採用有無に関わらず
+    候補日を記録する)。単一の代表日付に潰すと、一部の指数だけ古い日に
+    ログを監査できなくなるため (PR #423 レビュー指摘)。
     """
     states = {}
-    dates = []
+    dates = {}
     for index_name in set(CATEGORY_TO_INDEX.values()) | set(FALLBACK_INDEXES):
         entry = (market_db or {}).get(index_name) or {}
         state = entry.get("market_state")
         if state not in STATE_SCORES:
             continue
         date_str = _index_latest_date(entry)
-        dates.append(date_str)
+        dates[index_name] = date_str
         if not _is_fresh(date_str, "index", today=today):
             log_warning(
                 "[exposure] %s が鮮度切れのため判定から除外 (最新日足=%s)"
@@ -344,9 +352,7 @@ def read_index_states(market_db, *, today=None):
             )
             continue
         states[index_name] = state
-    adopted = [_index_latest_date((market_db or {}).get(n) or {}) for n in states]
-    valid = [d for d in (adopted or dates) if d]
-    return states, max(valid) if valid else None
+    return states, dates
 
 
 # ==================================================
@@ -382,7 +388,7 @@ def build_daily_entry(*, db_path=None, today=None):
     with ShelveDB(MARKET_SHELVE) as db:
         market_db = {k: db.get(k) for k in ("topix", "mothers", "nikkei225", "fear_and_greed")}
 
-    index_states, index_date = read_index_states(market_db, today=base_day)
+    index_states, index_dates = read_index_states(market_db, today=base_day)
     if not index_states:
         # ガイドの主軸が無く state=null だけの行には監査価値がないためスキップ
         log_warning("[exposure] 市場ステートを取得できないため日次ログをスキップ")
@@ -411,7 +417,7 @@ def build_daily_entry(*, db_path=None, today=None):
     entry["fng_jp"] = fng_jp
     entry["fng_us"] = fng_us
     entry["source_dates"] = {
-        "index": index_date,
+        "index": index_dates,  # {"topix": "2026-08-28", "mothers": "...", ...}
         "credit_balance": credit_date,
         "fng_jp": fng_jp_date,
         "fng_us": fng_us_date,

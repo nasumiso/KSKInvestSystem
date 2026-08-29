@@ -364,8 +364,8 @@
     {{ '%.0f'|format(ex.ratio_pct) }}%
   </span>
   <span style="padding:0.05em 0.45em;border-radius:3px;border:1px solid;{{ state_styles.get(ex.state, 'background:#eceff1;color:#333;border-color:#e0e0e0') }}"
-        title="保有額で加重した市場ステート ({{ ex.state }})。{% if ex.state_is_fallback %}保有が無いため TOPIX とグロース250 の悪い方で判定。{% else %}各保有銘柄の市場 (日経225/TOPIX/グロース) のステートを保有額で加重平均。{% endif %}">
-    {{ ex.state_label }}{% if ex.state_is_fallback %} (ノーポジ){% endif %}
+        title="保有額で加重した市場ステート ({{ ex.state }})。{% if ex.is_no_position %}保有が無いため TOPIX とグロース250 の悪い方で判定。{% elif ex.state_is_fallback %}保有カテゴリに対応する指数が鮮度切れのため TOPIX とグロース250 の悪い方で判定 (保有自体はあります)。{% else %}各保有銘柄の市場 (日経225/TOPIX/グロース) のステートを保有額で加重平均。{% endif %}">
+    {{ ex.state_label }}{% if ex.is_no_position %} (ノーポジ){% elif ex.state_is_fallback %} (指数欠損){% endif %}
   </span>
   {# 比率バー: 描画範囲は route 側で算出 (bar_* は 0-100 の % 位置) #}
   <div style="position:relative;flex:0 1 260px;min-width:180px;height:16px;"

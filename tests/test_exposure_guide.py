@@ -148,6 +148,36 @@ def test_evaluate_exposure_missing_inputs(
         assert result["position"] is None
 
 
+def test_evaluate_exposure_distinguishes_no_position_from_index_gap():
+    """フォールバックの原因がノーポジか指数欠損かを区別する (PR #423 レビュー指摘)。
+
+    weighted_state が None を返すのは「保有ゼロ」と「保有はあるが該当指数が
+    鮮度切れ」の両方がありうる。前者だけを「(ノーポジ)」と表示すべきで、
+    後者を同じ扱いにすると保有中なのに誤った表示になる。
+    """
+    settings = ps.EXPOSURE_DEFAULTS
+
+    # 保有あり (日経225) だが nikkei225 の指数だけ欠損 → フォールバックだがノーポジではない
+    with_holding = exposure_guide.evaluate_exposure(
+        1_000_000.0,
+        {"日経225": 1_000_000.0, "TOPIX": 0.0, "グロース": 0.0, "その他": 0.0},
+        {"topix": CONFIRMED, "mothers": CONFIRMED},  # nikkei225 欠損
+        None, None, settings,
+    )
+    assert with_holding["state_is_fallback"] is True
+    assert with_holding["is_no_position"] is False
+
+    # 本当にノーポジ
+    no_holding = exposure_guide.evaluate_exposure(
+        0.0,
+        {"日経225": 0.0, "TOPIX": 0.0, "グロース": 0.0, "その他": 0.0},
+        ALL_UP,
+        None, None, settings,
+    )
+    assert no_holding["state_is_fallback"] is True
+    assert no_holding["is_no_position"] is True
+
+
 @pytest.mark.parametrize(
     "kind, date_str, expected",
     [
@@ -211,6 +241,33 @@ def test_exposure_settings_merges_nested_dicts(tmp_path):
     modifiers = ps.get_exposure_settings(db_path=db_path)["modifiers"]
     assert modifiers["fng_jp"] == {"threshold": 70.0, "penalty": 10}
     assert modifiers["credit_eval_rate"] == {"threshold": -3.0, "penalty": 10}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"base_amount": float("nan")},
+        {"base_amount": float("inf")},
+        {"ranges": {CONFIRMED: [float("nan"), 120]}},
+        {"ranges": {CONFIRMED: [100, float("inf")]}},
+        {"modifiers": {"fng_jp": {"threshold": float("nan"), "penalty": 10}}},
+        {"modifiers": {"fng_jp": {"threshold": 75.0, "penalty": float("inf")}}},
+    ],
+)
+def test_exposure_settings_rejects_non_finite_values(tmp_path, payload):
+    """nan/inf を拒否する (PR #423 レビュー指摘)。
+
+    <= 0 比較は nan/inf に対して False を返すため、既存の非負チェックだけでは
+    素通りする。保存後は int() 変換 (CLI 表示・万円換算) で例外になり、
+    以後この設定を読む WebApp も含めて壊れる。実データで再現し、誤って
+    本番 DB に nan を書き込んでしまったため math.isfinite() で保存前に拒否する。
+    """
+    db_path = str(tmp_path / "portfolio_shelve")
+    with pytest.raises(ValueError):
+        ps.set_exposure_settings(payload, db_path=db_path)
+    # 拒否後も設定は変化しない (デフォルトのまま)
+    assert ps.get_exposure_settings(db_path=db_path)["base_amount"] == \
+        ps.EXPOSURE_DEFAULTS["base_amount"]
 
 
 @pytest.mark.parametrize(
@@ -318,11 +375,31 @@ def test_read_index_states_reads_newest_end_of_price_log():
             ],
         }
     }
-    states, latest = exposure_guide.read_index_states(
+    states, dates = exposure_guide.read_index_states(
         market_db, today=date(2026, 8, 29)
     )
     assert states == {"topix": CORRECTION}
-    assert latest == "2026-08-28"
+    assert dates["topix"] == "2026-08-28"
+
+
+def test_read_index_states_dates_are_per_index():
+    """指数ごとの日付を個別に返す (単一の代表日付に潰さない)。
+
+    採用した指数の最大日付だけを1つ返す設計だと、一部の指数だけ取得失敗で
+    古いまま残っている日に、その指数がどの日付に基づくか失われる
+    (PR #423 レビュー指摘)。
+    """
+    market_db = {
+        "topix": {"market_state": CORRECTION,
+                  "price_log": [(date(2026, 8, 28), 4000)]},
+        "mothers": {"market_state": CONFIRMED,
+                    "price_log": [(date(2026, 8, 27), 700)]},  # topixより1日古いが鮮度内
+    }
+    states, dates = exposure_guide.read_index_states(
+        market_db, today=date(2026, 8, 29)
+    )
+    assert set(states) == {"topix", "mothers"}  # 両方鮮度内 (3日以内)
+    assert dates == {"topix": "2026-08-28", "mothers": "2026-08-27"}
 
 
 def _stub_entry(entry):
