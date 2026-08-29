@@ -3959,3 +3959,41 @@ def test_build_round_trips_no_cross_broker_fallback():
         ("2026-01-05", 1000.0, 100, False, None),
         (None, None, 100, True, None),
     ]
+
+
+def test_build_round_trips_open_rows_get_unrealized_pl():
+    """保有中ロットに含み損益を設定する (PR #422 レビュー指摘)。
+
+    残数量 × (現在値 - 建値)。エピソード行の含み損益と定義を揃える。
+    確定損益と区別できるよう unrealized=True を立てる。
+    """
+    ep = _ep("現物", [
+        _f("2026-01-05", "buy", 100, 1000.0, "現物"),
+        _f("2026-01-06", "buy", 100, 2000.0, "現物"),
+    ], closed=False)
+    ep["current_price"] = 3000.0
+    rows = helpers.build_round_trips(ep)
+    assert [(r["open_price"], r["pl"], round(r["return_pct"]), r["unrealized"])
+            for r in rows] == [
+        (2000.0, 100000, 50, True),
+        (1000.0, 200000, 200, True),
+    ]
+
+
+def test_build_round_trips_keeps_csv_tate_price_when_lot_missing():
+    """建情報が一致する建玉が無くても、建値はCSVの値を使う (PR #422 レビュー指摘)。
+
+    別ロットを「CSVが指定した建玉」として割り当てると、実際に残る建玉が逆になる。
+    建玉が余っていれば数量だけ消費するが、表示する建値はCSV由来のままにする。
+    """
+    ep = _ep("信用", [
+        _f("2026-02-01", "buy", 200, 2000.0, "信用新規"),
+        _f("2026-03-01", "sell", 100, 1200.0, "信用返済",
+           tate_price=1000.0, tate_date="2026-01-05", fill_pl=20000),
+    ], closed=False)
+    rows = helpers.build_round_trips(ep)
+    # 決済行の建値は CSV の 1,000 (02-01 の 2,000 を流用しない)
+    closed = [r for r in rows if r["closed"]]
+    assert [(r["open_date"], r["open_price"]) for r in closed] == [("2026-01-05", 1000.0)]
+    # 02-01 の建玉は 100株が保有中として残る
+    assert [(r["open_date"], r["qty"]) for r in rows if not r["closed"]] == [("2026-02-01", 100)]

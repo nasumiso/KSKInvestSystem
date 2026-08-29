@@ -264,11 +264,11 @@
             </td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;color:#777;">{% if r.hold_days is not none %}{{ r.hold_days }}日{% else %}<span style="color:#666;">—</span>{% endif %}</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
-              {%- if r.return_pct is not none and not ep.split_suspect %}{{ return_pct_cell(r.return_pct, false, "", 2, false) }}
+              {%- if r.return_pct is not none and not ep.split_suspect %}{{ return_pct_cell(r.return_pct, r.unrealized, "含み損益を含む暫定リターン" if r.unrealized else "", 2, false) }}
               {%- else %}<span style="color:#666;">—</span>{% endif %}
             </td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
-              {%- if r.pl is not none and not ep.split_suspect %}<span style="color:{{ '#9ef0aa' if r.pl >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(r.pl) }}円</span>
+              {%- if r.pl is not none and not ep.split_suspect %}<span style="color:{{ ('#7ec48a' if r.pl >= 0 else '#c88585') if r.unrealized else ('#9ef0aa' if r.pl >= 0 else '#f0a0a0') }};"{% if r.unrealized %} title="含み損益 (未確定)。現在値 {{ "{:,}".format(ep.current_price|round|int) }}円 で評価"{% endif %}>{{ "{:+,}".format(r.pl) }}円</span>
               {%- else %}<span style="color:#666;">—</span>{% endif %}
             </td>
             <td style="padding:1px 0.8em;color:#666;white-space:nowrap;">{{ r.broker }}</td>
