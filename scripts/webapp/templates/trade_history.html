@@ -227,50 +227,55 @@
     <tr class="th-ep-detail" id="{{ uid }}" style="display:none;">
       <td></td>
       <td colspan="7" style="padding:0.3em 0.5em 0.6em;">
+        {# issue #421: 買と売を往復1行に畳んだ明細。実際に下した売買判断の単位で読める。
+           信用は証券会社CSVの建玉対応 (tate_date/tate_price)、現物は FIFO で対応づける。 #}
         <table style="width:auto;font-size:0.82em;color:#999;border-collapse:collapse;">
           <thead style="color:#666;font-size:0.9em;">
             <tr>
-              <th style="padding:1px 0.8em 1px 0;text-align:left;">日付</th>
-              <th style="padding:1px 0.8em;text-align:left;">売買</th>
-              <th style="padding:1px 0.8em;text-align:left;">区分</th>
+              <th style="padding:1px 0.8em 1px 0;text-align:left;">{{ '建 → 決済' if ep.is_short else '買 → 売' }}</th>
               <th style="padding:1px 0.8em;text-align:right;">株数</th>
-              <th style="padding:1px 0.8em;text-align:right;">単価</th>
-              <th style="padding:1px 0.8em;text-align:right;">建単価</th>
-              <th style="padding:1px 0.8em;">建日・保有</th>
-              <th style="padding:1px 0.8em;text-align:right;">損益率</th>
-              <th style="padding:1px 0.8em;text-align:right;">損益額</th>
+              <th style="padding:1px 0.8em;text-align:right;"{% if ep.is_short %} title="売建は「売単価 → 買戻単価」の順です"{% endif %}>{{ '売 → 買単価' if ep.is_short else '買 → 売単価' }}</th>
+              <th style="padding:1px 0.8em;text-align:right;">保有</th>
+              <th style="padding:1px 0.8em;text-align:right;">リターン</th>
+              <th style="padding:1px 0.8em;text-align:right;">損益</th>
               <th style="padding:1px 0.8em;">証券会社</th>
             </tr>
           </thead>
-          {# 明細は最新が上。損益計算 (平均取得単価法) は時系列昇順の ep.fills に依存する
-             ため、表示時だけ反転する。同日内の並びも逆転するが、建玉を作る側→減らす側の
-             順で処理した結果を裏返した形になり、日付降順としては一貫している #}
-          {% for f in ep.fills | reverse %}
-          <tr>
-            <td style="padding:1px 0.8em 1px 0;white-space:nowrap;color:#888;">{{ f.trade_date[2:4] }}/{{ f.trade_date[5:7] }}/{{ f.trade_date[8:10] }}</td>
-            <td style="padding:1px 0.8em;white-space:nowrap;">
-              {% if f.side == "buy" %}<span style="color:#9ed8f0;">{{ f.side_label }}</span>{% else %}<span style="color:#f0a0a0;">{{ f.side_label }}</span>{% endif %}
+          {% for r in ep.round_trips %}
+          <tr{% if not r.closed %} style="color:#7a7a95;"{% endif %}>
+            <td style="padding:1px 0.8em 1px 0;white-space:nowrap;color:#888;">
+              {%- if r.open_date %}{{ r.open_date[2:] }}{% else %}<span style="color:#666;" title="建玉を特定できる情報がCSVに無いため、対応する買いを表示できません">?</span>{% endif %}
+              <span style="color:#666;">→</span>
+              {% if r.closed %}{{ r.close_date[2:] }}{% else %}<span style="color:#a0a0d0;">保有中</span>{% endif %}
+              {%- if r.genbiki %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="現引は信用建玉を現物へ振り替える取引です。決済ではないため損益は計上せず、現物エピソード側へ引き継がれます">現引→現物</span>{% endif %}
+              {%- if r.orphan_close %}<span style="color:#8a6a5a;font-size:0.88em;margin-left:0.4em;" title="建玉情報がCSVに無いため建値・保有日数を表示できません">建玉不明</span>{% endif %}
             </td>
-            {# 現引は信用建玉を現物へ振り替える取引。信用側・現物側の両エピソードに
-               同じ約定が出るため、どちら側の記録かを行に添えて重複と誤読させない #}
-            <td style="padding:1px 0.8em;color:#777;white-space:nowrap;">{{ f.trade_kind }}{% if f.trade_kind == '現引' %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="現引は信用建玉を現物へ振り替える取引です。信用エピソードでは建玉の減少、現物エピソードでは取得として同じ約定が表示されます">{{ '→現物へ振替' if ep.kind == '信用' else '←信用から振替' }}</span>{% endif %}</td>
-            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "%g"|format(f.qty) }}株</td>
-            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "{:,}".format(f.price|round|int) }}円</td>
-            {% if f.tate_price %}<td style="padding:1px 0.8em;text-align:right;white-space:nowrap;color:#888;">建 {{ "{:,}".format(f.tate_price|round|int) }}</td>{% else %}<td></td>{% endif %}
-            {# fill 単位の保有日数は信用のみ。現物は売却fillと買いfillの対応がCSVに無く建日を紐付けられないため空欄 #}
-            {% if f.hold_days is defined %}<td style="padding:1px 0.8em;color:#777;white-space:nowrap;">{{ f.tate_date[2:] }} 建 → {{ f.hold_days }}日</td>{% else %}<td></td>{% endif %}
+            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{{ "%g"|format(r.qty) }}株</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
-              {% if f.fill_return_pct is defined %}<span style="color:{{ '#9ef0aa' if f.fill_return_pct >= 0 else '#f0a0a0' }};">{{ '+' if f.fill_return_pct >= 0 else '' }}{{ "%.2f"|format(f.fill_return_pct) }}%</span>
-              {% elif f.fill_pl is defined %}<span style="color:#666;" title="建単価または平均取得単価がないため損益率は算出できません">—</span>{% endif %}
+              {%- if r.open_price %}{{ "{:,}".format(r.open_price|round|int) }}{% else %}<span style="color:#666;">—</span>{% endif %}
+              <span style="color:#666;">→</span>
+              {% if r.close_price %}{{ "{:,}".format(r.close_price|round|int) }}{% else %}<span style="color:#666;">—</span>{% endif %}
+            </td>
+            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;color:#777;">{% if r.hold_days is not none %}{{ r.hold_days }}日{% else %}<span style="color:#666;">—</span>{% endif %}</td>
+            <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
+              {%- if r.return_pct is not none %}<span style="color:{{ '#9ef0aa' if r.return_pct >= 0 else '#f0a0a0' }};">{{ '+' if r.return_pct >= 0 else '' }}{{ "%.2f"|format(r.return_pct) }}%</span>
+              {%- else %}<span style="color:#666;">—</span>{% endif %}
             </td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
-              {% if f.fill_pl is defined %}<span style="color:{{ '#9ef0aa' if f.fill_pl >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(f.fill_pl) }}円</span>
-              {% elif f.side == 'sell' and f.trade_kind == '現物' %}<span style="color:#666;" title="取得記録がCSVに無いため損益は算出できません">—</span>{% endif %}
+              {%- if r.pl is not none %}<span style="color:{{ '#9ef0aa' if r.pl >= 0 else '#f0a0a0' }};">{{ "{:+,}".format(r.pl) }}円</span>
+              {%- else %}<span style="color:#666;">—</span>{% endif %}
             </td>
-            <td style="padding:1px 0.8em;color:#666;white-space:nowrap;">{{ f.broker }}</td>
+            <td style="padding:1px 0.8em;color:#666;white-space:nowrap;">{{ r.broker }}</td>
           </tr>
           {% endfor %}
         </table>
+        {# 保有中の現物は往復行(FIFO)とエピソード実現損益(平均取得単価法)の計算方法が
+           異なり合計が食い違う。数値のズレを不具合と誤読させないため明示する (issue #421) #}
+        {% if not ep.closed and ep.kind == "現物" %}
+        <div style="color:#7a6a4a;font-size:0.76em;margin-top:0.4em;">
+          ※ 往復行の損益は先入先出 (FIFO) で建値を対応づけています。保有中は上の実現損益 (平均取得単価法) と合計が一致しないことがあります。
+        </div>
+        {% endif %}
         {# エピソード単位の振り返りメモ (issue #387 Phase2)。アクションログ側から一本化 #}
         <div style="margin-top:0.6em;max-width:44em;">
           <div style="color:#888;font-size:0.78em;margin-bottom:0.2em;">振り返りメモ</div>
