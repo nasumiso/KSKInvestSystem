@@ -120,11 +120,23 @@ EOF
 
 ## 想定候補カタログ (2026-08 棚卸し)
 
-- **エピソード全体の集計・不変条件チェック** (未着手)
+- **エピソード全体の集計・不変条件チェック** (保留 — 仕様が固まってから)
   - 現状: `build_fill_episodes()` を `python -c` で呼び、銘柄別にグループ化して
     数え上げる処理を毎回書いている (PR #428 のレビュー対応で6回)。
-  - `show_fill_episodes.py` は「人が読む表示」用で、全銘柄走査して不整合を
-    数える用途には向かない。別の型として需要が実在する。
+  - `show_fill_episodes.py` は「人が読む表示」用 (434件をそのまま吐く) で、
+    全銘柄走査して不整合を数える用途には向かない。需要は実在する。
+  - **2026-08-30 の棚卸しで着手し、実装を見送った。** 昇格の障害は CLI の形では
+    なく「何を不変条件とするか」が未確定な点にある:
+    - 素朴に「buy量 == sell量」で検査すると 54件が引っかかるが、
+      `6227|信用|41` のように sell のみのエピソード (買いは前のエピソード) は正常
+    - 銘柄+kind 単位に集約し直しても 48件残る。信用の現引 (建玉の現物化) で
+      対称性が崩れるためと見られるが、エピソード内の fill に `trade_type` が
+      載っておらず (全て None) 判別できない
+    - この状態で実装すると、正常データを毎回「不整合48件」と報告する
+      誤検知製造機になる。「レアケース修正が現実のバグを作る」の変種
+  - **次に着手する条件**: 現引・期首持越し・信用/現物のペアリング仕様が固まること。
+    #398 (分割・併合) や #430 (保有サイクル) を触るときが自然なタイミング。
+    そこで「実際に検査したい不変条件」が確定してから昇格する。
 
 ### 棚卸しで決着した項目 (再提案しない)
 
@@ -137,10 +149,21 @@ EOF
 - **市場DBの一部だけ再計算** → 昇格しない。2ヶ月経って需要が出ず、
   `make_market_db.py html` で足りている。
 - **保有銘柄の code_s 一覧** → `portfolio_list.py` で対応済み (`--status` 絞り込み可)。
+- **特定銘柄のエピソード + fill を時系列で見る** → `show_fill_episodes.py <code> --fills`
+  で完全に代用できる (2026-08-30 に実際に叩いて確認)。ログに「近いことはできる」と
+  書いたまま `python -c` を使い続けていたが、実際は代用ではなく十分だった。
+- **split_suspect なエピソードの抽出** → `show_fill_episodes.py --check-splits` が既にある。
+- **stocks_shelve の登録件数・サイズ確認** → 件数は `make_stock_db.py list`、
+  サイズは `make_stock_db.py compact` の実行ログ (#194 / PR #431) に出る。
 
 既にCLI化済みで**やらなくてよい**もの (重複回避):
-make_market_db.py html / make_stock_db.py refresh_stock|refresh_price|refresh_pts /
-research_shelve.py show|list / portfolio_list.py / defrag_shelve.py / 各 migrate_*。
+make_market_db.py html / make_stock_db.py refresh_stock|refresh_price|refresh_pts|compact /
+research_shelve.py show|list / portfolio_list.py / defrag_shelve.py /
+show_fill_episodes.py (code指定・--fills・--open・--memo・--check-splits) / 各 migrate_*。
+
+**棚卸しの教訓**: ログの `how` に「既存CLIでも近いことはできる」と書いた項目は、
+まず実際に叩いて確認する。今回3クラスタ中2つがこれで決着した (書いた時点では
+面倒で `python -c` に流れただけで、CLI が不足していたわけではなかった)。
 
 ## 参照
 - 行動原則: CLAUDE.md「行動原則 (Karpathy 4原則)」「コーディング規約」

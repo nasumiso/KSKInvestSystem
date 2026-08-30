@@ -4,3 +4,8 @@
 {"ts":"2026-08-30","intent":"特定銘柄の fill を _current_hold_cycle と同じ順序で再生し held_qty の推移を追う","target":"_current_hold_cycle","args":{"code_s":"2980"},"how":"python -c で関数内のロジックを手で写経して途中経過を print","session":"PR #428 レビュー対応"}
 {"ts":"2026-08-30","intent":"特定銘柄の buy/sell 総量を数えて net が 0 になるか確認する","target":"build_fill_episodes","args":{"code_s":"2980"},"how":"python -c で fills を走査して合計","session":"PR #428 レビュー対応"}
 {"ts":"2026-08-30","intent":"stocks_shelve を開いて登録件数を確認する (DB 健全性チェック)","target":"stocks_shelve","args":{},"how":"python -c で shelve.open(flag='r') して len()","session":"データ整理"}
+{"ts":"2026-08-30","intent":"[棚卸し] 上記6件を棚卸し済み。エピソード全体の不変条件チェックのみ保留 (不変条件の定義が未確定)、他4件は既存CLIで決着","target":"query_log","args":{},"how":"promote-to-command スキルの棚卸し手順。詳細は SKILL.md の想定候補カタログを参照","session":"棚卸し 2026-08-30"}
+{"ts":"2026-08-30","intent":"shelve DB のファイル群 (.dat/.dir/.bak) の合計サイズと肥大化率を確認する","target":"stocks_shelve","args":{},"how":"du -sh と ls -la。CLI化済み → make_stock_db.py compact の実行ログに出る (#194)","session":"issue #194 コンパクション実装"}
+{"ts":"2026-08-30","intent":"本番DBのコピーに対して肥大化を再現し、compact 前後の件数・内容一致を全件検証する","target":"compact_shelve","args":{},"how":"python -c で本番を tmp にコピー → replace_from_dict で肥大化 → compact → export_to_dict 比較。テスト tests/test_db_shelve.py に取り込み済み","session":"issue #194 コンパクション実装"}
+{"ts":"2026-08-30","intent":"os.replace の失敗を注入して、退避・差し替えの各失敗点でライブDBが復元されるか確認する","target":"compact_shelve","args":{"fail_on":"backup/swap"},"how":"python -c で db_shelve.os.replace を差し替えて例外注入。テストに parametrize で取り込み済み","session":"PR #431 レビュー対応"}
+{"ts":"2026-08-30","intent":"別プロセスから同じ shelve を開いてロック待ちが発生するか (プロセス間排他の実効性) を確認する","target":"shelve_flock","args":{},"how":"python -c で subprocess を起動し待ち時間を計測。※ 排他自体を撤去したため現在は不要","session":"PR #431 レビュー対応"}
