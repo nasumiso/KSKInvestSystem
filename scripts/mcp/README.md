@@ -36,3 +36,27 @@ MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_D
 `period` は四季報の版情報です。正確な時点は DB に保存していないため、`as_of` は常に `null` です。
 
 すべての DB 読み取りは `research_shelve` の書き込みと同じ flock を取得するため、WebApp や日次バッチの更新とは直列化されます。
+
+## MBA での常駐起動
+
+Secure MCP Tunnel の Runtime API Key は平文ファイルや LaunchAgent に書かない。最初に、Runtime API Key を設定したターミナルでキーチェーンへ保存する。
+
+```bash
+security add-generic-password -U -a "$USER" \
+  -s shintakane-tunnel-control-plane -w "$CONTROL_PLANE_API_KEY"
+```
+
+`com.k_sohara.shintakane-tunnel.plist` の `WORKTREE_PATH` を実際のリポジトリパスへ置き換え、`~/Library/LaunchAgents/` へコピーして読み込む。次は、テンプレートを現在のリポジトリパスで展開してから配置する。
+
+```bash
+REPOSITORY_PATH="$(pwd)"
+sed "s|WORKTREE_PATH|$REPOSITORY_PATH|g" \
+  scripts/mcp/com.k_sohara.shintakane-tunnel.plist \
+  > ~/Library/LaunchAgents/com.k_sohara.shintakane-tunnel.plist
+launchctl bootstrap "gui/$(id -u)" \
+  ~/Library/LaunchAgents/com.k_sohara.shintakane-tunnel.plist
+```
+
+状態は `launchctl print "gui/$(id -u)/com.k_sohara.shintakane-tunnel"`、ログは
+`~/Library/Logs/shintakane-tunnel.stderr.log` で確認する。停止する場合は
+`launchctl bootout "gui/$(id -u)/com.k_sohara.shintakane-tunnel"` を使う。

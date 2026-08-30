@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ~/Library/LaunchAgents/ に配置して使用するテンプレート。
+  WORKTREE_PATH は実際の配置先へ置き換える。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.k_sohara.shintakane-tunnel</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>WORKTREE_PATH/scripts/mcp/run_tunnel_client.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>WORKTREE_PATH</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/k_sohara/Library/Logs/shintakane-tunnel.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/k_sohara/Library/Logs/shintakane-tunnel.stderr.log</string>
+</dict>
+</plist>
