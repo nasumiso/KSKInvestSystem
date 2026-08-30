@@ -17,6 +17,7 @@ import price
 import master
 import make_market_db
 import kessan
+import db_shelve
 from db_shelve import get_stock_db as _get_stock_shelve_db, ShelveDB, STOCKS_SHELVE
 
 
@@ -2502,6 +2503,11 @@ def main():
         action="store_true",
         help="update 後にウォッチ銘柄のスナップショット自動追記を実行",
     )
+    parser.add_argument(
+        "--keep-backup",
+        action="store_true",
+        help="compact 実行時、成功後も退避ファイルを残す",
+    )
     args = parser.parse_args()
     log_print("=" * 30)
     log_print("make_stock_db.pyを実行します", args)
@@ -2562,6 +2568,9 @@ def main():
         edit_db()
     elif command == "backup":
         backup_db()
+    elif command == "compact":
+        # stocks_shelve の断片化を解消して .dat を縮小する (issue #194)
+        db_shelve.compact_shelve(STOCKS_SHELVE, keep_backup=args.keep_backup)
     elif command == "update_all_db":
         # 対象コードを取得
         def get_code_list_from_db(min=1000, max=10000):
@@ -2622,12 +2631,28 @@ def main():
     googledrive.wait_all_uploads()
 
 
+def compact_stock_db_if_needed():
+    """stocks_shelve が閾値超過なら圧縮する。失敗しても日次バッチは継続する。
+
+    dbm.dumb は削除・上書き時に物理領域を解放しないため .dat が日々肥大化する
+    (issue #194)。cron の定期実行はスリープで発火しないことがあるため、
+    確実に動く日次バッチの末尾で閾値を見て自動実行する。
+    """
+    try:
+        db_shelve.compact_shelve_if_needed(STOCKS_SHELVE)
+    except Exception as exc:
+        log_error(f"stocks_shelve: 自動圧縮失敗: {exc}")
+
+
 def run_main_with_backup():
     """本処理の成否にかかわらず不可逆DBをバックアップする。"""
     try:
         main()
     finally:
         backup_irreplaceable_dbs()
+    # 圧縮は本処理が成功したときだけ行う。異常終了した回に走らせると、
+    # 調査材料になる断片化したままのDBを捨ててしまうため。
+    compact_stock_db_if_needed()
 
 
 # TODO: エラーを記述するようにせんと・・

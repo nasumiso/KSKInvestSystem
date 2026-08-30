@@ -3,6 +3,7 @@
 import os
 import pytest
 
+import db_shelve
 from db_shelve import ShelveDB
 
 
@@ -196,3 +197,72 @@ class TestShelveDBMemo:
                 _ = db.get("key")
             # メモが無効になった後も正常にアクセスできる
             assert db.get("key")["val"] == 1
+
+
+# ==================================================
+# コンパクション (issue #194)
+# ==================================================
+class TestCompactShelve:
+    """compact_shelve / compact_shelve_if_needed のテスト"""
+
+    def _bloat(self, db_path, records=50, rounds=20):
+        """replace_from_dict の繰り返しで .dat にゴミを溜める (本番と同じ肥大パターン)"""
+        data = {str(i): {"n": i, "pad": "x" * 500} for i in range(records)}
+        with ShelveDB(db_path) as db:
+            db.import_from_dict(data)
+        for _ in range(rounds):
+            with ShelveDB(db_path) as db:
+                db.replace_from_dict(data)
+        return data
+
+    def test_compact_preserves_records_and_shrinks(self, db_path):
+        """全レコードが保たれ、ファイルサイズが減る"""
+        data = self._bloat(db_path)
+        size_before = db_shelve.get_shelve_size(db_path)
+
+        result = db_shelve.compact_shelve(db_path)
+
+        assert result["record_count"] == len(data)
+        assert result["size_after"] < size_before
+        with ShelveDB(db_path) as db:
+            assert len(db) == len(data)
+            for key, value in data.items():
+                assert db[key] == value
+        # 退避はデフォルトで残さない
+        assert not os.path.exists(db_path + ".compact_backup.dat")
+
+    def test_compact_keeps_backup_when_requested(self, db_path):
+        """keep_backup=True なら退避が残る"""
+        self._bloat(db_path, records=10, rounds=5)
+        db_shelve.compact_shelve(db_path, keep_backup=True)
+        assert os.path.exists(db_path + ".compact_backup.dat")
+
+    def test_compact_if_needed_skips_under_threshold(self, db_path):
+        """閾値未満なら None を返し、ファイルは変化しない"""
+        self._bloat(db_path, records=10, rounds=3)
+        size_before = db_shelve.get_shelve_size(db_path)
+
+        assert db_shelve.compact_shelve_if_needed(db_path, threshold=10 ** 9) is None
+        assert db_shelve.get_shelve_size(db_path) == size_before
+
+    def test_compact_restores_live_db_on_swap_failure(self, db_path, monkeypatch):
+        """swap 途中で失敗してもライブDBが復元される (退避からのロールバック)"""
+        data = self._bloat(db_path, records=20, rounds=5)
+
+        real_replace = os.replace
+
+        def flaky_replace(src, dst):
+            # 一時DB → ライブ名 の .dat 差し替えだけ失敗させる
+            if str(dst).endswith(".dat") and ".compact_tmp" in str(src):
+                raise OSError("injected swap failure")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(db_shelve.os, "replace", flaky_replace)
+
+        with pytest.raises(OSError, match="injected swap failure"):
+            db_shelve.compact_shelve(db_path)
+
+        monkeypatch.undo()
+        with ShelveDB(db_path) as db:
+            assert len(db) == len(data)
+            assert db["7"] == data["7"]

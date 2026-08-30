@@ -43,6 +43,29 @@ def test_run_main_with_backup_backs_up_after_main_failure(monkeypatch):
     assert called == [True]
 
 
+def test_run_main_with_backup_skips_compaction_on_failure(monkeypatch):
+    """本処理が落ちた回は圧縮しない (断片化したDBを調査材料として残すため / issue #194)"""
+    called = []
+    monkeypatch.setattr(
+        make_stock_db, "backup_irreplaceable_dbs", lambda: called.append("backup")
+    )
+    monkeypatch.setattr(
+        make_stock_db, "compact_stock_db_if_needed", lambda: called.append("compact")
+    )
+
+    monkeypatch.setattr(make_stock_db, "main", lambda: None)
+    make_stock_db.run_main_with_backup()
+    assert called == ["backup", "compact"]
+
+    called.clear()
+    monkeypatch.setattr(
+        make_stock_db, "main", lambda: (_ for _ in ()).throw(RuntimeError("failed"))
+    )
+    with pytest.raises(RuntimeError, match="failed"):
+        make_stock_db.run_main_with_backup()
+    assert called == ["backup"]
+
+
 # ==================================================
 # has_price_data
 # ==================================================

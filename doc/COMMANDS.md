@@ -38,6 +38,12 @@ cd scripts && python make_stock_db.py reflesh
 # DBバックアップ
 cd scripts && python make_stock_db.py backup
 
+# stocks_shelve のコンパクション (issue #194)
+# dbm.dumb は削除・上書き時に領域を解放しないため .dat が約100〜120MB/日で肥大化する。
+# 日次バッチ末尾で 500MB 超過時に自動実行されるので、通常は手動実行不要。
+cd scripts && python make_stock_db.py compact
+cd scripts && python make_stock_db.py compact --keep-backup  # 成功後も退避を残す
+
 # PTSランキング再取得 + 当日決算銘柄の kessan_comments['pts'] 上書き
 # (list_all_db を回さず PTS だけ最新化したい時に使う)
 cd scripts && python make_stock_db.py refresh_pts
@@ -222,7 +228,7 @@ cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05
 
 ## 自動実行
 
-`shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` → `run_theme_news.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。
+`shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` → `exposure_guide.py` → `run_theme_news.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。
 
 詳細仕様:
 - 平日(月〜金)19:00 の `StartCalendarInterval` が定刻発火
@@ -231,6 +237,7 @@ cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05
 - shintakane_cron.sh の冒頭ガードで、launchd 経由かつ19時前の起動はスキップ
 - `make_stock_db.py` の結果サマリーをコンソールに出した後、`make_stock_db.py` 成功時のみ theme-news を実行
 - 開発時に theme-news を飛ばす場合: `bash shintakane_cron.sh --skip-theme-news` (`--no-theme-news` も同義)
+- `make_stock_db.py` の実行末尾で `stocks_shelve` のサイズを確認し、500MB 超過時のみコンパクションを自動実行 (issue #194)。圧縮の成否は日次バッチの結果に影響しない (失敗してもログに残すのみ)
 
 ## テスト
 
