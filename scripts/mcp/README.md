@@ -26,7 +26,7 @@ MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_D
 }
 ```
 
-この内容を Claude Code の `.mcp.json` に登録するのは手順 4 で行います。`/<REPOSITORY_ROOT>` は実際の worktree の絶対パスへ置き換えます。
+この内容を Claude Code の `.mcp.json` に登録するのは手順 4 で行います。`/<REPOSITORY_ROOT>` は main をチェックアウトしたリポジトリ直下の絶対パスへ置き換えます。
 
 ## 提供ツール
 
@@ -46,11 +46,11 @@ security add-generic-password -U -a "$USER" \
   -s shintakane-tunnel-control-plane -w "$CONTROL_PLANE_API_KEY"
 ```
 
-`com.k_sohara.shintakane-tunnel.plist` の `WORKTREE_PATH` を実際のリポジトリパスへ置き換え、`~/Library/LaunchAgents/` へコピーして読み込む。次は、テンプレートを現在のリポジトリパスで展開してから配置する。
+`com.k_sohara.shintakane-tunnel.plist` の `REPOSITORY_PATH` を、main をチェックアウトしたリポジトリ直下のパスへ置き換え、`~/Library/LaunchAgents/` へコピーして読み込む。次は、テンプレートをそのパスで展開してから配置する。
 
 ```bash
 REPOSITORY_PATH="$(pwd)"
-sed "s|WORKTREE_PATH|$REPOSITORY_PATH|g" \
+sed "s|REPOSITORY_PATH|$REPOSITORY_PATH|g" \
   scripts/mcp/com.k_sohara.shintakane-tunnel.plist \
   > ~/Library/LaunchAgents/com.k_sohara.shintakane-tunnel.plist
 launchctl bootstrap "gui/$(id -u)" \
