@@ -78,7 +78,20 @@ class ShelveDB:
                 if db_dir and not os.path.exists(db_dir):
                     os.makedirs(db_dir)
                 # dbm.dumbを使用（macOSのdbm.ndbmはハッシュ衝突でキー消失するため）
-                dumb_db = dbm.dumb.open(self._db_path, flag="c")
+                # コンパクション (issue #194) の差し替え中に開くと、ライブパスが
+                # 一時的に不在で空DBを新規作成したり、新旧混在の .dat/.dir を
+                # 読んで壊れる。open だけ排他して一貫したファイル群を見せる。
+                #
+                # 自動コンパクションの対象 (stocks_shelve) だけに限定する。
+                # research_shelve / portfolio_shelve は同じ `<path>.lock` を
+                # 各自の _flock で使っており、そちらがロックを保持したまま
+                # ShelveDB.open() に入ると、別々の深さカウンタ同士で
+                # 自己デッドロックするため。
+                if self._db_path == STOCKS_SHELVE:
+                    with shelve_flock(self._db_path):
+                        dumb_db = dbm.dumb.open(self._db_path, flag="c")
+                else:
+                    dumb_db = dbm.dumb.open(self._db_path, flag="c")
                 self._db = shelve.Shelf(
                     dumb_db,
                     protocol=pickle.HIGHEST_PROTOCOL,

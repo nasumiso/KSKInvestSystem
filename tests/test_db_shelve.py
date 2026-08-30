@@ -277,6 +277,35 @@ class TestCompactShelve:
             assert db.export_to_dict() == data
         assert not os.path.exists(db_path + ".compact_backup.dat")
 
+    def test_reader_waits_out_the_swap_window(self, db_path, monkeypatch):
+        """差し替え中に開いた読み手が空DBを掴まない (ロック未取得だと None になる)"""
+        import threading
+
+        # open 時の排他は自動コンパクション対象 (STOCKS_SHELVE) のみに効くため、
+        # テスト用DBをその対象として扱わせる
+        monkeypatch.setattr(db_shelve, "STOCKS_SHELVE", db_path)
+
+        with ShelveDB(db_path) as db:
+            db.import_from_dict({"42": {"stock_name": "name42"}})
+
+        got = []
+
+        def reader():
+            time.sleep(0.05)
+            with ShelveDB(db_path) as db:
+                got.append(db.get("42"))
+
+        backup = db_path + ".compact_backup"
+        t = threading.Thread(target=reader)
+        with db_shelve.shelve_flock(db_path):
+            db_shelve._move_shelve_files(db_path, backup)  # ライブDB不在の瞬間
+            t.start()
+            time.sleep(0.3)
+            db_shelve._move_shelve_files(backup, db_path)
+        t.join()
+
+        assert got == [{"stock_name": "name42"}]
+
     def test_compact_serializes_with_writers(self, db_path):
         """コンパクション中は他プロセス相当の書き込みがブロックされる (lost update 防止)"""
         import threading
