@@ -8,8 +8,9 @@ dbm.dumb はレコード更新時にファイル内に隙間（断片化）を�
 断片化を解消する。
 
 処理本体は db_shelve.compact_shelve() にある (issue #194)。
-stocks_shelve は日次バッチが閾値超過時に自動実行するため、
-このスクリプトは market / sector DB の手動デフラグが主な用途。
+自動実行は行わないので、肥大化に気づいたら手動で実行する必要がある
+(stocks_shelve は `make_stock_db.py compact` でも実行できる)。
+実行中に読み書きされると壊れるため、WebApp と日次バッチを止めてから叩くこと。
 
 使い方:
     cd scripts && python defrag_shelve.py --target market
@@ -22,6 +23,7 @@ import argparse
 # scriptsディレクトリからの相対パスでインポート
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from ks_util import log_print, log_error
 from db_shelve import (
     STOCKS_SHELVE,
     MARKET_SHELVE,
@@ -64,7 +66,7 @@ def main():
         try:
             result = compact_shelve(db_path, keep_backup=args.keep_backup)
         except Exception as exc:
-            print(f"[{label}] デフラグ失敗: {exc}")
+            log_error(f"[{label}] デフラグ失敗: {exc}")
             continue
         if result:
             total_before += result["size_before"]
@@ -73,7 +75,7 @@ def main():
     # 単一対象なら compact_shelve のログと重複するので合計は出さない
     if len(db_list) > 1 and total_before > 0:
         ratio = (1 - total_after / total_before) * 100
-        print(
+        log_print(
             "合計: %s → %s (削減 %.1f%%)"
             % (format_size(total_before), format_size(total_after), ratio)
         )

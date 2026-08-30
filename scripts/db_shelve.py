@@ -533,8 +533,14 @@ def compact_shelve(db_path: str, keep_backup: bool = False) -> Optional[Dict[str
     #    保持する場合も .compact_backup のままにはしない。この名前は
     #    「中断の痕跡」として次回実行時の停止条件に使っているため。
     if keep_backup:
-        kept_path = "%s.compact_kept_%s" % (db_path, time.strftime("%y%m%d_%H%M"))
-        _remove_shelve_files(kept_path)
+        # 既存の保持退避は消さない (最初の1つだけが肥大化前の状態を持つことがある)。
+        # 同一分内の再実行でも衝突しないよう、空いている名前を探す。
+        stamp = time.strftime("%y%m%d_%H%M%S")
+        kept_path = "%s.compact_kept_%s" % (db_path, stamp)
+        seq = 0
+        while os.path.exists(kept_path + ".dat"):
+            seq += 1
+            kept_path = "%s.compact_kept_%s_%d" % (db_path, stamp, seq)
         _move_shelve_files(backup_path, kept_path)
         log_print("compact: 退避を保持しました", kept_path)
     else:
