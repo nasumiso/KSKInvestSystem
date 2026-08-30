@@ -69,6 +69,20 @@ for c in $(python portfolio_list.py --status 1保); do
 done
 ```
 
+## 銘柄単体の取得・確認 (開発用)
+
+パーサ修正時やデータ確認時に、特定銘柄の1項目だけを取得して表示する。引数で銘柄コードを指定でき、省略時は各ソース内の既定値を使う (従来動作)。DB全体のランキング更新は行わない。
+
+```bash
+cd scripts && python master.py 6324        # 基本情報 (銘柄名/市場/セクター/テーマ/時価総額)
+cd scripts && python gyoseki.py 6324       # 業績 + 業績スコア
+cd scripts && python shihyou.py 6324       # 財務指標 (PER/PBR/ROE/自己資本比率など) + 指標PT
+cd scripts && python rironkabuka.py 6324   # 理論株価 + 乖離率
+cd scripts && python price.py 6324         # 価格 + モメンタム/移動平均/新高値判定
+
+cd scripts && python master.py 6324 7203   # 複数銘柄も可
+```
+
 ## 市場DB操作
 
 ```bash

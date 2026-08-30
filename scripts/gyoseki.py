@@ -3,6 +3,7 @@
 
 import re
 import os
+import sys
 from functools import reduce
 
 from ks_util import *
@@ -1054,7 +1055,8 @@ def main():
     # TODO: 配当2%まで出してるところが10倍株の意外な要素らしい(井村さん)
     # TODO: 通期進捗率を評価に含める？
     # TODO: 利益率伸びPTを表示に入れたい
-    code_list_s = ["6574"]
+    # 引数で銘柄コードを指定 (例: python gyoseki.py 6324 7203)。省略時は既定値。
+    code_list_s = sys.argv[1:] or ["6574"]
     for code_s in code_list_s:
         gyoseki_data = get_gyoseki_data(code_s, UPD_INTERVAL)  # UPD_FORCE/UPD_INTERVAL
         calc_progress_rate(gyoseki_data)

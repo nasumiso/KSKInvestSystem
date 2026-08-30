@@ -1,0 +1,6 @@
+{"ts":"2026-08-30","intent":"全エピソードを銘柄別にグループ化し、保有サイクルと open_pl の整合性を全件検証する","target":"build_fill_episodes","args":{},"how":"python -c で webapp.helpers を import し、by_code に集約して不変条件を数える","session":"PR #428 レビュー対応"}
+{"ts":"2026-08-30","intent":"特定銘柄のエピソードと fill を時系列で一覧表示する","target":"build_fill_episodes","args":{"code_s":"9337"},"how":"python -c。show_fill_episodes.py <code> でも近いことはできる","session":"PR #428 レビュー対応"}
+{"ts":"2026-08-30","intent":"split_suspect なエピソードを全件から抽出して数える","target":"build_fill_episodes","args":{"filter":"split_suspect"},"how":"python -c でリスト内包","session":"PR #428 レビュー対応"}
+{"ts":"2026-08-30","intent":"特定銘柄の fill を _current_hold_cycle と同じ順序で再生し held_qty の推移を追う","target":"_current_hold_cycle","args":{"code_s":"2980"},"how":"python -c で関数内のロジックを手で写経して途中経過を print","session":"PR #428 レビュー対応"}
+{"ts":"2026-08-30","intent":"特定銘柄の buy/sell 総量を数えて net が 0 になるか確認する","target":"build_fill_episodes","args":{"code_s":"2980"},"how":"python -c で fills を走査して合計","session":"PR #428 レビュー対応"}
+{"ts":"2026-08-30","intent":"stocks_shelve を開いて登録件数を確認する (DB 健全性チェック)","target":"stocks_shelve","args":{},"how":"python -c で shelve.open(flag='r') して len()","session":"データ整理"}

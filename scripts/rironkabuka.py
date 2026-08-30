@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import re
+import sys
 import requests
 
 from ks_util import *
@@ -625,17 +626,22 @@ def main():
 
     # TODO: 理論株価PTや進捗率はDB保持にしたほうがよいかも
     # 3920, 4493, 4595, 2389, 7270, 5032, 6096, 4169,6195,7808,2410,9107,9264
-    code_list = ["9343"]
+    # 引数で銘柄コードを指定 (例: python rironkabuka.py 6324 7203)。省略時は既定値。
+    code_list = sys.argv[1:] or ["9343"]
     for code_s in code_list:
         import make_stock_db as db
 
-        stock = db.load_cacehd_stock_db(code_s)
+        # DB未登録銘柄 (新規上場等) では None が返るので空dictに正規化する
+        stock = db.load_cacehd_stock_db(code_s) or {}
         upd = UPD_INTERVAL  # UPD_FORCE
         record = get_rironkabuka_data(code_s, upd, stock)
         # calc_theory_pt(code, stock)
 
+        # DB未登録銘柄は stock に price が無く乖離率が全て0%になるため、
+        # 株探htmlの現在値で補う (htmlはキャッシュ済みで通信は発生しない)。
+        price = stock.get("price") or analyze_from_kabutan(code_s, upd, stock)[4]
         # print get_rironkabuka_expr(stock)
-        log_print(get_rironkabuka_expr2(record, stock.get("price")))
+        log_print(get_rironkabuka_expr2(record, price))
 
 
 if __name__ == "__main__":

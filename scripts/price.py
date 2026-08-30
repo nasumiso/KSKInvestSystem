@@ -7,6 +7,7 @@ import json
 import os
 import os.path
 import re
+import sys
 
 import make_stock_db
 
@@ -2449,7 +2450,8 @@ def main():
     # となっているとき、取れていない
     # TODO: ローソク足ボラティリティの計算が疑問　終値の平均で割るところ
     # TODO: 1/5/20出来高変化率もほしい
-    code_list = ["215A"]
+    # 引数で銘柄コードを指定 (例: python price.py 6324 7203)。省略時は既定値。
+    code_list = sys.argv[1:] or ["215A"]
     for code_s in code_list:
         log_print("-" * 30)
         log_print("%sの価格を更新します" % code_s)

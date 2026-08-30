@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 from ks_util import *
 
 import re
@@ -235,7 +236,8 @@ def main():
     logger = setup_logger("make_stock_db")
 
     # TODO: !!! 時価総額の値が取得できません でとる
-    code_list = ["176A"]  # 7776
+    # 引数で銘柄コードを指定 (例: python master.py 6324 7203)。省略時は既定値。
+    code_list = sys.argv[1:] or ["176A"]  # 7776
     for code in code_list:
         log_print("-" * 30)
         log_print("%sの基本情報を更新します" % code)

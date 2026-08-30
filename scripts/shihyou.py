@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import re
+import sys
 
 # from scipy import stats
 # import numpy as np
@@ -723,7 +724,8 @@ def main():
     """
     # code_list = [1768,1959,1820,1793,1352,2152,1801,1812,1332,1764,11827,1782,1899,1905,1301,1810,1824,2109,1946,2162,1720,1788,1934,1870,1376,1911,1515,1885,1939,1941]
     # code_list = [3038,2301,6095,8001,8031,8035,3668]
-    code_list = ["9509"]  # 5034,4436,7808, 2780,6083
+    # 引数で銘柄コードを指定 (例: python shihyou.py 6324 7203)。省略時は既定値。
+    code_list = sys.argv[1:] or ["9509"]  # 5034,4436,7808, 2780,6083
     # import make_stock_db
     # stocks = make_stock_db.load_stock_db()
     for code_s in code_list:
