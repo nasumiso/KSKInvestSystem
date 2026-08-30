@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   ~/Library/LaunchAgents/ に配置して使用するテンプレート。
-  REPOSITORY_PATH は main をチェックアウトしたリポジトリ直下へ置き換える。
+  RUNNER_PATH はホーム配下へインストールした起動スクリプトの絶対パスへ置き換える。
 -->
 <plist version="1.0">
 <dict>
@@ -11,7 +11,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>REPOSITORY_PATH/scripts/mcp/run_tunnel_client.sh</string>
+        <string>RUNNER_PATH</string>
     </array>
 
     <key>RunAtLoad</key>

@@ -46,11 +46,15 @@ security add-generic-password -U -a "$USER" \
   -s shintakane-tunnel-control-plane -w "$CONTROL_PLANE_API_KEY"
 ```
 
-`com.k_sohara.shintakane-tunnel.plist` の `REPOSITORY_PATH` を、main をチェックアウトしたリポジトリ直下のパスへ置き換え、`~/Library/LaunchAgents/` へコピーして読み込む。次は、テンプレートをそのパスで展開してから配置する。
+launchd はこの Mac では Dropbox 内のシェルスクリプトを直接起動できないことがある。そのため、起動ラッパーだけをホーム配下へインストールする。MCP サーバー本体はトンネルのプロファイルで main の `scripts/mcp/shikiho_server.py` を参照するため、コードや DB のコピー運用にはならない。
+
+`com.k_sohara.shintakane-tunnel.plist` の `RUNNER_PATH` を、ホーム配下にインストールした起動スクリプトの絶対パスへ置き換え、`~/Library/LaunchAgents/` へコピーして読み込む。
 
 ```bash
-REPOSITORY_PATH="$(pwd)"
-sed "s|REPOSITORY_PATH|$REPOSITORY_PATH|g" \
+RUNNER_PATH="$HOME/.local/bin/shintakane-tunnel"
+mkdir -p "$(dirname "$RUNNER_PATH")"
+install -m 755 scripts/mcp/run_tunnel_client.sh "$RUNNER_PATH"
+sed "s|RUNNER_PATH|$RUNNER_PATH|g" \
   scripts/mcp/com.k_sohara.shintakane-tunnel.plist \
   > ~/Library/LaunchAgents/com.k_sohara.shintakane-tunnel.plist
 launchctl bootstrap "gui/$(id -u)" \
