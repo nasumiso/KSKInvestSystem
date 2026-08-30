@@ -631,7 +631,8 @@ def main():
     for code_s in code_list:
         import make_stock_db as db
 
-        stock = db.load_cacehd_stock_db(code_s)
+        # DB未登録銘柄 (新規上場等) では None が返るので空dictに正規化する
+        stock = db.load_cacehd_stock_db(code_s) or {}
         upd = UPD_INTERVAL  # UPD_FORCE
         record = get_rironkabuka_data(code_s, upd, stock)
         # calc_theory_pt(code, stock)
