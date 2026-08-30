@@ -204,7 +204,7 @@ class TestShelveDBMemo:
 # コンパクション (issue #194)
 # ==================================================
 class TestCompactShelve:
-    """compact_shelve / compact_shelve_if_needed のテスト"""
+    """compact_shelve のテスト"""
 
     def _bloat(self, db_path, records=50, rounds=20):
         """replace_from_dict の繰り返しで .dat にゴミを溜める (本番と同じ肥大パターン)"""
@@ -238,14 +238,6 @@ class TestCompactShelve:
         db_shelve.compact_shelve(db_path, keep_backup=True)
         assert os.path.exists(db_path + ".compact_backup.dat")
 
-    def test_compact_if_needed_skips_under_threshold(self, db_path):
-        """閾値未満なら None を返し、ファイルは変化しない"""
-        self._bloat(db_path, records=10, rounds=3)
-        size_before = db_shelve.get_shelve_size(db_path)
-
-        assert db_shelve.compact_shelve_if_needed(db_path, threshold=10 ** 9) is None
-        assert db_shelve.get_shelve_size(db_path) == size_before
-
     @pytest.mark.parametrize(
         "fail_on",
         [
@@ -276,53 +268,3 @@ class TestCompactShelve:
         with ShelveDB(db_path) as db:
             assert db.export_to_dict() == data
         assert not os.path.exists(db_path + ".compact_backup.dat")
-
-    def test_reader_waits_out_the_swap_window(self, db_path, monkeypatch):
-        """差し替え中に開いた読み手が空DBを掴まない (ロック未取得だと None になる)"""
-        import threading
-
-        # open 時の排他は自動コンパクション対象 (STOCKS_SHELVE) のみに効くため、
-        # テスト用DBをその対象として扱わせる
-        monkeypatch.setattr(db_shelve, "STOCKS_SHELVE", db_path)
-
-        with ShelveDB(db_path) as db:
-            db.import_from_dict({"42": {"stock_name": "name42"}})
-
-        got = []
-
-        def reader():
-            time.sleep(0.05)
-            with ShelveDB(db_path) as db:
-                got.append(db.get("42"))
-
-        backup = db_path + ".compact_backup"
-        t = threading.Thread(target=reader)
-        with db_shelve.shelve_flock(db_path):
-            db_shelve._move_shelve_files(db_path, backup)  # ライブDB不在の瞬間
-            t.start()
-            time.sleep(0.3)
-            db_shelve._move_shelve_files(backup, db_path)
-        t.join()
-
-        assert got == [{"stock_name": "name42"}]
-
-    def test_compact_serializes_with_writers(self, db_path):
-        """コンパクション中は他プロセス相当の書き込みがブロックされる (lost update 防止)"""
-        import threading
-
-        self._bloat(db_path, records=10, rounds=3)
-        order = []
-
-        def writer():
-            time.sleep(0.05)
-            with db_shelve.shelve_flock(db_path):
-                order.append("writer")
-
-        t = threading.Thread(target=writer)
-        with db_shelve.shelve_flock(db_path):
-            t.start()
-            time.sleep(0.3)
-            order.append("compact")
-        t.join()
-
-        assert order == ["compact", "writer"]

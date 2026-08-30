@@ -12,13 +12,12 @@ import dbm.dumb
 import threading
 import pickle
 import os
-import fcntl
 from contextlib import contextmanager
 from typing import Dict, Any, Optional, List, Iterator
 
 # ks_utilへの依存を遅延ロードに変更（テスト時の依存解決のため）
 try:
-    from ks_util import log_print, log_warning, log_debug, DATA_DIR
+    from ks_util import log_print, log_warning, DATA_DIR
 except ImportError:
     # Fallback for testing without full ks_util dependencies
     def log_print(*args, **kwargs):
@@ -26,9 +25,6 @@ except ImportError:
 
     def log_warning(*args, **kwargs):
         print("WARNING:", *args, **kwargs)
-
-    def log_debug(*args, **kwargs):
-        print("DEBUG:", *args, **kwargs)
 
     # Default DATA_DIR for testing
     DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -78,20 +74,7 @@ class ShelveDB:
                 if db_dir and not os.path.exists(db_dir):
                     os.makedirs(db_dir)
                 # dbm.dumbを使用（macOSのdbm.ndbmはハッシュ衝突でキー消失するため）
-                # コンパクション (issue #194) の差し替え中に開くと、ライブパスが
-                # 一時的に不在で空DBを新規作成したり、新旧混在の .dat/.dir を
-                # 読んで壊れる。open だけ排他して一貫したファイル群を見せる。
-                #
-                # 自動コンパクションの対象 (stocks_shelve) だけに限定する。
-                # research_shelve / portfolio_shelve は同じ `<path>.lock` を
-                # 各自の _flock で使っており、そちらがロックを保持したまま
-                # ShelveDB.open() に入ると、別々の深さカウンタ同士で
-                # 自己デッドロックするため。
-                if self._db_path == STOCKS_SHELVE:
-                    with shelve_flock(self._db_path):
-                        dumb_db = dbm.dumb.open(self._db_path, flag="c")
-                else:
-                    dumb_db = dbm.dumb.open(self._db_path, flag="c")
+                dumb_db = dbm.dumb.open(self._db_path, flag="c")
                 self._db = shelve.Shelf(
                     dumb_db,
                     protocol=pickle.HIGHEST_PROTOCOL,
@@ -415,50 +398,6 @@ def save_dict_to_shelve(db_path: str, data: Dict[str, Any]) -> None:
 # 「新しい .dat × 古い .dir」を読まれる窓を最小化する。
 _SHELVE_EXTENSIONS = (".dat", ".bak", ".dir")
 
-# リエントラント検出用: 同一スレッドが既にロックを保持しているか
-_flock_holder = threading.local()
-
-
-@contextmanager
-def shelve_flock(db_path: str):
-    """shelve のプロセス間排他ロック (fcntl.flock)。
-
-    research_shelve._flock と同じパターン。コンパクションは
-    「全件読み出し → 一時DB構築 → ライブDBへ差し替え」の間に
-    別プロセスが書き込むと、その更新が差し替えで失われる
-    (lost update)。読み出しから差し替え完了までを、通常の
-    書き込み側と共有するロックで囲うことで防ぐ。
-
-    リエントラント対応: 同一スレッドが二重に取得してもデッドロックしない。
-    """
-    if getattr(_flock_holder, "depth", 0) > 0:
-        _flock_holder.depth += 1
-        try:
-            yield
-        finally:
-            _flock_holder.depth -= 1
-        return
-
-    lock_file = db_path + ".lock"
-    lock_dir = os.path.dirname(lock_file)
-    if lock_dir and not os.path.exists(lock_dir):
-        os.makedirs(lock_dir, exist_ok=True)
-    fd = open(lock_file, "a")
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        _flock_holder.depth = 1
-        try:
-            yield
-        finally:
-            _flock_holder.depth = 0
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        fd.close()
-
-# 自動コンパクションの閾値。dbm.dumb は削除・上書き時に物理領域を解放しないため
-# .dat が日々肥大化する (stocks_shelve で実測 約100〜120MB/日、実データは約20MB)。
-COMPACT_THRESHOLD_BYTES = 500 * 1024 * 1024
-
 # 検証で内容一致を確認するサンプル件数
 _COMPACT_VERIFY_SAMPLES = 30
 
@@ -521,15 +460,6 @@ def compact_shelve(db_path: str, keep_backup: bool = False) -> Optional[Dict[str
         log_warning("compact: DBが存在しないためスキップします", db_path)
         return None
 
-    # 読み出しから差し替え完了までを排他する。ここを囲わないと、
-    # WebApp の POST /stock/<code_s>/refresh 等が途中で書き込んだ更新を
-    # 古いスナップショットで上書きしてしまう (lost update)。
-    with shelve_flock(db_path):
-        return _compact_shelve_locked(db_path, keep_backup)
-
-
-def _compact_shelve_locked(db_path: str, keep_backup: bool) -> Dict[str, Any]:
-    """compact_shelve の本体。呼び出し元が shelve_flock を保持していること。"""
     size_before = get_shelve_size(db_path)
     log_print("compact: 開始", db_path, format_size(size_before))
 
@@ -601,25 +531,6 @@ def _compact_shelve_locked(db_path: str, keep_backup: bool) -> Dict[str, Any]:
         "size_after": size_after,
         "record_count": record_count,
     }
-
-
-def compact_shelve_if_needed(
-    db_path: str, threshold: int = COMPACT_THRESHOLD_BYTES, keep_backup: bool = False
-) -> Optional[Dict[str, Any]]:
-    """閾値を超えている場合のみコンパクションする。
-
-    Returns:
-        実行した場合は compact_shelve の戻り値、しなかった場合は None
-    """
-    size = get_shelve_size(db_path)
-    if size < threshold:
-        log_debug(
-            "compact: 閾値未満のためスキップ",
-            db_path,
-            "%s < %s" % (format_size(size), format_size(threshold)),
-        )
-        return None
-    return compact_shelve(db_path, keep_backup=keep_backup)
 
 
 # ===========================================

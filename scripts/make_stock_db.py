@@ -766,9 +766,7 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
     force = upd >= UPD_REEVAL
     log_print("update_tables:", tables, " 更新:", upd, "同期" if sync else "非同期")
 
-    # コンパクション (issue #194) と排他する。WebApp の
-    # POST /stock/<code_s>/refresh もこの経路で書き込む
-    with db_shelve.shelve_flock(STOCKS_SHELVE), _get_stock_shelve_db() as stocks_db:
+    with _get_stock_shelve_db() as stocks_db:
         # yfinanceバッチプリフェッチ（price更新対象がある場合、DB参照で市場コード解決）
         if (not tables or "price" in tables) and code_s_list:
             try:
@@ -903,8 +901,7 @@ def persist_stock_fields(stock_data_list):
     """
     if not stock_data_list:
         return
-    # コンパクション (issue #194) と排他する
-    with db_shelve.shelve_flock(STOCKS_SHELVE), _get_stock_shelve_db() as db:
+    with _get_stock_shelve_db() as db:
         for stock_data in stock_data_list:
             update_db(db, stock_data)
         db.sync()
@@ -1968,8 +1965,7 @@ def save_stock_db(stocks):
     """stockDBの保存
     dictを全置換（削除も反映）
     """
-    # コンパクション (issue #194) と排他する
-    with db_shelve.shelve_flock(STOCKS_SHELVE), _get_stock_shelve_db() as db:
+    with _get_stock_shelve_db() as db:
         db.replace_from_dict(stocks)
 
 
@@ -2635,28 +2631,12 @@ def main():
     googledrive.wait_all_uploads()
 
 
-def compact_stock_db_if_needed():
-    """stocks_shelve が閾値超過なら圧縮する。失敗しても日次バッチは継続する。
-
-    dbm.dumb は削除・上書き時に物理領域を解放しないため .dat が日々肥大化する
-    (issue #194)。cron の定期実行はスリープで発火しないことがあるため、
-    確実に動く日次バッチの末尾で閾値を見て自動実行する。
-    """
-    try:
-        db_shelve.compact_shelve_if_needed(STOCKS_SHELVE)
-    except Exception as exc:
-        log_error(f"stocks_shelve: 自動圧縮失敗: {exc}")
-
-
 def run_main_with_backup():
     """本処理の成否にかかわらず不可逆DBをバックアップする。"""
     try:
         main()
     finally:
         backup_irreplaceable_dbs()
-    # 圧縮は本処理が成功したときだけ行う。異常終了した回に走らせると、
-    # 調査材料になる断片化したままのDBを捨ててしまうため。
-    compact_stock_db_if_needed()
 
 
 # TODO: エラーを記述するようにせんと・・
