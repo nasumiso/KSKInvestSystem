@@ -129,7 +129,7 @@ EOF
 ### 棚卸しで決着した項目 (再提案しない)
 
 - **特定銘柄の業績/指標/理論株価/価格の単体確認** → 2026-08 対応済み。
-  `master.py` / `gyoseki.py` / `shihyou.py` / `rironkabuka.py` が引数で
+  `master.py` / `gyoseki.py` / `shihyou.py` / `rironkabuka.py` / `price.py` が引数で
   銘柄コードを受け取る (省略時は既定値)。実態は「`python -c` で呼ぶ」ではなく
   「`main()` 内のハードコードを毎回書き換える」だった。
 - **パーサ単体の動作確認** → 昇格しない。`.claude/rules/html-scraping.md` が

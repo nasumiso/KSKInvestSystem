@@ -78,6 +78,7 @@ cd scripts && python master.py 6324        # 基本情報 (銘柄名/市場/セ�
 cd scripts && python gyoseki.py 6324       # 業績 + 業績スコア
 cd scripts && python shihyou.py 6324       # 財務指標 (PER/PBR/ROE/自己資本比率など) + 指標PT
 cd scripts && python rironkabuka.py 6324   # 理論株価 + 乖離率
+cd scripts && python price.py 6324         # 価格 + モメンタム/移動平均/新高値判定
 
 cd scripts && python master.py 6324 7203   # 複数銘柄も可
 ```
