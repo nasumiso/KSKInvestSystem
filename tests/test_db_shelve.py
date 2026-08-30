@@ -1,6 +1,7 @@
 """db_shelve.py の ShelveDB CRUD テスト（tmp_path で一時DB作成）"""
 
 import os
+import time
 import pytest
 
 import db_shelve
@@ -245,24 +246,54 @@ class TestCompactShelve:
         assert db_shelve.compact_shelve_if_needed(db_path, threshold=10 ** 9) is None
         assert db_shelve.get_shelve_size(db_path) == size_before
 
-    def test_compact_restores_live_db_on_swap_failure(self, db_path, monkeypatch):
-        """swap 途中で失敗してもライブDBが復元される (退避からのロールバック)"""
+    @pytest.mark.parametrize(
+        "fail_on",
+        [
+            "backup",  # ライブDB → 退避 の途中で失敗
+            "swap",  # 一時DB → ライブ名 の途中で失敗
+        ],
+    )
+    def test_compact_restores_live_db_on_failure(self, db_path, monkeypatch, fail_on):
+        """退避・差し替えのどこで失敗してもライブDBが完全復元される"""
         data = self._bloat(db_path, records=20, rounds=5)
 
         real_replace = os.replace
 
         def flaky_replace(src, dst):
-            # 一時DB → ライブ名 の .dat 差し替えだけ失敗させる
-            if str(dst).endswith(".dat") and ".compact_tmp" in str(src):
+            # .dir は最後に動くので、途中で落ちる状況を作れる
+            if fail_on == "backup" and ".compact_backup" in str(dst):
+                raise OSError("injected backup failure")
+            if fail_on == "swap" and ".compact_tmp" in str(src):
                 raise OSError("injected swap failure")
             return real_replace(src, dst)
 
         monkeypatch.setattr(db_shelve.os, "replace", flaky_replace)
 
-        with pytest.raises(OSError, match="injected swap failure"):
+        with pytest.raises(OSError):
             db_shelve.compact_shelve(db_path)
 
         monkeypatch.undo()
         with ShelveDB(db_path) as db:
-            assert len(db) == len(data)
-            assert db["7"] == data["7"]
+            assert db.export_to_dict() == data
+        assert not os.path.exists(db_path + ".compact_backup.dat")
+
+    def test_compact_serializes_with_writers(self, db_path):
+        """コンパクション中は他プロセス相当の書き込みがブロックされる (lost update 防止)"""
+        import threading
+
+        self._bloat(db_path, records=10, rounds=3)
+        order = []
+
+        def writer():
+            time.sleep(0.05)
+            with db_shelve.shelve_flock(db_path):
+                order.append("writer")
+
+        t = threading.Thread(target=writer)
+        with db_shelve.shelve_flock(db_path):
+            t.start()
+            time.sleep(0.3)
+            order.append("compact")
+        t.join()
+
+        assert order == ["compact", "writer"]

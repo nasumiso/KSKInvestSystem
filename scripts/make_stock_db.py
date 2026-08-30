@@ -766,7 +766,9 @@ def update_db_rows(code_s_list, upd=UPD_INTERVAL, tables=None, sync=True):
     force = upd >= UPD_REEVAL
     log_print("update_tables:", tables, " 更新:", upd, "同期" if sync else "非同期")
 
-    with _get_stock_shelve_db() as stocks_db:
+    # コンパクション (issue #194) と排他する。WebApp の
+    # POST /stock/<code_s>/refresh もこの経路で書き込む
+    with db_shelve.shelve_flock(STOCKS_SHELVE), _get_stock_shelve_db() as stocks_db:
         # yfinanceバッチプリフェッチ（price更新対象がある場合、DB参照で市場コード解決）
         if (not tables or "price" in tables) and code_s_list:
             try:
@@ -901,7 +903,8 @@ def persist_stock_fields(stock_data_list):
     """
     if not stock_data_list:
         return
-    with _get_stock_shelve_db() as db:
+    # コンパクション (issue #194) と排他する
+    with db_shelve.shelve_flock(STOCKS_SHELVE), _get_stock_shelve_db() as db:
         for stock_data in stock_data_list:
             update_db(db, stock_data)
         db.sync()
@@ -1965,7 +1968,8 @@ def save_stock_db(stocks):
     """stockDBの保存
     dictを全置換（削除も反映）
     """
-    with _get_stock_shelve_db() as db:
+    # コンパクション (issue #194) と排他する
+    with db_shelve.shelve_flock(STOCKS_SHELVE), _get_stock_shelve_db() as db:
         db.replace_from_dict(stocks)
 
 

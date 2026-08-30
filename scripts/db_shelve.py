@@ -12,6 +12,7 @@ import dbm.dumb
 import threading
 import pickle
 import os
+import fcntl
 from contextlib import contextmanager
 from typing import Dict, Any, Optional, List, Iterator
 
@@ -401,6 +402,46 @@ def save_dict_to_shelve(db_path: str, data: Dict[str, Any]) -> None:
 # 「新しい .dat × 古い .dir」を読まれる窓を最小化する。
 _SHELVE_EXTENSIONS = (".dat", ".bak", ".dir")
 
+# リエントラント検出用: 同一スレッドが既にロックを保持しているか
+_flock_holder = threading.local()
+
+
+@contextmanager
+def shelve_flock(db_path: str):
+    """shelve のプロセス間排他ロック (fcntl.flock)。
+
+    research_shelve._flock と同じパターン。コンパクションは
+    「全件読み出し → 一時DB構築 → ライブDBへ差し替え」の間に
+    別プロセスが書き込むと、その更新が差し替えで失われる
+    (lost update)。読み出しから差し替え完了までを、通常の
+    書き込み側と共有するロックで囲うことで防ぐ。
+
+    リエントラント対応: 同一スレッドが二重に取得してもデッドロックしない。
+    """
+    if getattr(_flock_holder, "depth", 0) > 0:
+        _flock_holder.depth += 1
+        try:
+            yield
+        finally:
+            _flock_holder.depth -= 1
+        return
+
+    lock_file = db_path + ".lock"
+    lock_dir = os.path.dirname(lock_file)
+    if lock_dir and not os.path.exists(lock_dir):
+        os.makedirs(lock_dir, exist_ok=True)
+    fd = open(lock_file, "a")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        _flock_holder.depth = 1
+        try:
+            yield
+        finally:
+            _flock_holder.depth = 0
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
+
 # 自動コンパクションの閾値。dbm.dumb は削除・上書き時に物理領域を解放しないため
 # .dat が日々肥大化する (stocks_shelve で実測 約100〜120MB/日、実データは約20MB)。
 COMPACT_THRESHOLD_BYTES = 500 * 1024 * 1024
@@ -467,6 +508,15 @@ def compact_shelve(db_path: str, keep_backup: bool = False) -> Optional[Dict[str
         log_warning("compact: DBが存在しないためスキップします", db_path)
         return None
 
+    # 読み出しから差し替え完了までを排他する。ここを囲わないと、
+    # WebApp の POST /stock/<code_s>/refresh 等が途中で書き込んだ更新を
+    # 古いスナップショットで上書きしてしまう (lost update)。
+    with shelve_flock(db_path):
+        return _compact_shelve_locked(db_path, keep_backup)
+
+
+def _compact_shelve_locked(db_path: str, keep_backup: bool) -> Dict[str, Any]:
+    """compact_shelve の本体。呼び出し元が shelve_flock を保持していること。"""
     size_before = get_shelve_size(db_path)
     log_print("compact: 開始", db_path, format_size(size_before))
 
@@ -503,12 +553,19 @@ def compact_shelve(db_path: str, keep_backup: bool = False) -> Optional[Dict[str
     #    _SHELVE_EXTENSIONS の順序 (.dir が最後) で窓を最小化する。
     backup_path = db_path + ".compact_backup"
     _remove_shelve_files(backup_path)
-    _move_shelve_files(db_path, backup_path)
     try:
+        # 退避自体が途中で失敗するとライブ側に不完全なファイル群が残るため、
+        # 退避と差し替えを同じ try に入れて両方をロールバック対象にする。
+        _move_shelve_files(db_path, backup_path)
         _move_shelve_files(tmp_path, db_path)
     except Exception:
-        # swap 途中で落ちた場合は退避から書き戻す
-        _remove_shelve_files(db_path)
+        # 退避・差し替えの途中で落ちた場合は退避から書き戻す。
+        # 退避に無い拡張子だけをライブ側から取り除く (退避途中で失敗した場合、
+        # ライブ側にはまだ移動していない元ファイルが残っているため、
+        # 先に全消ししてしまうと復元できなくなる)。
+        for ext in _SHELVE_EXTENSIONS:
+            if os.path.exists(backup_path + ext) and os.path.exists(db_path + ext):
+                os.remove(db_path + ext)
         _move_shelve_files(backup_path, db_path)
         _remove_shelve_files(tmp_path)
         raise
