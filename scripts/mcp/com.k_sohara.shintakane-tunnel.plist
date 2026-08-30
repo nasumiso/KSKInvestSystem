@@ -14,9 +14,6 @@
         <string>REPOSITORY_PATH/scripts/mcp/run_tunnel_client.sh</string>
     </array>
 
-    <key>WorkingDirectory</key>
-    <string>REPOSITORY_PATH</string>
-
     <key>RunAtLoad</key>
     <true/>
 
