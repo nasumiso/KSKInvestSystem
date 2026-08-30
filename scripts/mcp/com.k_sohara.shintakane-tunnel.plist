@@ -11,7 +11,6 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/sh</string>
         <string>REPOSITORY_PATH/scripts/mcp/run_tunnel_client.sh</string>
     </array>
 
