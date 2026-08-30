@@ -12,6 +12,7 @@ import dbm.dumb
 import threading
 import pickle
 import os
+import time
 from contextlib import contextmanager
 from typing import Dict, Any, Optional, List, Iterator
 
@@ -387,6 +388,174 @@ def save_dict_to_shelve(db_path: str, data: Dict[str, Any]) -> None:
     """
     with ShelveDB(db_path) as db:
         db.import_from_dict(data)
+
+
+# ===========================================
+# コンパクション (issue #194)
+# ===========================================
+
+# shelve (dbm.dumb) が作るファイル群の拡張子。
+# オフセット表である .dir を最後に置くことで、差し替え途中に
+# 「新しい .dat × 古い .dir」を読まれる窓を最小化する。
+_SHELVE_EXTENSIONS = (".dat", ".bak", ".dir")
+
+# 検証で内容一致を確認するサンプル件数
+_COMPACT_VERIFY_SAMPLES = 30
+
+
+def get_shelve_size(db_path: str) -> int:
+    """shelve DB (.dat/.dir/.bak) の合計サイズをバイトで返す"""
+    total = 0
+    for ext in _SHELVE_EXTENSIONS:
+        fpath = db_path + ext
+        if os.path.exists(fpath):
+            total += os.path.getsize(fpath)
+    return total
+
+
+def format_size(size_bytes: int) -> str:
+    """バイト数を読みやすい文字列に変換"""
+    if size_bytes >= 1024 ** 3:
+        return f"{size_bytes / (1024 ** 3):.1f} GB"
+    if size_bytes >= 1024 ** 2:
+        return f"{size_bytes / (1024 ** 2):.1f} MB"
+    if size_bytes >= 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes} B"
+
+
+def _move_shelve_files(src_path: str, dst_path: str) -> None:
+    """shelve の3ファイルを os.replace で移動する (存在するものだけ)"""
+    for ext in _SHELVE_EXTENSIONS:
+        src = src_path + ext
+        if os.path.exists(src):
+            os.replace(src, dst_path + ext)
+
+
+def _remove_shelve_files(db_path: str) -> None:
+    """shelve の3ファイルを削除する (存在するものだけ)"""
+    for ext in _SHELVE_EXTENSIONS:
+        fpath = db_path + ext
+        if os.path.exists(fpath):
+            os.remove(fpath)
+
+
+def compact_shelve(db_path: str, keep_backup: bool = False) -> Optional[Dict[str, Any]]:
+    """dbm.dumb の断片化を解消し .dat を縮小する (issue #194)。
+
+    ライブDBには触れずに一時DBを構築・検証し、最後に os.replace で差し替える。
+    退避 (`<db_path>.compact_backup.*`) は keep_backup の値によらず常に作り、
+    swap 成功後に削除する (swap 途中で失敗してもライブDBを復元できるようにするため)。
+
+    この退避が実行開始時に残っていれば「前回が差し替え途中で中断した」印なので、
+    消さずに RuntimeError で停止する。keep_backup=True で意図的に残す場合は
+    `<db_path>.compact_kept_<YYMMDD_HHMM>.*` へ改名し、この印と区別する。
+
+    Args:
+        db_path: 対象shelveのパス (拡張子なし)
+        keep_backup: True なら成功後も退避ファイルを別名で残す
+
+    Returns:
+        {"size_before", "size_after", "record_count"}。DB未作成なら None
+
+    Raises:
+        RuntimeError: 検証失敗時、または前回の中断を検出した場合。
+                      いずれもライブDB・退避は保持される
+    """
+    backup_path = db_path + ".compact_backup"
+    if os.path.exists(backup_path + ".dat"):
+        # 前回の実行が差し替え途中で中断している (プロセス強制終了・電源断など)。
+        # ライブ側は不完全なファイル群で、完全な元DBは退避側にしかない。
+        # ここで退避を消すとデータが回復不能になるため、消さずに中断する。
+        raise RuntimeError(
+            "前回のコンパクションが中断しています。退避 %s.* に元DBが残っているため、"
+            "手動で %s.* へ戻してから再実行してください" % (backup_path, db_path)
+        )
+
+    if not os.path.exists(db_path + ".dat"):
+        log_warning("compact: DBが存在しないためスキップします", db_path)
+        return None
+
+    size_before = get_shelve_size(db_path)
+    log_print("compact: 開始", db_path, format_size(size_before))
+
+    # 1. 全件読み出し (ライブDBはこの時点では変更しない)
+    with ShelveDB(db_path) as db:
+        all_data = db.export_to_dict()
+    record_count = len(all_data)
+
+    # 2. 一時DBに書き戻す。import_from_dict (upsert) を使う。
+    #    replace_from_dict は全キー del → set でゴミを生むため使わない。
+    tmp_path = "%s.compact_tmp.%d.%d" % (db_path, os.getpid(), threading.get_ident())
+    _remove_shelve_files(tmp_path)
+    try:
+        with ShelveDB(tmp_path) as db:
+            db.import_from_dict(all_data)
+
+        # 3. 検証: 件数一致 + サンプルの内容一致
+        with ShelveDB(tmp_path) as db:
+            new_count = len(db)
+            if new_count != record_count:
+                raise RuntimeError(
+                    "レコード数不一致 (元: %d, 新: %d)" % (record_count, new_count)
+                )
+            for key in list(all_data.keys())[:_COMPACT_VERIFY_SAMPLES]:
+                if db.get(key) != all_data[key]:
+                    raise RuntimeError("レコード内容不一致: key=%s" % key)
+    except Exception:
+        # ライブDBは未変更なので一時ファイルを消すだけでよい
+        _remove_shelve_files(tmp_path)
+        raise
+
+    # 4. ライブDBを退避してから swap する。
+    #    .dat/.dir/.bak を一括で atomic に差し替える手段は無いため、
+    #    _SHELVE_EXTENSIONS の順序 (.dir が最後) で窓を最小化する。
+    try:
+        # 退避自体が途中で失敗するとライブ側に不完全なファイル群が残るため、
+        # 退避と差し替えを同じ try に入れて両方をロールバック対象にする。
+        _move_shelve_files(db_path, backup_path)
+        _move_shelve_files(tmp_path, db_path)
+    except Exception:
+        # 退避・差し替えの途中で落ちた場合は退避から書き戻す。
+        # 退避に無い拡張子だけをライブ側から取り除く (退避途中で失敗した場合、
+        # ライブ側にはまだ移動していない元ファイルが残っているため、
+        # 先に全消ししてしまうと復元できなくなる)。
+        for ext in _SHELVE_EXTENSIONS:
+            if os.path.exists(backup_path + ext) and os.path.exists(db_path + ext):
+                os.remove(db_path + ext)
+        _move_shelve_files(backup_path, db_path)
+        _remove_shelve_files(tmp_path)
+        raise
+
+    size_after = get_shelve_size(db_path)
+
+    # 5. swap 成功。退避の後始末。
+    #    保持する場合も .compact_backup のままにはしない。この名前は
+    #    「中断の痕跡」として次回実行時の停止条件に使っているため。
+    if keep_backup:
+        # 既存の保持退避は消さない (最初の1つだけが肥大化前の状態を持つことがある)。
+        # 同一分内の再実行でも衝突しないよう、空いている名前を探す。
+        stamp = time.strftime("%y%m%d_%H%M%S")
+        kept_path = "%s.compact_kept_%s" % (db_path, stamp)
+        seq = 0
+        while os.path.exists(kept_path + ".dat"):
+            seq += 1
+            kept_path = "%s.compact_kept_%s_%d" % (db_path, stamp, seq)
+        _move_shelve_files(backup_path, kept_path)
+        log_print("compact: 退避を保持しました", kept_path)
+    else:
+        _remove_shelve_files(backup_path)
+
+    log_print(
+        "compact: 完了",
+        "%s → %s" % (format_size(size_before), format_size(size_after)),
+        "(%d件)" % record_count,
+    )
+    return {
+        "size_before": size_before,
+        "size_after": size_after,
+        "record_count": record_count,
+    }
 
 
 # ===========================================

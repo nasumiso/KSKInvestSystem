@@ -38,6 +38,13 @@ cd scripts && python make_stock_db.py reflesh
 # DBバックアップ
 cd scripts && python make_stock_db.py backup
 
+# stocks_shelve のコンパクション (issue #194)
+# dbm.dumb は削除・上書き時に領域を解放しないため .dat が約100〜120MB/日で肥大化する
+# (実データ約17MBに対し過去7.35GBまで膨張)。数GBになったら実行する。
+# WebApp と日次バッチを止めてから実行すること (差し替え中に読み書きされると壊れる)。
+cd scripts && python make_stock_db.py compact
+cd scripts && python make_stock_db.py compact --keep-backup  # 成功後も退避を残す
+
 # PTSランキング再取得 + 当日決算銘柄の kessan_comments['pts'] 上書き
 # (list_all_db を回さず PTS だけ最新化したい時に使う)
 cd scripts && python make_stock_db.py refresh_pts
@@ -236,7 +243,7 @@ cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05
 
 ## 自動実行
 
-`shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` → `run_theme_news.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。
+`shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` → `exposure_guide.py` → `run_theme_news.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。
 
 詳細仕様:
 - 平日(月〜金)19:00 の `StartCalendarInterval` が定刻発火

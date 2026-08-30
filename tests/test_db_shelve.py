@@ -1,8 +1,10 @@
 """db_shelve.py の ShelveDB CRUD テスト（tmp_path で一時DB作成）"""
 
 import os
+import time
 import pytest
 
+import db_shelve
 from db_shelve import ShelveDB
 
 
@@ -196,3 +198,107 @@ class TestShelveDBMemo:
                 _ = db.get("key")
             # メモが無効になった後も正常にアクセスできる
             assert db.get("key")["val"] == 1
+
+
+# ==================================================
+# コンパクション (issue #194)
+# ==================================================
+class TestCompactShelve:
+    """compact_shelve のテスト"""
+
+    def _bloat(self, db_path, records=50, rounds=20):
+        """replace_from_dict の繰り返しで .dat にゴミを溜める (本番と同じ肥大パターン)"""
+        data = {str(i): {"n": i, "pad": "x" * 500} for i in range(records)}
+        with ShelveDB(db_path) as db:
+            db.import_from_dict(data)
+        for _ in range(rounds):
+            with ShelveDB(db_path) as db:
+                db.replace_from_dict(data)
+        return data
+
+    def test_compact_preserves_records_and_shrinks(self, db_path):
+        """全レコードが保たれ、ファイルサイズが減る"""
+        data = self._bloat(db_path)
+        size_before = db_shelve.get_shelve_size(db_path)
+
+        result = db_shelve.compact_shelve(db_path)
+
+        assert result["record_count"] == len(data)
+        assert result["size_after"] < size_before
+        with ShelveDB(db_path) as db:
+            assert len(db) == len(data)
+            for key, value in data.items():
+                assert db[key] == value
+        # 退避はデフォルトで残さない
+        assert not os.path.exists(db_path + ".compact_backup.dat")
+
+    def test_compact_refuses_when_previous_run_was_interrupted(self, db_path):
+        """中断の痕跡 (退避) が残っていたら、消さずに停止する
+
+        差し替え途中で電源断すると完全な元DBは退避側にしかない。
+        そのまま再実行すると空同然のライブDBを圧縮し、唯一の退避を消してしまう。
+        """
+        data = {str(i): {"v": i} for i in range(20)}
+        with ShelveDB(db_path) as db:
+            db.import_from_dict(data)
+
+        # 「退避完了 → 差し替え途中で中断」の状態を作る
+        backup = db_path + ".compact_backup"
+        db_shelve._move_shelve_files(db_path, backup)
+        open(db_path + ".dat", "w").close()  # 不完全なライブ側
+
+        with pytest.raises(RuntimeError, match="中断"):
+            db_shelve.compact_shelve(db_path)
+
+        # 退避が消えていないこと (消えるとデータが回復不能になる)
+        assert os.path.exists(backup + ".dat")
+        db_shelve._move_shelve_files(backup, db_path)
+        with ShelveDB(db_path) as db:
+            assert db.export_to_dict() == data
+
+    def test_compact_keeps_backup_when_requested(self, db_path):
+        """keep_backup=True なら退避が別名で残り、次回実行を妨げない"""
+        self._bloat(db_path, records=10, rounds=5)
+        db_shelve.compact_shelve(db_path, keep_backup=True)
+
+        base = os.path.basename(db_path)
+        kept = [
+            f
+            for f in os.listdir(os.path.dirname(db_path))
+            if f.startswith(base + ".compact_kept_") and f.endswith(".dat")
+        ]
+        assert len(kept) == 1
+        # 中断の印 (.compact_backup) と紛れないこと
+        assert not os.path.exists(db_path + ".compact_backup.dat")
+        assert db_shelve.compact_shelve(db_path) is not None
+
+    @pytest.mark.parametrize(
+        "fail_on",
+        [
+            "backup",  # ライブDB → 退避 の途中で失敗
+            "swap",  # 一時DB → ライブ名 の途中で失敗
+        ],
+    )
+    def test_compact_restores_live_db_on_failure(self, db_path, monkeypatch, fail_on):
+        """退避・差し替えのどこで失敗してもライブDBが完全復元される"""
+        data = self._bloat(db_path, records=20, rounds=5)
+
+        real_replace = os.replace
+
+        def flaky_replace(src, dst):
+            # .dir は最後に動くので、途中で落ちる状況を作れる
+            if fail_on == "backup" and ".compact_backup" in str(dst):
+                raise OSError("injected backup failure")
+            if fail_on == "swap" and ".compact_tmp" in str(src):
+                raise OSError("injected swap failure")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(db_shelve.os, "replace", flaky_replace)
+
+        with pytest.raises(OSError):
+            db_shelve.compact_shelve(db_path)
+
+        monkeypatch.undo()
+        with ShelveDB(db_path) as db:
+            assert db.export_to_dict() == data
+        assert not os.path.exists(db_path + ".compact_backup.dat")
