@@ -12,6 +12,7 @@ import dbm.dumb
 import threading
 import pickle
 import os
+import time
 from contextlib import contextmanager
 from typing import Dict, Any, Optional, List, Iterator
 
@@ -443,19 +444,34 @@ def compact_shelve(db_path: str, keep_backup: bool = False) -> Optional[Dict[str
     """dbm.dumb の断片化を解消し .dat を縮小する (issue #194)。
 
     ライブDBには触れずに一時DBを構築・検証し、最後に os.replace で差し替える。
-    退避は keep_backup の値によらず常に作り、swap 成功後に削除する
-    (swap 途中で失敗してもライブDBを復元できるようにするため)。
+    退避 (`<db_path>.compact_backup.*`) は keep_backup の値によらず常に作り、
+    swap 成功後に削除する (swap 途中で失敗してもライブDBを復元できるようにするため)。
+
+    この退避が実行開始時に残っていれば「前回が差し替え途中で中断した」印なので、
+    消さずに RuntimeError で停止する。keep_backup=True で意図的に残す場合は
+    `<db_path>.compact_kept_<YYMMDD_HHMM>.*` へ改名し、この印と区別する。
 
     Args:
         db_path: 対象shelveのパス (拡張子なし)
-        keep_backup: True なら成功後も退避ファイルを残す
+        keep_backup: True なら成功後も退避ファイルを別名で残す
 
     Returns:
         {"size_before", "size_after", "record_count"}。DB未作成なら None
 
     Raises:
-        RuntimeError: 検証失敗時。ライブDBは元の内容のまま保たれる
+        RuntimeError: 検証失敗時、または前回の中断を検出した場合。
+                      いずれもライブDB・退避は保持される
     """
+    backup_path = db_path + ".compact_backup"
+    if os.path.exists(backup_path + ".dat"):
+        # 前回の実行が差し替え途中で中断している (プロセス強制終了・電源断など)。
+        # ライブ側は不完全なファイル群で、完全な元DBは退避側にしかない。
+        # ここで退避を消すとデータが回復不能になるため、消さずに中断する。
+        raise RuntimeError(
+            "前回のコンパクションが中断しています。退避 %s.* に元DBが残っているため、"
+            "手動で %s.* へ戻してから再実行してください" % (backup_path, db_path)
+        )
+
     if not os.path.exists(db_path + ".dat"):
         log_warning("compact: DBが存在しないためスキップします", db_path)
         return None
@@ -494,8 +510,6 @@ def compact_shelve(db_path: str, keep_backup: bool = False) -> Optional[Dict[str
     # 4. ライブDBを退避してから swap する。
     #    .dat/.dir/.bak を一括で atomic に差し替える手段は無いため、
     #    _SHELVE_EXTENSIONS の順序 (.dir が最後) で窓を最小化する。
-    backup_path = db_path + ".compact_backup"
-    _remove_shelve_files(backup_path)
     try:
         # 退避自体が途中で失敗するとライブ側に不完全なファイル群が残るため、
         # 退避と差し替えを同じ try に入れて両方をロールバック対象にする。
@@ -515,9 +529,14 @@ def compact_shelve(db_path: str, keep_backup: bool = False) -> Optional[Dict[str
 
     size_after = get_shelve_size(db_path)
 
-    # 5. swap 成功。退避の後始末
+    # 5. swap 成功。退避の後始末。
+    #    保持する場合も .compact_backup のままにはしない。この名前は
+    #    「中断の痕跡」として次回実行時の停止条件に使っているため。
     if keep_backup:
-        log_print("compact: 退避を保持しました", backup_path)
+        kept_path = "%s.compact_kept_%s" % (db_path, time.strftime("%y%m%d_%H%M"))
+        _remove_shelve_files(kept_path)
+        _move_shelve_files(backup_path, kept_path)
+        log_print("compact: 退避を保持しました", kept_path)
     else:
         _remove_shelve_files(backup_path)
 

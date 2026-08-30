@@ -232,11 +232,45 @@ class TestCompactShelve:
         # 退避はデフォルトで残さない
         assert not os.path.exists(db_path + ".compact_backup.dat")
 
+    def test_compact_refuses_when_previous_run_was_interrupted(self, db_path):
+        """中断の痕跡 (退避) が残っていたら、消さずに停止する
+
+        差し替え途中で電源断すると完全な元DBは退避側にしかない。
+        そのまま再実行すると空同然のライブDBを圧縮し、唯一の退避を消してしまう。
+        """
+        data = {str(i): {"v": i} for i in range(20)}
+        with ShelveDB(db_path) as db:
+            db.import_from_dict(data)
+
+        # 「退避完了 → 差し替え途中で中断」の状態を作る
+        backup = db_path + ".compact_backup"
+        db_shelve._move_shelve_files(db_path, backup)
+        open(db_path + ".dat", "w").close()  # 不完全なライブ側
+
+        with pytest.raises(RuntimeError, match="中断"):
+            db_shelve.compact_shelve(db_path)
+
+        # 退避が消えていないこと (消えるとデータが回復不能になる)
+        assert os.path.exists(backup + ".dat")
+        db_shelve._move_shelve_files(backup, db_path)
+        with ShelveDB(db_path) as db:
+            assert db.export_to_dict() == data
+
     def test_compact_keeps_backup_when_requested(self, db_path):
-        """keep_backup=True なら退避が残る"""
+        """keep_backup=True なら退避が別名で残り、次回実行を妨げない"""
         self._bloat(db_path, records=10, rounds=5)
         db_shelve.compact_shelve(db_path, keep_backup=True)
-        assert os.path.exists(db_path + ".compact_backup.dat")
+
+        base = os.path.basename(db_path)
+        kept = [
+            f
+            for f in os.listdir(os.path.dirname(db_path))
+            if f.startswith(base + ".compact_kept_") and f.endswith(".dat")
+        ]
+        assert len(kept) == 1
+        # 中断の印 (.compact_backup) と紛れないこと
+        assert not os.path.exists(db_path + ".compact_backup.dat")
+        assert db_shelve.compact_shelve(db_path) is not None
 
     @pytest.mark.parametrize(
         "fail_on",
