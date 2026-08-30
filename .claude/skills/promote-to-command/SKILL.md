@@ -71,25 +71,76 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash
    「何をする/しない (DB更新の有無等)」を明記。
 6. 反映方法 (commit/PR or main直push) はユーザーに確認 (軽微なら直push可)。
 
-## 想定候補カタログ (棚卸し済み)
+## 問い合わせログ (.claude/query_log.jsonl)
 
-開発で繰り返し叩きそうだが現状CLIに無い、昇格価値の高い候補
-(2026-06 時点の棚卸し)。これらに着手するときは本スキルの手順で。
+セッション内検知は「同じ系統を2回」に気づけないことが多い (長いセッションでは
+序盤を覚えていられない、セッションをまたぐ繰り返しは原理的に見えない)。
+**実際に投げた問いを1行ずつ残し、後から棚卸しする**ことで補う。
 
-- **特定銘柄の業績/指標/理論株価/価格だけ取得・確認**
-  - 現状: `gyoseki.get_gyoseki_data()` 等を `python -c` で呼ぶしかない。
-  - 案: 各 `.py <code>` で単体取得＋pretty print、または make_stock_db.py に
-    `--only <table>` 等のオプション。
-- **パーサ単体の動作確認** (HTMLフォーマット変更対応時)
-  - 現状: `parse_master_html_kabutan` 等を手で呼ぶ。
-  - 案: `<module>.py --parse <code>` でパース結果を表示。
-    html-scraping.md の検証フロー (パーサ修正→単体確認) と直結。
-- **市場DBの一部だけ再計算** (テーマランク等、必要が出たら)
-- **portfolio_shelve の特定銘柄確認** (research_shelve.py show 相当が未CLI化)
+### 何を残すか
+
+DB・データに対する**ワンショットの問い合わせ**を書いた/書こうとしたとき。
+`python -c` で shelve を開く、`build_fill_episodes()` を呼んで集計する、等。
+既存CLIで済ませたものは**書かない** (`make_stock_db.py list` を叩いた等)。
+
+```json
+{"ts":"2026-08-30","intent":"何が知りたかったか (自然言語)","target":"どのデータ/関数","args":{"code_s":"9337"},"how":"実際にどう代用したか","session":"何をしていた最中か"}
+```
+
+- `intent` は自然言語でよい。読むのは LLM なので語彙を統一する必要はない。
+  無理に正規化すると書くのが億劫になって記録されなくなる。
+- `args` を分けて持つのが肝。`intent` が同じで `args` だけ違うエントリが並べば、
+  **それは引数付きコマンド1本にできる**という結論が機械的に出る。
+- `how` は昇格時に何を置き換えるかの手がかり (既存関数を呼ぶだけか、
+  ロジックをその場で書いたか)。
+
+### いつ書くか
+
+**タスク完了報告のタイミングでまとめて**。都度書くと忘れるので、区切りで
+「今回データに投げた問いは何だったか」を振り返って数行 append する。
+同系統をまとめて1行にしてよい (同じ問いを3回なら1行 + 回数を intent に添える)。
+
+```bash
+cat >> .claude/query_log.jsonl <<'EOF'
+{"ts":"...","intent":"...","target":"...","args":{},"how":"...","session":"..."}
+EOF
+```
+
+### いつ棚卸しするか
+
+**月1回、最大1件**に絞って提案する。頻度と件数を欲張ると読まれなくなる
+(既存カタログが2ヶ月着手されなかったのは、候補が足りなかったからではない)。
+
+棚卸しの手順:
+1. `query_log.jsonl` を読み、`intent` が意味的に近いものをクラスタリングする
+   (文字列一致では拾えない。同じ問いを別の言い方で書いているため)
+2. 3回以上出現するクラスタのうち、既存CLIで代用できないものを1つ選ぶ
+3. 本スキルの「昇格の実行手順」で昇格する
+4. 昇格したら下のカタログの「棚卸しで決着した項目」に移し、再提案を防ぐ
+
+## 想定候補カタログ (2026-08 棚卸し)
+
+- **エピソード全体の集計・不変条件チェック** (未着手)
+  - 現状: `build_fill_episodes()` を `python -c` で呼び、銘柄別にグループ化して
+    数え上げる処理を毎回書いている (PR #428 のレビュー対応で6回)。
+  - `show_fill_episodes.py` は「人が読む表示」用で、全銘柄走査して不整合を
+    数える用途には向かない。別の型として需要が実在する。
+
+### 棚卸しで決着した項目 (再提案しない)
+
+- **特定銘柄の業績/指標/理論株価/価格の単体確認** → 2026-08 対応済み。
+  `master.py` / `gyoseki.py` / `shihyou.py` / `rironkabuka.py` が引数で
+  銘柄コードを受け取る (省略時は既定値)。実態は「`python -c` で呼ぶ」ではなく
+  「`main()` 内のハードコードを毎回書き換える」だった。
+- **パーサ単体の動作確認** → 昇格しない。`.claude/rules/html-scraping.md` が
+  `pytest tests/test_live_html.py` での検知を定めており、CLI を足すと役割が重複する。
+- **市場DBの一部だけ再計算** → 昇格しない。2ヶ月経って需要が出ず、
+  `make_market_db.py html` で足りている。
+- **保有銘柄の code_s 一覧** → `portfolio_list.py` で対応済み (`--status` 絞り込み可)。
 
 既にCLI化済みで**やらなくてよい**もの (重複回避):
 make_market_db.py html / make_stock_db.py refresh_stock|refresh_price|refresh_pts /
-research_shelve.py show|list / defrag_shelve.py / 各 migrate_*。
+research_shelve.py show|list / portfolio_list.py / defrag_shelve.py / 各 migrate_*。
 
 ## 参照
 - 行動原則: CLAUDE.md「行動原則 (Karpathy 4原則)」「コーディング規約」

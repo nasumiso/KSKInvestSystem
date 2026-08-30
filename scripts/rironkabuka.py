@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import re
+import sys
 import requests
 
 from ks_util import *
@@ -625,7 +626,8 @@ def main():
 
     # TODO: 理論株価PTや進捗率はDB保持にしたほうがよいかも
     # 3920, 4493, 4595, 2389, 7270, 5032, 6096, 4169,6195,7808,2410,9107,9264
-    code_list = ["9343"]
+    # 引数で銘柄コードを指定 (例: python rironkabuka.py 6324 7203)。省略時は既定値。
+    code_list = sys.argv[1:] or ["9343"]
     for code_s in code_list:
         import make_stock_db as db
 
