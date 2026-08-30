@@ -637,8 +637,11 @@ def main():
         record = get_rironkabuka_data(code_s, upd, stock)
         # calc_theory_pt(code, stock)
 
+        # DB未登録銘柄は stock に price が無く乖離率が全て0%になるため、
+        # 株探htmlの現在値で補う (htmlはキャッシュ済みで通信は発生しない)。
+        price = stock.get("price") or analyze_from_kabutan(code_s, upd, stock)[4]
         # print get_rironkabuka_expr(stock)
-        log_print(get_rironkabuka_expr2(record, stock.get("price")))
+        log_print(get_rironkabuka_expr2(record, price))
 
 
 if __name__ == "__main__":
