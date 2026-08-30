@@ -531,6 +531,52 @@ def current_shikiho_period() -> str:
     return f"{yy}.12"
 
 
+def _normalize_research_record_on_read(record: Dict[str, Any]) -> Dict[str, Any]:
+    """読出時の後方互換フィールドを補完する。"""
+    record["shikiho_comments"] = _normalize_shikiho_comments(
+        record.get("shikiho_comments", [])
+    )
+    if not isinstance(record.get("kessan_comments"), list):
+        record["kessan_comments"] = []
+    for entry in record["kessan_comments"]:
+        if not isinstance(entry, dict):
+            continue
+        for key in (
+            "kessan_matagi", "held_before_kessan", "held_after_kessan",
+        ):
+            if key not in entry:
+                entry[key] = False
+        entry["post_price_changes"] = normalize_kessan_post_price_changes(entry)
+    if "corporate_url_override" not in record:
+        record["corporate_url_override"] = ""
+    if "stock_name_prev" not in record:
+        record["stock_name_prev"] = None
+    record["chat_links"] = _normalize_chat_links(record.get("chat_links"))
+    return record
+
+
+def _get_research_record(
+    code_s: str,
+    *,
+    db_path: Optional[str] = None,
+    locked: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """1銘柄の調査レコードを取得する内部実装。"""
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    path = _resolve_db_path(db_path)
+    if locked:
+        with _flock(db_path):
+            with ShelveDB(path) as db:
+                record = db.get(normalized)
+    else:
+        with ShelveDB(path) as db:
+            record = db.get(normalized)
+    if record is not None:
+        return _normalize_research_record_on_read(record)
+    return None
+
+
 def get_research_record(
     code_s: str,
     *,
@@ -547,32 +593,20 @@ def get_research_record(
     {"1d": <旧値>, "5d": ""} に正規化する（後方互換）。
     chat_links は未設定/壊れたエントリを除去して List[{"label","url"}] に正規化する。
     """
-    validate_code_s(code_s)
-    normalized = normalize_code_s(code_s)
-    path = _resolve_db_path(db_path)
-    with ShelveDB(path) as db:
-        record = db.get(normalized)
-    if record is not None:
-        record["shikiho_comments"] = _normalize_shikiho_comments(
-            record.get("shikiho_comments", [])
-        )
-        if not isinstance(record.get("kessan_comments"), list):
-            record["kessan_comments"] = []
-        for entry in record["kessan_comments"]:
-            if not isinstance(entry, dict):
-                continue
-            for key in (
-                "kessan_matagi", "held_before_kessan", "held_after_kessan",
-            ):
-                if key not in entry:
-                    entry[key] = False
-            entry["post_price_changes"] = normalize_kessan_post_price_changes(entry)
-        if "corporate_url_override" not in record:
-            record["corporate_url_override"] = ""
-        if "stock_name_prev" not in record:
-            record["stock_name_prev"] = None
-        record["chat_links"] = _normalize_chat_links(record.get("chat_links"))
-    return record
+    return _get_research_record(code_s, db_path=db_path)
+
+
+def get_research_record_locked(
+    code_s: str,
+    *,
+    db_path: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """排他ロック取得中に1銘柄の調査レコードを取得する。
+
+    別プロセスから運用中の research_shelve を読む用途向け。
+    WebApp・バッチの書込みと同じ flock を使用し、dbm.dumb の読書競合を防ぐ。
+    """
+    return _get_research_record(code_s, db_path=db_path, locked=True)
 
 
 def upsert_research_record(
@@ -924,6 +958,22 @@ def list_research_records(
 
     results.sort(key=lambda r: r.get("code_s", ""))
     return results
+
+
+def list_research_records_locked(
+    *,
+    db_path: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """排他ロック取得中に全調査レコードを取得する。
+
+    MCP のような別プロセスの読み取り専用利用で使う。検索・整形は呼出側で
+    行い、ロック区間を DB 読み込みだけに限定する。
+    """
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            records = [record for _, record in db.items() if isinstance(record, dict)]
+    return [_normalize_research_record_on_read(record) for record in records]
 
 
 # ===========================================
