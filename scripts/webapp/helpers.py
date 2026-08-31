@@ -4639,13 +4639,37 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
         # 売建は「高く売って安く買い戻す」ので損益の符号が買建と逆になる。
         is_short = rnd.get("is_short", False)
         settle_side = "buy" if is_short else "sell"
+        open_side = "sell" if is_short else "buy"
+        # 建約定日の無い返済でも、未決済ロットが1本だけなら建値は一意に復元できる。
+        # 複数ロット候補が残る場合は従来どおり推測せず損益を伏せる。
+        open_pool: List[Dict[str, Any]] = [
+            {"fill": f, "remain": f["qty"]}
+            for f in fills
+            if (f["side"] == open_side
+                and (f.get("trade_kind") or "").startswith("信用新規"))
+        ]
+        # 建情報のある返済を先に引き当てる。同日中の複数返済では、建情報なしの行が
+        # 先に並んでいても、後続の建情報付き行を除外すれば残ロットが一意になる。
+        for f in fills:
+            if f["side"] == settle_side and f.get("tate_price") is not None:
+                _consume_open_lots(open_pool, f["qty"], f.get("tate_date"),
+                                   f["tate_price"], f.get("broker"))
         for f in fills:
             if f["side"] != settle_side:
-                continue  # 建玉側の fill。損益は返済 fill 側で確定
+                continue
             qty = f["qty"]
             price = f["price"]
             settle_pl = f.get("settle_pl")
             tate_price = f.get("tate_price")
+            tate_date = f.get("tate_date")
+            if tate_price is None and settle_pl is None:
+                candidates = _match_open_lots(open_pool, None, None, f.get("broker"))
+                if len(candidates) != 1 or candidates[0]["remain"] < qty:
+                    return None
+                opening = candidates[0]["fill"]
+                tate_price = opening["price"]
+                tate_date = opening.get("trade_date")
+                _consume_open_lots(open_pool, qty, tate_date, tate_price, f.get("broker"))
             if settle_pl is not None:
                 realized += settle_pl
                 f["fill_pl"] = settle_pl
@@ -4662,7 +4686,6 @@ def _episode_pl_from_round(rnd: dict) -> Optional[dict]:
                 return None
             if tate_price is not None:
                 f["fill_return_pct"] = f["fill_pl"] / (tate_price * qty) * 100
-            tate_date = f.get("tate_date")
             if tate_date:
                 try:
                     f["hold_days"] = (date.fromisoformat(f["trade_date"]) - date.fromisoformat(tate_date)).days

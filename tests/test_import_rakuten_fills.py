@@ -131,6 +131,28 @@ def test_backfill_tate_price_on_reimport(tmp_path, db_path):
     assert ps.list_fills("9509", db_path=db_path)[0]["tate_price"] == 795.0
 
 
+def test_reimport_with_confirmed_amount_does_not_duplicate_credit_settle(tmp_path, db_path):
+    """未確定CSVの受渡金額 0 は、確定値になっても同一約定として補完する。"""
+    path1 = _write_csv(
+        tmp_path / "pending.csv",
+        [_row("6227", "信用返済", "売埋", "100", "6,800.0")],
+    )
+    path2 = _write_csv(
+        tmp_path / "confirmed.csv",
+        [_row("6227", "信用返済", "売埋", "100", "6,800.0", amount="104,868",
+              tate_date="2026/8/21", tate_price="5,750.0")],
+    )
+    ir.import_csv_to_fills(path1, db_path=db_path)
+    stats = ir.import_csv_to_fills(path2, db_path=db_path)
+
+    fills = ps.list_fills("6227", db_path=db_path)
+    assert stats["imported"] == 0 and stats["skipped_dup"] == 1
+    assert len(fills) == 1
+    assert fills[0]["amount"] == 104868
+    assert fills[0]["tate_date"] == "2026-08-21"
+    assert fills[0]["tate_price"] == 5750.0
+
+
 def test_etf_rows_are_excluded(tmp_path, db_path, monkeypatch):
     """ETF (ETF_code.txt 掲載) の行は取込対象外 (issue #387)。個別株は通す。"""
     monkeypatch.setattr(ps, "_etf_codes_cache", frozenset({"1357"}))
@@ -165,4 +187,3 @@ def test_dedup_idempotent(tmp_path, db_path):
     s2 = ir.import_csv_to_fills(csv_path, db_path=db_path)
     assert s2["imported"] == 0 and s2["skipped_dup"] == 3
     assert len(ps.list_fills(db_path=db_path)) == 3  # 総数不変 (冪等)
-

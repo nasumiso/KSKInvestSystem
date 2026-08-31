@@ -228,7 +228,9 @@ def import_csv_to_fills(
             log_print("import_rakuten_fills: スキップ", e.reason)
             continue
 
-        # occurrence: 同一CSV内で dedup 素材が同一な行の出現順
+        # occurrence: 同一CSV内で同じ約定本体を持つ行の出現順。
+        # 受渡金額はCSVの再出力時に 0 → 確定値へ変わることがあるため、同じ約定を
+        # 別 fill にしないよう識別子から除外する。
         occ_key = "|".join(
             [
                 parsed["trade_date"],
@@ -237,7 +239,6 @@ def import_csv_to_fills(
                 parsed["baibai"],
                 str(parsed["qty"]),
                 f"{parsed['price']:.4f}",
-                str(parsed["amount"]),
             ]
         )
         occurrence = occurrence_counter.get(occ_key, 0)
@@ -250,7 +251,8 @@ def import_csv_to_fills(
             baibai_kubun=parsed["baibai"],
             qty=parsed["qty"],
             price=parsed["price"],
-            amount=parsed["amount"],
+            # 楽天の受渡金額は約定の識別子ではない（未確定CSVでは 0 になる）。
+            amount=0,
             occurrence=occurrence,
         )
         fill = ps.create_fill(

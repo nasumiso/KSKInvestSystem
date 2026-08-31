@@ -275,13 +275,22 @@ class TestShinyoRound:
         assert "fill_return_pct" not in settle
         assert "hold_days" not in settle
 
-    def test_credit_without_pl_source_is_none(self, db_path):
-        # 建単価も決済損益も無い信用返済 → 損益不能
+    def test_credit_without_pl_source_uses_unique_open_lot(self, db_path):
+        # 建単価も決済損益も無い返済でも、残った建玉が1本なら安全に復元できる。
         _add(db_path, "2003", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
         _add(db_path, "2003", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済", seq_salt="b")
         eps = helpers.build_fill_episodes(db_path=db_path)
         credit = [e for e in eps if e["kind"] == "信用"]
         assert len(credit) == 1
+        assert credit[0]["pl"]["profit_amount"] == 30000
+
+    def test_credit_without_pl_source_stays_none_when_open_lot_is_ambiguous(self, db_path):
+        """候補が複数なら建値を推測せず、従来どおり損益を伏せる。"""
+        _add(db_path, "2004", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "2004", "2026-01-02", "buy", 100, 1100.0, trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "2004", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済", seq_salt="c")
+        eps = helpers.build_fill_episodes(db_path=db_path)
+        credit = [e for e in eps if e["kind"] == "信用"]
         assert credit[0]["pl"] is None
 
     def test_pre_import_repayment_does_not_close_current_round(self, db_path):

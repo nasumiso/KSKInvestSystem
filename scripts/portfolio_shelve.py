@@ -1129,6 +1129,20 @@ def _next_fill_seq(db: ShelveDB, code_s: str) -> int:
 _FILL_BACKFILL_FIELDS = ("tate_date", "tate_price", "settle_pl", "broker")
 
 
+def _backfill_fill(value: Dict[str, Any], fill: Dict[str, Any]) -> bool:
+    """後続CSVで確定した fill の補完可能な値を反映する。"""
+    updated = False
+    for field in _FILL_BACKFILL_FIELDS:
+        if value.get(field) is None and fill.get(field) is not None:
+            value[field] = fill[field]
+            updated = True
+    # 楽天の未確定CSVは受渡金額を 0 として出す。後続CSVの確定値で置換する。
+    if value.get("amount") == 0 and fill.get("amount") not in (None, 0):
+        value["amount"] = fill["amount"]
+        updated = True
+    return updated
+
+
 def append_fill(
     fill: Dict[str, Any],
     *,
@@ -1137,8 +1151,7 @@ def append_fill(
     """fill を1件追記する (dedup_key で冪等)。
 
     同一 code_s に同じ dedup_key の fill が既にあればスキップ (取込済み)。ただし
-    tate_date/tate_price/settle_pl/broker が既存で None かつ新 fill で埋まっていれば
-    既存レコードに後付けする (Phase4b で列を追加したための移行、None→非None のみ)。
+    建玉情報など後続CSVで確定する値は既存レコードへ後付けする。
     新規なら _fill_seq を採番して保存する。
 
     Returns: (fill, is_new: bool) — is_new=False は重複スキップ (既存 fill を返す)
@@ -1155,13 +1168,7 @@ def append_fill(
                 if not key.startswith(prefix):
                     continue
                 if isinstance(value, dict) and value.get("dedup_key") == dedup_key:
-                    # 既存 fill に欠けた派生情報を後付け (None→非None のみ)
-                    updated = False
-                    for f in _FILL_BACKFILL_FIELDS:
-                        if value.get(f) is None and fill.get(f) is not None:
-                            value[f] = fill[f]
-                            updated = True
-                    if updated:
+                    if _backfill_fill(value, fill):
                         db[key] = value
                     return value, False  # 既に取込済み (冪等)
             seq = _next_fill_seq(db, code_s)
