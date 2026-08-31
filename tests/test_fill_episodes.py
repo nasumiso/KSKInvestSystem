@@ -293,6 +293,29 @@ class TestShinyoRound:
         credit = [e for e in eps if e["kind"] == "信用"]
         assert credit[0]["pl"] is None
 
+    def test_round_trip_infers_unique_open_lot_after_known_settlement(self, db_path):
+        """建情報付きの返済を除くと一意なら、明細にも推定建玉を表示する。"""
+        _add(db_path, "2005", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "2005", "2026-01-02", "buy", 100, 1200.0, trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "2005", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済", seq_salt="c")
+        _add(db_path, "2005", "2026-01-10", "sell", 100, 1250.0, trade_kind="信用返済",
+             tate_date="2026-01-02", tate_price=1200.0, seq_salt="d")
+        ep = helpers.build_fill_episodes(db_path=db_path)[0]
+        inferred = next(r for r in helpers.build_round_trips(ep) if r.get("inferred_open"))
+        assert inferred["open_date"] == "2026-01-01"
+        assert inferred["open_price"] == 1000.0
+        assert inferred["return_pct"] == pytest.approx(30.0)
+
+    def test_round_trip_does_not_infer_after_mismatched_known_settlement(self, db_path):
+        """建情報付き返済が既存ロットと一致しなければ、別ロットを推定から除外しない。"""
+        _add(db_path, "2006", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "2006", "2026-01-02", "buy", 100, 1200.0, trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "2006", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済", seq_salt="c")
+        _add(db_path, "2006", "2026-01-10", "sell", 100, 1250.0, trade_kind="信用返済",
+             tate_date="2026-01-03", tate_price=1100.0, seq_salt="d")
+        ep = helpers.build_fill_episodes(db_path=db_path)[0]
+        assert all(not r.get("inferred_open") for r in helpers.build_round_trips(ep))
+
     def test_pre_import_repayment_does_not_close_current_round(self, db_path):
         """取込前建玉の返済は、当期に新規で建てた信用玉と相殺しない。"""
         _add(db_path, "7089", "2026-02-20", "buy", 200, 1339.0,

@@ -158,7 +158,7 @@
 {% macro episode_rows(ep, uid) %}
     <tr class="th-ep-row" data-ep="{{ uid }}" style="cursor:pointer;">
       <td style="color:#666;text-align:center;font-size:0.8em;"><span class="th-ep-caret">▸</span></td>
-      <td style="white-space:nowrap;"><a href="/stock/{{ ep.code_s }}" onclick="event.stopPropagation();">{{ ep.code_s }} {{ ep.stock_name }}</a></td>
+      <td style="white-space:nowrap;"><a href="https://kabutan.jp/stock/chart?code={{ ep.code_s }}" target="_blank" rel="noopener" onclick="event.stopPropagation();">{{ ep.code_s }}</a> <a href="/stock/{{ ep.code_s }}" onclick="event.stopPropagation();">{{ ep.stock_name }}</a></td>
       <td style="white-space:nowrap;">
         {% if ep.kind == "信用" %}
         <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.74em;background:#4a3a2e;color:#e0b070;">信用</span>
@@ -249,6 +249,7 @@
               {%- if r.open_date %}{{ r.open_date[2:] }}{% else %}<span style="color:#666;">?</span>{% endif %}
               <span style="color:#666;">→</span>
               {% if r.closed %}{{ r.close_date[2:] }}{% else %}<span style="color:#a0a0d0;">保有中</span>{% endif %}
+              {%- if r.inferred_open %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="返済CSVには建玉情報がありませんが、同一エピソード内で残った建玉が一意のため補完表示しています">推定</span>{% endif %}
               {%- if r.genbiki %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="現引は信用建玉を現物へ振り替える取引です。決済ではないため損益は計上せず、現物エピソード側へ引き継がれます">現引→現物</span>{% endif %}
               {#- 建玉を特定できない決済 (建情報なしの信用返済など)。? マーカーと同じ条件で駆動する #}
               {%- if r.closed and not r.open_date %}<span style="color:#8a6a5a;font-size:0.88em;margin-left:0.4em;" title="建玉情報がCSVに無いため建値・保有日数を表示できません">建玉不明</span>{% endif %}
@@ -374,7 +375,7 @@
     <tr class="th-stock-row" data-stock="stock-{{ stock_idx }}" style="cursor:pointer;">
       <td style="color:#666;text-align:center;font-size:0.8em;"><span class="th-stock-caret">▸</span></td>
       <td style="white-space:nowrap;">
-        <a href="/stock/{{ r.code_s }}" onclick="event.stopPropagation();">{{ r.code_s }} {{ r.stock_name }}</a>
+        <a href="https://kabutan.jp/stock/chart?code={{ r.code_s }}" target="_blank" rel="noopener" onclick="event.stopPropagation();">{{ r.code_s }}</a> <a href="/stock/{{ r.code_s }}" onclick="event.stopPropagation();">{{ r.stock_name }}</a>
         {% if r.episode_count >= 2 %}
         <span style="color:#888;font-size:0.78em;margin-left:0.3em;">({{ r.episode_count }}件)</span>
         {% endif %}
@@ -510,7 +511,7 @@
     <tr{% if is_holding %} style="background:rgba(80,180,100,0.08);"{% endif %}>
       {% if loop.first %}
       <td rowspan="{{ ep.rowspan }}" style="vertical-align:top;white-space:nowrap;">
-        <a href="/stock/{{ ep.code_s }}">{{ ep.code_s }} {{ ep.stock_name }}</a>
+        <a href="https://kabutan.jp/stock/chart?code={{ ep.code_s }}" target="_blank" rel="noopener">{{ ep.code_s }}</a> <a href="/stock/{{ ep.code_s }}">{{ ep.stock_name }}</a>
       </td>
       {% endif %}
       <td style="white-space:nowrap;">

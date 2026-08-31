@@ -5439,6 +5439,19 @@ def _consume_open_lots(open_pool: List[Dict[str, Any]], qty: float,
     return taken
 
 
+def _consume_exact_open_lots(open_pool: List[Dict[str, Any]], qty: float,
+                             tate_date: Optional[str], tate_price: Optional[float],
+                             broker: Optional[str] = None) -> None:
+    """建日・建値に一致するロットだけを消費する（推定表示の候補絞り込み用）。"""
+    remain = qty
+    for cand in _match_open_lots(open_pool, tate_date, tate_price, broker):
+        if remain <= 0:
+            break
+        take = min(remain, cand["remain"])
+        cand["remain"] -= take
+        remain -= take
+
+
 def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     """信用エピソードの往復行を作る (issue #421)。
 
@@ -5459,6 +5472,17 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     for f in ep["fills"]:
         if f["side"] != settle_side and f.get("trade_kind", "").startswith("信用新規"):
             open_pool.append({"fill": f, "remain": f["qty"]})
+
+    # 建情報付きの後続返済をあらかじめ除外した照合用プール。建情報なし返済でも、
+    # これで残ロットが1本に絞れる場合だけ明細の建日・建値を「推定」として表示する。
+    inference_pool = [{"fill": c["fill"], "remain": c["remain"]} for c in open_pool]
+    for f in ep["fills"]:
+        if f.get("trade_kind") == "現引":
+            _consume_exact_open_lots(inference_pool, f["qty"], f.get("tate_date"),
+                                     f.get("tate_price"), f.get("broker"))
+        elif f["side"] == settle_side and f.get("tate_price") is not None:
+            _consume_exact_open_lots(inference_pool, f["qty"], f.get("tate_date"),
+                                     f["tate_price"], f.get("broker"))
 
     rows: List[Dict[str, Any]] = []
     for f in ep["fills"]:
@@ -5490,17 +5514,33 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
             continue
         tate_date = f.get("tate_date")
         tate_price = f.get("tate_price")
-        # 建情報 (tate_date/tate_price) が無い返済は建玉を特定できない (SBI 等で
-        # 17/487 本)。ただし取込範囲内に建玉が残っていれば、その玉を決済したのは
-        # 明らかなので FIFO で引き当てて建玉を消費する。消費しないと決済済みの玉が
-        # 「保有中」行として残り続ける (9984 売建の 2026-05-22 返済買が該当)。
-        # 建値・保有日数は推測せず伏せる (誤った建値でリターンを出すほうが有害)。
+        # 建情報なし返済は、後続の建情報付き返済を除いた残ロットが一意な場合だけ
+        # 建日・建値を補完する。それ以外は従来どおり建玉不明として表示する。
         if tate_date is None and tate_price is None:
-            # 建玉は消費するが建値は伏せる
-            _consume_open_lots(open_pool, f["qty"], broker=f.get("broker"))
-            row = _make_round_trip(None, f, f["qty"], None, None)
+            candidates = _match_open_lots(inference_pool, None, None, f.get("broker"))
+            inferred = None
+            if len(candidates) == 1 and candidates[0]["remain"] >= f["qty"]:
+                inferred = candidates[0]["fill"]
+            if inferred is not None:
+                tate_date = inferred.get("trade_date")
+                tate_price = inferred.get("price")
+                _consume_open_lots(inference_pool, f["qty"], tate_date, tate_price,
+                                   f.get("broker"))
+                matched = _consume_open_lots(open_pool, f["qty"], tate_date, tate_price,
+                                              f.get("broker"))
+                first = matched[0][0] if matched else inferred
+                row = _make_round_trip(first, f, f["qty"], tate_date, tate_price)
+                row["inferred_open"] = True
+            else:
+                # 建玉は消費するが建値は伏せる。消費しないと決済済みの玉が保有中に残る。
+                _consume_open_lots(open_pool, f["qty"], broker=f.get("broker"))
+                row = _make_round_trip(None, f, f["qty"], None, None)
             if "fill_pl" in f:
                 row["pl"] = f["fill_pl"]
+            if "fill_return_pct" in f:
+                row["return_pct"] = f["fill_return_pct"]
+            if "hold_days" in f:
+                row["hold_days"] = f["hold_days"]
             rows.append(row)
             continue
         # 対応する建玉 fill を建日 (+建単価) で引き当て、残株数を減らす。
