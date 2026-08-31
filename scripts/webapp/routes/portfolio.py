@@ -249,16 +249,16 @@ def _build_exposure_summary(total_position_value: float, cat_values: dict) -> Op
 
 
 def _exposure_bar_geometry(evaluation: dict, settings: dict) -> dict:
-    """比率バーの描画位置 (0-100 の %) を算出する (issue #362)。
+    """統合バーの描画位置 (0-100 の %) を算出する (issue #425)。
 
-    描画範囲は全ステートのレンジと現在比率を含むよう決め、針がバーから
-    はみ出さないようにする。過熱で削られた枠は元の上限まで別描画する。
+    横軸は基準運用額比率で 0% 始まりとし、目標帯と市場別積み上げを同じ
+    スケールに重ねる。描画上限は全ステートのレンジと現在比率を含めるため、
+    レバレッジ時も積み上げが切れない。過熱で削られた枠は別描画する。
     """
     ranges = settings.get("ranges") or {}
     base_upper = (ranges.get(evaluation["state"]) or [None, None])[1]
     # 全ステートのレンジ境界を描画範囲に含めることで、目盛りが日々のステート変化で
-    # 動かないようにする (針の位置を日毎に見比べられる)。実際に描く値
-    # (現在比率・適用中のレンジ・削る前の上限) も必ず含め、はみ出しを防ぐ。
+    # 動かないようにする。基準運用額の 100% も常に見せる。
     bounds = [v for rng in ranges.values() for v in rng]
     bounds += [evaluation["range_lower"], evaluation["range_upper"]]
     ratio = evaluation.get("ratio_pct")
@@ -266,20 +266,21 @@ def _exposure_bar_geometry(evaluation: dict, settings: dict) -> dict:
         bounds.append(ratio)
     if base_upper is not None:
         bounds.append(base_upper)
-    lo, hi = min(bounds), max(bounds)
-    margin = max((hi - lo) * 0.1, 5)
-    lo, hi = lo - margin, hi + margin
-    span = hi - lo
+    bounds.append(100)
+    hi = max(bounds)
 
     def pos(value):
         """値をバー上の 0-100 位置に変換する。"""
-        return round((value - lo) / span * 100, 1)
+        return round(value / hi * 100, 1)
 
     left, right = pos(evaluation["range_lower"]), pos(evaluation["range_upper"])
     geometry = {
         "bar_range_left": left,
         "bar_range_width": round(right - left, 1),
         "bar_marker_left": pos(ratio) if ratio is not None else 0,
+        "bar_position_width": pos(ratio) if ratio is not None else 0,
+        "bar_base_left": pos(100),
+        "bar_scale_upper": hi,
         "bar_penalty_left": 0,
         "bar_penalty_width": 0,
     }
@@ -1214,6 +1215,7 @@ def dashboard():
         ]
         # ノーポジ (全売却) でもガイドは出す。市場ステートに対して「今はゼロ」と
         # 分かることに意味があるため (fallback_state で TOPIX/グロースの悪い方を使う)
+        exposure = _build_exposure_summary(total_position_value, cat_values)
         hold_summary = {
             "total_man": int(round(total_position_value / 10000)),
             # 保有株数の真実源は証券会社CSVなので、手動更新時刻ではなく
@@ -1224,9 +1226,7 @@ def dashboard():
             ),
             "breakdown": breakdown,
             # issue #362: 基準運用額に対する運用比率と市場状態連動の目標レンジ
-            "exposure": _build_exposure_summary(
-                total_position_value, cat_values
-            ),
+            "exposure": exposure,
         }
 
     # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)

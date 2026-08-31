@@ -334,6 +334,21 @@ def test_exposure_bar_penalty_hatch_and_shared_scale():
     )
 
 
+def test_exposure_bar_uses_zero_origin_and_keeps_base_amount_visible():
+    """統合バーは 0% 始まりで、基準運用額の 100% を常に同じ軸に置く (issue #425)。"""
+    from webapp.routes.portfolio import _exposure_bar_geometry
+
+    g = _exposure_bar_geometry(
+        {"state": "uptrend_under_pressure", "ratio_pct": 85.0,
+         "range_lower": 80, "range_upper": 100},
+        ps.EXPOSURE_DEFAULTS,
+    )
+    # デフォルト全ステートの上限 120% までを描画するため、85% の保有は 70.8% の幅。
+    assert g["bar_scale_upper"] == 120
+    assert g["bar_position_width"] == pytest.approx(85 / 120 * 100, abs=0.1)
+    assert g["bar_base_left"] == pytest.approx(100 / 120 * 100, abs=0.1)
+
+
 @pytest.mark.parametrize(
     "topix_date, mothers_date, expected_indexes",
     [
