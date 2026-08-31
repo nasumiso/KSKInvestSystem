@@ -348,6 +348,14 @@ def test_exposure_bar_uses_zero_origin_and_keeps_base_amount_visible():
     assert g["bar_position_width"] == pytest.approx(85 / 120 * 100, abs=0.1)
     assert g["bar_base_left"] == pytest.approx(100 / 120 * 100, abs=0.1)
 
+    over = _exposure_bar_geometry(
+        {"state": "confirmed_uptrend", "ratio_pct": 120.8,
+         "range_lower": 100, "range_upper": 120},
+        ps.EXPOSURE_DEFAULTS,
+    )
+    assert over["bar_scale_upper"] == 120.8
+    assert over["bar_scale_upper_label"] == "120.8"
+
 
 @pytest.mark.parametrize(
     "topix_date, mothers_date, expected_indexes",

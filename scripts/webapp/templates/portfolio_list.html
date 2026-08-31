@@ -398,7 +398,7 @@
                 width:{{ ex.bar_range_width }}%;"></div>
     <span style="position:absolute;left:0;top:24px;font-size:0.68em;color:#888;">0</span>
     <span style="position:absolute;left:{{ ex.bar_base_left }}%;top:24px;transform:translateX(-50%);font-size:0.68em;color:#666;">基準</span>
-    <span style="position:absolute;right:0;top:24px;font-size:0.68em;color:#888;">{{ ex.bar_scale_upper|int }}</span>
+    <span style="position:absolute;right:0;top:24px;font-size:0.68em;color:#888;">{{ ex.bar_scale_upper_label }}</span>
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:0.7em;margin-top:0.15em;font-size:0.75em;color:#555;">
     {%- for b in hold_summary.breakdown if b.man > 0 -%}

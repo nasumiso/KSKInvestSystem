@@ -281,6 +281,8 @@ def _exposure_bar_geometry(evaluation: dict, settings: dict) -> dict:
         "bar_position_width": pos(ratio) if ratio is not None else 0,
         "bar_base_left": pos(100),
         "bar_scale_upper": hi,
+        # 描画スケールと右端目盛りの精度を揃える。整数なら余計な .0 は付けない。
+        "bar_scale_upper_label": ("%.1f" % hi).rstrip("0").rstrip("."),
         "bar_penalty_left": 0,
         "bar_penalty_width": 0,
     }
