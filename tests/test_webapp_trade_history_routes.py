@@ -210,10 +210,13 @@ class TestTradeHistoryPage:
         # 年ごとに独立したサマリーブロックが描画される (エピソード単位/銘柄単位で各1つ)
         assert fills_tab.count('data-year="2025"') == 2
         assert fills_tab.count('data-year="2026"') == 2
-        # 実現損益は通算 (+30,000円) ではなく年ごとに分かれる
-        assert "+10,000円" in fills_tab
-        assert "+20,000円" in fills_tab
-        assert "+30,000円" not in fills_tab
+        # 実現損益は通算 (+30,000円) ではなく年ごとに分かれる。
+        # issue #419 の戦略別ビューは全期間集計なので通算値を持つ。ここで見たいのは
+        # 「年サマリーが通算になっていないこと」なので、戦略別ビューを除いて判定する。
+        year_summary_area = fills_tab.split('id="th-view-strategy"')[0]
+        assert "+10,000円" in year_summary_area
+        assert "+20,000円" in year_summary_area
+        assert "+30,000円" not in year_summary_area
 
     def test_both_episode_and_stock_views_rendered(self, app, client):
         """issue #391: エピソード単位/銘柄単位を両方サーバがレンダリングする (CSSでの出し分け)。"""

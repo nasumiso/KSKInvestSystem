@@ -131,6 +131,8 @@
             style="background:none;border:1px solid #444;border-radius:4px;color:#ddd;font-size:0.85em;cursor:pointer;padding:0.3em 0.8em;">エピソード単位</button>
     <button class="th-view-btn" data-view="th-view-stock"
             style="background:none;border:1px solid #444;border-radius:4px;color:#aaa;font-size:0.85em;cursor:pointer;padding:0.3em 0.8em;">銘柄単位</button>
+    <button class="th-view-btn" data-view="th-view-strategy"
+            style="background:none;border:1px solid #444;border-radius:4px;color:#aaa;font-size:0.85em;cursor:pointer;padding:0.3em 0.8em;">戦略別</button>
   </div>
 </div>
 
@@ -159,7 +161,7 @@
     <tr class="th-ep-row" data-ep="{{ uid }}" style="cursor:pointer;">
       <td style="color:#666;text-align:center;font-size:0.8em;"><span class="th-ep-caret">▸</span></td>
       <td style="white-space:nowrap;"><a href="https://kabutan.jp/stock/chart?code={{ ep.code_s }}" target="_blank" rel="noopener" onclick="event.stopPropagation();">{{ ep.code_s }}</a> <a href="/stock/{{ ep.code_s }}" onclick="event.stopPropagation();">{{ ep.stock_name }}</a></td>
-      <td style="white-space:nowrap;">
+      <td class="th-kind-cell">
         {% if ep.kind == "信用" %}
         <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.74em;background:#4a3a2e;color:#e0b070;">信用</span>
         {% if ep.is_short %}
@@ -181,10 +183,29 @@
         <span title="振り返りメモあり" style="margin-left:0.2em;">📝</span>
         {% endif %}
       </td>
+      {# エピソード単位の売買戦略 (issue #419)。戦略別に成績を集計するための焼き付け。
+         行を開かずに一覧のまま設定・確認できるよう区分の隣に置く #}
+      <td class="th-strategy-cell" style="white-space:nowrap;" onclick="event.stopPropagation();">
+        {# 未確認 (seed) は破線の枠で「仮の値」であることを示す。人が選ぶと実線に変わる。
+           幅が狭く名前が省略されるので、選択中の値を title で読めるようにする #}
+        <select class="episode-strategy-select{% if ep.strategy_source == "seed" %} is-seed{% endif %}"
+                data-url="{{ url_for('trade_history.save_episode_strategy') }}"
+                data-episode-key="{{ ep.episode_key }}"
+                title="{{ ep.trade_idea or "未分類" }}{% if ep.strategy_source == "seed" %} (現在の銘柄戦略から機械的にコピーした仮の値です。選び直すと確定します){% endif %}">
+          <option value="">(未分類)</option>
+          {% for name in trade_idea_options %}
+          <option value="{{ name }}"{% if ep.trade_idea == name %} selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+        {% if ep.strategy_drift %}
+        <span class="th-strategy-drift"
+              title="後から古い約定が取り込まれ、この建玉ラウンドの区切りが変わりました。戦略が別の取引を指している可能性があるため、戦略別の比較からは除外しています">⚠</span>
+        {% endif %}
+      </td>
       {# 保有中は close_date が無いので最終約定日を右端に出す (期間が open_date だけに
          潰れて「いつまで動いていたラウンドか」が読めなくなるため) #}
       {% set ep_end = ep.close_date or ep.last_trade_date %}
-      <td style="white-space:nowrap;color:#888;font-size:0.82em;">{{ ep.open_date[2:] }}{% if ep_end and ep_end != ep.open_date %} 〜 {{ ep_end[2:] }}{% endif %}</td>
+      <td style="white-space:nowrap;color:#888;font-size:0.82em;">{{ ep.open_date[5:] }}{% if ep_end and ep_end != ep.open_date %} 〜 {{ ep_end[5:] }}{% endif %}</td>
       {# 保有中で建玉が残っていれば「ピーク(残N)」。残株数はリターン列ではなく株数列で示す #}
       <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ qty_with_held(ep.qty_peak,
           ep.open_pl.held_qty if ep.open_pl else 0,
@@ -228,7 +249,7 @@
     </tr>
     <tr class="th-ep-detail" id="{{ uid }}" style="display:none;">
       <td></td>
-      <td colspan="7" style="padding:0.3em 0.5em 0.6em;">
+      <td colspan="8" style="padding:0.3em 0.5em 0.6em;">
         {# issue #421: 買と売を往復1行に畳んだ明細。実際に下した売買判断の単位で読める。
            信用は証券会社CSVの建玉対応 (tate_date/tate_price)、現物は FIFO で対応づける。 #}
         <table style="width:auto;font-size:0.82em;color:#999;border-collapse:collapse;">
@@ -303,14 +324,15 @@
 <table class="trade-history-table">
   <colgroup>
     <col style="width:1.5em;"><col style="width:11em;"><col style="width:4em;">
-    <col style="width:9em;"><col style="width:4.5em;"><col style="width:5em;">
-    <col style="width:7em;"><col style="width:7em;">
+    <col style="width:7.5em;"><col style="width:9em;"><col style="width:4.5em;">
+    <col style="width:5em;"><col style="width:7em;"><col style="width:7em;">
   </colgroup>
   <thead>
     <tr>
       <th></th>
       <th>銘柄</th>
       <th>区分</th>
+      <th style="white-space:nowrap;">売買戦略</th>
       <th style="white-space:nowrap;">期間</th>
       <th style="text-align:right;white-space:nowrap;">株数</th>
       <th style="text-align:right;white-space:nowrap;">リターン</th>
@@ -354,14 +376,15 @@
 <table class="trade-history-table">
   <colgroup>
     <col style="width:1.5em;"><col style="width:11em;"><col style="width:4em;">
-    <col style="width:9em;"><col style="width:4.5em;"><col style="width:5em;">
-    <col style="width:7em;"><col style="width:7em;">
+    <col style="width:7.5em;"><col style="width:9em;"><col style="width:4.5em;">
+    <col style="width:5em;"><col style="width:7em;"><col style="width:7em;">
   </colgroup>
   <thead>
     <tr>
       <th></th>
       <th>銘柄</th>
       <th>区分</th>
+      <th style="white-space:nowrap;">売買戦略</th>
       <th style="white-space:nowrap;">期間</th>
       <th style="text-align:right;white-space:nowrap;">株数</th>
       <th style="text-align:right;white-space:nowrap;">リターン</th>
@@ -398,7 +421,7 @@
         {% endif %}
       </td>
       <td style="white-space:nowrap;color:#888;font-size:0.82em;"
-          title="{{ r.episode_count }}回のエピソード、通算保有{{ r.pl.hold_days if r.pl else 0 }}日">{{ r.first_open_date[2:] }} 〜 {{ r.last_trade_date[2:] }}</td>
+          title="{{ r.episode_count }}回のエピソード、通算保有{{ r.pl.hold_days if r.pl else 0 }}日">{{ r.first_open_date[5:] }} 〜 {{ r.last_trade_date[5:] }}</td>
       {# エピソード単位ビューと表示を揃える: 株数列に残株数を併記し、リターン列は
          保有中でも % を出す (残株数でリターン列を潰さない) #}
       <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ qty_with_held(r.qty_peak, r.held_qty, r.has_open,
@@ -443,8 +466,8 @@
         <table class="trade-history-table" style="margin:0;">
           <colgroup>
             <col style="width:1.5em;"><col style="width:11em;"><col style="width:4em;">
-            <col style="width:9em;"><col style="width:4.5em;"><col style="width:5em;">
-            <col style="width:7em;"><col style="width:7em;">
+            <col style="width:7.5em;"><col style="width:9em;"><col style="width:4.5em;">
+            <col style="width:5em;"><col style="width:7em;"><col style="width:7em;">
           </colgroup>
           <tbody>
           {% for ep in r.episodes %}
@@ -476,6 +499,72 @@
 {% else %}
 <p style="color:#888;">取り込まれた約定がありません。</p>
 {% endif %}
+</div>
+
+{# ============ 戦略別の成績 (issue #419) ============
+   売買履歴の本来の目的は「戦略ごとに成績を集計して今後の投資判断に使う」こと。
+   未分類・要再確認は比較の母数から外して下部に分離する (母数と損益合計は出す)。 #}
+<div id="th-view-strategy" style="display:none;">
+
+{% if strategy_summary.unclassified_share > 0.2 %}
+<div style="padding:0.5em 0.8em;margin-bottom:0.8em;background:rgba(200,165,133,0.08);border:1px solid #5a4a3a;border-radius:5px;color:#c8a585;font-size:0.85em;">
+  未分類が {{ strategy_summary.unclassified.closed_count }} 件 / 損益シェア {{ "%.0f"|format(strategy_summary.unclassified_share * 100) }}% あります。戦略別比較の精度は限定的です。
+  <span style="color:#888;">（「エピソード単位」の売買戦略列で設定できます）</span>
+</div>
+{% endif %}
+{% if orphan_strategies %}
+<div style="padding:0.5em 0.8em;margin-bottom:0.8em;background:rgba(200,133,133,0.08);border:1px solid #5a3a3a;border-radius:5px;color:#c88585;font-size:0.85em;">
+  対応先を失った戦略ひもづけが {{ orphan_strategies }} 件あります。遡って約定が取り込まれ、建玉ラウンドの区切りが変わった可能性があります
+  （<code>migrate_seed_episode_strategy.py check-drift</code> で確認できます）。
+</div>
+{% endif %}
+
+<table class="trade-history-table">
+  <colgroup>
+    <col><col style="width:5em;"><col style="width:5em;"><col style="width:9em;">
+    <col style="width:6em;"><col style="width:6em;"><col style="width:7em;">
+  </colgroup>
+  <thead>
+    <tr>
+      <th>戦略</th><th style="text-align:right;">件数</th><th style="text-align:right;">保有中</th>
+      <th style="text-align:right;">実現損益</th><th style="text-align:right;">勝率</th>
+      <th style="text-align:right;">期待値</th><th style="text-align:right;">平均保有</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for name, part in strategy_summary.strategies %}
+    <tr>
+      <td>{{ name }}</td>
+      <td style="text-align:right;">{{ part.priced_count }}</td>
+      <td style="text-align:right;color:#888;">{{ part.open_count or "" }}</td>
+      <td style="text-align:right;white-space:nowrap;"><span style="color:{{ '#9ef0aa' if part.total_pl >= 0 else '#f0a0a0' }};font-weight:600;">{{ "{:+,}".format(part.total_pl) }}円</span></td>
+      <td style="text-align:right;">{% if part.summary %}{{ "%.0f"|format(part.summary.win_rate) }}%{% else %}—{% endif %}</td>
+      <td style="text-align:right;">{% if part.summary and part.summary.expectancy is not none %}<span style="color:{{ '#9ef0aa' if part.summary.expectancy >= 0 else '#f0a0a0' }};">{{ '+' if part.summary.expectancy >= 0 else '' }}{{ "%.1f"|format(part.summary.expectancy) }}%</span>{% else %}—{% endif %}</td>
+      <td style="text-align:right;color:#aaa;">{% if part.avg_hold_days is not none %}{{ part.avg_hold_days }}日{% else %}—{% endif %}</td>
+    </tr>
+  {% endfor %}
+  {# 未分類・要再確認は比較対象ではないので区切って下部に置き、比較指標は薄く出す #}
+  {% for label, part, note in [
+       ("未分類", strategy_summary.unclassified, "まだ戦略が付いていないエピソード"),
+       ("要再確認", strategy_summary.drifted, "遡り取込で建玉ラウンドの区切りが変わり、ひもづけがずれた可能性があるエピソード")] %}
+    {% if part.closed_count or part.open_count %}
+    <tr style="border-top:2px solid #444;">
+      <td style="color:#888;" title="{{ note }}">{{ label }}</td>
+      <td style="text-align:right;color:#888;">{{ part.priced_count }}</td>
+      <td style="text-align:right;color:#666;">{{ part.open_count or "" }}</td>
+      <td style="text-align:right;white-space:nowrap;color:#888;">{{ "{:+,}".format(part.total_pl) }}円</td>
+      <td style="text-align:right;color:#555;">{% if part.summary %}{{ "%.0f"|format(part.summary.win_rate) }}%{% else %}—{% endif %}</td>
+      <td style="text-align:right;color:#555;">{% if part.summary and part.summary.expectancy is not none %}{{ '+' if part.summary.expectancy >= 0 else '' }}{{ "%.1f"|format(part.summary.expectancy) }}%{% else %}—{% endif %}</td>
+      <td style="text-align:right;color:#555;">{% if part.avg_hold_days is not none %}{{ part.avg_hold_days }}日{% else %}—{% endif %}</td>
+    </tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+<p style="color:#777;font-size:0.78em;margin-top:0.6em;">
+  未分類・要再確認は戦略どうしの比較対象ではないため、勝率・期待値を薄く表示しています (実現損益の合計には含まれます)。
+</p>
+
 </div>
 </div>
 
@@ -627,7 +716,8 @@
   var THFV_KEY = 'th-fill-view';
   var viewBtns = document.querySelectorAll('.th-view-btn');
   var viewPanels = { 'th-view-episode': document.getElementById('th-view-episode'),
-                      'th-view-stock': document.getElementById('th-view-stock') };
+                      'th-view-stock': document.getElementById('th-view-stock'),
+                      'th-view-strategy': document.getElementById('th-view-strategy') };
   function selectView(view) {
     viewBtns.forEach(function (b) {
       var active = b.dataset.view === view;
@@ -731,6 +821,33 @@
     cell.addEventListener('click', function (e) {
       if (cell.querySelector('textarea')) return;
       showEditor();
+    });
+  });
+
+  // エピソードへの戦略ひもづけ (issue #419)
+  document.querySelectorAll('.episode-strategy-select').forEach(function (sel) {
+    var prev = sel.value;
+    sel.addEventListener('change', function () {
+      var fd = new FormData();
+      fd.append('episode_key', sel.dataset.episodeKey);
+      fd.append('trade_idea', sel.value);
+      sel.disabled = true;
+      fetch(sel.dataset.url, { method: 'POST', body: fd })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok) {
+            alert(res.j.error || '戦略の保存に失敗しました');
+            sel.value = prev;
+          } else {
+            prev = sel.value;
+            // 人が選んだ時点で「仮の値」ではなくなるので破線・淡色を解除する。
+            // title は省略表示の補完も兼ねるので、消さず選択値に更新する
+            sel.classList.remove('is-seed');
+            sel.title = sel.value || '未分類';
+          }
+        })
+        .catch(function () { sel.value = prev; })
+        .finally(function () { sel.disabled = false; });
     });
   });
 

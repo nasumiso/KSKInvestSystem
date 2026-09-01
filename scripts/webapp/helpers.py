@@ -5331,10 +5331,172 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         )
         ep["review_memo"] = memos.get(ep["episode_key"], "")
 
+    # エピソードに焼き付けた売買戦略 (issue #419) を紐付ける。
+    # ここは純粋な読み取り経路なので DB には書かない (指紋の確定保存は
+    # seal_episode_fingerprints / 付与時に行う)。
+    strategies = ps.list_episode_strategies(db_path=db_path)
+    for ep in episodes:
+        record = strategies.get(ep["episode_key"])
+        ep["trade_idea"] = record.get("trade_idea", "") if record else ""
+        ep["strategy_source"] = record.get("source", "") if record else ""
+        # 指紋不一致 = キーは生きているが中身が変わった (遡り取込でラウンドの
+        # 区切りが変わった)。戦略が別の取引を指している可能性があるため、
+        # 戦略別比較の母数から外して「要再確認」に退避する。
+        #
+        # 指紋はクローズ確定時にしか焼かない (保有中は買い増しで seq 列が伸びるのが
+        # 正常動作なので None)。よって指紋があるのにクローズしていないエピソードは、
+        # 遡り取込でラウンドが繋がり直して未決済に戻ったケース = ズレそのもの。
+        saved_fp = record.get("fingerprint") if record else None
+        ep["strategy_drift"] = bool(
+            saved_fp
+            and (not ep["closed"]
+                 or saved_fp != ps.episode_fingerprint(ep["fills"]))
+        )
+        # 一括付与時の「保有期間がばらついている」警告に使う (テンプレートで日付
+        # 計算をしないで済むよう、ここで出しておく)
+        ep["hold_days_calc"] = episode_hold_days(ep)
+
     # 最終約定日 (最新の取引がある順) 降順、同日は銘柄コード昇順
     episodes.sort(key=lambda e: e["code_s"])
     episodes.sort(key=lambda e: e["last_trade_date"], reverse=True)
     return episodes
+
+
+def summarize_by_strategy(episodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """戦略別の成績を集計する (issue #419)。
+
+    母数定義は _summarize_fill_episodes と完全に揃える。すなわち split_suspect
+    (分割・併合の疑いだが未換算, issue #398) は除外する。除外を継承しないと、
+    損益が壊れていると既知のエピソードが戦略成績に再混入して比較表が壊れる。
+
+    戦略が付いているものを上部の比較対象とし、下記2つは比較の母数から外して
+    下部に分離する:
+      - 未分類: まだ戦略が付いていない
+      - 要再確認: 指紋不一致 (遡り取込でひもづけがずれた可能性がある)
+
+    どちらも件数と損益合計は出す (実在する取引で損益は正しいため、全体の
+    実現損益合計は既存サマリーと一致する)。勝率・平均損益は比較対象ではない。
+
+    Returns: {"strategies": [(戦略名, part), ...], "unclassified": part,
+              "drifted": part, "total_pl": 全体の実現損益, "unclassified_share": 0-1}
+    """
+    valid = [ep for ep in episodes if not ep.get("split_suspect")]
+
+    def _part(eps: List[Dict[str, Any]]) -> Dict[str, Any]:
+        pls = [ep["pl"] for ep in eps if ep["closed"] and ep["pl"]]
+        hold = [episode_hold_days(ep) for ep in eps if ep["closed"]]
+        hold = [d for d in hold if d is not None]
+        return {
+            "summary": calc_trade_summary(pls),
+            "total_pl": sum(p["profit_amount"] for p in pls
+                            if p["profit_amount"] is not None),
+            "priced_count": len(pls),
+            "closed_count": sum(1 for ep in eps if ep["closed"]),
+            "open_count": sum(1 for ep in eps if not ep["closed"]),
+            "avg_hold_days": round(sum(hold) / len(hold)) if hold else None,
+        }
+
+    by_idea: Dict[str, List[Dict[str, Any]]] = {}
+    unclassified: List[Dict[str, Any]] = []
+    drifted: List[Dict[str, Any]] = []
+    for ep in valid:
+        if ep.get("strategy_drift"):
+            drifted.append(ep)
+        elif ep.get("trade_idea"):
+            by_idea.setdefault(ep["trade_idea"], []).append(ep)
+        else:
+            unclassified.append(ep)
+
+    strategies = [(name, _part(eps)) for name, eps in by_idea.items()]
+    # 実現損益の大きい戦略から並べる (成績への寄与が大きい順)
+    strategies.sort(key=lambda x: abs(x[1]["total_pl"]), reverse=True)
+
+    unclassified_part = _part(unclassified)
+    drifted_part = _part(drifted)
+    total_abs = sum(abs(p[1]["total_pl"]) for p in strategies) \
+        + abs(unclassified_part["total_pl"]) + abs(drifted_part["total_pl"])
+    return {
+        "strategies": strategies,
+        "unclassified": unclassified_part,
+        "drifted": drifted_part,
+        "total_pl": (sum(p[1]["total_pl"] for p in strategies)
+                     + unclassified_part["total_pl"] + drifted_part["total_pl"]),
+        # 未分類の損益シェアが大きいうちは戦略別比較の精度が限定的
+        "unclassified_share": (abs(unclassified_part["total_pl"]) / total_abs
+                               if total_abs else 0.0),
+    }
+
+
+def episode_hold_days(ep: Dict[str, Any]) -> Optional[int]:
+    """エピソードの保有日数 (open_date〜close_date)。保有中・日付不正は None。"""
+    return _round_trip_days(ep.get("open_date"), ep.get("close_date"))
+
+
+def count_orphan_strategies(episodes: List[Dict[str, Any]],
+                            db_path: Optional[str] = None) -> int:
+    """現存エピソードに対応しない戦略ひもづけ (orphan) の件数 (issue #419)。
+
+    遡り取込でラウンドの区切りが変わり、保存済みキーの参照先が消えた状態。
+    指紋不一致 (strategy_drift) と違って印を立てる相手のエピソードが無いため、
+    エピソードの属性ではなく画面レベルの警告として出す。
+    """
+    import portfolio_shelve as ps  # 遅延 import (循環回避)
+
+    live_keys = {ep["episode_key"] for ep in episodes}
+    strategies = ps.list_episode_strategies(db_path=db_path)
+    return sum(1 for key in strategies if key not in live_keys)
+
+
+def seal_episode_fingerprints(db_path: Optional[str] = None) -> Dict[str, int]:
+    """クローズ確定したエピソードの指紋を焼き付ける (issue #419)。
+
+    「保有中に戦略を付与 → 後でクローズ」の穴を埋める。保有中は指紋を持てない
+    (買い増しで seq 列が伸びるのが正常) ため、クローズが確定した時点で初めて焼く。
+    クローズ済みへの後付けは set_episode_strategy が付与時に焼くので、ここは
+    fingerprint 未設定のものだけを拾えばよい。
+
+    同時に、保有中は判定できなかった time_horizon 足切りをここで再評価する。
+    素通しシードは「保留」であって「合格」ではないため、2日で閉じた中長期戦略の
+    ような矛盾は未分類に戻す。人が確認した manual は再評価しない。
+
+    fill 取込直後に呼ぶ。エピソードの姿が変わりうるのは fill が増えた時だけ。
+    冪等 (既に指紋があるレコードは触らない)。
+
+    戻り値: {"sealed": 指紋を確定した数, "dropped": 矛盾で未分類に戻した数}
+    """
+    import portfolio_shelve as ps  # 遅延 import (循環回避)
+
+    episodes = build_fill_episodes(db_path=db_path)
+    strategies = ps.list_episode_strategies(db_path=db_path)
+    horizons = {t["name"]: t.get("time_horizon", "")
+                for t in ps.list_trade_ideas(db_path=db_path)}
+
+    sealed = dropped = 0
+    for ep in episodes:
+        record = strategies.get(ep["episode_key"])
+        if not record or not ep["closed"] or record.get("fingerprint"):
+            continue
+        hold_days = episode_hold_days(ep)
+        if record.get("source") == "seed" and not ps.is_hold_days_consistent(
+            horizons.get(record["trade_idea"], ""), hold_days
+        ):
+            ps.set_episode_strategy(ep["episode_key"], "", db_path=db_path)
+            dropped += 1
+            continue
+        ps.set_episode_strategy(
+            ep["episode_key"], record["trade_idea"],
+            source=record.get("source", "manual"),
+            fingerprint=ps.episode_fingerprint(ep["fills"]),
+            hold_days=hold_days,
+            db_path=db_path,
+        )
+        sealed += 1
+    if sealed or dropped:
+        from ks_util import log_print
+
+        log_print("episode_strategy 指紋確定",
+                  f"sealed={sealed}", f"dropped={dropped}")
+    return {"sealed": sealed, "dropped": dropped}
 
 
 def _round_trip_days(open_date: Optional[str], close_date: Optional[str]) -> Optional[int]:

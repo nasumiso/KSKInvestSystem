@@ -1437,6 +1437,78 @@ class TestFillMemo:
         assert all("review_memo" not in fl for fl in fills)
 
 
+class TestEpisodeStrategy:
+    """エピソードへの戦略ひもづけ (issue #419)"""
+
+    @pytest.fixture
+    def seeded_db(self, db_path):
+        ps.seed_trade_ideas(db_path=db_path)
+        return db_path
+
+    def test_set_requires_registered_master(self, seeded_db):
+        # 集計キーなので未登録値は拒否する (fill_memo の自由文字列とは違う)
+        key = ps.fill_episode_key("1001", "信用", 1)
+        with pytest.raises(ValueError):
+            ps.set_episode_strategy(key, "存在しない戦略", db_path=seeded_db)
+        ps.set_episode_strategy(key, "GARP", db_path=seeded_db)
+        assert ps.get_episode_strategy(key, db_path=seeded_db)["trade_idea"] == "GARP"
+
+    def test_empty_deletes_key_not_stores_blank(self, seeded_db):
+        # 「未分類 = キーが存在しない」の1通りだけ。空文字レコードを残すと
+        # 一括付与 (未設定のみ埋める) から漏れて二度と拾えなくなる
+        key = ps.fill_episode_key("1001", "信用", 1)
+        ps.set_episode_strategy(key, "GARP", db_path=seeded_db)
+        ps.set_episode_strategy(key, "", db_path=seeded_db)
+        assert ps.get_episode_strategy(key, db_path=seeded_db) is None
+        assert key not in ps.list_episode_strategies(db_path=seeded_db)
+
+    @pytest.mark.parametrize("time_horizon,hold_days,expected", [
+        ("短期", 5, True),
+        ("短期", 40, False),      # 短期戦略が40日保有は矛盾
+        ("中期", 3, False),       # 中期戦略が3日で手仕舞いは矛盾
+        ("中期", 90, True),
+        ("中長期", 10, False),    # 中長期戦略が10日回転は矛盾
+        ("中長期", 200, True),
+        ("恒常", 1, True),        # 恒常は制限なし
+        ("中期", None, True),     # 保有中は判定できないので通す
+    ])
+    def test_hold_days_consistency(self, time_horizon, hold_days, expected):
+        assert ps.is_hold_days_consistent(time_horizon, hold_days) is expected
+
+    def test_master_rename_and_delete_cascade(self, seeded_db):
+        # rename は追従 (旧名が残ると戦略別テーブルで成績が分断される)、
+        # delete はキーごと削除して未分類に戻す
+        key = ps.fill_episode_key("1001", "信用", 1)
+        ps.set_episode_strategy(key, "GARP", db_path=seeded_db)
+        ps.update_trade_idea("GARP", new_name="GARP改", db_path=seeded_db)
+        assert ps.get_episode_strategy(key, db_path=seeded_db)["trade_idea"] == "GARP改"
+
+        ps.delete_trade_idea("GARP改", db_path=seeded_db)
+        assert ps.get_episode_strategy(key, db_path=seeded_db) is None
+
+    def test_time_horizon_change_drops_only_inconsistent_seeds(self, seeded_db):
+        # time_horizon を変えると既存 seed が新定義と矛盾しうる。seed は未分類へ
+        # 戻すが、人が確認した manual は機械が覆さない
+        seed_key = ps.fill_episode_key("1001", "信用", 1)
+        manual_key = ps.fill_episode_key("1002", "信用", 1)
+        ps.set_episode_strategy(seed_key, "GARP", source="seed",
+                                hold_days=200, db_path=seeded_db)
+        ps.set_episode_strategy(manual_key, "GARP", source="manual",
+                                hold_days=200, db_path=seeded_db)
+
+        # 中長期 (>=30日) → 短期 (<=20日) にすると 200日保有は矛盾になる
+        ps.update_trade_idea("GARP", time_horizon="短期", db_path=seeded_db)
+
+        assert ps.get_episode_strategy(seed_key, db_path=seeded_db) is None
+        assert ps.get_episode_strategy(manual_key, db_path=seeded_db) is not None
+
+    def test_fingerprint_changes_when_episode_splits(self):
+        # 遡り取込でラウンドが分裂し fill が抜けたら指紋は必ず変わる
+        # (open_date+先頭seq では検知できないケース)
+        assert (ps.episode_fingerprint([{"seq": 1}, {"seq": 2}, {"seq": 3}])
+                != ps.episode_fingerprint([{"seq": 2}, {"seq": 3}]))
+
+
 class TestPositionLayer:
     """position/position_source レイヤーのテスト (issue #397 Phase1)。
 
