@@ -10,6 +10,7 @@ build_fill_episodes (webapp.helpers) を呼んで、取込後の検算・保有�
     cd scripts && python show_fill_episodes.py --open     # 保有中のみ (DB非更新)
     cd scripts && python show_fill_episodes.py --memo     # 振り返りメモ付きのみ (DB非更新)
     cd scripts && python show_fill_episodes.py --fills 6324  # 内訳 fill も表示 (DB非更新)
+    cd scripts && python show_fill_episodes.py --check-dups            # 未確定CSV由来の重複約定を検出
     cd scripts && python show_fill_episodes.py --check-splits          # 分割・併合の疑いを診断 (issue #398)
     cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05  # 換算比率を登録
     cd scripts && python show_fill_episodes.py --reject-split 1491 2025-09-29  # 誤検知を解除
@@ -230,6 +231,50 @@ def _check_splits(db_path: Optional[str]) -> int:
     return 0
 
 
+def _check_dups(db_path: Optional[str]) -> int:
+    """未確定CSV由来の重複約定を検出する (DB非更新)。
+
+    証券会社CSVは約定直後だと受渡金額が 0 で出力されることがあり、後日その約定が
+    確定額つきで再取込されると **同じ約定が2件の fill として残る**。dedup_key は
+    amount を含む (make_dedup_key) ため、0円行と確定額行は別ハッシュになり
+    冪等取込では弾けない。
+
+    検出方法: 約定本体 (約定日・銘柄・売買・区分・数量・単価) が同一で、
+    受渡金額 0 の行と 0 でない行が併存する組を重複候補として報告する。
+
+    信用新規は受渡金額が元から 0 なので **対象外** (495件が該当し、全件が正常)。
+    誤検知を避けるためここを除外するのが肝。
+    """
+    fills = ps.list_fills(db_path=db_path)
+    groups: Dict[tuple, List[Dict[str, Any]]] = {}
+    for f in fills:
+        if f.get("trade_kind") == "信用新規":
+            continue  # 建玉を作る側は受渡金額を持たないのが正常
+        key = (f.get("trade_date"), f.get("code_s"), f.get("side"),
+               f.get("trade_kind"), f.get("qty"), f.get("price"))
+        groups.setdefault(key, []).append(f)
+
+    found = 0
+    for key, rows in sorted(groups.items()):
+        zero = [r for r in rows if (r.get("amount") or 0) == 0]
+        fixed = [r for r in rows if (r.get("amount") or 0) != 0]
+        if not (zero and fixed):
+            continue
+        found += 1
+        trade_date, code_s, side, trade_kind, qty, price = key
+        log_warning(f"[重複候補] {code_s} {trade_date} {side} {trade_kind} "
+                    f"{qty}株 @{price} — 未確定 {len(zero)}件 / 確定 {len(fixed)}件")
+        for r in zero + fixed:
+            log_print(f"    seq={r.get('seq')} amount={r.get('amount')} "
+                      f"broker={r.get('broker')} dedup_key={r.get('dedup_key')}")
+
+    if found:
+        log_warning(f"--- 重複候補 {found} 件。未確定 (受渡金額0) 側の削除を検討してください")
+    else:
+        log_print("--- 未確定CSV由来の重複はありません")
+    return 1 if found else 0
+
+
 def _register_split(code_s: str, ex_date: str, ratio: str, db_path: Optional[str]) -> int:
     """split_adj イベントを1件登録する (issue #398)。"""
     stored = ps.add_split_adjustment(code_s, ex_date, float(ratio), db_path=db_path)
@@ -264,6 +309,8 @@ def main() -> int:
     parser.add_argument("--memo", action="store_true", help="振り返りメモ付きのみ表示")
     parser.add_argument("--fills", action="store_true", help="内訳の個別 fill も表示")
     parser.add_argument("--db-path", default=None, help="portfolio DB パス")
+    parser.add_argument("--check-dups", action="store_true",
+                        help="未確定CSV由来の重複約定を検出する (DB非更新)")
     parser.add_argument("--check-splits", action="store_true",
                         help="分割・併合の疑いを診断する (issue #398、DB非更新)")
     parser.add_argument("--register-split", nargs=3, metavar=("CODE", "EX_DATE", "RATIO"),
@@ -276,6 +323,8 @@ def main() -> int:
         return _register_split(*args.register_split, db_path=args.db_path)
     if args.reject_split:
         return _reject_split(args.reject_split, db_path=args.db_path)
+    if args.check_dups:
+        return _check_dups(args.db_path)
     if args.check_splits:
         return _check_splits(args.db_path)
 
