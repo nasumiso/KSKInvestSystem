@@ -3006,6 +3006,7 @@ def update_trade_idea(
             if rule_value is not None:
                 current["exit_rule"] = rule_value
 
+            dropped_seeds = 0
             if renaming:
                 del db[old_key]
                 db[new_key] = current
@@ -3024,9 +3025,10 @@ def update_trade_idea(
             # シード時・クローズ時の足切りはどちらも通らないので、ここで再評価する。
             # 人が確認した manual は機械が覆さない。
             if time_horizon is not None:
-                affected_episodes += _drop_inconsistent_seeds(
+                dropped_seeds = _drop_inconsistent_seeds(
                     db, new_normalized if renaming else normalized, th_value
                 )
+                affected_episodes += dropped_seeds
 
     if renaming:
         log_print(
@@ -3041,7 +3043,12 @@ def update_trade_idea(
             normalized,
             f"episodes={affected_episodes}",
         )
-    return dict(current)
+    # 時間軸変更で未分類に戻した seed 件数を呼び出し側へ返す。UI で件数を出さないと
+    # 「更新しました」だけが表示され、履歴の分類が黙って消えたように見える (#419 レビュー)。
+    # 既存キーは変えず、参考値として添えるだけに留める
+    result = dict(current)
+    result["dropped_seed_episodes"] = dropped_seeds
+    return result
 
 
 def delete_trade_idea(name: str, *, db_path: Optional[str] = None) -> int:

@@ -1633,7 +1633,7 @@ def strategies_update(name: str):
     description = request.form.get("description")
     time_horizon = request.form.get("time_horizon")
     try:
-        ps.update_trade_idea(
+        updated = ps.update_trade_idea(
             name,
             new_name=new_name if new_name and new_name != name else None,
             description=description if description is not None else None,
@@ -1651,6 +1651,15 @@ def strategies_update(name: str):
         flash(f"戦略を「{name}」→「{new_name}」にリネームしました", "info")
     else:
         flash(f"戦略「{name}」を更新しました", "info")
+    # 時間軸を変えると矛盾する seed ひもづけが未分類に戻る。件数を出さないと
+    # 履歴の分類が黙って消えたように見えるので、消えたときだけ警告を足す (#419 レビュー)
+    dropped = updated.get("dropped_seed_episodes") or 0
+    if dropped:
+        flash(
+            f"時間軸の変更により、保有日数と矛盾する自動ひもづけ {dropped}件 を未分類に戻しました"
+            "（手動で選んだものは維持されます）",
+            "warning",
+        )
     return redirect(url_for("portfolio.strategies_index"))
 
 
