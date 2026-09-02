@@ -250,8 +250,11 @@ def _check_dups(db_path: Optional[str]) -> int:
     for f in fills:
         if f.get("trade_kind") == "信用新規":
             continue  # 建玉を作る側は受渡金額を持たないのが正常
+        # broker をキーに含める: 別会社で同日・同銘柄・同条件の約定をした場合、
+        # 片方が未確定 (受渡金額0) だと正当な2件を重複候補として報告してしまう。
+        # 出力は未確定側の削除を勧めるため、正常な fill を消す事故につながる
         key = (f.get("trade_date"), f.get("code_s"), f.get("side"),
-               f.get("trade_kind"), f.get("qty"), f.get("price"))
+               f.get("trade_kind"), f.get("qty"), f.get("price"), f.get("broker"))
         groups.setdefault(key, []).append(f)
 
     found = 0
@@ -261,9 +264,9 @@ def _check_dups(db_path: Optional[str]) -> int:
         if not (zero and fixed):
             continue
         found += 1
-        trade_date, code_s, side, trade_kind, qty, price = key
+        trade_date, code_s, side, trade_kind, qty, price, broker = key
         log_warning(f"[重複候補] {code_s} {trade_date} {side} {trade_kind} "
-                    f"{qty}株 @{price} — 未確定 {len(zero)}件 / 確定 {len(fixed)}件")
+                    f"{qty}株 @{price} ({broker}) — 未確定 {len(zero)}件 / 確定 {len(fixed)}件")
         for r in zero + fixed:
             log_print(f"    seq={r.get('seq')} amount={r.get('amount')} "
                       f"broker={r.get('broker')} dedup_key={r.get('dedup_key')}")

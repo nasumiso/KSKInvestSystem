@@ -420,6 +420,19 @@
         <span title="振り返りメモ {{ r.memo_count }}件" style="margin-left:0.2em;">📝</span>
         {% endif %}
       </td>
+      {# 銘柄行の売買戦略 (issue #419)。銘柄内のエピソードが1つの戦略に揃っていれば
+         その名前を、割れていれば「混在」を出す。設定はエピソード単位が真実源なので
+         ここは表示のみとし、詳細行を開いて個々のエピソードで選ぶ #}
+      <td style="white-space:nowrap;color:#888;font-size:0.82em;overflow:hidden;text-overflow:ellipsis;">
+        {% set stock_ideas = r.episodes | map(attribute="trade_idea") | reject("none") | reject("equalto", "") | unique | list %}
+        {% if stock_ideas | length == 1 %}
+        <span title="{{ stock_ideas[0] }}">{{ stock_ideas[0] }}</span>
+        {% elif stock_ideas | length > 1 %}
+        <span style="color:#a0a0d0;" title="{{ stock_ideas | join(" / ") }}">混在 ({{ stock_ideas | length }})</span>
+        {% else %}
+        <span style="color:#666;">—</span>
+        {% endif %}
+      </td>
       <td style="white-space:nowrap;color:#888;font-size:0.82em;"
           title="{{ r.episode_count }}回のエピソード、通算保有{{ r.pl.hold_days if r.pl else 0 }}日">{{ r.first_open_date[5:] }} 〜 {{ r.last_trade_date[5:] }}</td>
       {# エピソード単位ビューと表示を揃える: 株数列に残株数を併記し、リターン列は
@@ -462,7 +475,7 @@
     </tr>
     <tr class="th-stock-detail" id="stock-{{ stock_idx }}" style="display:none;">
       <td></td>
-      <td colspan="7" style="padding:0.3em 0.5em 0.6em;">
+      <td colspan="8" style="padding:0.3em 0.5em 0.6em;">
         <table class="trade-history-table" style="margin:0;">
           <colgroup>
             <col style="width:1.5em;"><col style="width:11em;"><col style="width:4em;">
@@ -826,7 +839,9 @@
 
   // エピソードへの戦略ひもづけ (issue #419)
   document.querySelectorAll('.episode-strategy-select').forEach(function (sel) {
-    var prev = sel.value;
+    // 巻き戻し先はクロージャではなく dataset に持つ。同じエピソードの双子を
+    // 同期する際、相手側の「直前の値」も一緒に更新する必要があるため
+    sel.dataset.prev = sel.value;
     sel.addEventListener('change', function () {
       var fd = new FormData();
       fd.append('episode_key', sel.dataset.episodeKey);
@@ -837,16 +852,24 @@
         .then(function (res) {
           if (!res.ok) {
             alert(res.j.error || '戦略の保存に失敗しました');
-            sel.value = prev;
+            sel.value = sel.dataset.prev;
           } else {
-            prev = sel.value;
             // 人が選んだ時点で「仮の値」ではなくなるので破線・淡色を解除する。
             // title は省略表示の補完も兼ねるので、消さず選択値に更新する
-            sel.classList.remove('is-seed');
-            sel.title = sel.value || '未分類';
+            // issue #391 のメモ欄と同じく、同じエピソードはエピソード単位/銘柄単位の
+            // 両ビューに描画されるので、非表示側の選択欄も揃える。揃えないと
+            // ビュー切替後に古い値が見え、そこで操作すると保存済みの値を巻き戻す
+            document.querySelectorAll(
+              '.episode-strategy-select[data-episode-key="' + sel.dataset.episodeKey + '"]'
+            ).forEach(function (other) {
+              other.value = sel.value;
+              other.dataset.prev = sel.value;
+              other.classList.remove('is-seed');
+              other.title = sel.value || '未分類';
+            });
           }
         })
-        .catch(function () { sel.value = prev; })
+        .catch(function () { sel.value = sel.dataset.prev; })
         .finally(function () { sel.disabled = false; });
     });
   });
