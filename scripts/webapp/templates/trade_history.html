@@ -197,6 +197,15 @@
           <option value="{{ name }}"{% if ep.trade_idea == name %} selected{% endif %}>{{ name }}</option>
           {% endfor %}
         </select>
+        {# 表示中の値のまま確定するボタン (issue #419 レビュー)。select は同じ option を
+           選び直しても change が出ないため、ボタン無しでは seed の確定・drift の解消が
+           できない (別の戦略に変えて戻す往復が要る)。要確認の行にだけ出す #}
+        {% if ep.strategy_source == "seed" or ep.strategy_drift %}
+        <button type="button" class="episode-strategy-confirm"
+                data-url="{{ url_for('trade_history.save_episode_strategy') }}"
+                data-episode-key="{{ ep.episode_key }}"
+                title="表示中の戦略「{{ ep.trade_idea or "未分類" }}」のまま確定します">✓</button>
+        {% endif %}
         {% if ep.strategy_drift %}
         <span class="th-strategy-drift"
               title="後から古い約定が取り込まれ、この建玉ラウンドの区切りが変わりました。戦略が別の取引を指している可能性があるため、戦略別の比較からは除外しています">⚠</span>
@@ -838,39 +847,57 @@
   });
 
   // エピソードへの戦略ひもづけ (issue #419)
+  // 保存は選択欄の change と「✓ そのまま確定」ボタンの両方から呼ぶので関数にまとめる。
+  // ボタン側は値が変わらないため、change に頼らず明示的に叩く必要がある
+  function saveEpisodeStrategy(sel) {
+    var fd = new FormData();
+    fd.append('episode_key', sel.dataset.episodeKey);
+    fd.append('trade_idea', sel.value);
+    sel.disabled = true;
+    return fetch(sel.dataset.url, { method: 'POST', body: fd })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          alert(res.j.error || '戦略の保存に失敗しました');
+          sel.value = sel.dataset.prev;
+          return;
+        }
+        // 人が選んだ時点で「仮の値」ではなくなるので破線・淡色を解除する。
+        // title は省略表示の補完も兼ねるので、消さず選択値に更新する
+        // issue #391 のメモ欄と同じく、同じエピソードはエピソード単位/銘柄単位の
+        // 両ビューに描画されるので、非表示側の選択欄も揃える。揃えないと
+        // ビュー切替後に古い値が見え、そこで操作すると保存済みの値を巻き戻す
+        document.querySelectorAll(
+          '.episode-strategy-select[data-episode-key="' + sel.dataset.episodeKey + '"]'
+        ).forEach(function (other) {
+          other.value = sel.value;
+          other.dataset.prev = sel.value;
+          other.classList.remove('is-seed');
+          other.title = sel.value || '未分類';
+        });
+        // 確定済みになったので「✓」も両ビューから消す (drift の ⚠ はサーバ側の
+        // 再判定が要るため、この場では触らずリロードに任せる)
+        document.querySelectorAll(
+          '.episode-strategy-confirm[data-episode-key="' + sel.dataset.episodeKey + '"]'
+        ).forEach(function (btn) { btn.remove(); });
+      })
+      .catch(function () { sel.value = sel.dataset.prev; })
+      .finally(function () { sel.disabled = false; });
+  }
+
   document.querySelectorAll('.episode-strategy-select').forEach(function (sel) {
     // 巻き戻し先はクロージャではなく dataset に持つ。同じエピソードの双子を
     // 同期する際、相手側の「直前の値」も一緒に更新する必要があるため
     sel.dataset.prev = sel.value;
-    sel.addEventListener('change', function () {
-      var fd = new FormData();
-      fd.append('episode_key', sel.dataset.episodeKey);
-      fd.append('trade_idea', sel.value);
-      sel.disabled = true;
-      fetch(sel.dataset.url, { method: 'POST', body: fd })
-        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-        .then(function (res) {
-          if (!res.ok) {
-            alert(res.j.error || '戦略の保存に失敗しました');
-            sel.value = sel.dataset.prev;
-          } else {
-            // 人が選んだ時点で「仮の値」ではなくなるので破線・淡色を解除する。
-            // title は省略表示の補完も兼ねるので、消さず選択値に更新する
-            // issue #391 のメモ欄と同じく、同じエピソードはエピソード単位/銘柄単位の
-            // 両ビューに描画されるので、非表示側の選択欄も揃える。揃えないと
-            // ビュー切替後に古い値が見え、そこで操作すると保存済みの値を巻き戻す
-            document.querySelectorAll(
-              '.episode-strategy-select[data-episode-key="' + sel.dataset.episodeKey + '"]'
-            ).forEach(function (other) {
-              other.value = sel.value;
-              other.dataset.prev = sel.value;
-              other.classList.remove('is-seed');
-              other.title = sel.value || '未分類';
-            });
-          }
-        })
-        .catch(function () { sel.value = sel.dataset.prev; })
-        .finally(function () { sel.disabled = false; });
+    sel.addEventListener('change', function () { saveEpisodeStrategy(sel); });
+  });
+
+  // 「✓ そのまま確定」: 表示中の値で保存し、seed を manual に変える
+  document.querySelectorAll('.episode-strategy-confirm').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var sel = btn.parentElement.querySelector('.episode-strategy-select');
+      if (sel) saveEpisodeStrategy(sel);
     });
   });
 

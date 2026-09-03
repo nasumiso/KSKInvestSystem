@@ -572,9 +572,30 @@ nav .quick-search {
   cursor: help;
   pointer-events: auto;
 }
+/* drift 行には「✓」も並ぶ。⚠ は絶対配置で右端に重なるため、ボタンの分だけ
+   左へ寄せて重なりを避ける (両方が出るのは要再確認の行だけ) */
+.th-strategy-cell:has(.episode-strategy-confirm) .th-strategy-drift {
+  right: 1.7em;
+}
 .episode-strategy-select.is-seed {
   opacity: 0.62;
   border-style: dashed;
+}
+/* 「そのまま確定」ボタン。select は同じ値を選び直しても change が出ないため、
+   seed の確定・drift の解消にはこのボタンが要る。要確認の行にだけ描画される */
+.episode-strategy-confirm {
+  border: 1px solid #cfc;
+  background: #f2fff2;
+  color: #3a7a3a;
+  border-radius: 3px;
+  font-size: 0.72em;
+  line-height: 1;
+  padding: 2px 4px;
+  margin-left: 0.2em;
+  cursor: pointer;
+}
+.episode-strategy-confirm:hover {
+  background: #e0ffe0;
 }
 
 /* 売買履歴の区分セル (issue #419)。table-layout:auto では「⚠ 分割・併合の疑い」の
