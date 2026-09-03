@@ -1453,6 +1453,27 @@ class TestEpisodeStrategy:
         ps.set_episode_strategy(key, "GARP", db_path=seeded_db)
         assert ps.get_episode_strategy(key, db_path=seeded_db)["trade_idea"] == "GARP"
 
+    @pytest.mark.parametrize("first_tate,second_tate,expect_stale", [
+        (None, "2026-01-05", True),      # 建日が後付け -> 姿が変わるので要再確認
+        ("2026-01-05", "2026-01-05", False),  # 既に入っている -> 冪等再取込で誤発火しない
+        (None, None, False),             # 後続CSVにも建日が無い -> 変化なし
+    ])
+    def test_tate_date_backfill_marks_drift(self, seeded_db, first_tate,
+                                            second_tate, expect_stale):
+        # 建日は carry_over 判定と hold_days を決めるが、指紋は seq 列のハッシュなので
+        # 後付けでは変化せず drift を検出できない。取込側で印を立てる (issue #419 レビュー)
+        key = ps.fill_episode_key("1001", "信用", 1)
+        common = dict(trade_date="2026-01-20", side="sell", qty=100, price=1000.0,
+                      amount=100000, trade_kind="信用返済", dedup_key="dup-1")
+        ps.append_fill(ps.create_fill("1001", tate_date=first_tate, **common),
+                       db_path=seeded_db)
+        ps.set_episode_strategy(key, "GARP", fingerprint="abc123def456",
+                                hold_days=15, db_path=seeded_db)
+        ps.append_fill(ps.create_fill("1001", tate_date=second_tate, **common),
+                       db_path=seeded_db)
+        fp = ps.get_episode_strategy(key, db_path=seeded_db)["fingerprint"]
+        assert (fp == ps._FINGERPRINT_STALE) is expect_stale
+
     def test_empty_deletes_key_not_stores_blank(self, seeded_db):
         # 「未分類 = キーが存在しない」の1通りだけ。空文字レコードを残すと
         # 一括付与 (未設定のみ埋める) から漏れて二度と拾えなくなる

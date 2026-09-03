@@ -1132,6 +1132,17 @@ def _next_fill_seq(db: ShelveDB, code_s: str) -> int:
 _FILL_BACKFILL_FIELDS = ("tate_date", "tate_price", "settle_pl", "broker")
 
 
+# 後付けされるとエピソードの区切り・保有日数が変わるフィールド (issue #419 レビュー)。
+# tate_date は carry_over 判定と hold_days の両方を決めるため、後から入ると
+# 「通常ラウンド → 期首持越し」「保有日数が変わる」という形でエピソードの姿が変わる。
+# 指紋は seq 列のハッシュなので後付けでは変化せず、strategy_drift が立たない。
+_FILL_SHAPE_FIELDS = ("tate_date",)
+
+# 「姿が変わったので要再確認」を表す指紋のセンチネル。実際の指紋は sha1 の先頭12桁
+# (16進) なので、この値と衝突しない。
+_FINGERPRINT_STALE = "stale-backfill"
+
+
 def _backfill_fill(value: Dict[str, Any], fill: Dict[str, Any]) -> bool:
     """後続CSVで確定した fill の補完可能な値を反映する。"""
     updated = False
@@ -1144,6 +1155,41 @@ def _backfill_fill(value: Dict[str, Any], fill: Dict[str, Any]) -> bool:
         value["amount"] = fill["amount"]
         updated = True
     return updated
+
+
+def _shape_changed_by_backfill(value: Dict[str, Any], fill: Dict[str, Any]) -> bool:
+    """後付けでエピソードの姿 (区切り・保有日数) が変わるかを、埋める前に判定する。"""
+    return any(value.get(f) is None and fill.get(f) is not None
+               for f in _FILL_SHAPE_FIELDS)
+
+
+def _invalidate_episode_fingerprints(db: ShelveDB, code_s: str) -> int:
+    """指定銘柄のエピソード戦略から指紋を落とし、要再確認に落とす (flock 内から呼ぶ)。
+
+    指紋を None にすると read 側 (build_fill_episodes) が strategy_drift を
+    立てられなくなるため、代わりに空文字を入れて「焼いてあるが現在の姿と一致しない」
+    状態を作る。seal_episode_fingerprints は fingerprint 未設定のものだけ拾うので、
+    空文字を残すと再 seal されずに要再確認のまま残ってしまう。よって現在の指紋を
+    知らないこの場では、確実に不一致になるセンチネルを入れる。
+
+    戻り値: 印を立てたレコード数
+    """
+    touched = 0
+    for key in list(db.keys()):
+        if not key.startswith(KEY_EPISODE_STRATEGY_PREFIX):
+            continue
+        record = db[key]
+        if not isinstance(record, dict) or not record.get("trade_idea"):
+            continue
+        episode_key = record.get("episode_key", key[len(KEY_EPISODE_STRATEGY_PREFIX):])
+        if str(episode_key).split("|")[0] != code_s:
+            continue
+        if not record.get("fingerprint"):
+            continue  # 未確定 (保有中) はもともと drift 判定の対象外
+        record["fingerprint"] = _FINGERPRINT_STALE
+        db[key] = record
+        touched += 1
+    return touched
 
 
 def append_fill(
@@ -1171,8 +1217,21 @@ def append_fill(
                 if not key.startswith(prefix):
                     continue
                 if isinstance(value, dict) and value.get("dedup_key") == dedup_key:
+                    # 埋める前に判定する (埋めた後では None→非None が消えて分からない)
+                    shape_changed = _shape_changed_by_backfill(value, fill)
                     if _backfill_fill(value, fill):
                         db[key] = value
+                        if shape_changed:
+                            # 建日が後から入るとエピソードの区切り・保有日数が変わるが、
+                            # 指紋 (seq 列のハッシュ) は変化しないので drift を検出できない。
+                            # この銘柄の戦略ひもづけに要再確認の印を立てて、戦略別比較の
+                            # 母数から外す (issue #419 レビュー)
+                            n = _invalidate_episode_fingerprints(db, code_s)
+                            if n:
+                                log_print(
+                                    "portfolio_shelve: 建日の後付けで要再確認",
+                                    code_s, f"episodes={n}",
+                                )
                     return value, False  # 既に取込済み (冪等)
             seq = _next_fill_seq(db, code_s)
             stored = dict(fill)
