@@ -5379,17 +5379,28 @@ def summarize_by_strategy(episodes: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     Returns: {"strategies": [(戦略名, part), ...], "unclassified": part,
               "drifted": part, "total_pl": 全体の実現損益, "unclassified_share": 0-1}
+
+    unclassified_share はエピソード単位の絶対損益で測る。バケットの net を使うと
+    利益と損失が相殺され、分類が進んでいないのにシェアが小さく見える。
     """
     valid = [ep for ep in episodes if not ep.get("split_suspect")]
 
     def _part(eps: List[Dict[str, Any]]) -> Dict[str, Any]:
-        pls = [ep["pl"] for ep in eps if ep["closed"] and ep["pl"]]
-        hold = [episode_hold_days(ep) for ep in eps if ep["closed"]]
-        hold = [d for d in hold if d is not None]
+        # 平均保有日数は件数・勝率・期待値と同じ母数 (損益を出せたクローズ済み) から
+        # 計算する。母数を広く取ると「件数1」の行に2件以上を平均した保有日数が並び、
+        # 成績1件あたりの平均と誤読される (建値や決済損益が欠けた期首持越しなど)
+        priced = [ep for ep in eps if ep["closed"] and ep["pl"]]
+        pls = [ep["pl"] for ep in priced]
+        hold = [d for d in (episode_hold_days(ep) for ep in priced) if d is not None]
         return {
             "summary": calc_trade_summary(pls),
             "total_pl": sum(p["profit_amount"] for p in pls
                             if p["profit_amount"] is not None),
+            # 分類状況の指標に使う絶対損益。バケット内で利益と損失が相殺されると
+            # 規模を見失う (未分類に +100万/-100万があると 0 になる) ため、
+            # エピソード単位の絶対値を積む
+            "abs_pl": sum(abs(p["profit_amount"]) for p in pls
+                          if p["profit_amount"] is not None),
             "priced_count": len(pls),
             "closed_count": sum(1 for ep in eps if ep["closed"]),
             "open_count": sum(1 for ep in eps if not ep["closed"]),
@@ -5413,8 +5424,8 @@ def summarize_by_strategy(episodes: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     unclassified_part = _part(unclassified)
     drifted_part = _part(drifted)
-    total_abs = sum(abs(p[1]["total_pl"]) for p in strategies) \
-        + abs(unclassified_part["total_pl"]) + abs(drifted_part["total_pl"])
+    total_abs = sum(p[1]["abs_pl"] for p in strategies) \
+        + unclassified_part["abs_pl"] + drifted_part["abs_pl"]
     return {
         "strategies": strategies,
         "unclassified": unclassified_part,
@@ -5422,7 +5433,7 @@ def summarize_by_strategy(episodes: List[Dict[str, Any]]) -> Dict[str, Any]:
         "total_pl": (sum(p[1]["total_pl"] for p in strategies)
                      + unclassified_part["total_pl"] + drifted_part["total_pl"]),
         # 未分類の損益シェアが大きいうちは戦略別比較の精度が限定的
-        "unclassified_share": (abs(unclassified_part["total_pl"]) / total_abs
+        "unclassified_share": (unclassified_part["abs_pl"] / total_abs
                                if total_abs else 0.0),
     }
 
