@@ -38,7 +38,7 @@ def test_margin_only_holding_can_calculate_defensive_line():
     }
     position = helpers._build_exit_position_map([episode])["4377"]
     line = helpers._weighted_stop_loss_line(
-        {"stop_loss_pct": 10, "allow_dca_lower": False}, position["fills"]
+        {"stop_loss_pct": 10, "allow_dca_lower": False}, position["episodes"]
     )
     assert position["held_qty"] == 100
     assert line == 900.0
@@ -72,8 +72,14 @@ def test_exit_cycle_id_survives_position_additions(episodes, expected):
     assert helpers._build_exit_position_map(eps)["402A"]["cycle_id"] == expected
 
 
-def test_exit_position_uses_cross_account_hold_cycle():
-    """口座をまたぐ買い増しと古い口座の決済で防御基準を下げない。"""
+def test_exit_position_line_ignores_settled_episode_cost():
+    """決済済みエピソードの取得単価を損切りラインに残さない。
+
+    サイクル (cycle_id) は口座をまたいでも維持して防歴を切らさないが、
+    損切りラインは未クローズエピソードだけで引く。両者をまとめて再生すると、
+    決済済みの高値建玉がラチェットに残り、現在の建玉より高い線が出る
+    (実例: 3496 は残玉 4,260円に対し 6,056円)。
+    """
     closed_genbutsu = {
         "code_s": "4970", "kind": "現物", "closed": True, "is_short": False,
         "split_suspect": False, "open_date": "2026-04-21",
@@ -92,10 +98,13 @@ def test_exit_position_uses_cross_account_hold_cycle():
                    "price": 500, "trade_kind": "信用新規"}],
     }
     position = helpers._build_exit_position_map([closed_genbutsu, open_shinyo])["4970"]
+    # 防歴の同一性は口座をまたいだ保有継続として維持する (PR #428)。
     assert position["cycle_id"] == "2026-04-21"
+    # 線は未クローズの信用建玉 (500円) だけで引く。決済済み現物 (1,000円) を
+    # 混ぜると 900円になり、現在の建単価より高い線になってしまう。
     assert helpers._weighted_stop_loss_line(
-        {"stop_loss_pct": 10, "allow_dca_lower": False}, position["fills"]
-    ) == 900.0
+        {"stop_loss_pct": 10, "allow_dca_lower": False}, position["episodes"]
+    ) == 450.0
 
 
 def test_exit_position_ignores_genbiki_and_its_paired_sell():
@@ -123,8 +132,43 @@ def test_exit_position_ignores_genbiki_and_its_paired_sell():
     }
     position = helpers._build_exit_position_map([genbiki_closed, open_shinyo])["9337"]
     assert position["cycle_id"] == "2026-08-07"
-    assert len(position["fills"]) == 1
-    assert position["fills"][0]["trade_kind"] == "信用新規"
+    # 現引 buy と対応する現物 sell をペアで無視できないと残高が 0 になり、
+    # サイクルが途切れて cycle_id が None に落ちる。
+    started_at, cycle_fills = helpers._current_hold_cycle([genbiki_closed, open_shinyo])
+    assert started_at == "2026-08-07"
+    assert [f["trade_kind"] for f in cycle_fills] == ["信用新規"]
+
+
+def test_stop_loss_line_stays_below_cost_after_long_hold_cycle():
+    """長期サイクルで建て直しても、損切りラインが現在の建単価を上回らない (3496)。
+
+    2025年の高値建玉を決済して安値で建て直しても、サイクルが途切れないと
+    allow_dca_lower=False のラチェットが旧建単価の線を保持し続け、含み益中の
+    銘柄に「防」が出ていた。
+    """
+    old_expensive = {
+        "code_s": "3496", "kind": "信用", "closed": True, "is_short": False,
+        "split_suspect": False, "open_date": "2025-06-10",
+        "fills": [
+            {"seq": 1, "trade_date": "2025-06-10", "side": "buy", "qty": 100,
+             "price": 8470, "trade_kind": "信用新規"},
+            {"seq": 2, "trade_date": "2025-12-25", "side": "sell", "qty": 100,
+             "price": 5420, "trade_kind": "信用返済"},
+        ],
+    }
+    current_cheap = {
+        "code_s": "3496", "kind": "信用", "closed": False, "is_short": False,
+        "split_suspect": False, "open_date": "2026-06-23",
+        "open_pl": {"held_qty": 100, "avg_cost": 4140.0},
+        "fills": [{"seq": 3, "trade_date": "2026-06-23", "side": "buy", "qty": 100,
+                   "price": 4140, "trade_kind": "信用新規"}],
+    }
+    position = helpers._build_exit_position_map([old_expensive, current_cheap])["3496"]
+    line = helpers._weighted_stop_loss_line(
+        {"stop_loss_pct": 20, "allow_dca_lower": False}, position["episodes"]
+    )
+    assert line == 3312.0  # 4140 * 0.8。8470 由来の 6,776円を引きずらない
+    assert line < position["avg_cost"]
 
 
 def test_split_adjusted_float_holding_is_included_in_exit_position():
