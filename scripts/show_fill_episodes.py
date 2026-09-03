@@ -252,9 +252,13 @@ def _check_dups(db_path: Optional[str]) -> int:
             continue  # 建玉を作る側は受渡金額を持たないのが正常
         # broker をキーに含める: 別会社で同日・同銘柄・同条件の約定をした場合、
         # 片方が未確定 (受渡金額0) だと正当な2件を重複候補として報告してしまう。
-        # 出力は未確定側の削除を勧めるため、正常な fill を消す事故につながる
+        # 出力は未確定側の削除を勧めるため、正常な fill を消す事故につながる。
+        # 未設定は楽天に寄せる (証券会社を持つ前の旧 fill。helpers 側の
+        # fill_date_range_by_broker・銘柄集約と同じ正規化にしないと、旧 fill と
+        # 再取込された楽天 fill が別グループになり、本来の重複を取りこぼす)
         key = (f.get("trade_date"), f.get("code_s"), f.get("side"),
-               f.get("trade_kind"), f.get("qty"), f.get("price"), f.get("broker"))
+               f.get("trade_kind"), f.get("qty"), f.get("price"),
+               f.get("broker") or "楽天")
         groups.setdefault(key, []).append(f)
 
     found = 0
