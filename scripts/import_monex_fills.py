@@ -300,6 +300,13 @@ def import_csv_to_fills(
                 f"qty={s['qty']} price={s['price']} kind={s['trade_kind']} "
                 f"settle_pl={s['settle_pl']} tate_price={s['tate_price']}"
             )
+
+    # 新しい fill でエピソードの姿が変わりうるのはここだけ。クローズが確定した
+    # エピソードの戦略ひもづけに指紋を焼き付ける (issue #419)。
+    if not dry_run and stats["imported"]:
+        from webapp import helpers
+
+        helpers.seal_episode_fingerprints(db_path=db_path)
     return stats
 
 

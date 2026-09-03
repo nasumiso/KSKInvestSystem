@@ -1152,3 +1152,40 @@ class TestRoundTripsAgreeWithOpenPl:
                           if not r["closed"])
             assert rt_open == ep["open_pl"]["held_qty"], (
                 f"{ep['code_s']} {ep['kind']}: 往復行={rt_open} open_pl={ep['open_pl']['held_qty']}")
+
+
+class TestCheckDups:
+    """未確定CSV由来の重複約定の検出 (show_fill_episodes --check-dups)"""
+
+    def _add_amount(self, db_path, code_s, amount, *, trade_kind, dedup_key,
+                    side="sell", trade_date="2026-06-20", qty=100, price=2200.0):
+        ps.append_fill(ps.create_fill(
+            code_s, trade_date=trade_date, side=side, qty=qty, price=price,
+            amount=amount, trade_kind=trade_kind, dedup_key=dedup_key,
+        ), db_path=db_path)
+
+    def test_detects_provisional_pair_but_not_margin_open(self, db_path, caplog):
+        """受渡金額0の未確定行と確定額行の併存だけを重複とする。
+
+        dedup_key は amount を含む (make_dedup_key) ため、同じ約定でも
+        0円行と確定額行は別ハッシュになり冪等取込では弾けない。
+        一方 信用新規 は受渡金額が元から0なので重複ではない (実データで495件)。
+        ここを除外しないと正常データを毎回誤検知する。
+        """
+        # 同一約定の 未確定 + 確定 → 重複
+        self._add_amount(db_path, "6324", 0, trade_kind="現物", dedup_key="prov")
+        self._add_amount(db_path, "6324", 220000, trade_kind="現物", dedup_key="fixed")
+        # 信用新規の0円行 → 正常 (単独なのでそもそも組にならない)
+        self._add_amount(db_path, "9432", 0, trade_kind="信用新規", dedup_key="m1",
+                         side="buy", price=1000.0)
+
+        with caplog.at_level("INFO"):
+            assert show_fill_episodes._check_dups(db_path) == 1
+        out = caplog.text
+        assert "6324" in out
+        assert "9432" not in out
+
+    def test_no_dups_returns_zero(self, db_path):
+        self._add_amount(db_path, "9432", 0, trade_kind="信用新規", dedup_key="m1",
+                         side="buy", price=1000.0)
+        assert show_fill_episodes._check_dups(db_path) == 0

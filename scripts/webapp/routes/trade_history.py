@@ -33,8 +33,11 @@ from webapp.helpers import (
     build_round_trips,
     build_stock_rollups,
     calc_trade_summary,
+    count_orphan_strategies,
+    episode_hold_days,
     fill_date_range_by_broker,
     resolve_stock_name,
+    summarize_by_strategy,
 )
 
 trade_history_bp = Blueprint("trade_history", __name__)
@@ -335,8 +338,17 @@ def trade_history():
     # 証券会社別の取込済み約定日レンジ (次回インポートの参考、取込のたびに更新される)
     broker_ranges = fill_date_range_by_broker()
 
+    # issue #419: 戦略別の成績 (全期間)。未分類・要再確認は比較の母数から外して下部に出す。
+    strategy_summary = summarize_by_strategy(fill_episodes)
+
+    trade_idea_options = [t["name"] for t in ps.list_trade_ideas()]
+    orphan_strategies = count_orphan_strategies(fill_episodes)
+
     return render_template(
         "trade_history.html",
+        strategy_summary=strategy_summary,
+        trade_idea_options=trade_idea_options,
+        orphan_strategies=orphan_strategies,
         recent=recent,
         past_years=past_years,
         fill_episodes=fill_episodes,
@@ -466,4 +478,38 @@ def save_fill_memo():
     if not episode_key:
         abort(400)
     ps.set_fill_memo(episode_key, review_memo)
+    return jsonify({"ok": True})
+
+
+def _episode_by_key(episode_key):
+    """episode_key からエピソードを引く。指紋・保有日数の焼き付けに使う。"""
+    for ep in build_fill_episodes():
+        if ep["episode_key"] == episode_key:
+            return ep
+    return None
+
+
+@trade_history_bp.route("/trade-history/episode-strategy", methods=["POST"])
+def save_episode_strategy():
+    """エピソードに売買戦略を焼き付ける (issue #419 レイヤー3)。
+
+    空文字は未分類に戻す (キー削除)。クローズ済みなら指紋と保有日数を一緒に
+    焼き付ける (保有中は姿が未確定なので None。クローズ確定時に seal が焼く)。
+    """
+    episode_key = request.form.get("episode_key", "")
+    trade_idea = request.form.get("trade_idea", "")
+    if not episode_key:
+        abort(400)
+    ep = _episode_by_key(episode_key)
+    if ep is None:
+        abort(404)
+    try:
+        ps.set_episode_strategy(
+            episode_key, trade_idea,
+            source="manual",
+            fingerprint=(ps.episode_fingerprint(ep["fills"]) if ep["closed"] else None),
+            hold_days=episode_hold_days(ep),
+        )
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify({"ok": True})

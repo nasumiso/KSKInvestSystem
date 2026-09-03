@@ -241,6 +241,12 @@ cd scripts && python show_fill_episodes.py --check-splits                       
 cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05  # 換算比率を登録 (新株数/旧株数、0.05=20株->1株併合)
 ```
 
+未確定CSV由来の重複約定の検出。証券会社CSVは約定直後だと受渡金額が 0 で出力されることがあり、後日その約定が確定額つきで再取込されると同じ約定が2件の fill として残る (`dedup_key` は amount を含むため冪等取込では弾けない)。`--check-dups` は DB を更新せず、同一約定本体で「受渡金額0の行」と「確定額の行」が併存する組だけを報告する。信用新規は受渡金額が元から0で正常なため対象外。CSV取込後の検算に使う。
+
+```bash
+cd scripts && python show_fill_episodes.py --check-dups                         # 未確定CSV由来の重複約定を検出 (DB非更新)
+```
+
 ## 自動実行
 
 `shintakane_cron.sh` が `shintakane.py` → `make_stock_db.py` → `exposure_guide.py` → `run_theme_news.py` を逐次実行。macOS launchd（`com.k_sohara.shintakane.cron.plist`）で平日19:00に定期実行。

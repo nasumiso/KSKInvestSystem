@@ -3966,13 +3966,13 @@ def _f(date_s, side, qty, price, trade_kind="", **kw):
      ]),
      [("2026-03-04", "2026-08-21", 100, 3025.0, 3359.0, 170, 33400),
       ("2026-02-26", "2026-06-12", 100, 3350.0, 4408.0, 106, 105800)]),
-    # 建情報なしの信用返済は建値・保有日数を推測せず伏せる (売りのみ行)。
-    # ただし建玉は消費するので「保有中」行は残らない (9984 売建の返済買が該当)。
+    # 建情報なしの信用返済でも、エピソード内に残る建玉が一意なら建値・保有日数を
+    # 補完する (inferred_open)。建玉は消費するので「保有中」行は残らない。
     (_ep("信用", [
         _f("2026-04-08", "buy", 100, 3050.0, "信用新規"),
         _f("2026-08-25", "sell", 100, 4230.0, "信用返済", settle_pl=-2760, fill_pl=-2760),
      ]),
-     [(None, "2026-08-25", 100, None, 4230.0, None, -2760)]),
+     [("2026-04-08", "2026-08-25", 100, 3050.0, 4230.0, 139, -2760)]),
     # 現引はCSVの建玉情報で引き当てる。先頭から機械的に消費すると別の建玉を消し、
     # 実際に振り替えた玉が「保有中」行として残ってしまう (6366 相当)。
     (_ep("信用", [
@@ -4099,3 +4099,52 @@ def test_build_round_trips_keeps_csv_tate_price_when_lot_missing():
     assert [(r["open_date"], r["open_price"]) for r in closed] == [("2026-01-05", 1000.0)]
     # 02-01 の建玉は 100株が保有中として残る
     assert [(r["open_date"], r["qty"]) for r in rows if not r["closed"]] == [("2026-02-01", 100)]
+
+
+class TestEpisodeStrategyDrift:
+    """遡り取込による戦略ひもづけのズレ検出 (issue #419)"""
+
+    def _add(self, ps, db, dt, side, qty, dedup_key):
+        fill = ps.create_fill("1001", trade_date=dt, side=side, qty=qty, price=1000.0,
+                              amount=qty * 1000, trade_kind="現物", dedup_key=dedup_key)
+        ps.append_fill(fill, db_path=db)
+
+    def test_backdated_import_marks_drift(self, tmp_path):
+        """後から入った古い約定でラウンドの区切りが変わったら drift を立てる。
+
+        episode_key (min(seq)) は生き残るため、指紋が無いと戦略が別の取引を
+        指したまま静かに集計へ混入する。
+        """
+        import portfolio_shelve as ps
+
+        db = str(tmp_path / "drift_db")
+        ps.seed_trade_ideas(db_path=db)
+        self._add(ps, db, "2026-02-01", "buy", 100, "a")
+        self._add(ps, db, "2026-03-01", "sell", 100, "b")
+
+        ep = helpers.build_fill_episodes(db_path=db)[0]
+        ps.set_episode_strategy(
+            ep["episode_key"], "中期テーマ",
+            fingerprint=ps.episode_fingerprint(ep["fills"]),
+            hold_days=helpers.episode_hold_days(ep), db_path=db,
+        )
+        assert helpers.build_fill_episodes(db_path=db)[0]["strategy_drift"] is False
+
+        # 01-05 の買いが後から入り、02-01 の玉と繋がって未決済に戻る
+        self._add(ps, db, "2026-01-05", "buy", 100, "c")
+        after = [e for e in helpers.build_fill_episodes(db_path=db)
+                 if e["episode_key"] == ep["episode_key"]][0]
+        assert after["strategy_drift"] is True
+
+    def test_orphan_counted_when_key_disappears(self, tmp_path):
+        """対応先を失ったひもづけは orphan として数える (印を立てる相手がいない)。"""
+        import portfolio_shelve as ps
+
+        db = str(tmp_path / "orphan_db")
+        ps.seed_trade_ideas(db_path=db)
+        self._add(ps, db, "2026-02-01", "buy", 100, "a")
+
+        ps.set_episode_strategy(ps.fill_episode_key("9999", "現物", 1), "中期テーマ",
+                                db_path=db)
+        episodes = helpers.build_fill_episodes(db_path=db)
+        assert helpers.count_orphan_strategies(episodes, db_path=db) == 1

@@ -541,3 +541,69 @@ nav .quick-search {
 /* トレンド列: 乖離ゲージ SVG は 40x28 固定生成。viewBox があるので CSS で横だけ広げる。
    height を auto にすると縦も比例拡大して行高が増え、指標タブだけ背が高くなるため固定する。 */
 .kairi-gauge-cell svg { width: 56px; height: 28px; margin: 0 auto; }
+
+/* エピソード単位の売買戦略セレクタ (issue #419)。Pico の select{width:100%} /
+   margin-bottom による全幅化・行高の増加を打ち消し、表の行に収める。
+   .th-year-select と同じ方針。source=seed (機械コピーの仮値) は破線枠で示す。 */
+.episode-strategy-select {
+  display: inline-block;
+  /* 最長の戦略名 (中長期ファンダ) に合わせると列が広がりすぎる。幅を決め打ちして
+     はみ出す名前は省略表示にする (選択中の値はホバーの title で読める) */
+  width: 9.4em !important;
+  font-size: 0.78em;
+  padding: 0.1em 1.2em 0.1em 0.35em;
+  margin: 0;
+  height: auto;
+  vertical-align: middle;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+/* ドリフト警告。稀にしか出ないので列幅を専有させず、セレクタの右端に重ねる */
+.th-strategy-cell {
+  position: relative;
+}
+.th-strategy-drift {
+  position: absolute;
+  right: 0.1em;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #c88585;
+  font-size: 0.8em;
+  cursor: help;
+  pointer-events: auto;
+}
+/* drift 行には「✓」も並ぶ。⚠ は絶対配置で右端に重なるため、ボタンの分だけ
+   左へ寄せて重なりを避ける (両方が出るのは要再確認の行だけ) */
+.th-strategy-cell:has(.episode-strategy-confirm) .th-strategy-drift {
+  right: 1.7em;
+}
+.episode-strategy-select.is-seed {
+  opacity: 0.62;
+  border-style: dashed;
+}
+/* 「そのまま確定」ボタン。select は同じ値を選び直しても change が出ないため、
+   seed の確定・drift の解消にはこのボタンが要る。要確認の行にだけ描画される */
+.episode-strategy-confirm {
+  border: 1px solid #cfc;
+  background: #f2fff2;
+  color: #3a7a3a;
+  border-radius: 3px;
+  font-size: 0.72em;
+  line-height: 1;
+  padding: 2px 4px;
+  margin-left: 0.2em;
+  cursor: pointer;
+}
+.episode-strategy-confirm:hover {
+  background: #e0ffe0;
+}
+
+/* 売買履歴の区分セル (issue #419)。table-layout:auto では「⚠ 分割・併合の疑い」の
+   ような稀な長いバッジが nowrap で全行の列幅を 202px まで押し広げてしまう。
+   折り返しを許したうえで min-width で通常のバッジ2つ分を確保し、稀な長いバッジ
+   だけが2行になるようにする (max-width は auto レイアウトでは効かない)。 */
+.th-kind-cell {
+  min-width: 9.8em;
+  white-space: normal;
+  line-height: 1.5;
+}

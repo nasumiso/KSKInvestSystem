@@ -94,6 +94,9 @@ KEY_FILL_SEQ_PREFIX = "_fill_seq:"
 # fill は再取込で作り直されるため、メモは別レイヤーに独立保存し
 # エピソードキー (code_s|kind|open_date|close_date) で紐付ける。
 KEY_FILL_MEMO_PREFIX = "fill_memo:"
+# issue #419: エピソードに焼き付けた売買戦略。メモと同じエピソードキーで紐付けるが、
+# 値は戦略マスター登録済みのみ許可する (集計キーなので自由文字列にしない)。
+KEY_EPISODE_STRATEGY_PREFIX = "episode_strategy:"
 # issue #397: 証券会社ポートフォリオCSV 由来の保有残高スナップショット。
 # (broker, account, kind, code_s) 単位で最新のみ保持 (上書き、fill と違い履歴を持たない)。
 KEY_POSITION_PREFIX = "position:"
@@ -1129,6 +1132,17 @@ def _next_fill_seq(db: ShelveDB, code_s: str) -> int:
 _FILL_BACKFILL_FIELDS = ("tate_date", "tate_price", "settle_pl", "broker")
 
 
+# 後付けされるとエピソードの区切り・保有日数が変わるフィールド (issue #419 レビュー)。
+# tate_date は carry_over 判定と hold_days の両方を決めるため、後から入ると
+# 「通常ラウンド → 期首持越し」「保有日数が変わる」という形でエピソードの姿が変わる。
+# 指紋は seq 列のハッシュなので後付けでは変化せず、strategy_drift が立たない。
+_FILL_SHAPE_FIELDS = ("tate_date",)
+
+# 「姿が変わったので要再確認」を表す指紋のセンチネル。実際の指紋は sha1 の先頭12桁
+# (16進) なので、この値と衝突しない。
+_FINGERPRINT_STALE = "stale-backfill"
+
+
 def _backfill_fill(value: Dict[str, Any], fill: Dict[str, Any]) -> bool:
     """後続CSVで確定した fill の補完可能な値を反映する。"""
     updated = False
@@ -1141,6 +1155,41 @@ def _backfill_fill(value: Dict[str, Any], fill: Dict[str, Any]) -> bool:
         value["amount"] = fill["amount"]
         updated = True
     return updated
+
+
+def _shape_changed_by_backfill(value: Dict[str, Any], fill: Dict[str, Any]) -> bool:
+    """後付けでエピソードの姿 (区切り・保有日数) が変わるかを、埋める前に判定する。"""
+    return any(value.get(f) is None and fill.get(f) is not None
+               for f in _FILL_SHAPE_FIELDS)
+
+
+def _invalidate_episode_fingerprints(db: ShelveDB, code_s: str) -> int:
+    """指定銘柄のエピソード戦略から指紋を落とし、要再確認に落とす (flock 内から呼ぶ)。
+
+    指紋を None にすると read 側 (build_fill_episodes) が strategy_drift を
+    立てられなくなるため、代わりに空文字を入れて「焼いてあるが現在の姿と一致しない」
+    状態を作る。seal_episode_fingerprints は fingerprint 未設定のものだけ拾うので、
+    空文字を残すと再 seal されずに要再確認のまま残ってしまう。よって現在の指紋を
+    知らないこの場では、確実に不一致になるセンチネルを入れる。
+
+    戻り値: 印を立てたレコード数
+    """
+    touched = 0
+    for key in list(db.keys()):
+        if not key.startswith(KEY_EPISODE_STRATEGY_PREFIX):
+            continue
+        record = db[key]
+        if not isinstance(record, dict) or not record.get("trade_idea"):
+            continue
+        episode_key = record.get("episode_key", key[len(KEY_EPISODE_STRATEGY_PREFIX):])
+        if str(episode_key).split("|")[0] != code_s:
+            continue
+        if not record.get("fingerprint"):
+            continue  # 未確定 (保有中) はもともと drift 判定の対象外
+        record["fingerprint"] = _FINGERPRINT_STALE
+        db[key] = record
+        touched += 1
+    return touched
 
 
 def append_fill(
@@ -1168,8 +1217,21 @@ def append_fill(
                 if not key.startswith(prefix):
                     continue
                 if isinstance(value, dict) and value.get("dedup_key") == dedup_key:
+                    # 埋める前に判定する (埋めた後では None→非None が消えて分からない)
+                    shape_changed = _shape_changed_by_backfill(value, fill)
                     if _backfill_fill(value, fill):
                         db[key] = value
+                        if shape_changed:
+                            # 建日が後から入るとエピソードの区切り・保有日数が変わるが、
+                            # 指紋 (seq 列のハッシュ) は変化しないので drift を検出できない。
+                            # この銘柄の戦略ひもづけに要再確認の印を立てて、戦略別比較の
+                            # 母数から外す (issue #419 レビュー)
+                            n = _invalidate_episode_fingerprints(db, code_s)
+                            if n:
+                                log_print(
+                                    "portfolio_shelve: 建日の後付けで要再確認",
+                                    code_s, f"episodes={n}",
+                                )
                     return value, False  # 既に取込済み (冪等)
             seq = _next_fill_seq(db, code_s)
             stored = dict(fill)
@@ -1270,6 +1332,169 @@ def list_fill_memos(*, db_path: Optional[str] = None) -> Dict[str, str]:
             if memo:
                 results[value.get("episode_key", key[len(KEY_FILL_MEMO_PREFIX):])] = memo
     return results
+
+
+# ===========================================
+# エピソードに焼き付けた売買戦略 (issue #419)
+# ===========================================
+
+def episode_fingerprint(fills: List[Dict[str, Any]]) -> str:
+    """エピソードの「姿」を表す指紋。所属 fill の seq 列のハッシュ。
+
+    episode_key (code_s|kind|first_seq) は不変ではない。seq は約定日順ではなく
+    取込順の追番で、エピソードは trade_date 順に再構成して min(seq) を first_seq と
+    するため、過去約定の後追い取込でラウンドの区切りが変わるとキーが別のエピソードを
+    指しうる。保存時の指紋を残しておけば、読み取り時の再計算と突き合わせて
+    「キーは生きているが中身が変わった」ズレを検出できる。
+
+    open_date と先頭 seq では不十分。1エピソードが後追い取込で2つに分裂した場合、
+    先頭側は open_date も先頭 seq も元のまま残りうる。seq 列なら fill が抜ければ
+    必ず変わる。
+    """
+    seqs = ",".join(str(f.get("seq")) for f in fills)
+    return hashlib.sha1(seqs.encode("utf-8")).hexdigest()[:12]
+
+
+def _episode_strategy_storage_key(episode_key: str) -> str:
+    return f"{KEY_EPISODE_STRATEGY_PREFIX}{episode_key}"
+
+
+def get_episode_strategy(episode_key: str, *,
+                         db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """エピソードの戦略レコードを取得する。未設定 (未分類) は None。"""
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        value = db.get(_episode_strategy_storage_key(episode_key))
+    return dict(value) if isinstance(value, dict) else None
+
+
+def set_episode_strategy(episode_key: str, trade_idea: str, *,
+                         source: str = "manual",
+                         fingerprint: Optional[str] = None,
+                         hold_days: Optional[int] = None,
+                         db_path: Optional[str] = None) -> None:
+    """エピソードに戦略を焼き付ける。空文字はキー削除 (未分類に戻す)。
+
+    「未分類 = キーが存在しない」の1通りだけを不変条件とする。trade_idea="" の
+    レコードを残すと、銘柄単位の一括付与 (未設定のみ埋める) から漏れ、二度と
+    一括付与で拾えないエピソードが生まれるため、入口でここに正規化する。
+
+    値は戦略マスター登録済みのみ許可 (update_memo の trade_idea 検証と同じ厳しさ)。
+    fill_memo が自由文字列なのは振り返りメモだからで、戦略は集計キーなので同列に
+    扱わない。ただし現に入っている値と同じなら許容する (旧値の救済)。
+
+    fingerprint はクローズ済みエピソードの場合のみ呼び出し側が渡す。保有中は
+    買い増し・部分利確で seq 列が伸びるのが正常動作なので None (未確定) とし、
+    クローズ確定後に seal_episode_fingerprints() が焼き付ける。
+
+    hold_days も同様にクローズ済みのみ。戦略マスターの time_horizon が後から
+    変更されたときの再評価に使う (エピソード再構成を portfolio_shelve に持ち込まず、
+    判定に必要な保有日数だけを焼き付けておく)。
+    """
+    if not isinstance(trade_idea, str):
+        raise TypeError(f"trade_idea must be str, got {type(trade_idea).__name__}")
+    if source not in ("seed", "manual"):
+        raise ValueError(f"source {source!r} は無効です (許容値: ['seed', 'manual'])")
+    path = _resolve_db_path(db_path)
+    storage_key = _episode_strategy_storage_key(episode_key)
+    normalized = trade_idea.strip()
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            if normalized == "":
+                if storage_key in db:
+                    del db[storage_key]
+                    log_print("portfolio_shelve: episode_strategy 削除", episode_key)
+                return
+            current = db.get(storage_key)
+            current_idea = current.get("trade_idea") if isinstance(current, dict) else None
+            if normalized != current_idea and not _trade_idea_exists(db, normalized):
+                raise ValueError(
+                    f"portfolio_shelve: trade_idea {normalized!r} はマスター未登録のため"
+                    f"新規付与できません"
+                )
+            db[storage_key] = {
+                "episode_key": episode_key,
+                "trade_idea": normalized,
+                "source": source,
+                "fingerprint": fingerprint,
+                "hold_days": hold_days,
+                "updated_at": now_iso(),
+            }
+    log_print("portfolio_shelve: episode_strategy 更新", episode_key, normalized)
+
+
+def list_episode_strategies(*, db_path: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    """全エピソード戦略を {episode_key: record} で一括取得する。"""
+    path = _resolve_db_path(db_path)
+    results: Dict[str, Dict[str, Any]] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_EPISODE_STRATEGY_PREFIX):
+                continue
+            if not isinstance(value, dict):
+                continue
+            if not value.get("trade_idea"):
+                continue
+            episode_key = value.get("episode_key", key[len(KEY_EPISODE_STRATEGY_PREFIX):])
+            results[episode_key] = dict(value)
+    return results
+
+
+def _trade_idea_exists(db: ShelveDB, name: str) -> bool:
+    """戦略マスターに name が登録されているか (flock 内から呼ぶ)。"""
+    return _trade_idea_key(name) in db
+
+
+# time_horizon ごとに許容する保有日数 (下限, 上限)。None は制限なし。
+# 戦略の時間軸と実際の保有期間が矛盾するものをシードしないための足切り。
+# 例: 「中長期ファンダ」を 0〜7日の回転に付けると、その戦略の平均保有日数が
+# 数日になり戦略定義が崩壊する。汚れた集計は空欄より有害という判断。
+TIME_HORIZON_HOLD_DAYS = {
+    "短期": (None, 20),
+    "中期": (10, 180),
+    "中長期": (30, None),
+    "長期": (30, None),
+    "恒常": (None, None),
+    "": (None, None),
+}
+
+
+def is_hold_days_consistent(time_horizon: str, hold_days: Optional[int]) -> bool:
+    """保有日数が戦略の time_horizon と矛盾しないか。
+
+    hold_days=None (保有中で未確定、または日数不明) は判定できないので True。
+    """
+    if hold_days is None:
+        return True
+    lo, hi = TIME_HORIZON_HOLD_DAYS.get(time_horizon, (None, None))
+    if lo is not None and hold_days < lo:
+        return False
+    if hi is not None and hold_days > hi:
+        return False
+    return True
+
+
+def _drop_inconsistent_seeds(db: ShelveDB, name: str, time_horizon: str) -> int:
+    """time_horizon と矛盾する source=seed のエピソード戦略をキーごと削除する。
+
+    人が確認した manual は対象外 (機械が人の判断を覆さない)。
+    呼び出し側で _flock + ShelveDB セッションを保持していること前提。
+
+    戻り値: 未分類に戻したエピソード数
+    """
+    dropped = 0
+    keys = [k for k in db.keys() if k.startswith(KEY_EPISODE_STRATEGY_PREFIX)]
+    for key in keys:
+        record = db[key]
+        if not isinstance(record, dict):
+            continue
+        if record.get("trade_idea") != name or record.get("source") != "seed":
+            continue
+        if is_hold_days_consistent(time_horizon, record.get("hold_days")):
+            continue
+        del db[key]
+        dropped += 1
+    return dropped
 
 
 # ===========================================
@@ -2840,23 +3065,49 @@ def update_trade_idea(
             if rule_value is not None:
                 current["exit_rule"] = rule_value
 
+            dropped_seeds = 0
             if renaming:
                 del db[old_key]
                 db[new_key] = current
                 affected_codes = _rewrite_trade_idea_in_records(db, normalized, new_normalized)
+                # 戦略名は集計の表示ラベルで実体は同じ戦略。旧名を残すと戦略別
+                # テーブルに旧名と新名が別行で並び、成績が分断される。
+                affected_episodes = _rewrite_trade_idea_in_episodes(
+                    db, normalized, new_normalized
+                )
             else:
                 db[old_key] = current
                 affected_codes = []
+                affected_episodes = 0
+
+            # time_horizon を変えると、既存の source=seed が新しい定義と矛盾しうる。
+            # シード時・クローズ時の足切りはどちらも通らないので、ここで再評価する。
+            # 人が確認した manual は機械が覆さない。
+            if time_horizon is not None:
+                dropped_seeds = _drop_inconsistent_seeds(
+                    db, new_normalized if renaming else normalized, th_value
+                )
+                affected_episodes += dropped_seeds
 
     if renaming:
         log_print(
             "portfolio_shelve: strategy リネーム",
             f"{normalized} -> {new_normalized}",
             f"affected={len(affected_codes)}",
+            f"episodes={affected_episodes}",
         )
     else:
-        log_print("portfolio_shelve: strategy 更新", normalized)
-    return dict(current)
+        log_print(
+            "portfolio_shelve: strategy 更新",
+            normalized,
+            f"episodes={affected_episodes}",
+        )
+    # 時間軸変更で未分類に戻した seed 件数を呼び出し側へ返す。UI で件数を出さないと
+    # 「更新しました」だけが表示され、履歴の分類が黙って消えたように見える (#419 レビュー)。
+    # 既存キーは変えず、参考値として添えるだけに留める
+    result = dict(current)
+    result["dropped_seed_episodes"] = dropped_seeds
+    return result
 
 
 def delete_trade_idea(name: str, *, db_path: Optional[str] = None) -> int:
@@ -2873,10 +3124,13 @@ def delete_trade_idea(name: str, *, db_path: Optional[str] = None) -> int:
                 raise KeyError(f"strategy {normalized!r} は存在しません")
             del db[key]
             affected_codes = _rewrite_trade_idea_in_records(db, normalized, None)
+            # エピソード側はキーごと削除して未分類に戻す (空文字を残さない)
+            affected_episodes = _rewrite_trade_idea_in_episodes(db, normalized, None)
     log_print(
         "portfolio_shelve: strategy 削除",
         normalized,
         f"affected={len(affected_codes)}",
+        f"episodes={affected_episodes}",
     )
     return len(affected_codes)
 
@@ -2970,6 +3224,45 @@ def _rewrite_trade_idea_in_records(
         new_record["updated_at"] = now_iso()
         db[key] = new_record
         affected.append(record.get("code_s") or key[len(KEY_RECORD_PREFIX):])
+    return affected
+
+
+def _rewrite_trade_idea_in_episodes(
+    db: ShelveDB,
+    old_name: str,
+    new_name: Optional[str],
+) -> int:
+    """全 episode_strategy:* を走査し、trade_idea が old_name のものを追従させる。
+
+    - new_name を渡せば新名に書き換え (リネーム)
+    - new_name=None ならキーごと削除 (戦略削除 → 未分類に戻す)
+
+    削除で trade_idea="" を残さずキーごと消すのは、「未分類 = キーが存在しない」の
+    不変条件を保つため。空文字が残ると銘柄単位の一括付与 (未設定のみ埋める) から
+    漏れ、削除後の再分類フローが壊れる。
+
+    record 側の _rewrite_trade_idea_in_records と対になる。呼び出し側で
+    _flock + ShelveDB セッションを保持していること前提 (別トランザクションにすると
+    record だけ書き換わってエピソードが取り残される)。
+
+    戻り値: 変更したエピソード数
+    """
+    affected = 0
+    keys = [k for k in db.keys() if k.startswith(KEY_EPISODE_STRATEGY_PREFIX)]
+    for key in keys:
+        record = db[key]
+        if not isinstance(record, dict):
+            continue
+        if record.get("trade_idea") != old_name:
+            continue
+        if new_name is None:
+            del db[key]
+        else:
+            new_record = dict(record)
+            new_record["trade_idea"] = new_name
+            new_record["updated_at"] = now_iso()
+            db[key] = new_record
+        affected += 1
     return affected
 
 
