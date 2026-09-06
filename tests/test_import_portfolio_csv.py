@@ -424,7 +424,11 @@ def test_import_csvs_rejects_invalid_as_of_before_writing(tmp_path, db_path, as_
 def test_import_csvs_rejects_future_as_of_before_writing(tmp_path, db_path):
     """未来の基準日では position を書き換えない。"""
     path = _write_csv(tmp_path / "r_spot.csv", RAKUTEN_SPOT_ROWS)
-    future_as_of = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+    # 「今日」の判定は実装 (validate_as_of) と同じ JST 基準で作る。ランナーの
+    # ローカル時刻 (CI は UTC) で作ると、JST 0〜9時の間だけ UTC 側が前日になり
+    # 「明日」のつもりの日付が実装側では「今日」になってテストが落ちる。
+    jst_today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).date()
+    future_as_of = (jst_today + datetime.timedelta(days=1)).isoformat()
     with pytest.raises(ValueError, match="未来日"):
         ic.import_csvs([path], future_as_of, dry_run=False, allow_partial=True, db_path=db_path)
     assert ps.list_positions(db_path=db_path) == []
