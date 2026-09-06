@@ -259,6 +259,10 @@
     <tr class="th-ep-detail" id="{{ uid }}" style="display:none;">
       <td></td>
       <td colspan="8" style="padding:0.3em 0.5em 0.6em;">
+        {# issue #366: 左に往復明細、右にチャートを並べる。数字と形を目を動かさずに
+           見比べられるようにする。狭い画面では wrap して縦積みに戻る。 #}
+        <div class="ep-detail-cols">
+        <div class="ep-detail-left">
         {# issue #421: 買と売を往復1行に畳んだ明細。実際に下した売買判断の単位で読める。
            信用は証券会社CSVの建玉対応 (tate_date/tate_price)、現物は FIFO で対応づける。 #}
         <table style="width:auto;font-size:0.82em;color:#999;border-collapse:collapse;">
@@ -323,6 +327,16 @@
             <span class="review-memo-display">{{ ep.review_memo or "クリックして入力" }}</span>
           </div>
         </div>
+        </div>{# /ep-detail-left #}
+        {# issue #366: このラウンド専用の週足チャート。SVG は初回展開時に
+           /trade-history/chart から取得して差し込む (433 ラウンド分を初期HTMLに
+           埋めると issue #406 の初期HTML削減と矛盾するため)。 #}
+        <div class="ep-chart-box" data-episode-key="{{ ep.episode_key }}"
+             data-url="{{ url_for('trade_history.episode_chart') }}">
+          <div style="color:#888;font-size:0.78em;margin-bottom:0.2em;">週足チャート (建玉の前後4週)</div>
+          <div class="ep-chart-slot" style="color:#666;font-size:0.8em;">読み込み中…</div>
+        </div>
+        </div>{# /ep-detail-cols #}
       </td>
     </tr>
 {% endmacro %}
@@ -709,6 +723,23 @@
   }
 
   // 売買履歴エピソード行のクリック展開 (issue #387 Phase4b)
+  // issue #366: 週足チャートは初回展開時にだけ取得する。2回目以降は差し込み済みの
+  // DOM をそのまま使う (全ラウンド分を初期HTMLに埋めない、issue #406 と同じ狙い)。
+  function loadEpChart(detail) {
+    var box = detail.querySelector('.ep-chart-box');
+    if (!box || box.dataset.loaded) return;
+    box.dataset.loaded = '1';
+    var slot = box.querySelector('.ep-chart-slot');
+    fetch(box.dataset.url + '?episode_key=' + encodeURIComponent(box.dataset.episodeKey))
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function (html) { slot.innerHTML = html; })
+      .catch(function () {
+        // 取得に失敗しても展開自体は使えるようにし、再試行できる状態へ戻す。
+        slot.textContent = 'チャートを取得できませんでした。';
+        box.dataset.loaded = '';
+      });
+  }
+
   document.querySelectorAll('.th-ep-row').forEach(function (row) {
     row.addEventListener('click', function () {
       var detail = document.getElementById(row.dataset.ep);
@@ -717,6 +748,7 @@
       detail.style.display = open ? 'none' : '';
       var caret = row.querySelector('.th-ep-caret');
       if (caret) caret.textContent = open ? '▸' : '▾';
+      if (!open) loadEpChart(detail);
     });
   });
 
