@@ -898,6 +898,17 @@ class TestSplitAdjustment:
         assert shinyo["pl"]["profit_amount"] == 9500  # settle_pl のまま、換算されない
         assert shinyo["fills"][0]["qty"] == 100  # 信用 fill の qty も不変
 
+    def test_registered_split_marks_shinyo_episode_suspect(self, db_path):
+        # 信用 fill は換算しないため、登録済みイベントをまたぐ損益も集計に入れてはいけない。
+        _add(db_path, "3492", "2025-01-01", "buy", 100, 1000, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "3492", "2025-06-01", "sell", 200, 600, trade_kind="信用返済",
+             settle_pl=80000, seq_salt="b")
+        ps.add_split_adjustment("3492", "2025-03-01", 2.0, db_path=db_path)
+
+        episode = helpers.build_fill_episodes(db_path=db_path)[0]
+        assert episode["kind"] == "信用"
+        assert episode["split_suspect"] is True
+
     def test_genbiki_not_adjusted_so_shinyo_round_closes(self, db_path):
         # 現引の qty は信用新規側の減算にも使われるため、現引だけ換算すると
         # shinyo_qty が0に戻らずクローズを取り逃す (simplifyレビューで発見した回帰)。
@@ -1019,6 +1030,7 @@ class TestSplitAdjustment:
                 [2.0], index=pd.to_datetime(["2025-03-01"])
             ) if code_s == "9497" else pd.Series(dtype=float),
         )
+        monkeypatch.setattr(show_fill_episodes, "_yfinance_weekly_close", lambda *_: None)
 
         assert show_fill_episodes._check_splits(db_path) == 0
         assert ps.list_pending_review_events(db_path=db_path)["9497"] == ["2025-03-01"]
@@ -1040,6 +1052,7 @@ class TestSplitAdjustment:
                 [2.0], index=pd.to_datetime(["2025-03-01"])
             ) if code_s == "9490" else pd.Series(dtype=float),
         )
+        monkeypatch.setattr(show_fill_episodes, "_yfinance_weekly_close", lambda *_: None)
 
         assert show_fill_episodes._check_splits(db_path) == 0
         assert "9490" not in ps.list_pending_review_codes(db_path=db_path)
@@ -1071,9 +1084,28 @@ class TestSplitAdjustment:
                 [2.0], index=pd.to_datetime(["2025-03-01"])
             ) if code_s == "9489" else pd.Series(dtype=float),
         )
+        monkeypatch.setattr(show_fill_episodes, "_yfinance_weekly_close", lambda *_: None)
 
         assert show_fill_episodes._check_splits(db_path) == 0
         assert "9489" not in ps.list_pending_review_codes(db_path=db_path)
+
+    def test_weekly_price_ratio_change_marks_shinyo_episode_suspect(self, db_path, monkeypatch):
+        # 週足は分割調整済みなので、分割前後で約定価格との乖離率が約2倍変わる。
+        # corporate actions に無いケースでも、信用エピソードを pending 経由で除外する。
+        _add(db_path, "9494", "2025-01-06", "buy", 100, 1000, trade_kind="信用新規", seq_salt="a")
+        _add(db_path, "9494", "2025-02-03", "sell", 200, 550, trade_kind="信用返済",
+             settle_pl=90000, seq_salt="b")
+        weekly_close = pd.Series(
+            [500.0, 550.0], index=pd.to_datetime(["2025-01-06", "2025-02-03"]),
+        )
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {})
+        monkeypatch.setattr(show_fill_episodes, "_yfinance_splits", lambda *_: pd.Series(dtype=float))
+        monkeypatch.setattr(show_fill_episodes, "_yfinance_weekly_close", lambda *_: weekly_close)
+
+        assert show_fill_episodes._check_splits(db_path) == 0
+        assert ps.list_pending_review_events(db_path=db_path)["9494"] == ["2025-02-03"]
+        episode = helpers.build_fill_episodes(db_path=db_path)[0]
+        assert episode["split_suspect"] is True
 
     def test_merger_ratio_closes_without_residual_qty(self, db_path):
         # 20:1併合相当の比率で浮動小数の残差が出てもクローズ判定を妨げない
