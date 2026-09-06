@@ -1642,6 +1642,24 @@ class TestSplitAdjustment:
         assert ps.clear_split_pending_review("9496", db_path=db_path) is True
         assert "9496" not in ps.list_pending_review_codes(db_path=db_path)
 
+    @pytest.mark.parametrize("ex_date,expect_remaining", [
+        # 実際の権利落ち日は2約定日の間にある。暫定日 (後側の約定日) とは一致しないが、
+        # 検出区間を説明できるので解除する。
+        ("2025-12-29", []),
+        # 区間の外側で登録された場合は、その乖離を説明できないので暫定マーカーを残す。
+        ("2026-06-01", ["2026-03-30"]),
+    ])
+    def test_span_covering_registration_clears_pending(self, db_path, ex_date, expect_remaining):
+        # PRレビュー #440 P1: 週足照合は実際の権利落ち日を知らず「後側の約定日」を
+        # 暫定 ex_date として積むため、正しい日付を登録しても日付一致では解除されず
+        # split_suspect が恒久的に残り、当該エピソードが集計から除外され続けていた。
+        ps.mark_split_pending_review(
+            "9498", reason="週足の分割調整後終値との乖離率変化",
+            ex_date="2026-03-30", span=("2025-08-07", "2026-03-30"), db_path=db_path,
+        )
+        ps.add_split_adjustment("9498", ex_date, 2.0, db_path=db_path)
+        assert ps.list_pending_review_events(db_path=db_path).get("9498", []) == expect_remaining
+
     def test_reject_pending_review_records_suppression(self, db_path):
         # PRレビュー #405 (5周目 P2): 却下済みイベントは再検出抑止リストに残す。
         ps.mark_split_pending_review("9497", reason="単価ジャンプ検出", ex_date="2025-06-01", db_path=db_path)

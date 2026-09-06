@@ -284,9 +284,14 @@ def _check_splits(db_path: Optional[str]) -> int:
                 )
                 # corporate actions に無い場合でも、後側の約定日を暫定境界として
                 # 保存すれば、クローズ済みエピソードにも split_suspect を維持できる。
+                # 検出区間も渡す: 実際の権利落ち日は2約定日の間にあり暫定日とは
+                # 一致しないため、区間が無いと --register-split しても暫定マーカーが
+                # 解除できず恒久的に split_suspect が残る (PRレビュー #440 P1 対応)。
                 ps.mark_split_pending_review(
                     code_s, reason="週足の分割調整後終値との乖離率変化",
-                    ex_date=jump["after_date"], db_path=db_path,
+                    ex_date=jump["after_date"],
+                    span=(jump["before_date"], jump["after_date"]),
+                    db_path=db_path,
                 )
                 log_print(
                     f"      要確認: 推定換算比率 {jump['adjustment_ratio']:.4g}。"
