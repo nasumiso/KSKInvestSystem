@@ -291,6 +291,7 @@ def _check_splits(db_path: Optional[str]) -> int:
                     code_s, reason="週足の分割調整後終値との乖離率変化",
                     ex_date=jump["after_date"],
                     span=(jump["before_date"], jump["after_date"]),
+                    ratio=jump["adjustment_ratio"],
                     db_path=db_path,
                 )
                 log_print(

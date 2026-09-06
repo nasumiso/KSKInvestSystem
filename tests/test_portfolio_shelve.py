@@ -1660,6 +1660,22 @@ class TestSplitAdjustment:
         ps.add_split_adjustment("9498", ex_date, 2.0, db_path=db_path)
         assert ps.list_pending_review_events(db_path=db_path).get("9498", []) == expect_remaining
 
+    def test_partial_registration_keeps_pending_until_ratio_explained(self, db_path):
+        # PRレビュー #440 (2周目 P2): corporate actions に無い分割が区間内に複数ある場合、
+        # 週足照合は合成された乖離を1つの span として保存する。日付だけで解除すると
+        # 1件登録した時点でマーカーが消え、残る分割の誤った残高・損益が集計へ戻る。
+        ps.mark_split_pending_review(
+            "9499", reason="週足の分割調整後終値との乖離率変化",
+            ex_date="2026-03-30", span=("2025-08-07", "2026-03-30"), ratio=6.0,
+            db_path=db_path,
+        )
+        ps.add_split_adjustment("9499", "2025-12-29", 2.0, db_path=db_path)
+        assert ps.list_pending_review_events(db_path=db_path)["9499"] == ["2026-03-30"]
+
+        # 積 2.0 * 3.0 = 6.0 が観測比率を説明できた時点で解除する。
+        ps.add_split_adjustment("9499", "2026-01-15", 3.0, db_path=db_path)
+        assert "9499" not in ps.list_pending_review_codes(db_path=db_path)
+
     def test_reject_pending_review_records_suppression(self, db_path):
         # PRレビュー #405 (5周目 P2): 却下済みイベントは再検出抑止リストに残す。
         ps.mark_split_pending_review("9497", reason="単価ジャンプ検出", ex_date="2025-06-01", db_path=db_path)
