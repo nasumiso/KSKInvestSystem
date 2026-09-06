@@ -5252,6 +5252,40 @@ def fill_date_range_by_broker(db_path: Optional[str] = None) -> Dict[str, Dict[s
     return ranges
 
 
+def _episodes_for_code(code_s: str, stock_name: str, fills: List[Dict[str, Any]],
+                       all_split_adj: Dict[str, List[Dict[str, Any]]],
+                       pending_events: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+    """1銘柄分の fill を建玉ラウンドのエピソードに再構成し split_suspect を付ける。
+
+    build_fill_episodes() の銘柄ループ本体。エピソード単位チャート (issue #366) は
+    展開のたびに全銘柄を再構成すると重い (0.5秒/回) ため、この関数で1銘柄分だけ
+    組み立てる。メモ・戦略・保有中の含み損益はここでは付けない。
+    """
+    events = all_split_adj.get(code_s, [])
+    if events:
+        fills = _apply_split_adjustments(fills, events)
+    # ジャンプ検知は換算後の fills に対して行う (PRレビュー対応: 未換算のまま
+    # 検知すると、登録済みイベントで残高の基準が変わった後の残高追跡が崩れ、
+    # 別の未登録イベントのジャンプを見逃す)。
+    jumps = _detect_price_jumps(fills)
+    code_episodes = _build_code_episodes(code_s, stock_name, fills)
+    uncovered = _uncovered_jumps(jumps, events)
+    pending_dates = pending_events.get(code_s, [])
+    for ep in code_episodes:
+        if ep["kind"] != "現物":
+            continue
+        if ep.get("split_fractional_residual"):
+            ep["split_suspect"] = True
+        elif any(_jump_affects_episode(j, ep) for j in uncovered):
+            ep["split_suspect"] = True
+        elif any(d != "unknown" and _split_event_affects_episode(d, ep)
+                 for d in pending_dates):
+            ep["split_suspect"] = True
+        elif "unknown" in pending_dates and not ep["closed"]:
+            ep["split_suspect"] = True
+    return code_episodes
+
+
 def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """全 fill を建玉ラウンド単位のエピソードに再構成する (issue #387 Phase4b)。
 
@@ -5301,29 +5335,8 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     pending_events = ps.list_pending_review_events(db_path=db_path)
     episodes: List[Dict[str, Any]] = []
     for code_s, fills in by_code.items():
-        events = all_split_adj.get(code_s, [])
-        if events:
-            fills = _apply_split_adjustments(fills, events)
-        # ジャンプ検知は換算後の fills に対して行う (PRレビュー対応: 未換算のまま
-        # 検知すると、登録済みイベントで残高の基準が変わった後の残高追跡が崩れ、
-        # 別の未登録イベントのジャンプを見逃す)。
-        jumps = _detect_price_jumps(fills)
-        code_episodes = _build_code_episodes(code_s, names.get(code_s, ""), fills)
-        uncovered = _uncovered_jumps(jumps, events)
-        pending_dates = pending_events.get(code_s, [])
-        for ep in code_episodes:
-            if ep["kind"] != "現物":
-                continue
-            if ep.get("split_fractional_residual"):
-                ep["split_suspect"] = True
-            elif any(_jump_affects_episode(j, ep) for j in uncovered):
-                ep["split_suspect"] = True
-            elif any(d != "unknown" and _split_event_affects_episode(d, ep)
-                     for d in pending_dates):
-                ep["split_suspect"] = True
-            elif "unknown" in pending_dates and not ep["closed"]:
-                ep["split_suspect"] = True
-        episodes.extend(code_episodes)
+        episodes.extend(_episodes_for_code(
+            code_s, names.get(code_s, ""), fills, all_split_adj, pending_events))
 
     # 保有中エピソードに実現損益 (部分売り分) と含み損益 (残玉評価) を付与 (issue #387 Phase4b)。
     # 含みは price_log の直近終値を現在値とする。銘柄をバルク取得して N+1 を避ける。
@@ -6076,3 +6089,292 @@ def calc_trade_summary(episode_pls: list) -> Optional[dict]:
         "n_win": len(wins),
         "n_lose": len(loses),
     }
+
+
+# ---- エピソード単位の週足チャート (issue #366) ----
+
+# 前後に確保する余白 (週)。前 = どんな形のところを建てたか、後 = 売った後どう動いたか。
+_EP_CHART_PAD_WEEKS = 4
+# 約定価格 ÷ 同一週バー終値 がこの倍率を超えたら分割・併合の未換算とみなしマーカーを打たない。
+# 実測分布 (プラン参照) で正常側は 1.2 未満に集中し、1.8〜2.2 に分割由来の山が立つ。その谷を取る。
+_EP_CHART_SPLIT_RATIO = 1.5
+
+
+def _monday_of(d: date) -> date:
+    """d を含む週の月曜日を返す。
+
+    yfinance 週足キャッシュの日付は月曜アンカーなので、約定日は「その日を含む週の
+    月曜バー」へ割り当てる。最近傍バーだと週後半の約定が翌週バーへ吸われて位置がずれる。
+    """
+    return d - timedelta(days=d.weekday())
+
+
+def load_weekly_closes(code_s: str) -> Dict[date, Tuple[float, float]]:
+    """yfinance 週足キャッシュから {月曜日: (終値, 出来高)} を返す。無ければ空 dict。
+
+    ネットワークアクセスは行わない (webapp は yfinance を呼ばない既存方針)。
+    DB の price_week_log は 25 週しか無くエピソードの窓を賄えないため使わない。
+    price_list は株探形式で index 4 が終値、index 7 が出来高。
+    """
+    try:
+        import price
+    except ImportError:
+        return {}
+    _, price_list = price._load_yfinance_cache(price.YFINANCE_WEEKLY_CACHE_FNAME % code_s)
+    if not price_list:
+        return {}
+    bars: Dict[date, Tuple[float, float]] = {}
+    for row in price_list:
+        try:
+            d = price.parse_date_str(str(row[0]))
+            if d is None:
+                continue
+            close = float(str(row[4]).replace(",", ""))
+            vol = float(str(row[7]).replace(",", "")) if len(row) > 7 else 0.0
+            bars[d] = (close, vol)
+        except (IndexError, ValueError, TypeError):
+            continue
+    return bars
+
+
+def _episode_window(ep: Dict[str, Any], latest: Optional[date]) -> Tuple[date, date]:
+    """エピソードの表示窓 (start, end) を月曜アンカーで返す。
+
+    start = open_date - 4週 / end = (close_date or 直近確定週) + 4週。
+    保有中は末尾の余白を取らない (まだ先が無いため)。
+    """
+    start = _monday_of(date.fromisoformat(ep["open_date"])) - timedelta(weeks=_EP_CHART_PAD_WEEKS)
+    if ep.get("close_date"):
+        end = _monday_of(date.fromisoformat(ep["close_date"])) + timedelta(weeks=_EP_CHART_PAD_WEEKS)
+    else:
+        end = latest or _monday_of(date.today())
+    return start, end
+
+
+def _episode_markers(ep: Dict[str, Any],
+                     bars: Dict[date, Tuple[float, float]]) -> Tuple[List[Dict[str, Any]], int]:
+    """fill を (約定日, 売買方向) でまとめてマーカー種を返す。(markers, skipped)
+
+    1日に複数約定があっても1マーカーにし、株数は合算・価格は数量加重平均とする。
+    build_round_trips() は使わない: 往復行は FIFO で1本の売り fill を複数ロットに
+    割るため、同じ座標にマーカーが重なる (285A は売り1本が往復4行に化ける)。
+    """
+    grouped: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for f in ep.get("fills") or []:
+        td = f.get("trade_date")
+        if not td:
+            continue
+        key = (td, f.get("side") or "")
+        g = grouped.setdefault(key, {
+            "trade_date": td, "side": f.get("side"), "qty": 0, "amount": 0.0,
+            "brokers": set(), "kinds": set(), "n": 0,
+        })
+        qty = int(f.get("qty") or 0)
+        g["qty"] += qty
+        g["amount"] += float(f.get("price") or 0) * qty
+        if f.get("broker"):
+            g["brokers"].add(f["broker"])
+        if f.get("trade_kind"):
+            g["kinds"].add(f["trade_kind"])
+        g["n"] += 1
+
+    open_side = "sell" if ep.get("is_short") else "buy"
+    first_date = min((g["trade_date"] for g in grouped.values()), default=None)
+    last_date = max((g["trade_date"] for g in grouped.values()), default=None)
+
+    markers: List[Dict[str, Any]] = []
+    skipped = 0
+    for g in sorted(grouped.values(), key=lambda x: (x["trade_date"], x["side"])):
+        bar = _monday_of(date.fromisoformat(g["trade_date"]))
+        entry = bars.get(bar)
+        if entry is None:
+            continue
+        close = entry[0]
+        avg = g["amount"] / g["qty"] if g["qty"] else 0.0
+        # 分割・併合の未換算で価格軸から外れる点は打たない (補正はしない: プラン参照)。
+        if close > 0 and avg > 0:
+            ratio = avg / close
+            if ratio >= _EP_CHART_SPLIT_RATIO or ratio <= 1 / _EP_CHART_SPLIT_RATIO:
+                skipped += 1
+                continue
+        is_open = g["side"] == open_side
+        # 期首持越し (carry_over) は open_date が実際の建日でないため IN を打たない。
+        if is_open and ep.get("carry_over") and g["trade_date"] == first_date:
+            continue
+        role = "in" if (is_open and g["trade_date"] == first_date) else (
+            "out" if (not is_open and g["trade_date"] == last_date) else "mid")
+        markers.append({
+            "bar": bar, "price": avg, "qty": g["qty"], "role": role, "is_open": is_open,
+            "side_buy": g["side"] == "buy",
+            "date": g["trade_date"], "n": g["n"],
+            "brokers": "/".join(sorted(g["brokers"])), "kinds": "/".join(sorted(g["kinds"])),
+        })
+    return markers, skipped
+
+
+def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200) -> str:
+    """エピソード1ラウンド分の週足チャート SVG を返す。描けない場合は説明文の HTML。
+
+    週足終値の折れ線 + 下部に出来高バーを描き、実約定の IN (▲) / OUT (▼) と
+    途中約定 (小さな点) を重ねる。株価軸は yfinance の分割調整後、fill は約定当時の
+    実価格なので、両者がずれるエピソードではマーカーを打たずに注記する (issue #435)。
+    """
+    if ep.get("split_suspect"):
+        return ('<div class="ep-chart-note">分割・併合の可能性があり価格軸が揃わないため、'
+                'チャートは表示しません。</div>')
+
+    bars = load_weekly_closes(ep["code_s"])
+    if not bars:
+        return '<div class="ep-chart-note">週足の株価データがありません。</div>'
+
+    latest = max(bars)
+    start_d, end_d = _episode_window(ep, latest)
+    # 窓の右端はデータのある範囲まで縮める (未来側の空白を出さない)。
+    end_d = min(end_d, latest)
+    series = sorted((d, v[0], v[1]) for d, v in bars.items() if start_d <= d <= end_d)
+    if len(series) < 2:
+        return '<div class="ep-chart-note">この期間の週足データが足りません。</div>'
+    start_d, end_d = series[0][0], series[-1][0]
+
+    markers, skipped = _episode_markers(ep, bars)
+
+    pad_l, pad_r, pad_t, pad_b = 42, 6, 10, 17
+    vol_h = 30  # 下部の出来高帯
+    inner_w = width - pad_l - pad_r
+    price_h = height - pad_t - pad_b - vol_h
+    lo = min(c for _, c, _ in series)
+    hi = max(c for _, c, _ in series)
+    # マーカーが枠外に出ないよう、打点する価格も上下限に含める。
+    for m in markers:
+        lo = min(lo, m["price"])
+        hi = max(hi, m["price"])
+    span = (hi - lo) or (hi or 1.0)
+    lo -= span * 0.08
+    hi += span * 0.08
+    span = hi - lo
+
+    days = max((end_d - start_d).days, 1)
+    x_of = lambda d: pad_l + inner_w * ((d - start_d).days / days)
+    y_of = lambda v: pad_t + price_h * (1 - (v - lo) / span)
+    vol_top = pad_t + price_h + 6
+    vol_max = max((v for _, _, v in series), default=0) or 1.0
+    # 週足バーの横幅 (隣接週との間隔から算出し、隙間を少し空ける)。
+    bar_w = max(inner_w / max(len(series), 1) * 0.62, 1.2)
+
+    parts: List[str] = [
+        '<svg class="ep-chart" viewBox="0 0 %d %d" width="100%%" height="%d" '
+        'preserveAspectRatio="xMidYMid meet" role="img">' % (width, height, height)
+    ]
+    # Y軸 (高値・安値・中間の3本)
+    for v in (hi, (hi + lo) / 2, lo):
+        y = y_of(v)
+        parts.append('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="#eee"/>'
+                     % (pad_l, y, width - pad_r, y))
+        parts.append('<text x="%.1f" y="%.1f" font-size="9" fill="#888" text-anchor="end">%s</text>'
+                     % (pad_l - 4, y + 3, format(int(round(v)), ",")))
+    # 月ラベル (月初の週のみ)。近すぎるラベルは間引き、重なって読めなくなるのを防ぐ。
+    seen_month = set()
+    last_label_x = None
+    for d, _, _ in series:
+        if (d.year, d.month) in seen_month:
+            continue
+        seen_month.add((d.year, d.month))
+        x = x_of(d)
+        if last_label_x is not None and x - last_label_x < 34:
+            continue
+        last_label_x = x
+        parts.append('<text x="%.1f" y="%d" font-size="9" fill="#888" text-anchor="middle">%d/%d</text>'
+                     % (x, height - 5, d.year % 100, d.month))
+
+    # 保有区間の帯 (株価と出来高の両方にかける)
+    o_x = x_of(max(_monday_of(date.fromisoformat(ep["open_date"])), start_d))
+    c_x = x_of(min(_monday_of(date.fromisoformat(ep["close_date"])), end_d)) if ep.get("close_date") \
+        else x_of(end_d)
+    parts.append('<rect x="%.1f" y="%d" width="%.1f" height="%.1f" fill="#f0b400" opacity="0.12"/>'
+                 % (o_x, pad_t, max(c_x - o_x, 1), price_h + vol_h + 6))
+
+    # 出来高バー。約定した週だけ色を変え、「出来高を伴った動きで建てたか」を読めるようにする。
+    color = "#e0b070" if ep.get("kind") == "信用" else "#80c0a0"
+    traded_weeks = {m["bar"] for m in markers}
+    for d, _, vol in series:
+        h = (vol / vol_max) * vol_h
+        if h <= 0:
+            continue
+        fill = color if d in traded_weeks else "#d0d0d0"
+        parts.append('<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="%s" opacity="0.75">'
+                     '<title>%s 出来高 %s株</title></rect>'
+                     % (x_of(d) - bar_w / 2, vol_top + (vol_h - h), bar_w, h, fill,
+                        d.isoformat(), format(int(vol), ",")))
+
+    # 株価の折れ線
+    pts = " ".join("%.1f,%.1f" % (x_of(d), y_of(c)) for d, c, _ in series)
+    parts.append('<polyline points="%s" fill="none" stroke="#5a7fa8" stroke-width="1.4"/>' % pts)
+
+    # マーカーは形も色も「売買方向」で統一する: 買い = ▲青 / 売り = ▼赤。
+    # 記号と色が別々の軸を指すと読み手が対応表を覚える必要が出るため揃える
+    # (現物/信用の区分は行のバッジと出来高バーの色で既に読める)。
+    # ラウンドの端 (建て・最終決済) は大きく、途中の買増・部分売りは小さくする。
+    # 空売りも向きを反転しない: 売って建てるので ▼ で始まり ▲ で終わる、が実態に合う。
+    for m in markers:
+        x, y = x_of(m["bar"]), y_of(m["price"])
+        buying = m["side_buy"]
+        if m["role"] == "in":
+            label = "建て"
+        elif m["role"] == "out":
+            label = "決済"
+        else:
+            label = "買増" if buying else "部分売り"
+        title = "%s %s %s株 @%s円" % (m["date"], label, format(m["qty"], ","),
+                                     format(int(round(m["price"])), ","))
+        if m["brokers"]:
+            title += " (%s)" % m["brokers"]
+        if m["n"] > 1:
+            title += " ※%d件の約定をまとめて表示" % m["n"]
+        size = 7.5 if m["role"] in ("in", "out") else 6.0
+        fill = "#3d7fb5" if buying else "#c25b5b"
+        if buying:
+            tri = "%.1f,%.1f %.1f,%.1f %.1f,%.1f" % (
+                x, y - size * 1.4, x - size, y + size * 0.3, x + size, y + size * 0.3)
+        else:
+            tri = "%.1f,%.1f %.1f,%.1f %.1f,%.1f" % (
+                x, y + size * 1.4, x - size, y - size * 0.3, x + size, y - size * 0.3)
+        parts.append('<polygon points="%s" fill="%s" stroke="#fff" stroke-width="1.3">'
+                     '<title>%s</title></polygon>' % (tri, fill, html.escape(title)))
+    parts.append("</svg>")
+
+    if skipped:
+        parts.append('<div class="ep-chart-note">%d件の約定は分割・併合の可能性があり '
+                     '(未換算)、株価と揃わないため表示していません。</div>' % skipped)
+    return "".join(parts)
+
+
+def build_episode_for_key(episode_key: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """episode_key (code_s|kind|first_seq) の1エピソードだけを再構成して返す。
+
+    チャートの遅延ロード (issue #366) 用。build_fill_episodes() は全 fill 再走査で
+    実測 0.5 秒/回かかり、1行展開ごとに呼ぶと展開レイテンシが悪化するため、
+    銘柄を絞って _episodes_for_code() を再利用する (ロジックは二重化しない)。
+    """
+    import portfolio_shelve as ps  # 遅延 import (循環回避)
+
+    parts = episode_key.split("|")
+    if len(parts) != 3:
+        return None
+    code_s, kind, _ = parts
+    try:
+        fills = ps.list_fills(code_s, db_path=db_path)
+    except ValueError:
+        return None
+    if not fills:
+        return None
+    episodes = _episodes_for_code(
+        code_s,
+        resolve_stock_name(code_s) or "",
+        fills,
+        ps.list_all_split_adjustments(db_path=db_path),
+        ps.list_pending_review_events(db_path=db_path),
+    )
+    for ep in episodes:
+        if ps.fill_episode_key(ep["code_s"], ep["kind"], ep["first_seq"]) == episode_key:
+            return ep
+    return None

@@ -29,6 +29,8 @@ import import_sbi_fills as sbi
 import portfolio_shelve as ps
 from ks_util import DATA_DIR
 from webapp.helpers import (
+    build_episode_chart,
+    build_episode_for_key,
     build_fill_episodes,
     build_round_trips,
     build_stock_rollups,
@@ -513,3 +515,20 @@ def save_episode_strategy():
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify({"ok": True})
+
+
+@trade_history_bp.route("/trade-history/chart")
+def episode_chart():
+    """エピソード1件分の週足チャート SVG を返す (issue #366)。
+
+    episode_key は "code_s|kind|first_seq" 形式で `|` を含むため、パスセグメント
+    ではなくクエリパラメータで受ける (save_fill_memo が form で受けるのと同じ扱い)。
+    描けない場合も 200 で説明文を返す (株価データの欠損は障害ではないため)。
+    """
+    episode_key = request.args.get("episode_key", "")
+    if not episode_key:
+        abort(400)
+    ep = build_episode_for_key(episode_key)
+    if ep is None:
+        return '<div class="ep-chart-note">この建玉ラウンドが見つかりません。</div>'
+    return build_episode_chart(ep)

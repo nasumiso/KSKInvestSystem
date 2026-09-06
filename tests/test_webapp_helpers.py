@@ -4192,3 +4192,121 @@ class TestEpisodeStrategyDrift:
                                 db_path=db)
         episodes = helpers.build_fill_episodes(db_path=db)
         assert helpers.count_orphan_strategies(episodes, db_path=db) == 1
+
+
+class TestEpisodeChart:
+    """エピソード単位の週足チャート (issue #366)。"""
+
+    @staticmethod
+    def _ep(**kw):
+        ep = {"code_s": "9999", "kind": "現物", "open_date": "2026-03-04",
+              "close_date": "2026-04-15", "closed": True, "fills": []}
+        ep.update(kw)
+        return ep
+
+    @pytest.mark.parametrize("open_date,close_date,exp_start,exp_end", [
+        # クローズ済み: 前後4週。窓の両端は月曜アンカーに丸める。
+        ("2026-03-04", "2026-04-15", date(2026, 2, 2), date(2026, 5, 11)),
+        # 短期ラウンド (同一週で建てて決済) でも前後4週で10本程度が確保される。
+        ("2026-03-04", "2026-03-06", date(2026, 2, 2), date(2026, 3, 30)),
+        # 保有中: close_date が無いので末尾は直近確定週のまま (後ろの余白を取らない)。
+        ("2026-03-04", None, date(2026, 2, 2), date(2026, 5, 4)),
+    ])
+    def test_window(self, open_date, close_date, exp_start, exp_end):
+        ep = self._ep(open_date=open_date, close_date=close_date, closed=bool(close_date))
+        start, end = helpers._episode_window(ep, date(2026, 5, 4))
+        assert (start, end) == (exp_start, exp_end)
+
+    @pytest.mark.parametrize("trade_date", ["2026-03-02", "2026-03-04", "2026-03-08"])
+    def test_monday_anchor(self, trade_date):
+        """週内のどの曜日の約定も同じ月曜バーへ割り当てる (週後半が翌週へ吸われない)。"""
+        assert helpers._monday_of(date.fromisoformat(trade_date)) == date(2026, 3, 2)
+
+    def test_weekly_cache_missing_returns_empty(self, monkeypatch, tmp_path):
+        """キャッシュが無い/壊れていても例外を出さず空を返す (webapp は yfinance を呼ばない)。"""
+        import price
+
+        monkeypatch.setattr(price, "YFINANCE_WEEKLY_CACHE_FNAME", str(tmp_path / "nope_%s.json"))
+        assert helpers.load_weekly_closes("9999") == {}
+
+        broken = tmp_path / "broken_9999.json"
+        broken.write_text("{ not json", encoding="utf-8")
+        monkeypatch.setattr(price, "YFINANCE_WEEKLY_CACHE_FNAME", str(tmp_path / "broken_%s.json"))
+        assert helpers.load_weekly_closes("9999") == {}
+
+    @pytest.mark.parametrize("kw,expect", [
+        ({"split_suspect": True}, "分割・併合の可能性"),
+        ({}, "週足の株価データがありません"),
+    ])
+    def test_degrades_without_raising(self, monkeypatch, kw, expect):
+        """描けない条件では 500 にせず説明文へ縮退する。"""
+        monkeypatch.setattr(helpers, "load_weekly_closes", lambda code_s: {})
+        assert expect in helpers.build_episode_chart(self._ep(**kw))
+
+    @pytest.mark.parametrize("fills,is_short,carry_over,n_poly,n_circle,note", [
+        # 同一日の複数約定は1マーカーに畳み、株数を合算する (285A 相当)。
+        ([("2026-03-04", "buy", 50, 1000), ("2026-03-04", "buy", 50, 1000),
+          ("2026-04-15", "sell", 100, 1200)], False, False, 2, 0, False),
+        # 週足終値から 1.5 倍以上外れる約定は打たず注記する (分割・併合の未換算)。
+        ([("2026-03-04", "buy", 100, 3000), ("2026-04-15", "sell", 100, 1200)],
+         False, False, 1, 0, True),
+        # 建て fill が無い決済 (carry_over) は OUT のみで IN を打たない。
+        ([("2026-03-04", "buy", 100, 1000), ("2026-04-15", "sell", 100, 1200)],
+         False, True, 1, 0, False),
+        # 途中の買増・部分売りも三角で描く (円は使わない)。買2 + 売2 で4つ。
+        ([("2026-03-04", "buy", 100, 1000), ("2026-03-18", "buy", 100, 1000),
+          ("2026-04-01", "sell", 50, 1100), ("2026-04-15", "sell", 150, 1200)],
+         False, False, 4, 0, False),
+    ])
+    def test_markers(self, monkeypatch, fills, is_short, carry_over, n_poly, n_circle, note):
+        closes = {date(2026, 2, 2) + _dt.timedelta(weeks=i): (1000.0, 10000.0) for i in range(16)}
+        monkeypatch.setattr(helpers, "load_weekly_closes", lambda code_s: closes)
+        ep = self._ep(is_short=is_short, carry_over=carry_over, fills=[
+            {"trade_date": d, "side": s, "qty": q, "price": p, "broker": "楽天"}
+            for d, s, q, p in fills])
+        svg = helpers.build_episode_chart(ep)
+        assert svg.count("<polygon") == n_poly
+        assert svg.count("<circle") == n_circle
+        assert ("ep-chart-note" in svg) is note
+        # 出来高バーは窓に入った週足の本数だけ出る (窓は 03-04 の4週前〜05-13)。
+        assert svg.count("出来高") == 15
+
+    @pytest.mark.parametrize("is_short", [False, True])
+    def test_marker_direction_follows_side(self, monkeypatch, is_short):
+        """買いは▲青・売りは▼赤。空売りでも向きを反転しない (売って建てるので▼始まり)。"""
+        closes = {date(2026, 2, 2) + _dt.timedelta(weeks=i): (1000.0, 10000.0) for i in range(16)}
+        monkeypatch.setattr(helpers, "load_weekly_closes", lambda code_s: closes)
+        ep = self._ep(is_short=is_short, fills=[
+            {"trade_date": "2026-03-04", "side": "sell" if is_short else "buy",
+             "qty": 100, "price": 1000, "broker": "楽天"},
+            {"trade_date": "2026-04-15", "side": "buy" if is_short else "sell",
+             "qty": 100, "price": 1200, "broker": "楽天"},
+        ])
+        svg = helpers.build_episode_chart(ep)
+        # 買い1つ (青) と売り1つ (赤) が必ず1つずつ出る。
+        assert svg.count('fill="#3d7fb5"') == 1
+        assert svg.count('fill="#c25b5b"') == 1
+
+    def test_single_code_rebuild_matches_full(self, tmp_path):
+        """build_episode_for_key の軽量経路が全件版と同じエピソードを返す。
+
+        build_fill_episodes() の銘柄ループを _episodes_for_code() へ切り出したため、
+        切り出しで挙動が変わっていないことを押さえる。
+        """
+        import portfolio_shelve as ps
+
+        db = str(tmp_path / "chart_db")
+        for i, (d, side, qty, price) in enumerate([
+            ("2026-03-04", "buy", 100, 1000), ("2026-03-18", "buy", 100, 1100),
+            ("2026-04-15", "sell", 200, 1200),
+        ], start=1):
+            fill = ps.create_fill("9999", trade_date=d, side=side, qty=qty, price=float(price),
+                                  amount=qty * price, trade_kind="現物", dedup_key="k%d" % i)
+            ps.append_fill(fill, db_path=db)
+
+        full = helpers.build_fill_episodes(db_path=db)
+        assert len(full) == 1
+        one = helpers.build_episode_for_key(full[0]["episode_key"], db_path=db)
+        assert one is not None
+        assert (one["open_date"], one["close_date"], len(one["fills"])) == (
+            full[0]["open_date"], full[0]["close_date"], len(full[0]["fills"]))

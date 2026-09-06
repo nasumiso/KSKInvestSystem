@@ -607,3 +607,19 @@ nav .quick-search {
   white-space: normal;
   line-height: 1.5;
 }
+
+/* エピソード単位の週足チャート (issue #366) */
+/* 左: 往復明細と振り返りメモ / 右: チャート。チャートは横軸スケールをラウンド間で
+   揃えたいので固定幅、明細は内容に応じて伸ばす。画面が狭ければ wrap で縦積みに戻る。 */
+/* 左に往復明細+メモ、右にチャート。テーブルセル内で flex の基準幅が崩れるのを避け、
+   grid で列幅を明示する (1列目=残り全部、2列目=チャート固定幅)。 */
+.ep-detail-cols { display: grid; grid-template-columns: minmax(0, 1fr) 440px;
+                  gap: 1.5em; align-items: start; }
+.ep-detail-left { min-width: 0; }
+.ep-chart-box { min-width: 0; }
+/* 明細とチャートを並べる幅が無い画面では 1列に落として縦積みへ戻す。 */
+@media (max-width: 1100px) {
+  .ep-detail-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.ep-chart { display: block; width: 100%; background: #fbfbfb; border: 1px solid #eee; border-radius: 3px; }
+.ep-chart-note { color: #8a7a5a; font-size: 0.76em; margin-top: 0.3em; }
