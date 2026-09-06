@@ -77,7 +77,13 @@ def calc_stop_loss_line(
     kind: Optional[str] = None,
     is_short: bool = False,
 ) -> Optional[float]:
-    """約定を時系列再生し、買い増し条件を反映した損切りラインを求める。"""
+    """約定を時系列再生し、買い増し条件を反映した損切りラインを求める。
+
+    fills は **1エピソード分** を渡す (kind はそのエピソードの "現物"/"信用")。
+    現物・信用をまたぐ銘柄は、エピソードごとに呼んで held_qty で加重平均する
+    (_weighted_stop_loss_line)。銘柄全体の保有サイクルをマージして渡すと、
+    決済済みの建玉の取得単価がラチェットに残り続ける。
+    """
     if is_short or not isinstance(exit_rule, dict):
         return None
     stop_loss_pct = exit_rule.get("stop_loss_pct")
@@ -100,17 +106,6 @@ def calc_stop_loss_line(
         if kind == "信用":
             is_open = side == "buy" and trade_kind.startswith("信用新規")
             is_close = side == "sell" or trade_kind == "現引"
-        elif kind is None:
-            # 銘柄全体の再生では、現引は信用→現物の振替なので保有数を変えない。
-            # 信用売建・買戻しもロング保有の損切り対象外とする。
-            if trade_kind == "現引":
-                continue
-            if trade_kind.startswith("信用"):
-                is_open = side == "buy" and trade_kind.startswith("信用新規")
-                is_close = side == "sell" and trade_kind.startswith("信用返済")
-            else:
-                is_open = side == "buy"
-                is_close = side == "sell"
         else:
             is_open = side == "buy" and not trade_kind.startswith("信用返済")
             is_close = side == "sell"

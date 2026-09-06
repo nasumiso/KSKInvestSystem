@@ -2069,7 +2069,7 @@ def list_portfolio_with_indicators(
                 rule_id = json.dumps(exit_rule, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                 if position:
                     position = dict(position)
-                    position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["fills"])
+                    position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["episodes"])
                     cycle_id = f"{position['cycle_id']}|{strategy}|{rule_id}"
                 else:
                     # CSV期間外からの保有など、約定履歴がない銘柄もMAは評価する。
@@ -2204,13 +2204,14 @@ def _build_exit_position_map(episodes: List[Dict[str, Any]]) -> Dict[str, Dict[s
             continue
         held_qty = sum(ep["open_pl"]["held_qty"] for ep in code_episodes)
         avg_cost = sum(ep["open_pl"]["held_qty"] * ep["open_pl"]["avg_cost"] for ep in code_episodes) / held_qty
-        hold_started_at, cycle_fills = _current_hold_cycle(all_by_code[code_s])
+        hold_started_at, _ = _current_hold_cycle(all_by_code[code_s])
         # 現物・信用をまたいだ銘柄全体の連続保有をサイクルにする。最古の口座だけを
         # 先に決済しても hold_started_at は変わらないため、防御履歴を維持できる。
+        # サイクルは防歴の同一性判定だけに使う。損切りラインはエピソード単位
+        # (_weighted_stop_loss_line) で、証券会社の建玉と一致する基準で出す。
         cycle_id = hold_started_at or min(str(ep.get("open_date") or "") for ep in code_episodes)
         result[code_s] = {"held_qty": held_qty, "avg_cost": avg_cost, "cycle_id": cycle_id,
-                          "episodes": code_episodes, "fills": cycle_fills,
-                          "stop_loss_line": None}
+                          "episodes": code_episodes, "stop_loss_line": None}
     return result
 
 
@@ -2270,11 +2271,29 @@ def _current_hold_cycle(episodes: List[Dict[str, Any]]) -> tuple:
     return started_at, cycle_fills
 
 
-def _weighted_stop_loss_line(exit_rule: Dict[str, Any], fills: List[Dict[str, Any]]) -> Optional[float]:
-    """銘柄全体の連続保有 fill を再生して損切りラインを求める。"""
+def _weighted_stop_loss_line(exit_rule: Dict[str, Any],
+                             episodes: List[Dict[str, Any]]) -> Optional[float]:
+    """未クローズエピソードごとに損切りラインを出し、held_qty で加重平均する。
+
+    銘柄全体の保有サイクルをマージして再生すると、決済済みの建玉の取得単価が
+    ラチェット (allow_dca_lower=False) に残り、現在の建玉と無関係に高い線が
+    引かれ続ける (実例: 3496 は残玉 4,260円に対し線 6,056円)。
+    """
     from exit_line import calc_stop_loss_line
 
-    return calc_stop_loss_line(exit_rule, fills)
+    total_qty = 0.0
+    weighted = 0.0
+    for ep in episodes:
+        line = calc_stop_loss_line(exit_rule, ep.get("fills") or [],
+                                   kind=ep.get("kind"), is_short=ep.get("is_short", False))
+        if line is None:
+            continue
+        held_qty = (ep.get("open_pl") or {}).get("held_qty")
+        if not isinstance(held_qty, (int, float)) or isinstance(held_qty, bool) or held_qty <= 0:
+            continue
+        weighted += line * held_qty
+        total_qty += held_qty
+    return round(weighted / total_qty, 4) if total_qty else None
 
 
 def _apply_exit_signal_display(row: Dict[str, Any], signal: Dict[str, Any]) -> None:
