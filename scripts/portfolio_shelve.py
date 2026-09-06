@@ -36,7 +36,7 @@ import re
 import threading
 from contextlib import contextmanager
 from datetime import date, datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from db_shelve import PORTFOLIO_SHELVE, ShelveDB
 
@@ -1858,10 +1858,48 @@ def add_split_adjustment(code_s: str, ex_date: str, ratio: float, *,
             # 残り続け、以後も保有中エピソードの残高・損益が非表示のままになる)。
             pending_value = db.get(pending_key)
             if isinstance(pending_value, dict):
+                spans = pending_value.get("spans", {}) or {}
+                ratios = pending_value.get("ratios", {}) or {}
+
+                def _covered(marker: str) -> bool:
+                    """登録済みイベントがこの暫定マーカーの乖離を説明しきれるか。
+
+                    週足照合の暫定日は「後側の約定日」であって実際の権利落ち日では
+                    ないため、日付一致では解除できない。検出区間 (before, after] に
+                    入る登録イベントを集め、その比率の積が観測比率と一致して初めて
+                    解除する (PRレビュー #440 P1・2周目 P2 対応)。
+
+                    区間内に複数の分割があるとき1件登録しただけで解除すると、残る
+                    分割が未登録のまま誤った残高・損益が集計へ戻ってしまうため、
+                    日付だけでは判定しない。観測比率が無い古いレコードは、日付が
+                    区間に入るかだけで判定する (従来動作)。
+                    """
+                    span = spans.get(marker)
+                    if not span or len(span) != 2:
+                        return False
+                    if not (span[0] < ex_date <= span[1]):
+                        return False
+                    observed = ratios.get(marker)
+                    if observed is None:
+                        return True
+                    # この区間に入る登録済みイベント (今回の分を含む) の積。
+                    product = 1.0
+                    for ev in events:
+                        if span[0] < ev["ex_date"] <= span[1]:
+                            product *= ev["ratio"]
+                    if product <= 0 or observed <= 0:
+                        return False
+                    # 比率は推定値なので厳密一致は求めない (10% の許容)。
+                    return abs(math.log(product / observed)) < math.log(1.1)
+
                 remaining = [d for d in pending_value.get("ex_dates", [])
-                            if d != ex_date and d != "unknown"]
+                            if d != ex_date and d != "unknown" and not _covered(d)]
                 if remaining:
                     pending_value["ex_dates"] = remaining
+                    pending_value["spans"] = {k: v for k, v in spans.items()
+                                              if k in remaining}
+                    pending_value["ratios"] = {k: v for k, v in ratios.items()
+                                               if k in remaining}
                     db[pending_key] = pending_value
                 else:
                     del db[pending_key]
@@ -1878,6 +1916,8 @@ def _split_rejected_review_storage_key(code_s: str) -> str:
 
 
 def mark_split_pending_review(code_s: str, *, reason: str, ex_date: Optional[str] = None,
+                              span: Optional[Tuple[str, str]] = None,
+                              ratio: Optional[float] = None,
                               db_path: Optional[str] = None) -> None:
     """--check-splits の (a)/(b) 検知結果を、webapp からも見える形で残す。
 
@@ -1893,6 +1933,16 @@ def mark_split_pending_review(code_s: str, *, reason: str, ex_date: Optional[str
     警告が消えてしまう)。ex_date 不明 (単価ジャンプ検知は yfinance 未参照でも
     呼ばれる) の場合は "unknown" として積み、build_fill_episodes 側は
     ex_dates の有無に関わらず銘柄が pending なら警告する (安全側)。
+
+    span (before_date, after_date) は検出できた区間、ratio はその区間で観測された
+    換算比率。週足照合は実際の権利落ち日を知らず「後側の約定日」を暫定 ex_date として
+    積むため、正しい権利落ち日 (通常は2約定日の間) を登録しても日付が一致せず暫定
+    マーカーが残り続ける。区間を持たせておけば add_split_adjustment 側で解除できる
+    (PRレビュー #440 P1 対応)。
+
+    比率も持つのは、区間内に複数の分割がある場合に1件登録しただけで区間全体を
+    解除してしまわないため。登録済み比率の積が観測比率を説明できて初めて解除する
+    (PRレビュー #440 2周目 P2 対応)。
     """
     path = _resolve_db_path(db_path)
     pending_key = _split_pending_review_storage_key(code_s)
@@ -1900,13 +1950,21 @@ def mark_split_pending_review(code_s: str, *, reason: str, ex_date: Optional[str
         with ShelveDB(path) as db:
             value = db.get(pending_key)
             ex_dates = list(value.get("ex_dates", [])) if isinstance(value, dict) else []
+            spans = dict(value.get("spans", {})) if isinstance(value, dict) else {}
+            ratios = dict(value.get("ratios", {})) if isinstance(value, dict) else {}
             marker = ex_date or "unknown"
             if marker not in ex_dates:
                 ex_dates.append(marker)
+            if span is not None:
+                spans[marker] = [span[0], span[1]]
+            if ratio is not None:
+                ratios[marker] = float(ratio)
             db[pending_key] = {
                 "code_s": normalize_code_s(code_s),
                 "reason": reason,
                 "ex_dates": ex_dates,
+                "spans": spans,
+                "ratios": ratios,
                 "marked_at": now_iso(),
             }
 

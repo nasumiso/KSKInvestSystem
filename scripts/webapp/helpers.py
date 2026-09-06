@@ -5266,7 +5266,7 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
       carry_over (bool: 取込対象期間より前の信用建玉の返済),
       pl (クローズ済みのみ: _episode_pl_from_round の結果, 未クローズは None),
       open_pl (保有中のみ: realized/unrealized/held_qty/avg_cost),
-      split_suspect (bool, 現物のみ: 単価ジャンプ検知だが split_adj 未登録、issue #398。
+      split_suspect (bool, 分割・併合の疑いで未換算、issue #398/#435。
         残高・損益が分割・併合未換算で誤っている可能性があるため画面上は数値を隠す)
 
     Returns: 最終約定日 (買い増し・部分売り含むラウンド内の最新の取引日) 降順の
@@ -5312,16 +5312,21 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         uncovered = _uncovered_jumps(jumps, events)
         pending_dates = pending_events.get(code_s, [])
         for ep in code_episodes:
-            if ep["kind"] != "現物":
-                continue
-            if ep.get("split_fractional_residual"):
-                ep["split_suspect"] = True
-            elif any(_jump_affects_episode(j, ep) for j in uncovered):
+            if ep["kind"] == "信用" and any(
+                    _split_event_affects_episode(ev["ex_date"], ep) for ev in events):
+                # 信用 fill は約定損益・建単価の基準を保つため換算しない。そのため、
+                # 登録済みの分割・併合をまたぐ信用エピソードも集計から除外する。
                 ep["split_suspect"] = True
             elif any(d != "unknown" and _split_event_affects_episode(d, ep)
                      for d in pending_dates):
                 ep["split_suspect"] = True
             elif "unknown" in pending_dates and not ep["closed"]:
+                ep["split_suspect"] = True
+            elif ep["kind"] != "現物":
+                continue
+            elif ep.get("split_fractional_residual"):
+                ep["split_suspect"] = True
+            elif any(_jump_affects_episode(j, ep) for j in uncovered):
                 ep["split_suspect"] = True
         episodes.extend(code_episodes)
 
