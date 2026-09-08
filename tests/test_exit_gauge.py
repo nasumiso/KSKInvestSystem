@@ -1,6 +1,7 @@
 """出口ゲージの数値・描画・既存判定との接続を検証する。"""
 
 import xml.etree.ElementTree as ET
+import re
 
 import pytest
 
@@ -21,9 +22,10 @@ def test_gauge_tracks(stop, ma, expected_y):
         return
     root = ET.fromstring(payload["svg"])
     assert (root.get("width"), root.get("height")) == ("56", "24")
-    circles = root.findall("{*}circle")
-    assert [int(c.get("cy")) for c in circles] == expected_y
-    assert all(float(c.get("cx")) == 28 for c in circles)
+    markers = [p for p in root.findall("{*}path") if p.get("class") == "exit-gauge-marker"]
+    coords = [re.fullmatch(r"M([\d.]+) (\d+)V\d+", p.get("d")).groups() for p in markers]
+    assert [int(y) + 4 for _, y in coords] == expected_y
+    assert all(float(x) == 28 for x, _ in coords)
     assert root.find("{*}title").text == payload["tooltip"]
     assert "(+0.0%)" in payload["tooltip"]
     assert "<理由>" not in payload["svg"]
@@ -33,7 +35,8 @@ def test_gauge_tracks(stop, ma, expected_y):
 def test_gauge_clips_marker_but_not_tooltip(close, x, pct):
     payload = helpers.exit_line_gauge_svg({"close": close, "stop_loss_line": 100})
     root = ET.fromstring(payload["svg"])
-    assert float(root.find("{*}circle").get("cx")) == x
+    marker = next(p for p in root.findall("{*}path") if p.get("class") == "exit-gauge-marker")
+    assert float(re.fullmatch(r"M([\d.]+) \d+V\d+", marker.get("d")).group(1)) == x
     assert pct in payload["tooltip"]
 
 
