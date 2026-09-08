@@ -26,6 +26,7 @@ def test_gauge_tracks(stop, ma, expected_y):
     coords = [re.fullmatch(r"M([\d.]+) (\d+)V\d+", p.get("d")).groups() for p in markers]
     assert [int(y) + 4 for _, y in coords] == expected_y
     assert all(float(x) == 28 for x, _ in coords)
+    assert len(root.findall("{*}path")) == len(markers) * 2  # halo と縦線だけ
     assert root.find("{*}title").text == payload["tooltip"]
     assert "(+0.0%)" in payload["tooltip"]
     assert "<理由>" not in payload["svg"]

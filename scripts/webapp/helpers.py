@@ -2314,7 +2314,6 @@ def exit_line_gauge_svg(values: Dict[str, Any], level: str = "", reasons: str = 
     close = values.get("close")
     if not valid(close):
         return {"svg": "", "tooltip": reasons}
-    track_color = "#fff" if level else "#aaa"
     tracks, lines = [], [reasons] if reasons else []
     for index, (label, value) in enumerate([
         ("損切りライン", values.get("stop_loss_line")),
@@ -2331,8 +2330,6 @@ def exit_line_gauge_svg(values: Dict[str, Any], level: str = "", reasons: str = 
         x = 2 + (max(-25, min(25, pct)) + 25) / 50 * 52
         y = 6 + index * 12
         tracks.append(
-            f'<path d="M2 {y}H54" stroke="{track_color}"/>'
-            f'<path d="M28 {y-4}V{y+4}" stroke="{track_color}"/>'
             f'<path class="exit-gauge-marker-halo" d="M{x:.2f} {y-4}V{y+4}" '
             'stroke="#fff" stroke-width="4"/>'
             f'<path class="exit-gauge-marker" d="M{x:.2f} {y-4}V{y+4}" '
