@@ -282,6 +282,8 @@ def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
         "memo": {"trade_idea": "成長"},
     }])
     assert rows[0]["signal_mark"] == "防予"
+    assert "日足50MA 1,000 (-10.0%)" in rows[0]["signal_full"]
+    assert rows[0]["exit_gauge"]["svg"]
 
 
 def test_manual_holding_records_confirmed_ma_alert(monkeypatch):

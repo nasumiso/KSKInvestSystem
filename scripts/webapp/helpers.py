@@ -2060,12 +2060,13 @@ def list_portfolio_with_indicators(
         row["overall_rating"] = rating_map.get(code_s, "")  # issue #199
         stock = stock_map.get(code_s, {})
         row.update(_extract_indicators_for_portfolio(stock))
+        row["exit_gauge"] = {"svg": "", "tooltip": ""}
         if rec.get("status") == "1保" and ps is not None:
             position = exit_positions.get(code_s)
             strategy = (rec.get("memo") or {}).get("trade_idea")
             exit_rule = exit_rules.get(strategy)
             if isinstance(exit_rule, dict):
-                from exit_line import evaluate_exit_signal
+                from exit_line import evaluate_exit_signal, exit_line_values
                 rule_id = json.dumps(exit_rule, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                 if position:
                     position = dict(position)
@@ -2083,6 +2084,12 @@ def list_portfolio_with_indicators(
                     if signal["level"] == "防":
                         ps.record_exit_alert_event(code_s, cycle_id, signal)
                     _apply_exit_signal_display(row, signal)
+                row["exit_gauge"] = exit_line_gauge_svg(
+                    exit_line_values(exit_rule, stock, position),
+                    signal.get("level", "") if signal else "",
+                    row.get("signal_full") or "",
+                )
+                row["signal_full"] = row["exit_gauge"]["tooltip"]
         # 運用総額の市場別内訳用カテゴリ (日経225/TOPIX/グロース/その他)
         row["market_category"] = _classify_market_category(
             stock.get("market"), stock.get("is_nikkei225"), code_s=code_s
@@ -2294,6 +2301,48 @@ def _weighted_stop_loss_line(exit_rule: Dict[str, Any],
         weighted += line * held_qty
         total_qty += held_qty
     return round(weighted / total_qty, 4) if total_qty else None
+
+
+def exit_line_gauge_svg(values: Dict[str, Any], level: str = "", reasons: str = "") -> Dict[str, str]:
+    """出口水準との乖離を固定2段SVGと数値tooltipにする（DB参照なし）。"""
+    import math
+
+    def valid(value):
+        return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                and math.isfinite(value) and value > 0)
+
+    close = values.get("close")
+    if not valid(close):
+        return {"svg": "", "tooltip": reasons}
+    tracks, lines = [], [reasons] if reasons else []
+    foreground = "#fff" if level in ("防", "防予") else "#174ea6"
+    halo = "#4285f4" if level == "防" else "#6fa8dc" if level == "防予" else "#fff"
+    for marker_kind, label, value in [
+        ("stop", "損切りライン", values.get("stop_loss_line")),
+        ("ma", values.get("ma_label") or "MA", values.get("ma_value")),
+    ]:
+        if not valid(value):
+            continue
+        pct = (close / value - 1) * 100
+        if not math.isfinite(pct):
+            continue
+        if not tracks:
+            lines.append(f"終値 {close:,.0f}")
+        lines.append(f"{label} {value:,.0f} ({pct:+.1f}%)")
+        x = 1 + (max(-25, min(25, pct)) + 25) / 50 * 38
+        dash = ' stroke-dasharray="2,2"' if marker_kind == "stop" else ""
+        tracks.append(
+            f'<path class="exit-gauge-marker-halo {marker_kind}" d="M{x:.2f} 0V14" '
+            f'stroke="{halo}" stroke-width="4"{dash}/>'
+            f'<path class="exit-gauge-marker {marker_kind}" d="M{x:.2f} 0V14" '
+            f'stroke="{foreground}" stroke-width="2"{dash}/>'
+        )
+    tooltip = "\n".join(lines)
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="14" viewBox="0 0 40 14" preserveAspectRatio="none" role="img">'
+        f'<title>{html.escape(tooltip)}</title>{"".join(tracks)}</svg>'
+    ) if tracks else ""
+    return {"svg": svg, "tooltip": tooltip}
 
 
 def _apply_exit_signal_display(row: Dict[str, Any], signal: Dict[str, Any]) -> None:

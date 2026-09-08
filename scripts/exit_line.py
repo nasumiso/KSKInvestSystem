@@ -120,6 +120,31 @@ def calc_stop_loss_line(
     return round(line, 4) if line is not None and held_qty > 0 else None
 
 
+def _exit_ma(exit_rule, stock):
+    """戦略で指定されたMAの名称と既存の評価データを返す。"""
+    kind, window = exit_rule.get("ma_kind"), exit_rule.get("ma_window")
+    if kind == "day" and window == 50:
+        return "日足50MA", stock.get("ma50_violation") or {}
+    if kind == "week" and window in (30, 40):
+        return f"週足{window}MA", stock.get(f"wma{window}_violation") or {}
+    return "", {}
+
+
+def exit_line_values(exit_rule, stock, position):
+    """警告の有無に依存せず、表示用に現在の出口水準を返す。"""
+    if not isinstance(exit_rule, dict):
+        return {}
+    latest = (stock.get("price_log") or [None])[0]
+    close = latest[1] if isinstance(latest, (tuple, list)) and len(latest) >= 2 else None
+    label, violation = _exit_ma(exit_rule, stock)
+    return {
+        "close": close,
+        "stop_loss_line": position.get("stop_loss_line"),
+        "ma_label": label,
+        "ma_value": violation.get("ma_value") if isinstance(violation, dict) else None,
+    }
+
+
 def evaluate_exit_signal(
     exit_rule: Optional[Dict[str, Any]],
     stock: Dict[str, Any],
@@ -142,16 +167,7 @@ def evaluate_exit_signal(
     stop_line = position.get("stop_loss_line")
     if isinstance(stop_line, (int, float)) and close < stop_line:
         reasons.append("損切りライン割れ")
-    ma_kind = exit_rule.get("ma_kind")
-    ma_window = exit_rule.get("ma_window")
-    violation = {}
-    ma_label = ""
-    if ma_kind == "day" and ma_window == 50:
-        violation = stock.get("ma50_violation") or {}
-        ma_label = "日足50MA"
-    elif ma_kind == "week" and ma_window in (30, 40):
-        violation = stock.get(f"wma{ma_window}_violation") or {}
-        ma_label = f"週足{ma_window}MA"
+    ma_label, violation = _exit_ma(exit_rule, stock)
     if isinstance(violation, dict) and violation.get("confirmed"):
         reasons.append(f"{ma_label}割れ確定")
     if reasons:
