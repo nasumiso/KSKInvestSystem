@@ -21,9 +21,10 @@
   /* ゲージ SVG のセルは縦 padding を持たせない。SVG 自体が背が高いため、
      指標タブ (ページ1) だけ行高が伸びてメモタブと表示件数がズレるのを防ぐ。 */
   table.portfolio-list td.spr-gauge-cell { padding-top: 0; padding-bottom: 0; }
-  table.portfolio-list td.exit-signal-cell { width:5.4em; max-width:5.4em; padding:0; text-align:center; }
-  .exit-signal-text { display:block; width:5.4em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.2; }
-  .exit-gauge-slot { display:block; width:56px; height:24px; margin:auto; line-height:0; }
+  table.portfolio-list td.exit-signal-cell { position:relative; width:56px; min-width:56px; max-width:56px; padding:0; text-align:center; white-space:nowrap; }
+  .exit-signal-text { position:relative; z-index:1; display:block; overflow:hidden; text-overflow:ellipsis; line-height:1.2; }
+  .exit-gauge-slot { position:absolute; z-index:0; left:50%; top:0; width:40px; height:100%; line-height:0; transform:translateX(-50%); }
+  .exit-gauge-slot > svg { display:block; width:100%; height:100%; }
   /* 長いヘッダラベル ("RSライン(20,5)" 等) が列幅を引っ張らないよう、
      ヘッダ側に max-width を設けて強制改行させる。データセル幅優先。 */
   table.portfolio-list thead th {
@@ -611,7 +612,7 @@
       {# シグナルは「ポ/ブ/週ブ」まで出るため見切れない幅を確保 #}
       <td data-page="1" class="exit-signal-cell" title="{{ row.signal_full or '' }}"
           style="{{ row.styles.signal or '' }}"><span class="exit-signal-text">{{ row.signal_mark }}</span>
-        <span class="exit-gauge-slot">{% if row.exit_gauge %}{{ row.exit_gauge.svg|safe }}{% endif %}</span>
+        {% if row.exit_gauge.svg %}<span class="exit-gauge-slot">{{ row.exit_gauge.svg|safe }}</span>{% endif %}
       </td>
       <td data-page="1" class="spr-gauge-cell" title="{{ row.spr_gauge.tooltip }}">{{ row.spr_gauge.svg|safe }}</td>
       <td data-page="1" style="{{ row.styles.market_cap or '' }}">{{ row.market_cap }}</td>

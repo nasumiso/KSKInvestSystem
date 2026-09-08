@@ -9,34 +9,38 @@ from exit_line import evaluate_exit_signal, exit_line_values
 from webapp import helpers
 
 
-@pytest.mark.parametrize("stop,ma,expected_y", [
-    (100, None, [6]), (None, 100, [18]), (100, 100, [6, 18]),
+@pytest.mark.parametrize("stop,ma,expected_kinds", [
+    (100, None, ["stop"]), (None, 100, ["ma"]), (100, 100, ["stop", "ma"]),
     (None, None, []), (0, float("nan"), []), (True, float("inf"), []),
 ])
-def test_gauge_tracks(stop, ma, expected_y):
+def test_gauge_tracks(stop, ma, expected_kinds):
     payload = helpers.exit_line_gauge_svg({
         "close": 100, "stop_loss_line": stop, "ma_value": ma, "ma_label": "日足50MA",
     }, "防", "<理由>&")
-    if not expected_y:
+    if not expected_kinds:
         assert payload == {"svg": "", "tooltip": "<理由>&"}
         return
     root = ET.fromstring(payload["svg"])
-    assert (root.get("width"), root.get("height")) == ("56", "24")
-    markers = [p for p in root.findall("{*}path") if p.get("class") == "exit-gauge-marker"]
+    assert (root.get("width"), root.get("height")) == ("40", "14")
+    markers = [p for p in root.findall("{*}path") if "exit-gauge-marker" in p.get("class", "").split()]
     coords = [re.fullmatch(r"M([\d.]+) (\d+)V\d+", p.get("d")).groups() for p in markers]
-    assert [int(y) + 4 for _, y in coords] == expected_y
-    assert all(float(x) == 28 for x, _ in coords)
+    assert [p.get("class").split()[1] for p in markers] == expected_kinds
+    assert all((float(x), y) == (20, "0") for x, y in coords)
+    if "stop" in expected_kinds:
+        assert next(p for p in markers if "stop" in p.get("class", "").split()).get("stroke-dasharray") == "2,2"
+    if "ma" in expected_kinds:
+        assert next(p for p in markers if "ma" in p.get("class", "").split()).get("stroke-dasharray") is None
     assert len(root.findall("{*}path")) == len(markers) * 2  # halo と縦線だけ
     assert root.find("{*}title").text == payload["tooltip"]
     assert "(+0.0%)" in payload["tooltip"]
     assert "<理由>" not in payload["svg"]
 
 
-@pytest.mark.parametrize("close,x,pct", [(50, 2, "-50.0%"), (100, 28, "+0.0%"), (150, 54, "+50.0%")])
+@pytest.mark.parametrize("close,x,pct", [(50, 1, "-50.0%"), (100, 20, "+0.0%"), (150, 39, "+50.0%")])
 def test_gauge_clips_marker_but_not_tooltip(close, x, pct):
     payload = helpers.exit_line_gauge_svg({"close": close, "stop_loss_line": 100})
     root = ET.fromstring(payload["svg"])
-    marker = next(p for p in root.findall("{*}path") if p.get("class") == "exit-gauge-marker")
+    marker = next(p for p in root.findall("{*}path") if "exit-gauge-marker" in p.get("class", "").split())
     assert float(re.fullmatch(r"M([\d.]+) \d+V\d+", marker.get("d")).group(1)) == x
     assert pct in payload["tooltip"]
 

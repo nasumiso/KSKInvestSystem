@@ -2315,10 +2315,12 @@ def exit_line_gauge_svg(values: Dict[str, Any], level: str = "", reasons: str = 
     if not valid(close):
         return {"svg": "", "tooltip": reasons}
     tracks, lines = [], [reasons] if reasons else []
-    for index, (label, value) in enumerate([
-        ("損切りライン", values.get("stop_loss_line")),
-        (values.get("ma_label") or "MA", values.get("ma_value")),
-    ]):
+    foreground = "#fff" if level in ("防", "防予") else "#174ea6"
+    halo = "#4285f4" if level == "防" else "#6fa8dc" if level == "防予" else "#fff"
+    for marker_kind, label, value in [
+        ("stop", "損切りライン", values.get("stop_loss_line")),
+        ("ma", values.get("ma_label") or "MA", values.get("ma_value")),
+    ]:
         if not valid(value):
             continue
         pct = (close / value - 1) * 100
@@ -2327,17 +2329,17 @@ def exit_line_gauge_svg(values: Dict[str, Any], level: str = "", reasons: str = 
         if not tracks:
             lines.append(f"終値 {close:,.0f}")
         lines.append(f"{label} {value:,.0f} ({pct:+.1f}%)")
-        x = 2 + (max(-25, min(25, pct)) + 25) / 50 * 52
-        y = 6 + index * 12
+        x = 1 + (max(-25, min(25, pct)) + 25) / 50 * 38
+        dash = ' stroke-dasharray="2,2"' if marker_kind == "stop" else ""
         tracks.append(
-            f'<path class="exit-gauge-marker-halo" d="M{x:.2f} {y-4}V{y+4}" '
-            'stroke="#fff" stroke-width="4"/>'
-            f'<path class="exit-gauge-marker" d="M{x:.2f} {y-4}V{y+4}" '
-            'stroke="#174ea6" stroke-width="2"/>'
+            f'<path class="exit-gauge-marker-halo {marker_kind}" d="M{x:.2f} 0V14" '
+            f'stroke="{halo}" stroke-width="4"{dash}/>'
+            f'<path class="exit-gauge-marker {marker_kind}" d="M{x:.2f} 0V14" '
+            f'stroke="{foreground}" stroke-width="2"{dash}/>'
         )
     tooltip = "\n".join(lines)
     svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="24" viewBox="0 0 56 24" role="img">'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="14" viewBox="0 0 40 14" preserveAspectRatio="none" role="img">'
         f'<title>{html.escape(tooltip)}</title>{"".join(tracks)}</svg>'
     ) if tracks else ""
     return {"svg": svg, "tooltip": tooltip}
