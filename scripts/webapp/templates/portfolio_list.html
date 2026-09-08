@@ -611,7 +611,7 @@
           style="max-width:4em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
       {# シグナルは「ポ/ブ/週ブ」まで出るため見切れない幅を確保 #}
       <td data-page="1" class="exit-signal-cell" title="{{ row.signal_full or '' }}"
-          style="{{ row.styles.signal or '' }}"><span class="exit-signal-text">{{ row.signal_mark }}</span>
+          style="{{ row.styles.signal or '' }}">{% if row.signal_mark != "—" %}<span class="exit-signal-text">{{ row.signal_mark }}</span>{% endif %}
         {% if row.exit_gauge.svg %}<span class="exit-gauge-slot">{{ row.exit_gauge.svg|safe }}</span>{% endif %}
       </td>
       <td data-page="1" class="spr-gauge-cell" title="{{ row.spr_gauge.tooltip }}">{{ row.spr_gauge.svg|safe }}</td>
