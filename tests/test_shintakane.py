@@ -723,6 +723,31 @@ class Test_saved_latest_date:
         assert shintakane._saved_latest_date(str(tmp_path / "missing.json")) is None
 
 
+class Test_fgjp_has_missing_component:
+    """fear_greed_jp.json の最新エントリに欠損成分があるかの判定ヘルパー。"""
+
+    @pytest.mark.parametrize("content,expected", [
+        # 全成分そろっている → 再取得不要
+        ('{"latest": {"components": {"momentum": {"score": 1}, '
+         '"volatility": {"score": 2}}}}', False),
+        # VI 取得失敗で volatility が null → 再取得させる
+        ('{"latest": {"components": {"momentum": {"score": 1}, '
+         '"volatility": null}}}', True),
+        ('{"latest": {"components": {}}}', False),  # 成分キー空 → 従来動作
+        ('{"latest": {}}', False),                  # components 無し
+        ('{"latest": null}', False),                # latest が null
+        ('not a json {{{', False),                  # 壊れた JSON
+    ])
+    def test_欠損成分の有無を判定する(self, tmp_path, content, expected):
+        p = tmp_path / "fear_greed_jp.json"
+        p.write_text(content, encoding="utf-8")
+        assert shintakane._fgjp_has_missing_component(str(p)) is expected
+
+    def test_ファイル無しはFalse(self, tmp_path):
+        assert shintakane._fgjp_has_missing_component(
+            str(tmp_path / "missing.json")) is False
+
+
 class Test_recent_weekday:
     """now から見た期待最新営業日 (17時カットオーバー + 土日補正) を返すヘルパー。"""
 

@@ -1626,6 +1626,24 @@ def _saved_latest_date(out_path):
     return d or None
 
 
+def _fgjp_has_missing_component(out_path):
+    """保存済み fear_greed_jp.json の最新エントリに None 成分があれば True を返す。
+
+    VI 取得の一時失敗などで成分が欠けたまま保存されると、latest.date だけを見る
+    スキップ判定では翌営業日まで欠損が残り market ページに "—" が出続ける。
+    欠損日は再取得させるためのガード。読めない/成分が無い場合は False (従来動作)。
+    """
+    if not os.path.exists(out_path):
+        return False
+    try:
+        with open(out_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        components = (payload.get("latest") or {}).get("components") or {}
+    except (OSError, ValueError, AttributeError):
+        return False
+    return any(v is None for v in components.values())
+
+
 def _recent_weekday(now):
     """now (datetime) から見た「期待される最新営業日」を "YYYY-MM-DD" で返す。
 
@@ -1789,8 +1807,10 @@ def update_fear_greed_jp():
 
     saved_latest = _saved_latest_date(out_path)
     if saved_latest is not None and saved_latest >= _recent_weekday(datetime.now()):
-        log_print(f"---- 日本版Fear&Greed 最新営業日を保持済みのためスキップ (saved={saved_latest})")
-        return
+        if not _fgjp_has_missing_component(out_path):
+            log_print(f"---- 日本版Fear&Greed 最新営業日を保持済みのためスキップ (saved={saved_latest})")
+            return
+        log_print(f"---- 日本版Fear&Greed 保存済み({saved_latest})に欠損成分があるため再取得")
 
     log_print("----> 日本版Fear&Greed 更新")
     try:
