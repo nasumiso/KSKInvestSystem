@@ -25,18 +25,28 @@ def test_gauge_tracks(stop, ma, expected_kinds):
     markers = [p for p in root.findall("{*}path") if "exit-gauge-marker" in p.get("class", "").split()]
     coords = [re.fullmatch(r"M([\d.]+) (\d+)V\d+", p.get("d")).groups() for p in markers]
     assert [p.get("class").split()[1] for p in markers] == expected_kinds
-    assert all((float(x), y) == (20, "0") for x, y in coords)
+    assert all((float(x), y) == (10.5, "0") for x, y in coords)
     if "stop" in expected_kinds:
         assert next(p for p in markers if "stop" in p.get("class", "").split()).get("stroke-dasharray") == "2,2"
     if "ma" in expected_kinds:
         assert next(p for p in markers if "ma" in p.get("class", "").split()).get("stroke-dasharray") is None
-    assert len(root.findall("{*}path")) == len(markers) * 2  # halo と縦線だけ
+    # halo と縦線に加えて乖離0%の基準線1本
+    baseline = [p for p in root.findall("{*}path") if p.get("class") == "exit-gauge-baseline"]
+    assert len(baseline) == 1
+    assert re.fullmatch(r"M10.50 0V\d+", baseline[0].get("d"))
+    assert len(root.findall("{*}path")) == len(markers) * 2 + 1
     assert root.find("{*}title").text == payload["tooltip"]
     assert "(+0.0%)" in payload["tooltip"]
     assert "<理由>" not in payload["svg"]
 
 
-@pytest.mark.parametrize("close,x,pct", [(50, 1, "-50.0%"), (100, 20, "+0.0%"), (150, 39, "+50.0%")])
+@pytest.mark.parametrize("close,x,pct", [
+    (50, 1, "-50.0%"),        # 下方クリップ(左端 -8.33% 未満)
+    (95, 4.8, "-5.0%"),       # 防衛ライン割れは左側25%に圧縮される
+    (100, 10.5, "+0.0%"),     # 乖離0% = 基準線位置
+    (125, 39, "+25.0%"),      # 右端ちょうど
+    (150, 39, "+50.0%"),      # 上方クリップ
+])
 def test_gauge_clips_marker_but_not_tooltip(close, x, pct):
     payload = helpers.exit_line_gauge_svg({"close": close, "stop_loss_line": 100})
     root = ET.fromstring(payload["svg"])

@@ -2303,6 +2303,16 @@ def _weighted_stop_loss_line(exit_rule: Dict[str, Any],
     return round(weighted / total_qty, 4) if total_qty else None
 
 
+# 出口ゲージの目盛り。防衛ライン割れ(マイナス乖離)はレアなので左側を狭く取り、
+# 乖離0%(ライン一致点)を描画域の左から25%に置いて上方乖離側に75%を配分する。
+_EXIT_GAUGE_X0 = 1.0          # 描画域の左端x(スロット幅40の左右に1pxずつ余白)
+_EXIT_GAUGE_W = 38.0          # 描画域の幅
+_EXIT_GAUGE_PCT_MAX = 25.0
+_EXIT_GAUGE_PCT_MIN = -_EXIT_GAUGE_PCT_MAX / 3   # ≈ -8.33%
+_EXIT_GAUGE_PCT_SPAN = _EXIT_GAUGE_PCT_MAX - _EXIT_GAUGE_PCT_MIN
+_EXIT_GAUGE_BASELINE_X = _EXIT_GAUGE_X0 + (-_EXIT_GAUGE_PCT_MIN) / _EXIT_GAUGE_PCT_SPAN * _EXIT_GAUGE_W
+
+
 def exit_line_gauge_svg(values: Dict[str, Any], level: str = "", reasons: str = "") -> Dict[str, str]:
     """出口水準との乖離を固定2段SVGと数値tooltipにする（DB参照なし）。"""
     import math
@@ -2329,7 +2339,8 @@ def exit_line_gauge_svg(values: Dict[str, Any], level: str = "", reasons: str = 
         if not tracks:
             lines.append(f"終値 {close:,.0f}")
         lines.append(f"{label} {value:,.0f} ({pct:+.1f}%)")
-        x = 1 + (max(-25, min(25, pct)) + 25) / 50 * 38
+        x = _EXIT_GAUGE_X0 + (max(_EXIT_GAUGE_PCT_MIN, min(_EXIT_GAUGE_PCT_MAX, pct))
+                              - _EXIT_GAUGE_PCT_MIN) / _EXIT_GAUGE_PCT_SPAN * _EXIT_GAUGE_W
         dash = ' stroke-dasharray="2,2"' if marker_kind == "stop" else ""
         tracks.append(
             f'<path class="exit-gauge-marker-halo {marker_kind}" d="M{x:.2f} 0V14" '
@@ -2337,10 +2348,16 @@ def exit_line_gauge_svg(values: Dict[str, Any], level: str = "", reasons: str = 
             f'<path class="exit-gauge-marker {marker_kind}" d="M{x:.2f} 0V14" '
             f'stroke="{foreground}" stroke-width="2"{dash}/>'
         )
+    # 乖離0%(ライン一致点)の基準線。マーカーより細い点線で、マーカーの背面に敷く。
+    baseline = (
+        f'<path class="exit-gauge-baseline" d="M{_EXIT_GAUGE_BASELINE_X:.2f} 0V14" '
+        f'stroke="{"#ffffff80" if level in ("防", "防予") else "#bbb"}" '
+        'stroke-width="1" stroke-dasharray="1,2"/>'
+    )
     tooltip = "\n".join(lines)
     svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="14" viewBox="0 0 40 14" preserveAspectRatio="none" role="img">'
-        f'<title>{html.escape(tooltip)}</title>{"".join(tracks)}</svg>'
+        f'<title>{html.escape(tooltip)}</title>{baseline}{"".join(tracks)}</svg>'
     ) if tracks else ""
     return {"svg": svg, "tooltip": tooltip}
 
