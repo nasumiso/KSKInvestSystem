@@ -319,7 +319,7 @@ def test_import_csvs_apply_writes_position_only_not_record(tmp_path, db_path):
     assert ps.compute_merged_qty("402A", db_path=db_path) == 1500
     assert ps.is_covered("402A", db_path=db_path) is True
     diff = next(d for d in result["diffs"] if d["code_s"] == "402A")
-    assert diff["judgement"] == "未登録+保有検出 (反映すると監視へ登録)"
+    assert diff["judgement"] == "未登録+保有検出 (戦略ありで1保へ / 空欄なら監視+保留キューへ)"
 
 
 def test_import_csvs_partial_update_carries_over_db_sources(tmp_path, db_path):
@@ -623,7 +623,7 @@ class TestPhase2ApplyRecords:
         assert any(a["action"] == "保留キューから削除" for a in result["applied"])
 
     def test_unregistered_code_registers_then_queues(self, tmp_path, db_path):
-        """未登録銘柄は add_to_watch() で3監登録した上で保留キューへ (§5-3b)。"""
+        """未登録銘柄は戦略未選択なら3監登録した上で保留キューへ (§5-3b)。"""
         assert ps.get_record("402A", db_path=db_path) is None
 
         result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
@@ -637,3 +637,47 @@ class TestPhase2ApplyRecords:
         assert any(p["code_s"] == "402A" and p["qty"] == 1500 for p in pending)
         applied = next(a for a in result["applied"] if a["code_s"] == "402A")
         assert applied["action"] == "登録+保留キューへ"
+
+    def test_unregistered_code_with_trade_idea_goes_to_1poh(self, tmp_path, db_path):
+        """未登録銘柄でも確認画面で戦略を選べば 3監 経由で 1保 まで進む。
+
+        ALLOWED_TRANSITIONS が (None,"3監") しか許さないため 3監 を経由する。
+        action_log には「初回登録」と「ステータス変更」の2件が残る。
+        """
+        assert ps.get_record("402A", db_path=db_path) is None
+        ps.seed_trade_ideas(db_path=db_path)
+
+        result = ic.import_csvs(
+            self._paths(tmp_path), "2026-08-10", dry_run=False, apply_records=True,
+            overrides={"402A": {"trade_idea": "GARP"}}, db_path=db_path,
+        )
+
+        record = ps.get_record("402A", db_path=db_path)
+        assert record["status"] == "1保" and record["qty"] == 1500
+        # update_memo を省くと「1保だが戦略未設定」になるため永続化を確認する
+        assert record["memo"]["trade_idea"] == "GARP"
+        assert not any(p["code_s"] == "402A" for p in ps.list_pending_in(db_path=db_path))
+        action_types = [g["action_type"] for g in ps.list_action_logs("402A", db_path=db_path)]
+        assert action_types == ["初回登録", "ステータス変更"]
+        applied = next(a for a in result["applied"] if a["code_s"] == "402A")
+        assert applied["action"] == "登録+新規IN(自動)"
+
+    @pytest.mark.parametrize(
+        "status,covered,merged_qty,needs_trade_idea,is_exit",
+        [
+            ("1保", True, 0, False, True),      # 売却候補
+            ("1保", True, 500, False, False),   # 株数変更候補
+            ("2準", True, 500, True, False),    # 新規IN候補
+            ("未登録", True, 500, True, False),  # 未登録+保有検出 (今回1保まで進む)
+            ("未登録", False, 500, False, False),  # covered=false は一切触らない
+        ],
+    )
+    def test_diff_row_flags(self, status, covered, merged_qty, needs_trade_idea, is_exit):
+        """確認画面の出し分けフラグ。judgement の文字列一致に依存しないこと。"""
+        rows = ic._build_diff_preview(
+            {"402A"}, {"402A": {"status": status, "qty": 500}} if status != "未登録" else {},
+            positions_by_code={}, source_map={}, all_sources_present=covered,
+            dry_run_aggregated={("楽天", "現物"): {("特定", "現物", "402A"): {"qty": merged_qty}}},
+        )
+        assert rows[0]["needs_trade_idea"] is needs_trade_idea
+        assert rows[0]["is_exit"] is is_exit

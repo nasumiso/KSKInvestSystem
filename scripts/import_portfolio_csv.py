@@ -709,6 +709,10 @@ def _build_diff_preview(
         diffs.append({
             "code_s": code_s, "status": status, "db_qty": db_qty,
             "merged_qty": merged_qty, "covered": covered, "judgement": judgement,
+            # 確認画面の入力欄・強調表示の出し分け用フラグ。judgement は人間向けの
+            # 表示文言なので、部分一致で分岐せずこのフラグを見ること
+            "needs_trade_idea": covered and merged_qty > 0 and status in ("2準", "3監", "未登録"),
+            "is_exit": covered and merged_qty == 0 and status == "1保",
         })
     return diffs
 
@@ -736,7 +740,7 @@ def _judge(status: str, covered: bool, merged_qty: int, db_qty: Optional[int]) -
     if status in ("2準", "3監"):
         return "新規IN候補 (戦略ありで1保へ / 空欄なら保留キューへ)"
     if status == "未登録":
-        return "未登録+保有検出 (反映すると監視へ登録)"
+        return "未登録+保有検出 (戦略ありで1保へ / 空欄なら監視+保留キューへ)"
     return "-"
 
 
@@ -756,6 +760,9 @@ def _sync_records(
     確認画面でユーザーが入力した内容)。新規IN では trade_idea が指定されていれば
     既存の戦略より優先し、record にも保存し直す。note は生成した reason の末尾に
     追記する (機械生成分は消さない)。両方省略可 (既定の自動反映のみ行う)。
+
+    未登録銘柄も 3監 登録後に戦略があれば 1保 まで進める。戦略未選択なら
+    従来どおり 3監 + 保留キュー止まり。
 
     Returns: 実際に反映した内容のログ (dry-run では呼ばれない)
     """
@@ -846,14 +853,39 @@ def _sync_records(
             continue
 
         if status == "未登録" and merged_qty > 0:
-            # 登録は必ず3監から (issue #397 §5-3b)。1保への遷移は保留キュー経由で人が確定する
+            # 登録は必ず3監から (issue #397 §5-3b)。ALLOWED_TRANSITIONS が新規登録を
+            # (None, "3監") しか許可しないため、1保 にする場合も 3監 を経由する
             reason = "CSV取込で保有を検出"
             ps.add_to_watch(
                 code_s, reason=reason, action_date=as_of,
                 source="csv_import", source_detail=source_detail, db_path=db_path,
             )
-            ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
-            applied.append({"code_s": code_s, "action": "登録+保留キューへ", "detail": f"qty={merged_qty}"})
+            # 確認画面で戦略が選ばれていれば 1保 まで進める。未登録銘柄は
+            # add_to_watch 直後なので既存の trade_idea は常に空で、override のみが効く
+            chosen_trade_idea = (overrides.get(code_s, {}).get("trade_idea") or "").strip()
+            if chosen_trade_idea:
+                # update_memo は必須。transition_status は戦略を保存しないため、
+                # 省くと「1保だが戦略未設定」のレコードができる
+                ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, db_path=db_path)
+                in_reason = "CSV取込による新規保有検出"
+                if note:
+                    in_reason = f"{in_reason} / {note}"
+                ps.transition_status(
+                    code_s, "1保", reason=in_reason, action_date=as_of, qty=merged_qty,
+                    source="csv_import", source_detail=source_detail, db_path=db_path,
+                )
+                ps.update_qty(
+                    code_s, merged_qty, reason=in_reason, action_date=as_of, log_action=False,
+                    source="csv_import", source_detail=source_detail, db_path=db_path,
+                )
+                ps.remove_pending_in(code_s, db_path=db_path)
+                applied.append({
+                    "code_s": code_s, "action": "登録+新規IN(自動)",
+                    "detail": f"株数{merged_qty} / 戦略「{chosen_trade_idea}」",
+                })
+            else:
+                ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
+                applied.append({"code_s": code_s, "action": "登録+保留キューへ", "detail": f"qty={merged_qty}"})
 
     log_print("import_portfolio_csv: record 反映完了", f"件数={len(applied)}")
     return applied
