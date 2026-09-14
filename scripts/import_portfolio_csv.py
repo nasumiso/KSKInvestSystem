@@ -9,8 +9,8 @@
 一切触れない (Phase1、可視化フェーズ)。
 --apply --apply-records: 上記に加え、covered な銘柄 (4ソース全てが取込済みの
 銘柄。基準日の一致は要求しない) の qty更新・自動OUT・戦略ありの自動IN を実際に
-反映する (Phase2)。戦略未設定の新規保有は pending_in (保留キュー) に積み、
-自動反映しない。
+反映する (Phase2)。戦略未設定の新規保有は自動反映しない (確認画面で戦略を
+選べばその場で 1保 になる)。
 
 4ファイル全てを毎回揃える必要はない。今回渡さなかったソースは、DB に前回の
 position_source があればそのまま引き継いで covered 判定に使う (Phase3b、
@@ -738,9 +738,9 @@ def _judge(status: str, covered: bool, merged_qty: int, db_qty: Optional[int]) -
     if status == "1保":
         return f"株数変更候補 {db_qty}→{merged_qty}"
     if status in ("2準", "3監"):
-        return "新規IN候補 (戦略ありで1保へ / 空欄なら保留キューへ)"
+        return "新規IN候補 (戦略ありで1保へ / 空欄なら変更なし)"
     if status == "未登録":
-        return "未登録+保有検出 (戦略ありで1保へ / 空欄なら監視+保留キューへ)"
+        return "未登録+保有検出 (戦略ありで1保へ / 空欄なら監視へ登録)"
     return "-"
 
 
@@ -762,7 +762,7 @@ def _sync_records(
     追記する (機械生成分は消さない)。両方省略可 (既定の自動反映のみ行う)。
 
     未登録銘柄も 3監 登録後に戦略があれば 1保 まで進める。戦略未選択なら
-    従来どおり 3監 + 保留キュー止まり。
+    3監 登録まで (登録は情報の追加でしかなく破壊的でないため行う)。
 
     Returns: 実際に反映した内容のログ (dry-run では呼ばれない)
     """
@@ -809,8 +809,7 @@ def _sync_records(
             continue
 
         if status in ("2準", "3監") and merged_qty == 0:
-            if ps.remove_pending_in(code_s, db_path=db_path):
-                applied.append({"code_s": code_s, "action": "保留キューから削除", "detail": "qty=0"})
+            # 2準/3監 で保有ゼロは想定どおりの状態なので何もしない
             continue
 
         if status in ("2準", "3監") and merged_qty > 0:
@@ -829,7 +828,7 @@ def _sync_records(
                 # 確認画面で戦略が変更されていれば先に記録し直す (§ Phase3b)
                 # 3監も2準と同じ扱いにする (issue #397 起票時は「3監の戦略は古い保有の
                 # 残骸の可能性がある」として除外していたが、実運用で 3監→買い直し が
-                # 発生し、戦略があっても永久に保留キューに積まれ続けたため)
+                # 発生し、戦略があっても永久に自動INされなかったため)
                 reason = "CSV取込による新規保有検出"
                 if note:
                     reason = f"{reason} / {note}"
@@ -841,15 +840,12 @@ def _sync_records(
                     code_s, merged_qty, reason=reason, action_date=as_of, log_action=False,
                     source="csv_import", source_detail=source_detail, db_path=db_path,
                 )
-                ps.remove_pending_in(code_s, db_path=db_path)
                 applied.append({
                     "code_s": code_s, "action": "新規IN(自動)",
                     "detail": f"株数{merged_qty} / 戦略「{chosen_trade_idea}」",
                 })
-            else:
-                # 戦略未設定 (確認画面で空欄を選んだ場合を含む) -> 保留キュー (issue #397 §6-2)
-                ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
-                applied.append({"code_s": code_s, "action": "保留キューへ", "detail": f"qty={merged_qty}"})
+            # 戦略未設定 (確認画面で空欄を選んだ場合を含む) は何もしない。
+            # 次回取込時にまた新規IN候補として確認画面に出る
             continue
 
         if status == "未登録" and merged_qty > 0:
@@ -878,14 +874,13 @@ def _sync_records(
                     code_s, merged_qty, reason=in_reason, action_date=as_of, log_action=False,
                     source="csv_import", source_detail=source_detail, db_path=db_path,
                 )
-                ps.remove_pending_in(code_s, db_path=db_path)
                 applied.append({
                     "code_s": code_s, "action": "登録+新規IN(自動)",
                     "detail": f"株数{merged_qty} / 戦略「{chosen_trade_idea}」",
                 })
             else:
-                ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
-                applied.append({"code_s": code_s, "action": "登録+保留キューへ", "detail": f"qty={merged_qty}"})
+                # 戦略未設定なら 3監 登録まで。次回取込時にまた確認画面に出る
+                applied.append({"code_s": code_s, "action": "3監へ登録", "detail": f"qty={merged_qty}"})
 
     log_print("import_portfolio_csv: record 反映完了", f"件数={len(applied)}")
     return applied
