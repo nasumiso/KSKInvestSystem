@@ -252,9 +252,20 @@
   #manage-panel > div { flex-basis: 100%; }
   #toggle-delete-mode { padding: 0.3em 0.8em; font-size: 0.85em; margin: 0; }
   /* CSV取込メニュー: summary をボタン代わりにした2択。開閉でヘッダの高さが
-     跳ねないよう、中身は absolute で浮かせる */
-  .csv-import-menu { position: relative; }
-  .csv-import-menu > summary { margin: 0; padding: 0.3em 0.8em; font-size: 0.85em; white-space: nowrap; }
+     跳ねないよう、中身は absolute で浮かせる。
+     Pico が details に付ける margin-bottom:15px は flex の中央揃えに含まれ、
+     その半分 (7.5px) だけ隣のボタンより上にずれるので margin を殺す */
+  .csv-import-menu { position: relative; margin: 0; }
+  .csv-import-menu > summary {
+    display: block; list-style: none;
+    margin: 0; padding: 0.3em 0.8em; font-size: 0.85em; white-space: nowrap;
+  }
+  /* Pico の summary[role=button] が付ける▼は高さ 22.5px あり、行高を押し上げて
+     隣のボタンと縦位置がずれる。矢印は残しつつ行高に影響しない寸法に抑える */
+  .csv-import-menu > summary[role="button"]::after {
+    height: 1em; width: 1em; background-size: 1em auto; margin-left: 0.4em;
+  }
+  .csv-import-menu > summary::-webkit-details-marker { display: none; }
   .csv-import-menu > div {
     position: absolute; right: 0; z-index: 20; margin-top: 0.3em;
     display: flex; flex-direction: column; gap: 0.7em;
@@ -285,9 +296,11 @@
           <button type="submit">クイック取り込み</button>
           <span>~/Downloads から未取込のCSVを自動で探します</span>
         </form>
-        <form method="post" action="{{ url_for('portfolio.csv_import_preview') }}" enctype="multipart/form-data">
+        {# ファイルを選んだ時点で送信する (選択後にもう1クリックさせない) #}
+        <form method="post" action="{{ url_for('portfolio.csv_import_preview') }}" enctype="multipart/form-data"
+              onchange="this.submit();">
           <input type="file" name="csv_files" accept=".csv" multiple required>
-          <button type="submit">差分プレビュー</button>
+          <span>選ぶとそのままプレビューへ進みます</span>
         </form>
       </div>
     </details>
