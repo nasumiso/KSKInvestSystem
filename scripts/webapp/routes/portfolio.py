@@ -8,6 +8,7 @@ POST /portfolio/bulk-exclude                     : 2準/3監 銘柄をユニバ�
 POST /portfolio/bulk-transition                  : ステータスを一括変更
 POST /portfolio/<code_s>/memo                    : memo 部分更新 (issue #175)
 POST /portfolio/csv-import/preview               : ポートフォリオCSV差分プレビュー (issue #397 Phase3)
+POST /portfolio/csv-import/quick                 : ~/Downloads から未取込CSVを自動発見してプレビュー
 POST /portfolio/csv-import/apply                 : ポートフォリオCSV反映
 
 portfolio_shelve のレコードに stocks_shelve から指標を補完して表示する。
@@ -23,7 +24,7 @@ import os
 import re
 import shutil
 import uuid
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urlencode
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
@@ -499,6 +500,15 @@ def csv_import_preview():
         f.save(path)
         saved_paths.append(path)
 
+    return _render_csv_import_preview(token, tmp_dir, saved_paths)
+
+
+def _render_csv_import_preview(token: str, tmp_dir: str, saved_paths: List[str]):
+    """一時保存済みCSVから差分プレビュー画面を描画する。
+
+    アップロード (csv_import_preview) と ~/Downloads 自動発見 (csv_import_quick)
+    の共通部。反映 (apply) は token から tmp_dir を引いて再利用する。
+    """
     as_of = datetime.datetime.now(ps.JST).date().isoformat()
 
     try:
@@ -545,6 +555,38 @@ def csv_import_preview():
         out_count=out_count,
         trade_idea_options=[t["name"] for t in trade_idea_master],
     )
+
+
+@portfolio_bp.route("/portfolio/csv-import/quick", methods=["POST"])
+def csv_import_quick():
+    """~/Downloads から未取込のポートフォリオCSVを自動発見して差分プレビューへ。
+
+    ファイル選択の手間を省くための主導線。見つけたCSVは一時ディレクトリへ
+    コピーしてから扱う (apply は tmp_dir を再読込するため、元ファイルを直接
+    参照すると確定までの間に Downloads 側が変化しうる。また apply/cancel の
+    rmtree がユーザーの Downloads を消してしまう)。
+    """
+    rejected = _reject_when_fallback()
+    if rejected is not None:
+        return rejected
+
+    found = csv_import.find_unimported_csvs()
+    if not found:
+        flash("~/Downloads に未取込のポートフォリオCSVは見つかりませんでした。", "info")
+        return redirect(url_for("portfolio.dashboard"))
+
+    os.makedirs(PORTFOLIO_CSV_IMPORT_TMP_DIR, exist_ok=True)
+    token = uuid.uuid4().hex
+    tmp_dir = os.path.join(PORTFOLIO_CSV_IMPORT_TMP_DIR, token)
+    os.makedirs(tmp_dir)
+    saved_paths = []
+    for i, src in enumerate(found):
+        # SBI 現物・信用は同名 "SaveFile*.csv" のことがあるため連番接頭辞を付ける。
+        path = os.path.join(tmp_dir, f"{i}_{os.path.basename(src)}")
+        shutil.copy2(src, path)
+        saved_paths.append(path)
+
+    return _render_csv_import_preview(token, tmp_dir, saved_paths)
 
 
 @portfolio_bp.route("/portfolio/csv-import/cancel", methods=["POST"])
@@ -1201,12 +1243,8 @@ def dashboard():
     }
     rs_change_sort_url = rs_change_sort_cycle.get(active_sort, sort_urls["rs_change_1d"])
 
-    # issue #397 Phase3b: CSV取込フォーム展開時に前回の各ソース取込日を出すための一覧
-    # (broker/kind -> as_of)。件数はごく少数 (最大4件) なので毎回取得しても軽量。
+    # 保有サマリーの「株数基準日」(qty_as_of) 算出に使う。件数はごく少数 (最大4件)。
     position_sources = [] if fallback_mode else ps.list_position_sources()
-    csv_import_sources = {
-        f"{s['broker']}/{s['kind']}": s["as_of"] for s in position_sources
-    }
 
     # 保有フィルタ表示時のみ、運用総額と保有株数の基準日を集計。
     # gyoutai_theme 指定時は表の行 (rows) がテーマで絞り込まれるが、運用比率ガイドは
@@ -1276,7 +1314,6 @@ def dashboard():
         monthly_tag_descriptions=MONTHLY_TAG_DESCRIPTIONS,
         tag_descriptions=TAG_DESCRIPTIONS,
         hold_summary=hold_summary,
-        csv_import_sources=csv_import_sources,
     )
 
 
