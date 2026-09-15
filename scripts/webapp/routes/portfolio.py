@@ -509,14 +509,28 @@ def csv_import_preview():
         return redirect(url_for("portfolio.dashboard"))
 
     diffs = [d for d in result["diffs"] if d["judgement"] not in ("一致", "対象外")]
+    # fill 履歴から銘柄ごとの直近約定日を引く。銘柄ごとに list_fills(code_s) を
+    # 呼ぶと都度 DB を open して全件走査するため、全件を1回だけ走査して集約する。
+    # trade_date は YYYY-MM-DD 固定形式なので文字列比較で最大値を取れる。
+    latest_trade_date: dict = {}
+    for fill in ps.list_fills():
+        code_s, trade_date = fill.get("code_s"), fill.get("trade_date")
+        if code_s and trade_date and trade_date > latest_trade_date.get(code_s, ""):
+            latest_trade_date[code_s] = trade_date
     for d in diffs:
         d["stock_name"] = resolve_stock_name(d["code_s"])
+        # fill 未取込の銘柄は空欄。約定CSVの取込は別フローなので異常ではない
+        d["last_trade_date"] = latest_trade_date.get(d["code_s"], "")
         # 新規IN候補は確認画面で戦略を選び直せるようにするため、現在の戦略を渡す
         # (issue #397 Phase3b)。未設定なら空文字のまま (select の初期値なし)。
-        if "新規IN候補" in d["judgement"]:
+        # 未登録扱いの行では初期値を出さない。list_records() は除外済みレコードを
+        # 返さないのでユニバース除外済み銘柄も "未登録" と判定されるが、get_record()
+        # は除外済みでも返すため、除外前の古い戦略が初期選択されてしまう。それを
+        # そのまま反映すると、ユーザーが戦略を選んでいないのに自動INが走る。
+        if d["needs_trade_idea"] and d["status"] != "未登録":
             record = ps.get_record(d["code_s"])
             d["current_trade_idea"] = (record.get("memo") or {}).get("trade_idea", "") if record else ""
-    out_count = sum(1 for d in diffs if "売却候補" in d["judgement"])
+    out_count = sum(1 for d in diffs if d["is_exit"])
 
     ps.seed_trade_ideas()
     trade_idea_master = ps.list_trade_ideas()
@@ -571,7 +585,7 @@ def csv_import_apply():
         if key.startswith("trade_idea_"):
             code_s = key[len("trade_idea_"):]
             # 未送信と明示的な空選択を区別する。空選択は既存戦略を外して
-            # 自動INではなく保留キューへ送る指示として扱う。
+            # 自動INしない (今回は反映しない) 指示として扱う。
             overrides.setdefault(code_s, {})["trade_idea"] = value.strip()
         elif key.startswith("note_"):
             code_s = key[len("note_"):]

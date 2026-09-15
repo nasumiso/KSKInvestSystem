@@ -222,13 +222,8 @@ cd scripts && python import_portfolio_csv.py <同上4ファイル> \
 Phase2 の反映内容:
 - **株数変更**: 1保 かつ `merged_qty != db_qty` → `update_qty` のみ
 - **売却 (自動OUT)**: 1保 かつ `merged_qty == 0` → 2準へ (3監にはしない。売買履歴の集計から漏れるため)
-- **新規IN**: 2準 かつ `trade_idea` 設定済み → 自動で1保へ遷移。**2準で戦略未設定・3監はいずれも保留キュー (`pending_in`) へ**、未登録銘柄は `add_to_watch()` で3監登録した上で保留キューへ (人が戦略を選んで確定するまで自動INしない)
-
-保留キューの内容確認:
-
-```bash
-cd scripts && python -c "import portfolio_shelve as ps; print(ps.list_pending_in())"
-```
+- **新規IN**: 2準/3監 かつ `trade_idea` 設定済み (または確認画面で選択) → 自動で1保へ遷移。未登録銘柄は `add_to_watch()` で3監登録した上で、戦略が選ばれていれば1保まで進める
+- **戦略未設定のとき**: 既存銘柄は何もしない (status そのまま)、未登録銘柄は3監登録まで。いずれも次回取込でまた新規IN候補として確認画面に出る
 
 WebApp からも取込可能 (issue #397 Phase3/Phase3b)。保有銘柄タブ (`/portfolio`) の「管理」→「＋ ポートフォリオCSV取込」から1〜4ファイルを選択すると (`--allow-partial` 相当が既定)、差分プレビュー画面 (`/portfolio/csv-import/preview`) を経由して「この内容で反映」ボタンで Phase2 相当 (`--apply --apply-records`) を実行する。基準日 (as_of) はアップロード当日の日付を自動設定する。CLI と異なり `--dry-run` のみの実行はできない (プレビュー画面自体が dry-run 相当)。プレビュー画面には「今回取込」と「前回分を引き継ぎ (未アップロード)」のソース内訳・前回取込日を表示する。
 

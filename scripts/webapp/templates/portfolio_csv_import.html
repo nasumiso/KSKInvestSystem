@@ -45,6 +45,7 @@
       <tr style="border-bottom:2px solid #d8dee6;text-align:left;">
         <th style="padding:0.35em 0.5em;">コード</th>
         <th style="padding:0.35em 0.5em;">銘柄名</th>
+        <th style="padding:0.35em 0.5em;">取引日</th>
         <th style="padding:0.35em 0.5em;">現ステータス</th>
         <th style="padding:0.35em 0.5em;">DB qty</th>
         <th style="padding:0.35em 0.5em;">CSV合算 qty</th>
@@ -54,9 +55,10 @@
     </thead>
     <tbody>
       {% for d in diffs %}
-      {% set is_out = '売却候補' in d.judgement %}
-      {% set is_in = '新規IN候補' in d.judgement %}
-      {% set is_unresolved = '判定不能' in d.judgement %}
+      {# judgement は人間向けの表示文言。分岐は _build_diff_preview のフラグを見る #}
+      {% set is_out = d.is_exit %}
+      {% set is_in = d.needs_trade_idea %}
+      {% set is_unresolved = not d.covered %}
       <tr style="border-bottom:1px solid #eee;
         {% if is_out %}background:#ffeaea;
         {% elif is_in %}background:#eaffef;
@@ -64,6 +66,7 @@
         {% endif %}">
         <td style="padding:0.35em 0.5em;">{{ d.code_s }}</td>
         <td style="padding:0.35em 0.5em;">{{ d.stock_name }}</td>
+        <td style="padding:0.35em 0.5em;white-space:nowrap;">{{ d.last_trade_date or '-' }}</td>
         <td style="padding:0.35em 0.5em;">{{ d.status }}</td>
         <td style="padding:0.35em 0.5em;">{{ d.db_qty if d.db_qty is not none else '-' }}</td>
         <td style="padding:0.35em 0.5em;">{{ d.merged_qty }}</td>

@@ -319,7 +319,7 @@ def test_import_csvs_apply_writes_position_only_not_record(tmp_path, db_path):
     assert ps.compute_merged_qty("402A", db_path=db_path) == 1500
     assert ps.is_covered("402A", db_path=db_path) is True
     diff = next(d for d in result["diffs"] if d["code_s"] == "402A")
-    assert diff["judgement"] == "未登録+保有検出 (反映すると監視へ登録)"
+    assert diff["judgement"] == "未登録+保有検出 (戦略ありで1保へ / 空欄ならウォッチリストへ登録)"
 
 
 def test_import_csvs_partial_update_carries_over_db_sources(tmp_path, db_path):
@@ -524,7 +524,7 @@ class TestPhase2ApplyRecords:
         """2準 かつ trade_idea 設定済み -> 自動で1保に遷移 (§6-2)。
 
         402A は CSV に登場するが本テストの DB には未登録なので、別途
-        「登録+保留キューへ」の対象になる (想定通り、§5-3b)。4970 の
+        「3監へ登録」の対象になる (想定通り、§5-3b)。4970 の
         挙動のみを検証する。
         """
         ps.add_to_watch("4970", db_path=db_path)
@@ -538,13 +538,12 @@ class TestPhase2ApplyRecords:
         record = ps.get_record("4970", db_path=db_path)
         assert record["status"] == "1保"
         assert record["qty"] == 100  # SBI信用のみ
-        assert not any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
         applied = next(a for a in result["applied"] if a["code_s"] == "4970")
         assert applied["action"] == "新規IN(自動)"
         assert "GARP" in applied["detail"]  # 適用した戦略が分かるようにする (issue #397)
 
-    def test_new_in_queued_when_trade_idea_missing(self, tmp_path, db_path):
-        """2準 かつ trade_idea 未設定 -> 保留キューへ (§6-2)。record は変更しない。"""
+    def test_new_in_skipped_when_trade_idea_missing(self, tmp_path, db_path):
+        """2準 かつ trade_idea 未設定 -> 何もしない。次回取込でまた候補に出る。"""
         ps.add_to_watch("4970", db_path=db_path)
         ps.transition_status("4970", "2準", db_path=db_path)
 
@@ -553,13 +552,10 @@ class TestPhase2ApplyRecords:
 
         record = ps.get_record("4970", db_path=db_path)
         assert record["status"] == "2準"
-        pending = ps.list_pending_in(db_path=db_path)
-        assert any(p["code_s"] == "4970" for p in pending)
-        applied = next(a for a in result["applied"] if a["code_s"] == "4970")
-        assert applied["action"] == "保留キューへ"
+        assert not any(a["code_s"] == "4970" for a in result["applied"])
 
-    def test_new_in_queued_when_trade_idea_is_explicitly_cleared(self, tmp_path, db_path):
-        """既存戦略を明示解除した2準銘柄は自動INせず保留する。"""
+    def test_new_in_skipped_when_trade_idea_is_explicitly_cleared(self, tmp_path, db_path):
+        """既存戦略を明示解除した2準銘柄は自動INしない。"""
         ps.add_to_watch("4970", db_path=db_path)
         ps.transition_status("4970", "2準", db_path=db_path)
         ps.seed_trade_ideas(db_path=db_path)
@@ -573,7 +569,7 @@ class TestPhase2ApplyRecords:
         record = ps.get_record("4970", db_path=db_path)
         assert record["status"] == "2準"
         assert record["memo"]["trade_idea"] == ""
-        assert next(a for a in result["applied"] if a["code_s"] == "4970")["action"] == "保留キューへ"
+        assert not any(a["code_s"] == "4970" for a in result["applied"])
 
     def test_new_in_auto_from_3kan_with_existing_trade_idea(self, tmp_path, db_path):
         """3監 も 2準 と同じく、既存 trade_idea があれば自動INする (issue #397 仕様変更)。"""
@@ -586,7 +582,6 @@ class TestPhase2ApplyRecords:
 
         record = ps.get_record("4970", db_path=db_path)
         assert record["status"] == "1保"
-        assert not any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
         applied = next(a for a in result["applied"] if a["code_s"] == "4970")
         assert applied["action"] == "新規IN(自動)"
 
@@ -603,27 +598,10 @@ class TestPhase2ApplyRecords:
         record = ps.get_record("4970", db_path=db_path)
         assert record["status"] == "1保"
         assert record["memo"]["trade_idea"] == "GARP"
-        assert not any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
         assert next(a for a in result["applied"] if a["code_s"] == "4970")["action"] == "新規IN(自動)"
 
-    def test_zero_qty_removes_pending_in(self, tmp_path, db_path):
-        """保有ゼロになった準保有・監視銘柄は保留キューからも取り除く。"""
-        ps.add_to_watch("4970", db_path=db_path)
-        ps.upsert_pending_in("4970", 100, "2026-08-03", db_path=db_path)
-        empty_sbi_margin = SBI_MARGIN_ROWS[:9]
-
-        result = ic.import_csvs([
-            _write_csv(tmp_path / "r_spot.csv", RAKUTEN_SPOT_ROWS),
-            _write_csv(tmp_path / "r_margin.csv", RAKUTEN_MARGIN_ROWS),
-            _write_csv(tmp_path / "s_spot.csv", SBI_SPOT_ROWS),
-            _write_csv(tmp_path / "s_margin_empty.csv", empty_sbi_margin),
-        ], "2026-08-10", dry_run=False, apply_records=True, db_path=db_path)
-
-        assert not any(p["code_s"] == "4970" for p in ps.list_pending_in(db_path=db_path))
-        assert any(a["action"] == "保留キューから削除" for a in result["applied"])
-
-    def test_unregistered_code_registers_then_queues(self, tmp_path, db_path):
-        """未登録銘柄は add_to_watch() で3監登録した上で保留キューへ (§5-3b)。"""
+    def test_unregistered_code_registers_to_watch(self, tmp_path, db_path):
+        """未登録銘柄は戦略未選択なら3監登録まで (§5-3b)。1保 には上げない。"""
         assert ps.get_record("402A", db_path=db_path) is None
 
         result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
@@ -633,7 +611,74 @@ class TestPhase2ApplyRecords:
         assert record is not None and record["status"] == "3監"
         log = ps.list_action_logs("402A", db_path=db_path)[0]
         assert log["action_type"] == "初回登録" and log["source"] == "csv_import"
-        pending = ps.list_pending_in(db_path=db_path)
-        assert any(p["code_s"] == "402A" and p["qty"] == 1500 for p in pending)
         applied = next(a for a in result["applied"] if a["code_s"] == "402A")
-        assert applied["action"] == "登録+保留キューへ"
+        assert applied["action"] == "3監へ登録"
+
+    def test_excluded_code_revives_without_auto_in(self, tmp_path, db_path):
+        """ユニバース除外済み銘柄は、古い戦略が残っていても自動INしない。
+
+        list_records() が除外済みを返さないため status は "未登録" と判定されるが、
+        レコード自体は除外前の status/memo を保持したまま add_to_watch() で復活する。
+        record 側の trade_idea を拾うとユーザーが選んでいない戦略で1保になる。
+        """
+        ps.add_to_watch("402A", db_path=db_path)
+        ps.transition_status("402A", "2準", db_path=db_path)
+        ps.seed_trade_ideas(db_path=db_path)
+        ps.update_memo("402A", {"trade_idea": "GARP"}, db_path=db_path)
+        ps.exclude_from_universe("402A", reason="検証用", db_path=db_path)
+
+        result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
+                                apply_records=True, db_path=db_path)
+
+        record = ps.get_record("402A", db_path=db_path)
+        assert record["excluded"] is False  # 復活はする
+        assert record["status"] != "1保"     # 戦略を選んでいないので1保にはしない
+        # 復活は除外前のステータス (2準) を保つので、3監 と報告してはいけない
+        assert record["status"] == "2準"
+        assert next(a for a in result["applied"] if a["code_s"] == "402A")["action"] == "2準へ登録"
+        # 復活後は通常レコードになり次回は "未登録" 判定にならないため、古い戦略を
+        # 残すと次回プレビューで初期選択され、そのまま反映すると自動INしてしまう
+        assert record["memo"].get("trade_idea", "") == ""
+
+    def test_unregistered_code_with_trade_idea_goes_to_1poh(self, tmp_path, db_path):
+        """未登録銘柄でも確認画面で戦略を選べば 3監 経由で 1保 まで進む。
+
+        ALLOWED_TRANSITIONS が (None,"3監") しか許さないため 3監 を経由する。
+        action_log には「初回登録」と「ステータス変更」の2件が残る。
+        """
+        assert ps.get_record("402A", db_path=db_path) is None
+        ps.seed_trade_ideas(db_path=db_path)
+
+        result = ic.import_csvs(
+            self._paths(tmp_path), "2026-08-10", dry_run=False, apply_records=True,
+            overrides={"402A": {"trade_idea": "GARP"}}, db_path=db_path,
+        )
+
+        record = ps.get_record("402A", db_path=db_path)
+        assert record["status"] == "1保" and record["qty"] == 1500
+        # update_memo を省くと「1保だが戦略未設定」になるため永続化を確認する
+        assert record["memo"]["trade_idea"] == "GARP"
+        action_types = [g["action_type"] for g in ps.list_action_logs("402A", db_path=db_path)]
+        assert action_types == ["初回登録", "ステータス変更"]
+        applied = next(a for a in result["applied"] if a["code_s"] == "402A")
+        assert applied["action"] == "登録+新規IN(自動)"
+
+    @pytest.mark.parametrize(
+        "status,covered,merged_qty,needs_trade_idea,is_exit",
+        [
+            ("1保", True, 0, False, True),      # 売却候補
+            ("1保", True, 500, False, False),   # 株数変更候補
+            ("2準", True, 500, True, False),    # 新規IN候補
+            ("未登録", True, 500, True, False),  # 未登録+保有検出 (今回1保まで進む)
+            ("未登録", False, 500, False, False),  # covered=false は一切触らない
+        ],
+    )
+    def test_diff_row_flags(self, status, covered, merged_qty, needs_trade_idea, is_exit):
+        """確認画面の出し分けフラグ。judgement の文字列一致に依存しないこと。"""
+        rows = ic._build_diff_preview(
+            {"402A"}, {"402A": {"status": status, "qty": 500}} if status != "未登録" else {},
+            positions_by_code={}, source_map={}, all_sources_present=covered,
+            dry_run_aggregated={("楽天", "現物"): {("特定", "現物", "402A"): {"qty": merged_qty}}},
+        )
+        assert rows[0]["needs_trade_idea"] is needs_trade_idea
+        assert rows[0]["is_exit"] is is_exit
