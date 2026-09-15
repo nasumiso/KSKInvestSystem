@@ -740,7 +740,9 @@ def _judge(status: str, covered: bool, merged_qty: int, db_qty: Optional[int]) -
     if status in ("2準", "3監"):
         return "新規IN候補 (戦略ありで1保へ / 空欄なら変更なし)"
     if status == "未登録":
-        return "未登録+保有検出 (戦略ありで1保へ / 空欄なら監視へ登録)"
+        # 「登録」の行き先は通常 3監 だが、ユニバース除外済み銘柄を復活させる場合は
+        # 除外前のステータス (2準/3監) を保つため、断定しない表現にする
+        return "未登録+保有検出 (戦略ありで1保へ / 空欄ならウォッチリストへ登録)"
     return "-"
 
 
@@ -900,7 +902,13 @@ def _sync_records(
                 revived = ps.get_record(code_s, db_path=db_path)
                 if (revived.get("memo") or {}).get("trade_idea"):
                     ps.update_memo(code_s, {"trade_idea": ""}, db_path=db_path)
-                applied.append({"code_s": code_s, "action": "3監へ登録", "detail": f"qty={merged_qty}"})
+                # 復活したレコードは除外前のステータスを保つので 3監 とは限らない。
+                # 2準 を 3監 に落とすと人が付けた「買う準備ができている」宣言を
+                # 壊すため、遷移させず実際のステータスをそのまま報告する
+                applied.append({
+                    "code_s": code_s, "action": f"{revived['status']}へ登録",
+                    "detail": f"qty={merged_qty}",
+                })
 
     log_print("import_portfolio_csv: record 反映完了", f"件数={len(applied)}")
     return applied

@@ -319,7 +319,7 @@ def test_import_csvs_apply_writes_position_only_not_record(tmp_path, db_path):
     assert ps.compute_merged_qty("402A", db_path=db_path) == 1500
     assert ps.is_covered("402A", db_path=db_path) is True
     diff = next(d for d in result["diffs"] if d["code_s"] == "402A")
-    assert diff["judgement"] == "未登録+保有検出 (戦略ありで1保へ / 空欄なら監視へ登録)"
+    assert diff["judgement"] == "未登録+保有検出 (戦略ありで1保へ / 空欄ならウォッチリストへ登録)"
 
 
 def test_import_csvs_partial_update_carries_over_db_sources(tmp_path, db_path):
@@ -633,7 +633,9 @@ class TestPhase2ApplyRecords:
         record = ps.get_record("402A", db_path=db_path)
         assert record["excluded"] is False  # 復活はする
         assert record["status"] != "1保"     # 戦略を選んでいないので1保にはしない
-        assert next(a for a in result["applied"] if a["code_s"] == "402A")["action"] == "3監へ登録"
+        # 復活は除外前のステータス (2準) を保つので、3監 と報告してはいけない
+        assert record["status"] == "2準"
+        assert next(a for a in result["applied"] if a["code_s"] == "402A")["action"] == "2準へ登録"
         # 復活後は通常レコードになり次回は "未登録" 判定にならないため、古い戦略を
         # 残すと次回プレビューで初期選択され、そのまま反映すると自動INしてしまう
         assert record["memo"].get("trade_idea", "") == ""
