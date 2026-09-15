@@ -892,7 +892,14 @@ def _sync_records(
                     "detail": f"株数{merged_qty} / 戦略「{chosen_trade_idea}」",
                 })
             else:
-                # 戦略未設定なら 3監 登録まで。次回取込時にまた確認画面に出る
+                # 戦略未設定なら 3監 登録まで。次回取込時にまた確認画面に出る。
+                # ユニバース除外済み銘柄は add_to_watch() が除外前の status/memo を
+                # 保持して復活させるため、古い戦略が残っていると次回プレビューでは
+                # 「未登録」ではなくなり、その古い戦略が初期選択されて自動INしうる。
+                # 「戦略を選ばなかった」という今回の意思を次回以降も保つために消す
+                revived = ps.get_record(code_s, db_path=db_path)
+                if (revived.get("memo") or {}).get("trade_idea"):
+                    ps.update_memo(code_s, {"trade_idea": ""}, db_path=db_path)
                 applied.append({"code_s": code_s, "action": "3監へ登録", "detail": f"qty={merged_qty}"})
 
     log_print("import_portfolio_csv: record 反映完了", f"件数={len(applied)}")

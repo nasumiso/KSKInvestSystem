@@ -634,6 +634,9 @@ class TestPhase2ApplyRecords:
         assert record["excluded"] is False  # 復活はする
         assert record["status"] != "1保"     # 戦略を選んでいないので1保にはしない
         assert next(a for a in result["applied"] if a["code_s"] == "402A")["action"] == "3監へ登録"
+        # 復活後は通常レコードになり次回は "未登録" 判定にならないため、古い戦略を
+        # 残すと次回プレビューで初期選択され、そのまま反映すると自動INしてしまう
+        assert record["memo"].get("trade_idea", "") == ""
 
     def test_unregistered_code_with_trade_idea_goes_to_1poh(self, tmp_path, db_path):
         """未登録銘柄でも確認画面で戦略を選べば 3監 経由で 1保 まで進む。
