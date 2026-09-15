@@ -775,6 +775,16 @@ def _sync_records(
         if not covered:
             continue
         note = (overrides.get(code_s, {}).get("note") or "").strip()
+        # 確認画面を出してから反映するまでの間に record 側が変わると、選んだ戦略を
+        # 使う分岐に入らないまま終わることがある (例: 別タブで 2準→1保 にした)。
+        # 黙って捨てると「選んだのに反映されない」に見えるので警告だけ残す
+        if (overrides.get(code_s, {}).get("trade_idea") or "").strip() and status not in (
+            "2準", "3監", "未登録",
+        ):
+            log_warning(
+                f"CSV取込: {code_s} は status={status} のため、選択された戦略は反映されません "
+                "(プレビュー表示後にステータスが変わった可能性があります)"
+            )
 
         if status == "1保":
             if merged_qty == db_qty:
