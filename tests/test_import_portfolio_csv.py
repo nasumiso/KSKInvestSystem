@@ -614,6 +614,27 @@ class TestPhase2ApplyRecords:
         applied = next(a for a in result["applied"] if a["code_s"] == "402A")
         assert applied["action"] == "3監へ登録"
 
+    def test_excluded_code_revives_without_auto_in(self, tmp_path, db_path):
+        """ユニバース除外済み銘柄は、古い戦略が残っていても自動INしない。
+
+        list_records() が除外済みを返さないため status は "未登録" と判定されるが、
+        レコード自体は除外前の status/memo を保持したまま add_to_watch() で復活する。
+        record 側の trade_idea を拾うとユーザーが選んでいない戦略で1保になる。
+        """
+        ps.add_to_watch("402A", db_path=db_path)
+        ps.transition_status("402A", "2準", db_path=db_path)
+        ps.seed_trade_ideas(db_path=db_path)
+        ps.update_memo("402A", {"trade_idea": "GARP"}, db_path=db_path)
+        ps.exclude_from_universe("402A", reason="検証用", db_path=db_path)
+
+        result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
+                                apply_records=True, db_path=db_path)
+
+        record = ps.get_record("402A", db_path=db_path)
+        assert record["excluded"] is False  # 復活はする
+        assert record["status"] != "1保"     # 戦略を選んでいないので1保にはしない
+        assert next(a for a in result["applied"] if a["code_s"] == "402A")["action"] == "3監へ登録"
+
     def test_unregistered_code_with_trade_idea_goes_to_1poh(self, tmp_path, db_path):
         """未登録銘柄でも確認画面で戦略を選べば 3監 経由で 1保 まで進む。
 

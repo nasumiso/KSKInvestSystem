@@ -856,8 +856,11 @@ def _sync_records(
                 code_s, reason=reason, action_date=as_of,
                 source="csv_import", source_detail=source_detail, db_path=db_path,
             )
-            # 確認画面で戦略が選ばれていれば 1保 まで進める。未登録銘柄は
-            # add_to_watch 直後なので既存の trade_idea は常に空で、override のみが効く
+            # 確認画面で戦略が選ばれていれば 1保 まで進める。ここは override のみを
+            # 見る (record 側は見ない)。ユニバース除外済み銘柄は list_records() に
+            # 出ないため "未登録" と判定されるが、レコード自体は除外前の status/memo
+            # を保持したまま add_to_watch() で復活する。record の trade_idea を拾うと
+            # ユーザーが選んでいない古い戦略で自動INしてしまう
             chosen_trade_idea = (overrides.get(code_s, {}).get("trade_idea") or "").strip()
             if chosen_trade_idea:
                 # update_memo は必須。transition_status は戦略を保存しないため、

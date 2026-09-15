@@ -523,7 +523,11 @@ def csv_import_preview():
         d["last_trade_date"] = latest_trade_date.get(d["code_s"], "")
         # 新規IN候補は確認画面で戦略を選び直せるようにするため、現在の戦略を渡す
         # (issue #397 Phase3b)。未設定なら空文字のまま (select の初期値なし)。
-        if d["needs_trade_idea"]:
+        # 未登録扱いの行では初期値を出さない。list_records() は除外済みレコードを
+        # 返さないのでユニバース除外済み銘柄も "未登録" と判定されるが、get_record()
+        # は除外済みでも返すため、除外前の古い戦略が初期選択されてしまう。それを
+        # そのまま反映すると、ユーザーが戦略を選んでいないのに自動INが走る。
+        if d["needs_trade_idea"] and d["status"] != "未登録":
             record = ps.get_record(d["code_s"])
             d["current_trade_idea"] = (record.get("memo") or {}).get("trade_idea", "") if record else ""
     out_count = sum(1 for d in diffs if d["is_exit"])
