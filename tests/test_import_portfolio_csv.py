@@ -6,6 +6,7 @@
 
 import csv
 import datetime
+import os
 
 import pytest
 
@@ -682,3 +683,87 @@ class TestPhase2ApplyRecords:
         )
         assert rows[0]["needs_trade_idea"] is needs_trade_idea
         assert rows[0]["is_exit"] is is_exit
+
+
+# ==================================================
+# クイック取り込み: 未取込CSVの自動発見 (issue #397)
+# ==================================================
+
+class TestFindUnimportedCsvs:
+    """~/Downloads 相当のディレクトリから未取込CSVを選ぶロジック。"""
+
+    def _rakuten_spot(self, dir_path, name, mtime=None):
+        """楽天現物CSVを書き、mtime を指定できるようにする。"""
+        path = _write_csv(dir_path / name, RAKUTEN_JP_SPOT_ROWS)
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
+
+    def _set_imported_at(self, monkeypatch, db_path, broker, kind, iso):
+        monkeypatch.setattr(ps, "now_iso", lambda: iso)
+        ps.upsert_position_source(broker, "特定", kind, as_of="2026-09-01",
+                                  row_count=1, db_path=db_path)
+
+    @pytest.mark.parametrize("file_ts,imported_at,expected", [
+        # ファイル名の日時が imported_at より新しい → 未取込
+        ("20260914_221044", "2026-09-03T20:00:00+09:00", True),
+        # 古い → 取込済みなので拾わない
+        ("20260901_100000", "2026-09-03T20:00:00+09:00", False),
+        # imported_at 自体が無い (一度も取り込んでいない) → 未取込
+        ("20260901_100000", None, True),
+    ])
+    def test_detects_only_newer_than_imported_at(self, tmp_path, db_path, monkeypatch,
+                                                 file_ts, imported_at, expected):
+        d = tmp_path / "dl"
+        d.mkdir()
+        self._rakuten_spot(d, f"assetbalance(JP)_{file_ts}.csv")
+        if imported_at:
+            self._set_imported_at(monkeypatch, db_path, "楽天", "現物", imported_at)
+
+        found = ic.find_unimported_csvs(str(d), db_path=db_path)
+
+        assert (len(found) == 1) is expected
+
+    def test_picks_latest_per_source(self, tmp_path, db_path):
+        """同一ソースで複数該当したら基準日時が最新の1件だけ。"""
+        d = tmp_path / "dl"
+        d.mkdir()
+        self._rakuten_spot(d, "assetbalance(JP)_20260910_100000.csv")
+        newest = self._rakuten_spot(d, "assetbalance(JP)_20260914_221044.csv")
+
+        found = ic.find_unimported_csvs(str(d), db_path=db_path)
+
+        assert found == [newest]
+
+    def test_filename_timestamp_beats_mtime(self, tmp_path, db_path):
+        """mtime が壊れていてもファイル名の日時を信頼する。
+
+        mtime はコピー・同期・touch で変わるため、これに引きずられると
+        古い残高スナップショットを最新と誤認して保有数量を巻き戻す。
+        """
+        d = tmp_path / "dl"
+        d.mkdir()
+        # 新しいファイル名だが mtime は1970年、古いファイル名だが mtime は現在
+        new_name_old_mtime = self._rakuten_spot(d, "assetbalance(JP)_20260914_221044.csv", mtime=0)
+        self._rakuten_spot(d, "assetbalance(JP)_20260901_100000.csv",
+                           mtime=datetime.datetime.now().timestamp())
+
+        found = ic.find_unimported_csvs(str(d), db_path=db_path)
+
+        assert found == [new_name_old_mtime]
+
+    @pytest.mark.parametrize("name,writer", [
+        # UTF-8 のCSV (Google Sheets エクスポート) は shift_jis で読めず例外になる
+        ("銘柄調査 - 保有銘柄.csv", lambda p: p.write_text("銘柄,メモ\n6501,日立\n", encoding="utf-8")),
+        # 形式は読めるがポートフォリオCSVではない
+        ("tradehistory(JP)_20260914.csv", lambda p: _write_csv(p, [["約定日", "銘柄コード"], ["2026/09/14", "6501"]])),
+    ])
+    def test_ignores_unreadable_and_unrelated(self, tmp_path, db_path, name, writer):
+        d = tmp_path / "dl"
+        d.mkdir()
+        writer(d / name)
+        target = self._rakuten_spot(d, "assetbalance(JP)_20260914_221044.csv")
+
+        found = ic.find_unimported_csvs(str(d), db_path=db_path)
+
+        assert found == [target]

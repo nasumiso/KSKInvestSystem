@@ -28,8 +28,11 @@ position_source があればそのまま引き継いで covered 判定に使う 
 
 import argparse
 import csv
+import datetime
+import glob
 import math
 import os
+import re
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -145,6 +148,74 @@ def detect_source(rows: List[List[str]]) -> Optional[Tuple[str, str]]:
         return ("楽天", "現物")
 
     return None
+
+
+# クイック取り込みの既定探索先。証券会社CSVのダウンロード先がここで固定されている
+# 運用前提のため、設定では変えられない (変えたくなったらこの定数を書き換える)。
+DOWNLOADS_DIR = os.path.expanduser("~/Downloads")
+
+# 楽天CSVのファイル名に埋まっている基準日時 (assetbalance(JP)_20260914_221044.csv)。
+_FILENAME_TS_RE = re.compile(r"_(\d{8})_(\d{6})")
+
+
+def _csv_basis_timestamp(path: str) -> float:
+    """CSVの基準日時を POSIX timestamp で返す。
+
+    ファイル名の日時を優先し、取れなければ mtime にフォールバックする。
+    mtime はコピー・同期・touch で変わってしまい、古い残高スナップショットを
+    最新と誤認する危険があるため、日時を持つ楽天CSVではそちらを信頼する。
+    SBI (SaveFile.csv 等) はファイル名にも中身にも基準日が無いので mtime のみ。
+    """
+    m = _FILENAME_TS_RE.search(os.path.basename(path))
+    if m:
+        try:
+            dt = datetime.datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
+            return dt.replace(tzinfo=ps.JST).timestamp()
+        except ValueError:
+            pass  # 日時として不正なら mtime に落とす
+    return os.path.getmtime(path)
+
+
+def find_unimported_csvs(search_dir: str = DOWNLOADS_DIR, *,
+                         db_path: Optional[str] = None) -> List[str]:
+    """search_dir から未取込のポートフォリオCSVを探し、取込対象のパスを返す。
+
+    「未取込」= CSVの基準日時 > そのソースの position_source.imported_at。
+    ソース (broker, kind) ごとに基準日時が最新の1件だけを選ぶ (残高CSVは
+    スナップショットなので、古い方を取り込む意味がない)。
+    読めないCSV・ポートフォリオCSVでないものは黙って無視する。
+    """
+    # account は畳んで (broker, kind) 単位の閾値にする。detect_source は
+    # account まで判別しないため。max を取るので取込済みを未取込と誤判定しない。
+    thresholds: Dict[Tuple[str, str], float] = {}
+    for s in ps.list_position_sources(db_path=db_path):
+        imported_at = s.get("imported_at")
+        if not imported_at:
+            continue
+        key = (s["broker"], s["kind"])
+        ts = datetime.datetime.fromisoformat(imported_at).timestamp()
+        thresholds[key] = max(thresholds.get(key, 0.0), ts)
+
+    best: Dict[Tuple[str, str], Tuple[float, str]] = {}
+    for path in glob.glob(os.path.join(search_dir, "*.csv")):
+        try:
+            source = detect_source(read_csv_rows(path))
+        except Exception:
+            # 拡張子だけを頼りに他人のファイルを読むので、文字コード違い
+            # (UTF-8のCSV) や破損・権限なしは想定内。無視して次へ。
+            continue
+        if source is None:
+            continue
+        basis = _csv_basis_timestamp(path)
+        if basis <= thresholds.get(source, 0.0):
+            continue
+        if source not in best or basis > best[source][0]:
+            best[source] = (basis, path)
+
+    for source, (_, path) in sorted(best.items()):
+        log_print("import_portfolio_csv: 未取込CSVを検出",
+                  f"{source[0]}/{source[1]}", os.path.basename(path))
+    return [path for _, path in best.values()]
 
 
 # ===========================================

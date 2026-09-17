@@ -1679,6 +1679,44 @@ class TestPortfolioCsvImport:
         assert resp.status_code == 302
         assert ps.compute_merged_qty("6501") == 100
 
+    def test_quick_import_flashes_when_nothing_found(self, csv_import_app, monkeypatch):
+        """未取込CSVが無ければ取り込まず、メッセージを出して一覧へ戻る。"""
+        import webapp.routes.portfolio as portfolio_routes
+        monkeypatch.setattr(portfolio_routes.csv_import, "find_unimported_csvs",
+                            lambda *a, **k: [])
+        client = csv_import_app.test_client()
+
+        resp = client.post("/portfolio/csv-import/quick", follow_redirects=True)
+
+        assert "未取込のポートフォリオCSVは見つかりませんでした" in resp.data.decode()
+
+    def test_quick_import_copies_found_csvs_and_previews(self, csv_import_app, monkeypatch, tmp_path):
+        """発見したCSVを一時ディレクトリへコピーし、差分プレビューを返す。
+
+        コピーするのは apply が tmp_dir を再読込する設計のため (元ファイルを
+        直接使うと apply/cancel の rmtree が ~/Downloads を消してしまう)。
+        """
+        import webapp.routes.portfolio as portfolio_routes
+        src = tmp_path / "assetbalance(JP)_20260914_221044.csv"
+        src.write_bytes(self._csv_bytes([
+            ["■ 保有商品詳細 (すべて）"],
+            ["種別", "銘柄コード・ティッカー", "銘柄", "口座", "保有数量", "［単位］",
+             "平均取得価額", "［単位］"],
+            ["国内株式", "6501", "日立", "特定", "100", "株", "4750", "円"],
+        ]))
+        monkeypatch.setattr(portfolio_routes.csv_import, "find_unimported_csvs",
+                            lambda *a, **k: [str(src)])
+        client = csv_import_app.test_client()
+
+        resp = client.post("/portfolio/csv-import/quick")
+
+        assert resp.status_code == 200
+        assert 'action="/portfolio/csv-import/apply"' in resp.data.decode()
+        # 元ファイルは消えず、コピーが tmp 側に残っている
+        assert src.exists()
+        copied = list((tmp_path / "csv_import_tmp").glob("*/*.csv"))
+        assert [p.name for p in copied] == ["0_assetbalance(JP)_20260914_221044.csv"]
+
 
 # ==================================================
 # /portfolio/themes (issue #282)

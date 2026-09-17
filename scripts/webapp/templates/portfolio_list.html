@@ -251,6 +251,35 @@
   }
   #manage-panel > div { flex-basis: 100%; }
   #toggle-delete-mode { padding: 0.3em 0.8em; font-size: 0.85em; margin: 0; }
+  /* CSV取込メニュー: summary をボタン代わりにした2択。開閉でヘッダの高さが
+     跳ねないよう、中身は absolute で浮かせる。
+     Pico が details に付ける margin-bottom:15px は flex の中央揃えに含まれ、
+     その半分 (7.5px) だけ隣のボタンより上にずれるので margin を殺す */
+  .csv-import-menu { position: relative; margin: 0; }
+  .csv-import-menu > summary {
+    display: block; list-style: none;
+    margin: 0; padding: 0.3em 0.8em; font-size: 0.85em; white-space: nowrap;
+  }
+  /* Pico の summary[role=button] が付ける▼は高さ 22.5px あり、行高を押し上げて
+     隣のボタンと縦位置がずれる。矢印は残しつつ行高に影響しない寸法に抑える */
+  .csv-import-menu > summary[role="button"]::after {
+    height: 1em; width: 1em; background-size: 1em auto; margin-left: 0.4em;
+  }
+  .csv-import-menu > summary::-webkit-details-marker { display: none; }
+  .csv-import-menu > div {
+    position: absolute; right: 0; z-index: 20; margin-top: 0.3em;
+    display: flex; flex-direction: column; gap: 0.7em;
+    background: #fff; border: 1px solid #ccc; border-radius: 4px;
+    padding: 0.7em; width: 19em; max-width: 90vw;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  /* 2択の区切り (クイック / ファイル選択) */
+  .csv-import-menu > div > form + form { border-top: 1px solid #eee; padding-top: 0.7em; }
+  /* 2択は縦積み。ファイル選択は input が横に伸びるので1行を占有させる */
+  .csv-import-menu form { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; margin: 0; }
+  .csv-import-menu button { width: auto; margin: 0; font-size: 0.85em; padding: 0.3em 0.8em; white-space: nowrap; }
+  .csv-import-menu span { font-size: 0.75em; color: #888; flex-basis: 100%; }
+  .csv-import-menu input[type=file] { font-size: 0.78em; flex: 1 1 14em; min-width: 0; }
 </style>
 <div class="dashboard-header">
   <h2 style="margin:0;">保有銘柄ダッシュボード</h2>
@@ -259,6 +288,22 @@
        class="dashboard-header-link"
        title="業態テーマ別 RS サマリー">📊 テーマサマリー</a>
     {% if not fallback_mode %}
+    {# issue #397: CSV取込の主導線。クイック取り込み (Downloads 自動発見) とファイル選択の2択 #}
+    <details class="csv-import-menu">
+      <summary role="button" class="outline" title="楽天/SBI のポートフォリオCSVを取込み、保有株数・ステータスを同期">CSV取り込み</summary>
+      <div>
+        <form method="post" action="{{ url_for('portfolio.csv_import_quick') }}">
+          <button type="submit">クイック取り込み</button>
+          <span>~/Downloads から未取込のCSVを自動で探します</span>
+        </form>
+        {# ファイルを選んだ時点で送信する (選択後にもう1クリックさせない) #}
+        <form method="post" action="{{ url_for('portfolio.csv_import_preview') }}" enctype="multipart/form-data"
+              onchange="this.submit();">
+          <input type="file" name="csv_files" accept=".csv" multiple required>
+          <span>選ぶとそのままプレビューへ進みます</span>
+        </form>
+      </div>
+    </details>
     <button type="button" id="toggle-manage-mode">管理</button>
     {% endif %}
   </div>
@@ -438,30 +483,6 @@
     <a href="{{ url_for('portfolio.shikiho_page') }}?status={{ active_status_query }}{% if active_gyoutai_theme %}&gyoutai_theme={{ active_gyoutai_theme|urlencode }}{% endif %}"
        style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
        title="四季報コメントを順次更新">四季報更新</a>
-  </div>
-  <div>
-    {# issue #397 Phase3: 楽天/SBI 現物・信用 計4ファイルをまとめて選択し、差分プレビューへ遷移する #}
-    <details style="display:inline-block;">
-      <summary style="font-size:0.85em;color:#555;cursor:pointer;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;list-style:none;"
-                title="楽天/SBI のポートフォリオCSV(現物・信用 最大4ファイル)を取込み、保有株数・ステータスを自動同期">＋ ポートフォリオCSV取込</summary>
-      <form method="post" action="{{ url_for('portfolio.csv_import_preview') }}" enctype="multipart/form-data"
-            style="display:flex;flex-direction:column;gap:0.3em;margin-top:0.4em;padding:0.4em 0.6em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;">
-        <span style="font-size:0.75em;color:#888;">楽天現物/楽天信用/SBI現物/SBI信用のうち更新分を選択 (ダイアログでCmdまたはShiftを押しながらクリックで複数選択、未選択分は前回取込を引き継ぎ)</span>
-        {% if csv_import_sources %}
-        <span style="font-size:0.72em;color:#999;">
-          前回取込日:
-          {% for key in ["楽天/現物", "楽天/信用", "SBI/現物", "SBI/信用"] %}
-            {{ key }}={{ csv_import_sources.get(key, '未取込') }}{% if not loop.last %} / {% endif %}
-          {% endfor %}
-        </span>
-        {% endif %}
-        <div style="display:flex;align-items:center;gap:0.5em;">
-          <input type="file" name="csv_files" accept=".csv" multiple required
-                 style="font-size:0.78em;width:22em;">
-          <button type="submit" style="width:auto;font-size:0.85em;">差分プレビュー</button>
-        </div>
-      </form>
-    </details>
   </div>
 </div>
 {% if delete_mode_allowed %}
