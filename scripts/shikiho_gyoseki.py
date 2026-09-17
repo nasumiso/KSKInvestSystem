@@ -104,25 +104,24 @@ def parse_shikiho_gyoseki(text: str) -> Dict[str, Any]:
     actual_rows = [r for r in rows if not r["is_forecast"]]
     latest_actual = actual_rows[-1] if actual_rows else None
 
-    # 決算月は実績行から決める。四季報の予想行には本決算のほかに中間期予想が
-    # 混じることがあり (例: 連27.9予)、月で弾かないと今季・来季がずれる。
+    # 決算月は最新実績の月を正とする。四季報の予想行には本決算のほかに中間期
+    # 予想が混じることがあり (例: 連27.9予)、月で弾かないと半期の値を通期として
+    # 保存してしまう (成長率もMCP出力も誤る)。
     #
-    # 同月の予想が1件も無い場合、「決算期変更」と「貼付範囲に中間期予想しか
-    # 入っていない」は区別できない。後者で別月を採用すると半期の値を通期として
-    # 保存してしまう (成長率もMCP出力も誤る) ため、ここでは採用しない。
-    # 決算期変更は実績行の決算月が途中で変わることで判別できるので、
-    # その場合だけ新しい決算月を正とする。
+    # 同月の予想が無いとき「決算期変更」と「貼付範囲に中間期予想しか入って
+    # いない」を貼付テキストから判別する方法は無い (過去の決算月変更の履歴が
+    # 残っている会社では、実績行の月が複数あることも判断材料にならない)。
+    # 誤って半期を通期として保存するより拒否する方が安全なので、推測しない。
+    # 決算期変更後は新しい決算月の実績行がいずれ載るため、その時点で通る。
     forecasts = [r for r in rows if r["is_forecast"]]
     if latest_actual is not None:
         fiscal_month = latest_actual["sort_key"][1]
-        same_month = [r for r in forecasts if r["sort_key"][1] == fiscal_month]
-        if not same_month:
-            actual_months = {r["sort_key"][1] for r in actual_rows}
-            if len(actual_months) > 1:
-                # 実績側で決算月が変わっている = 決算期変更。最新実績の月を
-                # 正とした上で該当が無いので、予想側の月移行も受け入れる。
-                same_month = forecasts
-        forecasts = same_month
+        forecasts = [r for r in forecasts if r["sort_key"][1] == fiscal_month]
+        if not forecasts:
+            raise ValueError(
+                f"直前実績 ({latest_actual['label']}) と同じ決算月の予想行が"
+                "ありません。中間期予想だけを貼り付けていないか確認してください。"
+            )
     if not forecasts:
         raise ValueError(
             "予想通期行 (例: 連27.3予) が見つかりません。"

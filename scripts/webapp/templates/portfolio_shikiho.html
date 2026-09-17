@@ -258,6 +258,10 @@
     // 直近 renderForm 時の業績テキスト (dirty 判定用)。
     var loadedGyosekiRaw = '';
 
+    // 業績保存の直列化キュー。コメント側の saveChain とは別系統だが、
+    // 同じ銘柄へ2本並行させないという目的は同じ。
+    var gyosekiChain = Promise.resolve();
+
     // 業績のみを保存 (コメント側の form とは独立した POST)。
     // 保存できなかった場合は reject する。これを resolve にすると銘柄切替が
     // そのまま進み、renderForm が貼り付けたテキストを保存済みの値で上書きして
@@ -268,26 +272,39 @@
       // 送信した値を控える。成功時に現在値を「保存済み」にすると、通信中の
       // 追記が未変更扱いになり、次の銘柄切替で送信されず失われる。
       var sentRaw = gyosekiRaw.value;
-      var fd = new FormData();
-      fd.append('shikiho_gyoseki_raw', sentRaw);
       gyosekiMsg.textContent = '保存中...';
       gyosekiMsg.style.color = '#666';
-      return fetch('/stock/' + encodeURIComponent(code) + '/shikiho_gyoseki',
-                   { method: 'POST', body: fd })
+      // キューに積んで直列化する。並行させると、古いリクエストが後からDBに
+      // 書き込んで新しい値を上書きしたり、古い成功ハンドラが切替後の画面を
+      // 前銘柄の内容に戻したりする。
+      gyosekiChain = gyosekiChain.catch(function () { /* 前の失敗で止めない */ })
+        .then(function () {
+          var fd = new FormData();
+          fd.append('shikiho_gyoseki_raw', sentRaw);
+          return fetch('/stock/' + encodeURIComponent(code) + '/shikiho_gyoseki',
+                       { method: 'POST', body: fd });
+        })
         .then(function (resp) { return resp.json().then(function (b) { return [resp, b]; }); })
         .then(function (pair) {
           var resp = pair[0], body = pair[1];
+          // 応答が返る頃には別銘柄へ切り替わっていることがある。その場合は
+          // 画面も loadedGyosekiRaw も触らない (前銘柄の内容に戻してしまう)。
+          var stillSameStock = (navIds[pos] === code);
           if (!resp.ok || !body.ok) {
-            gyosekiMsg.textContent = body.error || '保存に失敗しました';
-            gyosekiMsg.style.color = '#c00';
+            if (stillSameStock) {
+              gyosekiMsg.textContent = body.error || '保存に失敗しました';
+              gyosekiMsg.style.color = '#c00';
+            }
             throw new Error(body.error || 'save failed');
           }
+          if (!stillSameStock) return;
           gyosekiMsg.textContent = '保存しました';
           gyosekiMsg.style.color = '#2a7';
           loadedGyosekiRaw = sentRaw;
           renderGyosekiPreview(body.gyoseki);
           setTimeout(function () { gyosekiMsg.textContent = ''; }, 2000);
         });
+      return gyosekiChain;
     }
 
     // ボタン押下は単発保存。失敗しても画面に留まるだけなので reject は握り潰す。
