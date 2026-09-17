@@ -24,7 +24,6 @@ import os
 import re
 import threading
 import unicodedata
-import uuid
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
