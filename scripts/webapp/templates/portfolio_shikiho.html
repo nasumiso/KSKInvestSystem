@@ -27,6 +27,8 @@
   .memo-field label { display: block; font-size: 0.85em; color: #555; margin-bottom: 0.2em; }
   .shikiho-entry { display: flex; align-items: start; gap: 0.3em; margin-bottom: 0.3em; }
   .shikiho-entry .period { font-size: 0.8em; color: #888; min-width: 3em; padding-top: 0.6em; }
+  /* Pico の button{margin-bottom} は flex 中央揃えでボタンを上へずらすので打ち消す */
+  .memo-field button { margin-bottom: 0; }
 </style>
 
 <div style="margin-bottom:0.4em;">
@@ -59,6 +61,21 @@
     <label>企業概要</label>
     <textarea id="sk-overview" name="overview" rows="3"></textarea>
   </div>
+  {# issue #346: 四季報業績予想。コメント用 form とは別 POST (自動保存に混ぜない)。
+     コメント履歴が長いと下端に押し出されて入力しづらいため、コメントより前に置く。 #}
+  <div class="memo-field" id="gyoseki-section">
+    <div style="display:flex;align-items:center;gap:0.6em;">
+      <label style="margin:0;">四季報業績 (楽天証券の業績テーブルを貼り付け)</label>
+      <button type="button" id="btn-save-gyoseki" class="outline"
+              style="padding:0.15em 0.6em;font-size:0.85em;">保存</button>
+      <span id="gyoseki-msg" style="font-size:0.85em;"></span>
+    </div>
+    <div id="gyoseki-preview"
+         style="font-size:0.9em;color:#444;margin:0.3em 0;min-height:1.2em;"></div>
+    <textarea id="gyoseki-raw" rows="5" style="width:100%;font-family:monospace;font-size:0.85em;"
+              placeholder="【業績】&#9;売上高&#9;営業利益 ...&#10;連27.3予&#9;70,000&#9;3,700 ..."></textarea>
+  </div>
+
   <div class="memo-field">
     <div style="display:flex;align-items:center;gap:0.6em;">
       <label style="margin:0;">四季報コメント (<span id="shikiho-count">0</span>/8件)</label>
@@ -82,6 +99,9 @@
     var codeEl = document.getElementById('sk-code');
     var nameLink = document.getElementById('sk-name');
     var kabuLink = document.getElementById('sk-kabu');
+    var gyosekiRaw = document.getElementById('gyoseki-raw');
+    var gyosekiPreview = document.getElementById('gyoseki-preview');
+    var gyosekiMsg = document.getElementById('gyoseki-msg');
 
     codeEl.addEventListener('click', function () {
       var code = codeEl.textContent;
@@ -185,13 +205,20 @@
       return fetch('/portfolio/shikiho/' + enc + '/data')
         .then(function (resp) { return resp.json(); })
         .then(function (body) {
+          gyosekiMsg.textContent = '';
           if (!body || body.ok !== true) {
             overviewEl.value = '';
             editArea.innerHTML = '';
+            gyosekiRaw.value = '';
+            loadedGyosekiRaw = '';
+            renderGyosekiPreview(null);
             updateCount();
             loadedSnapshot = serializeForm();
             return;
           }
+          gyosekiRaw.value = body.shikiho_gyoseki_raw || '';
+          loadedGyosekiRaw = gyosekiRaw.value;
+          renderGyosekiPreview(body.shikiho_gyoseki);
           overviewEl.value = body.overview || '';
           editArea.innerHTML = '';
           (body.shikiho_comments || []).forEach(function (item, i) {
@@ -202,6 +229,97 @@
           setDoneMark(s ? s.has_current : false);
         });
     }
+
+    // 四季報業績 (issue #346) ------------------------------------------------
+    // 成長率を "+36.8%" 形式へ。未算出 (前期が赤字/欠損) は "—"。
+    function fmtGrowth(v) {
+      if (v === null || v === undefined) return '—';
+      return (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+    }
+
+    // 保存済みの業績予想を1行プレビューに描画。
+    function renderGyosekiPreview(gyoseki) {
+      if (!gyoseki) {
+        gyosekiPreview.textContent = '未登録';
+        gyosekiPreview.style.color = '#999';
+        return;
+      }
+      gyosekiPreview.style.color = '#444';
+      var parts = [];
+      ['this_year', 'next_year'].forEach(function (key) {
+        var e = gyoseki[key];
+        if (!e) return;
+        parts.push(e.label + ' 売上 ' + fmtGrowth(e.sales_growth) +
+                   ' / 営利 ' + fmtGrowth(e.op_growth));
+      });
+      gyosekiPreview.textContent = parts.join('   ');
+    }
+
+    // 直近 renderForm 時の業績テキスト (dirty 判定用)。
+    var loadedGyosekiRaw = '';
+
+    // 業績保存の直列化キュー。コメント側の saveChain とは別系統だが、
+    // 同じ銘柄へ2本並行させないという目的は同じ。
+    var gyosekiChain = Promise.resolve();
+
+    // 業績のみを保存 (コメント側の form とは独立した POST)。
+    // 保存できなかった場合は reject する。これを resolve にすると銘柄切替が
+    // そのまま進み、renderForm が貼り付けたテキストを保存済みの値で上書きして
+    // 入力を失う。
+    function saveGyoseki() {
+      var code = navIds[pos];
+      if (!code) return Promise.resolve();  // 対象銘柄なし (フィルタ結果が空)
+      // 送信した値を控える。成功時に現在値を「保存済み」にすると、通信中の
+      // 追記が未変更扱いになり、次の銘柄切替で送信されず失われる。
+      var sentRaw = gyosekiRaw.value;
+      gyosekiMsg.textContent = '保存中...';
+      gyosekiMsg.style.color = '#666';
+      // キューに積んで直列化する。並行させると、古いリクエストが後からDBに
+      // 書き込んで新しい値を上書きしたり、古い成功ハンドラが切替後の画面を
+      // 前銘柄の内容に戻したりする。
+      gyosekiChain = gyosekiChain.catch(function () { /* 前の失敗で止めない */ })
+        .then(function () {
+          var fd = new FormData();
+          fd.append('shikiho_gyoseki_raw', sentRaw);
+          return fetch('/stock/' + encodeURIComponent(code) + '/shikiho_gyoseki',
+                       { method: 'POST', body: fd });
+        })
+        .then(function (resp) { return resp.json().then(function (b) { return [resp, b]; }); })
+        .then(function (pair) {
+          var resp = pair[0], body = pair[1];
+          // 応答が返る頃には別銘柄へ切り替わっていることがある。その場合は
+          // 画面も loadedGyosekiRaw も触らない (前銘柄の内容に戻してしまう)。
+          var stillSameStock = (navIds[pos] === code);
+          if (!resp.ok || !body.ok) {
+            if (stillSameStock) {
+              gyosekiMsg.textContent = body.error || '保存に失敗しました';
+              gyosekiMsg.style.color = '#c00';
+            }
+            throw new Error(body.error || 'save failed');
+          }
+          if (!stillSameStock) return;
+          gyosekiMsg.textContent = '保存しました';
+          gyosekiMsg.style.color = '#2a7';
+          loadedGyosekiRaw = sentRaw;
+          renderGyosekiPreview(body.gyoseki);
+          setTimeout(function () { gyosekiMsg.textContent = ''; }, 2000);
+        });
+      return gyosekiChain;
+    }
+
+    // ボタン押下は単発保存。失敗しても画面に留まるだけなので reject は握り潰す。
+    function saveGyosekiFromButton() {
+      saveGyoseki().catch(function () { /* エラーは gyosekiMsg に表示済み */ });
+    }
+
+    // 銘柄切替・離脱前に、未保存の業績テキストがあれば保存する。
+    // 失敗時は reject を伝播させ、呼び出し元 (flushSave) が切替を中止する。
+    function flushGyoseki() {
+      if (gyosekiRaw.value === loadedGyosekiRaw) return Promise.resolve();
+      return saveGyoseki();
+    }
+
+    document.getElementById('btn-save-gyoseki').addEventListener('click', saveGyosekiFromButton);
 
     // 行追加 (period は今号を自動付与)。8 件超は末尾 (最古) を削除してから追加。
     function addEntry() {
@@ -227,8 +345,10 @@
     }
 
     // dirty があれば現フォームを POST。保存後にローカル has_current / 進捗を更新。Promise を返す。
+    // 業績 (issue #346) は別 POST だが、銘柄切替で入力が消えないようここで一緒に流す。
     function flushSave() {
-      if (!isDirty()) return Promise.resolve();
+      var gyosekiDone = flushGyoseki();
+      if (!isDirty()) return gyosekiDone;
       var code = (byCode(navIds[pos]) || {}).code_s || navIds[pos];
       var fd = new FormData(form);
       saveChain = saveChain.then(function () {
@@ -241,16 +361,21 @@
           setDoneMark(s ? s.has_current : false);
         });
       }).catch(function () { /* ネットワークエラーでもキュー継続 */ });
-      return saveChain;
+      // 業績保存の完了も待ってから銘柄切替させる (切替後の再描画で上書きされないように)。
+      return Promise.all([saveChain, gyosekiDone]);
     }
+
+    // 保存に失敗したときは銘柄を切り替えない (入力が上書きで消えるため)。
+    // エラー内容は gyosekiMsg に表示済みなので、ここでは握り潰すだけでよい。
+    function onSaveFailed() { /* 切替を中止 */ }
 
     function goPrev() {
       if (pos <= 0) return;
-      flushSave().then(function () { pos--; renderForm(navIds[pos]); });
+      flushSave().then(function () { pos--; renderForm(navIds[pos]); }, onSaveFailed);
     }
     function goNext() {
       if (pos >= navIds.length - 1) return;
-      flushSave().then(function () { pos++; renderForm(navIds[pos]); });
+      flushSave().then(function () { pos++; renderForm(navIds[pos]); }, onSaveFailed);
     }
 
     // トグル切替: 保存 flush → navIds をスナップショット再構築 → 先頭へ。
@@ -271,6 +396,12 @@
           form.action = '';
           overviewEl.value = '';
           editArea.innerHTML = '';
+          // 業績欄も消す。残すと前の銘柄の数値が「該当なし」表示の下に居座り、
+          // そのまま保存すると navIds が空で宛先不明の POST になる。
+          gyosekiRaw.value = '';
+          loadedGyosekiRaw = '';
+          renderGyosekiPreview(null);
+          gyosekiMsg.textContent = '';
           updateCount();
           navCountEl.textContent = '0 / 0';
           setDoneMark(false);
@@ -300,6 +431,14 @@
     window.addEventListener('beforeunload', function () {
       if (isDirty() && form.action) {
         navigator.sendBeacon(form.action, new FormData(form));
+      }
+      // 業績は別 POST なので、コメントとは独立にビーコンを送る (issue #346)。
+      // パース不能なテキストはサーバ側が 400 で弾くだけで、既存値は壊れない。
+      var code = navIds[pos];
+      if (code && gyosekiRaw.value !== loadedGyosekiRaw) {
+        var fd = new FormData();
+        fd.append('shikiho_gyoseki_raw', gyosekiRaw.value);
+        navigator.sendBeacon('/stock/' + encodeURIComponent(code) + '/shikiho_gyoseki', fd);
       }
     });
 

@@ -1220,6 +1220,24 @@ class TestSaveShikiho:
             {"period": "25.9", "comment": "コメント3"},
         ]
 
+    def test_save_shikiho_gyoseki_roundtrip(self, populated_db):
+        """issue #346: 貼り付けテキストの保存 → クリア → パース失敗時は据え置き。"""
+        text = "連26.3\t51,163\t2,189\n連27.3予\t70,000\t3,700\n"
+        helpers.save_shikiho_gyoseki("3496", text)
+
+        rec = helpers.get_research_detail("3496")
+        assert rec["shikiho_gyoseki"]["this_year"]["sales_growth"] == 36.8
+        assert rec["shikiho_gyoseki"]["raw_text"] == text.strip()
+
+        # パース失敗は ValueError で、保存済みの値を壊さない
+        with pytest.raises(ValueError):
+            helpers.save_shikiho_gyoseki("3496", "予想行のないテキスト")
+        assert helpers.get_research_detail("3496")["shikiho_gyoseki"] is not None
+
+        # 空文字でクリア
+        helpers.save_shikiho_gyoseki("3496", "")
+        assert helpers.get_research_detail("3496")["shikiho_gyoseki"] is None
+
     def test_save_shikiho_empty_comments_skipped(self, populated_db):
         form = {
             "overview": "概要",
@@ -3518,6 +3536,45 @@ class TestGetCurrentResearchData:
         group_names = [g[0] for g in result]
         # スコアグループは確実に出る (総合PT が非零)
         assert "スコア" in group_names
+
+    @pytest.mark.parametrize(
+        "gyoseki, expect_group",
+        [
+            (
+                {
+                    "this_year": {
+                        "label": "連27.3予", "sales_growth": 36.8, "op_growth": 69.0,
+                    },
+                    "next_year": {
+                        "label": "連28.3予", "sales_growth": 21.4, "op_growth": 16.2,
+                    },
+                },
+                True,
+            ),
+            (None, False),  # 未入力ならグループごと出ない
+        ],
+    )
+    def test_shikiho_gyoseki_group(self, monkeypatch, gyoseki, expect_group):
+        """issue #346: 【四季報予】グループの有無と表示内容。"""
+        stock_data = {
+            "stock_name": "テスト", "score_gyoseki": 50, "shihyo_pt": 40,
+            "momentum_pt": 30, "funda_pt": 20, "stock_rank_log": [],
+            "themes": "", "sector": "情報・通信業", "shihyo": {},
+        }
+        monkeypatch.setattr(helpers, "get_stock_data", lambda code_s: stock_data)
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"theme_rank": []})
+        monkeypatch.setattr(make_market_db, "get_major_theme", lambda themes: "")
+
+        result = helpers.get_current_research_data(
+            "9999", research_record={"shikiho_gyoseki": gyoseki}
+        )
+
+        groups = dict(result)
+        assert ("四季報予" in groups) is expect_group
+        if expect_group:
+            # 会計基準の接頭辞 (連) は落とし、成長率を符号付きで出す
+            assert groups["四季報予"][0] == ("27.3予", "売上 +36.8% / 営利 +69.0%")
 
 
 class TestBuildPortfolioThemeSummary:

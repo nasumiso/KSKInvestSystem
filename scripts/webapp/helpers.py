@@ -514,6 +514,31 @@ def save_shikiho(code_s: str, form_data: dict) -> None:
         upsert_research_record(record)
 
 
+def save_shikiho_gyoseki(code_s: str, raw_text: str) -> None:
+    """四季報業績予想を楽天証券の貼り付けテキストから保存する (issue #346)。
+
+    空文字ならクリア (None)。パース失敗時は ValueError を送出し、保存しない。
+    """
+    from shikiho_gyoseki import parse_shikiho_gyoseki  # 遅延 import
+
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+
+    text = (raw_text or "").strip()
+    parsed = parse_shikiho_gyoseki(text) if text else None
+
+    with _flock():
+        record = get_research_record(normalized)
+        if record is None:
+            raise ValueError(f"レコード未登録: {normalized}")
+
+        if record.get("shikiho_gyoseki") != parsed:
+            record["shikiho_gyoseki"] = parsed
+            record["analysis_date_raw"] = _today_analysis_date()
+
+        upsert_research_record(record)
+
+
 def save_ir_comments(code_s: str, form_data: dict) -> None:
     """スナップショット内の ir_comment を一括更新する。
 
@@ -4389,7 +4414,43 @@ _CR_GROUPS = [
 ]
 
 
-def get_current_research_data(code_s, stock_data=None, portfolio_status=None):
+def _fmt_growth(value) -> str:
+    """成長率 (%) を "+36.8%" 形式へ。未算出は空文字。"""
+    if value is None:
+        return ""
+    return f"{value:+.1f}%"
+
+
+def _build_shikiho_gyoseki_items(code_s, research_record=None):
+    """「現在の調査材料」の【四季報予】グループ項目を組み立てる (issue #346)。
+
+    戻り値: ``[(期ラベル, "売上 +36.8% / 営利 +69.0%"), ...]``。
+    未登録・未入力なら空リスト (呼び出し側でグループごと省略される)。
+    """
+    record = research_record
+    if record is None:
+        record = get_research_record(code_s)
+    gyoseki = (record or {}).get("shikiho_gyoseki")
+    if not isinstance(gyoseki, dict):
+        return []
+
+    items = []
+    for key in ("this_year", "next_year"):
+        entry = gyoseki.get(key)
+        if not isinstance(entry, dict):
+            continue
+        sales = _fmt_growth(entry.get("sales_growth"))
+        op = _fmt_growth(entry.get("op_growth"))
+        if not sales and not op:
+            continue  # 成長率が両方出せない期は出さない
+        # 期ラベルの会計基準接頭辞 (連/単) は画面では冗長なので落とす
+        label = (entry.get("label") or "").lstrip("連単◇※ ")
+        items.append((label, f"売上 {sales or '—'} / 営利 {op or '—'}"))
+    return items
+
+
+def get_current_research_data(code_s, stock_data=None, portfolio_status=None,
+                              research_record=None):
     """銘柄詳細ページ用に「現在の調査材料」(= code_rank.csv 相当) を取得する。
 
     stocks_shelve から都度計算する read-only ヘルパ。
@@ -4402,6 +4463,8 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None):
         portfolio_status: portfolio_shelve の status 文字列 ("1保"/"2準"/"3監")
                           detail.py の portfolio_status を渡す (parse_my_portforio
                           の全件スキャン回避 + excluded 整合)
+        research_record: detail.py 側で既に取得済みなら渡す (二重 open 回避)。
+                         【四季報予】グループ (issue #346) の組み立てに使う
 
     issue #219.
     """
@@ -4461,6 +4524,15 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None):
         # 全 item の value が空ならグループ自体スキップ
         if any(v for _, v in items):
             groups.append((group_name, items))
+
+    # 四季報業績予想 (issue #346) は出典が research_shelve なので _CR_GROUPS
+    # (code_rank.csv の列マッピング) には混ぜない。表示は実績ベースの【業績】と
+    # 対比させたいので、その直後に差し込む (【業績】が無ければ末尾)。
+    shikiho_items = _build_shikiho_gyoseki_items(code_s, research_record)
+    if shikiho_items:
+        names = [g[0] for g in groups]
+        insert_at = names.index("業績") + 1 if "業績" in names else len(groups)
+        groups.insert(insert_at, ("四季報予", shikiho_items))
     return groups
 
 

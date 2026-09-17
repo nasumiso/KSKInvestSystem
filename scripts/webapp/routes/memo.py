@@ -3,6 +3,7 @@
 
 POST /stock/<code_s>/memo             : 手動メモ保存
 POST /stock/<code_s>/shikiho          : 四季報保存
+POST /stock/<code_s>/shikiho_gyoseki  : 四季報業績予想の保存/クリア (issue #346, AJAX)
 POST /stock/<code_s>/ir_comment       : IR分析コメント一括保存
 POST /stock/<code_s>/corporate_url    : 会社HP URL 上書き保存/クリア (issue #208)
 POST /stock/<code_s>/stock_name_prev  : 旧名/エイリアス 保存/クリア (issue #236, AJAX)
@@ -16,10 +17,12 @@ import threading
 from flask import Blueprint, flash, jsonify, request, redirect, url_for
 
 import portfolio_shelve as ps
+import research_shelve
 import theme_suggest
 from webapp.helpers import (
     save_memo,
     save_shikiho,
+    save_shikiho_gyoseki,
     save_ir_comments,
     save_corporate_url_override,
     save_stock_name_prev,
@@ -56,6 +59,22 @@ def post_shikiho(code_s: str):
     """四季報保存 -> 302リダイレクト。"""
     save_shikiho(code_s, request.form)
     return redirect(url_for("detail.stock_detail", code_s=code_s))
+
+
+@memo_bp.route("/stock/<code_s>/shikiho_gyoseki", methods=["POST"])
+def post_shikiho_gyoseki(code_s: str):
+    """四季報業績予想の保存/クリア -> JSON {ok, gyoseki} (issue #346)。
+
+    パース失敗は 400 + メッセージを返し、保存しない。
+    """
+    raw_text = request.form.get("shikiho_gyoseki_raw", "")
+    try:
+        save_shikiho_gyoseki(code_s, raw_text)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    # get_research_detail は post_price_changes バックフィル等が走るため使わない。
+    record = research_shelve.get_research_record(code_s)
+    return jsonify({"ok": True, "gyoseki": (record or {}).get("shikiho_gyoseki")})
 
 
 @memo_bp.route("/stock/<code_s>/ir_comment", methods=["POST"])

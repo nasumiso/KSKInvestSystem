@@ -25,6 +25,19 @@ def research_db(tmp_path, monkeypatch):
         {"period": "", "comment": "旧コメント"},
         {"period": "26.6", "comment": "<b>新コメント</b>"},
     ]
+    exact["shikiho_gyoseki"] = {
+        "prev_year": {"label": "連26.3", "sales": 51163, "op_profit": 2189},
+        "this_year": {
+            "label": "連27.3予", "sales": 70000, "op_profit": 3700,
+            "sales_growth": 36.8, "op_growth": 69.0,
+        },
+        "next_year": {
+            "label": "連28.3予", "sales": 85000, "op_profit": 4300,
+            "sales_growth": 21.4, "op_growth": 16.2,
+        },
+        "raw_text": "連26.3\t51,163\t2,189\n連27.3予\t70,000\t3,700\n",
+        "updated_at": "2026-09-17",
+    }
     rs.upsert_research_record(exact, db_path=db_path)
     rs.upsert_research_record(
         rs.create_research_record("1000", "1301ホールディングス"), db_path=db_path
@@ -52,6 +65,26 @@ def test_get_shikiho_formats_period_and_unknown_stock(research_db, code_s, found
             "comment": "新コメント",
         }
         assert result["shikiho_comments"][1]["period_label"] is None
+
+
+@pytest.mark.parametrize(
+    "code_s, has_gyoseki",
+    [("1301", True), ("1000", False), ("9999", False)],
+)
+def test_get_shikiho_returns_gyoseki(research_db, code_s, has_gyoseki):
+    """業績予想の返却契約 (入力済み/未入力/未登録) を確認する (issue #346)。"""
+    result = server.get_shikiho_data(code_s)
+
+    assert "gyoseki" in result  # 未入力・未登録でもキーは必ず存在する
+    if not has_gyoseki:
+        assert result["gyoseki"] is None
+        return
+    gyoseki = result["gyoseki"]
+    assert gyoseki["unit"] == "百万円"
+    assert gyoseki["this_year"]["sales_growth"] == 36.8
+    assert gyoseki["next_year"]["op_growth"] == 16.2
+    assert gyoseki["updated_at"] == "2026-09-17"
+    assert "raw_text" not in gyoseki  # 原文は MCP では返さない
 
 
 def test_search_stocks_prioritizes_exact_code(research_db):

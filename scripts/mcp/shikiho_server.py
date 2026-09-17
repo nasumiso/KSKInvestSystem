@@ -28,9 +28,13 @@ logger = logging.getLogger(__name__)
 mcp = MCPServer(
     "shintakane-shikiho",
     instructions=(
-        "Shintakane の四季報コメントを読み取り専用で返します。"
+        "Shintakane の四季報コメントと業績予想を読み取り専用で返します。"
         "period は四季報の版情報であり時点情報ではありません。"
         "as_of は常に null です。"
+        "gyoseki は四季報の業績予想 (単位: 百万円) で、特に next_year (2期先) は"
+        "不確実性が高く、定量的な評価指標としてではなく、会社の成長シナリオを読む"
+        "ための定性的な材料として扱ってください。"
+        "updated_at は入力日なので、古い場合は予想が陳腐化している可能性があります。"
     ),
 )
 
@@ -53,8 +57,24 @@ def _period_label(period: str) -> Optional[str]:
     return f"四季報 20{year:02d}年{month}月号"
 
 
+def _format_gyoseki(gyoseki: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """四季報業績予想を MCP の返却形式へ整形する。未入力なら None。
+
+    raw_text (貼り付け原文) は AI に渡す価値が薄くトークンを食うため返さない。
+    """
+    if not isinstance(gyoseki, dict):
+        return None
+    return {
+        "unit": "百万円",
+        "prev_year": gyoseki.get("prev_year"),
+        "this_year": gyoseki.get("this_year"),
+        "next_year": gyoseki.get("next_year"),
+        "updated_at": gyoseki.get("updated_at"),
+    }
+
+
 def get_shikiho_data(code_s: str, limit: int = 8) -> Dict[str, Any]:
-    """指定銘柄の四季報コメントを MCP の返却形式へ整形する。"""
+    """指定銘柄の四季報コメントと業績予想を MCP の返却形式へ整形する。"""
     record = get_research_record_locked(code_s)
     if record is None:
         return {
@@ -63,6 +83,7 @@ def get_shikiho_data(code_s: str, limit: int = 8) -> Dict[str, Any]:
             "source": "research_shelve",
             "total_comments": 0,
             "shikiho_comments": [],
+            "gyoseki": None,
         }
 
     comments = sort_shikiho_comments_desc(record.get("shikiho_comments", []))
@@ -83,6 +104,7 @@ def get_shikiho_data(code_s: str, limit: int = 8) -> Dict[str, Any]:
         "stock_name": record.get("stock_name", ""),
         "overview": strip_html_tags(record.get("overview", "")),
         "shikiho_comments": formatted,
+        "gyoseki": _format_gyoseki(record.get("shikiho_gyoseki")),
         "source": "research_shelve",
         "total_comments": len(comments),
     }
@@ -118,10 +140,16 @@ def search_stocks_data(query: str, limit: int = 10) -> Dict[str, List[Dict[str, 
 
 @mcp.tool()
 def get_shikiho(code_s: str, limit: int = 8) -> Dict[str, Any]:
-    """銘柄コードから四季報コメント履歴と事業概要を返す。
+    """銘柄コードから四季報コメント履歴・事業概要・業績予想を返す。
 
     period は四季報の版情報であり、正確な時点は不明です。as_of は常に null
     として返します。データは読み取り専用です。
+
+    gyoseki は四季報の業績予想 (単位: 百万円、未入力なら null)。
+    prev_year (直前実績) / this_year (今季予想) / next_year (来季予想) を持ち、
+    予想には前期比の成長率 (sales_growth / op_growth、%) が付きます。
+    特に next_year は2期先であり不確実性が高いため、定量的な評価指標としてではなく、
+    会社の成長シナリオを読むための定性的な材料として扱ってください。
     """
     return get_shikiho_data(code_s, limit)
 
