@@ -1467,6 +1467,7 @@ def shikiho_data(code_s):
     if rec is None:
         return jsonify({"ok": False, "error": "not found"}), 404
     comments = research_shelve.sort_shikiho_comments_desc(rec.get("shikiho_comments") or [])
+    gyoseki = rec.get("shikiho_gyoseki")
     return jsonify({
         "ok": True,
         "overview": rec.get("overview") or "",
@@ -1474,6 +1475,9 @@ def shikiho_data(code_s):
             {"period": c.get("period") or "", "comment": c.get("comment") or ""}
             for c in comments
         ],
+        # issue #346: 業績予想は貼り付け原文 (再編集用) と整形済み (プレビュー用) を返す
+        "shikiho_gyoseki_raw": (gyoseki or {}).get("raw_text") or "",
+        "shikiho_gyoseki": gyoseki,
     })
 
 

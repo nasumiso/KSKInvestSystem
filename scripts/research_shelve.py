@@ -84,6 +84,7 @@ RECORD_FIELDS = frozenset(
         "openwork",
         "cramer",
         "shikiho_comments",
+        "shikiho_gyoseki",
         "kessan_comments",
         "snapshots",
         "analysis_date_raw",
@@ -266,6 +267,7 @@ def create_research_record(
     openwork: str = "",
     cramer: str = "",
     shikiho_comments: Optional[List[str]] = None,
+    shikiho_gyoseki: Optional[Dict[str, Any]] = None,
     kessan_comments: Optional[List[Dict[str, Any]]] = None,
     snapshots: Optional[List[Dict[str, Any]]] = None,
     analysis_date_raw: str = "",
@@ -278,6 +280,7 @@ def create_research_record(
     - code_s は normalize_code_s で大文字化される
     - overall_rating は空/S〜E のみ許容
     - shikiho_comments / kessan_comments / snapshots はリストでない場合に空リストで補完
+    - shikiho_gyoseki は四季報業績予想 (issue #346)。未入力は None
     - analysis_date_raw / kessan_date_raw はスプシ原文保持用(例: "11/13",
       "22四季報春" などの異形も許容。形式バリデーションはしない。型チェックのみ)
     - 返却した dict は upsert_research_record にそのまま渡せる
@@ -316,6 +319,7 @@ def create_research_record(
         "openwork": openwork,
         "cramer": cramer,
         "shikiho_comments": shikiho,
+        "shikiho_gyoseki": shikiho_gyoseki,
         "kessan_comments": kessan,
         "snapshots": snaps,
         "analysis_date_raw": analysis_date_raw,
@@ -536,6 +540,8 @@ def _normalize_research_record_on_read(record: Dict[str, Any]) -> Dict[str, Any]
     record["shikiho_comments"] = _normalize_shikiho_comments(
         record.get("shikiho_comments", [])
     )
+    # 四季報業績予想 (issue #346) は後付けフィールド。旧レコードは未入力扱い。
+    record.setdefault("shikiho_gyoseki", None)
     if not isinstance(record.get("kessan_comments"), list):
         record["kessan_comments"] = []
     for entry in record["kessan_comments"]:

@@ -130,6 +130,7 @@ def stock_detail(code_s: str):
     try:
         current_research = get_current_research_data(
             code_s, stock_data=stock, portfolio_status=portfolio_status,
+            research_record=record,
         )
     except Exception:  # noqa: BLE001
         current_research = None
