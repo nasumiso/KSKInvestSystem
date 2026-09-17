@@ -8,6 +8,8 @@ scipy==1.13.1
 oauth2client==4.1.3
 httplib2==0.22.0
 yfinance>=0.2.31
+# yfinance のバッチダウンロードが内部で使用 (未導入だと一部銘柄が取得失敗する)
+scikit-learn>=1.5
 flask>=3.0
 beautifulsoup4>=4.12
 markdown>=3.4
