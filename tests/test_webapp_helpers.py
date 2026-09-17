@@ -4251,3 +4251,54 @@ class TestEpisodeStrategyDrift:
                                 db_path=db)
         episodes = helpers.build_fill_episodes(db_path=db)
         assert helpers.count_orphan_strategies(episodes, db_path=db) == 1
+
+
+class TestIrQaCrud:
+    """issue #436: IR問い合わせ回答の CRUD (id 指定・10件上限)。"""
+
+    def test_add_update_delete_by_id(self, populated_db):
+        """保存順と表示順が食い違う状態でも、id 指定が正しいエントリに当たる。
+
+        ir_qa は保存順 (追加順) と表示順 (answered_at 降順) が一致しない。
+        index で特定すると別レコードを壊すため、id で引けることを回帰確認する。
+        """
+        helpers.add_ir_qa("3496", "2026/01/05", "古い回答")
+        # 後から新しい日付を足すと、表示順では先頭 = 2件目に追加したもの
+        entries = helpers.add_ir_qa("3496", "2026/08/20", "新しい回答")
+        assert [e["answered_at"] for e in entries] == ["2026/08/20", "2026/01/05"]
+
+        old_id = entries[1]["id"]
+        # 表示順で末尾 (= 追加順では先頭) を id 指定で更新する
+        entries = helpers.update_ir_qa("3496", old_id, "2026/01/05", "古い回答を訂正")
+        target = [e for e in entries if e["id"] == old_id][0]
+        assert "古い回答を訂正" in target["body"]
+        # もう一方は無傷
+        assert "新しい回答" in [e for e in entries if e["id"] != old_id][0]["body"]
+
+        entries = helpers.delete_ir_qa("3496", old_id)
+        assert [e["answered_at"] for e in entries] == ["2026/08/20"]
+
+    def test_truncates_to_max_keeping_newest(self, populated_db):
+        """IR_QA_MAX 件を超えたら answered_at 降順で古い側を切り捨てる。"""
+        for i in range(1, rs.IR_QA_MAX + 3):
+            helpers.add_ir_qa("3496", f"2026/01/{i:02d}", f"回答{i}")
+        entries = rs.get_research_record("3496")["ir_qa"]
+        assert len(entries) == rs.IR_QA_MAX
+        # 残るのは新しい側 (末尾の IR_QA_MAX 件)
+        assert entries[0]["answered_at"] == f"2026/01/{rs.IR_QA_MAX + 2:02d}"
+        assert entries[-1]["answered_at"] == "2026/01/03"
+
+    @pytest.mark.parametrize("answered_at, body, exc", [
+        ("2026-08-20", "本文", ValueError),   # 日付形式が YYYY/MM/DD でない
+        ("2026/08/20", "   ", ValueError),    # 本文が実質空
+    ])
+    def test_invalid_input_raises(self, populated_db, answered_at, body, exc):
+        with pytest.raises(exc):
+            helpers.add_ir_qa("3496", answered_at, body)
+
+    def test_unknown_id_raises_keyerror(self, populated_db):
+        helpers.add_ir_qa("3496", "2026/08/20", "回答")
+        with pytest.raises(KeyError):
+            helpers.update_ir_qa("3496", "deadbeef", "2026/08/21", "x")
+        with pytest.raises(KeyError):
+            helpers.delete_ir_qa("3496", "deadbeef")

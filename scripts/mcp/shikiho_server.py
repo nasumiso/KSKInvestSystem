@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""四季報コメントを読み取り専用で提供する stdio MCP サーバー。"""
+"""四季報コメント・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバー。"""
 
 import logging
 import os
@@ -19,6 +19,7 @@ from research_shelve import (
     get_research_record_locked,
     list_research_records_locked,
     normalize_for_search,
+    sort_ir_qa_desc,
     sort_shikiho_comments_desc,
 )
 from db_shelve import RESEARCH_SHELVE
@@ -35,6 +36,7 @@ mcp = MCPServer(
         "不確実性が高く、定量的な評価指標としてではなく、会社の成長シナリオを読む"
         "ための定性的な材料として扱ってください。"
         "updated_at は入力日なので、古い場合は予想が陳腐化している可能性があります。"
+        "IR問い合わせ回答 (get_ir_qa) は非公開の一次情報で、answered_at は実際の回答日です。"
     ),
 )
 
@@ -110,6 +112,40 @@ def get_shikiho_data(code_s: str, limit: int = 8) -> Dict[str, Any]:
     }
 
 
+def get_ir_qa_data(code_s: str, limit: int = 10) -> Dict[str, Any]:
+    """指定銘柄のIR問い合わせ回答を MCP の返却形式へ整形する。"""
+    record = get_research_record_locked(code_s)
+    if record is None:
+        return {
+            "code_s": code_s.strip().upper(),
+            "found": False,
+            "source": "research_shelve",
+            "total_entries": 0,
+            "ir_qa": [],
+        }
+
+    entries = sort_ir_qa_desc(record.get("ir_qa", []))
+    formatted = []
+    for item in entries[:_limit(limit, 10)]:
+        answered_at = (item.get("answered_at") or "").strip()
+        formatted.append(
+            {
+                "answered_at": answered_at,
+                # 四季報の period と違い実日付なので as_of に入れてよい
+                "as_of": answered_at or None,
+                "body": strip_html_tags(item.get("body", "")),
+            }
+        )
+    return {
+        "code_s": record["code_s"],
+        "found": True,
+        "stock_name": record.get("stock_name", ""),
+        "ir_qa": formatted,
+        "source": "research_shelve",
+        "total_entries": len(entries),
+    }
+
+
 def search_stocks_data(query: str, limit: int = 10) -> Dict[str, List[Dict[str, Any]]]:
     """社名またはコードで銘柄を検索し、コード完全一致を最優先する。"""
     query_norm = normalize_for_search(query.strip())
@@ -152,6 +188,16 @@ def get_shikiho(code_s: str, limit: int = 8) -> Dict[str, Any]:
     会社の成長シナリオを読むための定性的な材料として扱ってください。
     """
     return get_shikiho_data(code_s, limit)
+
+
+@mcp.tool()
+def get_ir_qa(code_s: str, limit: int = 10) -> Dict[str, Any]:
+    """銘柄コードからIR部門への問い合わせ回答履歴を新しい順に返す。
+
+    公開情報として流通しない非公開の一次情報です。answered_at は実際の回答日で、
+    as_of にも同じ値が入ります。データは読み取り専用です。
+    """
+    return get_ir_qa_data(code_s, limit)
 
 
 @mcp.tool()

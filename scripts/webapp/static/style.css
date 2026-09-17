@@ -119,6 +119,56 @@ table.ir-snapshot-table td.ir-comment-cell { width: 100%; word-break: break-word
   margin-bottom: 0.2em;
 }
 
+/* IR問い合わせ (issue #436) */
+.ir-qa-count { font-size: 0.8em; color: #888; font-weight: normal; }
+.ir-qa-toolbar { display: flex; align-items: center; gap: 0.4em; margin-bottom: 0.4em; }
+.ir-qa-toolbar select { width: auto; font-size: 0.9em; padding: 0.2em 0.4em; }
+.ir-qa-btn {
+  width: auto !important;
+  padding: 0.1em 0.5em;
+  font-size: 0.8em;
+  background: transparent;
+  border: 1px solid #ccc;
+  color: #666;
+  border-radius: 3px;
+  cursor: pointer;
+}
+/* 既定は数行のみ表示。「もっと見る」で .expanded を付けて全高展開する */
+.ir-qa-body {
+  /* 改行は保存時に <br> 化せず生の \n のまま持つ (memo の .rich-display と同じ方針) */
+  white-space: pre-wrap;
+  max-height: 12em;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 0.6em 0.8em;
+  font-size: 0.9em;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.ir-qa-body.expanded { max-height: none; overflow-y: visible; }
+.ir-qa-body p { margin: 0 0 0.5em; }
+.ir-qa-body p:last-child { margin-bottom: 0; }
+.ir-qa-expand {
+  width: auto !important;
+  margin-top: 0.3em;
+  padding: 0.1em 0.5em;
+  font-size: 0.8em;
+  background: transparent;
+  border: none;
+  color: #3498db;
+  cursor: pointer;
+}
+.ir-qa-empty { color: #999; font-size: 0.85em; margin: 0.3em 0; }
+.ir-qa-form { margin-top: 0.8em; }
+.ir-qa-form-row { display: flex; align-items: center; gap: 0.5em; margin-bottom: 0.3em; }
+.ir-qa-form-row label { font-size: 0.85em; font-weight: bold; }
+.ir-qa-form-row input[type="text"] { width: 9em; font-size: 0.9em; padding: 0.2em 0.4em; }
+.ir-qa-form-row button { width: auto !important; padding: 0.2em 0.8em; font-size: 0.85em; }
+.ir-qa-form-mode { font-size: 0.8em; color: #e67e22; font-weight: bold; }
+.ir-qa-form textarea { width: 100%; font-size: 0.9em; }
+
 /* click-to-edit テキストエリア */
 .editable-field {
   width: 100%;

@@ -1070,3 +1070,68 @@ class TestInagoOrigin:
         rs.upsert_research_record(old, db_path=db_path)
         loaded = rs.get_research_record("6324", db_path=db_path)
         assert (loaded.get("inago_origin") or "") == ""
+
+
+class TestIrQa:
+    """issue #436: IR問い合わせ回答 (ir_qa) の正規化・ソート。"""
+
+    @pytest.mark.parametrize("entries, expected", [
+        # 未設定・非リストは空リスト
+        (None, []),
+        ("not-a-list", []),
+        # 壊れたエントリ (dict でない / body が str でない) は捨てる
+        (
+            ["x", {"id": "a1", "answered_at": "2026/01/05", "body": 123},
+             {"id": "a2", "answered_at": "2026/01/05", "body": "ok"}],
+            [{"id": "a2", "answered_at": "2026/01/05", "body": "ok"}],
+        ),
+        # answered_at が str でなければ空文字に落とす
+        (
+            [{"id": "a3", "answered_at": None, "body": "b"}],
+            [{"id": "a3", "answered_at": "", "body": "b"}],
+        ),
+    ])
+    def test_normalize(self, entries, expected):
+        assert rs._normalize_ir_qa(entries) == expected
+
+    def test_normalize_fills_missing_id_deterministically(self):
+        """id 欠落エントリは読出しをまたいで同じIDになる (ランダム採番禁止)。
+
+        _normalize_ir_qa は読出しのたびに走るため、ここでランダム値を振ると
+        UI が表示した entry_id での更新・削除が 404 になる。
+        answered_at と body が完全に同一のエントリでも、配列位置を混ぜることで
+        ID が衝突しないことも併せて確認する。
+        """
+        raw = [
+            {"answered_at": "2026/01/05", "body": "同文"},
+            {"answered_at": "2026/01/05", "body": "同文"},
+        ]
+        first = rs._normalize_ir_qa(raw)
+        second = rs._normalize_ir_qa(raw)
+        assert [e["id"] for e in first] == [e["id"] for e in second]
+        assert first[0]["id"] != first[1]["id"]
+
+    def test_sort_desc_puts_invalid_dates_last(self):
+        """answered_at 降順。空・不正日付は最古扱いで末尾へ寄せる。"""
+        entries = [
+            {"id": "a", "answered_at": "2026/01/05", "body": ""},
+            {"id": "b", "answered_at": "", "body": ""},
+            {"id": "c", "answered_at": "2026/08/20", "body": ""},
+            {"id": "d", "answered_at": "2026-08-21", "body": ""},
+        ]
+        assert [e["id"] for e in rs.sort_ir_qa_desc(entries)] == ["c", "a", "b", "d"]
+
+    def test_backward_compat_and_keyword_search(self, db_path):
+        """ir_qa を持たない旧レコードは [] で読め、body がキーワード検索に載る。"""
+        old = rs.create_research_record("3496", "アズーム")
+        del old["ir_qa"]
+        rs.upsert_research_record(old, db_path=db_path)
+        assert rs.get_research_record("3496", db_path=db_path)["ir_qa"] == []
+
+        rec = rs.get_research_record("3496", db_path=db_path)
+        rec["ir_qa"] = [
+            {"id": "a1", "answered_at": "2026/08/20", "body": "<p>増産計画は順調</p>"}
+        ]
+        rs.upsert_research_record(rec, db_path=db_path)
+        hits = rs.list_research_records(keyword="増産計画", db_path=db_path)
+        assert [r["code_s"] for r in hits] == ["3496"]

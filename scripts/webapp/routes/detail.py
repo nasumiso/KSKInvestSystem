@@ -4,6 +4,8 @@
 GET /stock/<code_s> : 銘柄の全セクション表示
 """
 
+from datetime import date
+
 from flask import Blueprint, render_template, abort
 
 import portfolio
@@ -20,7 +22,7 @@ from webapp.routes.portfolio import (
     STATUS_VALUE_TO_QUERY,
     _allowed_transitions_from,
 )
-from research_shelve import VALID_RATINGS
+from research_shelve import VALID_RATINGS, IR_QA_MAX
 
 detail_bp = Blueprint("detail", __name__)
 
@@ -171,4 +173,7 @@ def stock_detail(code_s: str):
         gyoutai_themes_unset=gyoutai_themes_unset,
         has_business_text=has_business_text,
         action_logs=action_logs,
+        # issue #436: IR問い合わせ回答セクション (上限件数 / 追加フォームの日付初期値)
+        ir_qa_max=IR_QA_MAX,
+        today_ymd=date.today().strftime("%Y/%m/%d"),
     )

@@ -65,6 +65,10 @@ def _make_snippet(rec: dict, keyword: str) -> str:
         result = _extract(text, "四季報")
         if result:
             return result
+    for entry in rec.get("ir_qa", []) or []:
+        result = _extract(entry.get("body", ""), "IR問い合わせ")
+        if result:
+            return result
 
     # フォールバック: overview 先頭40文字
     overview = rec.get("overview", "") or ""

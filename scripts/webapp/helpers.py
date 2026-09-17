@@ -11,12 +11,13 @@ import csv
 import json
 import os
 import re
+import uuid
 from datetime import date, datetime, timedelta
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 from db_shelve import STOCKS_SHELVE, ShelveDB
-from html_sanitizer import sanitize_html
+from html_sanitizer import sanitize_html, strip_html_tags
 from ks_util import get_price_day, log_warning
 from research_shelve import (
     get_research_record,
@@ -31,6 +32,9 @@ from research_shelve import (
     validate_rating,
     _flock,
     _normalize_chat_links,
+    _normalize_ir_qa,
+    sort_ir_qa_desc,
+    IR_QA_MAX,
     normalize_kessan_post_price_changes,
     VALID_RATINGS,
     VALID_EXPECTATIONS,
@@ -52,6 +56,8 @@ def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
     """1銘柄の調査レコードを取得する。
 
     表示用に shikiho_comments を period 降順（新しい順）に並べ替える。
+    ir_qa も answered_at 降順に並べ替える（保存時に降順化しているが、
+    手編集データに備えて表示側でも揃える）。
     period 空 / "-" は最古扱いで末尾に寄せ、同値同士は元リスト順を保つ。
     過去の決算コメントで post_price_changes に欠損期間があれば
     price_log から補完計算して in-memory で埋める（永続化はしない）。
@@ -62,6 +68,7 @@ def get_research_detail(code_s: str) -> Optional[Dict[str, Any]]:
         record["shikiho_comments"] = sort_shikiho_comments_desc(
             record.get("shikiho_comments") or []
         )
+        record["ir_qa"] = sort_ir_qa_desc(record.get("ir_qa") or [])
         _backfill_post_price_changes_for_entries(
             code_s,
             record.get("kessan_comments") or [],
@@ -661,6 +668,112 @@ def delete_chat_link(code_s: str, index: int) -> List[Dict[str, str]]:
         record["chat_links"] = links
         upsert_research_record(record)
     return links
+
+
+# =======================================================
+# IR問い合わせ回答 (ir_qa) の CRUD (issue #436)
+# =======================================================
+# chat_links と同じく _flock で read-modify-write を直列化する。
+# chat_links と違い表示順 (answered_at 降順) と保存順 (追加順) が一致しないため、
+# 更新・削除は index ではなく不変の entry_id で特定する。
+
+def _get_record_for_ir_qa(normalized: str) -> Dict[str, Any]:
+    """ir_qa 操作用にレコードを取得する。未登録は KeyError (ルート側で 404)。"""
+    record = get_research_record(normalized)
+    if record is None:
+        raise KeyError(f"レコード未登録: {normalized}")
+    return record
+
+
+def _clean_ir_qa_input(answered_at: str, body: str) -> Tuple[str, str]:
+    """ir_qa の入力を検証・整形する。不正なら ValueError。"""
+    cleaned_date = (answered_at or "").strip()
+    if _parse_kessanbi(cleaned_date) is None:
+        raise ValueError(f"回答日は YYYY/MM/DD 形式で入力してください: {cleaned_date}")
+    # メール等からの貼り付けを想定し、markdown 経由で改行を保持してからサニタイズする
+    cleaned_body = sanitize_html(_markdown_to_html(body or ""))
+    if not strip_html_tags(cleaned_body).strip():
+        raise ValueError("回答内容を入力してください")
+    return cleaned_date, cleaned_body
+
+
+def _find_ir_qa_index(entries: List[Dict[str, str]], entry_id: str) -> int:
+    """entry_id に一致するエントリの位置を返す。無ければ KeyError。"""
+    for i, entry in enumerate(entries):
+        if entry.get("id") == entry_id:
+            return i
+    raise KeyError(f"ir_qa エントリが見つかりません: {entry_id}")
+
+
+def add_ir_qa(code_s: str, answered_at: str, body: str) -> List[Dict[str, str]]:
+    """IR問い合わせ回答を追加し、保存後の全リスト (降順) を返す。
+
+    id の採番はここだけで行う (uuid4().hex[:8])。読出し時には採番しない。
+    IR_QA_MAX 件を超えた場合は answered_at 降順で古い側を切り捨てる。
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    cleaned_date, cleaned_body = _clean_ir_qa_input(answered_at, body)
+    with _flock():
+        record = _get_record_for_ir_qa(normalized)
+        entries = _normalize_ir_qa(record.get("ir_qa"))
+        entries.append(
+            {
+                "id": uuid.uuid4().hex[:8],
+                "answered_at": cleaned_date,
+                "body": cleaned_body,
+            }
+        )
+        entries = sort_ir_qa_desc(entries)[:IR_QA_MAX]
+        record["ir_qa"] = entries
+        record["analysis_date_raw"] = _today_analysis_date()
+        upsert_research_record(record)
+    return entries
+
+
+def update_ir_qa(
+    code_s: str, entry_id: str, answered_at: str, body: str
+) -> List[Dict[str, str]]:
+    """entry_id のエントリを上書きし、保存後の全リスト (降順) を返す。
+
+    該当 id が無ければ KeyError。id は保持する。
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    cleaned_date, cleaned_body = _clean_ir_qa_input(answered_at, body)
+    with _flock():
+        record = _get_record_for_ir_qa(normalized)
+        entries = _normalize_ir_qa(record.get("ir_qa"))
+        idx = _find_ir_qa_index(entries, entry_id)
+        entries[idx] = {
+            "id": entry_id,
+            "answered_at": cleaned_date,
+            "body": cleaned_body,
+        }
+        entries = sort_ir_qa_desc(entries)
+        record["ir_qa"] = entries
+        record["analysis_date_raw"] = _today_analysis_date()
+        upsert_research_record(record)
+    return entries
+
+
+def delete_ir_qa(code_s: str, entry_id: str) -> List[Dict[str, str]]:
+    """entry_id のエントリを削除し、保存後の全リスト (降順) を返す。
+
+    該当 id が無ければ KeyError。
+    """
+    validate_code_s(code_s)
+    normalized = normalize_code_s(code_s)
+    with _flock():
+        record = _get_record_for_ir_qa(normalized)
+        entries = _normalize_ir_qa(record.get("ir_qa"))
+        idx = _find_ir_qa_index(entries, entry_id)
+        del entries[idx]
+        entries = sort_ir_qa_desc(entries)
+        record["ir_qa"] = entries
+        record["analysis_date_raw"] = _today_analysis_date()
+        upsert_research_record(record)
+    return entries
 
 
 # =======================================================
