@@ -106,13 +106,23 @@ def parse_shikiho_gyoseki(text: str) -> Dict[str, Any]:
 
     # 決算月は実績行から決める。四季報の予想行には本決算のほかに中間期予想が
     # 混じることがあり (例: 連27.9予)、月で弾かないと今季・来季がずれる。
-    # ただし決算期変更で予想が全て別の月になることもあるため、その場合は
-    # 絞り込みを諦めて全予想行を使う (弾き過ぎて 0 件にしない)。
+    #
+    # 同月の予想が1件も無い場合、「決算期変更」と「貼付範囲に中間期予想しか
+    # 入っていない」は区別できない。後者で別月を採用すると半期の値を通期として
+    # 保存してしまう (成長率もMCP出力も誤る) ため、ここでは採用しない。
+    # 決算期変更は実績行の決算月が途中で変わることで判別できるので、
+    # その場合だけ新しい決算月を正とする。
     forecasts = [r for r in rows if r["is_forecast"]]
     if latest_actual is not None:
         fiscal_month = latest_actual["sort_key"][1]
         same_month = [r for r in forecasts if r["sort_key"][1] == fiscal_month]
-        forecasts = same_month or forecasts
+        if not same_month:
+            actual_months = {r["sort_key"][1] for r in actual_rows}
+            if len(actual_months) > 1:
+                # 実績側で決算月が変わっている = 決算期変更。最新実績の月を
+                # 正とした上で該当が無いので、予想側の月移行も受け入れる。
+                same_month = forecasts
+        forecasts = same_month
     if not forecasts:
         raise ValueError(
             "予想通期行 (例: 連27.3予) が見つかりません。"

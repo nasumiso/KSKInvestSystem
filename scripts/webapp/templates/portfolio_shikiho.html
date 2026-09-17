@@ -265,8 +265,11 @@
     function saveGyoseki() {
       var code = navIds[pos];
       if (!code) return Promise.resolve();  // 対象銘柄なし (フィルタ結果が空)
+      // 送信した値を控える。成功時に現在値を「保存済み」にすると、通信中の
+      // 追記が未変更扱いになり、次の銘柄切替で送信されず失われる。
+      var sentRaw = gyosekiRaw.value;
       var fd = new FormData();
-      fd.append('shikiho_gyoseki_raw', gyosekiRaw.value);
+      fd.append('shikiho_gyoseki_raw', sentRaw);
       gyosekiMsg.textContent = '保存中...';
       gyosekiMsg.style.color = '#666';
       return fetch('/stock/' + encodeURIComponent(code) + '/shikiho_gyoseki',
@@ -281,7 +284,7 @@
           }
           gyosekiMsg.textContent = '保存しました';
           gyosekiMsg.style.color = '#2a7';
-          loadedGyosekiRaw = gyosekiRaw.value;
+          loadedGyosekiRaw = sentRaw;
           renderGyosekiPreview(body.gyoseki);
           setTimeout(function () { gyosekiMsg.textContent = ''; }, 2000);
         });
