@@ -101,5 +101,6 @@ WebApp画面の見え方・挙動、またはユーザーが直接触るデー�
 - [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) — アーキテクチャ詳細（データフロー、DB構成、キャッシュ戦略、テクニカル指標）
 - [doc/TESTING.md](doc/TESTING.md) — テスト方針（ユニットテスト、統合テスト、HTMLパース変更時の検証）
 - [doc/システム概要.md](doc/システム概要.md) — システム概要（非エンジニア向け）
+- [doc/機能紹介.md](doc/機能紹介.md) — WebApp 4画面のスクリーンショット付き機能紹介（対外説明用。画像は `doc/screenshots/`）
 - [doc/review/仕様レビュー_0704.md](doc/review/仕様レビュー_0704.md) — 投資システム評価レビュー（旧版: [仕様レビュー_0314.md](doc/review/仕様レビュー_0314.md)）
 - [doc/投資戦略.md](doc/投資戦略.md) — 投資スタイル分析
