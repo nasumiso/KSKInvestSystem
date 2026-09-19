@@ -14,7 +14,10 @@ from typing import Any, Dict, List, Optional
 _PERIOD_RE = re.compile(r"^[連単◇※]?\s*(\d{2})\.(\d{1,2})(.*)$")
 
 # 中間期・四半期行を示すサフィックス。通期のみ扱うため除外する。
-_NON_ANNUAL_SUFFIXES = ("中", "四")
+# レンジ記号は累計行 (例: "連25.9～5" = 9月〜5月の3Q累計) を表す。決算月と
+# 累計開始月が衝突する銘柄 (8月決算の 連25.9～5 等) では月での除外が効かず、
+# 累計行を通期実績と誤認して決算月ごと取り違えるため、記号自体で弾く。
+_NON_ANNUAL_SUFFIXES = ("中", "四", "～", "~", "-")
 
 
 def _parse_number(token: str) -> Optional[float]:
