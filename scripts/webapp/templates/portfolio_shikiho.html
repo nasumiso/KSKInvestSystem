@@ -59,7 +59,9 @@
 <form id="shikiho-form" action="" method="post">
   <div class="memo-field">
     <label>企業概要</label>
-    <textarea id="sk-overview" name="overview" rows="3"></textarea>
+    {# 企業概要は中央値43字 (ほぼ1行) なので rows=3 から詰める。rows=1 だと
+       80字超の76銘柄でスクロール頻発なので、94%が収まる rows=2 にする #}
+    <textarea id="sk-overview" name="overview" rows="2"></textarea>
   </div>
   {# issue #346: 四季報業績予想。コメント用 form とは別 POST (自動保存に混ぜない)。
      コメント履歴が長いと下端に押し出されて入力しづらいため、コメントより前に置く。 #}
@@ -71,7 +73,8 @@
       <span id="gyoseki-msg" style="font-size:0.85em;"></span>
     </div>
     <div id="gyoseki-preview"
-         style="font-size:0.9em;color:#444;margin:0.3em 0;min-height:1.2em;"></div>
+         style="font-size:0.9em;color:#444;margin:0.3em 0;min-height:1.2em;
+                white-space:pre-line;line-height:1.5;"></div>
     <textarea id="gyoseki-raw" rows="5" style="width:100%;font-family:monospace;font-size:0.85em;"
               placeholder="【業績】&#9;売上高&#9;営業利益 ...&#10;連27.3予&#9;70,000&#9;3,700 ..."></textarea>
   </div>
@@ -252,7 +255,9 @@
         parts.push(e.label + ' 売上 ' + fmtGrowth(e.sales_growth) +
                    ' / 営利 ' + fmtGrowth(e.op_growth));
       });
-      gyosekiPreview.textContent = parts.join('   ');
+      // 今季と来季は改行で分ける (横並びだと2期の境目が読み取りにくい)。
+      // 改行を活かすため #gyoseki-preview は white-space: pre-line。
+      gyosekiPreview.textContent = parts.join('\n');
     }
 
     // 直近 renderForm 時の業績テキスト (dirty 判定用)。
