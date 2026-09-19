@@ -35,6 +35,7 @@ from webapp.helpers import (
     add_ir_qa,
     update_ir_qa,
     delete_ir_qa,
+    IrQaLimitError,
     get_research_detail,
     get_stock_data,
 )
@@ -200,11 +201,16 @@ def post_chat_link_delete(code_s: str, idx: int):
 
 @memo_bp.route("/stock/<code_s>/ir_qa", methods=["POST"])
 def post_ir_qa_add(code_s: str):
-    """IR問い合わせ回答追加 -> JSON {ok, entries}。日付不正・本文空は 400。"""
+    """IR問い合わせ回答追加 -> JSON {ok, entries}。
+
+    日付不正・本文空は 400、上限到達は 409 (切り捨てず拒否する)。
+    """
     answered_at = request.form.get("answered_at", "")
     body = request.form.get("body", "")
     try:
         entries = add_ir_qa(code_s, answered_at, body)
+    except IrQaLimitError as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
     except KeyError as e:
         return jsonify({"ok": False, "error": str(e)}), 404
     except (ValueError, TypeError) as e:

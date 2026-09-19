@@ -161,6 +161,7 @@ table.ir-snapshot-table td.ir-comment-cell { width: 100%; word-break: break-word
   cursor: pointer;
 }
 .ir-qa-empty { color: #999; font-size: 0.85em; margin: 0.3em 0; }
+.ir-qa-limit { color: #e67e22; font-size: 0.85em; margin: 0.8em 0 0.3em; }
 .ir-qa-form { margin-top: 0.8em; }
 .ir-qa-form-row { display: flex; align-items: center; gap: 0.5em; margin-bottom: 0.3em; }
 .ir-qa-form-row label { font-size: 0.85em; font-weight: bold; }

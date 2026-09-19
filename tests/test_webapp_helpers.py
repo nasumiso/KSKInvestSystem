@@ -4278,15 +4278,29 @@ class TestIrQaCrud:
         entries = helpers.delete_ir_qa("3496", old_id)
         assert [e["answered_at"] for e in entries] == ["2026/08/20"]
 
-    def test_truncates_to_max_keeping_newest(self, populated_db):
-        """IR_QA_MAX 件を超えたら answered_at 降順で古い側を切り捨てる。"""
-        for i in range(1, rs.IR_QA_MAX + 3):
+    def test_rejects_add_at_max_without_dropping_entries(self, populated_db):
+        """上限到達後の追加は拒否し、既存エントリを1件も失わない。
+
+        切り捨て方式だと、古い日付を追加したときに「追加した回答自体」が
+        捨てられたまま成功扱いになる。IR回答は再取得できない一次情報なので、
+        黙って消さずに IrQaLimitError で拒否する。
+        """
+        for i in range(1, rs.IR_QA_MAX + 1):
             helpers.add_ir_qa("3496", f"2026/01/{i:02d}", f"回答{i}")
-        entries = rs.get_research_record("3496")["ir_qa"]
-        assert len(entries) == rs.IR_QA_MAX
-        # 残るのは新しい側 (末尾の IR_QA_MAX 件)
-        assert entries[0]["answered_at"] == f"2026/01/{rs.IR_QA_MAX + 2:02d}"
-        assert entries[-1]["answered_at"] == "2026/01/03"
+        before = rs.get_research_record("3496")["ir_qa"]
+        assert len(before) == rs.IR_QA_MAX
+
+        # 最古より更に古い日付 = 切り捨て方式なら新規自身が消えていたケース
+        with pytest.raises(helpers.IrQaLimitError):
+            helpers.add_ir_qa("3496", "2025/12/31", "上限超過で追加されない回答")
+
+        after = rs.get_research_record("3496")["ir_qa"]
+        assert [e["id"] for e in after] == [e["id"] for e in before]
+
+        # 上限到達中でも既存エントリの更新・削除は通る
+        helpers.update_ir_qa("3496", before[0]["id"], "2026/01/20", "更新後")
+        entries = helpers.delete_ir_qa("3496", before[0]["id"])
+        assert len(entries) == rs.IR_QA_MAX - 1
 
     @pytest.mark.parametrize("answered_at, body, exc", [
         ("2026-08-20", "本文", ValueError),   # 日付形式が YYYY/MM/DD でない

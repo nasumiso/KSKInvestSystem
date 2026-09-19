@@ -579,6 +579,11 @@
 
   <p class="ir-qa-empty" id="ir-qa-empty" {% if ir_qa %}style="display:none;"{% endif %}>IR問い合わせなし</p>
 
+  {# 上限到達時の案内。追加フォームと排他で表示する (JS の updateLimitState) #}
+  <p class="ir-qa-limit" id="ir-qa-limit" style="display:none;">
+    IR問い合わせは最大 {{ ir_qa_max }} 件です。追加するには不要な回答を削除してください。
+  </p>
+
   {# 編集フォーム。追加・更新で共用し、更新時のみ #ir-qa-entry-id に id が入る #}
   <form id="ir-qa-form" class="ir-qa-form" onsubmit="return false;">
     <input type="hidden" id="ir-qa-entry-id" value="">
@@ -613,6 +618,8 @@
     var modeEl   = document.getElementById('ir-qa-form-mode');
     var submitBt = document.getElementById('ir-qa-submit');
     var cancelBt = document.getElementById('ir-qa-cancel');
+    var form     = document.getElementById('ir-qa-form');
+    var limitMsg = document.getElementById('ir-qa-limit');
 
     // id をキーに引く (index はソート・切り詰めでずれるため使わない)
     function findEntry(id) {
@@ -641,6 +648,9 @@
         sel.appendChild(opt);
       });
       countEl.textContent = '(' + ENTRIES.length + '/{{ ir_qa_max }}件)';
+      // 上限到達時は追加フォームを閉じる (サーバーは 409 で拒否する)。
+      // 長文を貼ってから弾かれると貼り直しになるので、入力前に知らせる。
+      updateLimitState();
       if (!ENTRIES.length) {
         viewer.style.display = 'none';
         empty.style.display = '';
@@ -653,6 +663,15 @@
       showBody();
     }
 
+    // 上限到達時は「追加」を止める。ただし編集中 (既存1件の上書き) は件数が
+    // 増えないので通常どおり操作できる。
+    function updateLimitState() {
+      var editing = !!idInput.value;
+      var full = ENTRIES.length >= {{ ir_qa_max }} && !editing;
+      form.style.display = full ? 'none' : '';
+      limitMsg.style.display = full ? '' : 'none';
+    }
+
     function setMode(entry) {
       if (entry) {
         idInput.value = entry.id;
@@ -663,6 +682,7 @@
         modeEl.textContent = '編集中';
         submitBt.textContent = '更新';
         cancelBt.style.display = '';
+        updateLimitState();  // 編集開始時はフォームを開く (上限到達中でも編集は可)
         bodyIn.focus();
       } else {
         idInput.value = '';
@@ -670,6 +690,7 @@
         modeEl.textContent = '';
         submitBt.textContent = '追加';
         cancelBt.style.display = 'none';
+        updateLimitState();  // 編集終了時、上限到達なら再び閉じる
       }
     }
 

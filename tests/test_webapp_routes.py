@@ -1907,6 +1907,24 @@ class TestIrQaRoutes:
         assert resp.status_code == status
         assert resp.get_json()["ok"] is False
 
+    def test_add_at_limit_returns_409(self, client, db_path):
+        """上限到達後の追加は 409 で拒否し、既存を消さない (切り捨てない)。"""
+        import research_shelve as rs
+
+        for i in range(1, rs.IR_QA_MAX + 1):
+            resp = client.post("/stock/3496/ir_qa",
+                               data={"answered_at": f"2026/01/{i:02d}",
+                                     "body": f"回答{i}"})
+            assert resp.status_code == 201
+
+        resp = client.post("/stock/3496/ir_qa",
+                           data={"answered_at": "2025/12/31", "body": "溢れる回答"})
+        assert resp.status_code == 409
+        assert resp.get_json()["ok"] is False
+        saved = rs.get_research_record("3496", db_path=db_path)["ir_qa"]
+        assert len(saved) == rs.IR_QA_MAX
+        assert "溢れる回答" not in [e["body"] for e in saved]
+
 
 class TestSuggestThemes:
     """issue #297: POST /stock/<code_s>/suggest_themes (LLM 業態テーマ提案)。

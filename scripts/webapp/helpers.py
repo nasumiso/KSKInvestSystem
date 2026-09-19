@@ -677,6 +677,10 @@ def delete_chat_link(code_s: str, index: int) -> List[Dict[str, str]]:
 # chat_links と違い表示順 (answered_at 降順) と保存順 (追加順) が一致しないため、
 # 更新・削除は index ではなく不変の entry_id で特定する。
 
+class IrQaLimitError(Exception):
+    """ir_qa が上限件数に達しているため追加できない (ルート側で 409)。"""
+
+
 def _get_record_for_ir_qa(normalized: str) -> Dict[str, Any]:
     """ir_qa 操作用にレコードを取得する。未登録は KeyError (ルート側で 404)。"""
     record = get_research_record(normalized)
@@ -709,7 +713,8 @@ def add_ir_qa(code_s: str, answered_at: str, body: str) -> List[Dict[str, str]]:
     """IR問い合わせ回答を追加し、保存後の全リスト (降順) を返す。
 
     id の採番はここだけで行う (uuid4().hex[:8])。読出し時には採番しない。
-    IR_QA_MAX 件を超えた場合は answered_at 降順で古い側を切り捨てる。
+    既に IR_QA_MAX 件ある場合は追加せず IrQaLimitError を送出する (ルート側で 409)。
+    IR回答は再取得できない一次情報なので、上限超過を切り捨てで処理しない。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
@@ -717,6 +722,11 @@ def add_ir_qa(code_s: str, answered_at: str, body: str) -> List[Dict[str, str]]:
     with _flock():
         record = _get_record_for_ir_qa(normalized)
         entries = _normalize_ir_qa(record.get("ir_qa"))
+        if len(entries) >= IR_QA_MAX:
+            raise IrQaLimitError(
+                f"IR問い合わせは最大 {IR_QA_MAX} 件です。"
+                "不要な回答を削除してから追加してください"
+            )
         entries.append(
             {
                 "id": uuid.uuid4().hex[:8],
@@ -724,7 +734,7 @@ def add_ir_qa(code_s: str, answered_at: str, body: str) -> List[Dict[str, str]]:
                 "body": cleaned_body,
             }
         )
-        entries = sort_ir_qa_desc(entries)[:IR_QA_MAX]
+        entries = sort_ir_qa_desc(entries)
         record["ir_qa"] = entries
         record["analysis_date_raw"] = _today_analysis_date()
         upsert_research_record(record)
