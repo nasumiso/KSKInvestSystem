@@ -112,3 +112,43 @@ def test_locked_reader_uses_write_lock(research_db, monkeypatch):
 
     assert record["stock_name"] == "極洋"
     assert calls == [((research_db,), {})]
+
+
+@pytest.fixture
+def ir_qa_db(tmp_path, monkeypatch):
+    """IR問い合わせ回答入りの一時 research_shelve を作る。"""
+    db_path = str(tmp_path / "research_ir")
+    monkeypatch.setattr(rs, "RESEARCH_SHELVE", db_path)
+
+    rec = rs.create_research_record("1301", "極洋")
+    rec["ir_qa"] = [
+        {"id": "a1", "answered_at": "2026/01/05", "body": "<p>古い回答</p>"},
+        {"id": "a2", "answered_at": "2026/08/20", "body": "<b>新しい回答</b>"},
+    ]
+    rs.upsert_research_record(rec, db_path=db_path)
+    return db_path
+
+
+@pytest.mark.parametrize(
+    "code_s, limit, found, answered_ats",
+    [
+        # 降順で返る + answered_at が as_of にも入る
+        ("1301", 10, True, ["2026/08/20", "2026/01/05"]),
+        # limit で新しい側から絞る
+        ("1301", 1, True, ["2026/08/20"]),
+        # 未登録銘柄
+        ("9999", 10, False, []),
+    ],
+)
+def test_get_ir_qa_formats_and_limits(ir_qa_db, code_s, limit, found, answered_ats):
+    """降順整形・HTML除去・limit・未登録時の契約をまとめて確認する。"""
+    result = server.get_ir_qa_data(code_s, limit)
+
+    assert result["found"] is found
+    assert result["source"] == "research_shelve"
+    assert [item["answered_at"] for item in result["ir_qa"]] == answered_ats
+    if found:
+        # 四季報と違い answered_at は実日付なので as_of に入る
+        assert result["ir_qa"][0]["as_of"] == "2026/08/20"
+        assert result["ir_qa"][0]["body"] == "新しい回答"
+        assert result["total_entries"] == 2

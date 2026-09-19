@@ -553,6 +553,204 @@
   </form>
 </div>
 
+{# ===== 6.5. IR問い合わせ (issue #436) ===== #}
+{# IR部門への問い合わせ回答。公開情報として流通しないエッジ情報なので銘柄に恒久保存する。 #}
+{# 既存の「IR分析コメント」(スナップショット内 ir_comment = 自分の分析) とは別物。 #}
+<div class="memo-section" id="ir-qa-section" data-code="{{ record.code_s }}">
+  {% set ir_qa = record.ir_qa or [] %}
+  <h3>IR問い合わせ <span class="ir-qa-count">({{ ir_qa|length }}/{{ ir_qa_max }}件)</span></h3>
+
+  {# 全エントリ本文を JSON で埋め込み、select 変更時に JS が枠を差し替える (追加リクエスト不要) #}
+  <script type="application/json" id="ir-qa-data">{{ ir_qa | tojson }}</script>
+
+  <div id="ir-qa-viewer" {% if not ir_qa %}style="display:none;"{% endif %}>
+    <div class="ir-qa-toolbar">
+      <select id="ir-qa-select">
+        {% for entry in ir_qa %}
+        <option value="{{ entry.id }}">{{ entry.answered_at or '(日付なし)' }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" class="ir-qa-btn" id="ir-qa-edit" title="選択中の回答を編集">✎ 編集</button>
+      <button type="button" class="ir-qa-btn" id="ir-qa-delete" title="選択中の回答を削除">🗑 削除</button>
+    </div>
+    <div class="ir-qa-body" id="ir-qa-body"></div>
+    <button type="button" class="ir-qa-expand" id="ir-qa-expand">▼ もっと見る</button>
+  </div>
+
+  <p class="ir-qa-empty" id="ir-qa-empty" {% if ir_qa %}style="display:none;"{% endif %}>IR問い合わせなし</p>
+
+  {# 上限到達時の案内。追加フォームと排他で表示する (JS の updateLimitState) #}
+  <p class="ir-qa-limit" id="ir-qa-limit" style="display:none;">
+    IR問い合わせは最大 {{ ir_qa_max }} 件です。追加するには不要な回答を削除してください。
+  </p>
+
+  {# 編集フォーム。追加・更新で共用し、更新時のみ #ir-qa-entry-id に id が入る #}
+  <form id="ir-qa-form" class="ir-qa-form" onsubmit="return false;">
+    <input type="hidden" id="ir-qa-entry-id" value="">
+    <div class="ir-qa-form-row">
+      <label for="ir-qa-answered-at">回答日</label>
+      <input type="text" id="ir-qa-answered-at" placeholder="YYYY/MM/DD" value="{{ today_ymd }}">
+      <span class="ir-qa-form-mode" id="ir-qa-form-mode"></span>
+    </div>
+    <textarea id="ir-qa-input-body" rows="4" placeholder="IRからの回答内容を貼り付け"></textarea>
+    <div class="ir-qa-form-row">
+      <button type="button" class="outline" id="ir-qa-submit">追加</button>
+      <button type="button" class="outline" id="ir-qa-cancel" style="display:none;">キャンセル</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  (function () {
+    var section = document.getElementById('ir-qa-section');
+    var CODE = section.dataset.code;
+    var ENTRIES = JSON.parse(document.getElementById('ir-qa-data').textContent || '[]');
+
+    var sel      = document.getElementById('ir-qa-select');
+    var bodyBox  = document.getElementById('ir-qa-body');
+    var viewer   = document.getElementById('ir-qa-viewer');
+    var empty    = document.getElementById('ir-qa-empty');
+    var expand   = document.getElementById('ir-qa-expand');
+    var countEl  = section.querySelector('.ir-qa-count');
+    var idInput  = document.getElementById('ir-qa-entry-id');
+    var dateIn   = document.getElementById('ir-qa-answered-at');
+    var bodyIn   = document.getElementById('ir-qa-input-body');
+    var modeEl   = document.getElementById('ir-qa-form-mode');
+    var submitBt = document.getElementById('ir-qa-submit');
+    var cancelBt = document.getElementById('ir-qa-cancel');
+    var form     = document.getElementById('ir-qa-form');
+    var limitMsg = document.getElementById('ir-qa-limit');
+
+    // id をキーに引く (index はソート・切り詰めでずれるため使わない)
+    function findEntry(id) {
+      for (var i = 0; i < ENTRIES.length; i++) {
+        if (ENTRIES[i].id === id) return ENTRIES[i];
+      }
+      return null;
+    }
+
+    function showBody() {
+      var entry = findEntry(sel.value);
+      // body は保存時に sanitize_html 済みなので innerHTML で描画する
+      bodyBox.innerHTML = entry ? entry.body : '';
+      bodyBox.classList.remove('expanded');
+      expand.textContent = '▼ もっと見る';
+      // 折り返し後に高さが収まるなら「もっと見る」は出さない
+      expand.style.display = bodyBox.scrollHeight > bodyBox.clientHeight + 2 ? '' : 'none';
+    }
+
+    function render(keepId) {
+      sel.innerHTML = '';
+      ENTRIES.forEach(function (entry) {
+        var opt = document.createElement('option');
+        opt.value = entry.id;
+        opt.textContent = entry.answered_at || '(日付なし)';
+        sel.appendChild(opt);
+      });
+      countEl.textContent = '(' + ENTRIES.length + '/{{ ir_qa_max }}件)';
+      // 上限到達時は追加フォームを閉じる (サーバーは 409 で拒否する)。
+      // 長文を貼ってから弾かれると貼り直しになるので、入力前に知らせる。
+      updateLimitState();
+      if (!ENTRIES.length) {
+        viewer.style.display = 'none';
+        empty.style.display = '';
+        bodyBox.innerHTML = '';
+        return;
+      }
+      viewer.style.display = '';
+      empty.style.display = 'none';
+      if (keepId && findEntry(keepId)) sel.value = keepId;
+      showBody();
+    }
+
+    // 上限到達時は「追加」を止める。ただし編集中 (既存1件の上書き) は件数が
+    // 増えないので通常どおり操作できる。
+    function updateLimitState() {
+      var editing = !!idInput.value;
+      var full = ENTRIES.length >= {{ ir_qa_max }} && !editing;
+      form.style.display = full ? 'none' : '';
+      limitMsg.style.display = full ? '' : 'none';
+    }
+
+    function setMode(entry) {
+      if (entry) {
+        idInput.value = entry.id;
+        dateIn.value = entry.answered_at || '';
+        // 保存本文は memo と同じく生の改行 + インラインタグ (太字・リンク) 混在。
+        // 編集時はそのまま textarea に戻す (memo の rich-edit と同じ往復)。
+        bodyIn.value = entry.body;
+        modeEl.textContent = '編集中';
+        submitBt.textContent = '更新';
+        cancelBt.style.display = '';
+        updateLimitState();  // 編集開始時はフォームを開く (上限到達中でも編集は可)
+        bodyIn.focus();
+      } else {
+        idInput.value = '';
+        bodyIn.value = '';
+        modeEl.textContent = '';
+        submitBt.textContent = '追加';
+        cancelBt.style.display = 'none';
+        updateLimitState();  // 編集終了時、上限到達なら再び閉じる
+      }
+    }
+
+    function post(path, formData, keepId) {
+      fetch('/stock/' + encodeURIComponent(CODE) + path, {
+        method: 'POST',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        body: formData,
+      }).then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok || !j.ok) {
+            alert('失敗: ' + (j.error || r.status));
+            return;
+          }
+          ENTRIES = j.entries;
+          setMode(null);
+          render(keepId);
+        });
+      }).catch(function (err) {
+        alert('通信エラー: ' + err);
+      });
+    }
+
+    sel.addEventListener('change', showBody);
+
+    expand.addEventListener('click', function () {
+      var on = bodyBox.classList.toggle('expanded');
+      expand.textContent = on ? '▲ 折りたたむ' : '▼ もっと見る';
+    });
+
+    document.getElementById('ir-qa-edit').addEventListener('click', function () {
+      var entry = findEntry(sel.value);
+      if (entry) setMode(entry);
+    });
+
+    document.getElementById('ir-qa-delete').addEventListener('click', function () {
+      var entry = findEntry(sel.value);
+      if (!entry) return;
+      if (!window.confirm('削除しますか?\n' + (entry.answered_at || ''))) return;
+      post('/ir_qa/' + encodeURIComponent(entry.id) + '/delete', new FormData(), null);
+    });
+
+    cancelBt.addEventListener('click', function () { setMode(null); });
+
+    submitBt.addEventListener('click', function () {
+      var fd = new FormData();
+      fd.append('answered_at', dateIn.value);
+      fd.append('body', bodyIn.value);
+      var editId = idInput.value;
+      if (editId) {
+        post('/ir_qa/' + encodeURIComponent(editId), fd, editId);
+      } else {
+        post('/ir_qa', fd, null);
+      }
+    });
+
+    render(null);
+  })();
+</script>
+
 {# ===== 7. 決算コメント履歴 (閲覧のみ、降順) ===== #}
 {# 編集は /market ページで行う。ここでは /market で登録・自動算出された内容を時系列で確認する。 #}
 <div class="memo-section" id="kessan-history-section">

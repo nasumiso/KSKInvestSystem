@@ -4251,3 +4251,68 @@ class TestEpisodeStrategyDrift:
                                 db_path=db)
         episodes = helpers.build_fill_episodes(db_path=db)
         assert helpers.count_orphan_strategies(episodes, db_path=db) == 1
+
+
+class TestIrQaCrud:
+    """issue #436: IR問い合わせ回答の CRUD (id 指定・10件上限)。"""
+
+    def test_add_update_delete_by_id(self, populated_db):
+        """保存順と表示順が食い違う状態でも、id 指定が正しいエントリに当たる。
+
+        ir_qa は保存順 (追加順) と表示順 (answered_at 降順) が一致しない。
+        index で特定すると別レコードを壊すため、id で引けることを回帰確認する。
+        """
+        helpers.add_ir_qa("3496", "2026/01/05", "古い回答")
+        # 後から新しい日付を足すと、表示順では先頭 = 2件目に追加したもの
+        entries = helpers.add_ir_qa("3496", "2026/08/20", "新しい回答")
+        assert [e["answered_at"] for e in entries] == ["2026/08/20", "2026/01/05"]
+
+        old_id = entries[1]["id"]
+        # 表示順で末尾 (= 追加順では先頭) を id 指定で更新する
+        entries = helpers.update_ir_qa("3496", old_id, "2026/01/05", "古い回答を訂正")
+        target = [e for e in entries if e["id"] == old_id][0]
+        assert "古い回答を訂正" in target["body"]
+        # もう一方は無傷
+        assert "新しい回答" in [e for e in entries if e["id"] != old_id][0]["body"]
+
+        entries = helpers.delete_ir_qa("3496", old_id)
+        assert [e["answered_at"] for e in entries] == ["2026/08/20"]
+
+    def test_rejects_add_at_max_without_dropping_entries(self, populated_db):
+        """上限到達後の追加は拒否し、既存エントリを1件も失わない。
+
+        切り捨て方式だと、古い日付を追加したときに「追加した回答自体」が
+        捨てられたまま成功扱いになる。IR回答は再取得できない一次情報なので、
+        黙って消さずに IrQaLimitError で拒否する。
+        """
+        for i in range(1, rs.IR_QA_MAX + 1):
+            helpers.add_ir_qa("3496", f"2026/01/{i:02d}", f"回答{i}")
+        before = rs.get_research_record("3496")["ir_qa"]
+        assert len(before) == rs.IR_QA_MAX
+
+        # 最古より更に古い日付 = 切り捨て方式なら新規自身が消えていたケース
+        with pytest.raises(helpers.IrQaLimitError):
+            helpers.add_ir_qa("3496", "2025/12/31", "上限超過で追加されない回答")
+
+        after = rs.get_research_record("3496")["ir_qa"]
+        assert [e["id"] for e in after] == [e["id"] for e in before]
+
+        # 上限到達中でも既存エントリの更新・削除は通る
+        helpers.update_ir_qa("3496", before[0]["id"], "2026/01/20", "更新後")
+        entries = helpers.delete_ir_qa("3496", before[0]["id"])
+        assert len(entries) == rs.IR_QA_MAX - 1
+
+    @pytest.mark.parametrize("answered_at, body, exc", [
+        ("2026-08-20", "本文", ValueError),   # 日付形式が YYYY/MM/DD でない
+        ("2026/08/20", "   ", ValueError),    # 本文が実質空
+    ])
+    def test_invalid_input_raises(self, populated_db, answered_at, body, exc):
+        with pytest.raises(exc):
+            helpers.add_ir_qa("3496", answered_at, body)
+
+    def test_unknown_id_raises_keyerror(self, populated_db):
+        helpers.add_ir_qa("3496", "2026/08/20", "回答")
+        with pytest.raises(KeyError):
+            helpers.update_ir_qa("3496", "deadbeef", "2026/08/21", "x")
+        with pytest.raises(KeyError):
+            helpers.delete_ir_qa("3496", "deadbeef")

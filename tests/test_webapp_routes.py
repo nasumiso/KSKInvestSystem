@@ -1859,6 +1859,73 @@ class TestChatLinkRoutes:
         assert resp.get_json()["ok"] is False
 
 
+class TestIrQaRoutes:
+    """issue #436: IR問い合わせ回答 AJAX ルート"""
+
+    def test_add_update_delete_flow(self, client, db_path):
+        """追加 → 更新 → 削除の一連と永続化を検証 (更新・削除は id 指定)"""
+        resp = client.post("/stock/3496/ir_qa",
+                           data={"answered_at": "2026/08/20", "body": "増産は順調"})
+        assert resp.status_code == 201
+        entries = resp.get_json()["entries"]
+        assert len(entries) == 1
+        entry_id = entries[0]["id"]
+        assert entries[0]["answered_at"] == "2026/08/20"
+        assert "増産は順調" in entries[0]["body"]
+        # 永続化確認
+        saved = rs.get_research_record("3496", db_path=db_path)["ir_qa"]
+        assert [e["id"] for e in saved] == [entry_id]
+
+        # 更新 (id 指定で本文が差し替わり、id は不変)
+        resp = client.post(f"/stock/3496/ir_qa/{entry_id}",
+                           data={"answered_at": "2026/08/21", "body": "計画を上方修正"})
+        assert resp.status_code == 200
+        updated = resp.get_json()["entries"][0]
+        assert updated["id"] == entry_id
+        assert updated["answered_at"] == "2026/08/21"
+        assert "計画を上方修正" in updated["body"]
+
+        # 削除
+        resp = client.post(f"/stock/3496/ir_qa/{entry_id}/delete")
+        assert resp.status_code == 200
+        assert resp.get_json()["entries"] == []
+        assert rs.get_research_record("3496", db_path=db_path)["ir_qa"] == []
+
+    @pytest.mark.parametrize("path, data, status", [
+        # 日付形式不正 → 400
+        ("/stock/3496/ir_qa", {"answered_at": "2026-08-20", "body": "x"}, 400),
+        # 本文が空 → 400
+        ("/stock/3496/ir_qa", {"answered_at": "2026/08/20", "body": "  "}, 400),
+        # 未登録銘柄 → 404
+        ("/stock/9999/ir_qa", {"answered_at": "2026/08/20", "body": "x"}, 404),
+        # 該当 id 無し → 404
+        ("/stock/3496/ir_qa/deadbeef", {"answered_at": "2026/08/20", "body": "x"}, 404),
+        ("/stock/3496/ir_qa/deadbeef/delete", {}, 404),
+    ])
+    def test_error_cases(self, client, path, data, status):
+        resp = client.post(path, data=data)
+        assert resp.status_code == status
+        assert resp.get_json()["ok"] is False
+
+    def test_add_at_limit_returns_409(self, client, db_path):
+        """上限到達後の追加は 409 で拒否し、既存を消さない (切り捨てない)。"""
+        import research_shelve as rs
+
+        for i in range(1, rs.IR_QA_MAX + 1):
+            resp = client.post("/stock/3496/ir_qa",
+                               data={"answered_at": f"2026/01/{i:02d}",
+                                     "body": f"回答{i}"})
+            assert resp.status_code == 201
+
+        resp = client.post("/stock/3496/ir_qa",
+                           data={"answered_at": "2025/12/31", "body": "溢れる回答"})
+        assert resp.status_code == 409
+        assert resp.get_json()["ok"] is False
+        saved = rs.get_research_record("3496", db_path=db_path)["ir_qa"]
+        assert len(saved) == rs.IR_QA_MAX
+        assert "溢れる回答" not in [e["body"] for e in saved]
+
+
 class TestSuggestThemes:
     """issue #297: POST /stock/<code_s>/suggest_themes (LLM 業態テーマ提案)。
 

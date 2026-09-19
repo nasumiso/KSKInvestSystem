@@ -10,6 +10,9 @@ POST /stock/<code_s>/stock_name_prev  : 旧名/エイリアス 保存/クリア 
 POST /stock/<code_s>/chat_link            : 外部チャットリンク追加 (issue #265, AJAX)
 POST /stock/<code_s>/chat_link/<idx>      : 外部チャットリンク更新 (issue #265, AJAX)
 POST /stock/<code_s>/chat_link/<idx>/delete : 外部チャットリンク削除 (issue #265, AJAX)
+POST /stock/<code_s>/ir_qa                  : IR問い合わせ回答追加 (issue #436, AJAX)
+POST /stock/<code_s>/ir_qa/<entry_id>       : IR問い合わせ回答更新 (issue #436, AJAX)
+POST /stock/<code_s>/ir_qa/<entry_id>/delete : IR問い合わせ回答削除 (issue #436, AJAX)
 """
 
 import threading
@@ -29,6 +32,10 @@ from webapp.helpers import (
     add_chat_link,
     update_chat_link,
     delete_chat_link,
+    add_ir_qa,
+    update_ir_qa,
+    delete_ir_qa,
+    IrQaLimitError,
     get_research_detail,
     get_stock_data,
 )
@@ -184,6 +191,57 @@ def post_chat_link_delete(code_s: str, idx: int):
     except (ValueError, TypeError) as e:
         return jsonify({"ok": False, "error": str(e)}), 404
     return jsonify({"ok": True, "links": links})
+
+
+# =======================================================
+# IR問い合わせ回答 (ir_qa) ルート (issue #436, AJAX/JSON)
+# =======================================================
+# 長文 textarea を含むため 302 リロードは避け、chat_link と同じ AJAX/JSON にする。
+# 更新・削除は index ではなく不変の entry_id で特定する (表示順=降順 ≠ 保存順)。
+
+@memo_bp.route("/stock/<code_s>/ir_qa", methods=["POST"])
+def post_ir_qa_add(code_s: str):
+    """IR問い合わせ回答追加 -> JSON {ok, entries}。
+
+    日付不正・本文空は 400、上限到達は 409 (切り捨てず拒否する)。
+    """
+    answered_at = request.form.get("answered_at", "")
+    body = request.form.get("body", "")
+    try:
+        entries = add_ir_qa(code_s, answered_at, body)
+    except IrQaLimitError as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+    except KeyError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    except (ValueError, TypeError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "entries": entries}), 201
+
+
+@memo_bp.route("/stock/<code_s>/ir_qa/<entry_id>", methods=["POST"])
+def post_ir_qa_update(code_s: str, entry_id: str):
+    """IR問い合わせ回答更新 -> JSON {ok, entries}。該当 id 無しは 404。"""
+    answered_at = request.form.get("answered_at", "")
+    body = request.form.get("body", "")
+    try:
+        entries = update_ir_qa(code_s, entry_id, answered_at, body)
+    except KeyError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    except (ValueError, TypeError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "entries": entries})
+
+
+@memo_bp.route("/stock/<code_s>/ir_qa/<entry_id>/delete", methods=["POST"])
+def post_ir_qa_delete(code_s: str, entry_id: str):
+    """IR問い合わせ回答削除 -> JSON {ok, entries}。該当 id 無しは 404。"""
+    try:
+        entries = delete_ir_qa(code_s, entry_id)
+    except KeyError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    except (ValueError, TypeError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "entries": entries})
 
 
 @memo_bp.route("/stock/<code_s>/suggest_themes", methods=["POST"])
