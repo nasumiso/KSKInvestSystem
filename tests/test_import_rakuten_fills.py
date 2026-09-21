@@ -187,3 +187,51 @@ def test_dedup_idempotent(tmp_path, db_path):
     s2 = ir.import_csv_to_fills(csv_path, db_path=db_path)
     assert s2["imported"] == 0 and s2["skipped_dup"] == 3
     assert len(ps.list_fills(db_path=db_path)) == 3  # 総数不変 (冪等)
+
+
+def test_credit_settlement_dedup_ignores_csv_occurrence(tmp_path, db_path):
+    """期間・並びが異なるCSVでも、同じ建玉の信用返済は重複登録しない。"""
+    existing = ps.create_fill(
+        "278A", trade_date="2026-08-27", side="sell", qty=100, price=17700.0,
+        amount=251535, trade_kind="信用返済",
+        dedup_key=ps.make_dedup_key(
+            trade_date="2026-08-27", code_s="278A", trade_kind="信用返済",
+            baibai_kubun="売埋", qty=100, price=17700.0, amount=0, occurrence=1,
+        ),
+        broker="楽天", tate_date="2026-08-26", tate_price=15180.0,
+    )
+    ps.append_fill(existing, db_path=db_path)
+    csv_path = _write_csv(
+        tmp_path / "later_range.csv",
+        [_row("278A", "信用返済", "売埋", "100", "17,700.0", amount="251,535",
+              trade_date="2026/8/27", tate_date="2026/8/26", tate_price="15,180.0")],
+    )
+
+    stats = ir.import_csv_to_fills(csv_path, db_path=db_path)
+
+    assert stats["imported"] == 0 and stats["skipped_dup"] == 1
+    assert len(ps.list_fills("278A", db_path=db_path)) == 1
+
+
+def test_dedupe_rakuten_credit_settlements_removes_only_exact_duplicates(db_path, monkeypatch):
+    """既存データの完全一致重複は後の seq だけを削除し、建玉違いは残す。"""
+    # 修正前に保存されていた重複を再現するため、投入時だけ新しい照合を無効化する。
+    monkeypatch.setattr(ps, "_is_same_rakuten_credit_settlement", lambda *_: False)
+    for occurrence, tate_price in ((0, 15180.0), (1, 15180.0), (2, 15000.0)):
+        fill = ps.create_fill(
+            "278A", trade_date="2026-08-27", side="sell", qty=100, price=17700.0,
+            amount=251535, trade_kind="信用返済",
+            dedup_key=ps.make_dedup_key(
+                trade_date="2026-08-27", code_s="278A", trade_kind="信用返済",
+                baibai_kubun="売埋", qty=100, price=17700.0, amount=0, occurrence=occurrence,
+            ),
+            broker="楽天", tate_date="2026-08-26", tate_price=tate_price,
+        )
+        ps.append_fill(fill, db_path=db_path)
+
+    preview = ps.dedupe_rakuten_credit_settlements(db_path=db_path)
+    applied = ps.dedupe_rakuten_credit_settlements(dry_run=False, db_path=db_path)
+
+    assert preview == {"scanned": 3, "duplicates": 1, "deleted": 0}
+    assert applied == {"scanned": 3, "duplicates": 1, "deleted": 1}
+    assert [f["tate_price"] for f in ps.list_fills("278A", db_path=db_path)] == [15180.0, 15000.0]

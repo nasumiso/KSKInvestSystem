@@ -11,6 +11,7 @@ build_fill_episodes (webapp.helpers) を呼んで、取込後の検算・保有�
     cd scripts && python show_fill_episodes.py --memo     # 振り返りメモ付きのみ (DB非更新)
     cd scripts && python show_fill_episodes.py --fills 6324  # 内訳 fill も表示 (DB非更新)
     cd scripts && python show_fill_episodes.py --check-dups            # 未確定CSV由来の重複約定を検出
+    cd scripts && python show_fill_episodes.py --repair-rakuten-credit-dups  # 完全一致の信用返済重複を削除
     cd scripts && python show_fill_episodes.py --check-splits          # 分割・併合の疑いを診断 (issue #398)
     cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05  # 換算比率を登録
     cd scripts && python show_fill_episodes.py --reject-split 1491 2025-09-29  # 誤検知を解除
@@ -426,6 +427,8 @@ def main() -> int:
     parser.add_argument("--db-path", default=None, help="portfolio DB パス")
     parser.add_argument("--check-dups", action="store_true",
                         help="未確定CSV由来の重複約定を検出する (DB非更新)")
+    parser.add_argument("--repair-rakuten-credit-dups", action="store_true",
+                        help="楽天の完全一致の信用返済重複をバックアップ後に削除する")
     parser.add_argument("--check-splits", action="store_true",
                         help="分割・併合の疑いを診断する (issue #398、DB非更新)")
     parser.add_argument("--register-split", nargs=3, metavar=("CODE", "EX_DATE", "RATIO"),
@@ -440,6 +443,21 @@ def main() -> int:
         return _reject_split(args.reject_split, db_path=args.db_path)
     if args.check_dups:
         return _check_dups(args.db_path)
+    if args.repair_rakuten_credit_dups:
+        preview = ps.dedupe_rakuten_credit_settlements(db_path=args.db_path)
+        if not preview["duplicates"]:
+            log_print("楽天の完全一致の信用返済重複はありません。")
+            return 0
+        backups = ps.backup_portfolio_db(db_path=args.db_path)
+        applied = ps.dedupe_rakuten_credit_settlements(
+            dry_run=False, db_path=args.db_path,
+        )
+        log_print(
+            "楽天の信用返済重複を修復しました。",
+            f"削除={applied['deleted']}件",
+            f"backup_files={len(backups)}",
+        )
+        return 0
     if args.check_splits:
         return _check_splits(args.db_path)
 

@@ -1163,6 +1163,38 @@ def _shape_changed_by_backfill(value: Dict[str, Any], fill: Dict[str, Any]) -> b
                for f in _FILL_SHAPE_FIELDS)
 
 
+def _is_same_rakuten_credit_settlement(
+    value: Dict[str, Any], fill: Dict[str, Any],
+) -> bool:
+    """楽天の信用返済で、建玉まで一致する既存約定かを判定する。
+
+    楽天CSVには注文番号がないため、通常の約定はCSV内の出現順を dedup_key に含めて
+    同日同単価の別注文を残している。一方、信用返済は建約定日・建単価を持つので、
+    これらまで一致すれば同じ建玉の同じ返済として判定できる。期間や並びが異なる
+    CSVを重ねた際に occurrence がずれて重複登録されるのを防ぐ。
+    """
+    if fill.get("broker") != "楽天" or value.get("broker") not in (None, "楽天"):
+        return False
+    if fill.get("trade_kind") != "信用返済" or value.get("trade_kind") != "信用返済":
+        return False
+    if fill.get("tate_date") is None or fill.get("tate_price") is None:
+        return False
+
+    fields = ("code_s", "trade_date", "side", "qty", "price", "trade_kind")
+    if any(value.get(field) != fill.get(field) for field in fields):
+        return False
+
+    # 古い取込には建玉情報が無いことがある。その場合は後続CSVで補完するため一致とする。
+    for field in ("tate_date", "tate_price"):
+        if value.get(field) is not None and value.get(field) != fill.get(field):
+            return False
+
+    # 楽天の未確定CSVは 0、確定後は実額になる。両方が確定済みの場合だけ差を区別する。
+    old_amount = value.get("amount") or 0
+    new_amount = fill.get("amount") or 0
+    return not (old_amount and new_amount and old_amount != new_amount)
+
+
 def _invalidate_episode_fingerprints(db: ShelveDB, code_s: str) -> int:
     """指定銘柄のエピソード戦略から指紋を落とし、要再確認に落とす (flock 内から呼ぶ)。
 
@@ -1233,11 +1265,82 @@ def append_fill(
                                     code_s, f"episodes={n}",
                                 )
                     return value, False  # 既に取込済み (冪等)
+                if (isinstance(value, dict)
+                        and _is_same_rakuten_credit_settlement(value, fill)):
+                    # CSVの期間や行順が異なり occurrence が変わっても、建玉まで一致する
+                    # 楽天の信用返済は同一約定として扱う。必要な確定値は通常の再取込と
+                    # 同じく既存レコードへ後付けする。
+                    shape_changed = _shape_changed_by_backfill(value, fill)
+                    if _backfill_fill(value, fill):
+                        db[key] = value
+                        if shape_changed:
+                            _invalidate_episode_fingerprints(db, code_s)
+                    return value, False
             seq = _next_fill_seq(db, code_s)
             stored = dict(fill)
             stored["seq"] = seq
             db[_fill_key(code_s, seq)] = stored
     return stored, True
+
+
+def dedupe_rakuten_credit_settlements(
+    *,
+    dry_run: bool = True,
+    db_path: Optional[str] = None,
+) -> Dict[str, int]:
+    """過去に重複登録された楽天の完全一致の信用返済を検出・削除する。
+
+    建約定日・建単価・返済日・数量・価格・受渡金額がすべて一致するものだけを対象にし、
+    最小 seq を残す。通常の同日同単価注文や、建玉が異なる信用返済は対象外。
+    """
+    path = _resolve_db_path(db_path)
+    stats = {"scanned": 0, "duplicates": 0, "deleted": 0}
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            groups: Dict[tuple, List[tuple]] = {}
+            for key, value in db.items():
+                if not key.startswith(KEY_FILL_PREFIX) or not isinstance(value, dict):
+                    continue
+                if value.get("broker") not in (None, "楽天"):
+                    continue
+                if value.get("trade_kind") != "信用返済":
+                    continue
+                if value.get("tate_date") is None or value.get("tate_price") is None:
+                    continue
+                stats["scanned"] += 1
+                identity = (
+                    value.get("code_s"), value.get("trade_date"), value.get("side"),
+                    value.get("qty"), value.get("price"), value.get("amount"),
+                    value.get("trade_kind"), value.get("tate_date"), value.get("tate_price"),
+                )
+                groups.setdefault(identity, []).append((key, value))
+
+            remove_keys = []
+            affected_codes = set()
+            for rows in groups.values():
+                if len(rows) < 2:
+                    continue
+                rows.sort(key=lambda row: row[1].get("seq", 0))
+                duplicates = rows[1:]
+                remove_keys.extend(key for key, _ in duplicates)
+                affected_codes.update(value["code_s"] for _, value in duplicates)
+
+            stats["duplicates"] = len(remove_keys)
+            if not dry_run:
+                for code_s in affected_codes:
+                    _invalidate_episode_fingerprints(db, code_s)
+                for key in remove_keys:
+                    del db[key]
+                stats["deleted"] = len(remove_keys)
+
+    if stats["duplicates"]:
+        action = "削除" if not dry_run else "検出"
+        log_print(
+            f"portfolio_shelve: 楽天信用返済の重複を{action}",
+            f"scanned={stats['scanned']}",
+            f"duplicates={stats['duplicates']}",
+        )
+    return stats
 
 
 def list_fills(
