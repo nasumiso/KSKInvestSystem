@@ -286,7 +286,7 @@ def collect_theme_portfolio_links():
         if not records:
             return {}
         stock_map = {}
-        with ShelveDB(STOCKS_SHELVE) as db:
+        with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
             for rec in records:
                 code_s = rec.get("code_s")
                 if code_s:

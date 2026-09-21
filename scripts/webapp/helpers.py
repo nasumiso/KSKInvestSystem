@@ -150,7 +150,7 @@ def get_stock_data(code_s: str) -> Dict[str, Any]:
     この関数経由で取得しテンプレートに渡す。
     """
     normalized = normalize_code_s(code_s)
-    with ShelveDB(STOCKS_SHELVE) as db:
+    with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
         return db.get(normalized) or {}
 
 
@@ -1090,7 +1090,7 @@ def _bulk_price_logs(code_list: List[str]) -> Dict[str, List]:
             normalized_codes.add(normalize_code_s(c))
         except Exception:
             continue
-    with ShelveDB(STOCKS_SHELVE) as db:
+    with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
         for code in normalized_codes:
             rec = db.get(code)
             if rec:
@@ -1996,7 +1996,7 @@ def _bulk_get_stock_data(code_list: List[str]) -> Dict[str, Dict[str, Any]]:
     `get_stock_data` を N 回呼ぶと N 回 open/close するため、一覧画面用のバルク版。
     """
     result: Dict[str, Dict[str, Any]] = {}
-    with ShelveDB(STOCKS_SHELVE) as db:
+    with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
         for code_s in code_list:
             if not code_s:
                 continue
@@ -2015,7 +2015,7 @@ def resolve_stock_name(code_s: str) -> str:
     if not code_s:
         return ""
     normalized = normalize_code_s(code_s)
-    with ShelveDB(STOCKS_SHELVE) as db:
+    with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
         rec = db.get(normalized)
         if rec and rec.get("stock_name"):
             return rec["stock_name"]
@@ -2034,7 +2034,7 @@ def _bulk_resolve_stock_names(code_list: List[str]) -> Dict[str, str]:
     if not result:
         return result
 
-    with ShelveDB(STOCKS_SHELVE) as db:
+    with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
         for c in list(result.keys()):
             rec = db.get(normalize_code_s(c))
             if rec and rec.get("stock_name"):
