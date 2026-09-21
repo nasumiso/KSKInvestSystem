@@ -9,7 +9,7 @@ Provide concise, actionable guidance so an AI coding agent can be immediately pr
   - scripts/ : core Python modules and orchestration scripts (entrypoints like `shintakane.py`, `make_stock_db.py`).
   - data/ : persistent CSVs, cached HTML, and the single DB pickle `data/stock_data/stocks.pickle`.
   - logs/ : application logs (per-script, rotated by `ks_util.setup_logger`).
-  - cron / launchd integration: `shintakane_cron.sh` and `com.k_sohara.shintakane.cron.plist` schedule nightly runs.
+  - cron / launchd integration: `shintakane_cron.sh` and `deploy/com.k_sohara.shintakane.cron.plist` schedule nightly runs.
 - Data flow: crawler/scraper -> (today_stocks/html_cache) -> per-module parsers (e.g., `master.py`, `rironkabuka.py`) -> consolidated DB pickle `stocks.pickle` -> CSV exports / Google Drive uploads (`googledrive.py`).
 
 ## Important files & responsibilities (quick map)
@@ -18,7 +18,7 @@ Provide concise, actionable guidance so an AI coding agent can be immediately pr
 - `scripts/ks_util.py` — utilities used across the project (constants: `DATA_DIR`, `UPD_INTERVAL`, logging helpers `log_print` / `log_warning`, `get_price_day`, session helpers). Read this first.
 - `scripts/master.py`, `scripts/price.py`, `scripts/gyoseki.py`, `scripts/shihyou.py`, `scripts/rironkabuka.py` — per-domain scrapers/parsers and data transformers.
 - `scripts/googledrive.py` — Google Drive upload/update; requires OAuth credentials under `data/googledrive/`.
-- `shintakane_cron.sh` & `com.k_sohara.shintakane.cron.plist` — how the system is scheduled and run on macOS (launchd).
+- `shintakane_cron.sh` & `deploy/` — how the system is scheduled and run on macOS (launchd). See `doc/OPERATIONS.md`.
 - `data/stock_data/stocks.pickle` — canonical project DB (pickle). Many functions read/write this file.
 
 ## Conventions & patterns to follow (specific)
@@ -44,7 +44,7 @@ Provide concise, actionable guidance so an AI coding agent can be immediately pr
      - `cd scripts && python make_stock_db.py` — runs DB update routines
    - Run a single-module update (example): to re-evaluate price/gyoseki for codes `['7203','9984']` use `update_db_rows([...], upd=UPD_REEVAL, tables=['price','gyoseki'])` in an interactive session or small script.
 3. Scheduled runs
-   - macOS launchd: copy `com.k_sohara.shintakane.cron.plist` to `~/Library/LaunchAgents/` and load/unload with `launchctl`.
+   - macOS launchd: substitute placeholders in `deploy/com.k_sohara.shintakane.cron.plist`, copy to `~/Library/LaunchAgents/`, and load/unload with `launchctl` (see `deploy/README.md`).
    - Shell-based cron runner: `shintakane_cron.sh` activates `.venv` and runs both `shintakane.py` and `make_stock_db.py` — check `logs/` for outputs.
 4. Debugging
    - Check `logs/<scriptname>.log` (TimRotatingFileHandler, 7 days retention).
