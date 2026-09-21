@@ -9,11 +9,12 @@ pickleからshelveへの移行用モジュール。
 
 import shelve
 import dbm.dumb
+import fcntl
 import threading
 import pickle
 import os
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from typing import Dict, Any, Optional, List, Iterator
 
 # ks_utilへの依存を遅延ロードに変更（テスト時の依存解決のため）
@@ -29,6 +30,87 @@ except ImportError:
 
     # Default DATA_DIR for testing
     DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+
+
+# ===========================================
+# プロセス間排他制御 (issue #174)
+# ===========================================
+
+# リエントラント検出用: ロックファイルパスごとの取得深さ。
+# research_shelve は単一 DB 前提で depth をスカラーで持つが、ShelveDB は
+# stocks/market/research/portfolio を同じクラスで扱うため path をキーにする。
+_flock_depth = threading.local()
+
+
+def _lock_path_for(db_path: str) -> str:
+    """ロックファイルパスを返す。
+
+    research_shelve / portfolio_shelve が使う `<db>.lock` とは別名にする。
+    あちらは自前の _flock() を外側で取ってから ShelveDB を開くため、同名だと
+    同一プロセス・別fdで同じファイルを掴み自己デッドロックする
+    (flock はプロセス単位ではなく fd 単位で待つ)。
+    """
+    return db_path + ".dbm.lock"
+
+
+@contextmanager
+def _flock(db_path: str, operation: int):
+    """shelve DB のプロセス間ロック (fcntl.flock)。
+
+    compact のファイル差し替え (.dat/.dir の入れ替え) を、他プロセスの
+    読み書きと直列化するために使う。compact は EX、書き込み open は EX、
+    読み取り open は SH を、いずれも open〜close の全区間で保持する。
+
+    書き込みを EX にするのは、dbm.dumb が「.dat への値の書き込み」と
+    「.dir への索引反映 (close 時)」を分離しているため。close 時だけ
+    排他しても、compact の export 中に .dat が書き換わって pickle 破損や
+    更新消失が起きる (実測で 401件中100件が破損)。
+    open 全体を EX にしても、日次バッチは1銘柄ごとに open/write/close する
+    ため保持は一瞬で、並行する一覧表示は中央値 10ms・最大 18ms だった。
+
+    operation: fcntl.LOCK_EX または fcntl.LOCK_SH
+
+    リエントラント対応: 同一スレッドが同じロックファイルを保持中なら
+    取得をスキップする。SH 保持中の EX 要求 (昇格) は flock では
+    アトミックにできず取りこぼすため、呼び出し側の設計ミスとして弾く。
+    """
+    lock_file = _lock_path_for(db_path)
+    held = getattr(_flock_depth, "held", None)
+    if held is None:
+        held = _flock_depth.held = {}
+
+    entry = held.get(lock_file)
+    if entry is not None:
+        depth, held_op = entry
+        if operation == fcntl.LOCK_EX and held_op == fcntl.LOCK_SH:
+            raise RuntimeError(
+                "共有ロック保持中に排他ロックは取得できません: %s" % lock_file
+            )
+        held[lock_file] = (depth + 1, held_op)
+        try:
+            yield
+        finally:
+            depth, held_op = held[lock_file]
+            if depth <= 1:
+                del held[lock_file]
+            else:
+                held[lock_file] = (depth - 1, held_op)
+        return
+
+    lock_dir = os.path.dirname(lock_file)
+    if lock_dir and not os.path.exists(lock_dir):
+        os.makedirs(lock_dir, exist_ok=True)
+    fd = open(lock_file, "a")
+    try:
+        fcntl.flock(fd, operation)
+        held[lock_file] = (1, operation)
+        try:
+            yield
+        finally:
+            held.pop(lock_file, None)
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
 
 
 class ShelveDB:
@@ -50,20 +132,27 @@ class ShelveDB:
             data = db["key"]
     """
 
-    def __init__(self, db_path: str, writeback: bool = False):
+    def __init__(self, db_path: str, writeback: bool = False,
+                 read_only: bool = False):
         """
         Initialize ShelveDB.
 
         Args:
             db_path: Path to shelve database (without extension)
             writeback: Enable writeback mode (caches all accessed entries)
+            read_only: 読み取り専用。open〜close で共有ロックを保持する
+                (通常は排他ロック)。読み手同士は互いに待たない。
+                書き込みメソッドを呼ぶと RuntimeError (issue #174)。
         """
         self._db_path = db_path
         self._writeback = writeback
+        self._read_only = read_only
         self._lock = threading.RLock()
         self._db: Optional[shelve.Shelf] = None
         self._memo_cache: Dict[str, Any] = {}
         self._memo_enabled = False
+        # open〜close で保持するプロセス間ロック (ExitStack)
+        self._flock_stack: Optional[ExitStack] = None
 
     def open(self) -> "ShelveDB":
         """Open the database connection."""
@@ -74,13 +163,26 @@ class ShelveDB:
                 db_dir = os.path.dirname(self._db_path)
                 if db_dir and not os.path.exists(db_dir):
                     os.makedirs(db_dir)
-                # dbm.dumbを使用（macOSのdbm.ndbmはハッシュ衝突でキー消失するため）
-                dumb_db = dbm.dumb.open(self._db_path, flag="c")
-                self._db = shelve.Shelf(
-                    dumb_db,
-                    protocol=pickle.HIGHEST_PROTOCOL,
-                    writeback=self._writeback,
-                )
+                # open〜close の全区間でロックを保持する。
+                # dbm.dumb の索引は open 時に一度だけ読まれ以後更新されないため、
+                # 途中で解放すると compact の差し替え後に古いオフセットで
+                # .dat を読み書きしてしまう (別レコードの混入・pickle 破損)。
+                # 読み取りは共有ロックなので、読み手同士・読み手と書き手は待たない。
+                stack = ExitStack()
+                operation = fcntl.LOCK_SH if self._read_only else fcntl.LOCK_EX
+                stack.enter_context(_flock(self._db_path, operation))
+                try:
+                    # dbm.dumbを使用（macOSのdbm.ndbmはハッシュ衝突でキー消失するため）
+                    dumb_db = dbm.dumb.open(self._db_path, flag="c")
+                    self._db = shelve.Shelf(
+                        dumb_db,
+                        protocol=pickle.HIGHEST_PROTOCOL,
+                        writeback=self._writeback,
+                    )
+                except Exception:
+                    stack.close()
+                    raise
+                self._flock_stack = stack
         return self
 
     def close(self) -> None:
@@ -88,9 +190,14 @@ class ShelveDB:
         with self._lock:
             if self._db is not None:
                 log_print(f"shelveDB close: {self._db_path}")
+                # open で取得したロックを保持したまま閉じる。ここで取り直すと
+                # 共有ロックからの昇格になり、flock では安全に行えない。
                 self._db.close()
                 self._db = None
                 self._memo_cache.clear()
+            if self._flock_stack is not None:
+                self._flock_stack.close()
+                self._flock_stack = None
 
     def __enter__(self) -> "ShelveDB":
         return self.open()
@@ -103,6 +210,13 @@ class ShelveDB:
         if self._db is None:
             raise RuntimeError(
                 "Database not open. Use 'with' statement or call open()"
+            )
+
+    def _ensure_writable(self) -> None:
+        """read_only インスタンスへの書き込みを弾く (issue #174)。"""
+        if self._read_only:
+            raise RuntimeError(
+                "read_only で開いた DB には書き込めません: %s" % self._db_path
             )
 
     # ===========================================
@@ -150,6 +264,7 @@ class ShelveDB:
         """Dict-like assignment: db[key] = value"""
         with self._lock:
             self._ensure_open()
+            self._ensure_writable()
             self._db[key] = value
             if self._memo_enabled:
                 self._memo_cache[key] = value
@@ -158,6 +273,7 @@ class ShelveDB:
         """Dict-like deletion: del db[key]"""
         with self._lock:
             self._ensure_open()
+            self._ensure_writable()
             del self._db[key]
             self._memo_cache.pop(key, None)
 
@@ -206,6 +322,7 @@ class ShelveDB:
         """
         with self._lock:
             self._ensure_open()
+            self._ensure_writable()
             for key, value in updates.items():
                 self._db[key] = value
                 if self._memo_enabled:
@@ -221,6 +338,7 @@ class ShelveDB:
         deleted = 0
         with self._lock:
             self._ensure_open()
+            self._ensure_writable()
             for key in keys:
                 if key in self._db:
                     del self._db[key]
@@ -233,6 +351,10 @@ class ShelveDB:
         """Synchronize database to disk."""
         with self._lock:
             if self._db is not None:
+                if self._read_only:
+                    # 読み取り専用では書き戻すものが無い (_modified が False の
+                    # ままなので _commit() も走らない)。
+                    return
                 self._db.sync()
 
     # ===========================================
@@ -271,6 +393,7 @@ class ShelveDB:
         """Import dict data into database (upsert only, does not delete existing keys)."""
         with self._lock:
             self._ensure_open()
+            self._ensure_writable()
             for key, value in data.items():
                 self._db[str(key)] = value  # Ensure string keys
             self.sync()
@@ -279,6 +402,7 @@ class ShelveDB:
         """Replace entire database contents with dict data (deletes keys not in data)."""
         with self._lock:
             self._ensure_open()
+            self._ensure_writable()
             for key in list(self._db.keys()):
                 del self._db[key]
             for key, value in data.items():
@@ -462,6 +586,16 @@ def compact_shelve(db_path: str, keep_backup: bool = False) -> Optional[Dict[str
         RuntimeError: 検証失敗時、または前回の中断を検出した場合。
                       いずれもライブDB・退避は保持される
     """
+    # 全工程を排他ロックで囲む (issue #174)。
+    # 読み出し〜差し替えの間に他プロセスが書き込むと、古いスナップショットで
+    # 差し替えることになりその更新が消える (成功を返すため気づけない)。
+    # 実測 0.8〜1.4s で終わるため、読み手を待たせるコストは小さい。
+    with _flock(db_path, fcntl.LOCK_EX):
+        return _compact_shelve_locked(db_path, keep_backup)
+
+
+def _compact_shelve_locked(db_path: str, keep_backup: bool) -> Optional[Dict[str, Any]]:
+    """compact_shelve の本体。排他ロック保持中に呼ばれる。"""
     backup_path = db_path + ".compact_backup"
     if os.path.exists(backup_path + ".dat"):
         # 前回の実行が差し替え途中で中断している (プロセス強制終了・電源断など)。

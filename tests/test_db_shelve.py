@@ -1,6 +1,7 @@
 """db_shelve.py の ShelveDB CRUD テスト（tmp_path で一時DB作成）"""
 
 import os
+import sys
 import time
 import pytest
 
@@ -302,3 +303,146 @@ class TestCompactShelve:
         with ShelveDB(db_path) as db:
             assert db.export_to_dict() == data
         assert not os.path.exists(db_path + ".compact_backup.dat")
+
+
+# ==================================================
+# プロセス間ロック (issue #174)
+# ==================================================
+_READER_OPEN_SRC = """
+import sys, time
+sys.path.insert(0, %r)
+from db_shelve import ShelveDB
+path = sys.argv[1]
+with ShelveDB(path, read_only=True) as db:
+    print("OPENED", flush=True)
+    time.sleep(float(sys.argv[2]))   # この間に親が compact を走らせる
+    bad = 0
+    for k in list(db.keys()):
+        try:
+            rec = db.get(k)
+        except Exception:
+            bad += 1
+            continue
+        if not isinstance(rec, dict) or rec.get("key") != k:
+            bad += 1
+    print("BAD", bad, flush=True)
+"""
+
+
+class TestShelveDBFlock:
+    """compact とその最中の読み取りの排他 (issue #174)。
+
+    いずれも実プロセス並走でのみ再現する (同一プロセスでは GIL に隠れる)。
+    なお「日次バッチの書き込み途中を読むと壊れる」問題は dbm.dumb の構造上
+    このロックでは塞げないため、ここでは検証しない (SQLite 移行で解決予定)。
+    """
+
+    @staticmethod
+    def _scripts_dir():
+        return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
+
+    def test_リエントラントとread_onlyのopen_close(self, db_path):
+        """同一ロックの入れ子が固まらず、read_only が昇格エラーを出さずに完走する"""
+        import fcntl
+        with ShelveDB(db_path) as db:
+            db["a"] = {"v": 1}
+        # 同一パスの入れ子 (research/portfolio が外側で取るのと同じ形)
+        with db_shelve._flock(db_path, fcntl.LOCK_EX):
+            with ShelveDB(db_path) as db:
+                db["b"] = {"v": 2}
+        # read_only は open〜close で SH を保持したまま閉じる (EX へ昇格しない)
+        with ShelveDB(db_path, read_only=True) as db:
+            assert db["a"] == {"v": 1}
+        with pytest.raises(RuntimeError):
+            with ShelveDB(db_path, read_only=True) as db:
+                db["c"] = {"v": 3}
+
+    def test_compact中の書き込みが失われない(self, db_path, tmp_path):
+        """compact の export〜swap 中に別プロセスが書いた更新が消えないこと。
+
+        ロック無しでは compact が古いスナップショットで差し替えるため、
+        その更新が silent に消える (compact は成功を報告する)。
+        """
+        import subprocess
+        with ShelveDB(db_path) as db:
+            db.import_from_dict({"k%d" % i: {"n": i, "pad": "z" * 400} for i in range(300)})
+            db["CANARY"] = {"v": "ORIGINAL"}
+
+        src = tmp_path / "w2.py"
+        src.write_text(
+            "import sys, time\n"
+            "sys.path.insert(0, %r)\n" % self._scripts_dir() +
+            "from db_shelve import ShelveDB\n"
+            "path = sys.argv[1]\n"
+            "time.sleep(0.05)\n"
+            "with ShelveDB(path) as db:\n"
+            "    db['CANARY'] = {'v': 'UPDATED'}\n"
+            "    db['NEWKEY'] = {'v': 'ADDED'}\n"
+        )
+        proc = subprocess.Popen([sys.executable, str(src), db_path],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        db_shelve.compact_shelve(db_path)
+        proc.wait(timeout=30)
+
+        with ShelveDB(db_path, read_only=True) as db:
+            assert db.get("CANARY") == {"v": "UPDATED"}
+            assert db.get("NEWKEY") == {"v": "ADDED"}
+
+    def test_compact中に開いている読み手が壊れたデータを読まない(self, db_path, tmp_path):
+        """open 済みの読み手の索引は古くなる。compact の差し替えを SH で待たせる。
+
+        ロック無しでは 177 回中 176 回が pickle 破損か別レコード混入になる
+        (17 回は例外すら出さず他銘柄のデータを返す)。
+        断片化 (大→小の上書き) が無いと offset がズレず再現しないので seed に含める。
+        """
+        import subprocess
+        big = {"k%d" % i: {"key": "k%d" % i, "pad": "a" * 4000} for i in range(200)}
+        with ShelveDB(db_path) as db:
+            db.import_from_dict(big)
+        with ShelveDB(db_path) as db:   # 大→小で .dat に穴を開ける
+            db.import_from_dict({k: {"key": k, "pad": "b" * 50} for k in big})
+
+        src = tmp_path / "r.py"
+        src.write_text(_READER_OPEN_SRC % self._scripts_dir())
+        proc = subprocess.Popen([sys.executable, str(src), db_path, "1.5"],
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        assert proc.stdout.readline().strip() == "OPENED"
+        db_shelve.compact_shelve(db_path)
+        out = proc.stdout.read()
+        proc.wait(timeout=30)
+        assert "BAD 0" in out, out
+
+    def test_compact中に開いている書き手がDBを壊さない(self, db_path, tmp_path):
+        """書き手が open 済みのまま compact が始まっても破損しないこと。
+
+        書き込みの実データ変更は close 前に起きるため、close 時だけ排他しても
+        compact の export 中に .dat が変わる。ロック無しでは 401件中100件が破損した。
+        """
+        import subprocess
+        big = {"k%d" % i: {"key": "k%d" % i, "pad": "a" * 4000} for i in range(200)}
+        with ShelveDB(db_path) as db:
+            db.import_from_dict(big)
+        with ShelveDB(db_path) as db:   # 大→小で .dat に穴を開ける
+            db.import_from_dict({k: {"key": k, "pad": "b" * 50} for k in big})
+
+        src = tmp_path / "w.py"
+        src.write_text(
+            "import sys, time\n"
+            "sys.path.insert(0, %r)\n" % self._scripts_dir() +
+            "from db_shelve import ShelveDB\n"
+            "db = ShelveDB(sys.argv[1]).open()\n"
+            "print('OPENED', flush=True)\n"
+            "time.sleep(0.5)\n"
+            "for i in range(150):\n"
+            "    db['k%d' % i] = {'key': 'k%d' % i, 'pad': 'Z' * 3000}\n"
+            "db.close()\n"
+        )
+        proc = subprocess.Popen([sys.executable, str(src), db_path],
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        assert proc.stdout.readline().strip() == "OPENED"
+        db_shelve.compact_shelve(db_path)
+        proc.wait(timeout=30)
+
+        with ShelveDB(db_path, read_only=True) as db:
+            for k in db.keys():
+                assert db.get(k)["key"] == k
