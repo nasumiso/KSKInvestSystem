@@ -2,11 +2,14 @@
 
 GET  /trade-history                          : 売買履歴/アクションログの2タブ表示
 POST /trade-history/import                    : 楽天/SBI CSV をアップロード取込 (issue #387 4a)
+POST /trade-history/import/quick              : ~/Downloads の未取込CSVを自動取込
 POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
      seq は売却ログまたは1保遷移ログの seq。どちらも review_memo に保存可能。
 """
 
 import datetime
+import glob
+import hashlib
 import os
 import shutil
 import tempfile
@@ -44,6 +47,7 @@ trade_history_bp = Blueprint("trade_history", __name__)
 
 # 取込成功CSVの保存先 (取引履歴の原本置き場)。issue #387 4a
 TRADE_HISTORY_DIR = os.path.join(DATA_DIR, "trade_history")
+TRADE_HISTORY_DOWNLOADS_DIR = os.path.expanduser("~/Downloads")
 
 
 def _build_rows(ep: dict) -> list:
@@ -397,6 +401,72 @@ def import_trade_csv():
     return redirect(url_for("trade_history.trade_history"))
 
 
+@trade_history_bp.route("/trade-history/import/quick", methods=["POST"])
+def import_trade_csv_quick():
+    """~/Downloads から未取込の取引履歴CSVだけを見つけて取り込む。
+
+    残高CSVと違い、約定履歴CSVは同一証券会社の複数期間ファイルを取り込める。
+    そのためファイル名や更新日時ではなく、保存済み原本と内容を照合する。
+    """
+    found = _find_unimported_trade_csvs(TRADE_HISTORY_DOWNLOADS_DIR)
+    if not found:
+        flash("~/Downloads に未取込の取引履歴CSVは見つかりませんでした。", "info")
+        return redirect(url_for("trade_history.trade_history"))
+
+    used_names = set()
+    for path in found:
+        filename = _dedupe_filename(_safe_csv_filename(os.path.basename(path)), used_names)
+        used_names.add(filename)
+        try:
+            _import_csv_path(path, filename)
+        except Exception as e:  # noqa: BLE001 - 1ファイルの失敗で他を巻き込まない
+            flash(f"取込中にエラーが発生しました ({filename}): {e}", "error")
+
+    return redirect(url_for("trade_history.trade_history"))
+
+
+def _find_unimported_trade_csvs(search_dir: str) -> list:
+    """保存済み原本と内容が異なる楽天/SBI/マネックスCSVを返す。
+
+    Downloads には過去分やFinderが作った重複コピーも残るため、既存fillとの
+    全件照合はしない。取込成功時に保存する原本のハッシュと比べれば、DBを開かずに
+    同じCSVを除外できる。
+    """
+    saved_hashes = _saved_trade_csv_hashes(TRADE_HISTORY_DIR)
+    found = []
+    for path in sorted(glob.glob(os.path.join(search_dir, "*.csv"))):
+        module = _csv_import_module(path)
+        if module is None:
+            continue
+        try:
+            content_hash = _file_sha256(path)
+        except OSError:
+            continue  # Downloads 側で削除中・読込不能のCSVは候補から外す
+        if content_hash not in saved_hashes:
+            found.append(path)
+    return found
+
+
+def _saved_trade_csv_hashes(saved_dir: str) -> set:
+    """取込済み原本の内容ハッシュ集合を返す。"""
+    if not os.path.isdir(saved_dir):
+        return set()
+    return {
+        _file_sha256(path)
+        for path in glob.glob(os.path.join(saved_dir, "*.csv"))
+        if os.path.isfile(path)
+    }
+
+
+def _file_sha256(path: str) -> str:
+    """CSV内容を比較するためのSHA-256ハッシュを返す。"""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _safe_csv_filename(raw: str) -> str:
     """アップロード名から保存用の安全なファイル名を作る。
 
@@ -432,37 +502,44 @@ def _import_one_csv(file, filename: str) -> None:
     os.close(fd)
     try:
         file.save(tmp_path)
-
-        # ヘッダ自動判定 (楽天=先頭行が約定日ヘッダ28列 / SBI=メタ行+14列 /
-        # マネックス=メタ行+25列+建単価列)。列数が異なるので3者は排他。
-        if rakuten.is_rakuten_csv(tmp_path):
-            module = rakuten
-        elif sbi.is_sbi_csv(tmp_path):
-            module = sbi
-        elif monex.is_monex_csv(tmp_path):
-            module = monex
-        else:
-            flash(
-                f"楽天/SBI/マネックス の取引履歴CSVとして認識できませんでした: {filename}",
-                "error",
-            )
-            return
-
-        stats = module.import_csv_to_fills(tmp_path)
-
-        # 成功: 原本を正式置き場へ同名上書きコピー
-        os.makedirs(TRADE_HISTORY_DIR, exist_ok=True)
-        shutil.copy2(tmp_path, os.path.join(TRADE_HISTORY_DIR, filename))
-
-        flash(
-            f"{module.BROKER} CSV 取込完了: {filename} — "
-            f"新規 {stats['imported']} 件 / 重複スキップ {stats['skipped_dup']} 件 / "
-            f"対象外 {stats['skipped_invalid']} 件",
-            "success",
-        )
+        _import_csv_path(tmp_path, filename)
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+def _csv_import_module(csv_path: str):
+    """取引履歴CSVの証券会社別パーサーを返す。認識不能なら None。"""
+    if rakuten.is_rakuten_csv(csv_path):
+        return rakuten
+    if sbi.is_sbi_csv(csv_path):
+        return sbi
+    if monex.is_monex_csv(csv_path):
+        return monex
+    return None
+
+def _import_csv_path(csv_path: str, filename: str) -> None:
+    """判別済みまたはDownloads上のCSVを取り込み、原本を保存する。"""
+    module = _csv_import_module(csv_path)
+    if module is None:
+        flash(
+            f"楽天/SBI/マネックス の取引履歴CSVとして認識できませんでした: {filename}",
+            "error",
+        )
+        return
+
+    stats = module.import_csv_to_fills(csv_path)
+
+    # 成功: 原本を正式置き場へ同名上書きコピー
+    os.makedirs(TRADE_HISTORY_DIR, exist_ok=True)
+    shutil.copy2(csv_path, os.path.join(TRADE_HISTORY_DIR, filename))
+
+    flash(
+        f"{module.BROKER} CSV 取込完了: {filename} — "
+        f"新規 {stats['imported']} 件 / 重複スキップ {stats['skipped_dup']} 件 / "
+        f"対象外 {stats['skipped_invalid']} 件",
+        "success",
+    )
 
 
 @trade_history_bp.route("/trade-history/fill-memo", methods=["POST"])
