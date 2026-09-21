@@ -549,7 +549,7 @@ def _fetch_price_proxy(code_s: str, iso_timestamp: str) -> Optional[int]:
         return None
     try:
         from db_shelve import STOCKS_SHELVE
-        with ShelveDB(STOCKS_SHELVE) as db:
+        with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
             rec = db.get(normalize_code_s(code_s))
         price_log = (rec or {}).get("price_log") or []
     except Exception:
@@ -2189,7 +2189,7 @@ def _ensure_research_record(code_s: str) -> None:
         try:
             from db_shelve import STOCKS_SHELVE, ShelveDB as _ShelveDB
 
-            with _ShelveDB(STOCKS_SHELVE) as sdb:
+            with _ShelveDB(STOCKS_SHELVE, read_only=True) as sdb:
                 stock = sdb.get(code_s)
             if isinstance(stock, dict):
                 stock_name = stock.get("stock_name") or ""
@@ -3542,7 +3542,7 @@ def _resolve_stock_names(code_list: List[str]) -> Dict[str, str]:
         return result
 
     try:
-        with ShelveDB(STOCKS_SHELVE) as db:
+        with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
             for c in code_list:
                 rec = db.get(c)
                 if rec and rec.get("stock_name"):
