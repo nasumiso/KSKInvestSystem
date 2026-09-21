@@ -67,6 +67,15 @@ def test_parse_sample_extracts_three_periods():
             "連27.12予",
             "連25.12",
         ),
+        # 6890 相当: 9か月の変則期を経て12月決算へ変更。旧3月実績との比較は
+        # できないが、新決算期の予想2期は保存し、2期目は前期比を計算できる。
+        (
+            "連26.3\t288933\t27561\n連26.12予変\t380000\t60000\n"
+            "連27.12予\t500000\t80000\n連26.4～9予\t200000\t30000\n",
+            "連26.12予変",
+            "連27.12予",
+            "連26.3",
+        ),
         # 累計行 (9～2, 9～5) は通期でないので除外する。8月決算の SHIFT (3697) は
         # 累計開始月 9 が妥当な月なので月では弾けず、"連25.9～5" を通期実績と
         # 誤認して決算月を9と取り違え、通期予想を全て捨てて上期予想を今季に
@@ -90,6 +99,19 @@ def test_parse_row_selection(text, this_label, next_year, prev_year):
     assert (result["prev_year"] or {}).get("label") == prev_year
     if prev_year is None:
         assert result["this_year"]["sales_growth"] is None
+
+
+def test_fiscal_year_change_skips_stub_period_growth():
+    """決算期変更の変則期は前年実績比を出さず、2期先だけ新決算期比を出す。"""
+    result = parse_shikiho_gyoseki(
+        "連26.3\t288933\t27561\n連26.12予変\t380000\t60000\n"
+        "連27.12予\t500000\t80000\n"
+    )
+
+    assert result["this_year"]["sales_growth"] is None
+    assert result["this_year"]["op_growth"] is None
+    assert result["next_year"]["sales_growth"] == 31.6
+    assert result["next_year"]["op_growth"] == 33.3
 
 
 @pytest.mark.parametrize(

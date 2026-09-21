@@ -107,24 +107,36 @@ def parse_shikiho_gyoseki(text: str) -> Dict[str, Any]:
     actual_rows = [r for r in rows if not r["is_forecast"]]
     latest_actual = actual_rows[-1] if actual_rows else None
 
-    # 決算月は最新実績の月を正とする。四季報の予想行には本決算のほかに中間期
-    # 予想が混じることがあり (例: 連27.9予)、月で弾かないと半期の値を通期として
-    # 保存してしまう (成長率もMCP出力も誤る)。
-    #
-    # 同月の予想が無いとき「決算期変更」と「貼付範囲に中間期予想しか入って
-    # いない」を貼付テキストから判別する方法は無い (過去の決算月変更の履歴が
-    # 残っている会社では、実績行の月が複数あることも判断材料にならない)。
-    # 誤って半期を通期として保存するより拒否する方が安全なので、推測しない。
-    # 決算期変更後は新しい決算月の実績行がいずれ載るため、その時点で通る。
     forecasts = [r for r in rows if r["is_forecast"]]
+    fiscal_month_changed = False
     if latest_actual is not None:
         fiscal_month = latest_actual["sort_key"][1]
-        forecasts = [r for r in forecasts if r["sort_key"][1] == fiscal_month]
-        if not forecasts:
-            raise ValueError(
-                f"直前実績 ({latest_actual['label']}) と同じ決算月の予想行が"
-                "ありません。中間期予想だけを貼り付けていないか確認してください。"
+        forecasts = [r for r in forecasts if r["sort_key"] > latest_actual["sort_key"]]
+        same_month = [r for r in forecasts if r["sort_key"][1] == fiscal_month]
+        if same_month:
+            forecasts = same_month
+        else:
+            # 決算期変更の初年度は旧決算月の実績と比較できない。一方、予想行が
+            # 1件だけでは中間期予想との区別が付かないため、同じ新決算月の予想が
+            # 連続2期以上ある場合にだけ決算期変更として受け入れる。
+            by_month = {}
+            for row in forecasts:
+                by_month.setdefault(row["sort_key"][1], []).append(row)
+            changed = next(
+                (
+                    items for items in by_month.values()
+                    if len(items) >= 2
+                    and items[1]["sort_key"][0] == items[0]["sort_key"][0] + 1
+                ),
+                None,
             )
+            if changed is None:
+                raise ValueError(
+                    f"直前実績 ({latest_actual['label']}) と同じ決算月の予想行が"
+                    "ありません。中間期予想だけを貼り付けていないか確認してください。"
+                )
+            forecasts = changed
+            fiscal_month_changed = True
     if not forecasts:
         raise ValueError(
             "予想通期行 (例: 連27.3予) が見つかりません。"
@@ -134,7 +146,6 @@ def parse_shikiho_gyoseki(text: str) -> Dict[str, Any]:
     # 今季 = 直前実績の次に来る予想期。予想が3期以上並んでいても位置ではなく
     # 期で選ぶ (forecasts[-2] だと今季を飛ばして来季・再来季を掴む)。
     if latest_actual is not None:
-        forecasts = [r for r in forecasts if r["sort_key"] > latest_actual["sort_key"]]
         if not forecasts:
             # 予想が全て実績より過去 = 古い四季報を貼っている。ここで古い期を
             # 「今季予想」として保存すると、AI 分析に陳腐化した予想が流れる。
@@ -159,7 +170,9 @@ def parse_shikiho_gyoseki(text: str) -> Dict[str, Any]:
             if prev_row
             else None
         ),
-        "this_year": _to_entry(this_row, prev_row),
+        # 決算期変更の初年度は 9か月等の変則期になりうるため、旧決算月の実績との
+        # 成長率は計算しない。次年度以降は同じ新決算月の予想どうしで計算できる。
+        "this_year": _to_entry(this_row, None if fiscal_month_changed else prev_row),
         "next_year": _to_entry(next_row, this_row) if next_row else None,
         # 保存する原文は strip 済みに正規化する (呼び出し元ごとに差が出ないように)
         "raw_text": text.strip(),
