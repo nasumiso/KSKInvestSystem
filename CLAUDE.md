@@ -6,14 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 日本株式市場の成長株分析システム。株探・Yahoo Finance Japanからデータをスクレイピングし、ファンダメンタルズ・モメンタム・テクニカル指標で銘柄をスコアリング・ランキングする。
 
-## 行動原則 (Karpathy 4原則)
+## 行動原則
 
-less is more の方針でコーディングする。出典: [andrej-karpathy-skills/CLAUDE.md](https://github.com/forrestchang/andrej-karpathy-skills/blob/main/CLAUDE.md)
+less is more の方針でコーディングする。1-4 の出典: [andrej-karpathy-skills/CLAUDE.md](https://github.com/forrestchang/andrej-karpathy-skills/blob/main/CLAUDE.md)
 
 1. **Think Before Coding**: 仮定は明示する。複数解釈があれば提示し、勝手に選ばない。シンプルな代案があれば述べる。不明点は実装前に質問する。
 2. **Simplicity First**: 要求された問題を解く最小コードのみ書く。投機的な抽象化・configurability・ありえないシナリオへのエラー処理は不要。「シニアが overcomplicated と言うか?」を自問する。
 3. **Surgical Changes**: 必要な箇所だけ触る。隣接コードの "改善"・既存スタイルからの逸脱・既存のdead code削除はしない。各変更行が user の依頼に直接トレースできること。
 4. **Goal-Driven Execution**: タスクを検証可能なゴールに変換する。「バリデーション追加」→「不正入力のテストを書いて通す」のように。複数ステップなら計画と検証ポイントを述べる。
+5. **Question the Frame**: 対策が2回続けて効果を出さなかったら、3回目の設計に入る前に止まる。1回ごとは前進に見えるため、失敗回数で機械的に検知する。止まったら「過去に見送られた代替案とその再検討条件」「今の枠が解ける解を排除していないか」「問題の設定自体が誤っていないか」を確認し、ユーザーに提示する。土俵を変える判断はユーザーのものだが、選択肢を差し出すのは実装側の責任。3 は依頼の範囲を勝手に広げないための原則であり、小さな変更で解けない問題に小さな変更を積み続ける理由にはしない。
 
 ## コーディング規約
 
