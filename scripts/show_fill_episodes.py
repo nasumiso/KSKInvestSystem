@@ -148,16 +148,17 @@ def _weekly_price_ratio_jumps(fills: List[Dict[str, Any]], weekly_close) -> List
             })
 
     jumps = []
-    for before, after in zip(observations, observations[1:]):
-        ratio_change = after["price_ratio"] / before["price_ratio"]
-        if ratio_change >= 1.5 or ratio_change <= 1 / 1.5:
-            jumps.append({
-                "before_date": before["date"],
-                "after_date": after["date"],
-                "before_ratio": before["price_ratio"],
-                "after_ratio": after["price_ratio"],
-                "adjustment_ratio": before["price_ratio"] / after["price_ratio"],
-            })
+    for index, before in enumerate(observations):
+        for after in observations[index + 1:]:
+            ratio_change = after["price_ratio"] / before["price_ratio"]
+            if ratio_change >= 1.5 or ratio_change <= 1 / 1.5:
+                jumps.append({
+                    "before_date": before["date"],
+                    "after_date": after["date"],
+                    "before_ratio": before["price_ratio"],
+                    "after_ratio": after["price_ratio"],
+                    "adjustment_ratio": before["price_ratio"] / after["price_ratio"],
+                })
     return jumps
 
 

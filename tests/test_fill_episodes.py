@@ -1107,6 +1107,24 @@ class TestSplitAdjustment:
         episode = helpers.build_fill_episodes(db_path=db_path)[0]
         assert episode["split_suspect"] is True
 
+    def test_weekly_price_ratio_change_compares_non_adjacent_fills(self):
+        # 5985 相当: 分割前後に複数の約定があり、隣接比較では各変化が 1.5 倍未満。
+        # エピソード内の最初と最後では 1.61 倍変化するため検知対象になる。
+        fills = [
+            {"trade_date": "2026-03-09", "price": 1375, "seq": 1},
+            {"trade_date": "2026-03-10", "price": 1910, "seq": 2},
+            {"trade_date": "2026-03-13", "price": 2220, "seq": 3},
+        ]
+        weekly_close = pd.Series(
+            [2097.0], index=pd.to_datetime(["2026-03-09"]),
+        )
+
+        jumps = show_fill_episodes._weekly_price_ratio_jumps(fills, weekly_close)
+
+        assert [(j["before_date"], j["after_date"]) for j in jumps] == [
+            ("2026-03-09", "2026-03-13"),
+        ]
+
     def test_merger_ratio_closes_without_residual_qty(self, db_path):
         # 20:1併合相当の比率で浮動小数の残差が出てもクローズ判定を妨げない
         _add(db_path, "4491", "2025-01-01", "buy", 4000, 45, seq_salt="a")
