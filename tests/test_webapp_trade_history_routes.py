@@ -583,3 +583,34 @@ class TestImportTradeCsv:
                                       content_type="multipart/form-data",
                                       follow_redirects=True)
         assert "選択されていません" in resp.data.decode()
+
+    def test_quick_import_finds_only_csvs_with_new_fills(self, env, tmp_path, monkeypatch):
+        """~/Downloads の新規約定CSVだけを自動検出し、再実行では候補にしない。"""
+        import webapp.routes.trade_history as routes
+
+        app, save_dir = env
+        downloads = tmp_path / "Downloads"
+        downloads.mkdir()
+        source = downloads / "tradehistory(JP)_20260622.csv"
+        source.write_bytes(self._rakuten_csv())
+        monkeypatch.setattr(routes, "TRADE_HISTORY_DOWNLOADS_DIR", str(downloads))
+
+        client = app.test_client()
+        first = client.post("/trade-history/import/quick", follow_redirects=True)
+        assert "楽天 CSV 取込完了" in first.data.decode()
+        assert len(ps.list_fills("6324")) == 1
+        assert (save_dir / source.name).exists()
+
+        # Finder が作る同内容の重複コピーも、原本ハッシュで取込済みと判定する。
+        duplicate = downloads / "tradehistory(JP)_20260622 (1).csv"
+        duplicate.write_bytes(source.read_bytes())
+        second = client.post("/trade-history/import/quick", follow_redirects=True)
+        assert "未取込の取引履歴CSVは見つかりませんでした" in second.data.decode()
+        assert len(ps.list_fills("6324")) == 1
+
+    def test_quick_import_control_is_shown(self, env):
+        """手動選択と並んでDownloads自動検出の操作を表示する。"""
+        app, _ = env
+        html = app.test_client().get("/trade-history").data.decode()
+        assert 'action="/trade-history/import/quick"' in html
+        assert "~/Downloads から未取込のCSVを自動で探します" in html
