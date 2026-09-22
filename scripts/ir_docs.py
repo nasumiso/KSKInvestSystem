@@ -30,7 +30,8 @@ PDF_URL_RE = re.compile(
 )
 SETSUMEI_RE = re.compile(r"決算(補足)?説明(会)?資料|決算短信補足")
 TANSHIN_RE = re.compile(r"決算短信")
-EXCLUDE_RE = re.compile(r"お知らせ|書き起こし|動画|について|開催")
+EXCLUDE_RE = re.compile(r"書き起こし|動画|開催")
+NOTICE_RE = re.compile(r"お知らせ|について")
 REVISION_RE = re.compile(r"訂正|修正版|再表示|期中レビューの完了")
 DEPTH_DAYS = {"latest": None, "1y": 365, "2y": 730}
 DEPTH_RANK = {"latest": 0, "1y": 1, "2y": 2}
@@ -43,6 +44,10 @@ def classify_heading(heading):
     normalized = unicodedata.normalize("NFKC", html.unescape(heading or ""))
     normalized = re.sub(r"<[^>]+>", "", normalized)
     if EXCLUDE_RE.search(normalized):
+        return None
+    # Issue #139 の仕様: 「修正版」「訂正」は収集するが、
+    # 「一部訂正について／お知らせ」のような案内文だけの開示は除外する。
+    if NOTICE_RE.search(normalized):
         return None
     # 「決算短信補足資料」は短信ではなく説明資料として扱う。
     if SETSUMEI_RE.search(normalized):
