@@ -33,10 +33,32 @@ MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_D
 - `search_stocks(query, limit=10)`: 社名の一部またはコードで検索します。コード完全一致を優先します。
 - `get_shikiho(code_s, limit=8)`: 事業概要、四季報コメント履歴、四季報業績予想を返します。
 - `get_ir_qa(code_s, limit=10)`: IR部門への問い合わせ回答履歴を新しい順に返します。
+- `list_earnings_documents(code_s, months=12, include_superseded=False)`: 収集済みの決算説明資料・決算短信の一覧を返します。テキスト本体は含みません。
+- `get_earnings_document(code_s, doc_id, page_from=1, page_to=None, max_chars=15000)`: 資料の抽出済みテキストをページ範囲で返します。
 
 `period` は四季報の版情報です。正確な時点は DB に保存していないため、`as_of` は常に `null` です。
 
 `get_ir_qa` の `answered_at` は実際の回答日 (`YYYY/MM/DD`) なので、`as_of` にも同じ値が入ります。回答本文は公開情報として流通しない非公開の一次情報です。既定は10件、取得上限は50件です。
+
+### 決算資料 (issue #433)
+
+資料は `ir_docs.py` が収集したものに限られます (`{KS_DATA_DIR}/ir_docs/<code_s>/`)。
+収集していない銘柄と、資料が存在しない銘柄は区別して返します。
+
+- `coverage_status`: `collected` (収集を試みた) / `not_collected` (未収集。資料の有無は不明)
+- `total_documents`: `months` の絞り込みを無視した収集済み総数。`documents` が空でも
+  これが非0なら「期間内に無いだけ」で、資料が存在しないわけではありません
+- `partial_coverage`: 要求期間が収集区間に収まらないとき `true`。`collected_months` は
+  **収集した時点**からの深度なので、収集後に時間が経つと最新側に穴が空きます。
+  `coverage_through` (= 最終収集日) 以降の資料は未収集です
+- `has_collection_errors`: 収集時にエラーがあった場合 `true`。一覧は不完全です
+
+`get_earnings_document` は `text_quality` が `ok` 以外 (画像主体・文字化け) の資料で
+`text: null` と `local_path` を返します。この場合は PDF を直接添付してください
+(MCP で PDF バイナリは返しません)。
+
+テキストは `max_chars` を超えないようページ境界で切り出し、続きは `truncated: true` と
+`next_page_from` で案内します。
 
 すべての DB 読み取りは `research_shelve` の書き込みと同じ flock を取得するため、WebApp や日次バッチの更新とは直列化されます。
 

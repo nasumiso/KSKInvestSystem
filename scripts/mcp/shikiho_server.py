@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """四季報コメント・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバー。"""
 
+import json
 import logging
 import os
 import sys
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -23,8 +25,13 @@ from research_shelve import (
     sort_shikiho_comments_desc,
 )
 from db_shelve import RESEARCH_SHELVE
+from ks_util import DATA_DIR
 
 logger = logging.getLogger(__name__)
+
+# ir_docs.py は収集用に requests / pypdf を読み込むため import せず、
+# 読み取り専用の本サーバーでは保存先だけを同じ規則で組み立てる。
+IR_DOCS_DIR = Path(DATA_DIR) / "ir_docs"
 
 mcp = MCPServer(
     "shintakane-shikiho",
@@ -37,6 +44,10 @@ mcp = MCPServer(
         "ための定性的な材料として扱ってください。"
         "updated_at は入力日なので、古い場合は予想が陳腐化している可能性があります。"
         "IR問い合わせ回答 (get_ir_qa) は非公開の一次情報で、answered_at は実際の回答日です。"
+        "決算資料 (list_earnings_documents / get_earnings_document) は収集済みのものに"
+        "限られます。coverage_status が not_collected なら未収集であり、資料が存在しない"
+        "ことを意味しません。partial_coverage が true のときは coverage_through 以降が"
+        "未収集で、最新の資料が欠けている可能性があります。"
     ),
 )
 
@@ -172,6 +183,260 @@ def search_stocks_data(query: str, limit: int = 10) -> Dict[str, List[Dict[str, 
             }
         )
     return {"results": (exact + partial)[:_limit(limit, 10)]}
+
+
+def _ir_docs_dir(code_s: str) -> Path:
+    """指定銘柄のIR資料ディレクトリを返す。"""
+    return IR_DOCS_DIR / code_s.strip().upper()
+
+
+def _load_ir_index(code_s: str) -> Optional[Dict[str, Any]]:
+    """index.json を読む。未収集なら None。"""
+    index_path = _ir_docs_dir(code_s) / "index.json"
+    if not index_path.exists():
+        return None
+    with open(index_path, encoding="utf-8") as file_obj:
+        return json.load(file_obj)
+
+
+def _iso_date(value: str) -> Optional[str]:
+    """ir_docs の YYYYMMDD を YYYY-MM-DD へ正規化する。"""
+    text = (value or "").strip()
+    if len(text) != 8 or not text.isdigit():
+        return None
+    return f"{text[:4]}-{text[4:6]}-{text[6:]}"
+
+
+def _coverage_window(index: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    """収集済み区間 [from, through] を求める。
+
+    collected_months は「最後に収集した時点」からの深度であり、現在時点の
+    カバレッジではない。収集後に経過した分は最新側が穴になるため、区間で返す。
+    """
+    # last_collected_at は documents[].date (YYYYMMDD) と違い
+    # ISO 8601 のタイムスタンプ ("2026-09-22T18:50:31+09:00")。
+    raw = (index.get("last_collected_at") or "").strip()
+    months = index.get("collected_months") or 0
+    try:
+        through = datetime.fromisoformat(raw).date()
+    except ValueError:
+        return {"from": None, "through": None}
+    return {
+        # depth=latest (months=0) は直近1件のみで期間を張らないため from は持たない
+        "from": (through - timedelta(days=months * 30)).isoformat() if months else None,
+        "through": through.isoformat(),
+    }
+
+
+def list_earnings_documents_data(
+    code_s: str, months: int = 12, include_superseded: bool = False,
+    today: Optional[date] = None,
+) -> Dict[str, Any]:
+    """指定銘柄の収集済みIR資料一覧を MCP の返却形式へ整形する。"""
+    code = code_s.strip().upper()
+    index = _load_ir_index(code)
+    if index is None:
+        return {
+            "code_s": code,
+            "coverage_status": "not_collected",
+            "collected_months": 0,
+            "total_documents": 0,
+            "documents": [],
+            "note": "この銘柄は未収集です。資料の有無は判定できません。",
+        }
+
+    documents = index.get("documents") or []
+    if not include_superseded:
+        documents = [d for d in documents if d.get("is_latest", True)]
+
+    # 期間フィルタ。収集済み総数 (months 無視) は別に返し、
+    # 「未収集」「期間内に無いだけ」「本当に0件」を LLM が区別できるようにする。
+    total_documents = len(documents)
+    cutoff = ((today or date.today()) - timedelta(days=months * 30)).strftime("%Y%m%d")
+    in_range = [d for d in documents if (d.get("date") or "") >= cutoff]
+
+    window = _coverage_window(index)
+    # 要求区間 [今日-months, 今日] が収集区間に収まらなければ partial。
+    # 穴は最新側 (収集日〜今日) に空くため、月数の引き算では判定できない。
+    requested_from = ((today or date.today()) - timedelta(days=months * 30)).isoformat()
+    requested_through = (today or date.today()).isoformat()
+    partial = (
+        window["through"] is None
+        or window["from"] is None  # depth=latest は期間を張らない
+        or window["through"] < requested_through
+        or window["from"] > requested_from
+    )
+
+    errors = index.get("collection_errors") or {}
+    error_count = sum(len(v) for v in errors.values() if isinstance(v, list))
+
+    notes: List[str] = []
+    if not partial:
+        pass
+    elif not window["through"]:
+        notes.append("収集範囲が不明です。資料の網羅性は保証できません。")
+    elif not index.get("collected_months"):
+        # depth=latest は直近1件のみの取得で、期間の網羅を保証しない
+        notes.append(
+            f"{window['through']}に直近の資料のみを収集しました。"
+            "期間を遡った収集をしていないため、網羅性は保証できません。"
+        )
+    else:
+        notes.append(
+            f"収集済みの範囲は{window['from']}〜{window['through']}です。"
+            f"{window['through']}以降に開示された資料は未収集のため、"
+            "この期間の資料の有無は判定できません。"
+        )
+    if not in_range and total_documents:
+        notes.append(
+            f"収集済みですが、指定期間 (months={months}) に該当する資料は"
+            f"ありません。期間外に{total_documents}件あります。"
+        )
+    if error_count:
+        notes.append(
+            f"収集時に{error_count}件の資料でエラーが発生しており、"
+            "一覧は不完全な可能性があります。"
+        )
+
+    return {
+        "code_s": code,
+        "coverage_status": "collected",
+        "collected_months": index.get("collected_months") or 0,
+        "last_collected_at": window["through"],
+        "coverage_from": window["from"],
+        "coverage_through": window["through"],
+        "requested_months": months,
+        "partial_coverage": partial,
+        "has_collection_errors": bool(error_count),
+        "collection_error_count": error_count,
+        "total_documents": total_documents,
+        "documents": [_format_ir_document(code, d) for d in in_range],
+        "note": " ".join(notes) or None,
+    }
+
+
+def _format_ir_document(code_s: str, document: Dict[str, Any]) -> Dict[str, Any]:
+    """一覧用に資料メタデータを整形する。テキスト本体は含めない。"""
+    iso = _iso_date(document.get("date", ""))
+    return {
+        "doc_id": document.get("doc_id"),
+        "date": iso,
+        "as_of": iso,
+        "heading": document.get("heading", ""),
+        "doc_type": document.get("doc_type"),
+        "fiscal_period": document.get("fiscal_period"),
+        "quarter": document.get("quarter"),
+        "pages": document.get("pages"),
+        "total_chars": document.get("total_chars"),
+        "text_quality": document.get("text_quality"),
+        "is_latest": document.get("is_latest", True),
+        "superseded_by": document.get("superseded_by"),
+        "local_path": str(_ir_docs_dir(code_s) / document.get("pdf_path", "")),
+    }
+
+
+def get_earnings_document_data(
+    code_s: str, doc_id: str, page_from: int = 1,
+    page_to: Optional[int] = None, max_chars: int = 15000,
+) -> Dict[str, Any]:
+    """抽出済みテキストをページ範囲で返す。切り出しは必ずページ境界で行う。"""
+    code = code_s.strip().upper()
+    index = _load_ir_index(code)
+    documents = (index or {}).get("documents") or []
+    document = next((d for d in documents if d.get("doc_id") == doc_id), None)
+    if document is None:
+        return {
+            "code_s": code, "doc_id": doc_id, "found": False,
+            "text": None,
+            "note": "指定された doc_id の資料は収集されていません。",
+        }
+
+    local_path = str(_ir_docs_dir(code) / document.get("pdf_path", ""))
+    quality = document.get("text_quality")
+    # 品質が悪い資料で空文字や文字化けを返すと、LLM が推測で分析を進める。
+    # 必ず理由とローカルパスを示し、PDF添付へ誘導する。
+    if quality != "ok":
+        reason = (
+            "画像主体でテキストを抽出できません"
+            if quality == "image_based"
+            else "テキストが文字化けしており内容を読み取れません"
+        )
+        return {
+            "code_s": code, "doc_id": doc_id, "found": True,
+            "text_quality": quality, "text": None,
+            "local_path": local_path,
+            "note": f"この資料は{reason}。上記PDFを直接添付してください。",
+        }
+
+    text_path = _ir_docs_dir(code) / document.get("text_path", "")
+    with open(text_path, encoding="utf-8") as file_obj:
+        pages = json.load(file_obj).get("pages") or []
+
+    selected, used = [], 0
+    for page in pages:
+        number = page.get("page")
+        if number < page_from or (page_to is not None and number > page_to):
+            continue
+        text = page.get("text") or ""
+        # 1ページが単独で max_chars を超える場合はそのページだけを返す。
+        # 超過を許容しないと同じページを返し続けて無限ループする。
+        if selected and used + len(text) > max_chars:
+            break
+        selected.append(page)
+        used += len(text)
+        if used >= max_chars:
+            break
+
+    last_number = selected[-1]["page"] if selected else page_from
+    remaining = [
+        p for p in pages
+        if p.get("page") > last_number
+        and (page_to is None or p.get("page") <= page_to)
+    ]
+    iso = _iso_date(document.get("date", ""))
+    return {
+        "code_s": code, "doc_id": doc_id, "found": True,
+        "text_quality": quality, "as_of": iso,
+        "heading": document.get("heading", ""),
+        "pages": document.get("pages"),
+        "page_from": selected[0]["page"] if selected else page_from,
+        "page_to": last_number,
+        "truncated": bool(remaining),
+        "next_page_from": last_number + 1 if remaining else None,
+        "text": "\n".join(p.get("text") or "" for p in selected),
+        "local_path": local_path,
+    }
+
+
+@mcp.tool()
+def list_earnings_documents(
+    code_s: str, months: int = 12, include_superseded: bool = False,
+) -> Dict[str, Any]:
+    """銘柄コードから収集済みの決算説明資料・決算短信の一覧を返す。
+
+    テキスト本体は含みません。本文は get_earnings_document で取得します。
+
+    coverage_status が not_collected の場合、その銘柄は未収集であり
+    「資料が存在しない」ことを意味しません。partial_coverage が true の
+    ときは coverage_through 以降が未収集のため、最新の資料が欠けている
+    可能性があります。既定では訂正版に置き換えられた旧版を返しません。
+    """
+    return list_earnings_documents_data(code_s, months, include_superseded)
+
+
+@mcp.tool()
+def get_earnings_document(
+    code_s: str, doc_id: str, page_from: int = 1,
+    page_to: Optional[int] = None, max_chars: int = 15000,
+) -> Dict[str, Any]:
+    """決算資料の抽出済みテキストをページ範囲を指定して返す。
+
+    doc_id は list_earnings_documents が返す TDnet ID です。
+    truncated が true のとき、続きは next_page_from を page_from に渡して
+    取得します。text が null の場合はテキストを抽出できない資料なので、
+    local_path の PDF を直接添付してください。
+    """
+    return get_earnings_document_data(code_s, doc_id, page_from, page_to, max_chars)
 
 
 @mcp.tool()
