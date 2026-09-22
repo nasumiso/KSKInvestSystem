@@ -258,6 +258,40 @@ def _coverage_window(index: Dict[str, Any]) -> Dict[str, Optional[str]]:
     }
 
 
+# 訂正版が原本のこの割合を超える分量を持つなら全文差し替えとみなす。
+# 下回るものは「一部訂正について」の差分通知で、原本の中身を含まない。
+_SUPERSEDE_FULL_TEXT_RATIO = 0.7
+
+
+def _drop_superseded(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """訂正版に置き換えられた原本を落とす。ただし差分通知なら原本を残す。
+
+    訂正版には2種類ある (実データで確認):
+    - 全文差し替え (2681: 原本29,490字 → 訂正版30,324字)
+    - 一部訂正の通知のみ (2780: 原本48,085字 → 訂正版1,180字/2頁)
+
+    後者で原本を落とすと、74頁の本体が一覧から消え、宛名だけの2頁が
+    その四半期の決算説明資料として返る。LLM は本体に到達できなくなる。
+    """
+    by_id = {d.get("doc_id"): d for d in documents}
+    kept = []
+    for document in documents:
+        new_id = document.get("superseded_by")
+        if not new_id:
+            kept.append(document)
+            continue
+        revision = by_id.get(new_id)
+        if revision is None:
+            # 訂正版が期間外・未収集なら原本を残す (消すと何も見えなくなる)
+            kept.append(document)
+            continue
+        original_chars = document.get("total_chars") or 0
+        revised_chars = revision.get("total_chars") or 0
+        if revised_chars < original_chars * _SUPERSEDE_FULL_TEXT_RATIO:
+            kept.append(document)  # 差分通知なので原本も要る
+    return kept
+
+
 def list_earnings_documents_data(
     code_s: str, months: int = 12, include_superseded: bool = False,
     today: Optional[date] = None,
@@ -281,7 +315,7 @@ def list_earnings_documents_data(
 
     documents = index.get("documents") or []
     if not include_superseded:
-        documents = [d for d in documents if d.get("is_latest", True)]
+        documents = _drop_superseded(documents)
 
     # 期間フィルタ。収集済み総数 (months 無視) は別に返し、
     # 「未収集」「期間内に無いだけ」「本当に0件」を LLM が区別できるようにする。
@@ -491,7 +525,11 @@ def list_earnings_documents(
     coverage_status が not_collected の場合、その銘柄は未収集であり
     「資料が存在しない」ことを意味しません。partial_coverage が true の
     ときは coverage_through 以降が未収集のため、最新の資料が欠けている
-    可能性があります。既定では訂正版に置き換えられた旧版を返しません。
+    可能性があります。
+
+    既定では訂正版に置き換えられた旧版を返しませんが、訂正版が「一部訂正に
+    ついて」のような差分通知で原本の内容を含まない場合は、原本も返します
+    (superseded_by が入っているものが訂正済みの原本です)。
     """
     return list_earnings_documents_data(code_s, months, include_superseded)
 

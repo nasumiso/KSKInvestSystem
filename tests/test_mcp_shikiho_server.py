@@ -421,3 +421,54 @@ def test_months_is_clamped_to_usable_range(
     # 0以下を丸めた結果、収集範囲より短い要求として正しく判定される
     if months <= 0:
         assert result["partial_coverage"] is False
+
+
+@pytest.mark.parametrize(
+    "revision_chars, revision_pages, expect_headings",
+    [
+        # 全文差し替え (実例 2681: 原本29,490字 → 訂正版30,324字)。原本は落とす
+        (49000, 75, ["訂正版"]),
+        # 差分通知のみ (実例 2780: 原本48,085字/74p → 訂正版1,180字/2p)。
+        # 原本を落とすと74頁の本体が一覧から消え、宛名だけの2頁が
+        # その四半期の決算説明資料として返ってしまう
+        (1180, 2, ["訂正版", "原本"]),
+    ],
+)
+def test_partial_revision_keeps_the_original(
+    tmp_path, monkeypatch, revision_chars, revision_pages, expect_headings
+):
+    """訂正版が差分通知のときは原本も返す (原本に到達できなくなるため)。"""
+    original = _document(
+        doc_id="OLD", date_s="20260514", heading="原本",
+        pages=74, total_chars=48085, is_latest=False, superseded_by="NEW",
+    )
+    revision = _document(
+        doc_id="NEW", date_s="20260515", heading="訂正版",
+        pages=revision_pages, total_chars=revision_chars, supersedes="OLD",
+    )
+    _write_ir_index(tmp_path, monkeypatch, {
+        "last_collected_at": "2026-09-22T18:50:31+09:00",
+        "collected_months": 12, "last_requested_depth": "1y",
+        "documents": [revision, original],
+    })
+    result = server.list_earnings_documents_data(
+        "4011", months=12, today=date(2026, 9, 22)
+    )
+    assert [d["heading"] for d in result["documents"]] == expect_headings
+    # 残した原本は訂正済みと分かる必要がある
+    if "原本" in expect_headings:
+        kept = next(d for d in result["documents"] if d["heading"] == "原本")
+        assert kept["superseded_by"] == "NEW"
+
+
+def test_superseded_original_kept_when_revision_out_of_index(tmp_path, monkeypatch):
+    """訂正版が未収集・期間外なら原本を残す (消すと何も見えない)。"""
+    _write_ir_index(tmp_path, monkeypatch, {
+        "last_collected_at": "2026-09-22T18:50:31+09:00",
+        "collected_months": 12, "last_requested_depth": "1y",
+        "documents": [_document(heading="原本", is_latest=False, superseded_by="MISSING")],
+    })
+    result = server.list_earnings_documents_data(
+        "4011", months=12, today=date(2026, 9, 22)
+    )
+    assert [d["heading"] for d in result["documents"]] == ["原本"]
