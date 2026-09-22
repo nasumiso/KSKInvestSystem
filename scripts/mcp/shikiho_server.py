@@ -48,6 +48,13 @@ mcp = MCPServer(
         "限られます。coverage_status が not_collected なら未収集であり、資料が存在しない"
         "ことを意味しません。partial_coverage が true のときは coverage_through 以降が"
         "未収集で、最新の資料が欠けている可能性があります。"
+        "決算説明資料はスライド形式で図表が主体のため、返されるテキストには"
+        "グラフや表の中の数値が含まれないことがあります。テキストに項目名だけがあり"
+        "対応する数値が見当たらない場合、その数値は資料に存在しないのではなく"
+        "抽出できていないと考えてください。数値の裏取りが必要な分析では、"
+        "テキストから読み取れた範囲を明示し、local_path の PDF をユーザーに添付"
+        "してもらうよう促してください。local_path はこのサーバーを動かしている端末の"
+        "パスであり、あなたが直接開くことはできません。"
     ),
 )
 
@@ -407,7 +414,10 @@ def get_earnings_document_data(
             "code_s": code, "doc_id": doc_id, "found": True,
             "text_quality": quality, "text": None,
             "local_path": local_path,
-            "note": f"この資料は{reason}。上記PDFを直接添付してください。",
+            "note": (
+                f"この資料は{reason}。local_path の PDF をユーザーに"
+                "添付してもらってください (このパスをあなたが開くことはできません)。"
+            ),
         }
 
     # index.json に載っていてもテキストJSONが無いことはある (保持期間の棚卸しで
@@ -425,7 +435,8 @@ def get_earnings_document_data(
             "local_path": local_path,
             "note": (
                 "この資料の抽出済みテキストが見つかりません。"
-                "上記PDFを直接添付してください。"
+                "local_path の PDF をユーザーに添付してもらってください "
+                "(このパスをあなたが開くことはできません)。"
             ),
         }
 
@@ -490,8 +501,16 @@ def get_earnings_document(
 
     doc_id は list_earnings_documents が返す TDnet ID です。
     truncated が true のとき、続きは next_page_from を page_from に渡して
-    取得します。text が null の場合はテキストを抽出できない資料なので、
-    local_path の PDF を直接添付してください。
+    取得します。
+
+    返すのは PDF から抽出したテキストのみです。決算説明資料はスライド形式で
+    図表が主体のため、グラフや表の中の数値は含まれないことがあります。
+    項目名 (例「売上高 営業利益 (単位:百万円)」) だけがあって数値が続かない
+    場合、その数値は抽出できていないだけで資料には存在します。
+
+    text が null の場合はテキストを利用できない資料です。いずれの場合も
+    local_path はこのサーバーを動かしている端末のパスで、あなたが直接
+    開くことはできません。PDF が必要なときはユーザーに添付を依頼してください。
     """
     return get_earnings_document_data(code_s, doc_id, page_from, page_to, max_chars)
 
