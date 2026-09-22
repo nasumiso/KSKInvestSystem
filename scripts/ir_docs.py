@@ -349,6 +349,12 @@ def download_ir_docs(
         if dry_run:
             for candidate in candidates:
                 log_print(f"{candidate['date']} {candidate['doc_type']} {candidate['heading']}")
+            for item in scan_errors:
+                log_warning(
+                    f"IR資料dry-run走査失敗: {code_s} {item['stage']} {item['reason']}"
+                )
+            if scan_errors and not candidates:
+                log_error(f"IR資料の候補を取得できませんでした: {code_s}")
             return candidates
 
         stock_dir.mkdir(parents=True, exist_ok=True)

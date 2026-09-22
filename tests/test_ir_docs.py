@@ -119,6 +119,19 @@ def test_download_flow_cache_force_and_shared_bulk_http_state(tmp_path, monkeypa
     assert index["collected_depth"] == "latest"
     assert index["documents"][0]["text_quality"] == "ok"
 
+    warnings = []
+    errors = []
+    monkeypatch.setattr(
+        ir_docs,
+        "collect_candidates",
+        lambda *args, **kwargs: ([], [{"stage": "page_scan", "reason": "HTTP 500"}]),
+    )
+    monkeypatch.setattr(ir_docs, "log_warning", warnings.append)
+    monkeypatch.setattr(ir_docs, "log_error", errors.append)
+    assert ir_docs.download_ir_docs("4011", dry_run=True, output_dir=tmp_path) == []
+    assert "page_scan HTTP 500" in warnings[0]
+    assert "候補を取得できませんでした" in errors[0]
+
     bulk_calls = []
     monkeypatch.setattr(ir_docs.portfolio, "parse_my_portforio", lambda: (["4011"], ["4436"]))
 
