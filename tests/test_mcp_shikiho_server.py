@@ -317,3 +317,51 @@ def test_text_is_cut_at_page_boundary(
     assert result["truncated"] is expect_truncated
     assert result["next_page_from"] == expect_next
     assert result["text"]
+
+
+@pytest.mark.parametrize(
+    "last_requested_depth, expect_discontinuous, expect_partial",
+    [
+        # 1y 済みに latest をかけると ir_docs は last_collected_at だけ現在へ
+        # 進め collected_months=12 を残す。連続収集の終端として扱うと、
+        # 前回収集〜今日の開示が抜けているのに「収集済み」と偽る
+        ("latest", True, True),
+        # 通常の 1y 収集は当日収集なら連続しており穴はない
+        ("1y", False, False),
+    ],
+)
+def test_latest_after_deep_collection_is_not_treated_as_continuous(
+    tmp_path, monkeypatch, last_requested_depth, expect_discontinuous,
+    expect_partial
+):
+    """深い収集の後の latest 再収集で、連続カバレッジを捏造しない。"""
+    _write_ir_index(tmp_path, monkeypatch, {
+        "last_collected_at": "2026-09-22T18:50:31+09:00",
+        "collected_depth": "1y", "collected_months": 12,
+        "last_requested_depth": last_requested_depth,
+        "documents": [_document()],
+    })
+    result = server.list_earnings_documents_data(
+        "4011", months=12, today=date(2026, 9, 22)
+    )
+    assert result["coverage_discontinuous"] is expect_discontinuous
+    assert result["partial_coverage"] is expect_partial
+    if expect_discontinuous:
+        assert "抜けている可能性" in result["note"]
+
+
+def test_note_names_the_boundary_that_falls_short(tmp_path, monkeypatch):
+    """当日に12ヶ月収集して24ヶ月を要求した場合、不足は古い側だと述べる。"""
+    _write_ir_index(tmp_path, monkeypatch, {
+        "last_collected_at": "2026-09-22T18:50:31+09:00",
+        "collected_depth": "1y", "collected_months": 12,
+        "last_requested_depth": "1y",
+        "documents": [_document()],
+    })
+    result = server.list_earnings_documents_data(
+        "4011", months=24, today=date(2026, 9, 22)
+    )
+    assert result["partial_coverage"] is True
+    # 不足しているのは coverage_from より前。最新側の欠落と混同しない
+    assert "より前は収集していません" in result["note"]
+    assert "以降に開示された資料は未収集" not in result["note"]

@@ -51,6 +51,9 @@ MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_D
 - `partial_coverage`: 要求期間が収集区間に収まらないとき `true`。`collected_months` は
   **収集した時点**からの深度なので、収集後に時間が経つと最新側に穴が空きます。
   `coverage_through` (= 最終収集日) 以降の資料は未収集です
+- `coverage_discontinuous`: 期間を遡った収集の後に `--depth latest` で追加収集した場合 `true`。
+  `ir_docs.py` は `latest` 実行でも `last_collected_at` を現在へ進める一方、`collected_months`
+  は据え置くため、前回の深い収集から今日までの間に開示された資料が抜けている可能性があります
 - `has_collection_errors`: 収集時にエラーがあった場合 `true`。一覧は不完全です
 
 `get_earnings_document` は `text_quality` が `ok` 以外 (画像主体・文字化け) の資料で

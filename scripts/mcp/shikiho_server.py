@@ -221,10 +221,20 @@ def _coverage_window(index: Dict[str, Any]) -> Dict[str, Optional[str]]:
         through = datetime.fromisoformat(raw).date()
     except ValueError:
         return {"from": None, "through": None}
+
+    # ir_docs.py は latest 実行でも last_collected_at を現在へ更新する一方、
+    # collected_depth はランクが上がるときしか変えない (1y 済みに latest を
+    # かけても 1y のまま)。latest が足すのは直近1件だけなので、前回の深い
+    # 収集から今日までの間に出た開示には穴が残る。last_collected_at を連続
+    # 収集の終端として扱うと、その穴を「収集済み」と偽ってしまう。
+    if index.get("last_requested_depth") == "latest" and months:
+        return {"from": None, "through": None, "discontinuous": True}
+
     return {
         # depth=latest (months=0) は直近1件のみで期間を張らないため from は持たない
         "from": (through - timedelta(days=months * 30)).isoformat() if months else None,
         "through": through.isoformat(),
+        "discontinuous": False,
     }
 
 
@@ -273,6 +283,12 @@ def list_earnings_documents_data(
     notes: List[str] = []
     if not partial:
         pass
+    elif window.get("discontinuous"):
+        notes.append(
+            "過去に期間を遡って収集した後、直近の資料のみを追加で収集しています。"
+            "その間に開示された資料が抜けている可能性があり、"
+            "連続した期間の網羅は保証できません。"
+        )
     elif not window["through"]:
         notes.append("収集範囲が不明です。資料の網羅性は保証できません。")
     elif not index.get("collected_months"):
@@ -282,10 +298,22 @@ def list_earnings_documents_data(
             "期間を遡った収集をしていないため、網羅性は保証できません。"
         )
     else:
+        # 要求区間のどちら側がはみ出しているかで理由が異なる。
+        # 新しい側 = 収集後に開示された分、古い側 = 収集深度より前。
+        shortfalls = []
+        if window["through"] < requested_through:
+            shortfalls.append(
+                f"{window['through']}以降に開示された資料は未収集です。"
+            )
+        if window["from"] > requested_from:
+            shortfalls.append(
+                f"{window['from']}より前は収集していません "
+                f"(収集深度は{index.get('collected_months')}ヶ月)。"
+            )
         notes.append(
             f"収集済みの範囲は{window['from']}〜{window['through']}です。"
-            f"{window['through']}以降に開示された資料は未収集のため、"
-            "この期間の資料の有無は判定できません。"
+            + "".join(shortfalls)
+            + "この期間の資料の有無は判定できません。"
         )
     if not in_range and total_documents:
         notes.append(
@@ -307,6 +335,7 @@ def list_earnings_documents_data(
         "coverage_through": window["through"],
         "requested_months": months,
         "partial_coverage": partial,
+        "coverage_discontinuous": bool(window.get("discontinuous")),
         "has_collection_errors": bool(error_count),
         "collection_error_count": error_count,
         "total_documents": total_documents,
