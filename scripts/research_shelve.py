@@ -1304,6 +1304,64 @@ def _cmd_list(
     return 0
 
 
+def _describe_field_value(value: Any) -> str:
+    """fields --field の値を一覧向けに要約する。
+
+    長文・入れ子構造は中身を出さず型と件数だけを示す。詳細は show で見る。
+    """
+    if isinstance(value, (list, tuple)):
+        return f"{type(value).__name__}({len(value)})"
+    if isinstance(value, dict):
+        return f"dict({len(value)})"
+    text = str(value).replace("\n", " ")
+    if len(text) > 40:
+        return text[:40] + "..."
+    return text
+
+
+def _cmd_fields(
+    *,
+    field: Optional[str] = None,
+    db_path: Optional[str] = None,
+) -> int:
+    """fields サブコマンド本体。
+
+    field 未指定ならフィールド別の非空件数、指定時はそのフィールドが
+    非空のレコードを列挙する。
+    """
+    records = list_research_records(db_path=db_path)
+
+    if field is None:
+        counts: Dict[str, int] = {}
+        for rec in records:
+            for key, value in rec.items():
+                if value not in (None, "", [], {}):
+                    counts[key] = counts.get(key, 0) + 1
+        print("count\tfield")
+        for key, num in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+            print(f"{num}\t{key}")
+        print(f"-- {len(records)} records --")
+        return 0
+
+    header = "code_s\tstock_name\tvalue"
+    print(header)
+    print("-" * len(header))
+    hit = 0
+    for rec in records:
+        value = rec.get(field)
+        if value in (None, "", [], {}):
+            continue
+        hit += 1
+        stock_name = rec.get("stock_name", "") or _EMPTY_MARK
+        print(
+            f"{rec.get('code_s', '')}\t{stock_name}\t"
+            f"{_describe_field_value(value)}"
+        )
+    print("-" * len(header))
+    print(f"{hit} / {len(records)} records (field={field})")
+    return 0
+
+
 def _cmd_backup(*, db_path: Optional[str] = None) -> int:
     """backup サブコマンド本体。"""
     created = backup_research_db(db_path=db_path)
@@ -1350,6 +1408,17 @@ def _build_arg_parser():
         help="銘柄名・概要・メモへの部分一致 (大文字小文字無視)",
     )
 
+    # fields
+    fields_p = subparsers.add_parser(
+        "fields", help="フィールド別の非空件数を表示する"
+    )
+    fields_p.add_argument(
+        "--field",
+        type=str,
+        default=None,
+        help="指定フィールドが非空のレコードを列挙する (例: ir_qa)",
+    )
+
     # backup
     subparsers.add_parser("backup", help="DB本体のバックアップを作成する")
 
@@ -1365,6 +1434,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _cmd_show(args.code_s)
     if args.command == "list":
         return _cmd_list(rating=args.rating, keyword=args.keyword)
+    if args.command == "fields":
+        return _cmd_fields(field=args.field)
     if args.command == "backup":
         return _cmd_backup()
     parser.error(f"unknown command: {args.command}")

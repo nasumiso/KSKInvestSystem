@@ -121,8 +121,13 @@ cd scripts && python ir_docs.py list 4011
 ```bash
 cd scripts && python research_shelve.py show 3496
 cd scripts && python research_shelve.py list --rating S,A --keyword 駐車場
+cd scripts && python research_shelve.py fields                    # フィールド別の非空件数
+cd scripts && python research_shelve.py fields --field ir_qa      # 非空の銘柄を列挙
 cd scripts && python research_shelve.py backup
 ```
+
+`fields` は読み取り専用。新フィールドの投入状況を調べる用途で、`--field` 指定時は
+値そのものは出さず、リスト・dict は型と件数だけを示す（中身は `show` で見る）。
 
 `make_stock_db.py` の各実行末尾では、不可逆データである `research_shelve` と
 `portfolio_shelve` の `.dat` / `.dir` / `.bak` を日付付きで自動保存し、各14世代を保持する。

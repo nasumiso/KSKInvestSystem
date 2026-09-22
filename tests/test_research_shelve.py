@@ -749,6 +749,17 @@ class TestFormat:
         assert fields[3] == "0"
         assert fields[4] == "-"  # overview 空は "-"
 
+    @pytest.mark.parametrize("value, expected", [
+        ([{"id": "a"}, {"id": "b"}], "list(2)"),   # 長文を含む入れ子は件数のみ
+        ({"k": 1}, "dict(1)"),
+        ("https://example.com/ir/", "https://example.com/ir/"),
+        ("あ" * 50, "あ" * 40 + "..."),            # 長文は40字で打ち切り
+        ("改行\nあり", "改行 あり"),                # 1行に潰す
+    ])
+    def test_describe_field_value(self, value, expected):
+        """fields --field の値要約。入れ子は中身を出さず型と件数で示す。"""
+        assert rs._describe_field_value(value) == expected
+
 
 # ==================================================
 # 分析日・決算日フィールド (issue #92 で追加)
