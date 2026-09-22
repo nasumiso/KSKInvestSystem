@@ -31,7 +31,6 @@ PDF_URL_RE = re.compile(
 SETSUMEI_RE = re.compile(r"決算(補足)?説明(会)?資料|決算短信補足")
 TANSHIN_RE = re.compile(r"決算短信")
 EXCLUDE_RE = re.compile(r"書き起こし|動画|開催")
-NOTICE_RE = re.compile(r"お知らせ|について")
 REVISION_RE = re.compile(r"訂正|修正版|再表示|期中レビューの完了")
 DEPTH_DAYS = {"latest": None, "1y": 365, "2y": 730}
 DEPTH_RANK = {"latest": 0, "1y": 1, "2y": 2}
@@ -45,16 +44,21 @@ def classify_heading(heading):
     normalized = re.sub(r"<[^>]+>", "", normalized)
     if EXCLUDE_RE.search(normalized):
         return None
-    # Issue #139 の仕様: 「修正版」「訂正」は収集するが、
-    # 「一部訂正について／お知らせ」のような案内文だけの開示は除外する。
-    if NOTICE_RE.search(normalized):
-        return None
     # 「決算短信補足資料」は短信ではなく説明資料として扱う。
     if SETSUMEI_RE.search(normalized):
-        return "setsumei"
-    if TANSHIN_RE.search(normalized):
-        return "tanshin"
-    return None
+        doc_type = "setsumei"
+    elif TANSHIN_RE.search(normalized):
+        doc_type = "tanshin"
+    else:
+        return None
+
+    # 訂正資料そのものは「一部訂正について」でも収集する。
+    # 「お知らせ」と明記された案内文や、訂正でない掲載案内は除外する。
+    if "お知らせ" in normalized:
+        return None
+    if "について" in normalized and not REVISION_RE.search(normalized):
+        return None
+    return doc_type
 
 
 def extract_period(heading):
