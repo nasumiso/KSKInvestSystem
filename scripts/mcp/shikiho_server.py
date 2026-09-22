@@ -191,12 +191,20 @@ def _ir_docs_dir(code_s: str) -> Path:
 
 
 def _load_ir_index(code_s: str) -> Optional[Dict[str, Any]]:
-    """index.json を読む。未収集なら None。"""
+    """index.json を読む。未収集なら None。
+
+    壊れている・読めない場合も None を返すが、「未収集」と混同させないため
+    呼び出し側が区別できるよう空 dict ではなく None に倒し、警告を残す。
+    """
     index_path = _ir_docs_dir(code_s) / "index.json"
     if not index_path.exists():
         return None
-    with open(index_path, encoding="utf-8") as file_obj:
-        return json.load(file_obj)
+    try:
+        with open(index_path, encoding="utf-8") as file_obj:
+            return json.load(file_obj)
+    except (OSError, ValueError) as exc:
+        logger.warning("IR資料の index.json を読めません: %s (%s)", code_s, exc)
+        return None
 
 
 def _iso_date(value: str) -> Optional[str]:
@@ -402,9 +410,24 @@ def get_earnings_document_data(
             "note": f"この資料は{reason}。上記PDFを直接添付してください。",
         }
 
+    # index.json に載っていてもテキストJSONが無いことはある (保持期間の棚卸しで
+    # ファイルだけ消えた、同期途中で欠けている等)。例外を MCP の外へ漏らすと
+    # ChatGPT 側は原因不明のエラーになるため、PDF添付へ誘導して返す。
     text_path = _ir_docs_dir(code) / document.get("text_path", "")
-    with open(text_path, encoding="utf-8") as file_obj:
-        pages = json.load(file_obj).get("pages") or []
+    try:
+        with open(text_path, encoding="utf-8") as file_obj:
+            pages = json.load(file_obj).get("pages") or []
+    except (OSError, ValueError) as exc:
+        logger.warning("IR資料のテキストを読めません: %s %s (%s)", code, doc_id, exc)
+        return {
+            "code_s": code, "doc_id": doc_id, "found": True,
+            "text_quality": quality, "text": None,
+            "local_path": local_path,
+            "note": (
+                "この資料の抽出済みテキストが見つかりません。"
+                "上記PDFを直接添付してください。"
+            ),
+        }
 
     selected, used = [], 0
     for page in pages:

@@ -370,3 +370,30 @@ def test_note_names_the_boundary_that_falls_short(tmp_path, monkeypatch):
     # 不足しているのは coverage_from より前。最新側の欠落と混同しない
     assert "より前は収集していません" in result["note"]
     assert "以降に開示された資料は未収集" not in result["note"]
+
+
+@pytest.mark.parametrize("broken", ["missing", "corrupt"])
+def test_missing_text_file_does_not_raise(tmp_path, monkeypatch, broken):
+    """index に載っていてもテキストJSONが無い/壊れている場合がある。
+
+    保持期間の棚卸し (#460) でファイルだけ消える、同期途中で欠ける等。
+    例外を MCP の外へ漏らすと ChatGPT 側は原因不明のエラーになるため、
+    PDF添付へ誘導して返す。
+    """
+    root = _write_ir_index(
+        tmp_path, monkeypatch,
+        {"last_collected_at": "2026-09-22T18:50:31+09:00", "collected_months": 12,
+         "last_requested_depth": "1y", "documents": [_document()]},
+        texts={"20260901_D1.json": [{"page": 1, "text": "あ"}]},
+    )
+    target = root / "4011" / "20260901_D1.json"
+    if broken == "missing":
+        target.unlink()
+    else:
+        target.write_text("{壊れた", encoding="utf-8")
+
+    result = server.get_earnings_document_data("4011", "D1")
+    assert result["found"] is True
+    assert result["text"] is None
+    assert result["local_path"].endswith("20260901_D1.pdf")
+    assert "添付" in result["note"]
