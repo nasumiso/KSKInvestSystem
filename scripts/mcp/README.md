@@ -1,6 +1,6 @@
 # 四季報 MCP サーバー
 
-`shikiho_server.py` は `research_shelve` の四季報コメントだけを読み取り専用で提供する stdio MCP サーバーです。HTTP ポートは開きません。
+`shikiho_server.py` は `research_shelve` の四季報コメント・業績予想・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバーです。HTTP ポートは開きません。利用者向けの仕様は [doc/MCP.md](../../doc/MCP.md) を参照してください。
 
 ## ローカル起動前の準備
 
@@ -31,12 +31,12 @@ MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_D
 ## 提供ツール
 
 - `search_stocks(query, limit=10)`: 社名の一部またはコードで検索します。コード完全一致を優先します。
-- `get_shikiho(code_s, limit=8)`: 事業概要と四季報コメント履歴を返します。
+- `get_shikiho(code_s, limit=8)`: 事業概要、四季報コメント履歴、四季報業績予想を返します。
 - `get_ir_qa(code_s, limit=10)`: IR部門への問い合わせ回答履歴を新しい順に返します。
 
 `period` は四季報の版情報です。正確な時点は DB に保存していないため、`as_of` は常に `null` です。
 
-`get_ir_qa` の `answered_at` は実際の回答日 (`YYYY/MM/DD`) なので、`as_of` にも同じ値が入ります。回答本文は公開情報として流通しない非公開の一次情報です (最大 10 件。上限到達後の追加は切り捨てず拒否します)。
+`get_ir_qa` の `answered_at` は実際の回答日 (`YYYY/MM/DD`) なので、`as_of` にも同じ値が入ります。回答本文は公開情報として流通しない非公開の一次情報です。既定は10件、取得上限は50件です。
 
 すべての DB 読み取りは `research_shelve` の書き込みと同じ flock を取得するため、WebApp や日次バッチの更新とは直列化されます。
 
