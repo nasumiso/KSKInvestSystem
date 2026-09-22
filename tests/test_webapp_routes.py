@@ -225,6 +225,26 @@ class TestDetailRoute:
         assert "3496" in html
         assert "テストメモ" in html
 
+    def test_detail_shows_shikiho_gyoseki_editor(self, client):
+        html = client.get("/stock/3496").data.decode()
+        assert 'id="gyoseki-raw"' in html
+        assert 'id="btn-save-gyoseki"' in html
+        assert "/stock/3496/shikiho_gyoseki" in html
+
+    def test_detail_collapses_shikiho_comments_after_four(self, client, db_path):
+        record = rs.get_research_record("3496", db_path=db_path)
+        record["shikiho_comments"] = [
+            {"period": f"26.{9 - i * 3}", "comment": f"コメント{i + 1}"}
+            for i in range(5)
+        ]
+        rs.upsert_research_record(record, db_path=db_path)
+
+        html = client.get("/stock/3496").data.decode()
+        assert html.count('class="shikiho-entry"') == 5
+        assert 'class="shikiho-more"' in html
+        assert "過去の四季報コメント (1件)" in html
+        assert html.index('id="btn-add-shikiho"') < html.index('id="shikiho-edit-area"')
+
     def test_detail_404_for_unknown(self, client):
         resp = client.get("/stock/9999")
         assert resp.status_code == 404
