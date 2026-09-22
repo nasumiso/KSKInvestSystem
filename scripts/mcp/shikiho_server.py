@@ -220,20 +220,25 @@ def _coverage_window(index: Dict[str, Any]) -> Dict[str, Optional[str]]:
     try:
         through = datetime.fromisoformat(raw).date()
     except ValueError:
-        return {"from": None, "through": None}
+        return {"from": None, "through": None, "at": None, "discontinuous": False}
 
     # ir_docs.py は latest 実行でも last_collected_at を現在へ更新する一方、
     # collected_depth はランクが上がるときしか変えない (1y 済みに latest を
     # かけても 1y のまま)。latest が足すのは直近1件だけなので、前回の深い
     # 収集から今日までの間に出た開示には穴が残る。last_collected_at を連続
     # 収集の終端として扱うと、その穴を「収集済み」と偽ってしまう。
+    # 収集日そのものは事実なので at に残し、区間の主張だけを取り下げる。
     if index.get("last_requested_depth") == "latest" and months:
-        return {"from": None, "through": None, "discontinuous": True}
+        return {
+            "from": None, "through": None,
+            "at": through.isoformat(), "discontinuous": True,
+        }
 
     return {
         # depth=latest (months=0) は直近1件のみで期間を張らないため from は持たない
         "from": (through - timedelta(days=months * 30)).isoformat() if months else None,
         "through": through.isoformat(),
+        "at": through.isoformat(),
         "discontinuous": False,
     }
 
@@ -285,8 +290,8 @@ def list_earnings_documents_data(
         pass
     elif window.get("discontinuous"):
         notes.append(
-            "過去に期間を遡って収集した後、直近の資料のみを追加で収集しています。"
-            "その間に開示された資料が抜けている可能性があり、"
+            f"過去に期間を遡って収集した後、{window['at']}に直近の資料のみを"
+            "追加で収集しています。その間に開示された資料が抜けている可能性があり、"
             "連続した期間の網羅は保証できません。"
         )
     elif not window["through"]:
@@ -294,7 +299,7 @@ def list_earnings_documents_data(
     elif not index.get("collected_months"):
         # depth=latest は直近1件のみの取得で、期間の網羅を保証しない
         notes.append(
-            f"{window['through']}に直近の資料のみを収集しました。"
+            f"{window['at']}に直近の資料のみを収集しました。"
             "期間を遡った収集をしていないため、網羅性は保証できません。"
         )
     else:
@@ -330,7 +335,7 @@ def list_earnings_documents_data(
         "code_s": code,
         "coverage_status": "collected",
         "collected_months": index.get("collected_months") or 0,
-        "last_collected_at": window["through"],
+        "last_collected_at": window["at"],
         "coverage_from": window["from"],
         "coverage_through": window["through"],
         "requested_months": months,

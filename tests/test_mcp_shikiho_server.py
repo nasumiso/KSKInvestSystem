@@ -346,7 +346,12 @@ def test_latest_after_deep_collection_is_not_treated_as_continuous(
     )
     assert result["coverage_discontinuous"] is expect_discontinuous
     assert result["partial_coverage"] is expect_partial
+    # 区間の主張は取り下げるが、収集日そのものは事実なので残す
+    # (last_collected_at=null と collected_months=12 が並ぶと矛盾して見える)
+    assert result["last_collected_at"] == "2026-09-22"
     if expect_discontinuous:
+        assert result["coverage_from"] is None
+        assert result["coverage_through"] is None
         assert "抜けている可能性" in result["note"]
 
 
