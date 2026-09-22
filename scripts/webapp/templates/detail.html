@@ -787,7 +787,8 @@
       }
     }
 
-    function post(path, formData, keepId) {
+    function post(path, formData, keepId, selectAdded) {
+      var existingIds = selectAdded ? ENTRIES.map(function (entry) { return entry.id; }) : [];
       fetch('/stock/' + encodeURIComponent(CODE) + path, {
         method: 'POST',
         headers: {'X-Requested-With': 'XMLHttpRequest'},
@@ -799,6 +800,12 @@
             return;
           }
           ENTRIES = j.entries;
+          if (selectAdded) {
+            var added = ENTRIES.find(function (entry) {
+              return existingIds.indexOf(entry.id) === -1;
+            });
+            keepId = added ? added.id : null;
+          }
           setMode(null);
           render(keepId);
         });
@@ -836,7 +843,7 @@
       if (editId) {
         post('/ir_qa/' + encodeURIComponent(editId), fd, editId);
       } else {
-        post('/ir_qa', fd, null);
+        post('/ir_qa', fd, null, true);
       }
     });
 
