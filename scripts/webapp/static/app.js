@@ -223,7 +223,8 @@ function addShikiho() {
     '<span style="font-size:0.8em;color:#888;min-width:3em;padding-top:0.6em;">' + period + '</span>' +
     '<input type="hidden" name="shikiho_periods_' + idx + '" value="' + period + '">' +
     '<textarea class="editable-field" name="shikiho_comments_' + idx + '" rows="4" style="flex:1;" data-form="shikiho" placeholder="四季報コメントを入力..."></textarea>';
-  area.insertBefore(div, document.getElementById('btn-add-shikiho'));
+  // 一括更新ページと同様に、新しい今号コメントを先頭へ追加する。
+  area.prepend(div);
   var ta = div.querySelector('textarea');
   /* UI更新のみ、保存はしない（空のtextareaで保存するとデータロスになる） */
   updateShikihoState({ save: false });

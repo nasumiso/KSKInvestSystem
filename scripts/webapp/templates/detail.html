@@ -534,11 +534,30 @@
       <textarea class="editable-field" name="overview" rows="3" data-form="shikiho">{{ record.overview or '' }}</textarea>
     </div>
 
+    {# issue #346: 一括更新ページと同じ四季報業績予想の貼り付け・保存 UI。 #}
+    <div class="memo-field" id="gyoseki-section">
+      <div style="display:flex;align-items:center;gap:0.6em;">
+        <label style="margin:0;">四季報業績 (楽天証券の業績テーブルを貼り付け)</label>
+        <button type="button" id="btn-save-gyoseki" class="outline"
+                style="padding:0.15em 0.6em;font-size:0.85em;">保存</button>
+        <span id="gyoseki-msg" style="font-size:0.85em;"></span>
+      </div>
+      <div id="gyoseki-preview"
+           style="font-size:0.9em;color:#444;margin:0.3em 0;min-height:1.2em;
+                  white-space:pre-line;line-height:1.5;"></div>
+      <textarea id="gyoseki-raw" rows="5" style="width:100%;font-family:monospace;font-size:0.85em;"
+                placeholder="【業績】&#9;売上高&#9;営業利益 ...&#10;連27.3予&#9;70,000&#9;3,700 ...">{{ (record.shikiho_gyoseki or {}).get('raw_text') or '' }}</textarea>
+    </div>
+
     <div class="memo-field">
       {% set shikiho = record.shikiho_comments or [] %}
-      <label>四季報コメント (<span id="shikiho-count">{{ shikiho|length }}</span>/8件)</label>
+      <div style="display:flex;align-items:center;gap:0.6em;">
+        <label style="margin:0;">四季報コメント (<span id="shikiho-count">{{ shikiho|length }}</span>/8件)</label>
+        <button type="button" id="btn-add-shikiho" class="outline"
+                style="padding:0.15em 0.6em;font-size:0.85em;" onclick="addShikiho()">+ 追加</button>
+      </div>
       <div id="shikiho-edit-area">
-        {% for item in shikiho %}
+        {% for item in shikiho[:4] %}
         <div class="shikiho-entry" style="display:flex;align-items:start;gap:0.3em;margin-bottom:0.3em;">
           <span style="font-size:0.8em;color:#888;min-width:3em;padding-top:0.6em;">{{ item.period or '-' }}</span>
           <input type="hidden" name="shikiho_periods_{{ loop.index0 }}" value="{{ item.period or '' }}">
@@ -546,12 +565,86 @@
           {# 削除ボタンは非表示（基本的に消さないため） #}
         </div>
         {% endfor %}
-        <button type="button" id="btn-add-shikiho" class="outline" style="margin-top:0.3em;padding:0.2em 0.8em;font-size:0.85em;" onclick="addShikiho()">+ 追加</button>
+        {% if shikiho|length > 4 %}
+        <details class="shikiho-more" style="margin:0.4em 0;">
+          <summary style="cursor:pointer;font-size:0.9em;color:#666;">過去の四季報コメント ({{ shikiho|length - 4 }}件)</summary>
+          {% for item in shikiho[4:] %}
+          {% set index = loop.index0 + 4 %}
+          <div class="shikiho-entry" style="display:flex;align-items:start;gap:0.3em;margin:0.4em 0 0.3em;">
+            <span style="font-size:0.8em;color:#888;min-width:3em;padding-top:0.6em;">{{ item.period or '-' }}</span>
+            <input type="hidden" name="shikiho_periods_{{ index }}" value="{{ item.period or '' }}">
+            <textarea class="editable-field" name="shikiho_comments_{{ index }}" rows="4" style="flex:1;" data-form="shikiho">{{ item.comment }}</textarea>
+          </div>
+          {% endfor %}
+        </details>
+        {% endif %}
       </div>
     </div>
 
   </form>
 </div>
+
+<script>
+  (function () {
+    var raw = document.getElementById('gyoseki-raw');
+    var preview = document.getElementById('gyoseki-preview');
+    var button = document.getElementById('btn-save-gyoseki');
+    var message = document.getElementById('gyoseki-msg');
+
+    function fmtGrowth(value) {
+      if (value === null || value === undefined) return '—';
+      return (value >= 0 ? '+' : '') + value.toFixed(1) + '%';
+    }
+
+    function renderPreview(gyoseki) {
+      if (!gyoseki) {
+        preview.textContent = '未登録';
+        preview.style.color = '#999';
+        return;
+      }
+      preview.style.color = '#444';
+      var lines = [];
+      ['this_year', 'next_year'].forEach(function (key) {
+        var entry = gyoseki[key];
+        if (!entry) return;
+        lines.push(entry.label + ' 売上 ' + fmtGrowth(entry.sales_growth) +
+                   ' / 営利 ' + fmtGrowth(entry.op_growth));
+      });
+      preview.textContent = lines.join('\n');
+    }
+
+    function saveGyoseki() {
+      button.disabled = true;
+      message.textContent = '保存中...';
+      message.style.color = '#666';
+      var formData = new FormData();
+      formData.append('shikiho_gyoseki_raw', raw.value);
+      fetch('/stock/{{ record.code_s }}/shikiho_gyoseki', {
+        method: 'POST', body: formData
+      }).then(function (response) {
+        return response.json().then(function (body) {
+          return { response: response, body: body };
+        });
+      }).then(function (result) {
+        if (!result.response.ok || !result.body.ok) {
+          throw new Error(result.body.error || '保存に失敗しました');
+        }
+        renderPreview(result.body.gyoseki);
+        message.textContent = '保存しました';
+        message.style.color = '#2a7';
+        setTimeout(function () { message.textContent = ''; }, 2000);
+      }).catch(function (error) {
+        message.textContent = error.message || '保存に失敗しました';
+        message.style.color = '#c00';
+      }).finally(function () {
+        button.disabled = false;
+      });
+    }
+
+    renderPreview({{ record.shikiho_gyoseki|tojson }});
+    button.addEventListener('click', saveGyoseki);
+  })();
+</script>
 
 {# ===== 6.5. IR問い合わせ (issue #436) ===== #}
 {# IR部門への問い合わせ回答。公開情報として流通しないエッジ情報なので銘柄に恒久保存する。 #}
