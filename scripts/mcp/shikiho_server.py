@@ -264,6 +264,10 @@ def list_earnings_documents_data(
 ) -> Dict[str, Any]:
     """指定銘柄の収集済みIR資料一覧を MCP の返却形式へ整形する。"""
     code = code_s.strip().upper()
+    # LLM は任意の値を渡せる。大きすぎると日付計算が OverflowError を投げ、
+    # 0 以下だと「0ヶ月を要求したので全部収まっている」という無意味な
+    # partial_coverage: False になるため、実用的な範囲へ丸める。
+    months = min(max(months if isinstance(months, int) else 12, 1), 120)
     index = _load_ir_index(code)
     if index is None:
         return {

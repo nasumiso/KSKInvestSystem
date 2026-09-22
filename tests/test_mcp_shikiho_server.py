@@ -397,3 +397,27 @@ def test_missing_text_file_does_not_raise(tmp_path, monkeypatch, broken):
     assert result["text"] is None
     assert result["local_path"].endswith("20260901_D1.pdf")
     assert "添付" in result["note"]
+
+
+@pytest.mark.parametrize("months, expect_requested", [
+    (999999, 120),   # 日付計算が OverflowError を投げる値
+    (0, 1),          # 「0ヶ月を要求したので全部収まっている」を防ぐ
+    (-12, 1),
+    (24, 24),        # 通常値はそのまま
+])
+def test_months_is_clamped_to_usable_range(
+    tmp_path, monkeypatch, months, expect_requested
+):
+    """LLM は任意の months を渡せる。例外を出さず無意味な判定もしない。"""
+    _write_ir_index(tmp_path, monkeypatch, {
+        "last_collected_at": "2026-09-22T18:50:31+09:00",
+        "collected_months": 12, "last_requested_depth": "1y",
+        "documents": [_document()],
+    })
+    result = server.list_earnings_documents_data(
+        "4011", months=months, today=date(2026, 9, 22)
+    )
+    assert result["requested_months"] == expect_requested
+    # 0以下を丸めた結果、収集範囲より短い要求として正しく判定される
+    if months <= 0:
+        assert result["partial_coverage"] is False
