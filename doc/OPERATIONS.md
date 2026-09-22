@@ -67,7 +67,9 @@ LaunchDaemon (システムドメイン) にすればログイン不要にでき�
 ```bash
 # --- MBA 側 ---
 # 1. WebApp を停止し、書き込みプロセスが居ないことを確認
-lsof -iTCP:5001 -sTCP:LISTEN -t | xargs -r kill
+#    (macOS の xargs は -r が man に無いので、PID の有無をシェルで判定する)
+WEBAPP_PID=$(lsof -tiTCP:5001 -sTCP:LISTEN 2>/dev/null)
+[ -n "$WEBAPP_PID" ] && kill $WEBAPP_PID
 lsof +D "$KS_DATA_DIR" | grep -v ' DIR ' | head        # 0件であること
 
 # 2. 退避ファイル・同期競合コピーを削除 (削除前に du -sh で記録)
