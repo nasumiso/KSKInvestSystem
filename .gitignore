@@ -10,6 +10,7 @@ todays_kessan_data/
 today_stocks/html_cache/
 logs/
 data/googledrive/drive_credential.json
+data/ir_docs/
 
 # Pythonキャッシュや仮想環境なども除外
 __pycache__/

@@ -100,6 +100,22 @@ cd scripts && python make_market_db.py html   # DB更新なしで market_data.ht
 
 `html` サブコマンドは既存の market_db から表示用 HTML (market_data.html / disclosure_data.html) を作り直すだけ。スクレイピング不要なので、表示確認のための再生成に使う。
 
+## IR資料収集 (`ir_docs.py`)
+
+決算短信・決算説明資料を株探から収集し、PDFとページ単位の抽出テキストを
+`$KS_DATA_DIR/ir_docs/<code_s>/` に保存する。既定の収集深度は直近1年。
+
+```bash
+cd scripts && python ir_docs.py download 4011
+cd scripts && python ir_docs.py download 4011 --depth latest
+cd scripts && python ir_docs.py download 4011 --dry-run  # 一覧取得のみ。PDF・indexは保存しない
+cd scripts && python ir_docs.py download 4011 --force
+cd scripts && python ir_docs.py download_all
+cd scripts && python ir_docs.py list 4011
+```
+
+`--depth 2y` は初回運用の対象外で、実リクエスト数を確認してから解禁する。
+
 ## 銘柄調査DB (`research_shelve`)
 
 ```bash
