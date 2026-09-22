@@ -163,7 +163,7 @@ tailscale serve --bg localhost:5001 off
 
 - 平日19:00 に日次バッチ (`git pull --ff-only` → 分析 → DB更新 → exposure → theme-news)
 - pull が成功したら WebApp を自動で kickstart (新しいコードを反映)
-- **金曜のみ** バッチ末尾で `backup` → `compact` (stocks_shelve が 100〜120MB/日 肥大するため)
+- **金曜のみ** バッチ末尾で `compact` (stocks_shelve が 100〜120MB/日 肥大するため)。事前の `backup` は取らない — `compact_shelve()` が swap 前に自前で退避を作り、成功後に消す・失敗時は残して次回を止める形で保護しており、`make_stock_db.py backup` は世代削除を持たないので週1で呼ぶと数百MBのコピーが永久に積み上がる
 
 pull が失敗しても**バッチは継続する**。前回のコードで走るので、ログに `❌ git pull --ff-only 失敗` が出ていたら手当てする。
 

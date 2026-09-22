@@ -70,8 +70,17 @@ report() {
 
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行開始 ====="
 
-# --- webapp 起動（未起動の場合のみ） ---
-if ! lsof -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
+# --- webapp 起動（開発機のみ・未起動の場合） ---
+# 運用機では WebApp を LaunchAgent が持つので、ここでは起動しない。
+# cron の plist は SHINTAKANE_ENV も FLASK_SECRET_KEY も渡さないため、ここで
+# 起動すると debug 有効・既定の dev-secret-key のまま Tailnet へ公開され、
+# さらにポートを奪って LaunchAgent 側が KeepAlive で失敗し続ける。
+if [ "${SHINTAKANE_AUTO_PULL:-0}" = "1" ]; then
+  if ! lsof -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
+    echo "⚠️ webapp が起動していません。LaunchAgent を確認してください"
+    echo "   launchctl print gui/\$(id -u)/com.k_sohara.shintakane.webapp"
+  fi
+elif ! lsof -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
   echo "webapp を起動します (port 5001)"
   rotate_log ../logs/webapp.log
   nohup python -m webapp.app >> ../logs/webapp.log 2>&1 &
@@ -135,7 +144,10 @@ fi
 if [ "$(date +%u)" = "5" ]; then
   rotate_log ../logs/compact.log
   echo "===== $(date '+%Y-%m-%d %H:%M:%S') compact 開始 =====" >> ../logs/compact.log
-  python make_stock_db.py backup >> ../logs/compact.log 2>&1
+  # 事前の backup は取らない。compact_shelve() が swap 前に自前で退避を作り、
+  # 成功後に消す・失敗時は残して次回を止める、という形で保護しているため。
+  # make_stock_db.py backup は世代削除を持たないので、週1で呼ぶと数百MBの
+  # コピーが毎週永久に積み上がり、compact で減らした分を食い潰す。
   python make_stock_db.py compact >> ../logs/compact.log 2>&1
   RET_COMPACT=$?
   report "compact" $RET_COMPACT ../logs/compact.log
