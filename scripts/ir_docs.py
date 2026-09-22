@@ -2,6 +2,7 @@
 """決算短信・決算説明資料を収集し、ページ単位のテキストを保存する。"""
 
 import argparse
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 import hashlib
@@ -301,7 +302,15 @@ def _error(doc_id, stage, exc, at):
     return {"doc_id": doc_id, "stage": stage, "reason": str(exc), "at": at}
 
 
-def download_ir_docs(code_s, depth="1y", force=False, dry_run=False, output_dir=None):
+def download_ir_docs(
+    code_s,
+    depth="1y",
+    force=False,
+    dry_run=False,
+    output_dir=None,
+    session=None,
+    limiter=None,
+):
     """指定銘柄のIR資料を収集し、今回の対象メタデータを返す。"""
     code_s = str(code_s).upper()
     if not re.fullmatch(r"\d[0-9A-Z]\d[0-9A-Z]", code_s):
@@ -312,10 +321,11 @@ def download_ir_docs(code_s, depth="1y", force=False, dry_run=False, output_dir=
     root = Path(output_dir) if output_dir else IR_DOCS_DIR
     stock_dir = root / code_s
     index_path = stock_dir / "index.json"
-    limiter = _RateLimiter()
+    limiter = limiter or _RateLimiter()
     now = datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds")
 
-    with requests.Session() as session:
+    session_context = nullcontext(session) if session is not None else requests.Session()
+    with session_context as session:
         candidates, scan_errors = collect_candidates(
             code_s, depth=depth, session=session, limiter=limiter
         )
@@ -420,14 +430,22 @@ def download_all(depth="1y", force=False, dry_run=False, output_dir=None):
     watch_codes, possess_codes = portfolio.parse_my_portforio()
     codes = sorted(set(watch_codes + possess_codes))
     results = {}
-    for code_s in codes:
-        try:
-            results[code_s] = download_ir_docs(
-                code_s, depth=depth, force=force, dry_run=dry_run, output_dir=output_dir
-            )
-        except Exception as exc:
-            log_error(f"IR資料収集失敗: {code_s} {exc}")
-            results[code_s] = []
+    limiter = _RateLimiter()
+    with requests.Session() as session:
+        for code_s in codes:
+            try:
+                results[code_s] = download_ir_docs(
+                    code_s,
+                    depth=depth,
+                    force=force,
+                    dry_run=dry_run,
+                    output_dir=output_dir,
+                    session=session,
+                    limiter=limiter,
+                )
+            except Exception as exc:
+                log_error(f"IR資料収集失敗: {code_s} {exc}")
+                results[code_s] = []
     return results
 
 

@@ -69,7 +69,7 @@ def test_depth_state_is_monotonic_and_clears_lower_errors():
     assert index["collection_errors"] == {}
 
 
-def test_download_skips_cached_document_unless_forced(tmp_path, monkeypatch):
+def test_download_flow_cache_force_and_shared_bulk_http_state(tmp_path, monkeypatch):
     candidate = {
         "doc_id": "140120260101000001", "doc_type": "setsumei", "date": "20260101",
         "heading": "2025年12月期 決算説明資料", "fiscal_period": "2025年12月期",
@@ -98,3 +98,16 @@ def test_download_skips_cached_document_unless_forced(tmp_path, monkeypatch):
     index = json.loads((tmp_path / "4011" / "index.json").read_text(encoding="utf-8"))
     assert index["collected_depth"] == "latest"
     assert index["documents"][0]["text_quality"] == "ok"
+
+    bulk_calls = []
+    monkeypatch.setattr(ir_docs.portfolio, "parse_my_portforio", lambda: (["4011"], ["4436"]))
+
+    def fake_download(code_s, **kwargs):
+        bulk_calls.append((code_s, kwargs["session"], kwargs["limiter"]))
+        return []
+
+    monkeypatch.setattr(ir_docs, "download_ir_docs", fake_download)
+    ir_docs.download_all()
+    assert [call[0] for call in bulk_calls] == ["4011", "4436"]
+    assert bulk_calls[0][1] is bulk_calls[1][1]
+    assert bulk_calls[0][2] is bulk_calls[1][2]
