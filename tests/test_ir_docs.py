@@ -56,7 +56,7 @@ def test_link_revisions_matches_all_keys_and_revision_marker():
     assert by_id["5"]["supersedes"] is None
 
 
-def test_depth_state_is_monotonic_and_clears_lower_errors():
+def test_depth_state_is_monotonic_and_uses_price_day_cutoff(monkeypatch):
     index = {"collected_depth": "1y", "collected_months": 12, "collection_errors": {"latest": [{}], "1y": [{}], "2y": [{}]}}
     ir_docs._update_depth_state(index, "latest", [])
     assert index["collected_depth"] == "1y"
@@ -70,6 +70,23 @@ def test_depth_state_is_monotonic_and_clears_lower_errors():
     assert index["collected_depth"] == "2y"
     assert index["collected_months"] == 24
     assert index["collection_errors"] == {}
+
+    pages = iter([
+        [{
+            "type": "kaiji",
+            "date": "20250921",
+            "heading": "2025年12月期 決算説明資料",
+            "url": "https://kabutan.jp/disclosures/pdf/20250921/140120250921000001/",
+        }],
+        [],
+    ])
+    monkeypatch.setattr(ir_docs, "_get", lambda *args: type("Response", (), {"text": ""})())
+    monkeypatch.setattr(ir_docs.disclosure, "parse_disclosure_html", lambda html: next(pages))
+    candidates, errors = ir_docs.collect_candidates(
+        "4011", depth="1y", now=ir_docs.datetime(2026, 9, 22, 10, 0)
+    )
+    assert [candidate["doc_id"] for candidate in candidates] == ["140120250921000001"]
+    assert errors == []
 
 
 def test_download_flow_cache_force_and_shared_bulk_http_state(tmp_path, monkeypatch):

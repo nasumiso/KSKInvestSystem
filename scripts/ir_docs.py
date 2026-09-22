@@ -20,7 +20,15 @@ import requests
 
 import disclosure
 import portfolio
-from ks_util import DATA_DIR, USER_AGENT_CHROME, log_debug, log_error, log_print, log_warning
+from ks_util import (
+    DATA_DIR,
+    USER_AGENT_CHROME,
+    get_price_day,
+    log_debug,
+    log_error,
+    log_print,
+    log_warning,
+)
 
 
 IR_DOCS_DIR = Path(DATA_DIR) / "ir_docs"
@@ -155,7 +163,7 @@ def collect_candidates(code_s, depth="1y", session=None, limiter=None, now=None)
     now = now or datetime.now()
     cutoff = None
     if DEPTH_DAYS[depth] is not None:
-        cutoff = (now.date() - timedelta(days=DEPTH_DAYS[depth])).strftime("%Y%m%d")
+        cutoff = (get_price_day(now) - timedelta(days=DEPTH_DAYS[depth])).strftime("%Y%m%d")
 
     candidates = {}
     errors = []
