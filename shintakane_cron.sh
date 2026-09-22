@@ -24,10 +24,29 @@ if [ ! -t 1 ] && [ "$(date +%-H)" -lt 19 ]; then
   exit 0
 fi
 
+# 運用機 (MacMini) のみ main を追従する。開発機では未設定なので何もしない。
+# pull に失敗しても続行する: 前回のコードで実行する方が、日次データ更新を
+# 丸ごと落とすより損失が小さい。
+if [ "${SHINTAKANE_AUTO_PULL:-0}" = "1" ]; then
+  if git pull --ff-only; then
+    # 常駐 WebApp は古いコードのまま動き続けるため再起動する
+    # (LaunchAgent 未登録の環境ではエラーを無視する)
+    launchctl kickstart -k "gui/$(id -u)/com.k_sohara.shintakane.webapp" 2>/dev/null \
+      || echo "ℹ️ webapp LaunchAgent の再起動をスキップしました (未登録)"
+  else
+    echo "❌ git pull --ff-only 失敗。前回のコードのまま実行を継続します"
+  fi
+fi
+
 cd scripts
 
-# KS_DATA_DIR が未設定の場合はデフォルト値を設定
-export KS_DATA_DIR="${KS_DATA_DIR:-/Users/k_sohara/Ext/GoogleDrive/shintakane_data}"
+# KS_DATA_DIR は各ホストの .zshrc / plist で設定する。未設定のまま走らせると
+# 存在しないパスに空 DB を作る事故になるため fail-fast する。
+if [ -z "${KS_DATA_DIR:-}" ]; then
+  echo "❌ KS_DATA_DIR が未設定です。.zshrc か LaunchAgent の EnvironmentVariables で設定してください"
+  exit 1
+fi
+export KS_DATA_DIR
 source ../.venv/bin/activate
 
 # ログローテーション（1MB超で直近5000行に切り詰め）
@@ -51,8 +70,17 @@ report() {
 
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行開始 ====="
 
-# --- webapp 起動（未起動の場合のみ） ---
-if ! lsof -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
+# --- webapp 起動（開発機のみ・未起動の場合） ---
+# 運用機では WebApp を LaunchAgent が持つので、ここでは起動しない。
+# cron の plist は SHINTAKANE_ENV も FLASK_SECRET_KEY も渡さないため、ここで
+# 起動すると debug 有効・既定の dev-secret-key のまま Tailnet へ公開され、
+# さらにポートを奪って LaunchAgent 側が KeepAlive で失敗し続ける。
+if [ "${SHINTAKANE_AUTO_PULL:-0}" = "1" ]; then
+  if ! lsof -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
+    echo "⚠️ webapp が起動していません。LaunchAgent を確認してください"
+    echo "   launchctl print gui/\$(id -u)/com.k_sohara.shintakane.webapp"
+  fi
+elif ! lsof -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
   echo "webapp を起動します (port 5001)"
   rotate_log ../logs/webapp.log
   nohup python -m webapp.app >> ../logs/webapp.log 2>&1 &
@@ -105,4 +133,22 @@ else
   python run_theme_news.py >> ../logs/theme_news.log 2>&1
   RET3=$?
   report "theme-news" $RET3 ../logs/theme_news.log
+fi
+
+# --- 週1 compact (金曜のみ) ---
+# stocks_shelve は dbm.dumb の追記構造で 100〜120MB/日 肥大するため週1で詰める。
+# 独立 LaunchAgent にはしない: 同一スクリプトの逐次実行なら「バッチが
+# stocks_shelve を閉じた後」が構造的に保証される。
+# 金曜にするのは、失敗して .compact_backup が残った場合 (次回実行が
+# RuntimeError で停止する) に土日で対処できるため。
+if [ "$(date +%u)" = "5" ]; then
+  rotate_log ../logs/compact.log
+  echo "===== $(date '+%Y-%m-%d %H:%M:%S') compact 開始 =====" >> ../logs/compact.log
+  # 事前の backup は取らない。compact_shelve() が swap 前に自前で退避を作り、
+  # 成功後に消す・失敗時は残して次回を止める、という形で保護しているため。
+  # make_stock_db.py backup は世代削除を持たないので、週1で呼ぶと数百MBの
+  # コピーが毎週永久に積み上がり、compact で減らした分を食い潰す。
+  python make_stock_db.py compact >> ../logs/compact.log 2>&1
+  RET_COMPACT=$?
+  report "compact" $RET_COMPACT ../logs/compact.log
 fi

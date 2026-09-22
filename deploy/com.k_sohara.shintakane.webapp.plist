@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  運用機 (MacMini) で WebApp を常駐させるテンプレート。
+  deploy/README.md の手順で __RUNNER__ / __USER_HOME__ を実パスへ置換してから
+  ~/Library/LaunchAgents/ へ配置する。
+
+  FLASK_SECRET_KEY はここに書かない (リポジトリ管理下のファイルなので git に入る)。
+  run_webapp.sh が ~/.shintakane_env (chmod 600) から読む。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.k_sohara.shintakane.webapp</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__RUNNER__</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__USER_HOME__/Library/Logs/shintakane/webapp.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>__USER_HOME__/Library/Logs/shintakane/webapp.stderr.log</string>
+</dict>
+</plist>

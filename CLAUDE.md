@@ -99,6 +99,7 @@ WebApp画面の見え方・挙動、またはユーザーが直接触るデー�
 ## 関連ドキュメント
 
 - [doc/COMMANDS.md](doc/COMMANDS.md) — 開発コマンドリファレンス（全CLI、移行スクリプト、cron運用詳細）
+- [doc/OPERATIONS.md](doc/OPERATIONS.md) — 運用機 (MacMini) の構築・データ移行・日常運用・トラブルシュート
 - [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) — アーキテクチャ詳細（データフロー、DB構成、キャッシュ戦略、テクニカル指標）
 - [doc/TESTING.md](doc/TESTING.md) — テスト方針（ユニットテスト、統合テスト、HTMLパース変更時の検証）
 - [doc/システム概要.md](doc/システム概要.md) — システム概要（非エンジニア向け）

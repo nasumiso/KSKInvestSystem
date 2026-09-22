@@ -21,7 +21,18 @@ if _SCRIPTS_DIR not in sys.path:
 def create_app() -> Flask:
     """Flask アプリケーションファクトリ。"""
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key")
+    # 運用機 (SHINTAKANE_ENV=production) では既定値での起動を許さない。
+    # Tailnet 限定とはいえ、既定のセッション鍵で公開するのは事故のもと。
+    secret = os.environ.get("FLASK_SECRET_KEY")
+    if not secret:
+        if os.environ.get("SHINTAKANE_ENV") == "production":
+            raise RuntimeError(
+                "FLASK_SECRET_KEY が未設定です。"
+                "本番起動では ~/.shintakane_env に設定してください "
+                "(生成: openssl rand -hex 32)"
+            )
+        secret = "dev-secret-key"
+    app.config["SECRET_KEY"] = secret
 
     from webapp.routes.search import search_bp
     from webapp.routes.detail import detail_bp

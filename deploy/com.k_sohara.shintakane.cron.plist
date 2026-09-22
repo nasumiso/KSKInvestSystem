@@ -1,16 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
- <!-- これを~/Library/LaunchAgents/ に配置
- launchctl load ~/Library/LaunchAgents/com.k_sohara.shintakane.cron.plist で反映
- 編集したら、unload してから load し直すこと (launchctl print で実状態を確認)
+ <!-- 運用機 (MacMini) 用テンプレート。deploy/README.md の手順で
+ __REPO__ / __USER_HOME__ / __KS_DATA_DIR__ を実パスへ置換してから
+ ~/Library/LaunchAgents/ へ配置する。
 
  設計方針:
    平日19:00 の StartCalendarInterval が定刻実行。
    スリープ復帰の補完は RunAtLoad=true (ログイン/再起動/launchctl load 時に1回)
-   に任せる。スリープ頻度が低い前提なら、これで十分。
+   に任せる。運用機はスリープ無効 (pmset) が前提。
    shintakane_cron.sh 側の TTY 検知ガードで、launchd 経由かつ19時前の起動
-   (例: 朝マシンを開いた時の RunAtLoad 発火) のみサイレントスキップする。 -->
+   (例: 再起動直後の RunAtLoad 発火) のみサイレントスキップする。
+
+ PATH について:
+   launchd の EnvironmentVariables はシェル展開しないため $HOME は使えない。
+   __USER_HOME__/.local/bin は theme-news が使う claude CLI の置き場で、
+   これが無いと launchd 経由でのみ「claude CLI が見つかりません」で失敗する。
+   /opt/homebrew/bin は Apple Silicon の Homebrew (tailscale 等)。 -->
 <plist version="1.0">
   <dict>
     <key>Label</key>
@@ -18,7 +24,7 @@
     <!-- 実行スクリプトの絶対パス -->
     <key>ProgramArguments</key>
     <array>
-      <string>/Users/k_sohara/Library/CloudStorage/Dropbox/document/shintakane/shintakane_cron.sh</string>
+      <string>__REPO__/shintakane_cron.sh</string>
     </array>
 
     <!-- 平日(月〜金)19:00 に定刻実行 -->
@@ -55,19 +61,22 @@
     <key>RunAtLoad</key>
     <true/>
 
-    <!-- ログ出力 -->
+    <!-- ログ出力 (親ディレクトリは launchd が作らないので README の手順で mkdir する) -->
     <key>StandardOutPath</key>
-    <string>/tmp/shintakane_launchd_stdout.log</string>
+    <string>__USER_HOME__/Library/Logs/shintakane/cron.stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/shintakane_launchd_stderr.log</string>
+    <string>__USER_HOME__/Library/Logs/shintakane/cron.stderr.log</string>
 
-    <!-- 環境変数の継承 -->
+    <!-- 環境変数 (シェル展開されないので絶対パスで書く) -->
     <key>EnvironmentVariables</key>
     <dict>
       <key>PATH</key>
-      <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+      <string>__USER_HOME__/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
       <key>KS_DATA_DIR</key>
-      <string>/Users/k_sohara/Ext/GoogleDrive/shintakane_data</string>
+      <string>__KS_DATA_DIR__</string>
+      <!-- 運用機のみ: 実行前に git pull --ff-only する -->
+      <key>SHINTAKANE_AUTO_PULL</key>
+      <string>1</string>
     </dict>
   </dict>
 </plist>
