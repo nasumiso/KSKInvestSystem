@@ -284,7 +284,29 @@ def test_bad_quality_returns_null_text_with_path(tmp_path, monkeypatch, quality)
     assert result["text"] is None
     assert result["text_quality"] == quality
     assert result["local_path"].endswith("20260901_D1.pdf")
-    assert "添付" in result["note"]
+    assert result["relative_path"] == "ir_docs/4011/20260901_D1.pdf"
+    # Drive コネクタを先に案内し、使えない場合だけ添付を頼む
+    assert result["note"].index("Google Drive") < result["note"].index("添付")
+
+
+@pytest.mark.parametrize("tool", ["list", "text"])
+def test_relative_path_is_terminal_independent(tmp_path, monkeypatch, tool):
+    """relative_path は KS_DATA_DIR 相対。Mac mini / MBA / Drive で同じ値になる。"""
+    _write_ir_index(
+        tmp_path, monkeypatch,
+        {"last_collected_at": "2026-09-22T18:50:31+09:00", "collected_months": 12,
+         "documents": [_document()]},
+        texts={"20260901_D1.json": [{"page": 1, "text": "あ"}]},
+    )
+    if tool == "list":
+        result = server.list_earnings_documents_data(
+            "4011", today=date(2026, 9, 22)
+        )["documents"][0]
+    else:
+        result = server.get_earnings_document_data("4011", "D1")
+
+    assert result["relative_path"] == "ir_docs/4011/20260901_D1.pdf"
+    assert str(tmp_path) not in result["relative_path"]
 
 
 @pytest.mark.parametrize(
