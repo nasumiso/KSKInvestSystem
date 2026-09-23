@@ -33,6 +33,16 @@ logger = logging.getLogger(__name__)
 # 読み取り専用の本サーバーでは保存先だけを同じ規則で組み立てる。
 IR_DOCS_DIR = Path(DATA_DIR) / "ir_docs"
 
+# local_path を開けるかは利用環境次第。同じ Mac の ChatGPT アプリ (Work モード) や
+# Claude Code は開けるので「開けない」と言い切ると、最も確実な経路を捨てて
+# Drive や添付依頼へ回る。
+LOCAL_PATH_NOTE = (
+    "local_path はこのサーバーを動かしている端末上のパスです。あなたがその端末の"
+    "ローカルファイルを読める環境 (同じ Mac の ChatGPT アプリの Work モード、"
+    "Claude Code 等) なら直接開けます。通常のチャット、iPhone、ブラウザ版など、"
+    "ローカルファイルを読めない環境からは開けません。"
+)
+
 mcp = MCPServer(
     "shintakane-shikiho",
     instructions=(
@@ -51,11 +61,32 @@ mcp = MCPServer(
         "決算説明資料はスライド形式で図表が主体のため、返されるテキストには"
         "グラフや表の中の数値が含まれないことがあります。テキストに項目名だけがあり"
         "対応する数値が見当たらない場合、その数値は資料に存在しないのではなく"
-        "抽出できていないと考えてください。数値の裏取りが必要な分析では、"
-        "テキストから読み取れた範囲を明示し、local_path の PDF をユーザーに添付"
-        "してもらうよう促してください。local_path はこのサーバーを動かしている端末の"
-        "パスであり、あなたが直接開くことはできません。"
+        "抽出できていないと考えてください。"
+        "決算資料の読み方は用途で選んでください。"
+        "(1) PDF がすでにチャットに添付されている、またはこのサーバーと同じ端末で"
+        "ファイルを読める (local_path を開ける) なら、それを使い、取りに行き直さないで"
+        "ください。"
+        "(2) 全体の把握・文言の確認・読むべきページの特定は get_earnings_document の"
+        "テキストで行ってください。多くの資料はこれで足ります。"
+        "(3) text が null の資料、数値の裏取りが必要な分析、テキストに項目名だけが"
+        "あって数値が続かない場合は PDF を見てください。Google Drive コネクタが"
+        "使えるなら relative_path の末尾のファイル名で検索して直接開けます"
+        "(図表の数値も読めます)。"
+        "(4) コネクタが使えない場合に限り、ユーザーに PDF の添付を依頼してください。"
+        + LOCAL_PATH_NOTE
     ),
+)
+
+# テキストで足りない資料の案内。添付済みならそれ、同じ端末で読めるなら local_path、
+# 次に Drive コネクタ、どれも使えない場合だけ添付を頼む。
+# instructions の読み方 (1)〜(4) と同じ順にする。note だけ見た LLM が添付済みの
+# PDF を無視して取りに行き直さないように。
+PDF_GUIDANCE = (
+    "PDF がすでにチャットに添付されていればそれを使ってください。"
+    "そうでなく、同じ端末でファイルを読めるなら local_path の PDF を開いてください。"
+    "そうでなければ、Google Drive コネクタが使えるなら relative_path の末尾の"
+    "ファイル名で検索し、PDF を直接開いてください。いずれも使えない場合は"
+    "ユーザーに添付を依頼してください。"
 )
 
 
@@ -195,6 +226,20 @@ def search_stocks_data(query: str, limit: int = 10) -> Dict[str, List[Dict[str, 
 def _ir_docs_dir(code_s: str) -> Path:
     """指定銘柄のIR資料ディレクトリを返す。"""
     return IR_DOCS_DIR / code_s.strip().upper()
+
+
+def _pdf_paths(code_s: str, document: Dict[str, Any]) -> Dict[str, str]:
+    """PDF の所在を返す。
+
+    relative_path は KS_DATA_DIR からの相対で、端末 (Mac mini / MBA) に依存しない。
+    Google Drive の同期先も同じ構成のため、末尾のファイル名で Drive 上の PDF を特定できる。
+    local_path は互換のため残している。
+    """
+    pdf_path = document.get("pdf_path", "")
+    return {
+        "relative_path": f"ir_docs/{code_s}/{pdf_path}",
+        "local_path": str(_ir_docs_dir(code_s) / pdf_path),
+    }
 
 
 def _load_ir_index(code_s: str) -> Optional[Dict[str, Any]]:
@@ -418,7 +463,7 @@ def _format_ir_document(code_s: str, document: Dict[str, Any]) -> Dict[str, Any]
         "text_quality": document.get("text_quality"),
         "is_latest": document.get("is_latest", True),
         "superseded_by": document.get("superseded_by"),
-        "local_path": str(_ir_docs_dir(code_s) / document.get("pdf_path", "")),
+        **_pdf_paths(code_s, document),
     }
 
 
@@ -438,10 +483,10 @@ def get_earnings_document_data(
             "note": "指定された doc_id の資料は収集されていません。",
         }
 
-    local_path = str(_ir_docs_dir(code) / document.get("pdf_path", ""))
+    paths = _pdf_paths(code, document)
     quality = document.get("text_quality")
     # 品質が悪い資料で空文字や文字化けを返すと、LLM が推測で分析を進める。
-    # 必ず理由とローカルパスを示し、PDF添付へ誘導する。
+    # 必ず理由と PDF の所在を示し、PDF を見るよう誘導する。
     if quality != "ok":
         reason = (
             "画像主体でテキストを抽出できません"
@@ -451,16 +496,13 @@ def get_earnings_document_data(
         return {
             "code_s": code, "doc_id": doc_id, "found": True,
             "text_quality": quality, "text": None,
-            "local_path": local_path,
-            "note": (
-                f"この資料は{reason}。local_path の PDF をユーザーに"
-                "添付してもらってください (このパスをあなたが開くことはできません)。"
-            ),
+            **paths,
+            "note": f"この資料は{reason}。{PDF_GUIDANCE}",
         }
 
     # index.json に載っていてもテキストJSONが無いことはある (保持期間の棚卸しで
     # ファイルだけ消えた、同期途中で欠けている等)。例外を MCP の外へ漏らすと
-    # ChatGPT 側は原因不明のエラーになるため、PDF添付へ誘導して返す。
+    # ChatGPT 側は原因不明のエラーになるため、PDF を見るよう誘導して返す。
     text_path = _ir_docs_dir(code) / document.get("text_path", "")
     try:
         with open(text_path, encoding="utf-8") as file_obj:
@@ -470,12 +512,8 @@ def get_earnings_document_data(
         return {
             "code_s": code, "doc_id": doc_id, "found": True,
             "text_quality": quality, "text": None,
-            "local_path": local_path,
-            "note": (
-                "この資料の抽出済みテキストが見つかりません。"
-                "local_path の PDF をユーザーに添付してもらってください "
-                "(このパスをあなたが開くことはできません)。"
-            ),
+            **paths,
+            "note": f"この資料の抽出済みテキストが見つかりません。{PDF_GUIDANCE}",
         }
 
     selected, used = [], 0
@@ -510,7 +548,7 @@ def get_earnings_document_data(
         "truncated": bool(remaining),
         "next_page_from": last_number + 1 if remaining else None,
         "text": "\n".join(p.get("text") or "" for p in selected),
-        "local_path": local_path,
+        **paths,
     }
 
 
@@ -530,6 +568,9 @@ def list_earnings_documents(
     既定では訂正版に置き換えられた旧版を返しませんが、訂正版が「一部訂正に
     ついて」のような差分通知で原本の内容を含まない場合は、原本も返します
     (superseded_by が入っているものが訂正済みの原本です)。
+
+    relative_path の末尾のファイル名は Google Drive 上の同じ PDF のファイル名と
+    一致します。PDF を見る必要があるときは、Drive コネクタでこの名前を検索してください。
     """
     return list_earnings_documents_data(code_s, months, include_superseded)
 
@@ -550,9 +591,14 @@ def get_earnings_document(
     項目名 (例「売上高 営業利益 (単位:百万円)」) だけがあって数値が続かない
     場合、その数値は抽出できていないだけで資料には存在します。
 
-    text が null の場合はテキストを利用できない資料です。いずれの場合も
-    local_path はこのサーバーを動かしている端末のパスで、あなたが直接
-    開くことはできません。PDF が必要なときはユーザーに添付を依頼してください。
+    text が null の資料、数値の裏取りが必要な分析、項目名だけで数値が続かない
+    ページでは PDF を見てください。Google Drive コネクタが使えるなら
+    relative_path の末尾のファイル名で検索して直接開けます (図表の数値も読めます)。
+    コネクタが使えない場合に限り、ユーザーに添付を依頼してください。
+    local_path はこのサーバーを動かしている端末上のパスです。その端末のローカル
+    ファイルを読める環境 (同じ Mac の ChatGPT アプリの Work モード、Claude Code 等) なら
+    直接開けます。通常のチャット、iPhone、ブラウザ版など、ローカルファイルを読めない
+    環境からは開けません。
     """
     return get_earnings_document_data(code_s, doc_id, page_from, page_to, max_chars)
 
