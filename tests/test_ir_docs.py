@@ -166,6 +166,8 @@ IR_PAGES = {
     "https://corp.example.com/ir/library/presentation.html": """
         <a href="/ir/pdf/20260515.pdf">2026年3月期 決算説明資料</a>
         <a href="/ir/pdf/script.pdf">決算説明会書き起こし</a>
+        <a href="/ir/pdf/20200515.pdf">2020年3月期 決算説明資料</a>
+        <a href="/ir/pdf/undated.pdf">第2四半期 決算説明資料</a>
     """,
 }
 
@@ -192,7 +194,19 @@ def test_ir_page_candidates_follow_one_subpage_per_type(tmp_path, monkeypatch):
     requested = []
     _allow_public(monkeypatch)
     monkeypatch.setattr(ir_docs, "_get", _fake_page_get(requested))
+    monkeypatch.setattr(ir_docs, "get_price_day", lambda now: ir_docs.datetime(2026, 9, 23))
+    (tmp_path / "3660").mkdir()
+    (tmp_path / "3660" / "index.json").write_text(json.dumps({"documents": [{
+        "doc_id": "140120260515000001", "doc_type": "setsumei", "date": "20260515",
+        "fiscal_period": "2026年3月期", "quarter": "FY", "url": "https://kabutan.test/x.pdf",
+    }]}), encoding="utf-8")
     candidates = ir_docs.find_ir_page_candidates("3660", IR_TOP, output_dir=tmp_path)
+    marks = {item["url"].rsplit("/", 1)[1]: (item["old"], item["maybe_tdnet"]) for item in candidates}
+    # 期・四半期が TDnet 資料と一致すれば目印。2年より古い候補以降は同じページ内で畳む
+    assert marks["20260515.pdf"] == (False, "140120260515000001")
+    assert marks["20200515.pdf"] == (True, None)
+    assert marks["undated.pdf"] == (True, None)
+    candidates = [item for item in candidates if not item["old"]]
 
     by_url = {item["url"]: item["doc_type"] for item in candidates}
     assert by_url == {

@@ -567,6 +567,43 @@ def resolve_ir_start_url(code_s):
         return ((db.get(code_s) or {}).get("corporate_url") or "").strip()
 
 
+def _days_between(date_a, date_b):
+    to_date = lambda value: datetime.strptime(value, "%Y%m%d")
+    return abs((to_date(date_a) - to_date(date_b)).days)
+
+
+def _mark_ir_page_candidates(candidates, documents, today):
+    """候補に「古い」「TDnet 取得済みの可能性」の目印を付ける。
+
+    古い: 推定日付が2年より前。IRページは新しい順に並ぶため、同じページで
+    古い候補が出たら、日付を持たない後続の候補も古いとみなす。
+    TDnet 取得済み: 見出しの会計期間・四半期が一致するか、期間が取れなければ
+    推定日付が開示日の前後7日以内。PDF を取らずに判定するため確実ではない
+    (同一PDFの重複保存は fetch_ir_page_doc の sha256 一致で防ぐ)。
+    """
+    cutoff = (datetime.strptime(today, "%Y%m%d") - timedelta(days=730)).strftime("%Y%m%d")
+    tdnet_documents = [item for item in documents if item.get("source") != IR_PAGE_SOURCE]
+    old_pages = set()
+    for candidate in candidates:
+        estimated = _estimate_date(candidate["heading"], candidate["url"], "")
+        if estimated and estimated < cutoff:
+            old_pages.add(candidate["source_page"])
+        candidate["old"] = candidate["source_page"] in old_pages
+
+        fiscal_period, quarter = extract_period(candidate["heading"])
+        candidate["maybe_tdnet"] = next(
+            (
+                item["doc_id"] for item in tdnet_documents
+                if item.get("doc_type") == candidate["doc_type"] and (
+                    (item.get("fiscal_period"), item.get("quarter")) == (fiscal_period, quarter)
+                    if fiscal_period
+                    else estimated and _days_between(estimated, item["date"]) <= 7
+                )
+            ),
+            None,
+        )
+
+
 def find_ir_page_candidates(code_s, start_url, session=None, limiter=None, output_dir=None):
     """会社IRページから中計・決算説明資料のPDF候補を返す。DLはしない。
 
@@ -577,9 +614,8 @@ def find_ir_page_candidates(code_s, start_url, session=None, limiter=None, outpu
     session = session or requests.Session()
     limiter = limiter or _RateLimiter()
     root = Path(output_dir) if output_dir else IR_DOCS_DIR
-    downloaded_urls = {
-        item.get("url") for item in _load_index(root / code_s / "index.json")["documents"]
-    }
+    documents = _load_index(root / code_s / "index.json")["documents"]
+    downloaded_urls = {item.get("url") for item in documents}
 
     candidates = {}
 
@@ -623,7 +659,9 @@ def find_ir_page_candidates(code_s, start_url, session=None, limiter=None, outpu
 
     if not candidates:
         log_warning(f"IRページに資料候補がありません: {code_s} {start_url}")
-    return list(candidates.values())
+    result = list(candidates.values())
+    _mark_ir_page_candidates(result, documents, get_price_day(datetime.now()).strftime("%Y%m%d"))
+    return result
 
 
 def _estimate_date(heading, url, today, first_page=""):
@@ -779,6 +817,10 @@ def main(argv=None):
             return
         for item in find_ir_page_candidates(code_s, start_url):
             mark = "取得済" if item["downloaded"] else "未取得"
+            if item["maybe_tdnet"]:
+                mark += "(TDnet取得済?)"
+            if item["old"]:
+                mark += "(古い)"
             log_print(f"{item['doc_type']} {mark} {item['heading']} {item['url']}")
     elif args.command == "fetch-page":
         fetch_ir_page_doc(args.code_s, args.url, args.doc_type, args.heading)

@@ -154,7 +154,11 @@
           form.style.display = 'block';
           if (!json.ok) { msg.textContent = json.error || '候補の取得に失敗しました'; return; }
           var items = json.candidates || [];
+          var oldCount = items.filter(function(item) { return item.old; }).length;
           msg.textContent = items.length + '件の候補 (' + json.start_url + ')';
+          // 2年より古い候補は折りたたむ (IRページには10年分並ぶことがある)
+          var oldBox = document.createElement('div');
+          oldBox.style.display = 'none';
           items.forEach(function(item, i) {
             var row = document.createElement('div');
             var check = document.createElement('input');
@@ -174,13 +178,33 @@
             link.textContent = item.heading;
             row.appendChild(check); row.appendChild(select); row.appendChild(link);
             if (item.downloaded) row.appendChild(document.createTextNode(' (取得済)'));
+            if (item.maybe_tdnet) {
+              var tdnet = document.createElement('span');
+              tdnet.textContent = ' (TDnet取得済?)';
+              tdnet.title = '会計期間・四半期または日付が TDnet 経由の取得済み資料と一致 (同一PDFなら取得時にスキップされます)';
+              tdnet.style.color = '#888';
+              row.appendChild(tdnet);
+            }
             [['url_', item.url], ['heading_', item.heading], ['source_page_', item.source_page]].forEach(function(pair) {
               var hidden = document.createElement('input');
               hidden.type = 'hidden'; hidden.name = pair[0] + i; hidden.value = pair[1] || '';
               row.appendChild(hidden);
             });
-            list.appendChild(row);
+            (item.old ? oldBox : list).appendChild(row);
           });
+          if (oldCount) {
+            var toggle = document.createElement('a');
+            toggle.href = '#';
+            toggle.textContent = '古い候補を表示 (' + oldCount + '件)';
+            toggle.style.fontSize = '0.9em';
+            toggle.onclick = function(e) {
+              e.preventDefault();
+              oldBox.style.display = 'block';
+              toggle.style.display = 'none';
+            };
+            list.appendChild(toggle);
+            list.appendChild(oldBox);
+          }
         }).catch(function() {
           btn.disabled = false;
           msg.textContent = '候補の取得に失敗しました';
