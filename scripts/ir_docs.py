@@ -542,7 +542,8 @@ def _page_links(session, url, limiter):
     links = []
     for href, text in ANCHOR_RE.findall(response.text):
         text = re.sub(r"<[^>]+>|\s+", " ", html.unescape(text)).strip()
-        links.append((urljoin(url, html.unescape(href)), text))
+        # /ir → /ir/ のようなリダイレクト後は、到達先を相対リンクの基準にする
+        links.append((urljoin(response.url, html.unescape(href)), text))
     return links
 
 

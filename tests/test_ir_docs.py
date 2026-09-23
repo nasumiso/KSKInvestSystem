@@ -175,6 +175,7 @@ def _fake_page_get(requested):
         def __init__(self, url):
             self.text = IR_PAGES[url]
             self.apparent_encoding = "utf-8"
+            self.url = url
 
     def fake_get(session, url, limiter):
         requested.append(url)
