@@ -496,3 +496,30 @@ def test_superseded_original_kept_when_revision_out_of_index(tmp_path, monkeypat
         "4011", months=12, today=date(2026, 9, 22)
     )
     assert [d["heading"] for d in result["documents"]] == ["原本"]
+
+
+def test_chuki_plan_is_listed_without_date_claims(tmp_path, monkeypatch):
+    """issue #457: 中計は推定日付なので as_of null・期間外でも返す・手動旧版は落とす。"""
+    ir_page = {"source": "corporate_ir_page", "date_estimated": True, "doc_type": "chuki_plan",
+               "fiscal_period": None, "quarter": None}
+    _write_ir_index(tmp_path, monkeypatch, {
+        "last_collected_at": "2026-09-22T18:50:31+09:00",
+        "collected_months": 12, "last_requested_depth": "1y",
+        "documents": [
+            _document(doc_id="TDNET", date_s="20260901"),
+            _document(doc_id="PLAN_OLD_DATE", date_s="20210401", heading="中計2021", **ir_page),
+            _document(doc_id="PLAN_SUPERSEDED", date_s="20240501", heading="旧中計",
+                      **{**ir_page, "is_latest": False}),
+        ],
+    })
+    result = server.list_earnings_documents_data("4011", months=12, today=date(2026, 9, 22))
+    listed = {d["doc_id"]: d for d in result["documents"]}
+    assert set(listed) == {"TDNET", "PLAN_OLD_DATE"}
+    assert listed["PLAN_OLD_DATE"]["as_of"] is None
+    assert listed["PLAN_OLD_DATE"]["date_estimated"] is True
+    assert listed["TDNET"]["as_of"] == "2026-09-01"
+
+    only_plans = server.list_earnings_documents_data(
+        "4011", months=12, today=date(2026, 9, 22), doc_type="chuki_plan"
+    )
+    assert [d["doc_id"] for d in only_plans["documents"]] == ["PLAN_OLD_DATE"]

@@ -622,6 +622,45 @@ class TestRefreshPostRoutes:
         assert "background:#ffeaea" in html
 
 
+class TestIrPageDocsPostRoutes:
+    """POST /stock/<code_s>/ir_page_docs のテスト (issue #457)"""
+
+    def test_fetches_picked_and_manual_urls_with_flash(self, client, monkeypatch):
+        import sys
+        import types
+
+        calls = []
+
+        def fake_fetch(code_s, url, doc_type, heading, source_page):
+            calls.append((code_s, url, doc_type, heading, source_page))
+            if "broken" in url:
+                raise ValueError("PDF以外の応答です")
+            return {"heading": heading or "manual.pdf"}, "dup" not in url
+
+        stub = types.ModuleType("ir_docs")
+        stub.fetch_ir_page_doc = fake_fetch
+        monkeypatch.setitem(sys.modules, "ir_docs", stub)
+
+        resp = client.post("/stock/3496/ir_page_docs", data={
+            "pick": ["0", "2"],
+            "url_0": "https://a.example/plan.pdf", "doc_type_0": "chuki_plan",
+            "heading_0": "中期経営計画", "source_page_0": "https://a.example/ir/",
+            "url_1": "https://a.example/skip.pdf", "doc_type_1": "setsumei",
+            "url_2": "https://a.example/broken.pdf", "doc_type_2": "setsumei",
+            "manual_url": "https://b.example/dup.pdf", "manual_doc_type": "setsumei",
+        })
+        assert resp.status_code == 302
+        assert [call[1] for call in calls] == [
+            "https://a.example/plan.pdf", "https://a.example/broken.pdf", "https://b.example/dup.pdf",
+        ]
+        assert calls[0][4] == "https://a.example/ir/"
+
+        html = client.get("/stock/3496").data.decode()
+        assert "IR資料を保存しました (3496): 中期経営計画" in html
+        assert "IR資料の取得に失敗しました (3496)" in html
+        assert "同じIR資料が保存済みです (3496)" in html
+
+
 class TestCorporateUrlPostRoutes:
     """POST /stock/<code_s>/corporate_url のテスト (issue #208)"""
 

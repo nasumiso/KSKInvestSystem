@@ -116,6 +116,23 @@ cd scripts && python ir_docs.py list 4011
 
 `--depth 2y` は初回運用の対象外で、実リクエスト数を確認してから解禁する。
 
+### 会社IRページからの半自動収集 (issue #457)
+
+中期経営計画と、会社IRページにしか無い決算説明資料を、候補提示 → 選択 → DL の手順で
+同じ `index.json` に追加する (`source: corporate_ir_page`, `date_estimated: true`)。
+WebApp 詳細画面の「IR資料取得」ボタンでも同じ操作ができる。
+
+```bash
+cd scripts && python ir_docs.py page-candidates 9880            # 会社HP上書き→会社HPを起点に候補表示 (DLしない)
+cd scripts && python ir_docs.py page-candidates 9880 --url <IRページURL>
+cd scripts && python ir_docs.py fetch-page 9880 <PDF URL> --doc-type chuki_plan --heading "中期経営計画"
+cd scripts && python ir_docs.py list 9880 --doc-type chuki_plan
+cd scripts && python ir_docs.py mark-superseded 9880 <doc_id>   # 旧版の中計を手動で非最新化
+```
+
+- 候補抽出は開始ページ + 資料種別ごとのサブページ1件 (最大3リクエスト)。JS描画のページは拾えないので PDF URL を直接指定する
+- 日付は表紙 → 見出し → ファイル名 → DL日 の順に推定する。中計は自動で旧版にならず、`mark-superseded` でのみ落ちる
+
 ## 銘柄調査DB (`research_shelve`)
 
 ```bash

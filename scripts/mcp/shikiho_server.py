@@ -58,6 +58,9 @@ mcp = MCPServer(
         "限られます。coverage_status が not_collected なら未収集であり、資料が存在しない"
         "ことを意味しません。partial_coverage が true のときは coverage_through 以降が"
         "未収集で、最新の資料が欠けている可能性があります。"
+        "doc_type=chuki_plan (中期経営計画) は会社IRページから手動で集めたもので、"
+        "date は推定値のため as_of は null です。複数件並立しうるので、"
+        "どれが現行計画かは内容から判断してください。"
         "決算説明資料はスライド形式で図表が主体のため、返されるテキストには"
         "グラフや表の中の数値が含まれないことがあります。テキストに項目名だけがあり"
         "対応する数値が見当たらない場合、その数値は資料に存在しないのではなく"
@@ -321,6 +324,11 @@ def _drop_superseded(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     by_id = {d.get("doc_id"): d for d in documents}
     kept = []
     for document in documents:
+        # 会社IRページ由来 (#457) は訂正関係を持たず、旧版化は手動の is_latest のみ
+        if document.get("source") == "corporate_ir_page":
+            if document.get("is_latest", True):
+                kept.append(document)
+            continue
         new_id = document.get("superseded_by")
         if not new_id:
             kept.append(document)
@@ -339,7 +347,7 @@ def _drop_superseded(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def list_earnings_documents_data(
     code_s: str, months: int = 12, include_superseded: bool = False,
-    today: Optional[date] = None,
+    today: Optional[date] = None, doc_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """指定銘柄の収集済みIR資料一覧を MCP の返却形式へ整形する。"""
     code = code_s.strip().upper()
@@ -361,12 +369,18 @@ def list_earnings_documents_data(
     documents = index.get("documents") or []
     if not include_superseded:
         documents = _drop_superseded(documents)
+    if doc_type:
+        documents = [d for d in documents if d.get("doc_type") == doc_type]
 
     # 期間フィルタ。収集済み総数 (months 無視) は別に返し、
     # 「未収集」「期間内に無いだけ」「本当に0件」を LLM が区別できるようにする。
     total_documents = len(documents)
     cutoff = ((today or date.today()) - timedelta(days=months * 30)).strftime("%Y%m%d")
-    in_range = [d for d in documents if (d.get("date") or "") >= cutoff]
+    # 中計は推定日付が古くても現行計画でありうるため期間で絞らない
+    in_range = [
+        d for d in documents
+        if d.get("doc_type") == "chuki_plan" or (d.get("date") or "") >= cutoff
+    ]
 
     window = _coverage_window(index)
     # 要求区間 [今日-months, 今日] が収集区間に収まらなければ partial。
@@ -450,10 +464,14 @@ def list_earnings_documents_data(
 def _format_ir_document(code_s: str, document: Dict[str, Any]) -> Dict[str, Any]:
     """一覧用に資料メタデータを整形する。テキスト本体は含めない。"""
     iso = _iso_date(document.get("date", ""))
+    estimated = bool(document.get("date_estimated"))
     return {
         "doc_id": document.get("doc_id"),
         "date": iso,
-        "as_of": iso,
+        # 推定日付を確定値として LLM に渡さない (四季報の as_of と同じ扱い)
+        "as_of": None if estimated else iso,
+        "date_estimated": estimated,
+        "source": document.get("source") or "tdnet",
         "heading": document.get("heading", ""),
         "doc_type": document.get("doc_type"),
         "fiscal_period": document.get("fiscal_period"),
@@ -540,7 +558,8 @@ def get_earnings_document_data(
     iso = _iso_date(document.get("date", ""))
     return {
         "code_s": code, "doc_id": doc_id, "found": True,
-        "text_quality": quality, "as_of": iso,
+        "text_quality": quality,
+        "as_of": None if document.get("date_estimated") else iso,
         "heading": document.get("heading", ""),
         "pages": document.get("pages"),
         "page_from": selected[0]["page"] if selected else page_from,
@@ -555,8 +574,15 @@ def get_earnings_document_data(
 @mcp.tool()
 def list_earnings_documents(
     code_s: str, months: int = 12, include_superseded: bool = False,
+    doc_type: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """銘柄コードから収集済みの決算説明資料・決算短信の一覧を返す。
+    """銘柄コードから収集済みの決算説明資料・決算短信・中期経営計画の一覧を返す。
+
+    doc_type で tanshin (決算短信) / setsumei (決算説明資料) / chuki_plan
+    (中期経営計画) に絞れます。chuki_plan は months に関係なく全件返します。
+    date_estimated が true の資料 (会社IRページから取得したもの) は date が
+    推定値で、as_of は null です。chuki_plan は複数件が並立しうるため、
+    どれが現行計画かは見出しと内容から判断してください。
 
     テキスト本体は含みません。本文は get_earnings_document で取得します。
 
@@ -572,7 +598,9 @@ def list_earnings_documents(
     relative_path の末尾のファイル名は Google Drive 上の同じ PDF のファイル名と
     一致します。PDF を見る必要があるときは、Drive コネクタでこの名前を検索してください。
     """
-    return list_earnings_documents_data(code_s, months, include_superseded)
+    return list_earnings_documents_data(
+        code_s, months, include_superseded, doc_type=doc_type
+    )
 
 
 @mcp.tool()
@@ -582,7 +610,7 @@ def get_earnings_document(
 ) -> Dict[str, Any]:
     """決算資料の抽出済みテキストをページ範囲を指定して返す。
 
-    doc_id は list_earnings_documents が返す TDnet ID です。
+    doc_id は list_earnings_documents が返す ID です。
     truncated が true のとき、続きは next_page_from を page_from に渡して
     取得します。
 

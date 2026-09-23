@@ -119,8 +119,74 @@
                   onclick="editCorpUrl(this)"
                   style="display:inline-block;width:auto !important;padding:0.05em 0.3em;font-size:0.8em;margin:0 0 0 0.2em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">✎</button>
         </form>
+        {# issue #457: 会社IRページから中計・決算説明資料を候補提示 → 選択DL #}
+        <button type="button" id="ir-page-btn" data-code="{{ record.code_s }}" onclick="loadIrPageCandidates(this)"
+                title="会社HP (上書き優先) から中期経営計画・決算説明資料のPDFを探します"
+                style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0 0 0 0.3em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">IR資料取得</button>
+        <span id="ir-page-msg" style="font-size:0.8em;color:#888;margin-left:0.3em;"></span>
       </div>
+      <form method="POST" action="/stock/{{ record.code_s }}/ir_page_docs" id="ir-page-form"
+            style="display:none;font-size:0.85em;margin:0.3em 0;padding:0.4em;border:1px solid #ddd;border-radius:4px;">
+        <div id="ir-page-list"></div>
+        <div style="margin-top:0.3em;">
+          PDF URL を直接指定:
+          <input type="text" name="manual_url" placeholder="https://..." style="width:22em;height:auto;display:inline-block;margin:0;padding:0.1em 0.3em;font-size:1em;">
+          <select name="manual_doc_type" style="width:auto;display:inline-block;margin:0;padding:0.1em;font-size:1em;">
+            <option value="chuki_plan">中計</option><option value="setsumei">説明資料</option>
+          </select>
+          <input type="text" name="manual_heading" placeholder="見出し (任意)" style="width:12em;height:auto;display:inline-block;margin:0;padding:0.1em 0.3em;font-size:1em;">
+        </div>
+        <button type="submit" style="display:inline-block;width:auto !important;padding:0.1em 0.8em;font-size:0.9em;margin:0.3em 0 0 0;">取得</button>
+      </form>
       <script>
+      function loadIrPageCandidates(btn) {
+        var msg = document.getElementById('ir-page-msg');
+        var form = document.getElementById('ir-page-form');
+        var list = document.getElementById('ir-page-list');
+        btn.disabled = true;
+        msg.textContent = '探索中...';
+        fetch('/api/ir_page_candidates/' + encodeURIComponent(btn.dataset.code), {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        }).then(function(r) { return r.json(); }).then(function(json) {
+          btn.disabled = false;
+          list.textContent = '';
+          form.style.display = 'block';
+          if (!json.ok) { msg.textContent = json.error || '候補の取得に失敗しました'; return; }
+          var items = json.candidates || [];
+          msg.textContent = items.length + '件の候補 (' + json.start_url + ')';
+          items.forEach(function(item, i) {
+            var row = document.createElement('div');
+            var check = document.createElement('input');
+            check.type = 'checkbox'; check.name = 'pick'; check.value = i;
+            check.style.cssText = 'width:1em;height:1em;display:inline-block;vertical-align:middle;margin:0 0.3em 0 0;';
+            var select = document.createElement('select');
+            select.name = 'doc_type_' + i;
+            select.style.cssText = 'width:auto;display:inline-block;margin:0 0.3em 0 0;padding:0.05em;font-size:1em;';
+            [['chuki_plan', '中計'], ['setsumei', '説明資料']].forEach(function(pair) {
+              var opt = document.createElement('option');
+              opt.value = pair[0]; opt.textContent = pair[1];
+              opt.selected = pair[0] === item.doc_type;
+              select.appendChild(opt);
+            });
+            var link = document.createElement('a');
+            link.href = item.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+            link.textContent = item.heading;
+            row.appendChild(check); row.appendChild(select); row.appendChild(link);
+            if (item.downloaded) row.appendChild(document.createTextNode(' (取得済)'));
+            [['url_', item.url], ['heading_', item.heading], ['source_page_', item.source_page]].forEach(function(pair) {
+              var hidden = document.createElement('input');
+              hidden.type = 'hidden'; hidden.name = pair[0] + i; hidden.value = pair[1] || '';
+              row.appendChild(hidden);
+            });
+            list.appendChild(row);
+          });
+        }).catch(function() {
+          btn.disabled = false;
+          msg.textContent = '候補の取得に失敗しました';
+        });
+      }
+
       function editCorpUrl(btn) {
         var codeS = btn.dataset.code;
         var current = btn.dataset.current || "";
