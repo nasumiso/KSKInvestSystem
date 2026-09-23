@@ -8,12 +8,14 @@ KS_DATA_DIR は Google Drive のミラー同期フォルダなので、置くだ
     python stock_ratings.py show 3697
     python stock_ratings.py list [--status Active]
     python stock_ratings.py set 3697 --fund 36 --mispricing 17 --reason "2Q決算反映"
+    python stock_ratings.py export_html
     python stock_ratings.py migrate --csv <シートから書き出したCSV>
 """
 
 import argparse
 import csv
 import fcntl
+import html
 import json
 import os
 import re
@@ -27,6 +29,7 @@ from research_shelve import CODE_S_PATTERN
 RATINGS_DIR = Path(DATA_DIR) / "stock_ratings"
 RATINGS_FILENAME = "stock_ratings.json"
 HISTORY_FILENAME = "stock_ratings_history.jsonl"
+HTML_FILENAME = "stock_ratings.html"
 LOCK_FILENAME = ".stock_ratings.lock"
 
 SCHEMA_VERSION = 1
@@ -248,6 +251,7 @@ def update_rating(code_s, fields, reason, source, ratings_dir=None):
             "changes": changes,
         }])
         _write_json(json_path, data)
+        _export_html_safely(root, data)
     return changes
 
 
@@ -342,7 +346,122 @@ def migrate_from_csv(csv_path, ratings_dir=None):
             "rubric_version": RUBRIC_VERSION,
             "stocks": stocks,
         })
+        _export_html_safely(root, _load(json_path))
     return len(stocks), warnings
+
+
+# ===========================================
+# 表示用 HTML (JSON → HTML の一方向。編集は反映しない)
+# ===========================================
+
+# スマホのプレビューでは JavaScript が動かないことがあるため、CSS だけで組む
+_HTML_STYLE = """
+:root { --bg: #fff; --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --head: #f6f8fa; --accent: #0969da; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #30363d; --head: #161b22; --accent: #4493f8; }
+}
+body { margin: 0 auto; max-width: 1100px; padding: 16px; background: var(--bg); color: var(--fg);
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 28px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.meta { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; white-space: nowrap; }
+th, td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+th { background: var(--head); font-weight: 600; font-size: 12px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.total { font-weight: 700; }
+td.role { white-space: normal; min-width: 12em; color: var(--muted); }
+a { color: var(--accent); text-decoration: none; }
+details { border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; padding: 6px 10px; }
+summary { cursor: pointer; font-weight: 600; }
+dl { margin: 8px 0 0; }
+dt { color: var(--muted); font-size: 12px; margin-top: 8px; }
+dd { margin: 0; white-space: pre-wrap; }
+"""
+
+_SECTION_LABELS = (
+    ("thesis", "投資仮説"),
+    ("mispricing_note", "未織込"),
+    ("risks", "主要リスク"),
+    ("checkpoints", "次の格上げ/確認条件"),
+    ("note", "更新メモ"),
+)
+
+
+def render_html(data, generated_at):
+    """台帳 JSON から表示用 HTML を組み立てる。Status ごとに総合点順で並べる。"""
+    esc = html.escape
+    rows = sorted(
+        (_with_total(code_s, record) for code_s, record in data["stocks"].items()),
+        key=lambda r: (-r["total"], r["code_s"]),
+    )
+    rank = {r["code_s"]: i for i, r in enumerate(rows, start=1)}
+
+    parts = [
+        '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        f"<title>銘柄評価台帳</title><style>{_HTML_STYLE}</style></head><body>",
+        "<h1>銘柄評価台帳</h1>",
+        f'<p class="meta">生成 {esc(generated_at)} / 採点ルール Ver{esc(data.get("rubric_version", ""))}'
+        f" / {len(rows)} 銘柄。表示専用で、正本は stock_ratings.json</p>",
+    ]
+    for status in STATUS_VALUES:
+        group = [r for r in rows if r["status"] == status]
+        if not group:
+            continue
+        parts.append(f"<h2>{status} ({len(group)})</h2>")
+        parts.append(
+            '<div class="table-wrap"><table><tr><th class="num">順位</th><th>コード</th>'
+            '<th>銘柄</th><th class="num">ファンダ</th><th class="num">未織込</th>'
+            '<th class="num">モメンタム</th><th class="num">Val</th><th class="num">総合</th>'
+            "<th>C</th><th>更新日</th><th>役割</th></tr>"
+        )
+        for r in group:
+            s = r["scores"]
+            parts.append(
+                f'<tr><td class="num">{rank[r["code_s"]]}</td><td>{esc(r["code_s"])}</td>'
+                f'<td><a href="#s{esc(r["code_s"])}">{esc(r["name"])}</a></td>'
+                f'<td class="num">{s["fund"]}</td><td class="num">{s["mispricing"]}</td>'
+                f'<td class="num">{s["momentum"]}</td><td class="num">{s["valuation"]}</td>'
+                f'<td class="num total">{r["total"]}</td><td>{esc(r["confidence"])}</td>'
+                f'<td>{esc(r.get("updated_at", ""))}</td><td class="role">{esc(r.get("role", ""))}</td></tr>'
+            )
+        parts.append("</table></div>")
+        for r in group:
+            s = r["scores"]
+            parts.append(
+                f'<details id="s{esc(r["code_s"])}"><summary>{esc(r["code_s"])} {esc(r["name"])}'
+                f' — {r["total"]} ({s["fund"]}/{s["mispricing"]}/{s["momentum"]}/{s["valuation"]})'
+                f' {esc(r["confidence"])}</summary><dl>'
+            )
+            for key, label in _SECTION_LABELS:
+                if r.get(key):
+                    parts.append(f"<dt>{label}</dt><dd>{esc(r[key])}</dd>")
+            parts.append("</dl></details>")
+    parts.append("</body></html>\n")
+    return "\n".join(parts)
+
+
+def _export_html_safely(root, data):
+    """表示用 HTML を書き出す。失敗しても JSON の更新は成功扱いにする (警告だけ出す)。"""
+    try:
+        html_path = root / HTML_FILENAME
+        tmp_path = html_path.with_suffix(html_path.suffix + ".tmp")
+        tmp_path.write_text(
+            render_html(data, _now().strftime("%Y-%m-%d %H:%M")), encoding="utf-8"
+        )
+        os.replace(tmp_path, html_path)
+    except Exception as exc:  # 表示用なので、失敗で正本の更新を巻き戻さない
+        log_warning(f"stock_ratings: HTML の書き出しに失敗した: {exc}")
+
+
+def export_html(ratings_dir=None):
+    """現在の JSON から表示用 HTML を作り直す。"""
+    root, json_path, _ = _paths(ratings_dir)
+    with _flock(root):
+        _export_html_safely(root, _load(json_path))
+    return root / HTML_FILENAME
 
 
 # ===========================================
@@ -406,6 +525,11 @@ def _cmd_migrate(csv_path):
     return 0
 
 
+def _cmd_export_html():
+    log_print(f"stock_ratings: {export_html()} を書き出した")
+    return 0
+
+
 def _build_parser():
     parser = argparse.ArgumentParser(description="銘柄評価台帳")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -426,6 +550,8 @@ def _build_parser():
     set_parser.add_argument("--confidence")
     set_parser.add_argument("--status")
 
+    subparsers.add_parser("export_html", help="表示用 HTML を作り直す")
+
     migrate_parser = subparsers.add_parser("migrate", help="シートの CSV から一度だけ移行")
     migrate_parser.add_argument("--csv", required=True)
     return parser
@@ -439,6 +565,8 @@ def main(argv=None):
         return _cmd_list(args.status)
     if args.command == "set":
         return _cmd_set(args)
+    if args.command == "export_html":
+        return _cmd_export_html()
     return _cmd_migrate(args.csv)
 
 
