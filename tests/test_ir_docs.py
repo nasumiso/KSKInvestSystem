@@ -144,3 +144,164 @@ def test_download_flow_cache_force_and_shared_bulk_http_state(tmp_path, monkeypa
     assert [call[0] for call in bulk_calls] == ["4011", "4436"]
     assert bulk_calls[0][1] is bulk_calls[1][1]
     assert bulk_calls[0][2] is bulk_calls[1][2]
+
+
+# ---- issue #457: 会社IRページからの半自動収集 ----
+
+IR_TOP = "https://corp.example.com/ir/"
+IR_PAGES = {
+    "https://corp.example.com/": """
+        <a href="/isSmp?">IR情報</a>
+        <a href="/contact/ir.html">IRお問い合わせ</a>
+        <a href="/company/">会社情報</a>
+        <a href="/ir/">IR情報</a>
+    """,
+    IR_TOP: """
+        <a href="/common/company.pdf">会社案内</a>
+        <a href="/ir/news/plan_notice.pdf">中期経営計画策定に関するお知らせ</a>
+        <a href="https://cdn.example.net/plan2024.pdf">中期経営計画説明資料</a>
+        <a href="/ir/policy/midterm.html">中期経営計画</a>
+        <a href="/ir/library/presentation.html">決算説明会</a>
+        <a href="/ir/library/other.html">中長期ビジョン</a>
+    """,
+    "https://corp.example.com/ir/policy/midterm.html": """
+        <a href="/common/company.pdf">会社案内</a>
+        <a href="/common/header_guide.pdf">ご案内</a>
+        <a href="pdf/Medium-term_2026.pdf">新中期経営計画（2026 年度～2028 年度）</a>
+    """,
+    "https://corp.example.com/ir/library/presentation.html": """
+        <a href="/ir/pdf/20260515.pdf">2026年3月期 決算説明資料</a>
+        <a href="/ir/pdf/script.pdf">決算説明会書き起こし</a>
+        <a href="/ir/pdf/20200515.pdf">2020年3月期 決算説明資料</a>
+        <a href="/ir/pdf/undated.pdf">第2四半期 決算説明資料</a>
+    """,
+}
+
+
+def _fake_page_get(requested):
+    class Response:
+        def __init__(self, url):
+            self.text = IR_PAGES[url]
+            self.apparent_encoding = "utf-8"
+            self.url = url
+
+    def fake_get(session, url, limiter):
+        requested.append(url)
+        return Response(url)
+
+    return fake_get
+
+
+def _allow_public(monkeypatch):
+    monkeypatch.setattr(ir_docs, "_check_public_url", lambda url: None)
+
+
+def test_ir_page_candidates_follow_one_subpage_per_type(tmp_path, monkeypatch):
+    requested = []
+    _allow_public(monkeypatch)
+    monkeypatch.setattr(ir_docs, "_get", _fake_page_get(requested))
+    monkeypatch.setattr(ir_docs, "get_price_day", lambda now: ir_docs.datetime(2026, 9, 23))
+    (tmp_path / "3660").mkdir()
+    (tmp_path / "3660" / "index.json").write_text(json.dumps({"documents": [{
+        "doc_id": "140120260515000001", "doc_type": "setsumei", "date": "20260515",
+        "fiscal_period": "2026年3月期", "quarter": "FY", "url": "https://kabutan.test/x.pdf",
+    }]}), encoding="utf-8")
+    candidates = ir_docs.find_ir_page_candidates("3660", IR_TOP, output_dir=tmp_path)
+    marks = {item["url"].rsplit("/", 1)[1]: (item["old"], item["maybe_tdnet"]) for item in candidates}
+    # 期・四半期が TDnet 資料と一致すれば目印。2年より古い候補以降は同じページ内で畳む
+    assert marks["20260515.pdf"] == (False, "140120260515000001")
+    assert marks["20200515.pdf"] == (True, None)
+    assert marks["undated.pdf"] == (True, None)
+    candidates = [item for item in candidates if not item["old"]]
+
+    by_url = {item["url"]: item["doc_type"] for item in candidates}
+    assert by_url == {
+        "https://cdn.example.net/plan2024.pdf": "chuki_plan",
+        # 種別ページ内は文言不一致でも候補。サイト共通 (開始ページにもある) は除く
+        "https://corp.example.com/ir/policy/pdf/Medium-term_2026.pdf": "chuki_plan",
+        "https://corp.example.com/common/header_guide.pdf": "chuki_plan",
+        "https://corp.example.com/ir/pdf/20260515.pdf": "setsumei",
+    }
+    # 開始 + 種別ごとに1ページのみ (「中長期ビジョン」の2ページ目は辿らない)
+    assert len(requested) == 3
+
+    # 会社トップ起点なら IR トップを1回だけ辿り、同じ候補に届く
+    requested.clear()
+    from_top = ir_docs.find_ir_page_candidates("3660", "https://corp.example.com/", output_dir=tmp_path)
+    assert {item["url"] for item in from_top} == {item["url"] for item in candidates} | {
+        "https://corp.example.com/ir/pdf/20200515.pdf", "https://corp.example.com/ir/pdf/undated.pdf",
+    }
+    assert len(requested) == 4
+
+
+@pytest.mark.parametrize(
+    "url, address",
+    [
+        ("http://localhost:5001/x.pdf", "127.0.0.1"),
+        ("http://nas.local/x.pdf", "192.168.1.10"),
+        ("file:///etc/passwd", None),
+    ],
+)
+def test_check_public_url_rejects_non_public(monkeypatch, url, address):
+    monkeypatch.setattr(
+        ir_docs.socket, "getaddrinfo", lambda host, port: [(None, None, None, "", (address, port))]
+    )
+    with pytest.raises(ValueError):
+        ir_docs._check_public_url(url)
+
+
+def test_ir_page_docs_coexist_with_tdnet_and_survive_rebuild(tmp_path, monkeypatch):
+    """中計は並立・日付推定・TDnet資料と網羅性情報を壊さない。手動旧版化はTDnet再収集で戻らない。"""
+    _allow_public(monkeypatch)
+    tdnet = {
+        "doc_id": "140120260101000001", "doc_type": "setsumei", "date": "20260101",
+        "heading": "2025年12月期 決算説明資料", "fiscal_period": "2025年12月期",
+        "quarter": "FY", "url": "https://example.test/doc.pdf",
+    }
+    monkeypatch.setattr(ir_docs, "collect_candidates", lambda *args, **kwargs: ([tdnet], []))
+    monkeypatch.setattr(ir_docs, "_extract_pdf", lambda content: ["日本語の説明資料です。" * 20])
+    pdf_bodies = iter([b"%PDF-tdnet", b"%PDF-plan-a", b"%PDF-plan-b", b"%PDF-plan-a"])
+
+    class Response:
+        headers = {"content-type": "application/pdf"}
+
+        def __init__(self):
+            self.content = next(pdf_bodies)
+
+    monkeypatch.setattr(ir_docs, "_get", lambda *args: Response())
+    ir_docs.download_ir_docs("4011", depth="latest", output_dir=tmp_path)
+    index_path = tmp_path / "4011" / "index.json"
+    before = json.loads(index_path.read_text(encoding="utf-8"))
+
+    plan_a, created_a = ir_docs.fetch_ir_page_doc(
+        "4011", "https://corp.example.com/plan_2024.pdf", "chuki_plan",
+        "中期経営計画（2024年5月）", output_dir=tmp_path,
+    )
+    plan_b, _ = ir_docs.fetch_ir_page_doc(
+        "4011", "https://corp.example.com/Medium-term_20260515.pdf", "chuki_plan",
+        output_dir=tmp_path,
+    )
+    duplicate, created_dup = ir_docs.fetch_ir_page_doc(
+        "4011", "https://mirror.example.com/a.pdf", "chuki_plan", output_dir=tmp_path,
+    )
+    assert (created_a, created_dup) == (True, False)
+    assert duplicate["doc_id"] == plan_a["doc_id"]
+    assert (plan_a["date"], plan_b["date"]) == ("20240501", "20260515")
+
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    plans = [d for d in index["documents"] if d["doc_type"] == "chuki_plan"]
+    assert len(plans) == 2
+    assert all(d["is_latest"] and d["date_estimated"] for d in plans)
+    assert all(d["source"] == "corporate_ir_page" for d in plans)
+    assert next(d for d in index["documents"] if d["doc_id"] == tdnet["doc_id"])["is_latest"]
+    for key in ("last_collected_at", "collected_depth", "collection_errors"):
+        assert index[key] == before[key]
+
+    ir_docs.mark_superseded("4011", plan_a["doc_id"], output_dir=tmp_path)
+    with pytest.raises(ValueError):
+        ir_docs.mark_superseded("4011", tdnet["doc_id"], output_dir=tmp_path)
+    ir_docs.download_ir_docs("4011", depth="latest", output_dir=tmp_path)
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    latest = {d["doc_id"]: d["is_latest"] for d in index["documents"]}
+    assert latest[plan_a["doc_id"]] is False
+    assert latest[plan_b["doc_id"]] is True

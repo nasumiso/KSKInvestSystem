@@ -8,12 +8,15 @@ from difflib import SequenceMatcher
 import hashlib
 import html
 import io
+import ipaddress
 import json
 import os
 from pathlib import Path
 import re
+import socket
 import time
 import unicodedata
+from urllib.parse import urljoin, urlparse
 
 from pypdf import PdfReader
 import requests
@@ -44,6 +47,24 @@ DEPTH_DAYS = {"latest": None, "1y": 365, "2y": 730}
 DEPTH_RANK = {"latest": 0, "1y": 1, "2y": 2}
 DEPTH_MONTHS = {"latest": 0, "1y": 12, "2y": 24}
 REQUEST_INTERVAL = 1.0
+IR_PAGE_SOURCE = "corporate_ir_page"
+# 会社IRページ上の資料種別キーワード (#457)。リンク文言か URL に一致させる。
+IR_PAGE_KEYWORDS = {
+    "chuki_plan": re.compile(r"中期経営計画|中期事業方針|中期計画|中長期|Mid-?term", re.I),
+    "setsumei": re.compile(
+        r"決算(補足)?説明(会)?資料|決算短信補足|決算説明会|説明会資料|プレゼンテーション|presentation", re.I
+    ),
+}
+# 策定の案内文や常設の会社案内は資料本体ではないため候補から外す。
+IR_PAGE_EXCLUDE_RE = re.compile(r"お知らせ|会社案内|書き起こし|動画")
+# 会社トップから IR トップへのリンク。開始URLが会社トップの銘柄で1回だけ辿る。
+IR_TOP_LINK_RE = re.compile(
+    r"^(IR|IR情報|投資家情報|株主・投資家(の皆様へ|情報)?|投資家の皆様へ|Investors?( Relations)?)$",
+    re.I,
+)
+IR_TOP_HREF_RE = re.compile(r"/ir/?$|/ir\.html$|/investors?(-relations)?(\.html|/)?$", re.I)
+ANCHOR_RE = re.compile(r"<a\s[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", re.S | re.I)
+PDF_HREF_RE = re.compile(r"\.pdf($|[?#])", re.I)
 
 
 def classify_heading(heading):
@@ -154,6 +175,15 @@ def _get(session, url, limiter):
     return response
 
 
+def _get_pdf(session, url, limiter):
+    response = _get(session, url, limiter)
+    pdf_bytes = response.content
+    content_type = response.headers.get("content-type", "").lower()
+    if "pdf" not in content_type and not pdf_bytes.startswith(b"%PDF"):
+        raise ValueError(f"PDF以外の応答です: {content_type or 'unknown'}")
+    return pdf_bytes
+
+
 def collect_candidates(code_s, depth="1y", session=None, limiter=None, now=None):
     """株探の開示一覧を新しいページから辿り、対象資料を返す。"""
     if depth not in DEPTH_DAYS:
@@ -262,7 +292,12 @@ def _load_index(index_path):
 
 
 def _link_revisions(documents):
-    """明示的な訂正版だけを同種・同会計期間・同四半期の直前資料へ関連付ける。"""
+    """明示的な訂正版だけを同種・同会計期間・同四半期の直前資料へ関連付ける。
+
+    会社IRページ由来の資料は日付が推定値で訂正関係を判定できないうえ、
+    is_latest は mark_superseded の手動操作だけで変えるため対象外とする。
+    """
+    documents = [item for item in documents if item.get("source") != IR_PAGE_SOURCE]
     for document in documents:
         document["is_latest"] = True
         document["supersedes"] = None
@@ -319,6 +354,41 @@ def _error(doc_id, stage, exc, at):
     return {"doc_id": doc_id, "stage": stage, "reason": str(exc), "at": at}
 
 
+def _save_document(stock_dir, candidate, pdf_bytes, page_texts, now):
+    """PDFとページ単位テキストを保存し、index 用のメタデータを返す。"""
+    basename = f"{candidate['date']}_{candidate['doc_id']}_{_slug(candidate['heading'])}"
+    pdf_name = basename + ".pdf"
+    text_name = basename + ".json"
+    pdf_path = stock_dir / pdf_name
+    pdf_tmp_path = pdf_path.with_suffix(".pdf.tmp")
+    with open(pdf_tmp_path, "wb") as file_obj:
+        file_obj.write(pdf_bytes)
+    os.replace(pdf_tmp_path, pdf_path)
+    _write_json(
+        stock_dir / text_name,
+        {
+            "doc_id": candidate["doc_id"],
+            "pages": [
+                {"page": page_number, "text": text}
+                for page_number, text in enumerate(page_texts, start=1)
+            ],
+        },
+    )
+    return {
+        **candidate,
+        "pdf_path": pdf_name,
+        "text_path": text_name,
+        "downloaded_at": now,
+        "sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+        "pages": len(page_texts),
+        "total_chars": sum(len(text) for text in page_texts),
+        "text_quality": classify_text_quality(page_texts),
+        "is_latest": True,
+        "supersedes": None,
+        "superseded_by": None,
+    }
+
+
 def download_ir_docs(
     code_s,
     depth="1y",
@@ -373,11 +443,7 @@ def download_ir_docs(
                     continue
 
             try:
-                response = _get(session, candidate["url"], limiter)
-                pdf_bytes = response.content
-                content_type = response.headers.get("content-type", "").lower()
-                if "pdf" not in content_type and not pdf_bytes.startswith(b"%PDF"):
-                    raise ValueError(f"PDF以外の応答です: {content_type or 'unknown'}")
+                pdf_bytes = _get_pdf(session, candidate["url"], limiter)
             except Exception as exc:
                 errors.append(_error(candidate["doc_id"], "pdf_download", exc, now))
                 message = f"IR資料PDF取得失敗: {code_s} {candidate['doc_id']} {exc}"
@@ -398,37 +464,8 @@ def download_ir_docs(
                     log_warning(message)
                 continue
 
-            basename = f"{candidate['date']}_{candidate['doc_id']}_{_slug(candidate['heading'])}"
-            pdf_name = basename + ".pdf"
-            text_name = basename + ".json"
-            pdf_path = stock_dir / pdf_name
-            pdf_tmp_path = pdf_path.with_suffix(".pdf.tmp")
-            with open(pdf_tmp_path, "wb") as file_obj:
-                file_obj.write(pdf_bytes)
-            os.replace(pdf_tmp_path, pdf_path)
-            _write_json(
-                stock_dir / text_name,
-                {
-                    "doc_id": candidate["doc_id"],
-                    "pages": [
-                        {"page": page_number, "text": text}
-                        for page_number, text in enumerate(page_texts, start=1)
-                    ],
-                },
-            )
-            document = {
-                **candidate,
-                "pdf_path": pdf_name,
-                "text_path": text_name,
-                "downloaded_at": now,
-                "sha256": hashlib.sha256(pdf_bytes).hexdigest(),
-                "pages": len(page_texts),
-                "total_chars": sum(len(text) for text in page_texts),
-                "text_quality": classify_text_quality(page_texts),
-                "is_latest": True,
-                "supersedes": None,
-                "superseded_by": None,
-            }
+            document = _save_document(stock_dir, candidate, pdf_bytes, page_texts, now)
+            pdf_name = document["pdf_path"]
             documents_by_id[candidate["doc_id"]] = document
             log_print(f"IR資料を保存: {code_s} {pdf_name}")
 
@@ -472,17 +509,334 @@ def download_all(depth="1y", force=False, dry_run=False, output_dir=None):
     return results
 
 
-def list_ir_docs(code_s, output_dir=None):
+def list_ir_docs(code_s, output_dir=None, doc_type=None):
     """保存済みIR資料をログへ一覧表示して返す。"""
     root = Path(output_dir) if output_dir else IR_DOCS_DIR
     index = _load_index(root / str(code_s).upper() / "index.json")
-    for document in index["documents"]:
+    documents = [
+        item for item in index["documents"] if doc_type is None or item["doc_type"] == doc_type
+    ]
+    for document in documents:
         latest = "latest" if document.get("is_latest", True) else "superseded"
         log_print(
             f"{document['date']} {document['doc_type']} {document['text_quality']} "
-            f"{latest} {document['heading']}"
+            f"{latest} {document['doc_id']} {document['heading']}"
         )
-    return index["documents"]
+    return documents
+
+
+def _check_public_url(url):
+    """http(s) かつ解決先が全て公開アドレスの URL だけを許す。
+
+    WebApp から任意 URL を取得させるため、localhost や LAN を叩かせない。
+    """
+    parsed = urlparse(url or "")
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError(f"http(s) の URL ではありません: {url}")
+    infos = socket.getaddrinfo(parsed.hostname, parsed.port or 443)
+    for info in infos:
+        address = ipaddress.ip_address(info[4][0].split("%")[0])
+        if not address.is_global:
+            raise ValueError(f"公開されていないアドレスは取得できません: {url}")
+
+
+def _page_links(session, url, limiter):
+    """ページを取得し、(絶対URL, リンク文言) の一覧を返す。"""
+    _check_public_url(url)
+    response = _get(session, url, limiter)
+    response.encoding = response.apparent_encoding
+    links = []
+    for href, text in ANCHOR_RE.findall(response.text):
+        text = re.sub(r"<[^>]+>|\s+", " ", html.unescape(text)).strip()
+        # /ir → /ir/ のようなリダイレクト後は、到達先を相対リンクの基準にする
+        links.append((urljoin(response.url, html.unescape(href)), text))
+    return links
+
+
+def _ir_page_doc_type(url, text):
+    for doc_type, pattern in IR_PAGE_KEYWORDS.items():
+        if pattern.search(text) or pattern.search(url):
+            return doc_type
+    return None
+
+
+def guess_ir_top_url(code_s):
+    """会社HP (上書き前の既定URL) のトップから IR トップの URL を推測する。無ければ None。"""
+    from db_shelve import STOCKS_SHELVE, ShelveDB
+
+    with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
+        top = ((db.get(str(code_s).upper()) or {}).get("corporate_url") or "").strip()
+    if not top:
+        return None
+    return find_ir_top_link(_page_links(requests.Session(), top, _RateLimiter()), top)
+
+
+def resolve_ir_start_url(code_s):
+    """候補抽出の開始URL。会社HP上書き (#208) を優先し、無ければ会社HPを使う。"""
+    import research_shelve
+    from db_shelve import STOCKS_SHELVE, ShelveDB
+
+    record = research_shelve.get_research_record(code_s) or {}
+    override = (record.get("corporate_url_override") or "").strip()
+    if override:
+        return override
+    with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
+        return ((db.get(code_s) or {}).get("corporate_url") or "").strip()
+
+
+def _days_between(date_a, date_b):
+    to_date = lambda value: datetime.strptime(value, "%Y%m%d")
+    return abs((to_date(date_a) - to_date(date_b)).days)
+
+
+def _mark_ir_page_candidates(candidates, documents, today):
+    """候補に「古い」「TDnet 取得済みの可能性」の目印を付ける。
+
+    古い: 推定日付が2年より前。IRページは新しい順に並ぶため、同じページで
+    古い候補が出たら、日付を持たない後続の候補も古いとみなす。
+    TDnet 取得済み: 見出しの会計期間・四半期が一致するか、期間が取れなければ
+    推定日付が開示日の前後7日以内。PDF を取らずに判定するため確実ではない
+    (同一PDFの重複保存は fetch_ir_page_doc の sha256 一致で防ぐ)。
+    """
+    cutoff = (datetime.strptime(today, "%Y%m%d") - timedelta(days=730)).strftime("%Y%m%d")
+    tdnet_documents = [item for item in documents if item.get("source") != IR_PAGE_SOURCE]
+    old_pages = set()
+    for candidate in candidates:
+        estimated = _estimate_date(candidate["heading"], candidate["url"], today)
+        if estimated and estimated < cutoff:
+            old_pages.add(candidate["source_page"])
+        candidate["old"] = candidate["source_page"] in old_pages
+
+        fiscal_period, quarter = extract_period(candidate["heading"])
+        candidate["maybe_tdnet"] = next(
+            (
+                item["doc_id"] for item in tdnet_documents
+                if item.get("doc_type") == candidate["doc_type"] and (
+                    (item.get("fiscal_period"), item.get("quarter")) == (fiscal_period, quarter)
+                    if fiscal_period
+                    else estimated and _days_between(estimated, item["date"]) <= 7
+                )
+            ),
+            None,
+        )
+
+
+def _same_site(url, base_url):
+    """www. を除いたホストが一致するか、一方が他方のサブドメインなら同じサイトとみなす。"""
+    host = (urlparse(url).hostname or "").removeprefix("www.")
+    base = (urlparse(base_url).hostname or "").removeprefix("www.")
+    return host == base or host.endswith("." + base) or base.endswith("." + host)
+
+
+def find_ir_top_link(links, start_url):
+    """会社トップのリンク一覧から IR トップらしいリンクを返す。無ければ None。
+
+    文言「IR情報」はメニュー開閉用のダミーリンクに付いていることがあり (6227: isSmp?)、
+    パス /ir.html は IR 問い合わせページのことがある (7729: contact/ir.html) ため、
+    文言とパスの両方で絞り込み、一致の強い順に選ぶ。
+    """
+    links = [
+        (url, text, urlparse(url).path) for url, text in links
+        if url.rstrip("/") != start_url.rstrip("/")
+    ]
+    ranked = (
+        # 文言とパスの両方が一致
+        (url for url, text, path in links
+         if IR_TOP_LINK_RE.search(text) and IR_TOP_HREF_RE.search(path)),
+        # 文言が一致し、パスが IR 配下
+        (url for url, text, path in links
+         if IR_TOP_LINK_RE.search(text) and re.search(r"(^|/)(ir|investors?)\b", path, re.I)),
+        # パスだけ一致
+        (url for url, _, path in links if IR_TOP_HREF_RE.search(path)),
+    )
+    return next((url for group in ranked for url in group), None)
+
+
+def _scan_start_page(links, start_url, add):
+    """開始ページの PDF 候補を登録し、資料種別ごとのサブページ (先頭1件) を返す。
+
+    サブページは同じサイト内に限る。会社トップのニュース欄にある外部記事
+    (決算説明会の書き起こし記事など) を辿ると IR トップへ進めなくなるため。
+    """
+    subpages = {}
+    for url, text in links:
+        doc_type = _ir_page_doc_type(url, text)
+        if not doc_type:
+            continue
+        if PDF_HREF_RE.search(url):
+            add(url, text, doc_type, start_url)
+        elif (
+            doc_type not in subpages
+            and url.rstrip("/") != start_url.rstrip("/")
+            and _same_site(url, start_url)
+        ):
+            subpages[doc_type] = url
+    return subpages
+
+
+def find_ir_page_candidates(code_s, start_url, session=None, limiter=None, output_dir=None):
+    """会社IRページから中計・決算説明資料のPDF候補を返す。DLはしない。
+
+    開始ページの PDF リンクに加え、資料種別ごとに一致するサブページを1件だけ辿る。
+    開始ページに候補もサブページも無ければ (会社トップの場合)、IR トップへの
+    リンクを1回だけ辿ってそこを開始ページとみなす。リクエストは最大4回。
+    """
+    code_s = str(code_s).upper()
+    session = session or requests.Session()
+    limiter = limiter or _RateLimiter()
+    root = Path(output_dir) if output_dir else IR_DOCS_DIR
+    documents = _load_index(root / code_s / "index.json")["documents"]
+    downloaded_urls = {item.get("url") for item in documents}
+
+    candidates = {}
+
+    def add(url, text, doc_type, source_page):
+        if url in candidates or IR_PAGE_EXCLUDE_RE.search(text):
+            return
+        candidates[url] = {
+            "url": url,
+            "heading": text or Path(urlparse(url).path).name,
+            "doc_type": doc_type,
+            "source_page": source_page,
+            "downloaded": url in downloaded_urls,
+        }
+
+    links = _page_links(session, start_url, limiter)
+    subpages = _scan_start_page(links, start_url, add)
+    if not candidates and not subpages:
+        ir_top = find_ir_top_link(links, start_url)
+        if ir_top:
+            log_debug(f"IRトップを辿る: {code_s} {ir_top}")
+            start_url = ir_top
+            links = _page_links(session, start_url, limiter)
+            subpages = _scan_start_page(links, start_url, add)
+    start_urls = {url for url, _ in links}
+
+    for doc_type, page_url in subpages.items():
+        try:
+            sub_links = _page_links(session, page_url, limiter)
+        except Exception as exc:
+            log_warning(f"IRサブページ取得失敗: {code_s} {page_url} {exc}")
+            continue
+        for url, text in sub_links:
+            # 資料種別ページ内の PDF は表記揺れがあるため、キーワード不一致でも候補に出す。
+            # ただし開始ページにもあるものはヘッダー・フッター等のサイト共通リンクなので除く。
+            if not PDF_HREF_RE.search(url):
+                continue
+            matched = _ir_page_doc_type(url, text)
+            if matched or url not in start_urls:
+                add(url, text, matched or doc_type, page_url)
+
+    if not candidates:
+        log_warning(f"IRページに資料候補がありません: {code_s} {start_url}")
+    result = list(candidates.values())
+    _mark_ir_page_candidates(result, documents, get_price_day(datetime.now()).strftime("%Y%m%d"))
+    return result
+
+
+def _estimate_date(heading, url, today, first_page=""):
+    """資料1ページ目・見出し・ファイル名の順に YYYYMMDD を推定する。取れなければ None。
+
+    1ページ目は表紙の日付 (「2024年3月21日」) だけを見る。月までの表記は
+    対象期間の可能性があるため使わない。見出し・ファイル名は月までなら月初とする。
+    「2027年4月通期 第1四半期」のような決算期末は公表日より先になるため、
+    today より後の日付は捨てて次の候補を見る。
+    """
+    for value in _date_candidates(heading, url, first_page):
+        if value <= today:
+            return value
+    return None
+
+
+def _date_candidates(heading, url, first_page):
+    cover = re.sub(r"\s+", "", unicodedata.normalize("NFKC", first_page or ""))[:500]
+    match = re.search(r"(20\d{2})年(\d{1,2})月(\d{1,2})日", cover)
+    if match and 1 <= int(match.group(2)) <= 12 and 1 <= int(match.group(3)) <= 31:
+        yield f"{match.group(1)}{int(match.group(2)):02d}{int(match.group(3)):02d}"
+    for text in (unicodedata.normalize("NFKC", heading or ""), Path(urlparse(url).path).name):
+        match = re.search(r"(20\d{2})年\s*(\d{1,2})月", text)
+        if match and 1 <= int(match.group(2)) <= 12:
+            yield f"{match.group(1)}{int(match.group(2)):02d}01"
+        # ファイル名は日付の後ろに時刻や連番が続くことがある (20260520181351871s.pdf)
+        match = re.search(r"(?<!\d)(20\d{2})(\d{2})(\d{2})?", text)
+        if match and 1 <= int(match.group(2)) <= 12:
+            day = match.group(3) if match.group(3) and 1 <= int(match.group(3)) <= 31 else "01"
+            yield f"{match.group(1)}{match.group(2)}{day}"
+
+
+def fetch_ir_page_doc(
+    code_s, url, doc_type, heading=None, source_page=None,
+    output_dir=None, session=None, limiter=None,
+):
+    """会社IRページ上のPDFを1件取得して index.json に追加する。
+
+    日付は推定値のため常に date_estimated=True とし、is_latest は自動で落とさない。
+    TDnet 経路の網羅性を表す last_collected_at 等は更新しない。
+    (資料メタデータ, 新規保存したか) を返す。同一PDFが保存済みなら既存を返す。
+    """
+    code_s = str(code_s).upper()
+    if not re.fullmatch(r"\d[0-9A-Z]\d[0-9A-Z]", code_s):
+        raise ValueError(f"不正な銘柄コードです: {code_s}")
+    if doc_type not in IR_PAGE_KEYWORDS:
+        raise ValueError(f"未対応の資料種別です: {doc_type}")
+    _check_public_url(url)
+
+    root = Path(output_dir) if output_dir else IR_DOCS_DIR
+    stock_dir = root / code_s
+    index_path = stock_dir / "index.json"
+    now_dt = datetime.now(timezone(timedelta(hours=9)))
+    now = now_dt.isoformat(timespec="seconds")
+    session = session or requests.Session()
+    pdf_bytes = _get_pdf(session, url, limiter or _RateLimiter())
+    sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+
+    index = _load_index(index_path)
+    for existing in index["documents"]:
+        if existing.get("sha256") == sha256:
+            log_print(f"同一PDFが保存済みのためスキップ: {code_s} {existing['doc_id']}")
+            return existing, False
+
+    page_texts = _extract_pdf(pdf_bytes)
+    heading = (heading or "").strip() or Path(urlparse(url).path).name
+    fiscal_period, quarter = extract_period(heading) if doc_type == "setsumei" else (None, None)
+    candidate = {
+        "doc_id": sha256[:16],
+        "doc_type": doc_type,
+        "date": _estimate_date(
+            heading, url, now_dt.strftime("%Y%m%d"), page_texts[0] if page_texts else ""
+        ) or now_dt.strftime("%Y%m%d"),
+        "date_estimated": True,
+        "heading": heading,
+        "fiscal_period": fiscal_period,
+        "quarter": quarter,
+        "url": url,
+        "source": IR_PAGE_SOURCE,
+        "source_page": source_page,
+    }
+    stock_dir.mkdir(parents=True, exist_ok=True)
+    document = _save_document(stock_dir, candidate, pdf_bytes, page_texts, now)
+    index["documents"] = sorted(
+        index["documents"] + [document], key=lambda item: (item["date"], item["doc_id"]), reverse=True
+    )
+    _write_json(index_path, index)
+    log_print(f"IR資料を保存: {code_s} {document['pdf_path']}")
+    return document, True
+
+
+def mark_superseded(code_s, doc_id, output_dir=None):
+    """会社IRページ由来の資料を手動で旧版にする。"""
+    root = Path(output_dir) if output_dir else IR_DOCS_DIR
+    index_path = root / str(code_s).upper() / "index.json"
+    index = _load_index(index_path)
+    document = next((item for item in index["documents"] if item["doc_id"] == doc_id), None)
+    if document is None:
+        raise ValueError(f"資料が見つかりません: {code_s} {doc_id}")
+    if document.get("source") != IR_PAGE_SOURCE:
+        raise ValueError(f"適時開示由来の資料は訂正版で自動判定するため対象外です: {doc_id}")
+    document["is_latest"] = False
+    _write_json(index_path, index)
+    log_print(f"IR資料を旧版にしました: {code_s} {doc_id} {document['heading']}")
+    return document
 
 
 def _build_parser():
@@ -502,6 +856,25 @@ def _build_parser():
 
     list_parser = subparsers.add_parser("list", help="保存済み資料を表示")
     list_parser.add_argument("code_s")
+    list_parser.add_argument("--doc-type", choices=["tanshin", "setsumei", "chuki_plan"])
+
+    candidates_parser = subparsers.add_parser(
+        "page-candidates", help="会社IRページから中計・説明資料の候補を表示 (DLしない)"
+    )
+    candidates_parser.add_argument("code_s")
+    candidates_parser.add_argument("--url", help="開始URL (省略時は会社HPの上書き→会社HP)")
+
+    fetch_parser = subparsers.add_parser("fetch-page", help="会社IRページのPDFを1件取得")
+    fetch_parser.add_argument("code_s")
+    fetch_parser.add_argument("url")
+    fetch_parser.add_argument("--doc-type", choices=IR_PAGE_KEYWORDS, required=True)
+    fetch_parser.add_argument("--heading")
+
+    superseded_parser = subparsers.add_parser(
+        "mark-superseded", help="会社IRページ由来の資料を旧版にする"
+    )
+    superseded_parser.add_argument("code_s")
+    superseded_parser.add_argument("doc_id")
     return parser
 
 
@@ -511,8 +884,25 @@ def main(argv=None):
         download_ir_docs(args.code_s, args.depth, args.force, args.dry_run)
     elif args.command == "download_all":
         download_all(args.depth, args.force, args.dry_run)
+    elif args.command == "list":
+        list_ir_docs(args.code_s, doc_type=args.doc_type)
+    elif args.command == "page-candidates":
+        code_s = args.code_s.upper()
+        start_url = args.url or resolve_ir_start_url(code_s)
+        if not start_url:
+            log_error(f"会社HPのURLがありません: {code_s}")
+            return
+        for item in find_ir_page_candidates(code_s, start_url):
+            mark = "取得済" if item["downloaded"] else "未取得"
+            if item["maybe_tdnet"]:
+                mark += "(TDnet取得済?)"
+            if item["old"]:
+                mark += "(古い)"
+            log_print(f"{item['doc_type']} {mark} {item['heading']} {item['url']}")
+    elif args.command == "fetch-page":
+        fetch_ir_page_doc(args.code_s, args.url, args.doc_type, args.heading)
     else:
-        list_ir_docs(args.code_s)
+        mark_superseded(args.code_s, args.doc_id)
 
 
 if __name__ == "__main__":
