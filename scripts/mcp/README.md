@@ -95,8 +95,10 @@ MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_D
 
 4.9MB の PDF は base64 で約6.5MB となりコンテキストに載らず、ChatGPT のコネクタも
 ツール結果をテキストとして扱う。MCP が返すのは PDF の所在だけで、
-**ChatGPT などリモートのクライアントは `local_path` を開けない**。
-サーバーと同じ端末で動く Claude Code 等は開けるので、その場合は `local_path` が最も確実。
+**ローカルファイルを読めない環境 (通常のチャット・iPhone・ブラウザ版の ChatGPT) は
+`local_path` を開けない**。サーバーと同じ Mac の ChatGPT アプリの Work モードや
+Claude Code は開けるので (実機確認済み)、
+その場合は `local_path` が最も確実。
 
 代わりに **Google Drive コネクタ**で読む。`ir_docs` は Google Drive へミラー同期
 されており、ファイル名は TDnet ID を含むため一意になる。`relative_path` の末尾の
@@ -108,7 +110,7 @@ LLM には、instructions と docstring で次の順に案内している (#463)
 
 | 状況 | 読み方 |
 |---|---|
-| PDF がチャットに添付済み / 同じ端末で `local_path` を開ける (Claude Code 等) | それを使う (取りに行き直さない) |
+| PDF がチャットに添付済み / 同じ端末で `local_path` を開ける (Mac の ChatGPT アプリの Work モード、Claude Code 等) | それを使う (取りに行き直さない) |
 | 全体の把握・文言の確認・ページの特定 | `get_earnings_document` のテキスト |
 | `text: null`、数値の裏取り、項目名だけで数値がない | Drive コネクタで PDF を開く |
 | コネクタが使えない | ユーザーに添付を依頼する (最後の手段) |

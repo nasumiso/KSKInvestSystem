@@ -33,12 +33,14 @@ logger = logging.getLogger(__name__)
 # 読み取り専用の本サーバーでは保存先だけを同じ規則で組み立てる。
 IR_DOCS_DIR = Path(DATA_DIR) / "ir_docs"
 
-# local_path を開けるかはクライアント次第。同じ端末の Claude Code は開けるので
-# 「開けない」と言い切ると、最も確実な経路を捨てて Drive や添付依頼へ回ってしまう。
+# local_path を開けるかは利用環境次第。同じ Mac の ChatGPT アプリ (Work モード) や
+# Claude Code は開けるので「開けない」と言い切ると、最も確実な経路を捨てて
+# Drive や添付依頼へ回る。
 LOCAL_PATH_NOTE = (
-    "local_path はこのサーバーを動かしている端末のパスです。同じ端末でファイルを"
-    "読めるクライアント (Claude Code 等) なら直接開けますが、ChatGPT などリモートの"
-    "クライアントからは開けません。"
+    "local_path はこのサーバーを動かしている端末上のパスです。あなたがその端末の"
+    "ローカルファイルを読める環境 (同じ Mac の ChatGPT アプリの Work モード、"
+    "Claude Code 等) なら直接開けます。通常のチャット、iPhone、ブラウザ版など、"
+    "ローカルファイルを読めない環境からは開けません。"
 )
 
 mcp = MCPServer(
@@ -75,12 +77,15 @@ mcp = MCPServer(
     ),
 )
 
-# テキストで足りない資料の案内。同じ端末で読めるなら local_path、
-# 次に Drive コネクタ、どちらも使えない場合だけ添付を頼む。
+# テキストで足りない資料の案内。添付済みならそれ、同じ端末で読めるなら local_path、
+# 次に Drive コネクタ、どれも使えない場合だけ添付を頼む。
+# instructions の読み方 (1)〜(4) と同じ順にする。note だけ見た LLM が添付済みの
+# PDF を無視して取りに行き直さないように。
 PDF_GUIDANCE = (
-    "同じ端末でファイルを読めるなら local_path の PDF を開いてください。"
+    "PDF がすでにチャットに添付されていればそれを使ってください。"
+    "そうでなく、同じ端末でファイルを読めるなら local_path の PDF を開いてください。"
     "そうでなければ、Google Drive コネクタが使えるなら relative_path の末尾の"
-    "ファイル名で検索し、PDF を直接開いてください。どちらも使えない場合は"
+    "ファイル名で検索し、PDF を直接開いてください。いずれも使えない場合は"
     "ユーザーに添付を依頼してください。"
 )
 
@@ -590,9 +595,10 @@ def get_earnings_document(
     ページでは PDF を見てください。Google Drive コネクタが使えるなら
     relative_path の末尾のファイル名で検索して直接開けます (図表の数値も読めます)。
     コネクタが使えない場合に限り、ユーザーに添付を依頼してください。
-    local_path はこのサーバーを動かしている端末のパスです。同じ端末でファイルを
-    読めるクライアント (Claude Code 等) なら直接開けますが、ChatGPT などリモートの
-    クライアントからは開けません。
+    local_path はこのサーバーを動かしている端末上のパスです。その端末のローカル
+    ファイルを読める環境 (同じ Mac の ChatGPT アプリの Work モード、Claude Code 等) なら
+    直接開けます。通常のチャット、iPhone、ブラウザ版など、ローカルファイルを読めない
+    環境からは開けません。
     """
     return get_earnings_document_data(code_s, doc_id, page_from, page_to, max_chars)
 

@@ -285,8 +285,10 @@ def test_bad_quality_returns_null_text_with_path(tmp_path, monkeypatch, quality)
     assert result["text_quality"] == quality
     assert result["local_path"].endswith("20260901_D1.pdf")
     assert result["relative_path"] == "ir_docs/4011/20260901_D1.pdf"
-    # Drive コネクタを先に案内し、使えない場合だけ添付を頼む
-    assert result["note"].index("Google Drive") < result["note"].index("添付")
+    # instructions と同じ順: 添付済み → local_path → Drive → 添付依頼 (最後の手段)
+    note = result["note"]
+    order = [note.index(k) for k in ("添付されていれば", "local_path", "Google Drive", "添付を依頼")]
+    assert order == sorted(order)
 
 
 @pytest.mark.parametrize("tool", ["list", "text"])
