@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""四季報コメント・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバー。"""
+"""四季報コメント・IR問い合わせ回答を読み取り専用で提供し、銘柄評価台帳だけは更新もできる stdio MCP サーバー。"""
 
 import json
 import logging
@@ -26,6 +26,7 @@ from research_shelve import (
 )
 from db_shelve import RESEARCH_SHELVE
 from ks_util import DATA_DIR
+import stock_ratings
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,10 @@ mcp = MCPServer(
     "shintakane-shikiho",
     instructions=(
         "Shintakane の四季報コメントと業績予想を読み取り専用で返します。"
+        "書き込めるのは銘柄評価台帳 (update_stock_rating) だけです。"
+        "ユーザーが「台帳」「評価台帳」と言ったら、stock_ratings の各ツールを使ってください。"
+        "スプレッドシート「投資PJ_銘柄評価台帳」は 2026-09-23 に凍結した旧版なので、"
+        "参照も更新もしないでください。"
         "period は四季報の版情報であり時点情報ではありません。"
         "四季報コメントの as_of は常に null です。"
         "gyoseki は四季報の業績予想 (単位: 百万円) で、特に next_year (2期先) は"
@@ -552,6 +557,95 @@ def get_earnings_document_data(
     }
 
 
+# 一覧では長文を返さない (50銘柄分の仮説・リスクを毎回流すとトークンを食う)
+RATING_SUMMARY_KEYS = (
+    "code_s", "name", "status", "scores", "total", "confidence", "role", "updated_at",
+)
+
+
+def list_stock_ratings_data(status: Optional[str] = None) -> Dict[str, Any]:
+    """銘柄評価台帳の一覧を総合点の高い順に返す。"""
+    ratings = stock_ratings.list_ratings(status)
+    return {
+        "count": len(ratings),
+        "stocks": [{key: r.get(key) for key in RATING_SUMMARY_KEYS} for r in ratings],
+    }
+
+
+def get_stock_rating_data(code_s: str, history: int = 3) -> Dict[str, Any]:
+    """1銘柄の評価の全項目と直近の変更履歴を返す。"""
+    code_s = code_s.strip().upper()
+    rating = stock_ratings.get_rating(code_s)
+    return {
+        "code_s": code_s,
+        "found": rating is not None,
+        "rating": rating,
+        "history": stock_ratings.get_history(code_s, _limit(history, 3)) if rating else [],
+    }
+
+
+def update_stock_rating_data(
+    code_s: str, reason: str, fields: Dict[str, Any],
+) -> Dict[str, Any]:
+    """評価を部分更新する。検証エラーは例外にせず、項目ごとの理由を返す。"""
+    code_s = code_s.strip().upper()
+    if not (reason or "").strip():
+        return {"ok": False, "code_s": code_s, "errors": ["reason: 更新理由が空"]}
+    fields = {key: value for key, value in fields.items() if value is not None}
+    created = stock_ratings.get_rating(code_s) is None
+    try:
+        changes = stock_ratings.update_rating(code_s, fields, reason.strip(), source="mcp")
+    except stock_ratings.RatingValidationError as exc:
+        return {"ok": False, "code_s": code_s, "errors": exc.errors}
+    return {
+        "ok": True,
+        "code_s": code_s,
+        "created": created,
+        "changes": changes,
+        "rating": stock_ratings.get_rating(code_s),
+    }
+
+
+# シート2枚目「採点ルール Ver2.0」を移したもの。採点ルールを変えたら
+# stock_ratings.RUBRIC_VERSION と合わせて更新する。
+UPDATE_STOCK_RATING_DESCRIPTION = """銘柄評価台帳の1銘柄を部分更新する。未登録の銘柄なら新規作成する。
+
+個別銘柄の分析を終えたら、変わった項目だけを渡して差分更新してください。
+渡さなかった項目は変更されません。文字列の項目を空にしたいときは "" を渡します。
+reason (更新理由、例「2Q決算反映」) は必須で、変更前後の値と一緒に履歴に残ります。
+updated_at は自動で入り、総合点 (total) は4軸の合計として自動で計算されます。
+新規作成時は name・4軸すべて・confidence・status が必須です。
+検証に失敗すると ok: false と errors (どの項目がなぜ不正か) を返し、何も書きません。
+errors を見て値を直し、再度呼んでください。
+
+項目:
+- fund (ファンダ 0〜40)、mispricing (未織込 0〜20)、momentum (モメンタム 0〜20)、valuation (0〜20): 整数
+- confidence: A / B / C
+- status: Active / Watch / Archive
+- role (役割)、thesis (投資仮説)、mispricing_note (未織込と見ている点)、
+  risks (主要リスク・反証条件)、checkpoints (次の格上げ/確認条件)、note (更新メモ)
+
+採点ルール Ver2.0:
+- ファンダ 40 = 業績加速15 / 将来利益可視性10 / 構造成長10 / 質・リスク5。
+  現在業績だけでなく受注残・中計・構造変化を含む。
+  レンジ: 38-40 最上位 / 34-37 強い / 30-33 良好 / 25-29 不確実性高 /
+  20-24 テーマ・回復依存 / 15-19 オプション中心 / 15未満 原則Archive級
+- 未織込 20 = 市場認識ギャップ10 / 次の数字5 / 再評価軸5。
+  良い会社かではなく、その良さを市場がまだ十分評価していないか。良い材料の有無ではなく市場認識との差だけを評価する。
+  レンジ: 18-20 ほぼ未認知 / 15-17 かなり未反映 / 12-14 一部認識 /
+  9-11 主ストーリー認知済 / 6-8 大部分織込 / 0-5 期待先行
+- モメンタム 20 = 決算後反応8 / 相対強度7 / 出来高・値持ち5。急騰自体は減点しない
+- Valuation 20 = 成長率対比10 / 同業・自社レンジ5 / 安全域5。成長率・事業特性に対して現在価格に余白があるか
+- Confidence A: 一次資料十分・ドライバー明確・将来数字を比較的推定可能 /
+  B: 大筋は明確だが利益率・市況・新事業など重要変数が大きい /
+  C: オプション価値中心・将来売上利益レンジが広い (ポジションサイズ注意)
+- 原則1: 強い上昇はモメンタムで加点し、織り込み進展は未織込/Valuationで反映する (急騰を二重に減点しない)
+- 原則2: 新規INのスコアと保有継続の判断を分離する (低スコア化だけで強い保有株を機械的に売らない)
+- 原則3: 保有状況やユーザーの仮説を総合点へ直接加点しない (確証バイアス対策)
+- 総合点は企業価値ランキングではなく、現在価格からの中期投資魅力度
+"""
+
+
 @mcp.tool()
 def list_earnings_documents(
     code_s: str, months: int = 12, include_superseded: bool = False,
@@ -633,6 +727,56 @@ def get_ir_qa(code_s: str, limit: int = 10) -> Dict[str, Any]:
 def search_stocks(query: str, limit: int = 10) -> Dict[str, List[Dict[str, Any]]]:
     """社名の一部または銘柄コードで、四季報データを持つ銘柄候補を検索する。"""
     return search_stocks_data(query, limit)
+
+
+@mcp.tool()
+def list_stock_ratings(status: Optional[str] = None) -> Dict[str, Any]:
+    """銘柄評価台帳の一覧を総合点の高い順に返す。
+
+    銘柄評価台帳は、個別銘柄分析の結論として付けた現在の投資判断のスナップショットです
+    (ファンダ40 / 未織込20 / モメンタム20 / Valuation20 = 総合100、Confidence、Status)。
+    status (Active / Watch / Archive) を指定するとその Status だけを返します。
+    仮説・リスクなどの長文は含みません。全項目は get_stock_rating で取得します。
+    """
+    return list_stock_ratings_data(status)
+
+
+@mcp.tool()
+def get_stock_rating(code_s: str, history: int = 3) -> Dict[str, Any]:
+    """銘柄評価台帳の1銘柄について、全項目と直近の変更履歴を返す。
+
+    history は返す変更履歴の件数です (新しい順)。各履歴の changes は
+    {項目: [前の値, 新しい値]} で、前回から評価がどう変わったかが分かります。
+    評価を更新する前に呼び、現在の値と前回の変更理由を確認してください。
+    """
+    return get_stock_rating_data(code_s, history)
+
+
+@mcp.tool(description=UPDATE_STOCK_RATING_DESCRIPTION)
+def update_stock_rating(
+    code_s: str,
+    reason: str,
+    fund: Optional[int] = None,
+    mispricing: Optional[int] = None,
+    momentum: Optional[int] = None,
+    valuation: Optional[int] = None,
+    confidence: Optional[str] = None,
+    status: Optional[str] = None,
+    name: Optional[str] = None,
+    role: Optional[str] = None,
+    thesis: Optional[str] = None,
+    mispricing_note: Optional[str] = None,
+    risks: Optional[str] = None,
+    checkpoints: Optional[str] = None,
+    note: Optional[str] = None,
+) -> Dict[str, Any]:
+    return update_stock_rating_data(code_s, reason, {
+        "fund": fund, "mispricing": mispricing, "momentum": momentum,
+        "valuation": valuation, "confidence": confidence, "status": status,
+        "name": name, "role": role, "thesis": thesis,
+        "mispricing_note": mispricing_note, "risks": risks,
+        "checkpoints": checkpoints, "note": note,
+    })
 
 
 def _check_runtime_database() -> None:

@@ -496,3 +496,53 @@ def test_superseded_original_kept_when_revision_out_of_index(tmp_path, monkeypat
         "4011", months=12, today=date(2026, 9, 22)
     )
     assert [d["heading"] for d in result["documents"]] == ["原本"]
+
+
+@pytest.fixture
+def ratings_dir(tmp_path, monkeypatch):
+    """3697 を登録済みの一時台帳を作る。"""
+    import stock_ratings
+
+    monkeypatch.setattr(stock_ratings, "RATINGS_DIR", tmp_path / "stock_ratings")
+    server.update_stock_rating_data("3697", "初期登録", {
+        "name": "SHIFT", "fund": 35, "mispricing": 16, "momentum": 16, "valuation": 15,
+        "confidence": "A", "status": "Active", "thesis": "QA需要拡大",
+    })
+    return tmp_path / "stock_ratings"
+
+
+def test_update_stock_rating_changes_only_given_fields(ratings_dir):
+    """1回の呼び出しで差分更新でき、渡さない項目は残り、履歴で前回値が分かる。"""
+    result = server.update_stock_rating("3697", "2Q決算反映", fund=36, mispricing_note="FY27下限")
+
+    assert result["ok"] is True
+    assert result["created"] is False
+    assert result["changes"] == {
+        "mispricing_note": [None, "FY27下限"], "scores.fund": [35, 36],
+    }
+    assert result["rating"]["thesis"] == "QA需要拡大"
+    assert result["rating"]["total"] == 83
+
+    detail = server.get_stock_rating_data("3697", history=1)
+    assert detail["history"][0]["reason"] == "2Q決算反映"
+    assert detail["history"][0]["source"] == "mcp"
+    listed = server.list_stock_ratings_data()["stocks"][0]
+    assert "thesis" not in listed and listed["total"] == 83
+
+
+@pytest.mark.parametrize("code_s, reason, fields, error_key", [
+    ("3697", "誤入力", {"fund": 41}, "scores.fund"),
+    ("3697", "", {"fund": 36}, "reason"),
+    ("7203", "新規", {"name": "トヨタ", "fund": 30}, "confidence"),
+])
+def test_update_stock_rating_returns_errors_without_writing(
+    ratings_dir, code_s, reason, fields, error_key,
+):
+    """検証エラーは例外にせず項目名入りで返し、ファイルは変えない。"""
+    before = (ratings_dir / "stock_ratings.json").read_bytes()
+
+    result = server.update_stock_rating_data(code_s, reason, fields)
+
+    assert result["ok"] is False
+    assert any(e.startswith(error_key) for e in result["errors"])
+    assert (ratings_dir / "stock_ratings.json").read_bytes() == before

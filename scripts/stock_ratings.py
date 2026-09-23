@@ -188,6 +188,26 @@ def list_ratings(status=None, ratings_dir=None):
     return sorted(rows, key=lambda r: (-r["total"], r["code_s"]))
 
 
+def get_history(code_s, limit=3, ratings_dir=None):
+    """1銘柄の変更履歴を新しい順に最大 limit 件返す。
+
+    書き込み途中で落ちて壊れた行は読み飛ばす。
+    """
+    _, _, history_path = _paths(ratings_dir)
+    if not history_path.exists():
+        return []
+    entries = []
+    with open(history_path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("code_s") == code_s:
+                entries.append(entry)
+    return entries[::-1][:limit]
+
+
 def update_rating(code_s, fields, reason, source, ratings_dir=None):
     """1銘柄を部分更新する (未登録なら新規作成)。
 

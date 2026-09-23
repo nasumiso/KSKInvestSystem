@@ -17,7 +17,7 @@ MCP は銘柄推奨や自動売買を行いません。投資判断は必ず人�
 
 | MCPサーバー | 用途 | 提供ツール |
 |---|---|---|
-| `shintakane-shikiho` | 四季報・IR一次情報の参照 | `get_shikiho` / `get_ir_qa` / `search_stocks` |
+| `shintakane-shikiho` | 四季報・IR一次情報の参照、銘柄評価台帳の参照・更新 | `get_shikiho` / `get_ir_qa` / `search_stocks` / `list_stock_ratings` / `get_stock_rating` / `update_stock_rating` |
 
 `shintakane-shikiho` はローカルの stdio MCP サーバーです。HTTP ポートを開かず、
 `research_shelve` を既存のロック機構経由で読み取ります。LLM が DB へ直接接続することはありません。
@@ -59,9 +59,20 @@ IR 問い合わせ回答は公開情報として流通しない非公開の一�
 | 入力 | `query`、`limit` (既定10件、最大50件) |
 | 返却 | 銘柄コード、銘柄名、四季報コメントの有無・件数 |
 
+### 銘柄評価台帳 (`list_stock_ratings` / `get_stock_rating` / `update_stock_rating`)
+
+ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 / モメンタム20 / Valuation20、Confidence、Status) を参照・更新します。
+正本は `stock_ratings.json` で、旧スプレッドシート「投資PJ_銘柄評価台帳」は 2026-09-23 に凍結しました。
+
+| ツール | 内容 |
+|---|---|
+| `list_stock_ratings` | 総合点順の一覧 (長文なし)。`status` で絞り込み |
+| `get_stock_rating` | 1銘柄の全項目と直近の変更履歴 |
+| `update_stock_rating` | 渡した項目だけを部分更新 (未登録なら新規作成)。`reason` 必須。検証エラーは `ok: false` と `errors` で返し、何も書かない |
+
 ## 利用上の制約
 
-- 現在の MCP は完全に読み取り専用です。保存・評価変更・ポジション変更を行うツールは提供していません。
+- 書き込めるのは銘柄評価台帳 (`update_stock_rating`) だけです。調査DB・ポジションを変更するツールは提供していません。
 - データの時点と出典を確認してください。時点が不明なものは、推測で補わず `null` として返します。
 - MCP のデータは分析を助けるための材料です。投資成果や将来の株価を保証しません。
 
