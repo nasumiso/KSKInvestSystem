@@ -1,6 +1,6 @@
 # 四季報 MCP サーバー
 
-`shikiho_server.py` は `research_shelve` の四季報コメント・業績予想・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバーです。HTTP ポートは開きません。利用者向けの仕様は [doc/MCP.md](../../doc/MCP.md) を参照してください。
+`shikiho_server.py` は `research_shelve` の四季報コメント・業績予想・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバーです。書き込めるのは銘柄評価台帳 (`update_stock_rating`) だけです。HTTP ポートは開きません。利用者向けの仕様は [doc/MCP.md](../../doc/MCP.md) を参照してください。
 
 ## ローカル起動前の準備
 
@@ -121,6 +121,17 @@ LLM には、instructions と docstring で次の順に案内している (#463)
 `next_page_from` で案内します。
 
 すべての DB 読み取りは `research_shelve` の書き込みと同じ flock を取得するため、WebApp や日次バッチの更新とは直列化されます。
+
+### 銘柄評価台帳 (issue #466)
+
+正本は `{KS_DATA_DIR}/stock_ratings/stock_ratings.json` (#465)。読み書きは `scripts/stock_ratings.py` 経由で、CLI と同じ flock・検証・履歴を通る。
+
+- `list_stock_ratings(status=None)`: 総合点順の一覧。仮説・リスクなどの長文は返さない
+- `get_stock_rating(code_s, history=3)`: 全項目と直近の変更履歴 (`changes` は `[前の値, 新しい値]`)
+- `update_stock_rating(code_s, reason, fund=None, ...)`: 部分更新 (未登録なら新規作成)。検証エラーは例外にせず `ok: false` と `errors` を返し、何も書かない
+
+採点ルール Ver2.0 (旧シート2枚目) は `update_stock_rating` の説明文に入れている。ルールを変えたら `UPDATE_STOCK_RATING_DESCRIPTION` と `stock_ratings.RUBRIC_VERSION` を合わせて更新する。
+Mac が止まっているときは、ChatGPT の Drive コネクタで JSON を直接読める (読み取りのみ。JSON を直接編集しない)。
 
 ## MBA での常駐起動
 

@@ -161,11 +161,14 @@ cd scripts && python research_shelve.py backup
 cd scripts && python stock_ratings.py show 3697
 cd scripts && python stock_ratings.py list --status Active        # 総合点順
 cd scripts && python stock_ratings.py set 3697 --fund 36 --mispricing-note "..." --reason "2Q決算反映"
+cd scripts && python stock_ratings.py export_html                 # 表示用 HTML を作り直す
 cd scripts && python stock_ratings.py migrate --csv <シート1枚目のCSV>  # 一度きり。JSON があれば中断
 ```
 
 `set` は渡した項目だけを更新する（文字列を消すときは `""` を渡す）。値が変わった項目だけが
 `[前の値, 新しい値]` の形で履歴に残る。総合点は保存せず、読み出し時に4軸を合計する。
+
+表示用の `stock_ratings.html` (同じフォルダ) は更新のたびに作り直される (issue #467)。Drive で JSON を直接編集したときだけは作り直されないので、必要なら `export_html` を実行する。
 
 ## Shintakane Research（銘柄調査WebApp）
 

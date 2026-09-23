@@ -127,3 +127,28 @@ def test_migrate(tmp_path, rows, expect_error):
     assert [h["source"] for h in _history(out_dir)] == ["migration", "migration"]
     with pytest.raises(FileExistsError):
         sr.migrate_from_csv(csv_path, ratings_dir=out_dir)
+
+
+def test_update_regenerates_html(ratings_dir):
+    """更新のたびに HTML が作り直され、Status ごとに総合点順で並び、文字列はエスケープされる"""
+    sr.update_rating("6134", {"fund": 40, "thesis": "<b>受注</b> & 利益率"}, "反映", "cli",
+                     ratings_dir=ratings_dir)
+    sr.update_rating("4417", dict(BASE_FIELDS, name="GSX", status="Watch", fund=38),
+                     "新規", "cli", ratings_dir=ratings_dir)
+
+    page = (ratings_dir / sr.HTML_FILENAME).read_text(encoding="utf-8")
+    assert page.index("<h2>Active") < page.index('href="#s6134"') < page.index('href="#s3697"')
+    assert page.index('href="#s3697"') < page.index("<h2>Watch") < page.index('href="#s4417"')
+    assert "&lt;b&gt;受注&lt;/b&gt; &amp; 利益率" in page and "<b>受注" not in page
+
+
+def test_html_failure_does_not_block_update(ratings_dir, monkeypatch):
+    """HTML の書き出しに失敗しても、JSON の更新と履歴の記録は成功する"""
+    def broken(*args, **kwargs):
+        raise RuntimeError("render failed")
+
+    monkeypatch.setattr(sr, "render_html", broken)
+    sr.update_rating("3697", {"fund": 36}, "反映", "cli", ratings_dir=ratings_dir)
+
+    assert sr.get_rating("3697", ratings_dir=ratings_dir)["scores"]["fund"] == 36
+    assert _history(ratings_dir)[-1]["changes"] == {"scores.fund": [35, 36]}
