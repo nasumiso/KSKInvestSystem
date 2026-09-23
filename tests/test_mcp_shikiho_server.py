@@ -523,3 +523,7 @@ def test_chuki_plan_is_listed_without_date_claims(tmp_path, monkeypatch):
         "4011", months=12, today=date(2026, 9, 22), doc_type="chuki_plan"
     )
     assert [d["doc_id"] for d in only_plans["documents"]] == ["PLAN_OLD_DATE"]
+    # TDnet の収集期間を満たしていても、中計の網羅性は主張しない
+    assert result["partial_coverage"] is False
+    assert only_plans["partial_coverage"] is True
+    assert "中計が存在しないことを意味しません" in only_plans["note"]
