@@ -560,6 +560,17 @@ def _ir_page_doc_type(url, text):
     return None
 
 
+def guess_ir_top_url(code_s):
+    """会社HP (上書き前の既定URL) のトップから IR トップの URL を推測する。無ければ None。"""
+    from db_shelve import STOCKS_SHELVE, ShelveDB
+
+    with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
+        top = ((db.get(str(code_s).upper()) or {}).get("corporate_url") or "").strip()
+    if not top:
+        return None
+    return find_ir_top_link(_page_links(requests.Session(), top, _RateLimiter()), top)
+
+
 def resolve_ir_start_url(code_s):
     """候補抽出の開始URL。会社HP上書き (#208) を優先し、無ければ会社HPを使う。"""
     import research_shelve

@@ -3,6 +3,7 @@
 
 POST /api/ir_page_candidates/<code_s> : 中計・決算説明資料のPDF候補を返す (AJAX)
 POST /stock/<code_s>/ir_page_docs     : 選択・手入力されたPDFを取得して保存
+POST /api/ir_top_url/<code_s>         : 会社HPから IR トップの URL を推測して返す (AJAX)
 """
 
 import requests
@@ -25,6 +26,20 @@ def post_ir_page_candidates(code_s: str):
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)}), 502
     return jsonify({"ok": True, "start_url": start_url, "candidates": candidates})
+
+
+@ir_docs_bp.route("/api/ir_top_url/<code_s>", methods=["POST"])
+def post_ir_top_url(code_s: str):
+    """会社HP上書きの編集用に IR トップの URL を推測する。保存はしない。"""
+    import ir_docs
+
+    try:
+        url = ir_docs.guess_ir_top_url(code_s)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 502
+    if not url:
+        return jsonify({"ok": False, "error": "IRページが見つかりませんでした"}), 404
+    return jsonify({"ok": True, "url": url})
 
 
 @ir_docs_bp.route("/stock/<code_s>/ir_page_docs", methods=["POST"])
