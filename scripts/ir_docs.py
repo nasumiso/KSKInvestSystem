@@ -57,6 +57,12 @@ IR_PAGE_KEYWORDS = {
 }
 # 策定の案内文や常設の会社案内は資料本体ではないため候補から外す。
 IR_PAGE_EXCLUDE_RE = re.compile(r"お知らせ|会社案内|書き起こし|動画")
+# 会社トップから IR トップへのリンク。開始URLが会社トップの銘柄で1回だけ辿る。
+IR_TOP_LINK_RE = re.compile(
+    r"^(IR|IR情報|投資家情報|株主・投資家(の皆様へ|情報)?|投資家の皆様へ|Investors?( Relations)?)$",
+    re.I,
+)
+IR_TOP_HREF_RE = re.compile(r"/ir/?$|/ir\.html$|/investors?(-relations)?(\.html|/)?$", re.I)
 ANCHOR_RE = re.compile(r"<a\s[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", re.S | re.I)
 PDF_HREF_RE = re.compile(r"\.pdf($|[?#])", re.I)
 
@@ -585,7 +591,7 @@ def _mark_ir_page_candidates(candidates, documents, today):
     tdnet_documents = [item for item in documents if item.get("source") != IR_PAGE_SOURCE]
     old_pages = set()
     for candidate in candidates:
-        estimated = _estimate_date(candidate["heading"], candidate["url"], "")
+        estimated = _estimate_date(candidate["heading"], candidate["url"], today)
         if estimated and estimated < cutoff:
             old_pages.add(candidate["source_page"])
         candidate["old"] = candidate["source_page"] in old_pages
@@ -604,11 +610,65 @@ def _mark_ir_page_candidates(candidates, documents, today):
         )
 
 
+def _same_site(url, base_url):
+    """www. を除いたホストが一致するか、一方が他方のサブドメインなら同じサイトとみなす。"""
+    host = (urlparse(url).hostname or "").removeprefix("www.")
+    base = (urlparse(base_url).hostname or "").removeprefix("www.")
+    return host == base or host.endswith("." + base) or base.endswith("." + host)
+
+
+def find_ir_top_link(links, start_url):
+    """会社トップのリンク一覧から IR トップらしいリンクを返す。無ければ None。
+
+    文言「IR情報」はメニュー開閉用のダミーリンクに付いていることがあり (6227: isSmp?)、
+    パス /ir.html は IR 問い合わせページのことがある (7729: contact/ir.html) ため、
+    文言とパスの両方で絞り込み、一致の強い順に選ぶ。
+    """
+    links = [
+        (url, text, urlparse(url).path) for url, text in links
+        if url.rstrip("/") != start_url.rstrip("/")
+    ]
+    ranked = (
+        # 文言とパスの両方が一致
+        (url for url, text, path in links
+         if IR_TOP_LINK_RE.search(text) and IR_TOP_HREF_RE.search(path)),
+        # 文言が一致し、パスが IR 配下
+        (url for url, text, path in links
+         if IR_TOP_LINK_RE.search(text) and re.search(r"(^|/)(ir|investors?)\b", path, re.I)),
+        # パスだけ一致
+        (url for url, _, path in links if IR_TOP_HREF_RE.search(path)),
+    )
+    return next((url for group in ranked for url in group), None)
+
+
+def _scan_start_page(links, start_url, add):
+    """開始ページの PDF 候補を登録し、資料種別ごとのサブページ (先頭1件) を返す。
+
+    サブページは同じサイト内に限る。会社トップのニュース欄にある外部記事
+    (決算説明会の書き起こし記事など) を辿ると IR トップへ進めなくなるため。
+    """
+    subpages = {}
+    for url, text in links:
+        doc_type = _ir_page_doc_type(url, text)
+        if not doc_type:
+            continue
+        if PDF_HREF_RE.search(url):
+            add(url, text, doc_type, start_url)
+        elif (
+            doc_type not in subpages
+            and url.rstrip("/") != start_url.rstrip("/")
+            and _same_site(url, start_url)
+        ):
+            subpages[doc_type] = url
+    return subpages
+
+
 def find_ir_page_candidates(code_s, start_url, session=None, limiter=None, output_dir=None):
     """会社IRページから中計・決算説明資料のPDF候補を返す。DLはしない。
 
     開始ページの PDF リンクに加え、資料種別ごとに一致するサブページを1件だけ辿る。
-    リクエストは開始ページ + 資料種別数 (最大3回) に抑える。
+    開始ページに候補もサブページも無ければ (会社トップの場合)、IR トップへの
+    リンクを1回だけ辿ってそこを開始ページとみなす。リクエストは最大4回。
     """
     code_s = str(code_s).upper()
     session = session or requests.Session()
@@ -631,16 +691,15 @@ def find_ir_page_candidates(code_s, start_url, session=None, limiter=None, outpu
         }
 
     links = _page_links(session, start_url, limiter)
+    subpages = _scan_start_page(links, start_url, add)
+    if not candidates and not subpages:
+        ir_top = find_ir_top_link(links, start_url)
+        if ir_top:
+            log_debug(f"IRトップを辿る: {code_s} {ir_top}")
+            start_url = ir_top
+            links = _page_links(session, start_url, limiter)
+            subpages = _scan_start_page(links, start_url, add)
     start_urls = {url for url, _ in links}
-    subpages = {}
-    for url, text in links:
-        doc_type = _ir_page_doc_type(url, text)
-        if not doc_type:
-            continue
-        if PDF_HREF_RE.search(url):
-            add(url, text, doc_type, start_url)
-        elif doc_type not in subpages and url.rstrip("/") != start_url.rstrip("/"):
-            subpages[doc_type] = url
 
     for doc_type, page_url in subpages.items():
         try:
@@ -665,26 +724,33 @@ def find_ir_page_candidates(code_s, start_url, session=None, limiter=None, outpu
 
 
 def _estimate_date(heading, url, today, first_page=""):
-    """資料1ページ目・見出し・ファイル名の順に YYYYMMDD を推定する。
+    """資料1ページ目・見出し・ファイル名の順に YYYYMMDD を推定する。取れなければ None。
 
     1ページ目は表紙の日付 (「2024年3月21日」) だけを見る。月までの表記は
-    対象期間の可能性があるため使わない。見出し・ファイル名は月までなら月初、
-    何も取れなければ当日とする。
+    対象期間の可能性があるため使わない。見出し・ファイル名は月までなら月初とする。
+    「2027年4月通期 第1四半期」のような決算期末は公表日より先になるため、
+    today より後の日付は捨てて次の候補を見る。
     """
+    for value in _date_candidates(heading, url, first_page):
+        if value <= today:
+            return value
+    return None
+
+
+def _date_candidates(heading, url, first_page):
     cover = re.sub(r"\s+", "", unicodedata.normalize("NFKC", first_page or ""))[:500]
     match = re.search(r"(20\d{2})年(\d{1,2})月(\d{1,2})日", cover)
     if match and 1 <= int(match.group(2)) <= 12 and 1 <= int(match.group(3)) <= 31:
-        return f"{match.group(1)}{int(match.group(2)):02d}{int(match.group(3)):02d}"
+        yield f"{match.group(1)}{int(match.group(2)):02d}{int(match.group(3)):02d}"
     for text in (unicodedata.normalize("NFKC", heading or ""), Path(urlparse(url).path).name):
         match = re.search(r"(20\d{2})年\s*(\d{1,2})月", text)
         if match and 1 <= int(match.group(2)) <= 12:
-            return f"{match.group(1)}{int(match.group(2)):02d}01"
+            yield f"{match.group(1)}{int(match.group(2)):02d}01"
         # ファイル名は日付の後ろに時刻や連番が続くことがある (20260520181351871s.pdf)
         match = re.search(r"(?<!\d)(20\d{2})(\d{2})(\d{2})?", text)
         if match and 1 <= int(match.group(2)) <= 12:
             day = match.group(3) if match.group(3) and 1 <= int(match.group(3)) <= 31 else "01"
-            return f"{match.group(1)}{match.group(2)}{day}"
-    return today
+            yield f"{match.group(1)}{match.group(2)}{day}"
 
 
 def fetch_ir_page_doc(
@@ -727,7 +793,7 @@ def fetch_ir_page_doc(
         "doc_type": doc_type,
         "date": _estimate_date(
             heading, url, now_dt.strftime("%Y%m%d"), page_texts[0] if page_texts else ""
-        ),
+        ) or now_dt.strftime("%Y%m%d"),
         "date_estimated": True,
         "heading": heading,
         "fiscal_period": fiscal_period,

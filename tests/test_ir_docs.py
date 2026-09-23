@@ -150,6 +150,12 @@ def test_download_flow_cache_force_and_shared_bulk_http_state(tmp_path, monkeypa
 
 IR_TOP = "https://corp.example.com/ir/"
 IR_PAGES = {
+    "https://corp.example.com/": """
+        <a href="/isSmp?">IR情報</a>
+        <a href="/contact/ir.html">IRお問い合わせ</a>
+        <a href="/company/">会社情報</a>
+        <a href="/ir/">IR情報</a>
+    """,
     IR_TOP: """
         <a href="/common/company.pdf">会社案内</a>
         <a href="/ir/news/plan_notice.pdf">中期経営計画策定に関するお知らせ</a>
@@ -218,6 +224,14 @@ def test_ir_page_candidates_follow_one_subpage_per_type(tmp_path, monkeypatch):
     }
     # 開始 + 種別ごとに1ページのみ (「中長期ビジョン」の2ページ目は辿らない)
     assert len(requested) == 3
+
+    # 会社トップ起点なら IR トップを1回だけ辿り、同じ候補に届く
+    requested.clear()
+    from_top = ir_docs.find_ir_page_candidates("3660", "https://corp.example.com/", output_dir=tmp_path)
+    assert {item["url"] for item in from_top} == {item["url"] for item in candidates} | {
+        "https://corp.example.com/ir/pdf/20200515.pdf", "https://corp.example.com/ir/pdf/undated.pdf",
+    }
+    assert len(requested) == 4
 
 
 @pytest.mark.parametrize(

@@ -130,8 +130,8 @@ cd scripts && python ir_docs.py list 9880 --doc-type chuki_plan
 cd scripts && python ir_docs.py mark-superseded 9880 <doc_id>   # 旧版の中計を手動で非最新化
 ```
 
-- 候補抽出は開始ページ + 資料種別ごとのサブページ1件 (最大3リクエスト)。JS描画のページは拾えないので PDF URL を直接指定する
-- 日付は表紙 → 見出し → ファイル名 → DL日 の順に推定する。中計は自動で旧版にならず、`mark-superseded` でのみ落ちる
+- 候補抽出は開始ページ + 資料種別ごとのサブページ1件。開始ページが会社トップで何も無ければIRトップを1回辿る (最大4リクエスト)。JS描画のページは拾えないので PDF URL を直接指定する
+- 日付は表紙 → 見出し → ファイル名 → DL日 の順に推定する (今日より後の日付は決算期末なので使わない)。中計は自動で旧版にならず、`mark-superseded` でのみ落ちる
 
 ## 銘柄調査DB (`research_shelve`)
 
