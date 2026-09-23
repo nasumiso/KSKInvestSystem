@@ -41,6 +41,8 @@ PDF_URL_RE = re.compile(
 )
 SETSUMEI_RE = re.compile(r"決算(補足)?説明(会)?資料|決算短信補足")
 TANSHIN_RE = re.compile(r"決算短信")
+# グロース市場の年次開示「事業計画及び成長可能性に関する事項」を中計として扱う。
+CHUKI_PLAN_RE = re.compile(r"成長可能性に関する|事業計画(及び|並びに)成長可能性")
 EXCLUDE_RE = re.compile(r"書き起こし|動画|開催")
 REVISION_RE = re.compile(r"訂正|修正版|再表示|期中レビューの完了")
 DEPTH_DAYS = {"latest": None, "1y": 365, "2y": 730}
@@ -76,6 +78,8 @@ def classify_heading(heading):
     # 「決算短信補足資料」は短信ではなく説明資料として扱う。
     if SETSUMEI_RE.search(normalized):
         doc_type = "setsumei"
+    elif CHUKI_PLAN_RE.search(normalized):
+        doc_type = "chuki_plan"
     elif TANSHIN_RE.search(normalized):
         doc_type = "tanshin"
     else:
@@ -83,9 +87,10 @@ def classify_heading(heading):
 
     # 訂正資料そのものは「一部訂正について」でも収集する。
     # 「お知らせ」と明記された案内文や、訂正でない掲載案内は除外する。
+    # 成長可能性資料は「〜に関する事項について」という見出しで本体が出るため除外しない。
     if "お知らせ" in normalized:
         return None
-    if "について" in normalized and not REVISION_RE.search(normalized):
+    if "について" in normalized and doc_type != "chuki_plan" and not REVISION_RE.search(normalized):
         return None
     return doc_type
 
