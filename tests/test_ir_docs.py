@@ -359,3 +359,14 @@ def test_tdnet_setsumei_missing(tmp_path, depth, types, expected):
         json.dumps({"collected_depth": depth, "documents": documents}), encoding="utf-8"
     )
     assert ir_docs.tdnet_setsumei_missing("4970", output_dir=tmp_path) == expected
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("売上📈増加", "売上📈増加"),  # ペアは1文字に戻す
+    ("売上\ud83d増加", "売上�増加"),     # 相方のないサロゲートは置換文字
+    ("通常の日本語", "通常の日本語"),
+])
+def test_clean_text_makes_text_utf8_writable(raw, expected):
+    cleaned = ir_docs._clean_text(raw)
+    assert cleaned == expected
+    cleaned.encode("utf-8")

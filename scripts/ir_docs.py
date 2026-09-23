@@ -261,9 +261,18 @@ def _slug(heading):
     return value[:60] or "document"
 
 
+def _clean_text(text):
+    """pypdf がサロゲートのまま返す文字を直す。
+
+    ペアは1文字に結合し、相方のいないサロゲートは置換文字にする。残したままだと
+    UTF-8 で JSON を書けずに保存が失敗する (5138)。
+    """
+    return text.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+
+
 def _extract_pdf(pdf_bytes):
     reader = PdfReader(io.BytesIO(pdf_bytes))
-    return [(page.extract_text() or "") for page in reader.pages]
+    return [_clean_text(page.extract_text() or "") for page in reader.pages]
 
 
 def _write_json(path, value):
