@@ -305,3 +305,37 @@ def test_ir_page_docs_coexist_with_tdnet_and_survive_rebuild(tmp_path, monkeypat
     latest = {d["doc_id"]: d["is_latest"] for d in index["documents"]}
     assert latest[plan_a["doc_id"]] is False
     assert latest[plan_b["doc_id"]] is True
+
+
+def _candidate(heading, doc_type="chuki_plan", **marks):
+    return {"heading": heading, "doc_type": doc_type, "url": "https://x/" + heading,
+            "old": False, "downloaded": False, "maybe_tdnet": None, **marks}
+
+
+@pytest.mark.parametrize("doc_type, expected", [
+    (None, ["中期経営計画 資料", "決算説明資料"]),
+    ("chuki_plan", ["中期経営計画 資料"]),
+])
+def test_pending_candidates_keeps_only_worth_fetching(doc_type, expected):
+    """一括走査では古い・取得済み・TDnet取得済み?を除き、同じ見出しは1件にまとめる。"""
+    candidates = [
+        _candidate("中期経営計画 資料"),
+        _candidate("中期経営計画　資料 "),  # 別URLの同じ資料 (全角空白)
+        _candidate("旧中計", old=True),
+        _candidate("取得済み中計", downloaded=True),
+        _candidate("決算説明資料", doc_type="setsumei"),
+        _candidate("TDnetにある説明資料", doc_type="setsumei", maybe_tdnet="1401"),
+    ]
+    result = ir_docs.pending_candidates(candidates, doc_type)
+    assert [item["heading"] for item in result] == expected
+
+
+@pytest.mark.parametrize("heading, url, expected", [
+    ("2026.5.14 決算説明及び中期経営計画2年目振り返り", "https://x/a.pdf", "20260514"),
+    ("中期経営計画（2024年5月）", "https://x/a.pdf", "20240501"),
+    ("", "https://x/20260520181351871s.pdf", "20260520"),
+    # 決算期末 (公表日より未来) は捨てる
+    ("2027年4月通期 第1四半期決算説明会資料", "https://x/a.pdf", None),
+])
+def test_estimate_date_formats(heading, url, expected):
+    assert ir_docs._estimate_date(heading, url, "20260923") == expected

@@ -125,6 +125,7 @@ WebApp 詳細画面の「IR資料取得」ボタンでも同じ操作ができ�
 ```bash
 cd scripts && python ir_docs.py page-candidates 9880            # 会社HP上書き→会社HPを起点に候補表示 (DLしない)
 cd scripts && python ir_docs.py page-candidates 9880 --url <IRページURL>
+cd scripts && python ir_docs.py page-candidates --status 1保,2準 --doc-type chuki_plan  # ステータスで一括走査。未取得・直近・TDnetと重複しない候補だけ表示 (DLしない)
 cd scripts && python ir_docs.py fetch-page 9880 <PDF URL> --doc-type chuki_plan --heading "中期経営計画"
 cd scripts && python ir_docs.py list 9880 --doc-type chuki_plan
 cd scripts && python ir_docs.py mark-superseded 9880 <doc_id>   # 旧版の中計を手動で非最新化

@@ -754,6 +754,10 @@ def _date_candidates(heading, url, first_page):
     if match and 1 <= int(match.group(2)) <= 12 and 1 <= int(match.group(3)) <= 31:
         yield f"{match.group(1)}{int(match.group(2)):02d}{int(match.group(3)):02d}"
     for text in (unicodedata.normalize("NFKC", heading or ""), Path(urlparse(url).path).name):
+        # 見出しの「2026.5.14」「2026/5/14」形式 (6134, 9270)
+        match = re.search(r"(?<!\d)(20\d{2})[./](\d{1,2})[./](\d{1,2})(?!\d)", text)
+        if match and 1 <= int(match.group(2)) <= 12 and 1 <= int(match.group(3)) <= 31:
+            yield f"{match.group(1)}{int(match.group(2)):02d}{int(match.group(3)):02d}"
         match = re.search(r"(20\d{2})年\s*(\d{1,2})月", text)
         if match and 1 <= int(match.group(2)) <= 12:
             yield f"{match.group(1)}{int(match.group(2)):02d}01"
@@ -839,6 +843,57 @@ def mark_superseded(code_s, doc_id, output_dir=None):
     return document
 
 
+def pending_candidates(candidates, doc_type=None):
+    """一括走査用に、取りに行く価値のある候補だけを残す。
+
+    古い・取得済み・TDnet取得済みの可能性がある候補を除き、同じ見出しは1件にまとめる
+    (6890 のように同じ資料が別URLで2系統並ぶサイトがある)。
+    """
+    seen = set()
+    result = []
+    for item in candidates:
+        if item["old"] or item["downloaded"] or item["maybe_tdnet"]:
+            continue
+        if doc_type and item["doc_type"] != doc_type:
+            continue
+        key = re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", item["heading"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _print_pending_candidates(statuses, doc_type=None):
+    """指定ステータスの銘柄を走査し、未取得の直近候補を銘柄ごとに表示する。"""
+    import portfolio_shelve
+
+    codes = sorted({
+        record["code_s"]
+        for status in statuses
+        for record in portfolio_shelve.list_records(status=status.strip())
+    })
+    session = requests.Session()
+    limiter = _RateLimiter()
+    total = 0
+    for code_s in codes:
+        start_url = resolve_ir_start_url(code_s)
+        if not start_url:
+            continue
+        try:
+            candidates = find_ir_page_candidates(code_s, start_url, session, limiter)
+        except Exception as exc:
+            log_warning(f"IRページ取得失敗: {code_s} {exc}")
+            continue
+        items = pending_candidates(candidates, doc_type)
+        if items:
+            log_print(f"## {code_s} {start_url}")
+        for item in items:
+            log_print(f"  {item['doc_type']} {item['heading']} {item['url']}")
+        total += len(items)
+    log_print(f"未取得の候補: {total}件 / {len(codes)}銘柄 (取得は fetch-page <code_s> <url>)")
+
+
 def _build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -861,8 +916,12 @@ def _build_parser():
     candidates_parser = subparsers.add_parser(
         "page-candidates", help="会社IRページから中計・説明資料の候補を表示 (DLしない)"
     )
-    candidates_parser.add_argument("code_s")
+    candidates_parser.add_argument("code_s", nargs="?")
     candidates_parser.add_argument("--url", help="開始URL (省略時は会社HPの上書き→会社HP)")
+    candidates_parser.add_argument(
+        "--status", help="保有ステータスで一括走査 (例: 1保,2準)。未取得の直近候補だけを表示"
+    )
+    candidates_parser.add_argument("--doc-type", choices=IR_PAGE_KEYWORDS)
 
     fetch_parser = subparsers.add_parser("fetch-page", help="会社IRページのPDFを1件取得")
     fetch_parser.add_argument("code_s")
@@ -887,12 +946,20 @@ def main(argv=None):
     elif args.command == "list":
         list_ir_docs(args.code_s, doc_type=args.doc_type)
     elif args.command == "page-candidates":
+        if args.status:
+            _print_pending_candidates(args.status.split(","), args.doc_type)
+            return
+        if not args.code_s:
+            log_error("銘柄コードか --status を指定してください")
+            return
         code_s = args.code_s.upper()
         start_url = args.url or resolve_ir_start_url(code_s)
         if not start_url:
             log_error(f"会社HPのURLがありません: {code_s}")
             return
         for item in find_ir_page_candidates(code_s, start_url):
+            if args.doc_type and item["doc_type"] != args.doc_type:
+                continue
             mark = "取得済" if item["downloaded"] else "未取得"
             if item["maybe_tdnet"]:
                 mark += "(TDnet取得済?)"
