@@ -631,14 +631,15 @@ class TestIrPageDocsPostRoutes:
 
         calls = []
 
-        def fake_fetch(code_s, url, doc_type, heading, source_page):
-            calls.append((code_s, url, doc_type, heading, source_page))
+        def fake_fetch(code_s, url, doc_type, heading, source_page, session, limiter):
+            calls.append((code_s, url, doc_type, heading, source_page, limiter))
             if "broken" in url:
                 raise ValueError("PDF以外の応答です")
             return {"heading": heading or "manual.pdf"}, "dup" not in url
 
         stub = types.ModuleType("ir_docs")
         stub.fetch_ir_page_doc = fake_fetch
+        stub._RateLimiter = object
         monkeypatch.setitem(sys.modules, "ir_docs", stub)
 
         resp = client.post("/stock/3496/ir_page_docs", data={
@@ -654,6 +655,8 @@ class TestIrPageDocsPostRoutes:
             "https://a.example/plan.pdf", "https://a.example/broken.pdf", "https://b.example/dup.pdf",
         ]
         assert calls[0][4] == "https://a.example/ir/"
+        # 1回の送信で取得するPDF間は同じ待機を共有する (1秒1リクエスト)
+        assert len({id(call[5]) for call in calls}) == 1
 
         html = client.get("/stock/3496").data.decode()
         assert "IR資料を保存しました (3496): 中期経営計画" in html
