@@ -640,6 +640,7 @@ class TestIrPageDocsPostRoutes:
         stub = types.ModuleType("ir_docs")
         stub.fetch_ir_page_doc = fake_fetch
         stub._RateLimiter = object
+        stub.tdnet_setsumei_missing = lambda code_s: None
         monkeypatch.setitem(sys.modules, "ir_docs", stub)
 
         resp = client.post("/stock/3496/ir_page_docs", data={

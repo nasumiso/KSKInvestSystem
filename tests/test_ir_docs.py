@@ -332,6 +332,7 @@ def test_pending_candidates_keeps_only_worth_fetching(doc_type, expected):
 
 @pytest.mark.parametrize("heading, url, expected", [
     ("2026.5.14 決算説明及び中期経営計画2年目振り返り", "https://x/a.pdf", "20260514"),
+    ("2026年08月04日 2026年度第1四半期 決算説明会", "https://x/a.pdf", "20260804"),
     ("中期経営計画（2024年5月）", "https://x/a.pdf", "20240501"),
     ("", "https://x/20260520181351871s.pdf", "20260520"),
     # 決算期末 (公表日より未来) は捨てる
@@ -339,3 +340,22 @@ def test_pending_candidates_keeps_only_worth_fetching(doc_type, expected):
 ])
 def test_estimate_date_formats(heading, url, expected):
     assert ir_docs._estimate_date(heading, url, "20260923") == expected
+
+
+@pytest.mark.parametrize("depth, types, expected", [
+    ("1y", ["tanshin", "hp_setsumei"], "20260807"),  # 株探に説明資料なし → 会社HP由来の最新日
+    ("1y", ["tanshin"], ""),                         # 会社HPからも未取得
+    ("1y", ["tanshin", "setsumei"], None),           # 株探に説明資料あり
+    ("latest", ["tanshin"], None),                   # 1年分未収集なら判定しない
+])
+def test_tdnet_setsumei_missing(tmp_path, depth, types, expected):
+    documents = [
+        {"doc_id": t, "doc_type": "setsumei" if t == "hp_setsumei" else t, "date": "20260807",
+         **({"source": "corporate_ir_page"} if t == "hp_setsumei" else {})}
+        for t in types
+    ]
+    (tmp_path / "4970").mkdir()
+    (tmp_path / "4970" / "index.json").write_text(
+        json.dumps({"collected_depth": depth, "documents": documents}), encoding="utf-8"
+    )
+    assert ir_docs.tdnet_setsumei_missing("4970", output_dir=tmp_path) == expected

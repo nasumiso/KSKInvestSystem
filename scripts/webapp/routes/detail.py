@@ -147,8 +147,13 @@ def stock_detail(code_s: str):
     # issue #172: 振り返りセクション用アクションログ (除外・削除済みでもログは表示する)
     action_logs = list(reversed(ps.list_action_logs(code_s)))
 
+    # issue #457: 株探に説明資料を出さない銘柄は、会社HPからの取り忘れに気づけるよう表示する
+    from ir_docs import tdnet_setsumei_missing  # 遅延 import (pypdf 等を読み込むため)
+    ir_setsumei_hp_only = tdnet_setsumei_missing(code_s)
+
     return render_template(
         "detail.html",
+        ir_setsumei_hp_only=ir_setsumei_hp_only,
         record=record,
         stock=stock,
         price_rs_chart=price_rs_chart,

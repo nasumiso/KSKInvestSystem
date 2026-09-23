@@ -754,8 +754,8 @@ def _date_candidates(heading, url, first_page):
     if match and 1 <= int(match.group(2)) <= 12 and 1 <= int(match.group(3)) <= 31:
         yield f"{match.group(1)}{int(match.group(2)):02d}{int(match.group(3)):02d}"
     for text in (unicodedata.normalize("NFKC", heading or ""), Path(urlparse(url).path).name):
-        # 見出しの「2026.5.14」「2026/5/14」形式 (6134, 9270)
-        match = re.search(r"(?<!\d)(20\d{2})[./](\d{1,2})[./](\d{1,2})(?!\d)", text)
+        # 見出しの「2026.5.14」「2026/5/14」「2026年08月04日」形式 (6134, 9270, 7729)
+        match = re.search(r"(?<!\d)(20\d{2})(?:[./]|年)(\d{1,2})(?:[./]|月)(\d{1,2})(?!\d)", text)
         if match and 1 <= int(match.group(2)) <= 12 and 1 <= int(match.group(3)) <= 31:
             yield f"{match.group(1)}{int(match.group(2)):02d}{int(match.group(3)):02d}"
         match = re.search(r"(20\d{2})年\s*(\d{1,2})月", text)
@@ -892,6 +892,29 @@ def _print_pending_candidates(statuses, doc_type=None):
             log_print(f"  {item['doc_type']} {item['heading']} {item['url']}")
         total += len(items)
     log_print(f"未取得の候補: {total}件 / {len(codes)}銘柄 (取得は fetch-page <code_s> <url>)")
+
+
+def tdnet_setsumei_missing(code_s, output_dir=None):
+    """株探 (TDnet) に決算説明資料を出していない銘柄なら、会社HP由来の最新説明資料の日付を返す。
+
+    株探から1年分収集済みで、短信はあるのに説明資料が0件の銘柄が対象。こうした会社は
+    説明資料を会社HPにしか置かない (保有28銘柄中11銘柄)。対象外なら None、対象で
+    会社HP由来の説明資料も無ければ空文字を返す。ローカルの index.json だけを見る。
+    """
+    root = Path(output_dir) if output_dir else IR_DOCS_DIR
+    index = _load_index(root / str(code_s).upper() / "index.json")
+    if DEPTH_RANK.get(index.get("collected_depth"), -1) < DEPTH_RANK["1y"]:
+        return None
+    tdnet = [item for item in index["documents"] if item.get("source") != IR_PAGE_SOURCE]
+    if not any(item["doc_type"] == "tanshin" for item in tdnet):
+        return None
+    if any(item["doc_type"] == "setsumei" for item in tdnet):
+        return None
+    dates = [
+        item["date"] for item in index["documents"]
+        if item.get("source") == IR_PAGE_SOURCE and item["doc_type"] == "setsumei"
+    ]
+    return max(dates, default="")
 
 
 def _build_parser():
