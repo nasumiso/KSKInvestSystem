@@ -135,6 +135,21 @@ cd scripts && python research_shelve.py backup
 （例: `research_shelve_260705.dat/.dir/.bak`）を `data/stock_data/` にコピーして、
 日付部分を除いた `research_shelve.dat/.dir/.bak`（portfolio も同様）へ戻す。
 
+## 銘柄評価台帳 (`stock_ratings.py`, issue #465)
+
+正本は `{KS_DATA_DIR}/stock_ratings/stock_ratings.json`、変更履歴は同じフォルダの
+`stock_ratings_history.jsonl`。Drive ミラー同期フォルダ上にあるので、置くだけで Drive に同期される。
+
+```bash
+cd scripts && python stock_ratings.py show 3697
+cd scripts && python stock_ratings.py list --status Active        # 総合点順
+cd scripts && python stock_ratings.py set 3697 --fund 36 --mispricing-note "..." --reason "2Q決算反映"
+cd scripts && python stock_ratings.py migrate --csv <シート1枚目のCSV>  # 一度きり。JSON があれば中断
+```
+
+`set` は渡した項目だけを更新する（文字列を消すときは `""` を渡す）。値が変わった項目だけが
+`[前の値, 新しい値]` の形で履歴に残る。総合点は保存せず、読み出し時に4軸を合計する。
+
 ## Shintakane Research（銘柄調査WebApp）
 
 ```bash
