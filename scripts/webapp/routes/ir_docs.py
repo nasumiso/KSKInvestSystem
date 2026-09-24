@@ -4,10 +4,14 @@
 POST /api/ir_page_candidates/<code_s> : 中計・決算説明資料のPDF候補を返す (AJAX)
 POST /stock/<code_s>/ir_page_docs     : 選択・手入力されたPDFを取得して保存
 POST /api/ir_top_url/<code_s>         : 会社HPから IR トップの URL を推測して返す (AJAX)
+GET  /ir_docs/<code_s>/<doc_id>       : 保存済みPDFを返す (issue #473)
+POST /stock/<code_s>/ir_docs/tdnet    : 株探 (TDnet) から直近1年の短信・説明資料を収集 (issue #473)
 """
 
+import re
+
 import requests
-from flask import Blueprint, flash, jsonify, redirect, request, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, request, send_file, url_for
 
 ir_docs_bp = Blueprint("ir_docs", __name__)
 
@@ -65,7 +69,7 @@ def post_ir_page_docs(code_s: str):
         ))
     if not targets:
         flash(f"取得するIR資料が選択されていません ({code_s})", "error")
-        return redirect(url_for("detail.stock_detail", code_s=code_s))
+        return redirect(url_for("detail.stock_detail", code_s=code_s, _anchor="ir-docs"))
 
     # 複数件を続けて取得しても1秒1リクエストを守るため、セッションと待機を共有する
     session = requests.Session()
@@ -82,4 +86,47 @@ def post_ir_page_docs(code_s: str):
                 flash(f"同じIR資料が保存済みです ({code_s}): {document['heading']}", "info")
         except Exception as e:  # noqa: BLE001
             flash(f"IR資料の取得に失敗しました ({code_s}): {url} {e}", "error")
-    return redirect(url_for("detail.stock_detail", code_s=code_s))
+    return redirect(url_for("detail.stock_detail", code_s=code_s, _anchor="ir-docs"))
+
+
+@ir_docs_bp.route("/ir_docs/<code_s>/<doc_id>")
+def get_ir_doc_pdf(code_s: str, doc_id: str):
+    """保存済みPDFを返す。パスは URL から受け取らず、index.json を doc_id で引いて決める。"""
+    import ir_docs
+
+    code_s = code_s.upper()
+    if not re.fullmatch(r"\d[0-9A-Z]\d[0-9A-Z]", code_s):
+        abort(404)
+    stock_dir = ir_docs.IR_DOCS_DIR / code_s
+    index = ir_docs._load_index(stock_dir / "index.json")
+    document = next((item for item in index["documents"] if item["doc_id"] == doc_id), None)
+    if document is None or not (stock_dir / document["pdf_path"]).is_file():
+        abort(404)
+    return send_file(stock_dir / document["pdf_path"], mimetype="application/pdf")
+
+
+@ir_docs_bp.route("/stock/<code_s>/ir_docs/tdnet", methods=["POST"])
+def post_ir_docs_tdnet(code_s: str):
+    """株探 (TDnet) から直近1年の資料を収集する。取得済みはスキップされるので2回目以降は速い。"""
+    import ir_docs
+
+    # 訂正版が入ると原本が旧版になり is_latest の件数は増えないので、全件数の差で数える
+    index_path = ir_docs.IR_DOCS_DIR / code_s.upper() / "index.json"
+    before = len(ir_docs._load_index(index_path)["documents"])
+    try:
+        ir_docs.download_ir_docs(code_s, depth="1y")
+        index = ir_docs._load_index(index_path)
+        added = len(index["documents"]) - before
+        # 通信障害などは例外にならず collection_errors に残る (成功すると消える) ので、成功と区別して知らせる
+        errors = index["collection_errors"].get("1y") or []
+        if errors:
+            flash(
+                f"株探からのIR資料収集で取りこぼしがあります ({code_s}): {added}件追加 / "
+                f"失敗{len(errors)}件 ({errors[0]['stage']}: {errors[0]['reason']})",
+                "error",
+            )
+        else:
+            flash(f"株探からIR資料を収集しました ({code_s}): {added}件追加", "info")
+    except Exception as e:  # noqa: BLE001
+        flash(f"株探からのIR資料収集に失敗しました ({code_s}): {e}", "error")
+    return redirect(url_for("detail.stock_detail", code_s=code_s, _anchor="ir-docs"))

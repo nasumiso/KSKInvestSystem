@@ -365,6 +365,36 @@ def test_tdnet_setsumei_missing(tmp_path, depth, types, expected):
     assert ir_docs.tdnet_setsumei_missing("4970", output_dir=tmp_path) == expected
 
 
+def test_group_ir_docs_by_period(tmp_path):
+    """中計は別枠、短信・説明資料は期ごとの行 (新しい期が上)、期が取れないものは期不明。
+    全文差し替えの原本は出さず、一部訂正の通知なら本体の原本を残す"""
+    def doc(doc_id, doc_type, date, fp=None, q=None, **extra):
+        return {"doc_id": doc_id, "doc_type": doc_type, "date": date,
+                "fiscal_period": fp, "quarter": q, **extra}
+
+    documents = [
+        doc("t1", "tanshin", "20260515", "2026年12月期", "Q1", total_chars=40000, superseded_by="t1r"),
+        doc("t1r", "tanshin", "20260617", "2026年12月期", "Q1", total_chars=1200),
+        doc("s1", "setsumei", "20260515", "2026年12月期", "Q1", total_chars=30000, superseded_by="s1r"),
+        doc("s1r", "setsumei", "20260526", "2026年12月期", "Q1", total_chars=30500),
+        doc("t2", "tanshin", "20260814", "2026年12月期", "Q2"),
+        doc("c1", "chuki_plan", "20260331", None, "FY"),
+        doc("hp", "setsumei", "20250901", source="corporate_ir_page"),
+    ]
+    (tmp_path / "4011").mkdir()
+    (tmp_path / "4011" / "index.json").write_text(
+        json.dumps({"last_collected_at": "2026-09-24T01:02:25+09:00", "documents": documents}),
+        encoding="utf-8",
+    )
+    grouped = ir_docs.group_ir_docs("4011", output_dir=tmp_path)
+    assert [item["doc_id"] for item in grouped["chuki"]] == ["c1"]
+    assert [(row["quarter"], [d["doc_id"] for d in row["tanshin"]], [d["doc_id"] for d in row["setsumei"]])
+            for row in grouped["periods"]] == [("Q2", ["t2"], []), ("Q1", ["t1r", "t1"], ["s1r"])]
+    assert [item["doc_id"] for item in grouped["unknown"]] == ["hp"]
+    assert grouped["count"] == 6
+    assert ir_docs.group_ir_docs("9999", output_dir=tmp_path)["count"] == 0
+
+
 @pytest.mark.parametrize("raw, expected", [
     ("売上📈増加", "売上📈増加"),  # ペアは1文字に戻す
     ("売上\ud83d増加", "売上�増加"),     # 相方のないサロゲートは置換文字
