@@ -154,7 +154,7 @@
           msg.textContent = items.length + '件の候補 (' + json.start_url + ')';
           var fresh = items.filter(function(item) { return item.doc_type === 'setsumei' && !item.downloaded && !item.old; });
           if (!fresh.length) {
-            msg.textContent += ' — 未取得の説明資料は見つかりませんでした。IRページで PDF を開き、URL を下の欄に貼ってください';
+            msg.textContent += ' — 未取得の説明資料なし。PDF の URL を下に貼ってください';
             form.querySelector('input[name="manual_url"]').focus();
           }
           // 2年より古い候補は折りたたむ (IRページには10年分並ぶことがある)
@@ -1111,10 +1111,8 @@
       <summary>会社HPから探す (中計・株探に無い説明資料)</summary>
       {% if ir_setsumei_hp_only is not none %}
       <div style="font-size:0.85em;margin:0.3em 0;padding:0.4em;border:1px solid #e0b060;border-radius:4px;background:#fff8ec;">
-        この銘柄は<strong>株探 (適時開示) に決算説明資料を出していません</strong>。決算ごとに会社HPから取得してください
-        (取得済みの最新: {{ ir_setsumei_hp_only[2:4] ~ '/' ~ ir_setsumei_hp_only[4:6]|int ~ '/' ~ ir_setsumei_hp_only[6:]|int if ir_setsumei_hp_only else 'なし' }})。<br>
-        「候補を探す」で見つからないときは、IRページが一覧を JavaScript で表示している可能性があります。
-        {% if _display_url %}<a href="{{ _display_url }}" target="_blank" rel="noopener noreferrer">会社HP</a>で{% else %}ブラウザで{% endif %}説明資料の PDF を開き、その URL を下の欄に貼って「取得」を押してください。
+        <strong>株探に説明資料なし</strong> (取得済み最新: {{ ir_setsumei_hp_only[2:4] ~ '/' ~ ir_setsumei_hp_only[4:6]|int ~ '/' ~ ir_setsumei_hp_only[6:]|int if ir_setsumei_hp_only else 'なし' }})。
+        候補に出なければ{% if _display_url %}<a href="{{ _display_url }}" target="_blank" rel="noopener noreferrer">会社HP</a>{% else %}会社HP{% endif %}で PDF を開き、URL を下に貼って取得
       </div>
       {% endif %}
       <button type="button" id="ir-page-btn" data-code="{{ record.code_s }}" onclick="loadIrPageCandidates(this)"
