@@ -2940,6 +2940,30 @@ class TestPriceRsSparkline:
         # tooltip に RS(0~99) 現在値が出る (末尾 = 70)
         assert "RS(0~99): 70" in payload["tooltip"]
 
+    def test_rs_rank_history_drawn_beyond_daily_price_log(self):
+        """RS(0~99)履歴は日足 price_log (30営業日) より古い点も週足窓内なら線で描く。
+        分割は点間隔 7日超のみ (土日はつなぐ)。窓外の点は右軸レンジに影響しない。
+        """
+        from datetime import date as _d, timedelta
+        base = _d(2026, 5, 15)  # 金曜
+        weekdays = [base - timedelta(days=i) for i in range(140)
+                    if (base - timedelta(days=i)).weekday() < 5]
+        # 直近 80 営業日 (値 60~79) + 10日空けて古い 10 営業日 + 週足窓外の値 5
+        recent, older = weekdays[:80], weekdays[88:98]
+        rs_rank_log = ([(d, 60 + i % 20) for i, d in enumerate(recent)]
+                       + [(d, 70) for d in older]
+                       + [(base - timedelta(days=300), 5)])
+        stock = {
+            "price_log": [(d, 100) for d in weekdays[:30]],
+            "price_week_log": [(base - timedelta(days=i * 7), 100) for i in range(20)],
+            "rs_rank_log": rs_rank_log,
+        }
+        svg = helpers.build_stock_chart_payload(stock, market_db=None, mode="full")["svg"]
+        polylines = [ln for ln in svg.split("<polyline")[1:] if helpers._RS_RANK_COLOR in ln]
+        assert len(polylines) == 2  # 10日の空白でのみ分割
+        assert max(len(p.split('points="')[1].split('"')[0].split()) for p in polylines) == 80
+        assert ">0<" not in svg  # 窓外の値 5 で右軸下限が 0 に広がらない (50~99)
+
     @pytest.mark.parametrize("values,expected", [
         ([60, 72, 68, 94], (50, 99)),   # 50台~90台 → 50~99
         ([20, 35, 28, 40], (0, 50)),    # 0台~40台 → 0~50

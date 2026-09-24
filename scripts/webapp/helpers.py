@@ -3457,6 +3457,10 @@ def build_price_rs_chart_mini(
     return ("".join(parts), tooltip)
 
 
+# RS(0~99)履歴の線を分割する点間隔 (日)。これ以下の間隔 (土日・祝日・連休) はつなぐ。
+_RS_RANK_GAP_DAYS = 7
+
+
 def _clean_rs_rank_points(rs_rank_log) -> List:
     """rs_rank_log を昇順 (日付昇順) に整形し、None/0以下の無効値を除外する。
 
@@ -3491,14 +3495,15 @@ def _rs_rank_axis_bounds(values) -> tuple:
     return lo, hi
 
 
-def _overlay_rs_rank(parts, rank_pts, price_log, *,
+def _overlay_rs_rank(parts, rank_pts, *,
                      window_dates, xs, chart_top, chart_h,
                      pad_x, inner_w, pad_right):
     """RS(0~99)履歴を右Y軸 (25刻みスナップの可変スケール) で週足軸に重畳する。
 
     横軸は週足スケールのまま、RS各点の日付を window_dates/xs (週バー列) に実日付で
-    マップする (_interp_x_on_weekbars)。欠番は price_log の営業日カレンダー隣接で
-    判定し、連続営業日でない区間は線を分割する (跨いで補間しない)。
+    マップする (_interp_x_on_weekbars)。隣り合う点の間隔が _RS_RANK_GAP_DAYS 日を
+    超える区間 (バッチ未実行が続いた期間) は線を分割する (跨いで補間しない)。
+    土日・祝日・連休程度の間隔はつなぐ。
 
     右軸レンジは表示期間の RS min-max を 25 刻み境界にスナップして決める
     (_rs_rank_axis_bounds)。
@@ -3506,14 +3511,18 @@ def _overlay_rs_rank(parts, rank_pts, price_log, *,
     Args:
         parts: SVG 文字列リスト (追記する)
         rank_pts: _clean_rs_rank_points の結果 (日付昇順, [(date, value)])
-        price_log: 日足/週足台帳 (新しい順)。実営業日カレンダー突き合わせに使う
         window_dates / xs: 週バー日付列 (昇順) と各週バーの X 座標
         chart_top / chart_h: 騰落率描画域の上端 y と高さ (右軸もこの範囲を共有)
         pad_x / inner_w / pad_right: 右軸目盛りラベルの X 位置決めに使う
     Returns:
         描画したら True、点不足/窓不足で描かなければ False。
     """
-    if len(rank_pts) < 2 or not window_dates or not xs:
+    if not window_dates or not xs:
+        return False
+    # 週足窓より古い点は描かないので、右軸レンジの計算からも外す。
+    rank_pts = [(d, v) for d, v in rank_pts
+                if _interp_x_on_weekbars(d, window_dates, xs) is not None]
+    if len(rank_pts) < 2:
         return False
 
     # 右軸レンジを表示期間の RS 値域から 25 刻み境界にスナップ。
@@ -3524,29 +3533,15 @@ def _overlay_rs_rank(parts, rank_pts, price_log, *,
         # 右軸: [axis_lo, axis_hi] を描画域に線形マップ。v=axis_hi が chart_top。
         return chart_top + chart_h - ((v - axis_lo) / axis_span) * chart_h
 
-    # price_log (新しい順) の日付→index マップ。連続営業日判定 (隣接 index 差=1) に使う。
-    price_dates = [d for d, _ in price_log] if price_log else []
-    date_to_idx = {d: i for i, d in enumerate(price_dates)}
+    # 各 RS 点を (x, y, date) に変換。
+    placed = [(_interp_x_on_weekbars(d, window_dates, xs), _y_rank(v), d)
+              for d, v in rank_pts]
 
-    # 各 RS 点を (x, y, price_idx) に変換。窓外 (x=None) は drop。
-    placed = []
-    for d, v in rank_pts:
-        x = _interp_x_on_weekbars(d, window_dates, xs)
-        if x is None:
-            continue  # 週足窓より古い → drop
-        placed.append((x, _y_rank(v), date_to_idx.get(d)))
-
-    if len(placed) < 2:
-        return False
-
-    # price_log の営業日隣接 (idx 差=1) で連続セグメントに分割。
-    # idx が None (price_log に無い日付) はそこで切る。
+    # 点間隔が _RS_RANK_GAP_DAYS 日を超えたら分割する。
     segments = []
     cur = [placed[0]]
     for prev, p in zip(placed, placed[1:]):
-        pi_prev, pi = prev[2], p[2]
-        contiguous = (pi_prev is not None and pi is not None and pi_prev - pi == 1)
-        if contiguous:
+        if (p[2] - prev[2]).days <= _RS_RANK_GAP_DAYS:
             cur.append(p)
         else:
             segments.append(cur)
@@ -3809,10 +3804,8 @@ def build_price_rs_chart_full(
 
     # RS(0~99)履歴を右Y軸 (0~99 固定) で右端側に重畳 (最前面)。
     # 横軸は週足スケールのまま、RS各点は実日付で週足軸 (window_dates/xs) にマップ。
-    # 営業日カレンダー突き合わせは日足 price_log を使う (price_log 引数は週足台帳のため)。
-    daily_price_log = (stock or {}).get("price_log") or []
     _overlay_rs_rank(
-        parts, rank_pts, daily_price_log,
+        parts, rank_pts,
         window_dates=window_dates, xs=xs,
         chart_top=chart_top, chart_h=chart_h,
         pad_x=pad_x, inner_w=inner_w, pad_right=pad_right,
