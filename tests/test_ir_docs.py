@@ -378,8 +378,11 @@ def test_group_ir_docs_by_period(tmp_path):
         doc("s1", "setsumei", "20260515", "2026年12月期", "Q1", total_chars=30000, superseded_by="s1r"),
         doc("s1r", "setsumei", "20260526", "2026年12月期", "Q1", total_chars=30500),
         doc("t2", "tanshin", "20260814", "2026年12月期", "Q2"),
+        # 見出しに「YYYY年M月期」が無い説明資料は、同じ四半期の直前の短信の行に寄せる
+        doc("y2", "setsumei", "20260820", None, "FY", heading="2026年度上期 決算説明会資料"),
+        doc("y9", "setsumei", "20260101", None, "Q1", heading="2025年度第1四半期 決算補足説明資料"),
         doc("c1", "chuki_plan", "20260331", None, "FY"),
-        doc("hp", "setsumei", "20250901", source="corporate_ir_page"),
+        doc("hp", "setsumei", "20250901", source="corporate_ir_page", date_estimated=True),
     ]
     (tmp_path / "4011").mkdir()
     (tmp_path / "4011" / "index.json").write_text(
@@ -389,9 +392,10 @@ def test_group_ir_docs_by_period(tmp_path):
     grouped = ir_docs.group_ir_docs("4011", output_dir=tmp_path)
     assert [item["doc_id"] for item in grouped["chuki"]] == ["c1"]
     assert [(row["quarter"], [d["doc_id"] for d in row["tanshin"]], [d["doc_id"] for d in row["setsumei"]])
-            for row in grouped["periods"]] == [("Q2", ["t2"], []), ("Q1", ["t1r", "t1"], ["s1r"])]
-    assert [item["doc_id"] for item in grouped["unknown"]] == ["hp"]
-    assert grouped["count"] == 6
+            for row in grouped["periods"]] == [("Q2", ["t2"], ["y2"]), ("Q1", ["t1r", "t1"], ["s1r"])]
+    # 直前60日以内に同じ四半期の短信が無ければ期不明のまま。日付推定の会社HP由来も寄せない
+    assert [item["doc_id"] for item in grouped["unknown"]] == ["y9", "hp"]
+    assert grouped["count"] == 8
     assert ir_docs.group_ir_docs("9999", output_dir=tmp_path)["count"] == 0
 
 

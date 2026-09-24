@@ -106,7 +106,7 @@ def extract_period(heading):
     quarter_match = re.search(r"第\s*([1-4])\s*四半期", normalized)
     if quarter_match:
         quarter = f"Q{quarter_match.group(1)}"
-    elif "中間" in normalized:
+    elif "中間" in normalized or "上期" in normalized:
         quarter = "Q2"
     else:
         quarter = "FY"
@@ -956,10 +956,36 @@ def _visible_documents(documents):
     return visible
 
 
+# 見出しから期が取れない資料を、同じ四半期の短信に寄せるときの最大日数
+PERIOD_MATCH_DAYS = 60
+
+
+def _infer_fiscal_period(document, tanshin_documents):
+    """見出しに「YYYY年M月期」が無い資料の会計期間を、短信との日付・四半期の突き合わせで推定する。
+
+    「2025年度上期」「FY26/7 Q3」など表記が会社ごとに揺れ、「年度」はどの決算期を指すかも
+    会社で異なるため、見出しではなく「同じ四半期の短信のうち、資料以前で最も近いもの
+    (PERIOD_MATCH_DAYS 日以内)」の会計期間を採る。日付が推定値の会社HP由来資料は対象外。
+    """
+    if document.get("date_estimated"):
+        return None
+    quarter = extract_period(document.get("heading"))[1]
+    matches = [
+        item for item in tanshin_documents
+        if item["quarter"] == quarter
+        and item["date"] <= document["date"]
+        and _days_between(item["date"], document["date"]) <= PERIOD_MATCH_DAYS
+    ]
+    if not matches:
+        return None
+    return max(matches, key=lambda item: item["date"])["fiscal_period"], quarter
+
+
 def group_ir_docs(code_s, output_dir=None):
     """詳細画面のIR資料モーダル用に、保存済み資料を中計・期ごと・期不明に分けて返す (issue #473)。
 
     期ごとの行は (fiscal_period, quarter) でまとめ、行内の最新日付の降順に並べる。
+    見出しから期が取れない資料は短信との突き合わせで行に寄せる (表示のみ。index は変えない)。
     全文差し替えで置き換わった原本は出さない。各資料は index のエントリそのまま。
     """
     root = Path(output_dir) if output_dir else IR_DOCS_DIR
@@ -967,12 +993,17 @@ def group_ir_docs(code_s, output_dir=None):
     documents = sorted(
         _visible_documents(index["documents"]), key=lambda item: item["date"], reverse=True
     )
+    tanshin_documents = [
+        item for item in documents if item["doc_type"] == "tanshin" and item.get("fiscal_period")
+    ]
     chuki, unknown, rows = [], [], {}
     for document in documents:
         if document["doc_type"] == "chuki_plan":
             chuki.append(document)
             continue
         key = (document.get("fiscal_period"), document.get("quarter"))
+        if not key[0]:
+            key = _infer_fiscal_period(document, tanshin_documents) or key
         if not all(key):
             unknown.append(document)
             continue
