@@ -931,15 +931,42 @@ def tdnet_setsumei_missing(code_s, output_dir=None):
     return max(dates, default="")
 
 
+# 訂正版の文字数が原本のこの割合未満なら、全文差し替えではなく一部訂正の通知とみなす
+SUPERSEDE_FULL_TEXT_RATIO = 0.7
+
+
+def _visible_documents(documents):
+    """全文差し替えで置き換わった原本を除く。一部訂正の通知なら本体は原本にしか無いので残す。
+
+    判定は MCP の shikiho_server._drop_superseded と同じ (MCP は pypdf を読み込まないよう
+    ir_docs を import しないため、同じ基準をここにも持つ)。
+    """
+    by_id = {item["doc_id"]: item for item in documents}
+    visible = []
+    for document in documents:
+        if document.get("source") == IR_PAGE_SOURCE:
+            if document.get("is_latest", True):
+                visible.append(document)
+            continue
+        revision = by_id.get(document.get("superseded_by"))
+        if revision is None or (revision.get("total_chars") or 0) < (
+            document.get("total_chars") or 0
+        ) * SUPERSEDE_FULL_TEXT_RATIO:
+            visible.append(document)
+    return visible
+
+
 def group_ir_docs(code_s, output_dir=None):
     """詳細画面のIR資料モーダル用に、保存済み資料を中計・期ごと・期不明に分けて返す (issue #473)。
 
     期ごとの行は (fiscal_period, quarter) でまとめ、行内の最新日付の降順に並べる。
-    各資料は index のエントリそのまま。count は旧版を除いた件数。
+    全文差し替えで置き換わった原本は出さない。各資料は index のエントリそのまま。
     """
     root = Path(output_dir) if output_dir else IR_DOCS_DIR
     index = _load_index(root / str(code_s).upper() / "index.json")
-    documents = sorted(index["documents"], key=lambda item: item["date"], reverse=True)
+    documents = sorted(
+        _visible_documents(index["documents"]), key=lambda item: item["date"], reverse=True
+    )
     chuki, unknown, rows = [], [], {}
     for document in documents:
         if document["doc_type"] == "chuki_plan":
@@ -959,7 +986,7 @@ def group_ir_docs(code_s, output_dir=None):
         "periods": list(rows.values()),
         "unknown": unknown,
         "last_collected_at": index.get("last_collected_at"),
-        "count": sum(1 for item in documents if item.get("is_latest", True)),
+        "count": len(documents),
     }
 
 

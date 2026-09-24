@@ -1050,21 +1050,17 @@
 
 {# ===== IR資料モーダル (issue #473) ===== #}
 {% macro ir_doc_cell(doc) %}
-<div class="ir-doc{% if doc.get('is_latest', True) is sameas false %} ir-doc-old{% endif %}">
+<div class="ir-doc">
   <span class="ir-doc-date">{% if doc.get('date_estimated') %}~{% endif %}{{ doc.date[2:4] }}/{{ doc.date[4:6] }}/{{ doc.date[6:] }}</span>
   <span class="ir-doc-heading" title="{{ doc.heading }}">{{ doc.heading|truncate(34, true, '…') }}</span>
   {% if doc.get('source') == 'corporate_ir_page' %}<span class="ir-doc-tag">HP取得</span>{% endif %}
+  {% if doc.get('superseded_by') %}<span class="ir-doc-tag" title="後から一部訂正の通知が出ています。本体はこの資料です">訂正あり</span>{% endif %}
   {% if doc.get('text_quality') != 'ok' %}<span title="テキスト抽出の品質: {{ doc.get('text_quality') }} (画像主体・文字化けなど。PDFで確認してください)">⚠</span>{% endif %}
   <a href="{{ url_for('ir_docs.get_ir_doc_pdf', code_s=record.code_s, doc_id=doc.doc_id) }}" target="_blank" rel="noopener">[PDF]</a>
   {% if doc.get('url') %}<a href="{{ doc.url }}" target="_blank" rel="noopener noreferrer">[原本]</a>{% endif %}
 </div>
 {% endmacro %}
-{% macro ir_doc_list(docs) %}
-{% set latest = docs|rejectattr('is_latest', 'sameas', false)|list %}
-{% set old = docs|selectattr('is_latest', 'sameas', false)|list %}
-{% for doc in latest %}{{ ir_doc_cell(doc) }}{% endfor %}
-{% if old %}<details><summary class="ir-doc-old">旧版 {{ old|length }}件</summary>{% for doc in old %}{{ ir_doc_cell(doc) }}{% endfor %}</details>{% endif %}
-{% endmacro %}
+{% macro ir_doc_list(docs) %}{% for doc in docs %}{{ ir_doc_cell(doc) }}{% endfor %}{% endmacro %}
 <div id="ir-docs-modal" class="ir-docs-overlay" style="display:none;" onclick="if (event.target.id === 'ir-docs-modal') closeIrDocsModal()">
   <div class="ir-docs-content" role="dialog" aria-labelledby="ir-docs-title">
     <div class="ir-docs-header">
@@ -1142,7 +1138,6 @@
 .ir-doc { line-height: 1.5; }
 .ir-doc-date { color: #666; font-variant-numeric: tabular-nums; }
 .ir-doc-tag { font-size: 0.8em; color: #b36b00; border: 1px solid #e0b060; border-radius: 3px; padding: 0 0.2em; }
-.ir-doc-old { color: #999; font-size: 0.9em; }
 </style>
 <script>
 function openIrDocsModal() { document.getElementById('ir-docs-modal').style.display = 'flex'; }

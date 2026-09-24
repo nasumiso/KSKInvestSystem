@@ -366,15 +366,17 @@ def test_tdnet_setsumei_missing(tmp_path, depth, types, expected):
 
 
 def test_group_ir_docs_by_period(tmp_path):
-    """中計は別枠、短信・説明資料は期ごとの行 (新しい期が上)、期が取れないものは期不明。旧版は行に残し件数から除く"""
+    """中計は別枠、短信・説明資料は期ごとの行 (新しい期が上)、期が取れないものは期不明。
+    全文差し替えの原本は出さず、一部訂正の通知なら本体の原本を残す"""
     def doc(doc_id, doc_type, date, fp=None, q=None, **extra):
         return {"doc_id": doc_id, "doc_type": doc_type, "date": date,
                 "fiscal_period": fp, "quarter": q, **extra}
 
     documents = [
-        doc("t1", "tanshin", "20260515", "2026年12月期", "Q1"),
-        doc("s1", "setsumei", "20260515", "2026年12月期", "Q1", is_latest=False),
-        doc("s1r", "setsumei", "20260526", "2026年12月期", "Q1"),
+        doc("t1", "tanshin", "20260515", "2026年12月期", "Q1", total_chars=40000, superseded_by="t1r"),
+        doc("t1r", "tanshin", "20260617", "2026年12月期", "Q1", total_chars=1200),
+        doc("s1", "setsumei", "20260515", "2026年12月期", "Q1", total_chars=30000, superseded_by="s1r"),
+        doc("s1r", "setsumei", "20260526", "2026年12月期", "Q1", total_chars=30500),
         doc("t2", "tanshin", "20260814", "2026年12月期", "Q2"),
         doc("c1", "chuki_plan", "20260331", None, "FY"),
         doc("hp", "setsumei", "20250901", source="corporate_ir_page"),
@@ -387,9 +389,9 @@ def test_group_ir_docs_by_period(tmp_path):
     grouped = ir_docs.group_ir_docs("4011", output_dir=tmp_path)
     assert [item["doc_id"] for item in grouped["chuki"]] == ["c1"]
     assert [(row["quarter"], [d["doc_id"] for d in row["tanshin"]], [d["doc_id"] for d in row["setsumei"]])
-            for row in grouped["periods"]] == [("Q2", ["t2"], []), ("Q1", ["t1"], ["s1r", "s1"])]
+            for row in grouped["periods"]] == [("Q2", ["t2"], []), ("Q1", ["t1r", "t1"], ["s1r"])]
     assert [item["doc_id"] for item in grouped["unknown"]] == ["hp"]
-    assert grouped["count"] == 5
+    assert grouped["count"] == 6
     assert ir_docs.group_ir_docs("9999", output_dir=tmp_path)["count"] == 0
 
 
