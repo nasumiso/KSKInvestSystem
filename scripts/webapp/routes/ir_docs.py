@@ -115,8 +115,18 @@ def post_ir_docs_tdnet(code_s: str):
     before = len(ir_docs._load_index(index_path)["documents"])
     try:
         ir_docs.download_ir_docs(code_s, depth="1y")
-        added = len(ir_docs._load_index(index_path)["documents"]) - before
-        flash(f"株探からIR資料を収集しました ({code_s}): {added}件追加", "info")
+        index = ir_docs._load_index(index_path)
+        added = len(index["documents"]) - before
+        # 通信障害などは例外にならず collection_errors に残る (成功すると消える) ので、成功と区別して知らせる
+        errors = index["collection_errors"].get("1y") or []
+        if errors:
+            flash(
+                f"株探からのIR資料収集で取りこぼしがあります ({code_s}): {added}件追加 / "
+                f"失敗{len(errors)}件 ({errors[0]['stage']}: {errors[0]['reason']})",
+                "error",
+            )
+        else:
+            flash(f"株探からIR資料を収集しました ({code_s}): {added}件追加", "info")
     except Exception as e:  # noqa: BLE001
         flash(f"株探からのIR資料収集に失敗しました ({code_s}): {e}", "error")
     return redirect(url_for("detail.stock_detail", code_s=code_s, _anchor="ir-docs"))

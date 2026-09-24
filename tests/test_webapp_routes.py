@@ -695,7 +695,13 @@ class TestIrDocsModalRoutes:
         if status == 200:
             assert resp.mimetype == "application/pdf"
 
-    def test_tdnet_refresh_collects_1y_and_reports_added(self, client, ir_dir, monkeypatch):
+    @pytest.mark.parametrize("errors, expected", [
+        ({}, "株探からIR資料を収集しました (3496): 1件追加"),
+        # 通信障害は例外にならず collection_errors に残るので、成功扱いにしない
+        ({"1y": [{"stage": "page_scan", "reason": "RemoteDisconnected"}]},
+         "取りこぼしがあります (3496): 1件追加 / 失敗1件 (page_scan: RemoteDisconnected)"),
+    ])
+    def test_tdnet_refresh_collects_1y_and_reports_result(self, client, ir_dir, monkeypatch, errors, expected):
         import ir_docs
         calls = []
 
@@ -704,6 +710,7 @@ class TestIrDocsModalRoutes:
             index_path = ir_dir / "3496" / "index.json"
             index = json.loads(index_path.read_text(encoding="utf-8"))
             index["documents"].append({"doc_id": "d2", "doc_type": "setsumei", "date": "20260828"})
+            index["collection_errors"] = errors
             index_path.write_text(json.dumps(index), encoding="utf-8")
 
         monkeypatch.setattr(ir_docs, "download_ir_docs", fake_download)
@@ -712,7 +719,7 @@ class TestIrDocsModalRoutes:
         assert resp.headers["Location"].endswith("/stock/3496#ir-docs")
         assert calls == [("3496", "1y")]
         html = client.get("/stock/3496").data.decode()
-        assert "株探からIR資料を収集しました (3496): 1件追加" in html
+        assert expected in html
         assert "IR資料 (2)" in html
 
 
