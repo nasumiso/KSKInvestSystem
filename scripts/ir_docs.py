@@ -931,6 +931,38 @@ def tdnet_setsumei_missing(code_s, output_dir=None):
     return max(dates, default="")
 
 
+def group_ir_docs(code_s, output_dir=None):
+    """詳細画面のIR資料モーダル用に、保存済み資料を中計・期ごと・期不明に分けて返す (issue #473)。
+
+    期ごとの行は (fiscal_period, quarter) でまとめ、行内の最新日付の降順に並べる。
+    各資料は index のエントリそのまま。count は旧版を除いた件数。
+    """
+    root = Path(output_dir) if output_dir else IR_DOCS_DIR
+    index = _load_index(root / str(code_s).upper() / "index.json")
+    documents = sorted(index["documents"], key=lambda item: item["date"], reverse=True)
+    chuki, unknown, rows = [], [], {}
+    for document in documents:
+        if document["doc_type"] == "chuki_plan":
+            chuki.append(document)
+            continue
+        key = (document.get("fiscal_period"), document.get("quarter"))
+        if not all(key):
+            unknown.append(document)
+            continue
+        row = rows.setdefault(key, {
+            "fiscal_period": key[0], "quarter": key[1], "tanshin": [], "setsumei": [],
+        })
+        row[document["doc_type"]].append(document)
+    return {
+        "chuki": chuki,
+        # 資料は日付降順に走査しているので、行の作成順がそのまま行内最新日付の降順になる
+        "periods": list(rows.values()),
+        "unknown": unknown,
+        "last_collected_at": index.get("last_collected_at"),
+        "count": sum(1 for item in documents if item.get("is_latest", True)),
+    }
+
+
 def _build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)

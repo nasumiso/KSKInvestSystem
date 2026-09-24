@@ -1,6 +1,7 @@
 """webapp ルートの統合テスト (Flaskテストクライアント使用)"""
 
 import io
+import json
 import os
 
 import pytest
@@ -641,6 +642,9 @@ class TestIrPageDocsPostRoutes:
         stub.fetch_ir_page_doc = fake_fetch
         stub._RateLimiter = object
         stub.tdnet_setsumei_missing = lambda code_s: None
+        stub.group_ir_docs = lambda code_s: {
+            "chuki": [], "periods": [], "unknown": [], "last_collected_at": None, "count": 0,
+        }
         monkeypatch.setitem(sys.modules, "ir_docs", stub)
 
         resp = client.post("/stock/3496/ir_page_docs", data={
@@ -652,6 +656,7 @@ class TestIrPageDocsPostRoutes:
             "manual_url": "https://b.example/dup.pdf", "manual_doc_type": "setsumei",
         })
         assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/stock/3496#ir-docs")
         assert [call[1] for call in calls] == [
             "https://a.example/plan.pdf", "https://a.example/broken.pdf", "https://b.example/dup.pdf",
         ]
@@ -663,6 +668,52 @@ class TestIrPageDocsPostRoutes:
         assert "IR資料を保存しました (3496): 中期経営計画" in html
         assert "IR資料の取得に失敗しました (3496)" in html
         assert "同じIR資料が保存済みです (3496)" in html
+
+
+class TestIrDocsModalRoutes:
+    """IR資料モーダルの PDF 配信と株探収集 (issue #473)"""
+
+    @pytest.fixture
+    def ir_dir(self, tmp_path, monkeypatch):
+        import ir_docs
+        (tmp_path / "3496").mkdir()
+        (tmp_path / "3496" / "a.pdf").write_bytes(b"%PDF-1.4 dummy")
+        (tmp_path / "3496" / "index.json").write_text(json.dumps({"documents": [
+            {"doc_id": "d1", "doc_type": "tanshin", "date": "20260814", "pdf_path": "a.pdf"},
+        ]}), encoding="utf-8")
+        monkeypatch.setattr(ir_docs, "IR_DOCS_DIR", tmp_path)
+        return tmp_path
+
+    @pytest.mark.parametrize("path, status", [
+        ("/ir_docs/3496/d1", 200),
+        ("/ir_docs/3496/unknown", 404),
+        ("/ir_docs/..%2F3496/d1", 404),
+    ])
+    def test_pdf_is_served_only_by_doc_id(self, client, ir_dir, path, status):
+        resp = client.get(path)
+        assert resp.status_code == status
+        if status == 200:
+            assert resp.mimetype == "application/pdf"
+
+    def test_tdnet_refresh_collects_1y_and_reports_added(self, client, ir_dir, monkeypatch):
+        import ir_docs
+        calls = []
+
+        def fake_download(code_s, depth):
+            calls.append((code_s, depth))
+            index_path = ir_dir / "3496" / "index.json"
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            index["documents"].append({"doc_id": "d2", "doc_type": "setsumei", "date": "20260828"})
+            index_path.write_text(json.dumps(index), encoding="utf-8")
+
+        monkeypatch.setattr(ir_docs, "download_ir_docs", fake_download)
+        resp = client.post("/stock/3496/ir_docs/tdnet")
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/stock/3496#ir-docs")
+        assert calls == [("3496", "1y")]
+        html = client.get("/stock/3496").data.decode()
+        assert "株探からIR資料を収集しました (3496): 1件追加" in html
+        assert "IR資料 (2)" in html
 
 
 class TestCorporateUrlPostRoutes:

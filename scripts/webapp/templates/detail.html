@@ -123,32 +123,19 @@
                   data-code="{{ record.code_s }}" onclick="editCorpUrlToIr(this)"
                   style="display:inline-block;width:auto !important;padding:0.05em 0.3em;font-size:0.8em;margin:0 0 0 0.2em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">IR</button>
         </form>
-        {# issue #457: 会社IRページから中計・決算説明資料を候補提示 → 選択DL #}
-        <button type="button" id="ir-page-btn" data-code="{{ record.code_s }}" onclick="loadIrPageCandidates(this)"
-                title="会社HP (上書き優先) から中期経営計画・決算説明資料のPDFを探します"
-                style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0 0 0 0.3em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">IR資料取得</button>
+        {# issue #473: 取得済みIR資料の一覧と、株探・会社HPからの取得をモーダルにまとめる #}
+        <button type="button" onclick="openIrDocsModal()"
+                title="取得済みの決算短信・決算説明資料・中計を期ごとに表示し、株探・会社HPから取得します"
+                style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0 0 0 0.3em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">IR資料 ({{ ir_docs.count }})</button>
         {% if ir_setsumei_hp_only is not none %}
-        <span title="株探に決算短信はあるが決算説明資料が1年間出ていません。説明資料は会社HPにしか無い可能性が高いので、決算ごとに「IR資料取得」で取得してください (日付は会社HPから取得した最新の説明資料)"
+        <span title="株探に決算短信はあるが決算説明資料が1年間出ていません。説明資料は会社HPにしか無い可能性が高いので、決算ごとに「IR資料」→「会社HPから探す」で取得してください (日付は会社HPから取得した最新の説明資料)"
               style="font-size:0.8em;color:#b36b00;border:1px solid #e0b060;border-radius:3px;padding:0 0.3em;margin-left:0.3em;">説明資料HPのみ {{ ir_setsumei_hp_only[2:4] ~ '/' ~ ir_setsumei_hp_only[4:6]|int ~ '/' ~ ir_setsumei_hp_only[6:]|int if ir_setsumei_hp_only else '未取得' }}</span>
         {% endif %}
         <span id="ir-page-msg" style="font-size:0.8em;color:#888;margin-left:0.3em;"></span>
       </div>
-      <form method="POST" action="/stock/{{ record.code_s }}/ir_page_docs" id="ir-page-form"
-            style="display:none;font-size:0.85em;margin:0.3em 0;padding:0.4em;border:1px solid #ddd;border-radius:4px;">
-        <div id="ir-page-list"></div>
-        <div style="margin-top:0.3em;">
-          PDF URL を直接指定:
-          <input type="text" name="manual_url" placeholder="https://..." style="width:22em;height:auto;display:inline-block;margin:0;padding:0.1em 0.3em;font-size:1em;">
-          <select name="manual_doc_type" style="width:auto;display:inline-block;margin:0;padding:0.1em;font-size:1em;">
-            <option value="chuki_plan">中計</option><option value="setsumei">説明資料</option>
-          </select>
-          <input type="text" name="manual_heading" placeholder="見出し (任意)" style="width:12em;height:auto;display:inline-block;margin:0;padding:0.1em 0.3em;font-size:1em;">
-        </div>
-        <button type="submit" style="display:inline-block;width:auto !important;padding:0.1em 0.8em;font-size:0.9em;margin:0.3em 0 0 0;">取得</button>
-      </form>
       <script>
       function loadIrPageCandidates(btn) {
-        var msg = document.getElementById('ir-page-msg');
+        var msg = document.getElementById('ir-cand-msg');
         var form = document.getElementById('ir-page-form');
         var list = document.getElementById('ir-page-list');
         btn.disabled = true;
@@ -1060,6 +1047,112 @@
   </table>
 </div>
 {% endif %}
+
+{# ===== IR資料モーダル (issue #473) ===== #}
+{% macro ir_doc_cell(doc) %}
+<div class="ir-doc{% if doc.get('is_latest', True) is sameas false %} ir-doc-old{% endif %}">
+  <span class="ir-doc-date">{% if doc.get('date_estimated') %}~{% endif %}{{ doc.date[2:4] }}/{{ doc.date[4:6] }}/{{ doc.date[6:] }}</span>
+  <span class="ir-doc-heading" title="{{ doc.heading }}">{{ doc.heading|truncate(34, true, '…') }}</span>
+  {% if doc.get('source') == 'corporate_ir_page' %}<span class="ir-doc-tag">HP取得</span>{% endif %}
+  {% if doc.get('text_quality') != 'ok' %}<span title="テキスト抽出の品質: {{ doc.get('text_quality') }} (画像主体・文字化けなど。PDFで確認してください)">⚠</span>{% endif %}
+  <a href="{{ url_for('ir_docs.get_ir_doc_pdf', code_s=record.code_s, doc_id=doc.doc_id) }}" target="_blank" rel="noopener">[PDF]</a>
+  {% if doc.get('url') %}<a href="{{ doc.url }}" target="_blank" rel="noopener noreferrer">[原本]</a>{% endif %}
+</div>
+{% endmacro %}
+{% macro ir_doc_list(docs) %}
+{% set latest = docs|rejectattr('is_latest', 'sameas', false)|list %}
+{% set old = docs|selectattr('is_latest', 'sameas', false)|list %}
+{% for doc in latest %}{{ ir_doc_cell(doc) }}{% endfor %}
+{% if old %}<details><summary class="ir-doc-old">旧版 {{ old|length }}件</summary>{% for doc in old %}{{ ir_doc_cell(doc) }}{% endfor %}</details>{% endif %}
+{% endmacro %}
+<div id="ir-docs-modal" class="ir-docs-overlay" style="display:none;" onclick="if (event.target.id === 'ir-docs-modal') closeIrDocsModal()">
+  <div class="ir-docs-content" role="dialog" aria-labelledby="ir-docs-title">
+    <div class="ir-docs-header">
+      <strong id="ir-docs-title">IR資料 {{ record.code_s }} {{ macros.stock_name_with_prev(record) }}</strong>
+      <span>
+        <span style="font-size:0.8em;color:#888;">最終収集 {{ ir_docs.last_collected_at[5:16]|replace('T', ' ') if ir_docs.last_collected_at else '未収集' }}</span>
+        <form method="POST" action="{{ url_for('ir_docs.post_ir_docs_tdnet', code_s=record.code_s) }}" style="display:inline;"
+              onsubmit="var b = this.querySelector('button'); b.disabled = true; b.textContent = '取得中… (初回は数分)';">
+          <button type="submit" title="株探 (適時開示) から直近1年の決算短信・決算説明資料・成長可能性資料を収集します。取得済みはスキップします"
+                  style="display:inline-block;width:auto !important;padding:0.1em 0.6em;font-size:0.8em;margin:0 0 0 0.3em;">株探から更新</button>
+        </form>
+        <button type="button" class="ir-docs-close" onclick="closeIrDocsModal()" aria-label="閉じる">×</button>
+      </span>
+    </div>
+    {% if ir_docs.chuki %}
+    <h4 class="ir-docs-h">中計</h4>
+    {{ ir_doc_list(ir_docs.chuki) }}
+    {% endif %}
+    <h4 class="ir-docs-h">決算</h4>
+    {% if ir_docs.periods or ir_docs.unknown %}
+    <table class="ir-docs-table">
+      <tr><th>期</th><th>決算短信</th><th>決算説明資料</th></tr>
+      {% for row in ir_docs.periods %}
+      <tr>
+        <td style="white-space:nowrap;">{{ row.fiscal_period[2:]|replace('年', '/')|replace('月期', '期') }} {{ row.quarter }}</td>
+        <td>{{ ir_doc_list(row.tanshin) }}</td>
+        <td>{{ ir_doc_list(row.setsumei) }}</td>
+      </tr>
+      {% endfor %}
+      {% if ir_docs.unknown %}
+      <tr>
+        <td style="white-space:nowrap;" title="見出しから会計期間を読み取れなかった資料">期不明</td>
+        <td>{{ ir_doc_list(ir_docs.unknown|selectattr('doc_type', 'equalto', 'tanshin')|list) }}</td>
+        <td>{{ ir_doc_list(ir_docs.unknown|selectattr('doc_type', 'equalto', 'setsumei')|list) }}</td>
+      </tr>
+      {% endif %}
+    </table>
+    {% else %}
+    <p style="font-size:0.85em;color:#888;">取得済みの決算資料はありません。「株探から更新」で収集できます。</p>
+    {% endif %}
+    <details style="margin-top:0.8em;">
+      <summary>会社HPから探す (中計・株探に無い説明資料)</summary>
+      <button type="button" id="ir-page-btn" data-code="{{ record.code_s }}" onclick="loadIrPageCandidates(this)"
+              title="会社HP (上書き優先) から中期経営計画・決算説明資料のPDFを探します"
+              style="display:inline-block;width:auto !important;padding:0.1em 0.6em;font-size:0.85em;margin:0.3em 0 0 0;">候補を探す</button>
+      <span id="ir-cand-msg" style="font-size:0.85em;color:#888;margin-left:0.3em;"></span>
+      <form method="POST" action="/stock/{{ record.code_s }}/ir_page_docs" id="ir-page-form"
+            style="display:none;font-size:0.95em;margin:0.3em 0;padding:0.4em;border:1px solid #ddd;border-radius:4px;">
+        <div id="ir-page-list"></div>
+        <div style="margin-top:0.3em;">
+          PDF URL を直接指定:
+          <input type="text" name="manual_url" placeholder="https://..." style="width:22em;height:auto;display:inline-block;margin:0;padding:0.1em 0.3em;font-size:1em;">
+          <select name="manual_doc_type" style="width:auto;display:inline-block;margin:0;padding:0.1em;font-size:1em;">
+            <option value="chuki_plan">中計</option><option value="setsumei">説明資料</option>
+          </select>
+          <input type="text" name="manual_heading" placeholder="見出し (任意)" style="width:12em;height:auto;display:inline-block;margin:0;padding:0.1em 0.3em;font-size:1em;">
+        </div>
+        <button type="submit" style="display:inline-block;width:auto !important;padding:0.1em 0.8em;font-size:0.9em;margin:0.3em 0 0 0;">取得</button>
+      </form>
+    </details>
+  </div>
+</div>
+<style>
+.ir-docs-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 1000;
+  display: flex; align-items: center; justify-content: center; }
+.ir-docs-content { background: #fff; border-radius: 6px; padding: 1em 1.2em; width: min(820px, 95vw);
+  max-height: 90vh; overflow-y: auto; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); font-size: 0.9em; }
+.ir-docs-header { display: flex; justify-content: space-between; align-items: center; gap: 0.5em;
+  margin-bottom: 0.5em; padding-bottom: 0.4em; border-bottom: 1px solid #eee; }
+.ir-docs-close { background: none; border: none; font-size: 1.4em; cursor: pointer; padding: 0 0.3em;
+  line-height: 1; color: #888; width: auto !important; margin: 0; }
+.ir-docs-h { margin: 0.6em 0 0.2em; font-size: 1em; }
+.ir-docs-table { width: 100%; border-collapse: collapse; }
+.ir-docs-table th, .ir-docs-table td { border-bottom: 1px solid #eee; padding: 0.2em 0.3em; vertical-align: top; text-align: left; }
+.ir-doc { line-height: 1.5; }
+.ir-doc-date { color: #666; font-variant-numeric: tabular-nums; }
+.ir-doc-tag { font-size: 0.8em; color: #b36b00; border: 1px solid #e0b060; border-radius: 3px; padding: 0 0.2em; }
+.ir-doc-old { color: #999; font-size: 0.9em; }
+</style>
+<script>
+function openIrDocsModal() { document.getElementById('ir-docs-modal').style.display = 'flex'; }
+function closeIrDocsModal() { document.getElementById('ir-docs-modal').style.display = 'none'; }
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeIrDocsModal();
+});
+// 取得系の POST は #ir-docs 付きで戻ってくるので、モーダルを開き直して結果を見せる
+if (location.hash === '#ir-docs') openIrDocsModal();
+</script>
 
 {# ===== 保有ステータス変更モーダル (issue #195) ===== #}
 {% if not portfolio_fallback_mode %}

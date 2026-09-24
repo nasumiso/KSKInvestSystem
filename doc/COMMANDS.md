@@ -120,7 +120,7 @@ cd scripts && python ir_docs.py list 4011
 
 中期経営計画と、会社IRページにしか無い決算説明資料を、候補提示 → 選択 → DL の手順で
 同じ `index.json` に追加する (`source: corporate_ir_page`, `date_estimated: true`)。
-WebApp 詳細画面の「IR資料取得」ボタンでも同じ操作ができる。
+WebApp 詳細画面の「IR資料」モーダル (#473) でも同じ操作ができる。モーダルは取得済み資料を期ごとに一覧し、「株探から更新」で `download` (1年分) も実行できる。
 
 ```bash
 cd scripts && python ir_docs.py page-candidates 9880            # 会社HP上書き→会社HPを起点に候補表示 (DLしない)
