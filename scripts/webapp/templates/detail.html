@@ -128,8 +128,9 @@
                 title="取得済みの決算短信・決算説明資料・中計を期ごとに表示し、株探・会社HPから取得します"
                 style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0 0 0 0.3em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">IR資料 ({{ ir_docs.count }})</button>
         {% if ir_setsumei_hp_only is not none %}
-        <span title="株探に決算短信はあるが決算説明資料が1年間出ていません。説明資料は会社HPにしか無い可能性が高いので、決算ごとに「IR資料」→「会社HPから探す」で取得してください (日付は会社HPから取得した最新の説明資料)"
-              style="font-size:0.8em;color:#b36b00;border:1px solid #e0b060;border-radius:3px;padding:0 0.3em;margin-left:0.3em;">説明資料HPのみ {{ ir_setsumei_hp_only[2:4] ~ '/' ~ ir_setsumei_hp_only[4:6]|int ~ '/' ~ ir_setsumei_hp_only[6:]|int if ir_setsumei_hp_only else '未取得' }}</span>
+        <span title="株探に決算短信はあるが決算説明資料が1年間出ていません。説明資料は会社HPにしか無い可能性が高いので、決算ごとに会社HPから取得してください (日付は会社HPから取得した最新の説明資料)。クリックで取得画面を開きます"
+              onclick="openIrDocsModal(true)"
+              style="font-size:0.8em;color:#b36b00;border:1px solid #e0b060;border-radius:3px;padding:0 0.3em;margin-left:0.3em;cursor:pointer;">説明資料HPのみ {{ ir_setsumei_hp_only[2:4] ~ '/' ~ ir_setsumei_hp_only[4:6]|int ~ '/' ~ ir_setsumei_hp_only[6:]|int if ir_setsumei_hp_only else '未取得' }}</span>
         {% endif %}
         <span id="ir-page-msg" style="font-size:0.8em;color:#888;margin-left:0.3em;"></span>
       </div>
@@ -151,6 +152,11 @@
           var items = json.candidates || [];
           var oldCount = items.filter(function(item) { return item.old; }).length;
           msg.textContent = items.length + '件の候補 (' + json.start_url + ')';
+          var fresh = items.filter(function(item) { return item.doc_type === 'setsumei' && !item.downloaded && !item.old; });
+          if (!fresh.length) {
+            msg.textContent += ' — 未取得の説明資料は見つかりませんでした。IRページで PDF を開き、URL を下の欄に貼ってください';
+            form.querySelector('input[name="manual_url"]').focus();
+          }
           // 2年より古い候補は折りたたむ (IRページには10年分並ぶことがある)
           var oldBox = document.createElement('div');
           oldBox.style.display = 'none';
@@ -1101,20 +1107,28 @@
     {% else %}
     <p style="font-size:0.85em;color:#888;">取得済みの決算資料はありません。「株探から更新」で収集できます。</p>
     {% endif %}
-    <details style="margin-top:0.8em;">
+    <details id="ir-hp-section" style="margin-top:0.8em;"{% if ir_setsumei_hp_only is not none %} open{% endif %}>
       <summary>会社HPから探す (中計・株探に無い説明資料)</summary>
+      {% if ir_setsumei_hp_only is not none %}
+      <div style="font-size:0.85em;margin:0.3em 0;padding:0.4em;border:1px solid #e0b060;border-radius:4px;background:#fff8ec;">
+        この銘柄は<strong>株探 (適時開示) に決算説明資料を出していません</strong>。決算ごとに会社HPから取得してください
+        (取得済みの最新: {{ ir_setsumei_hp_only[2:4] ~ '/' ~ ir_setsumei_hp_only[4:6]|int ~ '/' ~ ir_setsumei_hp_only[6:]|int if ir_setsumei_hp_only else 'なし' }})。<br>
+        「候補を探す」で見つからないときは、IRページが一覧を JavaScript で表示している可能性があります。
+        {% if _display_url %}<a href="{{ _display_url }}" target="_blank" rel="noopener noreferrer">会社HP</a>で{% else %}ブラウザで{% endif %}説明資料の PDF を開き、その URL を下の欄に貼って「取得」を押してください。
+      </div>
+      {% endif %}
       <button type="button" id="ir-page-btn" data-code="{{ record.code_s }}" onclick="loadIrPageCandidates(this)"
               title="会社HP (上書き優先) から中期経営計画・決算説明資料のPDFを探します"
               style="display:inline-block;width:auto !important;padding:0.1em 0.6em;font-size:0.85em;margin:0.3em 0 0 0;">候補を探す</button>
       <span id="ir-cand-msg" style="font-size:0.85em;color:#888;margin-left:0.3em;"></span>
       <form method="POST" action="/stock/{{ record.code_s }}/ir_page_docs" id="ir-page-form"
-            style="display:none;font-size:0.95em;margin:0.3em 0;padding:0.4em;border:1px solid #ddd;border-radius:4px;">
+            style="display:{{ 'block' if ir_setsumei_hp_only is not none else 'none' }};font-size:0.95em;margin:0.3em 0;padding:0.4em;border:1px solid #ddd;border-radius:4px;">
         <div id="ir-page-list"></div>
         <div style="margin-top:0.3em;">
           PDF URL を直接指定:
           <input type="text" name="manual_url" placeholder="https://..." style="width:22em;height:auto;display:inline-block;margin:0;padding:0.1em 0.3em;font-size:1em;">
           <select name="manual_doc_type" style="width:auto;display:inline-block;margin:0;padding:0.1em;font-size:1em;">
-            <option value="chuki_plan">中計</option><option value="setsumei">説明資料</option>
+            <option value="chuki_plan">中計</option><option value="setsumei"{% if ir_setsumei_hp_only is not none %} selected{% endif %}>説明資料</option>
           </select>
           <input type="text" name="manual_heading" placeholder="見出し (任意)" style="width:12em;height:auto;display:inline-block;margin:0;padding:0.1em 0.3em;font-size:1em;">
         </div>
@@ -1140,7 +1154,10 @@
 .ir-doc-tag { font-size: 0.8em; color: #b36b00; border: 1px solid #e0b060; border-radius: 3px; padding: 0 0.2em; }
 </style>
 <script>
-function openIrDocsModal() { document.getElementById('ir-docs-modal').style.display = 'flex'; }
+function openIrDocsModal(showHpSection) {
+  document.getElementById('ir-docs-modal').style.display = 'flex';
+  if (showHpSection) document.getElementById('ir-hp-section').open = true;
+}
 function closeIrDocsModal() { document.getElementById('ir-docs-modal').style.display = 'none'; }
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeIrDocsModal();
