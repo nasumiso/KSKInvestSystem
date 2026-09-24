@@ -196,12 +196,14 @@ _EXPOSURE_MODIFIER_LABELS = {
 }
 
 
-def _build_exposure_summary(total_position_value: float, cat_values: dict) -> Optional[dict]:
+def _build_exposure_summary(total_position_value: float, cat_values: dict) -> tuple:
     """運用比率と市場状態連動の目標レンジを組み立てる (issue #362)。
 
-    指標が揃わない日はガイドを出さない (None を返す) が、運用総額の表示は
-    呼び出し側でそのまま続ける。取得失敗でページを落とさないよう例外は握る。
+    (evaluation, note) を返す。指標が揃わない日はガイドを出さず (evaluation=None)、
+    出せない理由を note に入れる。運用総額の表示は呼び出し側でそのまま続ける。
+    取得失敗でページを落とさないよう例外は握る。
     """
+    note = "市場指標が揃わず目標レンジ非表示"
     try:
         import exposure_guide
         import market_state
@@ -209,9 +211,12 @@ def _build_exposure_summary(total_position_value: float, cat_values: dict) -> Op
         from make_market_db import get_market_db
 
         market_db = get_market_db()
-        index_states, _ = exposure_guide.read_index_states(market_db)
+        index_states, index_dates = exposure_guide.read_index_states(market_db)
         if not index_states:
-            return None
+            latest = max((d for d in index_dates.values() if d), default=None)
+            if latest:
+                note = f"指数データが古い (最新 {latest})。日次バッチで復旧"
+            return None, note
         credit_eval_rate, _ = exposure_guide.read_credit_eval_rate()
         fng_jp, _ = exposure_guide.read_fng_jp()
         settings = ps.get_exposure_settings()
@@ -224,9 +229,9 @@ def _build_exposure_summary(total_position_value: float, cat_values: dict) -> Op
             settings,
         )
     except Exception:  # noqa: BLE001
-        return None
+        return None, note
     if evaluation["state"] is None:
-        return None
+        return None, note
     # テンプレートで円換算を出すため、レンジの万円換算を添える
     base_amount = evaluation["base_amount"]
     evaluation["range_lower_man"] = (
@@ -246,7 +251,7 @@ def _build_exposure_summary(total_position_value: float, cat_values: dict) -> Op
         for name in evaluation["modifiers_applied"]
     ]
     evaluation.update(_exposure_bar_geometry(evaluation, settings))
-    return evaluation
+    return evaluation, None
 
 
 def _exposure_bar_geometry(evaluation: dict, settings: dict) -> dict:
@@ -1269,7 +1274,7 @@ def dashboard():
         ]
         # ノーポジ (全売却) でもガイドは出す。市場ステートに対して「今はゼロ」と
         # 分かることに意味があるため (fallback_state で TOPIX/グロースの悪い方を使う)
-        exposure = _build_exposure_summary(total_position_value, cat_values)
+        exposure, exposure_note = _build_exposure_summary(total_position_value, cat_values)
         hold_summary = {
             "total_man": int(round(total_position_value / 10000)),
             # 保有株数の真実源は証券会社CSVなので、手動更新時刻ではなく
@@ -1281,6 +1286,7 @@ def dashboard():
             "breakdown": breakdown,
             # issue #362: 基準運用額に対する運用比率と市場状態連動の目標レンジ
             "exposure": exposure,
+            "exposure_note": exposure_note,
         }
 
     # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)

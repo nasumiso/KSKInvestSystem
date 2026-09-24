@@ -464,6 +464,9 @@
 {# 指標が揃わずガイドを出せない日でも、運用総額だけは表示する #}
 <div style="margin:0 0 0.6em;padding:0.55em 0.7em;border:1px solid #e0e0e0;border-radius:5px;background:#fafafa;font-size:0.8em;color:#555;">
   運用総額 <b style="font-size:1.15em;color:#333;">{{ '{:,}'.format(hold_summary.total_man) }}</b> 万円
+  {%- if hold_summary.exposure_note %}
+  <span style="margin-left:0.7em;color:#ef6c00;">⚠ {{ hold_summary.exposure_note }}</span>
+  {%- endif %}
 </div>
 {% endif %}
 

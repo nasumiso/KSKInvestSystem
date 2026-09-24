@@ -1590,6 +1590,15 @@ class TestPortfolioHoldSummary:
         # (「未取込」は CSV 取込フォーム側でも使う文言なので、サマリー部分を丸ごと照合する)
         assert "株数基準日\n      2026-08-13" in html
 
+    def test_stale_index_shows_note(self, portfolio_app, monkeypatch):
+        """指数が全て鮮度切れでガイドを出せない日は、理由と最新日付を注釈で出す"""
+        import exposure_guide
+        monkeypatch.setattr(exposure_guide, "read_index_states",
+                            lambda *a, **k: ({}, {"topix": "2026-09-17", "mothers": "2026-09-16"}))
+        html = portfolio_app.test_client().get("/portfolio?status=hold").data.decode()
+        assert "35</b> 万円" in html
+        assert "指数データが古い (最新 2026-09-17)" in html
+
     def test_hold_summary_ignores_gyoutai_theme_filter(self, portfolio_app):
         """運用比率ガイドはテーマ絞り込みの影響を受けず、常に全保有で集計する。
 
