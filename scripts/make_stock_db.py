@@ -119,9 +119,10 @@ def get_price_data(stocks, code_s, upd=UPD_INTERVAL):
     return price_dict
 
 
-# ランクログ保持日数。詳細チャートの週足20週窓 (≈100営業日) の約半分をカバーし、
-# RS(0~99)履歴を右端側に重畳できるようにする (rs_rank_log / stock_rank_log 共用)。
-RANK_LOG_DAYS = 60
+# ランクログ保持日数 (約1年)。詳細チャートの週足20週窓 (≈100営業日) を覆い、
+# 表示期間を広げる余地も残す。過去分は再計算できないので表示より長めに持つ
+# (rs_rank_log / stock_rank_log 共用)。
+RANK_LOG_DAYS = 250
 
 
 def update_stock_log(rank_log, rank):
