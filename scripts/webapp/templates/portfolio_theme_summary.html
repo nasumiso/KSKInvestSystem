@@ -43,11 +43,7 @@
   中長期の強さ (momentum_pt) と短期の勢い (rs_line の移動平均乖離) を併記する。
 </p>
 
-{% if fallback_mode %}
-<p style="padding:0.8em 1em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;color:#666;">
-  portfolio_shelve が空のためテーマ集計を表示できません。銘柄を登録すると集計対象になります。
-</p>
-{% elif not themes %}
+{% if not themes %}
 <p style="padding:0.8em 1em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;color:#666;">
   業態テーマ (memo.gyoutai_themes) が設定された銘柄がありません。
 </p>

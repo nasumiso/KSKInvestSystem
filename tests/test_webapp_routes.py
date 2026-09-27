@@ -1874,7 +1874,7 @@ class TestPortfolioThemes:
         monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
         monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
         monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
-        # fallback_mode を外すため最低 1 件 record を入れる
+        # 編集対象の銘柄を登録する
         ps.add_to_watch("3496", db_path=portfolio_db)
         ps.create_theme("半導体", "test", db_path=portfolio_db)
 
