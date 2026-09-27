@@ -17,6 +17,64 @@ for arg in "$@"; do
   esac
 done
 
+# launchd 経由の起動 (TTYなし) のみ「19時前ならスキップ」を適用。
+# 朝マシンを開いた時に RunAtLoad=true で発火しても、株価終値が揃ってない時間帯では
+# 走らせたくない。一方、手動で `bash shintakane_cron.sh` を打った時は時刻問わず実行する。
+# WebApp (/dev) からの起動も TTY なしだが、人が押した手動実行なのでスキップしない (issue #321)。
+if [ "${SHINTAKANE_WEB_TRIGGER:-0}" != "1" ] && [ ! -t 1 ] && [ "$(date +%-H)" -lt 19 ]; then
+  exit 0
+fi
+
+# ログローテーション（1MB超で直近5000行に切り詰め）
+rotate_log() {
+  local logfile="$1"
+  if [ -f "$logfile" ] && [ "$(stat -f%z "$logfile" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+    tail -5000 "$logfile" > "${logfile}.tmp" && mv "${logfile}.tmp" "$logfile"
+  fi
+}
+
+# --- 排他と実行状態 (issue #321) ---
+# launchd の定刻実行と WebApp (/dev) からの手動実行が重なると shelve へ並行書き込みに
+# なるため、1本に絞る。shlock はロック取得がアトミックで、ロック内の pid が死んで
+# いれば奪取するので、強制終了で trap が走らなかった後も次回が詰まらない。
+# 後で cd scripts するため、trap から参照するパスは絶対パスにしておく。
+LOG_DIR="$PWD/logs"
+if ! shlock -p $$ -f "$LOG_DIR/cron.lock"; then
+  echo "ℹ️ 日次バッチは実行中のためスキップします (pid $(cat "$LOG_DIR/cron.lock" 2>/dev/null))"
+  exit 0
+fi
+if [ "${SHINTAKANE_WEB_TRIGGER:-0}" = "1" ]; then
+  TRIGGER=web
+elif [ -t 1 ]; then
+  TRIGGER=manual
+else
+  TRIGGER=launchd
+fi
+STARTED_AT=$(date '+%Y-%m-%dT%H:%M:%S')
+
+# /dev の表示用 (排他には使わない)。書きかけを読ませないよう tmp から mv する
+write_status() {
+  printf '{"state": "%s", "pid": %d, "trigger": "%s", "started_at": "%s", "finished_at": %s, "exit_code": %s}\n' \
+    "$1" $$ "$TRIGGER" "$STARTED_AT" "$2" "$3" > "$LOG_DIR/cron_status.json.tmp" \
+    && mv "$LOG_DIR/cron_status.json.tmp" "$LOG_DIR/cron_status.json"
+}
+on_exit() {
+  local code=$?
+  local state=done
+  [ "$code" -ne 0 ] && state=failed
+  write_status "$state" "\"$(date '+%Y-%m-%dT%H:%M:%S')\"" "$code"
+  rm -f "$LOG_DIR/cron.lock"
+}
+trap on_exit EXIT
+write_status running null null
+
+# launchd (cron.stdout.log) と WebApp (stdout 破棄) のどちらから起動しても
+# /dev で読めるよう、以降の出力を logs/cron.log にも残す
+rotate_log "$LOG_DIR/cron.log"
+exec > >(tee -a "$LOG_DIR/cron.log") 2>&1
+echo ""
+echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行開始 (起動元: $TRIGGER) ====="
+
 # 開発用コピーで日次バッチを流すと、古いデータで Sheets を上書きし theme-news も
 # 二重課金になる。日次バッチは運用機だけで回す (issue #453)
 case "${KS_DATA_DIR%/}" in
@@ -25,13 +83,6 @@ case "${KS_DATA_DIR%/}" in
     exit 1
     ;;
 esac
-
-# launchd 経由の起動 (TTYなし) のみ「19時前ならスキップ」を適用。
-# 朝マシンを開いた時に RunAtLoad=true で発火しても、株価終値が揃ってない時間帯では
-# 走らせたくない。一方、手動で `bash shintakane_cron.sh` を打った時は時刻問わず実行する。
-if [ ! -t 1 ] && [ "$(date +%-H)" -lt 19 ]; then
-  exit 0
-fi
 
 # 運用機 (MacMini) のみ main を追従する。開発機では未設定なので何もしない。
 # pull に失敗しても続行する: 前回のコードで実行する方が、日次データ更新を
@@ -54,6 +105,10 @@ fi
 # (MBA のターミナルでは 1048576 に上がっていたので手動実行では露見しなかった)。
 ulimit -n 4096 2>/dev/null || true
 
+# theme-news が使う claude CLI は ~/.local/bin にある。launchd の cron plist は
+# PATH に入れているが、WebApp の plist には無いので /dev からの起動で見つからない。
+export PATH="$HOME/.local/bin:$PATH"
+
 cd scripts
 
 # KS_DATA_DIR は各ホストの .zshrc / plist で設定する。未設定のまま走らせると
@@ -64,14 +119,6 @@ if [ -z "${KS_DATA_DIR:-}" ]; then
 fi
 export KS_DATA_DIR
 source ../.venv/bin/activate
-
-# ログローテーション（1MB超で直近5000行に切り詰め）
-rotate_log() {
-  local logfile="$1"
-  if [ -f "$logfile" ] && [ "$(stat -f%z "$logfile" 2>/dev/null || echo 0)" -gt 1048576 ]; then
-    tail -5000 "$logfile" > "${logfile}.tmp" && mv "${logfile}.tmp" "$logfile"
-  fi
-}
 
 # 結果表示用ヘルパー
 report() {
@@ -84,14 +131,14 @@ report() {
   fi
 }
 
-echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行開始 ====="
-
 # --- webapp 起動（開発機のみ・未起動の場合） ---
 # 運用機では WebApp を LaunchAgent が持つので、ここでは起動しない。
 # cron の plist は SHINTAKANE_ENV も FLASK_SECRET_KEY も渡さないため、ここで
 # 起動すると debug 有効・既定の dev-secret-key のまま Tailnet へ公開され、
 # さらにポートを奪って LaunchAgent 側が KeepAlive で失敗し続ける。
-if [ "${SHINTAKANE_AUTO_PULL:-0}" = "1" ]; then
+if [ "$TRIGGER" = "web" ]; then
+  :  # 呼び出し元が WebApp なので起動済み (WebApp の PATH には lsof も無い)
+elif [ "${SHINTAKANE_AUTO_PULL:-0}" = "1" ]; then
   # pull 成功時に kickstart -k で落としたばかりなので、立ち上がるまで待つ。
   # 待たずに lsof を打つと必ず起動途中を観測し、毎回この警告が出る。
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -163,6 +210,7 @@ fi
 # stocks_shelve を閉じた後」が構造的に保証される。
 # 金曜にするのは、失敗して .compact_backup が残った場合 (次回実行が
 # RuntimeError で停止する) に土日で対処できるため。
+RET_COMPACT=0
 if [ "$(date +%u)" = "5" ]; then
   rotate_log ../logs/compact.log
   echo "===== $(date '+%Y-%m-%d %H:%M:%S') compact 開始 =====" >> ../logs/compact.log
@@ -174,3 +222,10 @@ if [ "$(date +%u)" = "5" ]; then
   RET_COMPACT=$?
   report "compact" $RET_COMPACT ../logs/compact.log
 fi
+
+# 子スクリプトの失敗をシェルの終了コードに反映する (/dev の成否表示・launchd の last exit code 用)。
+# git pull の失敗は前回のコードで続行する設計なので含めない。
+for ret in $RET1 $RET2 $RET_EXPOSURE $RET3 $RET_COMPACT; do
+  [ "$ret" -ne 0 ] && exit 1
+done
+exit 0

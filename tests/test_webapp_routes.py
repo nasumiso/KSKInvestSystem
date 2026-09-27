@@ -2202,3 +2202,73 @@ class TestPortfolioShikihoRoute:
         resp = shikiho_app.test_client().get("/portfolio/shikiho/9999/data")
         assert resp.status_code == 404
         assert resp.get_json()["ok"] is False
+
+
+class TestDevRoute:
+    """開発ページと日次バッチのブラウザ実行 (issue #321)"""
+
+    @pytest.fixture
+    def dev(self, tmp_path, monkeypatch):
+        from webapp.routes import dev
+        monkeypatch.setattr(dev, "_STATUS_JSON", tmp_path / "cron_status.json")
+        monkeypatch.setattr(dev, "_CRON_LOG", tmp_path / "cron.log")
+        monkeypatch.setattr(dev, "_LOCK_FILE", tmp_path / "cron.lock")
+        return dev
+
+    def test_pages_and_portal_link(self, client, dev):
+        html = client.get("/dev").get_data(as_text=True)
+        assert 'id="cron-run-btn"' in html
+        assert "KSKInvestSystem/pulls" in html
+        top = client.get("/").get_data(as_text=True)
+        assert 'href="/dev"' in top
+        assert "KSKInvestSystem/pulls" not in top
+
+    def test_run_spawns_cron(self, client, dev, monkeypatch):
+        calls = []
+
+        class FakeProc:
+            pid = 4242
+
+            def wait(self):
+                return 0
+
+        def fake_popen(args, **kwargs):
+            calls.append((args, kwargs))
+            return FakeProc()
+
+        monkeypatch.setattr(dev.subprocess, "Popen", fake_popen)
+        monkeypatch.setenv("FLASK_SECRET_KEY", "secret")
+        resp = client.post("/dev/cron/run")
+        assert resp.status_code == 202
+        (args, kwargs), = calls
+        assert args[-1].endswith("shintakane_cron.sh")
+        assert kwargs["env"]["SHINTAKANE_WEB_TRIGGER"] == "1"
+        assert "FLASK_SECRET_KEY" not in kwargs["env"]
+        assert kwargs["start_new_session"] is True
+        # マーカーはスクリプトが書く。WebApp が書くと即終了した子の最終状態を上書きしうる
+        assert not dev._STATUS_JSON.exists()
+
+    def test_run_rejects_while_running(self, client, dev, monkeypatch):
+        dev._LOCK_FILE.write_text(f"{os.getpid()}\n")
+        monkeypatch.setattr(dev.subprocess, "Popen", lambda *a, **k: pytest.fail("起動してはいけない"))
+        assert client.post("/dev/cron/run").status_code == 409
+
+    @pytest.mark.parametrize("marker, lock_alive, expected", [
+        ({"state": "running"}, True, "running"),
+        # ロック取得直後でマーカーがまだ前回分
+        ({"state": "done", "exit_code": 0}, True, "running"),
+        ({"state": "running"}, False, "interrupted"),
+        ({"state": "done", "exit_code": 0}, False, "done"),
+        ({"state": "failed", "exit_code": 1}, False, "failed"),
+        (None, False, "none"),
+    ])
+    def test_status(self, client, dev, marker, lock_alive, expected):
+        if marker is not None:
+            dev._STATUS_JSON.write_text(json.dumps(marker))
+        if lock_alive:
+            dev._LOCK_FILE.write_text(f"{os.getpid()}\n")
+        dev._CRON_LOG.write_text("".join(f"line{i}\n" for i in range(250)))
+        body = client.get("/dev/cron/status").get_json()
+        assert body["state"] == expected
+        lines = body["log_tail"].splitlines()
+        assert len(lines) == 200 and lines[0] == "line50" and lines[-1] == "line249"
