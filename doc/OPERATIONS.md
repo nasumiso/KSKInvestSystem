@@ -475,6 +475,8 @@ launchctl print-disabled "gui/$(id -u)" | grep shintakane      # cron と tunnel
 | 手動で日次バッチ | `cd ~/dev/shintakane && bash shintakane_cron.sh` |
 | WebApp を新コードで再起動 | `launchctl kickstart -k "gui/$(id -u)/com.k_sohara.shintakane.webapp"` |
 | WebApp を開く (出先・スマホ) | `http://kosukemac-mini:5001/` (Tailnet 内のみ) |
+| 開発機から稼働状況を見る | `deploy/macmini.sh status` |
+| 開発機から正本データを調べる | `deploy/macmini.sh run python -c '...'` |
 
 ### MBA (開発機) での使い分け
 
@@ -489,7 +491,13 @@ launchctl print-disabled "gui/$(id -u)" | grep shintakane      # cron と tunnel
 開発で最新データが要るときだけ、運用機から取り寄せる (一方向)。
 
 ```bash
-rsync -a --exclude 'ir_docs' --exclude '*.lock' --exclude '*.dbm.lock' \
+deploy/macmini.sh pull-data        # -n でドライラン
+```
+
+中身は次の rsync で、開発機の WebApp 起動中・運用機のバッチ実行中は拒否する。
+
+```bash
+rsync -a --exclude 'ir_docs' --exclude '*.lock' --exclude '*.dbm.lock' --exclude '.DS_Store' \
   macmini:/Users/k_sohara/shintakane_data/ "$KS_DATA_DIR"/
 ```
 

@@ -312,6 +312,22 @@ cd scripts && python show_fill_episodes.py --check-dups                         
 - `make_stock_db.py` の結果サマリーをコンソールに出した後、`make_stock_db.py` 成功時のみ theme-news を実行
 - 開発時に theme-news を飛ばす場合: `bash shintakane_cron.sh --skip-theme-news` (`--no-theme-news` も同義)
 
+### 運用機の操作 (`deploy/macmini.sh`)
+
+開発機 (MBA) から運用機 (MacMini) を扱う。接続先は `~/.ssh/config` の `Host macmini` (Tailscale 経由)。
+
+```bash
+deploy/macmini.sh status                                  # LaunchAgent・WebApp・各バッチの最終実行・コードの同期・データ量
+deploy/macmini.sh run python research_shelve.py fields    # 運用機の scripts/ で実行 (venv + KS_DATA_DIR 付き)
+deploy/macmini.sh run python -c '...'                     # 正本データへのワンショット問い合わせ
+deploy/macmini.sh pull-data                               # 運用機 → 開発機の KS_DATA_DIR へ取り寄せ (ir_docs 除外)
+deploy/macmini.sh pull-data -n                            # 取り寄せのドライラン (rsync のオプションをそのまま渡せる)
+```
+
+- **最新の運用データを調べるときは `run` で正本を読む。** 開発機の `KS_DATA_DIR` は取り寄せた時点のコピー
+- `pull-data` は開発機の WebApp 起動中、または運用機のバッチ実行中は拒否する (開いている DB の上書き・書き込み途中の shelve の取り込みを防ぐ)
+- claude のログインと tunnel の API キーはキーチェーンにあり、SSH からは確認も登録もできない。運用機の画面で行う
+
 ## テスト
 
 テスト方針・テストファイル一覧・統合テスト手順は [TESTING.md](TESTING.md) を参照。
