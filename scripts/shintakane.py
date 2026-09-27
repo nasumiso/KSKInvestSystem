@@ -346,9 +346,6 @@ def todays_shintakane(upd=UPD_INTERVAL):
                 if not d["code_s"] in already_code:
                     already_list.append(d)
 
-            # day_list_filtered = [d["code_s"] for d in day_list_filtered]
-            # print day_code_list
-            # already_list += day_list_filtered
         return already_list
         # return list(set(already_list))	#重複削除
 
@@ -547,13 +544,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
     # ---- マーケットの更新
     def update_market():
         make_market_db.update_market_db()
-        past_code = [t["code_s"] for t in already_only_list]
-        today_code = [t["code_s"] for t in today_list]
-        # shintakane_theme_csv = make_market_db.update_shintakane_theme_csv(
-        #     stocks, today_code, past_code
-        # )
-        # make_market_db.create_market_csv(None, shintakane_theme_csv)
-        make_market_db.create_market_csv()  # shintakane_theme_csv は不要になった
+        make_market_db.create_market_csv()
 
     update_market()  # マーケットDB更新、アップロード
 
@@ -882,60 +873,6 @@ def convert_kabutan_dekidakaup_html(html):
     return rows
 
 
-def convert_dekidakaup_html(html):
-    # 0:No、1:銘柄名、2:市場、3:業種、4:価格、5:前日比、6:前日比％、
-    # 7:出来高、8:平均出来高、9:出来高倍率
-    # print ux_cmd_head(html)
-    rows = []
-    for m in re.finditer(
-        r'<td class="">(.*)</td>\r\n'
-        r'<td class="tLeft "><a href=".*?" target="_chart">(.*)</a></td>\r\n'
-        r'<td class="tLeft ">(.*)</td>\r\n'
-        r'<td class="tRight " >(.*)</td>\r\n'
-        r'<td class="tRight " >(.*)</td>\r\n'
-        r'<td class="tRight " >(.*)</td>\r\n'
-        r"\r\n\r\n\r\n\r\n"
-        r'<td class="tRight ">(.*)</td>\r\n'
-        r"\r\n\r\n"
-        r'<td class="tRight rkgSelected01">(.*)</td>\r\n',
-        html,
-    ):
-        # print "-"*15
-        # print m.groups()
-        row = []
-        row.append(m.group(1))  # No
-        # stock_name = re.search(r'>(.*)<', m.group(2)).group(1)
-        stock_name = m.group(2)
-        row.append(stock_name)  # コード、銘柄名
-        # print stock_name
-        market = m.group(3).split("<br />")[0]
-        sector = m.group(3).split("<br />")[1]
-        row.append(market)  # 市場
-        row.append(sector)  # セクター
-        # print market, sector
-        price = re.search(r"((\d|,)+)<", m.group(4)).group(1)
-        row.append(price)  # 価格
-        # print price
-        m2 = re.search(r".*?((\d|,|\+|-)+)<br>(.*)(</span>)?", m.group(5))
-        zenjitsuhi = m2.group(1)
-        zenjitsuhi_per = m2.group(3).replace("</span>", "")
-        row.append(zenjitsuhi)
-        row.append(zenjitsuhi_per)
-        # print zenjitsuhi, zenjitsuhi_per
-        volume = m.group(6)  # .replace('"', '')
-        # print volume
-        row.append(volume)  # 出来高
-        average_volume = m.group(7)
-        row.append(average_volume)  # 平均出来高
-        # print average_volume
-        volume_upratio = m.group(8)  # 出来高増加率
-        row.append(volume_upratio)
-        # print volume_upratio
-        rows.append(row)
-        # print row
-    return rows
-
-
 def convert_kabutan_shintakane_html(html):
     """
     株探の新高値htmlを解析してリストとして取得
@@ -977,47 +914,6 @@ def convert_kabutan_shintakane_html(html):
         row.append("0")  # "出来高"
         rank += 1
         rows.append(row)
-    return rows
-
-
-def convert_shintakane_html(html):
-    """
-    ケンミレの新高値htmlを解析してリストとして取得
-    """
-    # print ux_cmd_head(html)
-    rows = []
-    for m in re.finditer(
-        r'<td class="">(.*)</td>\r\n'
-        r'<td class="tLeft rkgSelected01">(.*)</td>\r\n'
-        r'<td class="tLeft ">(.*)</td>\r\n'
-        r'<td class="tRight " >(.*)</td>\r\n'
-        r'<td class="tRight " >(.*)</td>\r\n'
-        r'<td class="tRight " >(.*)</td>\r\n',
-        html,
-    ):
-        # print "-"*15
-        # print m.groups()
-        row = []
-        row.append(m.group(1))
-        stock_name = re.search(r">(.*)<", m.group(2)).group(1)
-        row.append(stock_name)
-        market = m.group(3).split("<br />")[0]
-        sector = m.group(3).split("<br />")[1]
-        row.append(market)
-        row.append(sector)
-        price = re.search(r"((\d|, )+)<", m.group(4)).group(1)
-        # print stock_name, market, sector, price
-        row.append(price)
-        m2 = re.search(r".*?((\d|,|\+|-)+)<br>(.*)(</span>)?", m.group(5))
-        zenjitsuhi = m2.group(1)
-        zenjitsuhi_per = m2.group(3).replace("</span>", "")
-        row.append(zenjitsuhi)
-        row.append(zenjitsuhi_per)
-        volume = m.group(6)  # .replace('"', '')
-        # print zenjitsuhi, zenjitsuhi_per, volume
-        row.append(volume)
-        rows.append(row)
-        # print row
     return rows
 
 
@@ -1212,31 +1108,6 @@ def get_todays_shintakane(force=False):
     _archive_old_csvs("shintakane")
 
     log_print("<---- 取得完了")
-
-
-# def wait_connect():
-#     """
-#     laucnhdのための接続
-#     """
-#     import datetime
-#     import time
-
-#     first_time = datetime.datetime.now()
-#     diff = (datetime.datetime.now() - first_time).seconds
-#     while diff <= 30:
-#         try:
-#             url = "https://www.google.co.jp/"
-#             import requests
-
-#             requests.get(url)
-#             log_print("接続確立")
-#             return True
-#         except requests.exceptions.ConnectionError as e:
-#             log_warning("接続失敗", diff, "秒")
-#             log_print(e)
-#             time.sleep(5)
-#         diff = (datetime.datetime.now() - first_time).seconds
-#     return False
 
 
 URL_KABUTAN_PTS_UP = "https://kabutan.jp/warning/pts_night_price_increase"
@@ -1892,10 +1763,6 @@ def main(force=False):
     args = "update analyze"
     args += " " + " ".join(sys.argv[1:])
     log_print("args:", args)
-    # if "launchd" in args:
-    #     if not wait_connect():  # 接続確立待ち
-    #         raise "!!! ネット接続できませんでした"
-    #     args = "update analyze"
     # 新高値銘柄一覧の最新情報を取得する
     if "update" in args:
         update_todays_kessan()  # テストコメントアウト

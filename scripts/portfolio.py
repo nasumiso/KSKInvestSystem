@@ -96,9 +96,6 @@ def login_yahoo():
     r3 = http_post_yahoo(URL_YAHOO_LOGIN_POST, data, cookies)
     if "文字認証" in r3.text.encode("utf-8"):
         log_warning(" 文字認証が求められています")
-    # html_loggedin = r3.text.encode('utf-8')
-    # file_write("tmp2.html", html_loggedin)
-    # print "cookies yahoo_login_post", r3.cookies, "len:", len(r3.cookies)
     time.sleep(float(724 / 1000))
 
     return r3.cookies
@@ -138,34 +135,6 @@ def test_build_params():
 # ==================================================
 # ポートフォリオ更新
 # ==================================================
-
-
-def parse_portfolio_txt():
-    """
-    yahooファイナンスからコピペしたポートフォリオデータを解析
-    => list< dict >
-    """
-    text = file_read("portfolio_yahoo.txt")
-    stocks = {}
-    for m in re.finditer(
-        r"(\d{4})\n(.*?)\t(.*?)\t(.*?)\t(.*?)\t(.*?)\t(.*?)\t(.*?)\t", text
-    ):
-        # print m.group(1), "-", m.group(2), "-", m.group(3), \
-        # "-", m.group(4), "@5", m.group(5), "@6", m.group(6), "@7", \
-        # m.group(7), "@8", m.group(8)
-        stock = {}
-        # code = int(m.group(1))
-        code_s = m.group(1)
-        # stock["code"] = code
-        set_db_code(stock, code_s)
-        stock["market"] = m.group(2)
-        stock["name"] = m.group(3).replace("(株)", "")
-        stock["date"] = m.group(4)
-        stock["price"] = int(float(m.group(5).replace(",", "")))
-        stock["volume"] = int(float(m.group(8).replace(",", "")))  # 出来高
-        # print stock
-        stocks[code_s] = stock
-    return stocks
 
 
 def _parse_my_portforio_from_txt():

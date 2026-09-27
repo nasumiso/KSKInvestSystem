@@ -523,9 +523,6 @@ def calc_shihyo_pt(code_s, upd=UPD_INTERVAL, stock={}):
     # print shiyo_data
     JIKASOGAKU_MAX = 30
     DEBT_RATIO_MAX = 30  # 減点用
-    # PER_MAX = 25
-    # PBR_MAX = 10
-    # PSR_MAX = 35
     # 時価総額ファクター（成長性×流動性×外国資本流入の山型分布）
     jikasogaku_pt = 0
     if "jikasogaku" in shiyo:
@@ -557,29 +554,11 @@ def calc_shihyo_pt(code_s, upd=UPD_INTERVAL, stock={}):
     # 下限[-60, -30, 0, 30]
     thoery_total_pt = rironkabuka.calc_theory_pt(code_s, stock)
 
-    # PER(バリューファクター)
-    # per_pt = 0
-    # if shiyo.has_key("MPER"): # PER->MPERに
-    # 	if shiyo["MPER"] > 0:
-    # 		per_pt = step_func(shiyo["MPER"], [0, 30, 60], [PER_MAX, PER_MAX/2, 0])
-    # # PBR(バリューファクター)
-    # pbr_pt = 0
-    # if shiyo.has_key("PBR"):
-    # 	pbr_pt = step_func(shiyo["PBR"], [0, 1], [PBR_MAX, 0])
-    # # PSR(バリューファクター)
-    # psr_pt = 0
-    # if shiyo.has_key("PSR"):
-    # 	psr_pt = step_func(shiyo["PSR"], [0, 0.75, 2.5, 10], [PSR_MAX, PSR_MAX/2, PSR_MAX/4, 0])
-
     log_debug("時価総額pt: %d/%d" % (jikasogaku_pt, JIKASOGAKU_MAX))
     log_debug("有利子負債自己資本比率pt: %d/%d" % (debt_ratio_pt, -DEBT_RATIO_MAX))
-    # print "PER pt: %d/%d"%(per_pt, PER_MAX)
-    # print "PBR pt: %d/%d"%(pbr_pt, PBR_MAX)
-    # print "PSR pt: %d/%d"%(psr_pt, PSR_MAX)
     # TODO: ROEと売上営業利益率は株探から取得可能(クォリティファクター)
     # TODO: 配当利回りも？
 
-    # shiyo_pt = jikasogaku_pt + debt_ratio_pt+ per_pt+psr_pt
     shiyo_pt = jikasogaku_pt + debt_ratio_pt + thoery_total_pt
     shiyo_pt = int(cramp(shiyo_pt, 0, 100))
     log_print("----------")
@@ -619,13 +598,6 @@ def get_shihyo_data(stocks, code_s, upd=UPD_INTERVAL):
     tables["shihyo_pt"] = shihyo_pt
     # 指標データ登録
     tables["shihyo"] = shihyo_data
-    # tables["PER"] = shihyo_data["PER"]
-    # tables["PBR"] = shihyo_data["PBR"]
-    # tables["PSR"] = shihyo_data["PSR"]
-    # tables["ROE"] = shihyo_data["ROE"]
-    # tables["profit_margin"] = shihyo_data["profit_margin"]
-    # tables["debt_ratio"] = shihyo_data["debt_ratio"]
-    # tables["capital_ratio"] = shihyo_data["capital_ratio"]
 
     tables["code_s"] = code_s
 
@@ -722,12 +694,8 @@ def main():
     """
     指標:PERやPSRなど経営上の指標　を取得、分析する
     """
-    # code_list = [1768,1959,1820,1793,1352,2152,1801,1812,1332,1764,11827,1782,1899,1905,1301,1810,1824,2109,1946,2162,1720,1788,1934,1870,1376,1911,1515,1885,1939,1941]
-    # code_list = [3038,2301,6095,8001,8031,8035,3668]
     # 引数で銘柄コードを指定 (例: python shihyou.py 6324 7203)。省略時は既定値。
     code_list = sys.argv[1:] or ["9509"]  # 5034,4436,7808, 2780,6083
-    # import make_stock_db
-    # stocks = make_stock_db.load_stock_db()
     for code_s in code_list:
         log_print("-" * 30)
         log_print("%sの指標を計算します" % code_s)

@@ -257,12 +257,6 @@ def log_debug(*args, **kwargs):
     logger.debug(message)
 
 
-# 下位互換性のためのエイリアス
-def smart_print(*args, **kwargs):
-    """log_printのエイリアス（下位互換性のため）"""
-    log_print(*args, **kwargs)
-
-
 def ux_cmd_head(str, line=10):
     return "\n".join(str.splitlines()[:line])
 
@@ -292,11 +286,6 @@ def memoize(func):
             return value
 
     return mamoized_function
-
-
-def eprint(*args, **kwargs):
-    """標準エラー出力にメッセージを出力する"""
-    log_warning("ERROR:", *args)
 
 
 # ==================================================
@@ -641,25 +630,6 @@ def http_get_html_with_retry(url, use_cach, cache_dir="", cache_fname="", retry=
                 with_status=True,
             )
     return html
-
-
-def http_post_html(url, use_cache=True, data={}, cookies={}, encoding="utf-8"):
-    cache_name = "post_" + get_http_cachname(url)
-    if use_cache and os.path.exists(cache_name):
-        log_debug("html(post)をファイルキャッシュから取得します", cache_name)
-        html = file_read(cache_name)
-        return html, ""
-
-    headers = {"User-Agent": USER_AGENT_CHROME}
-    r = requests.post(url, headers=headers, data=data, cookies=cookies)
-    if r.encoding != "utf-8":
-        log_debug("encoding:", r.encoding, "encoding:", encoding)
-    html = r.text.encode(encoding)
-    # html = html.replace("charset=UTF-8", "charset=euc-jp")
-
-    log_debug("htmlをファイルキャッシュに書き込みます:", cache_name)
-    file_write(cache_name, html)
-    return html, r.cookies
 
 
 # ==================================================

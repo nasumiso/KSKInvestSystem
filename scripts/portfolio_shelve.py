@@ -3324,33 +3324,6 @@ def _rewrite_trade_idea_in_episodes(
     return affected
 
 
-def _append_action_log_inner(
-    db: ShelveDB,
-    code_s: str,
-    action_type: str,
-    *,
-    reason: str = "",
-) -> None:
-    """既にオープン済みの ShelveDB に action_log を直接書き込む (flock 内専用)。
-
-    append_action_log は内部で _flock + ShelveDB を再オープンするため、
-    リネーム/削除のような巨大トランザクション内ではこちらを使って同一セッションに収める。
-    """
-    validate_action_type(action_type)
-    normalized = normalize_code_s(code_s)
-    seq = _next_seq(db, normalized)
-    entry = {
-        "code_s": normalized,
-        "seq": seq,
-        "timestamp": now_iso(),
-        "action_type": action_type,
-        "status_from": None,
-        "status_to": None,
-        "reason": reason,
-    }
-    db[_action_log_key(normalized, seq)] = entry
-
-
 def update_memo(
     code_s: str,
     fields: Dict[str, Any],

@@ -480,36 +480,6 @@ def get_rank_log(stock, log_name, diff_day=0):
     return (None, 0)
 
 
-# def get_relates_rank(stocks, code):
-# 	"""
-# 	関連銘柄内ランクを更新
-# 	"""
-# 	# ---- relates_rsを計算
-# 	if stocks[code].has_key("relates"):
-# 		relates = stocks[code]["relates"]
-# 		rs_raws = []
-# 		if stocks[code].has_key("rs_raw"):
-# 			rs_raw = stocks[code]["rs_raw"]
-# 			rs_raws.append(rs_raw)
-# 			for relate in relates.split(","):
-# 				try:
-# 					if stocks.has_key(int(relate)):
-# 						if stocks[int(relate)].has_key("rs_raw"):
-# 							rs_raws.append(stocks[int(relate)]["rs_raw"])
-# 						else:
-# 							print "!!! 関連銘柄%sのRSはありません"%relate
-# 					else:
-# 						print "!!! 関連銘柄%sは銘柄DBにありません"%relate
-# 				except ValueError:
-# 					print "!!! 不正な関連銘柄です", relate
-# 			# print relates, rs_raws
-# 			rs_raws.sort(reverse=True)
-# 			relates_rank = rs_raws.index(rs_raw)+1
-# 			print "関連銘柄内ランク:", relates_rank
-# 			return relates_rank
-# 	return 0
-
-
 def need_kessan_upd(stocks, code_s, dt_access):
     """アクセス時間の決算日超過のチェック"""
     kessan_upd = False
@@ -913,15 +883,6 @@ def print_to():
     output = io.StringIO()
     sys.stdout = output
     yield output
-    sys.stdout = sys.__stdout__
-
-
-@contextmanager
-def print_to_file(fname):
-    output = open(fname, "w")
-    sys.stdout = output
-    yield output
-    output.close()
     sys.stdout = sys.__stdout__
 
 
@@ -2097,29 +2058,10 @@ def load_etf_codes():
 
 
 def test():
-    # code = 6560
-    # stock_db = load_stock_db()
-    # stock_data = stock_db[code]
-    # rank_log = stock_data.get("stock_rank_log",[])
-    # print rank_log
-    # rank0 = get_rank_log(stock_data, "stock_rank_log", 0)
-    # rank1 = get_rank_log(stock_data, "stock_rank_log", 1)
-    # rank5 = get_rank_log(stock_data, "stock_rank_log", 5)
-    # # print "Rank:", stock[0], rank0, rank1, rank5
-    # price_log = stock_data.get("price_log",[])
-    # print price_log
-    # pr0 = price.get_price_log(price_log, rank0[0])
-    # pr1 = price.get_price_log(price_log, rank1[0])
-    # pr5 = price.get_price_log(price_log, rank5[0])
-
     # RSログ表示のテスト
     code = "9343"
     stock_data = load_cacehd_stock_db(code)
     log_print((get_rank_log_expr(stock_data)))
-
-    # DBリフレッシュ用
-    # stocks = load_stock_db()
-    # print "before:", len(stocks), "個"
 
 
 
@@ -2515,14 +2457,6 @@ def main():
     log_print("=" * 30)
 
     command = args.command
-    # command = "edit"
-    # command = "backup"
-    # command = "list_all_db"  # デフォ
-    # command = "update"
-    # command = "update_all_db"
-    # command = "list"
-    # command = "reflesh"
-    # command = "test"
     if command == "update":
         if args.codes:
             code_list = list(args.codes)
@@ -2530,10 +2464,6 @@ def main():
             code_list = "471A"
             # code_list = "2979 3226 4384 4434 4443 4448 4449 4475 4477 4478 4479 4480 4483 4485 4488 4490 4493 4599 6835 7071"
             code_list = code_list.split()
-        # f = open("update_code_list.txt")
-        # lines = f.readlines()
-        # code_list = [l.strip() for l in lines]
-        # f.close()
         tables = None
         # tables = ["master"]
         # tables = ["price"]
