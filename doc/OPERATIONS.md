@@ -630,3 +630,29 @@ lsof "$KS_DATA_DIR"/stock_data/stocks_shelve.dbm.lock
 launchctl enable "gui/$(id -u)/com.k_sohara.shintakane.cron"
 launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.k_sohara.shintakane.cron.plist
 ```
+
+## 10. データディレクトリの掃除
+
+`KS_DATA_DIR` は自動では縮まない。手で掃除するときは次を守る (2026-08-30 の棚卸しで 2.68GB → 2.00GB)。
+
+**削除してはいけないもの**
+
+| パス | 理由 |
+|---|---|
+| `stocks_shelve.*` / `research_shelve.*` / `portfolio_shelve.*` / `market_db_shelve.*` | 本番DB |
+| `research_shelve_YYMMDD.*` / `portfolio_shelve_YYMMDD.*` | 日次自動バックアップ。`BACKUP_GENERATIONS` でローテーション済みなので手動削除不要 |
+| `disclosure/cache/` | 現役のキャッシュ |
+| `yahoo/price/` | 株価キャッシュ (再取得コスト大) |
+| `stock_data/stocks_pickle_back/` | shelve 移行前のレガシー pickle。**年1個を目安に残す** |
+
+**消してよいもの**
+
+- `stock_data/kabutan/{price,finance,base}` の180日超 — HTTP キャッシュで、必要なら次回実行時に再取得される。削除直後の1回だけバッチが数分延びる
+- 過去の作業で手動作成したバックアップ (`*.bak_*` / `*.bak.bak_*` / `*.before_*`)
+
+**手動バックアップを消すときの注意**: 本番の `portfolio_shelve.bak` と、ゴミの `portfolio_shelve.bak.bak_issue387_...` は接頭辞を共有する。
+対象は「shelve 拡張子の後ろにさらに接尾辞が付くもの」に限り、候補に本番DBと日次バックアップが含まれないことを個別に確かめてから消す。
+
+```bash
+find "$KS_DATA_DIR/stock_data" -maxdepth 1 -type f \( -name "*.bak_*" -o -name "*.bak.bak_*" -o -name "*.before_*" \)
+```

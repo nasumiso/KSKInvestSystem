@@ -69,7 +69,7 @@
 | `theme_momentum` | dict[str, tuple] | テーマ別騰落率 `(平均%, 銘柄数)` |
 | `access_date_theme_rank` | datetime | テーマランク最終取得日時 |
 | `topix`, `mothers`, `nikkei225`, `nasdaq`, `sp500` | dict | 各指数のprice/RS/トレンド/State Machine データ |
-| `momentum_calib` | dict | モメンタムポイント分布パラメータ `{loc, scale, sample_count, updated_at, n_days}`。`python make_stock_db.py calibrate_momentum` で手動更新（自動更新なし）。詳細は [doc/requirements/momentum_pt_requirements.md](requirements/momentum_pt_requirements.md) |
+| `momentum_calib` | dict | モメンタムポイント分布パラメータ `{loc, scale, sample_count, updated_at, n_days}`。`python make_stock_db.py calibrate_momentum` で手動更新（自動更新なし） |
 
 各指数 dict が持つ主要キー (issue #117 Part A/B):
 
@@ -94,7 +94,7 @@
 
 ## 銘柄調査データベース（research_shelve）
 
-stocks_shelve（日次更新の揮発性キャッシュ）とは別に、銘柄調査の蓄積データを保持する専用DB。手動メモと決算スナップショットを不可逆な資産として管理する。詳細な設計仕様は [doc/requirements/phase1_requirements.md](requirements/phase1_requirements.md) を参照。
+stocks_shelve（日次更新の揮発性キャッシュ）とは別に、銘柄調査の蓄積データを保持する専用DB。手動メモと決算スナップショットを不可逆な資産として管理する。
 
 ### DB分離の原則
 
