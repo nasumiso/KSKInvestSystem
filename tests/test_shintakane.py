@@ -109,8 +109,8 @@ class TestConvertKabutanShintakaneHtml:
         assert len(rows) == 1
         assert "133A" in rows[0][1]
 
-    def test_下落銘柄はスキップされる(self):
-        """spanにupクラスがない場合、zenjitsuhi=0になる"""
+    def test_下落銘柄の前日比を保持する(self):
+        """span.down の負の前日比をゼロに潰さない"""
         html = (
             '<table class="stock_table st_market">'
             '<tr>\n'
@@ -132,8 +132,8 @@ class TestConvertKabutanShintakaneHtml:
         )
         rows = shintakane.convert_kabutan_shintakane_html(html)
         assert len(rows) == 1
-        assert rows[0][5] == 0  # zenjitsuhi
-        assert rows[0][6] == 0  # zenjitsuhi_per
+        assert rows[0][5] == "-50"  # zenjitsuhi
+        assert rows[0][6] == "-2.00%"  # zenjitsuhi_per
 
     def test_空テーブル(self):
         html = '<table class="stock_table st_market"></table>'
@@ -194,8 +194,8 @@ class TestConvertKabutanDekidakaupHtml:
         assert len(rows) == 1
         assert "496A" in rows[0][1]
 
-    def test_下落銘柄はスキップされる(self):
-        """spanにupクラスがない場合、zenjitsuhi=0になる"""
+    def test_下落銘柄の前日比を保持する(self):
+        """span.down の負の前日比をゼロに潰さない"""
         html = (
             '<table class="stock_table st_market">'
             '<tr>\n'
@@ -208,7 +208,7 @@ class TestConvertKabutanDekidakaupHtml:
             '<td></td>\n'
             '<td><span class="down">-50</span></td>\n'
             '<td>100,000</td>\n'
-            '<td><span class="down">-50.00</span></td>\n'
+            '<td><span class="up">+50.00</span></td>\n'
             '<td>10.0</td>\n'
             '<td>1.00</td>\n'
             '<td>3.00</td>\n'
@@ -217,9 +217,9 @@ class TestConvertKabutanDekidakaupHtml:
         )
         rows = shintakane.convert_kabutan_dekidakaup_html(html)
         assert len(rows) == 1
-        assert rows[0][5] == 0  # zenjitsuhi
-        assert rows[0][6] == "0"  # zenjitsuhi_per（算出不可）
-        assert rows[0][9] == 0  # dekidaka_up
+        assert rows[0][5] == "-50"  # zenjitsuhi
+        assert rows[0][6] == "-4.76%"  # -50 / (1000 + 50) * 100
+        assert rows[0][9] == "+50.00"  # 下落銘柄でも出来高増加率を保持
 
     def test_空テーブル(self):
         html = '<table class="stock_table st_market"></table>'
