@@ -399,11 +399,69 @@ security find-generic-password -s shintakane-tunnel-control-plane -a "$USER" -w
 # ★ MacMini の画面のターミナルで: -w の値を省くとプロンプトで安全に入力できる
 security add-generic-password -U -a k_sohara -s shintakane-tunnel-control-plane -w
 
-# 登録できたか確認 (SSH 経由でも読み出しはできる)
-ssh macmini 'security find-generic-password -s shintakane-tunnel-control-plane -a k_sohara -w | wc -c'
+# 登録できたか確認する。★ これも MacMini の画面で行う
+security find-generic-password -s shintakane-tunnel-control-plane -a k_sohara -w | wc -c   # 165
 ```
 
-移設後、MBA 側の tunnel LaunchAgent は unload する。
+> SSH 経由では**読み出しもできない** (空が返る)。SSH から「未登録」に見えても、
+> 画面のターミナルで引ければ登録できている。LaunchAgent は GUI セッション配下で動くので読める。
+>
+> パスワード入力のプロンプト (`-w` の値を省いた形) はペーストが効いたか見えないので、
+> 値を `-w '<値>'` で渡して目視確認する方が確実。
+
+**`tunnel-client` を入れる** (cask ではないので sudo 不要)。
+
+```bash
+brew install openai/tools/tunnel-client
+```
+
+**プロファイルを MacMini 用に作る。** MBA の `~/.config/tunnel-client/shintakane-shikiho.yaml`
+をそのまま持ち込まない。`command` が MBA のパス (Dropbox 配下・旧 `KS_DATA_DIR`) を指しており、
+`api_key` が**平文**で入っているため。`api_key` は `env:` 参照にでき、`run_tunnel_client.sh` が
+キーチェーンから読んで `CONTROL_PLANE_API_KEY` に渡す。
+
+```yaml
+config_version: 1
+control_plane:
+  base_url: "https://api.openai.com"
+  tunnel_id: "tunnel_6a9415a6be7c8191904c5c66100d2681"
+  api_key: "env:CONTROL_PLANE_API_KEY"        # 平文で書かない
+health:
+  listen_addr: "127.0.0.1:0"
+admin_ui:
+  open_browser: false
+log:
+  level: info
+  format: json
+mcp:
+  commands:
+    - channel: main
+      command: "env KS_DATA_DIR=/Users/k_sohara/shintakane_data /Users/k_sohara/dev/shintakane/.venv/bin/python /Users/k_sohara/dev/shintakane/scripts/mcp/shikiho_server.py"
+```
+
+```bash
+chmod 600 ~/.config/tunnel-client/shintakane-shikiho.yaml
+```
+
+runner と plist のインストールは `scripts/mcp/README.md` の手順どおり。起動後、
+stdout ログに `🟢 tunnel-client started` と `tunnel metadata fetched` が出れば
+API Key 認証まで通っている。
+
+```bash
+grep -E 'tunnel-client started|metadata fetched' ~/Library/Logs/shintakane-tunnel.stdout.log | tail -2
+```
+
+**移設後、MBA 側の tunnel は必ず止める。** 同じ `tunnel_id` を2台がポーリングすると、
+ChatGPT のリクエストがどちらに届くか不定になり、MBA 側の古いデータが返ることがある。
+`bootout` だけだと plist が残っていて次のログインで `RunAtLoad` により復活するので、
+`disable` もする。
+
+```bash
+# MBA 側
+launchctl bootout "gui/$(id -u)/com.k_sohara.shintakane-tunnel"
+launchctl disable "gui/$(id -u)/com.k_sohara.shintakane-tunnel"
+launchctl print-disabled "gui/$(id -u)" | grep shintakane      # cron と tunnel が disabled
+```
 
 ## 7. 日常運用
 

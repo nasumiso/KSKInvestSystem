@@ -135,6 +135,10 @@ Mac が止まっているときは、ChatGPT の Drive コネクタで JSON を�
 
 ## MBA での常駐起動
 
+> 2026-09-27 に運用機 (MacMini) へ移設し、MBA 側は disable 済み。MacMini 固有の手順
+> (プロファイルの `api_key: "env:CONTROL_PLANE_API_KEY"` 化、キーチェーン登録は画面で行う等) は
+> [doc/OPERATIONS.md](../../doc/OPERATIONS.md) の「MCP tunnel の移設」を参照。
+
 Secure MCP Tunnel の Runtime API Key は平文ファイルや LaunchAgent に書かない。最初に、Runtime API Key を設定したターミナルでキーチェーンへ保存する。
 
 ```bash
