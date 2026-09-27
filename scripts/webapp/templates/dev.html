@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}開発 - Shintakane Research{% endblock %}
+{% block content %}
+{# issue #321: 日次バッチ (shintakane_cron.sh) の手動実行と状態確認 #}
+<h2>日次バッチ</h2>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.6em 1em;">
+  <button id="cron-run-btn" type="button">今すぐ実行</button>
+  <span id="cron-state" style="font-weight:bold;">—</span>
+  <span id="cron-times" style="font-size:0.85em;color:#666;"></span>
+</div>
+<p id="cron-msg" style="font-size:0.85em;color:#666;margin:0.4em 0 0 0;"></p>
+<pre id="cron-log" style="margin-top:0.8em;max-height:60vh;overflow:auto;font-size:0.78em;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;padding:0.6em;white-space:pre-wrap;"></pre>
+
+<h2>リンク</h2>
+<div style="display:flex;flex-wrap:wrap;gap:1.2em;">
+  {% for ln in portal_links %}
+  <a href="{{ ln.url }}" target="_blank" rel="noopener">{{ ln.title }}</a>
+  {% endfor %}
+</div>
+
+<script>
+(function() {
+  const btn = document.getElementById('cron-run-btn');
+  const stateEl = document.getElementById('cron-state');
+  const timesEl = document.getElementById('cron-times');
+  const msg = document.getElementById('cron-msg');
+  const logEl = document.getElementById('cron-log');
+  const LABELS = {
+    running: '⏳ 実行中', done: '✅ 成功', failed: '❌ 失敗',
+    interrupted: '⚠️ 中断 (終了を記録できずに止まった)', none: '記録なし',
+  };
+  const TRIGGERS = { web: 'WebApp', launchd: '定刻 (launchd)', manual: 'ターミナル' };
+  const POLL_INTERVAL_MS = 5 * 1000;
+  let pollTimer = null;
+
+  function render(s) {
+    stateEl.textContent = LABELS[s.state] || s.state;
+    const parts = [];
+    if (s.started_at) parts.push('開始 ' + s.started_at.replace('T', ' '));
+    if (s.finished_at) parts.push('終了 ' + s.finished_at.replace('T', ' '));
+    if (s.trigger) parts.push('起動元 ' + (TRIGGERS[s.trigger] || s.trigger));
+    timesEl.textContent = parts.join(' / ');
+    const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 4;
+    logEl.textContent = s.log_tail || '(ログなし)';
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+    btn.disabled = s.state === 'running';
+    if (s.state === 'running') {
+      if (pollTimer === null) pollTimer = setInterval(checkStatus, POLL_INTERVAL_MS);
+    } else if (pollTimer !== null) {
+      clearInterval(pollTimer); pollTimer = null;
+    }
+  }
+
+  async function checkStatus() {
+    try {
+      const r = await fetch('/dev/cron/status');
+      if (r.ok) render(await r.json());
+    } catch (e) {
+      // 19時の自動 pull で WebApp が再起動している間など。次回のポーリングで拾う
+    }
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    msg.textContent = '';
+    try {
+      const r = await fetch('/dev/cron/run', { method: 'POST' });
+      if (r.status === 409) {
+        msg.textContent = '既に実行中です。';
+      } else if (r.status !== 202) {
+        const err = await r.json().catch(() => ({}));
+        msg.textContent = '起動失敗: ' + (err.error || r.status);
+      }
+    } catch (e) {
+      msg.textContent = 'リクエスト失敗: ' + e.message;
+    }
+    // 子プロセスがロックを取る前に問い合わせると前回の状態が返りポーリングが始まらないので少し待つ
+    setTimeout(checkStatus, 1000);
+  });
+
+  checkStatus();
+})();
+</script>
+{% endblock %}

@@ -43,6 +43,7 @@ def create_app() -> Flask:
     from webapp.routes.portfolio import portfolio_bp
     from webapp.routes.trade_history import trade_history_bp
     from webapp.routes.ir_docs import ir_docs_bp
+    from webapp.routes.dev import dev_bp
 
     app.register_blueprint(search_bp)
     app.register_blueprint(detail_bp)
@@ -53,6 +54,7 @@ def create_app() -> Flask:
     app.register_blueprint(portfolio_bp)
     app.register_blueprint(trade_history_bp)
     app.register_blueprint(ir_docs_bp)
+    app.register_blueprint(dev_bp)
 
     # issue #165: /market テンプレートで theme-news markdown を HTML 化するフィルタ
     from webapp.helpers import theme_news_md_to_html
