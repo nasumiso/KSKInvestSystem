@@ -25,7 +25,7 @@ issue #452 に対応する。
 |---|---|---|
 | 用途 | 平日19:00 の日次バッチ / WebApp 常駐 | 機能開発・パーサー修正 |
 | ソース | `git pull --ff-only` で main 追従 | feature ブランチで開発 |
-| `KS_DATA_DIR` | ローカル SSD、**正本** (`ir_docs` のみ Drive へ symlink) | 開発用コピー (分離は #453) |
+| `KS_DATA_DIR` | ローカル SSD、**正本** (`ir_docs` のみ Drive へ symlink) | `~/shintakane_data_dev` の開発用コピー (#453) |
 | WebApp | LaunchAgent で常駐、Tailscale Serve で Tailnet 公開 | 開発時のみ手動起動 |
 
 **原則:**
@@ -488,6 +488,34 @@ launchctl print-disabled "gui/$(id -u)" | grep shintakane      # cron と tunnel
 **MBA の localhost でメモや売買記録を入力しない。** MBA のデータは運用機へ書き戻らないので、
 入力は正本に反映されずに消える。MBA にも Tailscale を入れ、普段使いは運用機の URL を開く。
 
+開発用コピーは `KS_DATA_DIR=~/shintakane_data_dev` (名前の末尾 `_dev` で判定する)。
+このとき次のガードが効く (#453)。
+
+- WebApp の全画面上部に赤い **DEV** 帯とデータ時点を出す
+- Google Drive / Sheets へのアップロードをスキップする (古いデータで正本の出力を上書きしない)
+- `shintakane_cron.sh` は即 exit 1 (theme-news の二重課金も防ぐ)
+
+旧 `~/Ext/GoogleDrive/shintakane_data` (MBA 時代の正本) はアーカイブとして残す。
+**Drive 上の `shintakane_data` フォルダは削除・移動・改名しない。** MBA の Drive はミラーなので、
+ローカルで消すとクラウドからも消える。次の2つが参照している。
+
+- `ir_docs/` — 運用機の `ir_docs` symlink の参照先、ChatGPT の Drive コネクタが PDF を読む経路
+- `stock_ratings/stock_ratings.json` — ChatGPT の Drive コネクタが読む経路 (fileId 固定)
+
+それ以外のサブフォルダ (`stock_data` 等) は 2026-09-26 時点のコピーで、運用機の安定稼働を
+1〜2週間確認したら削除してよい (約 2GB)。それまでは運用機が壊れたときの戻り先として残す。
+
+**開発用コピーの作り方 (初回のみ):**
+
+```bash
+mkdir ~/shintakane_data_dev
+# ir_docs は Drive (MBA ではミラー) からローカルへコピーする。symlink にすると、
+# 開発中の WebApp の資料収集が運用機と共有の index.json を書き換えてしまう
+cp -Rp ~/Ext/GoogleDrive/shintakane_data/ir_docs ~/shintakane_data_dev/
+KS_DATA_DIR=~/shintakane_data_dev deploy/macmini.sh pull-data
+# .zshrc の KS_DATA_DIR と ~/.claude.json の shintakane-shikiho MCP の env を切り替える
+```
+
 開発で最新データが要るときだけ、運用機から取り寄せる (一方向)。
 
 ```bash
@@ -501,9 +529,10 @@ rsync -a --exclude 'ir_docs' --exclude '*.lock' --exclude '*.dbm.lock' --exclude
   macmini:/Users/k_sohara/shintakane_data/ "$KS_DATA_DIR"/
 ```
 
-**`ir_docs` は必ず除外する。** 運用機側は Drive への symlink、MBA 側は Drive 上の実ディレクトリで、
-除外しないと実ディレクトリを symlink で上書きしようとする。どちらからも Drive 経由で同じものが
-見えているので、転送自体が要らない。
+**`ir_docs` は必ず除外する。** 運用機側は Drive への symlink、MBA 側はローカルの実ディレクトリで、
+除外しないと実ディレクトリを symlink で上書きしようとする。開発用の `ir_docs` は古くなるが、
+新しい資料が要るときは `~/Ext/GoogleDrive/shintakane_data/ir_docs` (Drive 経由で運用機と同じもの)
+から該当銘柄だけコピーする。
 
 **自動で走るもの:**
 

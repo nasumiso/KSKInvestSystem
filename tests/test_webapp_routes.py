@@ -81,6 +81,18 @@ def client(app):
     return app.test_client()
 
 
+@pytest.mark.parametrize("dir_name, expect_banner", [
+    ("shintakane_data_dev", True),
+    ("shintakane_data", False),
+])
+def test_dev_banner(client, tmp_path, monkeypatch, dir_name, expect_banner):
+    """開発用コピーのときだけ全画面に DEV 帯を出す (issue #453)"""
+    import ks_util
+    monkeypatch.setattr(ks_util, "DATA_DIR", str(tmp_path / dir_name))
+    html = client.get("/").get_data(as_text=True)
+    assert ('class="dev-banner"' in html) is expect_banner
+
+
 class TestSearchRoute:
     """GET / のテスト"""
 

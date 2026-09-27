@@ -5,7 +5,7 @@
 
 cd "$(dirname "$0")" || exit 1
 
-export KS_DATA_DIR="${KS_DATA_DIR:-/Users/k_sohara/Ext/GoogleDrive/shintakane_data}"
+export KS_DATA_DIR="${KS_DATA_DIR:-/Users/k_sohara/shintakane_data_dev}"
 source .venv/bin/activate
 cd scripts
 exec python -m webapp.app

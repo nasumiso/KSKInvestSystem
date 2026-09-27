@@ -96,8 +96,8 @@ cmd_pull_data() {
     exit 1
   fi
   echo "運用機 → $KS_DATA_DIR"
-  # ir_docs は運用機側が Drive への symlink、開発機側が Drive 上の実ディレクトリ。
-  # 除外しないと実ディレクトリを symlink で上書きしようとする (どちらも Drive で同じものが見える)
+  # ir_docs は運用機側が Drive への symlink、開発機側がローカルの実ディレクトリ。
+  # 除外しないと実ディレクトリを symlink で上書きしようとする (開発用は初回コピーのまま使う)
   rsync -a --exclude 'ir_docs' --exclude '*.lock' --exclude '*.dbm.lock' --exclude '.DS_Store' \
     "$@" "$HOST:/Users/k_sohara/shintakane_data/" "$KS_DATA_DIR"/
   echo "✅ 完了"

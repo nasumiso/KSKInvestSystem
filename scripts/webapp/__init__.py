@@ -64,4 +64,19 @@ def create_app() -> Flask:
         # ks_util.get_price_day() は業務日 (17:00 前は前日) のため使わない。
         return {"today_jst": datetime.now(_JST).date().strftime("%Y-%m-%d")}
 
+    @app.context_processor
+    def _inject_dev_banner():
+        # issue #453: 開発機の開発用コピーで動いていることを全画面に出す。
+        # 入力しても正本 (運用機) に反映されないため、誤って普段使いしないように。
+        import ks_util
+
+        if not ks_util.is_dev_data_dir():
+            return {"dev_data_asof": None}
+        shelve_dat = os.path.join(ks_util.DATA_DIR, "stock_data", "stocks_shelve.dat")
+        try:
+            asof = datetime.fromtimestamp(os.path.getmtime(shelve_dat), _JST).strftime("%m/%d %H:%M")
+        except OSError:
+            asof = "不明"
+        return {"dev_data_asof": asof}
+
     return app

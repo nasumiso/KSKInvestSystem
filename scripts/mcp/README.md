@@ -19,7 +19,7 @@ MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_D
       "command": "/<REPOSITORY_ROOT>/.venv/bin/python",
       "args": ["/<REPOSITORY_ROOT>/scripts/mcp/shikiho_server.py"],
       "env": {
-        "KS_DATA_DIR": "/Users/k_sohara/Ext/GoogleDrive/shintakane_data"
+        "KS_DATA_DIR": "/Users/k_sohara/shintakane_data_dev"
       }
     }
   }

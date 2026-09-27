@@ -69,6 +69,17 @@ def _resolve_data_dir(fallback_root: str) -> str:
 
 
 DATA_DIR = _resolve_data_dir(ROOT_DIR)
+
+
+def is_dev_data_dir() -> bool:
+    """開発機の開発用コピー (`~/shintakane_data_dev`) を指しているか (issue #453)。
+
+    正本は運用機にあり、開発用コピーは古い。外部への書き込み (Sheets 等) を止め、
+    WebApp に DEV 表示を出す判定に使う。
+    """
+    return os.path.basename(os.path.normpath(DATA_DIR)).endswith("_dev")
+
+
 LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 
 # theme-news 生成データのルート ($KS_DATA_DIR/theme_news/)。
