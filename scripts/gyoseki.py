@@ -4,7 +4,6 @@
 import re
 import os
 import sys
-from functools import reduce
 
 from ks_util import *
 
@@ -257,20 +256,6 @@ def calc_growth_rate2(cur, next):
             return float((next - cur) / (tmp * 0.5))
 
 
-def average_compound(growth):
-    """
-    幾何平均
-    In: 0.2(20%), -0.1(-10%)など0を基準とした割合を渡す
-    Out: 1.2(20%) 0.9(-10%)
-    """
-
-    def calc(x, y):
-        return max((1 + x), 0) * max((1 + y), 0)
-        # return max(x, 0)* max(y, 0)
-
-    return reduce(calc, growth) ** (1.0 / len(growth))
-
-
 def average_compound2(growth):
     avg = sum(growth) / len(growth)
     return avg
@@ -289,11 +274,6 @@ def calc_cagr(values):
 
 def check_table(code_s, table_current, table_quarter):
     """業績データの不足をチェック"""
-    # table_quarter = tables.get("gyoseki_quarter", [])
-    # table_current = tables.get("gyoseki_current", [])
-    # print str(code), "gyoseki_table データ数(term quater):", len(table_current), len(table_quarter)
-    # 期数:3 四半期数:2を最低限とする
-    # if len(table_quarter) < 3 and len(table_current) < 2:
     if len(table_current) < 1 and len(table_quarter) < 1:
         log_print(
             "!!! 業績を解析できていません(期数不足) cur=%d qua=%d"
@@ -316,8 +296,6 @@ def check_table(code_s, table_current, table_quarter):
             log_warning("  四半期業績の期数が足りないため過去データを加えました")
             table_quarter.insert(0, table_quarter[0])
             log_debug(table_quarter[0])
-            # table_quarter.insert(0, [table_quarter[0][0], 0,0,0,0,0,0])
-            # print [table_quarter[0][0]
     return True, table_quarter
 
 
@@ -331,13 +309,7 @@ def calc_progress_rate(stock):
     table_quarter = stock.get("gyoseki_quarter", "")
     table_current = stock.get("gyoseki_current", "")
     # ---- 進捗率
-    # if not check_table(tables):
-    # 	print "決算データ不足で進捗率取得できず"
-    # 	return 0, 0, 0, 0, 0
-    # table_quarter = tables.get("gyoseki_quarter", [])
-    # table_current = tables.get("gyoseki_current", [])
     ret = {}
-    # code = stock.get("code", 0)
     code_s = stock.get("code_s", "")
     if not check_table(code_s, table_current, table_quarter):
         log_debug("決算データ不足で進捗率取得できず", code_s)
@@ -565,9 +537,6 @@ def calc_gyoseki_score(tables):
     if not term_growth:
         log_warning(" 通期利益データがないため補充")
         term_growth = [0.0]
-    # if not term_sales_growth:
-    # 	term_sales_growth = [1.0]
-    # print "各期利益成長率:", [round(p,2) for p in term_growth]
     average_past_profit_rate = average_compound2(term_growth) * 100
     average_past_sales_rate = calc_cagr(term_sales_data) * 100
     # print "営利平均成長率(%):", average_past_profit_rate
@@ -602,10 +571,6 @@ def calc_gyoseki_score(tables):
     if len(table_current) >= 2:
         latest_term = table_current[-2][0]
         year, month = latest_term.split(".")
-        # import datetime
-        # latest_term_dt =  datetime.date(int(year), int(month), 1)
-        # print "予判定:", latest_term, latest_term_dt, datetime.datetime.today()
-        # isLatestTerm = datetime.date.today() < latest_term_dt
         isLatestTerm = latest_term.find("予") >= 0
         latest_term_profit = table_current[-2][2]
         latest_term_sales = table_current[-2][1]
@@ -1061,11 +1026,6 @@ def main():
         gyoseki_data = get_gyoseki_data(code_s, UPD_INTERVAL)  # UPD_FORCE/UPD_INTERVAL
         calc_progress_rate(gyoseki_data)
 
-        # import make_stock_db as db
-
-        # stock = db.load_cacehd_stock_db(code_s)
-        # # print get_gyoseki_expr(stock)
-        # log_print(get_gyoseki_quarity_expr(stock))
 
 
 if __name__ == "__main__":

@@ -6,25 +6,6 @@ import requests
 
 from ks_util import *
 
-# def calc_growth(uriage_zenki, uriage_raiki):
-# 	growth = (float(uriage_raiki)/uriage_zenki)**0.5 if uriage_zenki > 0 else 1.0
-# 	growth = min(growth, 1.25)
-# 	return growth
-
-# def calc_rironkabuka(bps, eps, uriage_zenki, uriage_raiki):
-# 	"""
-# 	rironkabuka = F72+(G72*(B72)^$A$2/(1+$B$2/100)^$A$2-($B$2/100)*F72)/($B$2/100)
-# 	"""
-# 	growth = calc_growth(uriage_zenki, uriage_raiki)
-# 	print "成長率：",round(growth,3)
-
-# 	A2 = 5 # $1益反映年数
-# 	B2 = 6.6 # $1引率
-# 	C2 = 0.6 # $1期金利
-# 	D2 = 6 # $1スクプレミアム
-# 	val = bps+(eps*(growth**A2)/(1+B2/100)**A2-((B2+1)/100)*bps)/(B2/100)
-# 	return int(val)
-
 
 def get_gyoseki_data(code, cache=True):
     fname = "stock_data/kabutan_gyoseki_%d.txt" % code
@@ -102,81 +83,6 @@ def get_kabutan_base_html(code_s, upd=UPD_INTERVAL):
 def get_kabutan_cachename(code_s):
     cache_fname = get_http_cachname(KABUTAN_BASE_URL_CODE % (str(code_s)))
     return os.path.join(KABUTAN_CACHE_DIR_BASE, cache_fname)
-
-
-# def get_from_kabutan2(html):
-# 	"""
-# 	株探htmlから解析情報を返す
-# 	"""
-# 	# ------------------------------
-# 	# eps,売上
-# 	# ------------------------------
-# 	year_tbl_m = re.search(r'<div class="title1">通期</div>.*?<table>(.*?)</table>', html, re.S)
-# 	if not year_tbl_m:
-# 		print "!!! 通期テーブルが取得できない（フォーマット変更？）"
-# 		return {}
-# 	year_tbl_html = year_tbl_m.group(1)
-# 	table = []
-# 	for year_row_m in re.finditer(r'<tr >(.*?)</tr>', year_tbl_html, re.S):
-# 		# print "Hoge", year_row_m.group(1)
-# 		values = []
-# 		for val_m in re.finditer(r'<td.*?>(.*?)</td>', year_row_m.group(1)):
-# 			val = val_m.group(1)
-# 			values.append(val)
-# 		# print values
-# 		table.append(values)
-# 	# eps 4列目
-# 	if table[-1][4] == "－":
-# 		eps = table[-2][4]
-# 		print "来季EPSが取得できないため今季"
-# 	else:
-# 		eps = table[-1][4]
-# 	print "eps:", eps
-# 	# 売上 0列目
-# 	if table[-1][0] == "－":
-# 		raiki_uriage = table[-2][0]
-# 		print "来季売上が取得できないため今季"
-# 	else:
-# 		raiki_uriage = table[-2][0]
-# 	konki_uriage = table[-2][0]
-# 	zenki_uriage = table[-3][0]
-# 	print "売上:", zenki_uriage, konki_uriage, raiki_uriage
-# 	# TODO: bps
-# 	# ------------------------------
-# 	# bps
-# 	# ------------------------------
-# 	year_tbl_m = re.search(r'<div class="cap1"><h3>財務 【実績】</h3></div>.*?<table>(.*?)</table>', html, re.S)
-# 	if not year_tbl_m:
-# 		print "!!! 財務テーブルが取得できない（フォーマット変更？）"
-# 		return {}
-# 	year_tbl_html = year_tbl_m.group(1)
-# 	# print year_tbl_html
-# 	table = []
-# 	for year_row_m in re.finditer(r'<tr >(.*?)</tr>', year_tbl_html, re.S):
-# 		# print "Hoge", year_row_m.group(1)
-# 		values = []
-# 		for val_m in re.finditer(r'<td>(.*?)</td>', year_row_m.group(1)):
-# 			val = val_m.group(1)
-# 			values.append(val)
-# 		# print values
-# 		table.append(values)
-# 	# bps
-# 	if table[-1][0] == "－":
-# 		if table[-2][0] == "－":
-# 			bps = "0"
-# 			print "!! bpsが取得できない"
-# 		else:
-# 			bps = table[-2][0]
-# 	else:
-# 		bps = table[-1][0]
-# 	print "bps:", bps
-# 	dic = {}
-# 	dic["bps"] = float(bps.replace(",",""))
-# 	dic["eps"] = float(eps.replace(",",""))
-# 	dic["uriage_zenki"] = float(zenki_uriage.replace(",",""))
-# 	dic["uriage_konki"] = float(konki_uriage.replace(",",""))
-# 	dic["uriage_raiki"] = float(raiki_uriage.replace(",",""))
-# 	return dic
 
 
 def get_from_kabutan3(html, code_s=""):
@@ -417,7 +323,6 @@ def analyze_from_kabutan(code_s, upd=UPD_INTERVAL, stock=None):
     # https://kabutan.jp/stock/finance?code=3825&mode=k
     # code = int(code)
     html = get_kabutan_html(code_s, upd)
-    # dic = get_from_kabutan2(html)
     # htmlから理論株価に必要なデータ解析
     # BPS:財務の一株純資産(前期末) EPS:一株利益(今季)
     dic = get_from_kabutan3(html, code_s)

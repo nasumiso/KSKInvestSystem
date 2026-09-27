@@ -1007,11 +1007,6 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
                         if kairi_low2cur <= 10:
                             return "○"
             return ""
-        # kairi_sum = sum(kairi_list[0:8])
-        # print "20MA押し　乖離:%d 8週乖離:%d"%(kairi_list[0], kairi_sum)
-        # if kairi_list[0] <= 3 and kairi_list[0] >= -2: # 20MAからこの%以内を許容
-        # 	if kairi_sum >= 7*8: # これまで20MAを一定以上上回っていた
-        # 		price_dict["pullback_20"] = "○"
         except (ValueError, ZeroDivisionError, IndexError):
             log_warning(" 価格データがかけている")
             return ""
@@ -2460,10 +2455,6 @@ def main():
             code_s, stock, UPD_INTERVAL
         )  # UPD_INTERVAL/UPD_REEVAL/UPD_FORCE
         log_print(price_dict)
-        # td = datetime.today().date()
-        # print get_price_log(price_dict["price_log"], td)
-        # print get_price_log(price_dict["price_log"], td-timedelta(1))
-        # print get_price_log(price_dict["price_log"], td-timedelta(5))
 
 
 if __name__ == "__main__":

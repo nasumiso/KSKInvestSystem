@@ -464,8 +464,7 @@ def _reject_when_fallback():
     """
     if _is_fallback_mode():
         flash(
-            "portfolio_shelve 未移行モードのため、書き込み操作は無効です。"
-            "Phase 3a 移行スクリプト (migrate_my_watch_list_to_shelve.py) を実行してください。",
+            "portfolio_shelve 未移行モードのため、書き込み操作は無効です。",
             "error",
         )
         return _redirect_with_return_query()

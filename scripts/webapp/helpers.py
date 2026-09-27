@@ -3362,15 +3362,6 @@ def _resolve_signal_markers(stock, window_dates, xs):
     return markers
 
 
-def _format_price_axis(value: float) -> str:
-    """株価軸ラベル (円)。1000円超は K 表記、それ以下は整数。"""
-    if value >= 10000:
-        return f"{value / 1000:.1f}K"
-    if value >= 1000:
-        return f"{int(round(value))}"
-    return f"{value:.1f}"
-
-
 def _format_pct_axis(pct: float) -> str:
     """RS変化率ラベル (%)。+/- 付き、絶対値10%未満は小数1桁、それ以上は整数。"""
     if abs(pct) < 10:
@@ -4853,13 +4844,6 @@ _SIDE_LABELS = {"buy": "買", "sell": "売"}
 # ===========================================
 # issue #387 Phase4b: fill 基準の建玉ラウンド・エピソード再構成
 # ===========================================
-
-# trade_kind → 口座種別 ("現物" / "信用")。現引は現物ラウンドに合流させる。
-def _fill_account_kind(trade_kind: str) -> str:
-    tk = trade_kind or ""
-    if tk.startswith("信用"):
-        return "信用"
-    return "現物"  # 現物 / 現物(単元未満) / 現引
 
 
 def _episode_pl_from_round(rnd: dict) -> Optional[dict]:

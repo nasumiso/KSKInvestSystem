@@ -482,39 +482,6 @@ def get_sector_db() -> ShelveDB:
 
 
 # ===========================================
-# Pickle Compatibility Functions
-# ===========================================
-
-
-def load_shelve_as_dict(db_path: str) -> Dict[str, Any]:
-    """
-    Load entire shelve database as dict.
-    For backward compatibility with code expecting dict.
-
-    Args:
-        db_path: Path to shelve database (without extension)
-
-    Returns:
-        Dict containing all database records
-    """
-    with ShelveDB(db_path) as db:
-        return db.export_to_dict()
-
-
-def save_dict_to_shelve(db_path: str, data: Dict[str, Any]) -> None:
-    """
-    Save dict to shelve database.
-    For backward compatibility with code using dict.
-
-    Args:
-        db_path: Path to shelve database (without extension)
-        data: Dict to save
-    """
-    with ShelveDB(db_path) as db:
-        db.import_from_dict(data)
-
-
-# ===========================================
 # コンパクション (issue #194)
 # ===========================================
 
