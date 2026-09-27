@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-日本株の成長株投資で、裁量判断の再現性を高めるための個人システム。株探・Yahoo Finance Japan 等からデータを集めて銘柄をスコアリングし、保有銘柄の監視・売買記録・振り返りを支える。役割分担 (Shintakane / LLM / 人間) は [doc/AI投資活用戦略.md](doc/AI投資活用戦略.md) を参照。
+日本株の成長株投資で、裁量判断の再現性を高めるための個人システム。株探・Yahoo Finance Japan 等からデータを集めて銘柄をスコアリングし、保有銘柄の監視・売買記録・振り返りを支える。目的と方向性は [doc/方向性メモ.md](doc/方向性メモ.md)、役割分担 (Shintakane / LLM / 人間) は [doc/AI投資活用戦略.md](doc/AI投資活用戦略.md) を参照。
 
 ## 行動原則
 
