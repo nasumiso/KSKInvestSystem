@@ -50,4 +50,4 @@ data_old/
 /*.png
 
 # 機能紹介.md から都度書き出す配布用 PDF (#81)
-doc/Shintakane機能紹介.pdf
+doc/introduction/Shintakane機能紹介.pdf
