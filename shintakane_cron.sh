@@ -76,6 +76,12 @@ echo "===== $(date '+%Y-%m-%d %H:%M:%S') 実行開始 ====="
 # 起動すると debug 有効・既定の dev-secret-key のまま Tailnet へ公開され、
 # さらにポートを奪って LaunchAgent 側が KeepAlive で失敗し続ける。
 if [ "${SHINTAKANE_AUTO_PULL:-0}" = "1" ]; then
+  # pull 成功時に kickstart -k で落としたばかりなので、立ち上がるまで待つ。
+  # 待たずに lsof を打つと必ず起動途中を観測し、毎回この警告が出る。
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    lsof -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1 && break
+    sleep 2
+  done
   if ! lsof -iTCP:5001 -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "⚠️ webapp が起動していません。LaunchAgent を確認してください"
     echo "   launchctl print gui/\$(id -u)/com.k_sohara.shintakane.webapp"
