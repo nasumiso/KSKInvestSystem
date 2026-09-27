@@ -28,7 +28,7 @@ less is more の方針でコーディングする。1-4 の出典: [andrej-karpa
 - DB操作は `update_db_rows()` を経由。バルク操作は `sync=False` で非同期化可能。
 - 日付判定は `ks_util.get_price_day()` を使用（17:00前は前日扱い）。
 - `DATA_DIR` のパス解決は `ks_util._resolve_data_dir()` で行う。環境変数 `KS_DATA_DIR` で上書き可能。詳細は [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) の「データパス解決」を参照。
-  - 現在の運用環境では `KS_DATA_DIR=/Users/k_sohara/Ext/GoogleDrive/shintakane_data`（`.zshrc` で設定済み）
+  - 正本は運用機 (MacMini) の `~/shintakane_data`。開発機 (MBA) は `KS_DATA_DIR=/Users/k_sohara/shintakane_data_dev`（`.zshrc` で設定済み）の開発用コピーで、古い。最新データを調べるときは `deploy/macmini.sh run python ...` で運用機に問い合わせる（詳細は [doc/OPERATIONS.md](doc/OPERATIONS.md)）
 - テストは「書けば書くほど良い」ものではない。1 PR で追加するテストは 5本以下を目安に、parametrize で集約する。自明な動作・getter/setter 素通し・ファクトリの各フィールド個別確認は書かない。詳細は [doc/TESTING.md](doc/TESTING.md) の「テスト量・粒度の方針」を参照。
 - Playwright MCP・`screencapture` 等でスクリーンショットを保存する前に [.claude/rules/playwright.md](.claude/rules/playwright.md) を参照。
 - 開発中に同じ系統の再現可能なワンショット処理 (`python -c` や複数行 Bash) を2回以上叩いたら、CLIサブコマンド/関数への昇格を1行で提案する。承認されたら [promote-to-command](.claude/skills/promote-to-command/SKILL.md) スキルの手順 (既存CLI確認→標準形選択→既存関数再利用→COMMANDS.md追記) で実施。`calc_*` 等のスコア計算はCLI化せずテストでカバーする。
@@ -46,7 +46,6 @@ less is more の方針でコーディングする。1-4 の出典: [andrej-karpa
 
 ```bash
 cd scripts && python shintakane.py                  # メイン分析(スクレイピング + 分析)
-cd scripts && python shintakane.py analyze          # 既存データのみ分析
 cd scripts && python make_stock_db.py list_all_db   # 全銘柄ランキング更新
 cd scripts && python make_stock_db.py update 6324   # 特定銘柄の更新
 cd scripts && python -m webapp.app                  # 調査WebApp (http://localhost:5001)

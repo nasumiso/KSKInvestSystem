@@ -247,6 +247,19 @@ table.ir-snapshot-table td.ir-comment-cell { width: 100%; word-break: break-word
   white-space: pre-wrap;
 }
 
+/* 開発用コピーの表示 (issue #453) */
+.dev-banner {
+  background: #c62828;
+  color: #fff;
+  padding: 0.3em 1em;
+  font-size: 0.85em;
+  font-weight: bold;
+}
+.dev-banner a {
+  color: #fff;
+  text-decoration: underline;
+}
+
 /* ナビゲーション */
 nav .brand {
   font-weight: bold;

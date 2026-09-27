@@ -10,6 +10,8 @@ from unittest.mock import patch, MagicMock, mock_open
 import csv
 import io
 
+import pytest
+
 
 class TestColNumToLetter:
     """列番号→列記号変換のテスト"""
@@ -59,6 +61,34 @@ class TestUploadCsvAsyncDispatch:
         assert args[0] is upload_csv
         assert args[1] == "dummy.csv"
         assert args[2] == "market_data"
+
+
+@pytest.mark.parametrize("data_dir, expect_upload", [
+    ("/Users/x/shintakane_data_dev", False),
+    ("/Users/x/shintakane_data_dev/", False),
+    ("/Users/x/shintakane_data", True),
+])
+def test_upload_skipped_on_dev_data_dir(monkeypatch, data_dir, expect_upload):
+    """開発用コピーでは古いデータで Sheets を上書きしない (issue #453)"""
+    import ks_util
+    from googledrive import _upload_with_lock
+    monkeypatch.setattr(ks_util, "DATA_DIR", data_dir)
+    func = MagicMock()
+    _upload_with_lock(func, "dummy.csv", "code_rank")
+    assert func.called is expect_upload
+
+
+@pytest.mark.parametrize("call", [
+    lambda g: g.get_drive_service(),
+    lambda g: g.upload_csv_via_sheets("dummy.csv", "shintakane_result"),
+])
+def test_write_refused_on_dev_data_dir(monkeypatch, call):
+    """直接呼び出し (main 等) でも開発用コピーからは書き込めない (issue #453)"""
+    import ks_util
+    import googledrive
+    monkeypatch.setattr(ks_util, "DATA_DIR", "/Users/x/shintakane_data_dev")
+    with pytest.raises(RuntimeError, match="開発用データ"):
+        call(googledrive)
 
 
 class TestUploadCsvViaSheets:

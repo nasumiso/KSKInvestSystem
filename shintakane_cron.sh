@@ -17,6 +17,15 @@ for arg in "$@"; do
   esac
 done
 
+# 開発用コピーで日次バッチを流すと、古いデータで Sheets を上書きし theme-news も
+# 二重課金になる。日次バッチは運用機だけで回す (issue #453)
+case "${KS_DATA_DIR%/}" in
+  *_dev)
+    echo "❌ KS_DATA_DIR が開発用コピー ($KS_DATA_DIR) です。日次バッチは運用機で実行してください (deploy/macmini.sh)"
+    exit 1
+    ;;
+esac
+
 # launchd 経由の起動 (TTYなし) のみ「19時前ならスキップ」を適用。
 # 朝マシンを開いた時に RunAtLoad=true で発火しても、株価終値が揃ってない時間帯では
 # 走らせたくない。一方、手動で `bash shintakane_cron.sh` を打った時は時刻問わず実行する。
