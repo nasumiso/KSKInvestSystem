@@ -8,7 +8,6 @@ from datetime import date
 
 from flask import Blueprint, render_template, abort
 
-import portfolio
 import portfolio_shelve as ps
 from webapp.helpers import (
     get_research_detail,
@@ -62,20 +61,10 @@ def stock_detail(code_s: str):
     if portfolio_record and portfolio_record.get("excluded"):
         portfolio_record = None
     portfolio_status = portfolio_record.get("status") if portfolio_record else None
-    # shelve 未移行環境のフォールバック: shelve が空のとき my_watch_list.txt 経由の所属を見る
-    # (portfolio.parse_my_portforio は shelve 空時に txt フォールバックする)
-    # issue #186: 全レコードが excluded=True の状態を fallback と誤判定しないよう
+    # shelve 未移行 (空) のときは書き込み UI を出さない。
+    # issue #186: 全レコードが excluded=True の状態を未移行と誤判定しないよう
     # include_excluded=True で取得する (portfolio.py の _is_fallback_mode と同じ判定)
     portfolio_fallback_mode = not ps.list_records(include_excluded=True)
-    if portfolio_status is None and portfolio_fallback_mode:
-        try:
-            watch, possess = portfolio.parse_my_portforio()
-        except Exception:  # noqa: BLE001
-            watch, possess = ([], [])
-        if code_s in possess:
-            portfolio_status = "1保"
-        elif code_s in watch:
-            portfolio_status = "3監"
     portfolio_status_label = STATUS_VALUE_TO_LABEL.get(portfolio_status) if portfolio_status else None
     portfolio_status_query = STATUS_VALUE_TO_QUERY.get(portfolio_status) if portfolio_status else None
     # issue #195: モーダル内 select 用の遷移先 [(label, value), ...]。未登録は空リスト。
