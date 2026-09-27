@@ -11,6 +11,14 @@
 <p id="cron-msg" style="font-size:0.85em;color:#666;margin:0.4em 0 0 0;"></p>
 <pre id="cron-log" style="margin-top:0.8em;max-height:60vh;overflow:auto;font-size:0.78em;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;padding:0.6em;white-space:pre-wrap;"></pre>
 
+<h2>コード反映</h2>
+{# main にマージした変更を19時の自動 pull を待たずに取り込む (運用機のみ) #}
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.6em 1em;">
+  <button id="deploy-btn" type="button" class="secondary">最新コードを反映 (git pull + 再起動)</button>
+  <span id="deploy-msg" style="font-size:0.85em;color:#666;"></span>
+</div>
+<pre id="deploy-out" style="display:none;margin-top:0.6em;font-size:0.78em;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;padding:0.6em;white-space:pre-wrap;"></pre>
+
 <h2>リンク</h2>
 <div style="display:flex;flex-wrap:wrap;gap:1.2em;">
   {% for ln in portal_links %}
@@ -79,6 +87,47 @@
   });
 
   checkStatus();
+
+  const deployBtn = document.getElementById('deploy-btn');
+  const deployMsg = document.getElementById('deploy-msg');
+  const deployOut = document.getElementById('deploy-out');
+  const DEPLOY_ERRORS = {
+    not_production: '運用機でのみ実行できます。',
+    cron_running: '日次バッチの実行中です。終わってから実行してください。',
+  };
+
+  // 再起動中は接続できないので、応答が戻るまで待ってから再読み込みする
+  function reloadWhenBack(retry) {
+    setTimeout(async () => {
+      try {
+        const r = await fetch('/dev/cron/status');
+        if (r.ok) { location.reload(); return; }
+      } catch (e) { /* まだ起動中 */ }
+      if (retry > 0) reloadWhenBack(retry - 1);
+      else deployMsg.textContent = '再起動の完了を確認できませんでした。手動で再読み込みしてください。';
+    }, 2000);
+  }
+
+  deployBtn.addEventListener('click', async () => {
+    deployBtn.disabled = true;
+    deployMsg.textContent = 'git pull 中…';
+    deployOut.style.display = 'none';
+    try {
+      const r = await fetch('/dev/deploy', { method: 'POST' });
+      const s = await r.json().catch(() => ({}));
+      if (s.output) { deployOut.textContent = s.output; deployOut.style.display = ''; }
+      if (s.status === 'updated') {
+        deployMsg.textContent = '✅ 更新しました。WebApp を再起動しています…';
+        reloadWhenBack(15);
+        return;
+      }
+      deployMsg.textContent = s.status === 'up_to_date' ? '既に最新です。'
+        : (DEPLOY_ERRORS[s.status] || '❌ 失敗しました (' + r.status + ')');
+    } catch (e) {
+      deployMsg.textContent = 'リクエスト失敗: ' + e.message;
+    }
+    deployBtn.disabled = false;
+  });
 })();
 </script>
 {% endblock %}

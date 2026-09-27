@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import subprocess
 
 import pytest
 
@@ -2272,3 +2273,39 @@ class TestDevRoute:
         assert body["state"] == expected
         lines = body["log_tail"].splitlines()
         assert len(lines) == 200 and lines[0] == "line50" and lines[-1] == "line249"
+
+    @pytest.mark.parametrize("env, running, heads, pull_rc, expected_code, expect_restart", [
+        # 開発機では作業ブランチを pull しない
+        (None, False, None, 0, 403, False),
+        ("production", True, None, 0, 409, False),
+        ("production", False, ("a", "b"), 0, 200, True),
+        ("production", False, ("a", "a"), 0, 200, False),
+        ("production", False, ("a", "a"), 1, 500, False),
+    ])
+    def test_deploy(self, client, dev, monkeypatch, env, running, heads, pull_rc,
+                    expected_code, expect_restart):
+        if env:
+            monkeypatch.setenv("SHINTAKANE_ENV", env)
+        else:
+            monkeypatch.delenv("SHINTAKANE_ENV", raising=False)
+        if running:
+            dev._LOCK_FILE.write_text(f"{os.getpid()}\n")
+        rev = iter(heads or ())
+        git_calls = []
+
+        def fake_run(args, **kwargs):
+            git_calls.append(args)
+            if args[1] == "rev-parse":
+                return subprocess.CompletedProcess(args, 0, stdout=next(rev) + "\n", stderr="")
+            return subprocess.CompletedProcess(args, pull_rc, stdout="pulled", stderr="")
+
+        popen_calls = []
+        monkeypatch.setattr(dev.subprocess, "run", fake_run)
+        monkeypatch.setattr(dev.subprocess, "Popen", lambda args, **k: popen_calls.append((args, k)))
+        resp = client.post("/dev/deploy")
+        assert resp.status_code == expected_code
+        assert bool(git_calls) == (expected_code not in (403, 409))
+        assert len(popen_calls) == int(expect_restart)
+        if expect_restart:
+            args, kwargs = popen_calls[0]
+            assert "kickstart -k" in args[-1] and kwargs["start_new_session"] is True
