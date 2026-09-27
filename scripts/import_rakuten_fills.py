@@ -292,9 +292,9 @@ def import_csv_to_fills(
     # 新しい fill でエピソードの姿が変わりうるのはここだけ。クローズが確定した
     # エピソードの戦略ひもづけに指紋を焼き付ける (issue #419)。
     if not dry_run and stats["imported"]:
-        from webapp import helpers
+        from webapp import trade_episodes
 
-        helpers.seal_episode_fingerprints(db_path=db_path)
+        trade_episodes.seal_episode_fingerprints(db_path=db_path)
     return stats
 
 

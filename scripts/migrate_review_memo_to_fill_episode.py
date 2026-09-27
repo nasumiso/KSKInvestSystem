@@ -26,7 +26,7 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 import portfolio_shelve as ps  # noqa: E402
-from webapp import helpers  # noqa: E402
+from webapp import trade_episodes  # noqa: E402
 
 try:
     from ks_util import log_print, log_warning
@@ -88,7 +88,7 @@ def _match_episode(
 def migrate(*, db_path: Optional[str] = None, dry_run: bool = False) -> Dict[str, Any]:
     logs = ps.list_action_logs(db_path=db_path)
     memo_logs = [l for l in logs if (l.get("review_memo") or "").strip()]
-    episodes = helpers.build_fill_episodes(db_path=db_path)
+    episodes = trade_episodes.build_fill_episodes(db_path=db_path)
     existing = ps.list_fill_memos(db_path=db_path)
 
     log_print(f"[migrate_review_memo] 対象 review_memo: {len(memo_logs)} 件")

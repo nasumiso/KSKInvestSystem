@@ -30,7 +30,7 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 import portfolio_shelve as ps  # noqa: E402
-from webapp import helpers  # noqa: E402
+from webapp import trade_episodes  # noqa: E402
 
 try:
     from ks_util import log_print, log_warning
@@ -44,7 +44,7 @@ except ImportError:
 
 def seed(*, db_path: Optional[str] = None, dry_run: bool = False) -> Dict[str, Any]:
     """未設定エピソードに銘柄の trade_idea を足切りつきでシードする。"""
-    episodes = helpers.build_fill_episodes(db_path=db_path)
+    episodes = trade_episodes.build_fill_episodes(db_path=db_path)
     existing = ps.list_episode_strategies(db_path=db_path)
     ideas = {r["code_s"]: (r.get("memo") or {}).get("trade_idea", "")
              for r in ps.list_records(db_path=db_path)}
@@ -69,7 +69,7 @@ def seed(*, db_path: Optional[str] = None, dry_run: bool = False) -> Dict[str, A
             # 集計キーには使えないので未分類のまま残し、人が付け直す。
             unregistered[idea] += 1
             continue
-        hold_days = helpers.episode_hold_days(ep)
+        hold_days = trade_episodes.episode_hold_days(ep)
         if not ps.is_hold_days_consistent(horizons.get(idea, ""), hold_days):
             rejected[idea] += 1
             log_print(f"[seed_episode_strategy] 却下 {ep['code_s']} {ep['episode_key']} "
@@ -115,7 +115,7 @@ def check_drift(*, db_path: Optional[str] = None) -> Dict[str, Any]:
     A (orphan): 保存キーに対応する現存エピソードが無い
     B (指紋不一致): キーは生きているが中身が変わった
     """
-    episodes = helpers.build_fill_episodes(db_path=db_path)
+    episodes = trade_episodes.build_fill_episodes(db_path=db_path)
     strategies = ps.list_episode_strategies(db_path=db_path)
 
     drifted = [ep for ep in episodes if ep["strategy_drift"]]
@@ -149,7 +149,7 @@ def main() -> int:
         summary = check_drift(db_path=args.db_path)
         return 1 if (summary["drifted"] or summary["orphans"]) else 0
     else:
-        helpers.seal_episode_fingerprints(db_path=args.db_path)
+        trade_episodes.seal_episode_fingerprints(db_path=args.db_path)
     return 0
 
 

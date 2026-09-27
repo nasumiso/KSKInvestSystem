@@ -10,6 +10,7 @@ import pytest
 
 import research_shelve as rs
 from webapp import helpers
+from webapp import trade_episodes
 
 
 def test_stop_loss_replay_includes_sell_fill():
@@ -237,7 +238,7 @@ def test_summarize_hold_positions_matches_row_aggregation(monkeypatch, tmp_path)
 
     summary = helpers.summarize_hold_positions(db_path=str(tmp_path / "dummy"))
 
-    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(trade_episodes, "build_fill_episodes", lambda: [])
     monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {})
     monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {})
     monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {})
@@ -262,7 +263,7 @@ def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
     """約定履歴のない手入力保有でもMA違反を防御シグナルとして表示する。"""
     import portfolio_shelve as ps
 
-    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(trade_episodes, "build_fill_episodes", lambda: [])
     monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {
         "4377": {"price": 900, "price_log": [(date(2026, 2, 9), 900)],
                  "ma50_violation": {"pending": True, "confirmed": False, "ma_value": 1000}}
@@ -291,7 +292,7 @@ def test_manual_holding_records_confirmed_ma_alert(monkeypatch):
     import portfolio_shelve as ps
 
     recorded = []
-    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(trade_episodes, "build_fill_episodes", lambda: [])
     monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {
         "4377": {"price": 900, "price_log": [(date(2026, 2, 9), 900)],
                  "ma50_violation": {"pending": False, "confirmed": True, "ma_value": 1000}}
@@ -4041,14 +4042,14 @@ def test_classify_market_category_legacy_nikkei225_cache(monkeypatch):
      {"avg_return_win": 15.0, "avg_return_lose": -20.0, "expectancy": 8.0}),
 ])
 def test_calc_trade_summary(pls, checks):
-    s = helpers.calc_trade_summary(pls)
+    s = trade_episodes.calc_trade_summary(pls)
     assert s is not None
     for k, v in checks.items():
         assert s[k] == v
 
 
 def test_calc_trade_summary_empty_returns_none():
-    assert helpers.calc_trade_summary([]) is None
+    assert trade_episodes.calc_trade_summary([]) is None
 
 
 # --- 往復行 (買→売の1行化, issue #421) ---------------------------------------
@@ -4115,7 +4116,7 @@ def _f(date_s, side, qty, price, trade_kind="", **kw):
       ("2026-04-14", "2026-05-11", 400, 1125.0, 960.0, 27, -66000)]),
 ])
 def test_build_round_trips(ep, expected):
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     got = [(r["open_date"], r["close_date"], r["qty"], r["open_price"],
             r["close_price"], r["hold_days"], r["pl"]) for r in rows]
     assert got == expected
@@ -4133,7 +4134,7 @@ def test_build_round_trips_genbutsu_partial_sell_diverges_from_average_cost():
         _f("2026-01-02", "buy", 100, 200.0, "現物"),
         _f("2026-01-03", "sell", 100, 150.0, "現物"),
     ], closed=False)
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     closed = [r for r in rows if r["closed"]]
     assert sum(r["pl"] for r in closed) == 5000  # FIFO: 100円の玉を150円で売った
     # 残った100株 (200円の玉) は保有中行として出る
@@ -4164,7 +4165,7 @@ def test_build_round_trips_genbutsu_partial_sell_diverges_from_average_cost():
       ("2026-01-06", "2026-02-05", 100, 2000.0, 2500.0, 30, 50000)]),
 ])
 def test_build_round_trips_lot_allocation(ep, expected):
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     got = [(r["open_date"], r["close_date"], r["qty"], r["open_price"],
             r["close_price"], r["hold_days"], r["pl"]) for r in rows]
     assert got == expected
@@ -4181,7 +4182,7 @@ def test_build_round_trips_no_cross_broker_fallback():
         _f("2026-01-05", "buy", 100, 1000.0, "現物", broker="楽天"),
         _f("2026-02-05", "sell", 100, 2500.0, "現物", broker="SBI"),
     ], closed=False)
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     # 楽天の100株は保有中のまま / SBI売却は建値を伏せた売りのみ行
     assert [(r["open_date"], r["open_price"], r["qty"], r["closed"], r["pl"])
             for r in rows] == [
@@ -4201,7 +4202,7 @@ def test_build_round_trips_open_rows_get_unrealized_pl():
         _f("2026-01-06", "buy", 100, 2000.0, "現物"),
     ], closed=False)
     ep["current_price"] = 3000.0
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     assert [(r["open_price"], r["pl"], round(r["return_pct"]), r["unrealized"])
             for r in rows] == [
         (2000.0, 100000, 50, True),
@@ -4220,7 +4221,7 @@ def test_build_round_trips_keeps_csv_tate_price_when_lot_missing():
         _f("2026-03-01", "sell", 100, 1200.0, "信用返済",
            tate_price=1000.0, tate_date="2026-01-05", fill_pl=20000),
     ], closed=False)
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     # 決済行の建値は CSV の 1,000 (02-01 の 2,000 を流用しない)
     closed = [r for r in rows if r["closed"]]
     assert [(r["open_date"], r["open_price"]) for r in closed] == [("2026-01-05", 1000.0)]
@@ -4249,17 +4250,17 @@ class TestEpisodeStrategyDrift:
         self._add(ps, db, "2026-02-01", "buy", 100, "a")
         self._add(ps, db, "2026-03-01", "sell", 100, "b")
 
-        ep = helpers.build_fill_episodes(db_path=db)[0]
+        ep = trade_episodes.build_fill_episodes(db_path=db)[0]
         ps.set_episode_strategy(
             ep["episode_key"], "中期テーマ",
             fingerprint=ps.episode_fingerprint(ep["fills"]),
-            hold_days=helpers.episode_hold_days(ep), db_path=db,
+            hold_days=trade_episodes.episode_hold_days(ep), db_path=db,
         )
-        assert helpers.build_fill_episodes(db_path=db)[0]["strategy_drift"] is False
+        assert trade_episodes.build_fill_episodes(db_path=db)[0]["strategy_drift"] is False
 
         # 01-05 の買いが後から入り、02-01 の玉と繋がって未決済に戻る
         self._add(ps, db, "2026-01-05", "buy", 100, "c")
-        after = [e for e in helpers.build_fill_episodes(db_path=db)
+        after = [e for e in trade_episodes.build_fill_episodes(db_path=db)
                  if e["episode_key"] == ep["episode_key"]][0]
         assert after["strategy_drift"] is True
 
@@ -4273,8 +4274,8 @@ class TestEpisodeStrategyDrift:
 
         ps.set_episode_strategy(ps.fill_episode_key("9999", "現物", 1), "中期テーマ",
                                 db_path=db)
-        episodes = helpers.build_fill_episodes(db_path=db)
-        assert helpers.count_orphan_strategies(episodes, db_path=db) == 1
+        episodes = trade_episodes.build_fill_episodes(db_path=db)
+        assert trade_episodes.count_orphan_strategies(episodes, db_path=db) == 1
 
 
 class TestIrQaCrud:

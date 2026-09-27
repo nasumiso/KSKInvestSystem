@@ -323,7 +323,7 @@ class TestTradeHistoryPage:
             ps.append_fill(ps.create_fill("6324", trade_date="2026-06-20", side="sell", qty=300,
                                           price=7810.0, amount=2343000, trade_kind="信用返済",
                                           tate_price=6990.0, dedup_key="fm-sell"))
-            from webapp.helpers import build_fill_episodes
+            from webapp.trade_episodes import build_fill_episodes
             key = next(e["episode_key"] for e in build_fill_episodes() if e["code_s"] == "6324")
 
         resp = client.post(
@@ -345,7 +345,7 @@ class TestTradeHistoryPage:
             ps.append_fill(ps.create_fill("6324", trade_date="2026-06-20", side="sell", qty=300,
                                           price=7810.0, amount=2343000, trade_kind="信用返済",
                                           tate_price=6990.0, dedup_key="fd-sell"))
-            from webapp.helpers import build_fill_episodes
+            from webapp.trade_episodes import build_fill_episodes
             key = next(e["episode_key"] for e in build_fill_episodes() if e["code_s"] == "6324")
             ps.set_fill_memo(key, "消す前")
         client.post("/trade-history/fill-memo", data={"episode_key": key, "review_memo": ""})
