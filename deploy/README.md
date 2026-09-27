@@ -11,7 +11,7 @@
 | `com.k_sohara.shintakane.cron.plist` | 平日19:00 の日次バッチ |
 | `com.k_sohara.shintakane.webapp.plist` | WebApp の常駐 (KeepAlive) |
 | `run_webapp.sh` | WebApp 起動ラッパー (secret の読み込みと venv 指定)。これもテンプレートで、`__REPO__` を置換してからインストールする |
-| `macmini.sh` | 開発機から運用機を操作するヘルパー (`status` / `run` / `pull-data`)。インストール不要で repo から直接叩く。使い方は [doc/COMMANDS.md](../doc/COMMANDS.md) の「運用機の操作」 |
+| `macmini.sh` | 開発機から運用機を操作するヘルパー (`status` / `run` / `pull-data` / `counts`)。インストール不要で repo から直接叩く。使い方は [doc/COMMANDS.md](../doc/COMMANDS.md) の「運用機の操作」 |
 
 ## プレースホルダ
 

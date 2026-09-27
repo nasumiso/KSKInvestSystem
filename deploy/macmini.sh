@@ -5,6 +5,7 @@
 #   deploy/macmini.sh run <cmd...>    運用機の scripts/ で venv + KS_DATA_DIR 付きで実行する
 #   deploy/macmini.sh pull-data [rsync opts]
 #                                     運用機 → 開発機へデータを取り寄せる (一方向。ir_docs は除外)
+#   deploy/macmini.sh counts          主要データの件数を運用機と開発機で並べる
 #
 # 接続先は ~/.ssh/config の Host macmini (Tailscale 経由)。MACMINI_HOST で上書きできる。
 # キーチェーンを使う操作 (claude のログイン、tunnel の API キー登録) は SSH からは
@@ -15,7 +16,7 @@ HOST="${MACMINI_HOST:-macmini}"
 REPO="/Users/k_sohara/dev/shintakane"
 
 usage() {
-  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
 }
 
@@ -103,11 +104,29 @@ cmd_pull_data() {
   echo "✅ 完了"
 }
 
+cmd_counts() {
+  : "${KS_DATA_DIR:?KS_DATA_DIR が未設定です (開発機側のデータ)}"
+  local scripts remote local_
+  scripts="$(cd "$(dirname "$0")/../scripts" && pwd)"
+  # 開発機のスクリプトを stdin で渡す (運用機が pull する前でも同じ定義で数える)
+  # shelve の open/close ログ (stderr) は捨て、エラーだけ残す
+  remote=$(cmd_run python - < "$scripts/data_counts.py" 2> >(grep -v '^shelveDB ' >&2))
+  local_=$(cd "$scripts" && ../.venv/bin/python data_counts.py 2> >(grep -v '^shelveDB ' >&2))
+  # printf の幅はバイト数で数えるため、全角の見出しは直書きする
+  echo "                 運用機     開発機"
+  # 同じ順で出力されるので行ごとに並べる。差があれば印を付ける
+  paste <(printf '%s\n' "$remote") <(printf '%s\n' "$local_") | while read -r name r _ l; do
+    mark=""; [ "$r" = "$l" ] || mark="  ← 差"
+    printf '%-12s %10s %10s%s\n' "$name" "$r" "$l" "$mark"
+  done
+}
+
 sub="${1:-}"
 [ $# -gt 0 ] && shift
 case "$sub" in
   status)    cmd_status ;;
   run)       cmd_run "$@" ;;
   pull-data) cmd_pull_data "$@" ;;
+  counts)    cmd_counts ;;
   *)         usage ;;
 esac

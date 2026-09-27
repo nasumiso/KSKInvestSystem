@@ -322,6 +322,7 @@ deploy/macmini.sh run python research_shelve.py fields    # 運用機の scripts
 deploy/macmini.sh run python -c '...'                     # 正本データへのワンショット問い合わせ
 deploy/macmini.sh pull-data                               # 運用機 → 開発機の KS_DATA_DIR へ取り寄せ (ir_docs 除外)
 deploy/macmini.sh pull-data -n                            # 取り寄せのドライラン (rsync のオプションをそのまま渡せる)
+deploy/macmini.sh counts                                  # 主要データ件数 (stocks/research/records/positions/fills/action_logs) を運用機と開発機で並べる。差に印。読み取りのみ
 ```
 
 - **最新の運用データを調べるときは `run` で正本を読む。** 開発機の `KS_DATA_DIR` は取り寄せた時点のコピー

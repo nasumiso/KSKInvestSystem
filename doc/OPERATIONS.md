@@ -246,8 +246,8 @@ print(\"records:\", len(p.list_records()), \"positions:\", len(p.list_positions(
 > 2026-09-27 の実績: stocks 3330 / research 896 / records 321 / positions 34 /
 > fills 1693 / action_logs 1780 が MBA と完全一致。
 >
-> `shintakane.py analyze` は**存在しない** (CLAUDE.md の記述が古い)。検証には
-> `make_stock_db.py list <code>` を使う。
+> 今は `deploy/macmini.sh counts` で同じ件数を運用機と開発機で並べて比べられる。
+> 個別銘柄の検証には `make_stock_db.py list <code>` を使う (`shintakane.py analyze` は存在しない)。
 
 **Google Drive API 認証**: `googledrive/` の認証ファイルは rsync で転送済み。
 **cron を有効化する前に token が有効か確かめる**。token が無いと `oauth2client` が
@@ -470,13 +470,16 @@ launchctl print-disabled "gui/$(id -u)" | grep shintakane      # cron と tunnel
 
 | やること | コマンド |
 |---|---|
-| ログを見る | `tail -f ~/Library/Logs/shintakane/cron.stdout.log` |
+| ログを見る | `tail -f ~/Library/Logs/shintakane/cron.stdout.log` (定刻実行分のみ) |
 | 個別処理のログ | `~/dev/shintakane/logs/{shintakane,make_stock_db,theme_news,compact}.log` |
 | 手動で日次バッチ | `cd ~/dev/shintakane && bash shintakane_cron.sh` |
+| ブラウザから日次バッチ | `http://kosukemac-mini:5001/dev` の「今すぐ実行」(19時前でも走る。git pull はしない) |
+| 最終実行の状態・日次バッチの出力 | `~/dev/shintakane/logs/cron_status.json` / `logs/cron.log` (定刻・手動・ブラウザ共通。`/dev` に表示) |
 | WebApp を新コードで再起動 | `launchctl kickstart -k "gui/$(id -u)/com.k_sohara.shintakane.webapp"` |
 | WebApp を開く (出先・スマホ) | `http://kosukemac-mini:5001/` (Tailnet 内のみ) |
 | 開発機から稼働状況を見る | `deploy/macmini.sh status` |
 | 開発機から正本データを調べる | `deploy/macmini.sh run python -c '...'` |
+| 運用機と開発機のデータ件数を比べる | `deploy/macmini.sh counts` |
 
 ### MBA (開発機) での使い分け
 
@@ -513,6 +516,7 @@ mkdir ~/shintakane_data_dev
 # 開発中の WebApp の資料収集が運用機と共有の index.json を書き換えてしまう
 cp -Rp ~/Ext/GoogleDrive/shintakane_data/ir_docs ~/shintakane_data_dev/
 KS_DATA_DIR=~/shintakane_data_dev deploy/macmini.sh pull-data
+KS_DATA_DIR=~/shintakane_data_dev deploy/macmini.sh counts   # 件数が揃ったか確認
 # .zshrc の KS_DATA_DIR と ~/.claude.json の shintakane-shikiho MCP の env を切り替える
 ```
 
