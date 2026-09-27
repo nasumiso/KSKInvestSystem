@@ -3,7 +3,7 @@
 Shintakane が蓄積する調査・記録データを、LLM から安全に参照するための MCP
 (Model Context Protocol) 連携です。
 
-Shintakane・LLM・人間の役割分担は [AI投資活用戦略.md](AI投資活用戦略.md) を参照してください。
+Shintakane・LLM・人間の役割分担は [AI投資活用戦略.md](../AI投資活用戦略.md) を参照してください。
 MCP は銘柄推奨や自動売買を行いません。投資判断は必ず人が行います。
 
 ## 現在提供中
@@ -55,7 +55,7 @@ IR 問い合わせ回答は公開情報として流通しない非公開の一�
 ### 決算資料 (`list_earnings_documents` / `get_earnings_document`)
 
 収集済みの決算短信 (`tanshin`)・決算説明資料 (`setsumei`)・中期経営計画 (`chuki_plan`) を返します。
-収集範囲と方針は [IR資料の収集範囲](decisions/2026-09-22-IR資料の収集範囲.md) を参照してください。
+収集範囲と方針は [IR資料の収集範囲](../decisions/2026-09-22-IR資料の収集範囲.md) を参照してください。
 
 | ツール | 内容 |
 |---|---|
@@ -88,7 +88,7 @@ ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 / モメ
 
 Python 3.11 の本体 `.venv` と `KS_DATA_DIR` が必要です。MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_DIR` は接続設定で明示します。未設定、またはリポジトリ内の空データを参照する設定ではサーバーは起動しません。
 
-ローカル接続設定、Secure MCP Tunnel による常駐運用、起動確認は [scripts/mcp/README.md](../scripts/mcp/README.md) を参照してください。
+ローカル接続設定、Secure MCP Tunnel による常駐運用、起動確認は [scripts/mcp/README.md](../../scripts/mcp/README.md) を参照してください。
 
 ## 今後の構想
 
@@ -102,4 +102,4 @@ Python 3.11 の本体 `.venv` と `KS_DATA_DIR` が必要です。MCP ホスト�
 | `get_portfolio_position` | 保有状況・株数・平均取得単価・評価額・PF比率 |
 | `get_investment_context` | 個別銘柄分析に必要な情報の集約 |
 
-書き込みツールは、読み取り連携の運用が安定してから検討します。設計上の背景と段階計画は [mcp-parent-concept.md](plan/mcp-parent-concept.md) を参照してください。
+書き込みツールは、読み取り連携の運用が安定してから検討します。設計上の背景と段階計画は [mcp-parent-concept.md](../plan/mcp-parent-concept.md) を参照してください。

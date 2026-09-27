@@ -53,7 +53,7 @@ cd scripts && python make_stock_db.py update 6324   # 特定銘柄の更新
 cd scripts && python -m webapp.app                  # 調査WebApp (http://localhost:5001)
 ```
 
-全コマンド一覧 (update/list/reflesh/backup/calibrate_momentum, 移行スクリプト, cron運用詳細など) は [doc/コマンド一覧.md](doc/コマンド一覧.md) を参照。テストは [doc/テスト方針.md](doc/テスト方針.md) を参照。
+全コマンド一覧 (update/list/reflesh/backup/calibrate_momentum, 移行スクリプト, cron運用詳細など) は [doc/spec/コマンド一覧.md](doc/spec/コマンド一覧.md) を参照。テストは [doc/テスト方針.md](doc/テスト方針.md) を参照。
 
 ## 実装プラン作成ルール
 
@@ -81,6 +81,10 @@ Kabutan HTMLスクレイピングのデータ取得失敗時:
 
 ETFコードは `data/ETF_code.txt` から読み込み、株式分析対象外とする。
 
+### 文書の更新は同じ PR で
+
+仕様・用語・不変条件・設計判断に影響する変更では、該当する文書 ([doc/アーキテクチャ.md](doc/アーキテクチャ.md)、[doc/用語集と不変条件.md](doc/用語集と不変条件.md)、`doc/spec/`、`doc/decisions/`) もコード変更と同じ PR で直す。issue を完了させる PR では、その計画書 (`doc/plan/`) を片付ける ([doc/README.md](doc/README.md) の「計画書の置き場所」)。
+
 ### 実装完了報告時の確認ポイント提示
 
 WebApp画面の見え方・挙動、またはユーザーが直接触るデータ（保有銘柄タブの表示など）が変わる実装が完了したら、完了報告の中で「ユーザーが確認すべき点」を自分から提案する。特に以下のようなケースは見落としやすいので優先して洗い出す：
@@ -99,7 +103,7 @@ WebApp画面の見え方・挙動、またはユーザーが直接触るデー�
 
 ## 関連ドキュメント
 
-- [doc/コマンド一覧.md](doc/コマンド一覧.md) — 開発コマンドリファレンス（全CLI、移行スクリプト、cron運用詳細）
+- [doc/spec/コマンド一覧.md](doc/spec/コマンド一覧.md) — 開発コマンドリファレンス（全CLI、移行スクリプト、cron運用詳細）
 - [doc/運用手順.md](doc/運用手順.md) — 運用機 (MacMini) の構築・データ移行・日常運用・トラブルシュート
 - [doc/アーキテクチャ.md](doc/アーキテクチャ.md) — データフロー、データストアの責務と分離原則、設計の意図、画面遷移
 - [doc/テスト方針.md](doc/テスト方針.md) — テスト方針（ユニットテスト、統合テスト、HTMLパース変更時の検証）
@@ -108,7 +112,7 @@ WebApp画面の見え方・挙動、またはユーザーが直接触るデー�
 - [doc/review/仕様レビュー_0704.md](doc/review/仕様レビュー_0704.md) — 投資システム評価レビュー（旧版: [仕様レビュー_0314.md](doc/review/仕様レビュー_0314.md)）
 - [doc/投資戦略.md](doc/投資戦略.md) — 個人メモ: 投資スタイル分析と売買ルール
 - [doc/方向性メモ.md](doc/方向性メモ.md) — システムの目的と方向性の正本
-- [doc/市場ステート仕様.md](doc/市場ステート仕様.md) — 市場ステートの判定仕様
+- [doc/spec/市場ステート仕様.md](doc/spec/市場ステート仕様.md) — 市場ステートの判定仕様
 - [doc/用語集と不変条件.md](doc/用語集と不変条件.md) — 用語の定義と機能をまたぐ制約
 - [doc/AI開発原則.md](doc/AI開発原則.md) — AI と開発するときに文書へ何を書くか、開発での AI の使い方
 - [doc/AI投資活用戦略.md](doc/AI投資活用戦略.md) — 投資判断での AI の使い方 (Shintakane / LLM / 人間の分業)

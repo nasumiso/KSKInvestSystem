@@ -1,6 +1,6 @@
 # 四季報 MCP サーバー
 
-`shikiho_server.py` は `research_shelve` の四季報コメント・業績予想・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバーです。書き込めるのは銘柄評価台帳 (`update_stock_rating`) だけです。HTTP ポートは開きません。利用者向けの仕様は [doc/MCP連携.md](../../doc/MCP連携.md) を参照してください。
+`shikiho_server.py` は `research_shelve` の四季報コメント・業績予想・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバーです。書き込めるのは銘柄評価台帳 (`update_stock_rating`) だけです。HTTP ポートは開きません。利用者向けの仕様は [doc/spec/MCP連携.md](../../doc/spec/MCP連携.md) を参照してください。
 
 ## ローカル起動前の準備
 
