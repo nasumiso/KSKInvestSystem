@@ -53,6 +53,7 @@ HTMLパーサー変更時は追加で `cd scripts && python shintakane.py --forc
 | 変更対象 | テストコマンド |
 |---|---|
 | `webapp/helpers.py` | `pytest tests/test_webapp_helpers.py tests/test_html_sanitizer.py -v` |
+| `webapp/trade_episodes.py` | `pytest tests/test_fill_episodes.py tests/test_webapp_helpers.py tests/test_webapp_trade_history_routes.py -v` |
 | `webapp/routes/` | `pytest tests/test_webapp_routes.py -v` |
 | `webapp/` の HTML サニタイズ関連 | `pytest tests/test_html_sanitizer.py -v` |
 

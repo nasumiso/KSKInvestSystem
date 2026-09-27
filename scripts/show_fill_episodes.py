@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """fill 建玉ラウンド (エピソード) を確認する開発補助CLI (issue #387)。
 
-build_fill_episodes (webapp.helpers) を呼んで、取込後の検算・保有中確認・
+build_fill_episodes (webapp.trade_episodes) を呼んで、取込後の検算・保有中確認・
 現引や信用の損益・振り返りメモの紐付けをターミナルで確認する。
 
 使い方:
@@ -34,6 +34,7 @@ if _THIS_DIR not in sys.path:
 import portfolio_shelve as ps  # noqa: E402
 from ks_util import log_print, log_warning  # noqa: E402
 from webapp import helpers  # noqa: E402
+from webapp import trade_episodes  # noqa: E402
 
 
 def _fmt_pl(ep: Dict[str, Any]) -> str:
@@ -226,8 +227,8 @@ def _check_splits(db_path: Optional[str]) -> int:
         # ジャンプ検知は換算後の fills に対して行う (build_fill_episodes と同じ理由:
         # 未換算のまま検知すると、登録済みイベントで残高の基準が変わった後の
         # 残高追跡が崩れ、別の未登録イベントのジャンプを見逃す)。
-        adjusted_fills = helpers._apply_split_adjustments(fills, events) if events else fills
-        jumps = helpers._detect_price_jumps(adjusted_fills)
+        adjusted_fills = trade_episodes._apply_split_adjustments(fills, events) if events else fills
+        jumps = trade_episodes._detect_price_jumps(adjusted_fills)
         for jump in jumps:
             # このジャンプの日付範囲をカバーする登録済みイベントがあるかで判定する
             # (銘柄単位の in registered だけだと、後日発生した別イベントを見逃す)
@@ -261,7 +262,7 @@ def _check_splits(db_path: Optional[str]) -> int:
             _report_split_candidate(code_s, splits, "単価ジャンプ検出", db_path)
 
     episodes_by_code: Dict[str, List[Dict[str, Any]]] = {}
-    for ep in helpers.build_fill_episodes(db_path=db_path):
+    for ep in trade_episodes.build_fill_episodes(db_path=db_path):
         episodes_by_code.setdefault(ep["code_s"], []).append(ep)
 
     for code_s, episodes in sorted(episodes_by_code.items()):
@@ -443,7 +444,7 @@ def main() -> int:
     if args.check_splits:
         return _check_splits(args.db_path)
 
-    episodes: List[Dict[str, Any]] = helpers.build_fill_episodes(db_path=args.db_path)
+    episodes: List[Dict[str, Any]] = trade_episodes.build_fill_episodes(db_path=args.db_path)
 
     if args.code_s:
         code = args.code_s.upper()

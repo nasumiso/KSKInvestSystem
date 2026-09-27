@@ -31,7 +31,8 @@ import import_rakuten_fills as rakuten
 import import_sbi_fills as sbi
 import portfolio_shelve as ps
 from ks_util import DATA_DIR
-from webapp.helpers import (
+from webapp.helpers import resolve_stock_name
+from webapp.trade_episodes import (
     build_fill_episodes,
     build_round_trips,
     build_stock_rollups,
@@ -39,7 +40,6 @@ from webapp.helpers import (
     count_orphan_strategies,
     episode_hold_days,
     fill_date_range_by_broker,
-    resolve_stock_name,
     summarize_by_strategy,
 )
 

@@ -12,6 +12,7 @@ import make_stock_db
 import portfolio_shelve as ps
 import show_fill_episodes
 from webapp import helpers
+from webapp import trade_episodes
 
 
 @pytest.fixture
@@ -54,7 +55,7 @@ class TestGenbaiBridge:
         _add(db_path, "4369", "2026-03-13", "sell", 100, 2618.0, seq_salt="e")
         _add(db_path, "4369", "2026-03-19", "sell", 100, 2642.0, seq_salt="f")
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         genbutsu = [e for e in eps if e["code_s"] == "4369" and e["kind"] == "現物"]
         assert len(genbutsu) == 1
         ep = genbutsu[0]
@@ -75,7 +76,7 @@ class TestGenbaiBridge:
         _add(db_path, "4369", "2026-02-05", "buy", 100, 1000.0, trade_kind="現物", seq_salt="a")
         _add(db_path, "4369", "2026-02-05", "buy", 100, 1000.0, trade_kind="現物", seq_salt="b")
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         genbutsu = [e for e in eps if e["code_s"] == "4369" and e["kind"] == "現物"]
         fills = genbutsu[0]["fills"]
         assert len(fills) == 2
@@ -96,7 +97,7 @@ class TestGenbaiBridge:
         _add(db_path, "1436", "2026-06-09", "sell", 100, 1855.0, trade_kind="現物", seq_salt="e")
         _add(db_path, "1436", "2026-06-16", "sell", 300, 1260.0, trade_kind="現物", seq_salt="f")
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         # 保有中は残らない (信用建玉は現引で全部振替、現物は全部売却)
         assert all(e["closed"] for e in eps), [e for e in eps if not e["closed"]]
         shinyo = [e for e in eps if e["kind"] == "信用"]
@@ -116,7 +117,7 @@ class TestGenbaiBridge:
         """現引で信用建玉が尽きたら信用が保有中に残らない (誤保有バグの回帰)。"""
         _add(db_path, "2001", "2026-01-10", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
         _add(db_path, "2001", "2026-01-20", "buy", 100, 1050.0, trade_kind="現引", seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         # 信用は現引で振替済み → 信用の保有中は無い。現物は現引100株を保有中
         open_shinyo = [e for e in eps if not e["closed"] and e["kind"] == "信用"]
         open_genbutsu = [e for e in eps if not e["closed"] and e["kind"] == "現物"]
@@ -140,7 +141,7 @@ class TestGenbaiBridge:
             helpers, "_bulk_price_logs",
             lambda codes: {"4377": [(_dt.date(2026, 8, 20), 2500)]},
         )
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         open_shinyo = [e for e in eps if not e["closed"] and e["kind"] == "信用"]
         open_genbutsu = [e for e in eps if not e["closed"] and e["kind"] == "現物"]
         # 信用200株のうち100株を現引 → 信用100株・現物100株がそれぞれ保有中
@@ -168,7 +169,7 @@ class TestGenbaiBridge:
              tate_price=1000.0, tate_date="2026-01-10", seq_salt="c")
         _add(db_path, "6367", "2026-02-02", "sell", 100, 1200.0, trade_kind="信用返済",
              tate_price=1000.0, tate_date="2026-01-11", seq_salt="d")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         closed_shinyo = [e for e in eps if e["closed"] and e["kind"] == "信用"]
         assert len(closed_shinyo) == 1
         # 返済した建玉コスト 100,000円 ÷ 返済100株 = 建単価 1,000円
@@ -183,7 +184,7 @@ class TestGenbaiBridge:
         # 同日 05-11: 現物売300 (seq が現引より先) と 現引300
         _add(db_path, "6366", "2026-05-11", "sell", 300, 753.1, trade_kind="現物", seq_salt="b")
         _add(db_path, "6366", "2026-05-11", "buy", 300, 1061.62, trade_kind="現引", seq_salt="c")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         # 現引で現物化した300株を同日売却 → 現物は保有中に残らない
         open_genbutsu = [e for e in eps if not e["closed"] and e["kind"] == "現物"]
         assert open_genbutsu == [], open_genbutsu
@@ -193,7 +194,7 @@ class TestGenbutsuRound:
     def test_simple_win(self, db_path):
         _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
         _add(db_path, "1001", "2026-01-20", "sell", 100, 1200.0, seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         assert len(eps) == 1
         ep = eps[0]
         assert ep["closed"]
@@ -211,7 +212,7 @@ class TestGenbutsuRound:
         _add(db_path, "1002", "2026-01-03", "buy", 100, 1100.0, seq_salt="c")
         _add(db_path, "1002", "2026-01-10", "sell", 100, 1300.0, seq_salt="d")
         _add(db_path, "1002", "2026-01-15", "sell", 200, 1400.0, seq_salt="e")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         assert len(eps) == 1
         ep = eps[0]
         assert ep["qty_peak"] == 300
@@ -230,7 +231,7 @@ class TestGenbutsuRound:
         _add(db_path, "1003", "2026-01-05", "sell", 100, 1100.0, seq_salt="b")
         _add(db_path, "1003", "2026-02-01", "buy", 100, 1200.0, seq_salt="c")
         _add(db_path, "1003", "2026-02-05", "sell", 100, 1150.0, seq_salt="d")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         assert len([e for e in eps if e["code_s"] == "1003"]) == 2
         pls = sorted(e["pl"]["profit_amount"] for e in eps)
         assert pls == [-5000, 10000]
@@ -238,7 +239,7 @@ class TestGenbutsuRound:
     def test_holding_open_round(self, db_path):
         # 買いのみ = 保有中、損益 None
         _add(db_path, "1004", "2026-01-01", "buy", 100, 1000.0, seq_salt="a")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         assert len(eps) == 1
         assert eps[0]["closed"] is False
         assert eps[0]["pl"] is None
@@ -251,7 +252,7 @@ class TestShinyoRound:
         _add(db_path, "2001", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
         _add(db_path, "2001", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済",
              tate_date="2026-01-01", tate_price=1000.0, seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         credit = [e for e in eps if e["kind"] == "信用"]
         assert len(credit) == 1
         # (1300-1000)*100 = 30000
@@ -266,7 +267,7 @@ class TestShinyoRound:
              broker="SBI", seq_salt="a")
         _add(db_path, "2002", "2026-01-10", "sell", 100, 1250.0, trade_kind="信用返済",
              broker="SBI", settle_pl=24000, tate_price=None, seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         credit = [e for e in eps if e["kind"] == "信用"]
         assert len(credit) == 1
         assert credit[0]["pl"]["profit_amount"] == 24000
@@ -279,7 +280,7 @@ class TestShinyoRound:
         # 建単価も決済損益も無い返済でも、残った建玉が1本なら安全に復元できる。
         _add(db_path, "2003", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
         _add(db_path, "2003", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済", seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         credit = [e for e in eps if e["kind"] == "信用"]
         assert len(credit) == 1
         assert credit[0]["pl"]["profit_amount"] == 30000
@@ -289,7 +290,7 @@ class TestShinyoRound:
         _add(db_path, "2004", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")
         _add(db_path, "2004", "2026-01-02", "buy", 100, 1100.0, trade_kind="信用新規", seq_salt="b")
         _add(db_path, "2004", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済", seq_salt="c")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         credit = [e for e in eps if e["kind"] == "信用"]
         assert credit[0]["pl"] is None
 
@@ -300,8 +301,8 @@ class TestShinyoRound:
         _add(db_path, "2005", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済", seq_salt="c")
         _add(db_path, "2005", "2026-01-10", "sell", 100, 1250.0, trade_kind="信用返済",
              tate_date="2026-01-02", tate_price=1200.0, seq_salt="d")
-        ep = helpers.build_fill_episodes(db_path=db_path)[0]
-        inferred = next(r for r in helpers.build_round_trips(ep) if r.get("inferred_open"))
+        ep = trade_episodes.build_fill_episodes(db_path=db_path)[0]
+        inferred = next(r for r in trade_episodes.build_round_trips(ep) if r.get("inferred_open"))
         assert inferred["open_date"] == "2026-01-01"
         assert inferred["open_price"] == 1000.0
         assert inferred["return_pct"] == pytest.approx(30.0)
@@ -313,8 +314,8 @@ class TestShinyoRound:
         _add(db_path, "2006", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済", seq_salt="c")
         _add(db_path, "2006", "2026-01-10", "sell", 100, 1250.0, trade_kind="信用返済",
              tate_date="2026-01-03", tate_price=1100.0, seq_salt="d")
-        ep = helpers.build_fill_episodes(db_path=db_path)[0]
-        assert all(not r.get("inferred_open") for r in helpers.build_round_trips(ep))
+        ep = trade_episodes.build_fill_episodes(db_path=db_path)[0]
+        assert all(not r.get("inferred_open") for r in trade_episodes.build_round_trips(ep))
 
     def test_pre_import_repayment_does_not_close_current_round(self, db_path):
         """取込前建玉の返済は、当期に新規で建てた信用玉と相殺しない。"""
@@ -330,7 +331,7 @@ class TestShinyoRound:
              trade_kind="信用返済", tate_date="2026-02-20", tate_price=1339.0,
              seq_salt="settle")
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         current = [e for e in eps if e["kind"] == "信用" and not e["carry_over"]]
         carry_over = [e for e in eps if e["kind"] == "信用" and e["carry_over"]]
 
@@ -347,7 +348,7 @@ class TestCarryOver:
     def test_sell_only_round_is_pl_none(self, db_path):
         # 期首持ち越し: 買い記録が無く売りだけ → クローズ済だが損益不能
         _add(db_path, "3001", "2026-02-20", "sell", 300, 1500.0, seq_salt="a")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         assert len(eps) == 1
         assert eps[0]["closed"] is True
         assert eps[0]["pl"] is None
@@ -366,7 +367,7 @@ class TestShortRound:
         _add(db_path, "5001", "2026-01-09", "buy", 100, 1300.0,
              trade_kind="信用返済", tate_price=tate_price, settle_pl=settle_pl,
              seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         assert len(eps) == 1
         ep = eps[0]
         assert ep["is_short"] is True
@@ -390,7 +391,7 @@ class TestShortRound:
              trade_kind="信用返済", tate_price=1500.0, seq_salt="c")
         _add(db_path, "5002", "2026-01-10", "sell", 100, 1200.0,
              trade_kind="信用返済", tate_price=1000.0, seq_salt="d")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         assert len(eps) == 2
         short = [e for e in eps if e["is_short"]][0]
         long_ = [e for e in eps if not e["is_short"]][0]
@@ -403,17 +404,17 @@ class TestShortRound:
         # 保有中の売建: 現在値が建単価より下なら含み益
         _add(db_path, "5003", "2026-01-05", "sell", 100, 1500.0,
              trade_kind="信用新規", seq_salt="a")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         ep = eps[0]
         assert ep["closed"] is False
-        assert helpers._episode_open_pl(ep, 1300.0)["unrealized"] == 20000
-        assert helpers._episode_open_pl(ep, 1700.0)["unrealized"] == -20000
+        assert trade_episodes._episode_open_pl(ep, 1300.0)["unrealized"] == 20000
+        assert trade_episodes._episode_open_pl(ep, 1700.0)["unrealized"] == -20000
 
     def test_pre_import_short_repayment_is_closed_carry_over(self, db_path):
         """新規売が取込範囲に無い返済買は、保有中の買建にしない。"""
         _add(db_path, "5004", "2026-01-05", "buy", 100, 1300.0,
              trade_kind="信用返済", settle_pl=20000, broker="SBI", seq_salt="a")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         assert len(eps) == 1
         ep = eps[0]
         assert ep["closed"] is True
@@ -427,7 +428,7 @@ class TestShortRound:
              trade_kind="信用新規", seq_salt="a")
         _add(db_path, "5005", "2026-01-05", "buy", 100, 1300.0,
              trade_kind="信用返済", settle_pl=20000, broker="SBI", seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         assert len(eps) == 1
         assert eps[0]["closed"] is True
         assert eps[0]["carry_over"] is False
@@ -442,7 +443,7 @@ class TestGenbutsuAndShinyoSeparate:
         _add(db_path, "4001", "2026-01-02", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="c")
         _add(db_path, "4001", "2026-01-06", "sell", 100, 1200.0, trade_kind="信用返済",
              tate_price=1000.0, seq_salt="d")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         kinds = sorted(e["kind"] for e in eps if e["code_s"] == "4001")
         assert kinds == ["信用", "現物"]
 
@@ -460,7 +461,7 @@ class TestOpenPositionPL:
             helpers, "_bulk_price_logs",
             lambda codes: {"7001": [(_dt.date(2026, 1, 31), 1400)]},
         )
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         ep = eps[0]
         assert ep["closed"] is False
         op = ep["open_pl"]
@@ -474,7 +475,7 @@ class TestOpenPositionPL:
     def test_open_without_price_has_none_unrealized(self, db_path, monkeypatch):
         _add(db_path, "7002", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
         monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {"7002": []})
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         op = eps[0]["open_pl"]
         assert op["realized"] == 0
         assert op["unrealized"] is None    # 現在値なし
@@ -490,7 +491,7 @@ class TestOpenPositionPL:
             helpers, "_bulk_price_logs",
             lambda codes: {"7003": [(_dt.date(2026, 1, 31), 6500)]},
         )
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         op = eps[0]["open_pl"]
         assert op["unrealized"] is None
 
@@ -503,7 +504,7 @@ class TestOrdering:
         # B: 建2026-01-02 のまま保有中で 2026-03-01 に買い増し (最終03-01)
         _add(db_path, "5002", "2026-01-02", "buy", 100, 2000.0, seq_salt="c")
         _add(db_path, "5002", "2026-03-01", "buy", 100, 2100.0, seq_salt="d")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         # 最終約定日降順 → 保有中(最終03-01)が先、クローズ済(最終01-05)が後
         assert [e["code_s"] for e in eps] == ["5002", "5001"]
         assert eps[0]["last_trade_date"] == "2026-03-01"
@@ -550,8 +551,8 @@ class TestStockRollups:
         elif setup == "all_open_no_price":
             _add(db_path, "8003", "2026-01-01", "buy", 100, 1000.0, seq_salt="a")
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
-        rollups = helpers.build_stock_rollups(eps)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
+        rollups = trade_episodes.build_stock_rollups(eps)
         r = rollups[0]
 
         if "episode_count" in expect:
@@ -580,8 +581,8 @@ class TestStockRollups:
             helpers, "_bulk_price_logs",
             lambda codes: {"8004": [(_dt.date(2026, 1, 31), 1200)]},
         )
-        eps = helpers.build_fill_episodes(db_path=db_path)
-        rollups = helpers.build_stock_rollups(eps)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
+        rollups = trade_episodes.build_stock_rollups(eps)
         r = rollups[0]
         assert r["open_unrealized"] == 20000   # (1200-1000)*100 (現物のみ、信用側はNone)
         assert r["open_unrealized_partial"] is True
@@ -603,15 +604,15 @@ class TestStockRollups:
         _add(db_path, "8102", "2026-01-15", "sell", 200, 480.0, trade_kind="信用返済",
              tate_price=500.0, seq_salt="f")  # 負け
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
-        rollups = helpers.build_stock_rollups(eps)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
+        rollups = trade_episodes.build_stock_rollups(eps)
 
         ep_pls = [e["pl"] for e in eps if e["closed"] and e["pl"]]
         stk_pls = [r["pl"] for r in rollups if r["pl"]]
 
         assert sum(p["profit_amount"] for p in ep_pls) == sum(p["profit_amount"] for p in stk_pls)
-        s_ep = helpers.calc_trade_summary(ep_pls)
-        s_stk = helpers.calc_trade_summary(stk_pls)
+        s_ep = trade_episodes.calc_trade_summary(ep_pls)
+        s_stk = trade_episodes.calc_trade_summary(stk_pls)
         assert s_ep["expectancy"] == pytest.approx(s_stk["expectancy"])
 
     def test_realized_total_sums_closed_and_partial_sell(self, db_path, monkeypatch):
@@ -628,8 +629,8 @@ class TestStockRollups:
         _add(db_path, "8103", "2026-02-10", "buy", 100, 1000.0, seq_salt="c")
         _add(db_path, "8103", "2026-02-20", "sell", 40, 1500.0, seq_salt="d")
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
-        r = helpers.build_stock_rollups(eps)[0]
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
+        r = trade_episodes.build_stock_rollups(eps)[0]
         assert r["pl"]["profit_amount"] == 20000      # クローズ済み分のみ
         assert r["open_realized"] == 20000            # 部分売り分のみ
         assert r["realized_total"] == 40000           # 合算
@@ -644,12 +645,12 @@ class TestStockRollups:
         _add(db_path, "8104", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
         _add(db_path, "8104", "2026-01-20", "sell", 40, 1500.0, seq_salt="b")
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
-        assert helpers.build_stock_rollups(eps)[0]["realized_total"] == 20000
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
+        assert trade_episodes.build_stock_rollups(eps)[0]["realized_total"] == 20000
 
         for e in eps:
             e["split_suspect"] = True
-        r = helpers.build_stock_rollups(eps)[0]
+        r = trade_episodes.build_stock_rollups(eps)[0]
         assert r["realized_total"] is None
         assert r["open_realized"] == 0
         assert r["held_qty"] == 0
@@ -683,8 +684,8 @@ class TestStockRollups:
         monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {c: [] for c in codes})
         for i, (dt, side, tk) in enumerate(fills):
             _add(db_path, "8301", dt, side, 100, 1000.0, trade_kind=tk, seq_salt=str(i))
-        rollups = helpers.build_stock_rollups(
-            helpers.build_fill_episodes(db_path=db_path))
+        rollups = trade_episodes.build_stock_rollups(
+            trade_episodes.build_fill_episodes(db_path=db_path))
         assert rollups[0]["qty_peak"] == expected_peak
 
     def test_sorted_by_last_trade_date_desc_then_code(self, db_path, monkeypatch):
@@ -695,8 +696,8 @@ class TestStockRollups:
         # 8201: 最終取引 2026-01-05 (後)
         _add(db_path, "8201", "2026-01-01", "buy", 100, 1000.0, seq_salt="c")
         _add(db_path, "8201", "2026-01-05", "sell", 100, 1100.0, seq_salt="d")
-        eps = helpers.build_fill_episodes(db_path=db_path)
-        rollups = helpers.build_stock_rollups(eps)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
+        rollups = trade_episodes.build_stock_rollups(eps)
         assert [r["code_s"] for r in rollups] == ["8202", "8201"]
 
 
@@ -710,7 +711,7 @@ class TestFillDateRangeByBroker:
              trade_kind="信用新規", broker="SBI", seq_salt="c")
         _add(db_path, "2002", "2026-07-21", "sell", 100, 600.0,
              trade_kind="信用返済", broker="SBI", settle_pl=10000, seq_salt="d")
-        ranges = helpers.fill_date_range_by_broker(db_path=db_path)
+        ranges = trade_episodes.fill_date_range_by_broker(db_path=db_path)
         assert ranges == {
             "楽天": {"first": "2026-01-10", "last": "2026-07-31"},
             "SBI": {"first": "2026-03-04", "last": "2026-07-21"},
@@ -718,16 +719,16 @@ class TestFillDateRangeByBroker:
 
     def test_none_broker_counts_as_rakuten(self, db_path):
         _add(db_path, "1001", "2026-05-01", "buy", 100, 1000.0, broker=None, seq_salt="a")
-        ranges = helpers.fill_date_range_by_broker(db_path=db_path)
+        ranges = trade_episodes.fill_date_range_by_broker(db_path=db_path)
         assert ranges == {"楽天": {"first": "2026-05-01", "last": "2026-05-01"}}
 
     def test_empty(self, db_path):
-        assert helpers.fill_date_range_by_broker(db_path=db_path) == {}
+        assert trade_episodes.fill_date_range_by_broker(db_path=db_path) == {}
 
 
 class TestEmpty:
     def test_no_fills(self, db_path):
-        assert helpers.build_fill_episodes(db_path=db_path) == []
+        assert trade_episodes.build_fill_episodes(db_path=db_path) == []
 
 
 class TestBrokerBackfill:
@@ -736,7 +737,7 @@ class TestBrokerBackfill:
     def test_none_broker_shown_as_rakuten(self, db_path):
         _add(db_path, "9001", "2026-01-10", "buy", 100, 1000.0, broker=None, seq_salt="a")
         _add(db_path, "9001", "2026-01-20", "sell", 100, 1100.0, broker=None, seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         assert len(eps) == 1
         brokers = {f["broker"] for f in eps[0]["fills"]}
         assert brokers == {"楽天"}
@@ -746,7 +747,7 @@ class TestBrokerBackfill:
              trade_kind="信用新規", broker="SBI", seq_salt="a")
         _add(db_path, "9002", "2026-01-20", "sell", 100, 1250.0,
              trade_kind="信用返済", broker="SBI", settle_pl=24000, seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         brokers = {f["broker"] for f in eps[0]["fills"]}
         assert brokers == {"SBI"}
 
@@ -763,13 +764,13 @@ class TestFillMemo:
         # P1-2: 保有中に付けたメモが売却後 (close_date 確定) も同じキーで追える
         _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
         monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {"1001": []})
-        eps_open = helpers.build_fill_episodes(db_path=db_path)
+        eps_open = trade_episodes.build_fill_episodes(db_path=db_path)
         key_open = eps_open[0]["episode_key"]
         assert eps_open[0]["closed"] is False
         ps.set_fill_memo(key_open, "保有中に書いたメモ", db_path=db_path)
         # 売却してラウンドをクローズ
         _add(db_path, "1001", "2026-01-20", "sell", 100, 1200.0, seq_salt="b")
-        eps_closed = helpers.build_fill_episodes(db_path=db_path)
+        eps_closed = trade_episodes.build_fill_episodes(db_path=db_path)
         assert eps_closed[0]["closed"] is True
         # キーが変わらずメモが引き継がれる
         assert eps_closed[0]["episode_key"] == key_open
@@ -784,7 +785,7 @@ class TestFillMemo:
         _add(db_path, "1001", "2026-01-12", "buy", 100, 1050.0, trade_kind="信用新規", seq_salt="c")
         _add(db_path, "1001", "2026-01-13", "sell", 100, 1200.0, trade_kind="信用返済",
              tate_price=1050.0, seq_salt="d")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         code_eps = [e for e in eps if e["code_s"] == "1001"]
         assert len(code_eps) == 2
         keys = {e["episode_key"] for e in code_eps}
@@ -800,17 +801,17 @@ class TestFillMemo:
     def test_memo_attached_to_episode(self, db_path):
         _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
         _add(db_path, "1001", "2026-01-20", "sell", 100, 1200.0, seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         key = eps[0]["episode_key"]
         assert eps[0]["review_memo"] == ""  # 初期は空
         ps.set_fill_memo(key, "利確成功、再現性の検証を", db_path=db_path)
-        eps2 = helpers.build_fill_episodes(db_path=db_path)
+        eps2 = trade_episodes.build_fill_episodes(db_path=db_path)
         assert eps2[0]["review_memo"] == "利確成功、再現性の検証を"
 
     def test_empty_memo_deletes(self, db_path):
         _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
         _add(db_path, "1001", "2026-01-20", "sell", 100, 1200.0, seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         key = eps[0]["episode_key"]
         ps.set_fill_memo(key, "メモ", db_path=db_path)
         assert ps.get_fill_memo(key, db_path=db_path) == "メモ"
@@ -822,12 +823,12 @@ class TestFillMemo:
         # メモは fill と独立レイヤー。fill を作り直しても同一キーなら残る
         _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
         _add(db_path, "1001", "2026-01-20", "sell", 100, 1200.0, seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         key = eps[0]["episode_key"]
         ps.set_fill_memo(key, "残るはず", db_path=db_path)
         # 同一 dedup の fill を再追加 (重複スキップされる) してもメモは維持
         _add(db_path, "1001", "2026-01-10", "buy", 100, 1000.0, seq_salt="a")
-        eps2 = helpers.build_fill_episodes(db_path=db_path)
+        eps2 = trade_episodes.build_fill_episodes(db_path=db_path)
         assert eps2[0]["review_memo"] == "残るはず"
 
 
@@ -860,7 +861,7 @@ class TestSplitAdjustment:
     def test_split_adjustment_closes_episode_at_zero(self, db_path):
         self._add_1491_fills(db_path)
         ps.add_split_adjustment("1491", "2025-09-29", 0.05, db_path=db_path)
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         genbutsu = [e for e in eps if e["code_s"] == "1491" and e["kind"] == "現物"]
         assert len(genbutsu) == 1
         ep = genbutsu[0]
@@ -875,7 +876,7 @@ class TestSplitAdjustment:
         _add(db_path, "2491", "2025-12-01", "sell", 1200, 100, seq_salt="c")
         ps.add_split_adjustment("2491", "2025-03-01", 0.1, db_path=db_path)   # 10:1併合
         ps.add_split_adjustment("2491", "2025-09-01", 2.0, db_path=db_path)   # 1:2分割
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         ep = [e for e in eps if e["code_s"] == "2491"][0]
         fills = {f["trade_date"]: f for f in ep["fills"]}
         # 2025-01-01: 100株@10000 -> ×0.1×2.0 = ×0.2 -> 20株@50000
@@ -893,7 +894,7 @@ class TestSplitAdjustment:
         _add(db_path, "3491", "2025-02-01", "sell", 100, 1100, trade_kind="信用返済",
              settle_pl=9500, seq_salt="b")
         ps.add_split_adjustment("3491", "2025-06-01", 0.5, db_path=db_path)  # 1:2併合
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         shinyo = [e for e in eps if e["code_s"] == "3491" and e["kind"] == "信用"][0]
         assert shinyo["pl"]["profit_amount"] == 9500  # settle_pl のまま、換算されない
         assert shinyo["fills"][0]["qty"] == 100  # 信用 fill の qty も不変
@@ -905,7 +906,7 @@ class TestSplitAdjustment:
              settle_pl=80000, seq_salt="b")
         ps.add_split_adjustment("3492", "2025-03-01", 2.0, db_path=db_path)
 
-        episode = helpers.build_fill_episodes(db_path=db_path)[0]
+        episode = trade_episodes.build_fill_episodes(db_path=db_path)[0]
         assert episode["kind"] == "信用"
         assert episode["split_suspect"] is True
 
@@ -917,7 +918,7 @@ class TestSplitAdjustment:
         _add(db_path, "6491", "2025-06-01", "buy", 300, 1000, trade_kind="現引", seq_salt="b")
         _add(db_path, "6491", "2025-12-01", "sell", 100, 900, seq_salt="c")
         ps.add_split_adjustment("6491", "2025-09-01", 0.833333, db_path=db_path)
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         shinyo = [e for e in eps if e["code_s"] == "6491" and e["kind"] == "信用"][0]
         assert shinyo["closed"] is True
         assert shinyo["fills"][0]["qty"] == 300  # 現引は換算されず信用新規と同じ基準
@@ -926,7 +927,7 @@ class TestSplitAdjustment:
         # 1491相当 (保有中): 未換算のまま既存ロジックで処理すると併合前4,000株が
         # 未消化のまま残り保有中になる (issue #398 の背景そのもの)。
         self._add_1491_fills(db_path)  # split_adj は登録しない
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         open_ep = [e for e in eps if e["code_s"] == "1491" and e["kind"] == "現物"][0]
         assert open_ep["closed"] is False
         assert open_ep["split_suspect"] is True
@@ -943,7 +944,7 @@ class TestSplitAdjustment:
         _add(db_path, "5491", "2025-06-01", "sell", 4000, 60, seq_salt="b")   # 残4000株、保有継続
         _add(db_path, "5491", "2025-09-01", "buy", 100, 900, seq_salt="c")    # 単価ジャンプ (同一保有内)
         _add(db_path, "5491", "2025-09-15", "sell", 4100, 950, seq_salt="d")  # 残高0でクローズ
-        eps2 = helpers.build_fill_episodes(db_path=db_path)
+        eps2 = trade_episodes.build_fill_episodes(db_path=db_path)
         closed_ep = [e for e in eps2 if e["code_s"] == "5491" and e["kind"] == "現物"][0]
         assert closed_ep["closed"] is True
         assert closed_ep["split_suspect"] is True
@@ -954,13 +955,13 @@ class TestSplitAdjustment:
         # build_fill_episodes は yfinance を呼ばないため、pending_review 経由で伝播する。
         _add(db_path, "9252", "2025-08-06", "buy", 100, 3270, seq_salt="a")
         _add(db_path, "9252", "2025-08-08", "sell", 83, 4250, trade_kind="現物(単元未満)", seq_salt="b")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         ep = [e for e in eps if e["code_s"] == "9252" and e["kind"] == "現物"][0]
         assert not ep.get("split_suspect")  # pending_review 未登録ならフラグは付かない
 
         ps.mark_split_pending_review(
             "9252", reason="保有中総当たりチェック", ex_date="2025-08-07", db_path=db_path)
-        eps2 = helpers.build_fill_episodes(db_path=db_path)
+        eps2 = trade_episodes.build_fill_episodes(db_path=db_path)
         ep2 = [e for e in eps2 if e["code_s"] == "9252" and e["kind"] == "現物"][0]
         assert ep2["split_suspect"] is True
 
@@ -980,7 +981,7 @@ class TestSplitAdjustment:
         ps.add_split_adjustment("9498", "2025-08-07", 0.833333, db_path=db_path)
         assert "9498" not in ps.list_pending_review_codes(db_path=db_path)
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         ep = [e for e in eps if e["code_s"] == "9498" and e["kind"] == "現物"][0]
         assert ep["closed"] is True
         assert ep["split_fractional_residual"] is True
@@ -995,7 +996,7 @@ class TestSplitAdjustment:
             "9496", reason="エピソード期間総当たりチェック", ex_date="2025-03-01",
             db_path=db_path)
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         ep = [e for e in eps if e["code_s"] == "9496" and e["kind"] == "現物"][0]
         assert ep["closed"] is True
         assert ep["split_suspect"] is True
@@ -1008,7 +1009,7 @@ class TestSplitAdjustment:
             "9488", reason="エピソード期間総当たりチェック", ex_date="2025-03-01",
             db_path=db_path)
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         ep = [e for e in eps if e["code_s"] == "9488" and e["kind"] == "現物"][0]
         assert not ep.get("split_suspect")
 
@@ -1104,7 +1105,7 @@ class TestSplitAdjustment:
 
         assert show_fill_episodes._check_splits(db_path) == 0
         assert ps.list_pending_review_events(db_path=db_path)["9494"] == ["2025-02-03"]
-        episode = helpers.build_fill_episodes(db_path=db_path)[0]
+        episode = trade_episodes.build_fill_episodes(db_path=db_path)[0]
         assert episode["split_suspect"] is True
 
     def test_weekly_price_ratio_change_compares_non_adjacent_fills(self):
@@ -1131,7 +1132,7 @@ class TestSplitAdjustment:
         _add(db_path, "4491", "2025-06-01", "sell", 3000, 60, seq_salt="b")
         _add(db_path, "4491", "2025-06-15", "sell", 1000, 70, seq_salt="c")
         ps.add_split_adjustment("4491", "2025-03-01", 0.05, db_path=db_path)
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         ep = [e for e in eps if e["code_s"] == "4491"][0]
         assert ep["closed"] is True  # 200株 - 200株 = 残差はあっても0扱い
 
@@ -1145,7 +1146,7 @@ class TestSplitAdjustment:
         ps.add_split_adjustment("8491", "2025-03-01", 0.5, db_path=db_path)  # 1回目登録済み
         _add(db_path, "8491", "2025-06-01", "sell", 400, 220, seq_salt="b")  # 分割後基準、残100株
         _add(db_path, "8491", "2025-12-01", "sell", 100, 900, seq_salt="c")  # 2回目 (未登録) ジャンプ
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         ep = [e for e in eps if e["code_s"] == "8491" and e["kind"] == "現物"][0]
         assert ep["split_suspect"] is True  # 登録済みでも新規ジャンプがあれば要確認扱い
 
@@ -1156,7 +1157,7 @@ class TestSplitAdjustment:
         _add(db_path, "9492", "2022-02-01", "sell", 100, 550, seq_salt="b")   # 完結
         _add(db_path, "9492", "2025-06-01", "buy", 100, 2000, seq_salt="c")  # 数年後の買い直し(3.6倍)
         _add(db_path, "9492", "2025-12-01", "sell", 100, 2200, seq_salt="d")
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         for ep in eps:
             if ep["code_s"] == "9492":
                 assert not ep.get("split_suspect")
@@ -1168,7 +1169,7 @@ class TestSplitAdjustment:
         _add(db_path, "9491", "2025-02-01", "sell", 100, 1100, seq_salt="b")  # 無関係ラウンド、完結
         _add(db_path, "9491", "2025-06-01", "buy", 100, 900, seq_salt="c")
         _add(db_path, "9491", "2025-12-01", "sell", 100, 3000, seq_salt="d")  # 単価ジャンプ (900->3000)
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         genbutsu = {e["open_date"]: e for e in eps if e["code_s"] == "9491"}
         assert not genbutsu["2025-01-01"].get("split_suspect")  # 無関係ラウンドは隠さない
         assert genbutsu["2025-01-01"]["pl"]["profit_amount"] == 10000
@@ -1194,11 +1195,11 @@ class TestRoundTripsAgreeWithOpenPl:
         _add(db_path, "5678", "2026-05-10", "buy", 100, 1200.0, seq_salt="d")
         _add(db_path, "5678", "2026-06-01", "sell", 50, 1300.0, seq_salt="e")
 
-        eps = helpers.build_fill_episodes(db_path=db_path)
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
         open_eps = [e for e in eps if not e["closed"]]
         assert open_eps, "保有中エピソードが無いとこのテストは意味がない"
         for ep in open_eps:
-            rt_open = sum(r["qty"] for r in helpers.build_round_trips(ep)
+            rt_open = sum(r["qty"] for r in trade_episodes.build_round_trips(ep)
                           if not r["closed"])
             assert rt_open == ep["open_pl"]["held_qty"], (
                 f"{ep['code_s']} {ep['kind']}: 往復行={rt_open} open_pl={ep['open_pl']['held_qty']}")
