@@ -3,29 +3,96 @@
 運用機 (MacMini M2 Pro) で日次バッチと WebApp を常駐させ、開発機 (MBA) から分離するための手順。
 issue #452 に対応する。
 
+**2026-09-27 に構築を実施済み。** 以下は実際に通した手順で、確定した値をそのまま書いている。
+再構築するときはこのまま上から実行できる。
+
+| 項目 | 値 |
+|---|---|
+| ホスト | `KosukenoMac-mini.local` (192.168.11.28) / macOS 26.5 / arm64 |
+| ユーザー | `k_sohara` |
+| repo | `~/dev/shintakane` (GitHub deploy key で SSH clone) |
+| `KS_DATA_DIR` | `/Users/k_sohara/shintakane_data` (ローカル SSD) |
+| Python | 3.11.16 (`uv venv --python 3.11 .venv`) |
+
+> **Claude Code から作業するときの制約:** Bash ツールには TTY が無いため、パスワードを
+> 求めるコマンド (`ssh-copy-id`・`sudo`・`brew install --cask`・キーチェーン操作) は
+> **一切通らない**。プロンプトを出す前に諦めて失敗するので、認証エラーに見えて紛らわしい。
+> これらはユーザーのターミナルで実行する。
+
 ## 1. 構成と原則
 
 | 観点 | MacMini (運用機) | MBA (開発機) |
 |---|---|---|
 | 用途 | 平日19:00 の日次バッチ / WebApp 常駐 | 機能開発・パーサー修正 |
 | ソース | `git pull --ff-only` で main 追従 | feature ブランチで開発 |
-| `KS_DATA_DIR` | ローカル SSD、**正本** | 開発用コピー (分離は #453) |
+| `KS_DATA_DIR` | ローカル SSD、**正本** (`ir_docs` のみ Drive へ symlink) | 開発用コピー (分離は #453) |
 | WebApp | LaunchAgent で常駐、Tailscale Serve で Tailnet 公開 | 開発時のみ手動起動 |
 
 **原則:**
 
 - **single-writer** — メモ・レーティング・action_log 等、人が書く運用データの編集は**常に運用機の WebApp 経由**で行う。スマホからも MBA からも Tailnet 経由 (Tailscale Serve の URL) で運用機の WebApp を開く
 - **データ同期は 運用機 → MBA の一方向のみ** — 開発でデータが要るときにオンデマンドで rsync する。書き戻しはしない (「どっちが新しいか」を考える場面を構造的に無くす)
-- **運用機ではローカル変更をしない** — `git pull --ff-only` が conflict で止まらないようにする
+- **運用機ではローカル変更をしない** — `git pull --ff-only` が conflict で止まらないようにする。
+  deploy key を read_only にしてあるので push もできない
+- **同期するのは同期に耐えるものだけ** — PDF (`ir_docs`) は一度書いたら変わらないので
+  Drive に置く。shelve は秒単位で書き換わるので絶対に同期しない (#174 の競合コピー問題)
 
 ## 2. MacMini 初期セットアップ
 
+**SSH で入れるようにする (MBA 側から実施)。** 以降の作業はすべて `ssh macmini` で行う。
+
 ```bash
-# リポジトリ (Dropbox 配下ではなく素のローカルパス)
-git clone <repo> ~/dev/shintakane
+# MacMini のシステム設定 > 一般 > 共有 > リモートログイン を ON にしておく
+# ★ このコマンドはパスワード入力が要るので、必ず自分のターミナルで実行する
+ssh-copy-id -o StrictHostKeyChecking=accept-new k_sohara@192.168.11.28
+```
+
+`~/.ssh/config` に追記しておくと以後 `ssh macmini` で済む。
+
+```
+Host macmini
+  HostName 192.168.11.28
+  User k_sohara
+  IdentityFile ~/.ssh/id_ed25519
+  AddKeysToAgent yes
+  UseKeychain yes
+```
+
+> IP 直指定なので DHCP で変わると効かなくなる。長く使うならルーターで固定するか
+> `KosukenoMac-mini.local` (mDNS) に変える。mDNS は IPv6 リンクローカルを先に
+> 返すことがあり、その経路では認証に失敗したので IPv4 を明示している。
+
+**パッケージ管理 (MacMini 上)。** `brew install --cask` は sudo を要求するので、
+cask だけはユーザーのターミナルで実行する。
+
+```bash
+# ★ Homebrew 本体と cask はパスワード入力が要る
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+
+brew install uv
+brew install --cask google-drive tailscale-app   # ★ sudo が要る
+```
+
+**リポジトリは deploy key で clone する。** 日次バッチが無人で `git pull` するため、
+トークンの期限切れやキーチェーン解錠の影響を受けない SSH 鍵にする。運用機は pull しか
+しないので**読み取り専用**で十分 (原則「運用機ではローカル変更をしない」とも整合する)。
+
+```bash
+# MacMini 側で鍵を作る (無人運用なのでパスフレーズ無し)
+ssh-keygen -t ed25519 -N "" -C "macmini-shintakane-deploy" -f ~/.ssh/id_ed25519
+ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
+
+# MBA 側で GitHub に deploy key として登録する
+gh api repos/nasumiso/KSKInvestSystem/keys \
+  -f title="macmini-shintakane-deploy" -f key="$(ssh macmini 'cat ~/.ssh/id_ed25519.pub')" \
+  -F read_only=true
+
+# MacMini 側で clone (HTTPS ではなく SSH URL。deploy key は SSH でしか使えない)
+git clone git@github.com:nasumiso/KSKInvestSystem.git ~/dev/shintakane
 cd ~/dev/shintakane
 git config user.name  "K.Sohara"
-git config user.email "<email>"
+git config user.email "kosuke4210@gmail.com"
 
 # Python 3.11 + venv
 uv venv --python 3.11 .venv
@@ -35,25 +102,32 @@ uv pip install --python .venv/bin/python -r requirements.txt
 `~/.zshrc` に追記する。`KS_DATA_DIR` は `ks_util._resolve_data_dir()` が `os.path.abspath()` をかけるだけで**チルダ展開しない**ため、必ず絶対パスで書く。
 
 ```bash
-export KS_DATA_DIR=/Users/<user>/shintakane_data
+export KS_DATA_DIR=/Users/k_sohara/shintakane_data
+export PATH="$HOME/.local/bin:$PATH"                              # theme-news の claude CLI
+export PATH="/Applications/Tailscale.app/Contents/MacOS:$PATH"    # Tailscale は .app 配下
 ```
 
-スリープを無効化する (運用機の存在理由なので必須)。
+スリープを無効化する (運用機の存在理由なので必須)。`disksleep` の既定は 10 なので
+必ず 0 にする。
 
 ```bash
-sudo pmset -a sleep 0 disksleep 0
-pmset -g | grep -E '^ *(sleep|disksleep)'
+# ★ sudo なのでユーザーのターミナルで実行する
+sudo pmset -a sleep 0 disksleep 0 autorestart 1
+pmset -g | grep -E '^ *(sleep|disksleep|autorestart)'
 ```
 
 **自動ログインと電源復帰を設定する (必須)。** LaunchAgent は per-user agent なので、**ログインセッションが成立するまで起動しない**。停電や OS アップデートで再起動したあと誰もログインしなければ、日次バッチも WebApp も止まったままになる。
 
 - システム設定 > ユーザとグループ > 自動ログイン を運用ユーザーに設定する
 - FileVault が有効だと再起動後に必ずディスク解錠が要る (自動ログインは効かない)。無人運用を優先するなら**運用機では FileVault を切る**。物理的に手元にある前提の割り切り
-- 停電復帰後に自動で電源が入るようにする
+- 停電復帰後に自動で電源が入るようにする (上の `pmset -a autorestart 1`)
+
+設定できたか確認する。
 
 ```bash
-sudo pmset -a autorestart 1      # 電源断からの復帰時に自動起動
-pmset -g | grep -E 'autorestart|SleepDisabled'
+pmset -g | grep -E '^ *(sleep|disksleep|autorestart)'
+defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser   # k_sohara が返る
+fdesetup status                                                          # FileVault is Off.
 ```
 
 LaunchDaemon (システムドメイン) にすればログイン不要にできるが、**採らない**。Google Drive アプリ・キーチェーン・Tailscale の GUI クライアントがいずれも GUI セッション前提で、システムドメインへ移すと別の問題が出る。
@@ -64,8 +138,39 @@ LaunchDaemon (システムドメイン) にすればログイン不要にでき�
 
 **静止点を作ってから実施する。** 途中で書き込まれると shelve の整合が崩れる。
 
+### 3-1. Google Drive を「ストリーミング」で構成する
+
+MBA では `KS_DATA_DIR` 全体が Google Drive のマイドライブ配下にあり (`~/Ext/GoogleDrive/...`
+は同一 inode)、shelve まで同期対象だった。これが `stocks_shelve (1).bak` のような
+**同期競合コピーが繰り返し生まれる原因** (#174)。
+
+運用機では**データ本体をローカル SSD に置き、`ir_docs` だけを Drive に残す**。
+PDF は一度書いたら変わらないので同期しても競合しないが、shelve は秒単位で書き換わるため
+同期すると必ず壊れる。両者を分けるのが要点。
+
+`ir_docs` を切れないのは、**Drive コネクタが iPhone やブラウザ版 ChatGPT から決算説明資料の
+PDF を読む唯一の経路**だから (MCP は 4.9MB の PDF を返せない。`scripts/mcp/README.md` 参照)。
+
+1. MacMini の画面で Google Drive.app にログインし、**「ストリーミング」を選ぶ**
+   (「マイドライブをこのパソコンにミラーリング」にしない)
+2. `~/Library/CloudStorage/GoogleDrive-<account>/マイドライブ/shintakane_data/ir_docs` が
+   見えることを確認する
+3. `KS_DATA_DIR` 配下から symlink を張る
+
 ```bash
-# --- MBA 側 ---
+ln -s "$HOME/Library/CloudStorage/GoogleDrive-kosuke4210@gmail.com/マイドライブ/shintakane_data/ir_docs" \
+      /Users/k_sohara/shintakane_data/ir_docs
+
+ls /Users/k_sohara/shintakane_data/ir_docs | wc -l     # 118 銘柄が見える
+du -sh ~/Library/CloudStorage/GoogleDrive-*            # 数MB (ストリーミングなので実体を持たない)
+```
+
+> `mount | grep google` は空になるが正常。最近の Drive は FileProvider 方式で動くため
+> `mount` には現れない。
+
+### 3-2. MBA 側で静止点を作る
+
+```bash
 # 1. WebApp を停止し、書き込みプロセスが居ないことを確認
 #    (macOS の xargs は -r が man に無いので、PID の有無をシェルで判定する)
 WEBAPP_PID=$(lsof -tiTCP:5001 -sTCP:LISTEN 2>/dev/null)
@@ -78,77 +183,225 @@ ls -lhS "$KS_DATA_DIR"/stock_data | head
 rm "$KS_DATA_DIR"/stock_data/stocks_shelve.*.before_compact_*.bak
 rm "$KS_DATA_DIR"/stock_data/stocks_shelve\ \(*\).*
 
-# 3. compact してから backup
+# 3. compact する (転送量が一桁変わる)
 cd scripts
 python make_stock_db.py compact
-python make_stock_db.py backup
 ```
 
-> 2026-09-21 に実施済み: 退避 6.6GB + 競合コピーを削除し、`stocks_shelve.dat` は 1.7GB → 18MB、`stock_data` は 9.8GB → 1.5GB になった。
+> `stocks_shelve.dat` は **6日で 18MB → 92MB** に再肥大する (dbm.dumb の追記構造)。
+> 転送直前の compact は必須。#451 のロックにより **WebApp を止めずに実行してよい**。
+> compact 前の `backup` は取らない (世代削除を持たないので積み上がる)。
+
+### 3-3. 転送
+
+再取得可能なキャッシュと、Drive に置いた `ir_docs` を除外する。3.9GB のうち
+**実際に転送するのは約 490MB**。
 
 ```bash
-# 4. 転送 (キャッシュ類は再取得可能なので除外)
 rsync -avh --progress \
+  --exclude 'ir_docs/' \
+  --exclude 'stock_data/kabutan/' --exclude 'stock_data/yahoo/' \
+  --exclude 'stock_data/stocks_pickle_back/' \
+  --exclude 'disclosure/cache/' \
+  --exclude 'html_cache/' \
   --exclude '*.lock' --exclude '*.dbm.lock' \
-  --exclude 'html_cache' --exclude 'disclosure/cache' \
-  --exclude '.DS_Store' --exclude 'portfolio_csv_import_tmp' \
-  "$KS_DATA_DIR"/ <macmini>:/Users/<user>/shintakane_data/
+  --exclude '.DS_Store' --exclude 'portfolio_csv_import_tmp/' \
+  "$KS_DATA_DIR"/ macmini:/Users/k_sohara/shintakane_data/
 ```
+
+**除外したディレクトリは空で作り直す。** コードは親ディレクトリの存在を前提に `.tmp`
+ファイルを書くため、無いと `FileNotFoundError` で日次バッチが落ちる。
 
 ```bash
-# --- MacMini 側: 整合性確認 ---
-du -sh "$KS_DATA_DIR"
-cd ~/dev/shintakane/scripts && source ../.venv/bin/activate
-python make_stock_db.py list 6324      # 複数銘柄で試す
-python shintakane.py analyze           # 完走すること
+ssh macmini 'D=/Users/k_sohara/shintakane_data
+for p in disclosure/cache sisu_data/html_cache \
+         stock_data/kabutan/base stock_data/kabutan/finance stock_data/kabutan/price \
+         stock_data/yahoo/price today_stocks/html_cache todays_kessan_data/html_cache \
+         portfolio_csv_import_tmp; do
+  mkdir -p "$D/$p"
+done'
 ```
 
-**Google Drive 認証**: `data/googledrive/` の認証ファイルを MBA から手動コピーし、**cron を有効化する前に対話認証を一度通しておく**。token が無いと `oauth2client` が対話入力を待ち、launchd 経由では無言でハングする。
+### 3-4. 整合性確認
+
+件数が MBA と一致することを確認する。
+
+```bash
+ssh macmini 'export KS_DATA_DIR=/Users/k_sohara/shintakane_data
+cd ~/dev/shintakane/scripts && ../.venv/bin/python -c "
+from db_shelve import ShelveDB
+from ks_util import DATA_DIR
+import os, research_shelve as r, portfolio_shelve as p
+with ShelveDB(os.path.join(DATA_DIR,\"stock_data\",\"stocks_shelve\"), read_only=True) as db:
+    print(\"stocks:\", len(list(db.keys())))
+print(\"research:\", len(r.list_research_records()))
+print(\"records:\", len(p.list_records()), \"positions:\", len(p.list_positions()),
+      \"fills:\", len(p.list_fills()), \"action_logs:\", len(p.list_action_logs()))
+"'
+```
+
+> 2026-09-27 の実績: stocks 3330 / research 896 / records 321 / positions 34 /
+> fills 1693 / action_logs 1780 が MBA と完全一致。
+>
+> `shintakane.py analyze` は**存在しない** (CLAUDE.md の記述が古い)。検証には
+> `make_stock_db.py list <code>` を使う。
+
+**Google Drive API 認証**: `googledrive/` の認証ファイルは rsync で転送済み。
+**cron を有効化する前に token が有効か確かめる**。token が無いと `oauth2client` が
+対話入力を待ち、launchd 経由では無言でハングする。
+
+```bash
+ssh macmini 'export KS_DATA_DIR=/Users/k_sohara/shintakane_data
+cd ~/dev/shintakane/scripts && ../.venv/bin/python -c "
+import signal, sys
+signal.signal(signal.SIGALRM, lambda *a: sys.exit(\"TIMEOUT: 対話入力待ち\")); signal.alarm(45)
+import googledrive
+print(googledrive.get_drive_service().about().get(fields=\"user(emailAddress)\").execute())
+"'
+```
 
 ## 4. LaunchAgent の有効化
 
-plist の置換とインストールは [deploy/README.md](../deploy/README.md) を参照。インストール後にスモークテストする。
+**先に `~/.shintakane_env` を作る** (WebApp の本番起動に要る)。
+
+```bash
+ssh macmini 'cat > ~/.shintakane_env <<EOF
+export KS_DATA_DIR=/Users/k_sohara/shintakane_data
+export FLASK_SECRET_KEY=$(openssl rand -hex 32)
+EOF
+chmod 600 ~/.shintakane_env'
+```
+
+plist の置換とインストールは [deploy/README.md](../deploy/README.md) を参照。
+`launchctl load` はユーザードメインなので sudo は要らない。
+
+インストール後、**置換漏れと plist の構文を必ず確認する**。
+
+```bash
+grep -c "__" ~/Library/LaunchAgents/com.k_sohara.shintakane.*.plist ~/.local/bin/shintakane-webapp  # 全て 0
+for f in ~/Library/LaunchAgents/com.k_sohara.shintakane.*.plist; do plutil -lint "$f"; done
+```
+
+### スモークテスト
 
 ```bash
 # 手動実行で通ることを確認 (theme-news は時間がかかるので省略)
 cd ~/dev/shintakane && bash shintakane_cron.sh --skip-theme-news
 
 # launchd が意図した plist を読んでいるか
-launchctl print "gui/$(id -u)/com.k_sohara.shintakane.cron" | grep -E 'path|state'
+launchctl print "gui/$(id -u)/com.k_sohara.shintakane.cron"   | grep -E 'path|state|runs|last exit'
+launchctl print "gui/$(id -u)/com.k_sohara.shintakane.webapp" | grep -E 'path|state|pid'
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5001/     # 200
 ```
+
+WebApp が **production で動いているか**も見る (debug 有効のまま Tailnet へ出すと危険)。
+
+```bash
+grep -m1 "Debug mode" ~/Library/Logs/shintakane/webapp.stdout.log    # Debug mode: off
+ps eww $(lsof -tiTCP:5001 -sTCP:LISTEN) | tr ' ' '\n' | grep SHINTAKANE_ENV   # =production
+```
+
+cron を load した直後は `RunAtLoad` で1回発火する。**19時前なら
+`shintakane_cron.sh` の TTY ガードでサイレントスキップされる**のが正常
+(`runs = 1` / `last exit code = 0` でログが両方 0 バイト)。
+
+> **ログが空なのは失敗ではない。** ガードが効いた証拠。実行させたい場合は
+> ターミナルから手動で叩く (TTY があれば時刻に関係なく走る)。
+
+### 初回実行で踏んだ問題
+
+- **`Errno 24: Too many open files`** — macOS の既定 `ulimit -n` は **256**。yfinance の
+  週足バッチ (`threads=True` で 418銘柄を並列取得) がソケットを開いた時点で枯渇し、
+  `dbm.dumb` が `.dat` を開けずに落ちる。`shintakane_cron.sh` が冒頭で 4096 に上げる
+  ようにした。**MBA のターミナルは 1048576 に上がっているため手動実行では露見せず、
+  launchd 経由の運用を始めて初めて出た**
+- **「webapp が起動していません」の誤検知** — `git pull` 成功時の
+  `launchctl kickstart -k` で WebApp を落とした直後に `lsof` で生存確認していたため、
+  必ず起動途中を観測していた。最大20秒待つようにした
 
 ## 5. Tailscale Serve (出先アクセス)
 
 ```bash
-brew install --cask tailscale
-tailscale up
-# ローカルの 5001 を Tailnet 限定の HTTPS (443) で公開する。
-# 証明書は自動発行され、URL は https://<machine>.<tailnet>.ts.net/ になる。
-tailscale serve --bg localhost:5001
-tailscale serve status         # 実際の公開 URL がここに出る
+brew install --cask tailscale-app        # ★ sudo が要るのでユーザーのターミナルで
+# メニューバーの Tailscale アイコン > Log in (ブラウザ認証)
 ```
 
-`--bg` だけでは公開先が既定の HTTPS (443) になる点に注意する。**`https://<machine>.<tailnet>.ts.net/` で開く**のであって、`http://<machine>:5001` では届かない (Flask は 127.0.0.1 にしか bind していないため、Tailnet IP の 5001 番は開いていない)。
-
-ポート番号付きの HTTP で使いたい場合は明示する。ただし MagicDNS 名でのみ到達でき、TLS は付かない。
+CLI は `.app` の中にあるので PATH を通す (「2. 初期セットアップ」の `.zshrc` 参照)。
 
 ```bash
-tailscale serve --bg --http=5001 localhost:5001   # http://<machine>:5001/
+export PATH="/Applications/Tailscale.app/Contents/MacOS:$PATH"
+tailscale status        # 自ノードが Online であること
 ```
 
-**`tailscale funnel` は使わない。** funnel は公開インターネットへ露出する。WebApp は認証を持たないので、Tailnet 限定が前提。
-
-MBA・スマホで Tailscale にログインし、`tailscale serve status` が表示した URL で到達することを確認する。
-
-止めるときは同じコマンドに `off` を付ける。
+**HTTP で公開する。**
 
 ```bash
-tailscale serve --bg localhost:5001 off
+tailscale serve --bg --http=5001 localhost:5001
+tailscale serve status
+```
+
+```
+http://kosukemac-mini:5001 (tailnet only)
+http://kosukemac-mini.tailbe284e.ts.net:5001 (tailnet only)
+|-- / proxy http://localhost:5001
+```
+
+### なぜ HTTPS にしないか
+
+`tailscale serve --bg localhost:5001` (HTTP 指定なし) は既定で **HTTPS(443) 公開**を試み、
+Tailnet で HTTPS 証明書が有効化されていないと**無言でハングする** (`CertDomains: None`)。
+有効化するには管理コンソール (login.tailscale.com/admin/dns) で「Enable HTTPS」を押す
+必要があり、CLI からはできない。
+
+そのうえで HTTP を選んでいる。
+
+- Tailnet 内の通信は **WireGuard で暗号化済み**。HTTPS は二重の暗号化にしかならない
+- WebApp は認証を持たないので、守っているのは **Tailnet の境界そのもの**。TLS の有無は
+  防御に寄与しない
+- HTTPS を有効化すると、マシン名と tailnet 名が **Certificate Transparency の公開台帳**に載る
+
+代償はブラウザの「保護されていない通信」表示だけ。後から HTTPS へ切り替えるのは
+管理コンソールの操作1回で済む。
+
+### 到達確認
+
+**MagicDNS 名で開く。** Tailscale IP 直打ち (`http://100.x.x.x:5001/`) は `serve` が
+ホスト名で振り分けるため **404 になる** (これは正常)。
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://kosukemac-mini.tailbe284e.ts.net:5001/   # 200
+```
+
+iPhone・MBA でも Tailscale にログインし、同じ URL で開けることを確認する。
+
+**`tailscale funnel` は使わない。** funnel は公開インターネットへ露出する。WebApp は
+認証を持たないので、Tailnet 限定が前提。
+
+止めるときは `off` を付ける。
+
+```bash
+tailscale serve --http=5001 off
 ```
 
 ## 6. MCP tunnel の移設
 
-四季報 MCP (`com.k_sohara.shintakane-tunnel`) は ChatGPT から運用データを参照するため、運用機側へ移す。手順は [scripts/mcp/README.md](../scripts/mcp/README.md) の「常駐起動」節。キーチェーンへの Runtime API Key 登録 (`security add-generic-password`) を MacMini で再実行する必要がある。
+四季報 MCP (`com.k_sohara.shintakane-tunnel`) は ChatGPT から運用データを参照するため、運用機側へ移す。手順は [scripts/mcp/README.md](../scripts/mcp/README.md) の「常駐起動」節。
+
+**Runtime API Key の登録は MacMini の画面で行う。** SSH 経由の非対話セッションでは
+キーチェーンがロックされたままで `User interaction is not allowed` になり、しかも
+`security` は**エラーを返さず成功したように見える**ので気づきにくい
+(`security find-generic-password` で引けないことで発覚する)。
+
+```bash
+# MBA 側: 現在の値を表示する
+security find-generic-password -s shintakane-tunnel-control-plane -a "$USER" -w
+
+# ★ MacMini の画面のターミナルで: -w の値を省くとプロンプトで安全に入力できる
+security add-generic-password -U -a k_sohara -s shintakane-tunnel-control-plane -w
+
+# 登録できたか確認 (SSH 経由でも読み出しはできる)
+ssh macmini 'security find-generic-password -s shintakane-tunnel-control-plane -a k_sohara -w | wc -c'
+```
 
 移設後、MBA 側の tunnel LaunchAgent は unload する。
 
@@ -160,6 +413,7 @@ tailscale serve --bg localhost:5001 off
 | 個別処理のログ | `~/dev/shintakane/logs/{shintakane,make_stock_db,theme_news,compact}.log` |
 | 手動で日次バッチ | `cd ~/dev/shintakane && bash shintakane_cron.sh` |
 | WebApp を新コードで再起動 | `launchctl kickstart -k "gui/$(id -u)/com.k_sohara.shintakane.webapp"` |
+| WebApp を開く (出先・スマホ) | `http://kosukemac-mini:5001/` (Tailnet 内のみ) |
 
 **自動で走るもの:**
 
@@ -193,6 +447,17 @@ FileVault が有効だと自動ログインは効かず、再起動のたびに�
 **theme-news だけ失敗する (`claude CLI が見つかりません`)**
 
 plist の `PATH` に `<home>/.local/bin` が入っているか確認する。launchd はシェルを通らないので `.zshrc` の PATH は効かない。
+
+**日次バッチが `Errno 24: Too many open files` で落ちる**
+
+macOS の既定 `ulimit -n` は 256 で、yfinance の週足バッチ (400銘柄超を並列取得) が
+枯渇させる。`shintakane_cron.sh` が冒頭で 4096 に上げているので、まずそれが効いて
+いるか見る。launchd は `.zshrc` を読まないため、シェルの設定では解決しない。
+
+```bash
+grep -n 'ulimit -n' ~/dev/shintakane/shintakane_cron.sh
+ssh macmini 'ulimit -n'          # SSH 経由だと 256 のまま (これは正常)
+```
 
 **WebApp に繋がらない**
 
