@@ -8,7 +8,7 @@ issue #452 に対応する。
 
 | 項目 | 値 |
 |---|---|
-| ホスト | `KosukenoMac-mini.local` (192.168.11.28) / macOS 26.5 / arm64 |
+| ホスト | `kosukemac-mini` (Tailscale) / LAN 内 192.168.11.28 / macOS 26.5 / arm64 |
 | ユーザー | `k_sohara` |
 | repo | `~/dev/shintakane` (GitHub deploy key で SSH clone) |
 | `KS_DATA_DIR` | `/Users/k_sohara/shintakane_data` (ローカル SSD) |
@@ -50,17 +50,20 @@ ssh-copy-id -o StrictHostKeyChecking=accept-new k_sohara@192.168.11.28
 `~/.ssh/config` に追記しておくと以後 `ssh macmini` で済む。
 
 ```
+# 運用機。Tailscale の MagicDNS 名なので自宅・出先どちらでも届く
 Host macmini
-  HostName 192.168.11.28
+  HostName kosukemac-mini
   User k_sohara
   IdentityFile ~/.ssh/id_ed25519
   AddKeysToAgent yes
   UseKeychain yes
 ```
 
-> IP 直指定なので DHCP で変わると効かなくなる。長く使うならルーターで固定するか
-> `KosukenoMac-mini.local` (mDNS) に変える。mDNS は IPv6 リンクローカルを先に
-> 返すことがあり、その経路では認証に失敗したので IPv4 を明示している。
+> `kosukemac-mini` は MBA に Tailscale を入れてログインしてから引ける名前 (「5. Tailscale Serve」参照)。
+> それまでは LAN 内の IP (`192.168.11.28`) で代用する。自宅でも Tailscale が LAN 内の直通経路を
+> 選ぶので速度は変わらない。IP 直指定は DHCP で変わりうるうえ、出先では届かない。
+> mDNS 名 (`KosukenoMac-mini.local`) は IPv6 リンクローカルを先に返すことがあり、
+> その経路では認証に失敗した。
 
 **パッケージ管理 (MacMini 上)。** `brew install --cask` は sudo を要求するので、
 cask だけはユーザーのターミナルで実行する。
