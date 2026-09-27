@@ -4,14 +4,14 @@
 `scripts/mcp/` と同じくプレースホルダを sed 置換してから `~/Library/LaunchAgents/` へ配置する。
 ホスト別のファイルは作らない。
 
-セットアップ全体の手順は [doc/OPERATIONS.md](../doc/OPERATIONS.md) を参照。ここは plist まわりだけを扱う。
+セットアップ全体の手順は [doc/運用手順.md](../doc/運用手順.md) を参照。ここは plist まわりだけを扱う。
 
 | ファイル | 用途 |
 |---|---|
 | `com.k_sohara.shintakane.cron.plist` | 平日19:00 の日次バッチ |
 | `com.k_sohara.shintakane.webapp.plist` | WebApp の常駐 (KeepAlive) |
 | `run_webapp.sh` | WebApp 起動ラッパー (secret の読み込みと venv 指定)。これもテンプレートで、`__REPO__` を置換してからインストールする |
-| `macmini.sh` | 開発機から運用機を操作するヘルパー (`status` / `run` / `pull-data` / `counts`)。インストール不要で repo から直接叩く。使い方は [doc/COMMANDS.md](../doc/COMMANDS.md) の「運用機の操作」 |
+| `macmini.sh` | 開発機から運用機を操作するヘルパー (`status` / `run` / `pull-data` / `counts`)。インストール不要で repo から直接叩く。使い方は [doc/spec/コマンド一覧.md](../doc/spec/コマンド一覧.md) の「運用機の操作」 |
 
 ## プレースホルダ
 
@@ -74,7 +74,7 @@ launchctl load "$HOME/Library/LaunchAgents/com.k_sohara.shintakane.webapp.plist"
 
 どちらも **per-user の LaunchAgent** なので、**ログインセッションが無いと起動しない**。
 再起動後に無人で動かすには自動ログインの設定が要る (FileVault は無効にする)。
-手順は [doc/OPERATIONS.md](../doc/OPERATIONS.md) の「MacMini 初期セットアップ」を参照。
+手順は [doc/運用手順.md](../doc/運用手順.md) の「MacMini 初期セットアップ」を参照。
 
 ## 確認
 

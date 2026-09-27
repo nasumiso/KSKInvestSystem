@@ -155,7 +155,7 @@
    であることを確認 (`test_make_stock_db.py` `TestExtractSignals` の既存ケース維持)
 5. **詳細チャート**: 履歴フィールドから30営業日ぶんのマーカーが描かれることをブラウザ確認
 
-テストは parametrize で集約し、1 PR で5本以下を目安 (TESTING.md 方針)。
+テストは parametrize で集約し、1 PR で5本以下を目安 (テスト方針.md 方針)。
 
 ## スコープ外 (本プランでは扱わない)
 

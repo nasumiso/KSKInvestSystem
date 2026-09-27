@@ -59,7 +59,7 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 1. **既存CLIを必ず先に確認** — 既に同等コマンドが無いか grep する
    (`grep -rn "__main__\|sys.argv\|add_parser" scripts/`)。
    shintakane は既存CLIが充実しているので**重複を作らない**。
-   doc/COMMANDS.md も確認。
+   doc/spec/コマンド一覧.md も確認。
 2. 昇格先の標準形を上記基準で選ぶ。複数解釈あればユーザーに確認。
 3. **既存の公開関数を再利用**して実装。新規ロジックは最小に。
 4. テスト方針 (.claude/rules/testing.md):
@@ -67,7 +67,7 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash
      カバーされていればテスト追加は不要。
    - 新規ロジックを足したらテストを書く (parametrize集約・1PR5本以下)。
    - testing.md のモジュール→テストのマッピングに従い回帰確認。
-5. **doc/COMMANDS.md に1行追記** (CLIサブコマンドを足した場合)。使い方と
+5. **doc/spec/コマンド一覧.md に1行追記** (CLIサブコマンドを足した場合)。使い方と
    「何をする/しない (DB更新の有無等)」を明記。
 6. 反映方法 (commit/PR or main直push) はユーザーに確認 (軽微なら直push可)。
 
@@ -221,5 +221,5 @@ show_fill_episodes.py (code指定・--fills・--open・--memo・--check-splits) 
 ## 参照
 - 行動原則: CLAUDE.md「行動原則 (Karpathy 4原則)」「コーディング規約」
 - テスト: .claude/rules/testing.md
-- 全コマンド: doc/COMMANDS.md
+- 全コマンド: doc/spec/コマンド一覧.md
 - パーサ検証: .claude/rules/html-scraping.md

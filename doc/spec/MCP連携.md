@@ -3,21 +3,14 @@
 Shintakane が蓄積する調査・記録データを、LLM から安全に参照するための MCP
 (Model Context Protocol) 連携です。
 
-役割は次のように分けます。
-
-```text
-Shintakane = 記録・数値・監視・規律
-LLM        = 調査・解釈・比較・反証
-人間       = 最終投資判断・サイズ・時間軸
-```
-
+Shintakane・LLM・人間の役割分担は [AI投資活用戦略.md](../AI投資活用戦略.md) を参照してください。
 MCP は銘柄推奨や自動売買を行いません。投資判断は必ず人が行います。
 
 ## 現在提供中
 
 | MCPサーバー | 用途 | 提供ツール |
 |---|---|---|
-| `shintakane-shikiho` | 四季報・IR一次情報の参照、銘柄評価台帳の参照・更新 | `get_shikiho` / `get_ir_qa` / `search_stocks` / `list_stock_ratings` / `get_stock_rating` / `update_stock_rating` |
+| `shintakane-shikiho` | 四季報・IR一次情報・決算資料の参照、銘柄評価台帳の参照・更新 | `get_shikiho` / `get_ir_qa` / `search_stocks` / `list_earnings_documents` / `get_earnings_document` / `list_stock_ratings` / `get_stock_rating` / `update_stock_rating` |
 
 `shintakane-shikiho` はローカルの stdio MCP サーバーです。HTTP ポートを開かず、
 `research_shelve` を既存のロック機構経由で読み取ります。LLM が DB へ直接接続することはありません。
@@ -59,6 +52,21 @@ IR 問い合わせ回答は公開情報として流通しない非公開の一�
 | 入力 | `query`、`limit` (既定10件、最大50件) |
 | 返却 | 銘柄コード、銘柄名、四季報コメントの有無・件数 |
 
+### 決算資料 (`list_earnings_documents` / `get_earnings_document`)
+
+収集済みの決算短信 (`tanshin`)・決算説明資料 (`setsumei`)・中期経営計画 (`chuki_plan`) を返します。
+収集範囲と方針は [IR資料の収集範囲](../decisions/2026-09-22-IR資料の収集範囲.md) を参照してください。
+
+| ツール | 内容 |
+|---|---|
+| `list_earnings_documents` | 資料の一覧 (本文なし)。`months` (既定12)、`doc_type` で絞り込み。`chuki_plan` は期間に関係なく全件 |
+| `get_earnings_document` | 抽出済みテキストをページ範囲で返す。`truncated` が true なら `next_page_from` で続きを取る |
+
+- `coverage_status: not_collected` は「未収集」であって「資料が存在しない」ではありません。`partial_coverage: true` のときは `coverage_through` 以降が未収集です。
+- 訂正版に置き換えられた旧版は既定で返しません。ただし訂正版が差分通知だけで原本の内容を含まない場合は、原本も返します (`superseded_by` 付き)。
+- 中期経営計画は会社IRページから手動で集めたもので、`date` は推定値 (`date_estimated: true`、`as_of` は `null`) です。複数件が並立しうるため、どれが現行計画かは内容から判断します。グロース市場の「事業計画及び成長可能性に関する事項」は適時開示から自動収集され、`date` は開示日です。
+- 返すのは PDF から抽出したテキストだけです。スライド資料ではグラフや表の数値が落ちることがあります。項目名だけがあって数値が続かない場合は、抽出できていないだけです。`text` が `null` の資料や数値の裏取りには PDF を見てください。`relative_path` 末尾のファイル名で Google Drive コネクタから検索できます。
+
 ### 銘柄評価台帳 (`list_stock_ratings` / `get_stock_rating` / `update_stock_rating`)
 
 ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 / モメンタム20 / Valuation20、Confidence、Status) を参照・更新します。
@@ -80,7 +88,7 @@ ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 / モメ
 
 Python 3.11 の本体 `.venv` と `KS_DATA_DIR` が必要です。MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_DIR` は接続設定で明示します。未設定、またはリポジトリ内の空データを参照する設定ではサーバーは起動しません。
 
-ローカル接続設定、Secure MCP Tunnel による常駐運用、起動確認は [scripts/mcp/README.md](../scripts/mcp/README.md) を参照してください。
+ローカル接続設定、Secure MCP Tunnel による常駐運用、起動確認は [scripts/mcp/README.md](../../scripts/mcp/README.md) を参照してください。
 
 ## 今後の構想
 
@@ -94,4 +102,4 @@ Python 3.11 の本体 `.venv` と `KS_DATA_DIR` が必要です。MCP ホスト�
 | `get_portfolio_position` | 保有状況・株数・平均取得単価・評価額・PF比率 |
 | `get_investment_context` | 個別銘柄分析に必要な情報の集約 |
 
-書き込みツールは、読み取り連携の運用が安定してから検討します。設計上の背景と段階計画は [mcp-parent-concept.md](plan/mcp-parent-concept.md) を参照してください。
+書き込みツールは、読み取り連携の運用が安定してから検討します。設計上の背景と段階計画は [mcp-parent-concept.md](../plan/mcp-parent-concept.md) を参照してください。
