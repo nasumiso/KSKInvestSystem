@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-日本株式市場の成長株分析システム。株探・Yahoo Finance Japanからデータをスクレイピングし、ファンダメンタルズ・モメンタム・テクニカル指標で銘柄をスコアリング・ランキングする。
+日本株の成長株投資で、裁量判断の再現性を高めるための個人システム。株探・Yahoo Finance Japan 等からデータを集めて銘柄をスコアリングし、保有銘柄の監視・売買記録・振り返りを支える。役割分担 (Shintakane / LLM / 人間) は [doc/AI投資活用戦略.md](doc/AI投資活用戦略.md) を参照。
 
 ## 行動原則
 
@@ -37,6 +37,8 @@ less is more の方針でコーディングする。1-4 の出典: [andrej-karpa
 ## アーキテクチャ
 
 データ取得→DB更新→ランキング→市場分析のパイプライン構成。詳細は [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) を参照。
+
+**実装前に必ず読む**: [doc/用語集と不変条件.md](doc/用語集と不変条件.md) — 名前から推測できない用語と、機能をまたぐ制約 (どこで守るか)。ドキュメントに何を書き何を書かないかは [doc/AI開発原則.md](doc/AI開発原則.md) に従う。
 
 ## 開発コマンド
 
@@ -105,3 +107,7 @@ WebApp画面の見え方・挙動、またはユーザーが直接触るデー�
 - [doc/機能紹介.md](doc/機能紹介.md) — WebApp 4画面のスクリーンショット付き機能紹介（対外説明用。画像は `doc/screenshots/`）
 - [doc/review/仕様レビュー_0704.md](doc/review/仕様レビュー_0704.md) — 投資システム評価レビュー（旧版: [仕様レビュー_0314.md](doc/review/仕様レビュー_0314.md)）
 - [doc/投資戦略.md](doc/投資戦略.md) — 投資スタイル分析
+- [doc/用語集と不変条件.md](doc/用語集と不変条件.md) — 用語の定義と機能をまたぐ制約
+- [doc/AI開発原則.md](doc/AI開発原則.md) — AI と開発するときに文書へ何を書くか、開発での AI の使い方
+- [doc/AI投資活用戦略.md](doc/AI投資活用戦略.md) — 投資判断での AI の使い方 (Shintakane / LLM / 人間の分業)
+- [doc/decisions/](doc/decisions/README.md) — 長期参照する設計判断と却下した案
