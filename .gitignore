@@ -48,3 +48,6 @@ data_old/
 
 # ルート直下に置く検証用スクリーンショット (issue別等)
 /*.png
+
+# 機能紹介.md から都度書き出す配布用 PDF (#81)
+doc/Shintakane機能紹介.pdf
