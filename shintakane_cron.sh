@@ -38,6 +38,13 @@ if [ "${SHINTAKANE_AUTO_PULL:-0}" = "1" ]; then
   fi
 fi
 
+# ファイルディスクリプタ上限を引き上げる。
+# macOS の既定は 256 で、yfinance の週足バッチ (threads=True で 400 銘柄超を
+# 並列取得) がソケットを開くと枯渇し、dbm.dumb が .dat を開けず Errno 24 で落ちる。
+# launchd は .zshrc を読まないため、ここで明示する必要がある
+# (MBA のターミナルでは 1048576 に上がっていたので手動実行では露見しなかった)。
+ulimit -n 4096 2>/dev/null || true
+
 cd scripts
 
 # KS_DATA_DIR は各ホストの .zshrc / plist で設定する。未設定のまま走らせると
