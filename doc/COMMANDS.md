@@ -155,8 +155,9 @@ cd scripts && python research_shelve.py backup
 
 ## 銘柄評価台帳 (`stock_ratings.py`, issue #465)
 
-正本は `{KS_DATA_DIR}/stock_ratings/stock_ratings.json`、変更履歴は同じフォルダの
-`stock_ratings_history.jsonl`。Drive ミラー同期フォルダ上にあるので、置くだけで Drive に同期される。
+正本は `{KS_DATA_DIR}/stock_ratings/stock_ratings.json` (ローカル)、変更履歴は同じフォルダの
+`stock_ratings_history.jsonl`。運用機では書き込みのたびに `stock_ratings_drive/` (Drive への symlink) へ
+上書きコピーされ、ChatGPT はその Drive 側を読む。**Drive 側は一方向の出力先で、編集しても次の書き込みで上書きされる。**
 
 ```bash
 cd scripts && python stock_ratings.py show 3697
@@ -169,7 +170,7 @@ cd scripts && python stock_ratings.py migrate --csv <シート1枚目のCSV>  # 
 `set` は渡した項目だけを更新する（文字列を消すときは `""` を渡す）。値が変わった項目だけが
 `[前の値, 新しい値]` の形で履歴に残る。総合点は保存せず、読み出し時に4軸を合計する。
 
-表示用の `stock_ratings.html` (同じフォルダ) は更新のたびに作り直される (issue #467)。Drive で JSON を直接編集したときだけは作り直されないので、必要なら `export_html` を実行する。
+表示用の `stock_ratings.html` (同じフォルダ) は更新のたびに作り直される (issue #467)。`export_html` は HTML を作り直し、Drive へのコピーもやり直す。
 
 ## Shintakane Research（銘柄調査WebApp）
 
