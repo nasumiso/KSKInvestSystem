@@ -2140,7 +2140,7 @@ def _latest_force_snapshot_date_yy_m(stock, record, acquired_date):
 def update_research_snapshots(*, db_path=None, code_filter=None, force=False):
     """ウォッチ銘柄のうち決算更新があったものにスナップショットを自動追記する。
 
-    対象は `my_watch_list.txt` 記載のコード (通常 + H付き保有) の union に限定。
+    対象は portfolio_shelve のウォッチ (2準/3監) と保有 (1保) の union に限定。
     kessanbi / kessan_mod_date が 14 日以内の銘柄のみが処理対象。
     ウォッチ銘柄でかつ決算ウィンドウ内でも research_shelve 未登録の場合は、
     空レコードを自動登録してから同一実行内でスナップショットも追記する。
@@ -2157,13 +2157,11 @@ def update_research_snapshots(*, db_path=None, code_filter=None, force=False):
     import research_shelve
     import portfolio
 
-    # ウォッチ集合の構築 (通常コード + H付き保有)
+    # ウォッチ集合の構築 (ウォッチ + 保有)
     try:
         watch_codes, possess_codes = portfolio.parse_my_portforio()
-    except FileNotFoundError:
-        log_warning(
-            "[research] my_watch_list.txt が見つからないためスナップショット自動追記をスキップ"
-        )
+    except Exception as e:
+        log_error(f"[research] portfolio_shelve 参照失敗のためスナップショット自動追記をスキップ: {e}")
         return set()
     watch_set = set(watch_codes) | set(possess_codes)
     if code_filter is not None:

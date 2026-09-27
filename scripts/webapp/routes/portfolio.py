@@ -30,7 +30,6 @@ from urllib.parse import urlencode
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
 import import_portfolio_csv as csv_import
-import portfolio
 import portfolio_shelve as ps
 import research_shelve
 from ks_util import DATA_DIR
@@ -443,12 +442,12 @@ def _redirect_with_return_query(
 
 
 def _is_fallback_mode() -> bool:
-    """portfolio_shelve が空 = txt フォールバック中かを判定する。
+    """portfolio_shelve が空 (未移行) かを判定する。
 
-    フォールバック中に書き込み POST を許すと、shelve に 1 件レコードができた
-    時点で次回 dashboard が `list_records()` 非空 → フォールバック解除 →
-    残りの txt 銘柄が画面上から消える、という運用事故が起きる (codex 指摘)。
-    各 POST ハンドラ冒頭で本関数を見て reject する。
+    空の shelve に WebApp から 1 件ずつ書き始めると、移行スクリプト
+    (`migrate_my_watch_list_to_shelve.py`) で一括復元する前に部分的な状態が
+    できてしまうため、各 POST ハンドラ冒頭で本関数を見て reject する。
+    txt からの表示復元は廃止済み (issue #192)。
 
     issue #186: 全レコードが excluded=True の状態を fallback と誤判定しない
     ため、include_excluded=True で取得して空判定する。
@@ -1133,27 +1132,6 @@ def set_status():
         default_status_query=STATUS_VALUE_TO_QUERY[new_status], code_s=normalized)
 
 
-def _build_fallback_records() -> list[dict]:
-    """portfolio_shelve が空のとき、my_watch_list.txt から仮レコードを組み立てる。
-
-    Phase 3a で portfolio_shelve に移行したが、本ブランチを移行未実施環境で
-    動かすと shelve が空 → ダッシュボードも空になり既存運用が壊れる。
-    `portfolio.parse_my_portforio()` は同条件で txt にフォールバックする
-    挙動を持つので、UI も同じソースを共有する。
-    txt 由来レコードはメモを持たず、書き込み API も走らせない (= 表示専用)。
-    """
-    try:
-        watch, possess = portfolio.parse_my_portforio()
-    except Exception:  # noqa: BLE001 — txt 不在等は表示空でフェイルセーフ
-        return []
-    records: list[dict] = []
-    for code_s in possess:
-        records.append(ps.create_record(code_s, status="1保"))
-    for code_s in watch:
-        records.append(ps.create_record(code_s, status="3監"))
-    return records
-
-
 @portfolio_bp.route("/portfolio")
 def dashboard():
     """フィルタ型ダッシュボード。
@@ -1174,10 +1152,7 @@ def dashboard():
     # 表示・件数カウントは除外を弾いた visible_records を使う。
     all_records_inc = ps.list_records(include_excluded=True)
     fallback_mode = not all_records_inc
-    if fallback_mode:
-        visible_records = _build_fallback_records()
-    else:
-        visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
+    visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
 
     # 件数 (フィルタ前): hold/semi/watch ごとに常に出す (status select の option ラベル用)
     counts = {q: 0 for q, _, _ in STATUS_CHOICES}
@@ -1334,13 +1309,8 @@ def charts():
     active_status = _parse_status_filter(request.args)
     active_gyoutai_theme = _parse_gyoutai_theme(request.args)
 
-    # issue #186: 未移行環境 (portfolio_shelve 空) では dashboard() と同じく
-    # my_watch_list.txt 由来の仮レコードにフォールバックする (除外含む全件で判定)。
     all_records_inc = ps.list_records(include_excluded=True)
-    if not all_records_inc:
-        visible_records = _build_fallback_records()
-    else:
-        visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
+    visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
 
     # フィルタ抽出は dashboard() と同じ規則 (issue #215): gyoutai_theme 指定時は
     # status 無視で完全一致、未指定かつ status None なら全件、それ以外は status 一致。
@@ -1401,12 +1371,9 @@ def shikiho_page():
     active_status = _parse_status_filter(request.args)
     active_gyoutai_theme = _parse_gyoutai_theme(request.args)
 
-    # 銘柄抽出は charts() と同一規則 (issue #186 fallback / issue #215 フィルタ)。
+    # 銘柄抽出は charts() と同一規則 (issue #215 フィルタ)。
     all_records_inc = ps.list_records(include_excluded=True)
-    if not all_records_inc:
-        visible_records = _build_fallback_records()
-    else:
-        visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
+    visible_records = [r for r in all_records_inc if not r.get("excluded", False)]
 
     if active_gyoutai_theme:
         filtered_records = [

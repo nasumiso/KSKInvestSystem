@@ -174,14 +174,14 @@ class TestUpdateResearchSnapshots:
         loaded = rs.get_research_record("3496", db_path=db_path)
         assert len(loaded["snapshots"]) == 1
 
-    def test_watchlist_file_missing_no_crash(self, db_path, monkeypatch):
-        """my_watch_list.txt 不在時は FileNotFoundError を握りつぶして早期 return"""
+    def test_portfolio_read_error_no_crash(self, db_path, monkeypatch):
+        """portfolio_shelve 参照失敗時は例外を握りつぶして早期 return (日次バッチを止めない)"""
         today = _today_str()
         stock = _make_stock("3496", kessanbi=today)
         monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
 
         def _raise():
-            raise FileNotFoundError("my_watch_list.txt")
+            raise RuntimeError("portfolio_shelve")
 
         monkeypatch.setattr(portfolio, "parse_my_portforio", _raise)
 
