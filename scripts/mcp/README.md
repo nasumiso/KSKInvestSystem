@@ -1,6 +1,6 @@
 # 四季報 MCP サーバー
 
-`shikiho_server.py` は `research_shelve` の四季報コメント・業績予想・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバーです。書き込めるのは銘柄評価台帳 (`update_stock_rating`) だけです。HTTP ポートは開きません。利用者向けの仕様は [doc/MCP.md](../../doc/MCP.md) を参照してください。
+`shikiho_server.py` は `research_shelve` の四季報コメント・業績予想・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバーです。書き込めるのは銘柄評価台帳 (`update_stock_rating`) だけです。HTTP ポートは開きません。利用者向けの仕様は [doc/MCP連携.md](../../doc/MCP連携.md) を参照してください。
 
 ## ローカル起動前の準備
 
@@ -137,7 +137,7 @@ Mac が止まっているときは、ChatGPT の Drive コネクタで JSON を�
 
 > 2026-09-27 に運用機 (MacMini) へ移設し、MBA 側は disable 済み。MacMini 固有の手順
 > (プロファイルの `api_key: "env:CONTROL_PLANE_API_KEY"` 化、キーチェーン登録は画面で行う等) は
-> [doc/OPERATIONS.md](../../doc/OPERATIONS.md) の「MCP tunnel の移設」を参照。
+> [doc/運用手順.md](../../doc/運用手順.md) の「MCP tunnel の移設」を参照。
 
 Secure MCP Tunnel の Runtime API Key は平文ファイルや LaunchAgent に書かない。最初に、Runtime API Key を設定したターミナルでキーチェーンへ保存する。
 

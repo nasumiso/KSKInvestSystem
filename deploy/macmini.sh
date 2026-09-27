@@ -9,7 +9,7 @@
 #
 # 接続先は ~/.ssh/config の Host macmini (Tailscale 経由)。MACMINI_HOST で上書きできる。
 # キーチェーンを使う操作 (claude のログイン、tunnel の API キー登録) は SSH からは
-# できないので、運用機の画面で行う (doc/OPERATIONS.md 参照)。
+# できないので、運用機の画面で行う (doc/運用手順.md 参照)。
 set -eu
 
 HOST="${MACMINI_HOST:-macmini}"

@@ -18,7 +18,7 @@ Provide concise, actionable guidance so an AI coding agent can be immediately pr
 - `scripts/ks_util.py` — utilities used across the project (constants: `DATA_DIR`, `UPD_INTERVAL`, logging helpers `log_print` / `log_warning`, `get_price_day`, session helpers). Read this first.
 - `scripts/master.py`, `scripts/price.py`, `scripts/gyoseki.py`, `scripts/shihyou.py`, `scripts/rironkabuka.py` — per-domain scrapers/parsers and data transformers.
 - `scripts/googledrive.py` — Google Drive upload/update; requires OAuth credentials under `data/googledrive/`.
-- `shintakane_cron.sh` & `deploy/` — how the system is scheduled and run on macOS (launchd). See `doc/OPERATIONS.md`.
+- `shintakane_cron.sh` & `deploy/` — how the system is scheduled and run on macOS (launchd). See `doc/運用手順.md`.
 - `data/stock_data/stocks.pickle` — canonical project DB (pickle). Many functions read/write this file.
 
 ## Conventions & patterns to follow (specific)

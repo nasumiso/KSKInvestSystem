@@ -25,8 +25,8 @@ AI はコードから構造を復元できる。構造を書き写した文書�
 |---|---|
 | 用語の定義・不変条件 | [用語集と不変条件.md](用語集と不変条件.md) |
 | 却下した案とその理由 | [decisions/](decisions/README.md) |
-| データフロー・責務・設計意図・画面遷移 | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 外部世界の制約・運用手順 | [OPERATIONS.md](OPERATIONS.md) |
+| データフロー・責務・設計意図・画面遷移 | [アーキテクチャ.md](アーキテクチャ.md) |
+| 外部世界の制約・運用手順 | [運用手順.md](運用手順.md) |
 | 進行中の計画 | [plan/](README.md#計画書の置き場所) |
 
 紹介資料・PDF・俯瞰図・説明用の図は正ではない。必要になったときに正のテキストから生成し、使い終わったら捨てる。
@@ -44,7 +44,7 @@ AI はコードから構造を復元できる。構造を書き写した文書�
 | 実装・調査 | Claude Code | [CLAUDE.md](../CLAUDE.md) の行動原則 |
 | 実装プランのレビュー | `codex exec` | [.claude/rules/codex-plan-review.md](../.claude/rules/codex-plan-review.md) |
 | PR レビュー | Codex (GitHub Actions が自動で付ける) | 指摘対応は [.claude/skills/github-review-fix](../.claude/skills/github-review-fix/SKILL.md) |
-| テスト | pytest | [.claude/rules/testing.md](../.claude/rules/testing.md)、[TESTING.md](TESTING.md) |
+| テスト | pytest | [.claude/rules/testing.md](../.claude/rules/testing.md)、[テスト方針.md](テスト方針.md) |
 | 繰り返す問い合わせの CLI 化 | — | [.claude/skills/promote-to-command](../.claude/skills/promote-to-command/SKILL.md) |
 | スクリーンショット | Playwright MCP 等 | [.claude/rules/playwright.md](../.claude/rules/playwright.md) |
 | スクレイピング修正 | — | [.claude/rules/html-scraping.md](../.claude/rules/html-scraping.md) |

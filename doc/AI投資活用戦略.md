@@ -156,7 +156,7 @@ Shintakaneを5年以上自作運用してきた技術的素地と、自己の認
 
 上の分業を支える仕組みの置き場所。
 
-- LLM からの参照窓口 (四季報・IR回答・決算資料・評価台帳): [MCP.md](MCP.md)
+- LLM からの参照窓口 (四季報・IR回答・決算資料・評価台帳): [MCP連携.md](MCP連携.md)
 - 評価台帳の採点ルールと原則 (確証バイアス対策を含む): `scripts/mcp/shikiho_server.py` の `update_stock_rating` 説明文、判断記録は [decisions/2026-09-23-銘柄評価台帳の正本をJSONにする.md](decisions/2026-09-23-銘柄評価台帳の正本をJSONにする.md)
 - テーマ急浮上の理由調査 (日次、`claude -p`): `.claude/skills/theme-news/`
 - 売買履歴と保有PFの AI 振り返り: issue #448 (計画は [plan/issue-trade-review-ai.md](plan/issue-trade-review-ai.md))

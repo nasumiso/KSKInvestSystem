@@ -42,7 +42,7 @@
 
 - `market_data.html`: 既存の `cd scripts && python make_market_db.py html` (DB 更新なしの HTML 再生成経路) をそのまま使う。
 - `code_rank.csv` / `shintakane_result.csv`: 既存 DB・既存 CSV キャッシュから出力のみ再生成する経路が現状存在しない。既存の生成関数 (`build_code_rank_row()` 系 / CSV 出力部) を**そのまま呼ぶだけ**の薄いサブコマンド (例: `make_stock_db.py export_csv`) を追加する。スクレイピング・DB 書き込み・Drive アップロードは一切呼ばないこと。
-- スナップショット手順 (データ dir コピー → `KS_DATA_DIR` 切替 → before/after 実行 → diff) を `doc/TESTING.md` に追記する。
+- スナップショット手順 (データ dir コピー → `KS_DATA_DIR` 切替 → before/after 実行 → diff) を `doc/テスト方針.md` に追記する。
 - タイムスタンプ等どうしても非決定になる出力列があれば、比較時に除外する列として手順に明記する。
 
 検証: ハーネス自体の検証は「main 上で2回連続実行して diff が空」であること。
@@ -76,7 +76,7 @@
 
 一回限りのデータ移行が完了済みのスクリプトを、対応テストごと削除する。git 履歴に残るので必要なら復元可能。
 
-| スクリプト | 移行内容 (issue) | COMMANDS.md 記載 | 扱い |
+| スクリプト | 移行内容 (issue) | コマンド一覧.md 記載 | 扱い |
 |---|---|---|---|
 | `migrate_my_watch_list_to_shelve.py` | watch list TXT→shelve (#170) | なし | 削除 |
 | `migrate_portfolio_from_csv.py` | portfolio CSV→shelve (#171) | なし | 削除 |
@@ -91,10 +91,10 @@
 | `migrate_kessan_comments_from_log.py` | 決算メモ log→shelve (#131) | **あり** | **要ユーザー判断** |
 
 - 対応する `tests/test_migrate_*.py` / `tests/test_cleanup_*.py` / `tests/test_reimport_rich_text.py` も同時に削除。
-- **着手前にユーザー確認**: 本番 DB への移行が完了済みで再実行の予定がないこと。特に COMMANDS.md 記載の2本は「今後もスプシ/ログから再インポートする運用があるか」を確認し、削除する場合は COMMANDS.md の該当手順も同 PR で削除。
+- **着手前にユーザー確認**: 本番 DB への移行が完了済みで再実行の予定がないこと。特に コマンド一覧.md 記載の2本は「今後もスプシ/ログから再インポートする運用があるか」を確認し、削除する場合は コマンド一覧.md の該当手順も同 PR で削除。
 - `.claude/rules/testing.md` のマッピング表 (`migrate_research_from_csv.py` の行) も更新。
 
-検証: テスト全パス + COMMANDS.md / testing.md に削除済みスクリプトへの参照が残っていないこと (grep)。
+検証: テスト全パス + コマンド一覧.md / testing.md に削除済みスクリプトへの参照が残っていないこと (grep)。
 
 ## Phase 3: 定数・重複パターンの集約 (リスク: 低〜中 / 3 PR 程度)
 

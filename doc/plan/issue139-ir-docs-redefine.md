@@ -348,7 +348,7 @@ cd scripts && python ir_docs.py list 4011
 |---|---|
 | `scripts/ir_docs.py` | **新規**。download / download_all / list のCLI + `download_ir_docs()` |
 | `tests/test_ir_docs.py` | **新規**。下記5本に集約 (httpはモック) |
-| `doc/COMMANDS.md` | CLI を追記 |
+| `doc/コマンド一覧.md` | CLI を追記 |
 | `requirements.txt` | `pypdf` (導入済みなら不要 — 要確認) |
 
 `scripts/disclosure.py` は**変更しない** (既存の日次フローに影響させないため)。

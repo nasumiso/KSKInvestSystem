@@ -341,7 +341,7 @@ CSSクラスは `make_market_db.py:605-` の市場テーブルCSSブロックに
 - 本要件は issue #117 の Part A の実装仕様を定義する
 - Part B: 市場セクション表示の State Machine 整合 + Stalling Day + 週足10MA補助遷移 — Addendum 参照
 - Part C: Minervini Breadth (トレンドテンプレート通過銘柄数による市場健全性評価) — 別要件
-- 関連ドキュメント: `doc/ARCHITECTURE.md` の市場DB構造
+- 関連ドキュメント: `doc/アーキテクチャ.md` の市場DB構造
 
 ---
 
