@@ -287,7 +287,7 @@
     <a href="{{ url_for('portfolio.theme_summary') }}"
        class="dashboard-header-link"
        title="業態テーマ別 RS サマリー">📊 テーマサマリー</a>
-    {% if not fallback_mode %}
+
     {# issue #397: CSV取込の主導線。クイック取り込み (Downloads 自動発見) とファイル選択の2択 #}
     <details class="csv-import-menu">
       <summary role="button" class="outline" title="楽天/SBI のポートフォリオCSVを取込み、保有株数・ステータスを同期">CSV取り込み</summary>
@@ -305,16 +305,11 @@
       </div>
     </details>
     <button type="button" id="toggle-manage-mode">管理</button>
-    {% endif %}
+
   </div>
 </div>
 
-{% if fallback_mode %}
-<div style="padding:0.6em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;background:#fff8e0;color:#a07000;border:1px solid #ecd07a;">
-  <strong>portfolio_shelve 未移行モード</strong>: portfolio_shelve が空です。
-  <code>migrate_my_watch_list_to_shelve.py</code> で復元するまで、ステータス変更・追加・削除などの書き込み操作は無効です。
-</div>
-{% endif %}
+
 
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
@@ -353,7 +348,7 @@
        style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
        title="現在のフィルタ結果をチャート一覧で確認">📊 チャート一覧</a>
   </form>
-  {% if not fallback_mode %}
+
   <button type="button" id="toggle-status-edit" aria-expanded="false">▷ ステータス編集</button>
   <div id="status-edit-panel" style="display:none;">
   {% if active_status_query %}
@@ -375,7 +370,7 @@
   <button type="button" id="toggle-delete-mode">一括変更モード</button>
   {% endif %}
   </div>
-  {% endif %}
+
 </div>
 
 {# 運用総額の市場別内訳: カテゴリ→色の固定マップ #}
@@ -470,7 +465,7 @@
 </div>
 {% endif %}
 
-{% if not fallback_mode %}
+
 <div id="manage-panel" style="display:none;">
   <div>
     <a href="{{ url_for('portfolio.themes_index') }}"
@@ -503,7 +498,7 @@
   <button type="button" id="bulk-delete-cancel">キャンセル</button>
 </div>
 {% endif %}
-{% endif %}
+
 
 {% if rows %}
 <div class="portfolio-table-wrap">
@@ -573,9 +568,7 @@
         {%- if row.status == '1保' and position_value > 0 %} title="ポジション: ¥{{ '{:,}'.format(position_value|int) }} ({{ row.qty }}株)"{% endif -%}
         {%- if row.status == '1保' and position_ratio > 0 %} style="background: linear-gradient(to right, rgba(40,80,40,0.18) 0% {{ '%.1f'|format(position_ratio) }}%, transparent {{ '%.1f'|format(position_ratio) }}% 100%);"{% endif -%}
       >
-        {% if fallback_mode %}
-        <span class="status-badge status-{{ row.status_query }}">{{ row.status_label }}</span>
-        {% else %}
+
         <button type="button"
                 class="status-badge status-{{ row.status_query }} status-badge-button"
                 data-code="{{ row.code_s }}"
@@ -586,7 +579,7 @@
                 data-transitions='{{ row.transitions|tojson|forceescape }}'
                 onclick="openPortfolioModalFromBadge(this)"
                 aria-label="保有ステータスを変更">{{ row.status_label }}</button>
-        {% endif %}
+
       </td>
       <td class="gyoutai-themes-cell" data-code="{{ row.code_s }}"
           style="max-width:10em;padding:0 2px;line-height:0;{{ row.styles.gyoutai_themes or '' }}">
@@ -598,7 +591,7 @@
                 data-slot="{{ i }}"
                 class="gyoutai-input"
                 title="Ctrl/Cmd+クリックでこのテーマで絞り込み (新タブ)"
-                {% if fallback_mode %}disabled{% endif %}>
+                >
           <option value="">—</option>
           {% if current and current not in master_names %}
           <option value="{{ current }}" selected>⚠️ {{ current }}</option>
@@ -643,18 +636,18 @@
       {# issue #327: ページ2 (手動入力)。更新日/ステージ/チャートパターンをページ1から移設 #}
       <td data-page="2" title="クリックで編集 (M/D 形式)"
           data-style-field="last_research_update"
-          {% if not fallback_mode %}class="editable" data-code="{{ row.code_s }}" data-field="last_research_update"{% endif %}
-          style="{{ row.styles.last_research_update or '' }}{% if not fallback_mode %};cursor:pointer{% endif %}">{{ row.memo.last_research_update or "—" }}</td>
+          class="editable" data-code="{{ row.code_s }}" data-field="last_research_update"
+          style="{{ row.styles.last_research_update or '' }};cursor:pointer">{{ row.memo.last_research_update or "—" }}</td>
       <td data-page="2" title="選択で保存 (ステージ変更時は更新日も当日に) / Ctrl+クリックで株探チャート"
           data-style-field="stage"
           class="stage-cell stage-struct-cell"
-          {% if not fallback_mode %}data-code="{{ row.code_s }}"{% endif %}
+          data-code="{{ row.code_s }}"
           style="{{ row.styles.stage or '' }}">
         {% set stage_struct = row.memo.stage_struct %}
         <div class="stage-struct"
              data-code="{{ row.code_s }}"
              data-rescue="{% if stage_struct.rescue %}1{% else %}0{% endif %}">
-          <select class="stage-main-select" {% if fallback_mode %}disabled{% endif %}>
+          <select class="stage-main-select">
             <option value="">—</option>
             {% if stage_struct.rescue %}
             <option value="{{ stage_struct.rescue }}" selected>⚠️ {{ stage_struct.rescue }}</option>
@@ -665,7 +658,7 @@
           </select>
           <select class="stage-t-select"
                   data-unit="{{ stage_struct.unit or ('B' if stage_struct.s and stage_struct.s.startswith('2S') else 'T') }}"
-                  {% if fallback_mode or stage_struct.rescue %}disabled{% endif %}>
+                  {% if stage_struct.rescue %}disabled{% endif %}>
             <option value="">{{ (stage_struct.unit or ('B' if stage_struct.s and stage_struct.s.startswith('2S') else 'T')) }}なし</option>
             {% for t in stage_t_options %}
             <option value="{{ t }}" {% if t == stage_struct.t %}selected{% endif %}>{{ t }}{{ stage_struct.unit or ('B' if stage_struct.s and stage_struct.s.startswith('2S') else 'T') }}</option>
@@ -678,7 +671,7 @@
         <div class="chart-struct"
              data-code="{{ row.code_s }}"
              data-rescue="{% if chart_struct.rescue %}1{% else %}0{% endif %}">
-          <select class="chart-style-select" {% if fallback_mode %}disabled{% endif %}>
+          <select class="chart-style-select">
             <option value="">型なし</option>
             {% if chart_struct.rescue %}
             <option value="{{ chart_struct.rescue }}" selected>⚠️ {{ chart_struct.rescue }}</option>
@@ -687,7 +680,7 @@
             <option value="{{ style }}" {% if style == chart_struct.style %}selected{% endif %}>{{ style }}</option>
             {% endfor %}
           </select>
-          <select class="chart-state-select" {% if fallback_mode or chart_struct.rescue %}disabled{% endif %}>
+          <select class="chart-state-select" {% if chart_struct.rescue %}disabled{% endif %}>
             <option value="">状態なし</option>
             {% for state in chart_state_options %}
             <option value="{{ state }}" {% if state == chart_struct.state %}selected{% endif %}>{{ state }}</option>
@@ -709,7 +702,7 @@
                 data-code="{{ row.code_s }}"
                 data-idea="{{ current_idea }}"
                 title="{{ trade_idea_descriptions[current_idea] if current_idea in trade_idea_descriptions else '売買戦略 (選択で即保存)' }}"
-                {% if fallback_mode %}disabled{% endif %}>
+                >
           <option value="">{% if unclassified_hold %}⚠️ 未分類{% else %}未分類{% endif %}</option>
           {% if current_idea and current_idea not in trade_idea_options %}
           <option value="{{ current_idea }}" selected>⚠️ {{ current_idea }}</option>
@@ -724,10 +717,10 @@
       {% for memo_field, input_width in [("watch_in_reason", "14em"), ("takaichi_sensitivity", "14em")] %}
       {% set memo_value = row.memo[memo_field] or '' %}
       <td data-page="2"
-          title="{{ (memo_value ~ ' (クリックで編集)') if (not fallback_mode and memo_value) else ('クリックで編集' if not fallback_mode else memo_value) }}"
+          title="{{ (memo_value ~ ' (クリックで編集)') if (memo_value) else 'クリックで編集' }}"
           data-full="{{ memo_value }}"
-          {% if not fallback_mode %}class="editable memo-short-cell" data-code="{{ row.code_s }}" data-field="{{ memo_field }}" data-multiline="1" data-input-width="{{ input_width }}"{% else %}class="memo-short-cell"{% endif %}
-          style="{% if not fallback_mode %}cursor:pointer{% endif %}">{%- if memo_value -%}<div class="memo-clamp">{{ memo_value }}</div>{%- else -%}—{%- endif -%}</td>
+          class="editable memo-short-cell" data-code="{{ row.code_s }}" data-field="{{ memo_field }}" data-multiline="1" data-input-width="{{ input_width }}"
+          style="cursor:pointer">{%- if memo_value -%}<div class="memo-clamp">{{ memo_value }}</div>{%- else -%}—{%- endif -%}</td>
       {% endfor %}
     </tr>
     {# issue #327: 手動メモの展開パネルは廃止。全項目をページ2の列 (inline 編集) に移設 #}
@@ -736,7 +729,7 @@
 </table>
 </div>
 
-{% if not fallback_mode %}
+
 <div id="portfolio-add-hold-modal" class="portfolio-modal-overlay" style="display:none;" onclick="closePortfolioAddHoldModalOnOverlay(event)">
   <div class="portfolio-modal-content" role="dialog" aria-labelledby="portfolio-add-hold-modal-title">
     <div class="portfolio-modal-header">
@@ -832,7 +825,7 @@
 </div>
 {# issue #363: 戦略の出口基準 (description) を JS の hint 表示に渡す #}
 <script id="trade-idea-descriptions" type="application/json">{{ trade_idea_descriptions | tojson }}</script>
-{% endif %}
+
 
 <style>
 .gyoutai-themes-cell { vertical-align: middle; }
@@ -897,7 +890,7 @@
   });
 })();
 
-{% if not fallback_mode %}
+
 // ========== 表示ステータスへの追加 ==========
 function openPortfolioAddHoldModal() {
   var addForm = document.getElementById('portfolio-add-form');
@@ -1045,7 +1038,7 @@ function excludeFromUniverse(codeS) {
   document.body.appendChild(form);
   form.submit();
 }
-{% endif %}
+
 
 // ========== inline 編集 (issue #177) ==========
 // .editable セルをクリック → input/textarea に置換 → blur で fetch POST → DOM 書き戻し
