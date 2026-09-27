@@ -4,6 +4,7 @@
 GET  /dev              : 日次バッチの実行ボタン・状態・ログ末尾・PR/issue リンク
 POST /dev/cron/run     : shintakane_cron.sh を非同期起動
 GET  /dev/cron/status  : 実行状態 (logs/cron_status.json) とログ末尾を JSON で返す
+POST /dev/deploy       : 運用機で git pull --ff-only し、コードが変わったら WebApp を再起動する
 
 排他・状態マーカー・ログは shintakane_cron.sh 自身が持つ。launchd の定刻実行も
 同じマーカー/ログに載り、19時の kickstart で WebApp が再起動しても状態を失わない。
@@ -31,6 +32,8 @@ _STATUS_JSON = _PROJECT_ROOT / "logs" / "cron_status.json"
 _LOCK_FILE = _PROJECT_ROOT / "logs" / "cron.lock"
 _CRON_LOG = _PROJECT_ROOT / "logs" / "cron.log"
 _LOG_TAIL_LINES = 200
+_WEBAPP_LABEL = "com.k_sohara.shintakane.webapp"
+_GIT_TIMEOUT_SEC = 60
 
 # GitHub の PR / issue 一覧へのリンク (トップページから移設)
 PORTAL_LINKS = (
@@ -124,3 +127,47 @@ def cron_status():
     elif marker.get("state") == "running":
         marker = {**marker, "state": "interrupted"}
     return jsonify({**marker, "log_tail": _log_tail()})
+
+
+def _git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args], cwd=str(_PROJECT_ROOT), capture_output=True, text=True,
+        timeout=_GIT_TIMEOUT_SEC,
+    )
+
+
+@dev_bp.route("/dev/deploy", methods=["POST"])
+def deploy():
+    """main の最新コードを取り込み、変わっていれば WebApp を再起動する。
+
+    日次バッチ冒頭の自動 pull (shintakane_cron.sh) を待たずに反映するためのもの。
+    開発機の作業ブランチを pull しないよう、運用機 (run_webapp.sh が production を設定) でだけ動かす。
+    """
+    if os.environ.get("SHINTAKANE_ENV") != "production":
+        return jsonify({"status": "not_production"}), 403
+    # 確認から pull までの間にバッチが起動すると git がぶつかりうるが、バッチ側は
+    # pull 失敗をログに出して前回のコードで続行するので、ロックの共有まではしない
+    if _is_running():
+        return jsonify({"status": "cron_running"}), 409
+
+    before = _git("rev-parse", "HEAD").stdout.strip()
+    try:
+        pull = _git("pull", "--ff-only")
+    except subprocess.TimeoutExpired:
+        return jsonify({"status": "failed", "output": "git pull がタイムアウトしました"}), 500
+    output = (pull.stdout + pull.stderr).strip()
+    if pull.returncode != 0:
+        log_warning(f"[dev] git pull --ff-only 失敗: {output}")
+        return jsonify({"status": "failed", "output": output}), 500
+
+    after = _git("rev-parse", "HEAD").stdout.strip()
+    if after == before:
+        return jsonify({"status": "up_to_date", "output": output, "restarting": False})
+
+    # kickstart -k は自プロセスを落とすので、応答を返し終えてから別セッションで実行する
+    subprocess.Popen(
+        ["bash", "-c", f'sleep 1; launchctl kickstart -k "gui/$(id -u)/{_WEBAPP_LABEL}"'],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+    )
+    log_print(f"[dev] git pull {before[:7]} -> {after[:7]}、WebApp を再起動します")
+    return jsonify({"status": "updated", "output": output, "restarting": True})
