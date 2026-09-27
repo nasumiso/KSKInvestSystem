@@ -473,6 +473,27 @@ launchctl print-disabled "gui/$(id -u)" | grep shintakane      # cron と tunnel
 | WebApp を新コードで再起動 | `launchctl kickstart -k "gui/$(id -u)/com.k_sohara.shintakane.webapp"` |
 | WebApp を開く (出先・スマホ) | `http://kosukemac-mini:5001/` (Tailnet 内のみ) |
 
+### MBA (開発機) での使い分け
+
+| 用途 | URL | データ |
+|---|---|---|
+| 普段使い (閲覧・メモ・売買記録・レーティング) | `http://kosukemac-mini:5001/` (運用機) | 運用機の正本 |
+| 開発 (コード修正の動作確認) | `http://localhost:5001/` (MBA) | MBA の開発用コピー |
+
+**MBA の localhost でメモや売買記録を入力しない。** MBA のデータは運用機へ書き戻らないので、
+入力は正本に反映されずに消える。MBA にも Tailscale を入れ、普段使いは運用機の URL を開く。
+
+開発で最新データが要るときだけ、運用機から取り寄せる (一方向)。
+
+```bash
+rsync -a --exclude 'ir_docs' --exclude '*.lock' --exclude '*.dbm.lock' \
+  macmini:/Users/k_sohara/shintakane_data/ "$KS_DATA_DIR"/
+```
+
+**`ir_docs` は必ず除外する。** 運用機側は Drive への symlink、MBA 側は Drive 上の実ディレクトリで、
+除外しないと実ディレクトリを symlink で上書きしようとする。どちらからも Drive 経由で同じものが
+見えているので、転送自体が要らない。
+
 **自動で走るもの:**
 
 - 平日19:00 に日次バッチ (`git pull --ff-only` → 分析 → DB更新 → exposure → theme-news)
