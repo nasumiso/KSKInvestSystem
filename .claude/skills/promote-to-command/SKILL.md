@@ -71,7 +71,11 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash
    「何をする/しない (DB更新の有無等)」を明記。
 6. 反映方法 (commit/PR or main直push) はユーザーに確認 (軽微なら直push可)。
 
-## 問い合わせログ (.claude/query_log.jsonl)
+## 問い合わせログ (`~/.claude/projects/-Users-k-sohara-Library-CloudStorage-Dropbox-document-shintakane/query_log.jsonl`)
+
+置き場所はリポジトリの外 (git 管理外)。追記のたびにコミット差分が出るのを避け、
+どの worktree から書いても同じファイルに集まるよう絶対パスに固定している。
+開発機 (MBA) でしか書かない前提。
 
 セッション内検知は「同じ系統を2回」に気づけないことが多い (長いセッションでは
 序盤を覚えていられない、セッションをまたぐ繰り返しは原理的に見えない)。
@@ -101,7 +105,7 @@ DB・データに対する**ワンショットの問い合わせ**を書いた/�
 同系統をまとめて1行にしてよい (同じ問いを3回なら1行 + 回数を intent に添える)。
 
 ```bash
-cat >> .claude/query_log.jsonl <<'EOF'
+cat >> ~/.claude/projects/-Users-k-sohara-Library-CloudStorage-Dropbox-document-shintakane/query_log.jsonl <<'EOF'
 {"ts":"...","intent":"...","target":"...","args":{},"how":"...","session":"..."}
 EOF
 ```

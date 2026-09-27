@@ -51,3 +51,4 @@ data_old/
 
 # 機能紹介.md から都度書き出す配布用 PDF (#81)
 doc/introduction/Shintakane機能紹介.pdf
+.claude/query_log.jsonl
