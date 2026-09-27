@@ -160,3 +160,19 @@ launchctl bootstrap "gui/$(id -u)" \
 状態は `launchctl print "gui/$(id -u)/com.k_sohara.shintakane-tunnel"`、ログは
 `~/Library/Logs/shintakane-tunnel.stderr.log` で確認する。停止する場合は
 `launchctl bootout "gui/$(id -u)/com.k_sohara.shintakane-tunnel"` を使う。
+
+## 更新後の再起動
+
+`shikiho_server.py`、MCP依存関係、トンネルプロファイル・接続設定を更新してマージした後は、
+常駐プロセスが旧コードを読み込んだままなので再起動する。
+
+```bash
+launchctl kickstart -k "gui/$(id -u)/com.k_sohara.shintakane-tunnel"
+```
+
+再起動後は、以下を確認する。
+
+1. `launchctl print "gui/$(id -u)/com.k_sohara.shintakane-tunnel"` が `state = running` であること
+2. ChatGPTから変更したMCPツールを1回呼び、追加・変更したフィールドが返ること
+
+四季報コメントや業績予想などの **DBデータだけを更新した場合は再起動不要**。MCPは呼び出しごとに `research_shelve` を読み取る。

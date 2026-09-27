@@ -92,7 +92,7 @@ WebApp画面の見え方・挙動、またはユーザーが直接触るデー�
 
 ## Python環境
 
-- **Python 3.9+**（`.venv/` の仮想環境）
+- **Python 3.11**（`.venv/` の仮想環境）。venv は `uv venv --python 3.11 .venv` で作成する
 - 主な依存: `requests`, `scipy`, `yfinance`, `pandas`, Google API ライブラリ群, `oauth2client`
 - `requirements.txt` に全依存を記載
 

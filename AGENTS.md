@@ -14,7 +14,7 @@ Run commands from `scripts/` unless noted:
 - `python make_stock_db.py update`: update specific stocks (edit `code_list` in `make_stock_db.py`).
 - `python make_market_db.py`: refresh market index summaries.
 
-Dependencies are managed via `requirements.txt`; use a local `.venv/` with Python 3.9+.
+Dependencies are managed via `requirements.txt`; use a local `.venv/` with Python 3.11.
 
 ## Coding Style & Naming Conventions
 Python code uses 4-space indentation and snake_case for functions and variables. Filenames are lower_snake_case (e.g., `make_stock_db.py`). Linting is configured with `.flake8` and ignores `F403`, `F405`, and `E501`. Prefer small, focused functions with explicit data flow through the stock DB dictionary.
