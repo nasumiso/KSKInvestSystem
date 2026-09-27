@@ -4274,7 +4274,7 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
 
 # ==================================================
 # 条件付き書式 (issue #177): スプシ「保有銘柄」シートの色分けを移植
-# 詳細は doc/PORTFOLIO_COLOR_RULES.md を参照
+# 色の意味は doc/システム概要.md の「色の凡例」、列ごとの条件は compute_cell_styles が正
 # ==================================================
 
 PORTFOLIO_COLORS = {
