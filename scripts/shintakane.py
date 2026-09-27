@@ -835,7 +835,7 @@ def convert_kabutan_dekidakaup_html(html):
         kabuka = m.group(4)
         dekidaka = m.group(7)
         try:
-            zenjitsuhi = re.search(r'<span class="up">(.*)</span>', m.group(6)).group(1)
+            zenjitsuhi = re.search(r'<span class="(?:up|down)">(.*)</span>', m.group(6)).group(1)
             dekidaka_up = re.search(r'<span class="up">(.*)</span>', m.group(8)).group(
                 1
             )
@@ -895,9 +895,9 @@ def convert_kabutan_shintakane_html(html):
         market_name = m.group(3)
         kabuka = m.group(4)
         try:
-            zenjitsuhi = re.search(r'<span class="up">(.*)</span>', m.group(6)).group(1)
+            zenjitsuhi = re.search(r'<span class="(?:up|down)">(.*)</span>', m.group(6)).group(1)
             zenjitsuhi_per = (
-                re.search(r'<span class="up">(.*)</span>', m.group(7)).group(1) + "%"
+                re.search(r'<span class="(?:up|down)">(.*)</span>', m.group(7)).group(1) + "%"
             )
         except AttributeError:
             zenjitsuhi = 0
