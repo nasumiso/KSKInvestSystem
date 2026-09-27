@@ -1,8 +1,12 @@
 """銘柄評価台帳 (ChatGPT で採点している投資判断スナップショット) の正本。
 
 正本は KS_DATA_DIR/stock_ratings/ の JSON 1ファイル、変更履歴は JSONL (追記のみ)。
-KS_DATA_DIR は Google Drive のミラー同期フォルダなので、置くだけで Drive に同期される。
 書き込みはこのモジュール経由のみ (flock で排他し、一時ファイル → os.replace で置き換える)。
+
+ChatGPT が Drive コネクタから読めるよう、KS_DATA_DIR/stock_ratings_drive (運用機にだけ置く
+Drive フォルダへの symlink) があれば、書き込みのたびにそこへ上書きコピーする。
+Drive 上で os.replace するとファイル ID が変わり ChatGPT の参照が切れるため、symlink で正本を
+Drive に置かず、既存ファイルへの上書き (shutil.copyfile) で ID を保つ。
 
 使い方:
     python stock_ratings.py show 3697
@@ -19,14 +23,16 @@ import html
 import json
 import os
 import re
+import shutil
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ks_util import DATA_DIR, log_print, log_warning
+from ks_util import DATA_DIR, is_dev_data_dir, log_print, log_warning
 from research_shelve import CODE_S_PATTERN
 
 RATINGS_DIR = Path(DATA_DIR) / "stock_ratings"
+DRIVE_MIRROR_DIR = Path(DATA_DIR) / "stock_ratings_drive"
 RATINGS_FILENAME = "stock_ratings.json"
 HISTORY_FILENAME = "stock_ratings_history.jsonl"
 HTML_FILENAME = "stock_ratings.html"
@@ -252,6 +258,7 @@ def update_rating(code_s, fields, reason, source, ratings_dir=None):
         }])
         _write_json(json_path, data)
         _export_html_safely(root, data)
+        _mirror_to_drive(root)
     return changes
 
 
@@ -347,6 +354,7 @@ def migrate_from_csv(csv_path, ratings_dir=None):
             "stocks": stocks,
         })
         _export_html_safely(root, _load(json_path))
+        _mirror_to_drive(root)
     return len(stocks), warnings
 
 
@@ -456,11 +464,27 @@ def _export_html_safely(root, data):
         log_warning(f"stock_ratings: HTML の書き出しに失敗した: {exc}")
 
 
+def _mirror_to_drive(root):
+    """正本を Drive へ上書きコピーする。ミラーが無い・開発用データ・テストなら何もしない。
+
+    失敗しても正本の更新は成功扱いにする (警告だけ出す)。
+    """
+    if root != RATINGS_DIR or is_dev_data_dir() or not DRIVE_MIRROR_DIR.is_dir():
+        return
+    try:
+        for name in (RATINGS_FILENAME, HISTORY_FILENAME, HTML_FILENAME):
+            if (root / name).exists():
+                shutil.copyfile(root / name, DRIVE_MIRROR_DIR / name)
+    except Exception as exc:
+        log_warning(f"stock_ratings: Drive へのコピーに失敗した: {exc}")
+
+
 def export_html(ratings_dir=None):
     """現在の JSON から表示用 HTML を作り直す。"""
     root, json_path, _ = _paths(ratings_dir)
     with _flock(root):
         _export_html_safely(root, _load(json_path))
+        _mirror_to_drive(root)
     return root / HTML_FILENAME
 
 
