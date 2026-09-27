@@ -25,7 +25,7 @@ issue #452 に対応する。
 |---|---|---|
 | 用途 | 平日19:00 の日次バッチ / WebApp 常駐 | 機能開発・パーサー修正 |
 | ソース | `git pull --ff-only` で main 追従 | feature ブランチで開発 |
-| `KS_DATA_DIR` | ローカル SSD、**正本** (`ir_docs` のみ Drive へ symlink) | `~/shintakane_data_dev` の開発用コピー (#453) |
+| `KS_DATA_DIR` | ローカル SSD、**正本** (`ir_docs` と `stock_ratings_drive` のみ Drive へ symlink) | `~/shintakane_data_dev` の開発用コピー (#453) |
 | WebApp | LaunchAgent で常駐、Tailscale Serve で Tailnet 公開 | 開発時のみ手動起動 |
 
 **原則:**
@@ -166,6 +166,16 @@ ln -s "$HOME/Library/CloudStorage/GoogleDrive-kosuke4210@gmail.com/マイドラ�
 
 ls /Users/k_sohara/shintakane_data/ir_docs | wc -l     # 118 銘柄が見える
 du -sh ~/Library/CloudStorage/GoogleDrive-*            # 数MB (ストリーミングなので実体を持たない)
+```
+
+4. 評価台帳の Drive 出力先も symlink で張る。正本 (`stock_ratings/`) はローカルに置いたまま、
+   `stock_ratings.py` が書き込みのたびに `stock_ratings_drive/` へ上書きコピーする。
+   **正本の `stock_ratings/` 自体を Drive へ symlink にしない。** Drive 上で `os.replace` すると
+   ファイル ID が変わり、ChatGPT の参照が切れる (2026-09-27 実測)
+
+```bash
+ln -s "$HOME/Library/CloudStorage/GoogleDrive-kosuke4210@gmail.com/マイドライブ/shintakane_data/stock_ratings" \
+      /Users/k_sohara/shintakane_data/stock_ratings_drive
 ```
 
 > `mount | grep google` は空になるが正常。最近の Drive は FileProvider 方式で動くため
@@ -503,7 +513,7 @@ launchctl print-disabled "gui/$(id -u)" | grep shintakane      # cron と tunnel
 ローカルで消すとクラウドからも消える。次の2つが参照している。
 
 - `ir_docs/` — 運用機の `ir_docs` symlink の参照先、ChatGPT の Drive コネクタが PDF を読む経路
-- `stock_ratings/stock_ratings.json` — ChatGPT の Drive コネクタが読む経路 (fileId 固定)
+- `stock_ratings/stock_ratings.json` — 運用機の `stock_ratings_drive` symlink の参照先、ChatGPT の Drive コネクタが読む経路 (fileId 固定)
 
 それ以外のサブフォルダ (`stock_data` 等) は 2026-09-26 時点のコピーで、運用機の安定稼働を
 1〜2週間確認したら削除してよい (約 2GB)。それまでは運用機が壊れたときの戻り先として残す。
@@ -529,7 +539,7 @@ deploy/macmini.sh pull-data        # -n でドライラン
 中身は次の rsync で、開発機の WebApp 起動中・運用機のバッチ実行中は拒否する。
 
 ```bash
-rsync -a --exclude 'ir_docs' --exclude '*.lock' --exclude '*.dbm.lock' --exclude '.DS_Store' \
+rsync -a --exclude 'ir_docs' --exclude 'stock_ratings_drive' --exclude '*.lock' --exclude '*.dbm.lock' --exclude '.DS_Store' \
   macmini:/Users/k_sohara/shintakane_data/ "$KS_DATA_DIR"/
 ```
 

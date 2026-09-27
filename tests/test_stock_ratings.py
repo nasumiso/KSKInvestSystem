@@ -152,3 +152,31 @@ def test_html_failure_does_not_block_update(ratings_dir, monkeypatch):
 
     assert sr.get_rating("3697", ratings_dir=ratings_dir)["scores"]["fund"] == 36
     assert _history(ratings_dir)[-1]["changes"] == {"scores.fund": [35, 36]}
+
+
+@pytest.mark.parametrize("has_mirror, dev, expect_copy", [
+    (True, False, True),
+    (False, False, False),
+    (True, True, False),   # 開発用データからは本番 Drive に出さない
+])
+def test_mirror_to_drive(tmp_path, monkeypatch, has_mirror, dev, expect_copy):
+    """Drive ミラーがあれば既存ファイルへ上書きコピーする (inode = Drive のファイルIDを保つ)"""
+    root, mirror = tmp_path / "stock_ratings", tmp_path / "stock_ratings_drive"
+    monkeypatch.setattr(sr, "RATINGS_DIR", root)
+    monkeypatch.setattr(sr, "DRIVE_MIRROR_DIR", mirror)
+    monkeypatch.setattr(sr, "is_dev_data_dir", lambda: dev)
+    if has_mirror:
+        mirror.mkdir()
+        (mirror / sr.RATINGS_FILENAME).write_text("{}", encoding="utf-8")
+        inode = (mirror / sr.RATINGS_FILENAME).stat().st_ino
+
+    sr.update_rating("3697", BASE_FIELDS, "初期登録", "test")
+
+    if expect_copy:
+        for name in (sr.RATINGS_FILENAME, sr.HISTORY_FILENAME, sr.HTML_FILENAME):
+            assert (mirror / name).read_bytes() == (root / name).read_bytes()
+        assert (mirror / sr.RATINGS_FILENAME).stat().st_ino == inode
+    elif has_mirror:
+        assert (mirror / sr.RATINGS_FILENAME).read_text(encoding="utf-8") == "{}"
+    else:
+        assert not mirror.exists()
