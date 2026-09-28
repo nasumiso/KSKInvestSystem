@@ -189,6 +189,14 @@ class TestGenbaiBridge:
         open_genbutsu = [e for e in eps if not e["closed"] and e["kind"] == "現物"]
         assert open_genbutsu == [], open_genbutsu
 
+    def test_same_day_open_then_genbiki_not_open(self, db_path):
+        """同日に 信用新規 → 現引 があるとき、seq が現引の方が先でも信用新規を先に処理する (9337相当)。"""
+        _add(db_path, "9337", "2026-08-07", "buy", 200, 1738.13, trade_kind="現引", seq_salt="a")
+        _add(db_path, "9337", "2026-08-07", "buy", 200, 1738.0, trade_kind="信用新規", seq_salt="b")
+        _add(db_path, "9337", "2026-08-12", "sell", 200, 1419.0, trade_kind="現物", seq_salt="c")
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
+        assert [e for e in eps if not e["closed"]] == []
+
 
 class TestGenbutsuRound:
     def test_simple_win(self, db_path):

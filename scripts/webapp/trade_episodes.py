@@ -456,14 +456,17 @@ def _build_code_episodes(code_s: str, stock_name: str,
     # 約定日昇順。同日内は建玉を作る側 (信用新規・現引・現物買) を先に、玉を減らす側
     # (売り・返済) を後に処理する。信用売建の新規売も先にし、同日の返済買より前に
     # 建玉を作る。現引で現物化してから同日に売るケースにも対応する (6366 相当)。
+    # 現引は同日の信用新規の玉を振り替えるので、信用新規より後に処理する (9337 相当)。
     def _sort_key(f):
         tk = f.get("trade_kind") or ""
-        opens_position = (
-            tk.startswith("信用新規")
-            or tk == "現引"
-            or (f["side"] == "buy" and not tk.startswith("信用返済"))
-        )
-        return (f.get("trade_date") or "", 0 if opens_position else 1, f.get("seq") or 0)
+        if tk == "現引":
+            order = 1
+        elif (tk.startswith("信用新規")
+              or (f["side"] == "buy" and not tk.startswith("信用返済"))):
+            order = 0
+        else:
+            order = 2
+        return (f.get("trade_date") or "", order, f.get("seq") or 0)
     fills = sorted(fills, key=_sort_key)
     episodes: List[Dict[str, Any]] = []
 
