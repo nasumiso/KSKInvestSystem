@@ -6,6 +6,7 @@
 #   deploy/macmini.sh pull-data [rsync opts]
 #                                     運用機 → 開発機へデータを取り寄せる (一方向。ir_docs は除外)
 #   deploy/macmini.sh counts          主要データの件数を運用機と開発機で並べる
+#   deploy/macmini.sh deploy          main の最新コードを運用機に反映する (/dev の「最新コードを反映」と同じ)
 #
 # 接続先は ~/.ssh/config の Host macmini (Tailscale 経由)。MACMINI_HOST で上書きできる。
 # キーチェーンを使う操作 (claude のログイン、tunnel の API キー登録) は SSH からは
@@ -16,7 +17,7 @@ HOST="${MACMINI_HOST:-macmini}"
 REPO="/Users/k_sohara/dev/shintakane"
 
 usage() {
-  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
 }
 
@@ -122,6 +123,29 @@ cmd_counts() {
   done
 }
 
+cmd_deploy() {
+  # 判断 (バッチ実行中は拒否 → pull --ff-only → 動作中のコードと違えば再起動) は
+  # /dev/deploy に一本化し、ここでは呼んで結果を待つだけにする
+  # shellcheck disable=SC2029
+  ssh "$HOST" "REPO=$REPO bash -s" <<'REMOTE'
+set -u
+res=$(curl -s -w '\n%{http_code}' --max-time 60 -X POST http://127.0.0.1:5001/dev/deploy)
+code=$(printf '%s' "$res" | tail -1)
+printf '%s\n' "$res" | sed '$d;/^$/d'
+[ "$code" = 200 ] || { echo "❌ HTTP $code (WebApp が落ちていれば status で確認)"; exit 1; }
+if printf '%s' "$res" | grep -q '"restarting": *true'; then
+  # kickstart は応答の1秒後に走るので、旧プロセスの応答を拾わないよう少し待ってから確認する
+  sleep 3
+  for _ in $(seq 1 20); do
+    [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:5001/)" = 200 ] && break
+    sleep 1
+  done
+  printf 'WebApp -> HTTP %s\n' "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:5001/)"
+fi
+cd "$REPO" && git log -1 --oneline
+REMOTE
+}
+
 sub="${1:-}"
 [ $# -gt 0 ] && shift
 case "$sub" in
@@ -129,5 +153,6 @@ case "$sub" in
   run)       cmd_run "$@" ;;
   pull-data) cmd_pull_data "$@" ;;
   counts)    cmd_counts ;;
+  deploy)    cmd_deploy ;;
   *)         usage ;;
 esac
