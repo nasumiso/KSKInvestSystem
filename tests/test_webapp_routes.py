@@ -228,6 +228,28 @@ class TestStockAddRoute:
 class TestDetailRoute:
     """GET /stock/<code_s> のテスト"""
 
+    @pytest.mark.parametrize("failure", ["oserror", "slow"])
+    def test_detail_survives_unreadable_ir_docs(self, client, monkeypatch, failure):
+        """Drive 上の ir_docs が読めない・読むのに時間がかかっても、詳細画面は返す。"""
+        import threading
+        from webapp.routes import detail
+
+        release = threading.Event()
+
+        def fake_read(code_s):
+            if failure == "oserror":
+                raise OSError(11, "Resource deadlock avoided")
+            release.wait(5)  # dataless ファイルのダウンロード待ちを模す
+
+        monkeypatch.setattr(detail, "_read_ir_docs", fake_read)
+        monkeypatch.setattr(detail, "_IR_DOCS_TIMEOUT_SEC", 0.2)
+        try:
+            resp = client.get("/stock/3496")
+        finally:
+            release.set()
+        assert resp.status_code == 200
+        assert "IR資料 (読込不可)" in resp.get_data(as_text=True)
+
     def test_detail_returns_200(self, client):
         resp = client.get("/stock/3496")
         assert resp.status_code == 200
