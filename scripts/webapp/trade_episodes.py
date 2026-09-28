@@ -664,6 +664,45 @@ def fill_date_range_by_broker(db_path: Optional[str] = None) -> Dict[str, Dict[s
     return ranges
 
 
+def _episodes_for_code(code_s: str, stock_name: str, fills: List[Dict[str, Any]],
+                       all_split_adj: Dict[str, List[Dict[str, Any]]],
+                       pending_events: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+    """1銘柄分の fill を建玉ラウンドのエピソードに再構成し split_suspect を付ける。
+
+    build_fill_episodes() の銘柄ループ本体。エピソード単位チャート (issue #366) は
+    展開のたびに全銘柄を再構成すると重い (0.5秒/回) ため、この関数で1銘柄分だけ
+    組み立てる。メモ・戦略・保有中の含み損益はここでは付けない。
+    """
+    events = all_split_adj.get(code_s, [])
+    if events:
+        fills = _apply_split_adjustments(fills, events)
+    # ジャンプ検知は換算後の fills に対して行う (PRレビュー対応: 未換算のまま
+    # 検知すると、登録済みイベントで残高の基準が変わった後の残高追跡が崩れ、
+    # 別の未登録イベントのジャンプを見逃す)。
+    jumps = _detect_price_jumps(fills)
+    code_episodes = _build_code_episodes(code_s, stock_name, fills)
+    uncovered = _uncovered_jumps(jumps, events)
+    pending_dates = pending_events.get(code_s, [])
+    for ep in code_episodes:
+        if ep["kind"] == "信用" and any(
+                _split_event_affects_episode(ev["ex_date"], ep) for ev in events):
+            # 信用 fill は約定損益・建単価の基準を保つため換算しない。そのため、
+            # 登録済みの分割・併合をまたぐ信用エピソードも集計から除外する。
+            ep["split_suspect"] = True
+        elif any(d != "unknown" and _split_event_affects_episode(d, ep)
+                 for d in pending_dates):
+            ep["split_suspect"] = True
+        elif "unknown" in pending_dates and not ep["closed"]:
+            ep["split_suspect"] = True
+        elif ep["kind"] != "現物":
+            continue
+        elif ep.get("split_fractional_residual"):
+            ep["split_suspect"] = True
+        elif any(_jump_affects_episode(j, ep) for j in uncovered):
+            ep["split_suspect"] = True
+    return code_episodes
+
+
 def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """全 fill を建玉ラウンド単位のエピソードに再構成する (issue #387 Phase4b)。
 
@@ -713,34 +752,8 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     pending_events = ps.list_pending_review_events(db_path=db_path)
     episodes: List[Dict[str, Any]] = []
     for code_s, fills in by_code.items():
-        events = all_split_adj.get(code_s, [])
-        if events:
-            fills = _apply_split_adjustments(fills, events)
-        # ジャンプ検知は換算後の fills に対して行う (PRレビュー対応: 未換算のまま
-        # 検知すると、登録済みイベントで残高の基準が変わった後の残高追跡が崩れ、
-        # 別の未登録イベントのジャンプを見逃す)。
-        jumps = _detect_price_jumps(fills)
-        code_episodes = _build_code_episodes(code_s, names.get(code_s, ""), fills)
-        uncovered = _uncovered_jumps(jumps, events)
-        pending_dates = pending_events.get(code_s, [])
-        for ep in code_episodes:
-            if ep["kind"] == "信用" and any(
-                    _split_event_affects_episode(ev["ex_date"], ep) for ev in events):
-                # 信用 fill は約定損益・建単価の基準を保つため換算しない。そのため、
-                # 登録済みの分割・併合をまたぐ信用エピソードも集計から除外する。
-                ep["split_suspect"] = True
-            elif any(d != "unknown" and _split_event_affects_episode(d, ep)
-                     for d in pending_dates):
-                ep["split_suspect"] = True
-            elif "unknown" in pending_dates and not ep["closed"]:
-                ep["split_suspect"] = True
-            elif ep["kind"] != "現物":
-                continue
-            elif ep.get("split_fractional_residual"):
-                ep["split_suspect"] = True
-            elif any(_jump_affects_episode(j, ep) for j in uncovered):
-                ep["split_suspect"] = True
-        episodes.extend(code_episodes)
+        episodes.extend(_episodes_for_code(
+            code_s, names.get(code_s, ""), fills, all_split_adj, pending_events))
 
     # 保有中エピソードに実現損益 (部分売り分) と含み損益 (残玉評価) を付与 (issue #387 Phase4b)。
     # 含みは price_log の直近終値を現在値とする。銘柄をバルク取得して N+1 を避ける。
@@ -1493,3 +1506,35 @@ def calc_trade_summary(episode_pls: list) -> Optional[dict]:
         "n_win": len(wins),
         "n_lose": len(loses),
     }
+
+
+def build_episode_for_key(episode_key: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """episode_key (code_s|kind|first_seq) の1エピソードだけを再構成して返す。
+
+    チャートの遅延ロード (issue #366) 用。build_fill_episodes() は全 fill 再走査で
+    実測 0.5 秒/回かかり、1行展開ごとに呼ぶと展開レイテンシが悪化するため、
+    銘柄を絞って _episodes_for_code() を再利用する (ロジックは二重化しない)。
+    """
+    import portfolio_shelve as ps  # 遅延 import (循環回避)
+
+    parts = episode_key.split("|")
+    if len(parts) != 3:
+        return None
+    code_s, kind, _ = parts
+    try:
+        fills = ps.list_fills(code_s, db_path=db_path)
+    except ValueError:
+        return None
+    if not fills:
+        return None
+    episodes = _episodes_for_code(
+        code_s,
+        helpers.resolve_stock_name(code_s) or "",
+        fills,
+        ps.list_all_split_adjustments(db_path=db_path),
+        ps.list_pending_review_events(db_path=db_path),
+    )
+    for ep in episodes:
+        if ps.fill_episode_key(ep["code_s"], ep["kind"], ep["first_seq"]) == episode_key:
+            return ep
+    return None
