@@ -4,11 +4,13 @@
 GET /stock/<code_s> : 銘柄の全セクション表示
 """
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import date
 
 from flask import Blueprint, render_template, abort
 
 import portfolio_shelve as ps
+from ks_util import log_warning
 from webapp.helpers import (
     get_research_detail,
     get_stock_data,
@@ -24,6 +26,36 @@ from webapp.routes.portfolio import (
 from research_shelve import VALID_RATINGS, IR_QA_MAX
 
 detail_bp = Blueprint("detail", __name__)
+
+
+# ir_docs は Google Drive 上にあり、ローカルに実体の無い (dataless) index.json を
+# 読むとダウンロード待ちで止まる、または Errno 11 で落ちる。詳細画面の本体を
+# 巻き添えにしないよう、別スレッドで読んで待ち時間を区切る。
+_IR_DOCS_TIMEOUT_SEC = 2
+_ir_docs_pool = ThreadPoolExecutor(max_workers=2)
+_IR_DOCS_UNAVAILABLE = {
+    "chuki": [], "periods": [], "unknown": [], "last_collected_at": None,
+    "count": "読込不可", "unavailable": True,
+}
+
+
+def _read_ir_docs(code_s):
+    from ir_docs import group_ir_docs, tdnet_setsumei_missing  # 遅延 import (pypdf 等を読み込むため)
+    # issue #457: 株探に説明資料を出さない銘柄は、会社HPからの取り忘れに気づけるよう表示する
+    # issue #473: IR資料モーダルの一覧 (ローカルの index.json だけを見る)
+    return tdnet_setsumei_missing(code_s), group_ir_docs(code_s)
+
+
+def _load_ir_docs(code_s):
+    """(説明資料HPのみの日付, IR資料一覧) を返す。読めなければ一覧を読込不可にする。
+
+    タイムアウトしたスレッドはそのまま走らせる (ダウンロードが済めば次回は読める)。
+    """
+    try:
+        return _ir_docs_pool.submit(_read_ir_docs, code_s).result(timeout=_IR_DOCS_TIMEOUT_SEC)
+    except (FutureTimeoutError, OSError) as e:
+        log_warning(f"[detail] {code_s} の IR資料 index を読めませんでした: {e!r}")
+        return None, _IR_DOCS_UNAVAILABLE
 
 
 @detail_bp.route("/stock/<code_s>")
@@ -132,11 +164,7 @@ def stock_detail(code_s: str):
     # issue #172: 振り返りセクション用アクションログ (除外・削除済みでもログは表示する)
     action_logs = list(reversed(ps.list_action_logs(code_s)))
 
-    # issue #457: 株探に説明資料を出さない銘柄は、会社HPからの取り忘れに気づけるよう表示する
-    from ir_docs import group_ir_docs, tdnet_setsumei_missing  # 遅延 import (pypdf 等を読み込むため)
-    ir_setsumei_hp_only = tdnet_setsumei_missing(code_s)
-    # issue #473: IR資料モーダルの一覧 (ローカルの index.json だけを見る)
-    ir_docs = group_ir_docs(code_s)
+    ir_setsumei_hp_only, ir_docs = _load_ir_docs(code_s)
 
     return render_template(
         "detail.html",
