@@ -10,6 +10,7 @@ todays_kessan_data/
 today_stocks/html_cache/
 logs/
 data/googledrive/drive_credential.json
+data/ir_docs/
 
 # Pythonキャッシュや仮想環境なども除外
 __pycache__/
@@ -47,3 +48,7 @@ data_old/
 
 # ルート直下に置く検証用スクリーンショット (issue別等)
 /*.png
+
+# 機能紹介.md から都度書き出す配布用 PDF (#81)
+doc/introduction/Shintakane機能紹介.pdf
+.claude/query_log.jsonl

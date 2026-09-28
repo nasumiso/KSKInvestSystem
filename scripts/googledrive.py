@@ -77,7 +77,20 @@ def _execute_google_request(request, label, max_attempts=4):
             time.sleep(wait_sec)
 
 
+def _refuse_dev_data_dir():
+    """開発用コピーからの書き込みを止める (issue #453)。
+
+    Drive サービスは書き込みにしか使っていないので取得の入口で止める。Sheets は
+    読み取り (reimport_rich_text) にも使うため、書き込み関数の側で止める。
+    """
+    if is_dev_data_dir():
+        raise RuntimeError(
+            "開発用データ (%s) から GoogleDrive へは書き込みません。運用機で実行してください" % DATA_DIR
+        )
+
+
 def get_drive_service():
+    _refuse_dev_data_dir()
     store = oauth2client.file.Storage(CREDENTIAL_FILE)
     if not store:
         log_warning(" GoogleDrive認証ファイルがありません。", CREDENTIAL_FILE)
@@ -169,6 +182,7 @@ def get_sheets_service():
 def upload_csv_via_sheets(csv_name, up_file_name):
     """Sheets API でセルデータのみ更新する（スプレッドシート設定を保持）"""
     log_print("%sをSheets APIでセル更新します" % csv_name)
+    _refuse_dev_data_dir()
     sheets_service = get_sheets_service()
     spreadsheet_id = FILE_DICT[up_file_name]
 
@@ -298,6 +312,10 @@ _upload_errors = []
 
 def _upload_with_lock(func, *args):
     """スレッド間排他付きアップロード"""
+    # 開発用コピーは古いので、正本 (運用機) がアップロードした内容を上書きしない (issue #453)
+    if is_dev_data_dir():
+        log_print("開発用データのため GoogleDrive へのアップロードをスキップ: %s" % (args,))
+        return
     try:
         with _upload_lock:
             func(*args)

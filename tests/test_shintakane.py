@@ -109,8 +109,8 @@ class TestConvertKabutanShintakaneHtml:
         assert len(rows) == 1
         assert "133A" in rows[0][1]
 
-    def test_下落銘柄はスキップされる(self):
-        """spanにupクラスがない場合、zenjitsuhi=0になる"""
+    def test_下落銘柄の前日比を保持する(self):
+        """span.down の負の前日比をゼロに潰さない"""
         html = (
             '<table class="stock_table st_market">'
             '<tr>\n'
@@ -132,8 +132,8 @@ class TestConvertKabutanShintakaneHtml:
         )
         rows = shintakane.convert_kabutan_shintakane_html(html)
         assert len(rows) == 1
-        assert rows[0][5] == 0  # zenjitsuhi
-        assert rows[0][6] == 0  # zenjitsuhi_per
+        assert rows[0][5] == "-50"  # zenjitsuhi
+        assert rows[0][6] == "-2.00%"  # zenjitsuhi_per
 
     def test_空テーブル(self):
         html = '<table class="stock_table st_market"></table>'
@@ -194,8 +194,8 @@ class TestConvertKabutanDekidakaupHtml:
         assert len(rows) == 1
         assert "496A" in rows[0][1]
 
-    def test_下落銘柄はスキップされる(self):
-        """spanにupクラスがない場合、zenjitsuhi=0になる"""
+    def test_下落銘柄の前日比を保持する(self):
+        """span.down の負の前日比をゼロに潰さない"""
         html = (
             '<table class="stock_table st_market">'
             '<tr>\n'
@@ -208,7 +208,7 @@ class TestConvertKabutanDekidakaupHtml:
             '<td></td>\n'
             '<td><span class="down">-50</span></td>\n'
             '<td>100,000</td>\n'
-            '<td><span class="down">-50.00</span></td>\n'
+            '<td><span class="up">+50.00</span></td>\n'
             '<td>10.0</td>\n'
             '<td>1.00</td>\n'
             '<td>3.00</td>\n'
@@ -217,9 +217,9 @@ class TestConvertKabutanDekidakaupHtml:
         )
         rows = shintakane.convert_kabutan_dekidakaup_html(html)
         assert len(rows) == 1
-        assert rows[0][5] == 0  # zenjitsuhi
-        assert rows[0][6] == "0"  # zenjitsuhi_per（算出不可）
-        assert rows[0][9] == 0  # dekidaka_up
+        assert rows[0][5] == "-50"  # zenjitsuhi
+        assert rows[0][6] == "-4.76%"  # -50 / (1000 + 50) * 100
+        assert rows[0][9] == "+50.00"  # 下落銘柄でも出来高増加率を保持
 
     def test_空テーブル(self):
         html = '<table class="stock_table st_market"></table>'
@@ -721,6 +721,31 @@ class Test_saved_latest_date:
 
     def test_ファイル無しはNone(self, tmp_path):
         assert shintakane._saved_latest_date(str(tmp_path / "missing.json")) is None
+
+
+class Test_fgjp_has_missing_component:
+    """fear_greed_jp.json の最新エントリに欠損成分があるかの判定ヘルパー。"""
+
+    @pytest.mark.parametrize("content,expected", [
+        # 全成分そろっている → 再取得不要
+        ('{"latest": {"components": {"momentum": {"score": 1}, '
+         '"volatility": {"score": 2}}}}', False),
+        # VI 取得失敗で volatility が null → 再取得させる
+        ('{"latest": {"components": {"momentum": {"score": 1}, '
+         '"volatility": null}}}', True),
+        ('{"latest": {"components": {}}}', False),  # 成分キー空 → 従来動作
+        ('{"latest": {}}', False),                  # components 無し
+        ('{"latest": null}', False),                # latest が null
+        ('not a json {{{', False),                  # 壊れた JSON
+    ])
+    def test_欠損成分の有無を判定する(self, tmp_path, content, expected):
+        p = tmp_path / "fear_greed_jp.json"
+        p.write_text(content, encoding="utf-8")
+        assert shintakane._fgjp_has_missing_component(str(p)) is expected
+
+    def test_ファイル無しはFalse(self, tmp_path):
+        assert shintakane._fgjp_has_missing_component(
+            str(tmp_path / "missing.json")) is False
 
 
 class Test_recent_weekday:

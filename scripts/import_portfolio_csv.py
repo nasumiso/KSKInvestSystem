@@ -9,8 +9,8 @@
 一切触れない (Phase1、可視化フェーズ)。
 --apply --apply-records: 上記に加え、covered な銘柄 (4ソース全てが取込済みの
 銘柄。基準日の一致は要求しない) の qty更新・自動OUT・戦略ありの自動IN を実際に
-反映する (Phase2)。戦略未設定の新規保有は pending_in (保留キュー) に積み、
-自動反映しない。
+反映する (Phase2)。戦略未設定の新規保有は自動反映しない (確認画面で戦略を
+選べばその場で 1保 になる)。
 
 4ファイル全てを毎回揃える必要はない。今回渡さなかったソースは、DB に前回の
 position_source があればそのまま引き継いで covered 判定に使う (Phase3b、
@@ -28,8 +28,11 @@ position_source があればそのまま引き継いで covered 判定に使う 
 
 import argparse
 import csv
+import datetime
+import glob
 import math
 import os
+import re
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -145,6 +148,74 @@ def detect_source(rows: List[List[str]]) -> Optional[Tuple[str, str]]:
         return ("楽天", "現物")
 
     return None
+
+
+# クイック取り込みの既定探索先。証券会社CSVのダウンロード先がここで固定されている
+# 運用前提のため、設定では変えられない (変えたくなったらこの定数を書き換える)。
+DOWNLOADS_DIR = os.path.expanduser("~/Downloads")
+
+# 楽天CSVのファイル名に埋まっている基準日時 (assetbalance(JP)_20260914_221044.csv)。
+_FILENAME_TS_RE = re.compile(r"_(\d{8})_(\d{6})")
+
+
+def _csv_basis_timestamp(path: str) -> float:
+    """CSVの基準日時を POSIX timestamp で返す。
+
+    ファイル名の日時を優先し、取れなければ mtime にフォールバックする。
+    mtime はコピー・同期・touch で変わってしまい、古い残高スナップショットを
+    最新と誤認する危険があるため、日時を持つ楽天CSVではそちらを信頼する。
+    SBI (SaveFile.csv 等) はファイル名にも中身にも基準日が無いので mtime のみ。
+    """
+    m = _FILENAME_TS_RE.search(os.path.basename(path))
+    if m:
+        try:
+            dt = datetime.datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
+            return dt.replace(tzinfo=ps.JST).timestamp()
+        except ValueError:
+            pass  # 日時として不正なら mtime に落とす
+    return os.path.getmtime(path)
+
+
+def find_unimported_csvs(search_dir: str = DOWNLOADS_DIR, *,
+                         db_path: Optional[str] = None) -> List[str]:
+    """search_dir から未取込のポートフォリオCSVを探し、取込対象のパスを返す。
+
+    「未取込」= CSVの基準日時 > そのソースの position_source.imported_at。
+    ソース (broker, kind) ごとに基準日時が最新の1件だけを選ぶ (残高CSVは
+    スナップショットなので、古い方を取り込む意味がない)。
+    読めないCSV・ポートフォリオCSVでないものは黙って無視する。
+    """
+    # account は畳んで (broker, kind) 単位の閾値にする。detect_source は
+    # account まで判別しないため。max を取るので取込済みを未取込と誤判定しない。
+    thresholds: Dict[Tuple[str, str], float] = {}
+    for s in ps.list_position_sources(db_path=db_path):
+        imported_at = s.get("imported_at")
+        if not imported_at:
+            continue
+        key = (s["broker"], s["kind"])
+        ts = datetime.datetime.fromisoformat(imported_at).timestamp()
+        thresholds[key] = max(thresholds.get(key, 0.0), ts)
+
+    best: Dict[Tuple[str, str], Tuple[float, str]] = {}
+    for path in glob.glob(os.path.join(search_dir, "*.csv")):
+        try:
+            source = detect_source(read_csv_rows(path))
+        except Exception:
+            # 拡張子だけを頼りに他人のファイルを読むので、文字コード違い
+            # (UTF-8のCSV) や破損・権限なしは想定内。無視して次へ。
+            continue
+        if source is None:
+            continue
+        basis = _csv_basis_timestamp(path)
+        if basis <= thresholds.get(source, 0.0):
+            continue
+        if source not in best or basis > best[source][0]:
+            best[source] = (basis, path)
+
+    for source, (_, path) in sorted(best.items()):
+        log_print("import_portfolio_csv: 未取込CSVを検出",
+                  f"{source[0]}/{source[1]}", os.path.basename(path))
+    return [path for _, path in best.values()]
 
 
 # ===========================================
@@ -709,6 +780,10 @@ def _build_diff_preview(
         diffs.append({
             "code_s": code_s, "status": status, "db_qty": db_qty,
             "merged_qty": merged_qty, "covered": covered, "judgement": judgement,
+            # 確認画面の入力欄・強調表示の出し分け用フラグ。judgement は人間向けの
+            # 表示文言なので、部分一致で分岐せずこのフラグを見ること
+            "needs_trade_idea": covered and merged_qty > 0 and status in ("2準", "3監", "未登録"),
+            "is_exit": covered and merged_qty == 0 and status == "1保",
         })
     return diffs
 
@@ -734,9 +809,11 @@ def _judge(status: str, covered: bool, merged_qty: int, db_qty: Optional[int]) -
     if status == "1保":
         return f"株数変更候補 {db_qty}→{merged_qty}"
     if status in ("2準", "3監"):
-        return "新規IN候補 (戦略ありで1保へ / 空欄なら保留キューへ)"
+        return "新規IN候補 (戦略ありで1保へ / 空欄なら変更なし)"
     if status == "未登録":
-        return "未登録+保有検出 (反映すると監視へ登録)"
+        # 「登録」の行き先は通常 3監 だが、ユニバース除外済み銘柄を復活させる場合は
+        # 除外前のステータス (2準/3監) を保つため、断定しない表現にする
+        return "未登録+保有検出 (戦略ありで1保へ / 空欄ならウォッチリストへ登録)"
     return "-"
 
 
@@ -757,6 +834,9 @@ def _sync_records(
     既存の戦略より優先し、record にも保存し直す。note は生成した reason の末尾に
     追記する (機械生成分は消さない)。両方省略可 (既定の自動反映のみ行う)。
 
+    未登録銘柄も 3監 登録後に戦略があれば 1保 まで進める。戦略未選択なら
+    3監 登録まで (登録は情報の追加でしかなく破壊的でないため行う)。
+
     Returns: 実際に反映した内容のログ (dry-run では呼ばれない)
     """
     source_detail = f"ポートフォリオCSV/{as_of}"
@@ -768,6 +848,16 @@ def _sync_records(
         if not covered:
             continue
         note = (overrides.get(code_s, {}).get("note") or "").strip()
+        # 確認画面を出してから反映するまでの間に record 側が変わると、選んだ戦略を
+        # 使う分岐に入らないまま終わることがある (例: 別タブで 2準→1保 にした)。
+        # 黙って捨てると「選んだのに反映されない」に見えるので警告だけ残す
+        if (overrides.get(code_s, {}).get("trade_idea") or "").strip() and status not in (
+            "2準", "3監", "未登録",
+        ):
+            log_warning(
+                f"CSV取込: {code_s} は status={status} のため、選択された戦略は反映されません "
+                "(プレビュー表示後にステータスが変わった可能性があります)"
+            )
 
         if status == "1保":
             if merged_qty == db_qty:
@@ -802,8 +892,7 @@ def _sync_records(
             continue
 
         if status in ("2準", "3監") and merged_qty == 0:
-            if ps.remove_pending_in(code_s, db_path=db_path):
-                applied.append({"code_s": code_s, "action": "保留キューから削除", "detail": "qty=0"})
+            # 2準/3監 で保有ゼロは想定どおりの状態なので何もしない
             continue
 
         if status in ("2準", "3監") and merged_qty > 0:
@@ -822,7 +911,7 @@ def _sync_records(
                 # 確認画面で戦略が変更されていれば先に記録し直す (§ Phase3b)
                 # 3監も2準と同じ扱いにする (issue #397 起票時は「3監の戦略は古い保有の
                 # 残骸の可能性がある」として除外していたが、実運用で 3監→買い直し が
-                # 発生し、戦略があっても永久に保留キューに積まれ続けたため)
+                # 発生し、戦略があっても永久に自動INされなかったため)
                 reason = "CSV取込による新規保有検出"
                 if note:
                     reason = f"{reason} / {note}"
@@ -834,26 +923,63 @@ def _sync_records(
                     code_s, merged_qty, reason=reason, action_date=as_of, log_action=False,
                     source="csv_import", source_detail=source_detail, db_path=db_path,
                 )
-                ps.remove_pending_in(code_s, db_path=db_path)
                 applied.append({
                     "code_s": code_s, "action": "新規IN(自動)",
                     "detail": f"株数{merged_qty} / 戦略「{chosen_trade_idea}」",
                 })
-            else:
-                # 戦略未設定 (確認画面で空欄を選んだ場合を含む) -> 保留キュー (issue #397 §6-2)
-                ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
-                applied.append({"code_s": code_s, "action": "保留キューへ", "detail": f"qty={merged_qty}"})
+            # 戦略未設定 (確認画面で空欄を選んだ場合を含む) は何もしない。
+            # 次回取込時にまた新規IN候補として確認画面に出る
             continue
 
         if status == "未登録" and merged_qty > 0:
-            # 登録は必ず3監から (issue #397 §5-3b)。1保への遷移は保留キュー経由で人が確定する
+            # 登録は必ず3監から (issue #397 §5-3b)。ALLOWED_TRANSITIONS が新規登録を
+            # (None, "3監") しか許可しないため、1保 にする場合も 3監 を経由する
             reason = "CSV取込で保有を検出"
             ps.add_to_watch(
                 code_s, reason=reason, action_date=as_of,
                 source="csv_import", source_detail=source_detail, db_path=db_path,
             )
-            ps.upsert_pending_in(code_s, merged_qty, as_of, db_path=db_path)
-            applied.append({"code_s": code_s, "action": "登録+保留キューへ", "detail": f"qty={merged_qty}"})
+            # 確認画面で戦略が選ばれていれば 1保 まで進める。ここは override のみを
+            # 見る (record 側は見ない)。ユニバース除外済み銘柄は list_records() に
+            # 出ないため "未登録" と判定されるが、レコード自体は除外前の status/memo
+            # を保持したまま add_to_watch() で復活する。record の trade_idea を拾うと
+            # ユーザーが選んでいない古い戦略で自動INしてしまう
+            chosen_trade_idea = (overrides.get(code_s, {}).get("trade_idea") or "").strip()
+            if chosen_trade_idea:
+                # update_memo は必須。transition_status は戦略を保存しないため、
+                # 省くと「1保だが戦略未設定」のレコードができる
+                ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, db_path=db_path)
+                in_reason = "CSV取込による新規保有検出"
+                if note:
+                    in_reason = f"{in_reason} / {note}"
+                ps.transition_status(
+                    code_s, "1保", reason=in_reason, action_date=as_of, qty=merged_qty,
+                    source="csv_import", source_detail=source_detail, db_path=db_path,
+                )
+                ps.update_qty(
+                    code_s, merged_qty, reason=in_reason, action_date=as_of, log_action=False,
+                    source="csv_import", source_detail=source_detail, db_path=db_path,
+                )
+                applied.append({
+                    "code_s": code_s, "action": "登録+新規IN(自動)",
+                    "detail": f"株数{merged_qty} / 戦略「{chosen_trade_idea}」",
+                })
+            else:
+                # 戦略未設定なら 3監 登録まで。次回取込時にまた確認画面に出る。
+                # ユニバース除外済み銘柄は add_to_watch() が除外前の status/memo を
+                # 保持して復活させるため、古い戦略が残っていると次回プレビューでは
+                # 「未登録」ではなくなり、その古い戦略が初期選択されて自動INしうる。
+                # 「戦略を選ばなかった」という今回の意思を次回以降も保つために消す
+                revived = ps.get_record(code_s, db_path=db_path)
+                if (revived.get("memo") or {}).get("trade_idea"):
+                    ps.update_memo(code_s, {"trade_idea": ""}, db_path=db_path)
+                # 復活したレコードは除外前のステータスを保つので 3監 とは限らない。
+                # 2準 を 3監 に落とすと人が付けた「買う準備ができている」宣言を
+                # 壊すため、遷移させず実際のステータスをそのまま報告する
+                applied.append({
+                    "code_s": code_s, "action": f"{revived['status']}へ登録",
+                    "detail": f"qty={merged_qty}",
+                })
 
     log_print("import_portfolio_csv: record 反映完了", f"件数={len(applied)}")
     return applied

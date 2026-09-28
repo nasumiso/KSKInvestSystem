@@ -4,9 +4,10 @@
 GET /stock/<code_s> : 銘柄の全セクション表示
 """
 
+from datetime import date
+
 from flask import Blueprint, render_template, abort
 
-import portfolio
 import portfolio_shelve as ps
 from webapp.helpers import (
     get_research_detail,
@@ -20,7 +21,7 @@ from webapp.routes.portfolio import (
     STATUS_VALUE_TO_QUERY,
     _allowed_transitions_from,
 )
-from research_shelve import VALID_RATINGS
+from research_shelve import VALID_RATINGS, IR_QA_MAX
 
 detail_bp = Blueprint("detail", __name__)
 
@@ -60,20 +61,6 @@ def stock_detail(code_s: str):
     if portfolio_record and portfolio_record.get("excluded"):
         portfolio_record = None
     portfolio_status = portfolio_record.get("status") if portfolio_record else None
-    # shelve 未移行環境のフォールバック: shelve が空のとき my_watch_list.txt 経由の所属を見る
-    # (portfolio.parse_my_portforio は shelve 空時に txt フォールバックする)
-    # issue #186: 全レコードが excluded=True の状態を fallback と誤判定しないよう
-    # include_excluded=True で取得する (portfolio.py の _is_fallback_mode と同じ判定)
-    portfolio_fallback_mode = not ps.list_records(include_excluded=True)
-    if portfolio_status is None and portfolio_fallback_mode:
-        try:
-            watch, possess = portfolio.parse_my_portforio()
-        except Exception:  # noqa: BLE001
-            watch, possess = ([], [])
-        if code_s in possess:
-            portfolio_status = "1保"
-        elif code_s in watch:
-            portfolio_status = "3監"
     portfolio_status_label = STATUS_VALUE_TO_LABEL.get(portfolio_status) if portfolio_status else None
     portfolio_status_query = STATUS_VALUE_TO_QUERY.get(portfolio_status) if portfolio_status else None
     # issue #195: モーダル内 select 用の遷移先 [(label, value), ...]。未登録は空リスト。
@@ -94,7 +81,7 @@ def stock_detail(code_s: str):
         _memo = {}
     gyoutai_themes = _memo.get("gyoutai_themes") or []
     # issue #282: テーママスターから候補を取得
-    theme_master = [] if portfolio_fallback_mode else ps.list_themes()
+    theme_master = ps.list_themes()
 
     # issue #297: 業態テーマ自動提案ボタンの表示条件。
     # 未設定 (全スロット空) かつ事業テキスト (四季報特色・コメント・株探概要) が
@@ -130,6 +117,7 @@ def stock_detail(code_s: str):
     try:
         current_research = get_current_research_data(
             code_s, stock_data=stock, portfolio_status=portfolio_status,
+            research_record=record,
         )
     except Exception:  # noqa: BLE001
         current_research = None
@@ -144,8 +132,16 @@ def stock_detail(code_s: str):
     # issue #172: 振り返りセクション用アクションログ (除外・削除済みでもログは表示する)
     action_logs = list(reversed(ps.list_action_logs(code_s)))
 
+    # issue #457: 株探に説明資料を出さない銘柄は、会社HPからの取り忘れに気づけるよう表示する
+    from ir_docs import group_ir_docs, tdnet_setsumei_missing  # 遅延 import (pypdf 等を読み込むため)
+    ir_setsumei_hp_only = tdnet_setsumei_missing(code_s)
+    # issue #473: IR資料モーダルの一覧 (ローカルの index.json だけを見る)
+    ir_docs = group_ir_docs(code_s)
+
     return render_template(
         "detail.html",
+        ir_setsumei_hp_only=ir_setsumei_hp_only,
+        ir_docs=ir_docs,
         record=record,
         stock=stock,
         price_rs_chart=price_rs_chart,
@@ -155,7 +151,6 @@ def stock_detail(code_s: str):
         valid_ratings=[r for r in ("S", "A", "B", "C", "D", "E") if r in VALID_RATINGS],
         portfolio_status_label=portfolio_status_label,
         portfolio_status_query=portfolio_status_query,
-        portfolio_fallback_mode=portfolio_fallback_mode,
         portfolio_transitions=portfolio_transitions,
         # issue #363: 遷移モーダルの売買戦略 select 用
         trade_idea_options=trade_idea_options,
@@ -170,4 +165,7 @@ def stock_detail(code_s: str):
         gyoutai_themes_unset=gyoutai_themes_unset,
         has_business_text=has_business_text,
         action_logs=action_logs,
+        # issue #436: IR問い合わせ回答セクション (上限件数 / 追加フォームの日付初期値)
+        ir_qa_max=IR_QA_MAX,
+        today_ymd=date.today().strftime("%Y/%m/%d"),
     )

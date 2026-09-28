@@ -10,6 +10,9 @@
 </head>
 <body>
 
+{% if dev_data_asof %}
+<div class="dev-banner">DEV — 開発用コピー (データ {{ dev_data_asof }} 時点)。ここでの入力は正本に反映されません。普段使いは <a href="http://kosukemac-mini:5001/">運用機</a></div>
+{% endif %}
 <nav class="container-fluid">
   <ul>
     <li><a href="/" class="brand">Shintakane Research</a></li>
@@ -17,6 +20,7 @@
     <li><a href="/portfolio" class="nav-link">保有銘柄</a></li>
     <li><a href="/disclosure" class="nav-link">決算・開示</a></li>
     <li><a href="/trade-history" class="nav-link">売買履歴</a></li>
+    <li><a href="/dev" class="nav-link">開発</a></li>
   </ul>
   <ul>
     <li class="quick-search">

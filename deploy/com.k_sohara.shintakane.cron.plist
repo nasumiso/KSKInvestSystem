@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+ <!-- 運用機 (MacMini) 用テンプレート。deploy/README.md の手順で
+ __REPO__ / __USER_HOME__ / __KS_DATA_DIR__ を実パスへ置換してから
+ ~/Library/LaunchAgents/ へ配置する。
+
+ 設計方針:
+   平日19:00 の StartCalendarInterval が定刻実行。
+   スリープ復帰の補完は RunAtLoad=true (ログイン/再起動/launchctl load 時に1回)
+   に任せる。運用機はスリープ無効 (pmset) が前提。
+   shintakane_cron.sh 側の TTY 検知ガードで、launchd 経由かつ19時前の起動
+   (例: 再起動直後の RunAtLoad 発火) のみサイレントスキップする。
+
+ PATH について:
+   launchd の EnvironmentVariables はシェル展開しないため $HOME は使えない。
+   __USER_HOME__/.local/bin は theme-news が使う claude CLI の置き場で、
+   これが無いと launchd 経由でのみ「claude CLI が見つかりません」で失敗する。
+   /opt/homebrew/bin は Apple Silicon の Homebrew (tailscale 等)。 -->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.k_sohara.shintakane.cron</string>
+    <!-- 実行スクリプトの絶対パス -->
+    <key>ProgramArguments</key>
+    <array>
+      <string>__REPO__/shintakane_cron.sh</string>
+    </array>
+
+    <!-- 平日(月〜金)19:00 に定刻実行 -->
+    <key>StartCalendarInterval</key>
+    <array>
+      <dict>
+        <key>Weekday</key><integer>1</integer>
+        <key>Hour</key><integer>19</integer>
+        <key>Minute</key><integer>0</integer>
+      </dict>
+      <dict>
+        <key>Weekday</key><integer>2</integer>
+        <key>Hour</key><integer>19</integer>
+        <key>Minute</key><integer>0</integer>
+      </dict>
+      <dict>
+        <key>Weekday</key><integer>3</integer>
+        <key>Hour</key><integer>19</integer>
+        <key>Minute</key><integer>0</integer>
+      </dict>
+      <dict>
+        <key>Weekday</key><integer>4</integer>
+        <key>Hour</key><integer>19</integer>
+        <key>Minute</key><integer>0</integer>
+      </dict>
+      <dict>
+        <key>Weekday</key><integer>5</integer>
+        <key>Hour</key><integer>19</integer>
+        <key>Minute</key><integer>0</integer>
+      </dict>
+    </array>
+
+    <!-- ログイン/再起動/launchctl load 時にも 1 回起動 (19時前なら shintakane_cron.sh のガードでスキップ) -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- ログ出力 (親ディレクトリは launchd が作らないので README の手順で mkdir する) -->
+    <key>StandardOutPath</key>
+    <string>__USER_HOME__/Library/Logs/shintakane/cron.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>__USER_HOME__/Library/Logs/shintakane/cron.stderr.log</string>
+
+    <!-- 環境変数 (シェル展開されないので絶対パスで書く) -->
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>__USER_HOME__/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+      <key>KS_DATA_DIR</key>
+      <string>__KS_DATA_DIR__</string>
+      <!-- 運用機のみ: 実行前に git pull --ff-only する -->
+      <key>SHINTAKANE_AUTO_PULL</key>
+      <string>1</string>
+    </dict>
+  </dict>
+</plist>

@@ -21,7 +21,18 @@ if _SCRIPTS_DIR not in sys.path:
 def create_app() -> Flask:
     """Flask アプリケーションファクトリ。"""
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key")
+    # 運用機 (SHINTAKANE_ENV=production) では既定値での起動を許さない。
+    # Tailnet 限定とはいえ、既定のセッション鍵で公開するのは事故のもと。
+    secret = os.environ.get("FLASK_SECRET_KEY")
+    if not secret:
+        if os.environ.get("SHINTAKANE_ENV") == "production":
+            raise RuntimeError(
+                "FLASK_SECRET_KEY が未設定です。"
+                "本番起動では ~/.shintakane_env に設定してください "
+                "(生成: openssl rand -hex 32)"
+            )
+        secret = "dev-secret-key"
+    app.config["SECRET_KEY"] = secret
 
     from webapp.routes.search import search_bp
     from webapp.routes.detail import detail_bp
@@ -31,6 +42,8 @@ def create_app() -> Flask:
     from webapp.routes.disclosure import disclosure_bp
     from webapp.routes.portfolio import portfolio_bp
     from webapp.routes.trade_history import trade_history_bp
+    from webapp.routes.ir_docs import ir_docs_bp
+    from webapp.routes.dev import dev_bp
 
     app.register_blueprint(search_bp)
     app.register_blueprint(detail_bp)
@@ -40,6 +53,8 @@ def create_app() -> Flask:
     app.register_blueprint(disclosure_bp)
     app.register_blueprint(portfolio_bp)
     app.register_blueprint(trade_history_bp)
+    app.register_blueprint(ir_docs_bp)
+    app.register_blueprint(dev_bp)
 
     # issue #165: /market テンプレートで theme-news markdown を HTML 化するフィルタ
     from webapp.helpers import theme_news_md_to_html
@@ -50,5 +65,20 @@ def create_app() -> Flask:
         # issue #220: action_date input の value/max に使う実カレンダー上の JST 当日。
         # ks_util.get_price_day() は業務日 (17:00 前は前日) のため使わない。
         return {"today_jst": datetime.now(_JST).date().strftime("%Y-%m-%d")}
+
+    @app.context_processor
+    def _inject_dev_banner():
+        # issue #453: 開発機の開発用コピーで動いていることを全画面に出す。
+        # 入力しても正本 (運用機) に反映されないため、誤って普段使いしないように。
+        import ks_util
+
+        if not ks_util.is_dev_data_dir():
+            return {"dev_data_asof": None}
+        shelve_dat = os.path.join(ks_util.DATA_DIR, "stock_data", "stocks_shelve.dat")
+        try:
+            asof = datetime.fromtimestamp(os.path.getmtime(shelve_dat), _JST).strftime("%m/%d %H:%M")
+        except OSError:
+            asof = "不明"
+        return {"dev_data_asof": asof}
 
     return app

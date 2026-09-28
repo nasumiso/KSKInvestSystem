@@ -119,9 +119,10 @@ def get_price_data(stocks, code_s, upd=UPD_INTERVAL):
     return price_dict
 
 
-# ランクログ保持日数。詳細チャートの週足20週窓 (≈100営業日) の約半分をカバーし、
-# RS(0~99)履歴を右端側に重畳できるようにする (rs_rank_log / stock_rank_log 共用)。
-RANK_LOG_DAYS = 60
+# ランクログ保持日数 (約1年)。詳細チャートの週足20週窓 (≈100営業日) を覆い、
+# 表示期間を広げる余地も残す。過去分は再計算できないので表示より長めに持つ
+# (rs_rank_log / stock_rank_log 共用)。
+RANK_LOG_DAYS = 250
 
 
 def update_stock_log(rank_log, rank):
@@ -477,36 +478,6 @@ def get_rank_log(stock, log_name, diff_day=0):
         if (day_first - day).days >= diff_day:
             return day, rs
     return (None, 0)
-
-
-# def get_relates_rank(stocks, code):
-# 	"""
-# 	関連銘柄内ランクを更新
-# 	"""
-# 	# ---- relates_rsを計算
-# 	if stocks[code].has_key("relates"):
-# 		relates = stocks[code]["relates"]
-# 		rs_raws = []
-# 		if stocks[code].has_key("rs_raw"):
-# 			rs_raw = stocks[code]["rs_raw"]
-# 			rs_raws.append(rs_raw)
-# 			for relate in relates.split(","):
-# 				try:
-# 					if stocks.has_key(int(relate)):
-# 						if stocks[int(relate)].has_key("rs_raw"):
-# 							rs_raws.append(stocks[int(relate)]["rs_raw"])
-# 						else:
-# 							print "!!! 関連銘柄%sのRSはありません"%relate
-# 					else:
-# 						print "!!! 関連銘柄%sは銘柄DBにありません"%relate
-# 				except ValueError:
-# 					print "!!! 不正な関連銘柄です", relate
-# 			# print relates, rs_raws
-# 			rs_raws.sort(reverse=True)
-# 			relates_rank = rs_raws.index(rs_raw)+1
-# 			print "関連銘柄内ランク:", relates_rank
-# 			return relates_rank
-# 	return 0
 
 
 def need_kessan_upd(stocks, code_s, dt_access):
@@ -912,15 +883,6 @@ def print_to():
     output = io.StringIO()
     sys.stdout = output
     yield output
-    sys.stdout = sys.__stdout__
-
-
-@contextmanager
-def print_to_file(fname):
-    output = open(fname, "w")
-    sys.stdout = output
-    yield output
-    output.close()
     sys.stdout = sys.__stdout__
 
 
@@ -2096,29 +2058,10 @@ def load_etf_codes():
 
 
 def test():
-    # code = 6560
-    # stock_db = load_stock_db()
-    # stock_data = stock_db[code]
-    # rank_log = stock_data.get("stock_rank_log",[])
-    # print rank_log
-    # rank0 = get_rank_log(stock_data, "stock_rank_log", 0)
-    # rank1 = get_rank_log(stock_data, "stock_rank_log", 1)
-    # rank5 = get_rank_log(stock_data, "stock_rank_log", 5)
-    # # print "Rank:", stock[0], rank0, rank1, rank5
-    # price_log = stock_data.get("price_log",[])
-    # print price_log
-    # pr0 = price.get_price_log(price_log, rank0[0])
-    # pr1 = price.get_price_log(price_log, rank1[0])
-    # pr5 = price.get_price_log(price_log, rank5[0])
-
     # RSログ表示のテスト
     code = "9343"
     stock_data = load_cacehd_stock_db(code)
     log_print((get_rank_log_expr(stock_data)))
-
-    # DBリフレッシュ用
-    # stocks = load_stock_db()
-    # print "before:", len(stocks), "個"
 
 
 
@@ -2197,7 +2140,7 @@ def _latest_force_snapshot_date_yy_m(stock, record, acquired_date):
 def update_research_snapshots(*, db_path=None, code_filter=None, force=False):
     """ウォッチ銘柄のうち決算更新があったものにスナップショットを自動追記する。
 
-    対象は `my_watch_list.txt` 記載のコード (通常 + H付き保有) の union に限定。
+    対象は portfolio_shelve のウォッチ (2準/3監) と保有 (1保) の union に限定。
     kessanbi / kessan_mod_date が 14 日以内の銘柄のみが処理対象。
     ウォッチ銘柄でかつ決算ウィンドウ内でも research_shelve 未登録の場合は、
     空レコードを自動登録してから同一実行内でスナップショットも追記する。
@@ -2214,13 +2157,11 @@ def update_research_snapshots(*, db_path=None, code_filter=None, force=False):
     import research_shelve
     import portfolio
 
-    # ウォッチ集合の構築 (通常コード + H付き保有)
+    # ウォッチ集合の構築 (ウォッチ + 保有)
     try:
         watch_codes, possess_codes = portfolio.parse_my_portforio()
-    except FileNotFoundError:
-        log_warning(
-            "[research] my_watch_list.txt が見つからないためスナップショット自動追記をスキップ"
-        )
+    except Exception as e:
+        log_error(f"[research] portfolio_shelve 参照失敗のためスナップショット自動追記をスキップ: {e}")
         return set()
     watch_set = set(watch_codes) | set(possess_codes)
     if code_filter is not None:
@@ -2514,14 +2455,6 @@ def main():
     log_print("=" * 30)
 
     command = args.command
-    # command = "edit"
-    # command = "backup"
-    # command = "list_all_db"  # デフォ
-    # command = "update"
-    # command = "update_all_db"
-    # command = "list"
-    # command = "reflesh"
-    # command = "test"
     if command == "update":
         if args.codes:
             code_list = list(args.codes)
@@ -2529,10 +2462,6 @@ def main():
             code_list = "471A"
             # code_list = "2979 3226 4384 4434 4443 4448 4449 4475 4477 4478 4479 4480 4483 4485 4488 4490 4493 4599 6835 7071"
             code_list = code_list.split()
-        # f = open("update_code_list.txt")
-        # lines = f.readlines()
-        # code_list = [l.strip() for l in lines]
-        # f.close()
         tables = None
         # tables = ["master"]
         # tables = ["price"]

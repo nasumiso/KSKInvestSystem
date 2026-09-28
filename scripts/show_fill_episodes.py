@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """fill 建玉ラウンド (エピソード) を確認する開発補助CLI (issue #387)。
 
-build_fill_episodes (webapp.helpers) を呼んで、取込後の検算・保有中確認・
+build_fill_episodes (webapp.trade_episodes) を呼んで、取込後の検算・保有中確認・
 現引や信用の損益・振り返りメモの紐付けをターミナルで確認する。
 
 使い方:
@@ -24,6 +24,7 @@ split_pending_review (拒否リスト) に記録する。これにより webapp 
 import argparse
 import os
 import sys
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,6 +34,7 @@ if _THIS_DIR not in sys.path:
 import portfolio_shelve as ps  # noqa: E402
 from ks_util import log_print, log_warning  # noqa: E402
 from webapp import helpers  # noqa: E402
+from webapp import trade_episodes  # noqa: E402
 
 
 def _fmt_pl(ep: Dict[str, Any]) -> str:
@@ -95,6 +97,72 @@ def _yfinance_splits(code_s: str, stock_db: Dict[str, Any]):
         return None
 
 
+def _yfinance_weekly_close(code_s: str, stock_db: Dict[str, Any]):
+    """yfinance の分割調整済み週足終値を取得する。失敗時は None。issue #435。"""
+    import price as price_module
+
+    try:
+        import yfinance as yf
+        ticker_symbol = price_module._get_ticker_symbol(code_s, stock_db.get(code_s, {}))
+        history = yf.Ticker(ticker_symbol).history(
+            period="max", interval="1wk", auto_adjust=True,
+        )
+        if history.empty or "Close" not in history:
+            return None
+        return history["Close"]
+    except Exception as e:  # yfinance 側の例外種別は不定
+        log_warning(f"yfinance 週足取得失敗 ({code_s}): {e}")
+        return None
+
+
+def _weekly_price_ratio_jumps(fills: List[Dict[str, Any]], weekly_close) -> List[Dict[str, Any]]:
+    """約定価格と同週の分割調整後終値との比率が1.5倍以上変わる箇所を返す。
+
+    分割前の約定価格は auto_adjust=True の週足終値と乖離する一方、分割後は一致する。
+    同一エピソード内でこの乖離率が変化すれば、単価ジャンプだけでは見つからない
+    2:1 分割等でも、損益の株数基準が途中で変わった疑いを検出できる。
+    """
+    if weekly_close is None or weekly_close.empty:
+        return []
+    close_by_week = {}
+    for timestamp, close in weekly_close.items():
+        if not close:
+            continue
+        day = timestamp.date() if hasattr(timestamp, "date") else timestamp
+        monday = day - timedelta(days=day.weekday())
+        close_by_week[monday.isoformat()] = float(close)
+
+    observations = []
+    for fill in sorted(fills, key=lambda f: (f.get("trade_date") or "", f.get("seq") or 0)):
+        trade_date = fill.get("trade_date")
+        price = fill.get("price")
+        if not trade_date or not price:
+            continue
+        day = datetime.strptime(trade_date, "%Y-%m-%d").date()
+        weekly = close_by_week.get((day - timedelta(days=day.weekday())).isoformat())
+        if weekly:
+            observations.append({
+                "date": trade_date,
+                "price": price,
+                "weekly_close": weekly,
+                "price_ratio": price / weekly,
+            })
+
+    jumps = []
+    for index, before in enumerate(observations):
+        for after in observations[index + 1:]:
+            ratio_change = after["price_ratio"] / before["price_ratio"]
+            if ratio_change >= 1.5 or ratio_change <= 1 / 1.5:
+                jumps.append({
+                    "before_date": before["date"],
+                    "after_date": after["date"],
+                    "before_ratio": before["price_ratio"],
+                    "after_ratio": after["price_ratio"],
+                    "adjustment_ratio": before["price_ratio"] / after["price_ratio"],
+                })
+    return jumps
+
+
 def _report_split_candidate(code_s: str, splits, reason: str, db_path: Optional[str]) -> None:
     """未登録の分割・併合イベントを pending_review に記録し、登録コマンドを案内する。
 
@@ -127,11 +195,13 @@ def _filter_rejected_splits(code_s: str, splits, rejected_dates: set):
 
 
 def _check_splits(db_path: Optional[str]) -> int:
-    """分割・併合の疑いを診断する。issue #398。
+    """分割・併合の疑いを診断する。issue #398/#435。
 
     (a) 単価ジャンプ検知: 全銘柄の fill を約定日順に見て単価が急変する箇所を検出。
-    (b) 現物エピソード期間の総当たり: 単価ジャンプが無くても、エピソード期間中の
+    (b) エピソード期間の総当たり: 単価ジャンプが無くても、エピソード期間中の
         split イベントの有無を yfinance で直接確認する。
+    (c) 週足照合: 約定価格と同週の分割調整後終値の乖離率がエピソード内で変化した
+        箇所を検出する。corporate actions に載らないイベントも対象にする。
 
     fill 本体・split_adj は更新しないが、未登録の発見は split_pending_review
     (拒否リスト) に記録する。build_fill_episodes は yfinance を呼ばないため、
@@ -157,8 +227,8 @@ def _check_splits(db_path: Optional[str]) -> int:
         # ジャンプ検知は換算後の fills に対して行う (build_fill_episodes と同じ理由:
         # 未換算のまま検知すると、登録済みイベントで残高の基準が変わった後の
         # 残高追跡が崩れ、別の未登録イベントのジャンプを見逃す)。
-        adjusted_fills = helpers._apply_split_adjustments(fills, events) if events else fills
-        jumps = helpers._detect_price_jumps(adjusted_fills)
+        adjusted_fills = trade_episodes._apply_split_adjustments(fills, events) if events else fills
+        jumps = trade_episodes._detect_price_jumps(adjusted_fills)
         for jump in jumps:
             # このジャンプの日付範囲をカバーする登録済みイベントがあるかで判定する
             # (銘柄単位の in registered だけだと、後日発生した別イベントを見逃す)
@@ -191,15 +261,54 @@ def _check_splits(db_path: Optional[str]) -> int:
                         f"(x{jump['after_price'] / jump['before_price']:.1f})")
             _report_split_candidate(code_s, splits, "単価ジャンプ検出", db_path)
 
-    genbutsu_ranges: Dict[str, List[Dict[str, str]]] = {}
-    for ep in helpers.build_fill_episodes(db_path=db_path):
-        if ep["kind"] != "現物":
-            continue
-        genbutsu_ranges.setdefault(ep["code_s"], []).append({
+    episodes_by_code: Dict[str, List[Dict[str, Any]]] = {}
+    for ep in trade_episodes.build_fill_episodes(db_path=db_path):
+        episodes_by_code.setdefault(ep["code_s"], []).append(ep)
+
+    for code_s, episodes in sorted(episodes_by_code.items()):
+        events = registered.get(code_s, [])
+        rejected_dates = set(rejected.get(code_s, []))
+        weekly_close = _yfinance_weekly_close(code_s, stock_db)
+        for ep in episodes:
+            for jump in _weekly_price_ratio_jumps(ep["fills"], weekly_close):
+                # 登録済みイベントがこの約定間隔をカバーするなら、現物は既に換算済み、
+                # 信用は build_fill_episodes 側で要確認にするため pending に重ねない。
+                if any(jump["before_date"] < ev["ex_date"] <= jump["after_date"]
+                       for ev in events):
+                    continue
+                if jump["after_date"] in rejected_dates:
+                    continue
+                found += 1
+                log_warning(
+                    f" {code_s:>5} {names.get(code_s, ''):<12} 週足照合: "
+                    f"{jump['before_date']} -> {jump['after_date']} "
+                    f"(乖離率 x{jump['after_ratio'] / jump['before_ratio']:.2f})"
+                )
+                # corporate actions に無い場合でも、後側の約定日を暫定境界として
+                # 保存すれば、クローズ済みエピソードにも split_suspect を維持できる。
+                # 検出区間も渡す: 実際の権利落ち日は2約定日の間にあり暫定日とは
+                # 一致しないため、区間が無いと --register-split しても暫定マーカーが
+                # 解除できず恒久的に split_suspect が残る (PRレビュー #440 P1 対応)。
+                ps.mark_split_pending_review(
+                    code_s, reason="週足の分割調整後終値との乖離率変化",
+                    ex_date=jump["after_date"],
+                    span=(jump["before_date"], jump["after_date"]),
+                    ratio=jump["adjustment_ratio"],
+                    db_path=db_path,
+                )
+                log_print(
+                    f"      要確認: 推定換算比率 {jump['adjustment_ratio']:.4g}。"
+                    f"登録: python show_fill_episodes.py --register-split {code_s} "
+                    f"<ex_date> <ratio>"
+                )
+
+    episode_ranges: Dict[str, List[Dict[str, str]]] = {}
+    for code_s, episodes in episodes_by_code.items():
+        episode_ranges[code_s] = [{
             "open_date": ep["open_date"],
             "close_date": ep.get("close_date") or "9999-12-31",
-        })
-    for code_s, ranges in sorted(genbutsu_ranges.items()):
+        } for ep in episodes]
+    for code_s, ranges in sorted(episode_ranges.items()):
         splits = _yfinance_splits(code_s, stock_db)
         if splits is None or splits.empty:
             continue
@@ -335,7 +444,7 @@ def main() -> int:
     if args.check_splits:
         return _check_splits(args.db_path)
 
-    episodes: List[Dict[str, Any]] = helpers.build_fill_episodes(db_path=args.db_path)
+    episodes: List[Dict[str, Any]] = trade_episodes.build_fill_episodes(db_path=args.db_path)
 
     if args.code_s:
         code = args.code_s.upper()

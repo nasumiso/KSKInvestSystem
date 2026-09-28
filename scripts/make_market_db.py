@@ -15,7 +15,6 @@ import os
 import sys
 
 import price
-import make_stock_db
 import fng
 import disclosure
 
@@ -286,7 +285,7 @@ def collect_theme_portfolio_links():
         if not records:
             return {}
         stock_map = {}
-        with ShelveDB(STOCKS_SHELVE) as db:
+        with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
             for rec in records:
                 code_s = rec.get("code_s")
                 if code_s:
@@ -473,14 +472,6 @@ def make_nikkei_db():
     db_dict = make_db_common(code_s)
     db = {}
     db["nikkei225"] = db_dict
-    return db
-
-
-def make_dow_db():
-    code_s = "0800"
-    db_dict = make_db_common(code_s)
-    db = {}
-    db["dow"] = db_dict
     return db
 
 
@@ -779,53 +770,12 @@ def _theme_rank_label(theme, diff):
         return "%s(←)" % theme
 
 
-def create_market_csv(market_db=None, shintakane_theme_csv=None):
+def create_market_csv(market_db=None):
     """市場DBから表示用CSVデータにする"""
-    if shintakane_theme_csv is None:
-        shintakane_theme_csv = []
     if not market_db:
         market_db = get_market_db()
-    csv_path = os.path.join(DATA_DIR, "code_rank_data", "market_data.csv")
 
     theme_rank_list, prev_theme_rank_list, _, prev_day = get_theme_rank_list()
-
-    # --- CSV版（コメントアウト: HTML版に置き換え） ---
-    # rows = []
-    # rows.append(["■ テーマランク"])
-    # row = ["ランク"]
-    # theme_rank_diff = market_db.get("theme_rank_diff", {})
-    # for theme in market_db["theme_rank"]:
-    #     diff = theme_rank_diff.get(theme)
-    #     row.append(_theme_rank_label(theme, diff))
-    # rows.append(row)
-    # theme_momentum = market_db.get("theme_momentum", {})
-    # if theme_momentum:
-    #     row = ["騰落率"]
-    #     for theme in market_db["theme_rank"]:
-    #         if theme in theme_momentum:
-    #             avg_rate, count = theme_momentum[theme]
-    #             row.append("%+.1f%%[%d]" % (avg_rate, count))
-    #         else:
-    #             row.append("-")
-    #     rows.append(row)
-    # time = market_db["access_date_theme_rank"].date()
-    # row = [str(time)]
-    # row.extend(theme_rank_list)
-    # rows.append(row)
-    # prev_time = prev_day.date()
-    # row = [prev_time]
-    # row.extend(prev_theme_rank_list)
-    # rows.append(row)
-    # for row in shintakane_theme_csv:
-    #     rows.append(row)
-
-    # def get_db_row(db_name, market_name):
-    #     ...（省略）
-
-    # rows.append([])
-    # rows.append(["■市場"])
-    # ...（省略）
-    # --- CSV版ここまで ---
 
     # 決算・開示データの取得（HTML版でも同じデータを使う）
     import kessan
@@ -841,44 +791,6 @@ def create_market_csv(market_db=None, shintakane_theme_csv=None):
                        kessan_csv=kessan_csv,
                        theme_rank_data=theme_rank_data)
     create_disclosure_html(disc_csv)
-
-
-def update_shintakane_theme(stocks, code_list):
-    themes_count = {}
-    for code_s in code_list:
-        if code_s not in stocks:
-            continue
-        stock = stocks[code_s]
-        themes = stock.get("themes", [])
-        for theme in themes.split(","):
-            if not theme:
-                continue
-            if theme not in themes_count:
-                themes_count[theme] = 0
-            themes_count[theme] += 1
-    themes_count_sorted = sorted(
-        list(themes_count.items()), key=lambda x: x[1], reverse=True
-    )
-    for theme, count in themes_count_sorted[:30]:
-        log_print(theme, count)
-    return themes_count_sorted
-
-
-def update_shintakane_theme_csv(stocks, today_list, past_list):
-    # HTML版移行に伴い廃止（新高値テーマ分布は不要になった）
-    # log_print("新高値テーマの取得")
-    # today_counts = update_shintakane_theme(stocks, today_list)
-    # past_counts = update_shintakane_theme(stocks, past_list)
-    # csv = []
-    # today = ["当日"]
-    # today.extend(["%s(%d)" % (t[0], t[1]) for t in today_counts[:30]])
-    # csv.append(today)
-    # today = ["過去"]
-    # today.extend(["%s(%d)" % (t[0], t[1]) for t in past_counts[:30]])
-    # csv.append(today)
-    # return csv
-    return []
-
 
 
 # ==================================================

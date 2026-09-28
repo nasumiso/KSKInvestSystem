@@ -4,6 +4,7 @@ import pytest
 
 import portfolio_shelve as ps
 from webapp import helpers
+from webapp import trade_episodes
 import migrate_review_memo_to_fill_episode as mig
 
 
@@ -38,7 +39,7 @@ def _closed_shinyo_round(db_path, code_s, open_date, close_date, tate=1000.0, se
 
 def _episode_key(db_path, code_s, kind="信用"):
     """build_fill_episodes から対象銘柄・区分のエピソードキーを取る。"""
-    eps = helpers.build_fill_episodes(db_path=db_path)
+    eps = trade_episodes.build_fill_episodes(db_path=db_path)
     return next(e["episode_key"] for e in eps if e["code_s"] == code_s and e["kind"] == kind)
 
 

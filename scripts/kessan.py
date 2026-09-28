@@ -235,10 +235,6 @@ def main():
     logger = setup_logger('make_stock_db')
 
     make_kessan_csv()
-    # 決算DB作成テスト
-    # import make_stock_db
-    # stocks = make_stock_db.load_stock_db()
-    # save_pf_kessan_db(stocks)
 
 
 if __name__ == "__main__":

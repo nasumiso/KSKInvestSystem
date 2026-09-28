@@ -1,7 +1,7 @@
 """portfolio.py の parse_my_portforio() テスト。
 
-portfolio_shelve を真実源とし、空・障害時のみ my_watch_list.txt に
-フォールバックする分岐と、戻り値 (ステータス分類・code_s 昇順) を検証する。
+portfolio_shelve のみを真実源とし (my_watch_list.txt は読まない, issue #192)、
+戻り値 (ステータス分類・code_s 昇順) を検証する。
 """
 
 import pytest
@@ -25,14 +25,12 @@ def _write_txt(tmp_path, content):
     return str(txt)
 
 
-class TestFallbackToTxt:
-    """shelve が空のときのみ txt を読む (移行前・shelve 障害時の保険)"""
+class TestShelveOnly:
+    """txt へのフォールバックは撤廃済み (issue #192)"""
 
-    def test_falls_back_to_txt_when_shelve_empty(self, isolated_data_dir):
+    def test_empty_shelve_ignores_txt(self, isolated_data_dir):
         _write_txt(isolated_data_dir, "H7047ポート\n5032AnyColor\n")
-        watch, hold = portfolio.parse_my_portforio()
-        assert "7047" in hold
-        assert "5032" in watch
+        assert portfolio.parse_my_portforio() == ([], [])
 
     def test_uses_shelve_when_populated(self, isolated_data_dir):
         """shelve に登録があれば txt は無視される"""

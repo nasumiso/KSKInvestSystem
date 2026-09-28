@@ -19,6 +19,7 @@ delete_research_record 等) を経由して更新を行い、他のモジュー�
 
 import fcntl
 import glob
+import hashlib
 import os
 import re
 import threading
@@ -84,12 +85,14 @@ RECORD_FIELDS = frozenset(
         "openwork",
         "cramer",
         "shikiho_comments",
+        "shikiho_gyoseki",
         "kessan_comments",
         "snapshots",
         "analysis_date_raw",
         "kessan_date_raw",
         "corporate_url_override",
         "chat_links",
+        "ir_qa",
     }
 )
 
@@ -115,6 +118,18 @@ KESSAN_COMMENT_FIELDS = frozenset(
                                 # 自動判定: held_before AND held_after / ログ☆由来 / UI手動
     }
 )
+
+# IR問い合わせ回答 (ir_qa) エントリの既知フィールド (issue #436)
+IR_QA_FIELDS = frozenset(
+    {
+        "id",           # 追加時に採番する不変ID (uuid4().hex[:8])
+        "answered_at",  # 回答日 (YYYY/MM/DD)
+        "body",         # 回答内容 (sanitize_html 済みHTML)
+    }
+)
+
+# IR問い合わせ回答の保持件数上限。超過時は answered_at 降順で古い側を切り捨てる
+IR_QA_MAX = 10
 
 
 def normalize_kessan_post_price_changes(entry: Dict[str, Any]) -> Dict[str, str]:
@@ -266,18 +281,21 @@ def create_research_record(
     openwork: str = "",
     cramer: str = "",
     shikiho_comments: Optional[List[str]] = None,
+    shikiho_gyoseki: Optional[Dict[str, Any]] = None,
     kessan_comments: Optional[List[Dict[str, Any]]] = None,
     snapshots: Optional[List[Dict[str, Any]]] = None,
     analysis_date_raw: str = "",
     kessan_date_raw: str = "",
     corporate_url_override: str = "",
     chat_links: Optional[List[Dict[str, Any]]] = None,
+    ir_qa: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """銘柄調査レコードのひな型 dict を生成する。
 
     - code_s は normalize_code_s で大文字化される
     - overall_rating は空/S〜E のみ許容
     - shikiho_comments / kessan_comments / snapshots はリストでない場合に空リストで補完
+    - shikiho_gyoseki は四季報業績予想 (issue #346)。未入力は None
     - analysis_date_raw / kessan_date_raw はスプシ原文保持用(例: "11/13",
       "22四季報春" などの異形も許容。形式バリデーションはしない。型チェックのみ)
     - 返却した dict は upsert_research_record にそのまま渡せる
@@ -316,12 +334,14 @@ def create_research_record(
         "openwork": openwork,
         "cramer": cramer,
         "shikiho_comments": shikiho,
+        "shikiho_gyoseki": shikiho_gyoseki,
         "kessan_comments": kessan,
         "snapshots": snaps,
         "analysis_date_raw": analysis_date_raw,
         "kessan_date_raw": kessan_date_raw,
         "corporate_url_override": corporate_url_override,
         "chat_links": _normalize_chat_links(chat_links),
+        "ir_qa": _normalize_ir_qa(ir_qa),
     }
 
 
@@ -485,6 +505,54 @@ def _normalize_chat_links(links):
     return result
 
 
+def _normalize_ir_qa(entries):
+    """IR問い合わせ回答を List[{"id","answered_at","body"}] に正規化する (issue #436)。
+
+    - list でなければ空リスト
+    - 各要素は dict かつ body が str のもののみ採用。壊れたエントリは捨てる
+    - id 欠落エントリは「配列位置 + answered_at + body」の決定的ハッシュで補う。
+      読出しのたびに正規化が走るため、ここでランダム採番 (uuid4 等) をすると
+      リクエストごとに id が変わり、UI が表示した entry_id での更新・削除が
+      404 になる。id の採番は add_ir_qa でのみ行う
+    - 位置 i を混ぜることで、answered_at と body が同一のエントリが2件あっても
+      id が衝突しない
+    """
+    if not isinstance(entries, list):
+        return []
+    result = []
+    for i, item in enumerate(entries):
+        if not isinstance(item, dict):
+            continue
+        body = item.get("body")
+        if not isinstance(body, str):
+            continue
+        answered_at = item.get("answered_at")
+        answered_at = answered_at.strip() if isinstance(answered_at, str) else ""
+        entry_id = item.get("id")
+        entry_id = entry_id.strip() if isinstance(entry_id, str) else ""
+        if not entry_id:
+            seed = f"{i}\n{answered_at}\n{body}".encode("utf-8")
+            entry_id = hashlib.sha1(seed).hexdigest()[:8]
+        result.append({"id": entry_id, "answered_at": answered_at, "body": body})
+    return result
+
+
+def sort_ir_qa_desc(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """IR問い合わせ回答を answered_at 降順（新しい順）に並べ替える (issue #436)。
+
+    answered_at が空・形式不正のエントリは最古扱いで末尾に寄せる。
+    Python の sorted は安定ソートなので、同じ日付のエントリは元順序を保つ。
+    """
+    def _key(item: Dict[str, Any]) -> tuple:
+        raw = (item.get("answered_at") or "").strip()
+        parts = raw.split("/")
+        if len(parts) != 3 or not all(p.isdigit() for p in parts):
+            return (-1, 0, 0)
+        return (int(parts[0]), int(parts[1]), int(parts[2]))
+
+    return sorted(entries, key=_key, reverse=True)
+
+
 def sort_shikiho_comments_desc(
     comments: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
@@ -536,6 +604,8 @@ def _normalize_research_record_on_read(record: Dict[str, Any]) -> Dict[str, Any]
     record["shikiho_comments"] = _normalize_shikiho_comments(
         record.get("shikiho_comments", [])
     )
+    # 四季報業績予想 (issue #346) は後付けフィールド。旧レコードは未入力扱い。
+    record.setdefault("shikiho_gyoseki", None)
     if not isinstance(record.get("kessan_comments"), list):
         record["kessan_comments"] = []
     for entry in record["kessan_comments"]:
@@ -552,6 +622,7 @@ def _normalize_research_record_on_read(record: Dict[str, Any]) -> Dict[str, Any]
     if "stock_name_prev" not in record:
         record["stock_name_prev"] = None
     record["chat_links"] = _normalize_chat_links(record.get("chat_links"))
+    record["ir_qa"] = _normalize_ir_qa(record.get("ir_qa"))
     return record
 
 
@@ -592,6 +663,8 @@ def get_research_record(
     post_price_changes が無く旧 post_price_change のみがある場合、
     {"1d": <旧値>, "5d": ""} に正規化する（後方互換）。
     chat_links は未設定/壊れたエントリを除去して List[{"label","url"}] に正規化する。
+    ir_qa は未設定/壊れたエントリを除去して List[{"id","answered_at","body"}] に
+    正規化する（id 欠落時は決定的ハッシュで補完。読出しをまたいで安定する）。
     """
     return _get_research_record(code_s, db_path=db_path)
 
@@ -923,6 +996,10 @@ def _matches_keyword(record: Dict[str, Any], keyword_norm: str) -> bool:
         val = shikiho if isinstance(shikiho, str) else shikiho.get("comment", "") or ""
         if keyword_norm in normalize_for_search(strip_html_tags(val)):
             return True
+    for entry in record.get("ir_qa", []) or []:
+        val = entry.get("body", "") or ""
+        if keyword_norm in normalize_for_search(strip_html_tags(val)):
+            return True
     return False
 
 
@@ -1227,6 +1304,64 @@ def _cmd_list(
     return 0
 
 
+def _describe_field_value(value: Any) -> str:
+    """fields --field の値を一覧向けに要約する。
+
+    長文・入れ子構造は中身を出さず型と件数だけを示す。詳細は show で見る。
+    """
+    if isinstance(value, (list, tuple)):
+        return f"{type(value).__name__}({len(value)})"
+    if isinstance(value, dict):
+        return f"dict({len(value)})"
+    text = str(value).replace("\n", " ")
+    if len(text) > 40:
+        return text[:40] + "..."
+    return text
+
+
+def _cmd_fields(
+    *,
+    field: Optional[str] = None,
+    db_path: Optional[str] = None,
+) -> int:
+    """fields サブコマンド本体。
+
+    field 未指定ならフィールド別の非空件数、指定時はそのフィールドが
+    非空のレコードを列挙する。
+    """
+    records = list_research_records(db_path=db_path)
+
+    if field is None:
+        counts: Dict[str, int] = {}
+        for rec in records:
+            for key, value in rec.items():
+                if value not in (None, "", [], {}):
+                    counts[key] = counts.get(key, 0) + 1
+        print("count\tfield")
+        for key, num in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+            print(f"{num}\t{key}")
+        print(f"-- {len(records)} records --")
+        return 0
+
+    header = "code_s\tstock_name\tvalue"
+    print(header)
+    print("-" * len(header))
+    hit = 0
+    for rec in records:
+        value = rec.get(field)
+        if value in (None, "", [], {}):
+            continue
+        hit += 1
+        stock_name = rec.get("stock_name", "") or _EMPTY_MARK
+        print(
+            f"{rec.get('code_s', '')}\t{stock_name}\t"
+            f"{_describe_field_value(value)}"
+        )
+    print("-" * len(header))
+    print(f"{hit} / {len(records)} records (field={field})")
+    return 0
+
+
 def _cmd_backup(*, db_path: Optional[str] = None) -> int:
     """backup サブコマンド本体。"""
     created = backup_research_db(db_path=db_path)
@@ -1273,6 +1408,17 @@ def _build_arg_parser():
         help="銘柄名・概要・メモへの部分一致 (大文字小文字無視)",
     )
 
+    # fields
+    fields_p = subparsers.add_parser(
+        "fields", help="フィールド別の非空件数を表示する"
+    )
+    fields_p.add_argument(
+        "--field",
+        type=str,
+        default=None,
+        help="指定フィールドが非空のレコードを列挙する (例: ir_qa)",
+    )
+
     # backup
     subparsers.add_parser("backup", help="DB本体のバックアップを作成する")
 
@@ -1288,6 +1434,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _cmd_show(args.code_s)
     if args.command == "list":
         return _cmd_list(rating=args.rating, keyword=args.keyword)
+    if args.command == "fields":
+        return _cmd_fields(field=args.field)
     if args.command == "backup":
         return _cmd_backup()
     parser.error(f"unknown command: {args.command}")

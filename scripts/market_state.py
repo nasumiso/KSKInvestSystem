@@ -8,7 +8,7 @@ O'Neil/IBD原典に準拠した3状態モデル + 原典準拠DD/FTD判定 + ラ
 - market_in_correction: 調整相場
 
 I/O は持たない純関数の集まり。market_db への永続化は make_market_db.py 側で行う。
-詳細仕様は doc/requirements/market_state_machine_requirements.md を参照。
+詳細仕様は doc/spec/市場ステート仕様.md を参照。
 """
 
 # ==================================================

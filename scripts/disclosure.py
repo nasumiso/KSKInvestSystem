@@ -304,16 +304,11 @@ def expoert_to_csv(disc_db, csv_path=None):
 
 
 def update_disclosure_all(upd=UPD_INTERVAL):
-    # disc_db = load_pickle(DISCLOSURE_DB)
-    # if not disc_db:
-    #    disc_db = []
     disc_db = []
     code_list_s, possess_list_s = portfolio.parse_my_portforio()
     with use_requests_session():  # 中でhttp_get_htmlを使うためセッションを指定
         for code_s in code_list_s + possess_list_s:
             update_disclosure(code_s, disc_db, upd)
-    # 更新した内容で保存
-    # save_pickle(DISCLOSURE_DB, disc_db)
     return expoert_to_csv(disc_db)
 
 

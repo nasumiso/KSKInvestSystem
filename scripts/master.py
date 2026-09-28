@@ -8,7 +8,6 @@ import re
 import csv
 
 import rironkabuka
-import make_sector_data
 import make_market_db
 from datetime import datetime
 

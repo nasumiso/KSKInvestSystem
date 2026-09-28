@@ -1,7 +1,9 @@
 """webapp ルートの統合テスト (Flaskテストクライアント使用)"""
 
 import io
+import json
 import os
+import subprocess
 
 import pytest
 
@@ -78,6 +80,18 @@ def app(db_path, tmp_path, monkeypatch):
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+@pytest.mark.parametrize("dir_name, expect_banner", [
+    ("shintakane_data_dev", True),
+    ("shintakane_data", False),
+])
+def test_dev_banner(client, tmp_path, monkeypatch, dir_name, expect_banner):
+    """開発用コピーのときだけ全画面に DEV 帯を出す (issue #453)"""
+    import ks_util
+    monkeypatch.setattr(ks_util, "DATA_DIR", str(tmp_path / dir_name))
+    html = client.get("/").get_data(as_text=True)
+    assert ('class="dev-banner"' in html) is expect_banner
 
 
 class TestSearchRoute:
@@ -224,6 +238,26 @@ class TestDetailRoute:
         assert "アズーム" in html
         assert "3496" in html
         assert "テストメモ" in html
+
+    def test_detail_shows_shikiho_gyoseki_editor(self, client):
+        html = client.get("/stock/3496").data.decode()
+        assert 'id="gyoseki-raw"' in html
+        assert 'id="btn-save-gyoseki"' in html
+        assert "/stock/3496/shikiho_gyoseki" in html
+
+    def test_detail_collapses_shikiho_comments_after_four(self, client, db_path):
+        record = rs.get_research_record("3496", db_path=db_path)
+        record["shikiho_comments"] = [
+            {"period": f"26.{9 - i * 3}", "comment": f"コメント{i + 1}"}
+            for i in range(5)
+        ]
+        rs.upsert_research_record(record, db_path=db_path)
+
+        html = client.get("/stock/3496").data.decode()
+        assert html.count('class="shikiho-entry"') == 5
+        assert 'class="shikiho-more"' in html
+        assert "過去の四季報コメント (1件)" in html
+        assert html.index('id="btn-add-shikiho"') < html.index('id="shikiho-edit-area"')
 
     def test_detail_404_for_unknown(self, client):
         resp = client.get("/stock/9999")
@@ -600,6 +634,106 @@ class TestRefreshPostRoutes:
         assert "再取得に失敗しました (3496)" in html
         assert "boom" in html
         assert "background:#ffeaea" in html
+
+
+class TestIrPageDocsPostRoutes:
+    """POST /stock/<code_s>/ir_page_docs のテスト (issue #457)"""
+
+    def test_fetches_picked_and_manual_urls_with_flash(self, client, monkeypatch):
+        import sys
+        import types
+
+        calls = []
+
+        def fake_fetch(code_s, url, doc_type, heading, source_page, session, limiter):
+            calls.append((code_s, url, doc_type, heading, source_page, limiter))
+            if "broken" in url:
+                raise ValueError("PDF以外の応答です")
+            return {"heading": heading or "manual.pdf"}, "dup" not in url
+
+        stub = types.ModuleType("ir_docs")
+        stub.fetch_ir_page_doc = fake_fetch
+        stub._RateLimiter = object
+        stub.tdnet_setsumei_missing = lambda code_s: None
+        stub.group_ir_docs = lambda code_s: {
+            "chuki": [], "periods": [], "unknown": [], "last_collected_at": None, "count": 0,
+        }
+        monkeypatch.setitem(sys.modules, "ir_docs", stub)
+
+        resp = client.post("/stock/3496/ir_page_docs", data={
+            "pick": ["0", "2"],
+            "url_0": "https://a.example/plan.pdf", "doc_type_0": "chuki_plan",
+            "heading_0": "中期経営計画", "source_page_0": "https://a.example/ir/",
+            "url_1": "https://a.example/skip.pdf", "doc_type_1": "setsumei",
+            "url_2": "https://a.example/broken.pdf", "doc_type_2": "setsumei",
+            "manual_url": "https://b.example/dup.pdf", "manual_doc_type": "setsumei",
+        })
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/stock/3496#ir-docs")
+        assert [call[1] for call in calls] == [
+            "https://a.example/plan.pdf", "https://a.example/broken.pdf", "https://b.example/dup.pdf",
+        ]
+        assert calls[0][4] == "https://a.example/ir/"
+        # 1回の送信で取得するPDF間は同じ待機を共有する (1秒1リクエスト)
+        assert len({id(call[5]) for call in calls}) == 1
+
+        html = client.get("/stock/3496").data.decode()
+        assert "IR資料を保存しました (3496): 中期経営計画" in html
+        assert "IR資料の取得に失敗しました (3496)" in html
+        assert "同じIR資料が保存済みです (3496)" in html
+
+
+class TestIrDocsModalRoutes:
+    """IR資料モーダルの PDF 配信と株探収集 (issue #473)"""
+
+    @pytest.fixture
+    def ir_dir(self, tmp_path, monkeypatch):
+        import ir_docs
+        (tmp_path / "3496").mkdir()
+        (tmp_path / "3496" / "a.pdf").write_bytes(b"%PDF-1.4 dummy")
+        (tmp_path / "3496" / "index.json").write_text(json.dumps({"documents": [
+            {"doc_id": "d1", "doc_type": "tanshin", "date": "20260814", "pdf_path": "a.pdf"},
+        ]}), encoding="utf-8")
+        monkeypatch.setattr(ir_docs, "IR_DOCS_DIR", tmp_path)
+        return tmp_path
+
+    @pytest.mark.parametrize("path, status", [
+        ("/ir_docs/3496/d1", 200),
+        ("/ir_docs/3496/unknown", 404),
+        ("/ir_docs/..%2F3496/d1", 404),
+    ])
+    def test_pdf_is_served_only_by_doc_id(self, client, ir_dir, path, status):
+        resp = client.get(path)
+        assert resp.status_code == status
+        if status == 200:
+            assert resp.mimetype == "application/pdf"
+
+    @pytest.mark.parametrize("errors, expected", [
+        ({}, "株探からIR資料を収集しました (3496): 1件追加"),
+        # 通信障害は例外にならず collection_errors に残るので、成功扱いにしない
+        ({"1y": [{"stage": "page_scan", "reason": "RemoteDisconnected"}]},
+         "取りこぼしがあります (3496): 1件追加 / 失敗1件 (page_scan: RemoteDisconnected)"),
+    ])
+    def test_tdnet_refresh_collects_1y_and_reports_result(self, client, ir_dir, monkeypatch, errors, expected):
+        import ir_docs
+        calls = []
+
+        def fake_download(code_s, depth):
+            calls.append((code_s, depth))
+            index_path = ir_dir / "3496" / "index.json"
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            index["documents"].append({"doc_id": "d2", "doc_type": "setsumei", "date": "20260828"})
+            index["collection_errors"] = errors
+            index_path.write_text(json.dumps(index), encoding="utf-8")
+
+        monkeypatch.setattr(ir_docs, "download_ir_docs", fake_download)
+        resp = client.post("/stock/3496/ir_docs/tdnet")
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/stock/3496#ir-docs")
+        assert calls == [("3496", "1y")]
+        html = client.get("/stock/3496").data.decode()
+        assert expected in html
+        assert "IR資料 (2)" in html
 
 
 class TestCorporateUrlPostRoutes:
@@ -1469,6 +1603,15 @@ class TestPortfolioHoldSummary:
         # (「未取込」は CSV 取込フォーム側でも使う文言なので、サマリー部分を丸ごと照合する)
         assert "株数基準日\n      2026-08-13" in html
 
+    def test_stale_index_shows_note(self, portfolio_app, monkeypatch):
+        """指数が全て鮮度切れでガイドを出せない日は、理由と最新日付を注釈で出す"""
+        import exposure_guide
+        monkeypatch.setattr(exposure_guide, "read_index_states",
+                            lambda *a, **k: ({}, {"topix": "2026-09-17", "mothers": "2026-09-16"}))
+        html = portfolio_app.test_client().get("/portfolio?status=hold").data.decode()
+        assert "35</b> 万円" in html
+        assert "指数データが古い (最新 2026-09-17)" in html
+
     def test_hold_summary_ignores_gyoutai_theme_filter(self, portfolio_app):
         """運用比率ガイドはテーマ絞り込みの影響を受けず、常に全保有で集計する。
 
@@ -1679,6 +1822,44 @@ class TestPortfolioCsvImport:
         assert resp.status_code == 302
         assert ps.compute_merged_qty("6501") == 100
 
+    def test_quick_import_flashes_when_nothing_found(self, csv_import_app, monkeypatch):
+        """未取込CSVが無ければ取り込まず、メッセージを出して一覧へ戻る。"""
+        import webapp.routes.portfolio as portfolio_routes
+        monkeypatch.setattr(portfolio_routes.csv_import, "find_unimported_csvs",
+                            lambda *a, **k: [])
+        client = csv_import_app.test_client()
+
+        resp = client.post("/portfolio/csv-import/quick", follow_redirects=True)
+
+        assert "未取込のポートフォリオCSVは見つかりませんでした" in resp.data.decode()
+
+    def test_quick_import_copies_found_csvs_and_previews(self, csv_import_app, monkeypatch, tmp_path):
+        """発見したCSVを一時ディレクトリへコピーし、差分プレビューを返す。
+
+        コピーするのは apply が tmp_dir を再読込する設計のため (元ファイルを
+        直接使うと apply/cancel の rmtree が ~/Downloads を消してしまう)。
+        """
+        import webapp.routes.portfolio as portfolio_routes
+        src = tmp_path / "assetbalance(JP)_20260914_221044.csv"
+        src.write_bytes(self._csv_bytes([
+            ["■ 保有商品詳細 (すべて）"],
+            ["種別", "銘柄コード・ティッカー", "銘柄", "口座", "保有数量", "［単位］",
+             "平均取得価額", "［単位］"],
+            ["国内株式", "6501", "日立", "特定", "100", "株", "4750", "円"],
+        ]))
+        monkeypatch.setattr(portfolio_routes.csv_import, "find_unimported_csvs",
+                            lambda *a, **k: [str(src)])
+        client = csv_import_app.test_client()
+
+        resp = client.post("/portfolio/csv-import/quick")
+
+        assert resp.status_code == 200
+        assert 'action="/portfolio/csv-import/apply"' in resp.data.decode()
+        # 元ファイルは消えず、コピーが tmp 側に残っている
+        assert src.exists()
+        copied = list((tmp_path / "csv_import_tmp").glob("*/*.csv"))
+        assert [p.name for p in copied] == ["0_assetbalance(JP)_20260914_221044.csv"]
+
 
 # ==================================================
 # /portfolio/themes (issue #282)
@@ -1694,7 +1875,7 @@ class TestPortfolioThemes:
         monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
         monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
         monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
-        # fallback_mode を外すため最低 1 件 record を入れる
+        # 編集対象の銘柄を登録する
         ps.add_to_watch("3496", db_path=portfolio_db)
         ps.create_theme("半導体", "test", db_path=portfolio_db)
 
@@ -1819,6 +2000,73 @@ class TestChatLinkRoutes:
         resp = client.post(path, data=data)
         assert resp.status_code == status
         assert resp.get_json()["ok"] is False
+
+
+class TestIrQaRoutes:
+    """issue #436: IR問い合わせ回答 AJAX ルート"""
+
+    def test_add_update_delete_flow(self, client, db_path):
+        """追加 → 更新 → 削除の一連と永続化を検証 (更新・削除は id 指定)"""
+        resp = client.post("/stock/3496/ir_qa",
+                           data={"answered_at": "2026/08/20", "body": "増産は順調"})
+        assert resp.status_code == 201
+        entries = resp.get_json()["entries"]
+        assert len(entries) == 1
+        entry_id = entries[0]["id"]
+        assert entries[0]["answered_at"] == "2026/08/20"
+        assert "増産は順調" in entries[0]["body"]
+        # 永続化確認
+        saved = rs.get_research_record("3496", db_path=db_path)["ir_qa"]
+        assert [e["id"] for e in saved] == [entry_id]
+
+        # 更新 (id 指定で本文が差し替わり、id は不変)
+        resp = client.post(f"/stock/3496/ir_qa/{entry_id}",
+                           data={"answered_at": "2026/08/21", "body": "計画を上方修正"})
+        assert resp.status_code == 200
+        updated = resp.get_json()["entries"][0]
+        assert updated["id"] == entry_id
+        assert updated["answered_at"] == "2026/08/21"
+        assert "計画を上方修正" in updated["body"]
+
+        # 削除
+        resp = client.post(f"/stock/3496/ir_qa/{entry_id}/delete")
+        assert resp.status_code == 200
+        assert resp.get_json()["entries"] == []
+        assert rs.get_research_record("3496", db_path=db_path)["ir_qa"] == []
+
+    @pytest.mark.parametrize("path, data, status", [
+        # 日付形式不正 → 400
+        ("/stock/3496/ir_qa", {"answered_at": "2026-08-20", "body": "x"}, 400),
+        # 本文が空 → 400
+        ("/stock/3496/ir_qa", {"answered_at": "2026/08/20", "body": "  "}, 400),
+        # 未登録銘柄 → 404
+        ("/stock/9999/ir_qa", {"answered_at": "2026/08/20", "body": "x"}, 404),
+        # 該当 id 無し → 404
+        ("/stock/3496/ir_qa/deadbeef", {"answered_at": "2026/08/20", "body": "x"}, 404),
+        ("/stock/3496/ir_qa/deadbeef/delete", {}, 404),
+    ])
+    def test_error_cases(self, client, path, data, status):
+        resp = client.post(path, data=data)
+        assert resp.status_code == status
+        assert resp.get_json()["ok"] is False
+
+    def test_add_at_limit_returns_409(self, client, db_path):
+        """上限到達後の追加は 409 で拒否し、既存を消さない (切り捨てない)。"""
+        import research_shelve as rs
+
+        for i in range(1, rs.IR_QA_MAX + 1):
+            resp = client.post("/stock/3496/ir_qa",
+                               data={"answered_at": f"2026/01/{i:02d}",
+                                     "body": f"回答{i}"})
+            assert resp.status_code == 201
+
+        resp = client.post("/stock/3496/ir_qa",
+                           data={"answered_at": "2025/12/31", "body": "溢れる回答"})
+        assert resp.status_code == 409
+        assert resp.get_json()["ok"] is False
+        saved = rs.get_research_record("3496", db_path=db_path)["ir_qa"]
+        assert len(saved) == rs.IR_QA_MAX
+        assert "溢れる回答" not in [e["body"] for e in saved]
 
 
 class TestSuggestThemes:
@@ -1955,3 +2203,109 @@ class TestPortfolioShikihoRoute:
         resp = shikiho_app.test_client().get("/portfolio/shikiho/9999/data")
         assert resp.status_code == 404
         assert resp.get_json()["ok"] is False
+
+
+class TestDevRoute:
+    """開発ページと日次バッチのブラウザ実行 (issue #321)"""
+
+    @pytest.fixture
+    def dev(self, tmp_path, monkeypatch):
+        from webapp.routes import dev
+        monkeypatch.setattr(dev, "_STATUS_JSON", tmp_path / "cron_status.json")
+        monkeypatch.setattr(dev, "_CRON_LOG", tmp_path / "cron.log")
+        monkeypatch.setattr(dev, "_LOCK_FILE", tmp_path / "cron.lock")
+        return dev
+
+    def test_pages_and_portal_link(self, client, dev):
+        html = client.get("/dev").get_data(as_text=True)
+        assert 'id="cron-run-btn"' in html
+        assert "KSKInvestSystem/pulls" in html
+        top = client.get("/").get_data(as_text=True)
+        assert 'href="/dev"' in top
+        assert "KSKInvestSystem/pulls" not in top
+
+    def test_run_spawns_cron(self, client, dev, monkeypatch):
+        calls = []
+
+        class FakeProc:
+            pid = 4242
+
+            def wait(self):
+                return 0
+
+        def fake_popen(args, **kwargs):
+            calls.append((args, kwargs))
+            return FakeProc()
+
+        monkeypatch.setattr(dev.subprocess, "Popen", fake_popen)
+        monkeypatch.setenv("FLASK_SECRET_KEY", "secret")
+        resp = client.post("/dev/cron/run")
+        assert resp.status_code == 202
+        (args, kwargs), = calls
+        assert args[-1].endswith("shintakane_cron.sh")
+        assert kwargs["env"]["SHINTAKANE_WEB_TRIGGER"] == "1"
+        assert "FLASK_SECRET_KEY" not in kwargs["env"]
+        assert kwargs["start_new_session"] is True
+        # マーカーはスクリプトが書く。WebApp が書くと即終了した子の最終状態を上書きしうる
+        assert not dev._STATUS_JSON.exists()
+
+    def test_run_rejects_while_running(self, client, dev, monkeypatch):
+        dev._LOCK_FILE.write_text(f"{os.getpid()}\n")
+        monkeypatch.setattr(dev.subprocess, "Popen", lambda *a, **k: pytest.fail("起動してはいけない"))
+        assert client.post("/dev/cron/run").status_code == 409
+
+    @pytest.mark.parametrize("marker, lock_alive, expected", [
+        ({"state": "running"}, True, "running"),
+        # ロック取得直後でマーカーがまだ前回分
+        ({"state": "done", "exit_code": 0}, True, "running"),
+        ({"state": "running"}, False, "interrupted"),
+        ({"state": "done", "exit_code": 0}, False, "done"),
+        ({"state": "failed", "exit_code": 1}, False, "failed"),
+        (None, False, "none"),
+    ])
+    def test_status(self, client, dev, marker, lock_alive, expected):
+        if marker is not None:
+            dev._STATUS_JSON.write_text(json.dumps(marker))
+        if lock_alive:
+            dev._LOCK_FILE.write_text(f"{os.getpid()}\n")
+        dev._CRON_LOG.write_text("".join(f"line{i}\n" for i in range(250)))
+        body = client.get("/dev/cron/status").get_json()
+        assert body["state"] == expected
+        lines = body["log_tail"].splitlines()
+        assert len(lines) == 200 and lines[0] == "line50" and lines[-1] == "line249"
+
+    @pytest.mark.parametrize("env, running, heads, pull_rc, expected_code, expect_restart", [
+        # 開発機では作業ブランチを pull しない
+        (None, False, None, 0, 403, False),
+        ("production", True, None, 0, 409, False),
+        ("production", False, ("a", "b"), 0, 200, True),
+        ("production", False, ("a", "a"), 0, 200, False),
+        ("production", False, ("a", "a"), 1, 500, False),
+    ])
+    def test_deploy(self, client, dev, monkeypatch, env, running, heads, pull_rc,
+                    expected_code, expect_restart):
+        if env:
+            monkeypatch.setenv("SHINTAKANE_ENV", env)
+        else:
+            monkeypatch.delenv("SHINTAKANE_ENV", raising=False)
+        if running:
+            dev._LOCK_FILE.write_text(f"{os.getpid()}\n")
+        rev = iter(heads or ())
+        git_calls = []
+
+        def fake_run(args, **kwargs):
+            git_calls.append(args)
+            if args[1] == "rev-parse":
+                return subprocess.CompletedProcess(args, 0, stdout=next(rev) + "\n", stderr="")
+            return subprocess.CompletedProcess(args, pull_rc, stdout="pulled", stderr="")
+
+        popen_calls = []
+        monkeypatch.setattr(dev.subprocess, "run", fake_run)
+        monkeypatch.setattr(dev.subprocess, "Popen", lambda args, **k: popen_calls.append((args, k)))
+        resp = client.post("/dev/deploy")
+        assert resp.status_code == expected_code
+        assert bool(git_calls) == (expected_code not in (403, 409))
+        assert len(popen_calls) == int(expect_restart)
+        if expect_restart:
+            args, kwargs = popen_calls[0]
+            assert "kickstart -k" in args[-1] and kwargs["start_new_session"] is True

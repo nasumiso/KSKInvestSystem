@@ -65,6 +65,10 @@ def _make_snippet(rec: dict, keyword: str) -> str:
         result = _extract(text, "四季報")
         if result:
             return result
+    for entry in rec.get("ir_qa", []) or []:
+        result = _extract(entry.get("body", ""), "IR問い合わせ")
+        if result:
+            return result
 
     # フォールバック: overview 先頭40文字
     overview = rec.get("overview", "") or ""
@@ -94,13 +98,6 @@ PORTAL_SPREADSHEETS = (
         "url": "https://kabutan.jp/warning/pts_night_price_increase",
     },
 )
-
-# GitHub の PR / issue 一覧へのリンク (最終更新は持たない)
-PORTAL_LINKS = (
-    {"title": "PR", "url": "https://github.com/nasumiso/KSKInvestSystem/pulls"},
-    {"title": "issue", "url": "https://github.com/nasumiso/KSKInvestSystem/issues"},
-)
-
 
 def _portal_spreadsheets():
     """PORTAL_SPREADSHEETS に最終更新日を付与して返す"""
@@ -190,7 +187,6 @@ def index():
         q_normalized=q_normalized,
         has_query=has_query,
         portal_spreadsheets=_portal_spreadsheets() if not has_query else None,
-        portal_links=PORTAL_LINKS if not has_query else None,
     )
 
 

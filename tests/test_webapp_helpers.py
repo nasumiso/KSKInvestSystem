@@ -10,6 +10,7 @@ import pytest
 
 import research_shelve as rs
 from webapp import helpers
+from webapp import trade_episodes
 
 
 def test_stop_loss_replay_includes_sell_fill():
@@ -237,7 +238,7 @@ def test_summarize_hold_positions_matches_row_aggregation(monkeypatch, tmp_path)
 
     summary = helpers.summarize_hold_positions(db_path=str(tmp_path / "dummy"))
 
-    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(trade_episodes, "build_fill_episodes", lambda: [])
     monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {})
     monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {})
     monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {})
@@ -262,7 +263,7 @@ def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
     """約定履歴のない手入力保有でもMA違反を防御シグナルとして表示する。"""
     import portfolio_shelve as ps
 
-    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(trade_episodes, "build_fill_episodes", lambda: [])
     monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {
         "4377": {"price": 900, "price_log": [(date(2026, 2, 9), 900)],
                  "ma50_violation": {"pending": True, "confirmed": False, "ma_value": 1000}}
@@ -282,6 +283,8 @@ def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
         "memo": {"trade_idea": "成長"},
     }])
     assert rows[0]["signal_mark"] == "防予"
+    assert "日足50MA 1,000 (-10.0%)" in rows[0]["signal_full"]
+    assert rows[0]["exit_gauge"]["svg"]
 
 
 def test_manual_holding_records_confirmed_ma_alert(monkeypatch):
@@ -289,7 +292,7 @@ def test_manual_holding_records_confirmed_ma_alert(monkeypatch):
     import portfolio_shelve as ps
 
     recorded = []
-    monkeypatch.setattr(helpers, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(trade_episodes, "build_fill_episodes", lambda: [])
     monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {
         "4377": {"price": 900, "price_log": [(date(2026, 2, 9), 900)],
                  "ma50_violation": {"pending": False, "confirmed": True, "ma_value": 1000}}
@@ -1217,6 +1220,24 @@ class TestSaveShikiho:
             {"period": "25.12", "comment": "コメント2"},
             {"period": "25.9", "comment": "コメント3"},
         ]
+
+    def test_save_shikiho_gyoseki_roundtrip(self, populated_db):
+        """issue #346: 貼り付けテキストの保存 → クリア → パース失敗時は据え置き。"""
+        text = "連26.3\t51,163\t2,189\n連27.3予\t70,000\t3,700\n"
+        helpers.save_shikiho_gyoseki("3496", text)
+
+        rec = helpers.get_research_detail("3496")
+        assert rec["shikiho_gyoseki"]["this_year"]["sales_growth"] == 36.8
+        assert rec["shikiho_gyoseki"]["raw_text"] == text.strip()
+
+        # パース失敗は ValueError で、保存済みの値を壊さない
+        with pytest.raises(ValueError):
+            helpers.save_shikiho_gyoseki("3496", "予想行のないテキスト")
+        assert helpers.get_research_detail("3496")["shikiho_gyoseki"] is not None
+
+        # 空文字でクリア
+        helpers.save_shikiho_gyoseki("3496", "")
+        assert helpers.get_research_detail("3496")["shikiho_gyoseki"] is None
 
     def test_save_shikiho_empty_comments_skipped(self, populated_db):
         form = {
@@ -2920,6 +2941,30 @@ class TestPriceRsSparkline:
         # tooltip に RS(0~99) 現在値が出る (末尾 = 70)
         assert "RS(0~99): 70" in payload["tooltip"]
 
+    def test_rs_rank_history_drawn_beyond_daily_price_log(self):
+        """RS(0~99)履歴は日足 price_log (30営業日) より古い点も週足窓内なら線で描く。
+        分割は点間隔 7日超のみ (土日はつなぐ)。窓外の点は右軸レンジに影響しない。
+        """
+        from datetime import date as _d, timedelta
+        base = _d(2026, 5, 15)  # 金曜
+        weekdays = [base - timedelta(days=i) for i in range(140)
+                    if (base - timedelta(days=i)).weekday() < 5]
+        # 直近 80 営業日 (値 60~79) + 10日空けて古い 10 営業日 + 週足窓外の値 5
+        recent, older = weekdays[:80], weekdays[88:98]
+        rs_rank_log = ([(d, 60 + i % 20) for i, d in enumerate(recent)]
+                       + [(d, 70) for d in older]
+                       + [(base - timedelta(days=300), 5)])
+        stock = {
+            "price_log": [(d, 100) for d in weekdays[:30]],
+            "price_week_log": [(base - timedelta(days=i * 7), 100) for i in range(20)],
+            "rs_rank_log": rs_rank_log,
+        }
+        svg = helpers.build_stock_chart_payload(stock, market_db=None, mode="full")["svg"]
+        polylines = [ln for ln in svg.split("<polyline")[1:] if helpers._RS_RANK_COLOR in ln]
+        assert len(polylines) == 2  # 10日の空白でのみ分割
+        assert max(len(p.split('points="')[1].split('"')[0].split()) for p in polylines) == 80
+        assert ">0<" not in svg  # 窓外の値 5 で右軸下限が 0 に広がらない (50~99)
+
     @pytest.mark.parametrize("values,expected", [
         ([60, 72, 68, 94], (50, 99)),   # 50台~90台 → 50~99
         ([20, 35, 28, 40], (0, 50)),    # 0台~40台 → 0~50
@@ -3517,6 +3562,45 @@ class TestGetCurrentResearchData:
         # スコアグループは確実に出る (総合PT が非零)
         assert "スコア" in group_names
 
+    @pytest.mark.parametrize(
+        "gyoseki, expect_group",
+        [
+            (
+                {
+                    "this_year": {
+                        "label": "連27.3予", "sales_growth": 36.8, "op_growth": 69.0,
+                    },
+                    "next_year": {
+                        "label": "連28.3予", "sales_growth": 21.4, "op_growth": 16.2,
+                    },
+                },
+                True,
+            ),
+            (None, False),  # 未入力ならグループごと出ない
+        ],
+    )
+    def test_shikiho_gyoseki_group(self, monkeypatch, gyoseki, expect_group):
+        """issue #346: 【四季報予】グループの有無と表示内容。"""
+        stock_data = {
+            "stock_name": "テスト", "score_gyoseki": 50, "shihyo_pt": 40,
+            "momentum_pt": 30, "funda_pt": 20, "stock_rank_log": [],
+            "themes": "", "sector": "情報・通信業", "shihyo": {},
+        }
+        monkeypatch.setattr(helpers, "get_stock_data", lambda code_s: stock_data)
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"theme_rank": []})
+        monkeypatch.setattr(make_market_db, "get_major_theme", lambda themes: "")
+
+        result = helpers.get_current_research_data(
+            "9999", research_record={"shikiho_gyoseki": gyoseki}
+        )
+
+        groups = dict(result)
+        assert ("四季報予" in groups) is expect_group
+        if expect_group:
+            # 会計基準の接頭辞 (連) は落とし、成長率を符号付きで出す
+            assert groups["四季報予"][0] == ("27.3予", "売上 +36.8% / 営利 +69.0%")
+
 
 class TestBuildPortfolioThemeSummary:
     """build_portfolio_theme_summary のテスト (issue #283)。
@@ -3958,14 +4042,14 @@ def test_classify_market_category_legacy_nikkei225_cache(monkeypatch):
      {"avg_return_win": 15.0, "avg_return_lose": -20.0, "expectancy": 8.0}),
 ])
 def test_calc_trade_summary(pls, checks):
-    s = helpers.calc_trade_summary(pls)
+    s = trade_episodes.calc_trade_summary(pls)
     assert s is not None
     for k, v in checks.items():
         assert s[k] == v
 
 
 def test_calc_trade_summary_empty_returns_none():
-    assert helpers.calc_trade_summary([]) is None
+    assert trade_episodes.calc_trade_summary([]) is None
 
 
 # --- 往復行 (買→売の1行化, issue #421) ---------------------------------------
@@ -4032,7 +4116,7 @@ def _f(date_s, side, qty, price, trade_kind="", **kw):
       ("2026-04-14", "2026-05-11", 400, 1125.0, 960.0, 27, -66000)]),
 ])
 def test_build_round_trips(ep, expected):
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     got = [(r["open_date"], r["close_date"], r["qty"], r["open_price"],
             r["close_price"], r["hold_days"], r["pl"]) for r in rows]
     assert got == expected
@@ -4050,7 +4134,7 @@ def test_build_round_trips_genbutsu_partial_sell_diverges_from_average_cost():
         _f("2026-01-02", "buy", 100, 200.0, "現物"),
         _f("2026-01-03", "sell", 100, 150.0, "現物"),
     ], closed=False)
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     closed = [r for r in rows if r["closed"]]
     assert sum(r["pl"] for r in closed) == 5000  # FIFO: 100円の玉を150円で売った
     # 残った100株 (200円の玉) は保有中行として出る
@@ -4081,7 +4165,7 @@ def test_build_round_trips_genbutsu_partial_sell_diverges_from_average_cost():
       ("2026-01-06", "2026-02-05", 100, 2000.0, 2500.0, 30, 50000)]),
 ])
 def test_build_round_trips_lot_allocation(ep, expected):
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     got = [(r["open_date"], r["close_date"], r["qty"], r["open_price"],
             r["close_price"], r["hold_days"], r["pl"]) for r in rows]
     assert got == expected
@@ -4098,7 +4182,7 @@ def test_build_round_trips_no_cross_broker_fallback():
         _f("2026-01-05", "buy", 100, 1000.0, "現物", broker="楽天"),
         _f("2026-02-05", "sell", 100, 2500.0, "現物", broker="SBI"),
     ], closed=False)
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     # 楽天の100株は保有中のまま / SBI売却は建値を伏せた売りのみ行
     assert [(r["open_date"], r["open_price"], r["qty"], r["closed"], r["pl"])
             for r in rows] == [
@@ -4118,7 +4202,7 @@ def test_build_round_trips_open_rows_get_unrealized_pl():
         _f("2026-01-06", "buy", 100, 2000.0, "現物"),
     ], closed=False)
     ep["current_price"] = 3000.0
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     assert [(r["open_price"], r["pl"], round(r["return_pct"]), r["unrealized"])
             for r in rows] == [
         (2000.0, 100000, 50, True),
@@ -4137,7 +4221,7 @@ def test_build_round_trips_keeps_csv_tate_price_when_lot_missing():
         _f("2026-03-01", "sell", 100, 1200.0, "信用返済",
            tate_price=1000.0, tate_date="2026-01-05", fill_pl=20000),
     ], closed=False)
-    rows = helpers.build_round_trips(ep)
+    rows = trade_episodes.build_round_trips(ep)
     # 決済行の建値は CSV の 1,000 (02-01 の 2,000 を流用しない)
     closed = [r for r in rows if r["closed"]]
     assert [(r["open_date"], r["open_price"]) for r in closed] == [("2026-01-05", 1000.0)]
@@ -4166,17 +4250,17 @@ class TestEpisodeStrategyDrift:
         self._add(ps, db, "2026-02-01", "buy", 100, "a")
         self._add(ps, db, "2026-03-01", "sell", 100, "b")
 
-        ep = helpers.build_fill_episodes(db_path=db)[0]
+        ep = trade_episodes.build_fill_episodes(db_path=db)[0]
         ps.set_episode_strategy(
             ep["episode_key"], "中期テーマ",
             fingerprint=ps.episode_fingerprint(ep["fills"]),
-            hold_days=helpers.episode_hold_days(ep), db_path=db,
+            hold_days=trade_episodes.episode_hold_days(ep), db_path=db,
         )
-        assert helpers.build_fill_episodes(db_path=db)[0]["strategy_drift"] is False
+        assert trade_episodes.build_fill_episodes(db_path=db)[0]["strategy_drift"] is False
 
         # 01-05 の買いが後から入り、02-01 の玉と繋がって未決済に戻る
         self._add(ps, db, "2026-01-05", "buy", 100, "c")
-        after = [e for e in helpers.build_fill_episodes(db_path=db)
+        after = [e for e in trade_episodes.build_fill_episodes(db_path=db)
                  if e["episode_key"] == ep["episode_key"]][0]
         assert after["strategy_drift"] is True
 
@@ -4190,8 +4274,73 @@ class TestEpisodeStrategyDrift:
 
         ps.set_episode_strategy(ps.fill_episode_key("9999", "現物", 1), "中期テーマ",
                                 db_path=db)
-        episodes = helpers.build_fill_episodes(db_path=db)
-        assert helpers.count_orphan_strategies(episodes, db_path=db) == 1
+        episodes = trade_episodes.build_fill_episodes(db_path=db)
+        assert trade_episodes.count_orphan_strategies(episodes, db_path=db) == 1
+
+
+class TestIrQaCrud:
+    """issue #436: IR問い合わせ回答の CRUD (id 指定・10件上限)。"""
+
+    def test_add_update_delete_by_id(self, populated_db):
+        """保存順と表示順が食い違う状態でも、id 指定が正しいエントリに当たる。
+
+        ir_qa は保存順 (追加順) と表示順 (answered_at 降順) が一致しない。
+        index で特定すると別レコードを壊すため、id で引けることを回帰確認する。
+        """
+        helpers.add_ir_qa("3496", "2026/01/05", "古い回答")
+        # 後から新しい日付を足すと、表示順では先頭 = 2件目に追加したもの
+        entries = helpers.add_ir_qa("3496", "2026/08/20", "新しい回答")
+        assert [e["answered_at"] for e in entries] == ["2026/08/20", "2026/01/05"]
+
+        old_id = entries[1]["id"]
+        # 表示順で末尾 (= 追加順では先頭) を id 指定で更新する
+        entries = helpers.update_ir_qa("3496", old_id, "2026/01/05", "古い回答を訂正")
+        target = [e for e in entries if e["id"] == old_id][0]
+        assert "古い回答を訂正" in target["body"]
+        # もう一方は無傷
+        assert "新しい回答" in [e for e in entries if e["id"] != old_id][0]["body"]
+
+        entries = helpers.delete_ir_qa("3496", old_id)
+        assert [e["answered_at"] for e in entries] == ["2026/08/20"]
+
+    def test_rejects_add_at_max_without_dropping_entries(self, populated_db):
+        """上限到達後の追加は拒否し、既存エントリを1件も失わない。
+
+        切り捨て方式だと、古い日付を追加したときに「追加した回答自体」が
+        捨てられたまま成功扱いになる。IR回答は再取得できない一次情報なので、
+        黙って消さずに IrQaLimitError で拒否する。
+        """
+        for i in range(1, rs.IR_QA_MAX + 1):
+            helpers.add_ir_qa("3496", f"2026/01/{i:02d}", f"回答{i}")
+        before = rs.get_research_record("3496")["ir_qa"]
+        assert len(before) == rs.IR_QA_MAX
+
+        # 最古より更に古い日付 = 切り捨て方式なら新規自身が消えていたケース
+        with pytest.raises(helpers.IrQaLimitError):
+            helpers.add_ir_qa("3496", "2025/12/31", "上限超過で追加されない回答")
+
+        after = rs.get_research_record("3496")["ir_qa"]
+        assert [e["id"] for e in after] == [e["id"] for e in before]
+
+        # 上限到達中でも既存エントリの更新・削除は通る
+        helpers.update_ir_qa("3496", before[0]["id"], "2026/01/20", "更新後")
+        entries = helpers.delete_ir_qa("3496", before[0]["id"])
+        assert len(entries) == rs.IR_QA_MAX - 1
+
+    @pytest.mark.parametrize("answered_at, body, exc", [
+        ("2026-08-20", "本文", ValueError),   # 日付形式が YYYY/MM/DD でない
+        ("2026/08/20", "   ", ValueError),    # 本文が実質空
+    ])
+    def test_invalid_input_raises(self, populated_db, answered_at, body, exc):
+        with pytest.raises(exc):
+            helpers.add_ir_qa("3496", answered_at, body)
+
+    def test_unknown_id_raises_keyerror(self, populated_db):
+        helpers.add_ir_qa("3496", "2026/08/20", "回答")
+        with pytest.raises(KeyError):
+            helpers.update_ir_qa("3496", "deadbeef", "2026/08/21", "x")
+        with pytest.raises(KeyError):
+            helpers.delete_ir_qa("3496", "deadbeef")
 
 
 class TestEpisodeChart:
@@ -4304,9 +4453,9 @@ class TestEpisodeChart:
                                   amount=qty * price, trade_kind="現物", dedup_key="k%d" % i)
             ps.append_fill(fill, db_path=db)
 
-        full = helpers.build_fill_episodes(db_path=db)
+        full = trade_episodes.build_fill_episodes(db_path=db)
         assert len(full) == 1
-        one = helpers.build_episode_for_key(full[0]["episode_key"], db_path=db)
+        one = trade_episodes.build_episode_for_key(full[0]["episode_key"], db_path=db)
         assert one is not None
         assert (one["open_date"], one["close_date"], len(one["fills"])) == (
             full[0]["open_date"], full[0]["close_date"], len(full[0]["fills"]))

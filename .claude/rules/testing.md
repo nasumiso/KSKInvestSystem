@@ -44,6 +44,7 @@ HTMLパーサー変更時は追加で `cd scripts && python shintakane.py --forc
 | `portfolio_shelve.py` | `pytest tests/test_portfolio_shelve.py -v` |
 | `exposure_guide.py` | `pytest tests/test_exposure_guide.py -v` |
 | `import_portfolio_csv.py` | `pytest tests/test_import_portfolio_csv.py -v` |
+| `stock_ratings.py` | `pytest tests/test_stock_ratings.py -v` |
 
 スコアリング・ランキングのロジック変更時は追加で `cd scripts && python make_stock_db.py list_all_db` で統合テスト。
 
@@ -52,6 +53,7 @@ HTMLパーサー変更時は追加で `cd scripts && python shintakane.py --forc
 | 変更対象 | テストコマンド |
 |---|---|
 | `webapp/helpers.py` | `pytest tests/test_webapp_helpers.py tests/test_html_sanitizer.py -v` |
+| `webapp/trade_episodes.py` | `pytest tests/test_fill_episodes.py tests/test_webapp_helpers.py tests/test_webapp_trade_history_routes.py -v` |
 | `webapp/routes/` | `pytest tests/test_webapp_routes.py -v` |
 | `webapp/` の HTML サニタイズ関連 | `pytest tests/test_html_sanitizer.py -v` |
 

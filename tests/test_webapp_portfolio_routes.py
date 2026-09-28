@@ -939,129 +939,32 @@ class TestAddUnknownCodeRejected:
 
 
 # ==================================================
-# P1 (codex 指摘): portfolio_shelve 未移行時 txt フォールバック
+# 空の shelve から通常操作を開始できる。
 # ==================================================
-@pytest.fixture
-def fallback_app(tmp_path, monkeypatch):
-    """portfolio_shelve が空 + my_watch_list.txt にデータあり、の状態を再現する。"""
-    portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
-    stocks_db_path = str(tmp_path / "test_stocks_shelve")
-    txt_path = tmp_path / "my_watch_list.txt"
+class TestEmptyPortfolio:
+    def test_empty_dashboard_allows_management(self, client, tmp_path, monkeypatch):
+        empty_db = str(tmp_path / "empty_portfolio")
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", empty_db)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", empty_db)
+        html = client.get("/portfolio").get_data(as_text=True)
+        assert "未移行モード" not in html
+        assert 'id="toggle-manage-mode"' in html
+        assert "/portfolio/csv-import/preview" in html
 
-    monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db_path)
-    monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db_path)
-    monkeypatch.setattr("db_shelve.STOCKS_SHELVE", stocks_db_path)
-    monkeypatch.setattr("webapp.helpers.STOCKS_SHELVE", stocks_db_path)
-    monkeypatch.setattr("portfolio_shelve.DATA_DIR", str(tmp_path))
-    monkeypatch.setattr("portfolio.DATA_DIR", str(tmp_path))
+    def test_first_stock_can_be_added(self, client, tmp_path, monkeypatch):
+        empty_db = str(tmp_path / "empty_portfolio")
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", empty_db)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", empty_db)
+        response = client.post("/portfolio/add", data={"code_s": "7203"})
+        assert response.status_code == 302
+        assert ps.get_record("7203")["status"] == "3監"
 
-    # shelve は空のまま、txt に保有 (H...) と監視を書き込む
-    txt_path.write_text(
-        "# kabutan\n"
-        "H6324\n"   # 保有
-        "3496\n"    # 監視
-        "7203\n",   # 監視
-        encoding="utf-8",
-    )
-
-    # 表示時に銘柄名解決するため stocks_shelve にも入れる
-    with ShelveDB(stocks_db_path) as db:
-        db["6324"] = {"code_s": "6324", "stock_name": "ハーモニックドライブシステムズ",
-                      "shihyo": {"PER": 308.0}}
-        db["3496"] = {"code_s": "3496", "stock_name": "アズーム",
-                      "shihyo": {"PER": 30.0}}
-        db["7203"] = {"code_s": "7203", "stock_name": "トヨタ自動車",
-                      "shihyo": {"PER": 12.0}}
-
-    app = create_app()
-    app.config["TESTING"] = True
-    return app
-
-
-@pytest.fixture
-def fallback_client(fallback_app):
-    return fallback_app.test_client()
-
-
-class TestFallbackFromTxt:
-
-    def test_fallback_dashboard_shows_txt_records(self, fallback_client):
-        # 1保 タブ (デフォルト) にハーモニック (H プレフィクス) が出る
-        resp = fallback_client.get("/portfolio")
-        assert resp.status_code == 200
-        html = resp.data.decode()
-        assert "ハーモニック" in html
-        # 監視タブには 3496/7203 が出る
-        resp = fallback_client.get("/portfolio?status=watch")
-        html = resp.data.decode()
-        assert "アズーム" in html
-        assert "トヨタ" in html
-
-    def test_fallback_shows_banner(self, fallback_client):
-        resp = fallback_client.get("/portfolio")
-        html = resp.data.decode()
-        assert "未移行モード" in html
-
-    def test_fallback_disables_transition_form(self, fallback_client):
-        # 書き込み UI (ステータス変更フォーム) は出ない
-        resp = fallback_client.get("/portfolio")
-        html = resp.data.decode()
-        assert "/transition" not in html
-        assert "/delete" not in html
-
-    def test_fallback_rejects_add_post(self, fallback_client, tmp_path):
-        """フォールバック中は /portfolio/add も reject (= shelve に書き込まれない)。
-
-        codex 指摘: バナーで「無効」と表示しても POST が通ると、shelve に 1 件
-        書かれた瞬間にフォールバック解除 → 残りの txt 銘柄が画面から消える。
-        """
-        portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
-        before = ps.list_records(db_path=portfolio_db_path)
-        resp = fallback_client.post("/portfolio/add", data={"code_s": "8035"})
-        assert resp.status_code == 302
-        # shelve にレコードは増えていない
-        after = ps.list_records(db_path=portfolio_db_path)
-        assert len(after) == len(before)
-        assert ps.get_record("8035", db_path=portfolio_db_path) is None
-
-    def test_fallback_rejects_transition_post(self, fallback_client, tmp_path):
-        portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
-        resp = fallback_client.post(
-            "/portfolio/3496/transition", data={"new_status": "1保"}
-        )
-        assert resp.status_code == 302
-        assert ps.list_records(db_path=portfolio_db_path) == []
-
-    def test_fallback_rejects_bulk_exclude_post(self, fallback_client, tmp_path):
-        """フォールバック中は /portfolio/bulk-exclude も reject (issue #186)"""
-        portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
-        resp = fallback_client.post(
-            "/portfolio/bulk-exclude", data={"codes": "3496"}
-        )
-        assert resp.status_code == 302
-        assert ps.list_records(include_excluded=True, db_path=portfolio_db_path) == []
-
-    def test_fallback_rejects_memo_post(self, fallback_client, tmp_path):
-        """フォールバック中は /portfolio/<code>/memo も reject (issue #175)"""
-        portfolio_db_path = str(tmp_path / "test_portfolio_shelve")
-        resp = fallback_client.post(
-            "/portfolio/3496/memo", data={"trade_idea": "GARP"}
-        )
-        assert resp.status_code == 302
-        # shelve は空のまま (memo 更新で 1 件作られたら fallback 解除事故が起きる)
-        assert ps.list_records(db_path=portfolio_db_path) == []
-
-    def test_fallback_charts_shows_txt_records(self, fallback_client):
-        """フォールバック中も /portfolio/charts に txt 由来銘柄が出る (issue #231 codex P2)。
-
-        shelve 空のままチャート一覧を開くと「対象銘柄なし」で空になる回帰を防ぐ。
-        デフォルト status=1保 なので保有 (H6324=ハーモニック) が JSON 埋め込みに出る。
-        """
-        resp = fallback_client.get("/portfolio/charts")
-        assert resp.status_code == 200
-        html = resp.data.decode()
-        assert "6324" in html
-        assert "対象銘柄なし" not in html
+    @pytest.mark.parametrize("path", ["/portfolio/themes", "/portfolio/strategies", "/portfolio/themes/summary"])
+    def test_empty_master_pages_are_accessible(self, client, tmp_path, monkeypatch, path):
+        empty_db = str(tmp_path / "empty_portfolio")
+        monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", empty_db)
+        monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", empty_db)
+        assert client.get(path).status_code == 200
 
 
 # ==================================================

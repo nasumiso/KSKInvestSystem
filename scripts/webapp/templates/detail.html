@@ -47,14 +47,11 @@
               onclick="editStockNamePrev(this)">✎</button>
       {% endif %}
       {% if portfolio_status_query %}
-        {% if portfolio_fallback_mode %}
-        {# フォールバック中は書き込み不可なので静的バッジ #}
-        <span class="portfolio-badge portfolio-badge-{{ portfolio_status_query }}">{{ portfolio_status_label }}</span>
-        {% else %}
+
         <button type="button" class="portfolio-badge portfolio-badge-{{ portfolio_status_query }} portfolio-badge-button"
                 onclick="openPortfolioModal()" aria-label="保有ステータスを変更">{{ portfolio_status_label }}</button>
-        {% endif %}
-      {% elif not portfolio_fallback_mode %}
+
+      {% else %}
         {# issue: portfolio 未登録時は同じ位置に「+」アイコンを表示 (✎ ボタンとサイズを揃える) #}
         <button type="button" class="portfolio-badge portfolio-badge-add portfolio-badge-button"
                 onclick="openPortfolioModal()" title="監視に追加" aria-label="監視に追加">+</button>
@@ -65,7 +62,7 @@
       分析日: <input class="editable-field inline-date" type="text" name="analysis_date_raw" value="{{ record.analysis_date_raw or '' }}" data-form="memo" form="memo-form" placeholder="MM/DD" style="width:5em;display:inline;padding:0.1em 0.3em;font-size:0.9em;">
       {% if stock.kessanbi %} | 決算日: {{ stock.kessanbi[2:] }}{% endif %}
       {# issue #205: 業態・テーマを同じ行に配置。change/blur で AJAX 即時保存 (portfolio_list と同方式) #}
-      {% if portfolio_status_query and not portfolio_fallback_mode %}
+      {% if portfolio_status_query %}
       {% set master_names = theme_master | map(attribute='name') | list %}
       | <span class="gyoutai-themes-inline" data-code="{{ record.code_s }}">
         業態・テーマ:
@@ -118,9 +115,122 @@
                   data-code="{{ record.code_s }}" data-current="{{ _override }}"
                   onclick="editCorpUrl(this)"
                   style="display:inline-block;width:auto !important;padding:0.05em 0.3em;font-size:0.8em;margin:0 0 0 0.2em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">✎</button>
+          {# issue #457: 会社HPから IR トップを推測し、編集ダイアログに入れて開く #}
+          <button type="button" title="会社HPからIRページを探して、会社HPリンクの差し替え候補に入れます"
+                  data-code="{{ record.code_s }}" onclick="editCorpUrlToIr(this)"
+                  style="display:inline-block;width:auto !important;padding:0.05em 0.3em;font-size:0.8em;margin:0 0 0 0.2em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">IR</button>
         </form>
+        {# issue #473: 取得済みIR資料の一覧と、株探・会社HPからの取得をモーダルにまとめる #}
+        <button type="button" onclick="openIrDocsModal()"
+                title="取得済みの決算短信・決算説明資料・中計を期ごとに表示し、株探・会社HPから取得します"
+                style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0 0 0 0.3em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">IR資料 ({{ ir_docs.count }})</button>
+        {% if ir_setsumei_hp_only is not none %}
+        <span title="株探に決算短信はあるが決算説明資料が1年間出ていません。説明資料は会社HPにしか無い可能性が高いので、決算ごとに会社HPから取得してください (日付は会社HPから取得した最新の説明資料)。クリックで取得画面を開きます"
+              onclick="openIrDocsModal(true)"
+              style="font-size:0.8em;color:#b36b00;border:1px solid #e0b060;border-radius:3px;padding:0 0.3em;margin-left:0.3em;cursor:pointer;">説明資料HPのみ {{ ir_setsumei_hp_only[2:4] ~ '/' ~ ir_setsumei_hp_only[4:6]|int ~ '/' ~ ir_setsumei_hp_only[6:]|int if ir_setsumei_hp_only else '未取得' }}</span>
+        {% endif %}
+        <span id="ir-page-msg" style="font-size:0.8em;color:#888;margin-left:0.3em;"></span>
       </div>
       <script>
+      function loadIrPageCandidates(btn) {
+        var msg = document.getElementById('ir-cand-msg');
+        var form = document.getElementById('ir-page-form');
+        var list = document.getElementById('ir-page-list');
+        btn.disabled = true;
+        msg.textContent = '探索中...';
+        fetch('/api/ir_page_candidates/' + encodeURIComponent(btn.dataset.code), {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        }).then(function(r) { return r.json(); }).then(function(json) {
+          btn.disabled = false;
+          list.textContent = '';
+          form.style.display = 'block';
+          if (!json.ok) { msg.textContent = json.error || '候補の取得に失敗しました'; return; }
+          var items = json.candidates || [];
+          var oldCount = items.filter(function(item) { return item.old; }).length;
+          msg.textContent = items.length + '件の候補 (' + json.start_url + ')';
+          var fresh = items.filter(function(item) { return item.doc_type === 'setsumei' && !item.downloaded && !item.old; });
+          if (!fresh.length) {
+            msg.textContent += ' — 未取得の説明資料なし。PDF の URL を下に貼ってください';
+            form.querySelector('input[name="manual_url"]').focus();
+          }
+          // 2年より古い候補は折りたたむ (IRページには10年分並ぶことがある)
+          var oldBox = document.createElement('div');
+          oldBox.style.display = 'none';
+          items.forEach(function(item, i) {
+            var row = document.createElement('div');
+            var check = document.createElement('input');
+            check.type = 'checkbox'; check.name = 'pick'; check.value = i;
+            check.style.cssText = 'width:1em;height:1em;display:inline-block;vertical-align:middle;margin:0 0.3em 0 0;';
+            var select = document.createElement('select');
+            select.name = 'doc_type_' + i;
+            select.style.cssText = 'width:auto;display:inline-block;margin:0 0.3em 0 0;padding:0.05em;font-size:1em;';
+            [['chuki_plan', '中計'], ['setsumei', '説明資料']].forEach(function(pair) {
+              var opt = document.createElement('option');
+              opt.value = pair[0]; opt.textContent = pair[1];
+              opt.selected = pair[0] === item.doc_type;
+              select.appendChild(opt);
+            });
+            var link = document.createElement('a');
+            link.href = item.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+            link.textContent = item.heading;
+            row.appendChild(check); row.appendChild(select); row.appendChild(link);
+            if (item.downloaded) row.appendChild(document.createTextNode(' (取得済)'));
+            if (item.maybe_tdnet) {
+              var tdnet = document.createElement('span');
+              tdnet.textContent = ' (TDnet取得済?)';
+              tdnet.title = '会計期間・四半期または日付が TDnet 経由の取得済み資料と一致 (同一PDFなら取得時にスキップされます)';
+              tdnet.style.color = '#888';
+              row.appendChild(tdnet);
+            }
+            [['url_', item.url], ['heading_', item.heading], ['source_page_', item.source_page]].forEach(function(pair) {
+              var hidden = document.createElement('input');
+              hidden.type = 'hidden'; hidden.name = pair[0] + i; hidden.value = pair[1] || '';
+              row.appendChild(hidden);
+            });
+            (item.old ? oldBox : list).appendChild(row);
+          });
+          if (oldCount) {
+            var toggle = document.createElement('a');
+            toggle.href = '#';
+            toggle.textContent = '古い候補を表示 (' + oldCount + '件)';
+            toggle.style.fontSize = '0.9em';
+            toggle.onclick = function(e) {
+              e.preventDefault();
+              oldBox.style.display = 'block';
+              toggle.style.display = 'none';
+            };
+            list.appendChild(toggle);
+            list.appendChild(oldBox);
+          }
+        }).catch(function() {
+          btn.disabled = false;
+          msg.textContent = '候補の取得に失敗しました';
+        });
+      }
+
+      function editCorpUrlToIr(btn) {
+        var codeS = btn.dataset.code;
+        var msg = document.getElementById('ir-page-msg');
+        btn.disabled = true;
+        msg.textContent = 'IRページを探索中...';
+        fetch('/api/ir_top_url/' + encodeURIComponent(codeS), {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        }).then(function(r) { return r.json(); }).then(function(json) {
+          btn.disabled = false;
+          if (!json.ok) { msg.textContent = json.error || 'IRページが見つかりませんでした'; return; }
+          msg.textContent = '';
+          var input = window.prompt("会社HP URL（空欄でデフォルトに戻す）", json.url);
+          if (input === null) return;  // Cancel
+          document.getElementById('corp-url-input-' + codeS).value = input;
+          document.getElementById('corp-url-form-' + codeS).submit();
+        }).catch(function() {
+          btn.disabled = false;
+          msg.textContent = 'IRページの探索に失敗しました';
+        });
+      }
+
       function editCorpUrl(btn) {
         var codeS = btn.dataset.code;
         var current = btn.dataset.current || "";
@@ -158,11 +268,7 @@
         });
       }
       </script>
-      {% if portfolio_fallback_mode and not portfolio_status_query %}
-      <div style="margin-top:0.4em;">
-        <span style="color:#a07000;font-size:0.85em;">portfolio_shelve 未移行モード</span>
-      </div>
-      {% endif %}
+
     </div>{# /.meta #}
   </div>{# /.left #}
   {# issue #227: 株価 + RSライン 統合チャート (フル版)。
@@ -534,11 +640,30 @@
       <textarea class="editable-field" name="overview" rows="3" data-form="shikiho">{{ record.overview or '' }}</textarea>
     </div>
 
+    {# issue #346: 一括更新ページと同じ四季報業績予想の貼り付け・保存 UI。 #}
+    <div class="memo-field" id="gyoseki-section">
+      <div style="display:flex;align-items:center;gap:0.6em;">
+        <label style="margin:0;">四季報業績 (楽天証券の業績テーブルを貼り付け)</label>
+        <button type="button" id="btn-save-gyoseki" class="outline"
+                style="padding:0.15em 0.6em;font-size:0.85em;">保存</button>
+        <span id="gyoseki-msg" style="font-size:0.85em;"></span>
+      </div>
+      <div id="gyoseki-preview"
+           style="font-size:0.9em;color:#444;margin:0.3em 0;min-height:1.2em;
+                  white-space:pre-line;line-height:1.5;"></div>
+      <textarea id="gyoseki-raw" rows="5" style="width:100%;font-family:monospace;font-size:0.85em;"
+                placeholder="【業績】&#9;売上高&#9;営業利益 ...&#10;連27.3予&#9;70,000&#9;3,700 ...">{{ (record.shikiho_gyoseki or {}).get('raw_text') or '' }}</textarea>
+    </div>
+
     <div class="memo-field">
       {% set shikiho = record.shikiho_comments or [] %}
-      <label>四季報コメント (<span id="shikiho-count">{{ shikiho|length }}</span>/8件)</label>
+      <div style="display:flex;align-items:center;gap:0.6em;">
+        <label style="margin:0;">四季報コメント (<span id="shikiho-count">{{ shikiho|length }}</span>/8件)</label>
+        <button type="button" id="btn-add-shikiho" class="outline"
+                style="padding:0.15em 0.6em;font-size:0.85em;" onclick="addShikiho()">+ 追加</button>
+      </div>
       <div id="shikiho-edit-area">
-        {% for item in shikiho %}
+        {% for item in shikiho[:4] %}
         <div class="shikiho-entry" style="display:flex;align-items:start;gap:0.3em;margin-bottom:0.3em;">
           <span style="font-size:0.8em;color:#888;min-width:3em;padding-top:0.6em;">{{ item.period or '-' }}</span>
           <input type="hidden" name="shikiho_periods_{{ loop.index0 }}" value="{{ item.period or '' }}">
@@ -546,12 +671,291 @@
           {# 削除ボタンは非表示（基本的に消さないため） #}
         </div>
         {% endfor %}
-        <button type="button" id="btn-add-shikiho" class="outline" style="margin-top:0.3em;padding:0.2em 0.8em;font-size:0.85em;" onclick="addShikiho()">+ 追加</button>
+        {% if shikiho|length > 4 %}
+        <details class="shikiho-more" style="margin:0.4em 0;">
+          <summary style="cursor:pointer;font-size:0.9em;color:#666;">過去の四季報コメント ({{ shikiho|length - 4 }}件)</summary>
+          {% for item in shikiho[4:] %}
+          {% set index = loop.index0 + 4 %}
+          <div class="shikiho-entry" style="display:flex;align-items:start;gap:0.3em;margin:0.4em 0 0.3em;">
+            <span style="font-size:0.8em;color:#888;min-width:3em;padding-top:0.6em;">{{ item.period or '-' }}</span>
+            <input type="hidden" name="shikiho_periods_{{ index }}" value="{{ item.period or '' }}">
+            <textarea class="editable-field" name="shikiho_comments_{{ index }}" rows="4" style="flex:1;" data-form="shikiho">{{ item.comment }}</textarea>
+          </div>
+          {% endfor %}
+        </details>
+        {% endif %}
       </div>
     </div>
 
   </form>
 </div>
+
+<script>
+  (function () {
+    var raw = document.getElementById('gyoseki-raw');
+    var preview = document.getElementById('gyoseki-preview');
+    var button = document.getElementById('btn-save-gyoseki');
+    var message = document.getElementById('gyoseki-msg');
+
+    function fmtGrowth(value) {
+      if (value === null || value === undefined) return '—';
+      return (value >= 0 ? '+' : '') + value.toFixed(1) + '%';
+    }
+
+    function renderPreview(gyoseki) {
+      if (!gyoseki) {
+        preview.textContent = '未登録';
+        preview.style.color = '#999';
+        return;
+      }
+      preview.style.color = '#444';
+      var lines = [];
+      ['this_year', 'next_year'].forEach(function (key) {
+        var entry = gyoseki[key];
+        if (!entry) return;
+        lines.push(entry.label + ' 売上 ' + fmtGrowth(entry.sales_growth) +
+                   ' / 営利 ' + fmtGrowth(entry.op_growth));
+      });
+      preview.textContent = lines.join('\n');
+    }
+
+    function saveGyoseki() {
+      button.disabled = true;
+      message.textContent = '保存中...';
+      message.style.color = '#666';
+      var formData = new FormData();
+      formData.append('shikiho_gyoseki_raw', raw.value);
+      fetch('/stock/{{ record.code_s }}/shikiho_gyoseki', {
+        method: 'POST', body: formData
+      }).then(function (response) {
+        return response.json().then(function (body) {
+          return { response: response, body: body };
+        });
+      }).then(function (result) {
+        if (!result.response.ok || !result.body.ok) {
+          throw new Error(result.body.error || '保存に失敗しました');
+        }
+        renderPreview(result.body.gyoseki);
+        message.textContent = '保存しました';
+        message.style.color = '#2a7';
+        setTimeout(function () { message.textContent = ''; }, 2000);
+      }).catch(function (error) {
+        message.textContent = error.message || '保存に失敗しました';
+        message.style.color = '#c00';
+      }).finally(function () {
+        button.disabled = false;
+      });
+    }
+
+    renderPreview({{ record.shikiho_gyoseki|tojson }});
+    button.addEventListener('click', saveGyoseki);
+  })();
+</script>
+
+{# ===== 6.5. IR問い合わせ (issue #436) ===== #}
+{# IR部門への問い合わせ回答。公開情報として流通しないエッジ情報なので銘柄に恒久保存する。 #}
+{# 既存の「IR分析コメント」(スナップショット内 ir_comment = 自分の分析) とは別物。 #}
+<div class="memo-section" id="ir-qa-section" data-code="{{ record.code_s }}">
+  {% set ir_qa = record.ir_qa or [] %}
+  <h3>IR問い合わせ <span class="ir-qa-count">({{ ir_qa|length }}/{{ ir_qa_max }}件)</span></h3>
+
+  {# 全エントリ本文を JSON で埋め込み、select 変更時に JS が枠を差し替える (追加リクエスト不要) #}
+  <script type="application/json" id="ir-qa-data">{{ ir_qa | tojson }}</script>
+
+  <div id="ir-qa-viewer" {% if not ir_qa %}style="display:none;"{% endif %}>
+    <div class="ir-qa-toolbar">
+      <select id="ir-qa-select">
+        {% for entry in ir_qa %}
+        <option value="{{ entry.id }}">{{ entry.answered_at or '(日付なし)' }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" class="ir-qa-btn" id="ir-qa-edit" title="選択中の回答を編集">✎ 編集</button>
+      <button type="button" class="ir-qa-btn" id="ir-qa-delete" title="選択中の回答を削除">🗑 削除</button>
+    </div>
+    <div class="ir-qa-body" id="ir-qa-body"></div>
+    <button type="button" class="ir-qa-expand" id="ir-qa-expand">▼ もっと見る</button>
+  </div>
+
+  <p class="ir-qa-empty" id="ir-qa-empty" {% if ir_qa %}style="display:none;"{% endif %}>IR問い合わせなし</p>
+
+  {# 上限到達時の案内。追加フォームと排他で表示する (JS の updateLimitState) #}
+  <p class="ir-qa-limit" id="ir-qa-limit" style="display:none;">
+    IR問い合わせは最大 {{ ir_qa_max }} 件です。追加するには不要な回答を削除してください。
+  </p>
+
+  {# 編集フォーム。追加・更新で共用し、更新時のみ #ir-qa-entry-id に id が入る #}
+  <form id="ir-qa-form" class="ir-qa-form" onsubmit="return false;">
+    <input type="hidden" id="ir-qa-entry-id" value="">
+    <div class="ir-qa-form-row">
+      <label for="ir-qa-answered-at">回答日</label>
+      <input type="text" id="ir-qa-answered-at" placeholder="YYYY/MM/DD" value="{{ today_ymd }}">
+      <span class="ir-qa-form-mode" id="ir-qa-form-mode"></span>
+    </div>
+    <textarea id="ir-qa-input-body" rows="4" placeholder="IRからの回答内容を貼り付け"></textarea>
+    <div class="ir-qa-form-row">
+      <button type="button" class="outline" id="ir-qa-submit">追加</button>
+      <button type="button" class="outline" id="ir-qa-cancel" style="display:none;">キャンセル</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  (function () {
+    var section = document.getElementById('ir-qa-section');
+    var CODE = section.dataset.code;
+    var ENTRIES = JSON.parse(document.getElementById('ir-qa-data').textContent || '[]');
+
+    var sel      = document.getElementById('ir-qa-select');
+    var bodyBox  = document.getElementById('ir-qa-body');
+    var viewer   = document.getElementById('ir-qa-viewer');
+    var empty    = document.getElementById('ir-qa-empty');
+    var expand   = document.getElementById('ir-qa-expand');
+    var countEl  = section.querySelector('.ir-qa-count');
+    var idInput  = document.getElementById('ir-qa-entry-id');
+    var dateIn   = document.getElementById('ir-qa-answered-at');
+    var bodyIn   = document.getElementById('ir-qa-input-body');
+    var modeEl   = document.getElementById('ir-qa-form-mode');
+    var submitBt = document.getElementById('ir-qa-submit');
+    var cancelBt = document.getElementById('ir-qa-cancel');
+    var form     = document.getElementById('ir-qa-form');
+    var limitMsg = document.getElementById('ir-qa-limit');
+
+    // id をキーに引く (index はソート・切り詰めでずれるため使わない)
+    function findEntry(id) {
+      for (var i = 0; i < ENTRIES.length; i++) {
+        if (ENTRIES[i].id === id) return ENTRIES[i];
+      }
+      return null;
+    }
+
+    function showBody() {
+      var entry = findEntry(sel.value);
+      // body は保存時に sanitize_html 済みなので innerHTML で描画する
+      bodyBox.innerHTML = entry ? entry.body : '';
+      bodyBox.classList.remove('expanded');
+      expand.textContent = '▼ もっと見る';
+      // 折り返し後に高さが収まるなら「もっと見る」は出さない
+      expand.style.display = bodyBox.scrollHeight > bodyBox.clientHeight + 2 ? '' : 'none';
+    }
+
+    function render(keepId) {
+      sel.innerHTML = '';
+      ENTRIES.forEach(function (entry) {
+        var opt = document.createElement('option');
+        opt.value = entry.id;
+        opt.textContent = entry.answered_at || '(日付なし)';
+        sel.appendChild(opt);
+      });
+      countEl.textContent = '(' + ENTRIES.length + '/{{ ir_qa_max }}件)';
+      // 上限到達時は追加フォームを閉じる (サーバーは 409 で拒否する)。
+      // 長文を貼ってから弾かれると貼り直しになるので、入力前に知らせる。
+      updateLimitState();
+      if (!ENTRIES.length) {
+        viewer.style.display = 'none';
+        empty.style.display = '';
+        bodyBox.innerHTML = '';
+        return;
+      }
+      viewer.style.display = '';
+      empty.style.display = 'none';
+      if (keepId && findEntry(keepId)) sel.value = keepId;
+      showBody();
+    }
+
+    // 上限到達時は「追加」を止める。ただし編集中 (既存1件の上書き) は件数が
+    // 増えないので通常どおり操作できる。
+    function updateLimitState() {
+      var editing = !!idInput.value;
+      var full = ENTRIES.length >= {{ ir_qa_max }} && !editing;
+      form.style.display = full ? 'none' : '';
+      limitMsg.style.display = full ? '' : 'none';
+    }
+
+    function setMode(entry) {
+      if (entry) {
+        idInput.value = entry.id;
+        dateIn.value = entry.answered_at || '';
+        // 保存本文は memo と同じく生の改行 + インラインタグ (太字・リンク) 混在。
+        // 編集時はそのまま textarea に戻す (memo の rich-edit と同じ往復)。
+        bodyIn.value = entry.body;
+        modeEl.textContent = '編集中';
+        submitBt.textContent = '更新';
+        cancelBt.style.display = '';
+        updateLimitState();  // 編集開始時はフォームを開く (上限到達中でも編集は可)
+        bodyIn.focus();
+      } else {
+        idInput.value = '';
+        bodyIn.value = '';
+        modeEl.textContent = '';
+        submitBt.textContent = '追加';
+        cancelBt.style.display = 'none';
+        updateLimitState();  // 編集終了時、上限到達なら再び閉じる
+      }
+    }
+
+    function post(path, formData, keepId, selectAdded) {
+      var existingIds = selectAdded ? ENTRIES.map(function (entry) { return entry.id; }) : [];
+      fetch('/stock/' + encodeURIComponent(CODE) + path, {
+        method: 'POST',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        body: formData,
+      }).then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok || !j.ok) {
+            alert('失敗: ' + (j.error || r.status));
+            return;
+          }
+          ENTRIES = j.entries;
+          if (selectAdded) {
+            var added = ENTRIES.find(function (entry) {
+              return existingIds.indexOf(entry.id) === -1;
+            });
+            keepId = added ? added.id : null;
+          }
+          setMode(null);
+          render(keepId);
+        });
+      }).catch(function (err) {
+        alert('通信エラー: ' + err);
+      });
+    }
+
+    sel.addEventListener('change', showBody);
+
+    expand.addEventListener('click', function () {
+      var on = bodyBox.classList.toggle('expanded');
+      expand.textContent = on ? '▲ 折りたたむ' : '▼ もっと見る';
+    });
+
+    document.getElementById('ir-qa-edit').addEventListener('click', function () {
+      var entry = findEntry(sel.value);
+      if (entry) setMode(entry);
+    });
+
+    document.getElementById('ir-qa-delete').addEventListener('click', function () {
+      var entry = findEntry(sel.value);
+      if (!entry) return;
+      if (!window.confirm('削除しますか?\n' + (entry.answered_at || ''))) return;
+      post('/ir_qa/' + encodeURIComponent(entry.id) + '/delete', new FormData(), null);
+    });
+
+    cancelBt.addEventListener('click', function () { setMode(null); });
+
+    submitBt.addEventListener('click', function () {
+      var fd = new FormData();
+      fd.append('answered_at', dateIn.value);
+      fd.append('body', bodyIn.value);
+      var editId = idInput.value;
+      if (editId) {
+        post('/ir_qa/' + encodeURIComponent(editId), fd, editId);
+      } else {
+        post('/ir_qa', fd, null, true);
+      }
+    });
+
+    render(null);
+  })();
+</script>
 
 {# ===== 7. 決算コメント履歴 (閲覧のみ、降順) ===== #}
 {# 編集は /market ページで行う。ここでは /market で登録・自動算出された内容を時系列で確認する。 #}
@@ -643,8 +1047,118 @@
 </div>
 {% endif %}
 
+{# ===== IR資料モーダル (issue #473) ===== #}
+{% macro ir_doc_cell(doc) %}
+<div class="ir-doc">
+  <span class="ir-doc-date">{% if doc.get('date_estimated') %}~{% endif %}{{ doc.date[2:4] }}/{{ doc.date[4:6] }}/{{ doc.date[6:] }}</span>
+  <span class="ir-doc-heading" title="{{ doc.heading }}">{{ doc.heading|truncate(34, true, '…') }}</span>
+  {% if doc.get('source') == 'corporate_ir_page' %}<span class="ir-doc-tag">HP取得</span>{% endif %}
+  {% if doc.get('superseded_by') %}<span class="ir-doc-tag" title="後から一部訂正の通知が出ています。本体はこの資料です">訂正あり</span>{% endif %}
+  {% if doc.get('text_quality') != 'ok' %}<span title="テキスト抽出の品質: {{ doc.get('text_quality') }} (画像主体・文字化けなど。PDFで確認してください)">⚠</span>{% endif %}
+  <a href="{{ url_for('ir_docs.get_ir_doc_pdf', code_s=record.code_s, doc_id=doc.doc_id) }}" target="_blank" rel="noopener">[PDF]</a>
+  {% if doc.get('url') %}<a href="{{ doc.url }}" target="_blank" rel="noopener noreferrer">[原本]</a>{% endif %}
+</div>
+{% endmacro %}
+{% macro ir_doc_list(docs) %}{% for doc in docs %}{{ ir_doc_cell(doc) }}{% endfor %}{% endmacro %}
+<div id="ir-docs-modal" class="ir-docs-overlay" style="display:none;" onclick="if (event.target.id === 'ir-docs-modal') closeIrDocsModal()">
+  <div class="ir-docs-content" role="dialog" aria-labelledby="ir-docs-title">
+    <div class="ir-docs-header">
+      <strong id="ir-docs-title">IR資料 {{ record.code_s }} {{ macros.stock_name_with_prev(record) }}</strong>
+      <span>
+        <span style="font-size:0.8em;color:#888;">最終収集 {{ ir_docs.last_collected_at[5:16]|replace('T', ' ') if ir_docs.last_collected_at else '未収集' }}</span>
+        <form method="POST" action="{{ url_for('ir_docs.post_ir_docs_tdnet', code_s=record.code_s) }}" style="display:inline;"
+              onsubmit="var b = this.querySelector('button'); b.disabled = true; b.textContent = '取得中… (初回は数分)';">
+          <button type="submit" title="株探 (適時開示) から直近1年の決算短信・決算説明資料・成長可能性資料を収集します。取得済みはスキップします"
+                  style="display:inline-block;width:auto !important;padding:0.1em 0.6em;font-size:0.8em;margin:0 0 0 0.3em;">株探から更新</button>
+        </form>
+        <button type="button" class="ir-docs-close" onclick="closeIrDocsModal()" aria-label="閉じる">×</button>
+      </span>
+    </div>
+    {% if ir_docs.chuki %}
+    <h4 class="ir-docs-h">中計</h4>
+    {{ ir_doc_list(ir_docs.chuki) }}
+    {% endif %}
+    <h4 class="ir-docs-h">決算</h4>
+    {% if ir_docs.periods or ir_docs.unknown %}
+    <table class="ir-docs-table">
+      <tr><th>期</th><th>決算短信</th><th>決算説明資料</th></tr>
+      {% for row in ir_docs.periods %}
+      <tr>
+        <td style="white-space:nowrap;">{{ row.fiscal_period[2:]|replace('年', '/')|replace('月期', '期') }} {{ row.quarter }}</td>
+        <td>{{ ir_doc_list(row.tanshin) }}</td>
+        <td>{{ ir_doc_list(row.setsumei) }}</td>
+      </tr>
+      {% endfor %}
+      {% if ir_docs.unknown %}
+      <tr>
+        <td style="white-space:nowrap;" title="見出しから会計期間を読み取れなかった資料">期不明</td>
+        <td>{{ ir_doc_list(ir_docs.unknown|selectattr('doc_type', 'equalto', 'tanshin')|list) }}</td>
+        <td>{{ ir_doc_list(ir_docs.unknown|selectattr('doc_type', 'equalto', 'setsumei')|list) }}</td>
+      </tr>
+      {% endif %}
+    </table>
+    {% else %}
+    <p style="font-size:0.85em;color:#888;">取得済みの決算資料はありません。「株探から更新」で収集できます。</p>
+    {% endif %}
+    <details id="ir-hp-section" style="margin-top:0.8em;"{% if ir_setsumei_hp_only is not none %} open{% endif %}>
+      <summary>会社HPから探す (中計・株探に無い説明資料)</summary>
+      {% if ir_setsumei_hp_only is not none %}
+      <div style="font-size:0.85em;margin:0.3em 0;padding:0.4em;border:1px solid #e0b060;border-radius:4px;background:#fff8ec;">
+        <strong>株探に説明資料なし</strong> (取得済み最新: {{ ir_setsumei_hp_only[2:4] ~ '/' ~ ir_setsumei_hp_only[4:6]|int ~ '/' ~ ir_setsumei_hp_only[6:]|int if ir_setsumei_hp_only else 'なし' }})。
+        候補に出なければ{% if _display_url %}<a href="{{ _display_url }}" target="_blank" rel="noopener noreferrer">会社HP</a>{% else %}会社HP{% endif %}で PDF を開き、URL を下に貼って取得
+      </div>
+      {% endif %}
+      <button type="button" id="ir-page-btn" data-code="{{ record.code_s }}" onclick="loadIrPageCandidates(this)"
+              title="会社HP (上書き優先) から中期経営計画・決算説明資料のPDFを探します"
+              style="display:inline-block;width:auto !important;padding:0.1em 0.6em;font-size:0.85em;margin:0.3em 0 0 0;">候補を探す</button>
+      <span id="ir-cand-msg" style="font-size:0.85em;color:#888;margin-left:0.3em;"></span>
+      <form method="POST" action="/stock/{{ record.code_s }}/ir_page_docs" id="ir-page-form"
+            style="display:{{ 'block' if ir_setsumei_hp_only is not none else 'none' }};font-size:0.95em;margin:0.3em 0;padding:0.4em;border:1px solid #ddd;border-radius:4px;">
+        <div id="ir-page-list"></div>
+        <div style="margin-top:0.3em;">
+          PDF URL を直接指定:
+          <input type="text" name="manual_url" placeholder="https://..." style="width:22em;height:auto;display:inline-block;margin:0;padding:0.1em 0.3em;font-size:1em;">
+          <select name="manual_doc_type" style="width:auto;display:inline-block;margin:0;padding:0.1em;font-size:1em;">
+            <option value="chuki_plan">中計</option><option value="setsumei"{% if ir_setsumei_hp_only is not none %} selected{% endif %}>説明資料</option>
+          </select>
+          <input type="text" name="manual_heading" placeholder="見出し (任意)" style="width:12em;height:auto;display:inline-block;margin:0;padding:0.1em 0.3em;font-size:1em;">
+        </div>
+        <button type="submit" style="display:inline-block;width:auto !important;padding:0.1em 0.8em;font-size:0.9em;margin:0.3em 0 0 0;">取得</button>
+      </form>
+    </details>
+  </div>
+</div>
+<style>
+.ir-docs-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 1000;
+  display: flex; align-items: center; justify-content: center; }
+.ir-docs-content { background: #fff; border-radius: 6px; padding: 1em 1.2em; width: min(820px, 95vw);
+  max-height: 90vh; overflow-y: auto; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); font-size: 0.9em; }
+.ir-docs-header { display: flex; justify-content: space-between; align-items: center; gap: 0.5em;
+  margin-bottom: 0.5em; padding-bottom: 0.4em; border-bottom: 1px solid #eee; }
+.ir-docs-close { background: none; border: none; font-size: 1.4em; cursor: pointer; padding: 0 0.3em;
+  line-height: 1; color: #888; width: auto !important; margin: 0; }
+.ir-docs-h { margin: 0.6em 0 0.2em; font-size: 1em; }
+.ir-docs-table { width: 100%; border-collapse: collapse; }
+.ir-docs-table th, .ir-docs-table td { border-bottom: 1px solid #eee; padding: 0.2em 0.3em; vertical-align: top; text-align: left; }
+.ir-doc { line-height: 1.5; }
+.ir-doc-date { color: #666; font-variant-numeric: tabular-nums; }
+.ir-doc-tag { font-size: 0.8em; color: #b36b00; border: 1px solid #e0b060; border-radius: 3px; padding: 0 0.2em; }
+</style>
+<script>
+function openIrDocsModal(showHpSection) {
+  document.getElementById('ir-docs-modal').style.display = 'flex';
+  if (showHpSection) document.getElementById('ir-hp-section').open = true;
+}
+function closeIrDocsModal() { document.getElementById('ir-docs-modal').style.display = 'none'; }
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeIrDocsModal();
+});
+// 取得系の POST は #ir-docs 付きで戻ってくるので、モーダルを開き直して結果を見せる
+if (location.hash === '#ir-docs') openIrDocsModal();
+</script>
+
 {# ===== 保有ステータス変更モーダル (issue #195) ===== #}
-{% if not portfolio_fallback_mode %}
+
 <div id="portfolio-modal" class="portfolio-modal-overlay" style="display:none;" onclick="closePortfolioModalOnOverlay(event)">
   <div class="portfolio-modal-content" role="dialog" aria-labelledby="portfolio-modal-title">
     <div class="portfolio-modal-header">
@@ -1115,5 +1629,5 @@ function excludeFromUniverse(codeS) {
   }
 })();
 </script>
-{% endif %}
+
 {% endblock %}
