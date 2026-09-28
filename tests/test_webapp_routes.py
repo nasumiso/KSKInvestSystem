@@ -2274,10 +2274,12 @@ class TestDevRoute:
         lines = body["log_tail"].splitlines()
         assert len(lines) == 200 and lines[0] == "line50" and lines[-1] == "line249"
 
+    # heads = (WebApp 起動時の HEAD, pull 後の HEAD)
     @pytest.mark.parametrize("env, running, heads, pull_rc, expected_code, expect_restart", [
         # 開発機では作業ブランチを pull しない
         (None, False, None, 0, 403, False),
         ("production", True, None, 0, 409, False),
+        # pull が空振りでも、別経路の pull で起動時からコードが変わっていれば再起動する
         ("production", False, ("a", "b"), 0, 200, True),
         ("production", False, ("a", "a"), 0, 200, False),
         ("production", False, ("a", "a"), 1, 500, False),
@@ -2290,7 +2292,9 @@ class TestDevRoute:
             monkeypatch.delenv("SHINTAKANE_ENV", raising=False)
         if running:
             dev._LOCK_FILE.write_text(f"{os.getpid()}\n")
-        rev = iter(heads or ())
+        startup, *rest = heads or (None,)
+        monkeypatch.setattr(dev, "_STARTUP_HEAD", startup)
+        rev = iter(rest)
         git_calls = []
 
         def fake_run(args, **kwargs):

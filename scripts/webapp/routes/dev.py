@@ -4,7 +4,7 @@
 GET  /dev              : 日次バッチの実行ボタン・状態・ログ末尾・PR/issue リンク
 POST /dev/cron/run     : shintakane_cron.sh を非同期起動
 GET  /dev/cron/status  : 実行状態 (logs/cron_status.json) とログ末尾を JSON で返す
-POST /dev/deploy       : 運用機で git pull --ff-only し、コードが変わったら WebApp を再起動する
+POST /dev/deploy       : 運用機で git pull --ff-only し、動作中のコードと HEAD が違えば WebApp を再起動する
 
 排他・状態マーカー・ログは shintakane_cron.sh 自身が持つ。launchd の定刻実行も
 同じマーカー/ログに載り、19時の kickstart で WebApp が再起動しても状態を失わない。
@@ -136,9 +136,14 @@ def _git(*args: str) -> subprocess.CompletedProcess:
     )
 
 
+# WebApp が動かしているコードの版。SSH 等の別経路で pull 済みだと pull 前後の HEAD は
+# 変わらないため、再起動の要否は起動時の HEAD と比べて決める
+_STARTUP_HEAD = _git("rev-parse", "HEAD").stdout.strip()
+
+
 @dev_bp.route("/dev/deploy", methods=["POST"])
 def deploy():
-    """main の最新コードを取り込み、変わっていれば WebApp を再起動する。
+    """main の最新コードを取り込み、動作中のコードより新しければ WebApp を再起動する。
 
     日次バッチ冒頭の自動 pull (shintakane_cron.sh) を待たずに反映するためのもの。
     開発機の作業ブランチを pull しないよう、運用機 (run_webapp.sh が production を設定) でだけ動かす。
@@ -150,7 +155,6 @@ def deploy():
     if _is_running():
         return jsonify({"status": "cron_running"}), 409
 
-    before = _git("rev-parse", "HEAD").stdout.strip()
     try:
         pull = _git("pull", "--ff-only")
     except subprocess.TimeoutExpired:
@@ -161,7 +165,7 @@ def deploy():
         return jsonify({"status": "failed", "output": output}), 500
 
     after = _git("rev-parse", "HEAD").stdout.strip()
-    if after == before:
+    if after == _STARTUP_HEAD:
         return jsonify({"status": "up_to_date", "output": output, "restarting": False})
 
     # kickstart -k は自プロセスを落とすので、応答を返し終えてから別セッションで実行する
@@ -169,5 +173,5 @@ def deploy():
         ["bash", "-c", f'sleep 1; launchctl kickstart -k "gui/$(id -u)/{_WEBAPP_LABEL}"'],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
     )
-    log_print(f"[dev] git pull {before[:7]} -> {after[:7]}、WebApp を再起動します")
+    log_print(f"[dev] 動作中 {_STARTUP_HEAD[:7]} -> HEAD {after[:7]}、WebApp を再起動します")
     return jsonify({"status": "updated", "output": output, "restarting": True})
