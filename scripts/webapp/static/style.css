@@ -276,6 +276,17 @@ nav .nav-link {
 nav .nav-link:hover {
   background: #ecf0f1;
 }
+/* 日次バッチ失敗の印 (ナビ「開発」) */
+nav .nav-alert {
+  display: inline-block;
+  margin-left: 0.3em;
+  padding: 0 0.45em;
+  border-radius: 999px;
+  background: #c62828;
+  color: #fff;
+  font-size: 0.8em;
+  font-weight: bold;
+}
 nav .quick-search {
   display: flex;
   align-items: center;

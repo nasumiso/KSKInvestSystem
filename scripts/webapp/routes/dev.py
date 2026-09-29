@@ -117,16 +117,28 @@ def cron_run():
     return jsonify({"status": "started", "pid": proc.pid}), 202
 
 
-@dev_bp.route("/dev/cron/status", methods=["GET"])
-def cron_status():
-    """state は running / done / failed / interrupted (running のまま pid 消滅) / none。"""
-    marker = _read_marker() or {"state": "none"}
+def _current_state(marker: Dict[str, Any]) -> str:
+    """running / done / failed / interrupted (running のまま pid 消滅) / none。"""
     if _is_running():
         # ロック取得直後でマーカーがまだ前回分のこともあるので、ロックを優先する
-        marker = {**marker, "state": "running"}
-    elif marker.get("state") == "running":
-        marker = {**marker, "state": "interrupted"}
-    return jsonify({**marker, "log_tail": _log_tail()})
+        return "running"
+    if marker.get("state") == "running":
+        return "interrupted"
+    return marker.get("state", "none")
+
+
+@dev_bp.route("/dev/cron/status", methods=["GET"])
+def cron_status():
+    marker = _read_marker() or {"state": "none"}
+    return jsonify({**marker, "state": _current_state(marker), "log_tail": _log_tail()})
+
+
+@dev_bp.app_context_processor
+def _inject_cron_alert():
+    # 前回の日次バッチが失敗・中断していたら、全画面のナビ「開発」に印を出す。
+    # 次の日次バッチが成功してマーカーが書き換わるまで出続ける
+    marker = _read_marker()
+    return {"cron_alert": marker is not None and _current_state(marker) in ("failed", "interrupted")}
 
 
 def _git(*args: str) -> subprocess.CompletedProcess:

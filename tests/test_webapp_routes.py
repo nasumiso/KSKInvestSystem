@@ -2296,6 +2296,21 @@ class TestDevRoute:
         lines = body["log_tail"].splitlines()
         assert len(lines) == 200 and lines[0] == "line50" and lines[-1] == "line249"
 
+    @pytest.mark.parametrize("marker, lock_alive, expected", [
+        ({"state": "failed", "exit_code": 1}, False, True),
+        ({"state": "running"}, False, True),  # 中断
+        ({"state": "failed", "exit_code": 1}, True, False),  # 再実行中は前回の失敗を出さない
+        ({"state": "done", "exit_code": 0}, False, False),
+        (None, False, False),
+    ])
+    def test_nav_alert(self, client, dev, marker, lock_alive, expected):
+        if marker is not None:
+            dev._STATUS_JSON.write_text(json.dumps(marker))
+        if lock_alive:
+            dev._LOCK_FILE.write_text(f"{os.getpid()}\n")
+        html = client.get("/").get_data(as_text=True)
+        assert ('class="nav-alert"' in html) is expected
+
     # heads = (WebApp 起動時の HEAD, pull 後の HEAD)
     @pytest.mark.parametrize("env, running, heads, pull_rc, expected_code, expect_restart", [
         # 開発機では作業ブランチを pull しない
