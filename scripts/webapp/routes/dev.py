@@ -16,6 +16,7 @@ import os
 import subprocess
 import threading
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -84,7 +85,7 @@ def _log_tail() -> str:
 
 @dev_bp.route("/dev", methods=["GET"])
 def dev_page():
-    return render_template("dev.html", portal_links=PORTAL_LINKS)
+    return render_template("dev.html", portal_links=PORTAL_LINKS, version=_STARTUP_VERSION)
 
 
 @dev_bp.route("/dev/cron/run", methods=["POST"])
@@ -151,6 +152,11 @@ def _git(*args: str) -> subprocess.CompletedProcess:
 # WebApp が動かしているコードの版。SSH 等の別経路で pull 済みだと pull 前後の HEAD は
 # 変わらないため、再起動の要否は起動時の HEAD と比べて決める
 _STARTUP_HEAD = _git("rev-parse", "HEAD").stdout.strip()
+# /dev の「コード反映」に出す、動作中のコードの版と反映 (= WebApp 起動) 日時
+_STARTUP_VERSION = {
+    "commit": _git("log", "-1", "--format=%h %cd %s", "--date=format:%m/%d %H:%M").stdout.strip(),
+    "started_at": datetime.now().strftime("%m/%d %H:%M"),
+}
 
 
 @dev_bp.route("/dev/deploy", methods=["POST"])

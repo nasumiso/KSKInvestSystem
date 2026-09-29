@@ -13,6 +13,7 @@
 
 <h2>コード反映</h2>
 {# main にマージした変更を19時の自動 pull を待たずに取り込む (運用機のみ) #}
+<p style="font-size:0.85em;color:#666;margin:0 0 0.6em 0;">動作中: <code>{{ version.commit }}</code> (反映 {{ version.started_at }})</p>
 <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.6em 1em;">
   <button id="deploy-btn" type="button" class="secondary">最新コードを反映 (git pull + 再起動)</button>
   <span id="deploy-msg" style="font-size:0.85em;color:#666;"></span>

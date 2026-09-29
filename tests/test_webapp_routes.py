@@ -2241,6 +2241,7 @@ class TestDevRoute:
     def test_pages_and_portal_link(self, client, dev):
         html = client.get("/dev").get_data(as_text=True)
         assert 'id="cron-run-btn"' in html
+        assert dev._STARTUP_VERSION["commit"] in html
         assert "KSKInvestSystem/pulls" in html
         top = client.get("/").get_data(as_text=True)
         assert 'href="/dev"' in top
