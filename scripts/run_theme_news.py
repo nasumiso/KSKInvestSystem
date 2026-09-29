@@ -10,6 +10,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -81,11 +82,15 @@ def _run_claude_skill() -> int:
         "--allowed-tools", "Read,Write,Edit,Bash,WebSearch,Glob,Grep",
         "--output-format", "json",  # 末尾に result/usage が含まれる JSON が出力される
     ]
+    # claude CLI は ~/.local/bin にあるが、WebApp の LaunchAgent は PATH に含めていない。
+    # /market ボタン経由でも見つかるよう、起動元によらずここで足す
+    env = {**os.environ, "PATH": f"{Path.home() / '.local/bin'}:{os.environ.get('PATH', '')}"}
     started = time.monotonic()
     try:
         result = subprocess.run(
             cmd,
             cwd=str(PROJECT_ROOT),
+            env=env,
             timeout=CLAUDE_TIMEOUT_SEC,
             check=False,
             capture_output=True,
