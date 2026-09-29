@@ -2,7 +2,7 @@
 name: theme-news
 description: テーマランク急上昇の理由を調査。テーマニュース、市場材料、テーマ急上昇の調査時に使用
 disable-model-invocation: true
-allowed-tools: Read, Grep, Glob, WebSearch, Write, Bash
+allowed-tools: Read, Grep, Glob, WebSearch, Write, Edit, Bash
 ---
 
 # テーマ急上昇ニュース調査

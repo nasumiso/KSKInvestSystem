@@ -77,8 +77,8 @@ def _run_claude_skill() -> int:
     log_print("[theme-news] claude -p '/theme-news' を起動")
     cmd = [
         "claude", "-p", "/theme-news",
-        "--model", "claude-sonnet-5",
-        "--allowed-tools", "Read,Write,Bash,WebSearch,Glob,Grep",
+        "--model", "claude-sonnet-5-5",
+        "--allowed-tools", "Read,Write,Edit,Bash,WebSearch,Glob,Grep",
         "--output-format", "json",  # 末尾に result/usage が含まれる JSON が出力される
     ]
     started = time.monotonic()
