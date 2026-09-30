@@ -5119,6 +5119,6 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200)
                       if f.get("trade_date")
                       and _monday_of(date.fromisoformat(f["trade_date"])) > latest)
     if unconfirmed:
-        parts.append('<div class="ep-chart-note">直近の約定 %d件は、週足が確定すると '
+        parts.append('<div class="ep-chart-note">直近の約定 %d件は、週足が確定すると'
                      '表示されます。</div>' % unconfirmed)
     return "".join(parts)
