@@ -8,7 +8,7 @@ POST /portfolio/bulk-exclude                     : 2準/3監 銘柄をユニバ�
 POST /portfolio/bulk-transition                  : ステータスを一括変更
 POST /portfolio/<code_s>/memo                    : memo 部分更新 (issue #175)
 POST /portfolio/csv-import/preview               : ポートフォリオCSV差分プレビュー (issue #397 Phase3)
-POST /portfolio/csv-import/quick                 : ~/Downloads から未取込CSVを自動発見してプレビュー
+POST /portfolio/csv-import/quick                 : ダウンロードフォルダ (MBA または ~/Downloads) から未取込CSVを自動発見してプレビュー
 POST /portfolio/csv-import/apply                 : ポートフォリオCSV反映
 
 portfolio_shelve のレコードに stocks_shelve から指標を補完して表示する。
@@ -530,7 +530,7 @@ def _render_csv_import_preview(token: str, tmp_dir: str, saved_paths: List[str])
 
 @portfolio_bp.route("/portfolio/csv-import/quick", methods=["POST"])
 def csv_import_quick():
-    """~/Downloads から未取込のポートフォリオCSVを自動発見して差分プレビューへ。
+    """ダウンロードフォルダから未取込のポートフォリオCSVを自動発見して差分プレビューへ。
 
     ファイル選択の手間を省くための主導線。見つけたCSVは一時ディレクトリへ
     コピーしてから扱う (apply は tmp_dir を再読込するため、元ファイルを直接
@@ -538,9 +538,14 @@ def csv_import_quick():
     rmtree がユーザーの Downloads を消してしまう)。
     """
 
-    found = csv_import.find_unimported_csvs()
+    try:
+        search_dir, place = csv_import.quick_import_source()
+    except csv_import.QuickImportSourceError as e:
+        flash(f"MBA のダウンロードフォルダに接続できませんでした (MBA のスリープ・リモートログインを確認): {e}", "error")
+        return redirect(url_for("portfolio.dashboard"))
+    found = csv_import.find_unimported_csvs(search_dir)
     if not found:
-        flash("~/Downloads に未取込のポートフォリオCSVは見つかりませんでした。", "info")
+        flash(f"{place} に未取込のポートフォリオCSVは見つかりませんでした。", "info")
         return redirect(url_for("portfolio.dashboard"))
 
     os.makedirs(PORTFOLIO_CSV_IMPORT_TMP_DIR, exist_ok=True)

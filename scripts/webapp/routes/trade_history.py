@@ -2,7 +2,7 @@
 
 GET  /trade-history                          : 売買履歴/アクションログの2タブ表示
 POST /trade-history/import                    : 楽天/SBI CSV をアップロード取込 (issue #387 4a)
-POST /trade-history/import/quick              : ~/Downloads の未取込CSVを自動取込
+POST /trade-history/import/quick              : ダウンロードフォルダ (MBA または ~/Downloads) の未取込CSVを自動取込
 POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
      seq は売却ログまたは1保遷移ログの seq。どちらも review_memo に保存可能。
 """
@@ -27,6 +27,7 @@ from flask import (
 )
 
 import import_monex_fills as monex
+import import_portfolio_csv as csv_import
 import import_rakuten_fills as rakuten
 import import_sbi_fills as sbi
 import portfolio_shelve as ps
@@ -409,9 +410,14 @@ def import_trade_csv_quick():
     残高CSVと違い、約定履歴CSVは同一証券会社の複数期間ファイルを取り込める。
     そのためファイル名や更新日時ではなく、保存済み原本と内容を照合する。
     """
-    found = _find_unimported_trade_csvs(TRADE_HISTORY_DOWNLOADS_DIR)
+    try:
+        search_dir, place = csv_import.quick_import_source(TRADE_HISTORY_DOWNLOADS_DIR)
+    except csv_import.QuickImportSourceError as e:
+        flash(f"MBA のダウンロードフォルダに接続できませんでした (MBA のスリープ・リモートログインを確認): {e}", "error")
+        return redirect(url_for("trade_history.trade_history"))
+    found = _find_unimported_trade_csvs(search_dir)
     if not found:
-        flash("~/Downloads に未取込の取引履歴CSVは見つかりませんでした。", "info")
+        flash(f"{place} に未取込の取引履歴CSVは見つかりませんでした。", "info")
         return redirect(url_for("trade_history.trade_history"))
 
     used_names = set()

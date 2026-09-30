@@ -294,7 +294,7 @@
       <div>
         <form method="post" action="{{ url_for('portfolio.csv_import_quick') }}">
           <button type="submit">クイック取り込み</button>
-          <span>~/Downloads から未取込のCSVを自動で探します</span>
+          <span>ダウンロードフォルダから未取込のCSVを自動で探します</span>
         </form>
         {# ファイルを選んだ時点で送信する (選択後にもう1クリックさせない) #}
         <form method="post" action="{{ url_for('portfolio.csv_import_preview') }}" enctype="multipart/form-data"

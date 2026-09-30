@@ -613,4 +613,4 @@ class TestImportTradeCsv:
         app, _ = env
         html = app.test_client().get("/trade-history").data.decode()
         assert 'action="/trade-history/import/quick"' in html
-        assert "~/Downloads から未取込のCSVを自動で探します" in html
+        assert "ダウンロードフォルダから未取込のCSVを自動で探します" in html
