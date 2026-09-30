@@ -10,6 +10,7 @@
 - LLM の失敗 (タイムアウト・異常終了・パース失敗) は空リストにフォールバックする。
 """
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -168,10 +169,13 @@ def _run_claude(prompt: str, timeout_sec: int) -> str:
         "--output-format",
         "json",
     ]
+    # claude CLI は ~/.local/bin にあるが、WebApp の LaunchAgent は PATH に含めていない
+    env = {**os.environ, "PATH": f"{Path.home() / '.local/bin'}:{os.environ.get('PATH', '')}"}
     try:
         result = subprocess.run(
             cmd,
             cwd=str(PROJECT_ROOT),
+            env=env,
             timeout=timeout_sec,
             check=False,
             capture_output=True,
