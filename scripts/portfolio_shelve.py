@@ -97,6 +97,11 @@ KEY_FILL_MEMO_PREFIX = "fill_memo:"
 # issue #419: エピソードに焼き付けた売買戦略。メモと同じエピソードキーで紐付けるが、
 # 値は戦略マスター登録済みのみ許可する (集計キーなので自由文字列にしない)。
 KEY_EPISODE_STRATEGY_PREFIX = "episode_strategy:"
+# issue #492: 銘柄・エピソードの戦略の変更履歴 (追記のみ)。銘柄ごとのリスト。
+# 入った時点の戦略 (source=entry) は、この履歴から「建てた日に有効だった値」を引く。
+KEY_STRATEGY_HISTORY_PREFIX = "strategy_history:"
+# 履歴の記録開始日 ({"started": "YYYY-MM-DD"})。entry を付ける対象の境界。
+KEY_STRATEGY_HISTORY_META = "strategy_history_meta"
 # issue #397: 証券会社ポートフォリオCSV 由来の保有残高スナップショット。
 # (broker, account, kind, code_s) 単位で最新のみ保持 (上書き、fill と違い履歴を持たない)。
 KEY_POSITION_PREFIX = "position:"
@@ -1368,8 +1373,97 @@ def get_episode_strategy(episode_key: str, *,
     return dict(value) if isinstance(value, dict) else None
 
 
+def _append_strategy_history(db: ShelveDB, code_s: str, entry: Dict[str, Any]) -> None:
+    """戦略の変更履歴を1件追記する (呼び出し側で _flock + ShelveDB を保持)。"""
+    key = f"{KEY_STRATEGY_HISTORY_PREFIX}{code_s}"
+    history = list(db.get(key) or [])
+    history.append(entry)
+    db[key] = history
+
+
+def _ensure_strategy_history_baseline(db: ShelveDB) -> None:
+    """履歴の記録開始時に、全銘柄の今の戦略を基準値 (source=baseline) として残す。
+
+    呼び出し側で _flock + ShelveDB を保持し、戦略の変更を書き込む**前**に呼ぶ。
+    基準値が無いと、開始後に一度も戦略を変えない銘柄や、開始直後に変えた銘柄の
+    変更前の値を「建てた日に有効だった値」として引けない。2回目以降は何もしない。
+    """
+    if KEY_STRATEGY_HISTORY_META in db:
+        return
+    today = datetime.now(JST).date().isoformat()
+    at = now_iso()
+    for key in [k for k in db.keys() if k.startswith(KEY_RECORD_PREFIX)]:
+        record = db[key]
+        if not isinstance(record, dict):
+            continue
+        idea = (record.get("memo") or {}).get("trade_idea") or ""
+        if not idea:
+            continue
+        _append_strategy_history(db, record.get("code_s") or key[len(KEY_RECORD_PREFIX):], {
+            "scope": "stock", "effective_date": today, "recorded_at": at,
+            "old": "", "new": idea, "source": "baseline", "reason": "",
+        })
+    db[KEY_STRATEGY_HISTORY_META] = {"started": today}
+    log_print("portfolio_shelve: 戦略の変更履歴を開始", today)
+
+
+def ensure_strategy_history_baseline(*, db_path: Optional[str] = None) -> str:
+    """履歴の基準値を確保し、記録開始日を返す。"""
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            _ensure_strategy_history_baseline(db)
+            return db[KEY_STRATEGY_HISTORY_META]["started"]
+
+
+def list_strategy_history(code_s: str, *, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """銘柄の戦略の変更履歴 (追記順)。"""
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        return [dict(h) for h in db.get(f"{KEY_STRATEGY_HISTORY_PREFIX}{normalize_code_s(code_s)}") or []]
+
+
+def _add_weekdays(day: str, n: int) -> str:
+    """day から n 平日後の日付 (祝日カレンダーは持たない方針なので平日で数える)。"""
+    d = date.fromisoformat(day)
+    while n > 0:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            n -= 1
+    return d.isoformat()
+
+
+def strategy_effective_at(history: List[Dict[str, Any]], open_date: str,
+                          *, window_weekdays: int = 5) -> Optional[str]:
+    """銘柄の戦略の履歴から、建てた日に有効だった戦略を返す (issue #492 5d)。
+
+    open_date 以前に有効になった最後の値。空 (買ってから「1保」にして戦略を
+    付けた) なら、open_date の後 window_weekdays 平日以内に最初に付いた値。
+    それより後に付いた値は入った時点の意図とみなさず None を返す。
+    基準値は記録開始時点の既存の値なので、有効日にかかわらず最初に並べる
+    (開始後に過去日付で記録した変更より後ろに来ると、変更前の値に巻き戻る)。
+    """
+    def order(h: Dict[str, Any]) -> tuple:
+        eff = "" if h.get("source") == "baseline" else h.get("effective_date") or ""
+        return (eff, h.get("recorded_at") or "")
+
+    stock = sorted((h for h in history if h.get("scope") == "stock"), key=order)
+    value = ""
+    for h in stock:
+        if order(h)[0] <= open_date:
+            value = h.get("new") or ""
+    if value:
+        return value
+    limit = _add_weekdays(open_date, window_weekdays)
+    for h in stock:
+        if open_date < order(h)[0] <= limit and h.get("new"):
+            return h["new"]
+    return None
+
+
 def set_episode_strategy(episode_key: str, trade_idea: str, *,
                          source: str = "manual",
+                         reason: str = "",
                          fingerprint: Optional[str] = None,
                          hold_days: Optional[int] = None,
                          db_path: Optional[str] = None) -> None:
@@ -1393,25 +1487,40 @@ def set_episode_strategy(episode_key: str, trade_idea: str, *,
     """
     if not isinstance(trade_idea, str):
         raise TypeError(f"trade_idea must be str, got {type(trade_idea).__name__}")
-    if source not in ("seed", "manual"):
-        raise ValueError(f"source {source!r} は無効です (許容値: ['seed', 'manual'])")
+    if source not in ("seed", "manual", "entry"):
+        raise ValueError(
+            f"source {source!r} は無効です (許容値: ['seed', 'manual', 'entry'])")
     path = _resolve_db_path(db_path)
     storage_key = _episode_strategy_storage_key(episode_key)
     normalized = trade_idea.strip()
+
+    def log_change(db: ShelveDB, old: str) -> None:
+        # issue #492: 値が変わるときだけ残す (seal が同じ値で指紋を焼く呼び出しは除く)。
+        # 有効日は付けた日。入った時点の意図は銘柄の戦略の履歴から引く (5d)
+        if old == normalized:
+            return
+        _append_strategy_history(db, episode_key.split("|")[0], {
+            "scope": "episode", "episode_key": episode_key,
+            "effective_date": datetime.now(JST).date().isoformat(), "recorded_at": now_iso(),
+            "old": old, "new": normalized, "source": source, "reason": reason,
+        })
+
     with _flock(db_path):
         with ShelveDB(path) as db:
+            current = db.get(storage_key)
+            current_idea = current.get("trade_idea") if isinstance(current, dict) else None
             if normalized == "":
                 if storage_key in db:
                     del db[storage_key]
+                    log_change(db, current_idea or "")
                     log_print("portfolio_shelve: episode_strategy 削除", episode_key)
                 return
-            current = db.get(storage_key)
-            current_idea = current.get("trade_idea") if isinstance(current, dict) else None
             if normalized != current_idea and not _trade_idea_exists(db, normalized):
                 raise ValueError(
                     f"portfolio_shelve: trade_idea {normalized!r} はマスター未登録のため"
                     f"新規付与できません"
                 )
+            log_change(db, current_idea or "")
             db[storage_key] = {
                 "episode_key": episode_key,
                 "trade_idea": normalized,
@@ -3133,6 +3242,9 @@ def update_trade_idea(
                 affected_episodes = _rewrite_trade_idea_in_episodes(
                     db, normalized, new_normalized
                 )
+                # 履歴の旧名も追従させる。残すと「建てた日に有効だった値」が
+                # マスター未登録の旧名になり、入った時点の戦略を付けられない (issue #492)
+                _rename_trade_idea_in_history(db, normalized, new_normalized)
             else:
                 db[old_key] = current
                 affected_codes = []
@@ -3267,6 +3379,9 @@ def _rewrite_trade_idea_in_records(
     呼び出し側で _flock + ShelveDB セッションを保持していること前提。
     """
     affected: List[str] = []
+    if new_name is None:
+        # 削除は銘柄の戦略の変更 (出口ルールが外れる) なので履歴に残す (issue #492)
+        _ensure_strategy_history_baseline(db)
     record_keys = [k for k in db.keys() if k.startswith(KEY_RECORD_PREFIX)]
     for key in record_keys:
         record = db[key]
@@ -3281,8 +3396,27 @@ def _rewrite_trade_idea_in_records(
         new_record["memo"] = new_memo
         new_record["updated_at"] = now_iso()
         db[key] = new_record
-        affected.append(record.get("code_s") or key[len(KEY_RECORD_PREFIX):])
+        code_s = record.get("code_s") or key[len(KEY_RECORD_PREFIX):]
+        affected.append(code_s)
+        if new_name is None:
+            _append_strategy_history(db, code_s, {
+                "scope": "stock", "effective_date": datetime.now(JST).date().isoformat(),
+                "recorded_at": now_iso(), "old": old_name, "new": "",
+                "source": "master_delete", "reason": "戦略マスターから削除",
+            })
     return affected
+
+
+def _rename_trade_idea_in_history(db: ShelveDB, old_name: str, new_name: str) -> None:
+    """戦略の変更履歴の中の旧名を新名に書き換える (改名時、呼び出し側で _flock 保持)。"""
+    for key in [k for k in db.keys() if k.startswith(KEY_STRATEGY_HISTORY_PREFIX)]:
+        history = db[key]
+        if not any(old_name in (h.get("old"), h.get("new")) for h in history):
+            continue
+        db[key] = [
+            {**h, **{f: new_name for f in ("old", "new") if h.get(f) == old_name}}
+            for h in history
+        ]
 
 
 def _rewrite_trade_idea_in_episodes(
@@ -3315,6 +3449,13 @@ def _rewrite_trade_idea_in_episodes(
             continue
         if new_name is None:
             del db[key]
+            episode_key = record.get("episode_key") or key[len(KEY_EPISODE_STRATEGY_PREFIX):]
+            _append_strategy_history(db, episode_key.split("|")[0], {
+                "scope": "episode", "episode_key": episode_key,
+                "effective_date": datetime.now(JST).date().isoformat(), "recorded_at": now_iso(),
+                "old": old_name, "new": "", "source": "master_delete",
+                "reason": "戦略マスターから削除",
+            })
         else:
             new_record = dict(record)
             new_record["trade_idea"] = new_name
@@ -3328,9 +3469,16 @@ def update_memo(
     code_s: str,
     fields: Dict[str, Any],
     *,
+    effective_date: Optional[str] = None,
+    source: str = "manual",
+    reason: str = "",
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """既存レコードの memo フィールドを部分更新する。
+
+    trade_idea が変わるときは、同じトランザクションで戦略の変更履歴を1件追記する
+    (issue #492)。effective_date はその戦略が有効になった日 (CSV 取込なら基準日、
+    画面なら操作画面の日付)。省略時は今日。source / reason は履歴にだけ残る。
 
     部分更新セマンティクス:
     - fields に含まれるキーのみ更新する。fields に存在しないキーは現行値を保持
@@ -3455,6 +3603,21 @@ def update_memo(
                     normalized,
                 )
                 return record
+            old_idea = current_memo.get("trade_idea", "") or ""
+            new_idea = normalized_fields.get("trade_idea", old_idea)
+            if new_idea != old_idea:
+                # issue #492: 戦略の変更は出口ルールを変えるので、有効日つきで残す。
+                # 基準値は変更を書き込む前に作る (変更前の値を基準値として残すため)
+                _ensure_strategy_history_baseline(db)
+                _append_strategy_history(db, normalized, {
+                    "scope": "stock",
+                    "effective_date": effective_date or datetime.now(JST).date().isoformat(),
+                    "recorded_at": now_iso(),
+                    "old": old_idea,
+                    "new": new_idea,
+                    "source": source,
+                    "reason": reason,
+                })
             record["memo"] = {**current_memo, **normalized_fields}
             record["updated_at"] = now_iso()
             db[key] = record

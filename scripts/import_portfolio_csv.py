@@ -938,7 +938,8 @@ def _sync_records(
                 if has_trade_idea_override else existing_trade_idea
             )
             if has_trade_idea_override and chosen_trade_idea != existing_trade_idea:
-                ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, db_path=db_path)
+                ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, effective_date=as_of,
+                               source="csv_import", reason="CSV取込の確認画面で選択", db_path=db_path)
             if chosen_trade_idea:
                 # 戦略あり: webapp/routes/portfolio.py:520-537 と同じ順序で自動IN (issue #397 §6-2)
                 # 確認画面で戦略が変更されていれば先に記録し直す (§ Phase3b)
@@ -981,7 +982,8 @@ def _sync_records(
             if chosen_trade_idea:
                 # update_memo は必須。transition_status は戦略を保存しないため、
                 # 省くと「1保だが戦略未設定」のレコードができる
-                ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, db_path=db_path)
+                ps.update_memo(code_s, {"trade_idea": chosen_trade_idea}, effective_date=as_of,
+                               source="csv_import", reason="CSV取込の確認画面で選択", db_path=db_path)
                 in_reason = "CSV取込による新規保有検出"
                 if note:
                     in_reason = f"{in_reason} / {note}"
@@ -1005,7 +1007,9 @@ def _sync_records(
                 # 「戦略を選ばなかった」という今回の意思を次回以降も保つために消す
                 revived = ps.get_record(code_s, db_path=db_path)
                 if (revived.get("memo") or {}).get("trade_idea"):
-                    ps.update_memo(code_s, {"trade_idea": ""}, db_path=db_path)
+                    ps.update_memo(code_s, {"trade_idea": ""}, effective_date=as_of,
+                                   source="csv_import", reason="CSV取込で戦略を選ばなかった",
+                                   db_path=db_path)
                 # 復活したレコードは除外前のステータスを保つので 3監 とは限らない。
                 # 2準 を 3監 に落とすと人が付けた「買う準備ができている」宣言を
                 # 壊すため、遷移させず実際のステータスをそのまま報告する

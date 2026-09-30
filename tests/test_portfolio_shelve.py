@@ -1530,6 +1530,62 @@ class TestEpisodeStrategy:
                 != ps.episode_fingerprint([{"seq": 2}, {"seq": 3}]))
 
 
+class TestStrategyHistory:
+    """戦略の変更履歴 (issue #492)。"""
+
+    @pytest.fixture
+    def seeded_db(self, db_path):
+        ps.seed_trade_ideas(db_path=db_path)
+        for code_s in ("7001", "7002"):
+            ps.add_to_watch(code_s, db_path=db_path)
+        ps.update_memo("7002", {"trade_idea": "GARP"}, db_path=db_path)
+        # 上の変更で基準値ができる。7002 は「履歴開始前から GARP」の状態にする
+        with ps.ShelveDB(ps._resolve_db_path(db_path)) as db:
+            db[ps.KEY_STRATEGY_HISTORY_PREFIX + "7002"] = []
+            del db[ps.KEY_STRATEGY_HISTORY_META]
+        return db_path
+
+    def test_update_memo_logs_change_after_baseline(self, seeded_db):
+        """最初の変更の前に基準値を作り、変更は有効日つきで1件残す。同じ値なら残さない。"""
+        ps.update_memo("7002", {"trade_idea": "中期モメンタム"}, effective_date="2026-03-02",
+                       source="csv_import", reason="r", db_path=seeded_db)
+        ps.update_memo("7002", {"trade_idea": "中期モメンタム"}, db_path=seeded_db)
+        ps.update_memo("7002", {"gyoutai_theme": "AI"}, db_path=seeded_db)
+        history = ps.list_strategy_history("7002", db_path=seeded_db)
+        assert [(h["source"], h["old"], h["new"]) for h in history] == [
+            ("baseline", "", "GARP"), ("csv_import", "GARP", "中期モメンタム")]
+        assert history[1]["effective_date"] == "2026-03-02"
+
+    @pytest.mark.parametrize("open_date,expected", [
+        ("2026-03-05", "GARP"),          # 建てた日に有効な値
+        ("2026-03-20", "中期モメンタム"),  # 変更が有効になった日以降
+        ("2026-02-02", "短期イベント"),    # 建てた日に値が無い → 5平日以内に最初に付いた値
+        ("2026-01-29", None),            # 6平日目に付いた値は入った時点の意図にしない
+    ])
+    def test_strategy_effective_at(self, open_date, expected):
+        history = [
+            {"scope": "stock", "effective_date": "2026-02-06", "recorded_at": "1",
+             "new": "短期イベント", "source": "manual"},
+            {"scope": "stock", "effective_date": "2026-03-01", "recorded_at": "2",
+             "new": "GARP", "source": "manual"},
+            {"scope": "stock", "effective_date": "2026-03-20", "recorded_at": "3",
+             "new": "中期モメンタム", "source": "manual"},
+            {"scope": "episode", "effective_date": "2026-01-01", "recorded_at": "0",
+             "new": "夢枠", "source": "manual"},  # エピソードの変更は引き当てに使わない
+        ]
+        # 基準値は有効日に関係なく先頭 (開始後に過去日付で記録した変更に負けない)
+        baseline = {"scope": "stock", "effective_date": "2026-12-31", "recorded_at": "9",
+                    "new": "", "source": "baseline"}
+        assert ps.strategy_effective_at([baseline] + history, open_date) == expected
+
+    def test_master_rename_rewrites_history(self, seeded_db):
+        """改名で履歴の旧名も追従する (旧名のままだと入った時点の戦略を付けられない)。"""
+        ps.update_memo("7001", {"trade_idea": "GARP"}, db_path=seeded_db)
+        ps.update_trade_idea("GARP", new_name="GARP改", db_path=seeded_db)
+        history = ps.list_strategy_history("7001", db_path=seeded_db)
+        assert [h["new"] for h in history] == ["GARP改"]
+
+
 class TestPositionLayer:
     """position/position_source レイヤーのテスト (issue #397 Phase1)。
 

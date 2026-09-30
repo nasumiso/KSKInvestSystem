@@ -794,7 +794,8 @@ def transition(code_s: str):
             ps.seed_trade_ideas()
             # 戦略を先に保存 → 成功後に遷移。この順序なら戦略保存失敗時は元ステータスのままで
             # 「1保かつ未分類」の中間状態が生まれない。マスター未登録値は update_memo が ValueError で弾く。
-            ps.update_memo(code_s, {"trade_idea": trade_idea})
+            ps.update_memo(code_s, {"trade_idea": trade_idea}, effective_date=action_date,
+                           reason=reason)
         ps.transition_status(code_s, new_status, reason=reason, action_date=action_date, qty=qty if new_status == "1保" else None)
         # issue #269: 1保 のときだけ qty を反映する (他ステータスでは無視)
         # log_action=False は「非1保 → 1保」の遷移時のみ（IN株数は遷移ログに記録済み）
@@ -1064,7 +1065,7 @@ def set_status():
                 flash("保有に変更するには売買戦略を選択してください", "error")
                 return _redirect_with_return_query()
             ps.seed_trade_ideas()
-            ps.update_memo(normalized, {"trade_idea": trade_idea})
+            ps.update_memo(normalized, {"trade_idea": trade_idea}, reason=reason)
         ps.transition_status(normalized, new_status, reason=reason, qty=qty)
         if new_status == "1保" and qty is not None:
             ps.update_qty(normalized, qty, reason=reason, log_action=old_status == "1保")

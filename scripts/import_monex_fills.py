@@ -306,6 +306,7 @@ def import_csv_to_fills(
     if not dry_run and stats["imported"]:
         from webapp import trade_episodes
 
+        trade_episodes.assign_entry_strategies(db_path=db_path)
         trade_episodes.seal_episode_fingerprints(db_path=db_path)
     return stats
 

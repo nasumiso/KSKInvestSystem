@@ -910,6 +910,42 @@ def count_orphan_strategies(episodes: List[Dict[str, Any]],
     return sum(1 for key in strategies if key not in live_keys)
 
 
+def assign_entry_strategies(db_path: Optional[str] = None) -> int:
+    """入った時点の戦略を、銘柄の戦略の変更履歴から写す (issue #492 5d)。
+
+    戦略の無いエピソードのうち、履歴の記録開始日以降に建てたものに、建てた日に
+    有効だった銘柄の戦略を source=entry で付ける。取込時点の今の値を写さないのは、
+    約定から取込までに戦略を変えると、変えた後の値が入ってしまうため。
+    開始日より前のエピソードと期首持越し (建てた日が分からない) は触らない。
+    fill 取込直後、seal_episode_fingerprints の前に呼ぶ。冪等。
+
+    戻り値: 付けたエピソード数
+    """
+    import portfolio_shelve as ps  # 遅延 import (循環回避)
+
+    started = ps.ensure_strategy_history_baseline(db_path=db_path)
+    strategies = ps.list_episode_strategies(db_path=db_path)
+    masters = {t["name"] for t in ps.list_trade_ideas(db_path=db_path)}
+    histories: Dict[str, List[Dict[str, Any]]] = {}
+    assigned = 0
+    for ep in build_fill_episodes(db_path=db_path):
+        if (ep["episode_key"] in strategies or ep.get("carry_over")
+                or ep["open_date"] < started):
+            continue
+        if ep["code_s"] not in histories:
+            histories[ep["code_s"]] = ps.list_strategy_history(ep["code_s"], db_path=db_path)
+        idea = ps.strategy_effective_at(histories[ep["code_s"]], ep["open_date"])
+        if idea not in masters:
+            continue  # 付いていない / 削除済みの戦略
+        ps.set_episode_strategy(ep["episode_key"], idea, source="entry", db_path=db_path)
+        assigned += 1
+    if assigned:
+        from ks_util import log_print
+
+        log_print("episode_strategy 入った時点の戦略を付与", f"{assigned}件")
+    return assigned
+
+
 def seal_episode_fingerprints(db_path: Optional[str] = None) -> Dict[str, int]:
     """クローズ確定したエピソードの指紋を焼き付ける (issue #419)。
 
@@ -943,7 +979,10 @@ def seal_episode_fingerprints(db_path: Optional[str] = None) -> Dict[str, int]:
         if record.get("source") == "seed" and not ps.is_hold_days_consistent(
             horizons.get(record["trade_idea"], ""), hold_days
         ):
-            ps.set_episode_strategy(ep["episode_key"], "", db_path=db_path)
+            # 時間軸で外すのは過去分の一括シードだけ。entry・manual は入った意図
+            # なので、早く切っても外さない (外すと中長期の成績が良く見える, issue #492)
+            ps.set_episode_strategy(ep["episode_key"], "", source="seed",
+                                    reason="保有日数が戦略の時間軸と矛盾", db_path=db_path)
             dropped += 1
             continue
         ps.set_episode_strategy(
