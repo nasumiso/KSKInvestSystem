@@ -154,6 +154,39 @@ def detect_source(rows: List[List[str]]) -> Optional[Tuple[str, str]]:
 # 運用前提のため、設定では変えられない (変えたくなったらこの定数を書き換える)。
 DOWNLOADS_DIR = os.path.expanduser("~/Downloads")
 
+
+class QuickImportSourceError(Exception):
+    """クイック取り込みの探索先 (MBA の Downloads) を取得できなかった。"""
+
+
+def quick_import_source(local_dir: str = DOWNLOADS_DIR) -> Tuple[str, str]:
+    """クイック取り込みの探索先ディレクトリと、画面に出す場所名を返す (issue #489)。
+
+    WebApp は運用機で動くが、CSV は MBA のブラウザでダウンロードされる。
+    KS_QUICK_IMPORT_REMOTE (例: user@host:Downloads/) があれば、押した時点で
+    SSH 越しに CSV だけをキャッシュへ写して、そこを探索先にする。未設定なら
+    従来どおり WebApp が動く機械の ~/Downloads を探す (開発機で動かすとき)。
+    -t で更新日時を保つ (SBI の保有CSVは mtime で未取込を判定するため)。
+    取得に失敗したら例外にする。空の結果にすると「未取込なし」と区別できない。
+    """
+    remote = os.environ.get("KS_QUICK_IMPORT_REMOTE")
+    if not remote:
+        return local_dir, "~/Downloads"
+    import subprocess
+    from ks_util import DATA_DIR
+
+    cache_dir = os.path.join(DATA_DIR, "quick_import_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    cmd = ["rsync", "-rt", "--delete", "--include=*.csv", "--exclude=*",
+           "-e", "ssh -o BatchMode=yes -o ConnectTimeout=5", remote, cache_dir + "/"]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)
+    except subprocess.CalledProcessError as e:
+        raise QuickImportSourceError((e.stderr or "").strip()[-200:]) from e
+    except subprocess.TimeoutExpired as e:
+        raise QuickImportSourceError("タイムアウトしました") from e
+    return cache_dir, "MBA のダウンロードフォルダ"
+
 # 楽天CSVのファイル名に埋まっている基準日時 (assetbalance(JP)_20260914_221044.csv)。
 _FILENAME_TS_RE = re.compile(r"_(\d{8})_(\d{6})")
 

@@ -767,3 +767,30 @@ class TestFindUnimportedCsvs:
         found = ic.find_unimported_csvs(str(d), db_path=db_path)
 
         assert found == [target]
+
+
+class TestQuickImportSource:
+    """クイック取り込みの探索先 (issue #489)。"""
+
+    def test_local_downloads_when_remote_unset(self, monkeypatch, tmp_path):
+        """KS_QUICK_IMPORT_REMOTE が無ければ SSH せず手元のディレクトリを探す (開発機)。"""
+        monkeypatch.delenv("KS_QUICK_IMPORT_REMOTE", raising=False)
+        assert ic.quick_import_source(str(tmp_path)) == (str(tmp_path), "~/Downloads")
+
+    @pytest.mark.parametrize("exc", [
+        __import__("subprocess").CalledProcessError(255, "rsync", stderr="Connection refused"),
+        __import__("subprocess").TimeoutExpired("rsync", 30),
+    ])
+    def test_remote_failure_raises(self, monkeypatch, tmp_path, exc):
+        """MBA に届かないときは例外にする (空の結果にすると「未取込なし」と区別できない)。"""
+        import subprocess
+        import ks_util
+
+        monkeypatch.setenv("KS_QUICK_IMPORT_REMOTE", "user@mba:Downloads/")
+        monkeypatch.setattr(ks_util, "DATA_DIR", str(tmp_path))
+
+        def fail(*args, **kwargs):
+            raise exc
+        monkeypatch.setattr(subprocess, "run", fail)
+        with pytest.raises(ic.QuickImportSourceError):
+            ic.quick_import_source()
