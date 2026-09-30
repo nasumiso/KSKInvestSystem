@@ -302,6 +302,20 @@ class TestShinyoRound:
         credit = [e for e in eps if e["kind"] == "信用"]
         assert credit[0]["pl"] is None
 
+    @pytest.mark.parametrize("broker,pending", [("楽天", True), ("SBI", False)])
+    def test_round_trip_pending_confirm_only_for_rakuten(self, db_path, broker, pending):
+        """建情報なし返済のうち、楽天 (未確定CSV由来) だけを確定CSV待ちとして区別する。"""
+        _add(db_path, "2007", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規",
+             broker=broker, seq_salt="a")
+        _add(db_path, "2007", "2026-01-02", "buy", 100, 1100.0, trade_kind="信用新規",
+             broker=broker, seq_salt="b")
+        _add(db_path, "2007", "2026-01-10", "sell", 100, 1300.0, trade_kind="信用返済",
+             broker=broker, seq_salt="c")
+        ep = trade_episodes.build_fill_episodes(db_path=db_path)[0]
+        unknown = next(r for r in trade_episodes.build_round_trips(ep)
+                       if r["closed"] and not r["open_date"])
+        assert unknown["pending_confirm"] is pending
+
     def test_round_trip_infers_unique_open_lot_after_known_settlement(self, db_path):
         """建情報付きの返済を除くと一意なら、明細にも推定建玉を表示する。"""
         _add(db_path, "2005", "2026-01-01", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt="a")

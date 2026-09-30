@@ -995,6 +995,7 @@ def _make_round_trip(open_fill: Optional[Dict[str, Any]], close_fill: Optional[D
         "broker": (close_fill or open_fill or {}).get("broker", ""),
         "closed": close_fill is not None,
         "genbiki": False,  # 現引による現物への振替 (決済ではないので損益を出さない)
+        "pending_confirm": False,  # 楽天の未確定CSV由来で建玉情報が未取込
         "unrealized": False,  # pl が含み損益 (未確定) かどうか
         "pl": None,
         "return_pct": None,
@@ -1160,6 +1161,9 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
                 # 建玉は消費するが建値は伏せる。消費しないと決済済みの玉が保有中に残る。
                 _consume_open_lots(open_pool, f["qty"], broker=f.get("broker"))
                 row = _make_round_trip(None, f, f["qty"], None, None)
+            # 楽天の確定CSVは信用返済に必ず建約定日を持つ。無いのは当日の未確定CSV
+            # 由来で、後続の確定CSVの取込で埋まる (SBI の建玉不明とは別物)。
+            row["pending_confirm"] = f.get("broker") == "楽天"
             if "fill_pl" in f:
                 row["pl"] = f["fill_pl"]
             if "fill_return_pct" in f:

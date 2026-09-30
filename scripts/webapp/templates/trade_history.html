@@ -306,7 +306,10 @@
               {%- if r.inferred_open %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="返済CSVには建玉情報がありませんが、同一エピソード内で残った建玉が一意のため補完表示しています">推定</span>{% endif %}
               {%- if r.genbiki %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="現引は信用建玉を現物へ振り替える取引です。決済ではないため損益は計上せず、現物エピソード側へ引き継がれます">現引→現物</span>{% endif %}
               {#- 建玉を特定できない決済 (建情報なしの信用返済など)。? マーカーと同じ条件で駆動する #}
-              {%- if r.closed and not r.open_date %}<span style="color:#8a6a5a;font-size:0.88em;margin-left:0.4em;" title="建玉情報がCSVに無いため建値・保有日数を表示できません">建玉不明</span>{% endif %}
+              {%- if r.closed and not r.open_date %}
+              {%- if r.pending_confirm %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="当日の未確定CSVから取り込んだ返済で、建玉情報がまだありません。翌営業日以降の楽天CSVを取り込むと建日・建値・決済損益が埋まります。それまでの損益は平均建単価による暫定値です">確定CSV待ち</span>
+              {%- else %}<span style="color:#8a6a5a;font-size:0.88em;margin-left:0.4em;" title="建玉情報がCSVに無いため建値・保有日数を表示できません">建玉不明</span>{% endif %}
+              {%- endif %}
             </td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{% if ep.split_suspect %}<span style="color:#666;">—</span>{% else %}{{ "%g"|format(r.qty) }}株{% endif %}</td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">
