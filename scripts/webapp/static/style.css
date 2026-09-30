@@ -698,3 +698,5 @@ nav .quick-search {
 }
 .ep-chart { display: block; width: 100%; background: #fbfbfb; border: 1px solid #eee; border-radius: 3px; }
 .ep-chart-note { color: #8a7a5a; font-size: 0.76em; margin-top: 0.3em; }
+/* 往復行にカーソルが乗ったとき、チャート上の対応する建て→決済の線を実線で強調する */
+.ep-lot-link.is-hot { stroke: #e67e22; stroke-width: 2.5; stroke-dasharray: none; }

@@ -4420,6 +4420,18 @@ class TestEpisodeChart:
         # 出来高バーは窓に入った週足の本数だけ出る (窓は 03-04 の4週前〜05-13)。
         assert svg.count("出来高") == 15
 
+    def test_lot_link_lines_drawn_between_markers(self, monkeypatch):
+        """往復行ごとに建て→決済の点線を1本ずつ引き、明細行と同じ data-lot を持たせる。"""
+        closes = {date(2026, 2, 2) + _dt.timedelta(weeks=i): (1000.0, 10000.0) for i in range(16)}
+        monkeypatch.setattr(helpers, "load_weekly_closes", lambda code_s: closes)
+        ep = self._ep(fills=[
+            {"trade_date": d, "side": s, "qty": q, "price": 1000, "broker": "楽天"}
+            for d, s, q in [("2026-03-04", "buy", 100), ("2026-03-18", "buy", 100),
+                            ("2026-04-01", "sell", 150), ("2026-04-15", "sell", 50)]])
+        svg = helpers.build_episode_chart(ep)
+        assert svg.count('class="ep-lot-link"') == 3
+        assert 'data-lot="2026-03-18|2026-04-15"' in svg
+
     @pytest.mark.parametrize("is_short", [False, True])
     def test_marker_direction_follows_side(self, monkeypatch, is_short):
         """買いは▲青・売りは▼赤。空売りでも向きを反転しない (売って建てるので▼始まり)。"""

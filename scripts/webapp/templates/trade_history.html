@@ -298,7 +298,7 @@
             </tr>
           </thead>
           {% for r in ep.round_trips %}
-          <tr{% if not r.closed %} style="color:#7a7a95;"{% endif %}>
+          <tr{% if not r.closed %} style="color:#7a7a95;"{% endif %}{% if r.closed and r.open_date %} data-lot="{{ r.open_date }}|{{ r.close_date }}"{% endif %}>
             <td style="padding:1px 0.8em 1px 0;white-space:nowrap;color:#888;">
               {%- if r.open_date %}{{ r.open_date[2:] }}{% else %}<span style="color:#666;">?</span>{% endif %}
               <span style="color:#666;">→</span>
@@ -759,6 +759,20 @@
         box.dataset.loaded = '';
       });
   }
+
+  // 往復行にカーソルを乗せると、チャート上の対応する建て→決済の線を強調する。
+  // チャートは展開後に差し込まれるので、乗せた時点で同じ明細内から線を探す。
+  function hotLot(e, on) {
+    var row = e.target.closest && e.target.closest('tr[data-lot]');
+    if (!row || (e.relatedTarget && row.contains(e.relatedTarget))) return;
+    var cols = row.closest('.ep-detail-cols');
+    if (!cols) return;
+    cols.querySelectorAll('.ep-lot-link').forEach(function (line) {
+      if (line.getAttribute('data-lot') === row.dataset.lot) line.classList.toggle('is-hot', on);
+    });
+  }
+  document.addEventListener('mouseover', function (e) { hotLot(e, true); });
+  document.addEventListener('mouseout', function (e) { hotLot(e, false); });
 
   document.querySelectorAll('.th-ep-row').forEach(function (row) {
     row.addEventListener('click', function () {

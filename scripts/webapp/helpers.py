@@ -5059,6 +5059,25 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200)
     pts = " ".join("%.1f,%.1f" % (x_of(d), y_of(c)) for d, c, _ in series)
     parts.append('<polyline points="%s" fill="none" stroke="#5a7fa8" stroke-width="1.4"/>' % pts)
 
+    # 往復行 (明細の「買 → 売」1行) ごとに建て→決済を点線で結ぶ。明細行と同じ
+    # data-lot を持たせ、行にカーソルを乗せると対応する線を強調する (trade_history.html)。
+    # 端点はマーカー (約定日・売買方向でまとめた点) に合わせる。どちらかのマーカーを
+    # 打っていない (分割・併合の疑い、期首持越し) 往復行は線を引かない。
+    from webapp.trade_episodes import build_round_trips  # 循環 import 回避
+    marker_at = {(m["date"], m["side_buy"]): m for m in markers}
+    open_buy = not ep.get("is_short")
+    for r in build_round_trips(ep):
+        # 信用ラウンドの現引は買い fill で建玉を閉じる
+        close_buy = True if r["genbiki"] else not open_buy
+        a = marker_at.get((r["open_date"], open_buy))
+        b = marker_at.get((r["close_date"], close_buy))
+        if a is None or b is None:
+            continue
+        parts.append('<line class="ep-lot-link" data-lot="%s|%s" x1="%.1f" y1="%.1f" '
+                     'x2="%.1f" y2="%.1f" stroke="#777" stroke-width="1" stroke-dasharray="3,2"/>'
+                     % (r["open_date"], r["close_date"], x_of(a["bar"]), y_of(a["price"]),
+                        x_of(b["bar"]), y_of(b["price"])))
+
     # マーカーは形も色も「売買方向」で統一する: 買い = ▲青 / 売り = ▼赤。
     # 記号と色が別々の軸を指すと読み手が対応表を覚える必要が出るため揃える
     # (現物/信用の区分は行のバッジと出来高バーの色で既に読める)。
