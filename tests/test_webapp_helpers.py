@@ -4406,6 +4406,9 @@ class TestEpisodeChart:
         ([("2026-03-04", "buy", 100, 1000), ("2026-03-18", "buy", 100, 1000),
           ("2026-04-01", "sell", 50, 1100), ("2026-04-15", "sell", 150, 1200)],
          False, False, 4, 0, False),
+        # 週足の最新週 (05-18) より後の約定は打てないので、件数を注記する。
+        ([("2026-03-04", "buy", 100, 1000), ("2026-05-27", "sell", 100, 1200)],
+         False, False, 1, 0, True),
     ])
     def test_markers(self, monkeypatch, fills, is_short, carry_over, n_poly, n_circle, note):
         closes = {date(2026, 2, 2) + _dt.timedelta(weeks=i): (1000.0, 10000.0) for i in range(16)}

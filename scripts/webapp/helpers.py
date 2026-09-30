@@ -5113,4 +5113,12 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200)
     if skipped:
         parts.append('<div class="ep-chart-note">%d件の約定は分割・併合の可能性があり '
                      '(未換算)、株価と揃わないため表示していません。</div>' % skipped)
+    # 週足は確定した週までしか無いので、それより後の約定はマーカーも線も出ない。
+    # 黙って消えると描画の不具合に見えるため件数を知らせる。
+    unconfirmed = sum(1 for f in ep.get("fills") or []
+                      if f.get("trade_date")
+                      and _monday_of(date.fromisoformat(f["trade_date"])) > latest)
+    if unconfirmed:
+        parts.append('<div class="ep-chart-note">直近の約定 %d件は、週足が確定すると '
+                     '表示されます。</div>' % unconfirmed)
     return "".join(parts)
