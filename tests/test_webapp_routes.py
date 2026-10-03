@@ -638,13 +638,18 @@ class TestRefreshPostRoutes:
     sys.modules に make_stock_db スタブを差し込んで実体呼び出しを避ける。
     """
 
-    def test_refresh_post_redirects_with_info_flash(self, client, monkeypatch):
+    @pytest.mark.parametrize("snapshot_targets,note", [
+        ({"3496"}, False),
+        # ウォッチ・保有に無い銘柄はスナップショットが更新されないので、その旨を添える
+        (set(), True),
+    ])
+    def test_refresh_post_redirects_with_info_flash(self, client, monkeypatch, snapshot_targets, note):
         import sys
         import types
 
         calls = []
         stub = types.ModuleType("make_stock_db")
-        stub.refresh_stock = lambda codes: calls.append(list(codes))
+        stub.refresh_stock = lambda codes: calls.append(list(codes)) or snapshot_targets
         monkeypatch.setitem(sys.modules, "make_stock_db", stub)
 
         resp = client.post("/stock/3496/refresh")
@@ -656,6 +661,7 @@ class TestRefreshPostRoutes:
         follow = client.get("/stock/3496")
         html = follow.data.decode()
         assert "再取得しました (3496)" in html
+        assert ("スナップショットは更新していません" in html) == note
         assert "background:#eaffea" in html
 
     def test_refresh_post_handles_exception_with_error_flash(self, client, monkeypatch):

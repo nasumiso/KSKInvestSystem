@@ -17,8 +17,12 @@ def post_refresh(code_s: str):
         # 巻き添えで落ちないようルート呼び出し時に遅延 import する
         from make_stock_db import refresh_stock
 
-        refresh_stock([code_s])
-        flash(f"再取得しました ({code_s})", "info")
+        # スナップショットはウォッチ・保有銘柄だけが対象。対象外のときは株式 DB しか
+        # 更新されないので、画面に「取れていない」と見える理由を添える
+        if code_s in refresh_stock([code_s]):
+            flash(f"再取得しました ({code_s})", "info")
+        else:
+            flash(f"再取得しました ({code_s})。保有銘柄一覧に無いため、スナップショットは更新していません", "info")
     except Exception as e:
         flash(f"再取得に失敗しました ({code_s}): {e}", "error")
     return redirect(url_for("detail.stock_detail", code_s=code_s))

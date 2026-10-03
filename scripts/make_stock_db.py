@@ -2105,8 +2105,12 @@ def _latest_force_snapshot_date_yy_m(stock, record, acquired_date):
 
     優先順位:
     1. kessan_jisseki_date / kessan_mod_date のうち新しい方
-    2. 既存 snapshots の先頭 (最新) date_yy_m
+    2. 既存 snapshots の先頭 (最新) date_yy_m。ただし自動取得 (auto) の行に限る
     3. acquired_date (どうしても決算イベント日が無い場合のフォールバック)
+
+    2 を auto に限るのは、移行データ・手入力の行は上書きから保護されるため。
+    そこを上書き先に選ぶと毎回スキップされ、何度再取得しても行が増えない
+    (決算速報を通っていない新規銘柄で、古い移行行だけを持つ場合に起きた)。
 
     force 再取得は「存在しない新しい決算イベント」を追加する用途ではなく、
     直近の決算イベント行の指標を最新値で取り直す用途なので、取得日 today を
@@ -2129,7 +2133,7 @@ def _latest_force_snapshot_date_yy_m(stock, record, acquired_date):
         return research_shelve.to_date_yy_m(latest)
 
     snapshots = (record or {}).get("snapshots") or []
-    if snapshots:
+    if snapshots and snapshots[0].get("data_source") == "auto":
         existing_date_yy_m = snapshots[0].get("date_yy_m", "")
         if existing_date_yy_m:
             return existing_date_yy_m
@@ -2369,18 +2373,22 @@ def refresh_stock(code_list):
     `update CODE --snapshot` と内部処理はほぼ同じだが、引数必須で名前が直感的。
     決算速報 (kessan_quarter / kessan_mod_date) は別経路 (shintakane.update_todays_kessan)
     なので、必要なら shintakane.py を別途実行する。
+
+    戻り値: スナップショット更新の対象になった銘柄コードの集合。スナップショットは
+    ウォッチ・保有銘柄だけが対象なので、それ以外の銘柄は株式 DB だけが更新される。
     """
     if not code_list:
         log_warning("[refresh_stock] 銘柄コードが指定されていません")
-        return
+        return set()
     codes = list(code_list)
     log_print("=" * 30)
     log_print(f"[refresh_stock] 強制再取得を開始します: {codes}")
     update_db_rows(codes, upd=UPD_FORCE, tables=None)
     # stocks DB だけ最新化しても research_shelve のスナップショットは古い ir_quant のまま
     # なので、決算ウィンドウチェックをスキップして強制的にスナップショットを追記する
-    update_research_snapshots(code_filter=codes, force=True)
+    snapshot_targets = update_research_snapshots(code_filter=codes, force=True)
     log_print("[refresh_stock] 強制再取得を完了しました")
+    return snapshot_targets
 
 
 def refresh_price(code_list):

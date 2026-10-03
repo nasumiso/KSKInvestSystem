@@ -565,6 +565,26 @@ class TestUpdateResearchSnapshots:
         assert loaded["snapshots"][0]["ir_quant"] != "old"
 
 
+    def test_force_appends_today_when_only_protected_snapshot_exists(self, db_path, monkeypatch):
+        """実績日/修正日が無く、既存が移行・手入力の行だけなら、今日の日付で行を足す。
+
+        保護された行を上書き先に選ぶと毎回スキップされ、再取得しても行が増えない (4966)。
+        """
+        stock = _make_stock("3496", stock_name="アズーム")
+        monkeypatch.setattr(make_stock_db, "load_stock_db", lambda: {"3496": stock})
+        monkeypatch.setattr(portfolio, "parse_my_portforio", lambda: (["3496"], []))
+
+        rs.upsert_research_record(rs.create_research_record("3496", "アズーム"), db_path=db_path)
+        rs.upsert_snapshot("3496", rs.create_snapshot("22.6", ir_quant="old", data_source="migration"),
+                           db_path=db_path)
+
+        make_stock_db.update_research_snapshots(db_path=db_path, code_filter=["3496"], force=True)
+
+        got = {s["date_yy_m"]: s["data_source"]
+               for s in rs.get_research_record("3496", db_path=db_path)["snapshots"]}
+        assert got == {_today_yy_m_d(): "auto", "22.6": "migration"}
+
+
 class TestUpdatePtsReactions:
     """update_pts_reactions のユニットテスト (issue #154)"""
 
