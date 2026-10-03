@@ -373,7 +373,13 @@
            埋めると issue #406 の初期HTML削減と矛盾するため)。 #}
         <div class="ep-chart-box" data-episode-key="{{ ep.episode_key }}"
              data-url="{{ url_for('trade_history.episode_chart') }}">
-          <div style="color:#888;font-size:0.78em;margin-bottom:0.2em;">週足チャート (建玉の前後4週)</div>
+          {# 線の表示切り替え。設定は全チャート共通で、ブラウザに覚えさせる。
+             売買の線は売買がひと目で分かるので既定で出す (隠しても、明細の行に乗せた1本は出る)。
+             防衛線は重ねるとごちゃつくので、振り返りで見たいときに出す #}
+          <div style="color:#888;font-size:0.78em;margin-bottom:0.2em;">週足チャート (建玉の前後4週)
+            <label class="ep-chart-toggle" title="建て→決済を結ぶ点線。隠していても、明細の行にカーソルを乗せるとその1本は出ます"><input type="checkbox" data-chart-toggle="lots"> 売買の線</label>
+            <label class="ep-chart-toggle" title="戦略の出口ルールの移動平均線と損切りライン"><input type="checkbox" data-chart-toggle="defense"> 防衛線</label>
+          </div>
           <div class="ep-chart-slot" style="color:#666;font-size:0.8em;">読み込み中…</div>
         </div>
         </div>{# /ep-detail-cols #}
@@ -770,7 +776,8 @@
     if (!box || box.dataset.loaded) return;
     box.dataset.loaded = '1';
     var slot = box.querySelector('.ep-chart-slot');
-    fetch(box.dataset.url + '?episode_key=' + encodeURIComponent(box.dataset.episodeKey))
+    fetch(box.dataset.url + '?episode_key=' + encodeURIComponent(box.dataset.episodeKey)
+          + '&defense=' + (chartToggleOn('defense') ? '1' : '0'))
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
       .then(function (html) { slot.innerHTML = html; })
       .catch(function () {
@@ -793,6 +800,34 @@
   }
   document.addEventListener('mouseover', function (e) { hotLot(e, true); });
   document.addEventListener('mouseout', function (e) { hotLot(e, false); });
+
+  // チャートの線の表示切り替え。全チャート共通の設定で、各チャートのチェックボックスを
+  // 揃える。既定は 売買の線=出す / 防衛線=隠す。売買の線は body のクラスで隠す。
+  // 防衛線は縦軸の範囲ごと変わるので、読み込み済みのチャートを取り直す
+  var chartToggleDefaults = { lots: true, defense: false };
+  function chartToggleOn(key) {
+    var saved = null;
+    try { saved = localStorage.getItem('thChart_' + key); } catch (e) {}
+    return saved === null ? chartToggleDefaults[key] : saved === '1';
+  }
+  function applyChartToggle(key, on) {
+    document.body.classList.toggle('ep-hide-' + key, !on);
+    document.querySelectorAll('input[data-chart-toggle="' + key + '"]').forEach(function (cb) {
+      cb.checked = on;
+    });
+  }
+  Object.keys(chartToggleDefaults).forEach(function (key) { applyChartToggle(key, chartToggleOn(key)); });
+  document.addEventListener('change', function (e) {
+    var key = e.target.dataset && e.target.dataset.chartToggle;
+    if (!key) return;
+    try { localStorage.setItem('thChart_' + key, e.target.checked ? '1' : '0'); } catch (err) {}
+    applyChartToggle(key, e.target.checked);
+    if (key !== 'defense') return;
+    document.querySelectorAll('.ep-chart-box[data-loaded="1"]').forEach(function (box) {
+      box.dataset.loaded = '';
+      loadEpChart(box.parentElement);
+    });
+  });
 
   document.querySelectorAll('.th-ep-row').forEach(function (row) {
     row.addEventListener('click', function () {

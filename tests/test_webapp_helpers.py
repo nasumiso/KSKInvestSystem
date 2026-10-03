@@ -4392,6 +4392,39 @@ class TestEpisodeChart:
         monkeypatch.setattr(helpers, "load_weekly_closes", lambda code_s: {})
         assert expect in helpers.build_episode_chart(self._ep(**kw))
 
+    @pytest.mark.parametrize("rule,is_short,ma_label,has_stop", [
+        # 50日線は週足では10週線で近似する。損切りは平均取得単価から。
+        ({"ma_kind": "day", "ma_window": 50, "stop_loss_pct": 10}, False, "10週線 (≈50日線)", True),
+        # 短期の戦略は移動平均のルールが無く、損切りラインだけ。
+        ({"ma_kind": None, "ma_window": None, "stop_loss_pct": 7}, False, None, True),
+        # 空売りは損切りの基準が上側になるので線を出さない。
+        ({"ma_kind": "week", "ma_window": 30, "stop_loss_pct": 20}, True, "30週線", False),
+        # 未分類 (ルールなし) は何も足さない。
+        (None, False, None, False),
+    ])
+    def test_defense_lines(self, monkeypatch, rule, is_short, ma_label, has_stop):
+        """戦略の出口ルールから移動平均線と損切りラインを重ねる (issue #492)。"""
+        closes = {date(2025, 6, 2) + _dt.timedelta(weeks=i): (1000.0 + i, 10000.0) for i in range(52)}
+        monkeypatch.setattr(helpers, "load_weekly_closes", lambda code_s: closes)
+        buy, sell = ("sell", "buy") if is_short else ("buy", "sell")
+        ep = self._ep(is_short=is_short, fills=[
+            {"trade_date": d, "side": s, "qty": q, "price": p, "broker": "楽天"}
+            for d, s, q, p in [("2026-03-04", buy, 100, 1000), ("2026-03-18", buy, 100, 1200),
+                               ("2026-04-15", sell, 200, 1100)]])
+        svg = helpers.build_episode_chart(ep, exit_rule=rule)
+        assert ("ep-ma-line" in svg) == bool(ma_label)
+        assert ma_label is None or ma_label in svg
+        assert ("ep-stop-line" in svg) == has_stop
+        if has_stop:
+            # 買い増しで平均取得単価が 1000 → 1100 に上がり、損切り価格も階段状に上がる
+            pct = rule["stop_loss_pct"]
+            assert [round(v) for _, v in helpers._episode_stop_steps(ep, rule)] == [
+                round(1000 * (1 - pct / 100)), round(1100 * (1 - pct / 100))]
+            # 買い下がりでは、ナンピンを許す戦略だけ線が下がる (保有銘柄一覧の防衛線と同じ)
+            ep["fills"][1]["price"] = 800
+            for allow, n_steps in ((False, 1), (True, 2)):
+                assert len(helpers._episode_stop_steps(ep, dict(rule, allow_dca_lower=allow))) == n_steps
+
     @pytest.mark.parametrize("fills,is_short,carry_over,n_poly,n_circle,note", [
         # 同一日の複数約定は1マーカーに畳み、株数を合算する (285A 相当)。
         ([("2026-03-04", "buy", 50, 1000), ("2026-03-04", "buy", 50, 1000),
