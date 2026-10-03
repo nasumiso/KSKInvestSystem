@@ -343,6 +343,14 @@
         {# エピソード単位の振り返りメモ (issue #387 Phase2)。アクションログ側から一本化 #}
         <div style="margin-top:0.6em;max-width:44em;">
           <div style="color:#888;font-size:0.78em;margin-bottom:0.2em;">振り返りメモ</div>
+          {# IN/OUT 時にアクションログへ残した理由 (読み取り専用)。直すのはアクションログ側 #}
+          {% for n in ep.action_notes %}
+          <div style="color:#999;font-size:0.82em;line-height:1.5;">
+            <span style="display:inline-block;min-width:2.6em;color:#777;">{{ n.label }}</span>
+            <span style="display:inline-block;min-width:3em;color:#777;">{{ n.date[5:7]|int }}/{{ n.date[8:10]|int }}</span>
+            {{ n.text }}
+          </div>
+          {% endfor %}
           <div class="review-memo-cell"
                data-url="{{ url_for('trade_history.save_fill_memo') }}"
                data-episode-key="{{ ep.episode_key }}"
