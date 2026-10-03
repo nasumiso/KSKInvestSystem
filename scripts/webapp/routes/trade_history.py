@@ -615,4 +615,11 @@ def episode_chart():
     ep = build_episode_for_key(episode_key)
     if ep is None:
         return '<div class="ep-chart-note">この建玉ラウンドが見つかりません。</div>'
-    return build_episode_chart(ep)
+    # defense=1 のときだけ、エピソードの戦略の出口ルールで防衛線を重ねる (issue #492)。
+    # 線を枠に収めるぶん縦軸が広がり株価が小さく見えるので、画面の切り替えで選ばせる。
+    # 未分類なら線は出ない
+    if request.args.get("defense") != "1":
+        return build_episode_chart(ep)
+    strategy = ps.get_episode_strategy(episode_key) or {}
+    rules = {t["name"]: t.get("exit_rule") for t in ps.list_trade_ideas()}
+    return build_episode_chart(ep, exit_rule=rules.get(strategy.get("trade_idea")))

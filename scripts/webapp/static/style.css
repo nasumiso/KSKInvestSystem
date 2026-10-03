@@ -727,3 +727,7 @@ nav .quick-search {
 .ep-chart-note { color: #8a7a5a; font-size: 0.76em; margin-top: 0.3em; }
 /* 往復行にカーソルが乗ったとき、チャート上の対応する建て→決済の線を実線で強調する */
 .ep-lot-link.is-hot { stroke: #e67e22; stroke-width: 2.5; stroke-dasharray: none; }
+/* チャートの線の表示切り替え。売買の線は隠していても、乗せた行の1本 (is-hot) は出す */
+body.ep-hide-lots .ep-lot-link:not(.is-hot) { display: none; }
+.ep-chart-toggle { display: inline; margin-left: 0.8em; cursor: pointer; white-space: nowrap; }
+.ep-chart-toggle input[type="checkbox"] { width: 0.95em; height: 0.95em; margin: 0 0.15em 0 0; vertical-align: -0.1em; }

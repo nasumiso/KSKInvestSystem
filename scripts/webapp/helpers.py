@@ -4961,12 +4961,59 @@ def _episode_markers(ep: Dict[str, Any],
     return markers, skipped
 
 
-def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200) -> str:
+def _episode_ma_line(bars: Dict[date, Tuple[float, float]],
+                     exit_rule: Dict[str, Any]) -> Tuple[str, Dict[date, float]]:
+    """出口ルールの移動平均線を週足終値から求める。(凡例, {月曜日: 値})
+
+    日足の線 (50日線) は週足では 5 営業日 = 1 週として 10 週線で近似する。日足
+    キャッシュは直近3か月しか無く、過去のエピソードでは日足の線を計算できないため。
+    本数が足りない週には値を出さない (古いエピソードでは線が途中から始まる)。
+    """
+    kind, window = exit_rule.get("ma_kind"), exit_rule.get("ma_window")
+    if kind not in ("day", "week") or not window:
+        return "", {}
+    weeks = window // 5 if kind == "day" else window
+    label = "%d週線 (≈%d日線)" % (weeks, window) if kind == "day" else "%d週線" % weeks
+    days = sorted(bars)
+    closes = [bars[d][0] for d in days]
+    return label, {days[i]: sum(closes[i + 1 - weeks:i + 1]) / weeks
+                   for i in range(weeks - 1, len(days))}
+
+
+def _episode_stop_steps(ep: Dict[str, Any], stop_loss_pct: float) -> List[Tuple[date, float]]:
+    """建てるたびの (約定週の月曜, 損切り価格) を返す。損切り価格 = 平均取得単価 × (1 - 率)。
+
+    保有銘柄一覧の防衛線と同じく平均取得単価を基準にするので、買い増しのたびに動く。
+    空売りと期首持越し (建ての約定が欠けている) は基準が取れないので空を返す。
+    """
+    if ep.get("is_short") or ep.get("carry_over"):
+        return []
+    is_credit = ep.get("kind") == "信用"
+    held, avg = 0.0, 0.0
+    steps: List[Tuple[date, float]] = []
+    for f in ep.get("fills") or []:
+        qty, price = f["qty"], f["price"]
+        # 信用ラウンドの現引は買い fill だが、建玉を減らす側
+        if f["side"] == "buy" and (not is_credit or (f.get("trade_kind") or "").startswith("信用新規")):
+            avg = (avg * held + price * qty) / (held + qty)
+            held += qty
+            steps.append((_monday_of(date.fromisoformat(f["trade_date"])),
+                          avg * (1 - stop_loss_pct / 100)))
+        else:
+            held -= qty
+    return steps
+
+
+def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
+                        exit_rule: Optional[Dict[str, Any]] = None) -> str:
     """エピソード1ラウンド分の週足チャート SVG を返す。描けない場合は説明文の HTML。
 
     週足終値の折れ線 + 下部に出来高バーを描き、実約定の IN (▲) / OUT (▼) と
     途中約定 (小さな点) を重ねる。株価軸は yfinance の分割調整後、fill は約定当時の
     実価格なので、両者がずれるエピソードではマーカーを打たずに注記する (issue #435)。
+
+    exit_rule (エピソードの戦略の出口ルール) を渡すと、防衛線 (移動平均線と損切り
+    ライン) を重ねる。ルールは今の戦略マスターのもので、当時のルールではない。
     """
     if ep.get("split_suspect"):
         return ('<div class="ep-chart-note">分割・併合の可能性があり価格軸が揃わないため、'
@@ -4997,6 +5044,18 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200)
     for m in markers:
         lo = min(lo, m["price"])
         hi = max(hi, m["price"])
+
+    # 防衛線 (issue #492)。振り返りで「線を割ったのに持ち続けたか」を読むために重ねる。
+    # 損切りラインは約定価格から作るので、価格軸が揃わない (skipped) ときは出さない
+    exit_rule = exit_rule or {}
+    ma_label, ma_values = _episode_ma_line(bars, exit_rule)
+    ma_pts = [(d, ma_values[d]) for d, _, _ in series if d in ma_values]
+    stop_pct = exit_rule.get("stop_loss_pct")
+    stop_steps = [(d, v) for d, v in (_episode_stop_steps(ep, stop_pct) if stop_pct and not skipped else [])
+                  if d <= end_d]
+    for _, v in ma_pts + stop_steps:
+        lo = min(lo, v)
+        hi = max(hi, v)
     span = (hi - lo) or (hi or 1.0)
     lo -= span * 0.08
     hi += span * 0.08
@@ -5058,6 +5117,25 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200)
     # 株価の折れ線
     pts = " ".join("%.1f,%.1f" % (x_of(d), y_of(c)) for d, c, _ in series)
     parts.append('<polyline points="%s" fill="none" stroke="#5a7fa8" stroke-width="1.4"/>' % pts)
+
+    # 防衛線と凡例。移動平均は紫の破線、損切りラインは赤の階段 (保有区間の終わりまで)
+    legend_x = pad_l + 2
+    if len(ma_pts) >= 2:
+        parts.append('<polyline class="ep-ma-line" points="%s" fill="none" stroke="#9a78c0" '
+                     'stroke-width="1" stroke-dasharray="4,2"/>'
+                     % " ".join("%.1f,%.1f" % (x_of(d), y_of(v)) for d, v in ma_pts))
+        parts.append('<text x="%.1f" y="8" font-size="8" fill="#9a78c0">%s</text>'
+                     % (legend_x, html.escape(ma_label)))
+        legend_x += 9 * len(ma_label) * 0.62 + 10
+    if stop_steps:
+        stop_pts = []
+        for i, (d, v) in enumerate(stop_steps):
+            x_next = x_of(stop_steps[i + 1][0]) if i + 1 < len(stop_steps) else c_x
+            stop_pts += ["%.1f,%.1f" % (x_of(d), y_of(v)), "%.1f,%.1f" % (max(x_next, x_of(d)), y_of(v))]
+        parts.append('<polyline class="ep-stop-line" points="%s" fill="none" stroke="#d05050" '
+                     'stroke-width="1.4" stroke-dasharray="3,2"/>' % " ".join(stop_pts))
+        parts.append('<text x="%.1f" y="8" font-size="8" fill="#d05050">損切り -%s%%</text>'
+                     % (legend_x, format(stop_pct, "g")))
 
     # 往復行 (明細の「買 → 売」1行) ごとに建て→決済を点線で結ぶ。明細行と同じ
     # data-lot を持たせ、行にカーソルを乗せると対応する線を強調する (trade_history.html)。
