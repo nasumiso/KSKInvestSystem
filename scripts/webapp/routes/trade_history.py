@@ -591,6 +591,8 @@ def save_episode_strategy():
         ps.set_episode_strategy(
             episode_key, trade_idea,
             source="manual",
+            # 変更履歴に残す理由 (issue #492)。画面に欄はまだ無いので任意
+            reason=(request.form.get("reason") or "").strip(),
             fingerprint=(ps.episode_fingerprint(ep["fills"]) if ep["closed"] else None),
             hold_days=episode_hold_days(ep),
         )

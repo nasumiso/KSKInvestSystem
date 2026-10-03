@@ -774,6 +774,42 @@ class TestBrokerBackfill:
         assert brokers == {"SBI"}
 
 
+class TestAssignEntryStrategy:
+    """入った時点の戦略を、銘柄の戦略の履歴から写す (issue #492 5d)。"""
+
+    def test_assigns_strategy_effective_at_open_date(self, db_path):
+        ps.seed_trade_ideas(db_path=db_path)
+        ps.add_to_watch("7001", db_path=db_path)
+        ps.ensure_strategy_history_baseline(db_path=db_path)
+        with ps.ShelveDB(ps._resolve_db_path(db_path)) as db:
+            db[ps.KEY_STRATEGY_HISTORY_META] = {"started": "2026-03-01"}
+        ps.update_memo("7001", {"trade_idea": "GARP"}, effective_date="2026-03-02", db_path=db_path)
+        ps.update_memo("7001", {"trade_idea": "中期モメンタム"}, effective_date="2026-03-20",
+                       db_path=db_path)
+        for i, (d, side) in enumerate([
+            ("2026-02-10", "buy"), ("2026-02-12", "sell"),  # 記録開始前
+            ("2026-03-05", "buy"), ("2026-03-06", "sell"),  # GARP の期間 (1日で損切り)
+            ("2026-04-01", "buy"), ("2026-04-02", "sell"),  # 手で付けた戦略がある
+            ("2026-04-10", "buy"),                          # 保有中、中期モメンタムの期間
+        ]):
+            _add(db_path, "7001", d, side, 100, 1000.0, seq_salt=str(i))
+        manual_key = next(e["episode_key"] for e in trade_episodes.build_fill_episodes(db_path=db_path)
+                          if e["open_date"] == "2026-04-01")
+        ps.set_episode_strategy(manual_key, "短期イベント", db_path=db_path)
+
+        assert trade_episodes.assign_entry_strategies(db_path=db_path) == 2
+        # 中長期の GARP で入って1日で切っても、時間軸で外さない (seed だけが対象)
+        trade_episodes.seal_episode_fingerprints(db_path=db_path)
+        got = {e["open_date"]: (e["trade_idea"], e["strategy_source"])
+               for e in trade_episodes.build_fill_episodes(db_path=db_path)}
+        assert got == {
+            "2026-02-10": ("", ""),
+            "2026-03-05": ("GARP", "entry"),
+            "2026-04-01": ("短期イベント", "manual"),
+            "2026-04-10": ("中期モメンタム", "entry"),
+        }
+
+
 class TestFillMemo:
     """fill エピソード単位の振り返りメモ (issue #387 Phase2)。"""
 
