@@ -202,7 +202,7 @@ TRADE_IDEA_DESCRIPTIONS = {
     "中期テーマ": "中期: 相場の物色テーマの波に乗る",
     "中期モメンタム": "中期: 新高値ブレイク順張り 2〜3ヶ月保有 (メイン戦略)",
     "中長期ファンダ": "中長期: ファンダメンタルズの改善を軸に保有する",
-    "中期底値リバ": "中期: 底値圏からのトレンド転換を狙う",
+    "中期底値リバ": "中期: リバ取り。中長期で強気な銘柄の押し目買い・戻り売りを含む",
     "短期底値リバ": "短期: 下げすぎリバ。サイズ小・機械的利確損切り",
     "短期イベント": "短期: 決算・材料・政策などカタリスト狙い",
     "底値リバ": "短期: 下げすぎリバ。サイズ小・機械的利確損切り",
@@ -214,17 +214,20 @@ TRADE_IDEA_OPTIONS = tuple(TRADE_IDEA_DESCRIPTIONS.keys())
 # 戦略マスター (issue #335: 定数 shelve 移行・編集画面)
 VALID_TIME_HORIZONS = ("短期", "中期", "中長期", "長期", "恒常", "")
 
+# ここは空の DB に入れる初期値。定義の正本は戦略マスター (DB、編集画面で変える) で、
+# 既存のマスターはここを変えても上書きされない。中期底値リバは、中核の玉とは別に
+# 「戻りで売るつもりで買う」押し目買いのロットも含む (issue #492 の 2026-10-03 の結論)
 _TRADE_IDEA_SEED = [
     {"name": "GARP",           "description": "安定成長株を押し目・一時的売り込まれ局面で拾う。業績成長シナリオが崩れたら売る",    "time_horizon": "中長期", "over_earnings": True},
     {"name": "ピーターリンチ", "description": "身近な実感で好印象の銘柄を持つ。身近な実感・好印象が消えたら売る",                  "time_horizon": "中長期", "over_earnings": False},
-    {"name": "中期テーマ",     "description": "相場の物色テーマの波に乗る。物色が他テーマへ移ったら売る",                          "time_horizon": "中期",   "over_earnings": False},
-    {"name": "中期モメンタム", "description": "新高値ブレイク順張り 2〜3ヶ月保有。トレンド（チャート）が崩れたら売る",             "time_horizon": "中期",   "over_earnings": False},
-    {"name": "中長期ファンダ", "description": "ファンダメンタルズの改善を軸に保有。投資仮説が崩れたら売る",                         "time_horizon": "中長期", "over_earnings": True},
+    {"name": "中期テーマ",     "description": "相場の物色テーマの波に乗る。物色が他テーマへ移ったら売る(50MA割れ、10MA割れ早売り)", "time_horizon": "中期",   "over_earnings": False},
+    {"name": "中期モメンタム", "description": "新高値ブレイク順張り 2〜3ヶ月保有。トレンド（チャート）が崩れたら(50MA割れ、10MA割れ早売り)売る", "time_horizon": "中期",   "over_earnings": False},
+    {"name": "中長期ファンダ", "description": "6ヶ月~2年くらいのファンダの根拠のある業績成長に乗る。上昇トレンド(ステージ２コア)毀損、ファンダ前提崩れで売る", "time_horizon": "中長期", "over_earnings": True},
     {"name": "短期イベント",   "description": "決算・材料・政策などカタリスト狙い。イベント通過で手仕舞い",                        "time_horizon": "短期",   "over_earnings": True},
-    {"name": "底値リバ",       "description": "下げすぎリバ取り。MAタッチ/10%で機械的利確。サイズ小・損切り事前設定",             "time_horizon": "短期",   "over_earnings": False},
+    {"name": "底値リバ",       "description": "短期(デイ~数日)下げすぎリバ取り。SRR、感情的値動きなど。10,20等MAタッチ/10%で機械的利確。サイズ小・損切り事前設定", "time_horizon": "短期",   "over_earnings": False},
     {"name": "夢枠",           "description": "2〜3年の夢に乗る。現物放置。売らない",                                              "time_horizon": "長期",   "over_earnings": True},
     {"name": "大型高配当",     "description": "PF安定・信用代用を兼ねる。恒常保有。売らない",                                      "time_horizon": "恒常",   "over_earnings": True},
-    {"name": "中期底値リバ",   "description": "底値圏からのトレンド転換を狙う。トレンドが崩れたら売る",                            "time_horizon": "中期",   "over_earnings": False},
+    {"name": "中期底値リバ",   "description": "中期（数週間~1,2ヶ月）のリバ。50MA等タッチで利確、損切り設定。値頃買いは避ける。中長期で強気な銘柄のレンジ押し目買い・戻り売りを含む", "time_horizon": "中期", "over_earnings": False},
 ]
 _NEW_TRADE_IDEA_SEED_NAMES = {"中長期ファンダ", "中期底値リバ"}
 
