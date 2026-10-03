@@ -869,9 +869,10 @@
     var url = cell.dataset.url;
     var display = cell.querySelector('.review-memo-display');
 
-    function showEditor() {
+    function showEditor(text) {
       var ta = document.createElement('textarea');
-      ta.value = cell.dataset.memo;
+      ta.value = text !== undefined ? text : cell.dataset.memo;
+      var lastSent = null;
       ta.rows = 4;
       ta.style.cssText = 'width:100%;font-size:0.9em;box-sizing:border-box;';
       ta.classList.add('review-memo-ta');
@@ -888,6 +889,7 @@
           display.style.display = '';
           return;
         }
+        lastSent = next;
         var fd = new FormData();
         fd.append('review_memo', next);
         // 売買履歴タブ (fill エピソード) はエピソードキーで保存 (issue #387 Phase2)
@@ -923,6 +925,23 @@
         }, save);
       }
       ta.addEventListener('blur', save);
+      // キー操作 (app.js の共通ハンドラから呼ばれる, issue #439):
+      // Esc はまだ送っていない編集を取り消す、Ctrl+Enter / Cmd+Enter は保存
+      ta._editKeys = {
+        commit: function () { ta.blur(); },
+        cancel: function () {
+          var target = lastSent !== null ? lastSent : cell.dataset.memo;
+          var discarded = ta.value;
+          ta.value = target;
+          ta.blur();
+          if (discarded === target) return;
+          showCancelled(cell, function () {
+            var current = cell.querySelector('textarea');
+            if (current) { current.value = discarded; current.focus(); }
+            else showEditor(discarded);
+          });
+        }
+      };
     }
 
     cell.style.cursor = 'pointer';

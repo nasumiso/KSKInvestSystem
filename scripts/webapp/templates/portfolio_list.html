@@ -1302,6 +1302,8 @@ function excludeFromUniverse(codeS) {
 
     input.addEventListener('blur', commit);
     input.addEventListener('keydown', function(e) {
+      // 日本語入力の変換中の Esc・Enter は変換の取消・確定 (issue #439)
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Escape') { e.preventDefault(); cancel(); }
       if (e.key === 'Enter' && input.tagName !== 'TEXTAREA') {
         e.preventDefault();

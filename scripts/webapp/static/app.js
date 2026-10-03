@@ -19,26 +19,99 @@ function switchToEdit(displayEl) {
   editEl.focus();
 }
 
-/* --- Escape キーでフォーカスを外す（→ 自動保存が発火） --- */
+/* --- 編集欄のキー操作 (issue #439 仕様判断 4) ---
+   Esc: まだ送っていない編集を取り消して抜ける
+   Ctrl+Enter / Cmd+Enter: 編集を終えて保存
+   Enter: 複数行の欄では改行、1行の入力欄では確定して保存
+   日本語入力の変換中の Esc・Enter は変換の取消・確定なので反応しない。 */
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') {
-    var el = document.activeElement;
-    if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.tagName === 'SELECT')) {
-      /* 決算エディタ内の field ならその場で保存してからアコーディオン閉じる */
-      if (el.classList && el.classList.contains('kessan-field')) {
-        var editor = el.closest('.kessan-editor');
-        var li = editor ? editor.closest('.kessan-stock') : null;
-        el.blur();
-        if (li) {
-          saveKessanFromEditor(li);
-          if (editor) editor.style.display = 'none';
-        }
-      } else {
-        el.blur();
-      }
-    }
+  if (e.isComposing || e.keyCode === 229) return;
+  var isEsc = e.key === 'Escape';
+  var isEnter = e.key === 'Enter';
+  if (!isEsc && !isEnter) return;
+  var el = document.activeElement;
+  if (!el || !(el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.tagName === 'SELECT')) return;
+  var commitKey = isEnter && (e.ctrlKey || e.metaKey);
+
+  /* 画面側で取消・確定を持つ欄 (売買履歴の振り返りメモ) */
+  if (el._editKeys) {
+    if (isEsc) { e.preventDefault(); el._editKeys.cancel(); }
+    else if (commitKey) { e.preventDefault(); el._editKeys.commit(); }
+    return;
   }
+  /* 決算エディタ: Esc は取り消して閉じる、Ctrl+Enter は保存して閉じる */
+  if (el.classList.contains('kessan-field')) {
+    var editor = el.closest('.kessan-editor');
+    var li = editor ? editor.closest('.kessan-stock') : null;
+    if (!li) return;
+    if (isEsc) {
+      e.preventDefault();
+      cancelKessanEdit(li);
+    } else if (commitKey) {
+      e.preventDefault();
+      el.blur();  /* focusout の自動保存に任せる */
+      editor.style.display = 'none';
+    }
+    return;
+  }
+  /* 自動保存の欄 (詳細画面) */
+  if (el.dataset.form && (el.classList.contains('editable-field') || el.classList.contains('editable-select'))) {
+    if (isEsc) {
+      e.preventDefault();
+      cancelFieldEdit(el);
+    } else if (commitKey || (isEnter && el.tagName === 'INPUT')) {
+      e.preventDefault();
+      el.blur();
+    }
+    return;
+  }
+  /* それ以外の入力欄は従来どおりフォーカスを外すだけ */
+  if (isEsc) el.blur();
 });
+
+/* 取り消した直後に「元に戻す」を数秒出す (長いメモを誤って消す事故への備え)。
+   保存状態の表示 (失敗・再試行) を消さないよう、別の要素にする。 */
+function showCancelled(anchor, undo) {
+  var el = anchor._cancelEl;
+  if (!el || !el.isConnected) {
+    el = document.createElement('span');
+    el.className = 'save-status cancelled';
+    anchor.insertAdjacentElement('afterend', el);
+    anchor._cancelEl = el;
+  }
+  clearTimeout(el._timer);
+  el.textContent = '取り消しました ';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = '元に戻す';
+  btn.addEventListener('click', function(ev) {
+    ev.stopPropagation();
+    clearTimeout(el._timer);
+    el.remove();
+    undo();
+  });
+  el.appendChild(btn);
+  el._timer = setTimeout(function() { el.remove(); }, 8000);
+}
+
+/* 戻す先は「その欄で最後に送信した値」(送信がまだなら画面を開いたときの値)。
+   送信済み・通信中の変更まで画面だけ戻すと、後から届いた保存で DB と食い違う。 */
+var _lastSent = {};
+function cancelFieldEdit(el) {
+  var saved = initialValues[el.name] || '';
+  var target = (el.name in _lastSent) ? _lastSent[el.name] : saved;
+  var discarded = el.value;
+  if (discarded !== target) {
+    el.value = target;
+    el.classList.toggle('dirty', target !== saved);
+    showCancelled(el, function() {
+      el.value = discarded;
+      el.classList.toggle('dirty', discarded !== saved);
+      el.focus();
+    });
+  }
+  el.blur();
+}
 
 /* --- 初期値を記録（変更検知用、display:none の要素も含む） --- */
 var initialValues = {};
@@ -174,6 +247,7 @@ function submitFormAsync(form, anchor) {
   fields.forEach(function(el) {
     formData.set(el.name + '__dirty', el.classList.contains('dirty') ? '1' : '');
     sent[el.name] = el.value;
+    _lastSent[el.name] = el.value;
   });
   anchor = anchor || form;
   queueSave(anchor, function() {
@@ -381,6 +455,37 @@ function updatePostPriceChangeDisplay(editor, data) {
   if (pc20Span && changes['20d']) pc20Span.textContent = changes['20d'] + '%';
 }
 
+function setKessanFieldValues(fields, values) {
+  fields.forEach(function(el, i) {
+    if (el.type === 'checkbox') el.checked = values[i] === '1';
+    else el.value = values[i];
+  });
+}
+
+/* Esc: まだ送っていない編集を取り消してエディタを閉じる */
+function cancelKessanEdit(li) {
+  var editor = li.querySelector('.kessan-editor');
+  if (!editor) return;
+  var active = document.activeElement;
+  if (editor.dataset.loaded === '1') {
+    var fields = Array.from(editor.querySelectorAll('.kessan-field'));
+    var target = editor._lastSent || fields.map(function(el) {
+      return el.dataset.initial || (el.type === 'checkbox' ? '0' : '');
+    });
+    var discarded = fields.map(kessanFieldValue);
+    setKessanFieldValues(fields, target);
+    if (discarded.some(function(v, i) { return v !== target[i]; })) {
+      showCancelled(editor, function() {
+        editor.style.display = '';
+        setKessanFieldValues(fields, discarded);
+        if (active && active.focus) active.focus();
+      });
+    }
+  }
+  if (active && editor.contains(active)) active.blur();
+  editor.style.display = 'none';
+}
+
 function isKessanDirty(editor) {
   var dirty = false;
   editor.querySelectorAll('.kessan-field').forEach(function(el) {
@@ -422,6 +527,7 @@ function saveKessanFromEditor(li) {
 
   var url = '/api/kessan_comment/' + encodeURIComponent(code);
   var sent = Array.from(editor.querySelectorAll('.kessan-field')).map(kessanFieldValue);
+  editor._lastSent = sent;
   /* エディタを閉じた後も失敗が見えるよう、状態はエディタの外 (直後) に出す */
   queueSave(editor, function() {
     return fetch(url, { method: 'POST', body: formData }).then(function(res) {

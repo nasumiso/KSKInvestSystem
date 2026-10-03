@@ -236,6 +236,8 @@ table.ir-snapshot-table td.ir-comment-cell { width: 100%; word-break: break-word
 .save-status.saving { color: #888; }
 .save-status.saved { color: #1a7f37; }
 .save-status.failed { color: #c0392b; font-weight: 600; }
+.save-status.cancelled { color: #666; }
+.save-status.cancelled button { color: #555; border-color: #999; }
 .save-status button {
   display: inline-block; width: auto; margin: 0 0 0 0.3em; padding: 0.05em 0.6em;
   font-size: 0.8rem; background: #fff; color: #c0392b; border: 1px solid #c0392b;
