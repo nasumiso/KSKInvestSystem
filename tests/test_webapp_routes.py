@@ -168,6 +168,29 @@ class TestSearchRoute:
         resp = client.get("/?q=テスト")  # "アズーム" の "テストメモ" と "空テスト" 両方にヒット
         assert resp.status_code == 200
 
+    @pytest.mark.parametrize("query, location, count", [
+        ("q=テスト&code_s=1234", "/stock/1234", None),          # コード欄で1件に絞れる
+        ("q=テスト&code_s=0000", None, "0 件"),                  # 以前は q だけが効いて2件のままだった
+        ("q=テスト&keyword=アズーム", "/stock/3496", None),      # キーワード欄で絞れる
+        ("q=テスト&keyword=存在しない語", None, "0 件"),
+        ("q=9999&code_s=3496", None, "0 件"),                    # 絞った結果の0件に追加フォームは出さない
+        ("q=テスト アズーム", "/stock/3496", None),              # 空白区切りは AND
+        ("q=テスト\u3000空", "/stock/1234", None),               # 全角空白でも区切れる
+        ("q=349 テスト", "/stock/3496", None),                   # コードの一部と語の組み合わせ
+        ("q=テスト 存在しない語", None, "0 件"),
+    ])
+    def test_index_q_combines_with_other_filters(self, client, query, location, count):
+        """検索語は空白区切りで AND。旧 URL の code_s / keyword も AND で効く (issue #439 U1)"""
+        resp = client.get("/?" + query)
+        if location:
+            assert resp.status_code == 302
+            assert location in resp.headers["Location"]
+            return
+        html = resp.data.decode()
+        assert count in html
+        assert 'name="add_code_s"' not in html
+        assert 'name="q"' in html and 'type="hidden" name="q"' not in html
+
     def test_index_no_hit_with_code_q_shows_add_button(self, client):
         """issue #216: ?q=未登録コード 0件時は追加フォームを表示"""
         resp = client.get("/?q=9999")

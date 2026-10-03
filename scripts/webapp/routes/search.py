@@ -121,6 +121,21 @@ def _portal_spreadsheets():
     return cards
 
 
+def _match_term(term: str, rating) -> dict:
+    """検索語1つに当たるレコードを {code_s: record} で返す。
+
+    code_s 部分一致 OR keyword 一致。NFKC で全角コード入力 (例: '６９９９') も
+    半角登録の code_s にマッチさせる。
+    """
+    term_upper = unicodedata.normalize("NFKC", term).upper()
+    code_match = [
+        r for r in search_records(rating=rating)
+        if term_upper in r.get("code_s", "")
+    ]
+    keyword_match = search_records(rating=rating, keyword=term)
+    return {r["code_s"]: r for r in code_match + keyword_match if r.get("code_s")}
+
+
 @search_bp.route("/")
 def index():
     """検索・ホーム画面。"""
@@ -130,31 +145,32 @@ def index():
     # ナビの汎用検索欄: code_s 部分一致 OR 銘柄名(他テキスト)部分一致
     q = request.args.get("q", "").strip()
 
-    if q:
-        # q は code_s 部分一致 OR keyword 一致 (search_records が見る複数フィールド)
-        # NFKC で全角コード入力 (例: '６９９９') も半角登録の code_s にマッチさせる
-        q_upper = unicodedata.normalize("NFKC", q).upper()
-        code_match = [
-            r for r in search_records(rating=rating)
-            if q_upper in r.get("code_s", "")
+    # 空白区切り (全角空白も可) の語はすべて満たすものに絞る (AND)。
+    terms = q.replace("\u3000", " ").split()
+    if terms:
+        # 各語は code_s 部分一致 OR keyword 一致 (search_records が見る複数フィールド)
+        matched = [_match_term(term, rating) for term in terms]
+        records = [
+            r for code, r in matched[0].items()
+            if all(code in other for other in matched[1:])
         ]
-        keyword_match = search_records(rating=rating, keyword=q)
-        seen = set()
-        records = []
-        for r in code_match + keyword_match:
-            cs = r.get("code_s", "")
-            if cs and cs not in seen:
-                seen.add(cs)
-                records.append(r)
         records.sort(key=lambda r: r.get("code_s", ""))
+        # 画面のキーワード欄は q の結果をさらに絞る (AND)。以前は q があると
+        # 画面の欄が効かなかった (issue #439 U1)
+        if keyword:
+            keyword_codes = {
+                r.get("code_s") for r in search_records(rating=rating, keyword=keyword)
+            }
+            records = [r for r in records if r.get("code_s") in keyword_codes]
     else:
         records = search_records(rating=rating, keyword=keyword)
-        if code_s:
-            code_s_norm = unicodedata.normalize("NFKC", code_s).upper()
-            records = [r for r in records if code_s_norm in r.get("code_s", "")]
+    if code_s:
+        code_s_norm = unicodedata.normalize("NFKC", code_s).upper()
+        records = [r for r in records if code_s_norm in r.get("code_s", "")]
 
     # キーワードがある場合はヒット箇所 snippet をレコードに付与
-    kw_for_snippet = keyword or (q if q else None)
+    # 複数語のときは最も長い語で出す (コードの断片より語のほうが箇所を示せる)
+    kw_for_snippet = keyword or (max(terms, key=len) if terms else None)
     if kw_for_snippet:
         for r in records:
             r["_snippet"] = _make_snippet(r, kw_for_snippet)
@@ -165,10 +181,13 @@ def index():
 
     # issue #216: q がコード形式 (4桁数字 or 3桁数字+大文字) で 0 件ヒット時のみ
     # 「この銘柄を追加」フォームを出す。銘柄名検索や不正フォーマットでは出さない。
+    # コード欄・キーワード欄で絞った結果の 0 件は「未登録」ではないので出さない。
     q_normalized = unicodedata.normalize("NFKC", q).upper()
     can_add = (
         bool(q)
         and not records
+        and not code_s
+        and not keyword
         and bool(CODE_S_PATTERN.match(q_normalized))
     )
 

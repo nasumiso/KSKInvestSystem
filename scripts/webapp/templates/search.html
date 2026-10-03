@@ -7,30 +7,20 @@
 
 <form method="get" action="/" style="margin-bottom:1.5em;">
   <div style="display:flex;gap:0.8em;flex-wrap:wrap;align-items:end;">
-    {% if filter_q %}<input type="hidden" name="q" value="{{ filter_q }}">{% endif %}
+    {# 検索欄は1つ。コードの一部でも、銘柄名・メモ等の語でも引ける。
+       以前はナビの検索語が hidden で残り、画面の欄が効かなかった (issue #439 U1) #}
     <div>
-      <label for="filter-code" style="font-size:0.85em;">銘柄コード</label>
-      <input id="filter-code" type="text" name="code_s" value="{{ filter_code_s }}"
-             placeholder="例: 3496" style="width:8em;padding:0.4em;margin:0;">
-    </div>
-    <div>
-      <label for="filter-rating" style="font-size:0.85em;">評価</label>
-      <select id="filter-rating" name="rating" style="padding:0.4em;margin:0;">
-        <option value="">全て</option>
-        {% for r in ["S","A","B","C","D","E"] %}
-        <option value="{{ r }}" {{ 'selected' if filter_rating == r }}>{{ r }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label for="filter-keyword" style="font-size:0.85em;">キーワード</label>
-      <input id="filter-keyword" type="text" name="keyword" value="{{ filter_keyword }}"
-             placeholder="銘柄名・メモ等" style="width:14em;padding:0.4em;margin:0;"
-             title="対象: 銘柄名 / 手動メモ / IR分析コメント / 四季報コメント / 概要 / OpenWork / Cramer / 機関投資家コメント">
+      <label for="filter-q" style="font-size:0.85em;">コード・銘柄名・メモ</label>
+      <input id="filter-q" type="text" name="q" value="{{ filter_q }}"
+             placeholder="例: 3496 / 半導体 装置" style="width:18em;padding:0.4em;margin:0;"
+             title="コードの一部、または次に含まれる語: 銘柄名 / 手動メモ / IR分析コメント / 四季報コメント / 概要 / OpenWork / Cramer / 機関投資家コメント。空白で区切ると、すべての語を満たす銘柄に絞ります">
     </div>
     <div>
       <button type="submit" style="padding:0.4em 1em;margin:0;">検索</button>
     </div>
+    {% if has_query %}
+    <div><a href="/" style="font-size:0.85em;">条件をクリア</a></div>
+    {% endif %}
   </div>
 </form>
 
@@ -43,7 +33,12 @@
 {% endwith %}
 
 {% if has_query %}
-<p style="font-size:0.85em;color:#666;">{{ records|length }} 件</p>
+<p style="font-size:0.85em;color:#666;">{{ records|length }} 件
+  {# 入力欄を持たない旧 URL の条件 (code_s / rating / keyword) は、効いていることを文字で見せる #}
+  {% if filter_code_s or filter_rating or filter_keyword %}
+  （絞り込み:{% if filter_code_s %} コード {{ filter_code_s }}{% endif %}{% if filter_rating %} 評価 {{ filter_rating }}{% endif %}{% if filter_keyword %} キーワード {{ filter_keyword }}{% endif %}）
+  {% endif %}
+</p>
 
 {% if records %}
 <div style="overflow-x:auto;">
