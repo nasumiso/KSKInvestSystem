@@ -230,6 +230,15 @@
         <span class="th-strategy-drift"
               title="後から古い約定が取り込まれ、この建玉ラウンドの区切りが変わりました。戦略が別の取引を指している可能性があるため、戦略別の比較からは除外しています">⚠</span>
         {% endif %}
+        {# 保有銘柄側の今の戦略 (issue #492)。エピソードの戦略と違うときだけ見せる。
+           食い違いは誤りではない (保有中に意図を変えた跡) ので警告の見た目にしない。
+           未分類のときだけ、押すとその値をエピソードに付ける #}
+        {% if ep.stock_trade_idea %}
+        <span class="th-stock-idea{% if not ep.trade_idea %} is-applicable{% endif %}"
+              data-episode-key="{{ ep.episode_key }}"
+              data-idea="{{ ep.stock_trade_idea }}"
+              {% if ep.stock_trade_idea == ep.trade_idea %}hidden{% endif %}>銘柄: {{ ep.stock_trade_idea }}</span>
+        {% endif %}
       </td>
       {# 保有中は close_date が無いので最終約定日を右端に出す (期間が open_date だけに
          潰れて「いつまで動いていたラウンドか」が読めなくなるため) #}
@@ -961,6 +970,10 @@
         document.querySelectorAll(
           '.episode-strategy-confirm[data-episode-key="' + sel.dataset.episodeKey + '"]'
         ).forEach(function (btn) { btn.remove(); });
+        // 保有銘柄側の戦略の表示も、保存した値に合わせて出し分ける
+        document.querySelectorAll(
+          '.th-stock-idea[data-episode-key="' + sel.dataset.episodeKey + '"]'
+        ).forEach(syncStockIdea);
       })
       .catch(function () { sel.value = sel.dataset.prev; })
       .finally(function () { sel.disabled = false; });
@@ -971,6 +984,26 @@
     // 同期する際、相手側の「直前の値」も一緒に更新する必要があるため
     sel.dataset.prev = sel.value;
     sel.addEventListener('change', function () { saveEpisodeStrategy(sel); });
+  });
+
+  // 保有銘柄側の戦略 (issue #492)。エピソードの戦略と同じなら隠し、未分類のときだけ
+  // 押して付けられるようにする (付いている戦略は入った意図なので、押し間違いで上書きさせない)
+  function syncStockIdea(hint) {
+    var sel = hint.parentElement.querySelector('.episode-strategy-select');
+    hint.hidden = sel.value === hint.dataset.idea;
+    hint.classList.toggle('is-applicable', !sel.value);
+    hint.title = sel.value
+      ? '保有銘柄の今の戦略です。このエピソードの戦略 (入った時点の意図) と違います'
+      : '保有銘柄の今の戦略です。押すとこのエピソードに付けます';
+  }
+  document.querySelectorAll('.th-stock-idea').forEach(function (hint) {
+    syncStockIdea(hint);
+    hint.addEventListener('click', function () {
+      var sel = hint.parentElement.querySelector('.episode-strategy-select');
+      if (sel.value || sel.disabled) return;
+      sel.value = hint.dataset.idea;
+      saveEpisodeStrategy(sel);
+    });
   });
 
   // 「✓ そのまま確定」: 表示中の値で保存し、seed を manual に変える

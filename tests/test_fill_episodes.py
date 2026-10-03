@@ -774,6 +774,22 @@ class TestBrokerBackfill:
         assert brokers == {"SBI"}
 
 
+class TestStockTradeIdea:
+    """保有中エピソードにだけ、保有銘柄 (1保) の今の戦略を添える (issue #492)。"""
+
+    def test_only_open_episode_of_held_stock(self, db_path):
+        ps.seed_trade_ideas(db_path=db_path)
+        ps.add_to_watch("7001", db_path=db_path)
+        ps.update_memo("7001", {"trade_idea": "GARP"}, db_path=db_path)
+        ps.transition_status("7001", "1保", qty=100, db_path=db_path)
+        for i, (d, side) in enumerate([
+                ("2026-03-05", "buy"), ("2026-03-06", "sell"), ("2026-04-10", "buy")]):
+            _add(db_path, "7001", d, side, 100, 1000.0, seq_salt=str(i))
+        got = {e["open_date"]: e["stock_trade_idea"]
+               for e in trade_episodes.build_fill_episodes(db_path=db_path)}
+        assert got == {"2026-03-05": "", "2026-04-10": "GARP"}
+
+
 class TestAssignEntryStrategy:
     """入った時点の戦略を、銘柄の戦略の履歴から写す (issue #492 5d)。"""
 

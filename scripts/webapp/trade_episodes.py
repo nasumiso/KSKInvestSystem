@@ -899,6 +899,14 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
         # 計算をしないで済むよう、ここで出しておく)
         ep["hold_days_calc"] = episode_hold_days(ep)
 
+    # 保有中エピソードに、保有銘柄 (1保) の今の戦略を添える (issue #492)。エピソードの
+    # 戦略 (入った意図) と食い違うときに画面で示す。クローズ済みには付けない
+    # (銘柄の戦略はその後の別の取引で変わるので、比べる意味がない)
+    stock_ideas = {r["code_s"]: (r.get("memo") or {}).get("trade_idea") or ""
+                   for r in ps.list_records("1保", db_path=db_path)}
+    for ep in episodes:
+        ep["stock_trade_idea"] = "" if ep["closed"] else stock_ideas.get(ep["code_s"], "")
+
     # 最終約定日 (最新の取引がある順) 降順、同日は銘柄コード昇順
     episodes.sort(key=lambda e: e["code_s"])
     episodes.sort(key=lambda e: e["last_trade_date"], reverse=True)

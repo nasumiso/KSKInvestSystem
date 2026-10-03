@@ -682,6 +682,21 @@ nav .quick-search {
 .episode-strategy-confirm:hover {
   background: #e0ffe0;
 }
+/* 保有銘柄側の今の戦略 (issue #492)。エピソードの戦略と違うときだけ、セレクタの下に
+   小さく出す。警告ではないので灰色。未分類のときだけ押せる (下線で示す) */
+.th-stock-idea {
+  display: block;
+  color: #888;
+  font-size: 0.7em;
+  line-height: 1.2;
+}
+.th-stock-idea[hidden] {
+  display: none;
+}
+.th-stock-idea.is-applicable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
 
 /* 売買履歴の区分セル (issue #419)。table-layout:auto では「⚠ 分割・併合の疑い」の
    ような稀な長いバッジが nowrap で全行の列幅を 202px まで押し広げてしまう。
