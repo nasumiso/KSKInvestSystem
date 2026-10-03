@@ -4418,8 +4418,12 @@ class TestEpisodeChart:
         if has_stop:
             # 買い増しで平均取得単価が 1000 → 1100 に上がり、損切り価格も階段状に上がる
             pct = rule["stop_loss_pct"]
-            assert [round(v) for _, v in helpers._episode_stop_steps(ep, pct)] == [
+            assert [round(v) for _, v in helpers._episode_stop_steps(ep, rule)] == [
                 round(1000 * (1 - pct / 100)), round(1100 * (1 - pct / 100))]
+            # 買い下がりでは、ナンピンを許す戦略だけ線が下がる (保有銘柄一覧の防衛線と同じ)
+            ep["fills"][1]["price"] = 800
+            for allow, n_steps in ((False, 1), (True, 2)):
+                assert len(helpers._episode_stop_steps(ep, dict(rule, allow_dca_lower=allow))) == n_steps
 
     @pytest.mark.parametrize("fills,is_short,carry_over,n_poly,n_circle,note", [
         # 同一日の複数約定は1マーカーに畳み、株数を合算する (285A 相当)。

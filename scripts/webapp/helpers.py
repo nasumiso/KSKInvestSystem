@@ -4980,27 +4980,25 @@ def _episode_ma_line(bars: Dict[date, Tuple[float, float]],
                    for i in range(weeks - 1, len(days))}
 
 
-def _episode_stop_steps(ep: Dict[str, Any], stop_loss_pct: float) -> List[Tuple[date, float]]:
-    """建てるたびの (約定週の月曜, 損切り価格) を返す。損切り価格 = 平均取得単価 × (1 - 率)。
+def _episode_stop_steps(ep: Dict[str, Any], exit_rule: Dict[str, Any]) -> List[Tuple[date, float]]:
+    """損切りラインが動いた時点の (約定週の月曜, 損切り価格) を返す。
 
-    保有銘柄一覧の防衛線と同じく平均取得単価を基準にするので、買い増しのたびに動く。
-    空売りと期首持越し (建ての約定が欠けている) は基準が取れないので空を返す。
+    保有銘柄一覧の防衛線と同じ calc_stop_loss_line で、その約定までを再生して求める
+    (平均取得単価が基準。買い下がりで線を下げない戦略のラチェットも同じになる)。
+    空売りは calc_stop_loss_line が扱わず、期首持越しは建ての約定が欠けていて
+    基準が取れないので、どちらも空を返す。
     """
-    if ep.get("is_short") or ep.get("carry_over"):
+    from exit_line import calc_stop_loss_line
+
+    if ep.get("carry_over"):
         return []
-    is_credit = ep.get("kind") == "信用"
-    held, avg = 0.0, 0.0
+    fills = ep.get("fills") or []
     steps: List[Tuple[date, float]] = []
-    for f in ep.get("fills") or []:
-        qty, price = f["qty"], f["price"]
-        # 信用ラウンドの現引は買い fill だが、建玉を減らす側
-        if f["side"] == "buy" and (not is_credit or (f.get("trade_kind") or "").startswith("信用新規")):
-            avg = (avg * held + price * qty) / (held + qty)
-            held += qty
-            steps.append((_monday_of(date.fromisoformat(f["trade_date"])),
-                          avg * (1 - stop_loss_pct / 100)))
-        else:
-            held -= qty
+    for i, f in enumerate(fills):
+        line = calc_stop_loss_line(exit_rule, fills[:i + 1], kind=ep.get("kind"),
+                                   is_short=bool(ep.get("is_short")))
+        if line is not None and (not steps or line != steps[-1][1]):
+            steps.append((_monday_of(date.fromisoformat(f["trade_date"])), line))
     return steps
 
 
@@ -5051,7 +5049,7 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
     ma_label, ma_values = _episode_ma_line(bars, exit_rule)
     ma_pts = [(d, ma_values[d]) for d, _, _ in series if d in ma_values]
     stop_pct = exit_rule.get("stop_loss_pct")
-    stop_steps = [(d, v) for d, v in (_episode_stop_steps(ep, stop_pct) if stop_pct and not skipped else [])
+    stop_steps = [(d, v) for d, v in (_episode_stop_steps(ep, exit_rule) if stop_pct and not skipped else [])
                   if d <= end_d]
     for _, v in ma_pts + stop_steps:
         lo = min(lo, v)
