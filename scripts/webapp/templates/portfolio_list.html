@@ -701,6 +701,7 @@
         <select class="trade-idea-select"
                 data-code="{{ row.code_s }}"
                 data-idea="{{ current_idea }}"
+                {% if row.status == '1保' %}data-hold="1"{% endif %}
                 title="{{ trade_idea_descriptions[current_idea] if current_idea in trade_idea_descriptions else '売買戦略 (選択で即保存)' }}"
                 >
           <option value="">{% if unclassified_hold %}⚠️ 未分類{% else %}未分類{% endif %}</option>
@@ -1558,6 +1559,17 @@ function excludeFromUniverse(codeS) {
       var prev = sel.dataset.idea || '';
       var fd = new FormData();
       fd.append('trade_idea', sel.value);
+      // 保有中に戦略を変えると出口ルールが変わるので、理由を聞いて変更履歴に残す (issue #492 5c)。
+      // 未分類への初回付与は意図の変更ではないので聞かない
+      if (sel.dataset.hold && prev) {
+        var reason = prompt('保有中の戦略を「' + prev + '」から「' + (sel.value || '未分類')
+                            + '」に変える理由 (任意)');
+        if (reason === null) {
+          sel.value = prev;
+          return;
+        }
+        fd.append('reason', reason.trim());
+      }
       sel.classList.add('saving');
       sel.classList.remove('error');
       fetch('/portfolio/' + encodeURIComponent(code) + '/memo', {

@@ -1323,6 +1323,21 @@ class TestDetailGyoutaiThemes:
         rec = ps.get_record("3496", db_path=portfolio_db)
         assert (rec.get("memo") or {}).get("gyoutai_themes") == ["新規テーマ"]
 
+    def test_ajax_post_records_strategy_change_reason(self, portfolio_app):
+        """戦略の変更と一緒に送った reason が、変更履歴に残る (issue #492)"""
+        import portfolio_shelve as ps
+        app, portfolio_db = portfolio_app
+        ps.seed_trade_ideas(db_path=portfolio_db)
+        client = app.test_client()
+        resp = client.post(
+            "/portfolio/3496/memo",
+            data={"trade_idea": "GARP", "reason": " 押し目で中長期に切り替え "},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status_code == 200
+        last = ps.list_strategy_history("3496", db_path=portfolio_db)[-1]
+        assert (last["new"], last["reason"]) == ("GARP", "押し目で中長期に切り替え")
+
     def test_ajax_post_clears_when_all_empty(self, portfolio_app):
         """既存テーマあり → 全スロット空文字 AJAX POST → gyoutai_themes が空 list に"""
         import portfolio_shelve as ps

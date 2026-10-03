@@ -908,7 +908,8 @@ def update_memo(code_s: str):
     fields = _extract_memo_fields_from_form(request.form)
 
     try:
-        ps.update_memo(code_s, fields)
+        # reason は戦略の変更履歴に残す (issue #492)。保有中の戦略変更で画面が聞く
+        ps.update_memo(code_s, fields, reason=(request.form.get("reason") or "").strip())
     except KeyError:
         msg = f"{code_s} は portfolio_shelve に未登録です"
         if is_ajax:
