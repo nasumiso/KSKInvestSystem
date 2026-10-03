@@ -1298,3 +1298,57 @@ class TestCheckDups:
         self._add_amount(db_path, "9432", 0, trade_kind="信用新規", dedup_key="m1",
                          side="buy", price=1000.0)
         assert show_fill_episodes._check_dups(db_path) == 0
+
+
+def _note_ep(kind, open_date, close_date=None, **extra):
+    return {"code_s": "6336", "kind": kind, "open_date": open_date,
+            "close_date": close_date, "closed": close_date is not None, **extra}
+
+
+def _note_log(day, reason, *, action_type="ステータス変更", status_from=None, status_to=None):
+    return {"code_s": "6336", "timestamp": f"{day}T12:00:00+09:00", "reason": reason,
+            "action_type": action_type, "status_from": status_from, "status_to": status_to}
+
+
+_IN = dict(status_from="3監", status_to="1保")
+_OUT = dict(action_type="売却", status_from="1保", status_to="2準")
+
+
+@pytest.mark.parametrize("episodes, logs, expected", [
+    pytest.param(
+        [_note_ep("現物", "2026-09-11", "2026-10-01")],
+        [_note_log("2026-09-14", "決算強気が裏目", **_IN),
+         _note_log("2026-10-02", "CSV取込による売却検出 / 決算またぎ失敗", **_OUT)],
+        [[("IN", "2026-09-14", "決算強気が裏目"), ("OUT", "2026-10-02", "決算またぎ失敗")]],
+        id="ログが約定より遅れても付き、機械の接頭辞は除く",
+    ),
+    pytest.param(
+        [_note_ep("現物", "2026-09-01", "2026-09-28"), _note_ep("信用", "2026-10-02")],
+        [_note_log("2026-10-02", "流れで残りも売り", **_OUT),
+         _note_log("2026-10-02", "CSV取込による新規保有検出 / ドローン", **_IN)],
+        [[("OUT", "2026-10-02", "流れで残りも売り")], [("IN", "2026-10-02", "ドローン")]],
+        id="売った日に入り直すと、売却は閉じた側・INは新しい側",
+    ),
+    pytest.param(
+        [_note_ep("現物", "2026-09-11")],
+        [_note_log("2026-09-14", "CSV取込による新規保有検出", **_IN),
+         _note_log("2026-09-14", "txt 取り込み (H 接頭辞)", **_IN),
+         _note_log("2026-09-20", "100 → 300 (CSV取込)", action_type="株数変更"),
+         _note_log("2026-09-21", "300 → 400", action_type="株数変更"),
+         _note_log("2026-09-22", "400 → 500 (強めの押し)", action_type="株数変更")],
+        [[("株数", "2026-09-22", "400 → 500 強めの押し")]],
+        id="機械の文言だけの行は出さず、人のメモつき株数変更は出す",
+    ),
+    pytest.param(
+        [_note_ep("現物", "2026-08-01", "2026-08-05"),
+         _note_ep("信用", "2026-09-10", carry_over=True)],
+        [_note_log("2026-09-12", "離れすぎたIN", **_IN),
+         _note_log("2026-08-25", "離れすぎたOUT", **_OUT)],
+        [[], []],
+        id="15日以上離れたログと期首持越しへのINは付けない",
+    ),
+])
+def test_attach_action_notes(episodes, logs, expected):
+    trade_episodes.attach_action_notes(episodes, logs)
+    got = [[(n["label"], n["date"], n["text"]) for n in ep["action_notes"]] for ep in episodes]
+    assert got == expected

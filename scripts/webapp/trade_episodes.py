@@ -706,6 +706,95 @@ def _episodes_for_code(code_s: str, stock_name: str, fills: List[Dict[str, Any]]
     return code_episodes
 
 
+# アクションログの reason のうち機械が書く部分 (import_portfolio_csv.py が生成)。
+# 人のメモはこの後ろに " / " で付く。
+_MACHINE_REASON_PREFIXES = (
+    "CSV取込による売却検出", "CSV取込による新規保有検出", "CSV取込で保有を検出",
+)
+# アクションログの日付は約定日より遅れる (CSV 取込の日になる)。実測では 0〜7 日
+_ACTION_NOTE_MAX_LAG_DAYS = 14
+
+
+def _human_reason(reason: str) -> str:
+    """アクションログの reason から機械の文言を除き、人が書いた文だけを返す。"""
+    text = (reason or "").strip()
+    if text.startswith("txt 取り込み"):  # 2026-05 の移行時のログ
+        return ""
+    for prefix in _MACHINE_REASON_PREFIXES:
+        if text.startswith(prefix):
+            return text[len(prefix):].lstrip(" /").strip()
+    return text
+
+
+def _qty_change_note(reason: str) -> str:
+    """株数変更の reason "500 → 700 (メモ)" から、人のメモつきのものだけ文にする。"""
+    text = (reason or "").strip()
+    if "(" not in text or not text.endswith(")"):
+        return ""
+    memo = text[text.index("(") + 1:-1].strip()
+    if memo in ("", "CSV取込"):
+        return ""
+    return f"{text[:text.index('(')].strip()} {memo}"
+
+
+def attach_action_notes(episodes: List[Dict[str, Any]],
+                        logs: List[Dict[str, Any]]) -> None:
+    """IN/OUT 時にアクションログへ残した人の文を、エピソードに紐付ける。
+
+    振り返りメモ欄に当時の理由を並べて見せるための読み取り専用の突き合わせ。
+    保存先は別のまま (書くタイミングが違う)。ログに現物/信用の区分は無いので
+    銘柄と日付だけで決める:
+      IN (1保への変更): ログ日以前に建てた最後のエピソード
+      OUT (1保からの変更): ログ日以前に閉じた最後のエピソード。売った日に入り直した
+        とき新しい側へ付けないため。無ければログ日を含むエピソード
+      株数 (株数変更): ログ日を含むエピソード
+    どこにも付かないログは捨てる。各エピソードに action_notes
+    ([{label, date, text}], 日付昇順) を付ける。
+    """
+    by_code: Dict[str, List[Dict[str, Any]]] = {}
+    for ep in episodes:
+        ep["action_notes"] = []
+        by_code.setdefault(ep["code_s"], []).append(ep)
+
+    def covers(ep: Dict[str, Any], day: str) -> bool:
+        return ep["open_date"] <= day and (not ep["closed"] or day <= ep["close_date"])
+
+    def within_lag(start: str, day: str) -> bool:
+        lag = (date.fromisoformat(day) - date.fromisoformat(start)).days
+        return lag <= _ACTION_NOTE_MAX_LAG_DAYS
+
+    for log in logs:
+        eps = by_code.get(log.get("code_s"))
+        if not eps:
+            continue
+        day = log["timestamp"][:10]
+        if log.get("action_type") == "株数変更":
+            label, text = "株数", _qty_change_note(log.get("reason", ""))
+            targets = [e for e in eps if covers(e, day)]
+        elif log.get("status_to") == "1保":
+            label, text = "IN", _human_reason(log.get("reason", ""))
+            # 期首持越しは open_date が実際の建て日ではない
+            cands = [e for e in eps if not e.get("carry_over") and e["open_date"] <= day]
+            last = max((e["open_date"] for e in cands), default="")
+            targets = [e for e in cands if e["open_date"] == last
+                       and (within_lag(last, day) or covers(e, day))]
+        elif log.get("status_from") == "1保":
+            label, text = "OUT", _human_reason(log.get("reason", ""))
+            cands = [e for e in eps if e["closed"] and e["close_date"] <= day]
+            last = max((e["close_date"] for e in cands), default="")
+            targets = [e for e in cands if e["close_date"] == last and within_lag(last, day)]
+            if not targets:  # 売る前に先にステータスを変えた
+                targets = [e for e in eps if covers(e, day)]
+        else:
+            continue
+        if not text:
+            continue
+        for ep in targets:
+            ep["action_notes"].append({"label": label, "date": day, "text": text})
+    for ep in episodes:
+        ep["action_notes"].sort(key=lambda n: n["date"])
+
+
 def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """全 fill を建玉ラウンド単位のエピソードに再構成する (issue #387 Phase4b)。
 
@@ -782,6 +871,8 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
             ep["code_s"], ep["kind"], ep["first_seq"]
         )
         ep["review_memo"] = memos.get(ep["episode_key"], "")
+    # IN/OUT 時のアクションログの理由を、振り返りメモ欄に並べて見せるために付ける
+    attach_action_notes(episodes, ps.list_action_logs(db_path=db_path))
 
     # エピソードに焼き付けた売買戦略 (issue #419) を紐付ける。
     # ここは純粋な読み取り経路なので DB には書かない (指紋の確定保存は
