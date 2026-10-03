@@ -356,22 +356,30 @@
       if (!isDirty()) return gyosekiDone;
       var code = (byCode(navIds[pos]) || {}).code_s || navIds[pos];
       var fd = new FormData(form);
-      saveChain = saveChain.then(function () {
+      var saved = saveChain.then(function () {
+        setSaveStatus(form, 'saving');
         return fetch(form.action, { method: 'POST', body: fd }).then(function (resp) {
-          if (!resp.ok) return;
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
           var s = byCode(code);
           if (s) s.has_current = formHasCurrent();
           loadedSnapshot = serializeForm();
           refreshDoneCount();
           setDoneMark(s ? s.has_current : false);
+          setSaveStatus(form, 'saved');
         });
-      }).catch(function () { /* ネットワークエラーでもキュー継続 */ });
+      });
+      // 失敗を呼び出し側へ伝え、銘柄を切り替えさせない (切り替えると入力が消える, issue #439 U4)。
+      // キュー自体は継続する。
+      saved.catch(function () {
+        setSaveStatus(form, 'failed', function () { flushSave().catch(function () {}); });
+      });
+      saveChain = saved.catch(function () {});
       // 業績保存の完了も待ってから銘柄切替させる (切替後の再描画で上書きされないように)。
-      return Promise.all([saveChain, gyosekiDone]);
+      return Promise.all([saved, gyosekiDone]);
     }
 
     // 保存に失敗したときは銘柄を切り替えない (入力が上書きで消えるため)。
-    // エラー内容は gyosekiMsg に表示済みなので、ここでは握り潰すだけでよい。
+    // エラー内容は gyosekiMsg / 保存状態の表示に出ているので、ここでは握り潰すだけでよい。
     function onSaveFailed() { /* 切替を中止 */ }
 
     function goPrev() {

@@ -869,10 +869,12 @@
       display.style.display = 'none';
       cell.appendChild(ta);
       ta.focus();
-      ta.addEventListener('blur', function () {
+      // 保存。失敗したら入力欄を残して再試行できるようにする (issue #439 U4)
+      function save() {
         var next = ta.value;
         var initial = cell.dataset.memo;
         if (next === initial) {
+          setSaveStatus(cell, '');
           ta.remove();
           display.style.display = '';
           return;
@@ -883,33 +885,35 @@
         if (cell.dataset.episodeKey) {
           fd.append('episode_key', cell.dataset.episodeKey);
         }
-        fetch(url, { method: 'POST', body: fd })
-          .then(function (r) {
-            if (r.ok) {
-              cell.dataset.memo = next;
-              display.textContent = next || 'クリックして入力';
-              display.style.color = next ? '#555' : '#aaa';
-              ta.remove();
-              display.style.display = '';
-              // issue #391: エピソード単位/銘柄単位の両ビューに同じ episode_key の
-              // セルが存在するため、非表示側の dataset.memo と表示も揃える
-              if (cell.dataset.episodeKey) {
-                document.querySelectorAll(
-                  '.review-memo-cell[data-episode-key="' + cell.dataset.episodeKey + '"]'
-                ).forEach(function (other) {
-                  if (other === cell) return;
-                  other.dataset.memo = next;
-                  var otherDisplay = other.querySelector('.review-memo-display');
-                  if (otherDisplay) {
-                    otherDisplay.textContent = next || 'クリックして入力';
-                    otherDisplay.style.color = next ? '#555' : '#aaa';
-                  }
-                });
-              }
+        queueSave(cell, function () {
+          return fetch(url, { method: 'POST', body: fd }).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            cell.dataset.memo = next;
+            // 保存中に書き足していたら、入力欄を残して未保存のままにする
+            if (ta.value !== next) return false;
+            display.textContent = next || 'クリックして入力';
+            display.style.color = next ? '#555' : '#aaa';
+            ta.remove();
+            display.style.display = '';
+            // issue #391: エピソード単位/銘柄単位の両ビューに同じ episode_key の
+            // セルが存在するため、非表示側の dataset.memo と表示も揃える
+            if (cell.dataset.episodeKey) {
+              document.querySelectorAll(
+                '.review-memo-cell[data-episode-key="' + cell.dataset.episodeKey + '"]'
+              ).forEach(function (other) {
+                if (other === cell) return;
+                other.dataset.memo = next;
+                var otherDisplay = other.querySelector('.review-memo-display');
+                if (otherDisplay) {
+                  otherDisplay.textContent = next || 'クリックして入力';
+                  otherDisplay.style.color = next ? '#555' : '#aaa';
+                }
+              });
             }
-          })
-          .catch(function () {});
-      });
+          });
+        }, save);
+      }
+      ta.addEventListener('blur', save);
     }
 
     cell.style.cursor = 'pointer';

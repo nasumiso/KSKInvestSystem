@@ -108,29 +108,90 @@ function revertShikiho() {
   updateSaveBar('shikiho');
 }
 
-/* --- 非同期フォーム送信（直列化でリクエスト順序を保証） --- */
+/* --- 保存状態の表示 (issue #439 U4) ---
+   自動保存は失敗しても何も言わなかったため、欄のそばに状態を出す。
+   state: 'saving' / 'saved' / 'failed' / '' (消す)。失敗時は retry を呼ぶ再試行ボタンを付ける。 */
+function setSaveStatus(anchor, state, retry) {
+  if (!anchor) return;
+  var el = anchor._saveStatusEl;
+  if (!el || !el.isConnected) {
+    el = document.createElement('span');
+    anchor.insertAdjacentElement('afterend', el);
+    anchor._saveStatusEl = el;
+  }
+  clearTimeout(el._timer);
+  el.className = 'save-status' + (state ? ' ' + state : '');
+  el.textContent = '';
+  if (state === 'saving') {
+    el.textContent = '保存中…';
+  } else if (state === 'saved') {
+    el.textContent = '保存済み';
+    el._timer = setTimeout(function() { setSaveStatus(anchor, ''); }, 2500);
+  } else if (state === 'failed') {
+    el.textContent = '保存できませんでした ';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '再試行';
+    btn.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      if (retry) retry();
+    });
+    el.appendChild(btn);
+  }
+}
+
+/* --- 保存の直列化（リクエスト順序を保証）と状態表示 ---
+   send は Promise を返す。HTTP 失敗は throw すること。送った値と今の値が違う
+   (保存中に書き足した) ときは false を返すと「保存済み」を出さない。 */
 var _saveQueue = Promise.resolve();
-function submitFormAsync(form) {
+var _savePending = 0;
+function queueSave(anchor, send, retry) {
+  _savePending++;
+  setSaveStatus(anchor, 'saving');
+  _saveQueue = _saveQueue.then(send).then(function(clean) {
+    _savePending--;
+    setSaveStatus(anchor, clean === false ? '' : 'saved');
+  }, function() {
+    /* 失敗してもキューは継続する。入力と未保存の印は残す */
+    _savePending--;
+    setSaveStatus(anchor, 'failed', retry);
+  });
+  return _saveQueue;
+}
+
+/* --- 非同期フォーム送信 --- */
+function submitFormAsync(form, anchor) {
   var formData = new FormData(form);
+  /* form 属性でひもづくフォーム外のフィールド (ヘッダーの評価・分析日) も含める */
+  var fields = Array.from(form.elements).filter(function(el) {
+    return el.name && el.classList &&
+      (el.classList.contains('editable-field') || el.classList.contains('editable-select'));
+  });
   /* フィールド自体が手動編集されたかをサーバに渡す。
      値が送信されるだけでは「未編集の初期値」か区別できないため、
      dirty フラグを hidden 的に追加する。 */
-  form.querySelectorAll('.editable-field, .editable-select').forEach(function(el) {
-    if (!el.name) return;
+  var sent = {};
+  fields.forEach(function(el) {
     formData.set(el.name + '__dirty', el.classList.contains('dirty') ? '1' : '');
+    sent[el.name] = el.value;
   });
-  _saveQueue = _saveQueue.then(function() {
+  anchor = anchor || form;
+  queueSave(anchor, function() {
     return fetch(form.action, { method: 'POST', body: formData }).then(function(response) {
-      if (!response.ok) return;
-      /* 保存完了: dirty フラグをリセットして初期値を更新 */
-      form.querySelectorAll('.editable-field, .editable-select').forEach(function(el) {
-        initialValues[el.name] = el.value;
-        el.classList.remove('dirty');
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      /* 保存完了: 送った値を初期値にする。保存中に書き足した欄は dirty のまま残す */
+      var clean = true;
+      fields.forEach(function(el) {
+        initialValues[el.name] = sent[el.name];
+        var changed = el.value !== sent[el.name];
+        el.classList.toggle('dirty', changed);
+        if (changed) clean = false;
       });
       var formName = (form.querySelector('[data-form]') || {}).dataset;
       if (formName && formName.form) updateSaveBar(formName.form);
+      return clean;
     });
-  }).catch(function() { /* ネットワークエラー時もキューを継続 */ });
+  }, function() { submitFormAsync(form, anchor); });
 }
 
 /* --- フォーカスアウト時の自動保存 --- */
@@ -159,7 +220,7 @@ document.addEventListener('focusout', function(e) {
     var formId = _autoSaveFormIds[formName];
     if (!formId) return;
     var form = document.getElementById(formId);
-    if (form) submitFormAsync(form);
+    if (form) submitFormAsync(form, el);
   }, 100);
 });
 
@@ -293,13 +354,14 @@ function openKessanEditor(li) {
   if (preOutEl) preOutEl.focus();
 }
 
-function rememberKessanInitialValues(editor) {
-  editor.querySelectorAll('.kessan-field').forEach(function(el) {
-    if (el.type === 'checkbox') {
-      el.dataset.initial = el.checked ? '1' : '0';
-    } else {
-      el.dataset.initial = el.value;
-    }
+function kessanFieldValue(el) {
+  return el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+}
+
+/* values を渡すとその値 (送信時点のスナップショット) を初期値にする */
+function rememberKessanInitialValues(editor, values) {
+  editor.querySelectorAll('.kessan-field').forEach(function(el, i) {
+    el.dataset.initial = values ? values[i] : kessanFieldValue(el);
   });
 }
 
@@ -359,14 +421,15 @@ function saveKessanFromEditor(li) {
   }
 
   var url = '/api/kessan_comment/' + encodeURIComponent(code);
-  _saveQueue = _saveQueue.then(function() {
+  var sent = Array.from(editor.querySelectorAll('.kessan-field')).map(kessanFieldValue);
+  /* エディタを閉じた後も失敗が見えるよう、状態はエディタの外 (直後) に出す */
+  queueSave(editor, function() {
     return fetch(url, { method: 'POST', body: formData }).then(function(res) {
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
     }).then(function(data) {
-      if (!data) return;
-      /* 初期値リセット */
-      rememberKessanInitialValues(editor);
+      /* 初期値リセット (送った値。保存中に書き足した分は未保存のまま残す) */
+      rememberKessanInitialValues(editor, sent);
       updatePostPriceChangeDisplay(editor, data);
       /* 閲覧用 view DOM を再構築（リロード不要で反映） */
       updateKessanViewDOM(li, data);
@@ -376,8 +439,9 @@ function saveKessanFromEditor(li) {
       } else {
         li.classList.remove('has-comment');
       }
+      return !isKessanDirty(editor);
     });
-  }).catch(function() { /* エラー時もキュー継続 */ });
+  }, function() { saveKessanFromEditor(li); });
 }
 
 /* 保存成功後、li 内の表示用 DOM（見通し・反応・期待度バッジ・決算またぎ）を更新 */
@@ -481,6 +545,33 @@ document.addEventListener('change', function(e) {
   if (!el.classList || !el.classList.contains('kessan-pre-expectation')) return;
   var li = el.closest('.kessan-stock');
   if (li) saveKessanFromEditor(li);
+});
+
+/* --- 離脱確認 (issue #439 U4) ---
+   自動保存はフォーカスを外した瞬間に送るので、書いてすぐリンクを押すと通信が
+   途中で切れて内容が失われる。未保存・順番待ち・通信中・失敗のどれかがあれば確認する。 */
+function hasUnsavedEdits() {
+  if (_savePending > 0) return true;
+  if (document.querySelector('[data-form].dirty, .save-status.failed')) return true;
+  var kessanDirty = Array.from(document.querySelectorAll('.kessan-editor')).some(function(editor) {
+    return editor.dataset.loaded === '1' && isKessanDirty(editor);
+  });
+  if (kessanDirty) return true;
+  return Array.from(document.querySelectorAll('.review-memo-ta')).some(function(ta) {
+    var cell = ta.closest('.review-memo-cell');
+    return cell && ta.value !== cell.dataset.memo;
+  });
+}
+
+/* 通常のフォーム送信はそれ自体が保存なので確認しない */
+var _nativeSubmit = false;
+document.addEventListener('submit', function(e) {
+  if (!e.defaultPrevented) _nativeSubmit = true;
+});
+window.addEventListener('beforeunload', function(e) {
+  if (_nativeSubmit || !hasUnsavedEdits()) return;
+  e.preventDefault();
+  e.returnValue = '';
 });
 
 /* id 付き details 要素の開閉状態を localStorage に記憶し、ページ再訪時に復元する。

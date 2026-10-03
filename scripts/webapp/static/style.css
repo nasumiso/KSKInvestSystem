@@ -231,6 +231,16 @@ table.ir-snapshot-table td.ir-comment-cell { width: 100%; word-break: break-word
 }
 .save-bar.visible { display: flex; }
 
+/* 自動保存の状態表示 (issue #439 U4) */
+.save-status { margin-left: 0.5em; font-size: 0.8rem; font-weight: normal; white-space: nowrap; }
+.save-status.saving { color: #888; }
+.save-status.saved { color: #1a7f37; }
+.save-status.failed { color: #c0392b; font-weight: 600; }
+.save-status button {
+  display: inline-block; width: auto; margin: 0 0 0 0.3em; padding: 0.05em 0.6em;
+  font-size: 0.8rem; background: #fff; color: #c0392b; border: 1px solid #c0392b;
+}
+
 /* 四季報リスト */
 .shikiho-list {
   list-style: none;
