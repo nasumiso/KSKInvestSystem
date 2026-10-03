@@ -30,6 +30,7 @@ shelve ベースのラッパー。
 import fcntl
 import glob
 import hashlib
+import json
 import math
 import os
 import re
@@ -1379,6 +1380,44 @@ def _append_strategy_history(db: ShelveDB, code_s: str, entry: Dict[str, Any]) -
     history = list(db.get(key) or [])
     history.append(entry)
     db[key] = history
+
+
+def exit_rule_id(exit_rule: Dict[str, Any]) -> str:
+    """出口ルールの識別子。出口アラートの cycle_id の末尾に入る。"""
+    return json.dumps(exit_rule, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _strategy_change_context(db: ShelveDB, code_s: str, record: Dict[str, Any],
+                             old_idea: str, new_idea: str) -> Dict[str, Any]:
+    """保有中に戦略を変えた時点の出口ルールと防衛線の状態 (issue #492 5c)。
+
+    呼び出し側で _flock + ShelveDB を保持する。後から復元できないものだけを残す:
+    出口アラートは cycle_id に戦略と出口ルールを含むので戦略を変えると消え、
+    戦略マスターの出口ルールは後から編集できる。終値と平均取得単価は日足と fill
+    から計算できるので残さない。
+    """
+    def rule_of(name: str) -> Optional[Dict[str, Any]]:
+        master = db.get(f"{KEY_TRADE_IDEA_PREFIX}{name}") if name else None
+        rule = master.get("exit_rule") if isinstance(master, dict) else None
+        return dict(rule) if isinstance(rule, dict) else None
+
+    old_rule = rule_of(old_idea)
+    alert = None
+    state = db.get(_exit_alert_key(code_s))
+    # 別の戦略や、出口ルールを編集する前の状態が残っていても写さない
+    # (画面側の get_exit_alert_state が捨てる条件に合わせる)
+    if (isinstance(state, dict) and old_rule is not None
+            and str(state.get("cycle_id", "")).endswith(f"|{old_idea}|{exit_rule_id(old_rule)}")):
+        events = [e for e in state.get("events") or [] if isinstance(e, dict)]
+        alert = {
+            "cycle_id": state["cycle_id"],
+            "triggered": bool(state.get("triggered")),
+            "first_date": events[0].get("date") if events else None,
+            "event_count": len(events),
+            "last_event": dict(events[-1]) if events else None,
+        }
+    return {"qty": record.get("qty"), "old_exit_rule": old_rule,
+            "new_exit_rule": rule_of(new_idea), "exit_alert": alert}
 
 
 def _ensure_strategy_history_baseline(db: ShelveDB) -> None:
@@ -3609,7 +3648,7 @@ def update_memo(
                 # issue #492: 戦略の変更は出口ルールを変えるので、有効日つきで残す。
                 # 基準値は変更を書き込む前に作る (変更前の値を基準値として残すため)
                 _ensure_strategy_history_baseline(db)
-                _append_strategy_history(db, normalized, {
+                entry = {
                     "scope": "stock",
                     "effective_date": effective_date or datetime.now(JST).date().isoformat(),
                     "recorded_at": now_iso(),
@@ -3617,7 +3656,12 @@ def update_memo(
                     "new": new_idea,
                     "source": source,
                     "reason": reason,
-                })
+                }
+                # 保有中の付け替えは出口ルールを変える。変えた瞬間の状態を添える
+                if record.get("status") == "1保" and old_idea:
+                    entry["context"] = _strategy_change_context(
+                        db, normalized, record, old_idea, new_idea)
+                _append_strategy_history(db, normalized, entry)
             record["memo"] = {**current_memo, **normalized_fields}
             record["updated_at"] = now_iso()
             db[key] = record

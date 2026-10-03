@@ -2217,7 +2217,7 @@ def list_portfolio_with_indicators(
             exit_rule = exit_rules.get(strategy)
             if isinstance(exit_rule, dict):
                 from exit_line import evaluate_exit_signal, exit_line_values
-                rule_id = json.dumps(exit_rule, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                rule_id = ps.exit_rule_id(exit_rule)
                 if position:
                     position = dict(position)
                     position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["episodes"])

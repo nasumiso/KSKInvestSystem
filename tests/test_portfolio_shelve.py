@@ -1578,6 +1578,45 @@ class TestStrategyHistory:
                     "new": "", "source": "baseline"}
         assert ps.strategy_effective_at([baseline] + history, open_date) == expected
 
+    @pytest.mark.parametrize("status,alert_strategy,stale_rule,expect_context,expect_alert", [
+        ("1保", "GARP", False, True, True),          # 防衛線割れ中に付け替えた
+        ("1保", None, False, True, False),           # アラート無し
+        ("1保", "中期モメンタム", False, True, False),  # 別の戦略の状態が残っている
+        ("1保", "GARP", True, True, False),          # 出口ルール編集前の状態が残っている
+        ("2準", "GARP", False, False, False),        # 保有していない
+    ])
+    def test_held_change_keeps_exit_context(self, seeded_db, status, alert_strategy,
+                                            stale_rule, expect_context, expect_alert):
+        """保有中の付け替えには、その瞬間の出口ルールと防衛線の状態を添える。
+
+        防衛線の状態は戦略を変えると消え、出口ルールは後から編集できるため。
+        """
+        ps.transition_status("7002", status, db_path=seeded_db)
+        if status == "1保":
+            ps.update_qty("7002", 300, db_path=seeded_db)
+        rules = {t["name"]: t["exit_rule"] for t in ps.list_trade_ideas(db_path=seeded_db)}
+        if alert_strategy:
+            rule = dict(rules[alert_strategy], stop_loss_pct=5) if stale_rule else rules[alert_strategy]
+            ps.record_exit_alert_event(
+                "7002", f"2026-06-15|{alert_strategy}|{ps.exit_rule_id(rule)}",
+                {"level": "防", "date": "2026-09-28", "close": 2788}, db_path=seeded_db)
+        ps.update_memo("7002", {"trade_idea": "中長期ファンダ"}, reason="r", db_path=seeded_db)
+        context = ps.list_strategy_history("7002", db_path=seeded_db)[-1].get("context")
+        assert (context is not None) == expect_context
+        if expect_context:
+            assert (context["qty"], context["old_exit_rule"], context["new_exit_rule"]) == (
+                300, rules["GARP"], rules["中長期ファンダ"])
+            assert (context["exit_alert"] is not None) == expect_alert
+        if expect_alert:
+            assert context["exit_alert"]["first_date"] == "2026-09-28"
+            assert context["exit_alert"]["last_event"]["close"] == 2788
+
+    def test_first_assignment_on_held_has_no_context(self, seeded_db):
+        """未分類への初回付与は出口をゆるめる変更ではないので添えない。"""
+        ps.transition_status("7001", "1保", qty=100, db_path=seeded_db)
+        ps.update_memo("7001", {"trade_idea": "GARP"}, db_path=seeded_db)
+        assert "context" not in ps.list_strategy_history("7001", db_path=seeded_db)[-1]
+
     def test_master_rename_rewrites_history(self, seeded_db):
         """改名で履歴の旧名も追従する (旧名のままだと入った時点の戦略を付けられない)。"""
         ps.update_memo("7001", {"trade_idea": "GARP"}, db_path=seeded_db)
