@@ -217,6 +217,10 @@
           <option value="{{ name }}"{% if ep.trade_idea == name %} selected{% endif %}>{{ name }}</option>
           {% endfor %}
         </select>
+        {# 戦略の違うロットの数 (issue #492 段階2)。行を畳んだままでも混在に気づけるようにする #}
+        <span class="lot-differs-count" data-episode-key="{{ ep.episode_key }}"
+              title="戦略の違うロットが {{ ep.lot_differs_count }} 件あります"
+              {% if not ep.lot_differs_count %}hidden{% endif %}>+{{ ep.lot_differs_count }}</span>
         {# 表示中の値のまま確定するボタン (issue #419 レビュー)。select は同じ option を
            選び直しても change が出ないため、ボタン無しでは seed の確定・drift の解消が
            できない (別の戦略に変えて戻す往復が要る)。要確認の行にだけ出す #}
@@ -318,6 +322,20 @@
               {%- if r.closed and not r.open_date %}
               {%- if r.pending_confirm %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="当日の未確定CSVから取り込んだ返済で、建玉情報がまだありません。翌営業日以降の楽天CSVを取り込むと建日・建値・決済損益が埋まります。それまでの損益は平均建単価による暫定値です">確定CSV待ち</span>
               {%- else %}<span style="color:#8a6a5a;font-size:0.88em;margin-left:0.4em;" title="建玉情報がCSVに無いため建値・保有日数を表示できません">建玉不明</span>{% endif %}
+              {%- endif %}
+              {#- 建てロットの戦略 (issue #492 段階2)。エピソードの戦略と違う行だけバッジを出す。
+                 「戦略」リンクは行に乗せたときだけ見せる。エピソードが未分類の行、建て側が
+                 分からない行、現引 (損益を持たない) には出さない #}
+              {%- if ep.trade_idea and r.open_seqs and not r.genbiki %}
+              <span class="lot-strategy" data-episode-key="{{ ep.episode_key }}"
+                    data-seqs="{{ r.open_seqs | join(',') }}"
+                    data-url="{{ url_for('trade_history.save_lot_strategy') }}"
+                    data-idea="{{ r.trade_idea if r.strategy_differs else '' }}">
+                <span class="lot-strategy-badge{% if r.late_label %} is-late{% endif %}"
+                      title="{% if r.late_label %}買ってから5営業日以上あとに付けた戦略です{% else %}このロットの戦略 (エピソードの戦略と違います){% endif %}"
+                      {% if not r.strategy_differs %}hidden{% endif %}>{{ r.trade_idea }}</span>
+                <a href="#" class="lot-strategy-edit" title="このロットを買った時点の意図で戦略を付けます">戦略</a>
+              </span>
               {%- endif %}
             </td>
             <td style="padding:1px 0.8em;text-align:right;white-space:nowrap;">{% if ep.split_suspect %}<span style="color:#666;">—</span>{% else %}{{ "%g"|format(r.qty) }}株{% endif %}</td>
@@ -1045,6 +1063,64 @@
       sel.value = hint.dataset.idea;
       saveEpisodeStrategy(sel);
     });
+  });
+
+  // 建てロットの戦略 (issue #492 段階2)。「戦略」リンクを押すとその場に選択欄を出す。
+  // 先頭の「エピソードと同じ」は上書きを消す。戦略は買いに付くので、同じ買いから
+  // 出た行 (1つの買いを2回に分けて売ると2行) と、もう一方のビューの行もまとめて揃える
+  var lotStrategyOptions = {{ trade_idea_options | tojson }};
+  function applyLotStrategy(box, idea) {
+    document.querySelectorAll('.lot-strategy[data-episode-key="' + box.dataset.episodeKey
+                              + '"][data-seqs="' + box.dataset.seqs + '"]').forEach(function (other) {
+      var badge = other.querySelector('.lot-strategy-badge');
+      other.dataset.idea = idea;
+      badge.textContent = idea;
+      badge.hidden = !idea;
+      badge.classList.remove('is-late');
+      badge.title = 'このロットの戦略 (エピソードの戦略と違います)';
+    });
+    // 一覧行の「+N」も数え直す (同じ明細の中で、バッジが出ている行の数)
+    var n = box.closest('table').querySelectorAll('.lot-strategy-badge:not([hidden])').length;
+    document.querySelectorAll('.lot-differs-count[data-episode-key="' + box.dataset.episodeKey
+                              + '"]').forEach(function (cnt) {
+      cnt.textContent = '+' + n;
+      cnt.title = '戦略の違うロットが ' + n + ' 件あります';
+      cnt.hidden = !n;
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var link = e.target.closest && e.target.closest('.lot-strategy-edit');
+    if (!link) return;
+    e.preventDefault();
+    var box = link.parentElement;
+    if (box.querySelector('select')) return;
+    var sel = document.createElement('select');
+    sel.className = 'lot-strategy-select';
+    [''].concat(lotStrategyOptions).forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name || 'エピソードと同じ';
+      opt.selected = name === box.dataset.idea;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('blur', function () { sel.remove(); });
+    sel.addEventListener('change', function () {
+      var fd = new FormData();
+      fd.append('episode_key', box.dataset.episodeKey);
+      fd.append('seqs', box.dataset.seqs);
+      fd.append('trade_idea', sel.value);
+      sel.disabled = true;
+      fetch(box.dataset.url, { method: 'POST', body: fd })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok) { alert(res.j.error || '戦略の保存に失敗しました'); return; }
+          applyLotStrategy(box, res.j.differs ? res.j.trade_idea : '');
+        })
+        .catch(function () { alert('戦略の保存に失敗しました'); })
+        .finally(function () { sel.remove(); });
+    });
+    box.appendChild(sel);
+    sel.focus();
   });
 
   // 「✓ そのまま確定」: 表示中の値で保存し、seed を manual に変える

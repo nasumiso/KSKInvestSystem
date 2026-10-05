@@ -98,6 +98,10 @@ KEY_FILL_MEMO_PREFIX = "fill_memo:"
 # issue #419: エピソードに焼き付けた売買戦略。メモと同じエピソードキーで紐付けるが、
 # 値は戦略マスター登録済みのみ許可する (集計キーなので自由文字列にしない)。
 KEY_EPISODE_STRATEGY_PREFIX = "episode_strategy:"
+# issue #492 段階2: 建て側の fill (ロット) に付けた戦略。キーは <code_s>|<seq>。
+# エピソードの戦略と違うロットにだけ保存し、無ければエピソードの戦略に従う。
+# seq は遡り取込でも変わらないので、エピソードのような指紋 (drift 検出) は要らない。
+KEY_FILL_STRATEGY_PREFIX = "fill_strategy:"
 # issue #492: 銘柄・エピソードの戦略の変更履歴 (追記のみ)。銘柄ごとのリスト。
 # 入った時点の戦略 (source=entry) は、この履歴から「建てた日に有効だった値」を引く。
 KEY_STRATEGY_HISTORY_PREFIX = "strategy_history:"
@@ -1589,6 +1593,101 @@ def list_episode_strategies(*, db_path: Optional[str] = None) -> Dict[str, Dict[
             episode_key = value.get("episode_key", key[len(KEY_EPISODE_STRATEGY_PREFIX):])
             results[episode_key] = dict(value)
     return results
+
+
+def _fill_strategy_storage_key(code_s: str, seq: int) -> str:
+    return f"{KEY_FILL_STRATEGY_PREFIX}{code_s}|{int(seq)}"
+
+
+def set_fill_strategies(code_s: str, seqs: List[int], trade_idea: str, *,
+                        reason: str = "",
+                        db_path: Optional[str] = None) -> None:
+    """建て側の fill (ロット) に戦略を付ける。空文字は上書きを消す (issue #492 段階2)。
+
+    seqs 全部に同じ値を書く。1本の信用返済が複数の建て fill をまとめて返済した
+    往復行は建て fill が複数あり、行単位で付け替えるため。値は戦略マスター登録済みのみ
+    (set_episode_strategy と同じ厳しさ)。値が変わったら変更履歴に1件残す。
+
+    「エピソードの戦略と違うときだけ保存する」の判断は呼び出し側 (ルート) で行う。
+    ここはエピソードを知らないので、渡された値をそのまま書く。
+    """
+    if not isinstance(trade_idea, str):
+        raise TypeError(f"trade_idea must be str, got {type(trade_idea).__name__}")
+    validate_code_s(code_s)
+    seqs = [int(q) for q in seqs]
+    if not seqs:
+        raise ValueError("seqs が空です")
+    normalized = trade_idea.strip()
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            if normalized and not _trade_idea_exists(db, normalized):
+                raise ValueError(
+                    f"portfolio_shelve: trade_idea {normalized!r} はマスター未登録のため"
+                    f"付与できません"
+                )
+            olds = [(db.get(_fill_strategy_storage_key(code_s, q)) or {}).get("trade_idea", "")
+                    for q in seqs]
+            if all(old == normalized for old in olds):
+                return
+            for q in seqs:
+                key = _fill_strategy_storage_key(code_s, q)
+                if not normalized:
+                    if key in db:
+                        del db[key]
+                    continue
+                db[key] = {
+                    "code_s": code_s, "seq": q, "trade_idea": normalized, "source": "manual",
+                    # 後付けかどうかは、付けた日と建てた日の差で読み取り側が判定する
+                    "assigned_at": datetime.now(JST).date().isoformat(),
+                    "updated_at": now_iso(),
+                }
+            _append_strategy_history(db, code_s, {
+                "scope": "lot", "seqs": seqs,
+                "effective_date": datetime.now(JST).date().isoformat(), "recorded_at": now_iso(),
+                "old": olds[0], "new": normalized, "source": "manual", "reason": reason,
+            })
+    log_print("portfolio_shelve: fill_strategy 更新", code_s, seqs, normalized or "(削除)")
+
+
+def list_fill_strategies(*, db_path: Optional[str] = None) -> Dict[Tuple[str, int], Dict[str, Any]]:
+    """ロットの戦略を {(code_s, seq): record} で一括取得する。"""
+    path = _resolve_db_path(db_path)
+    results: Dict[Tuple[str, int], Dict[str, Any]] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items():
+            if not key.startswith(KEY_FILL_STRATEGY_PREFIX):
+                continue
+            if not isinstance(value, dict) or not value.get("trade_idea"):
+                continue
+            results[(value["code_s"], int(value["seq"]))] = dict(value)
+    return results
+
+
+def _rewrite_trade_idea_in_fills(db: ShelveDB, old_name: str, new_name: Optional[str]) -> int:
+    """全 fill_strategy:* の trade_idea を追従させる (_rewrite_trade_idea_in_episodes と対)。
+
+    new_name=None (戦略削除) は上書きを消し、ロットをエピソードの戦略に戻す。
+    追従しないと、改名後に成績が旧名・新名に割れ、削除済みの戦略で集計が残る。
+    呼び出し側で _flock + ShelveDB セッションを保持していること前提。
+    """
+    affected = 0
+    for key in [k for k in db.keys() if k.startswith(KEY_FILL_STRATEGY_PREFIX)]:
+        record = db[key]
+        if not isinstance(record, dict) or record.get("trade_idea") != old_name:
+            continue
+        if new_name is None:
+            del db[key]
+            _append_strategy_history(db, record["code_s"], {
+                "scope": "lot", "seqs": [record["seq"]],
+                "effective_date": datetime.now(JST).date().isoformat(), "recorded_at": now_iso(),
+                "old": old_name, "new": "", "source": "master_delete",
+                "reason": "戦略マスターから削除",
+            })
+        else:
+            db[key] = {**record, "trade_idea": new_name, "updated_at": now_iso()}
+        affected += 1
+    return affected
 
 
 def _trade_idea_exists(db: ShelveDB, name: str) -> bool:
@@ -3284,6 +3383,7 @@ def update_trade_idea(
                 affected_episodes = _rewrite_trade_idea_in_episodes(
                     db, normalized, new_normalized
                 )
+                _rewrite_trade_idea_in_fills(db, normalized, new_normalized)
                 # 履歴の旧名も追従させる。残すと「建てた日に有効だった値」が
                 # マスター未登録の旧名になり、入った時点の戦略を付けられない (issue #492)
                 _rename_trade_idea_in_history(db, normalized, new_normalized)
@@ -3338,6 +3438,7 @@ def delete_trade_idea(name: str, *, db_path: Optional[str] = None) -> int:
             affected_codes = _rewrite_trade_idea_in_records(db, normalized, None)
             # エピソード側はキーごと削除して未分類に戻す (空文字を残さない)
             affected_episodes = _rewrite_trade_idea_in_episodes(db, normalized, None)
+            _rewrite_trade_idea_in_fills(db, normalized, None)
     log_print(
         "portfolio_shelve: strategy 削除",
         normalized,

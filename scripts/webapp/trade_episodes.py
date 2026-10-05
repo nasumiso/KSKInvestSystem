@@ -8,7 +8,7 @@ webapp の各画面と取込スクリプト (import_*_fills.py 等) から使う
 """
 
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from webapp import helpers
 
@@ -1112,7 +1112,8 @@ def _round_trip_days(open_date: Optional[str], close_date: Optional[str]) -> Opt
 
 def _make_round_trip(open_fill: Optional[Dict[str, Any]], close_fill: Optional[Dict[str, Any]],
                      qty: float, open_date: Optional[str],
-                     open_price: Optional[float]) -> Dict[str, Any]:
+                     open_price: Optional[float],
+                     open_fills: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """往復1行を組み立てる (issue #421)。
 
     open 側 (建て) と close 側 (決済) のどちらかが欠ける行もある:
@@ -1121,9 +1122,17 @@ def _make_round_trip(open_fill: Optional[Dict[str, Any]], close_fill: Optional[D
                          → 売りのみ行
     損益は呼び出し側が close_fill の fill_pl / fill_return_pct から埋めるか、
     現物 FIFO のようにロット単位で計算した値を渡す。
+
+    open_fills は、1本の信用返済が複数の建て fill をまとめて返済した行で渡す
+    (省略時は open_fill の1本)。その seq を open_seqs に載せ、ロットの戦略
+    (fill_strategy) を引く鍵にする。日付・単価から建て fill を探し直すと、同日・
+    同単価の複数建てで別ロットの戦略を拾うため、対応付けの時点で持たせる (issue #492)。
     """
     close_date = close_fill.get("trade_date") if close_fill else None
+    if open_fills is None:
+        open_fills = [open_fill] if open_fill else []
     return {
+        "open_seqs": [f["seq"] for f in open_fills if f.get("seq") is not None],
         "open_date": open_date,
         "close_date": close_date,
         "qty": qty,
@@ -1293,7 +1302,8 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
                 matched = _consume_open_lots(open_pool, f["qty"], tate_date, tate_price,
                                               f.get("broker"))
                 first = matched[0][0] if matched else inferred
-                row = _make_round_trip(first, f, f["qty"], tate_date, tate_price)
+                row = _make_round_trip(first, f, f["qty"], tate_date, tate_price,
+                                       [m[0] for m in matched] or [inferred])
                 row["inferred_open"] = True
             else:
                 # 建玉は消費するが建値は伏せる。消費しないと決済済みの玉が保有中に残る。
@@ -1321,7 +1331,8 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
         open_price = tate_price if tate_price is not None else (
             first["price"] if first else None)
         open_date = tate_date or (first.get("trade_date") if first else None)
-        row = _make_round_trip(first, f, f["qty"], open_date, open_price)
+        row = _make_round_trip(first, f, f["qty"], open_date, open_price,
+                               [m[0] for m in matched])
         # 損益は既存の fill 単位計算をそのまま使う (計算ロジックを二重化しない)。
         if "fill_pl" in f:
             row["pl"] = f["fill_pl"]
@@ -1452,6 +1463,42 @@ def build_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     closed.sort(key=lambda r: (r["close_date"] or "", r["open_date"] or ""), reverse=True)
     open_rows.sort(key=lambda r: r["open_date"] or "", reverse=True)
     return open_rows + closed
+
+
+# 手で付けたロットの戦略を「後付け」とみなす、建てた日からの平日数 (issue #492 5)
+LATE_LABEL_WEEKDAYS = 5
+
+
+def attach_lot_strategies(ep: Dict[str, Any],
+                          fill_strategies: Dict[Tuple[str, int], Dict[str, Any]]) -> None:
+    """往復行 (ep["round_trips"]) に、建てロットの戦略を付ける (issue #492 段階2)。
+
+    行の戦略は、建て fill の上書き (fill_strategy) があればそれ、無ければエピソードの
+    戦略。建て fill が複数ある行は先頭の値を使う (画面からは全部に同じ値を書く)。
+    エピソードが未分類なら上書きは無視する (行だけ分類済みの状態を作らない)。
+
+    各行: trade_idea / strategy_differs (エピソードの戦略と違う) / late_label (後付け)
+    ep: lot_differs_count (戦略の違う行の数。現引は損益を持たないので数えない)
+
+    strategy_differs は保存の有無ではなく実際の値で判定する。エピソード側を後から
+    同じ値に変えた行に、違いの印を残さないため。
+    """
+    import portfolio_shelve as ps  # 遅延 import (循環回避)
+
+    ep_idea = ep.get("trade_idea") or ""
+    differs = 0
+    for row in ep.get("round_trips") or []:
+        record = next((fill_strategies[(ep["code_s"], q)] for q in row["open_seqs"]
+                       if (ep["code_s"], q) in fill_strategies), None) if ep_idea else None
+        row["trade_idea"] = record["trade_idea"] if record else ep_idea
+        row["strategy_differs"] = row["trade_idea"] != ep_idea
+        row["late_label"] = bool(
+            record and row["strategy_differs"] and record.get("source") == "manual"
+            and row.get("open_date") and record.get("assigned_at")
+            and record["assigned_at"] >= ps._add_weekdays(row["open_date"], LATE_LABEL_WEEKDAYS))
+        if row["strategy_differs"] and not row["genbiki"]:
+            differs += 1
+    ep["lot_differs_count"] = differs
 
 
 def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

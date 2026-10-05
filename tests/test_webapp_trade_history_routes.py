@@ -336,6 +336,41 @@ class TestTradeHistoryPage:
         html = client.get("/trade-history").data.decode()
         assert "上値で薄く売り過ぎた" in html
 
+    def test_save_lot_strategy(self, app, client):
+        """建てロットに戦略を付ける (issue #492 段階2)。エピソードと同じ値・空は上書きを消す。"""
+        from webapp.trade_episodes import build_fill_episodes
+        with app.app_context():
+            ps.seed_trade_ideas()
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-06-10", side="buy", qty=300,
+                                          price=6990.0, amount=-2097000, trade_kind="信用新規",
+                                          dedup_key="ls-buy"))
+            ps.append_fill(ps.create_fill("6324", trade_date="2026-06-20", side="sell", qty=300,
+                                          price=7810.0, amount=2343000, trade_kind="信用返済",
+                                          tate_date="2026-06-10", tate_price=6990.0,
+                                          dedup_key="ls-sell"))
+            ep = next(e for e in build_fill_episodes() if e["code_s"] == "6324")
+        buy, sell = (f["seq"] for f in ep["fills"])
+
+        def post(seq, idea):
+            return client.post("/trade-history/lot-strategy", data={
+                "episode_key": ep["episode_key"], "seqs": str(seq), "trade_idea": idea})
+
+        # エピソードが未分類のうちは付けられない
+        assert post(buy, "中期テーマ").status_code == 400
+        ps.set_episode_strategy(ep["episode_key"], "GARP")
+        # 決済側の fill には付けられない
+        assert post(sell, "中期テーマ").status_code == 400
+
+        assert post(buy, "中期テーマ").get_json() == {"ok": True, "trade_idea": "中期テーマ", "differs": True}
+        assert ps.list_fill_strategies()[("6324", buy)]["trade_idea"] == "中期テーマ"
+        # 6月に建てた玉に今日付けたので、後付けの印つきでバッジが出る
+        assert 'class="lot-strategy-badge is-late"' in client.get("/trade-history").data.decode()
+
+        for same in ("GARP", ""):
+            post(buy, "中期テーマ")
+            assert post(buy, same).get_json()["differs"] is False
+            assert ps.list_fill_strategies() == {}
+
     def test_save_fill_memo_empty_deletes(self, app, client):
         """空文字を送るとメモが削除される (Phase2)。"""
         with app.app_context():

@@ -34,6 +34,7 @@ import portfolio_shelve as ps
 from ks_util import DATA_DIR
 from webapp.helpers import build_episode_chart, resolve_stock_name
 from webapp.trade_episodes import (
+    attach_lot_strategies,
     build_episode_for_key,
     build_fill_episodes,
     build_round_trips,
@@ -299,8 +300,11 @@ def trade_history():
     # 往復行 (issue #421) は明細表示専用のため、共有の build_fill_episodes() ではなく
     # 描画側で付与する。ポートフォリオ画面や CLI・移行スクリプトも
     # build_fill_episodes() を呼ぶが、往復行は使わない。
+    fill_strategies = ps.list_fill_strategies()
     for ep in fill_episodes:
         ep["round_trips"] = build_round_trips(ep)
+        # 建てロットの戦略 (issue #492 段階2)。エピソードの戦略と違う行に印を付ける
+        attach_lot_strategies(ep, fill_strategies)
 
     # 年の基準はこの1箇所で決め、サマリーとアコーディオンで共有する。
     current_year = datetime.datetime.now(ps.JST).strftime("%Y")
@@ -599,6 +603,45 @@ def save_episode_strategy():
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify({"ok": True})
+
+
+@trade_history_bp.route("/trade-history/lot-strategy", methods=["POST"])
+def save_lot_strategy():
+    """往復行の建てロットに戦略を付ける (issue #492 段階2)。
+
+    フォーム: episode_key / seqs (建て fill の seq、カンマ区切り) / trade_idea。
+    trade_idea が空 (「エピソードと同じ」)、またはエピソードの戦略と同じ値なら
+    上書きを消す (保存するのはエピソードの戦略と違うときだけ)。
+    """
+    episode_key = request.form.get("episode_key", "")
+    trade_idea = (request.form.get("trade_idea") or "").strip()
+    try:
+        seqs = [int(q) for q in (request.form.get("seqs") or "").split(",") if q.strip()]
+    except ValueError:
+        abort(400)
+    if not episode_key or not seqs:
+        abort(400)
+    ep = build_episode_for_key(episode_key)
+    if ep is None:
+        abort(404)
+    # 他のエピソードの fill や決済側の fill に付けさせない
+    open_seqs = {q for r in build_round_trips(ep) for q in r["open_seqs"]}
+    if not set(seqs) <= open_seqs:
+        abort(400)
+    # build_episode_for_key のエピソードには戦略が付いていないので別に引く
+    ep_idea = (ps.get_episode_strategy(episode_key) or {}).get("trade_idea", "")
+    if not ep_idea:
+        # 行だけ分類済みでエピソードは未分類、という状態を作らない
+        return jsonify({"ok": False, "error": "先にエピソードに戦略を付けてください"}), 400
+    try:
+        ps.set_fill_strategies(
+            ep["code_s"], seqs, "" if trade_idea == ep_idea else trade_idea,
+            reason=(request.form.get("reason") or "").strip(),
+        )
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    actual = trade_idea or ep_idea
+    return jsonify({"ok": True, "trade_idea": actual, "differs": actual != ep_idea})
 
 
 @trade_history_bp.route("/trade-history/chart")

@@ -690,6 +690,34 @@ nav .quick-search {
   opacity: 0.62;
   border-style: dashed;
 }
+/* 建てロットの戦略 (issue #492 段階2)。エピソードの戦略と違う行だけバッジを出す。
+   後付け (買ってから5営業日以上あとに付けた) は破線枠で区別する。
+   「戦略」リンクは行に乗せたときだけ見せ、明細を読む邪魔をしない */
+.lot-strategy { margin-left: 0.4em; white-space: nowrap; }
+.lot-strategy-badge {
+  display: inline-block;
+  padding: 0 0.4em;
+  border: 1px solid #b9c4e0;
+  border-radius: 3px;
+  background: #eef2fb;
+  color: #3d4f80;
+  font-size: 0.88em;
+}
+.lot-strategy-badge[hidden] { display: none; }
+.lot-strategy-badge.is-late { border-style: dashed; background: transparent; }
+.lot-strategy-edit { visibility: hidden; font-size: 0.88em; margin-left: 0.3em; }
+tr:hover > td > .lot-strategy > .lot-strategy-edit { visibility: visible; }
+.lot-strategy-select {
+  display: inline-block;
+  width: 9.4em !important;
+  font-size: 0.95em;
+  padding: 0.05em 1.2em 0.05em 0.35em;
+  margin: 0 0 0 0.3em;
+  height: auto;
+}
+/* エピソード一覧行の「+N」: 戦略の違うロットの数 */
+.lot-differs-count { color: #3d4f80; font-size: 0.72em; margin-left: 0.15em; cursor: help; }
+.lot-differs-count[hidden] { display: none; }
 /* 「そのまま確定」ボタン。select は同じ値を選び直しても change が出ないため、
    seed の確定・drift の解消にはこのボタンが要る。要確認の行にだけ描画される */
 .episode-strategy-confirm {
