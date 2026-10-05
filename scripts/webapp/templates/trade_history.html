@@ -619,14 +619,21 @@
 </div>
 {% endif %}
 
+{# issue #492 段階2: 母数は往復行。1つのエピソードに意図の違う玉が同居しても分けて数える #}
+<div style="color:#666;font-size:0.82em;margin-bottom:0.4em;">
+  往復行 (買い → 売り) 単位の集計です。ロットに別の戦略を付けた分は、その戦略に入ります。
+</div>
 <table class="trade-history-table">
   <colgroup>
-    <col><col style="width:5em;"><col style="width:5em;"><col style="width:9em;">
+    <col><col style="width:5em;"><col style="width:6em;"><col style="width:5em;"><col style="width:9em;">
     <col style="width:6em;"><col style="width:6em;"><col style="width:7em;">
   </colgroup>
   <thead>
     <tr>
-      <th>戦略</th><th style="text-align:right;">件数</th><th style="text-align:right;">保有中</th>
+      <th>戦略</th>
+      <th style="text-align:right;" title="決済済みの往復行 (買い → 売り) の数。勝率・期待値・平均保有はこの単位で計算します">件数</th>
+      <th style="text-align:right;" title="その戦略の往復行を持つ、クローズ済みエピソードの数">エピソード</th>
+      <th style="text-align:right;" title="保有中のエピソードの数 (成績には入れません)">保有中</th>
       <th style="text-align:right;">実現損益</th><th style="text-align:right;">勝率</th>
       <th style="text-align:right;">期待値</th><th style="text-align:right;">平均保有</th>
     </tr>
@@ -636,6 +643,7 @@
     <tr>
       <td>{{ name }}</td>
       <td style="text-align:right;">{{ part.priced_count }}</td>
+      <td style="text-align:right;color:#888;">{{ part.episode_count }}</td>
       <td style="text-align:right;color:#888;">{{ part.open_count or "" }}</td>
       <td style="text-align:right;white-space:nowrap;"><span style="color:{{ 'var(--th-pos)' if part.total_pl >= 0 else 'var(--th-neg)' }};font-weight:600;">{{ "{:+,}".format(part.total_pl) }}円</span></td>
       <td style="text-align:right;">{% if part.summary %}{{ "%.0f"|format(part.summary.win_rate) }}%{% else %}—{% endif %}</td>
@@ -651,6 +659,7 @@
     <tr style="border-top:2px solid #444;">
       <td style="color:#888;" title="{{ note }}">{{ label }}</td>
       <td style="text-align:right;color:#888;">{{ part.priced_count }}</td>
+      <td style="text-align:right;color:#888;">{{ part.episode_count }}</td>
       <td style="text-align:right;color:#666;">{{ part.open_count or "" }}</td>
       <td style="text-align:right;white-space:nowrap;color:#888;">{{ "{:+,}".format(part.total_pl) }}円</td>
       <td style="text-align:right;color:#555;">{% if part.summary %}{{ "%.0f"|format(part.summary.win_rate) }}%{% else %}—{% endif %}</td>
