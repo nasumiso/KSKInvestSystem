@@ -41,6 +41,28 @@
 
 /* 売買履歴の成績年セレクタ。Pico の select{width:100%} / margin-bottom による
    全幅化・行送りを打ち消し、ラベルと同じ行に inline で収める。 */
+/* 売買履歴の文字色 (issue #439 U3)。白背景で読める濃さにする。
+   含み・暫定 (prov) は確定より一段薄くして区別を保つ。 */
+:root {
+  --th-pos: #1a7f37;
+  --th-neg: #c0392b;
+  --th-pos-prov: #3f8f57;
+  --th-neg-prov: #c2605a;
+  --th-num: #222;
+}
+.th-tab-btn, .th-view-btn { color: #777; }
+.th-tab-btn.active {
+  color: #1a1a1a;
+  font-weight: 600;
+  border-bottom-color: #0172ad !important;
+}
+.th-view-btn.active {
+  color: #1a1a1a;
+  font-weight: 600;
+  background: #eaf2f8 !important;
+  border-color: #0172ad !important;
+}
+
 .th-year-select {
   display: inline-block;
   width: auto !important;
