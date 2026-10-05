@@ -379,6 +379,7 @@
 <div style="display:flex;align-items:center;justify-content:space-between;gap:1em;flex-wrap:wrap;margin:0 0 0.4em 0;">
   <p style="font-size:0.85em;color:#666;margin:0;">
     {% if total > 0 %}{{ total }} 件表示{% else %}0 件{% endif %}
+    {% if active_gyoutai_theme %}<span title="業態・テーマを指定すると、ステータスの選択に関係なく全ステータスから抽出します">(対象: 保有・準保有・監視)</span>{% endif %}
     {% if hold_summary %}
     <span style="color:#ccc;margin:0 0.5em;">|</span>
     <span title="保有株数の真実源である証券会社CSVの残高基準日 (最新ソース)">株数基準日
@@ -402,7 +403,7 @@
      "market_in_correction": "background:#ffebee;color:#c62828;border-color:#ffcdd2"} %}
 <div style="margin:0 0 0.7em 0;padding:0.55em 0.7em 0.6em;border:1px solid #e0e0e0;border-radius:5px;background:#fafafa;">
   <div style="display:flex;align-items:center;gap:0.7em;flex-wrap:wrap;margin:0 0 0.5em;font-size:0.8em;">
-    <span style="color:#555;">運用総額 <b style="font-size:1.15em;color:#333;">{{ '{:,}'.format(hold_summary.total_man) }}</b> 万円</span>
+    <span style="color:#555;">運用総額 <b style="font-size:1.15em;color:#333;">{{ '{:,}'.format(hold_summary.total_man) }}</b> 万円{% if active_gyoutai_theme %}<span style="font-size:0.9em;color:#888;margin-left:0.4em;">(保有全体。テーマ絞り込みの対象外)</span>{% endif %}</span>
     <span style="font-weight:700;color:{{ pos_colors.get(ex.position, '#333') }};"
           title="運用比率: 運用総額 ÷ 基準運用額 {{ '{:,}'.format((ex.base_amount / 10000)|round|int) }}万円">{{ '%.0f'|format(ex.ratio_pct) }}%</span>
     <span style="padding:0.05em 0.45em;border-radius:3px;border:1px solid;{{ state_styles.get(ex.state, 'background:#eceff1;color:#333;border-color:#e0e0e0') }}"
@@ -458,7 +459,7 @@
 {% elif hold_summary %}
 {# 指標が揃わずガイドを出せない日でも、運用総額だけは表示する #}
 <div style="margin:0 0 0.6em;padding:0.55em 0.7em;border:1px solid #e0e0e0;border-radius:5px;background:#fafafa;font-size:0.8em;color:#555;">
-  運用総額 <b style="font-size:1.15em;color:#333;">{{ '{:,}'.format(hold_summary.total_man) }}</b> 万円
+  運用総額 <b style="font-size:1.15em;color:#333;">{{ '{:,}'.format(hold_summary.total_man) }}</b> 万円{% if active_gyoutai_theme %}<span style="font-size:0.9em;color:#888;margin-left:0.4em;">(保有全体。テーマ絞り込みの対象外)</span>{% endif %}
   {%- if hold_summary.exposure_note %}
   <span style="margin-left:0.7em;color:#ef6c00;">⚠ {{ hold_summary.exposure_note }}</span>
   {%- endif %}

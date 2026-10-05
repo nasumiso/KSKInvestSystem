@@ -1,7 +1,7 @@
 """
 決算・開示ページ ルート。
 
-GET  /disclosure                     : 決算日カード + 適宜開示 (disclosure_data.html) ページ
+GET  /disclosure                     : 決算日カード + 適時開示 (disclosure_data.html) ページ
 GET  /api/kessan_comment/<code_s>    : 指定銘柄・決算日のコメントを JSON で返す
 POST /api/kessan_comment/<code_s>    : 決算コメントを保存 (新規 or 上書き)
 """
