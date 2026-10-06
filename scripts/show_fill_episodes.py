@@ -11,6 +11,7 @@ build_fill_episodes (webapp.trade_episodes) を呼んで、取込後の検算・
     cd scripts && python show_fill_episodes.py --memo     # 振り返りメモ付きのみ (DB非更新)
     cd scripts && python show_fill_episodes.py --fills 6324  # 内訳 fill も表示 (DB非更新)
     cd scripts && python show_fill_episodes.py --check-dups            # 未確定CSV由来の重複約定を検出
+    cd scripts && python show_fill_episodes.py --check-pl              # 往復行とエピソードの損益の一致を検算 (DB非更新)
     cd scripts && python show_fill_episodes.py --check-splits          # 分割・併合の疑いを診断 (issue #398)
     cd scripts && python show_fill_episodes.py --register-split 1491 2025-09-29 0.05  # 換算比率を登録
     cd scripts && python show_fill_episodes.py --reject-split 1491 2025-09-29  # 誤検知を解除
@@ -391,6 +392,42 @@ def _check_dups(db_path: Optional[str]) -> int:
     return 1 if found else 0
 
 
+def _check_pl(db_path: Optional[str]) -> int:
+    """往復行の損益合計がエピソードの損益と一致するかを全件検算する (DB非更新)。
+
+    不変条件: クローズ済みエピソードでは、決済済みの往復行の損益合計がエピソードの
+    損益と一致する。戦略別の成績は往復行を母数にする (issue #492) ので、ここがずれると
+    戦略別の合計が全体の実現損益と合わなくなる。CSV取込の後や、エピソード・往復行の
+    組み立てを触った後の検算に使う。
+
+    対象外: 保有中 (現物は往復行の FIFO と実現損益の平均取得単価法が一致しない)、
+    分割・併合の疑い (損益が壊れていると既知)。現引の行は損益を持たないので足さない。
+    比較は1円の丸め差を許す (往復行は行ごとに丸める)。
+    """
+    episodes = [ep for ep in trade_episodes.build_fill_episodes(db_path=db_path)
+                if ep["closed"] and not ep.get("split_suspect")]
+    n_rows = 0
+    found = 0
+    for ep in episodes:
+        rows = [r for r in trade_episodes.build_round_trips(ep)
+                if r["closed"] and not r["genbiki"] and r["pl"] is not None]
+        n_rows += len(rows)
+        row_pl = sum(r["pl"] for r in rows)
+        ep_pl = (ep.get("pl") or {}).get("profit_amount") or 0
+        if abs(row_pl - ep_pl) <= 1:
+            continue
+        found += 1
+        log_warning(f"[損益不一致] {ep['episode_key']} {ep['open_date']}〜{ep.get('close_date')} "
+                    f"エピソード {ep_pl:+,.0f}円 / 往復行 {row_pl:+,.0f}円 "
+                    f"(差 {row_pl - ep_pl:+,.0f}円、往復行 {len(rows)} 行)")
+    if found:
+        log_warning(f"--- 損益不一致 {found} 件 / クローズ済み {len(episodes)} エピソード")
+    else:
+        log_print(f"--- 往復行とエピソードの損益は一致しています "
+                  f"(クローズ済み {len(episodes)} エピソード、往復行 {n_rows} 行)")
+    return 1 if found else 0
+
+
 def _register_split(code_s: str, ex_date: str, ratio: str, db_path: Optional[str]) -> int:
     """split_adj イベントを1件登録する (issue #398)。"""
     stored = ps.add_split_adjustment(code_s, ex_date, float(ratio), db_path=db_path)
@@ -427,6 +464,8 @@ def main() -> int:
     parser.add_argument("--db-path", default=None, help="portfolio DB パス")
     parser.add_argument("--check-dups", action="store_true",
                         help="未確定CSV由来の重複約定を検出する (DB非更新)")
+    parser.add_argument("--check-pl", action="store_true",
+                        help="往復行の損益合計とエピソード損益の一致を検算 (DB非更新)")
     parser.add_argument("--check-splits", action="store_true",
                         help="分割・併合の疑いを診断する (issue #398、DB非更新)")
     parser.add_argument("--register-split", nargs=3, metavar=("CODE", "EX_DATE", "RATIO"),
@@ -441,6 +480,8 @@ def main() -> int:
         return _reject_split(args.reject_split, db_path=args.db_path)
     if args.check_dups:
         return _check_dups(args.db_path)
+    if args.check_pl:
+        return _check_pl(args.db_path)
     if args.check_splits:
         return _check_splits(args.db_path)
 

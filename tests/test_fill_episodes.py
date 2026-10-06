@@ -1368,3 +1368,21 @@ def test_attach_action_notes(episodes, logs, expected):
     trade_episodes.attach_action_notes(episodes, logs)
     got = [[(n["label"], n["date"], n["text"]) for n in ep["action_notes"]] for ep in episodes]
     assert got == expected
+
+
+class TestCheckPl:
+    """往復行とエピソードの損益の検算 (show_fill_episodes --check-pl)"""
+
+    def test_reports_only_when_round_trips_disagree(self, db_path, monkeypatch):
+        import show_fill_episodes
+
+        _add(db_path, "9002", "2026-03-02", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "9002", "2026-03-03", "buy", 100, 1200.0, seq_salt="b")
+        _add(db_path, "9002", "2026-03-10", "sell", 200, 1300.0)
+        assert show_fill_episodes._check_pl(db_path) == 0
+
+        # 往復行が1本欠けると、合計がエピソード損益とずれる
+        orig = trade_episodes.build_round_trips
+        monkeypatch.setattr(trade_episodes, "build_round_trips", lambda ep: orig(ep)[1:])
+        assert show_fill_episodes._check_pl(db_path) == 1
+
