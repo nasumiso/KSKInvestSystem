@@ -1,7 +1,7 @@
 """
 会社IRページからの資料取得ルート (issue #457)。
 
-POST /api/ir_page_candidates/<code_s> : 中計・決算説明資料のPDF候補を返す (AJAX)
+POST /api/ir_page_candidates/<code_s> : 中計・有報・決算説明資料のPDF候補を返す (AJAX)
 POST /stock/<code_s>/ir_page_docs     : 選択・手入力されたPDFを取得して保存
 POST /api/ir_top_url/<code_s>         : 会社HPから IR トップの URL を推測して返す (AJAX)
 GET  /ir_docs/<code_s>/<doc_id>       : 保存済みPDFを返す (issue #473)

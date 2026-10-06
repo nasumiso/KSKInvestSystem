@@ -54,17 +54,18 @@ IR 問い合わせ回答は公開情報として流通しない非公開の一�
 
 ### 決算資料 (`list_earnings_documents` / `get_earnings_document`)
 
-収集済みの決算短信 (`tanshin`)・決算説明資料 (`setsumei`)・中期経営計画 (`chuki_plan`) を返します。
+収集済みの決算短信 (`tanshin`)・決算説明資料 (`setsumei`)・中期経営計画 (`chuki_plan`)・有価証券報告書 (`yuho`) を返します。
 収集範囲と方針は [IR資料の収集範囲](../decisions/2026-09-22-IR資料の収集範囲.md) を参照してください。
 
 | ツール | 内容 |
 |---|---|
-| `list_earnings_documents` | 資料の一覧 (本文なし)。`months` (既定12)、`doc_type` で絞り込み。`chuki_plan` は期間に関係なく全件 |
+| `list_earnings_documents` | 資料の一覧 (本文なし)。`months` (既定12)、`doc_type` で絞り込み。`chuki_plan` と `yuho` は期間に関係なく全件 |
 | `get_earnings_document` | 抽出済みテキストをページ範囲で返す。`truncated` が true なら `next_page_from` で続きを取る |
 
 - `coverage_status: not_collected` は「未収集」であって「資料が存在しない」ではありません。`partial_coverage: true` のときは `coverage_through` 以降が未収集です。
 - 訂正版に置き換えられた旧版は既定で返しません。ただし訂正版が差分通知だけで原本の内容を含まない場合は、原本も返します (`superseded_by` 付き)。
 - 中期経営計画は会社IRページから手動で集めたもので、`date` は推定値 (`date_estimated: true`、`as_of` は `null`) です。複数件が並立しうるため、どれが現行計画かは内容から判断します。グロース市場の「事業計画及び成長可能性に関する事項」は適時開示から自動収集され、`date` は開示日です。
+- 有価証券報告書は EDINET 開示で株探に出ないため、会社IRページから手動で集めたものだけです (`date` は表紙の提出日が読めればそれ、読めなければ推定値で `date_estimated: true`、`as_of` は `null`)。`doc_type=yuho` で 0件でも、有報が存在しないことを意味しません (`partial_coverage: true`)。100ページを超えることが多いので `get_earnings_document` のページ範囲指定で読みます。
 - 返すのは PDF から抽出したテキストだけです。スライド資料ではグラフや表の数値が落ちることがあります。項目名だけがあって数値が続かない場合は、抽出できていないだけです。`text` が `null` の資料や数値の裏取りには PDF を見てください。`relative_path` 末尾のファイル名で Google Drive コネクタから検索できます。
 
 ### 銘柄評価台帳 (`list_stock_ratings` / `get_stock_rating` / `update_stock_rating`)

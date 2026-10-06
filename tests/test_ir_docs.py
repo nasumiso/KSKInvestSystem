@@ -346,6 +346,27 @@ def test_estimate_date_formats(heading, url, expected):
     assert ir_docs._estimate_date(heading, url, "20260923") == expected
 
 
+@pytest.mark.parametrize("text, doc_type", [
+    ("第10期 有価証券報告書", "yuho"),
+    ("Annual Securities Report 2026", "yuho"),
+    ("第9期 第3四半期報告書", None),
+    ("半期報告書", None),
+])
+def test_ir_page_doc_type_yuho(text, doc_type):
+    """有報は IR ページ経路で拾い、四半期・半期報告書は拾わない。"""
+    assert ir_docs._ir_page_doc_type("https://x/a.pdf", text) == doc_type
+
+
+@pytest.mark.parametrize("cover, expected", [
+    ("有価証券報告書\n【提出日】 令和8年6月26日\n【事業年度】", "20260626"),
+    ("【提出日】令和元年6月26日", "20190626"),
+    # 表紙の次ページにある提出日 (西暦)。期首の日付 (2025年1月1日) より提出日を採る
+    ("事業年度\n自 2025年１月１日\n至 2025年12月31日\n\n【提出日】 2026年3月27日", "20260327"),
+])
+def test_estimate_date_reads_reiwa_cover(cover, expected):
+    assert ir_docs._estimate_date("有価証券報告書", "https://x/a.pdf", "20261231", cover) == expected
+
+
 @pytest.mark.parametrize("depth, types, expected", [
     ("1y", ["tanshin", "hp_setsumei"], "20260807"),  # 株探に説明資料なし → 会社HP由来の最新日
     ("1y", ["tanshin"], ""),                         # 会社HPからも未取得
@@ -382,6 +403,7 @@ def test_group_ir_docs_by_period(tmp_path):
         doc("y2", "setsumei", "20260820", None, "FY", heading="2026年度上期 決算説明会資料"),
         doc("y9", "setsumei", "20260101", None, "Q1", heading="2025年度第1四半期 決算補足説明資料"),
         doc("c1", "chuki_plan", "20260331", None, "FY"),
+        doc("yh", "yuho", "20260626", None, "FY", source="corporate_ir_page", date_estimated=True),
         doc("hp", "setsumei", "20250901", source="corporate_ir_page", date_estimated=True),
     ]
     (tmp_path / "4011").mkdir()
@@ -391,11 +413,12 @@ def test_group_ir_docs_by_period(tmp_path):
     )
     grouped = ir_docs.group_ir_docs("4011", output_dir=tmp_path)
     assert [item["doc_id"] for item in grouped["chuki"]] == ["c1"]
+    assert [item["doc_id"] for item in grouped["yuho"]] == ["yh"]  # 期の表には入れない
     assert [(row["quarter"], [d["doc_id"] for d in row["tanshin"]], [d["doc_id"] for d in row["setsumei"]])
             for row in grouped["periods"]] == [("Q2", ["t2"], ["y2"]), ("Q1", ["t1r", "t1"], ["s1r"])]
     # 直前60日以内に同じ四半期の短信が無ければ期不明のまま。日付推定の会社HP由来も寄せない
     assert [item["doc_id"] for item in grouped["unknown"]] == ["y9", "hp"]
-    assert grouped["count"] == 8
+    assert grouped["count"] == 9
     assert ir_docs.group_ir_docs("9999", output_dir=tmp_path)["count"] == 0
 
 

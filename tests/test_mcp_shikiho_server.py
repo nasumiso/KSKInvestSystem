@@ -510,11 +510,13 @@ def test_chuki_plan_is_listed_without_date_claims(tmp_path, monkeypatch):
             _document(doc_id="PLAN_OLD_DATE", date_s="20210401", heading="中計2021", **ir_page),
             _document(doc_id="PLAN_SUPERSEDED", date_s="20240501", heading="旧中計",
                       **{**ir_page, "is_latest": False}),
+            _document(doc_id="YUHO_OLD_DATE", date_s="20250627", heading="第9期 有価証券報告書",
+                      **{**ir_page, "doc_type": "yuho"}),
         ],
     })
     result = server.list_earnings_documents_data("4011", months=12, today=date(2026, 9, 22))
     listed = {d["doc_id"]: d for d in result["documents"]}
-    assert set(listed) == {"TDNET", "PLAN_OLD_DATE"}
+    assert set(listed) == {"TDNET", "PLAN_OLD_DATE", "YUHO_OLD_DATE"}  # 有報も期間で絞らない
     assert listed["PLAN_OLD_DATE"]["as_of"] is None
     assert listed["PLAN_OLD_DATE"]["date_estimated"] is True
     assert listed["TDNET"]["as_of"] == "2026-09-01"
@@ -527,6 +529,12 @@ def test_chuki_plan_is_listed_without_date_claims(tmp_path, monkeypatch):
     assert result["partial_coverage"] is False
     assert only_plans["partial_coverage"] is True
     assert "中計が存在しないことを意味しません" in only_plans["note"]
+    only_yuho = server.list_earnings_documents_data(
+        "4011", months=12, today=date(2026, 9, 22), doc_type="yuho"
+    )
+    assert [d["doc_id"] for d in only_yuho["documents"]] == ["YUHO_OLD_DATE"]
+    assert only_yuho["partial_coverage"] is True
+    assert "有報が存在しないことを意味しません" in only_yuho["note"]
 
 
 @pytest.fixture

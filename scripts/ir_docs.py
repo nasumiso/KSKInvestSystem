@@ -53,12 +53,20 @@ IR_PAGE_SOURCE = "corporate_ir_page"
 # 会社IRページ上の資料種別キーワード (#457)。リンク文言か URL に一致させる。
 IR_PAGE_KEYWORDS = {
     "chuki_plan": re.compile(r"中期経営計画|中期事業方針|中期計画|中長期|Mid-?term", re.I),
+    # 有報は EDINET 開示で株探 (適時開示) に出ないため、中計と同じくIRページから集める。
+    "yuho": re.compile(r"有価証券報告書|(Annual\s+)?Securities\s+Report", re.I),
     "setsumei": re.compile(
         r"決算(補足)?説明(会)?資料|決算短信補足|決算説明会|説明会資料|プレゼンテーション|presentation", re.I
     ),
 }
 # 策定の案内文や常設の会社案内は資料本体ではないため候補から外す。
 IR_PAGE_EXCLUDE_RE = re.compile(r"お知らせ|会社案内|書き起こし|動画")
+# 有報の一覧ページには半期・四半期報告書や対応表も並ぶので外す。表の行全体が1つのリンク文言に
+# なるサイト (6857) では文言が長く、他の報告書名を含むため、短い文言だけで判定する。
+YUHO_EXCLUDE_RE = re.compile(r"半期報告書|対応表")
+YUHO_EXCLUDE_MAX_LEN = 80
+# 有報の「【提出日】」を探すページ数。表紙の前に事業年度の表紙・目次などが数ページ入る (4755 は4ページ目)
+YUHO_COVER_PAGES = 6
 # 会社トップから IR トップへのリンク。開始URLが会社トップの銘柄で1回だけ辿る。
 IR_TOP_LINK_RE = re.compile(
     r"^(IR|IR情報|投資家情報|株主・投資家(の皆様へ|情報)?|投資家の皆様へ|Investors?( Relations)?)$",
@@ -707,6 +715,8 @@ def find_ir_page_candidates(code_s, start_url, session=None, limiter=None, outpu
     def add(url, text, doc_type, source_page):
         if url in candidates or IR_PAGE_EXCLUDE_RE.search(text):
             return
+        if doc_type == "yuho" and len(text) <= YUHO_EXCLUDE_MAX_LEN and YUHO_EXCLUDE_RE.search(text):
+            return
         candidates[url] = {
             "url": url,
             "heading": text or Path(urlparse(url).path).name,
@@ -764,6 +774,15 @@ def _estimate_date(heading, url, today, first_page=""):
 
 def _date_candidates(heading, url, first_page):
     cover = re.sub(r"\s+", "", unicodedata.normalize("NFKC", first_page or ""))[:500]
+    # 有報の「【提出日】」は西暦・令和どちらもある。表紙の前後に別のページが入るため、先頭の数ページを渡す
+    submitted = re.sub(r"\s+", "", unicodedata.normalize("NFKC", first_page or ""))
+    match = re.search(r"提出日】?(?:(20\d{2})|令和(\d{1,2}|元))年(\d{1,2})月(\d{1,2})日", submitted)
+    if match and 1 <= int(match.group(3)) <= 12 and 1 <= int(match.group(4)) <= 31:
+        if match.group(1):
+            year = int(match.group(1))
+        else:
+            year = 2019 if match.group(2) == "元" else 2018 + int(match.group(2))
+        yield f"{year}{int(match.group(3)):02d}{int(match.group(4)):02d}"
     match = re.search(r"(20\d{2})年(\d{1,2})月(\d{1,2})日", cover)
     if match and 1 <= int(match.group(2)) <= 12 and 1 <= int(match.group(3)) <= 31:
         yield f"{match.group(1)}{int(match.group(2)):02d}{int(match.group(3)):02d}"
@@ -821,7 +840,8 @@ def fetch_ir_page_doc(
         "doc_id": sha256[:16],
         "doc_type": doc_type,
         "date": _estimate_date(
-            heading, url, now_dt.strftime("%Y%m%d"), page_texts[0] if page_texts else ""
+            heading, url, now_dt.strftime("%Y%m%d"),
+            "\n".join(page_texts[:YUHO_COVER_PAGES]) if doc_type == "yuho" else (page_texts[0] if page_texts else ""),
         ) or now_dt.strftime("%Y%m%d"),
         "date_estimated": True,
         "heading": heading,
@@ -996,10 +1016,13 @@ def group_ir_docs(code_s, output_dir=None):
     tanshin_documents = [
         item for item in documents if item["doc_type"] == "tanshin" and item.get("fiscal_period")
     ]
-    chuki, unknown, rows = [], [], {}
+    chuki, yuho, unknown, rows = [], [], [], {}
     for document in documents:
         if document["doc_type"] == "chuki_plan":
             chuki.append(document)
+            continue
+        if document["doc_type"] == "yuho":
+            yuho.append(document)
             continue
         key = (document.get("fiscal_period"), document.get("quarter"))
         if not key[0]:
@@ -1013,6 +1036,7 @@ def group_ir_docs(code_s, output_dir=None):
         row[document["doc_type"]].append(document)
     return {
         "chuki": chuki,
+        "yuho": yuho,
         # 資料は日付降順に走査しているので、行の作成順がそのまま行内最新日付の降順になる
         "periods": list(rows.values()),
         "unknown": unknown,
@@ -1038,10 +1062,10 @@ def _build_parser():
 
     list_parser = subparsers.add_parser("list", help="保存済み資料を表示")
     list_parser.add_argument("code_s")
-    list_parser.add_argument("--doc-type", choices=["tanshin", "setsumei", "chuki_plan"])
+    list_parser.add_argument("--doc-type", choices=["tanshin", "setsumei", "chuki_plan", "yuho"])
 
     candidates_parser = subparsers.add_parser(
-        "page-candidates", help="会社IRページから中計・説明資料の候補を表示 (DLしない)"
+        "page-candidates", help="会社IRページから中計・有報・説明資料の候補を表示 (DLしない)"
     )
     candidates_parser.add_argument("code_s", nargs="?")
     candidates_parser.add_argument("--url", help="開始URL (省略時は会社HPの上書き→会社HP)")

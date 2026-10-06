@@ -66,6 +66,8 @@ mcp = MCPServer(
         "限られます。coverage_status が not_collected なら未収集であり、資料が存在しない"
         "ことを意味しません。partial_coverage が true のときは coverage_through 以降が"
         "未収集で、最新の資料が欠けている可能性があります。"
+        "doc_type=yuho (有価証券報告書) は会社IRページから手動で集めたもので、"
+        "date は推定値 (as_of は null)、0件でも有報が存在しないことを意味しません。"
         "doc_type=chuki_plan (中期経営計画) は会社IRページから手動で集めたもの"
         "(date は推定値のため as_of は null) と、グロース市場の「事業計画及び成長可能性に"
         "関する事項」(適時開示から自動収集、date は開示日) です。複数件並立しうるので、"
@@ -318,6 +320,8 @@ def _coverage_window(index: Dict[str, Any]) -> Dict[str, Optional[str]]:
 # 訂正版が原本のこの割合を超える分量を持つなら全文差し替えとみなす。
 # 下回るものは「一部訂正について」の差分通知で、原本の中身を含まない。
 _SUPERSEDE_FULL_TEXT_RATIO = 0.7
+# 会社IRページから手動で集める資料。期間 (months) で絞らない
+IR_PAGE_ONLY_TYPES = ("chuki_plan", "yuho")
 
 
 def _drop_superseded(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -385,10 +389,10 @@ def list_earnings_documents_data(
     # 「未収集」「期間内に無いだけ」「本当に0件」を LLM が区別できるようにする。
     total_documents = len(documents)
     cutoff = ((today or date.today()) - timedelta(days=months * 30)).strftime("%Y%m%d")
-    # 中計は推定日付が古くても現行計画でありうるため期間で絞らない
+    # 中計・有報は推定日付が古くても現行の資料でありうる (有報は年1回) ため期間で絞らない
     in_range = [
         d for d in documents
-        if d.get("doc_type") == "chuki_plan" or (d.get("date") or "") >= cutoff
+        if d.get("doc_type") in IR_PAGE_ONLY_TYPES or (d.get("date") or "") >= cutoff
     ]
 
     window = _coverage_window(index)
@@ -451,9 +455,15 @@ def list_earnings_documents_data(
             f"収集時に{error_count}件の資料でエラーが発生しており、"
             "一覧は不完全な可能性があります。"
         )
-    # 中計の多くは会社IRページから手動で集めたもので、上の網羅性 (TDnet の収集期間) とは
-    # 無関係。0件を「中計は無い」と読ませないよう、常に網羅性は未確認として返す。
-    if doc_type == "chuki_plan":
+    # 有報は会社IRページから手動で集めたもの。中計の多くも同様で、上の網羅性 (TDnet の
+    # 収集期間) とは無関係。0件を「無い」と読ませないよう、常に網羅性は未確認として返す。
+    if doc_type == "yuho":
+        partial = True
+        notes = [
+            "有価証券報告書は会社IRページから手動で取得したものだけを返します。"
+            "0件でも、この銘柄に有報が存在しないことを意味しません。"
+        ]
+    elif doc_type == "chuki_plan":
         partial = True
         notes = [
             "中期経営計画は会社IRページから手動で取得したものと、グロース市場の"
@@ -686,7 +696,8 @@ def list_earnings_documents(
     """銘柄コードから収集済みの決算説明資料・決算短信・中期経営計画の一覧を返す。
 
     doc_type で tanshin (決算短信) / setsumei (決算説明資料) / chuki_plan
-    (中期経営計画) に絞れます。chuki_plan は months に関係なく全件返します。
+    (中期経営計画) / yuho (有価証券報告書) に絞れます。chuki_plan と yuho は
+    months に関係なく全件返します。
     date_estimated が true の資料 (会社IRページから取得したもの) は date が
     推定値で、as_of は null です。chuki_plan は複数件が並立しうるため、
     どれが現行計画かは見出しと内容から判断してください。
