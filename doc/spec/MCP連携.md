@@ -68,6 +68,20 @@ IR 問い合わせ回答は公開情報として流通しない非公開の一�
 - 有価証券報告書は EDINET 開示で株探に出ないため、会社IRページから手動で集めたものだけです (`date` は表紙の提出日が読めればそれ、読めなければ推定値で `date_estimated: true`、`as_of` は `null`)。`doc_type=yuho` で 0件でも、有報が存在しないことを意味しません (`partial_coverage: true`)。100ページを超えることが多いので `get_earnings_document` のページ範囲指定で読みます。
 - 返すのは PDF から抽出したテキストだけです。スライド資料ではグラフや表の数値が落ちることがあります。項目名だけがあって数値が続かない場合は、抽出できていないだけです。`text` が `null` の資料や数値の裏取りには PDF を見てください。`relative_path` 末尾のファイル名で Google Drive コネクタから検索できます。
 
+### IR 資料の収集 (`sync_earnings_documents` / `list_ir_page_candidates` / `fetch_ir_page_document`、#498)
+
+WebApp の IR 資料モーダルと同じ `ir_docs.py` の収集処理を呼びます。MCP 専用の取得処理・保存形式は持ちません。PDF 本体は返さず、保存先は `relative_path` / `local_path` で参照します。
+
+| ツール | 内容 |
+|---|---|
+| `sync_earnings_documents(code_s, depth="1y")` | 株探 (適時開示) から決算短信・説明資料・成長可能性資料を収集。取得済みはスキップするので何度呼んでも重複しない。新規銘柄の1年分で15秒ほど。`depth` は `1y` / `latest` (直近1件のみ) |
+| `list_ir_page_candidates(code_s, doc_type=None, pending_only=True)` | 会社IRページから中計 (`chuki_plan`)・有報 (`yuho`)・説明資料 (`setsumei`) の PDF 候補を返す。保存しない。会社HP未登録なら `ok: false` |
+| `fetch_ir_page_document(code_s, url, doc_type, heading=None, source_page=None)` | 候補の PDF を1件保存。公開 URL の PDF だけ。LAN・localhost・PDF 以外は `ok: false` で何も保存しない。同一 PDF は `added: false` |
+
+- `sync_earnings_documents` の返却は `added` (今回保存)・`already_collected_count`・`coverage`。**`coverage.has_collection_errors` が true なら一部取りこぼしがあり、`ok: true` でも一覧は不完全**です (`collection_errors` に理由)
+- 3ツールは同時に1つだけ実行できます。実行中に呼ぶと待たず `ok: false` を返します (同じ銘柄の `index.json` を同時に書き換えないため)
+- 新規銘柄の調査の流れ: `sync_earnings_documents` → `list_earnings_documents` で確認 → 会社HP限定の説明資料・中計・有報が不足なら `list_ir_page_candidates` → 見出しを確認して `fetch_ir_page_document` → `get_earnings_document` で本文を読む。候補には誤りがありうるので、全件を無条件に保存しない
+
 ### 銘柄評価台帳 (`list_stock_ratings` / `get_stock_rating` / `update_stock_rating`)
 
 ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 / モメンタム20 / Valuation20、Confidence、Status) を参照・更新します。
@@ -81,7 +95,9 @@ ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 / モメ
 
 ## 利用上の制約
 
-- 書き込めるのは銘柄評価台帳 (`update_stock_rating`) だけです。調査DB・ポジションを変更するツールは提供していません。
+- 書き込むのは次の2系統だけです。調査DB・ポジション・売買情報を変更するツールは提供していません。
+  - 銘柄評価台帳の更新 (`update_stock_rating`)
+  - IR 資料の収集 (`sync_earnings_documents` / `fetch_ir_page_document`。`ir_docs` に PDF・テキスト・`index.json` を追加する。`list_ir_page_candidates` は保存せず外部サイトを読むだけ)
 - データの時点と出典を確認してください。時点が不明なものは、推測で補わず `null` として返します。
 - MCP のデータは分析を助けるための材料です。投資成果や将来の株価を保証しません。
 

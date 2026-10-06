@@ -189,7 +189,7 @@ def _fake_page_get(requested):
             self.apparent_encoding = "utf-8"
             self.url = url
 
-    def fake_get(session, url, limiter):
+    def fake_get(session, url, limiter, public_only=False):
         requested.append(url)
         return Response(url)
 
@@ -198,6 +198,56 @@ def _fake_page_get(requested):
 
 def _allow_public(monkeypatch):
     monkeypatch.setattr(ir_docs, "_check_public_url", lambda url: None)
+
+
+class _Hop:
+    """リダイレクトを返す偽の応答。"""
+    def __init__(self, location=None):
+        self.headers = {"location": location} if location else {}
+        self.is_redirect = bool(location)
+
+    def raise_for_status(self):
+        pass
+
+
+class _HopSession:
+    def __init__(self, routes):
+        self.routes, self.requested = routes, []
+
+    def get(self, url, **kwargs):
+        assert kwargs.get("allow_redirects") is False  # 自動追跡させない
+        self.requested.append(url)
+        return _Hop(self.routes.get(url))
+
+
+class _NoWait:
+    def wait(self):
+        pass
+
+
+@pytest.mark.parametrize("routes, blocked", [
+    # 公開URL → 公開URL (/ir → /ir/ のような通常のリダイレクト) は辿る
+    ({"https://corp.example.com/ir": "/ir/"}, False),
+    # 公開URL → localhost は、内部へアクセスする前に拒否する
+    ({"https://corp.example.com/ir": "http://127.0.0.1:5001/x"}, True),
+    # 終わらないリダイレクトは打ち切る
+    ({"https://corp.example.com/ir": "/ir"}, True),
+])
+def test_get_public_only_validates_every_redirect_hop(monkeypatch, routes, blocked):
+    """任意URLの取得は、リダイレクト先も公開アドレスか1ホップずつ検証する (#499 レビュー)。"""
+    real = ir_docs._check_public_url
+    monkeypatch.setattr(
+        ir_docs, "_check_public_url",
+        lambda url: None if "example.com" in url else real(url),
+    )
+    session = _HopSession(routes)
+    if blocked:
+        with pytest.raises(ValueError):
+            ir_docs._get(session, "https://corp.example.com/ir", _NoWait(), public_only=True)
+        assert not any("127.0.0.1" in url for url in session.requested)
+    else:
+        ir_docs._get(session, "https://corp.example.com/ir", _NoWait(), public_only=True)
+        assert session.requested == ["https://corp.example.com/ir", "https://corp.example.com/ir/"]
 
 
 def test_ir_page_candidates_follow_one_subpage_per_type(tmp_path, monkeypatch):

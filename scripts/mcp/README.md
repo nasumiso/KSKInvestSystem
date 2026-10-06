@@ -1,6 +1,6 @@
 # 四季報 MCP サーバー
 
-`shikiho_server.py` は `research_shelve` の四季報コメント・業績予想・IR問い合わせ回答を読み取り専用で提供する stdio MCP サーバーです。書き込めるのは銘柄評価台帳 (`update_stock_rating`) だけです。HTTP ポートは開きません。利用者向けの仕様は [doc/spec/MCP連携.md](../../doc/spec/MCP連携.md) を参照してください。
+`shikiho_server.py` は `research_shelve` の四季報コメント・業績予想・IR問い合わせ回答を提供する stdio MCP サーバーです。読み取りが中心で、書き込むのは銘柄評価台帳 (`update_stock_rating`) の更新と IR 資料の収集 (`sync_earnings_documents` / `fetch_ir_page_document`) だけです。HTTP ポートは開きません。利用者向けの仕様は [doc/spec/MCP連携.md](../../doc/spec/MCP連携.md) を参照してください。
 
 ## ローカル起動前の準備
 
@@ -35,6 +35,7 @@ MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_D
 - `get_ir_qa(code_s, limit=10)`: IR部門への問い合わせ回答履歴を新しい順に返します。
 - `list_earnings_documents(code_s, months=12, include_superseded=False)`: 収集済みの決算説明資料・決算短信の一覧を返します。テキスト本体は含みません。
 - `get_earnings_document(code_s, doc_id, page_from=1, page_to=None, max_chars=15000)`: 資料の抽出済みテキストをページ範囲で返します。
+- `sync_earnings_documents(code_s, depth="1y")` / `list_ir_page_candidates(...)` / `fetch_ir_page_document(...)`: IR 資料の収集 (#498)。`ir_docs.py` を呼ぶだけで、仕様は [doc/spec/MCP連携.md](../../doc/spec/MCP連携.md) の「IR 資料の収集」を参照。収集ツールを追加・変更したら、運用機で常駐プロセスを再起動します (下の「更新後の再起動」)。
 
 `period` は四季報の版情報です。正確な時点は DB に保存していないため、`as_of` は常に `null` です。
 

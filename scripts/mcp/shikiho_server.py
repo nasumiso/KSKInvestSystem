@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""四季報コメント・IR問い合わせ回答を読み取り専用で提供し、銘柄評価台帳だけは更新もできる stdio MCP サーバー。"""
+"""四季報コメント・IR資料などを提供する stdio MCP サーバー。書き込むのは銘柄評価台帳の更新と IR 資料の収集だけ。"""
 
 import json
 import logging
 import os
 import sys
+import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -30,8 +31,9 @@ import stock_ratings
 
 logger = logging.getLogger(__name__)
 
-# ir_docs.py は収集用に requests / pypdf を読み込むため import せず、
-# 読み取り専用の本サーバーでは保存先だけを同じ規則で組み立てる。
+# ir_docs.py は収集用に requests / pypdf を読み込むため、読み取りツールは import せず
+# 保存先だけを同じ規則で組み立てる。収集ツール (sync_earnings_documents など) だけが
+# 呼び出し時に遅延 import する。
 IR_DOCS_DIR = Path(DATA_DIR) / "ir_docs"
 
 # local_path を開けるかは利用環境次第。同じ Mac の ChatGPT アプリ (Work モード) や
@@ -48,7 +50,13 @@ mcp = MCPServer(
     "shintakane-shikiho",
     instructions=(
         "Shintakane の四季報コメントと業績予想を読み取り専用で返します。"
-        "書き込めるのは銘柄評価台帳 (update_stock_rating) だけです。"
+        "書き込むのは銘柄評価台帳 (update_stock_rating) の更新と、IR 資料の収集"
+        "(sync_earnings_documents / fetch_ir_page_document が ir_docs の PDF・テキスト・"
+        "index.json を追加する) だけです。調査DB・ポートフォリオ・売買情報は書き換えません。"
+        "新規銘柄の調査では、先に sync_earnings_documents で決算短信・説明資料を集め、"
+        "list_earnings_documents で確認し、不足 (会社HP限定の説明資料・中計・有価証券報告書) は"
+        "list_ir_page_candidates で候補を見て、必要なものだけ fetch_ir_page_document で保存してください。"
+        "sync_earnings_documents の has_collection_errors が true なら一部取りこぼしがあります。"
         "ユーザーが「台帳」「評価台帳」と言ったら、stock_ratings の各ツールを使ってください。"
         "このサーバーに接続できている間は、Google Drive 上の stock_ratings.json を"
         "直接編集せず、更新は必ず update_stock_rating で行ってください"
@@ -648,6 +656,110 @@ def update_stock_rating_data(
     }
 
 
+# IR 資料の収集系ツールの同時実行を防ぐ。同じ銘柄の index.json を2つの呼び出しが
+# 同時に書き換えると、先に書いた分が消えるため。待たせず ok: false で返す。
+_IR_WRITE_LOCK = threading.Lock()
+SYNC_DEPTHS = ("1y", "latest")
+
+
+def _run_ir_collection(action) -> Dict[str, Any]:
+    """収集系ツールの共通処理。排他と、例外の ok: false 化だけを持つ。"""
+    if not _IR_WRITE_LOCK.acquire(blocking=False):
+        return {
+            "ok": False,
+            "error": "別の IR 資料の収集が実行中です。終わってからもう一度呼んでください。",
+        }
+    try:
+        return action()
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:  # 通信失敗など。握りつぶさず理由を返す
+        logger.exception("IR 資料の収集に失敗しました")
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        _IR_WRITE_LOCK.release()
+
+
+def sync_earnings_documents_data(code_s: str, depth: str = "1y") -> Dict[str, Any]:
+    """株探 (適時開示) から決算短信・決算説明資料・成長可能性資料を収集する。"""
+    code = code_s.strip().upper()
+    if depth not in SYNC_DEPTHS:
+        return {"ok": False, "code_s": code, "error": f"depth は {' / '.join(SYNC_DEPTHS)} のどちらかです"}
+
+    def action() -> Dict[str, Any]:
+        import ir_docs  # 遅延 import (requests / pypdf を読み込むため)
+
+        before = {d.get("doc_id") for d in (_load_ir_index(code) or {}).get("documents") or []}
+        targets = ir_docs.download_ir_docs(code, depth=depth, output_dir=IR_DOCS_DIR)
+        added = [d for d in targets if d["doc_id"] not in before]
+        listing = list_earnings_documents_data(code)
+        index = _load_ir_index(code) or {}
+        return {
+            "ok": True,
+            "code_s": code,
+            "requested_depth": depth,
+            "added": [_format_ir_document(code, d) for d in added],
+            "already_collected_count": len(targets) - len(added),
+            "coverage": {
+                **{key: listing.get(key) for key in (
+                    "coverage_status", "partial_coverage", "has_collection_errors",
+                    "collection_error_count", "total_documents", "note",
+                )},
+                "collection_errors": index.get("collection_errors") or {},
+            },
+        }
+
+    return _run_ir_collection(action)
+
+
+def list_ir_page_candidates_data(
+    code_s: str, doc_type: Optional[str] = None, pending_only: bool = True,
+) -> Dict[str, Any]:
+    """会社IRページから中計・有報・説明資料の PDF 候補を返す。保存はしない。"""
+    code = code_s.strip().upper()
+
+    def action() -> Dict[str, Any]:
+        import ir_docs
+
+        if doc_type is not None and doc_type not in ir_docs.IR_PAGE_KEYWORDS:
+            raise ValueError(f"doc_type は {' / '.join(ir_docs.IR_PAGE_KEYWORDS)} のいずれかです")
+        start_url = ir_docs.resolve_ir_start_url(code)
+        if not start_url:
+            return {
+                "ok": False, "code_s": code,
+                "error": "会社HPの URL が未登録です (WebApp の会社HP上書きで登録できます)。",
+            }
+        candidates = ir_docs.find_ir_page_candidates(code, start_url, output_dir=IR_DOCS_DIR)
+        if pending_only:
+            items = ir_docs.pending_candidates(candidates, doc_type)
+        else:
+            items = [c for c in candidates if doc_type in (None, c["doc_type"])]
+        return {
+            "ok": True, "code_s": code, "start_url": start_url,
+            "pending_only": pending_only, "candidates": items,
+        }
+
+    return _run_ir_collection(action)
+
+
+def fetch_ir_page_document_data(
+    code_s: str, url: str, doc_type: str,
+    heading: Optional[str] = None, source_page: Optional[str] = None,
+) -> Dict[str, Any]:
+    """会社IRページ上の PDF を1件保存する。URL 検証・PDF 判定・重複排除は ir_docs が行う。"""
+    code = code_s.strip().upper()
+
+    def action() -> Dict[str, Any]:
+        import ir_docs
+
+        document, saved = ir_docs.fetch_ir_page_doc(
+            code, url, doc_type, heading, source_page, output_dir=IR_DOCS_DIR
+        )
+        return {"ok": True, "code_s": code, "added": saved, "document": _format_ir_document(code, document)}
+
+    return _run_ir_collection(action)
+
+
 # シート2枚目「採点ルール Ver2.0」を移したもの。採点ルールを変えたら
 # stock_ratings.RUBRIC_VERSION と合わせて更新する。
 UPDATE_STOCK_RATING_DESCRIPTION = """銘柄評価台帳の1銘柄を部分更新する。未登録の銘柄なら新規作成する。
@@ -829,6 +941,53 @@ def update_stock_rating(
         "mispricing_note": mispricing_note, "risks": risks,
         "checkpoints": checkpoints, "note": note,
     })
+
+
+@mcp.tool()
+def sync_earnings_documents(code_s: str, depth: str = "1y") -> Dict[str, Any]:
+    """銘柄の決算短信・決算説明資料・成長可能性資料を株探 (適時開示) から収集して保存する。
+
+    新規銘柄の調査や最新決算の評価更新の前に呼びます。取得済みの資料はスキップし、
+    未取得分だけを保存するので、何度呼んでも重複しません。新規銘柄の1年分で15秒ほどかかります。
+    depth は "1y" (直近1年。既定) か "latest" (直近1件だけ。最新四半期の短信と説明資料を
+    揃える用途には足りない)。
+
+    返却: added (今回保存した資料)、already_collected_count、coverage。
+    coverage.has_collection_errors が true なら一部取りこぼしがあり、一覧は不完全です
+    (collection_errors に理由)。ok が true でも、これを見てユーザーに伝えてください。
+    株探に出ない有価証券報告書・中期経営計画・会社HP限定の説明資料は、
+    list_ir_page_candidates と fetch_ir_page_document で集めます。
+    """
+    return sync_earnings_documents_data(code_s, depth)
+
+
+@mcp.tool()
+def list_ir_page_candidates(
+    code_s: str, doc_type: Optional[str] = None, pending_only: bool = True,
+) -> Dict[str, Any]:
+    """会社IRページから、株探に出ない資料 (中計・有価証券報告書・説明資料) の PDF 候補を返す。
+
+    保存はしません (外部サイトへ最大4回アクセスします)。doc_type は chuki_plan (中期経営計画) /
+    yuho (有価証券報告書) / setsumei (決算説明資料)。pending_only が true なら、取得済み・古い・
+    株探取得済みの可能性がある候補を除きます。候補は誤りがありうるので、見出しを確認して
+    必要なものだけ fetch_ir_page_document で保存してください。会社HPが未登録の銘柄は ok: false です。
+    """
+    return list_ir_page_candidates_data(code_s, doc_type, pending_only)
+
+
+@mcp.tool()
+def fetch_ir_page_document(
+    code_s: str, url: str, doc_type: str,
+    heading: Optional[str] = None, source_page: Optional[str] = None,
+) -> Dict[str, Any]:
+    """会社IRページ上の PDF を1件、既存の保存形式で追加する。
+
+    url は list_ir_page_candidates の候補の url。doc_type は chuki_plan / yuho / setsumei。
+    公開 URL の PDF だけを保存し、LAN・localhost・PDF 以外は ok: false で何も保存しません。
+    同じ PDF が保存済みなら added が false です。日付は推定値 (date_estimated) で、
+    保存後は get_earnings_document で本文を読めます。
+    """
+    return fetch_ir_page_document_data(code_s, url, doc_type, heading, source_page)
 
 
 def _check_runtime_database() -> None:
