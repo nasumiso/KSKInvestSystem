@@ -585,3 +585,123 @@ def test_update_stock_rating_returns_errors_without_writing(
     assert result["ok"] is False
     assert any(e.startswith(error_key) for e in result["errors"])
     assert (ratings_dir / "stock_ratings.json").read_bytes() == before
+
+
+# ---- IR 資料の収集ツール (issue #498) ----
+
+class _FakeResponse:
+    def __init__(self, content, content_type="application/pdf"):
+        self.content = content
+        self.headers = {"content-type": content_type}
+
+
+@pytest.fixture
+def ir_collect(tmp_path, monkeypatch):
+    """収集ツールをネットワーク無しで動かす。保存先は一時ディレクトリ。"""
+    import ir_docs
+
+    root = tmp_path / "ir_docs"
+    monkeypatch.setattr(server, "IR_DOCS_DIR", root)
+    monkeypatch.setattr(ir_docs, "_extract_pdf", lambda pdf_bytes: ["決算の本文です。" * 20])
+    return ir_docs
+
+
+def _candidate(doc_id, date_s="20260813", doc_type="tanshin"):
+    return {
+        "doc_id": doc_id, "doc_type": doc_type, "date": date_s,
+        "heading": f"2026年12月期 {doc_id}", "fiscal_period": "2026年12月期",
+        "quarter": "Q2", "url": f"https://kabutan.test/{doc_id}.pdf",
+    }
+
+
+def test_sync_adds_only_new_documents(ir_collect, monkeypatch):
+    """新規は保存し、再実行では重複保存せず、開示が増えたら未取得分だけ足す。"""
+    candidates = [_candidate("A"), _candidate("B", "20260513")]
+    monkeypatch.setattr(ir_collect, "collect_candidates", lambda *a, **k: (list(candidates), []))
+    monkeypatch.setattr(ir_collect, "_get_pdf", lambda session, url, limiter: b"%PDF " + url.encode())
+
+    first = server.sync_earnings_documents_data("3040")
+    assert first["ok"] is True
+    assert sorted(d["doc_id"] for d in first["added"]) == ["A", "B"]
+    assert first["already_collected_count"] == 0
+    assert first["coverage"]["has_collection_errors"] is False
+
+    again = server.sync_earnings_documents_data("3040")
+    assert again["added"] == [] and again["already_collected_count"] == 2
+    assert len(list((server.IR_DOCS_DIR / "3040").glob("*.pdf"))) == 2
+
+    candidates.insert(0, _candidate("C", "20260813", "setsumei"))
+    increment = server.sync_earnings_documents_data("3040")
+    assert [d["doc_id"] for d in increment["added"]] == ["C"]
+    assert increment["already_collected_count"] == 2
+    assert len(list((server.IR_DOCS_DIR / "3040").glob("*.pdf"))) == 3
+
+
+def test_sync_reports_errors_without_hiding_them(ir_collect, monkeypatch):
+    """取りこぼしがあっても ok のまま、has_collection_errors と理由で見分けられる。"""
+    monkeypatch.setattr(
+        ir_collect, "collect_candidates", lambda *a, **k: ([_candidate("A"), _candidate("B")], [])
+    )
+
+    def get_pdf(session, url, limiter):
+        if url.endswith("B.pdf"):
+            raise ValueError("PDF以外の応答です: text/html")
+        return b"%PDF A"
+
+    monkeypatch.setattr(ir_collect, "_get_pdf", get_pdf)
+    result = server.sync_earnings_documents_data("3040")
+    assert result["ok"] is True
+    assert [d["doc_id"] for d in result["added"]] == ["A"]
+    assert result["coverage"]["has_collection_errors"] is True
+    assert result["coverage"]["collection_errors"]["1y"][0]["doc_id"] == "B"
+    # 2y など対象外の深度は何も実行しない
+    assert server.sync_earnings_documents_data("3040", "2y")["ok"] is False
+
+
+def test_list_ir_page_candidates(ir_collect, monkeypatch):
+    """会社HP未登録は ok: false。pending_only で取得済み・古い候補を除き、doc_type で絞れる。"""
+    monkeypatch.setattr(ir_collect, "resolve_ir_start_url", lambda code: None)
+    assert server.list_ir_page_candidates_data("3040")["ok"] is False
+
+    def item(name, doc_type, **marks):
+        return {"url": f"https://corp.test/{name}.pdf", "heading": name, "doc_type": doc_type,
+                "source_page": "https://corp.test/ir", "old": False, "downloaded": False,
+                "maybe_tdnet": None, **marks}
+
+    found = [item("中計2026", "chuki_plan"), item("第10期有価証券報告書", "yuho"),
+             item("旧中計", "chuki_plan", old=True), item("取得済み", "setsumei", downloaded=True)]
+    monkeypatch.setattr(ir_collect, "resolve_ir_start_url", lambda code: "https://corp.test/ir")
+    monkeypatch.setattr(ir_collect, "find_ir_page_candidates", lambda *a, **k: found)
+
+    pending = server.list_ir_page_candidates_data("3040")
+    assert [c["heading"] for c in pending["candidates"]] == ["中計2026", "第10期有価証券報告書"]
+    everything = server.list_ir_page_candidates_data("3040", pending_only=False)
+    assert len(everything["candidates"]) == 4
+    only_yuho = server.list_ir_page_candidates_data("3040", doc_type="yuho")
+    assert [c["doc_type"] for c in only_yuho["candidates"]] == ["yuho"]
+    assert server.list_ir_page_candidates_data("3040", doc_type="x")["ok"] is False
+
+
+def test_fetch_ir_page_document_guards(ir_collect, monkeypatch):
+    """LAN・PDF以外は保存せず ok: false。同一PDFは added: false。収集が実行中なら待たせず断る。"""
+    for url in ("http://127.0.0.1/a.pdf", "http://192.168.0.5/a.pdf", "file:///etc/passwd"):
+        assert server.fetch_ir_page_document_data("3040", url, "chuki_plan")["ok"] is False
+
+    monkeypatch.setattr(ir_collect, "_check_public_url", lambda url: None)
+    monkeypatch.setattr(ir_collect, "_get", lambda *a, **k: _FakeResponse(b"<html>", "text/html"))
+    refused = server.fetch_ir_page_document_data("3040", "https://corp.test/a.pdf", "chuki_plan")
+    assert refused["ok"] is False and "PDF" in refused["error"]
+    assert not (server.IR_DOCS_DIR / "3040").exists()
+
+    monkeypatch.setattr(ir_collect, "_get", lambda *a, **k: _FakeResponse(b"%PDF-1.4 plan"))
+    saved = server.fetch_ir_page_document_data(
+        "3040", "https://corp.test/a.pdf", "yuho", "第10期 有価証券報告書"
+    )
+    assert saved["ok"] is True and saved["added"] is True
+    assert saved["document"]["doc_type"] == "yuho" and saved["document"]["date_estimated"] is True
+    same = server.fetch_ir_page_document_data("3040", "https://corp.test/b.pdf", "yuho")
+    assert same["ok"] is True and same["added"] is False
+
+    with server._IR_WRITE_LOCK:
+        busy = server.sync_earnings_documents_data("3040")
+    assert busy["ok"] is False and "実行中" in busy["error"]
