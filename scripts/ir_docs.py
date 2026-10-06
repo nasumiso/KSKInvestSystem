@@ -181,15 +181,35 @@ class _RateLimiter:
         self.last_requested_at = time.monotonic()
 
 
-def _get(session, url, limiter):
-    limiter.wait()
-    response = session.get(url, headers={"User-Agent": USER_AGENT_CHROME}, timeout=20)
+MAX_REDIRECTS = 5
+
+
+def _get(session, url, limiter, public_only=False):
+    """GET して返す。public_only なら、リダイレクト先も1つずつ公開アドレスか検証する。
+
+    任意 URL を受ける経路 (WebApp・MCP) では、公開 URL が localhost や LAN へ
+    リダイレクトして内部サービスへ GET を送らせる抜け道を塞ぐ。
+    """
+    headers = {"User-Agent": USER_AGENT_CHROME}
+    if not public_only:
+        limiter.wait()
+        response = session.get(url, headers=headers, timeout=20)
+    else:
+        for _ in range(MAX_REDIRECTS + 1):
+            _check_public_url(url)
+            limiter.wait()
+            response = session.get(url, headers=headers, timeout=20, allow_redirects=False)
+            if not (response.is_redirect and response.headers.get("location")):
+                break
+            url = urljoin(url, response.headers["location"])
+        else:
+            raise ValueError(f"リダイレクトが多すぎます: {url}")
     response.raise_for_status()
     return response
 
 
-def _get_pdf(session, url, limiter):
-    response = _get(session, url, limiter)
+def _get_pdf(session, url, limiter, public_only=False):
+    response = _get(session, url, limiter, public_only)
     pdf_bytes = response.content
     content_type = response.headers.get("content-type", "").lower()
     if "pdf" not in content_type and not pdf_bytes.startswith(b"%PDF"):
@@ -564,8 +584,7 @@ def _check_public_url(url):
 
 def _page_links(session, url, limiter):
     """ページを取得し、(絶対URL, リンク文言) の一覧を返す。"""
-    _check_public_url(url)
-    response = _get(session, url, limiter)
+    response = _get(session, url, limiter, public_only=True)
     response.encoding = response.apparent_encoding
     links = []
     for href, text in ANCHOR_RE.findall(response.text):
@@ -824,7 +843,7 @@ def fetch_ir_page_doc(
     now_dt = datetime.now(timezone(timedelta(hours=9)))
     now = now_dt.isoformat(timespec="seconds")
     session = session or requests.Session()
-    pdf_bytes = _get_pdf(session, url, limiter or _RateLimiter())
+    pdf_bytes = _get_pdf(session, url, limiter or _RateLimiter(), public_only=True)
     sha256 = hashlib.sha256(pdf_bytes).hexdigest()
 
     index = _load_index(index_path)
