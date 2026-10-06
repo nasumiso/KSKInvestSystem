@@ -1545,6 +1545,27 @@ class TestStrategyHistory:
             del db[ps.KEY_STRATEGY_HISTORY_META]
         return db_path
 
+    def test_fill_strategy_follows_master_and_logs(self, seeded_db):
+        """ロットの戦略 (issue #492 段階2): 複数の建て fill に同じ値を書き、空文字で消す。
+        マスターの改名・削除に追従し、変更は scope=lot で履歴に残る。"""
+        ps.set_fill_strategies("7001", [3, 4], "GARP", db_path=seeded_db)
+        ps.set_fill_strategies("7001", [5], "中期テーマ", db_path=seeded_db)
+        ps.set_fill_strategies("7001", [5], "中期テーマ", db_path=seeded_db)  # 同じ値は残さない
+        with pytest.raises(ValueError, match="マスター未登録"):
+            ps.set_fill_strategies("7001", [3], "無い戦略", db_path=seeded_db)
+
+        ps.update_trade_idea("GARP", new_name="GARP改", db_path=seeded_db)
+        ps.delete_trade_idea("中期テーマ", db_path=seeded_db)
+        got = {k: v["trade_idea"] for k, v in ps.list_fill_strategies(db_path=seeded_db).items()}
+        assert got == {("7001", 3): "GARP改", ("7001", 4): "GARP改"}
+
+        ps.set_fill_strategies("7001", [3, 4], "", db_path=seeded_db)
+        assert ps.list_fill_strategies(db_path=seeded_db) == {}
+        lots = [(h["seqs"], h["old"], h["new"], h["source"])
+                for h in ps.list_strategy_history("7001", db_path=seeded_db) if h["scope"] == "lot"]
+        assert lots == [([3, 4], "", "GARP改", "manual"), ([5], "", "中期テーマ", "manual"),
+                        ([5], "中期テーマ", "", "master_delete"), ([3, 4], "GARP改", "", "manual")]
+
     def test_update_memo_logs_change_after_baseline(self, seeded_db):
         """最初の変更の前に基準値を作り、変更は有効日つきで1件残す。同じ値なら残さない。"""
         ps.update_memo("7002", {"trade_idea": "中期モメンタム"}, effective_date="2026-03-02",

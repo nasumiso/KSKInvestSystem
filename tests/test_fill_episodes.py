@@ -790,6 +790,52 @@ class TestStockTradeIdea:
         assert got == {"2026-03-05": "", "2026-04-10": "GARP"}
 
 
+class TestLotStrategy:
+    """建てロットの戦略 (issue #492 段階2)。"""
+
+    def test_open_seqs_on_round_trips(self, db_path):
+        """往復行は、対応付けた建て fill の seq を持つ。信用で1本の返済が同じ建日・建単価の
+        複数の建てをまとめた行は全部、現物は FIFO で充当した買い1本。"""
+        for i in range(2):
+            _add(db_path, "9001", "2026-03-02", "buy", 100, 1000.0, trade_kind="信用新規", seq_salt=str(i))
+        _add(db_path, "9001", "2026-03-10", "sell", 200, 1100.0, trade_kind="信用返済",
+             tate_date="2026-03-02", tate_price=1000.0, settle_pl=20000)
+        _add(db_path, "9002", "2026-03-02", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "9002", "2026-03-03", "buy", 100, 1200.0, seq_salt="b")
+        _add(db_path, "9002", "2026-03-10", "sell", 150, 1300.0)
+        eps = {e["code_s"]: e for e in trade_episodes.build_fill_episodes(db_path=db_path)}
+        seqs = {c: [f["seq"] for f in eps[c]["fills"] if f["side"] == "buy"] for c in eps}
+
+        assert [r["open_seqs"] for r in trade_episodes.build_round_trips(eps["9001"])] == [seqs["9001"]]
+        got = sorted((r["closed"], r["qty"], r["open_seqs"])
+                     for r in trade_episodes.build_round_trips(eps["9002"]))
+        assert got == [(False, 50, seqs["9002"][1:]), (True, 50, seqs["9002"][1:]),
+                       (True, 100, seqs["9002"][:1])]
+
+    @pytest.mark.parametrize("ep_idea,expect_ideas,n_differs", [
+        ("GARP", {"GARP", "中期テーマ"}, 2),   # 2本目の買いから出た2行 (売った分と保有中) が違う
+        ("中期テーマ", {"中期テーマ"}, 0),     # エピソード側を後から同じ値にしたら、違いは消える
+        ("", {""}, 0),                         # エピソードが未分類なら上書きは無視
+    ])
+    def test_attach_lot_strategies(self, db_path, ep_idea, expect_ideas, n_differs):
+        _add(db_path, "9002", "2026-03-02", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "9002", "2026-03-03", "buy", 100, 1200.0, seq_salt="b")
+        _add(db_path, "9002", "2026-03-10", "sell", 150, 1300.0)
+        ep = trade_episodes.build_fill_episodes(db_path=db_path)[0]
+        ep["trade_idea"] = ep_idea
+        ep["round_trips"] = trade_episodes.build_round_trips(ep)
+        second = [f["seq"] for f in ep["fills"] if f["side"] == "buy"][1]
+        override = {("9002", second): {"trade_idea": "中期テーマ", "source": "manual",
+                                       "assigned_at": "2026-03-10"}}
+
+        trade_episodes.attach_lot_strategies(ep, override)
+
+        assert {r["trade_idea"] for r in ep["round_trips"]} == expect_ideas
+        assert ep["lot_differs_count"] == n_differs
+        # 03-03 に買って 03-10 (5平日後) に付けたので後付け。違いの無い行には印を付けない
+        assert sum(r["late_label"] for r in ep["round_trips"]) == n_differs
+
+
 class TestAssignEntryStrategy:
     """入った時点の戦略を、銘柄の戦略の履歴から写す (issue #492 5d)。"""
 
