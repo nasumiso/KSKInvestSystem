@@ -84,9 +84,9 @@
             <option value="{{ idea }}" {% if idea == d.current_trade_idea %}selected{% endif %}>{{ idea }}</option>
             {% endfor %}
           </select>
-          <input type="text" name="note_{{ d.code_s }}" placeholder="振り返りメモ (任意)" style="width:100%;padding:0.2em 0.4em;">
+          <textarea name="note_{{ d.code_s }}" rows="2" placeholder="振り返りメモ (任意。Enter で改行)" style="width:100%;padding:0.2em 0.4em;margin:0;resize:vertical;"></textarea>
           {% elif is_out %}
-          <input type="text" name="note_{{ d.code_s }}" placeholder="例: 業績下振れで撤退" style="width:100%;padding:0.2em 0.4em;">
+          <textarea name="note_{{ d.code_s }}" rows="2" placeholder="例: 業績下振れで撤退 (Enter で改行)" style="width:100%;padding:0.2em 0.4em;margin:0;resize:vertical;"></textarea>
           {% endif %}
         </td>
       </tr>

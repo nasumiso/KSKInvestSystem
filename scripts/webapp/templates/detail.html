@@ -1038,7 +1038,7 @@
             {{ log.action_type }}{% if log.status_to %} [→ {{ log.status_to }}]{% endif %}
           {% endif %}
         </td>
-        <td style="color:#555;">{{ log.reason or "" }}</td>
+        <td style="color:#555;white-space:pre-line;">{{ log.reason or "" }}</td>
       </tr>
       {% endif %}
     {% endfor %}

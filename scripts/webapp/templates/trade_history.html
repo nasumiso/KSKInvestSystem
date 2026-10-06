@@ -357,7 +357,7 @@
           <div style="color:#555;font-size:0.82em;line-height:1.5;">
             <span style="display:inline-block;min-width:2.6em;color:#777;">{{ n.label }}</span>
             <span style="display:inline-block;min-width:3em;color:#777;">{{ n.date[5:7]|int }}/{{ n.date[8:10]|int }}</span>
-            {{ n.text }}
+            <span style="white-space:pre-line;">{{ n.text }}</span>
           </div>
           {% endfor %}
           <div class="review-memo-cell"
@@ -703,7 +703,7 @@
       <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">
         {% if row.price is not none %}{{ "{:,}".format(row.price|int) }}{% else %}—{% endif %}
       </td>
-      <td style="color:#555;">{{ row.reason }}</td>
+      <td style="color:#555;white-space:pre-line;">{{ row.reason }}</td>
     </tr>
     {% endfor %}
   {% endfor %}

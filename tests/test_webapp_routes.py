@@ -1810,7 +1810,8 @@ class TestPortfolioCsvImport:
         # 初期値は現在設定済みの GARP が selected になっている。
         assert 'name="trade_idea_6501"' in html
         assert 'value="GARP" selected' in html
-        assert 'name="note_6501"' in html
+        # メモ欄は複数行 (Enter で改行)。1行入力だと Enter で反映が走ってしまう
+        assert '<textarea name="note_6501"' in html
 
         # プレビュー画面から token/as_of を抜き出す
         import re
@@ -1822,7 +1823,7 @@ class TestPortfolioCsvImport:
             "/portfolio/csv-import/apply",
             data={
                 "token": token, "as_of": as_of,
-                "trade_idea_6501": "中期モメンタム", "note_6501": "テスト用の振り返りメモ",
+                "trade_idea_6501": "中期モメンタム", "note_6501": "テスト用の振り返りメモ\n2行目",
             },
             follow_redirects=True,
         )
@@ -1834,7 +1835,7 @@ class TestPortfolioCsvImport:
 
         logs = ps.list_action_logs("6501")
         hold_log = next(l for l in logs if l.get("status_to") == "1保")
-        assert "テスト用の振り返りメモ" in hold_log["reason"]
+        assert "テスト用の振り返りメモ\n2行目" in hold_log["reason"]
 
     def test_apply_rejects_invalid_token(self, csv_import_app):
         client = csv_import_app.test_client()
