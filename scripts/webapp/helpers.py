@@ -4858,12 +4858,14 @@ def _monday_of(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
 
-def load_weekly_closes(code_s: str) -> Dict[date, Tuple[float, float]]:
-    """yfinance 週足キャッシュから {月曜日: (終値, 出来高)} を返す。無ければ空 dict。
+def load_weekly_closes(code_s: str) -> Dict[date, Tuple[float, ...]]:
+    """yfinance 週足キャッシュから {月曜日: (終値, 出来高, 高値, 安値)} を返す。無ければ空 dict。
+
+    高値・安値が読めない行は終値で代用する (0番=終値、1番=出来高の並びは変えない)。
 
     ネットワークアクセスは行わない (webapp は yfinance を呼ばない既存方針)。
     DB の price_week_log は 25 週しか無くエピソードの窓を賄えないため使わない。
-    price_list は株探形式で index 4 が終値、index 7 が出来高。
+    price_list は株探形式で index 2 が高値、3 が安値、4 が終値、7 が出来高。
     """
     try:
         import price
@@ -4872,7 +4874,7 @@ def load_weekly_closes(code_s: str) -> Dict[date, Tuple[float, float]]:
     _, price_list = price._load_yfinance_cache(price.YFINANCE_WEEKLY_CACHE_FNAME % code_s)
     if not price_list:
         return {}
-    bars: Dict[date, Tuple[float, float]] = {}
+    bars: Dict[date, Tuple[float, ...]] = {}
     for row in price_list:
         try:
             d = price.parse_date_str(str(row[0]))
@@ -4880,10 +4882,20 @@ def load_weekly_closes(code_s: str) -> Dict[date, Tuple[float, float]]:
                 continue
             close = float(str(row[4]).replace(",", ""))
             vol = float(str(row[7]).replace(",", "")) if len(row) > 7 else 0.0
-            bars[d] = (close, vol)
+            try:
+                high = float(str(row[2]).replace(",", ""))
+                low = float(str(row[3]).replace(",", ""))
+            except (IndexError, ValueError, TypeError):
+                high = low = close
+            bars[d] = (close, vol, high, low)
         except (IndexError, ValueError, TypeError):
             continue
     return bars
+
+
+def _week_range(bar: Tuple[float, ...]) -> Tuple[float, float]:
+    """週足バーの (高値, 安値)。高安が無いバーは終値で代用する。"""
+    return (bar[2], bar[3]) if len(bar) > 3 else (bar[0], bar[0])
 
 
 def _episode_window(ep: Dict[str, Any], latest: Optional[date]) -> Tuple[date, date]:
@@ -5006,7 +5018,7 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
                         exit_rule: Optional[Dict[str, Any]] = None) -> str:
     """エピソード1ラウンド分の週足チャート SVG を返す。描けない場合は説明文の HTML。
 
-    週足終値の折れ線 + 下部に出来高バーを描き、実約定の IN (▲) / OUT (▼) と
+    週足終値の折れ線 (背面に週ごとの高値〜安値の縦線) + 下部に出来高バーを描き、実約定の IN (▲) / OUT (▼) と
     途中約定 (小さな点) を重ねる。株価軸は yfinance の分割調整後、fill は約定当時の
     実価格なので、両者がずれるエピソードではマーカーを打たずに注記する (issue #435)。
 
@@ -5036,8 +5048,9 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
     vol_h = 30  # 下部の出来高帯
     inner_w = width - pad_l - pad_r
     price_h = height - pad_t - pad_b - vol_h
-    lo = min(c for _, c, _ in series)
-    hi = max(c for _, c, _ in series)
+    # 縦軸は週ごとの高値・安値まで含める (約定価格が終値から離れて見える理由を示すため)
+    lo = min(_week_range(bars[d])[1] for d, _, _ in series)
+    hi = max(_week_range(bars[d])[0] for d, _, _ in series)
     # マーカーが枠外に出ないよう、打点する価格も上下限に含める。
     for m in markers:
         lo = min(lo, m["price"])
@@ -5111,6 +5124,17 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
                      '<title>%s 出来高 %s株</title></rect>'
                      % (x_of(d) - bar_w / 2, vol_top + (vol_h - h), bar_w, h, fill,
                         d.isoformat(), format(int(vol), ",")))
+
+    # 週ごとの高値〜安値の縦線と終値の目盛り (米国式の HLC バー)。折れ線の背面に薄く敷く。
+    # 約定は週の途中の価格なので、終値の線から離れて見えても、この範囲に入っていれば自然
+    for d, c, _ in series:
+        high, low = _week_range(bars[d])
+        x = x_of(d)
+        parts.append('<path class="ep-hl" d="M%.1f,%.1f V%.1f M%.1f,%.1f H%.1f" fill="none" '
+                     'stroke="#a9bdd6" stroke-width="1.2"><title>%s 高値 %s / 安値 %s / 終値 %s</title></path>'
+                     % (x, y_of(high), y_of(low), x, y_of(c), x + 2.5, d.isoformat(),
+                        format(int(round(high)), ","), format(int(round(low)), ","),
+                        format(int(round(c)), ",")))
 
     # 株価の折れ線
     pts = " ".join("%.1f,%.1f" % (x_of(d), y_of(c)) for d, c, _ in series)

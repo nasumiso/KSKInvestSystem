@@ -4383,6 +4383,30 @@ class TestEpisodeChart:
         monkeypatch.setattr(price, "YFINANCE_WEEKLY_CACHE_FNAME", str(tmp_path / "broken_%s.json"))
         assert helpers.load_weekly_closes("9999") == {}
 
+    def test_weekly_high_low_loaded_with_fallback(self, monkeypatch):
+        """週足は (終値, 出来高, 高値, 安値) で読む。高安が壊れた行は終値で代用する。"""
+        import price
+
+        rows = [["2026年3月2日", "1000", "1,100", "900", "1,050", "0", "0", "5,000"],
+                ["2026年3月9日", "1000", "x", "900", "1,060", "0", "0", "6,000"]]
+        monkeypatch.setattr(price, "_load_yfinance_cache", lambda fname: (None, rows))
+        bars = helpers.load_weekly_closes("9999")
+        assert bars[date(2026, 3, 2)] == (1050.0, 5000.0, 1100.0, 900.0)
+        assert bars[date(2026, 3, 9)] == (1060.0, 6000.0, 1060.0, 1060.0)
+
+    def test_chart_draws_weekly_high_low_bars(self, monkeypatch):
+        """週ごとの高値〜安値の縦線を描き、縦軸もその範囲まで広げる。"""
+        closes = {date(2026, 3, 2) + _dt.timedelta(weeks=i): (1000.0, 10000.0, 1300.0, 800.0)
+                  for i in range(8)}
+        monkeypatch.setattr(helpers, "load_weekly_closes", lambda code_s: closes)
+        ep = self._ep(fills=[
+            {"trade_date": d, "side": s, "qty": 100, "price": p, "broker": "楽天"}
+            for d, s, p in [("2026-03-11", "buy", 1000), ("2026-04-08", "sell", 1010)]])
+        svg = helpers.build_episode_chart(ep)
+        assert svg.count('class="ep-hl"') >= 6
+        assert "高値 1,300 / 安値 800 / 終値 1,000" in svg
+        assert ">1,3" in svg  # 縦軸の上端ラベルが高値 (+余白) まで届く
+
     @pytest.mark.parametrize("kw,expect", [
         ({"split_suspect": True}, "分割・併合の可能性"),
         ({}, "週足の株価データがありません"),
