@@ -715,8 +715,10 @@ tr:hover > td > .lot-strategy > .lot-strategy-edit { visibility: visible; }
   margin: 0 0 0 0.3em;
   height: auto;
 }
-/* エピソード一覧行の「×N」: 往復行 (ロット) の数。「+N」と同じ控えめな見た目で、色だけ変える */
-.lot-count { color: #777; font-size: 0.8em; margin-left: 0.3em; cursor: help; }
+/* エピソード一覧行の開閉の印 (▸) と往復行 (ロット) の数。数字がある行もない行も
+   同じ幅の箱にして、銘柄コードの列が揃うようにする */
+.th-caret-box { display: inline-block; width: 2.6em; white-space: nowrap; text-align: left; }
+.lot-count { margin-left: 0.25em; font-size: 1em; color: #888; cursor: help; }
 /* エピソード一覧行の「+N」: 戦略の違うロットの数 */
 .lot-differs-count { color: #3d4f80; font-size: 0.72em; margin-left: 0.15em; cursor: help; }
 .lot-differs-count[hidden] { display: none; }

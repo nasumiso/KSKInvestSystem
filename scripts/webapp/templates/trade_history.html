@@ -179,7 +179,9 @@
    エピソードビューは "ep-N"、銘柄ビュー内は "st-i-ep-j" を呼び出し側で渡す。 #}
 {% macro episode_rows(ep, uid) %}
     <tr class="th-ep-row" data-ep="{{ uid }}" style="cursor:pointer;">
-      <td style="color:#666;text-align:center;font-size:0.8em;"><span class="th-ep-caret">▸</span></td>
+      {# 開閉の印と往復行 (ロット) の数。複数あるエピソードだけ数字を出す。数字の有無で
+         銘柄コードの位置がずれないよう、幅固定の箱に入れる #}
+      <td style="color:#666;font-size:0.8em;"><span class="th-caret-box"><span class="th-ep-caret">▸</span>{% if ep.round_trips|length > 1 %}<span class="lot-count" title="往復行が {{ ep.round_trips|length }} 本あります">{{ ep.round_trips|length }}</span>{% endif %}</span></td>
       <td style="white-space:nowrap;"><a href="https://kabutan.jp/stock/chart?code={{ ep.code_s }}" target="_blank" rel="noopener" onclick="event.stopPropagation();">{{ ep.code_s }}</a> <a href="/stock/{{ ep.code_s }}" onclick="event.stopPropagation();">{{ ep.stock_name }}</a></td>
       <td class="th-kind-cell">
         {% if ep.kind == "信用" %}
@@ -217,10 +219,6 @@
           <option value="{{ name }}"{% if ep.trade_idea == name %} selected{% endif %}>{{ name }}</option>
           {% endfor %}
         </select>
-        {# 往復行 (ロット) の数。複数あるエピソードだけに出し、行を開く前に内訳の有無が分かるようにする #}
-        {% if ep.round_trips|length > 1 %}
-        <span class="lot-count" title="往復行が {{ ep.round_trips|length }} 本あります">×{{ ep.round_trips|length }}</span>
-        {% endif %}
         {# 戦略の違うロットの数 (issue #492 段階2)。行を畳んだままでも混在に気づけるようにする #}
         <span class="lot-differs-count" data-episode-key="{{ ep.episode_key }}"
               title="戦略の違うロットが {{ ep.lot_differs_count }} 件あります"
