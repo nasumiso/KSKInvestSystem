@@ -913,68 +913,98 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     return episodes
 
 
-def summarize_by_strategy(episodes: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """戦略別の成績を集計する (issue #419)。
+def summarize_by_strategy(episodes: List[Dict[str, Any]],
+                          fill_strategies: Optional[Dict[Tuple[str, int], Dict[str, Any]]] = None
+                          ) -> Dict[str, Any]:
+    """戦略別の成績を、決済済みの往復行を建てロットの戦略で集計する (issue #419, #492 段階2)。
 
-    母数定義は _summarize_fill_episodes と完全に揃える。すなわち split_suspect
-    (分割・併合の疑いだが未換算, issue #398) は除外する。除外を継承しないと、
-    損益が壊れていると既知のエピソードが戦略成績に再混入して比較表が壊れる。
+    母数はクローズ済みエピソードの往復行 (買い → 売り)。1つのエピソードに意図の違う
+    玉が同居しても、ロットの戦略ごとに成績を分けられる。往復行を母数にできるのは、
+    クローズ済みエピソードでは往復行の損益合計がエピソード損益と一致するため
+    (不変条件。テストで固定)。上書きの無いエピソードは損益合計が今までと変わらず、
+    件数と平均保有日数が往復行単位になる。
+
+    - split_suspect (分割・併合の疑いだが未換算, issue #398) は除外する。損益が
+      壊れていると既知のエピソードを戦略成績に混ぜないため
+    - 保有中エピソードは比較に入れない (保有中の現物は往復行 (FIFO) と実現損益
+      (平均取得単価法) が一致しない)。open_count にエピソード数だけ出す
+    - 現引の行は損益を持たないので数えない (損益は現物エピソード側の往復行に出る)
 
     戦略が付いているものを上部の比較対象とし、下記2つは比較の母数から外して
-    下部に分離する:
-      - 未分類: まだ戦略が付いていない
+    下部に分離する。どちらもエピソード単位で決まり、ロットの上書きは見ない:
+      - 未分類: エピソードにまだ戦略が付いていない
       - 要再確認: 指紋不一致 (遡り取込でひもづけがずれた可能性がある)
-
-    どちらも件数と損益合計は出す (実在する取引で損益は正しいため、全体の
-    実現損益合計は既存サマリーと一致する)。勝率・平均損益は比較対象ではない。
 
     Returns: {"strategies": [(戦略名, part), ...], "unclassified": part,
               "drifted": part, "total_pl": 全体の実現損益, "unclassified_share": 0-1}
 
-    unclassified_share はエピソード単位の絶対損益で測る。バケットの net を使うと
-    利益と損失が相殺され、分類が進んでいないのにシェアが小さく見える。
-    """
-    valid = [ep for ep in episodes if not ep.get("split_suspect")]
+    part の priced_count は往復行の数、episode_count はその行を持つエピソードの数。
+    勝率・期待値 (summary) は、リターン・建値・保有日数がそろった行だけで計算する
+    (建玉不明の決済などは損益合計と件数には入るが、率は出せない)。
 
-    def _part(eps: List[Dict[str, Any]]) -> Dict[str, Any]:
-        # 平均保有日数は件数・勝率・期待値と同じ母数 (損益を出せたクローズ済み) から
-        # 計算する。母数を広く取ると「件数1」の行に2件以上を平均した保有日数が並び、
-        # 成績1件あたりの平均と誤読される (建値や決済損益が欠けた期首持越しなど)
-        priced = [ep for ep in eps if ep["closed"] and ep["pl"]]
-        pls = [ep["pl"] for ep in priced]
-        hold = [d for d in (episode_hold_days(ep) for ep in priced) if d is not None]
+    往復行 (ep["round_trips"]) が付いていないエピソードはここで作る。その場合の
+    ロットの上書きは fill_strategies で渡す (省略時は上書き無し)。
+    """
+    unclassified_key, drifted_key = ("未分類",), ("要再確認",)  # 戦略名と衝突しないキー
+    buckets: Dict[Any, Dict[str, Any]] = {}
+
+    def bucket(key: Any) -> Dict[str, Any]:
+        return buckets.setdefault(key, {"rows": [], "episodes": set(), "closed": 0, "open": 0})
+
+    for ep in episodes:
+        if ep.get("split_suspect"):
+            continue
+        if ep.get("strategy_drift"):
+            fixed = drifted_key
+        elif ep.get("trade_idea"):
+            fixed = None
+        else:
+            fixed = unclassified_key
+        own = bucket(fixed or ep["trade_idea"])
+        if not ep["closed"]:
+            own["open"] += 1
+            continue
+        own["closed"] += 1
+        rows = ep.get("round_trips")
+        if rows is None or (rows and "trade_idea" not in rows[0]):
+            work = dict(ep, round_trips=build_round_trips(ep))
+            attach_lot_strategies(work, fill_strategies or {})
+            rows = work["round_trips"]
+        for r in rows:
+            if not r["closed"] or r["genbiki"] or r["pl"] is None:
+                continue
+            b = bucket(fixed or r["trade_idea"])
+            b["rows"].append(r)
+            b["episodes"].add(ep["episode_key"])
+
+    def _part(b: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        b = b or {"rows": [], "episodes": set(), "closed": 0, "open": 0}
+        rows = b["rows"]
+        pls = [{"profit_amount": r["pl"], "return_pct": r["return_pct"],
+                "amount": r["open_price"] * r["qty"], "hold_days": r["hold_days"]}
+               for r in rows
+               if r["return_pct"] is not None and r["open_price"] and r["hold_days"] is not None]
+        hold = [r["hold_days"] for r in rows if r["hold_days"] is not None]
         return {
             "summary": calc_trade_summary(pls),
-            "total_pl": sum(p["profit_amount"] for p in pls
-                            if p["profit_amount"] is not None),
+            "total_pl": sum(r["pl"] for r in rows),
             # 分類状況の指標に使う絶対損益。バケット内で利益と損失が相殺されると
-            # 規模を見失う (未分類に +100万/-100万があると 0 になる) ため、
-            # エピソード単位の絶対値を積む
-            "abs_pl": sum(abs(p["profit_amount"]) for p in pls
-                          if p["profit_amount"] is not None),
-            "priced_count": len(pls),
-            "closed_count": sum(1 for ep in eps if ep["closed"]),
-            "open_count": sum(1 for ep in eps if not ep["closed"]),
+            # 規模を見失う (未分類に +100万/-100万があると 0 になる) ため絶対値を積む
+            "abs_pl": sum(abs(r["pl"]) for r in rows),
+            "priced_count": len(rows),
+            "episode_count": len(b["episodes"]),
+            "closed_count": b["closed"],
+            "open_count": b["open"],
             "avg_hold_days": round(sum(hold) / len(hold)) if hold else None,
         }
 
-    by_idea: Dict[str, List[Dict[str, Any]]] = {}
-    unclassified: List[Dict[str, Any]] = []
-    drifted: List[Dict[str, Any]] = []
-    for ep in valid:
-        if ep.get("strategy_drift"):
-            drifted.append(ep)
-        elif ep.get("trade_idea"):
-            by_idea.setdefault(ep["trade_idea"], []).append(ep)
-        else:
-            unclassified.append(ep)
-
-    strategies = [(name, _part(eps)) for name, eps in by_idea.items()]
+    strategies = [(name, _part(b)) for name, b in buckets.items()
+                  if name not in (unclassified_key, drifted_key)]
     # 実現損益の大きい戦略から並べる (成績への寄与が大きい順)
     strategies.sort(key=lambda x: abs(x[1]["total_pl"]), reverse=True)
 
-    unclassified_part = _part(unclassified)
-    drifted_part = _part(drifted)
+    unclassified_part = _part(buckets.get(unclassified_key))
+    drifted_part = _part(buckets.get(drifted_key))
     total_abs = sum(p[1]["abs_pl"] for p in strategies) \
         + unclassified_part["abs_pl"] + drifted_part["abs_pl"]
     return {
