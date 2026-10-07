@@ -658,7 +658,7 @@ nav .quick-search {
   display: inline-block;
   /* 最長の戦略名 (中長期ファンダ) に合わせると列が広がりすぎる。幅を決め打ちして
      はみ出す名前は省略表示にする (選択中の値はホバーの title で読める) */
-  width: 9.4em !important;
+  width: 11.8em !important;
   font-size: 0.78em;
   padding: 0.1em 1.2em 0.1em 0.35em;
   margin: 0;
@@ -755,7 +755,9 @@ tr:hover > td > .lot-strategy > .lot-strategy-edit { visibility: visible; }
    折り返しを許したうえで min-width で通常のバッジ2つ分を確保し、稀な長いバッジ
    だけが2行になるようにする (max-width は auto レイアウトでは効かない)。 */
 .th-kind-cell {
-  min-width: 9.8em;
+  min-width: 8.2em;
+  padding-left: 0.4em;
+  padding-right: 0.4em;
   white-space: normal;
   line-height: 1.5;
 }
