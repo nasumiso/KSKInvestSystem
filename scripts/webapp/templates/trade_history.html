@@ -217,6 +217,10 @@
           <option value="{{ name }}"{% if ep.trade_idea == name %} selected{% endif %}>{{ name }}</option>
           {% endfor %}
         </select>
+        {# 往復行 (ロット) の数。複数あるエピソードだけに出し、行を開く前に内訳の有無が分かるようにする #}
+        {% if ep.round_trips|length > 1 %}
+        <span class="lot-count" title="往復行が {{ ep.round_trips|length }} 本あります">×{{ ep.round_trips|length }}</span>
+        {% endif %}
         {# 戦略の違うロットの数 (issue #492 段階2)。行を畳んだままでも混在に気づけるようにする #}
         <span class="lot-differs-count" data-episode-key="{{ ep.episode_key }}"
               title="戦略の違うロットが {{ ep.lot_differs_count }} 件あります"
