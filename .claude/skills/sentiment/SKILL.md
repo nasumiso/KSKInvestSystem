@@ -2,12 +2,15 @@
 name: sentiment
 description: Yahoo Finance 掲示板の投稿を感情ラベルで分析する。銘柄の掲示板の温度感・センチメント・材料を知りたいときに使用
 disable-model-invocation: true
+model: sonnet
 allowed-tools: Read, Bash
 ---
 
 # 掲示板の感情分析 (/sentiment)
 
 `/sentiment <銘柄コード>` で、Yahoo Finance 掲示板の直近の投稿を読み、感情ラベルの分布と材料をまとめる。結果は会話に表示するだけで、保存しない (issue #62)。
+
+モデルは Sonnet に固定している (frontmatter の `model`)。モデルが変わると判定の基準がぶれ、日をまたいだ温度の比較ができなくなるため。
 
 ## 手順
 
