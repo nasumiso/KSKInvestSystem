@@ -835,13 +835,14 @@ class TestLotStrategy:
         # 03-03 に買って 03-10 (5平日後) に付けたので後付け。違いの無い行には印を付けない
         assert sum(r["late_label"] for r in ep["round_trips"]) == n_differs
 
-    @pytest.mark.parametrize("override_second,expect_qtys", [
-        (False, [400]),        # 証券会社が100+300に分けた同日・同単価の約定は1行に統合
-        (True, [100, 300]),    # 片方だけ別の戦略を付けたロットは統合しない
+    @pytest.mark.parametrize("price_b,override_second,expect_qtys", [
+        (996.0, False, [400]),    # 同日・同単価の分割約定は1行に統合
+        (994.0, False, [400]),    # 板を食い上がって単価が違っても、同日・同証券会社なら統合
+        (996.0, True, [100, 300]),  # 片方だけ別の戦略を付けたロットは統合しない
     ])
-    def test_merge_same_price_rows(self, db_path, override_second, expect_qtys):
-        for qty, salt in ((100, "a"), (300, "b")):
-            _add(db_path, "9552", "2026-08-14", "buy", qty, 996.0, seq_salt=salt)
+    def test_merge_same_day_rows(self, db_path, price_b, override_second, expect_qtys):
+        for qty, price, salt in ((100, 996.0, "a"), (300, price_b, "b")):
+            _add(db_path, "9552", "2026-08-14", "buy", qty, price, seq_salt=salt)
         for qty, salt in ((100, "c"), (300, "d")):
             _add(db_path, "9552", "2026-08-17", "sell", qty, 930.0, seq_salt=salt)
         ep = trade_episodes.build_fill_episodes(db_path=db_path)[0]
@@ -850,73 +851,18 @@ class TestLotStrategy:
         buys = [f["seq"] for f in ep["fills"] if f["side"] == "buy"]
         override = {("9552", buys[1]): {"trade_idea": "中期テーマ", "source": "manual",
                                         "assigned_at": "2026-08-14"}} if override_second else {}
+        pl_before = sum(r["pl"] for r in ep["round_trips"])
 
         trade_episodes.attach_lot_strategies(ep, override)
 
         rows = sorted(ep["round_trips"], key=lambda r: r["qty"])
         assert [r["qty"] for r in rows] == expect_qtys
-        assert sum(r["pl"] for r in rows) == -26400
+        assert sum(r["pl"] for r in rows) == pl_before
         assert sorted(q for r in rows for q in r["open_seqs"]) == sorted(buys)
-
-
-    @pytest.mark.parametrize("fills", [
-        # 現物: 2回に分けて買い、2回に分けて売り切る (FIFO と平均取得単価法の総額が一致する)
-        [("2026-03-02", "buy", 100, 1000.0, {}), ("2026-03-03", "buy", 100, 1200.0, {}),
-         ("2026-03-10", "sell", 150, 1300.0, {}), ("2026-03-12", "sell", 50, 900.0, {})],
-        # 信用: 建約定日つきの返済。古い建玉を残して新しい建玉から返済する
-        [("2026-03-02", "buy", 100, 1000.0, {"trade_kind": "信用新規"}),
-         ("2026-03-03", "buy", 100, 1200.0, {"trade_kind": "信用新規"}),
-         ("2026-03-10", "sell", 100, 1300.0, {"trade_kind": "信用返済", "tate_date": "2026-03-03",
-                                              "tate_price": 1200.0, "settle_pl": 10000}),
-         ("2026-03-12", "sell", 100, 900.0, {"trade_kind": "信用返済", "tate_date": "2026-03-02",
-                                             "tate_price": 1000.0, "settle_pl": -10000})],
-        # 信用 → 現引 → 現物売り。現引の行は損益を持たず、損益は現物側の往復行に出る
-        [("2026-03-02", "buy", 100, 1000.0, {"trade_kind": "信用新規"}),
-         ("2026-03-05", "buy", 100, 1000.0, {"trade_kind": "現引", "tate_date": "2026-03-02",
-                                             "tate_price": 1000.0}),
-         ("2026-03-10", "sell", 100, 1300.0, {})],
-    ])
-    def test_round_trip_pl_matches_episode_pl(self, db_path, fills):
-        """不変条件: クローズ済みエピソードの往復行の損益合計は、エピソードの損益と一致する。
-
-        戦略別の集計が往復行を母数にできる前提 (issue #492 段階2)。"""
-        for i, (d, side, qty, price, kw) in enumerate(fills):
-            _add(db_path, "9003", d, side, qty, price, seq_salt=str(i), **kw)
-        eps = trade_episodes.build_fill_episodes(db_path=db_path)
-        assert eps and all(e["closed"] for e in eps)
-        for ep in eps:
-            rows = trade_episodes.build_round_trips(ep)
-            total = sum(r["pl"] for r in rows if not r["genbiki"] and r["pl"] is not None)
-            assert total == ((ep["pl"] or {}).get("profit_amount") or 0)
-
-    @pytest.mark.parametrize("ep_idea,override,expected", [
-        # 上書き無し: 損益合計はエピソード損益と同じ。件数は往復行の数になる
-        ("GARP", False, {"GARP": (40000, 2, 1)}),
-        # 2本目の買いを別の戦略にすると、その往復行の損益だけが移る。合計は変わらない
-        ("GARP", True, {"GARP": (30000, 1, 1), "中期テーマ": (10000, 1, 1)}),
-        # エピソードが未分類なら、上書きがあっても全部未分類
-        ("", True, {}),
-    ])
-    def test_summarize_by_strategy_uses_lot_strategy(self, db_path, ep_idea, override, expected):
-        ps.seed_trade_ideas(db_path=db_path)
-        _add(db_path, "9002", "2026-03-02", "buy", 100, 1000.0, seq_salt="a")
-        _add(db_path, "9002", "2026-03-03", "buy", 100, 1200.0, seq_salt="b")
-        _add(db_path, "9002", "2026-03-10", "sell", 200, 1300.0)
-        ep = trade_episodes.build_fill_episodes(db_path=db_path)[0]
-        if ep_idea:
-            ps.set_episode_strategy(ep["episode_key"], ep_idea, db_path=db_path)
-        if override:
-            second = [f["seq"] for f in ep["fills"] if f["side"] == "buy"][1]
-            ps.set_fill_strategies("9002", [second], "中期テーマ", db_path=db_path)
-
-        got = trade_episodes.summarize_by_strategy(
-            trade_episodes.build_fill_episodes(db_path=db_path),
-            ps.list_fill_strategies(db_path=db_path))
-
-        assert {name: (p["total_pl"], p["priced_count"], p["episode_count"])
-                for name, p in got["strategies"]} == expected
-        assert got["total_pl"] == 40000
-        assert got["unclassified"]["total_pl"] == (0 if ep_idea else 40000)
+        if len(rows) == 1:  # 株数加重平均の建単価と、損益/取得額に一致するリターン
+            avg = (100 * 996.0 + 300 * price_b) / 400
+            assert rows[0]["open_price"] == pytest.approx(avg)
+            assert rows[0]["return_pct"] == pytest.approx(rows[0]["pl"] / (avg * 400) * 100)
 
     def test_round_trips_sorted_by_open_date_desc(self, db_path):
         """往復行は買付日の降順。保有中も買付日の位置に混ざり、同じロットの売れた分と

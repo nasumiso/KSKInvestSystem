@@ -138,8 +138,9 @@ class TestTradeHistoryPage:
         assert "1,234" in fills_tab       # 内訳展開の取得単価
         # issue #421: 明細は往復1行に畳まれ、列見出しは「損益率」→「リターン」
         assert "リターン" in fills_tab
-        assert "+13,300円" in fills_tab
-        assert "+13,800円" in fills_tab
+        # 同日に単価違いで分けて売った往復行は1行に統合される (13,300 + 13,800)
+        assert "+13,300円" not in fills_tab
+        assert "+13,800円" not in fills_tab
 
     def test_genbutsu_and_shinyo_are_separate_episodes(self, app, client):
         """現物と信用は同一銘柄でも別エピソードになる (口座種別で分離、Phase4b)。"""
