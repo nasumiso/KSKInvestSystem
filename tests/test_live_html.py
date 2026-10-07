@@ -22,6 +22,7 @@ import shintakane
 import make_market_db
 import market_breadth
 import rironkabuka
+import sentiment
 from ks_util import http_get_html, UPD_CACHE, UPD_FORCE
 
 # テスト用銘柄（大型株・安定して存在する）
@@ -274,4 +275,17 @@ class TestLiveHtmlDisclosure:
             "kaiji以外のニュースカテゴリが取得できていない "
             "(HTMLフォーマット変更？ 取得type: %s)" % types
         )
+        _sleep()
+
+
+class TestLiveHtmlForum:
+    """sentiment.py — Yahoo掲示板HTML取得→パース"""
+
+    def test_掲示板の投稿の抽出(self):
+        """Yahoo掲示板から投稿が取り出せ、分析に使う項目がそろっていること"""
+        posts = sentiment.get_forum_posts(TEST_CODE, limit=None)
+        assert len(posts) > 0, "投稿が1件も取得できていない (HTMLフォーマット変更？)"
+        for key in ("part", "post_date", "body", "good", "bad", "feel_label"):
+            assert key in posts[0]
+        assert posts[0]["post_date"], "投稿日時が取れていない"
         _sleep()

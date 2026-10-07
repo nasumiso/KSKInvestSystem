@@ -27,6 +27,7 @@ HTMLパース処理を変更したら、以下を順に実行すること。
 | `TestLiveHtmlShintakane` | `shintakane.py` | 新高値銘柄パース |
 | `TestLiveHtmlKessan` | `shintakane.py` | 決算速報パース |
 | `TestLiveHtmlTheme` | `make_market_db.py` | テーマランクパース |
+| `TestLiveHtmlForum` | `sentiment.py` | Yahoo掲示板の投稿抽出 |
 
 ## 注意事項
 

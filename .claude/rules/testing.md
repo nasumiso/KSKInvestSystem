@@ -28,6 +28,7 @@ Pythonコードを変更したら、以下のマッピングに従って関連�
 | `rironkabuka.py` | `pytest tests/test_rironkabuka.py -v` |
 | `kessan.py` | `pytest tests/test_kessan.py -v` |
 | `shintakane.py` | `pytest tests/test_shintakane.py -v` |
+| `sentiment.py` | `pytest tests/test_sentiment.py -v` |
 
 HTMLパーサー変更時は追加で `cd scripts && python shintakane.py --force` を実行し、CSV再生成を確認。
 
