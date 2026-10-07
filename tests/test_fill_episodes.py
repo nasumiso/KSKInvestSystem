@@ -918,6 +918,19 @@ class TestLotStrategy:
         assert got["total_pl"] == 40000
         assert got["unclassified"]["total_pl"] == (0 if ep_idea else 40000)
 
+    def test_round_trips_sorted_by_open_date_desc(self, db_path):
+        """往復行は買付日の降順。保有中も買付日の位置に混ざり、同じロットの売れた分と
+        売れ残りが隣り合う。"""
+        _add(db_path, "9002", "2026-03-02", "buy", 100, 1000.0, seq_salt="a")
+        _add(db_path, "9002", "2026-03-03", "buy", 100, 1200.0, seq_salt="b")
+        _add(db_path, "9002", "2026-03-10", "sell", 150, 1300.0)
+        ep = trade_episodes.build_fill_episodes(db_path=db_path)[0]
+
+        rows = trade_episodes.build_round_trips(ep)
+
+        assert [(r["open_date"], r["closed"]) for r in rows] == [
+            ("2026-03-03", True), ("2026-03-03", False), ("2026-03-02", True)]
+
 
 class TestAssignEntryStrategy:
     """入った時点の戦略を、銘柄の戦略の履歴から写す (issue #492 5d)。"""

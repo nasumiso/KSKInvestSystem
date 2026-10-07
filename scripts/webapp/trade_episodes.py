@@ -1476,9 +1476,10 @@ def build_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     実際に下した売買判断の単位で明細を読めるようにするのが目的。
     信用は証券会社CSVの建玉対応 (tate_date/tate_price)、現物は FIFO で対応づける。
 
-    並び順: 保有中 (未決済) を先頭に、続いて決済済みを決済日の降順 (最新が上)。
-    保有中はまだ決済日が無く「最新」の側なので、決済済みより上に置く。
-    保有中どうし・決済済みどうしは買付日/決済日の降順。
+    並び順: 買付日の降順 (最新が上)、同じ買付日は決済日の降順。保有中も買付日の位置に
+    混ぜる。明細の左端が買付日であり、戦略も建てロットに付くため。1つの買いロットを
+    分けて売った行や、売れ残った保有中の行が隣り合う。建日が無い行 (期首持越し・建玉
+    不明の売り) は最下段。
 
     保有中ロットには現在値 (ep["current_price"]) から含み損益を付ける。
     エピソード行の含み損益と定義を揃える (残数量 × (現在値 - 建値)、売建は符号が逆)。
@@ -1487,12 +1488,10 @@ def build_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
         rows = _build_shinyo_round_trips(ep)
     else:
         rows = _build_genbutsu_round_trips(ep)
-    closed = [r for r in rows if r["closed"]]
-    open_rows = [r for r in rows if not r["closed"]]
-    _set_unrealized(open_rows, ep.get("current_price"), ep.get("is_short", False))
-    closed.sort(key=lambda r: (r["close_date"] or "", r["open_date"] or ""), reverse=True)
-    open_rows.sort(key=lambda r: r["open_date"] or "", reverse=True)
-    return open_rows + closed
+    _set_unrealized([r for r in rows if not r["closed"]],
+                    ep.get("current_price"), ep.get("is_short", False))
+    rows.sort(key=lambda r: (r["open_date"] or "", r["close_date"] or ""), reverse=True)
+    return rows
 
 
 # 手で付けたロットの戦略を「後付け」とみなす、建てた日からの平日数 (issue #492 5)
