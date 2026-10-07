@@ -1120,16 +1120,26 @@ class TestSplitAdjustment:
         assert shinyo["pl"]["profit_amount"] == 9500  # settle_pl のまま、換算されない
         assert shinyo["fills"][0]["qty"] == 100  # 信用 fill の qty も不変
 
-    def test_registered_split_marks_shinyo_episode_suspect(self, db_path):
-        # 信用 fill は換算しないため、登録済みイベントをまたぐ損益も集計に入れてはいけない。
+    @pytest.mark.parametrize("sell_qty,expect_closed,expect_suspect", [
+        (100, True, False),   # 決済済み: 損益は証券会社の決済損益で確定。数量の基準に依らないので集計に入れる
+        (50, False, True),    # 保有中: 残高・含み損益が不確かなので除外する
+    ])
+    def test_shinyo_episode_across_registered_split(self, db_path, sell_qty, expect_closed,
+                                                    expect_suspect):
+        # 信用 fill は換算しない。登録済みイベントをまたぐ信用エピソードは、決済済みなら
+        # settle_pl のまま集計に入れ、保有中だけ split_suspect で除外する。
         _add(db_path, "3492", "2025-01-01", "buy", 100, 1000, trade_kind="信用新規", seq_salt="a")
-        _add(db_path, "3492", "2025-06-01", "sell", 200, 600, trade_kind="信用返済",
+        _add(db_path, "3492", "2025-06-01", "sell", sell_qty, 600, trade_kind="信用返済",
              settle_pl=80000, seq_salt="b")
         ps.add_split_adjustment("3492", "2025-03-01", 2.0, db_path=db_path)
 
         episode = trade_episodes.build_fill_episodes(db_path=db_path)[0]
+
         assert episode["kind"] == "信用"
-        assert episode["split_suspect"] is True
+        assert episode["closed"] is expect_closed
+        assert bool(episode.get("split_suspect")) is expect_suspect
+        if not expect_suspect:
+            assert episode["pl"]["profit_amount"] == 80000
 
     def test_genbiki_not_adjusted_so_shinyo_round_closes(self, db_path):
         # 現引の qty は信用新規側の減算にも使われるため、現引だけ換算すると

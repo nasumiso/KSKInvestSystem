@@ -687,10 +687,12 @@ def _episodes_for_code(code_s: str, stock_name: str, fills: List[Dict[str, Any]]
     uncovered = _uncovered_jumps(jumps, events)
     pending_dates = pending_events.get(code_s, [])
     for ep in code_episodes:
-        if ep["kind"] == "信用" and any(
+        if ep["kind"] == "信用" and not ep["closed"] and any(
                 _split_event_affects_episode(ev["ex_date"], ep) for ev in events):
-            # 信用 fill は約定損益・建単価の基準を保つため換算しない。そのため、
-            # 登録済みの分割・併合をまたぐ信用エピソードも集計から除外する。
+            # 信用 fill は約定損益・建単価の基準を保つため換算しない。そのため、登録済みの
+            # 分割・併合をまたぐ保有中の信用エピソードは、残高・含み損益が不確かなので除外する。
+            # 決済済みは損益が証券会社の決済損益で確定しており (建単価も証券会社側で調整済み)、
+            # 数量の基準に依らないので除外しない。
             ep["split_suspect"] = True
         elif any(d != "unknown" and _split_event_affects_episode(d, ep)
                  for d in pending_dates):
