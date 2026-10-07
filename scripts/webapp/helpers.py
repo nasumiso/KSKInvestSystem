@@ -5116,11 +5116,12 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
     pts = " ".join("%.1f,%.1f" % (x_of(d), y_of(c)) for d, c, _ in series)
     parts.append('<polyline points="%s" fill="none" stroke="#5a7fa8" stroke-width="1.4"/>' % pts)
 
-    # 防衛線と凡例。移動平均は紫の破線、損切りラインは赤の階段 (保有区間の終わりまで)
+    # 防衛線と凡例。移動平均は紫、損切りラインは赤の階段 (保有区間の終わりまで)。
+    # 防衛線は実線にして、破線の「買→売の線」と線種で見分けられるようにする
     legend_x = pad_l + 2
     if len(ma_pts) >= 2:
         parts.append('<polyline class="ep-ma-line" points="%s" fill="none" stroke="#9a78c0" '
-                     'stroke-width="1" stroke-dasharray="4,2"/>'
+                     'stroke-width="1"/>'
                      % " ".join("%.1f,%.1f" % (x_of(d), y_of(v)) for d, v in ma_pts))
         parts.append('<text x="%.1f" y="8" font-size="8" fill="#9a78c0">%s</text>'
                      % (legend_x, html.escape(ma_label)))
@@ -5131,7 +5132,7 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
             x_next = x_of(stop_steps[i + 1][0]) if i + 1 < len(stop_steps) else c_x
             stop_pts += ["%.1f,%.1f" % (x_of(d), y_of(v)), "%.1f,%.1f" % (max(x_next, x_of(d)), y_of(v))]
         parts.append('<polyline class="ep-stop-line" points="%s" fill="none" stroke="#d05050" '
-                     'stroke-width="1.4" stroke-dasharray="3,2"/>' % " ".join(stop_pts))
+                     'stroke-width="1.4"/>' % " ".join(stop_pts))
         parts.append('<text x="%.1f" y="8" font-size="8" fill="#d05050">損切り -%s%%</text>'
                      % (legend_x, format(stop_pct, "g")))
 

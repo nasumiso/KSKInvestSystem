@@ -392,10 +392,10 @@
         <div class="ep-chart-box" data-episode-key="{{ ep.episode_key }}"
              data-url="{{ url_for('trade_history.episode_chart') }}">
           {# 線の表示切り替え。設定は全チャート共通で、ブラウザに覚えさせる。
-             売買の線は売買がひと目で分かるので既定で出す (隠しても、明細の行に乗せた1本は出る)。
+             買→売の線は売買がひと目で分かるので既定で出す (隠しても、明細の行に乗せた1本は出る)。
              防衛線は重ねるとごちゃつくので、振り返りで見たいときに出す #}
           <div style="color:#888;font-size:0.78em;margin-bottom:0.2em;">週足チャート (建玉の前後4週)
-            <label class="ep-chart-toggle" title="建て→決済を結ぶ点線。隠していても、明細の行にカーソルを乗せるとその1本は出ます"><input type="checkbox" data-chart-toggle="lots"> 売買の線</label>
+            <label class="ep-chart-toggle" title="建て→決済を結ぶ点線。隠していても、明細の行にカーソルを乗せるとその1本は出ます"><input type="checkbox" data-chart-toggle="lots"> 買→売の線</label>
             <label class="ep-chart-toggle" title="戦略の出口ルールの移動平均線と損切りライン"><input type="checkbox" data-chart-toggle="defense"> 防衛線</label>
           </div>
           <div class="ep-chart-slot" style="color:#666;font-size:0.8em;">読み込み中…</div>
@@ -818,7 +818,7 @@
   document.addEventListener('mouseout', function (e) { hotLot(e, false); });
 
   // チャートの線の表示切り替え。全チャート共通の設定で、各チャートのチェックボックスを
-  // 揃える。既定は 売買の線=出す / 防衛線=隠す。売買の線は body のクラスで隠す。
+  // 揃える。既定は 買→売の線=出す / 防衛線=隠す。買→売の線は body のクラスで隠す。
   // 防衛線は縦軸の範囲ごと変わるので、読み込み済みのチャートを取り直す
   var chartToggleDefaults = { lots: true, defense: false };
   function chartToggleOn(key) {
