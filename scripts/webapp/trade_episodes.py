@@ -1482,11 +1482,13 @@ def attach_lot_strategies(ep: Dict[str, Any],
 
     strategy_differs は保存の有無ではなく実際の値で判定する。エピソード側を後から
     同じ値に変えた行に、違いの印を残さないため。
+
+    戦略が決まった後で、同日・同単価の行を1行に統合する (_merge_same_price_rows)。
+    証券会社の約定が分割されただけの行を、売買判断の単位に揃えるため。
     """
     import portfolio_shelve as ps  # 遅延 import (循環回避)
 
     ep_idea = ep.get("trade_idea") or ""
-    differs = 0
     for row in ep.get("round_trips") or []:
         record = next((fill_strategies[(ep["code_s"], q)] for q in row["open_seqs"]
                        if (ep["code_s"], q) in fill_strategies), None) if ep_idea else None
@@ -1496,9 +1498,41 @@ def attach_lot_strategies(ep: Dict[str, Any],
             record and row["strategy_differs"] and record.get("source") == "manual"
             and row.get("open_date") and record.get("assigned_at")
             and record["assigned_at"] >= ps._add_weekdays(row["open_date"], LATE_LABEL_WEEKDAYS))
-        if row["strategy_differs"] and not row["genbiki"]:
-            differs += 1
-    ep["lot_differs_count"] = differs
+    ep["round_trips"] = _merge_same_price_rows(ep.get("round_trips") or [])
+    ep["lot_differs_count"] = sum(1 for r in ep["round_trips"]
+                                  if r["strategy_differs"] and not r["genbiki"])
+
+
+def _merge_same_price_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """建日・決済日・建単価・決済単価・証券会社が同じ往復行を1行に統合する。
+
+    証券会社の都合で約定が100株+300株のように分かれても、同日・同単価なら売買判断は
+    1回。戦略 (late_label を含む) が違う行は別のロットとして残す。建てが特定できない行
+    (open_seqs が空) と損益が無い行は、足し合わせても意味が無いので触らない。
+    統合した行は最初の行の位置に置き、qty / pl / open_seqs を合算する
+    (リターン%は同単価なので同じ値)。
+    """
+    merged: List[Dict[str, Any]] = []
+    index: Dict[tuple, Dict[str, Any]] = {}
+    for r in rows:
+        if not r["open_seqs"] or r["pl"] is None:
+            merged.append(r)
+            continue
+        key = (r["open_date"], r["close_date"], r["open_price"], r["close_price"],
+               r["broker"], r["closed"], r["genbiki"], r["pending_confirm"],
+               r["unrealized"], r.get("inferred_open", False),
+               r["trade_idea"], r["late_label"])
+        base = index.get(key)
+        if base is None:
+            r = dict(r)
+            r["open_seqs"] = list(r["open_seqs"])
+            index[key] = r
+            merged.append(r)
+        else:
+            base["qty"] += r["qty"]
+            base["pl"] += r["pl"]
+            base["open_seqs"] += r["open_seqs"]
+    return merged
 
 
 def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

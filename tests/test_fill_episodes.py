@@ -835,6 +835,29 @@ class TestLotStrategy:
         # 03-03 に買って 03-10 (5平日後) に付けたので後付け。違いの無い行には印を付けない
         assert sum(r["late_label"] for r in ep["round_trips"]) == n_differs
 
+    @pytest.mark.parametrize("override_second,expect_qtys", [
+        (False, [400]),        # 証券会社が100+300に分けた同日・同単価の約定は1行に統合
+        (True, [100, 300]),    # 片方だけ別の戦略を付けたロットは統合しない
+    ])
+    def test_merge_same_price_rows(self, db_path, override_second, expect_qtys):
+        for qty, salt in ((100, "a"), (300, "b")):
+            _add(db_path, "9552", "2026-08-14", "buy", qty, 996.0, seq_salt=salt)
+        for qty, salt in ((100, "c"), (300, "d")):
+            _add(db_path, "9552", "2026-08-17", "sell", qty, 930.0, seq_salt=salt)
+        ep = trade_episodes.build_fill_episodes(db_path=db_path)[0]
+        ep["trade_idea"] = "GARP"
+        ep["round_trips"] = trade_episodes.build_round_trips(ep)
+        buys = [f["seq"] for f in ep["fills"] if f["side"] == "buy"]
+        override = {("9552", buys[1]): {"trade_idea": "中期テーマ", "source": "manual",
+                                        "assigned_at": "2026-08-14"}} if override_second else {}
+
+        trade_episodes.attach_lot_strategies(ep, override)
+
+        rows = sorted(ep["round_trips"], key=lambda r: r["qty"])
+        assert [r["qty"] for r in rows] == expect_qtys
+        assert sum(r["pl"] for r in rows) == -26400
+        assert sorted(q for r in rows for q in r["open_seqs"]) == sorted(buys)
+
 
 class TestAssignEntryStrategy:
     """入った時点の戦略を、銘柄の戦略の履歴から写す (issue #492 5d)。"""
