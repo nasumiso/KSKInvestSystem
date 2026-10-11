@@ -309,6 +309,42 @@ class TestDetailRoute:
         assert resp.status_code == 404
 
 
+class TestDetailSentiment:
+    """issue #501: stock ページの掲示板の感情分析 (表示・起動・実行状況)"""
+
+    @pytest.fixture
+    def result_dir(self, tmp_path, monkeypatch):
+        import run_sentiment
+        monkeypatch.setattr(run_sentiment, "RESULT_DIR", tmp_path)
+        return tmp_path
+
+    def test_保存済みの結果と見出しを表示する(self, client, result_dir):
+        html = client.get("/stock/3496").data.decode()
+        assert "(未実行)" in html and "分析する" in html
+
+        (result_dir / "3496.md").write_text(
+            "## 掲示板の感情分析: アズーム (3496)  投稿 42件 (10/1 〜 10/9)\n\n"
+            "### 掲示板の温度\n+1 (やや強気) 相当\n\n### 要約\n- 引用<script>alert(1)</script>\n",
+            encoding="utf-8",
+        )
+        html = client.get("/stock/3496").data.decode()
+        assert "+1 (やや強気)" in html and "投稿42件" in html and "再分析" in html
+        assert "<script>alert(1)</script>" not in html  # 引用した投稿の本文は無害化される
+
+    def test_起動は1つだけで状況を返す(self, client, result_dir, monkeypatch):
+        from webapp.routes import detail
+        spawned = []
+        monkeypatch.setattr(detail.subprocess, "Popen", lambda cmd, **k: spawned.append(cmd))
+        monkeypatch.setattr(detail, "_PROJECT_ROOT", result_dir)  # logs/ を実ディレクトリに作らない
+
+        assert client.post("/stock/bad!/sentiment/run").status_code == 404
+        assert client.post("/stock/3496/sentiment/run").status_code == 202
+        assert client.post("/stock/3496/sentiment/run").status_code == 409  # 実行中は起動しない
+        assert len(spawned) == 1 and spawned[0][-2:] == ["3496", "--web-trigger"]
+        assert client.get("/stock/3496/sentiment/status").get_json() == {"running": True, "executed_at": None}
+        assert "実行中..." in client.get("/stock/3496").data.decode()
+
+
 class TestDetailStockNamePrev:
     """issue #183: stock_name_prev の併記表示"""
 

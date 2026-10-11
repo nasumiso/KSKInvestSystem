@@ -1,16 +1,23 @@
 """
 銘柄詳細ビュールート。
 
-GET /stock/<code_s> : 銘柄の全セクション表示
+GET  /stock/<code_s>                  : 銘柄の全セクション表示
+POST /stock/<code_s>/sentiment/run    : 掲示板の感情分析を非同期起動 (issue #501)
+GET  /stock/<code_s>/sentiment/status : 感情分析の実行状況を JSON で返す
 """
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from datetime import date
+import subprocess
+import sys
 
-from flask import Blueprint, render_template, abort
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from datetime import date, datetime
+from pathlib import Path
+
+from flask import Blueprint, render_template, abort, jsonify
 
 import portfolio_shelve as ps
-from ks_util import log_warning
+import run_sentiment
+from ks_util import log_print, log_warning
 from webapp.helpers import (
     get_research_detail,
     get_stock_data,
@@ -23,7 +30,7 @@ from webapp.routes.portfolio import (
     STATUS_VALUE_TO_QUERY,
     _allowed_transitions_from,
 )
-from research_shelve import VALID_RATINGS, IR_QA_MAX
+from research_shelve import VALID_RATINGS, IR_QA_MAX, validate_code_s
 
 detail_bp = Blueprint("detail", __name__)
 
@@ -196,4 +203,65 @@ def stock_detail(code_s: str):
         # issue #436: IR問い合わせ回答セクション (上限件数 / 追加フォームの日付初期値)
         ir_qa_max=IR_QA_MAX,
         today_ymd=date.today().strftime("%Y/%m/%d"),
+        # issue #501: 掲示板の感情分析 (最新1件)
+        sentiment=run_sentiment.load_result(code_s),
+        sentiment_running=run_sentiment.is_running(code_s),
     )
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_RUN_SENTIMENT_SCRIPT = _PROJECT_ROOT / "scripts" / "run_sentiment.py"
+
+
+@detail_bp.route("/stock/<code_s>/sentiment/run", methods=["POST"])
+def sentiment_run(code_s: str):
+    """掲示板の感情分析を非同期起動する (issue #501)。
+
+    実行は1分ほどかかるので待たずに 202 を返し、status エンドポイントで poll してもらう。
+    実行中の印はここで排他的に作る。子プロセスに作らせると、同時に押されたときの二重起動と、
+    起動直後の status が「実行していない」を返す誤判定を防げない。
+    """
+    try:
+        validate_code_s(code_s)
+    except ValueError:
+        abort(404)
+    if not run_sentiment.acquire_running_marker(code_s):
+        return jsonify({"status": "already_running"}), 409
+
+    log_dir = _PROJECT_ROOT / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        with open(log_dir / "sentiment.log", "ab") as log_fh:
+            log_fh.write(
+                f"\n===== {datetime.now().isoformat(timespec='seconds')} "
+                f"/stock/{code_s} から感情分析を起動 =====\n".encode("utf-8")
+            )
+            log_fh.flush()
+            subprocess.Popen(
+                [sys.executable, str(_RUN_SENTIMENT_SCRIPT), code_s, "--web-trigger"],
+                cwd=str(_PROJECT_ROOT / "scripts"),
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,  # webapp 再起動でも実行は継続させる
+            )
+    except OSError as e:
+        run_sentiment.release_running_marker(code_s)
+        log_warning(f"[detail] {code_s} の感情分析を起動できませんでした: {e}")
+        return jsonify({"status": "spawn_failed", "error": str(e)}), 500
+
+    log_print(f"[detail] {code_s} の感情分析を起動")
+    return jsonify({"status": "started"}), 202
+
+
+@detail_bp.route("/stock/<code_s>/sentiment/status", methods=["GET"])
+def sentiment_status(code_s: str):
+    """感情分析の実行状況を返す (UI ポーリング用)。executed_at が変われば新しい結果が保存されている。"""
+    try:
+        validate_code_s(code_s)
+    except ValueError:
+        abort(404)
+    result = run_sentiment.load_result(code_s)
+    return jsonify({
+        "running": run_sentiment.is_running(code_s),
+        "executed_at": result["executed_at"] if result else None,
+    })
