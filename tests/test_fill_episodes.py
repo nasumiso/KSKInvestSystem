@@ -43,6 +43,83 @@ def _add(db_path, code_s, trade_date, side, qty, price, *,
     ps.append_fill(fill, db_path=db_path)
 
 
+@pytest.mark.parametrize("open_price,sell_price,fee,pl", [
+    (2388, 3380, 1172, 98028), (2388, 3950, 1685, 154515),
+    (12437, 11930, 95, -50795), (13500, 11980, 621, -152621),
+    (2571, 2625, 394, 5006), (2572, 2450, 1017, -13217),
+    (2169.7, 2601, 1501, 41629), (2169.8, 2601, 1281, 41839),
+])
+def test_sbi_fee_matches_open_lot(open_price, sell_price, fee, pl):
+    """実CSVの不明8件は別価格の建玉と区別し、建日・損益率・残玉を復元する。"""
+    fills = [
+        {"seq": 1, "trade_date": "2026-03-23", "side": "buy", "qty": 200,
+         "price": open_price, "trade_kind": "信用新規", "broker": "SBI"},
+        {"seq": 2, "trade_date": "2026-04-14", "side": "buy", "qty": 100,
+         "price": open_price + 252, "trade_kind": "信用新規", "broker": "SBI"},
+        {"seq": 3, "trade_date": "2026-05-14", "side": "sell", "qty": 100,
+         "price": sell_price, "trade_kind": "信用返済", "broker": "SBI",
+         "settle_fee": fee, "settle_pl": pl},
+    ]
+    ep = trade_episodes._finalize_round("9880", "信用", "銘柄", fills, 300)
+    rows = trade_episodes.build_round_trips(ep)
+    settled = next(r for r in rows if r["closed"])
+    assert settled["inferred_open"]
+    assert settled["open_seqs"] == [1]
+    assert settled["open_date"] == "2026-03-23"
+    assert settled["open_price"] == open_price
+    assert settled["hold_days"] == 52
+    assert settled["pl"] == pl
+    assert settled["return_pct"] == pytest.approx(pl / (open_price * 100) * 100)
+    assert {r["open_seqs"][0]: r["qty"] for r in rows if not r["closed"]} == {1: 100, 2: 100}
+
+
+@pytest.mark.parametrize("variant", ["ambiguous", "partial_duplicate", "future", "other_broker", "insufficient", "mismatch"])
+def test_sbi_fee_match_requires_unique_available_lot(variant):
+    """価格が一致しても建日・証券会社・数量・一意性を満たさなければ推定しない。"""
+    opening = {"seq": 1, "trade_date": "2026-01-01", "side": "buy", "qty": 100,
+               "price": 1000, "trade_kind": "信用新規", "broker": "SBI"}
+    if variant == "future":
+        opening["trade_date"] = "2026-01-03"
+    elif variant == "other_broker":
+        opening["broker"] = "楽天"
+    elif variant == "insufficient":
+        opening["qty"] = 50
+    elif variant == "mismatch":
+        opening["price"] = 1001
+    fills = [opening]
+    if variant in ("ambiguous", "partial_duplicate"):
+        fills.append({**opening, "seq": 2, "qty": 50 if variant == "partial_duplicate" else 100})
+    fills.append({"seq": 3, "trade_date": "2026-01-02", "side": "sell", "qty": 100,
+                  "price": 1100, "trade_kind": "信用返済", "broker": "SBI",
+                  "settle_pl": 9990, "settle_fee": 10})
+    ep = trade_episodes._finalize_round("9880", "信用", "銘柄", fills, 200)
+    row = next(r for r in trade_episodes.build_round_trips(ep) if r["closed"])
+    assert row["open_date"] is None
+    assert row["pl"] == 9990
+
+
+@pytest.mark.parametrize("is_short", [False, True])
+def test_sbi_fee_matches_two_settlements_on_same_day(is_short):
+    """同日返済でも損益に合う玉を選び、売建では損益の符号を反転する。"""
+    open_side, close_side = ("sell", "buy") if is_short else ("buy", "sell")
+    fills = [
+        {"seq": 1, "trade_date": "2026-08-05", "side": open_side, "qty": 100,
+         "price": 13500, "trade_kind": "信用新規", "broker": "SBI"},
+        {"seq": 2, "trade_date": "2026-08-07", "side": open_side, "qty": 100,
+         "price": 12437, "trade_kind": "信用新規", "broker": "SBI"},
+    ]
+    for seq, price, fee, opening in [(3, 11930, 95, 12437), (4, 11980, 621, 13500)]:
+        pl = (opening - price if is_short else price - opening) * 100 - fee
+        fills.append({"seq": seq, "trade_date": "2026-08-07", "side": close_side,
+                      "qty": 100, "price": price, "trade_kind": "信用返済",
+                      "broker": "SBI", "settle_fee": fee, "settle_pl": pl})
+    ep = trade_episodes._finalize_round("278A", "信用", "銘柄", fills, 200, is_short=is_short)
+    rows = trade_episodes.build_round_trips(ep)
+    assert len(rows) == 2
+    assert {r["close_price"]: r["open_seqs"] for r in rows} == {11930: [2], 11980: [1]}
+    assert sum(r["pl"] for r in rows) == ep["pl"]["profit_amount"]
+
+
 class TestGenbaiBridge:
     """現引ブリッジ: 現引 (buy) → 現物売 で 1 現物ラウンドが閉じる。"""
 
