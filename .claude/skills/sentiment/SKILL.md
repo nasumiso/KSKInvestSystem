@@ -3,7 +3,7 @@ name: sentiment
 description: Yahoo Finance 掲示板の投稿を感情ラベルで分析する。銘柄の掲示板の温度感・センチメント・材料を知りたいときに使用
 disable-model-invocation: true
 model: sonnet
-allowed-tools: Read, Bash
+allowed-tools: Read, Bash(../.venv/bin/python sentiment.py *)
 ---
 
 # 掲示板の感情分析 (/sentiment)

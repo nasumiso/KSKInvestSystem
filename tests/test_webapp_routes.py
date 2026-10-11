@@ -338,6 +338,8 @@ class TestDetailSentiment:
         monkeypatch.setattr(detail, "_PROJECT_ROOT", result_dir)  # logs/ を実ディレクトリに作らない
 
         assert client.post("/stock/bad!/sentiment/run").status_code == 404
+        assert client.post("/stock/9999/sentiment/run").status_code == 404  # 未登録の銘柄
+        assert spawned == []
         assert client.post("/stock/3496/sentiment/run").status_code == 202
         assert client.post("/stock/3496/sentiment/run").status_code == 409  # 実行中は起動しない
         assert len(spawned) == 1 and spawned[0][-2:] == ["3496", "--web-trigger"]

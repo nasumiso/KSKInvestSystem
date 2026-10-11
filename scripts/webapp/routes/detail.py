@@ -225,6 +225,9 @@ def sentiment_run(code_s: str):
         validate_code_s(code_s)
     except ValueError:
         abort(404)
+    # ボタンは登録済みの銘柄のページにしか無い。ページが 404 の銘柄では起動しない
+    if get_research_detail(code_s) is None:
+        abort(404)
     if not run_sentiment.acquire_running_marker(code_s):
         return jsonify({"status": "already_running"}), 409
 
