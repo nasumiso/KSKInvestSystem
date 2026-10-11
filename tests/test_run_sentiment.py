@@ -13,9 +13,13 @@ import run_sentiment as rs
 _RESULT = "投稿を読みました。\n\n## 掲示板の感情分析: テスト (3496)  投稿 42件 (10/1 〜 10/9)\n\n### 掲示板の温度\n+1 (やや強気) 相当  ※平均 +0.30\n"
 
 
+_POST = {"part": 1, "post_date": "2026/10/9 0:20", "body": "本文", "good": 1, "bad": 0, "feel_label": None}
+
+
 @pytest.fixture
 def result_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(rs, "RESULT_DIR", tmp_path)
+    monkeypatch.setattr(rs, "get_forum_posts", lambda code_s: [_POST])
     return tmp_path
 
 
@@ -25,8 +29,11 @@ def _completed(result=_RESULT, returncode=0, is_error=False):
 
 
 def test_成功したら見出し以降を保存し結果を読み出せる(result_dir, monkeypatch):
-    monkeypatch.setattr(rs.subprocess, "run", lambda *a, **k: _completed())
+    called = []
+    monkeypatch.setattr(rs.subprocess, "run", lambda cmd, **k: called.append(cmd) or _completed())
     assert rs.run("3496") == 0
+    # 投稿は先に取得して渡し、モデルにはツールを持たせない
+    assert "本文" in called[0][2] and called[0][called[0].index("--tools") + 1] == ""
     saved = (result_dir / "3496.md").read_text(encoding="utf-8")
     assert saved.startswith("## 掲示板の感情分析")  # 見出しより前の文章は落とす
     assert json.loads((result_dir / "3496.meta.json").read_text(encoding="utf-8"))["total_cost_usd"] == 0.2
@@ -37,7 +44,8 @@ def test_成功したら見出し以降を保存し結果を読み出せる(resu
 @pytest.mark.parametrize("outcome", [
     _completed(returncode=1),
     _completed(is_error=True),
-    _completed(result="投稿を取得できませんでした"),  # 掲示板が取れないと見出しが出ない
+    _completed(result="見出しのない応答"),
+    "no_posts",
     SimpleNamespace(returncode=0, stdout="JSON ではない出力", stderr=""),
     subprocess.TimeoutExpired(cmd="claude", timeout=1),
     FileNotFoundError("claude"),
@@ -45,7 +53,11 @@ def test_成功したら見出し以降を保存し結果を読み出せる(resu
 def test_失敗したら前回の結果を残す(result_dir, monkeypatch, outcome):
     (result_dir / "3496.md").write_text("前回の結果", encoding="utf-8")
 
+    if outcome == "no_posts":
+        monkeypatch.setattr(rs, "get_forum_posts", lambda code_s: [])
+
     def fake_run(*a, **k):
+        assert outcome != "no_posts", "投稿が無ければ claude を起動しない"
         if isinstance(outcome, Exception):
             raise outcome
         return outcome

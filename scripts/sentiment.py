@@ -95,6 +95,18 @@ def get_forum_posts(code_s: str, limit: Optional[int] = DEFAULT_LIMIT) -> List[D
     return posts[:limit] if limit else posts
 
 
+def format_posts(code_s: str, posts: List[Dict]) -> List[str]:
+    """投稿を、スキル `/sentiment` が読む形の行にする"""
+    lines = ["掲示板 %s: %d件 (%s 〜 %s)" % (
+        code_s, len(posts), posts[-1]["post_date"], posts[0]["post_date"])]
+    for p in posts:
+        feel = " 投稿者の選択:%s" % p["feel_label"] if p["feel_label"] else ""
+        lines.append("[%s] %s そう思う:%d そう思わない:%d%s" % (
+            p["part"], p["post_date"], p["good"], p["bad"], feel))
+        lines.append("  " + p["body"])
+    return lines
+
+
 def main():
     parser = argparse.ArgumentParser(description="Yahoo Finance 掲示板の投稿を表示する")
     parser.add_argument("code_s", help="銘柄コード (例: 3496, 285A)")
@@ -106,13 +118,8 @@ def main():
     if not posts:
         log_print("投稿を取得できませんでした: %s" % args.code_s)
         return
-    log_print("掲示板 %s: %d件 (%s 〜 %s)" % (
-        args.code_s, len(posts), posts[-1]["post_date"], posts[0]["post_date"]))
-    for p in posts:
-        feel = " 投稿者の選択:%s" % p["feel_label"] if p["feel_label"] else ""
-        log_print("[%s] %s そう思う:%d そう思わない:%d%s" % (
-            p["part"], p["post_date"], p["good"], p["bad"], feel))
-        log_print("  " + p["body"])
+    for line in format_posts(args.code_s, posts):
+        log_print(line)
 
 
 if __name__ == "__main__":

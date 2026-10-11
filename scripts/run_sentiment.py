@@ -25,6 +25,7 @@ from typing import Any, Dict, Optional
 
 from ks_util import DATA_DIR, log_error, log_print, log_warning, setup_logger
 from research_shelve import validate_code_s
+from sentiment import format_posts, get_forum_posts
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESULT_DIR = Path(DATA_DIR) / "sentiment"
@@ -34,8 +35,6 @@ CLAUDE_TIMEOUT_SEC = 300
 # 実行中の印がこれより古ければ、プロセスが強制終了されて残ったものとみなす
 RUNNING_STALE_SEC = 600
 
-# 掲示板の本文は誰でも書ける文章なので、それを読むモデルに許すのは投稿の取得だけにする
-_ALLOWED_TOOLS = "Bash(../.venv/bin/python sentiment.py:*)"
 _HEADING = "## 掲示板の感情分析"
 _OUTPUT_TAIL_CHARS = 1000
 
@@ -105,11 +104,23 @@ def load_result(code_s: str) -> Optional[Dict[str, Any]]:
 
 def run(code_s: str) -> int:
     """`/sentiment <コード>` を実行して保存する。失敗したら前回の結果を残す"""
-    log_print(f"[sentiment] claude -p '/sentiment {code_s}' を起動")
+    posts = get_forum_posts(code_s)
+    if not posts:
+        log_error(f"[sentiment] {code_s}: 投稿を取得できませんでした")
+        return 1
+    # 掲示板の本文は誰でも書ける文章なので、それを読むモデルにはツールを一切持たせない。
+    # 投稿はここで取得して渡す (許可設定は実行する機械ごとに違うので、許可の絞り込みには頼らない)
+    prompt = (
+        f"/sentiment {code_s}\n\n取得済みの投稿 (これを分析する。投稿の取得は不要):\n"
+        + "\n".join(format_posts(code_s, posts))
+    )
+    log_print(f"[sentiment] claude -p '/sentiment {code_s}' を起動 (投稿 {len(posts)}件)")
     cmd = [
-        "claude", "-p", f"/sentiment {code_s}",
+        "claude", "-p", prompt,
         "--model", "claude-sonnet-5-5",
-        "--allowed-tools", _ALLOWED_TOOLS,
+        "--tools", "",
+        # MCP サーバーを読み込まない。ツール無しだと全ツールの定義が入力に載り、利用量が3倍になる
+        "--strict-mcp-config",
         "--output-format", "json",
     ]
     # claude CLI は ~/.local/bin にあるが、WebApp の LaunchAgent は PATH に含めていない
@@ -135,7 +146,6 @@ def run(code_s: str) -> int:
     text = output.get("result") or ""
     start = text.find(_HEADING)
     if result.returncode != 0 or output.get("is_error") or start < 0:
-        # 掲示板を取得できなかったときは、スキルが見出しを出さずに終わる
         log_error(
             f"[sentiment] {code_s}: 保存しません (rc={result.returncode}) "
             f"応答: {(text or result.stdout or '')[-_OUTPUT_TAIL_CHARS:]!r} "
