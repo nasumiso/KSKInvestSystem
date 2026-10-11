@@ -4355,6 +4355,67 @@ class TestEpisodeChart:
         ep.update(kw)
         return ep
 
+    @pytest.mark.parametrize("kind", ["現物", "信用"])
+    def test_split_chart_uses_original_fills_without_double_adjustment(self, monkeypatch, kind):
+        """分割前の現物・信用は同じ座標に換算し、tooltipと保存済みfillは元の値を保つ。"""
+        import copy
+
+        fills = [
+            {"seq": i, "code_s": "278A", "trade_date": d, "side": side, "qty": 100,
+             "price": price, "broker": "SBI", "trade_kind": tk, "settle_pl": pl}
+            for i, d, side, price, tk, pl in [
+                (1, "2026-08-05", "buy", 13500, "現物" if kind == "現物" else "信用新規", None),
+                (2, "2026-08-07", "sell", 11980, "現物" if kind == "現物" else "信用返済", -152621)]
+        ]
+        before = copy.deepcopy(fills)
+        events = [{"ex_date": "2026-09-29", "ratio": 2.0}]
+        ep = trade_episodes._episodes_for_code("278A", "銘柄", fills, {"278A": events}, {})[0]
+        bars = {date(2026, 7, 6) + _dt.timedelta(weeks=i): (6035, 10000, 7195, 5045) for i in range(14)}
+        monkeypatch.setattr(helpers, "load_weekly_closes", lambda code: bars)
+        markers, skipped = helpers._episode_markers(ep, bars)
+        assert skipped == 0
+        assert [m["price"] for m in markers] == [6750, 5990]
+        assert [m["qty"] for m in markers] == [100, 100]
+        svg = helpers.build_episode_chart(ep, exit_rule={"stop_loss_pct": 10})
+        assert svg.count("<polygon") == 2
+        assert "100株 @13,500円" in svg
+        assert "描画価格 6,750.00円" in svg
+        assert "ep-lot-link" in svg
+        assert "ep-stop-line" in svg
+        assert fills == before
+
+    @pytest.mark.parametrize("events,expected", [
+        ([{"ex_date": "2026-03-10", "ratio": 2}, {"ex_date": "2026-03-20", "ratio": 3}], [100, 200, 600]),
+        ([{"ex_date": "2026-03-10", "ratio": 0.5}], [1200, 600, 600]),
+        ([{"ex_date": "2026-04-01", "ratio": 2}], [600, 600, 600]),
+    ])
+    def test_chart_split_date_boundary_and_cumulative_ratio(self, events, expected):
+        """権利落ち当日は換算せず、複数分割・併合を累積し、古いキャッシュには適用しない。"""
+        ep = self._ep(split_adjustments=events, fills=[
+            {"trade_date": d, "side": "buy", "qty": 100, "price": 600}
+            for d in ["2026-03-09", "2026-03-10", "2026-03-20"]])
+        adjusted = helpers._episode_chart_fills(ep, {date(2026, 3, 30): (100, 1000)})
+        assert [f["price"] for f in adjusted] == expected
+        assert all(f["price"] * f["qty"] == 60000 for f in adjusted)
+
+    def test_chart_split_midweek_uses_cache_saved_date(self, monkeypatch, tmp_path):
+        """週途中の権利落ちは月曜バーではなくキャッシュの取得日で換算を判定する。"""
+        import json
+        import price
+
+        cache = tmp_path / "weekly_9999.json"
+        monkeypatch.setattr(price, "YFINANCE_WEEKLY_CACHE_FNAME", str(tmp_path / "weekly_%s.json"))
+        bars = {date(2026, 8, 24) + _dt.timedelta(weeks=i): (1000, 10000) for i in range(6)}
+        monkeypatch.setattr(helpers, "load_weekly_closes", lambda code: bars)
+        ep = self._ep(open_date="2026-09-25", close_date="2026-09-28",
+                      split_adjustments=[{"ex_date": "2026-09-29", "ratio": 2}], fills=[
+                          {"trade_date": d, "side": s, "price": 2000, "qty": 100}
+                          for d, s in [("2026-09-25", "buy"), ("2026-09-28", "sell")]])
+        cache.write_text(json.dumps({"saved_at": "2026-09-28T17:00:00"}))
+        assert helpers.build_episode_chart(ep).count("<polygon") == 0
+        cache.write_text(json.dumps({"saved_at": "2026-10-02T17:00:00"}))
+        assert helpers.build_episode_chart(ep).count("<polygon") == 2
+
     @pytest.mark.parametrize("open_date,close_date,exp_start,exp_end", [
         # クローズ済み: 前後4週。窓の両端は月曜アンカーに丸める。
         ("2026-03-04", "2026-04-15", date(2026, 2, 2), date(2026, 5, 11)),

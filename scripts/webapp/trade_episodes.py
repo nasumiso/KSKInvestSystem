@@ -677,6 +677,7 @@ def _episodes_for_code(code_s: str, stock_name: str, fills: List[Dict[str, Any]]
     組み立てる。メモ・戦略・保有中の含み損益はここでは付けない。
     """
     events = all_split_adj.get(code_s, [])
+    original_fills = {f.get("seq"): f for f in fills}
     if events:
         fills = _apply_split_adjustments(fills, events)
     # ジャンプ検知は換算後の fills に対して行う (PRレビュー対応: 未換算のまま
@@ -687,6 +688,9 @@ def _episodes_for_code(code_s: str, stock_name: str, fills: List[Dict[str, Any]]
     uncovered = _uncovered_jumps(jumps, events)
     pending_dates = pending_events.get(code_s, [])
     for ep in code_episodes:
+        # 損益用の現物換算とは分け、チャートは当時の約定値を基準に描画する。
+        ep["chart_fills"] = [original_fills[f.get("seq")] for f in ep["fills"]]
+        ep["split_adjustments"] = events
         if ep["kind"] == "信用" and not ep["closed"] and any(
                 _split_event_affects_episode(ev["ex_date"], ep) for ev in events):
             # 信用 fill は約定損益・建単価の基準を保つため換算しない。そのため、登録済みの
