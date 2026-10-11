@@ -28,8 +28,6 @@ import ks_util  # noqa: E402
 import portfolio_shelve as ps  # noqa: E402
 from ks_util import log_print, log_warning  # noqa: E402
 
-# 初期損切りの原則 (doc/投資戦略.md「損切り・利確」の -7〜10% の下限)
-STOP_LOSS_PCT = -10.0
 # 再IN とみなす、直前の決済からの日数
 REENTRY_DAYS = 30
 # 小口とみなす、建玉合計に対する比率 (%)
@@ -46,6 +44,28 @@ def _profit(ep: Dict[str, Any]) -> Optional[float]:
 
 def _first_fill(ep: Dict[str, Any]) -> Dict[str, Any]:
     return min(ep["fills"], key=lambda f: (f["trade_date"], f["seq"]))
+
+
+def _stop_loss_widths(episodes: List[Dict[str, Any]], trade_ideas: List[Dict[str, Any]],
+                      fill_strategies: Dict[Any, Dict[str, Any]]) -> Dict[str, Optional[float]]:
+    """エピソードごとの損切り幅 (%、正の数)。入った時点の戦略の exit_rule から引く。
+
+    次のときは None にし、超過の判定をしない (-10% 等の代わりの幅は当てない)。
+    - 戦略の宣言が無い、または戦略に幅が無い (夢枠・大型高配当)
+    - 戦略のひもづけが要再確認 (strategy_drift)
+    - ロットに別の戦略が付いている (エピソード全体の損益率を1つの幅と比べられない)
+    """
+    by_idea = {t.get("name", ""): (t.get("exit_rule") or {}).get("stop_loss_pct")
+               for t in trade_ideas}
+    widths: Dict[str, Optional[float]] = {}
+    for ep in episodes:
+        idea = ep.get("trade_idea") or ""
+        width = by_idea.get(idea)
+        mixed = any((fill_strategies.get((ep["code_s"], f["seq"])) or {}).get("trade_idea", idea) != idea
+                    for f in ep["fills"])
+        ok = isinstance(width, (int, float)) and width > 0 and not ep.get("strategy_drift") and not mixed
+        widths[ep["episode_key"]] = float(width) if ok else None
+    return widths
 
 
 def _days_between(d1: str, d2: str) -> int:
@@ -108,7 +128,8 @@ def _unrealized_pct(eps: List[Dict[str, Any]]) -> Optional[float]:
 
 def _trade_row(ep: Dict[str, Any], episodes: List[Dict[str, Any]],
                log_by_date: Dict[str, Dict[str, Any]],
-               horizons: Dict[str, str]) -> Dict[str, Any]:
+               horizons: Dict[str, str],
+               stop_widths: Dict[str, Optional[float]]) -> Dict[str, Any]:
     pl = ep.get("pl") or {}
     horizon = horizons.get(ep.get("trade_idea") or "", "")
     open_log = log_by_date.get(ep["open_date"]) or {}
@@ -121,6 +142,7 @@ def _trade_row(ep: Dict[str, Any], episodes: List[Dict[str, Any]],
         "trade_idea": ep.get("trade_idea") or "",
         "strategy_drift": bool(ep.get("strategy_drift")),
         "time_horizon": horizon,
+        "stop_loss_pct": stop_widths[ep["episode_key"]],
         "open_date": ep["open_date"],
         "close_date": ep.get("close_date"),
         "qty_peak": ep.get("qty_peak"),
@@ -199,16 +221,21 @@ def _summary(ym: str, closed: List[Dict[str, Any]], episodes: List[Dict[str, Any
     }
 
 
-def _hypotheses(ym: str, episodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _hypotheses(ym: str, episodes: List[Dict[str, Any]],
+                stop_widths: Dict[str, Optional[float]]) -> Dict[str, Any]:
     """弱点仮説を、当年1月1日から当月末までの累計で検証する。"""
     year_start, month_end = f"{ym[:4]}-01-01", f"{ym}-31"
     closed = [e for e in episodes
               if e["closed"] and year_start <= (e.get("close_date") or "") <= month_end]
     usable = [e for e in closed if not e.get("split_suspect") and _profit(e) is not None]
 
+    # 損切りの幅は戦略ごと。幅の無い損失は超過とも範囲内とも数えず、別に出す
     losses = [e for e in usable if _profit(e) <= 0]
-    over = [e for e in losses
-            if e["pl"].get("return_pct") is not None and e["pl"]["return_pct"] < STOP_LOSS_PCT]
+    no_width = [e for e in losses if stop_widths[e["episode_key"]] is None]
+    judged = [e for e in losses if stop_widths[e["episode_key"]] is not None]
+    over = [e for e in judged
+            if e["pl"].get("return_pct") is not None
+            and e["pl"]["return_pct"] < -stop_widths[e["episode_key"]]]
     over_keys = {e["episode_key"] for e in over}
 
     # 再IN は建てた側から数える (決済側から数えると、1つの建て直しを二重に数えうる)
@@ -226,7 +253,9 @@ def _hypotheses(ym: str, episodes: List[Dict[str, Any]]) -> Dict[str, Any]:
             "loss_pl": sum(_profit(e) for e in losses),
             "over_count": len(over),
             "over_pl": sum(_profit(e) for e in over),
-            "within_pl": sum(_profit(e) for e in losses if e["episode_key"] not in over_keys),
+            "within_pl": sum(_profit(e) for e in judged if e["episode_key"] not in over_keys),
+            "no_width_count": len(no_width),
+            "no_width_pl": sum(_profit(e) for e in no_width),
             "month_over_count": sum(1 for e in over if e["close_date"].startswith(ym)),
         },
         "reentry": {
@@ -240,7 +269,8 @@ def _hypotheses(ym: str, episodes: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _portfolio(episodes: List[Dict[str, Any]], exposure_history: List[Dict[str, Any]],
-               records: List[Dict[str, Any]], stocks: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+               records: List[Dict[str, Any]], stocks: Dict[str, Dict[str, Any]],
+               stop_widths: Dict[str, Optional[float]]) -> Dict[str, Any]:
     """レポートを作った日の保有PF。保有構成は 1保 で数える (保有中エピソードは実保有と一致しない)。"""
     open_eps: Dict[str, List[Dict[str, Any]]] = {}
     for ep in episodes:
@@ -272,11 +302,11 @@ def _portfolio(episodes: List[Dict[str, Any]], exposure_history: List[Dict[str, 
     over = [
         {"episode_key": ep["episode_key"], "code_s": code_s, "stock_name": names[code_s],
          "kind": ep["kind"], "trade_idea": ep.get("trade_idea") or "",
-         "open_date": ep["open_date"], "unrealized_pct": pct}
+         "open_date": ep["open_date"], "stop_loss_pct": width, "unrealized_pct": pct}
         for code_s, eps in open_eps.items() if code_s in names
         for ep in eps
-        for pct in [_unrealized_pct([ep])]
-        if pct is not None and pct < STOP_LOSS_PCT
+        for width, pct in [(stop_widths[ep["episode_key"]], _unrealized_pct([ep]))]
+        if width is not None and pct is not None and pct < -width
     ]
     latest = max(exposure_history, key=lambda h: h.get("date") or "", default={})
     return {
@@ -296,6 +326,7 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
                          records: List[Dict[str, Any]],
                          stocks: Dict[str, Dict[str, Any]],
                          trade_ideas: List[Dict[str, Any]],
+                         fill_strategies: Dict[Any, Dict[str, Any]],
                          generated_at: str) -> Dict[str, Any]:
     """月次の振り返りに渡す数字を作る (DB を読まない)。
 
@@ -306,9 +337,11 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
         records: portfolio_shelve.list_records("1保")
         stocks: 1保 の銘柄の現在値 {code_s: {"price": 終値, "stock_name": 名前}}
         trade_ideas: 戦略マスター (portfolio_shelve.list_trade_ideas())
+        fill_strategies: ロットの戦略の上書き (portfolio_shelve.list_fill_strategies())
     """
     log_by_date = {h["date"]: h for h in exposure_history if h.get("date")}
     horizons = {t.get("name", ""): t.get("time_horizon") or "" for t in trade_ideas}
+    stop_widths = _stop_loss_widths(episodes, trade_ideas, fill_strategies)
 
     # 取引ごとの照合の対象: 当月に完全決済したものと、当月に新規に建てたもの。
     # 現引で始まるもの (信用からの振り替え) と当月中に決済したもの (決済側に出る) は
@@ -325,7 +358,7 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
               and _first_fill(e).get("trade_kind") != "現引"]
 
     def rows(eps: List[Dict[str, Any]], key: str) -> List[Dict[str, Any]]:
-        return [_trade_row(e, episodes, log_by_date, horizons)
+        return [_trade_row(e, episodes, log_by_date, horizons, stop_widths)
                 for e in sorted(eps, key=lambda e: (e[key], e["code_s"]))]
 
     return {
@@ -334,8 +367,8 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
         "summary": _summary(year_month, closed, episodes, log_by_date),
         "trades": {"closed": rows(closed, "close_date"), "opened": rows(opened, "open_date"),
                    "split_suspect_count": len(in_month) - len(targets)},
-        "hypotheses": _hypotheses(year_month, episodes),
-        "portfolio": _portfolio(episodes, exposure_history, records, stocks),
+        "hypotheses": _hypotheses(year_month, episodes, stop_widths),
+        "portfolio": _portfolio(episodes, exposure_history, records, stocks, stop_widths),
     }
 
 
@@ -353,6 +386,7 @@ def _load_inputs() -> Dict[str, Any]:
         "stocks": {c: {"price": s.get("price"), "stock_name": s.get("stock_name", "")}
                    for c, s in stock_map.items() if isinstance(s, dict)},
         "trade_ideas": ps.list_trade_ideas(),
+        "fill_strategies": ps.list_fill_strategies(),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }
 

@@ -38,11 +38,15 @@ def _ep(code_s, first_seq, fills, *, kind="信用", profit=None, return_pct=None
     return ep
 
 
-def _build(episodes, *, exposure_history=(), records=(), stocks=None):
+def _build(episodes, *, exposure_history=(), records=(), stocks=None, fill_strategies=None):
     return trade_review.build_review_dataset(
         YM, episodes=episodes, exposure_history=list(exposure_history), records=list(records),
         stocks=stocks or {}, generated_at="2026-10-01T00:00:00",
-        trade_ideas=[{"name": "中期モメンタム", "time_horizon": "中期"}])
+        fill_strategies=fill_strategies or {},
+        trade_ideas=[
+            {"name": "中期モメンタム", "time_horizon": "中期", "exit_rule": {"stop_loss_pct": 10}},
+            {"name": "中長期ファンダ", "time_horizon": "中長期", "exit_rule": {"stop_loss_pct": 25}},
+            {"name": "夢枠", "time_horizon": "長期", "exit_rule": {"stop_loss_pct": None}}])
 
 
 def test_対象は当月の完全決済と当月の新規建て():
@@ -105,7 +109,10 @@ def test_弱点仮説は年初来で損切りの幅と再INを数える():
                    profit=profit, return_pct=return_pct, hold_days=1, **kw)
 
     episodes = [
-        closed("3001", 1, "2026-02-01", "2026-03-01", -1000, -10.0),   # 原則ちょうどは超過にしない
+        closed("3001", 1, "2026-02-01", "2026-03-01", -1000, -10.0),   # 幅ちょうどは超過にしない
+        # 幅は戦略ごと。中長期ファンダ (25%) の -24% は範囲内、夢枠は幅が無いので判定しない
+        closed("3006", 1, "2026-02-01", "2026-03-01", -2000, -24.0, trade_idea="中長期ファンダ"),
+        closed("3007", 1, "2026-02-01", "2026-03-01", -4000, -40.0, trade_idea="夢枠"),
         closed("3002", 1, "2026-02-01", "2026-09-01", -3000, -10.1),   # 超過 (当月)
         closed("3003", 1, "2025-11-01", "2025-12-20", -5000, -30.0),   # 前年の決済は母数外
         closed("3004", 1, "2026-02-01", "2026-03-01", -7000, -30.0, split_suspect=True),
@@ -119,9 +126,11 @@ def test_弱点仮説は年初来で損切りの幅と再INを数える():
         _ep("3003", 3, [("2026-01-10", "buy", 100, 1000)]),
     ]
     h = _build(episodes)["hypotheses"]
-    assert (h["closed_count"], h["excluded_count"]) == (5, 2)
-    assert h["stop_loss_width"] == {"loss_count": 2, "loss_pl": -4000, "over_count": 1,
-                                    "over_pl": -3000, "within_pl": -1000, "month_over_count": 1}
+    assert (h["closed_count"], h["excluded_count"]) == (7, 2)
+    assert h["stop_loss_width"] == {"loss_count": 4, "loss_pl": -10000, "over_count": 1,
+                                    "over_pl": -3000, "within_pl": -3000,
+                                    "no_width_count": 1, "no_width_pl": -4000,
+                                    "month_over_count": 1}
     assert h["reentry"] == {"count": 2, "settled_count": 1, "settled_wins": 1,
                             "settled_pl": 500, "month_count": 0}
 
@@ -133,18 +142,26 @@ def test_保有PFは1保で数え含み損益率に実現損益を混ぜない()
                    open_pl={"realized": 50000, "unrealized": unrealized, "held_qty": 100,
                             "avg_cost": 1000.0, "return_pct": 20.0}, **kw)
 
+    # 4006 は中長期ファンダ (25%) の範囲内。4007 (戦略のひもづけが要再確認) と
+    # 4008 (ロットに別の戦略) は判定しない
     episodes = [holding("4001", -10100), holding("4002", -10000), holding("4003", -30000),
-                holding("4004", -30000, split_suspect=True)]
+                holding("4004", -30000, split_suspect=True),
+                holding("4006", -20000, trade_idea="中長期ファンダ"),
+                holding("4007", -20000, strategy_drift=True), holding("4008", -20000)]
     records = [{"code_s": c, "qty": q, "memo": {"trade_idea": "GARP"}}
-               for c, q in (("4001", 100), ("4002", 100), ("4004", 2), ("4005", 0))]
-    stocks = {c: {"price": 900.0, "stock_name": f"銘柄{c}"} for c in ("4001", "4002", "4004", "4005")}
+               for c, q in (("4001", 100), ("4002", 100), ("4004", 2), ("4005", 0),
+                            ("4006", 100), ("4007", 100), ("4008", 100))]
+    stocks = {c: {"price": 900.0, "stock_name": f"銘柄{c}"}
+              for c in ("4001", "4002", "4004", "4005", "4006", "4007", "4008")}
     history = [{"date": "2026-10-01", "ratio_pct": 94.5, "state": "market_in_correction"},
                {"date": "2026-09-30", "ratio_pct": 80.0}]
-    p = _build(episodes, records=records, stocks=stocks, exposure_history=history)["portfolio"]
+    p = _build(episodes, records=records, stocks=stocks, exposure_history=history,
+               fill_strategies={("4008", 1): {"trade_idea": "中長期ファンダ"}})["portfolio"]
     # 4003 は 1保 に無い (売却の約定が未取込の保有中エピソード)。4005 は株数 0
-    assert p["holding_count"] == 3
+    assert p["holding_count"] == 6
     assert p["small"] == {"count": 1, "value": 1800.0}
-    assert [(r["code_s"], round(r["unrealized_pct"], 1)) for r in p["over_stop_loss"]] == [("4001", -10.1)]
+    assert [(r["code_s"], r["stop_loss_pct"], round(r["unrealized_pct"], 1))
+            for r in p["over_stop_loss"]] == [("4001", 10.0, -10.1)]
     assert p["exposure"]["date"] == "2026-10-01" and p["exposure"]["ratio_pct"] == 94.5
 
 
