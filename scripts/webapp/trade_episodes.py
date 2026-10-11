@@ -1330,7 +1330,6 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
                 available = {c["fill"].get("seq"): c["remain"] for c in open_pool}
                 candidates = [c for c in candidates
                               if c["fill"]["trade_date"] <= f["trade_date"]
-                              and available.get(c["fill"].get("seq"), 0) > 0
                               and abs((c["fill"]["price"] - f["price"] if is_short
                                        else f["price"] - c["fill"]["price"]) * f["qty"]
                                       - f["settle_fee"] - f["settle_pl"]) < 0.000001]
@@ -1341,10 +1340,17 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
             if inferred is not None:
                 tate_date = inferred.get("trade_date")
                 tate_price = inferred.get("price")
-                _consume_open_lots(inference_pool, f["qty"], tate_date, tate_price,
-                                   f.get("broker"))
-                matched = _consume_open_lots(open_pool, f["qty"], tate_date, tate_price,
-                                              f.get("broker"))
+                if fee_match:
+                    # 未照合返済のFIFO消費で候補を減らさず、確定したロットだけを消費する。
+                    candidates[0]["remain"] -= f["qty"]
+                    selected = next(c for c in open_pool if c["fill"] is inferred)
+                    selected["remain"] -= f["qty"]
+                    matched = [(inferred, f["qty"])]
+                else:
+                    _consume_open_lots(inference_pool, f["qty"], tate_date, tate_price,
+                                       f.get("broker"))
+                    matched = _consume_open_lots(open_pool, f["qty"], tate_date, tate_price,
+                                                 f.get("broker"))
                 first = matched[0][0] if matched else inferred
                 row = _make_round_trip(first, f, f["qty"], tate_date, tate_price,
                                        [m[0] for m in matched] or [inferred])

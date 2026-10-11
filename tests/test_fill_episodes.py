@@ -120,6 +120,19 @@ def test_sbi_fee_matches_two_settlements_on_same_day(is_short):
     assert sum(r["pl"] for r in rows) == ep["pl"]["profit_amount"]
 
 
+def test_sbi_unknown_fifo_does_not_make_next_settlement_unique():
+    """同単価・別建日の最初の返済が不明なら、後続もFIFO残数から特定しない。"""
+    fills = [{"seq": i, "trade_date": f"2026-01-0{i}", "side": "buy", "qty": 100,
+              "price": 1000, "trade_kind": "信用新規", "broker": "SBI"} for i in (1, 2)]
+    fills += [{"seq": i, "trade_date": f"2026-01-0{i}", "side": "sell", "qty": 100,
+               "price": 1100, "trade_kind": "信用返済", "broker": "SBI",
+               "settle_fee": 10, "settle_pl": 9990} for i in (3, 4)]
+    ep = trade_episodes._finalize_round("9880", "信用", "銘柄", fills, 200)
+    rows = trade_episodes.build_round_trips(ep)
+    assert len(rows) == 2
+    assert all(r["closed"] and r["open_date"] is None and not r["open_seqs"] for r in rows)
+
+
 class TestGenbaiBridge:
     """現引ブリッジ: 現引 (buy) → 現物売 で 1 現物ラウンドが閉じる。"""
 
