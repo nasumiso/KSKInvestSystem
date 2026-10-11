@@ -101,7 +101,7 @@ cmd_pull_data() {
   # ir_docs は運用機側が Drive への symlink、開発機側がローカルの実ディレクトリ。
   # 除外しないと実ディレクトリを symlink で上書きしようとする (開発用は初回コピーのまま使う)
   # stock_ratings_drive は本番 Drive への symlink。持ち込むと開発機の更新が本番に出る
-  rsync -a --exclude 'ir_docs' --exclude 'stock_ratings_drive' --exclude '*.lock' --exclude '*.dbm.lock' --exclude '.DS_Store' \
+  rsync -a --exclude 'ir_docs' --exclude 'stock_ratings_drive' --exclude 'offsite_backup_drive' --exclude '*.lock' --exclude '*.dbm.lock' --exclude '.DS_Store' \
     "$@" "$HOST:/Users/k_sohara/shintakane_data/" "$KS_DATA_DIR"/
   echo "✅ 完了"
 }

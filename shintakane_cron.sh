@@ -204,6 +204,16 @@ else
   report "theme-news" $RET3 ../logs/theme_news.log
 fi
 
+# --- 不可逆データを Drive へ複製 (issue #482) ---
+# その日の theme_news/history も含めるため theme-news の後に置く。前段の成否にかかわらず実行する。
+# make_stock_db.py 内のバックアップ (失敗しても継続) には混ぜない: 複製が止まったら
+# 終了コードで /dev に出して気づけるようにする。
+rotate_log ../logs/offsite_backup.log
+echo "===== $(date '+%Y-%m-%d %H:%M:%S') offsite_backup.py 開始 =====" >> ../logs/offsite_backup.log
+python offsite_backup.py >> ../logs/offsite_backup.log 2>&1
+RET_OFFSITE=$?
+report "offsite_backup.py" $RET_OFFSITE ../logs/offsite_backup.log
+
 # --- 週1 compact (金曜のみ) ---
 # stocks_shelve は dbm.dumb の追記構造で 100〜120MB/日 肥大するため週1で詰める。
 # 独立 LaunchAgent にはしない: 同一スクリプトの逐次実行なら「バッチが
@@ -225,7 +235,7 @@ fi
 
 # 子スクリプトの失敗をシェルの終了コードに反映する (/dev の成否表示・launchd の last exit code 用)。
 # git pull の失敗は前回のコードで続行する設計なので含めない。
-for ret in $RET1 $RET2 $RET_EXPOSURE $RET3 $RET_COMPACT; do
+for ret in $RET1 $RET2 $RET_EXPOSURE $RET3 $RET_OFFSITE $RET_COMPACT; do
   [ "$ret" -ne 0 ] && exit 1
 done
 exit 0
