@@ -150,5 +150,5 @@ Shintakaneを5年以上自作運用してきた技術的素地と、自己の認
 - LLM からの参照窓口 (四季報・IR回答・決算資料・評価台帳): [MCP連携.md](spec/MCP連携.md)
 - 評価台帳の採点ルールと原則 (確証バイアス対策を含む): `scripts/mcp/shikiho_server.py` の `update_stock_rating` 説明文、判断記録は [decisions/2026-09-23-銘柄評価台帳の正本をJSONにする.md](decisions/2026-09-23-銘柄評価台帳の正本をJSONにする.md)
 - テーマ急浮上の理由調査 (日次、`claude -p`): `.claude/skills/theme-news/`
-- 売買履歴と保有PFの AI 振り返り: issue #448 (計画は [plan/issue-trade-review-ai.md](plan/issue-trade-review-ai.md))
+- 月次の売買振り返り (`/trade-review`): issue #448 ([判断記録](decisions/2026-10-11-月次の売買振り返りは取引の照合と2つの仮説に絞る.md))
 - 用語と、AI が勝手に解釈してはいけない前提: [用語集と不変条件.md](用語集と不変条件.md)
