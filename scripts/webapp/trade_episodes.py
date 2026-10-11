@@ -1690,6 +1690,7 @@ def build_stock_rollups(episodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             # 走査中に実測した値を使う。ラウンド単位の qty_peak の max では、信用と
             # 現物を同時に持つ銘柄 (6890: 現物100+信用100) でピークを取り逃す。
             "qty_peak": max([ep.get("code_qty_peak") or ep["qty_peak"] for ep in eps]),
+            "qty_total": sum(ep["qty_total"] for ep in eps),
             "has_open": any(not ep["closed"] for ep in eps),
             "has_carry_over": any(ep.get("carry_over") for ep in eps),
             "memo_count": sum(1 for ep in eps if ep.get("review_memo")),
@@ -1738,6 +1739,15 @@ def _finalize_round(code_s: str, kind: str, stock_name: str,
         "close_date": max(dates) if (dates and closed) else None,
         "last_trade_date": max(dates) if dates else "",  # ラウンド内の最新約定日 (並び順の基準)
         "qty_peak": qty_peak,
+        # 延べ株数 = ラウンド内で新規に買った (売建は新規に売った) 株数の合計。買い直しがあると
+        # qty_peak (同時保有の最大) より大きくなる。リターン率の分母は延べの取得額なので、
+        # 画面では qty_peak と食い違うときだけ併記する。現引は信用建玉の振替なので数えない
+        # (数えると信用ラウンドと現物ラウンドで同じ株を二重に数える)。
+        "qty_total": sum(
+            f["qty"] for f in round_fills
+            if f["side"] == ("sell" if is_short else "buy")
+            and f.get("trade_kind") != "現引"
+        ),
         "closed": closed,
         "carry_over": carry_over,
         "is_short": is_short,

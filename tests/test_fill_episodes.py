@@ -800,6 +800,31 @@ class TestStockRollups:
             trade_episodes.build_fill_episodes(db_path=db_path))
         assert rollups[0]["qty_peak"] == expected_peak
 
+    def test_qty_total_counts_rebuys_but_not_genbiki(self, db_path, monkeypatch):
+        """延べ株数は買い直しを足し上げ、現引 (信用建玉の振替) は数えない。
+
+        6227 相当: 100株を買い増しては売る往復で、同時保有は最大200株・延べ300株。
+        現引は信用ラウンドと現物ラウンドの両方に side=buy で入るので、数えると二重になる。
+        """
+        monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {c: [] for c in codes})
+        rebuys = [("2026-06-26", "buy", "信用新規"), ("2026-07-02", "buy", "信用新規"),
+                  ("2026-07-03", "sell", "信用返済"), ("2026-07-07", "buy", "信用新規"),
+                  ("2026-07-08", "sell", "信用返済"), ("2026-07-13", "sell", "信用返済")]
+        for i, (dt, side, tk) in enumerate(rebuys):
+            _add(db_path, "6227", dt, side, 100, 1000.0, trade_kind=tk, seq_salt=str(i))
+        genbiki = [("2026-01-05", "buy", "信用新規"), ("2026-01-06", "buy", "現引"),
+                   ("2026-01-07", "sell", "現物")]
+        for i, (dt, side, tk) in enumerate(genbiki):
+            _add(db_path, "8301", dt, side, 100, 1000.0, trade_kind=tk, seq_salt="g" + str(i))
+
+        eps = trade_episodes.build_fill_episodes(db_path=db_path)
+        by_key = {(e["code_s"], e["kind"]): e for e in eps}
+        assert (by_key["6227", "信用"]["qty_peak"], by_key["6227", "信用"]["qty_total"]) == (200, 300)
+        assert by_key["8301", "信用"]["qty_total"] == 100
+        assert by_key["8301", "現物"]["qty_total"] == 0
+        rollups = {r["code_s"]: r for r in trade_episodes.build_stock_rollups(eps)}
+        assert (rollups["6227"]["qty_total"], rollups["8301"]["qty_total"]) == (300, 100)
+
     def test_sorted_by_last_trade_date_desc_then_code(self, db_path, monkeypatch):
         monkeypatch.setattr(helpers, "_bulk_price_logs", lambda codes: {c: [] for c in codes})
         # 8202: 最終取引 2026-03-01 (先)

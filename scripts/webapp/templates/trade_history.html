@@ -169,9 +169,11 @@
 <span style="color:{{ ('var(--th-pos-prov)' if pct >= 0 else 'var(--th-neg-prov)') if provisional else ('var(--th-pos)' if pct >= 0 else 'var(--th-neg)') }};{% if bold %}font-weight:600;{% endif %}"{% if title %} title="{{ title }}"{% endif %}>{{ '+' if pct >= 0 else '' }}{{ ("%." ~ digits ~ "f")|format(pct) }}%</span>
 {%- endmacro %}
 
-{# 株数セル。保有中は「ピーク(残N)」形式で現在の保有株数を併記する。 #}
-{% macro qty_with_held(qty_peak, held_qty, show_held, held_title) %}
-{{- "%g"|format(qty_peak) }}{% if show_held and held_qty > 0 %}<span style="color:#5f5fa8;font-size:0.92em;" title="{{ held_title }}">(残{{ "%g"|format(held_qty) }})</span>{% endif %}
+{# 株数セル。主の値は同時に持っていた最大株数 (ピーク)。買い直しで延べ株数がそれを上回るときだけ
+   「ピーク(延べN)」と併記する (リターン率の分母は延べの取得額なので、ピークだけだと計算が合わなく見える)。
+   保有中は「ピーク(残N)」形式で現在の保有株数を併記する。 #}
+{% macro qty_with_held(qty_peak, qty_total, held_qty, show_held, held_title) %}
+{{- "%g"|format(qty_peak) }}{% if qty_total > qty_peak %}<span style="font-size:0.92em;" title="買った株数の合計 (左は同時に持っていた最大株数)。リターン率はこの延べの取得額に対する率です">(延べ{{ "%g"|format(qty_total) }})</span>{% endif %}{% if show_held and held_qty > 0 %}<span style="color:#5f5fa8;font-size:0.92em;" title="{{ held_title }}">(残{{ "%g"|format(held_qty) }})</span>{% endif %}
 {%- endmacro %}
 
 {# エピソード行+明細行 (issue #391: マクロ化してエピソード単位/銘柄単位の両ビューで共有)。
@@ -251,7 +253,7 @@
       {% set ep_end = ep.close_date or ep.last_trade_date %}
       <td style="white-space:nowrap;color:#888;font-size:0.82em;">{{ ep.open_date[5:] }}{% if ep_end and ep_end != ep.open_date %} 〜 {{ ep_end[5:] }}{% endif %}</td>
       {# 保有中で建玉が残っていれば「ピーク(残N)」。残株数はリターン列ではなく株数列で示す #}
-      <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ qty_with_held(ep.qty_peak,
+      <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ qty_with_held(ep.qty_peak, ep.qty_total,
           ep.open_pl.held_qty if ep.open_pl else 0,
           not ep.closed and not ep.split_suspect and ep.open_pl,
           "現在も保有している株数 (左はラウンド中の最大建玉)") }}</td>
@@ -326,10 +328,11 @@
               {%- else %}<span style="color:#8a6a5a;font-size:0.88em;margin-left:0.4em;" title="建玉情報がCSVに無いため建値・保有日数を表示できません">建玉不明</span>{% endif %}
               {%- endif %}
               {#- 建てロットの戦略 (issue #492 段階2)。エピソードの戦略と違う行だけバッジを出す。
-                 「戦略」リンクは行に乗せたときだけ見せる。エピソードが未分類の行、建て側が
-                 分からない行、現引 (損益を持たない) には出さない #}
-              {%- if ep.trade_idea and r.open_seqs and not r.genbiki %}
-              <span class="lot-strategy" data-episode-key="{{ ep.episode_key }}"
+                 「戦略」リンクは行に乗せたときだけ見せる。建て側が分からない行、現引 (損益を
+                 持たない) には出さない。エピソードが未分類の行は隠しておき、その場で戦略を
+                 付けたら再読み込みなしで出す (saveEpisodeStrategy) #}
+              {%- if r.open_seqs and not r.genbiki %}
+              <span class="lot-strategy"{% if not ep.trade_idea %} hidden{% endif %} data-episode-key="{{ ep.episode_key }}"
                     data-seqs="{{ r.open_seqs | join(',') }}"
                     data-url="{{ url_for('trade_history.save_lot_strategy') }}"
                     data-idea="{{ r.trade_idea if r.strategy_differs else '' }}">
@@ -423,7 +426,7 @@
       <th>区分</th>
       <th style="white-space:nowrap;">売買戦略</th>
       <th style="white-space:nowrap;">期間</th>
-      <th style="text-align:right;white-space:nowrap;">株数</th>
+      <th style="text-align:right;white-space:nowrap;" title="同時に持っていた最大株数。買い直しで延べ株数が上回るときは (延べN) を併記します">株数</th>
       <th style="text-align:right;white-space:nowrap;">リターン</th>
       <th style="text-align:right;white-space:nowrap;">実現損益</th>
       <th style="text-align:right;white-space:nowrap;">含み損益</th>
@@ -475,7 +478,7 @@
       <th>区分</th>
       <th style="white-space:nowrap;">売買戦略</th>
       <th style="white-space:nowrap;">期間</th>
-      <th style="text-align:right;white-space:nowrap;">株数</th>
+      <th style="text-align:right;white-space:nowrap;" title="同時に持っていた最大株数。買い直しで延べ株数が上回るときは (延べN) を併記します">株数</th>
       <th style="text-align:right;white-space:nowrap;">リターン</th>
       <th style="text-align:right;white-space:nowrap;">実現損益</th>
       <th style="text-align:right;white-space:nowrap;">含み損益</th>
@@ -526,7 +529,7 @@
           title="{{ r.episode_count }}回のエピソード、通算保有{{ r.pl.hold_days if r.pl else 0 }}日">{{ r.first_open_date[5:] }} 〜 {{ r.last_trade_date[5:] }}</td>
       {# エピソード単位ビューと表示を揃える: 株数列に残株数を併記し、リターン列は
          保有中でも % を出す (残株数でリターン列を潰さない) #}
-      <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ qty_with_held(r.qty_peak, r.held_qty, r.has_open,
+      <td style="text-align:right;color:#888;font-size:0.85em;white-space:nowrap;">{{ qty_with_held(r.qty_peak, r.qty_total, r.held_qty, r.has_open,
           "現在も保有している株数 (左は各ラウンドの最大建玉)") }}</td>
       <td style="text-align:right;white-space:nowrap;">
         {# 保有中が無い銘柄では total_return_pct は pl.return_pct と一致する (分母・分子
@@ -813,7 +816,11 @@
     var cols = row.closest('.ep-detail-cols');
     if (!cols) return;
     cols.querySelectorAll('.ep-lot-link').forEach(function (line) {
-      if (line.getAttribute('data-lot') === row.dataset.lot) line.classList.toggle('is-hot', on);
+      if (line.getAttribute('data-lot') !== row.dataset.lot) return;
+      line.classList.toggle('is-hot', on);
+      // 強調中の線はマーカーより手前に出す (SVG は後ろの要素ほど手前)。同じ週の往復は
+      // 線が数 px しかなく、マーカーの下に隠れると乗せても何も変わらないように見える
+      if (on) line.parentNode.appendChild(line);
     });
   }
   document.addEventListener('mouseover', function (e) { hotLot(e, true); });
@@ -1040,6 +1047,10 @@
         document.querySelectorAll(
           '.episode-strategy-confirm[data-episode-key="' + sel.dataset.episodeKey + '"]'
         ).forEach(function (btn) { btn.remove(); });
+        // 明細行の「戦略」リンクは、エピソードに戦略が付いているときだけ出す
+        document.querySelectorAll(
+          '.lot-strategy[data-episode-key="' + sel.dataset.episodeKey + '"]'
+        ).forEach(function (box) { box.hidden = !sel.value; });
         // 保有銘柄側の戦略の表示も、保存した値に合わせて出し分ける
         document.querySelectorAll(
           '.th-stock-idea[data-episode-key="' + sel.dataset.episodeKey + '"]'
