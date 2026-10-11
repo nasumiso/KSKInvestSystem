@@ -3,12 +3,12 @@ name: sentiment
 description: Yahoo Finance 掲示板の投稿を感情ラベルで分析する。銘柄の掲示板の温度感・センチメント・材料を知りたいときに使用
 disable-model-invocation: true
 model: sonnet
-allowed-tools: Read, Bash
+allowed-tools: Read, Bash(../.venv/bin/python sentiment.py *)
 ---
 
 # 掲示板の感情分析 (/sentiment)
 
-`/sentiment <銘柄コード>` で、Yahoo Finance 掲示板の直近の投稿を読み、感情ラベルの分布と材料をまとめる。結果は会話に表示するだけで、保存しない (issue #62)。
+`/sentiment <銘柄コード>` で、Yahoo Finance 掲示板の直近の投稿を読み、感情ラベルの分布と材料をまとめる。会話で実行した結果は表示するだけで、保存しない (issue #62)。stock ページのボタンから実行した結果は、`scripts/run_sentiment.py` が銘柄ごとに最新1件を保存する (issue #501)。
 
 モデルは Sonnet に固定している (frontmatter の `model`)。モデルが変わると判定の基準がぶれ、日をまたいだ温度の比較ができなくなるため。
 
@@ -19,6 +19,8 @@ allowed-tools: Read, Bash
    ```bash
    cd scripts && ../.venv/bin/python sentiment.py <銘柄コード>
    ```
+
+   入力に「取得済みの投稿」が添えられているときは、取得せずにそれを分析する (stock ページからの実行。`run_sentiment.py` が先に取得して渡し、ツールは使えない)。
 
    「投稿を取得できませんでした」と出たら、その旨を伝えて終わる (HTML 形式の変更は `pytest tests/test_live_html.py -k Forum` で確かめる)。
 
@@ -93,6 +95,8 @@ allowed-tools: Read, Bash
 - (強気) ... (9/14 👍13 👎1)
 - (弱気) ... (9/13 👍2 👎15、同意は少なめ)
 ```
+
+- **見出しより前に文章を書かない**。見出し行の「投稿 {N}件」と、掲示板の温度の1行目 (「+2 (興奮・楽観) 相当」) は stock ページが読み取って表示する。この2行の形を変えるときは `run_sentiment.py` の `load_result` も直す
 
 - **引用には必ず日付と反応を付ける**。日付は前に月/日だけ (時刻と年は書かない)、反応は後ろに 👍 (そう思う) 👎 (そう思わない) と数字。票は古い投稿ほど溜まるので、日付が無いと反応の重みを読めない
 

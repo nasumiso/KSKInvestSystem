@@ -326,6 +326,90 @@
 </details>
 {% endif %}
 
+{# ===== 掲示板の感情分析 (issue #501)。最新1件だけを保存して表示する ===== #}
+<style>
+.sentiment-body { padding: 0.8em 1.2em; background: #f8f9fa; border-radius: 4px; margin-top: 0.5em; max-width: 60em; line-height: 1.75; font-size: 0.95em; }
+.sentiment-body h2 { font-size: 1em; margin: 0 0 0.4em 0; }
+.sentiment-body h3 { font-size: 0.95em; margin: 1em 0 0.3em 0; color: #555; }
+.sentiment-body ul { margin: 0.3em 0 0.8em 0; padding-left: 1.4em; }
+.sentiment-body li { margin-bottom: 0.5em; }
+/* 分布などは Markdown の改行で行を分けているので、段落内の改行をそのまま見せる */
+.sentiment-body p { white-space: pre-line; margin: 0.3em 0; }
+.sentiment-meta { color: #666; font-size: 0.9em; margin-left: 0.6em; }
+</style>
+<details id="sentiment-section">
+  <summary>
+    <strong>掲示板の感情</strong>
+    {% if sentiment %}
+    {% if sentiment.temperature %}<span style="margin-left:0.6em;">{{ sentiment.temperature }}</span>{% endif %}
+    <span class="sentiment-meta">{{ sentiment.executed_at[5:7]|int }}/{{ sentiment.executed_at[8:10]|int }} {{ sentiment.executed_at[11:16] }} 実行{% if sentiment.post_count %}・投稿{{ sentiment.post_count }}件{% endif %}</span>
+    {% else %}
+    <span class="sentiment-meta">(未実行)</span>
+    {% endif %}
+    <button type="button" id="sentiment-run-btn" style="margin-left:0.8em;font-size:0.85em;"
+            data-executed-at="{{ sentiment.executed_at if sentiment else '' }}"
+            {% if sentiment_running %}disabled{% endif %}>{% if sentiment %}再分析{% else %}分析する{% endif %}</button>
+    <span id="sentiment-status-msg" class="sentiment-meta">{% if sentiment_running %}実行中... (約1分){% endif %}</span>
+  </summary>
+  {% if sentiment %}
+  <div class="sentiment-body">{{ sentiment.markdown | theme_news_md_to_html | safe }}</div>
+  {% else %}
+  <p class="sentiment-meta">Yahoo 掲示板の直近50件を読み、感情の分布と材料をまとめます。売買の根拠にはせず、定性的な材料として読んでください。</p>
+  {% endif %}
+</details>
+<script>
+(function() {
+  const btn = document.getElementById('sentiment-run-btn');
+  const msg = document.getElementById('sentiment-status-msg');
+  const base = '/stock/{{ record.code_s }}/sentiment/';
+  const before = btn.dataset.executedAt || null;
+  let timer = null;
+
+  async function checkStatus() {
+    try {
+      const r = await fetch(base + 'status');
+      if (!r.ok) return;
+      const s = await r.json();
+      if (s.running) return;
+      clearInterval(timer); timer = null;
+      if (s.executed_at && s.executed_at !== before) {
+        msg.textContent = '完了。再読み込みします...';
+        location.reload();
+      } else {
+        btn.disabled = false;
+        msg.textContent = '失敗しました (logs/sentiment.log を確認)';
+      }
+    } catch (e) {
+      // ネットワークの一時エラーは無視して次回まで待つ
+    }
+  }
+  function startPolling() {
+    if (timer === null) timer = setInterval(checkStatus, 5000);
+  }
+
+  btn.addEventListener('click', async (ev) => {
+    ev.preventDefault();  // summary 内のボタンなので、折りたたみの開閉を起こさない
+    btn.disabled = true;
+    msg.textContent = '起動中...';
+    try {
+      const r = await fetch(base + 'run', { method: 'POST' });
+      if (r.status === 202 || r.status === 409) {
+        msg.textContent = '実行中... (約1分)';
+        startPolling();
+      } else {
+        msg.textContent = '起動に失敗しました (' + r.status + ')';
+        btn.disabled = false;
+      }
+    } catch (e) {
+      msg.textContent = 'リクエスト失敗: ' + e.message;
+      btn.disabled = false;
+    }
+  });
+
+  {% if sentiment_running %}startPolling();{% endif %}
+})();
+</script>
+
 {# ===== 1.5. 現在の調査材料 (issue #219) ===== #}
 {% if current_research %}
 <style>
