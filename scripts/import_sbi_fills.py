@@ -50,6 +50,8 @@ COL_CODE_S = 2         # 銘柄コード
 COL_TRADE_ACTION = 4   # 取引 (信用返済売 / 信用新規買 / 株式現物売 / 株式現物買)
 COL_QTY = 8            # 約定数量
 COL_PRICE = 9          # 約定単価
+COL_FEE = 10           # 手数料/諸経費等
+COL_TAX = 11           # 税額
 COL_AMOUNT = 13        # 受渡金額/決済損益 (信用返済は決済損益、それ以外は受渡金額)
 
 HEADER_FIRST_COL = "約定日"
@@ -164,6 +166,9 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
     amount = int(amount_f) if amount_f is not None else 0
     # 信用返済行の受渡金額列は「決済損益」。それを settle_pl に持たせる (P/L の真実源)
     settle_pl = amount if action in _SETTLE_ACTIONS else None
+    fee = _parse_num(row[COL_FEE])
+    settle_fee = (fee + (_parse_num(row[COL_TAX]) or 0)
+                  if action in _SETTLE_ACTIONS and fee is not None else None)
 
     return {
         "code_s": code_s,
@@ -175,6 +180,7 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
         "trade_kind": trade_kind,
         "action": action,       # dedup 素材 (元の取引区分)
         "settle_pl": settle_pl,
+        "settle_fee": settle_fee,
     }
 
 
@@ -242,6 +248,7 @@ def import_csv_to_fills(
             dedup_key=dedup_key,
             broker="SBI",
             settle_pl=parsed["settle_pl"],
+            settle_fee=parsed["settle_fee"],
         )
 
         if dry_run:

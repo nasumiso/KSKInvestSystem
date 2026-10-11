@@ -1265,8 +1265,8 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     建玉の対応であり、推定するとリターンが実態とずれる (4258 の 07/06 返済は
     04/08 建 → 89日 → +54.43% だが、FIFO では 06/16 の返済に当たってしまう)。
 
-    建情報を持たない返済 (SBI 等で 17/487 本) は建玉を特定できないため、
-    推測でペアを作らず売りのみ行として出す (誤った建値でリターンを出すほうが有害)。
+    建情報を持たない返済は残建玉が一意の場合、またはSBIの諸経費込み決済損益と
+    一意に一致する場合だけ推定建玉を表示する。それ以外は売りのみ行として出す。
     ただし建玉自体は消費するので、決済済みの玉が「保有中」行として残ることはない。
     """
     is_short = ep.get("is_short", False)
@@ -1323,16 +1323,34 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
         # 建日・建値を補完する。それ以外は従来どおり建玉不明として表示する。
         if tate_date is None and tate_price is None:
             candidates = _match_open_lots(inference_pool, None, None, f.get("broker"))
+            # SBIは建情報が無いが、諸経費込みの決済損益が一致する新規玉を照合できる。
+            # 同日内の約定順は不明なので同日建玉も許す。未来の建玉は使わない。
+            fee_match = f.get("broker") == "SBI" and f.get("settle_fee") is not None and f.get("settle_pl") is not None
+            if fee_match:
+                available = {c["fill"].get("seq"): c["remain"] for c in open_pool}
+                candidates = [c for c in candidates
+                              if c["fill"]["trade_date"] <= f["trade_date"]
+                              and abs((c["fill"]["price"] - f["price"] if is_short
+                                       else f["price"] - c["fill"]["price"]) * f["qty"]
+                                      - f["settle_fee"] - f["settle_pl"]) < 0.000001]
             inferred = None
-            if len(candidates) == 1 and candidates[0]["remain"] >= f["qty"]:
+            if (len(candidates) == 1 and candidates[0]["remain"] >= f["qty"]
+                    and (not fee_match or available[candidates[0]["fill"].get("seq")] >= f["qty"])):
                 inferred = candidates[0]["fill"]
             if inferred is not None:
                 tate_date = inferred.get("trade_date")
                 tate_price = inferred.get("price")
-                _consume_open_lots(inference_pool, f["qty"], tate_date, tate_price,
-                                   f.get("broker"))
-                matched = _consume_open_lots(open_pool, f["qty"], tate_date, tate_price,
-                                              f.get("broker"))
+                if fee_match:
+                    # 未照合返済のFIFO消費で候補を減らさず、確定したロットだけを消費する。
+                    candidates[0]["remain"] -= f["qty"]
+                    selected = next(c for c in open_pool if c["fill"] is inferred)
+                    selected["remain"] -= f["qty"]
+                    matched = [(inferred, f["qty"])]
+                else:
+                    _consume_open_lots(inference_pool, f["qty"], tate_date, tate_price,
+                                       f.get("broker"))
+                    matched = _consume_open_lots(open_pool, f["qty"], tate_date, tate_price,
+                                                 f.get("broker"))
                 first = matched[0][0] if matched else inferred
                 row = _make_round_trip(first, f, f["qty"], tate_date, tate_price,
                                        [m[0] for m in matched] or [inferred])
@@ -1350,6 +1368,9 @@ def _build_shinyo_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
                 row["return_pct"] = f["fill_return_pct"]
             if "hold_days" in f:
                 row["hold_days"] = f["hold_days"]
+            if inferred is not None and fee_match:
+                row["hold_days"] = _round_trip_days(tate_date, f["trade_date"])
+                row["return_pct"] = f["settle_pl"] / (tate_price * f["qty"]) * 100
             rows.append(row)
             continue
         # 対応する建玉 fill を建日 (+建単価) で引き当て、残株数を減らす。
@@ -1730,6 +1751,7 @@ def _finalize_round(code_s: str, kind: str, stock_name: str,
                 "tate_price": f.get("tate_price"),
                 "tate_date": f.get("tate_date"),
                 "settle_pl": f.get("settle_pl"),
+                "settle_fee": f.get("settle_fee"),
                 # 銘柄全体の保有サイクル再生 (_current_hold_cycle) の dedup キーに必要。
                 "seq": f.get("seq"),
                 "dedup_key": f.get("dedup_key"),

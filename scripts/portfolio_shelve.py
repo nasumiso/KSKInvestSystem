@@ -1093,11 +1093,13 @@ def create_fill(
     settle_pl: Optional[int] = None,
     tate_date: Optional[str] = None,
     tate_price: Optional[float] = None,
+    settle_fee: Optional[float] = None,
 ) -> Dict[str, Any]:
     """fill レコード dict を生成する (バリデーション付き)。
 
     broker: 取込元証券会社 ("楽天"/"SBI")。settle_pl: 決済損益[円] (SBI 信用返済のみ)。
     tate_date/tate_price: 建約定日/建単価 (楽天 信用返済のみ)。issue #387 Phase4b。
+    settle_fee: SBI信用返済の手数料・諸経費と税額の合計。建玉照合用。
     """
     validate_code_s(code_s)
     normalized = normalize_code_s(code_s)
@@ -1124,6 +1126,7 @@ def create_fill(
         "settle_pl": int(settle_pl) if settle_pl is not None else None,
         "tate_date": tate_date,
         "tate_price": float(tate_price) if tate_price is not None else None,
+        "settle_fee": float(settle_fee) if settle_fee is not None else None,
     }
 
 
@@ -1138,7 +1141,7 @@ def _next_fill_seq(db: ShelveDB, code_s: str) -> int:
 
 # 再取込時に既存 fill へ後付けで埋めてよいフィールド (dedup_key に含まれず、
 # 古い取込では欠けている派生情報)。値が None→非None のときだけ埋める。issue #387 Phase4b
-_FILL_BACKFILL_FIELDS = ("tate_date", "tate_price", "settle_pl", "broker")
+_FILL_BACKFILL_FIELDS = ("tate_date", "tate_price", "settle_pl", "broker", "settle_fee")
 
 
 # 後付けされるとエピソードの区切り・保有日数が変わるフィールド (issue #419 レビュー)。

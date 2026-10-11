@@ -106,3 +106,21 @@ def test_dedup_idempotent_and_broker(tmp_path, db_path):
     f = ps.list_fills("6674", db_path=db_path)[0]
     assert f["broker"] == "SBI"
     assert f["settle_pl"] == -33482
+
+
+def test_reimport_backfills_settle_fee_without_new_fill(tmp_path, db_path):
+    """旧取込へ諸経費と税額だけ補完し、seq・建情報・件数を維持する。"""
+    row = _row("6674", "信用返済売", "100", "3380", "98028")
+    csv_path = _write_csv(tmp_path / "sbi.csv", [row])
+    isf.import_csv_to_fills(csv_path, db_path=db_path)
+    before = ps.list_fills("6674", db_path=db_path)[0]
+    assert before["settle_fee"] is None
+    row[10:12] = ["1,170", "2"]
+    _write_csv(tmp_path / "sbi.csv", [row])
+    isf.import_csv_to_fills(csv_path, db_path=db_path)
+    isf.import_csv_to_fills(csv_path, db_path=db_path)
+    fills = ps.list_fills("6674", db_path=db_path)
+    assert len(fills) == 1
+    assert fills[0]["seq"] == before["seq"]
+    assert fills[0]["settle_fee"] == 1172
+    assert fills[0]["tate_date"] is None
