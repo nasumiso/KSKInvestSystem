@@ -4921,8 +4921,39 @@ def _episode_window(ep: Dict[str, Any], latest: Optional[date]) -> Tuple[date, d
     return start, end
 
 
+def _weekly_cache_saved_date(code_s: str) -> Optional[date]:
+    """週足の月曜ラベルとは別に、分割が反映されているキャッシュ取得日を読む。"""
+    import json
+    import price
+
+    try:
+        with open(price.YFINANCE_WEEKLY_CACHE_FNAME % code_s, encoding="utf-8") as f:
+            saved_at = json.load(f)["saved_at"]
+        return date.fromisoformat(saved_at[:10])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _episode_chart_fills(ep: Dict[str, Any], bars: Dict[date, Tuple[float, ...]],
+                         as_of: Optional[date] = None) -> List[Dict[str, Any]]:
+    """元の約定値を保存し、描画用コピーだけ週足の分割後基準へ換算する。"""
+    # キャッシュ取得日より後のイベントは使わない。取得日不明なら最新バーまでに限る。
+    latest = (as_of or max(bars, default=date.min)).isoformat()
+    events = [ev for ev in ep.get("split_adjustments", []) if ev["ex_date"] <= latest]
+    result = []
+    for f in ep.get("chart_fills", ep.get("fills")) or []:
+        ratio = 1.0
+        for ev in events:
+            if f.get("trade_date", "") < ev["ex_date"]:
+                ratio *= ev["ratio"]
+        result.append({**f, "original_price": f["price"], "original_qty": f["qty"],
+                       "price": f["price"] / ratio, "qty": f["qty"] * ratio})
+    return result
+
+
 def _episode_markers(ep: Dict[str, Any],
-                     bars: Dict[date, Tuple[float, float]]) -> Tuple[List[Dict[str, Any]], int]:
+                     bars: Dict[date, Tuple[float, float]],
+                     as_of: Optional[date] = None) -> Tuple[List[Dict[str, Any]], int]:
     """fill を (約定日, 売買方向) でまとめてマーカー種を返す。(markers, skipped)
 
     1日に複数約定があっても1マーカーにし、株数は合算・価格は数量加重平均とする。
@@ -4930,18 +4961,19 @@ def _episode_markers(ep: Dict[str, Any],
     割るため、同じ座標にマーカーが重なる (285A は売り1本が往復4行に化ける)。
     """
     grouped: Dict[Tuple[str, str], Dict[str, Any]] = {}
-    for f in ep.get("fills") or []:
+    for f in _episode_chart_fills(ep, bars, as_of):
         td = f.get("trade_date")
         if not td:
             continue
         key = (td, f.get("side") or "")
         g = grouped.setdefault(key, {
-            "trade_date": td, "side": f.get("side"), "qty": 0, "amount": 0.0,
+            "trade_date": td, "side": f.get("side"), "qty": 0, "amount": 0.0, "chart_amount": 0.0,
             "brokers": set(), "kinds": set(), "n": 0,
         })
-        qty = int(f.get("qty") or 0)
+        qty = f.get("original_qty") or 0
         g["qty"] += qty
-        g["amount"] += float(f.get("price") or 0) * qty
+        g["amount"] += f["original_price"] * qty
+        g["chart_amount"] += f["price"] * qty
         if f.get("broker"):
             g["brokers"].add(f["broker"])
         if f.get("trade_kind"):
@@ -4960,8 +4992,8 @@ def _episode_markers(ep: Dict[str, Any],
         if entry is None:
             continue
         close = entry[0]
-        avg = g["amount"] / g["qty"] if g["qty"] else 0.0
-        # 分割・併合の未換算で価格軸から外れる点は打たない (補正はしない: プラン参照)。
+        avg = g["chart_amount"] / g["qty"] if g["qty"] else 0.0
+        # 登録済み分割の換算後も価格軸から外れる点は、従来どおり打たない。
         if close > 0 and avg > 0:
             ratio = avg / close
             if ratio >= _EP_CHART_SPLIT_RATIO or ratio <= 1 / _EP_CHART_SPLIT_RATIO:
@@ -4975,6 +5007,7 @@ def _episode_markers(ep: Dict[str, Any],
             "out" if (not is_open and g["trade_date"] == last_date) else "mid")
         markers.append({
             "bar": bar, "price": avg, "qty": g["qty"], "role": role, "is_open": is_open,
+            "original_price": g["amount"] / g["qty"] if g["qty"] else 0.0,
             "side_buy": g["side"] == "buy",
             "date": g["trade_date"], "n": g["n"],
             "brokers": "/".join(sorted(g["brokers"])), "kinds": "/".join(sorted(g["kinds"])),
@@ -5029,7 +5062,8 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
 
     週足終値の折れ線 (背面に週ごとの高値〜安値の縦線) + 下部に出来高バーを描き、実約定の IN (▲) / OUT (▼) と
     途中約定 (小さな点) を重ねる。株価軸は yfinance の分割調整後、fill は約定当時の
-    実価格なので、両者がずれるエピソードではマーカーを打たずに注記する (issue #435)。
+    実価格なので、登録済みの分割・併合で描画座標を換算する。元の約定値はtooltipに残す。
+    換算後も価格軸が揃わない約定はマーカーを打たずに注記する (issue #435)。
 
     exit_rule (エピソードの戦略の出口ルール) を渡すと、防衛線 (移動平均線と損切り
     ライン) を重ねる。ルールは今の戦略マスターのもので、当時のルールではない。
@@ -5051,7 +5085,8 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
         return '<div class="ep-chart-note">この期間の週足データが足りません。</div>'
     start_d, end_d = series[0][0], series[-1][0]
 
-    markers, skipped = _episode_markers(ep, bars)
+    cache_date = _weekly_cache_saved_date(ep["code_s"]) if ep.get("split_adjustments") else None
+    markers, skipped = _episode_markers(ep, bars, cache_date)
 
     pad_l, pad_r, pad_t, pad_b = 42, 6, 10, 17
     vol_h = 30  # 下部の出来高帯
@@ -5071,7 +5106,8 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
     ma_label, ma_values = _episode_ma_line(bars, exit_rule)
     ma_pts = [(d, ma_values[d]) for d, _, _ in series if d in ma_values]
     stop_pct = exit_rule.get("stop_loss_pct")
-    stop_steps = [(d, v) for d, v in (_episode_stop_steps(ep, exit_rule) if stop_pct and not skipped else [])
+    chart_ep = {**ep, "fills": _episode_chart_fills(ep, bars, cache_date)}
+    stop_steps = [(d, v) for d, v in (_episode_stop_steps(chart_ep, exit_rule) if stop_pct and not skipped else [])
                   if d <= end_d]
     for _, v in ma_pts + stop_steps:
         lo = min(lo, v)
@@ -5203,7 +5239,9 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
         else:
             label = "買増" if buying else "部分売り"
         title = "%s %s %s株 @%s円" % (m["date"], label, format(m["qty"], ","),
-                                     format(int(round(m["price"])), ","))
+                                     format(int(round(m["original_price"])), ","))
+        if abs(m["price"] - m["original_price"]) > 0.000001:
+            title += " (描画価格 %s円・分割換算)" % format(m["price"], ",.2f")
         if m["brokers"]:
             title += " (%s)" % m["brokers"]
         if m["n"] > 1:
