@@ -57,12 +57,14 @@ def _find_reentry(ep: Dict[str, Any], episodes: List[Dict[str, Any]]) -> Optiona
 
     同じ日の決済は数えない (現物を持ったまま信用で売買した、と区別できないため)。
     現引で始まる現物エピソードは信用からの振り替えなので再IN にしない。
+    買いと空売りは向きが逆なので、同じ向きの決済だけを前回とみなす。
     """
     if _first_fill(ep).get("trade_kind") == "現引":
         return None
     prev = [
         e for e in episodes
         if e["code_s"] == ep["code_s"] and e["closed"] and e.get("close_date")
+        and bool(e.get("is_short")) == bool(ep.get("is_short"))
         and e["close_date"] < ep["open_date"]
         and _days_between(e["close_date"], ep["open_date"]) <= REENTRY_DAYS
     ]
@@ -388,7 +390,7 @@ def main() -> int:
 
     dataset = build_review_dataset(args.year_month, **_load_inputs())
     if args.command == "json":
-        print(json.dumps(dataset, ensure_ascii=False, indent=2))
+        sys.stdout.write(json.dumps(dataset, ensure_ascii=False, indent=2) + "\n")
         return 0
     try:
         paths = save_review(args.year_month, dataset, sys.stdin.read())

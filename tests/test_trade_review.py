@@ -113,11 +113,13 @@ def test_弱点仮説は年初来で損切りの幅と再INを数える():
         # 3001 の決済 (3/1) から30日ちょうどは再IN、31日は再INではない
         closed("3001", 3, "2026-03-31", "2026-04-10", 500, 5.0),
         closed("3005", 3, "2026-04-01", "2026-04-10", 900, 9.0),
+        # 買いを決済した直後の空売りは向きが逆なので再INではない
+        closed("3002", 5, "2026-09-05", "2026-09-06", 100, 1.0, is_short=True),
         # 前年末の決済から年初に建て直し、まだ保有中
         _ep("3003", 3, [("2026-01-10", "buy", 100, 1000)]),
     ]
     h = _build(episodes)["hypotheses"]
-    assert (h["closed_count"], h["excluded_count"]) == (4, 2)
+    assert (h["closed_count"], h["excluded_count"]) == (5, 2)
     assert h["stop_loss_width"] == {"loss_count": 2, "loss_pl": -4000, "over_count": 1,
                                     "over_pl": -3000, "within_pl": -1000, "month_over_count": 1}
     assert h["reentry"] == {"count": 2, "settled_count": 1, "settled_wins": 1,
