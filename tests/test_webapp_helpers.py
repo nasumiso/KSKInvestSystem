@@ -306,7 +306,9 @@ def test_manual_holding_records_confirmed_ma_alert(monkeypatch):
     monkeypatch.setattr(ps, "seed_trade_ideas", lambda: 0)
     monkeypatch.setattr(ps, "list_trade_ideas", lambda: [{"name": "成長", "exit_rule": {
         "ma_kind": "day", "ma_window": 50}}])
-    monkeypatch.setattr(ps, "get_exit_alert_state", lambda code, cycle: {"cycle_id": cycle, "triggered": False})
+    monkeypatch.setattr(ps, "list_exit_alert_states", lambda: {})
+    monkeypatch.setattr(ps, "get_exit_alert_state",
+                        lambda code, cycle, preloaded=None: {"cycle_id": cycle, "triggered": False})
     monkeypatch.setattr(ps, "record_exit_alert_event", lambda code, cycle, event: recorded.append((code, cycle, event)))
 
     # 実レコードが持つのは registered_at (created_at は theme/trade_idea 用)。

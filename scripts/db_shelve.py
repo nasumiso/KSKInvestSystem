@@ -295,12 +295,18 @@ class ShelveDB:
             self._ensure_open()
             return list(self._db.keys())
 
-    def items(self) -> Iterator[tuple]:
-        """Iterate over (key, value) pairs."""
+    def items(self, prefix: str = "") -> Iterator[tuple]:
+        """Iterate over (key, value) pairs.
+
+        prefix を渡すと、キーがその接頭辞で始まるレコードだけ値を読む。
+        値の読み出しは1件ごとに .dat を開いて unpickle するため、複数種別が
+        同居する DB では、全件を読んでから呼び出し側で絞るより大幅に軽い。
+        """
         with self._lock:
             self._ensure_open()
             for key in self._db.keys():
-                yield key, self._db[key]
+                if key.startswith(prefix):
+                    yield key, self._db[key]
 
     def values(self) -> Iterator[Any]:
         """Iterate over values."""

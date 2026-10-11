@@ -790,9 +790,7 @@ def list_records(
     path = _resolve_db_path(db_path)
     results: List[Dict[str, Any]] = []
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_RECORD_PREFIX):
-                continue
+        for key, value in db.items(KEY_RECORD_PREFIX):
             if not isinstance(value, dict):
                 continue
             if status is not None and value.get("status") != status:
@@ -911,9 +909,7 @@ def list_action_logs(
     path = _resolve_db_path(db_path)
     results: List[Dict[str, Any]] = []
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(prefix):
-                continue
+        for key, value in db.items(prefix):
             if not isinstance(value, dict):
                 continue
             value.setdefault("review_memo", "")
@@ -1226,9 +1222,7 @@ def append_fill(
     with _flock(db_path):
         with ShelveDB(path) as db:
             prefix = _fill_prefix_for(code_s)
-            for key, value in db.items():
-                if not key.startswith(prefix):
-                    continue
+            for key, value in db.items(prefix):
                 if isinstance(value, dict) and value.get("dedup_key") == dedup_key:
                     # 埋める前に判定する (埋めた後では None→非None が消えて分からない)
                     shape_changed = _shape_changed_by_backfill(value, fill)
@@ -1267,9 +1261,7 @@ def list_fills(
     path = _resolve_db_path(db_path)
     results: List[Dict[str, Any]] = []
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(prefix):
-                continue
+        for key, value in db.items(prefix):
             if not isinstance(value, dict):
                 continue
             results.append(value)
@@ -1336,9 +1328,7 @@ def list_fill_memos(*, db_path: Optional[str] = None) -> Dict[str, str]:
     path = _resolve_db_path(db_path)
     results: Dict[str, str] = {}
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_FILL_MEMO_PREFIX):
-                continue
+        for key, value in db.items(KEY_FILL_MEMO_PREFIX):
             if not isinstance(value, dict):
                 continue
             memo = value.get("review_memo", "") or ""
@@ -1583,9 +1573,7 @@ def list_episode_strategies(*, db_path: Optional[str] = None) -> Dict[str, Dict[
     path = _resolve_db_path(db_path)
     results: Dict[str, Dict[str, Any]] = {}
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_EPISODE_STRATEGY_PREFIX):
-                continue
+        for key, value in db.items(KEY_EPISODE_STRATEGY_PREFIX):
             if not isinstance(value, dict):
                 continue
             if not value.get("trade_idea"):
@@ -1655,9 +1643,7 @@ def list_fill_strategies(*, db_path: Optional[str] = None) -> Dict[Tuple[str, in
     path = _resolve_db_path(db_path)
     results: Dict[Tuple[str, int], Dict[str, Any]] = {}
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_FILL_STRATEGY_PREFIX):
-                continue
+        for key, value in db.items(KEY_FILL_STRATEGY_PREFIX):
             if not isinstance(value, dict) or not value.get("trade_idea"):
                 continue
             results[(value["code_s"], int(value["seq"]))] = dict(value)
@@ -1823,9 +1809,7 @@ def list_positions(
     path = _resolve_db_path(db_path)
     results: List[Dict[str, Any]] = []
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_POSITION_PREFIX):
-                continue
+        for key, value in db.items(KEY_POSITION_PREFIX):
             if not isinstance(value, dict):
                 continue
             if normalized is not None and value.get("code_s") != normalized:
@@ -1849,9 +1833,8 @@ def delete_positions_for_source(
     with _flock(db_path):
         with ShelveDB(path) as db:
             keys = [
-                key for key, value in db.items()
-                if key.startswith(KEY_POSITION_PREFIX)
-                and isinstance(value, dict)
+                key for key, value in db.items(KEY_POSITION_PREFIX)
+                if isinstance(value, dict)
                 and value.get("broker") == broker
                 and value.get("kind") in target_kinds
             ]
@@ -1871,9 +1854,8 @@ def delete_position_sources_for_source(
     with _flock(db_path):
         with ShelveDB(path) as db:
             keys = [
-                key for key, value in db.items()
-                if key.startswith(KEY_POSITION_SOURCE_PREFIX)
-                and isinstance(value, dict)
+                key for key, value in db.items(KEY_POSITION_SOURCE_PREFIX)
+                if isinstance(value, dict)
                 and value.get("broker") == broker
                 and value.get("kind") == kind
             ]
@@ -1917,9 +1899,7 @@ def list_position_sources(*, db_path: Optional[str] = None) -> List[Dict[str, An
     path = _resolve_db_path(db_path)
     results: List[Dict[str, Any]] = []
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_POSITION_SOURCE_PREFIX):
-                continue
+        for key, value in db.items(KEY_POSITION_SOURCE_PREFIX):
             if not isinstance(value, dict):
                 continue
             results.append(value)
@@ -2008,9 +1988,7 @@ def list_pending_in(*, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     path = _resolve_db_path(db_path)
     results: List[Dict[str, Any]] = []
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_PENDING_IN_PREFIX):
-                continue
+        for key, value in db.items(KEY_PENDING_IN_PREFIX):
             if not isinstance(value, dict):
                 continue
             results.append(value)
@@ -2060,9 +2038,7 @@ def list_all_split_adjustments(*, db_path: Optional[str] = None) -> Dict[str, Li
     path = _resolve_db_path(db_path)
     results: Dict[str, List[Dict[str, Any]]] = {}
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_SPLIT_ADJ_PREFIX):
-                continue
+        for key, value in db.items(KEY_SPLIT_ADJ_PREFIX):
             if not isinstance(value, dict):
                 continue
             events = value.get("events") or []
@@ -2295,8 +2271,8 @@ def list_pending_review_codes(*, db_path: Optional[str] = None) -> List[str]:
     path = _resolve_db_path(db_path)
     codes = []
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if key.startswith(KEY_SPLIT_PENDING_REVIEW_PREFIX) and isinstance(value, dict):
+        for key, value in db.items(KEY_SPLIT_PENDING_REVIEW_PREFIX):
+            if isinstance(value, dict):
                 codes.append(value.get("code_s", key[len(KEY_SPLIT_PENDING_REVIEW_PREFIX):]))
     return codes
 
@@ -2310,9 +2286,7 @@ def list_pending_review_events(*, db_path: Optional[str] = None) -> Dict[str, Li
     path = _resolve_db_path(db_path)
     results: Dict[str, List[str]] = {}
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_SPLIT_PENDING_REVIEW_PREFIX):
-                continue
+        for key, value in db.items(KEY_SPLIT_PENDING_REVIEW_PREFIX):
             if not isinstance(value, dict):
                 continue
             code_s = value.get("code_s", key[len(KEY_SPLIT_PENDING_REVIEW_PREFIX):])
@@ -2325,9 +2299,7 @@ def list_rejected_review_events(*, db_path: Optional[str] = None) -> Dict[str, L
     path = _resolve_db_path(db_path)
     results: Dict[str, List[str]] = {}
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_SPLIT_REJECTED_REVIEW_PREFIX):
-                continue
+        for key, value in db.items(KEY_SPLIT_REJECTED_REVIEW_PREFIX):
             if not isinstance(value, dict):
                 continue
             code_s = value.get("code_s", key[len(KEY_SPLIT_REJECTED_REVIEW_PREFIX):])
@@ -2956,9 +2928,7 @@ def list_themes(*, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     path = _resolve_db_path(db_path)
     results: List[Dict[str, Any]] = []
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_THEME_PREFIX):
-                continue
+        for key, value in db.items(KEY_THEME_PREFIX):
             if not isinstance(value, dict):
                 continue
             results.append(dict(value))
@@ -3085,9 +3055,7 @@ def count_theme_usage(*, db_path: Optional[str] = None) -> Dict[str, int]:
     path = _resolve_db_path(db_path)
     counts: Dict[str, int] = {}
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_RECORD_PREFIX):
-                continue
+        for key, value in db.items(KEY_RECORD_PREFIX):
             if not isinstance(value, dict):
                 continue
             memo = value.get("memo") or {}
@@ -3184,8 +3152,23 @@ def _validate_exit_rule(exit_rule: Any) -> Dict[str, Any]:
             "allow_dca_lower": allow_dca_lower}
 
 
-def get_exit_alert_state(code_s: str, cycle_id: str, *, db_path: Optional[str] = None) -> Dict[str, Any]:
+def list_exit_alert_states(*, db_path: Optional[str] = None) -> Dict[str, Any]:
+    """全銘柄の出口アラート状態を1回の open で読む ({code_s: 保存されている値})。
+
+    一覧画面で銘柄ごとに get_exit_alert_state() を呼ぶと銘柄数だけ DB を開き直すため、
+    先にこれで読んで preloaded に渡す。
+    """
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        return {key[len(KEY_EXIT_ALERT_PREFIX):]: value
+                for key, value in db.items(KEY_EXIT_ALERT_PREFIX)}
+
+
+def get_exit_alert_state(code_s: str, cycle_id: str, *, db_path: Optional[str] = None,
+                         preloaded: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """現在の建玉サイクルに対応する出口アラート状態を取得する。
+
+    preloaded (list_exit_alert_states() の戻り値) を渡すと DB を開かずにそこから引く。
 
     サイクル不一致のレコードは既定値を返すだけでなく削除する。残しておくと
     戦略A(防記録)→戦略B(違反なし)→戦略A のように cycle_id が元へ戻ったとき、
@@ -3193,8 +3176,11 @@ def get_exit_alert_state(code_s: str, cycle_id: str, *, db_path: Optional[str] =
     """
     normalized = normalize_code_s(code_s)
     path = _resolve_db_path(db_path)
-    with ShelveDB(path) as db:
-        state = db.get(_exit_alert_key(normalized))
+    if preloaded is not None:
+        state = preloaded.get(normalized)
+    else:
+        with ShelveDB(path) as db:
+            state = db.get(_exit_alert_key(normalized))
     if not isinstance(state, dict) or state.get("cycle_id") != cycle_id:
         if state is not None:
             reset_exit_alert_state(normalized, db_path=db_path)
@@ -3251,9 +3237,7 @@ def list_trade_ideas(*, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     path = _resolve_db_path(db_path)
     results: List[Dict[str, Any]] = []
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_TRADE_IDEA_PREFIX):
-                continue
+        for key, value in db.items(KEY_TRADE_IDEA_PREFIX):
             if not isinstance(value, dict):
                 continue
             results.append(dict(value))
@@ -3453,9 +3437,7 @@ def count_trade_idea_usage(*, db_path: Optional[str] = None) -> Dict[str, int]:
     path = _resolve_db_path(db_path)
     counts: Dict[str, int] = {}
     with ShelveDB(path) as db:
-        for key, value in db.items():
-            if not key.startswith(KEY_RECORD_PREFIX):
-                continue
+        for key, value in db.items(KEY_RECORD_PREFIX):
             if not isinstance(value, dict):
                 continue
             memo = value.get("memo") or {}

@@ -32,7 +32,7 @@ import import_rakuten_fills as rakuten
 import import_sbi_fills as sbi
 import portfolio_shelve as ps
 from ks_util import DATA_DIR
-from webapp.helpers import build_episode_chart, resolve_stock_name
+from webapp.helpers import _bulk_resolve_stock_names, build_episode_chart
 from webapp.trade_episodes import (
     attach_lot_strategies,
     build_episode_for_key,
@@ -276,8 +276,10 @@ def trade_history():
     # 銘柄名付与・サブ行組み立て (issue #361)
     # 成績サマリー・概算損益は fill 側 (売買履歴タブ) に一本化したため、
     # アクションログ側では計算しない (issue #387 Phase4b)。
+    # 銘柄名は一括で引く (1件ずつ引くと銘柄数だけ stocks_shelve を開き直す)
+    names = _bulk_resolve_stock_names([ep["code_s"] for ep in episodes])
     for ep in episodes:
-        ep["stock_name"] = resolve_stock_name(ep["code_s"])
+        ep["stock_name"] = names.get(ep["code_s"], "")
         ep["rows"] = _build_rows(ep)
         ep["rowspan"] = len(ep["rows"])
 
