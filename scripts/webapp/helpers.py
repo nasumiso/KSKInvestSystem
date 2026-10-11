@@ -2201,6 +2201,10 @@ def list_portfolio_with_indicators(
         except Exception:  # noqa: BLE001
             topix_map = None
 
+    # 出口アラートの状態は、最初に必要になったときに一括で読む
+    # (銘柄ごとに読むと銘柄数だけ DB を開き直す)
+    exit_states = None
+
     rows: List[Dict[str, Any]] = []
     for rec in records:
         code_s = rec.get("code_s", "")
@@ -2228,10 +2232,15 @@ def list_portfolio_with_indicators(
                     # レコードの登録時刻は registered_at (created_at は theme/trade_idea 用)。
                     # 削除→再登録を別サイクルとして扱わないと旧「防歴」を引き継ぐ。
                     cycle_id = f"manual:{rec.get('registered_at') or code_s}|{strategy}|{rule_id}"
-                state = ps.get_exit_alert_state(code_s, cycle_id)
+                if exit_states is None:
+                    exit_states = ps.list_exit_alert_states()
+                state = ps.get_exit_alert_state(code_s, cycle_id, preloaded=exit_states)
                 signal = evaluate_exit_signal(exit_rule, stock, position, state)
                 if signal:
-                    if signal["level"] == "防":
+                    # 同じ日付のイベントが記録済みなら書かない (表示のたびに書き直さない)
+                    if signal["level"] == "防" and not any(
+                            e.get("date") == signal.get("date")
+                            for e in state.get("events") or [] if isinstance(e, dict)):
                         ps.record_exit_alert_event(code_s, cycle_id, signal)
                     _apply_exit_signal_display(row, signal)
                 row["exit_gauge"] = exit_line_gauge_svg(

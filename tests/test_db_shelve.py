@@ -69,6 +69,24 @@ class TestShelveDBCrud:
             keys = db.keys()
             assert set(keys) == {"AAA", "BBB"}
 
+    def test_items_prefix_reads_only_matching(self, db_path):
+        """items(prefix) は接頭辞に合うキーだけを返し、合わないレコードの値は読まない"""
+        with ShelveDB(db_path) as db:
+            db["fill:1"] = 1
+            db["fill:2"] = 2
+            db["record:1"] = 3
+            assert dict(db.items()) == {"fill:1": 1, "fill:2": 2, "record:1": 3}
+
+            read_keys = []
+            raw_getitem = type(db._db).__getitem__
+            type(db._db).__getitem__ = lambda self, key: (
+                read_keys.append(key), raw_getitem(self, key))[1]
+            try:
+                assert dict(db.items("fill:")) == {"fill:1": 1, "fill:2": 2}
+            finally:
+                type(db._db).__getitem__ = raw_getitem
+            assert sorted(read_keys) == ["fill:1", "fill:2"]
+
     def test_get_default(self, db_path):
         """get のデフォルト値"""
         with ShelveDB(db_path) as db:
