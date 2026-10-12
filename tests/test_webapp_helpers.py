@@ -4492,6 +4492,30 @@ class TestEpisodeChart:
         assert "2026-04-24 決算発表" in svg
         assert "2026-02-27" not in svg and "2026-05-01" not in svg
 
+    @pytest.mark.parametrize("day,expect", [
+        ("2026-07-07", ("決0", "same")),
+        ("2026-07-08", ("決+1", "after")),
+        ("2026-07-06", ("決-1", "before")),
+        ("2026-07-03", ("決-2", "before")),   # 土日は数えない
+        ("2026-07-14", ("決+5", "after")),
+        ("2026-07-15", None),                      # 5営業日より離れたら付けない
+        ("2026-09-25", ("上+1", "after")),  # 修正だけの日は方向つき
+        (None, None),
+    ])
+    def test_kessan_note(self, monkeypatch, day, expect):
+        """約定日が決算・修正の何営業日前後かを文字にする。当日は前後を断定しない。"""
+        import disclosure
+        import gyoseki
+
+        monkeypatch.setattr(gyoseki, "load_kessan_dates", lambda code_s: {
+            "kessan": ["2026-07-07"], "shusei": ["2026-07-07", "2026-09-24"]})
+        monkeypatch.setattr(disclosure, "load_revision_directions",
+                            lambda code_s: {"2026-09-24": "上方"})
+        note = helpers.kessan_note("9999", day, {})
+        assert (note and (note["label"], note["tone"])) == expect
+        if day == "2026-09-25":
+            assert note["title"].startswith("上方修正の翌日 (2026-09-24)")
+
     @pytest.mark.parametrize("kw,expect", [
         ({"split_suspect": True}, "分割・併合の可能性"),
         ({}, "週足の株価データがありません"),

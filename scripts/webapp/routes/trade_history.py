@@ -32,7 +32,7 @@ import import_rakuten_fills as rakuten
 import import_sbi_fills as sbi
 import portfolio_shelve as ps
 from ks_util import DATA_DIR
-from webapp.helpers import _bulk_resolve_stock_names, build_episode_chart
+from webapp.helpers import _bulk_resolve_stock_names, build_episode_chart, kessan_note
 from webapp.trade_episodes import (
     attach_lot_strategies,
     build_episode_for_key,
@@ -303,10 +303,15 @@ def trade_history():
     # 描画側で付与する。ポートフォリオ画面や CLI・移行スクリプトも
     # build_fill_episodes() を呼ぶが、往復行は使わない。
     fill_strategies = ps.list_fill_strategies()
+    kessan_cache: dict = {}
     for ep in fill_episodes:
         ep["round_trips"] = build_round_trips(ep)
         # 建てロットの戦略 (issue #492 段階2)。エピソードの戦略と違う行に印を付ける
         attach_lot_strategies(ep, fill_strategies)
+        # 建て日・決済日が決算の何営業日前後か (issue #512)。近い約定だけ注記が付く
+        for r in ep["round_trips"]:
+            r["open_kessan"] = kessan_note(ep["code_s"], r.get("open_date"), kessan_cache)
+            r["close_kessan"] = kessan_note(ep["code_s"], r.get("close_date"), kessan_cache)
 
     # 年の基準はこの1箇所で決め、サマリーとアコーディオンで共有する。
     current_year = datetime.datetime.now(ps.JST).strftime("%Y")

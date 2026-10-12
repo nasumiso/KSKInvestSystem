@@ -5097,6 +5097,59 @@ def _episode_kessan_events(code_s: str, start_d: date, end_d: date) -> List[Dict
     return events
 
 
+_KESSAN_NOTE_MAX_DAYS = 5  # 決算の前後この営業日数までの約定に注記を付ける
+
+
+def kessan_note(code_s: str, day: Optional[str], cache: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """約定日が、近い決算発表日・業績修正日の何営業日前後かを返す (issue #512)。
+
+    週足チャートでは同じ週の前後が読めないので、明細の行に文字で出すためのもの。
+    前後 _KESSAN_NOTE_MAX_DAYS 営業日より離れていれば None。営業日は土日だけ除く (祝日は見ない)。
+    同じ日の約定は、発表時刻が分からないので「当日」とだけ返し、前後を断定しない。
+    cache は呼び出し側が持つ dict (銘柄ごとのファイル読みを1回にする)。
+    """
+    if not day:
+        return None
+    import numpy as np
+    try:
+        import disclosure
+        import gyoseki
+        if code_s not in cache:
+            cache[code_s] = gyoseki.load_kessan_dates(code_s)
+        dates = cache[code_s]
+        best = None
+        for ev in set(dates["kessan"]) | set(dates["shusei"]):
+            diff = int(np.busday_count(ev, day))
+            # 同じ距離なら、約定より前の出来事を優先する
+            if abs(diff) <= _KESSAN_NOTE_MAX_DAYS and (best is None or (abs(diff), -diff) < (abs(best[0]), -best[0])):
+                best = (diff, ev)
+        if best is None:
+            return None
+        diff, ev = best
+        if ev in dates["kessan"]:
+            name, mark = "決算", "決"
+        else:
+            # 方向は適時開示の CSV を読むので、修正日に当たったときだけ引く
+            key = ("dir", code_s)
+            if key not in cache:
+                cache[key] = disclosure.load_revision_directions(code_s)
+            direction = cache[key].get(ev, "")
+            name, mark = direction + "修正", direction[:1] or "修"
+    except Exception:
+        return None
+    if diff == 0:
+        when, tone = "当日", "same"
+    elif diff > 0:
+        when, tone = ("翌日" if diff == 1 else "%d営業日後" % diff), "after"
+    else:
+        when, tone = ("前日" if diff == -1 else "%d営業日前" % -diff), "before"
+    # 行が込み合うので、表示は「決+1」「上-2」の短い形にする (文字はチャートの縦線と同じ)。
+    # 読み下した文は title に出す
+    return {"label": "%s%s" % (mark, "%+d" % diff if diff else "0"), "tone": tone,
+            "title": "%sの%s (%s)。土日だけ除いて数えています (祝日は考慮していません)" % (name, when, ev)
+                     + ("。発表時刻が分からないため、前後は決められません" if diff == 0 else "")}
+
+
 def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
                         exit_rule: Optional[Dict[str, Any]] = None) -> str:
     """エピソード1ラウンド分の週足チャート SVG を返す。描けない場合は説明文の HTML。

@@ -318,8 +318,10 @@
           <tr{% if not r.closed %} style="color:#7a7a95;"{% endif %}{% if r.closed and r.open_date %} data-lot="{{ r.open_date }}|{{ r.close_date }}"{% endif %}>
             <td style="padding:1px 0.8em 1px 0;white-space:nowrap;color:#888;">
               {%- if r.open_date %}{{ r.open_date[2:] }}{% else %}<span style="color:#666;">?</span>{% endif %}
+              {%- if r.open_kessan %} <span class="kessan-note is-{{ r.open_kessan.tone }}" title="{{ r.open_kessan.title }}">{{ r.open_kessan.label }}</span>{% endif %}
               <span style="color:#666;">→</span>
               {% if r.closed %}{{ r.close_date[2:] }}{% else %}<span style="color:#5f5fa8;">保有中</span>{% endif %}
+              {%- if r.closed and r.close_kessan %} <span class="kessan-note is-{{ r.close_kessan.tone }}" title="{{ r.close_kessan.title }}">{{ r.close_kessan.label }}</span>{% endif %}
               {%- if r.inferred_open %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="返済CSVには建玉情報がありませんが、残った建玉、または諸経費込みの決済損益との照合で候補が一意のため補完表示しています">推定</span>{% endif %}
               {%- if r.genbiki %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="現引は信用建玉を現物へ振り替える取引です。決済ではないため損益は計上せず、現物エピソード側へ引き継がれます">現引→現物</span>{% endif %}
               {#- 建玉を特定できない決済 (建情報なしの信用返済など)。? マーカーと同じ条件で駆動する #}
