@@ -1830,6 +1830,9 @@ def list_all_db(upload_csv=True, update_portforio=True):
         # RS(0~99)履歴も全銘柄ループで記録する (価格更新済み銘柄のみ)
         update_rs_rank_if_fresh(stock)
     save_stock_db(stocks)  # 更新した順位のDB保存
+    # 決算カレンダーの元データを、この回で取り直した決算予定日に合わせる。
+    # shintakane.py 側の保存はマスター更新より前なので、ここで保存し直さないと1日遅れる
+    kessan.save_pf_kessan_db(stocks)
 
     # ---- テーマ別株価騰落率を計算してmarket_dbに保存
     log_print("---- テーマ別株価騰落率を計算")
