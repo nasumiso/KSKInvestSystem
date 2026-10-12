@@ -462,6 +462,38 @@ def load_disclosure_for_code(code_s, days=30):
     return results
 
 
+def load_revision_directions(code_s):
+    """disclosure_db.csv から、指定銘柄の業績修正の方向を日付ごとに返す (issue #512)。
+
+    種類が「修正」で、見出しに「上方修正」「下方修正」を含む開示だけを拾う (材料・特集の記事は
+    翌日以降の日付で同じ語を含むので除く)。CSV に残っている期間しか返らない。
+    同じ日に両方あれば、先に出てきた方を使う。
+    Returns:
+        dict: {"YYYY-MM-DD": "上方" | "下方"}
+    """
+    import csv
+
+    code_s = code_s.strip().upper()
+    if not os.path.exists(DISCLOSURE_CSV):
+        return {}
+    directions = {}
+    with open(DISCLOSURE_CSV, "r", encoding="utf-8") as f:
+        for row in csv.reader(f):
+            if len(row) < 5 or not re.fullmatch(r"\d{8}", row[0].strip()):
+                continue
+            if row[3].strip() != HEAD_TYPE_EXPR["modify"]:
+                continue
+            m_code = re.search(r'"(\d[0-9a-zA-Z]\d[0-9A-Z])"', row[1])
+            if not m_code or m_code.group(1) != code_s:
+                continue
+            impact = classify_disclosure_impact(row[4])
+            if not impact or impact["kind"] not in ("upward", "downward"):
+                continue
+            raw = row[0].strip()
+            directions.setdefault("%s-%s-%s" % (raw[:4], raw[4:6], raw[6:]), impact["label"])
+    return directions
+
+
 def main():
     # ロガーの初期化
     logger = setup_logger('shintakane')

@@ -318,8 +318,10 @@
           <tr{% if not r.closed %} style="color:#7a7a95;"{% endif %}{% if r.closed and r.open_date %} data-lot="{{ r.open_date }}|{{ r.close_date }}"{% endif %}>
             <td style="padding:1px 0.8em 1px 0;white-space:nowrap;color:#888;">
               {%- if r.open_date %}{{ r.open_date[2:] }}{% else %}<span style="color:#666;">?</span>{% endif %}
+              {%- if r.open_kessan %} <span class="kessan-note is-{{ r.open_kessan.tone }}" title="{{ r.open_kessan.title }}">{{ r.open_kessan.label }}</span>{% endif %}
               <span style="color:#666;">→</span>
               {% if r.closed %}{{ r.close_date[2:] }}{% else %}<span style="color:#5f5fa8;">保有中</span>{% endif %}
+              {%- if r.closed and r.close_kessan %} <span class="kessan-note is-{{ r.close_kessan.tone }}" title="{{ r.close_kessan.title }}">{{ r.close_kessan.label }}</span>{% endif %}
               {%- if r.inferred_open %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="返済CSVには建玉情報がありませんが、残った建玉、または諸経費込みの決済損益との照合で候補が一意のため補完表示しています">推定</span>{% endif %}
               {%- if r.genbiki %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="現引は信用建玉を現物へ振り替える取引です。決済ではないため損益は計上せず、現物エピソード側へ引き継がれます">現引→現物</span>{% endif %}
               {#- 建玉を特定できない決済 (建情報なしの信用返済など)。? マーカーと同じ条件で駆動する #}
@@ -402,6 +404,7 @@
           <div style="color:#888;font-size:0.78em;margin-bottom:0.2em;">週足チャート (建玉の前後4週)
             <label class="ep-chart-toggle" title="建て→決済を結ぶ点線。隠していても、明細の行にカーソルを乗せるとその1本は出ます"><input type="checkbox" data-chart-toggle="lots"> 買→売の線</label>
             <label class="ep-chart-toggle" title="戦略の出口ルールの移動平均線と損切りライン"><input type="checkbox" data-chart-toggle="defense"> 防衛線</label>
+            <label class="ep-chart-toggle" title="決算発表日と業績修正日の縦線 (決=決算発表 / 上・下=上方・下方修正 / 修=方向不明の修正)。日付は線にカーソルを乗せると出ます"><input type="checkbox" data-chart-toggle="kessan"> 決算</label>
           </div>
           <div class="ep-chart-slot" style="color:#666;font-size:0.8em;">読み込み中…</div>
         </div>
@@ -827,9 +830,9 @@
   document.addEventListener('mouseout', function (e) { hotLot(e, false); });
 
   // チャートの線の表示切り替え。全チャート共通の設定で、各チャートのチェックボックスを
-  // 揃える。既定は 買→売の線=出す / 防衛線=隠す。買→売の線は body のクラスで隠す。
+  // 揃える。既定は 買→売の線=出す / 防衛線=隠す / 決算=出す。買→売の線と決算は body のクラスで隠す。
   // 防衛線は縦軸の範囲ごと変わるので、読み込み済みのチャートを取り直す
-  var chartToggleDefaults = { lots: true, defense: false };
+  var chartToggleDefaults = { lots: true, defense: false, kessan: true };
   function chartToggleOn(key) {
     var saved = null;
     try { saved = localStorage.getItem('thChart_' + key); } catch (e) {}

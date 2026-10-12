@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import json
 import re
 import os
 import sys
@@ -9,6 +10,8 @@ from ks_util import *
 
 CACHE_DIR = os.path.join(DATA_DIR, "stock_data", "kabutan", "finance")
 URL_CODE = "http://kabutan.jp/stock/finance?code=%s&mode=k"
+# 決算発表日・業績修正日の蓄積 (issue #512)。株探の表は直近8四半期ぶんしか載らないので貯める
+KESSAN_DATES_DIR = os.path.join(DATA_DIR, "stock_data", "kessan_dates")
 
 
 def parse_kabutan_account2(html):
@@ -753,6 +756,98 @@ def calc_gyoseki_score(tables):
     return gyoseki_score
 
 
+def _kabutan_date_to_iso(text):
+    """株探の "YY/MM/DD" を "YYYY-MM-DD" にする (年は 2000 + YY)。日付でなければ None。"""
+    m = re.fullmatch(r"(\d\d)/(\d\d)/(\d\d)", text)
+    if not m:
+        return None
+    try:
+        return datetime(2000 + int(m.group(1)), int(m.group(2)), int(m.group(3))).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def parse_kessan_event_dates(html):
+    """株探の業績ページhtmlから、決算発表日と業績修正日を取り出す (issue #512)。
+
+    kessan: 「3ヵ月決算【実績】」の表の発表日 (直近8四半期)
+    shusei: 通期と上期の「修正履歴」の表で区分が「修」の行の修正日 (「初」「実」は取らない)
+    表が無ければ空リスト。日付は "YYYY-MM-DD" の昇順・重複なし。
+    type: str -> dict
+    """
+    html = html or ""
+    kessan, shusei = set(), set()
+    quarter_tbl_m = re.search(
+        r'<div class="title1">3ヵ月決算【実績】</div>.*?<table>(.*?)</table>', html, re.S
+    )
+    if quarter_tbl_m:
+        # この表で YY/MM/DD の形をしているのは発表日の列だけ
+        kessan.update(re.findall(r"\d\d/\d\d/\d\d", quarter_tbl_m.group(1)))
+    # 修正履歴の表は入れ子の </table> を含むので、囲みの div の終わりまでを見る
+    for term in ("year", "half"):
+        forecast_m = re.search(
+            r"fin_%s_forecast_d.*?<!--/fin_%s_forecast_d-->" % (term, term), html, re.S
+        )
+        if not forecast_m:
+            continue
+        for day, kind in re.findall(
+            r'>(\d\d/\d\d/\d\d)</td>\s*<td class="tal fs12">(.)</td>', forecast_m.group(0)
+        ):
+            if kind == "修":
+                shusei.add(day)
+    return {
+        "kessan": sorted(filter(None, map(_kabutan_date_to_iso, kessan))),
+        "shusei": sorted(filter(None, map(_kabutan_date_to_iso, shusei))),
+    }
+
+
+def load_kessan_dates(code_s):
+    """蓄積した決算発表日・業績修正日を読む。無ければ空。
+    type: str -> dict
+    """
+    try:
+        with open(os.path.join(KESSAN_DATES_DIR, "%s.json" % code_s), encoding="utf-8") as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        saved = {}
+    return {k: list(saved.get(k) or []) for k in ("kessan", "shusei")}
+
+
+def merge_kessan_dates(code_s, dates):
+    """決算発表日・業績修正日を蓄積ファイルに足し込む。既存の日付は消さない。
+
+    銘柄ごとに1ファイルにしているのは、日次バッチが並行スレッドで銘柄ごとに書くため。
+    追加が無ければ書かない。書いたら True。
+    type: str, dict -> bool
+    """
+    saved = load_kessan_dates(code_s)
+    merged = {k: sorted(set(saved[k]) | set(dates.get(k) or [])) for k in saved}
+    if merged == saved:
+        return False
+    os.makedirs(KESSAN_DATES_DIR, exist_ok=True)
+    file_write(os.path.join(KESSAN_DATES_DIR, "%s.json" % code_s), json.dumps(merged))
+    return True
+
+
+def backfill_kessan_dates():
+    """売買したことのある銘柄の決算発表日・業績修正日を、蓄積ファイルに初回投入する。
+
+    業績ページのキャッシュがあればそれを読み、無い銘柄だけ株探から取得する。
+    """
+    from webapp.trade_episodes import build_fill_episodes
+
+    code_list_s = sorted({ep["code_s"] for ep in build_fill_episodes()})
+    log_print("[決算日の初回投入] 対象 %d 銘柄" % len(code_list_s))
+    added = fetched = 0
+    for code_s in code_list_s:
+        url = URL_CODE % code_s
+        use_cache = os.path.exists(os.path.join(CACHE_DIR, get_http_cachname(url)))
+        fetched += not use_cache
+        html = http_get_html_with_retry(url, use_cache, CACHE_DIR, retry=4)
+        added += merge_kessan_dates(code_s, parse_kessan_event_dates(html))
+    log_print("[決算日の初回投入] 完了: 更新 %d 銘柄 (うち株探から取得 %d 銘柄)" % (added, fetched))
+
+
 def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
     """codeの業績情報をkabutan(又はキャッシュ)から
     パース、計算して取得する
@@ -775,6 +870,7 @@ def get_gyoseki_data(code_s, upd=UPD_INTERVAL):
 
     log_print(">>>>> %sの業績を解析 " % code_s)
     tables = parse_kabutan_account2(html)
+    merge_kessan_dates(code_s, parse_kessan_event_dates(html))
     log_print("<<<<< 解析完了 ")
 
     # 業績得点の追加
@@ -1020,6 +1116,9 @@ def main():
     # TODO: 配当2%まで出してるところが10倍株の意外な要素らしい(井村さん)
     # TODO: 通期進捗率を評価に含める？
     # TODO: 利益率伸びPTを表示に入れたい
+    if sys.argv[1:] == ["backfill_kessan_dates"]:
+        backfill_kessan_dates()
+        return
     # 引数で銘柄コードを指定 (例: python gyoseki.py 6324 7203)。省略時は既定値。
     code_list_s = sys.argv[1:] or ["6574"]
     for code_s in code_list_s:

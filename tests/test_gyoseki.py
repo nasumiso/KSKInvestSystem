@@ -172,3 +172,64 @@ class TestCalcGyosekiScore:
         result = gyoseki.calc_gyoseki_score(tables)
         assert isinstance(result, (int, float))
         assert result >= 0
+
+
+# ==================================================
+# 決算発表日・業績修正日 (issue #512)
+# ==================================================
+
+# 株探の業績ページを、日付の取り出しに関わる部分だけに削ったもの
+_KESSAN_HTML = """
+<div class="fin_year_t0_d fin_year_forecast_d dispnone">
+<table>
+<tr><td class="td_hpd" rowspan="3">2025.11</td>
+<td class="tac fs14">25/01/14</td>
+<td class="tal fs12">初</td></tr>
+<tr><td class="tac fs14">25/10/07</td>
+<td class="tal fs12">修</td>
+<td class="nopm"><table><tr><td>プレミアム</td></tr></table></td></tr>
+<tr class="bggray"><td class="tac fs14">26/01/13</td>
+<td class="tal fs12">実</td></tr>
+<tr><td class="tac fs14">26/07/07</td>
+<td class="tal fs12">修</td></tr>
+</table>
+</div><!--/fin_year_forecast_d-->
+<div class="fin_half_t0_d fin_half_forecast_d dispnone">
+<table>
+<tr><td class="tac fs14">26/05/14</td>
+<td class="tal fs12">初</td></tr>
+<tr><td class="tac fs14">26/09/24</td>
+<td class="tal fs12">修</td></tr>
+</table>
+</div><!--/fin_half_forecast_d-->
+<div class="title1">3ヵ月決算【実績】</div>
+<table>
+<tr  ><th scope="row">25.12-02</th><td>1,200</td>
+<td class="fb_pdf1"><a href="x" target="pdf">26/04/14<img src="p.gif" /></a></td></tr>
+<tr  ><th scope="row">26.03-05</th><td>1,386</td>
+<td class="fb_pdf1"><a href="x" target="pdf">26/07/07<img src="p.gif" /></a></td></tr>
+<tr  ><th scope="row">26.06-08</th><td>－</td><td>－</td></tr>
+</table>
+"""
+
+
+@pytest.mark.parametrize("html, expected", [
+    (_KESSAN_HTML, {"kessan": ["2026-04-14", "2026-07-07"],
+                    "shusei": ["2025-10-07", "2026-07-07", "2026-09-24"]}),
+    ("<html>フォーマット変更</html>", {"kessan": [], "shusei": []}),
+    ("", {"kessan": [], "shusei": []}),
+])
+def test_parse_kessan_event_dates(html, expected):
+    """決算発表日と、通期・上期の「修」の修正日だけを、4桁の年で取る。表が無ければ空。"""
+    assert gyoseki.parse_kessan_event_dates(html) == expected
+
+
+def test_merge_kessan_dates_keeps_existing(tmp_path, monkeypatch):
+    """株探の表から消えた古い日付を残して足し込む。追加が無ければ書かない。"""
+    monkeypatch.setattr(gyoseki, "KESSAN_DATES_DIR", str(tmp_path))
+    assert gyoseki.merge_kessan_dates("215A", {"kessan": ["2024-10-09"], "shusei": []})
+    assert gyoseki.merge_kessan_dates("215A", {"kessan": ["2026-07-07"], "shusei": ["2026-07-07"]})
+    assert not gyoseki.merge_kessan_dates("215A", {"kessan": ["2026-07-07"], "shusei": []})
+    assert gyoseki.load_kessan_dates("215A") == {
+        "kessan": ["2024-10-09", "2026-07-07"], "shusei": ["2026-07-07"]}
+    assert gyoseki.load_kessan_dates("9999") == {"kessan": [], "shusei": []}

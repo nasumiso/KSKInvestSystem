@@ -785,5 +785,11 @@ tr:hover > td > .lot-strategy > .lot-strategy-edit { visibility: visible; }
 .ep-lot-link.is-hot { stroke: #e67e22; stroke-width: 2.5; stroke-dasharray: none; }
 /* チャートの線の表示切り替え。買→売の線は隠していても、乗せた行の1本 (is-hot) は出す */
 body.ep-hide-lots .ep-lot-link:not(.is-hot) { display: none; }
+body.ep-hide-kessan .ep-kessan { display: none; }
+/* 明細の約定日に付ける「決算の何日前後か」(issue #512)。前=橙 / 後=緑 / 当日=灰 */
+.kessan-note { font-size: 0.86em; padding: 0 0.3em; border-radius: 3px; border: 1px solid; }
+.kessan-note.is-before { color: #b9770e; border-color: #e6c58a; }
+.kessan-note.is-after { color: #2e8b57; border-color: #a6d3ba; }
+.kessan-note.is-same { color: #777; border-color: #ccc; }
 .ep-chart-toggle { display: inline; margin-left: 0.8em; cursor: pointer; white-space: nowrap; }
 .ep-chart-toggle input[type="checkbox"] { width: 0.95em; height: 0.95em; margin: 0 0.15em 0 0; vertical-align: -0.1em; }
