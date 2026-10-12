@@ -70,6 +70,9 @@ def _print_episode(ep: Dict[str, Any], show_fills: bool) -> None:
         period += f"〜{ep['close_date']}"
     print(f"{ep['code_s']:>5} {ep['kind']}{held}{carry_over} {ep['stock_name']}")
     print(f"      期間 {period}  最大建玉 {ep['qty_peak']}株  {_fmt_pl(ep)}")
+    if ep.get("trade_idea"):
+        drift = "  ⚠ 要再確認 (ひもづけのズレ)" if ep.get("strategy_drift") else ""
+        print(f"      戦略 {ep['trade_idea']} ({ep.get('strategy_source') or '-'}){drift}")
     if ep.get("review_memo"):
         first_line = ep["review_memo"].splitlines()[0]
         print(f"      📝 {first_line}")
