@@ -1,5 +1,8 @@
 """売買履歴ページ (issue #351, #357) ルートテスト。"""
 
+import os
+from datetime import datetime, timedelta
+
 import pytest
 import portfolio_shelve as ps
 import research_shelve as rs
@@ -643,6 +646,15 @@ class TestImportTradeCsv:
         second = client.post("/trade-history/import/quick", follow_redirects=True)
         assert "未取込の取引履歴CSVは見つかりませんでした" in second.data.decode()
         assert len(ps.list_fills("6324")) == 1
+
+        # issue #372: 約定が増えておらず同内容だったCSVも、落とした時刻で「確かめた」と記録する。
+        # 古いCSVが Downloads に残っているだけでは記録を進めない。
+        imported_at = datetime.fromisoformat(ps.get_fill_import_at()["楽天"])
+        os.utime(source, (imported_at.timestamp() - 86400 * 30,) * 2)
+        os.utime(duplicate, (imported_at.timestamp() + 86400,) * 2)
+        client.post("/trade-history/import/quick", follow_redirects=True)
+        recorded = datetime.fromisoformat(ps.get_fill_import_at()["楽天"])
+        assert recorded - imported_at == timedelta(days=1)
 
     def test_quick_import_control_is_shown(self, env):
         """手動選択と並んでDownloads自動検出の操作を表示する。"""

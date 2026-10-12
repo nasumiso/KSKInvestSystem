@@ -2541,13 +2541,21 @@ def get_qty_global_updated_at(
         return db.get(KEY_QTY_GLOBAL_UPDATED_AT)
 
 
-def record_fill_import(broker: str, *, db_path: Optional[str] = None) -> None:
-    """約定CSVの取込を実行した時刻を証券会社別に記録する (issue #372)。"""
+def record_fill_import(broker: str, *, at: Optional[str] = None,
+                       db_path: Optional[str] = None) -> None:
+    """約定CSVの取込を実行した時刻を証券会社別に記録する (issue #372)。
+
+    at: 記録する時刻 (ISO8601)。省略時は現在時刻。既存の記録より古ければ何もしない。
+    """
+    at = at or now_iso()
     path = _resolve_db_path(db_path)
     with _flock(db_path):
         with ShelveDB(path) as db:
             stamps = dict(db.get(KEY_FILL_IMPORT_AT) or {})
-            stamps[broker] = now_iso()
+            prev = stamps.get(broker)
+            if prev and datetime.fromisoformat(prev) >= datetime.fromisoformat(at):
+                return
+            stamps[broker] = at
             db[KEY_FILL_IMPORT_AT] = stamps
 
 
