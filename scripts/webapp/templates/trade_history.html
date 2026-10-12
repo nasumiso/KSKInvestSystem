@@ -322,6 +322,7 @@
               {% if r.closed %}{{ r.close_date[2:] }}{% else %}<span style="color:#5f5fa8;">保有中</span>{% endif %}
               {%- if r.inferred_open %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="返済CSVには建玉情報がありませんが、残った建玉、または諸経費込みの決済損益との照合で候補が一意のため補完表示しています">推定</span>{% endif %}
               {%- if r.genbiki %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="現引は信用建玉を現物へ振り替える取引です。決済ではないため損益は計上せず、現物エピソード側へ引き継がれます">現引→現物</span>{% endif %}
+              {%- if r.genbiki_date %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="信用で建てて {{ r.genbiki_date[2:] }} に現引した玉です。買った日は信用の建日、単価は現引の取得単価 (諸経費込み) です。現引までの経過は信用エピソード側にあります">信用建→現引 {{ r.genbiki_date[2:] }}</span>{% endif %}
               {#- 建玉を特定できない決済 (建情報なしの信用返済など)。? マーカーと同じ条件で駆動する #}
               {%- if r.closed and not r.open_date %}
               {%- if r.pending_confirm %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="当日の未確定CSVから取り込んだ返済で、建玉情報がまだありません。翌営業日以降の楽天CSVを取り込むと建日・建値・決済損益が埋まります。それまでの損益は平均建単価による暫定値です">確定CSV待ち</span>

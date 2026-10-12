@@ -182,8 +182,10 @@ class TestGenbaiBridge:
         """
         _add(db_path, "1436", "2026-05-08", "buy", 300, 1440.0, trade_kind="信用新規", seq_salt="a")
         _add(db_path, "1436", "2026-05-13", "buy", 100, 1810.0, trade_kind="信用新規", seq_salt="b")
-        _add(db_path, "1436", "2026-06-08", "buy", 100, 1813.74, trade_kind="現引", seq_salt="c")
-        _add(db_path, "1436", "2026-06-08", "buy", 300, 1443.31, trade_kind="現引", seq_salt="d")
+        _add(db_path, "1436", "2026-06-08", "buy", 100, 1813.74, trade_kind="現引", seq_salt="c",
+             tate_date="2026-05-13", tate_price=1810.0)
+        _add(db_path, "1436", "2026-06-08", "buy", 300, 1443.31, trade_kind="現引", seq_salt="d",
+             tate_date="2026-05-08", tate_price=1440.0)
         _add(db_path, "1436", "2026-06-09", "sell", 100, 1855.0, trade_kind="現物", seq_salt="e")
         _add(db_path, "1436", "2026-06-16", "sell", 300, 1260.0, trade_kind="現物", seq_salt="f")
 
@@ -202,6 +204,14 @@ class TestGenbaiBridge:
         # 現物: 取得 (1813.74*100 + 1443.31*300) / 売却 (1855*100 + 1260*300)
         # = 181374 + 432993 = 614367 取得, 185500 + 378000 = 563500 売却 → -50,867
         assert genbutsu[0]["pl"]["profit_amount"] == -50867
+        # 現物側の往復行は、買った日を現引日 (06-08) ではなく信用の建日で見せる。
+        # 単価は現引の取得単価のままなので、損益はエピソードの損益と一致する。
+        rows = trade_episodes.build_round_trips(genbutsu[0])
+        assert [(r["open_date"], r["close_date"], r["genbiki_date"], r["hold_days"], r["pl"])
+                for r in rows] == [
+            ("2026-05-13", "2026-06-09", "2026-06-08", 27, 4126),
+            ("2026-05-08", "2026-06-16", "2026-06-08", 39, -54993),
+        ]
 
     def test_genbiki_does_not_leave_open_shinyo(self, db_path):
         """現引で信用建玉が尽きたら信用が保有中に残らない (誤保有バグの回帰)。"""
