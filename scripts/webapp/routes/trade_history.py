@@ -421,6 +421,7 @@ def import_trade_csv_quick():
     except csv_import.QuickImportSourceError as e:
         flash(f"MBA のダウンロードフォルダに接続できませんでした (MBA のスリープ・リモートログインを確認): {e}", "error")
         return redirect(url_for("trade_history.trade_history"))
+    _record_redownloaded_trade_csvs(search_dir)
     found = _find_unimported_trade_csvs(search_dir)
     if not found:
         flash(f"{place} に未取込の取引履歴CSVは見つかりませんでした。", "info")
@@ -458,6 +459,27 @@ def _find_unimported_trade_csvs(search_dir: str) -> list:
         if content_hash not in saved_hashes:
             found.append(path)
     return found
+
+
+def _record_redownloaded_trade_csvs(search_dir: str) -> None:
+    """保存済み原本と同じ内容のCSVを、ダウンロードした時刻で「取込実行」として記録する。
+
+    約定が増えていなければ、落とし直したCSVは原本と同一になり取込対象から外れる。
+    それでも「確かめた」ことは残さないと、トップページの催促が消えない (issue #372)。
+    記録するのはファイルの更新日時なので、Downloads に残った古いCSVでは催促は消えない。
+    """
+    saved_hashes = _saved_trade_csv_hashes(TRADE_HISTORY_DIR)
+    for path in glob.glob(os.path.join(search_dir, "*.csv")):
+        module = _csv_import_module(path)
+        if module is None:
+            continue
+        try:
+            if _file_sha256(path) not in saved_hashes:
+                continue
+            downloaded_at = datetime.datetime.fromtimestamp(os.path.getmtime(path), ps.JST)
+        except OSError:
+            continue
+        ps.record_fill_import(module.BROKER, at=downloaded_at.isoformat())
 
 
 def _saved_trade_csv_hashes(saved_dir: str) -> set:

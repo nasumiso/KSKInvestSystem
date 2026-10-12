@@ -575,6 +575,18 @@ def sort_shikiho_comments_desc(
     return sorted(comments, key=_key, reverse=True)
 
 
+def has_shikiho_comment(record: Optional[Dict[str, Any]], period: str) -> bool:
+    """record に period 号の四季報コメント (空でない) があるか。
+
+    list_research_records() は正規化を通さないため、旧形式 (str要素) 混在に備えて正規化する。
+    """
+    comments = _normalize_shikiho_comments((record or {}).get("shikiho_comments") or [])
+    return any(
+        (c.get("period") or "").strip() == period and (c.get("comment") or "").strip()
+        for c in comments
+    )
+
+
 def current_shikiho_period() -> str:
     """現在月から四季報の発行時期を返す。
 

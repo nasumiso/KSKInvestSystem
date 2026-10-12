@@ -32,6 +32,9 @@ def app(db_path, tmp_path, monkeypatch):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("dummy\n")
     monkeypatch.setattr("webapp.routes.search.DATA_DIR", str(portal_data_dir))
+    # トップページの「今日のアクション」は portfolio_shelve を読む。この fixture は
+    # portfolio 側を差し替えていないので、実データを読まないよう既定で空にする。
+    monkeypatch.setattr("webapp.routes.search.build_action_queue", lambda: [])
 
     # テストデータ投入
     rec = rs.create_research_record(
@@ -125,6 +128,23 @@ class TestSearchRoute:
         assert "Shintakane Result" in html
         assert "Code Rank" in html
         assert "最終更新" in html
+
+    @pytest.mark.parametrize("url, items, expected, not_expected", [
+        ("/", [{"text": "残高CSVが古い: 楽天 (10/1 時点、11日前)", "url": "/portfolio", "link_label": "保有銘柄で取り込む"}],
+         ['残高CSVが古い: 楽天 (10/1 時点、11日前) → <a href="/portfolio">保有銘柄で取り込む</a>'],
+         ["今日の手入れはありません"]),
+        ("/", [], ["今日のアクション", "今日の手入れはありません"], []),
+        ("/?q=3496x", [{"text": "残高CSVが古い", "url": "/portfolio", "link_label": "取り込む"}],
+         [], ["今日のアクション", "残高CSVが古い"]),
+    ])
+    def test_index_action_queue(self, client, monkeypatch, url, items, expected, not_expected):
+        """issue #372: クエリなしトップにだけ手入れ項目を出し、0件なら不要と明示する"""
+        monkeypatch.setattr("webapp.routes.search.build_action_queue", lambda: items)
+        html = client.get(url).data.decode()
+        for text in expected:
+            assert text in html
+        for text in not_expected:
+            assert text not in html
 
     def test_index_with_keyword_shows_records(self, client):
         """issue #244: 検索クエリ付き (keyword) では従来通り一覧を表示"""

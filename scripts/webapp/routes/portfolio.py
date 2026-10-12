@@ -1340,13 +1340,7 @@ def shikiho_page():
         rec = all_research.get(code_s)
         if rec is None:
             continue  # research 未登録は save_shikiho が失敗するため対象外
-        # list_research_records() は正規化を通さないため、旧形式 (str要素) 混在に備えて正規化。
-        comments = research_shelve._normalize_shikiho_comments(rec.get("shikiho_comments") or [])
-        has_current = any(
-            (c.get("period") or "").strip() == current_period
-            and (c.get("comment") or "").strip()
-            for c in comments
-        )
+        has_current = research_shelve.has_shikiho_comment(rec, current_period)
         if has_current:
             done_count += 1
         stocks.append({
