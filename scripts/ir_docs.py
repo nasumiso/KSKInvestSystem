@@ -39,7 +39,8 @@ KABUTAN_URL = "https://kabutan.jp/stock/news?code={code_s}&b=disclose&page={page
 PDF_URL_RE = re.compile(
     r"https?://kabutan\.jp/disclosures/pdf/(\d{8})/(\d+)/?"
 )
-SETSUMEI_RE = re.compile(r"決算(補足)?説明(会)?資料|決算短信補足")
+# 「2026年8月期決算 補足資料」(6264) のように、説明の語が無い補足資料も説明資料として扱う。
+SETSUMEI_RE = re.compile(r"決算(補足)?説明(会)?資料|決算短信補足|決算\s*補足資料")
 TANSHIN_RE = re.compile(r"決算短信")
 # グロース市場の年次開示「事業計画及び成長可能性に関する事項」を中計として扱う。
 CHUKI_PLAN_RE = re.compile(r"成長可能性に関する|事業計画(及び|並びに)成長可能性")
