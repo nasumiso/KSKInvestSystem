@@ -5056,6 +5056,47 @@ def _episode_stop_steps(ep: Dict[str, Any], exit_rule: Dict[str, Any]) -> List[T
     return steps
 
 
+def _episode_kessan_events(code_s: str, start_d: date, end_d: date) -> List[Dict[str, Any]]:
+    """表示窓に入る決算発表日・業績修正日を、週ごとにまとめて返す (issue #512)。
+
+    週足チャートの座標は月曜アンカーなので、約定マーカーと同じく週の月曜に置く。
+    同じ週の決算と修正は1本にまとめ、実際の日付は title に出す。
+    修正の方向は、適時開示の CSV に残っている期間だけ付く (無ければ「修」)。
+    """
+    try:
+        import disclosure
+        import gyoseki
+        dates = gyoseki.load_kessan_dates(code_s)
+        directions = disclosure.load_revision_directions(code_s) if dates["shusei"] else {}
+    except Exception:
+        return []
+    by_week: Dict[date, List[Tuple[str, str, str]]] = {}
+    for day in sorted(set(dates["kessan"]) | set(dates["shusei"])):
+        try:
+            bar = _monday_of(date.fromisoformat(day))
+        except ValueError:
+            continue
+        if not start_d <= bar <= end_d:
+            continue
+        if day in dates["kessan"]:
+            by_week.setdefault(bar, []).append((day, "決", "決算発表"))
+        if day in dates["shusei"]:
+            direction = directions.get(day)
+            by_week.setdefault(bar, []).append(
+                (day, direction[0] if direction else "修", "%s修正" % (direction or "業績")))
+    events = []
+    for bar, items in sorted(by_week.items()):
+        labels = list(dict.fromkeys(label for _, label, _ in items))
+        events.append({
+            "bar": bar,
+            "label": "・".join(labels),
+            "title": " / ".join("%s %s" % (day, text) for day, _, text in items),
+            # 色は方向で決める (上方=赤 / 下方=青)。方向が無ければ緑
+            "color": "#c0392b" if "上" in labels else "#2c6fbb" if "下" in labels else "#4a9a6a",
+        })
+    return events
+
+
 def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
                         exit_rule: Optional[Dict[str, Any]] = None) -> str:
     """エピソード1ラウンド分の週足チャート SVG を返す。描けない場合は説明文の HTML。
@@ -5064,6 +5105,8 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
     途中約定 (小さな点) を重ねる。株価軸は yfinance の分割調整後、fill は約定当時の
     実価格なので、登録済みの分割・併合で描画座標を換算する。元の約定値はtooltipに残す。
     換算後も価格軸が揃わない約定はマーカーを打たずに注記する (issue #435)。
+
+    蓄積済みの決算発表日・業績修正日があれば、その週に縦線を重ねる (issue #512)。
 
     exit_rule (エピソードの戦略の出口ルール) を渡すと、防衛線 (移動平均線と損切り
     ライン) を重ねる。ルールは今の戦略マスターのもので、当時のルールではない。
@@ -5204,6 +5247,18 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
                      'stroke-width="1.4"/>' % " ".join(stop_pts))
         parts.append('<text x="%.1f" y="8" font-size="8" fill="#d05050">損切り -%s%%</text>'
                      % (legend_x, format(stop_pct, "g")))
+
+    # 決算発表日・業績修正日の縦線 (issue #512)。振り返りで「決算の前後どちらで売買したか」を読む。
+    # 細い線は乗せにくいので、透明な太い線を重ねて title を出しやすくする
+    for ev in _episode_kessan_events(ep["code_s"], start_d, end_d):
+        x = x_of(ev["bar"])
+        parts.append('<g class="ep-kessan"><title>%s</title>'
+                     '<line x1="%.1f" y1="%d" x2="%.1f" y2="%.1f" stroke="%s" stroke-width="1" opacity="0.7"/>'
+                     '<line x1="%.1f" y1="%d" x2="%.1f" y2="%.1f" stroke="#000" stroke-opacity="0" stroke-width="7"/>'
+                     '<text x="%.1f" y="%d" font-size="8" fill="%s">%s</text></g>'
+                     % (html.escape(ev["title"]), x, pad_t, x, vol_top + vol_h, ev["color"],
+                        x, pad_t, x, vol_top + vol_h, x + 2, pad_t + 7, ev["color"],
+                        html.escape(ev["label"])))
 
     # 往復行 (明細の「買 → 売」1行) ごとに建て→決済を点線で結ぶ。明細行と同じ
     # data-lot を持たせ、行にカーソルを乗せると対応する線を強調する (trade_history.html)。

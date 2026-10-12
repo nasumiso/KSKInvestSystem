@@ -4470,6 +4470,28 @@ class TestEpisodeChart:
         assert "高値 1,300 / 安値 800 / 終値 1,000" in svg
         assert ">1,3" in svg  # 縦軸の上端ラベルが高値 (+余白) まで届く
 
+    def test_chart_draws_kessan_lines(self, monkeypatch):
+        """窓に入る週の決算・修正だけ縦線にする。同じ週は1本にまとめ、方向は開示から付ける。"""
+        import disclosure
+        import gyoseki
+
+        closes = {date(2026, 3, 2) + _dt.timedelta(weeks=i): (1000.0, 10000.0, 1300.0, 800.0)
+                  for i in range(8)}  # 3/2〜4/20 の週
+        monkeypatch.setattr(helpers, "load_weekly_closes", lambda code_s: closes)
+        monkeypatch.setattr(gyoseki, "load_kessan_dates", lambda code_s: {
+            # 2/27 は窓の左外、4/24 は右端の週 (4/20) の金曜、5/1 は窓の右外
+            "kessan": ["2026-02-27", "2026-03-10", "2026-04-24", "2026-05-01"],
+            "shusei": ["2026-03-10", "2026-03-25"]})
+        monkeypatch.setattr(disclosure, "load_revision_directions",
+                            lambda code_s: {"2026-03-10": "上方"})
+        svg = helpers.build_episode_chart(self._ep())
+        assert svg.count('class="ep-kessan"') == 3
+        assert "2026-03-10 決算発表 / 2026-03-10 上方修正" in svg
+        assert ">決・上<" in svg
+        assert "2026-03-25 業績修正" in svg and ">修<" in svg
+        assert "2026-04-24 決算発表" in svg
+        assert "2026-02-27" not in svg and "2026-05-01" not in svg
+
     @pytest.mark.parametrize("kw,expect", [
         ({"split_suspect": True}, "分割・併合の可能性"),
         ({}, "週足の株価データがありません"),
