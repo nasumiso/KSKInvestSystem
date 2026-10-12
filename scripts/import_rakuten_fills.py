@@ -296,6 +296,9 @@ def import_csv_to_fills(
 
         trade_episodes.assign_entry_strategies(db_path=db_path)
         trade_episodes.seal_episode_fingerprints(db_path=db_path)
+    if not dry_run:
+        # 新規0件でも「取り込んだ」ことを残す (トップページの催促を消すため、issue #372)
+        ps.record_fill_import(BROKER, db_path=db_path)
     return stats
 
 

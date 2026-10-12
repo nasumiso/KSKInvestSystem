@@ -138,6 +138,10 @@ KEY_QTY_GLOBAL_UPDATED_AT = "_meta:qty_global_updated_at"
 # issue #362: エクスポージャーガイドの設定 (PF 全体で 1 つ)。
 KEY_EXPOSURE_SETTINGS = "_meta:exposure_settings"
 
+# issue #372: 約定CSVの取込を実行した時刻 ({broker: ISO8601})。
+# fill.imported_at は新規 fill にしか付かず、新規0件の取込が跡に残らないため別に持つ。
+KEY_FILL_IMPORT_AT = "_meta:fill_import_at"
+
 # 基準運用額は「市場中立時の標準運用総額」でユーザーが宣言する値。
 # レンジは基準運用額に対する % で、ユーザーの感情スコア式レバレッジ管理
 # (通常1.2倍を中立とし 0.8〜1.4倍で調整) を客観指標側に写したもの。
@@ -2535,6 +2539,23 @@ def get_qty_global_updated_at(
     path = _resolve_db_path(db_path)
     with ShelveDB(path) as db:
         return db.get(KEY_QTY_GLOBAL_UPDATED_AT)
+
+
+def record_fill_import(broker: str, *, db_path: Optional[str] = None) -> None:
+    """約定CSVの取込を実行した時刻を証券会社別に記録する (issue #372)。"""
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            stamps = dict(db.get(KEY_FILL_IMPORT_AT) or {})
+            stamps[broker] = now_iso()
+            db[KEY_FILL_IMPORT_AT] = stamps
+
+
+def get_fill_import_at(*, db_path: Optional[str] = None) -> Dict[str, str]:
+    """証券会社別の、約定CSVの取込を最後に実行した時刻を返す。未記録なら空 dict。"""
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        return dict(db.get(KEY_FILL_IMPORT_AT) or {})
 
 
 def get_exposure_settings(

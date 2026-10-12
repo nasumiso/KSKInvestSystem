@@ -12,6 +12,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 
 from ks_util import DATA_DIR
 from research_shelve import CODE_S_PATTERN, normalize_for_search
+from webapp.action_queue import build_action_queue
 from webapp.helpers import search_records, add_stock
 
 # snippet 生成: ヒットフィールド名ラベルと前後30文字
@@ -206,6 +207,7 @@ def index():
         q_normalized=q_normalized,
         has_query=has_query,
         portal_spreadsheets=_portal_spreadsheets() if not has_query else None,
+        action_queue=build_action_queue() if not has_query else None,
     )
 
 

@@ -80,6 +80,20 @@
 {% endif %}
 
 {% else %}
+{# issue #372: データの手入れが要る項目。各項目1行、済ませると消える #}
+<section id="action-queue" style="margin-top:1.5em;padding:0.8em 1em;border:1px solid #e1e5ea;border-radius:6px;">
+  <h3 style="margin:0 0 0.4em 0;font-size:1em;">今日のアクション</h3>
+  {% if action_queue %}
+  <ul style="margin:0;padding-left:1.2em;">
+    {% for item in action_queue %}
+    <li style="margin:0.2em 0;">{{ item.text }}{% if item.url %} → <a href="{{ item.url }}">{{ item.link_label }}</a>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p style="margin:0;color:#666;">今日の手入れはありません</p>
+  {% endif %}
+</section>
+
 {# issue #98: クエリなしトップアクセスは Google Spreadsheets / 開発ページへのリンクをひとまとまりで表示 #}
 <section id="portal-spreadsheets" style="margin-top:1.5em;padding:0.8em 1em;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;">
   <div style="display:flex;flex-wrap:wrap;gap:0.4em 1.2em;">
