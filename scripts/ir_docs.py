@@ -75,6 +75,8 @@ IR_TOP_LINK_RE = re.compile(
 IR_TOP_HREF_RE = re.compile(r"/ir/?$|/ir\.html$|/investors?(-relations)?(\.html|/)?$", re.I)
 ANCHOR_RE = re.compile(r"<a\s[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", re.S | re.I)
 PDF_HREF_RE = re.compile(r"\.pdf($|[?#])", re.I)
+HEADING_RE = re.compile(r"<h[1-6][^>]*>(.*?)</h[1-6]>", re.S | re.I)
+GENERIC_LINK_TEXT_MAX_LEN = 10
 
 
 def classify_heading(heading):
@@ -587,11 +589,30 @@ def _page_links(session, url, limiter):
     response = _get(session, url, limiter, public_only=True)
     response.encoding = response.apparent_encoding
     links = []
-    for href, text in ANCHOR_RE.findall(response.text):
-        text = re.sub(r"<[^>]+>|\s+", " ", html.unescape(text)).strip()
+    headings = [(m.end(), _plain_text(m.group(1))) for m in HEADING_RE.finditer(response.text)]
+    for match in ANCHOR_RE.finditer(response.text):
+        href, text = html.unescape(match.group(1)), _plain_text(match.group(2))
+        # 「資料」「PDF」だけの文言は、どの期の資料か見分けられない (6264 は25件すべて「資料」)。
+        # 期の名前は直前の見出しにあるので、それを前に付ける。
+        if PDF_HREF_RE.search(href) and _is_generic_link_text(text):
+            heading = next((h for end, h in reversed(headings) if end <= match.start() and h), "")
+            text = f"{heading} {text}".strip()
         # /ir → /ir/ のようなリダイレクト後は、到達先を相対リンクの基準にする
-        links.append((urljoin(response.url, html.unescape(href)), text))
+        links.append((urljoin(response.url, href), text))
     return links
+
+
+def _plain_text(fragment):
+    return re.sub(r"<[^>]+>|\s+", " ", html.unescape(fragment)).strip()
+
+
+def _is_generic_link_text(text):
+    """期も資料種別も読み取れない短いリンク文言か。"""
+    return (
+        len(text) <= GENERIC_LINK_TEXT_MAX_LEN
+        and not re.search(r"\d", unicodedata.normalize("NFKC", text))
+        and not any(pattern.search(text) for pattern in IR_PAGE_KEYWORDS.values())
+    )
 
 
 def _ir_page_doc_type(url, text):

@@ -288,6 +288,28 @@ def test_ir_page_candidates_follow_one_subpage_per_type(tmp_path, monkeypatch):
     assert len(requested) == 4
 
 
+def test_page_links_prefix_generic_pdf_text_with_heading(monkeypatch):
+    # 6264 の IR ページ: 期の名前は見出しにあり、PDF のリンク文言はどれも「資料」
+    page = """
+      <h2>決算説明会</h2><a href="/ir/">資料</a>
+      <h3>2026年8月期第2四半期決算説明会</h3><table><tr><th>資料ダウンロード</th>
+      <td><a href="/doc/2q.pdf">資料</a></td></tr></table>
+      <h3>2026年8月期第1四半期決算説明会</h3><a href="/doc/1q.pdf"><span>資料</span></a>
+      <a href="/doc/plan.pdf">中期経営計画</a>
+    """
+    response = type("R", (), {"text": page, "url": "https://corp.example.com/ir_9.html",
+                              "apparent_encoding": "utf-8"})()
+    monkeypatch.setattr(ir_docs, "_get", lambda *args, **kwargs: response)
+    links = dict(ir_docs._page_links(None, response.url, None))
+    assert links == {
+        # PDF でないリンクと、資料種別が読み取れる文言はそのまま
+        "https://corp.example.com/ir/": "資料",
+        "https://corp.example.com/doc/2q.pdf": "2026年8月期第2四半期決算説明会 資料",
+        "https://corp.example.com/doc/1q.pdf": "2026年8月期第1四半期決算説明会 資料",
+        "https://corp.example.com/doc/plan.pdf": "中期経営計画",
+    }
+
+
 @pytest.mark.parametrize(
     "url, address",
     [
