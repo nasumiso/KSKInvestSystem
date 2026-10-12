@@ -25,14 +25,18 @@ def _item(text: str, url: str, link_label: str) -> Dict[str, str]:
 
 
 def _balance_csv_item(today: date) -> Optional[Dict[str, str]]:
-    """残高CSVの基準日が古い証券会社を1行にまとめる。一度も取り込んでいない口座は催促しない。"""
-    latest: Dict[str, str] = {}
+    """残高CSVの基準日が古い証券会社を1行にまとめる。一度も取り込んでいない口座は催促しない。
+
+    現物・信用の片方だけ取り込むと、もう片方は古い基準日のまま残る。
+    古い側を見逃さないよう、証券会社ごとに最も古い基準日で判定する。
+    """
+    oldest: Dict[str, str] = {}
     for s in ps.list_position_sources():
         broker, as_of = s.get("broker"), s.get("as_of")
         if broker in BROKER_STALE_DAYS and as_of:
-            latest[broker] = max(latest.get(broker, ""), as_of)
+            oldest[broker] = min(oldest.get(broker, as_of), as_of)
     stale = []
-    for broker, as_of in latest.items():
+    for broker, as_of in oldest.items():
         as_of_date = date.fromisoformat(as_of)
         days = (today - as_of_date).days
         if days > BROKER_STALE_DAYS[broker]:

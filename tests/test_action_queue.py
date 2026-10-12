@@ -23,7 +23,7 @@ def test_csv_items_fire_only_past_broker_threshold(monkeypatch, broker, days_ago
     day = date.fromordinal(TODAY.toordinal() - days_ago).isoformat()
     fresh = TODAY.isoformat()
     monkeypatch.setattr(ps, "list_position_sources", lambda: [
-        {"broker": broker, "kind": "現物", "as_of": "2020-01-01"},  # 同じ証券会社は新しい方で判定
+        {"broker": broker, "kind": "現物", "as_of": fresh},  # 片方だけ新しくても、古い方で判定
         {"broker": broker, "kind": "信用", "as_of": day},
     ])
     # 対象の証券会社以外は取込済みにして、記録なしの催促と混ざらないようにする
