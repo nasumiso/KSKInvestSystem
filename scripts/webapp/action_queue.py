@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 
 import portfolio_shelve as ps
 import research_shelve
-from ks_util import log_warning
+from ks_util import get_price_day, log_warning
 from webapp.helpers import _bulk_get_stock_data, _parse_kessanbi
 from webapp.routes.portfolio import STATUS_VALUE_TO_LABEL, STATUS_VALUE_TO_QUERY
 
@@ -170,8 +170,12 @@ def build_action_queue(today: Optional[date] = None) -> List[Dict[str, str]]:
 
     1項目の検知が失敗しても他は出す。失敗した項目は「判定できませんでした」の行にする
     (黙って消すと「手入れ不要」と見分けがつかないため)。
+
+    決算の行のリンク先 (決算・開示ページの get_market_kessan_data) が
+    get_price_day (17時境界) で基準日を決めているため、ここも揃える。
+    単純な date.today() だと17時前はカレンダー側と1日ずれる。
     """
-    today = today or date.today()
+    today = today or get_price_day(datetime.today())
     items = []
     for name, detect in _DETECTORS:
         try:
