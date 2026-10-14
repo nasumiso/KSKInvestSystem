@@ -91,3 +91,62 @@ def test_build_action_queue_keeps_other_items_when_one_detector_fails(monkeypatc
         "残高CSVの状態を判定できませんでした",
         "四季報 26.9 が未入力: 保有 1銘柄",
     ]
+
+
+def _stub_kessan(monkeypatch, by_status, research=()):
+    """by_status: {ステータス: {code_s: 決算予定日 (YYYY/MM/DD または "")}}"""
+    stocks = {c: {"stock_name": f"銘柄{c}", "kessanbi": k} for d in by_status.values() for c, k in d.items()}
+    monkeypatch.setattr(ps, "list_records", lambda: [
+        {"code_s": c, "status": status} for status, d in by_status.items() for c in d
+    ])
+    monkeypatch.setattr(aq, "_bulk_get_stock_data", lambda codes: {c: stocks[c] for c in codes})
+    monkeypatch.setattr(rs, "list_research_records", lambda: list(research))
+
+
+@pytest.mark.parametrize("kessanbi, hold_fires, watch_fires", [
+    ("2026/10/12", True, True),    # 当日は出す (引け後の発表が多い)
+    ("2026/10/15", True, True),    # 監視は3日以内
+    ("2026/10/16", True, False),
+    ("2026/10/19", True, False),   # 保有・準保有は7日以内
+    ("2026/10/20", False, False),
+    ("2026/10/11", False, False),  # 過去日は次回予定日が未掲載の状態
+    ("", False, False),
+])
+def test_kessan_items_fire_within_days(monkeypatch, kessanbi, hold_fires, watch_fires):
+    """決算予定日が保有・準保有は7日以内、監視は3日以内のときだけ出る"""
+    _stub_kessan(monkeypatch, {"1保": {"1001": kessanbi}, "2準": {"2001": kessanbi}, "3監": {"3001": kessanbi}})
+
+    texts = [i["text"] for i in aq._kessan_items(TODAY)]
+
+    md = "/".join(str(int(x)) for x in kessanbi.split("/")[1:])
+    expected = [f"決算が近い: 保有 銘柄1001 ({md})", f"決算が近い: 準保有 1銘柄 ({md})"] if hold_fires else []
+    if watch_fires:
+        expected.append("監視の決算: 3日以内に 1銘柄")
+    assert texts == expected
+
+
+def test_kessan_items_drop_stocks_with_outlook(monkeypatch):
+    """事前見通し (期待度か見通し文) を書いた銘柄は消える。空白だけ・別の決算日の記入は未記入扱い"""
+    day = "2026/10/15"
+    _stub_kessan(
+        monkeypatch,
+        {
+            "1保": {c: day for c in ("1001", "1002", "1003", "1004", "1005", "1006")},
+            "2準": {"2001": "2026/10/14", "2002": "2026/10/16", "2003": day},
+            "3監": {"3001": day},
+        },
+        research=[
+            {"code_s": "1001", "kessan_comments": [{"kessanbi": day, "pre_outlook": "増益なら継続"}]},
+            {"code_s": "1002", "kessan_comments": [{"kessanbi": day, "pre_expectation": "○"}]},
+            {"code_s": "1003", "kessan_comments": [{"kessanbi": day, "pre_outlook": "  ", "post_comment": "決算後"}]},
+            {"code_s": "1004", "kessan_comments": [{"kessanbi": "2026/07/15", "pre_outlook": "前回分"}]},
+            {"code_s": "2003", "kessan_comments": [{"kessanbi": day, "pre_outlook": "様子見"}]},
+            {"code_s": "3001", "kessan_comments": [{"kessanbi": day, "pre_outlook": "監視は記入を問わない"}]},
+        ],
+    )
+
+    assert [i["text"] for i in aq._kessan_items(TODAY)] == [
+        "決算が近い: 保有 銘柄1003 (10/15)・銘柄1004 (10/15)・銘柄1005 (10/15) 他1銘柄",
+        "決算が近い: 準保有 2銘柄 (10/14〜10/16)",
+        "監視の決算: 3日以内に 1銘柄",
+    ]
