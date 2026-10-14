@@ -8,8 +8,9 @@ import os
 import unicodedata
 from datetime import datetime
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, abort, render_template, request, redirect, send_file, url_for, flash
 
+import stock_ratings
 from ks_util import DATA_DIR
 from research_shelve import CODE_S_PATTERN, normalize_for_search
 from webapp.action_queue import build_action_queue
@@ -95,9 +96,10 @@ PORTAL_SPREADSHEETS = (
         "url": "https://docs.google.com/document/d/1_O8GdD7SwA6mCMJR5SC362oX1UouJCGworj9z1rZ2I4/edit?usp=sharing",
     },
     {
-        # 正本は KS_DATA_DIR/stock_ratings/stock_ratings.html。Drive へは上書きコピーでファイル ID を保つ (stock_ratings.py)
+        # Drive のプレビューは HTML を表として描かず、file:// へのリンクは Chrome が開かないので、
+        # WebApp から正本 (KS_DATA_DIR/stock_ratings/stock_ratings.html) を返す
         "title": "銘柄評価台帳",
-        "url": "https://drive.google.com/file/d/1rBn0Teo7FgSpFX0cp_kLQThkvi_A5JZJ/view",
+        "url": "/stock-ratings",
         "mtime_csv": "stock_ratings/stock_ratings.html",
     },
     {
@@ -215,6 +217,15 @@ def index():
         portal_spreadsheets=_portal_spreadsheets() if not has_query else None,
         action_queue=build_action_queue() if not has_query else None,
     )
+
+
+@search_bp.route("/stock-ratings")
+def stock_ratings_html():
+    """銘柄評価台帳の表示用 HTML (stock_ratings.py が更新のたびに作り直す) をそのまま返す。"""
+    path = stock_ratings.RATINGS_DIR / stock_ratings.HTML_FILENAME
+    if not path.is_file():
+        abort(404)
+    return send_file(path, mimetype="text/html")
 
 
 @search_bp.route("/stock/add", methods=["POST"])
