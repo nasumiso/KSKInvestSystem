@@ -577,7 +577,7 @@ def csv_import_apply():
 
     preview で保存した一時ファイル (token で特定) を使い、covered な銘柄の
     qty/status を実際に同期する (apply_records=True, Phase2ロジックを呼ぶだけ)。
-    売却・新規IN の行に入力された戦略・振り返りメモ (フォーム: trade_idea_<code_s> /
+    売却・新規IN・株数変更の行に入力された戦略・振り返りメモ (フォーム: trade_idea_<code_s> /
     note_<code_s>) を overrides として渡し、_sync_records に反映させる。
     """
 

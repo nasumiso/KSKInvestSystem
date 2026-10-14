@@ -738,7 +738,9 @@ def _qty_change_note(reason: str) -> str:
     if "(" not in text or not text.endswith(")"):
         return ""
     memo = text[text.index("(") + 1:-1].strip()
-    if memo in ("", "CSV取込"):
+    # CSV 取込の確認画面で書いたメモは "CSV取込 / メモ" の形で入る
+    memo = memo.removeprefix("CSV取込").lstrip(" /").strip()
+    if not memo:
         return ""
     return f"{text[:text.index('(')].strip()} {memo}"
 

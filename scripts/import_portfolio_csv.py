@@ -817,6 +817,7 @@ def _build_diff_preview(
             # 表示文言なので、部分一致で分岐せずこのフラグを見ること
             "needs_trade_idea": covered and merged_qty > 0 and status in ("2準", "3監", "未登録"),
             "is_exit": covered and merged_qty == 0 and status == "1保",
+            "is_qty_change": covered and status == "1保" and 0 < merged_qty != db_qty,
         })
     return diffs
 
@@ -865,7 +866,7 @@ def _sync_records(
     overrides は {code_s: {"trade_idea": ..., "note": ...}} (issue #397 Phase3b:
     確認画面でユーザーが入力した内容)。新規IN では trade_idea が指定されていれば
     既存の戦略より優先し、record にも保存し直す。note は生成した reason の末尾に
-    追記する (機械生成分は消さない)。両方省略可 (既定の自動反映のみ行う)。
+    追記する (機械生成分は消さない。売却・新規IN・株数変更で共通)。両方省略可 (既定の自動反映のみ行う)。
 
     未登録銘柄も 3監 登録後に戦略があれば 1保 まで進める。戦略未選択なら
     3監 登録まで (登録は情報の追加でしかなく破壊的でないため行う)。
@@ -917,6 +918,8 @@ def _sync_records(
             else:
                 # 株数変更のみ (既に1保なので log_action=True で株数変更ログを残す)
                 reason = "CSV取込"
+                if note:
+                    reason = f"{reason} / {note}"
                 ps.update_qty(
                     code_s, merged_qty, reason=reason, action_date=as_of,
                     source="csv_import", source_detail=source_detail, db_path=db_path,

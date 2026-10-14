@@ -13,6 +13,7 @@ import pytest
 import import_portfolio_csv as ic
 import portfolio_shelve as ps
 import research_shelve as rs
+from webapp.trade_episodes import _qty_change_note
 
 
 def _write_csv(path, rows):
@@ -482,7 +483,8 @@ class TestPhase2ApplyRecords:
         ps.update_qty("402A", 1000, log_action=False, db_path=db_path)
 
         result = ic.import_csvs(self._paths(tmp_path), "2026-08-10", dry_run=False,
-                                apply_records=True, db_path=db_path)
+                                apply_records=True, db_path=db_path,
+                                overrides={"402A": {"note": "押し目で買い増し"}})
 
         record = ps.get_record("402A", db_path=db_path)
         assert record["status"] == "1保"
@@ -491,6 +493,10 @@ class TestPhase2ApplyRecords:
         assert applied["action"] == "株数変更"
         log = ps.list_action_logs("402A", db_path=db_path)[-1]
         assert log["source"] == "csv_import"
+        # 確認画面のメモは理由に残り、売買履歴の振り返りメモ欄では機械の文言を除いて出る
+        assert log["reason"] == "1000 → 1500 (CSV取込 / 押し目で買い増し)"
+        assert _qty_change_note(log["reason"]) == "1000 → 1500 押し目で買い増し"
+        assert _qty_change_note("1000 → 1500 (CSV取込)") == ""
 
     def test_sell_when_merged_qty_zero(self, tmp_path, db_path):
         """1保 かつ merged_qty=0 -> 2準へ自動OUT。3監にはしない (§5-4)。
@@ -665,16 +671,17 @@ class TestPhase2ApplyRecords:
         assert applied["action"] == "登録+新規IN(自動)"
 
     @pytest.mark.parametrize(
-        "status,covered,merged_qty,needs_trade_idea,is_exit",
+        "status,covered,merged_qty,needs_trade_idea,is_exit,is_qty_change",
         [
-            ("1保", True, 0, False, True),      # 売却候補
-            ("1保", True, 500, False, False),   # 株数変更候補
-            ("2準", True, 500, True, False),    # 新規IN候補
-            ("未登録", True, 500, True, False),  # 未登録+保有検出 (今回1保まで進む)
-            ("未登録", False, 500, False, False),  # covered=false は一切触らない
+            ("1保", True, 0, False, True, False),      # 売却候補
+            ("1保", True, 700, False, False, True),    # 株数変更候補
+            ("1保", True, 500, False, False, False),   # 一致
+            ("2準", True, 500, True, False, False),    # 新規IN候補
+            ("未登録", True, 500, True, False, False),  # 未登録+保有検出 (今回1保まで進む)
+            ("未登録", False, 500, False, False, False),  # covered=false は一切触らない
         ],
     )
-    def test_diff_row_flags(self, status, covered, merged_qty, needs_trade_idea, is_exit):
+    def test_diff_row_flags(self, status, covered, merged_qty, needs_trade_idea, is_exit, is_qty_change):
         """確認画面の出し分けフラグ。judgement の文字列一致に依存しないこと。"""
         rows = ic._build_diff_preview(
             {"402A"}, {"402A": {"status": status, "qty": 500}} if status != "未登録" else {},
@@ -683,6 +690,7 @@ class TestPhase2ApplyRecords:
         )
         assert rows[0]["needs_trade_idea"] is needs_trade_idea
         assert rows[0]["is_exit"] is is_exit
+        assert rows[0]["is_qty_change"] is is_qty_change
 
 
 # ==================================================
