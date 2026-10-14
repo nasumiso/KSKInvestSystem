@@ -95,6 +95,12 @@ PORTAL_SPREADSHEETS = (
         "url": "https://docs.google.com/document/d/1_O8GdD7SwA6mCMJR5SC362oX1UouJCGworj9z1rZ2I4/edit?usp=sharing",
     },
     {
+        # 正本は KS_DATA_DIR/stock_ratings/stock_ratings.html。Drive へは上書きコピーでファイル ID を保つ (stock_ratings.py)
+        "title": "銘柄評価台帳",
+        "url": "https://drive.google.com/file/d/1rBn0Teo7FgSpFX0cp_kLQThkvi_A5JZJ/view",
+        "mtime_csv": "stock_ratings/stock_ratings.html",
+    },
+    {
         "title": "PTS",
         "url": "https://kabutan.jp/warning/pts_night_price_increase",
     },
