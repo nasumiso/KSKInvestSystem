@@ -68,15 +68,15 @@
 
   {% macro render_stock_li(s, is_past) -%}
     {% set li_class = 'kessan-4q' if (s.quarter|string) == '4' else '' %}
-    {% set possess_class = ' is-possess' if s.is_possess else '' %}
-    <li class="{{ li_class }} kessan-stock{% if s.has_comment %} has-comment{% endif %}{{ possess_class }}"
+    {% set badge = status_badges.get(s.code_s) %}
+    <li class="{{ li_class }} kessan-stock{% if s.has_comment %} has-comment{% endif %}"
         data-code="{{ s.code_s }}"
         data-kessanbi="{{ s.kessanbi }}"
         data-quarter="{{ s.quarter }}"
         data-is-past="{{ '1' if is_past else '0' }}"
         onclick="handleKessanRowClick(event, this)"
         title="クリックでコメント編集">
-      {% if s.is_possess %}<span class="kessan-possess-mark" title="保有銘柄">☆</span>{% endif %}
+      {% if badge %}<span class="status-badge status-{{ badge.query }}">{{ badge.label }}</span>{% endif %}
       {% if s.kessan_matagi %}<span class="kessan-matagi-mark" title="決算またぎ保有">◆</span>{% endif %}
       <a href="https://kabutan.jp/stock/chart?code={{ s.code_s }}" target="_blank">{{ s.code_s }}</a>
       <a href="/stock/{{ s.code_s }}">{% if s.stock_name %}{{ macros.stock_name_with_prev(s) }}{% else %}-{% endif %}</a>
@@ -187,6 +187,22 @@
 {% if disclosure_parts.available %}
 {{ disclosure_parts.body | safe }}
 {{ disclosure_parts.footer | safe }}
+<script>
+/* 適時開示の表は日次バッチで作り置きした HTML なので、今のステータスのバッジをここで足す */
+(function() {
+  var badges = {{ status_badges|tojson }};
+  document.querySelectorAll('.disc-table a[href]').forEach(function(a) {
+    var m = new URL(a.href, location.href).pathname.match(/^\/stock\/([0-9A-Z]{4})$/);
+    var badge = m && badges[m[1]];
+    if (!badge) return;
+    var span = document.createElement('span');
+    span.className = 'status-badge status-' + badge.query;
+    span.textContent = badge.label;
+    a.parentNode.insertBefore(span, a);
+    a.parentNode.insertBefore(document.createTextNode(' '), a);
+  });
+})();
+</script>
 {% endif %}
 
 {% endblock %}

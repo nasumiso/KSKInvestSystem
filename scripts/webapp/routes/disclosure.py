@@ -10,6 +10,8 @@ from typing import Any, Dict
 
 from flask import Blueprint, jsonify, render_template, request
 
+import portfolio_shelve as ps
+from ks_util import log_warning
 from webapp.helpers import (
     get_disclosure_html_parts,
     get_kessan_comment,
@@ -54,6 +56,26 @@ def _serialize_kessan_entry_for_api(entry: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+# バッジを付けるステータス。このページの銘柄は全部が保有・準保有・監視のどれかなので、
+# 監視にも付けると全行に並んで区別にならない。
+_BADGE_STATUSES = {"1保": ("保有", "hold"), "2準": ("準保有", "semi")}
+
+
+def _status_badges() -> Dict[str, Dict[str, str]]:
+    """保有・準保有の銘柄を {code_s: {"label", "query"}} で返す。読めなければ空。"""
+    try:
+        records = ps.list_records()
+    except Exception as e:  # noqa: BLE001
+        log_warning(f"[disclosure] 保有ステータスを読めませんでした: {e}")
+        return {}
+    badges = {}
+    for r in records:
+        if r.get("status") in _BADGE_STATUSES:
+            label, query = _BADGE_STATUSES[r["status"]]
+            badges[r["code_s"]] = {"label": label, "query": query}
+    return badges
+
+
 @disclosure_bp.route("/disclosure", methods=["GET"])
 def disclosure_page():
     """決算・開示ページ。決算日カード + 静的 disclosure_data.html を取り込んで表示する。"""
@@ -65,6 +87,7 @@ def disclosure_page():
         disclosure_parts=disclosure_parts,
         kessan_data=kessan_data,
         expectation_options=expectation_options,
+        status_badges=_status_badges(),
     )
 
 

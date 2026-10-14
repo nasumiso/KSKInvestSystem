@@ -562,8 +562,8 @@ function updateKessanViewDOM(li, data) {
       matagiMark.className = 'kessan-matagi-mark';
       matagiMark.title = '決算またぎ保有';
       matagiMark.textContent = '◆';
-      var possessMark = li.querySelector('.kessan-possess-mark');
-      var refNode = possessMark ? possessMark.nextSibling : li.firstChild;
+      var statusBadge = li.querySelector('.status-badge');
+      var refNode = statusBadge ? statusBadge.nextSibling : li.firstChild;
       li.insertBefore(matagiMark, refNode);
     }
   } else if (matagiMark) {

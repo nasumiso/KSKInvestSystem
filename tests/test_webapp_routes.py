@@ -1141,6 +1141,36 @@ class TestDisclosureRouteKessanCard:
         assert '<div class="card-date">04/26 (済)</div>' in html
         assert 'kessan-card past' in html
 
+    def test_status_badges_for_hold_and_semi_only(self, client, monkeypatch):
+        """保有・準保有の行にバッジが付き、監視には付かない。保有の ☆ は出ない"""
+        from datetime import datetime as _dt
+        day = "2026/04/26"
+        from webapp.routes import disclosure as _disc_route
+        monkeypatch.setattr(_disc_route.ps, "list_records", lambda: [
+            {"code_s": "7203", "status": "1保"},
+            {"code_s": "6501", "status": "2準"},
+            {"code_s": "9984", "status": "3監"},
+        ])
+        monkeypatch.setattr(
+            _disc_route, "get_market_kessan_data",
+            lambda: {
+                "base_day": _dt.today().date(),
+                "future_entries": [], "past_entries": [], "today_entries": [],
+                "older_past_entries": [],
+                "recent_past_entries": [(day, [
+                    self._make_stub_entry("7203", day, is_possess=True),
+                    self._make_stub_entry("6501", day),
+                    self._make_stub_entry("9984", day),
+                ])],
+            },
+        )
+
+        html = client.get("/disclosure").data.decode()
+        assert html.count('class="status-badge status-hold">保有</span>') == 1
+        assert html.count('class="status-badge status-semi">準保有</span>') == 1
+        assert "status-watch" not in html
+        assert "kessan-possess-mark" not in html and "is-possess" not in html
+
     def test_today_card_still_renders_post_fields(self, client, monkeypatch):
         """当日カードでも中身は past (is_past=True) として render され、反応コメ・株価変動率枠が出る"""
         from datetime import datetime as _dt

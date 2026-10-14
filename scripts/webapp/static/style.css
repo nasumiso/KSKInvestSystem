@@ -529,15 +529,15 @@ nav .quick-search {
   color: #333;
 }
 
-/* 保有銘柄マーク */
-.kessan-possess-mark {
-  color: #e67e22;
-  font-weight: bold;
-  margin-right: 2px;
+/* 保有ステータスのバッジ (一覧・テーマ集計・決算と開示で共有) */
+.status-badge {
+  display: inline-block; padding: 0.05em 0.4em;
+  border-radius: 3px; font-size: 0.9em; line-height: 1.3;
+  white-space: nowrap;
 }
-.kessan-stock.is-possess {
-  background: #fff9ed;
-}
+.status-badge.status-hold  { background: #d4ead4; color: #285028; }
+.status-badge.status-semi  { background: #fdf0c0; color: #856100; }
+.status-badge.status-watch { background: #e2e2e2; color: #555; }
 
 /* 決算またぎ (決算日をまたいで保有) マーク */
 .kessan-matagi-mark {
