@@ -2158,22 +2158,7 @@ def list_portfolio_with_indicators(
     if not records:
         return []
 
-    from webapp.trade_episodes import build_fill_episodes  # 循環 import 回避
-
-    exit_positions = _build_exit_position_map(build_fill_episodes()) if any(
-        r.get("status") == "1保" for r in records
-    ) else {}
-    try:
-        import portfolio_shelve as ps
-        ps.seed_trade_ideas()
-        exit_rules = {
-            item.get("name"): item.get("exit_rule")
-            for item in ps.list_trade_ideas()
-            if item.get("name")
-        }
-    except Exception:  # noqa: BLE001
-        ps = None
-        exit_rules = {}
+    ps, exit_positions, exit_rules = _prepare_hold_exit(records)
 
     code_list = [r.get("code_s", "") for r in records]
     stock_map = _bulk_get_stock_data(code_list)
@@ -2201,9 +2186,7 @@ def list_portfolio_with_indicators(
         except Exception:  # noqa: BLE001
             topix_map = None
 
-    # 出口アラートの状態は、最初に必要になったときに一括で読む
-    # (銘柄ごとに読むと銘柄数だけ DB を開き直す)
-    exit_states = None
+    exit_states_cache: Dict[str, Any] = {}
 
     rows: List[Dict[str, Any]] = []
     for rec in records:
@@ -2216,35 +2199,14 @@ def list_portfolio_with_indicators(
         row.update(_extract_indicators_for_portfolio(stock))
         row["exit_gauge"] = {"svg": "", "tooltip": ""}
         if rec.get("status") == "1保" and ps is not None:
-            position = exit_positions.get(code_s)
-            strategy = (rec.get("memo") or {}).get("trade_idea")
-            exit_rule = exit_rules.get(strategy)
-            if isinstance(exit_rule, dict):
-                from exit_line import evaluate_exit_signal, exit_line_values
-                rule_id = ps.exit_rule_id(exit_rule)
-                if position:
-                    position = dict(position)
-                    position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["episodes"])
-                    cycle_id = f"{position['cycle_id']}|{strategy}|{rule_id}"
-                else:
-                    # CSV期間外からの保有など、約定履歴がない銘柄もMAは評価する。
-                    position = {}
-                    # レコードの登録時刻は registered_at (created_at は theme/trade_idea 用)。
-                    # 削除→再登録を別サイクルとして扱わないと旧「防歴」を引き継ぐ。
-                    cycle_id = f"manual:{rec.get('registered_at') or code_s}|{strategy}|{rule_id}"
-                if exit_states is None:
-                    exit_states = ps.list_exit_alert_states()
-                state = ps.get_exit_alert_state(code_s, cycle_id, preloaded=exit_states)
-                signal = evaluate_exit_signal(exit_rule, stock, position, state)
+            ev = _evaluate_hold_exit(rec, stock, ps, exit_positions, exit_rules, exit_states_cache)
+            if ev:
+                from exit_line import exit_line_values
+                signal = ev["signal"]
                 if signal:
-                    # 同じ日付のイベントが記録済みなら書かない (表示のたびに書き直さない)
-                    if signal["level"] == "防" and not any(
-                            e.get("date") == signal.get("date")
-                            for e in state.get("events") or [] if isinstance(e, dict)):
-                        ps.record_exit_alert_event(code_s, cycle_id, signal)
                     _apply_exit_signal_display(row, signal)
                 row["exit_gauge"] = exit_line_gauge_svg(
-                    exit_line_values(exit_rule, stock, position),
+                    exit_line_values(ev["exit_rule"], stock, ev["position"]),
                     signal.get("level", "") if signal else "",
                     row.get("signal_full") or "",
                 )
@@ -2339,6 +2301,98 @@ def list_portfolio_with_indicators(
             r.get("code_s", ""),
         ))
     return rows
+
+
+def _prepare_hold_exit(records: List[Dict[str, Any]]) -> tuple:
+    """1保の出口判定に使う材料を1回だけ用意する。(ps, 建玉マップ, 戦略名→出口ルール) を返す。
+
+    出口ルールを読めないときは ps=None を返し、呼び出し側は出口判定をしない。
+    """
+    from webapp.trade_episodes import build_fill_episodes  # 循環 import 回避
+
+    exit_positions = _build_exit_position_map(build_fill_episodes()) if any(
+        r.get("status") == "1保" for r in records
+    ) else {}
+    try:
+        import portfolio_shelve as ps
+        ps.seed_trade_ideas()
+        exit_rules = {
+            item.get("name"): item.get("exit_rule")
+            for item in ps.list_trade_ideas()
+            if item.get("name")
+        }
+    except Exception:  # noqa: BLE001
+        ps = None
+        exit_rules = {}
+    return ps, exit_positions, exit_rules
+
+
+def _evaluate_hold_exit(rec: Dict[str, Any], stock: Dict[str, Any], ps: Any,
+                        exit_positions: Dict[str, Any], exit_rules: Dict[str, Any],
+                        states_cache: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """1保の銘柄1つの出口シグナルを判定し、「防」なら日付単位で記録する。
+
+    戦略に出口ルールが無ければ None。あれば {signal, position, exit_rule, state} を返す
+    (state は判定前の出口アラート状態)。保有銘柄タブとトップの今日のアクションが共用する。
+    states_cache は出口アラートの状態を最初に必要になったときに一括で読むための入れ物
+    (銘柄ごとに読むと銘柄数だけ DB を開き直す)。
+    """
+    from exit_line import evaluate_exit_signal
+
+    code_s = rec.get("code_s", "")
+    position = exit_positions.get(code_s)
+    strategy = (rec.get("memo") or {}).get("trade_idea")
+    exit_rule = exit_rules.get(strategy)
+    if not isinstance(exit_rule, dict):
+        return None
+    rule_id = ps.exit_rule_id(exit_rule)
+    if position:
+        position = dict(position)
+        position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["episodes"])
+        cycle_id = f"{position['cycle_id']}|{strategy}|{rule_id}"
+    else:
+        # CSV期間外からの保有など、約定履歴がない銘柄もMAは評価する。
+        position = {}
+        # レコードの登録時刻は registered_at (created_at は theme/trade_idea 用)。
+        # 削除→再登録を別サイクルとして扱わないと旧「防歴」を引き継ぐ。
+        cycle_id = f"manual:{rec.get('registered_at') or code_s}|{strategy}|{rule_id}"
+    if "states" not in states_cache:
+        states_cache["states"] = ps.list_exit_alert_states()
+    state = ps.get_exit_alert_state(code_s, cycle_id, preloaded=states_cache["states"])
+    signal = evaluate_exit_signal(exit_rule, stock, position, state)
+    # 同じ日付のイベントが記録済みなら書かない (表示のたびに書き直さない)
+    if signal and signal["level"] == "防" and not any(
+            e.get("date") == signal.get("date")
+            for e in state.get("events") or [] if isinstance(e, dict)):
+        ps.record_exit_alert_event(code_s, cycle_id, signal)
+    return {"signal": signal, "position": position, "exit_rule": exit_rule, "state": state}
+
+
+def evaluate_hold_exit_signals(records: List[Dict[str, Any]],
+                               stock_map: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """1保の銘柄ごとに、今の出口シグナルと「防」が今のサイクルで初めて点いた日を返す。
+
+    {code_s: {"signal": dict|None, "first_defense": "YYYY-MM-DD"|None}}。出口ルールの無い銘柄は含めない。
+    初点灯日は記録済みの「防」の最も古い日。記録が無く今日「防」なら今日の判定の日付。
+    """
+    hold = [r for r in records if r.get("status") == "1保"]
+    ps, exit_positions, exit_rules = _prepare_hold_exit(hold)
+    if ps is None:
+        return {}
+    cache: Dict[str, Any] = {}
+    result = {}
+    for rec in hold:
+        code_s = rec.get("code_s", "")
+        ev = _evaluate_hold_exit(rec, stock_map.get(code_s) or {}, ps, exit_positions, exit_rules, cache)
+        if ev is None:
+            continue
+        signal = ev["signal"]
+        dates = [str(e["date"]) for e in ev["state"].get("events") or []
+                 if isinstance(e, dict) and e.get("date")]
+        if signal and signal["level"] == "防":
+            dates.append(str(signal["date"]))
+        result[code_s] = {"signal": signal, "first_defense": min(dates) if dates else None}
+    return result
 
 
 def _build_exit_position_map(episodes: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:

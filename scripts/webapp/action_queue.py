@@ -1,16 +1,26 @@
 """トップページの「今日のアクション」(issue #372)。
 
-データの手入れが要る項目と、決算が近い銘柄を出す。各項目は1行に集約し、手入れを済ませると消える。
-相場起点の検知のうち扱うのは決算接近だけ (シグナル点灯・順位急落などは扱わない)。
+相場起点の項目 (出口ライン「防」・決算接近・ブレイク) と、データの手入れが要る項目
+(ステージ・残高CSV・約定CSV・四季報) を出す。各項目は1行に集約し、期限が過ぎるか
+手入れを済ませると消える。順位・RS の急落と業態テーマの悪化は、過去の値を残しておらず
+新しく悪化したことを判定できないので扱わない。
 """
 
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from functools import cached_property
+from typing import Any, Dict, List, Optional
+
+import numpy as np
 
 import portfolio_shelve as ps
 import research_shelve
 from ks_util import get_price_day, log_warning
-from webapp.helpers import _bulk_get_stock_data, _parse_kessanbi
+from webapp.helpers import (
+    _bulk_get_stock_data,
+    _parse_kessanbi,
+    _parse_research_update_md,
+    evaluate_hold_exit_signals,
+)
 from webapp.routes.portfolio import STATUS_VALUE_TO_LABEL, STATUS_VALUE_TO_QUERY
 
 # 証券会社ごとの「これより古ければ催促する」日数。ここに無い証券会社は催促しない。
@@ -26,6 +36,47 @@ KESSAN_NEAR_DAYS = 7
 KESSAN_NEAR_DAYS_WATCH = 3
 # 保有の行に銘柄名を並べる上限。超えた分は「他N銘柄」にまとめる。
 KESSAN_NAME_LIMIT = 3
+
+# 「防」の初点灯とブレイクの発生を何営業日出すか (発生日を含む。土日だけ除き、祝日は考慮しない)。
+# トップを開かない日があっても見逃さず、点きっぱなしの銘柄で毎日埋まらない長さ。
+SIGNAL_SHOW_BUSDAYS = 3
+# 出すブレイクのシグナル種別 (make_stock_db.extract_signals の kind)。
+BREAKOUT_KINDS = ("ブ", "週ブ")
+# 決算・「防」のあと、何日までステージの更新を促すか (暦日)。
+# 過ぎたら出さない (更新しないまま古くなった銘柄で点きっぱなしにしないため)。
+STAGE_AFTER_EVENT_DAYS = 14
+
+
+class _Material:
+    """防・決算・ブレイク・ステージの行が共有する材料。初めて使うときに1回だけ読む。"""
+
+    @cached_property
+    def records(self) -> List[Dict[str, Any]]:
+        return ps.list_records()
+
+    @cached_property
+    def stocks(self) -> Dict[str, Dict[str, Any]]:
+        return _bulk_get_stock_data([r["code_s"] for r in self.records])
+
+    @cached_property
+    def exits(self) -> Dict[str, Dict[str, Any]]:
+        return evaluate_hold_exit_signals(self.records, self.stocks)
+
+    def name(self, code_s: str) -> str:
+        return (self.stocks.get(code_s) or {}).get("stock_name") or code_s
+
+
+def _busdays_since(start: date, today: date) -> int:
+    """start から today までの営業日数 (start 当日は 0)。"""
+    return int(np.busday_count(start, today))
+
+
+def _names(entries: List[str]) -> str:
+    """銘柄の表示を並べる。上限を超えた分は「他N銘柄」にまとめる。"""
+    text = "・".join(entries[:KESSAN_NAME_LIMIT])
+    if len(entries) > KESSAN_NAME_LIMIT:
+        text += f" 他{len(entries) - KESSAN_NAME_LIMIT}銘柄"
+    return text
 
 
 def _item(text: str, url: str, link_label: str) -> Dict[str, str]:
@@ -107,7 +158,115 @@ def _has_outlook(record: Optional[Dict], day: date) -> bool:
     )
 
 
-def _kessan_items(today: date) -> List[Dict[str, str]]:
+def _exit_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:
+    """保有で出口ライン「防」が今の保有サイクルで初めて点いてから3営業日の銘柄を、1銘柄1行で出す。
+
+    点きっぱなしの銘柄 (持ち続けると決めたもの) で毎日埋まらないよう、初点灯からの日数で切る。
+    今日も「防」のままの銘柄だけを出す (割れから戻った銘柄は急ぎの判断が要らない)。
+    """
+    mat = mat or _Material()
+    rows = []
+    for code_s, ev in mat.exits.items():
+        signal, first = ev["signal"], ev["first_defense"]
+        if not (signal and signal["level"] == "防" and first):
+            continue
+        first_day = date.fromisoformat(first)
+        if 0 <= _busdays_since(first_day, today) < SIGNAL_SHOW_BUSDAYS:
+            rows.append((first_day, code_s, "・".join(signal.get("reasons") or [])))
+    return [
+        _item(f"出口ライン: {code_s} {mat.name(code_s)} {reasons} ({_md(day)}〜)",
+              "/portfolio?status=hold", "保有銘柄で手仕舞いを決める")
+        for day, code_s, reasons in sorted(rows)
+    ]
+
+
+def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:
+    """ブ・週ブが出てから3営業日の銘柄を、保有・準保有は銘柄名で、監視は件数で各1行にまとめる。"""
+    from make_stock_db import extract_signals  # 遅延 import (webapp 起動時に読まない)
+
+    mat = mat or _Material()
+    found: Dict[str, Dict[str, Dict[str, Any]]] = {}  # status -> code_s -> {kinds, day}
+    for r in mat.records:
+        status = r.get("status")
+        if status not in ("1保", "2準", "3監"):
+            continue
+        for sig in extract_signals(mat.stocks.get(r["code_s"]) or {}):
+            day = sig.get("sig_date")
+            if sig["kind"] not in BREAKOUT_KINDS or not isinstance(day, date):
+                continue
+            if not 0 <= _busdays_since(day, today) < SIGNAL_SHOW_BUSDAYS:
+                continue
+            hit = found.setdefault(status, {}).setdefault(r["code_s"], {"kinds": set(), "day": day})
+            hit["kinds"].add(sig["kind"])
+            hit["day"] = max(hit["day"], day)
+
+    def kinds_label(kinds: set) -> str:
+        return "・".join(k for k in BREAKOUT_KINDS if k in kinds)
+
+    items = []
+    for status, action in (("1保", "増し玉を検討"), ("2準", "入り直しを検討")):
+        hits = found.get(status)
+        if not hits:
+            continue
+        # 発生日の新しい順 (同日はコード順)
+        order = sorted(hits, key=lambda c: (-hits[c]["day"].toordinal(), c))
+        names = _names([f"{mat.name(c)} ({kinds_label(hits[c]['kinds'])})" for c in order])
+        items.append(_item(
+            f"ブレイク点灯: {STATUS_VALUE_TO_LABEL[status]} {names}",
+            f"/portfolio/charts?status={STATUS_VALUE_TO_QUERY[status]}", f"チャート一覧で{action}",
+        ))
+    watch = found.get("3監")
+    if watch:
+        counts = "・".join(
+            f"{k}{n}" for k in BREAKOUT_KINDS
+            if (n := sum(1 for h in watch.values() if k in h["kinds"]))
+        )
+        items.append(_item(
+            f"監視のブレイク: {len(watch)}銘柄 ({counts})", "/portfolio/charts?status=watch", "チャート一覧で見る"
+        ))
+    return items
+
+
+def _stage_item(today: date, mat: Optional[_Material] = None) -> Optional[Dict[str, str]]:
+    """決算・「防」のあと14日以内で、ステージをまだ更新していない保有・準保有の数を1行にまとめる。
+
+    チャートが変わりやすい出来事の後だけ促す (更新日の古さだけで数えると、ほぼ全銘柄が常に該当する)。
+    チャート一覧でステージを保存すると更新日が今日になり、消える。
+    両方に当たる銘柄は「防の後」として1回だけ数える。
+    """
+    mat = mat or _Material()
+    counts: Dict[str, Dict[str, int]] = {"防の後": {}, "決算後": {}}
+    for r in mat.records:
+        status = r.get("status")
+        if status not in ("1保", "2準"):
+            continue
+        code_s = r["code_s"]
+        updated = _parse_research_update_md((r.get("memo") or {}).get("last_research_update"), today)
+        events = []
+        first = (mat.exits.get(code_s) or {}).get("first_defense") if status == "1保" else None
+        if first:
+            events.append(("防の後", date.fromisoformat(first)))
+        kessan_day = _parse_kessanbi((mat.stocks.get(code_s) or {}).get("kessan_jisseki_date", ""))
+        if kessan_day:
+            events.append(("決算後", kessan_day))
+        for label, day in events:
+            if 0 <= (today - day).days <= STAGE_AFTER_EVENT_DAYS and not (updated and updated >= day):
+                counts[label][status] = counts[label].get(status, 0) + 1
+                break
+    parts = [
+        f"{label} " + "・".join(f"{STATUS_VALUE_TO_LABEL[st]} {n}" for st, n in sorted(c.items()))
+        for label, c in (("決算後", counts["決算後"]), ("防の後", counts["防の後"])) if c
+    ]
+    if not parts:
+        return None
+    has_hold = any("1保" in c for c in counts.values())
+    return _item(
+        "ステージ未更新: " + "、".join(parts),
+        f"/portfolio/charts?status={'hold' if has_hold else 'semi'}", "チャート一覧で更新",
+    )
+
+
+def _kessan_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:
     """決算が近い銘柄を、保有・準保有・監視の各1行にまとめる。
 
     保有・準保有は事前見通しが未記入の銘柄だけを数え、書くと消える。
@@ -117,8 +276,8 @@ def _kessan_items(today: date) -> List[Dict[str, str]]:
     日次バッチの終わりまで前日のままなので、そこを経由すると出し遅れる。
     予定日が無い・過去日の銘柄は、株探に次回予定日がまだ載っていないので出さない。
     """
-    records = ps.list_records()
-    stocks = _bulk_get_stock_data([r["code_s"] for r in records])
+    mat = mat or _Material()
+    records, stocks = mat.records, mat.stocks
     near: Dict[str, List] = {}  # status -> [(予定日, code_s, 銘柄名)]
     for r in records:
         stock = stocks.get(r["code_s"]) or {}
@@ -137,9 +296,7 @@ def _kessan_items(today: date) -> List[Dict[str, str]]:
     items = []
     hold = pending("1保")
     if hold:
-        names = "・".join(f"{name or code_s} ({_md(day)})" for day, code_s, name in hold[:KESSAN_NAME_LIMIT])
-        if len(hold) > KESSAN_NAME_LIMIT:
-            names += f" 他{len(hold) - KESSAN_NAME_LIMIT}銘柄"
+        names = _names([f"{name or code_s} ({_md(day)})" for day, code_s, name in hold])
         items.append(_item(f"決算が近い: 保有 {names}", "/disclosure", "決算・開示で見通しを書く"))
     semi = pending("2準")
     if semi:
@@ -156,12 +313,16 @@ def _kessan_items(today: date) -> List[Dict[str, str]]:
     return items
 
 
-# (項目名, 検知関数)。表示順もこの順。検知関数は1行 (dict) か複数行 (list) か None を返す。
+# (項目名, 検知関数, 共有の材料を使うか)。表示順もこの順。
+# 検知関数は1行 (dict) か複数行 (list) か None を返す。
 _DETECTORS: List = [
-    ("決算予定", _kessan_items),
-    ("残高CSV", _balance_csv_item),
-    ("約定CSV", _fill_csv_item),
-    ("四季報", _shikiho_item),
+    ("出口ライン", _exit_items, True),
+    ("決算予定", _kessan_items, True),
+    ("ブレイク", _breakout_items, True),
+    ("ステージ", _stage_item, True),
+    ("残高CSV", _balance_csv_item, False),
+    ("約定CSV", _fill_csv_item, False),
+    ("四季報", _shikiho_item, False),
 ]
 
 
@@ -176,10 +337,11 @@ def build_action_queue(today: Optional[date] = None) -> List[Dict[str, str]]:
     単純な date.today() だと17時前はカレンダー側と1日ずれる。
     """
     today = today or get_price_day(datetime.today())
+    mat = _Material()
     items = []
-    for name, detect in _DETECTORS:
+    for name, detect, uses_material in _DETECTORS:
         try:
-            found = detect(today)
+            found = detect(today, mat) if uses_material else detect(today)
         except Exception as e:  # noqa: BLE001 - トップページを 500 にしない
             log_warning("action_queue: 判定に失敗", name, repr(e))
             found = _item(f"{name}の状態を判定できませんでした", "", "")

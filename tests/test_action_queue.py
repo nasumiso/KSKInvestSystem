@@ -80,9 +80,9 @@ def test_build_action_queue_keeps_other_items_when_one_detector_fails(monkeypatc
         raise RuntimeError("db broken")
 
     monkeypatch.setattr(aq, "_DETECTORS", [
-        ("残高CSV", boom),
-        ("約定CSV", lambda today: None),
-        ("四季報", lambda today: {"text": "四季報 26.9 が未入力: 保有 1銘柄", "url": "/x", "link_label": "入力する"}),
+        ("残高CSV", boom, False),
+        ("約定CSV", lambda today: None, False),
+        ("四季報", lambda today: {"text": "四季報 26.9 が未入力: 保有 1銘柄", "url": "/x", "link_label": "入力する"}, False),
     ])
 
     items = aq.build_action_queue(TODAY)
@@ -150,3 +150,108 @@ def test_kessan_items_drop_stocks_with_outlook(monkeypatch):
         "決算が近い: 準保有 2銘柄 (10/14〜10/16)",
         "監視の決算: 3日以内に 1銘柄",
     ]
+
+
+def _stub_material(monkeypatch, records, stocks=None, exits=None):
+    """records: [{code_s, status, memo?}]、stocks: {code_s: stock}、exits: {code_s: {signal, first_defense}}"""
+    stocks = stocks or {}
+    monkeypatch.setattr(ps, "list_records", lambda: records)
+    monkeypatch.setattr(aq, "_bulk_get_stock_data",
+                        lambda codes: {c: {"stock_name": f"銘柄{c}", **stocks.get(c, {})} for c in codes})
+    monkeypatch.setattr(aq, "evaluate_hold_exit_signals", lambda recs, stock_map: exits or {})
+
+
+@pytest.mark.parametrize("first, level, shown", [
+    ("2026-10-12", "防", True),    # 初点灯の当日 (TODAY は月曜)
+    ("2026-10-09", "防", True),    # 金曜点灯 → 月曜は1営業日後
+    ("2026-10-08", "防", True),    # 2営業日後まで出す
+    ("2026-10-07", "防", False),   # 3営業日後は出さない (点きっぱなしの銘柄で埋まらないため)
+    ("2026-10-12", "防予", False),  # 予兆は出さない
+])
+def test_exit_items_show_first_defense_for_three_busdays(monkeypatch, first, level, shown):
+    """出口ライン「防」は、今の保有サイクルで初めて点いてから3営業日だけ出る"""
+    _stub_material(monkeypatch, [{"code_s": "1001", "status": "1保"}], exits={
+        "1001": {"signal": {"level": level, "reasons": ["損切りライン割れ"]}, "first_defense": first},
+    })
+
+    items = aq._exit_items(TODAY)
+
+    if shown:
+        md = f"{int(first[5:7])}/{int(first[8:])}"
+        assert [i["text"] for i in items] == [f"出口ライン: 1001 銘柄1001 損切りライン割れ ({md}〜)"]
+    else:
+        assert items == []
+
+
+def test_evaluate_hold_exit_signals_first_defense(monkeypatch):
+    """初点灯日は記録済みの「防」の最も古い日。記録が無く今日「防」なら今日の判定の日付"""
+    from webapp import helpers
+
+    evals = {
+        "1001": {"signal": {"level": "防", "date": "2026-10-12"}, "state": {"events": []}},
+        "1002": {"signal": {"level": "防", "date": "2026-10-12"},
+                 "state": {"events": [{"date": "2026-10-09"}, {"date": "2026-10-08"}]}},
+        "1003": {"signal": None, "state": {"events": []}},
+    }
+    monkeypatch.setattr(helpers, "_prepare_hold_exit", lambda recs: (object(), {}, {}))
+    monkeypatch.setattr(helpers, "_evaluate_hold_exit",
+                        lambda rec, stock, ps_, pos, rules, cache: evals[rec["code_s"]])
+
+    result = helpers.evaluate_hold_exit_signals(
+        [{"code_s": c, "status": "1保"} for c in evals] + [{"code_s": "2001", "status": "2準"}], {})
+
+    assert {c: v["first_defense"] for c, v in result.items()} == {
+        "1001": "2026-10-12", "1002": "2026-10-08", "1003": None,
+    }
+
+
+def test_breakout_items(monkeypatch):
+    """ブ・週ブは発生から3営業日。保有・準保有は銘柄名 (新しい順、4銘柄目から「他N銘柄」)、監視は件数と内訳"""
+    import make_stock_db
+
+    sigs = {
+        "1001": [("ブ", date(2026, 10, 8))],                            # 2営業日後: 出る
+        "1002": [("ブ", date(2026, 10, 12)), ("週ブ", date(2026, 10, 9))],  # 両方: 新しい方の日付で並ぶ
+        "1003": [("週ブ", date(2026, 10, 9))],
+        "1004": [("ブ", date(2026, 10, 9))],
+        "1005": [("ブ", date(2026, 10, 7))],                            # 3営業日後: 出ない
+        "1006": [("ポ", date(2026, 10, 12))],                           # ポは出さない
+        "3001": [("ブ", date(2026, 10, 12)), ("週ブ", date(2026, 10, 12))],
+        "3002": [("ブ", date(2026, 10, 9))],
+    }
+    _stub_material(monkeypatch, [
+        {"code_s": c, "status": "3監" if c.startswith("3") else "1保"} for c in sigs
+    ])
+    monkeypatch.setattr(make_stock_db, "extract_signals", lambda stock: [
+        {"kind": k, "sig_date": d} for k, d in sigs[stock["stock_name"][2:]]
+    ])
+
+    items = aq._breakout_items(TODAY)
+
+    assert [(i["text"], i["url"]) for i in items] == [
+        ("ブレイク点灯: 保有 銘柄1002 (ブ・週ブ)・銘柄1003 (週ブ)・銘柄1004 (ブ) 他1銘柄",
+         "/portfolio/charts?status=hold"),
+        ("監視のブレイク: 2銘柄 (ブ2・週ブ1)", "/portfolio/charts?status=watch"),
+    ]
+
+
+@pytest.mark.parametrize("kessan, updated, first_defense, expected", [
+    ("2026/10/12", None, None, "ステージ未更新: 決算後 保有 1"),    # 決算当日
+    ("2026/09/28", "9/27", None, "ステージ未更新: 決算後 保有 1"),  # 14日後まで。更新日が決算前なら未更新
+    ("2026/09/27", None, None, None),                              # 15日後は出さない
+    ("2026/10/05", "10/6", None, None),                            # 決算の後に更新済み
+    ("2026/10/05", None, "2026-10-08", "ステージ未更新: 防の後 保有 1"),  # 両方なら防の後だけで数える
+])
+def test_stage_item_after_kessan_or_defense(monkeypatch, kessan, updated, first_defense, expected):
+    """決算・「防」の後14日以内で、ステージをまだ更新していない保有・準保有を数える"""
+    memo = {"last_research_update": updated} if updated else {}
+    _stub_material(
+        monkeypatch,
+        [{"code_s": "1001", "status": "1保", "memo": memo}],
+        stocks={"1001": {"kessan_jisseki_date": kessan}},
+        exits={"1001": {"signal": None, "first_defense": first_defense}} if first_defense else {},
+    )
+
+    item = aq._stage_item(TODAY)
+
+    assert (item["text"] if item else None) == expected
