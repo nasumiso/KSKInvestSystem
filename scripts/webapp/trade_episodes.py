@@ -1180,6 +1180,7 @@ def _make_round_trip(open_fill: Optional[Dict[str, Any]], close_fill: Optional[D
         "broker": (close_fill or open_fill or {}).get("broker", ""),
         "closed": close_fill is not None,
         "genbiki": False,  # 現引による現物への振替 (決済ではないので損益を出さない)
+        "genbiki_date": None,  # 現物側の行で、信用で建てて現引した玉なら現引日 (open_date は信用の建日)
         "pending_confirm": False,  # 楽天の未確定CSV由来で建玉情報が未取込
         "unrealized": False,  # pl が含み損益 (未確定) かどうか
         "pl": None,
@@ -1439,6 +1440,18 @@ def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     全株売却されれば総額は一致する。振り返り目的では実際の建値を反映する FIFO を
     優先し、不一致は許容する方針 (issue #421)。
     """
+    def make_row(bf, close_fill, qty):
+        # 現引で現物化した玉は、買った日を信用の建日で見せる。現引日のままだと、信用側と
+        # 現物側で1つの取引が2つに切れ、保有日数も現引後の分だけになる。
+        # 単価は現引の取得単価 (諸経費込み) のままにし、損益は変えない。
+        from_shinyo = bf.get("trade_kind") == "現引" and bf.get("tate_date")
+        row = _make_round_trip(bf, close_fill, qty,
+                               bf["tate_date"] if from_shinyo else bf.get("trade_date"),
+                               bf.get("price"))
+        if from_shinyo:
+            row["genbiki_date"] = bf.get("trade_date")
+        return row
+
     lots: List[Dict[str, Any]] = []  # FIFO キュー: {fill, remain}
     rows: List[Dict[str, Any]] = []
     for f in ep["fills"]:
@@ -1456,7 +1469,7 @@ def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
                 break  # 同社の買いロットが無い → 建玉不明の売りとして下で処理
             take = min(remain, lot["remain"])
             bf = lot["fill"]
-            row = _make_round_trip(bf, f, take, bf.get("trade_date"), bf.get("price"))
+            row = make_row(bf, f, take)
             cost = bf["price"] * take
             profit = (f["price"] - bf["price"]) * take
             row["pl"] = round(profit)
@@ -1473,9 +1486,7 @@ def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     # 売られずに残ったロットは「保有中」行
     for lot in lots:
         if lot["remain"] > 0:
-            bf = lot["fill"]
-            rows.append(_make_round_trip(bf, None, lot["remain"],
-                                         bf.get("trade_date"), bf.get("price")))
+            rows.append(make_row(lot["fill"], None, lot["remain"]))
     return rows
 
 
@@ -1581,7 +1592,9 @@ def _merge_same_day_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not r["open_seqs"] or r["pl"] is None or r["open_price"] is None:
             merged.append(r)
             continue
+        # genbiki_date: 同じ日に現物で買った玉と、同じ日に信用で建てて後で現引した玉を混ぜない
         key = (r["open_date"], r["close_date"], r["broker"], r["closed"], r["genbiki"],
+               r.get("genbiki_date"),
                r["pending_confirm"], r["unrealized"], r.get("inferred_open", False),
                r["trade_idea"], r["late_label"])
         base = index.get(key)

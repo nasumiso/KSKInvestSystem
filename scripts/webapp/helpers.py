@@ -5323,7 +5323,9 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
     for r in build_round_trips(ep):
         # 信用ラウンドの現引は買い fill で建玉を閉じる
         close_buy = True if r["genbiki"] else not open_buy
-        a = marker_at.get((r["open_date"], open_buy))
+        # 現引した玉の現物側は買った日を信用の建日で見せるが、このエピソードに
+        # その日の約定は無い。線の始点は現物になった現引日のマーカーに置く。
+        a = marker_at.get((r.get("genbiki_date") or r["open_date"], open_buy))
         b = marker_at.get((r["close_date"], close_buy))
         if a is None or b is None:
             continue
