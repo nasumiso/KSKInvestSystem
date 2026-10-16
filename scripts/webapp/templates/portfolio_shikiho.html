@@ -106,10 +106,25 @@
     var gyosekiPreview = document.getElementById('gyoseki-preview');
     var gyosekiMsg = document.getElementById('gyoseki-msg');
 
+    // 運用機へは http://<ホスト名>:5001 で開くので、navigator.clipboard (HTTPS か localhost 限定) が
+    // 無いことがある。そのときは選択してコピーする古い方法に切り替える。
+    function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand('copy');
+      ta.remove();
+      return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+    }
+
     codeEl.addEventListener('click', function () {
       var code = codeEl.textContent;
       if (!code) return;
-      navigator.clipboard.writeText(code).then(function () {
+      copyText(code).then(function () {
         codeEl.title = 'コピーしました！';
         setTimeout(function () { codeEl.title = 'クリックでコピー'; }, 1500);
       });
@@ -431,8 +446,16 @@
     filterToggle.addEventListener('change', applyFilter);
 
     // キーボード: ← / → (k / j)。入力欄フォーカス中は無効。
+    // 入力欄では Ctrl+Enter / Cmd+Enter で確定して保存する (編集欄のキー操作の統一, issue #439)。
     document.addEventListener('keydown', function (e) {
       var el = document.activeElement;
+      if (el && el.tagName === 'TEXTAREA' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)
+          && !e.isComposing && e.keyCode !== 229) {
+        e.preventDefault();
+        el.blur();
+        flushSave().catch(function () { /* 失敗は保存状態の表示に出ている */ });
+        return;
+      }
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) {
         return;
       }
