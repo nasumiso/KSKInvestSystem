@@ -3564,6 +3564,24 @@ class TestGetCurrentResearchData:
         # スコアグループは確実に出る (総合PT が非零)
         assert "スコア" in group_names
 
+    @pytest.mark.parametrize("hour, expected", [(16, "2025/12/31"), (17, "2026/01/01")])
+    def test_dates_use_source_datetimes(self, monkeypatch, hour, expected):
+        """年・月を省略せず、株価だけ17時の価格日境界を適用する。"""
+        import make_stock_db
+        import make_market_db
+        stock = {"score_gyoseki": 50, "shihyo_pt": 40,
+                 "access_date_price": _dt.datetime(2026, 1, 1, hour),
+                 "access_date_gyoseki": _dt.datetime(2025, 12, 30, 9)}
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {})
+        monkeypatch.setattr(make_stock_db, "build_code_rank_row", lambda *a, **kw: {
+            "更新日(業績|指標|価格)": "誤った省略日付"})
+        groups = dict(helpers.get_current_research_data(
+            "9999", stock_data=stock, research_record={}))
+        assert groups["データ時点"] == [
+            ("株価基準日", expected), ("業績更新日", "2025/12/30"),
+            ("指標更新日", "未取得")]
+        assert "誤った省略日付" not in str(groups)
+
     @pytest.mark.parametrize(
         "gyoseki, expect_group",
         [

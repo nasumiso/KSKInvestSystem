@@ -4488,7 +4488,7 @@ _CR_LABEL_MAP = {
     "順位": "順位",
     "過去順位(1日/5日前)": "過去",
     "シグナル": "シグナル",
-    "総合PT": "総合PT",
+    "総合PT": "総合スコア（自動）",
     "プロフィット/クォリティ": "プロフィット",
     "バリュー/サイズ": "バリュー",
     "モメンタム(現在.20日比/5日比)": "モメンタム",
@@ -4528,7 +4528,7 @@ _CR_GROUPS = [
     ("過去業績", ["過去業績(5年増収増益 4Q増収増益率)"]),
     ("信用", ["信用(倍率|出来高買残比)"]),
     ("テーマ", ["テーマ"]),
-    ("更新日", ["更新日(業績|指標|価格)", "セクター"]),
+    ("分類", ["セクター"]),
 ]
 
 
@@ -4642,6 +4642,21 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None,
         # 全 item の value が空ならグループ自体スキップ
         if any(v for _, v in items):
             groups.append((group_name, items))
+
+    # CSV の省略日付を解釈せず、取得元の日時から年を含めて表示する。
+    dates = []
+    for label, key in (("株価基準日", "access_date_price"),
+                       ("業績更新日", "access_date_gyoseki"),
+                       ("指標更新日", "access_date_shihyo")):
+        dt = stock_data.get(key)
+        if isinstance(dt, datetime):
+            if key == "access_date_price":
+                dt = get_price_day(dt)
+            value = dt.strftime("%Y/%m/%d")
+        else:
+            value = "未取得"
+        dates.append((label, value))
+    groups.insert(0, ("データ時点", dates))
 
     # 四季報業績予想 (issue #346) は出典が research_shelve なので _CR_GROUPS
     # (code_rank.csv の列マッピング) には混ぜない。表示は実績ベースの【業績】と
