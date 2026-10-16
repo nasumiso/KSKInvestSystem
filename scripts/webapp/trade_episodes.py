@@ -1590,7 +1590,9 @@ def _merge_same_day_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not r["open_seqs"] or r["pl"] is None or r["open_price"] is None:
             merged.append(r)
             continue
+        # genbiki_date: 同じ日に現物で買った玉と、同じ日に信用で建てて後で現引した玉を混ぜない
         key = (r["open_date"], r["close_date"], r["broker"], r["closed"], r["genbiki"],
+               r.get("genbiki_date"),
                r["pending_confirm"], r["unrealized"], r.get("inferred_open", False),
                r["trade_idea"], r["late_label"])
         base = index.get(key)
