@@ -423,12 +423,17 @@
 <details open class="current-research">
   <summary><strong>現在の調査材料</strong></summary>
   <div class="current-research-body">
+    {% set label_tips = {
+      '順位': '全銘柄を総合スコアで並べた順位（1が最上位）。括弧内は並べた日',
+      '過去': '前回・5日以上前からの順位の変化（↑は上昇）。括弧内は同じ期間の株価騰落率（%）',
+      'RSスコア': '先頭はRSスコア（0〜100、株価基準日の時点の値）。小数点の後はRSライン（対TOPIX）の20日平均/5日平均からの乖離率（%）',
+    } %}
     {% for group_name, items in current_research %}
     <div class="cr-row">
       <span class="cr-group">【{{ group_name }}】</span>
       {% for label, value in items %}
       <span class="cr-item">
-        {% if label %}<span class="cr-label"{% if label == 'RSスコア' %} title="先頭はRSスコア（0〜100）。小数点の後はRSライン（対TOPIX）の20日平均/5日平均からの乖離率（%）"{% endif %}>{{ label }}</span>{% endif %}
+        {% if label %}<span class="cr-label"{% if label in label_tips %} title="{{ label_tips[label] }}"{% endif %}>{{ label }}</span>{% endif %}
         {% if label == 'シグナル' and signal_display and signal_display.tooltip %}
         <span class="cr-value" title="{{ signal_display.tooltip }}" style="cursor:help;">{{ value if value else '—' }}</span>
         {% else %}

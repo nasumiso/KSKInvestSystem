@@ -506,7 +506,7 @@
       <th><a href="{{ sort_urls.position }}">状態</a></th>
       <th><a href="{{ sort_urls.gyoutai }}">業態・テーマ</a></th>
       <th data-page="1"><a href="{{ sort_urls.rating }}">評価</a></th>
-      <th data-page="1"><a href="{{ sort_urls.rank }}">順位</a></th>
+      <th data-page="1" title="全銘柄を総合スコアで並べた順位（1が最上位）"><a href="{{ sort_urls.rank }}">順位</a></th>
       <th data-page="1">売上成長(%)</th>
       <th data-page="1">利益成長(%)</th>
       <th data-page="1">PER</th>
@@ -515,7 +515,7 @@
       <th data-page="1" title="決算Q (進行中の四半期)">決算Q</th>
       <th data-page="1" title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
       <th data-page="1">決算日</th>
-      <th data-page="1" class="rs-metric {% if active_sort == 'rs' %}sort-active{% endif %}" title="RSスコア（0〜100）で降順ソート"><a href="{{ sort_urls.rs }}">RSスコア</a></th>
+      <th data-page="1" class="rs-metric {% if active_sort == 'rs' %}sort-active{% endif %}" title="RSスコア（0〜100、株価基準日の時点の値）で降順ソート"><a href="{{ sort_urls.rs }}">RSスコア</a></th>
       {# RS列クリックで RSライン騰落率ソートを 1日→5日→20日 の順に切替。 #}
       {% set rs_sort_labels = {'rs_change_1d': '▼1日比', 'rs_change_5d': '▼5日比', 'rs_change_20d': '▼20日比'} %}
       <th data-page="1" class="rs-metric {% if active_sort in rs_sort_labels %}sort-active{% endif %}"

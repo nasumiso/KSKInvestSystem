@@ -68,13 +68,13 @@
         {%- endif %}
         {%- if theme_news.current.meta.elapsed_sec %}
         <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.4em;"
-              title="claude -p 実行時間 (start_new_session で fire-and-forget 起動)">
+              title="調査にかかった時間">
           ⏱ {{ (theme_news.current.meta.elapsed_sec // 60) | int }}分{{ (theme_news.current.meta.elapsed_sec % 60) | int }}秒
         </span>
         {%- endif %}
         {%- if theme_news.current.meta.executed_at %}
         <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.4em;"
-              title="meta.json に保存された skill 完了時刻">
+              title="調査が終わった時刻">
           🕒 {{ theme_news.current.meta.executed_at[11:16] }}
         </span>
         {%- endif %}
@@ -87,7 +87,7 @@
         {% if theme_news.is_today %}🔄 当日分のテーマニュースを再調査する{% else %}▶ 当日分のテーマニュースを調査する{% endif %}
       </button>
       <span id="theme-news-status-msg" style="color:#666;font-size:0.85em;">
-        {% if theme_news.running %}実行中... (最大 5〜15 分){% else %}クリックで claude -p 起動 (約 5〜15 分){% endif %}
+        {% if theme_news.running %}実行中... (最大 5〜15 分){% else %}AI が当日のテーマニュースを調べます (約 5〜15 分){% endif %}
       </span>
     </div>
     {% if theme_news.current %}
@@ -191,7 +191,7 @@
       {% include "_calendar_inline.html" %}
     {% else %}
     <p style="color:#888;padding:0.5em 1em;">
-      カレンダーに登録されたイベントがありません。theme-news skill が events.json を更新するとここに表示されます。
+      カレンダーに登録されたイベントがありません。テーマニュース調査でイベントが見つかると、ここに表示されます。
     </p>
     {% endif %}
   </details>

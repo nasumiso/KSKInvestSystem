@@ -4289,7 +4289,8 @@ def _extract_indicators_for_portfolio(stock: Dict[str, Any]) -> Dict[str, Any]:
         # "%" 表記は列ヘッダ側 ("配当(%)") に集約 (issue #177)、値は数値のみ (小数1桁)
         "dividend": f"{dividend_yield:.1f}" if isinstance(dividend_yield, (int, float)) else "—",
         "dividend_raw": dividend_yield if isinstance(dividend_yield, (int, float)) else None,
-        "rs": f"{int(momentum_pt)}" if isinstance(momentum_pt, (int, float)) else "—",
+        # 0 以下は算出失敗の値 (rs_rank_log にも記録しない) なので 0 点に見せない
+        "rs": f"{int(momentum_pt)}" if isinstance(momentum_pt, (int, float)) and momentum_pt > 0 else "未算出",
         "rs_raw": int(momentum_pt) if isinstance(momentum_pt, (int, float)) else None,
         "sales_growth": f"{int(sales_growth)}" if isinstance(sales_growth, (int, float)) else "—",
         "sales_growth_raw": sales_growth if isinstance(sales_growth, (int, float)) else None,
@@ -4686,6 +4687,12 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None,
             # 数値は str 化、その他はそのまま
             if isinstance(value, (int, float)):
                 value = str(value)
+            # 順位は並べた日を併記する (並べる対象から外れた銘柄の古い順位に気づけるように)
+            if key == "順位" and value and rank_entry and rank_entry[0]:
+                value = "%s (%s)" % (value, rank_entry[0].strftime("%y/%m/%d"))
+            # RSスコア 0 以下は算出失敗の値なので 0 点に見せない
+            if key == "モメンタム(現在.20日比/5日比)" and not (mom_pt and mom_pt > 0):
+                value = "未算出"
             short_label = _CR_LABEL_MAP.get(key, key)
             items.append((short_label, value))
         # 全 item の value が空ならグループ自体スキップ

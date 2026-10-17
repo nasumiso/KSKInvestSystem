@@ -3582,6 +3582,21 @@ class TestGetCurrentResearchData:
             ("指標", "未取得")]
         assert "誤った省略日付" not in str(groups)
 
+    @pytest.mark.parametrize("mom_pt, expected_rs", [(85, "85.x"), (0, "未算出")])
+    def test_rank_date_and_rs_missing(self, monkeypatch, mom_pt, expected_rs):
+        """順位に並べた日を付け、算出失敗の RSスコアを 0 点に見せない。"""
+        import make_stock_db
+        import make_market_db
+        stock = {"score_gyoseki": 50, "shihyo_pt": 40, "momentum_pt": mom_pt,
+                 "stock_rank_log": [(_dt.date(2026, 10, 9), 123)]}
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {})
+        monkeypatch.setattr(make_stock_db, "build_code_rank_row", lambda *a, **kw: {
+            "順位": str(kw["rank"]), "総合PT": 1, "モメンタム(現在.20日比/5日比)": "85.x"})
+        groups = dict(helpers.get_current_research_data(
+            "9999", stock_data=stock, research_record={}))
+        assert dict(groups["ランク"])["順位"] == "123 (26/10/09)"
+        assert dict(groups["スコア"])["RSスコア"] == expected_rs
+
     @pytest.mark.parametrize(
         "gyoseki, expect_group",
         [
