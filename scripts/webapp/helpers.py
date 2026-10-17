@@ -3751,14 +3751,6 @@ def build_price_rs_chart_full(
         f'<text x="{x_today:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="end">{today_label}</text>'
     )
 
-    # 凡例 (上端)
-    parts.append(
-        '<text x="' + str(pad_x) + '" y="10" font-size="9" fill="#666">'
-        '<tspan fill="#1976d2" font-style="italic"><title>RSライン（対TOPIX）。基準週からの変化率（%）、左軸</title>┄ RSライン（左軸%）</tspan>'
-        '<tspan dx="6" fill="' + _RS_RANK_COLOR + '"><title>RSスコア（0〜100）、右軸</title>━ RSスコア（右軸）</tspan>'
-        '</text>'
-    )
-
     # 左Y軸ラベル (RSライン %, 灰色)
     label_x = pad_left - 2
     parts.append(
@@ -3870,6 +3862,14 @@ def build_price_rs_chart_full(
             '<title>%s</title></rect>'
             % (width, chart_hover_h, html.escape(tooltip))
         )
+
+    # 凡例は非操作グループと透明hover面の後に置き、尺度の説明へ届くようにする。
+    parts.append(
+        '<text x="' + str(pad_x) + '" y="10" font-size="9" fill="#666">'
+        '<tspan fill="#1976d2" font-style="italic"><title>RSライン（対TOPIX）。基準週からの変化率（%）、左軸</title>┄ RSライン（左軸%）</tspan>'
+        '<tspan dx="6" fill="' + _RS_RANK_COLOR + '"><title>RSスコア（0〜100）、右軸</title>━ RSスコア（右軸）</tspan>'
+        '</text>'
+    )
 
     parts.append("</svg>")
     return ("".join(parts), tooltip)
