@@ -1096,7 +1096,7 @@ class TestDashboardFilter:
         assert resp.status_code == 200
         html = resp.data.decode()
         assert 'name="sort" value="rs"' in html
-        assert "RS (momentum_pt) で降順ソート" in html
+        assert "RSスコア（0〜100）で降順ソート" in html
         assert "sort-active" in html
 
     def test_gyoutai_boundary_only_for_gyoutai_sort(self, client, portfolio_db_path):

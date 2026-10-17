@@ -2919,7 +2919,7 @@ class TestPriceRsSparkline:
 
     def test_build_payload_with_none_market_db_renders_rs_rank_history(self):
         """build_stock_chart_payload は market_db=None でも rs_rank_log があれば
-        RS(0~99)履歴で SVG を返す (空チャート回帰を避ける)。
+        RSスコア（0〜100）履歴で SVG を返す (空チャート回帰を避ける)。
 
         株価系列廃止に伴い旧「価格のみフォールバック」契約を置き換える。
         market_db が無いと RSライン (対TOPIX) は算出できないが、rs_rank_log は
@@ -2930,7 +2930,7 @@ class TestPriceRsSparkline:
         stock = {
             "price_log": [(base - timedelta(days=i), 100 + i) for i in range(20)],
             "price_week_log": [(base - timedelta(days=i * 7), 100 + i) for i in range(20)],
-            # 直近 6 営業日分の RS(0~99) 履歴 (右軸に重畳される)
+            # 直近 6 営業日分の RSスコア（0〜100） 履歴 (右軸に重畳される)
             "rs_rank_log": [(base - timedelta(days=i), 70 - i) for i in range(6)],
         }
         payload = helpers.build_stock_chart_payload(stock, market_db=None, mode="full")
@@ -2940,11 +2940,11 @@ class TestPriceRsSparkline:
         # RS履歴の右軸色 (紫) と 25 刻みスナップの軸目盛りが出る
         assert helpers._RS_RANK_COLOR in payload["svg"]
         assert "株価:" not in payload["tooltip"]  # 株価行は廃止
-        # tooltip に RS(0~99) 現在値が出る (末尾 = 70)
-        assert "RS(0~99): 70" in payload["tooltip"]
+        # tooltip に RSスコア（0〜100） 現在値が出る (末尾 = 70)
+        assert "RSスコア（0〜100）: 70" in payload["tooltip"]
 
     def test_rs_rank_history_drawn_beyond_daily_price_log(self):
-        """RS(0~99)履歴は日足 price_log (30営業日) より古い点も週足窓内なら線で描く。
+        """RSスコア（0〜100）履歴は日足 price_log (30営業日) より古い点も週足窓内なら線で描く。
         分割は点間隔 7日超のみ (土日はつなぐ)。窓外の点は右軸レンジに影響しない。
         """
         from datetime import date as _d, timedelta
@@ -3029,7 +3029,7 @@ class TestPriceRsSparkline:
         # RS系列色 (青) が線・末尾ラベルに使われる
         assert "#1976d2" in svg
         # 凡例が新仕様 (RSライン左軸 / RS右軸) であること
-        assert "RSライン" in svg and "RS (0~99/右軸)" in svg
+        assert "RSライン" in svg and "RSスコア（右軸）" in svg
 
     # --- codex review 対応: 5日基準のずれ / 短期履歴ガイドはみ出し ---
 

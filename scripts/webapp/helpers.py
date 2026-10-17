@@ -3047,7 +3047,7 @@ _PRICE_FADED = {"up": "#a5d6a7", "down": "#ef9a9a", "flat": "#ccc"}
 _RS_COLORS = {"up": "#1976d2", "down": "#ef6c00", "flat": "#999"}
 _RS_FADED = {"up": "#90caf9", "down": "#ffcc80", "flat": "#ccc"}
 _BLUE_DOT = "#1976d2"
-_RS_RANK_COLOR = "#7b1fa2"  # RS(0~99)履歴 (右軸): RSライン青と区別する紫系
+_RS_RANK_COLOR = "#7b1fa2"  # RSスコア（0〜100）履歴 (右軸): RSライン青と区別する紫系
 
 # portfolio ミニチャート: 20日株価騰落率による線色 (|r20| < 10% 灰 / < 20% 淡 / ≥ 20% 濃)
 _MINI_LINE_NEUTRAL = "#999"
@@ -3264,13 +3264,13 @@ def _build_chart_tooltip(
     portfolio 一覧の mini チャートのみ有効化し、詳細ページ週足 (full) には出さない。
 
     full_chart=True のとき (詳細ページ full): 株価系列を廃止したため株価行は出さない。
-    rs_rank_now があれば RS(0~99) 現在値行を先頭に足す (無ければ RSライン乖離行のみ)。
+    rs_rank_now があれば RSスコア（0〜100） 現在値行を先頭に足す (無ければ RSライン乖離行のみ)。
     full_chart=False (mini) は従来どおり株価行を先頭に出す。
     """
     lines = []
     if full_chart:
         if rs_rank_now is not None:
-            lines.append(f"RS(0~99): {int(round(rs_rank_now))}")
+            lines.append(f"RSスコア（0〜100）: {int(round(rs_rank_now))}")
     else:
         lines.append(
             f"株価: 20{unit_label} {_format_total_change(price_values, _SPARK_LOOKBACK)}, "
@@ -3508,14 +3508,14 @@ def build_price_rs_chart_mini(
     return ("".join(parts), tooltip)
 
 
-# RS(0~99)履歴の線を分割する点間隔 (日)。これ以下の間隔 (土日・祝日・連休) はつなぐ。
+# RSスコア（0〜100）履歴の線を分割する点間隔 (日)。これ以下の間隔 (土日・祝日・連休) はつなぐ。
 _RS_RANK_GAP_DAYS = 7
 
 
 def _clean_rs_rank_points(rs_rank_log) -> List:
     """rs_rank_log を昇順 (日付昇順) に整形し、None/0以下の無効値を除外する。
 
-    rs_rank_log: [(date, momentum_pt), ...] (日付降順, momentum_pt は 0~99)。
+    rs_rank_log: [(date, momentum_pt), ...] (日付降順, momentum_pt は 0〜100)。
     返り値: [(date, value), ...] 日付昇順。0 はエラー値として除外 (get_rank_log_expr 同方針)。
     """
     if not rs_rank_log:
@@ -3526,7 +3526,7 @@ def _clean_rs_rank_points(rs_rank_log) -> List:
 
 
 def _rs_rank_axis_bounds(values) -> tuple:
-    """RS(0~99)右軸の表示レンジ (lo, hi) を 25 刻みの境界にスナップして返す。
+    """RSスコア（0〜100）右軸の表示レンジ (lo, hi) を 25 刻みの境界にスナップして返す。
 
     境界候補 = 0/25/50/75/99。データ min-max を内包する最寄りの境界帯に丸める
     (lo = min を下回る最大境界, hi = max を上回る最小境界)。これにより線が軸の
@@ -3549,7 +3549,7 @@ def _rs_rank_axis_bounds(values) -> tuple:
 def _overlay_rs_rank(parts, rank_pts, *,
                      window_dates, xs, chart_top, chart_h,
                      pad_x, inner_w, pad_right):
-    """RS(0~99)履歴を右Y軸 (25刻みスナップの可変スケール) で週足軸に重畳する。
+    """RSスコア（0〜100）履歴を右Y軸 (25刻みスナップの可変スケール) で週足軸に重畳する。
 
     横軸は週足スケールのまま、RS各点の日付を window_dates/xs (週バー列) に実日付で
     マップする (_interp_x_on_weekbars)。隣り合う点の間隔が _RS_RANK_GAP_DAYS 日を
@@ -3636,9 +3636,9 @@ def build_price_rs_chart_full(
 ) -> tuple:
     """詳細ページ用 20 週フルチャート SVG と tooltip を返す (週足 20 本ベース)。
 
-    RSライン (対TOPIX) と RS(0~99)履歴 を 1 パネル・二重Y軸で重ねる:
+    RSライン (対TOPIX) と RSスコア（0〜100）履歴 を 1 パネル・二重Y軸で重ねる:
       - 左Y軸 = RSライン (週足20週, 基準週=0% 起点の累積騰落率 %)
-      - 右Y軸 = RS(0~99)履歴 (日足, 最大 RANK_LOG_DAYS 日保持) を重畳。
+      - 右Y軸 = RSスコア（0〜100）履歴 (日足, 最大 RANK_LOG_DAYS 日保持) を重畳。
         スケールは値域を 25 刻み境界にスナップ (_rs_rank_axis_bounds)
         (横軸は週足スケールのまま、RS各点は実日付で週足軸にマップ)
       - 0% の水平基準線を薄く描画
@@ -3647,7 +3647,7 @@ def build_price_rs_chart_full(
       - Blue Dot は RS ライン末尾の青丸 (r=4)
       - ポ/ブ発生日マーカーは X軸下のバンドに描画
 
-    描画契約: RSライン と RS(0~99)履歴 のうち描けるものを描く。両方無ければ空SVG。
+    描画契約: RSライン と RSスコア（0〜100）履歴 のうち描けるものを描く。両方無ければ空SVG。
     末尾 1 本は Case A (両週足あり + 日足が両週足より新しい) のみ今週仮終値 (= 最新日足) になる。
     """
     price_asc_raw = _asc_series_from_log(price_log, _SPARK_LOOKBACK)
@@ -3660,7 +3660,7 @@ def build_price_rs_chart_full(
     # (空SVG 判定は週足軸の土台 price_asc < 2 で後段に一本化)。
     rs_available = len(rs_asc_raw) >= 2 and rs_asc_raw[0] > 0
 
-    # tooltip: RSライン乖離 + RS(0~99)現在値 (株価行は廃止)
+    # tooltip: RSライン乖離 + RSスコア（0〜100）現在値 (株価行は廃止)
     rank_now = rank_pts[-1][1] if rank_pts else None
     tooltip = _build_chart_tooltip(
         price_asc_raw, rs_asc_raw, has_blue_dot, unit_label="週",
@@ -3704,7 +3704,7 @@ def build_price_rs_chart_full(
     else:
         rs_pct = []
 
-    # 左に RSライン% 軸ラベル、右に RS(0~99) 軸ラベルを出すため両側に余白。
+    # 左に RSライン% 軸ラベル、右に RSスコア（0〜100） 軸ラベルを出すため両側に余白。
     pad_left = 36
     pad_right = 28
     pad_y_top = 14
@@ -3800,14 +3800,6 @@ def build_price_rs_chart_full(
         f'<text x="{x_today:.1f}" y="{label_y}" font-size="9" fill="#888" text-anchor="end">{today_label}</text>'
     )
 
-    # 凡例 (上端)
-    parts.append(
-        '<text x="' + str(pad_x) + '" y="10" font-size="9" fill="#666">'
-        '<tspan fill="#1976d2" font-style="italic">┄ RSライン (対TOPIX %/左軸)</tspan>'
-        '<tspan dx="6" fill="' + _RS_RANK_COLOR + '">━ RS (0~99/右軸)</tspan>'
-        '</text>'
-    )
-
     # 左Y軸ラベル (RSライン %, 灰色)
     label_x = pad_left - 2
     parts.append(
@@ -3853,7 +3845,7 @@ def build_price_rs_chart_full(
             f'fill="#1976d2" font-weight="bold" text-anchor="end">{_format_pct_axis(rs_pct[-1])}</text>'
         )
 
-    # RS(0~99)履歴を右Y軸 (0~99 固定) で右端側に重畳 (最前面)。
+    # RSスコア（0〜100）履歴を右Y軸 (25刻みスナップの可変スケール) で右端側に重畳 (最前面)。
     # 横軸は週足スケールのまま、RS各点は実日付で週足軸 (window_dates/xs) にマップ。
     _overlay_rs_rank(
         parts, rank_pts,
@@ -3919,6 +3911,14 @@ def build_price_rs_chart_full(
             '<title>%s</title></rect>'
             % (width, chart_hover_h, html.escape(tooltip))
         )
+
+    # 凡例は非操作グループと透明hover面の後に置き、尺度の説明へ届くようにする。
+    parts.append(
+        '<text x="' + str(pad_x) + '" y="10" font-size="9" fill="#666">'
+        '<tspan fill="#1976d2" font-style="italic"><title>RSライン（対TOPIX）。基準週からの変化率（%）、左軸</title>┄ RSライン（左軸%）</tspan>'
+        '<tspan dx="6" fill="' + _RS_RANK_COLOR + '"><title>RSスコア（0〜100）、右軸</title>━ RSスコア（右軸）</tspan>'
+        '</text>'
+    )
 
     parts.append("</svg>")
     return ("".join(parts), tooltip)
@@ -4540,7 +4540,7 @@ _CR_LABEL_MAP = {
     "総合PT": "総合スコア",
     "プロフィット/クォリティ": "プロフィット",
     "バリュー/サイズ": "バリュー",
-    "モメンタム(現在.20日比/5日比)": "モメンタム",
+    "モメンタム(現在.20日比/5日比)": "RSスコア",
     "ファンダメンタル": "ファンダ",
     "トレンドテンプレート": "トレンド",
     "ローソク足ボラティリティ(20,5)": "ボラ",

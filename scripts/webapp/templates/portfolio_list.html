@@ -14,6 +14,7 @@
      全体 font-size ダウン + セル padding 圧縮 + ヘッダ折り返し許可。
      issue #327 で列を指標 (ページ1) / メモ (ページ2) に分割し、同時表示数を削減。 */
   table.portfolio-list { width: 100%; font-size: 0.76em; }
+  table.portfolio-list th.rs-metric { max-width: none; white-space: nowrap; }
   table.portfolio-list th, table.portfolio-list td {
     padding: 0.25em 0.35em;
     white-space: normal;  /* ヘッダの折り返しを許可してセル幅を縮める */
@@ -278,7 +279,7 @@
   <div class="dashboard-header-actions">
     <a href="{{ url_for('portfolio.theme_summary') }}"
        class="dashboard-header-link"
-       title="業態テーマ別 RS サマリー">📊 テーマサマリー</a>
+       title="業態テーマ別 RSスコア サマリー">📊 テーマサマリー</a>
 
     {# issue #397: CSV取込の主導線。クイック取り込み (Downloads 自動発見) とファイル選択の2択 #}
     <details class="csv-import-menu">
@@ -514,11 +515,11 @@
       <th data-page="1" title="決算Q (進行中の四半期)">決算Q</th>
       <th data-page="1" title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
       <th data-page="1">決算日</th>
-      <th data-page="1" class="{% if active_sort == 'rs' %}sort-active{% endif %}" title="RS (momentum_pt) で降順ソート"><a href="{{ sort_urls.rs }}">RS</a></th>
+      <th data-page="1" class="rs-metric {% if active_sort == 'rs' %}sort-active{% endif %}" title="RSスコア（0〜100）で降順ソート"><a href="{{ sort_urls.rs }}">RSスコア</a></th>
       {# RS列クリックで RSライン騰落率ソートを 1日→5日→20日 の順に切替。 #}
       {% set rs_sort_labels = {'rs_change_1d': '▼1日比', 'rs_change_5d': '▼5日比', 'rs_change_20d': '▼20日比'} %}
-      <th data-page="1" class="{% if active_sort in rs_sort_labels %}sort-active{% endif %}"
-          title="RSライン (対TOPIX, 青=上昇/オレンジ=下降) の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸。クリックでRSライン騰落率ソートを 1日→5日→20日 で切替"><a href="{{ rs_change_sort_url }}">{% if active_sort in rs_sort_labels %}{{ rs_sort_labels[active_sort] }}{% else %}RS(20,5){% endif %}</a></th>
+      <th data-page="1" class="rs-metric {% if active_sort in rs_sort_labels %}sort-active{% endif %}"
+          title="RSライン（対TOPIX、青=上昇/オレンジ=下降） の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸。クリックでRSライン騰落率ソートを 1日→5日→20日 で切替"><a href="{{ rs_change_sort_url }}">{% if active_sort in rs_sort_labels %}{{ rs_sort_labels[active_sort] }}{% else %}RSライン{% endif %}</a></th>
       <th data-page="1" title="表記: ◎全通過 / ◯1-2件未達 / ▲3-4件未達 / △5-6件未達 / 空白7件未達&#10;薄青: Stage2コア一部未達 / 青: Stage2コア全未達&#10;Stage2コア: 株価30/40WMA上、30WMA&gt;40WMA、40WMA上向き&#10;点線: 赤太=10ma 30日維持中 / 黒太=30日維持実績あり / 黒細=なし">トレンド</th>
       {# tooltip 文言は helpers.TAG_DESCRIPTIONS を単一の出典にする。
          セル側 tooltip はタグが出ている理由 (実際の値) を出すため凡例はここに集約 #}
