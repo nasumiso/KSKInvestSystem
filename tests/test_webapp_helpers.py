@@ -2265,19 +2265,26 @@ class TestFormatTagsTooltip:
         assert helpers._format_tags({"code_s": "1234"}, tags) == expected_tags
         assert helpers._format_monthly_tag(tags) == expected_monthly
 
-    # ----- 進捗率乖離: <C3>=赤(注目) 単独 / eiri≧20 = 濃黄 単独 / 両該当=左右分割 -----
-    def test_progress_diff_c3_only(self):
-        """<C3> タグのみで eiri 不該当: 赤 (注目) 単色 + 白文字"""
+    # ----- 進捗率乖離: 収と利が両方=赤(注目) 単独 / eiri≧20 = 濃黄 単独 / 両該当=左右分割 -----
+    @pytest.mark.parametrize("tags,expected", [
+        ("<収利>", f"background:{C['赤']};color:#fff"),
+        ("<収利率>", f"background:{C['赤']};color:#fff"),
+        ("<収率>", None),  # 収と利がそろわなければ色を付けない (issue #121)
+        ("", None),
+    ])
+    def test_progress_diff_sales_and_profit(self, tags, expected):
+        """売上と利益がそろって3Q加速 (タグに収と利) で eiri 不該当: 赤 (注目) 単色 + 白文字"""
         styles = helpers.compute_cell_styles(
-            {"progress_diff_eiri_raw": 10, "gyoseki_quarity_expr": "[A]20%<C3>"},
+            {"progress_diff_eiri_raw": 10,
+             "gyoseki_quarity_expr": "[A]5±8%,2±6%[Q]-5±12%,1±8%" + tags},
             today=TODAY,
         )
-        assert styles["progress_diff"] == f"background:{C['赤']};color:#fff"
+        assert styles.get("progress_diff") == expected
 
     def test_progress_diff_c3_and_eiri_split(self):
-        """<C3> + eiri≧20 両該当: 左半分=赤 / 右半分=濃黄 の linear-gradient"""
+        """収と利 + eiri≧20 両該当: 左半分=赤 / 右半分=濃黄 の linear-gradient"""
         styles = helpers.compute_cell_styles(
-            {"progress_diff_eiri_raw": 30, "gyoseki_quarity_expr": "[A]20%<C3>"},
+            {"progress_diff_eiri_raw": 30, "gyoseki_quarity_expr": "[A]5±8%,2±6%[Q]-5±12%,1±8%<収利>"},
             today=TODAY,
         )
         assert styles["progress_diff"] == (
@@ -3489,7 +3496,7 @@ class TestBuildGyosekiTooltips:
     """issue #204: gyoseki_quarity_expr から portfolio 列 tooltip を生成する。"""
 
     @pytest.mark.parametrize("expr,expected", [
-        # 通常ケース (<C3>無し)
+        # 通常ケース (タグ無し)
         (
             "[A]5±8%,2±6%[Q]-5±12%,1±8%",
             {
@@ -3498,13 +3505,13 @@ class TestBuildGyosekiTooltips:
                 "progress_diff": "4Q平均: 売上-5±12% / 利益1±8%",
             },
         ),
-        # <C3> タグ付き
+        # 成長のタグ付き: 成り立った条件だけを並べる (issue #121)
         (
-            "[A]5±8%,2±6%[Q]-5±12%,1±8%<C3>",
+            "[A]5±8%,2±6%[Q]-5±12%,1±8%<収率>",
             {
                 "sales_growth": "5年平均: 5±8%",
                 "profit_growth": "5年平均: 2±6%",
-                "progress_diff": "4Q平均: 売上-5±12% / 利益1±8% [3Q連続利益率向上]",
+                "progress_diff": "4Q平均: 売上-5±12% / 利益1±8% [3Q: 売上加速・利益率改善]",
             },
         ),
         # 空文字・パース失敗時は全空 (Jinja 側で title 属性が出ない想定)
