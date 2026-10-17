@@ -158,7 +158,7 @@ def _stub_material(monkeypatch, records, stocks=None, exits=None):
     monkeypatch.setattr(ps, "list_records", lambda: records)
     monkeypatch.setattr(aq, "_bulk_get_stock_data",
                         lambda codes: {c: {"stock_name": f"銘柄{c}", **stocks.get(c, {})} for c in codes})
-    monkeypatch.setattr(aq, "evaluate_hold_exit_signals", lambda recs, stock_map: exits or {})
+    monkeypatch.setattr(aq, "_recorded_exits", lambda recs, stock_map: exits or {})
 
 
 @pytest.mark.parametrize("first, level, shown", [
@@ -183,25 +183,25 @@ def test_exit_items_show_first_defense_for_three_busdays(monkeypatch, first, lev
         assert items == []
 
 
-def test_evaluate_hold_exit_signals_first_defense(monkeypatch):
-    """初点灯日は記録済みの「防」の最も古い日。記録が無く今日「防」なら今日の判定の日付"""
-    from webapp import helpers
-
-    evals = {
-        "1001": {"signal": {"level": "防", "date": "2026-10-12"}, "state": {"events": []}},
-        "1002": {"signal": {"level": "防", "date": "2026-10-12"},
-                 "state": {"events": [{"date": "2026-10-09"}, {"date": "2026-10-08"}]}},
-        "1003": {"signal": None, "state": {"events": []}},
+def test_recorded_exits_reads_batch_records(monkeypatch):
+    """初点灯日は記録の最も古い日。最後の記録が最新の株価日なら今も「防」、古ければ戻った扱い"""
+    states = {
+        "1001": {"events": [{"level": "防", "date": "2026-10-12"}, {"level": "防", "date": "2026-10-08"}]},
+        "1002": {"events": [{"level": "防", "date": "2026-10-08"}]},  # その後の株価日に記録なし
+        "2001": {"events": [{"level": "防", "date": "2026-10-12"}]},  # 1保以外は読まない
     }
-    monkeypatch.setattr(helpers, "_prepare_hold_exit", lambda recs: (object(), {}, {}))
-    monkeypatch.setattr(helpers, "_evaluate_hold_exit",
-                        lambda rec, stock, ps_, pos, rules, cache: evals[rec["code_s"]])
+    monkeypatch.setattr(ps, "list_exit_alert_states", lambda: states)
+    stocks = {c: {"price_log": [(date(2026, 10, 12), 100)]} for c in ("1001", "1002")}
 
-    result = helpers.evaluate_hold_exit_signals(
-        [{"code_s": c, "status": "1保"} for c in evals] + [{"code_s": "2001", "status": "2準"}], {})
+    result = aq._recorded_exits(
+        [{"code_s": "1001", "status": "1保"}, {"code_s": "1002", "status": "1保"},
+         {"code_s": "2001", "status": "2準"}], stocks)
 
+    assert {c: (v["signal"] or {}).get("date") for c, v in result.items()} == {
+        "1001": "2026-10-12", "1002": None,
+    }
     assert {c: v["first_defense"] for c, v in result.items()} == {
-        "1001": "2026-10-12", "1002": "2026-10-08", "1003": None,
+        "1001": "2026-10-08", "1002": "2026-10-08",
     }
 
 

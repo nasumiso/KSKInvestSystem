@@ -2368,31 +2368,26 @@ def _evaluate_hold_exit(rec: Dict[str, Any], stock: Dict[str, Any], ps: Any,
     return {"signal": signal, "position": position, "exit_rule": exit_rule, "state": state}
 
 
-def evaluate_hold_exit_signals(records: List[Dict[str, Any]],
-                               stock_map: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """1保の銘柄ごとに、今の出口シグナルと「防」が今のサイクルで初めて点いた日を返す。
+def record_hold_exit_alerts(stock_map: Dict[str, Dict[str, Any]]) -> int:
+    """1保の全銘柄の出口シグナルを判定し、「防」を記録する。点いた銘柄数を返す。
 
-    {code_s: {"signal": dict|None, "first_defense": "YYYY-MM-DD"|None}}。出口ルールの無い銘柄は含めない。
-    初点灯日は記録済みの「防」の最も古い日。記録が無く今日「防」なら今日の判定の日付。
+    日次バッチ (make_stock_db.list_all_db) から呼ぶ。保有銘柄タブを開かなかった日の「防」も
+    記録に残し、トップの今日のアクションは判定せずに記録を読むだけにするため (issue #372)。
     """
-    hold = [r for r in records if r.get("status") == "1保"]
-    ps, exit_positions, exit_rules = _prepare_hold_exit(hold)
-    if ps is None:
-        return {}
+    import portfolio_shelve as ps
+
+    hold = ps.list_records("1保")
+    ps_, exit_positions, exit_rules = _prepare_hold_exit(hold)
+    if ps_ is None:
+        return 0
     cache: Dict[str, Any] = {}
-    result = {}
+    count = 0
     for rec in hold:
-        code_s = rec.get("code_s", "")
-        ev = _evaluate_hold_exit(rec, stock_map.get(code_s) or {}, ps, exit_positions, exit_rules, cache)
-        if ev is None:
-            continue
-        signal = ev["signal"]
-        dates = [str(e["date"]) for e in ev["state"].get("events") or []
-                 if isinstance(e, dict) and e.get("date")]
-        if signal and signal["level"] == "防":
-            dates.append(str(signal["date"]))
-        result[code_s] = {"signal": signal, "first_defense": min(dates) if dates else None}
-    return result
+        ev = _evaluate_hold_exit(rec, stock_map.get(rec.get("code_s", "")) or {},
+                                 ps_, exit_positions, exit_rules, cache)
+        if ev and ev["signal"] and ev["signal"]["level"] == "防":
+            count += 1
+    return count
 
 
 def _build_exit_position_map(episodes: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:

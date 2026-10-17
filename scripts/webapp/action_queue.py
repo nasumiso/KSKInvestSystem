@@ -19,7 +19,6 @@ from webapp.helpers import (
     _bulk_get_stock_data,
     _parse_kessanbi,
     _parse_research_update_md,
-    evaluate_hold_exit_signals,
 )
 from webapp.routes.portfolio import STATUS_VALUE_TO_LABEL, STATUS_VALUE_TO_QUERY
 
@@ -60,10 +59,36 @@ class _Material:
 
     @cached_property
     def exits(self) -> Dict[str, Dict[str, Any]]:
-        return evaluate_hold_exit_signals(self.records, self.stocks)
+        return _recorded_exits(self.records, self.stocks)
 
     def name(self, code_s: str) -> str:
         return (self.stocks.get(code_s) or {}).get("stock_name") or code_s
+
+
+def _recorded_exits(records: List[Dict[str, Any]],
+                    stock_map: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """1保の銘柄ごとに、記録済みの「防」から今のシグナルと初点灯日を返す。
+
+    {code_s: {"signal": dict|None, "first_defense": "YYYY-MM-DD"}}。判定と記録は日次バッチ
+    (webapp.helpers.record_hold_exit_alerts) が行い、ここでは読むだけにする (トップを速く保つため)。
+    最後の記録が銘柄の最新の株価日と同じなら、今も「防」とみなす。
+    """
+    hold = {r["code_s"] for r in records if r.get("status") == "1保"}
+    result = {}
+    for code_s, state in ps.list_exit_alert_states().items():
+        if code_s not in hold or not isinstance(state, dict):
+            continue
+        events = sorted((e for e in state.get("events") or [] if isinstance(e, dict) and e.get("date")),
+                        key=lambda e: str(e["date"]))
+        if not events:
+            continue
+        price_log = (stock_map.get(code_s) or {}).get("price_log") or []
+        latest = str(price_log[0][0]) if price_log else None
+        result[code_s] = {
+            "signal": events[-1] if str(events[-1]["date"]) == latest else None,
+            "first_defense": str(events[0]["date"]),
+        }
+    return result
 
 
 def _busdays_since(start: date, today: date) -> int:
