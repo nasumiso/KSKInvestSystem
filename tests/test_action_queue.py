@@ -159,6 +159,7 @@ def _stub_material(monkeypatch, records, stocks=None, exits=None):
     monkeypatch.setattr(aq, "_bulk_get_stock_data",
                         lambda codes: {c: {"stock_name": f"銘柄{c}", **stocks.get(c, {})} for c in codes})
     monkeypatch.setattr(aq, "_recorded_exits", lambda recs, stock_map: exits or {})
+    monkeypatch.setattr(aq, "_real_today", lambda: TODAY)
 
 
 @pytest.mark.parametrize("first, level, shown", [
@@ -184,18 +185,27 @@ def test_exit_items_show_first_defense_for_three_busdays(monkeypatch, first, lev
 
 
 def test_recorded_exits_reads_batch_records(monkeypatch):
-    """初点灯日は記録の最も古い日。最後の記録が最新の株価日なら今も「防」、古ければ戻った扱い"""
+    """初点灯日は記録の最も古い日。最後の記録が最新の株価日なら今も「防」、古ければ戻った扱い。
+    戦略を変えた銘柄の古い記録は読まない"""
+    rule = {"ma_kind": None, "ma_window": None, "stop_loss_pct": 10, "allow_dca_lower": False}
+    cyc = f"c|中期テーマ|{ps.exit_rule_id(rule)}"
     states = {
-        "1001": {"events": [{"level": "防", "date": "2026-10-12"}, {"level": "防", "date": "2026-10-08"}]},
-        "1002": {"events": [{"level": "防", "date": "2026-10-08"}]},  # その後の株価日に記録なし
-        "2001": {"events": [{"level": "防", "date": "2026-10-12"}]},  # 1保以外は読まない
+        "1001": {"cycle_id": cyc, "events": [{"level": "防", "date": "2026-10-12"},
+                                             {"level": "防", "date": "2026-10-08"}]},
+        "1002": {"cycle_id": cyc, "events": [{"level": "防", "date": "2026-10-08"}]},  # その後の株価日に記録なし
+        "1003": {"cycle_id": cyc, "events": [{"level": "防", "date": "2026-10-12"}]},  # 戦略を変えた後
+        "2001": {"cycle_id": cyc, "events": [{"level": "防", "date": "2026-10-12"}]},  # 1保以外は読まない
     }
     monkeypatch.setattr(ps, "list_exit_alert_states", lambda: states)
-    stocks = {c: {"price_log": [(date(2026, 10, 12), 100)]} for c in ("1001", "1002")}
+    monkeypatch.setattr(ps, "list_trade_ideas", lambda: [
+        {"name": "中期テーマ", "exit_rule": rule}, {"name": "夢枠", "exit_rule": None}])
+    stocks = {c: {"price_log": [(date(2026, 10, 12), 100)]} for c in ("1001", "1002", "1003")}
 
+    memo = {"trade_idea": "中期テーマ"}
     result = aq._recorded_exits(
-        [{"code_s": "1001", "status": "1保"}, {"code_s": "1002", "status": "1保"},
-         {"code_s": "2001", "status": "2準"}], stocks)
+        [{"code_s": "1001", "status": "1保", "memo": memo}, {"code_s": "1002", "status": "1保", "memo": memo},
+         {"code_s": "1003", "status": "1保", "memo": {"trade_idea": "夢枠"}},
+         {"code_s": "2001", "status": "2準", "memo": memo}], stocks)
 
     assert {c: (v["signal"] or {}).get("date") for c, v in result.items()} == {
         "1001": "2026-10-12", "1002": None,
@@ -235,14 +245,16 @@ def test_breakout_items(monkeypatch):
     ]
 
 
-@pytest.mark.parametrize("kessan, updated, first_defense, expected", [
-    ("2026/10/12", None, None, "ステージ未更新: 決算後 保有 1"),    # 決算当日
-    ("2026/09/28", "9/27", None, "ステージ未更新: 決算後 保有 1"),  # 14日後まで。更新日が決算前なら未更新
-    ("2026/09/27", None, None, None),                              # 15日後は出さない
-    ("2026/10/05", "10/6", None, None),                            # 決算の後に更新済み
-    ("2026/10/05", None, "2026-10-08", "ステージ未更新: 防の後 保有 1"),  # 両方なら防の後だけで数える
+@pytest.mark.parametrize("kessan, updated, first_defense, real_today, expected", [
+    ("2026/10/12", None, None, None, "ステージ未更新: 決算後 保有 1"),    # 決算当日
+    ("2026/09/28", "9/27", None, None, "ステージ未更新: 決算後 保有 1"),  # 14日後まで。更新日が決算前なら未更新
+    ("2026/09/27", None, None, None, None),                              # 15日後は出さない
+    ("2026/10/05", "10/6", None, None, None),                            # 決算の後に更新済み
+    # 17時前 (株価の基準日は前日) に今日保存した更新日を、去年と読まない
+    ("2026/10/05", "10/13", None, date(2026, 10, 13), None),
+    ("2026/10/05", None, "2026-10-08", None, "ステージ未更新: 防の後 保有 1"),  # 両方なら防の後だけで数える
 ])
-def test_stage_item_after_kessan_or_defense(monkeypatch, kessan, updated, first_defense, expected):
+def test_stage_item_after_kessan_or_defense(monkeypatch, kessan, updated, first_defense, real_today, expected):
     """決算・「防」の後14日以内で、ステージをまだ更新していない保有・準保有を数える"""
     memo = {"last_research_update": updated} if updated else {}
     _stub_material(
@@ -251,6 +263,9 @@ def test_stage_item_after_kessan_or_defense(monkeypatch, kessan, updated, first_
         stocks={"1001": {"kessan_jisseki_date": kessan}},
         exits={"1001": {"signal": None, "first_defense": first_defense}} if first_defense else {},
     )
+
+    if real_today:
+        monkeypatch.setattr(aq, "_real_today", lambda: real_today)
 
     item = aq._stage_item(TODAY)
 

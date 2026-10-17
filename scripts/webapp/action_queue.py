@@ -72,11 +72,19 @@ def _recorded_exits(records: List[Dict[str, Any]],
     {code_s: {"signal": dict|None, "first_defense": "YYYY-MM-DD"}}。判定と記録は日次バッチ
     (webapp.helpers.record_hold_exit_alerts) が行い、ここでは読むだけにする (トップを速く保つため)。
     最後の記録が銘柄の最新の株価日と同じなら、今も「防」とみなす。
+    戦略を変えたり出口ルールを外したりした銘柄の古い記録は読まない (バッチは出口ルールの無い銘柄の
+    記録を消さないため)。記録の cycle_id の末尾が今の「戦略|出口ルール」と一致するものだけ使う。
     """
-    hold = {r["code_s"] for r in records if r.get("status") == "1保"}
+    rules = {i.get("name"): i.get("exit_rule") for i in ps.list_trade_ideas() if i.get("name")}
+    suffixes = {}  # code_s -> 今の「|戦略|ルールID」
+    for r in records:
+        strategy = (r.get("memo") or {}).get("trade_idea")
+        if r.get("status") == "1保" and isinstance(rules.get(strategy), dict):
+            suffixes[r["code_s"]] = f"|{strategy}|{ps.exit_rule_id(rules[strategy])}"
     result = {}
     for code_s, state in ps.list_exit_alert_states().items():
-        if code_s not in hold or not isinstance(state, dict):
+        if (code_s not in suffixes or not isinstance(state, dict)
+                or not str(state.get("cycle_id", "")).endswith(suffixes[code_s])):
             continue
         events = sorted((e for e in state.get("events") or [] if isinstance(e, dict) and e.get("date")),
                         key=lambda e: str(e["date"]))
@@ -89,6 +97,11 @@ def _recorded_exits(records: List[Dict[str, Any]],
             "first_defense": str(events[0]["date"]),
         }
     return result
+
+
+def _real_today() -> date:
+    """実際の今日 (テストで差し替えるため関数にしている)。"""
+    return date.today()
 
 
 def _busdays_since(start: date, today: date) -> int:
@@ -266,7 +279,9 @@ def _stage_item(today: date, mat: Optional[_Material] = None) -> Optional[Dict[s
         if status not in ("1保", "2準"):
             continue
         code_s = r["code_s"]
-        updated = _parse_research_update_md((r.get("memo") or {}).get("last_research_update"), today)
+        # 更新日はブラウザが保存した実際の日付。株価の基準日 (17時前は前日) で年を補うと、
+        # 当日の保存を去年と読んでしまう
+        updated = _parse_research_update_md((r.get("memo") or {}).get("last_research_update"), _real_today())
         events = []
         first = (mat.exits.get(code_s) or {}).get("first_defense") if status == "1保" else None
         if first:
