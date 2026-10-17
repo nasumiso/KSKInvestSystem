@@ -2957,7 +2957,7 @@ def _market_cap_category(billion_yen: Optional[float]) -> Optional[str]:
 def _gyoseki_quarity_expr_safe(stock: Dict[str, Any]) -> str:
     """gyoseki.get_gyoseki_quarity_expr を安全に呼ぶ (例外時は空文字)。
 
-    末尾に "<C3>" タグが付いていれば 3Q 連続利益率向上の意味。
+    末尾の "<収利率>" 等のタグは直近3四半期の成長の型 (gyoseki.calc_growth_tags)。
     """
     if not stock:
         return ""
@@ -2968,26 +2968,26 @@ def _gyoseki_quarity_expr_safe(stock: Dict[str, Any]) -> str:
         return ""
 
 
-# issue #204: gyoseki_quarity_expr を [A]…/[Q]…/<C3> の各セグメントに分解する
+# issue #204: gyoseki_quarity_expr を [A]…/[Q]…/<収利率> の各セグメントに分解する
 _GYOSEKI_EXPR_RE = re.compile(
     r"\[A\](?P<annual>[-\d]+±\d+%,[-\d]+±\d+%)"
     r"\[Q\](?P<quarter>[-\d]+±\d+%,[-\d]+±\d+%)"
-    r"(?P<c3><C3>)?"
+    r"(?:<(?P<tags>[収利率]+)>)?"
 )
 
 
 def parse_gyoseki_quarity_expr(expr: str) -> Dict[str, Any]:
     """gyoseki_quarity_expr を tooltip 生成用に分解する。
 
-    入力例: "[A]5±8%,2±6%[Q]-5±12%,1±8%<C3>"
+    入力例: "[A]5±8%,2±6%[Q]-5±12%,1±8%<収利率>"
     返り値: {
         "sales_5y": "5±8%", "profit_5y": "2±6%",     # [A] = 過去5年年度平均
         "sales_4q": "-5±12%", "profit_4q": "1±8%",   # [Q] = 過去4Q平均
-        "has_c3": True,                              # 3Q連続利益率向上タグ
+        "tags": "収利率",                            # 成長のタグ (無ければ空文字)
     }
-    パース失敗時は全フィールドが None / has_c3 = False の dict を返す。
+    パース失敗時は全フィールドが None / tags = "" の dict を返す。
     """
-    empty = {"sales_5y": None, "profit_5y": None, "sales_4q": None, "profit_4q": None, "has_c3": False}
+    empty = {"sales_5y": None, "profit_5y": None, "sales_4q": None, "profit_4q": None, "tags": ""}
     if not expr:
         return empty
     m = _GYOSEKI_EXPR_RE.search(expr)
@@ -3000,7 +3000,7 @@ def parse_gyoseki_quarity_expr(expr: str) -> Dict[str, Any]:
         "profit_5y": profit_5y,
         "sales_4q": sales_4q,
         "profit_4q": profit_4q,
-        "has_c3": bool(m.group("c3")),
+        "tags": m.group("tags") or "",
     }
 
 
@@ -3017,8 +3017,9 @@ def build_gyoseki_tooltips(expr: str) -> Dict[str, str]:
     parts: List[str] = []
     if parsed["sales_4q"] and parsed["profit_4q"]:
         parts.append(f"4Q平均: 売上{parsed['sales_4q']} / 利益{parsed['profit_4q']}")
-    if parsed["has_c3"]:
-        parts.append("[3Q連続利益率向上]")
+    if parsed["tags"]:
+        labels = {"収": "売上加速", "利": "利益加速", "率": "利益率改善"}
+        parts.append("[3Q: %s]" % "・".join(labels[t] for t in parsed["tags"]))
     progress_tip = " ".join(parts)
 
     return {
@@ -4417,17 +4418,18 @@ def compute_cell_styles(row: Dict[str, Any], today: Optional[date] = None) -> Di
         elif div_raw > 3:
             styles["dividend"] = bg("薄黄")
 
-    # --- 進捗率乖離: <C3>タグ 赤(注目) / 営利乖離≧20 濃黄 / 両該当は左右分割
-    quarity = row.get("gyoseki_quarity_expr") or ""
+    # --- 進捗率乖離: 売上と利益がそろって3Q加速 (タグに収と利) 赤(注目) / 営利乖離≧20 濃黄 /
+    # 両該当は左右分割 (issue #121)
+    growth_tags = parse_gyoseki_quarity_expr(row.get("gyoseki_quarity_expr") or "")["tags"]
     eiri_raw = row.get("progress_diff_eiri_raw")
-    has_c3 = "<C3>" in quarity
+    sales_profit = "収" in growth_tags and "利" in growth_tags
     hit_eiri = isinstance(eiri_raw, (int, float)) and eiri_raw >= 20
-    if has_c3 and hit_eiri:
+    if sales_profit and hit_eiri:
         styles["progress_diff"] = (
             f"background:linear-gradient(to right,"
             f"{PORTFOLIO_COLORS['赤']} 50%,{PORTFOLIO_COLORS['濃黄']} 50%)"
         )
-    elif has_c3:
+    elif sales_profit:
         styles["progress_diff"] = bg_with_white("赤")
     elif hit_eiri:
         styles["progress_diff"] = bg("濃黄")
