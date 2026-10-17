@@ -3577,9 +3577,9 @@ class TestGetCurrentResearchData:
             "更新日(業績|指標|価格)": "誤った省略日付"})
         groups = dict(helpers.get_current_research_data(
             "9999", stock_data=stock, research_record={}))
-        assert groups["データ時点"] == [
-            ("株価基準日", expected), ("業績更新日", "25/12/30"),
-            ("指標更新日", "未取得")]
+        assert groups["更新日"] == [
+            ("株価", expected), ("業績", "25/12/30"),
+            ("指標", "未取得")]
         assert "誤った省略日付" not in str(groups)
 
     @pytest.mark.parametrize(

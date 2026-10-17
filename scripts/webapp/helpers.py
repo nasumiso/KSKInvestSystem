@@ -4645,9 +4645,9 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None,
 
     # CSV の省略日付を解釈せず、取得元の日時から年を含めて表示する。
     dates = []
-    for label, key in (("株価基準日", "access_date_price"),
-                       ("業績更新日", "access_date_gyoseki"),
-                       ("指標更新日", "access_date_shihyo")):
+    for label, key in (("株価", "access_date_price"),
+                       ("業績", "access_date_gyoseki"),
+                       ("指標", "access_date_shihyo")):
         dt = stock_data.get(key)
         if isinstance(dt, datetime):
             if key == "access_date_price":
@@ -4656,7 +4656,7 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None,
         else:
             value = "未取得"
         dates.append((label, value))
-    groups.insert(0, ("データ時点", dates))
+    groups.insert(0, ("更新日", dates))
 
     # 四季報業績予想 (issue #346) は出典が research_shelve なので _CR_GROUPS
     # (code_rank.csv の列マッピング) には混ぜない。表示は実績ベースの【業績】と
