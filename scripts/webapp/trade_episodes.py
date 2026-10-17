@@ -874,7 +874,10 @@ def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     # 建玉ラウンド単位の振り返りメモ (issue #387 Phase2) を一括で紐付ける。
     # メモは fill と独立レイヤーに保存され、エピソードキーで対応する。
     memos = ps.list_fill_memos(db_path=db_path)
+    # 現物の往復行で手で結びつけた買いと売り。往復行を作る側 (build_round_trips) が使う
+    lot_matches = ps.list_lot_matches(db_path=db_path)
     for ep in episodes:
+        ep["lot_matches"] = lot_matches.get(ep["code_s"], {})
         ep["episode_key"] = ps.fill_episode_key(
             ep["code_s"], ep["kind"], ep["first_seq"]
         )
@@ -1171,6 +1174,7 @@ def _make_round_trip(open_fill: Optional[Dict[str, Any]], close_fill: Optional[D
         open_fills = [open_fill] if open_fill else []
     return {
         "open_seqs": [f["seq"] for f in open_fills if f.get("seq") is not None],
+        "close_seq": close_fill.get("seq") if close_fill else None,
         "open_date": open_date,
         "close_date": close_date,
         "qty": qty,
@@ -1183,6 +1187,7 @@ def _make_round_trip(open_fill: Optional[Dict[str, Any]], close_fill: Optional[D
         "genbiki_date": None,  # 現物側の行で、信用で建てて現引した玉なら現引日 (open_date は信用の建日)
         "pending_confirm": False,  # 楽天の未確定CSV由来で建玉情報が未取込
         "unrealized": False,  # pl が含み損益 (未確定) かどうか
+        "manual_match": False,  # 現物で、手で結びつけた買いと売り (lot_match) の行
         "pl": None,
         "return_pct": None,
     }
@@ -1427,12 +1432,58 @@ def _oldest_lot(lots: List[Dict[str, Any]],
     return None
 
 
+def valid_lot_matches(ep: Dict[str, Any]) -> Dict[int, int]:
+    """手で結びつけた買いと売り (lot_match) のうち、このエピソードで成り立つものを返す。
+
+    成り立つのは、買いと売りがどちらもこのエピソードの fill にあり、買いが buy・売りが
+    sell、証券会社が同じで、fill の並びで買いが売りより前のとき。遡り取込でエピソードが
+    分かれた等で成り立たなくなった指定は、無視して FIFO に任せる。往復行の組み立てと、
+    保存時の空き判定・画面の候補が同じ判定を使う (無効な古い指定が売りを埋めた扱いに
+    ならないように)。Returns: {買いの seq: 売りの seq}
+    """
+    pairs = ep.get("lot_matches") or {}
+    if ep.get("kind") != "現物" or not pairs:
+        return {}
+    pos = {f["seq"]: (i, f) for i, f in enumerate(ep["fills"]) if f.get("seq") is not None}
+    valid: Dict[int, int] = {}
+    for buy_seq, sell_seq in pairs.items():
+        if buy_seq not in pos or sell_seq not in pos:
+            continue
+        (bi, bf), (si, sf) = pos[buy_seq], pos[sell_seq]
+        if (bf["side"] == "buy" and sf["side"] == "sell" and bi < si
+                and bf.get("broker") == sf.get("broker")):
+            valid[buy_seq] = sell_seq
+    return valid
+
+
+def lot_match_sells(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """現物エピソードの売り fill を、手で結びつける出口の候補として返す。
+
+    各要素: seq / date / qty / price / broker / claims ({買いの seq: 株数}。この売りに
+    手で向けられている買いロットと株数。valid_lot_matches を通った指定だけ数える)。
+    空きの判定 (向けられた株数の合計が売りの株数に届いているか) は、保存のルートと
+    画面の候補の両方がこれを使う。
+    """
+    matches = valid_lot_matches(ep)
+    qty_of = {f["seq"]: f["qty"] for f in ep["fills"] if f.get("seq") is not None}
+    return [{
+        "seq": f["seq"], "date": f.get("trade_date"), "qty": f["qty"],
+        "price": f.get("price"), "broker": f.get("broker", ""),
+        "claims": {b: qty_of[b] for b, s in matches.items() if s == f["seq"]},
+    } for f in ep["fills"] if f["side"] == "sell" and f.get("seq") is not None]
+
+
 def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     """現物エピソードの往復行を FIFO (先入先出) で作る (issue #421)。
 
     現物の売り fill には建単価・建日が無く、どの買いに対応するかCSVに情報が無い。
     FIFO で古い買いから順に充当する (税務・証券会社の考え方に近く、ロットごとの
     リターンが実際の建値を反映するため)。
+
+    手で結びつけた買いと売り (valid_lot_matches) があれば、その売りにはまず向けられた
+    買いロットを充当し、残りを FIFO で充当する。向けられたロットのうち向け先の売りに
+    入る株数 (向けられたロットに買った順で割り当てる) は、それより前の売りの FIFO では
+    使わない。売りより大きいロットの余りは、最初から普通の FIFO の対象になる。
 
     **注意**: エピソードの実現損益 (_episode_pl_from_round) は平均取得単価法で
     計算されており、部分売却で建玉が残るラウンドでは往復行の損益合計と一致しない
@@ -1452,33 +1503,60 @@ def _build_genbutsu_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
             row["genbiki_date"] = bf.get("trade_date")
         return row
 
+    matches = valid_lot_matches(ep)
+    # 向け先の売りのために取っておく株数 {買いの seq: 株数}
+    room = {f.get("seq"): f["qty"] for f in ep["fills"] if f["side"] == "sell"}
+    held: Dict[int, float] = {}
+    for f in ep["fills"] if matches else []:
+        target = matches.get(f.get("seq"))
+        if target is not None:
+            held[f["seq"]] = min(f["qty"], room[target])
+            room[target] -= held[f["seq"]]
     lots: List[Dict[str, Any]] = []  # FIFO キュー: {fill, remain}
     rows: List[Dict[str, Any]] = []
+
+    def free(lot: Dict[str, Any]) -> float:
+        return lot["remain"] - held.get(lot["fill"].get("seq"), 0)
+
+    def take(lot: Dict[str, Any], f: Dict[str, Any], remain: float, manual: bool) -> float:
+        """lot から売り f に充当して往復行を1本足し、売りの残り株数を返す。"""
+        qty = min(remain, lot["remain"] if manual else free(lot))
+        bf = lot["fill"]
+        row = make_row(bf, f, qty)
+        cost = bf["price"] * qty
+        profit = (f["price"] - bf["price"]) * qty
+        row["pl"] = round(profit)
+        row["return_pct"] = (profit / cost * 100) if cost else None
+        row["manual_match"] = manual
+        rows.append(row)
+        lot["remain"] -= qty
+        if lot["remain"] <= 0:
+            lots.remove(lot)
+        return remain - qty
+
     for f in ep["fills"]:
         if f["side"] == "buy":
             lots.append({"fill": f, "remain": f["qty"]})
             continue
-        # 売り: 古いロットから充当。1つの売りが複数ロットにまたがる場合は行を分ける。
+        remain = f["qty"]
+        targeted = [lot for lot in lots if f.get("seq") is not None
+                    and matches.get(lot["fill"].get("seq")) == f["seq"]]
+        for lot in targeted:
+            if remain <= 0:
+                break
+            remain = take(lot, f, remain, True)
+        for b, s in matches.items():
+            if s == f.get("seq"):
+                held.pop(b, None)
+        # 残りは古いロットから充当。1つの売りが複数ロットにまたがる場合は行を分ける。
         # 同一銘柄を複数社で同時保有していると、他社の買いロットと突き合わせて誤った
         # 建値のリターンを出してしまう (実データで7行該当)。同じ証券会社のロットを
         # 優先し、無ければ従来どおり最古のロットへ充当する (PRレビュー指摘)。
-        remain = f["qty"]
         while remain > 0 and lots:
-            lot = _oldest_lot(lots, f.get("broker"))
+            lot = _oldest_lot([lot for lot in lots if free(lot) > 0], f.get("broker"))
             if lot is None:
                 break  # 同社の買いロットが無い → 建玉不明の売りとして下で処理
-            take = min(remain, lot["remain"])
-            bf = lot["fill"]
-            row = make_row(bf, f, take)
-            cost = bf["price"] * take
-            profit = (f["price"] - bf["price"]) * take
-            row["pl"] = round(profit)
-            row["return_pct"] = (profit / cost * 100) if cost else None
-            rows.append(row)
-            remain -= take
-            lot["remain"] -= take
-            if lot["remain"] <= 0:
-                lots.remove(lot)
+            remain = take(lot, f, remain, False)
         if remain > 0:
             # 充当できる買いが無い (取込範囲外で取得した株の売却など)
             rows.append(_make_round_trip(None, f, remain, None, None))
@@ -1596,7 +1674,11 @@ def _merge_same_day_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         key = (r["open_date"], r["close_date"], r["broker"], r["closed"], r["genbiki"],
                r.get("genbiki_date"),
                r["pending_confirm"], r["unrealized"], r.get("inferred_open", False),
-               r["trade_idea"], r["late_label"])
+               r["trade_idea"], r["late_label"],
+               # 手で結びつけた行は、別々の売りに向けた行をまとめない。まとめると
+               # open_seqs が混ざり、画面からの付け替えで両方の指定を一度に書き換える
+               r.get("manual_match", False),
+               r.get("close_seq") if r.get("manual_match") else None)
         base = index.get(key)
         if base is None:
             base = dict(r)
@@ -1869,5 +1951,6 @@ def build_episode_for_key(episode_key: str, db_path: Optional[str] = None) -> Op
     )
     for ep in episodes:
         if ps.fill_episode_key(ep["code_s"], ep["kind"], ep["first_seq"]) == episode_key:
+            ep["lot_matches"] = ps.list_lot_matches(db_path=db_path).get(code_s, {})
             return ep
     return None

@@ -1566,6 +1566,15 @@ class TestStrategyHistory:
         assert lots == [([3, 4], "", "GARP改", "manual"), ([5], "", "中期テーマ", "manual"),
                         ([5], "中期テーマ", "", "master_delete"), ([3, 4], "GARP改", "", "manual")]
 
+    def test_lot_match_keeps_other_lots_and_codes(self, db_path):
+        """手で結びつけた買いと売り: 他の買い・他の銘柄の指定は残し、None で消す。"""
+        ps.set_lot_match("7001", [3, 4], 9, db_path=db_path)
+        ps.set_lot_match("7002", [1], 2, db_path=db_path)
+        ps.set_lot_match("7001", [4], 10, db_path=db_path)
+        assert ps.list_lot_matches(db_path=db_path) == {"7001": {3: 9, 4: 10}, "7002": {1: 2}}
+        ps.set_lot_match("7001", [3, 4], None, db_path=db_path)
+        assert ps.list_lot_matches(db_path=db_path) == {"7002": {1: 2}}
+
     def test_update_memo_logs_change_after_baseline(self, seeded_db):
         """最初の変更の前に基準値を作り、変更は有効日つきで1件残す。同じ値なら残さない。"""
         ps.update_memo("7002", {"trade_idea": "中期モメンタム"}, effective_date="2026-03-02",

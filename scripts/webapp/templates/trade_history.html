@@ -302,7 +302,9 @@
         <div class="ep-detail-left">
         {# issue #421: 買と売を往復1行に畳んだ明細。実際に下した売買判断の単位で読める。
            信用は証券会社CSVの建玉対応 (tate_date/tate_price)、現物は FIFO で対応づける。 #}
-        <table style="width:auto;font-size:0.82em;color:#999;border-collapse:collapse;">
+        {# 現物は決済日 (保有中) を押すと、そのロットの出口を手で選べる。候補はエピソードの売り fill #}
+        <table style="width:auto;font-size:0.82em;color:#999;border-collapse:collapse;"
+               {%- if ep.lot_match_sells %} data-lot-sells="{{ ep.lot_match_sells | tojson | forceescape }}"{% endif %}>
           <thead style="color:#666;font-size:0.9em;">
             <tr>
               <th style="padding:1px 0.8em 1px 0;text-align:left;">{{ '建 → 決済' if ep.is_short else '買 → 売' }}</th>
@@ -320,7 +322,15 @@
               {%- if r.open_date %}{{ r.open_date[2:] }}{% else %}<span style="color:#666;">?</span>{% endif %}
               {%- if r.open_kessan %} <span class="kessan-note is-{{ r.open_kessan.tone }}" title="{{ r.open_kessan.title }}">{{ r.open_kessan.label }}</span>{% endif %}
               <span style="color:#666;">→</span>
-              {% if r.closed %}{{ r.close_date[2:] }}{% else %}<span style="color:#5f5fa8;">保有中</span>{% endif %}
+              {%- set close_label %}{% if r.closed %}{{ r.close_date[2:] }}{% else %}<span style="color:#5f5fa8;">保有中</span>{% endif %}{% endset %}
+              {% if ep.lot_match_sells and r.open_seqs and r.open_date -%}
+              <a href="#" class="lot-match-edit" title="このロットを決済した売りを選びます (未指定は先入先出)"
+                 data-episode-key="{{ ep.episode_key }}" data-seqs="{{ r.open_seqs | join(',') }}"
+                 data-open-date="{{ r.genbiki_date or r.open_date }}" data-broker="{{ r.broker }}"
+                 data-close-seq="{{ r.close_seq if r.manual_match else '' }}"
+                 data-url="{{ url_for('trade_history.save_lot_match') }}">{{ close_label }}</a>
+              {%- else %}{{ close_label }}{% endif %}
+              {%- if r.manual_match %}<span class="lot-match-mark" title="手で結びつけた売りです。決済日を押すと付け替え・先入先出に戻せます">手動</span>{% endif %}
               {%- if r.closed and r.close_kessan %} <span class="kessan-note is-{{ r.close_kessan.tone }}" title="{{ r.close_kessan.title }}">{{ r.close_kessan.label }}</span>{% endif %}
               {%- if r.inferred_open %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="返済CSVには建玉情報がありませんが、残った建玉、または諸経費込みの決済損益との照合で候補が一意のため補完表示しています">推定</span>{% endif %}
               {%- if r.genbiki %}<span style="color:#8a8a5a;font-size:0.88em;margin-left:0.4em;" title="現引は信用建玉を現物へ振り替える取引です。決済ではないため損益は計上せず、現物エピソード側へ引き継がれます">現引→現物</span>{% endif %}
@@ -372,7 +382,7 @@
            異なり合計が食い違う。数値のズレを不具合と誤読させないため明示する (issue #421) #}
         {% if not ep.closed and ep.kind == "現物" %}
         <div style="color:#7a6a4a;font-size:0.76em;margin-top:0.4em;">
-          ※ 往復行の損益は先入先出 (FIFO) で建値を対応づけています。保有中は上の実現損益 (平均取得単価法) と合計が一致しないことがあります。
+          ※ 往復行の損益は、手で結びつけた行 (手動) 以外は先入先出 (FIFO) で建値を対応づけています。保有中は上の実現損益 (平均取得単価法) と合計が一致しないことがあります。
         </div>
         {% endif %}
         {# エピソード単位の振り返りメモ (issue #387 Phase2)。アクションログ側から一本化 #}
@@ -1148,6 +1158,69 @@
     box.appendChild(sel);
     sel.focus();
   });
+
+  // 現物の往復行の出口を手で選ぶ。決済日 (保有中) を押すと、買った日以降の同じ証券会社の
+  // 売りを候補に出す。ほかのロットで株数が埋まっている売りは選べない。保存したら組み直した
+  // 往復行を出すため再読み込みし、同じエピソードを開いた状態に戻す
+  var LOT_MATCH_REOPEN = 'thLotMatchReopen';
+  document.addEventListener('click', function (e) {
+    var link = e.target.closest && e.target.closest('.lot-match-edit');
+    if (!link) return;
+    e.preventDefault();
+    if (link.parentElement.querySelector('.lot-match-select')) return;
+    var sells = JSON.parse(link.closest('table').dataset.lotSells);
+    var own = link.dataset.seqs.split(',');
+    var sel = document.createElement('select');
+    sel.className = 'lot-match-select';
+    sel.add(new Option('先入先出 (自動)', ''));
+    sells.forEach(function (s) {
+      if (s.broker !== link.dataset.broker || s.date < link.dataset.openDate) return;
+      var claimed = 0;
+      Object.keys(s.claims).forEach(function (b) { if (own.indexOf(b) < 0) claimed += s.claims[b]; });
+      var opt = new Option(s.date.slice(2) + ' 売 ' + s.qty + '株 @' + Math.round(s.price).toLocaleString()
+                           + (claimed >= s.qty ? ' (ほかのロットで埋まっています)' : ''), String(s.seq));
+      opt.disabled = claimed >= s.qty;
+      sel.add(opt);
+    });
+    sel.value = link.dataset.closeSeq;
+    sel.addEventListener('blur', function () { sel.remove(); });
+    sel.addEventListener('change', function () {
+      var fd = new FormData();
+      fd.append('episode_key', link.dataset.episodeKey);
+      fd.append('buy_seqs', link.dataset.seqs);
+      fd.append('sell_seq', sel.value);
+      sel.disabled = true;
+      fetch(link.dataset.url, { method: 'POST', body: fd })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok) { alert(res.j.error || '出口の保存に失敗しました'); sel.remove(); return; }
+          var row = link.closest('.th-ep-detail');
+          try { sessionStorage.setItem(LOT_MATCH_REOPEN, row ? row.id : ''); } catch (err) {}
+          location.reload();
+        })
+        .catch(function () { alert('出口の保存に失敗しました'); sel.remove(); });
+    });
+    link.insertAdjacentElement('afterend', sel);
+    sel.focus();
+  });
+  (function reopenAfterLotMatch() {
+    var uid = null;
+    try { uid = sessionStorage.getItem(LOT_MATCH_REOPEN); sessionStorage.removeItem(LOT_MATCH_REOPEN); } catch (err) {}
+    var detail = uid && document.getElementById(uid);
+    var row = detail && document.querySelector('.th-ep-row[data-ep="' + uid + '"]');
+    if (!row) return;
+    // 年のまとまり・銘柄行の中に畳まれていれば開く
+    for (var el = row.parentElement; el; el = el.parentElement) {
+      if (!el.style || el.style.display !== 'none' || el.classList.contains('th-tab-panel')) continue;
+      el.style.display = '';
+      var icon = el.id && document.querySelector('.year-toggle[data-target="' + el.id + '"] .toggle-icon');
+      if (icon) icon.textContent = '▼';
+      var caret = el.id && document.querySelector('.th-stock-row[data-stock="' + el.id + '"] .th-stock-caret');
+      if (caret) caret.textContent = '▾';
+    }
+    row.click();
+    row.scrollIntoView({ block: 'center' });
+  }());
 
   // 「✓ そのまま確定」: 表示中の値で保存し、seed を manual に変える
   document.querySelectorAll('.episode-strategy-confirm').forEach(function (btn) {

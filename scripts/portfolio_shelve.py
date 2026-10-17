@@ -102,6 +102,9 @@ KEY_EPISODE_STRATEGY_PREFIX = "episode_strategy:"
 # エピソードの戦略と違うロットにだけ保存し、無ければエピソードの戦略に従う。
 # seq は遡り取込でも変わらないので、エピソードのような指紋 (drift 検出) は要らない。
 KEY_FILL_STRATEGY_PREFIX = "fill_strategy:"
+# 現物の往復行で、手で結びつけた買いと売り。キーは <code_s>、値は
+# {"pairs": {"<買いの seq>": <売りの seq>}, "updated_at"}。指定の無い分は FIFO で組む。
+KEY_LOT_MATCH_PREFIX = "lot_match:"
 # issue #492: 銘柄・エピソードの戦略の変更履歴 (追記のみ)。銘柄ごとのリスト。
 # 入った時点の戦略 (source=entry) は、この履歴から「建てた日に有効だった値」を引く。
 KEY_STRATEGY_HISTORY_PREFIX = "strategy_history:"
@@ -1654,6 +1657,48 @@ def list_fill_strategies(*, db_path: Optional[str] = None) -> Dict[Tuple[str, in
             if not isinstance(value, dict) or not value.get("trade_idea"):
                 continue
             results[(value["code_s"], int(value["seq"]))] = dict(value)
+    return results
+
+
+def set_lot_match(code_s: str, buy_seqs: List[int], sell_seq: Optional[int], *,
+                  db_path: Optional[str] = None) -> None:
+    """現物の買いロット (buy_seqs) を、決済した売り (sell_seq) に結びつける。
+
+    sell_seq=None で buy_seqs の指定を消す (FIFO に戻す)。同じ銘柄の他の買いの指定は
+    残す。指定が成り立つか (同じエピソード・売りが後・空きがある) はルートで確かめる。
+    """
+    validate_code_s(code_s)
+    buy_seqs = [int(q) for q in buy_seqs]
+    if not buy_seqs:
+        raise ValueError("buy_seqs が空です")
+    key = f"{KEY_LOT_MATCH_PREFIX}{code_s}"
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            pairs = dict((db.get(key) or {}).get("pairs") or {})
+            for q in buy_seqs:
+                if sell_seq is None:
+                    pairs.pop(str(q), None)
+                else:
+                    pairs[str(q)] = int(sell_seq)
+            if pairs:
+                db[key] = {"pairs": pairs, "updated_at": now_iso()}
+            elif key in db:
+                del db[key]
+    log_print("portfolio_shelve: lot_match 更新", code_s, buy_seqs,
+              sell_seq if sell_seq is not None else "(FIFO)")
+
+
+def list_lot_matches(*, db_path: Optional[str] = None) -> Dict[str, Dict[int, int]]:
+    """手で結びつけた買いと売りを {code_s: {買いの seq: 売りの seq}} で一括取得する。"""
+    path = _resolve_db_path(db_path)
+    results: Dict[str, Dict[int, int]] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items(KEY_LOT_MATCH_PREFIX):
+            if not isinstance(value, dict):
+                continue
+            results[key[len(KEY_LOT_MATCH_PREFIX):]] = {
+                int(b): int(s) for b, s in (value.get("pairs") or {}).items()}
     return results
 
 

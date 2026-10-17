@@ -1062,6 +1062,59 @@ class TestLotStrategy:
             ("2026-03-03", True), ("2026-03-03", False), ("2026-03-02", True)]
 
 
+    @pytest.mark.parametrize("pairs,expected", [
+        # 指定なしは FIFO
+        ({}, [("03-02", "03-10", 100, False), ("03-03", "03-12", 100, False),
+              ("03-04", "03-13", 50, False), ("03-11", "03-13", 10, False),
+              ("03-05", "03-14", 10, False)]),
+        # 新しいロットを前の売りに向ける。売りの残りは FIFO で古いロットから
+        ({"C": "S1"}, [("03-04", "03-10", 50, True), ("03-02", "03-10", 50, False),
+                       ("03-02", "03-12", 50, False), ("03-03", "03-12", 50, False),
+                       ("03-03", "03-13", 50, False), ("03-11", "03-13", 10, False),
+                       ("03-05", "03-14", 10, False)]),
+        # 向けたロットは、向け先より前の売りの FIFO では使わない
+        ({"A": "S2"}, [("03-03", "03-10", 100, False), ("03-02", "03-12", 100, True),
+                       ("03-04", "03-13", 50, False), ("03-11", "03-13", 10, False),
+                       ("03-05", "03-14", 10, False)]),
+        # 売りより大きいロットの余り (A の 40株) は、前の売りの FIFO に使える
+        ({"A": "S3"}, [("03-02", "03-10", 40, False), ("03-03", "03-10", 60, False),
+                       ("03-03", "03-12", 40, False), ("03-04", "03-12", 50, False),
+                       ("03-11", "03-12", 10, False), ("03-02", "03-13", 60, True),
+                       ("03-05", "03-14", 10, False)]),
+        # 成り立たない指定は無視して FIFO: 売りが買いより前 / 証券会社違い / 他エピソードの seq
+        ({"E": "S1"}, None), ({"D": "S3"}, None), ({999: "S3"}, None),
+    ])
+    def test_genbutsu_round_trips_follow_lot_match(self, db_path, pairs, expected):
+        """手で結びつけた買いと売りを先に使い、残りは FIFO で組む。クローズ済みなら
+        往復行の損益合計はエピソードの損益のまま (--check-pl の不変条件)。"""
+        fills = [("A", "2026-03-02", "buy", 100, 1000.0, "楽天"),
+                 ("B", "2026-03-03", "buy", 100, 1200.0, "楽天"),
+                 ("C", "2026-03-04", "buy", 50, 1500.0, "楽天"),
+                 ("D", "2026-03-05", "buy", 10, 1400.0, "SBI"),
+                 ("S1", "2026-03-10", "sell", 100, 1300.0, "楽天"),
+                 ("E", "2026-03-11", "buy", 10, 1250.0, "楽天"),
+                 ("S2", "2026-03-12", "sell", 100, 1100.0, "楽天"),
+                 ("S3", "2026-03-13", "sell", 60, 900.0, "楽天"),
+                 ("S4", "2026-03-14", "sell", 10, 1000.0, "SBI")]
+        for i, (_, d, side, qty, price, broker) in enumerate(fills):
+            _add(db_path, "9004", d, side, qty, price, broker=broker, seq_salt=str(i))
+        seqs = dict(zip([f[0] for f in fills],
+                        [f["seq"] for f in ps.list_fills("9004", db_path=db_path)]))
+        for b, s in pairs.items():
+            ps.set_lot_match("9004", [seqs.get(b, b)], seqs[s], db_path=db_path)
+        ep = trade_episodes.build_fill_episodes(db_path=db_path)[0]
+        rows = trade_episodes.build_round_trips(ep)
+
+        got = [(r["open_date"][5:], r["close_date"][5:], r["qty"], r["manual_match"]) for r in rows]
+        if expected is None:
+            expected = [("03-02", "03-10", 100, False), ("03-03", "03-12", 100, False),
+                        ("03-04", "03-13", 50, False), ("03-11", "03-13", 10, False),
+                        ("03-05", "03-14", 10, False)]
+        assert sorted(got) == sorted(expected)
+        assert ep["closed"]
+        assert sum(r["pl"] for r in rows) == ep["pl"]["profit_amount"]
+
+
 class TestAssignEntryStrategy:
     """入った時点の戦略を、銘柄の戦略の履歴から写す (issue #492 5d)。"""
 
