@@ -428,7 +428,7 @@
       <span class="cr-group">【{{ group_name }}】</span>
       {% for label, value in items %}
       <span class="cr-item">
-        {% if label %}<span class="cr-label">{{ label }}</span>{% endif %}
+        {% if label %}<span class="cr-label"{% if label == 'RSスコア' %} title="先頭はRSスコア（0〜100）。小数点の後はRSライン（対TOPIX）の20日平均/5日平均からの乖離率（%）"{% endif %}>{{ label }}</span>{% endif %}
         {% if label == 'シグナル' and signal_display and signal_display.tooltip %}
         <span class="cr-value" title="{{ signal_display.tooltip }}" style="cursor:help;">{{ value if value else '—' }}</span>
         {% else %}

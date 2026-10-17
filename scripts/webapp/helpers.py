@@ -3658,7 +3658,7 @@ def build_price_rs_chart_full(
     # 左に RSライン% 軸ラベル、右に RSスコア（0〜100） 軸ラベルを出すため両側に余白。
     pad_left = 36
     pad_right = 28
-    pad_y_top = 26
+    pad_y_top = 14
     pad_y_bottom = 14
     # X軸の下に常設するポ/ブマーカー専用バンド (issue #253)。騰落率描画域とは独立。
     marker_band_h = 18
@@ -3754,8 +3754,8 @@ def build_price_rs_chart_full(
     # 凡例 (上端)
     parts.append(
         '<text x="' + str(pad_x) + '" y="10" font-size="9" fill="#666">'
-        '<tspan fill="#1976d2" font-style="italic">┄ RSライン（対TOPIX）%/左軸</tspan>'
-        '<tspan x="' + str(pad_x) + '" dy="12" fill="' + _RS_RANK_COLOR + '">━ RSスコア（0〜100/右軸）</tspan>'
+        '<tspan fill="#1976d2" font-style="italic"><title>RSライン（対TOPIX）。基準週からの変化率（%）、左軸</title>┄ RSライン（左軸%）</tspan>'
+        '<tspan dx="6" fill="' + _RS_RANK_COLOR + '"><title>RSスコア（0〜100）、右軸</title>━ RSスコア（右軸）</tspan>'
         '</text>'
     )
 
@@ -4491,7 +4491,7 @@ _CR_LABEL_MAP = {
     "総合PT": "総合スコア",
     "プロフィット/クォリティ": "プロフィット",
     "バリュー/サイズ": "バリュー",
-    "モメンタム(現在.20日比/5日比)": "RSスコア（0〜100）・RSライン（対TOPIX）乖離",
+    "モメンタム(現在.20日比/5日比)": "RSスコア",
     "ファンダメンタル": "ファンダ",
     "トレンドテンプレート": "トレンド",
     "ローソク足ボラティリティ(20,5)": "ボラ",

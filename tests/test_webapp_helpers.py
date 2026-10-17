@@ -3029,7 +3029,7 @@ class TestPriceRsSparkline:
         # RS系列色 (青) が線・末尾ラベルに使われる
         assert "#1976d2" in svg
         # 凡例が新仕様 (RSライン左軸 / RS右軸) であること
-        assert "RSライン" in svg and "RSスコア（0〜100/右軸）" in svg
+        assert "RSライン" in svg and "RSスコア（右軸）" in svg
 
     # --- codex review 対応: 5日基準のずれ / 短期履歴ガイドはみ出し ---
 
