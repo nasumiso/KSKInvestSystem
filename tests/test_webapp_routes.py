@@ -132,8 +132,8 @@ class TestSearchRoute:
     @pytest.mark.parametrize("url, items, expected, not_expected", [
         ("/", [{"text": "残高CSVが古い: 楽天 (10/1 時点、11日前)", "url": "/portfolio", "link_label": "保有銘柄で取り込む"}],
          ['残高CSVが古い: 楽天 (10/1 時点、11日前) → <a href="/portfolio">保有銘柄で取り込む</a>'],
-         ["今日の手入れはありません"]),
-        ("/", [], ["今日のアクション", "今日の手入れはありません"], []),
+         ["今日の検討事項はありません"]),
+        ("/", [], ["今日のアクション", "今日の検討事項はありません"], []),
         ("/?q=3496x", [{"text": "残高CSVが古い", "url": "/portfolio", "link_label": "取り込む"}],
          [], ["今日のアクション", "残高CSVが古い"]),
     ])

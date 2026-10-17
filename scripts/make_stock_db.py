@@ -1833,6 +1833,12 @@ def list_all_db(upload_csv=True, update_portforio=True):
     # 決算カレンダーの元データを、この回で取り直した決算予定日に合わせる。
     # shintakane.py 側の保存はマスター更新より前なので、ここで保存し直さないと1日遅れる
     kessan.save_pf_kessan_db(stocks)
+    # 保有銘柄の出口ライン「防」を記録する。トップの今日のアクションはこの記録を読む (issue #372)
+    try:
+        from webapp.helpers import record_hold_exit_alerts
+        log_print("出口ライン「防」の保有銘柄数", record_hold_exit_alerts(stocks))
+    except Exception as e:  # noqa: BLE001
+        log_warning(f"出口ライン「防」の記録に失敗: {e}")
 
     # ---- テーマ別株価騰落率を計算してmarket_dbに保存
     log_print("---- テーマ別株価騰落率を計算")

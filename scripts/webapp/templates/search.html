@@ -80,7 +80,7 @@
 {% endif %}
 
 {% else %}
-{# issue #372: データの手入れが要る項目。各項目1行、済ませると消える #}
+{# issue #372: 相場起点の項目とデータの手入れが要る項目。各項目1行、期限が過ぎるか済ませると消える #}
 <section id="action-queue" style="margin-top:1.5em;padding:0.8em 1em;border:1px solid #e1e5ea;border-radius:6px;">
   <h3 style="margin:0 0 0.4em 0;font-size:1em;">今日のアクション</h3>
   {% if action_queue %}
@@ -90,7 +90,7 @@
     {% endfor %}
   </ul>
   {% else %}
-  <p style="margin:0;color:#666;">今日の手入れはありません</p>
+  <p style="margin:0;color:#666;">今日の検討事項はありません</p>
   {% endif %}
 </section>
 
