@@ -2079,7 +2079,7 @@ class TestPortfolioThemes:
 
 
 class TestPortfolioThemeSummary:
-    """業態テーマ別 RS サマリー画面の smoke テスト (issue #283)"""
+    """業態テーマ別 RSスコア サマリー画面の smoke テスト (issue #283)"""
 
     @pytest.fixture
     def summary_app(self, db_path, tmp_path, monkeypatch):
@@ -2108,7 +2108,7 @@ class TestPortfolioThemeSummary:
         resp = client.get(url)
         assert resp.status_code == 200
         html = resp.data.decode()
-        assert "業態テーマ別 RS サマリー" in html
+        assert "業態テーマ別 RSスコア サマリー" in html
         assert "半導体" in html
 
 

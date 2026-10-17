@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}業態テーマ別 RS サマリー | Shintakane Research{% endblock %}
+{% block title %}業態テーマ別 RSスコア サマリー | Shintakane Research{% endblock %}
 
 {% block content %}
 <style>
@@ -32,13 +32,13 @@
 {% macro fmt_int(v) %}{% if v is none %}—{% else %}{{ v|round|int }}{% endif %}{% endmacro %}
 
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6em;flex-wrap:wrap;gap:0.5em;">
-  <h2 style="margin:0;">業態テーマ別 RS サマリー</h2>
+  <h2 style="margin:0;">業態テーマ別 RSスコア サマリー</h2>
   <a href="{{ url_for('portfolio.dashboard') }}" style="font-size:0.9em;">← ポートフォリオに戻る</a>
 </div>
 
 <p style="font-size:0.85em;color:#666;margin:0 0 0.6em 0;">
   手動付けした業態テーマ (memo.gyoutai_themes) を自分の分類軸とした市場ローテーション検知。
-  中長期の強さ (momentum_pt) と短期の勢い (rs_line の移動平均乖離) を併記する。
+  RSスコア（0〜100）とRSライン（対TOPIX）の移動平均乖離を併記する。
 </p>
 
 {% if not themes %}
@@ -55,12 +55,12 @@
     <tr>
       <th class="theme-col">テーマ</th>
       <th class="num-col">構成</th>
-      <th class="num-col {% if active_sort == 'momentum' %}sort-active{% endif %}" title="構成銘柄の momentum_pt 平均 (0〜100)。クリックで降順ソート"><a href="{{ sort_urls['momentum'] }}">RS平均</a></th>
-      <th class="num-col" title="構成銘柄の momentum_pt 最大">最大</th>
-      <th class="num-col {% if active_sort == 'dev_1d' %}sort-active{% endif %}" title="今日の rs_line (銘柄/TOPIX) の前日比 (%) の平均。本日の瞬間的な勢い。クリックで降順ソート"><a href="{{ sort_urls['dev_1d'] }}">1日乖離</a></th>
-      <th class="num-col {% if active_sort == 'dev_a' %}sort-active{% endif %}" title="今日の rs_line (銘柄/TOPIX) と直近5日移動平均の乖離率の平均。正=直近平均より上振れ(勢い強)。クリックで降順ソート"><a href="{{ sort_urls['dev_a'] }}">5日乖離</a></th>
-      <th class="num-col {% if active_sort == 'dev_b' %}sort-active{% endif %}" title="今日の rs_line (銘柄/TOPIX) と直近20日移動平均の乖離率の平均。正=直近平均より上振れ(勢い強)。クリックで降順ソート"><a href="{{ sort_urls['dev_b'] }}">20日乖離</a></th>
-      <th class="leaders-col" title="momentum_pt 降順 上位3銘柄">リーダー株 (top3)</th>
+      <th class="num-col {% if active_sort == 'momentum' %}sort-active{% endif %}" title="構成銘柄のRSスコア（0〜100）の平均。クリックで降順ソート"><a href="{{ sort_urls['momentum'] }}">RSスコア平均（0〜100）</a></th>
+      <th class="num-col" title="構成銘柄のRSスコア（0〜100）の最大値">最大</th>
+      <th class="num-col {% if active_sort == 'dev_1d' %}sort-active{% endif %}" title="今日のRSライン（対TOPIX） の前日比 (%) の平均。本日の瞬間的な勢い。クリックで降順ソート"><a href="{{ sort_urls['dev_1d'] }}">1日乖離</a></th>
+      <th class="num-col {% if active_sort == 'dev_a' %}sort-active{% endif %}" title="今日のRSライン（対TOPIX） と直近5日移動平均の乖離率の平均。正=直近平均より上振れ(勢い強)。クリックで降順ソート"><a href="{{ sort_urls['dev_a'] }}">5日乖離</a></th>
+      <th class="num-col {% if active_sort == 'dev_b' %}sort-active{% endif %}" title="今日のRSライン（対TOPIX） と直近20日移動平均の乖離率の平均。正=直近平均より上振れ(勢い強)。クリックで降順ソート"><a href="{{ sort_urls['dev_b'] }}">20日乖離</a></th>
+      <th class="leaders-col" title="RSスコア（0〜100）降順 上位3銘柄">リーダー株 (top3)</th>
     </tr>
   </thead>
   <tbody>
@@ -75,7 +75,7 @@
               <a href="{{ url_for('detail.stock_detail', code_s=m.code_s) }}">{{ m.code_s }}</a>
               <span class="{% if m.status_query == 'hold' %}member-hold{% endif %}">{{ m.stock_name }}</span>
               <span class="status-badge status-{{ m.status_query }}">{{ m.status }}</span>
-              {% if m.momentum_pt is not none %}<span style="color:#888;">RS {{ m.momentum_pt|round|int }}</span>{% endif %}
+              {% if m.momentum_pt is not none %}<span style="color:#888;">RSスコア（0〜100） {{ m.momentum_pt|round|int }}</span>{% endif %}
             </div>
             {% endfor %}
           </div>

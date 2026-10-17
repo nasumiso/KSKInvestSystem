@@ -2098,7 +2098,7 @@ def _html_market(market_db):
     header_static = (
         '<table class="market-table">\n'
         '<thead><tr>\n'
-        '  <th>市場名</th><th class="col-rs">RS</th><th class="col-trend">トレンド</th>\n'
+        '  <th>市場名</th><th class="col-rs">市場RS（倍率）</th><th class="col-trend">トレンド</th>\n'
         '  <th class="col-dd">DD</th><th class="col-ftd">FTD/ラリー</th>\n'
         '  <th class="col-state">市場状態</th><th class="col-spr">需給バランス</th>\n'
         '</tr></thead>\n'
