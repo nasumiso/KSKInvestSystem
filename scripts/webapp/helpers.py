@@ -5039,7 +5039,7 @@ def _episode_markers(ep: Dict[str, Any],
         key = (td, f.get("side") or "")
         g = grouped.setdefault(key, {
             "trade_date": td, "side": f.get("side"), "qty": 0, "amount": 0.0, "chart_amount": 0.0,
-            "brokers": set(), "kinds": set(), "n": 0,
+            "brokers": set(), "kinds": set(), "n": 0, "seqs": [],
         })
         qty = f.get("original_qty") or 0
         g["qty"] += qty
@@ -5050,6 +5050,8 @@ def _episode_markers(ep: Dict[str, Any],
         if f.get("trade_kind"):
             g["kinds"].add(f["trade_kind"])
         g["n"] += 1
+        if f.get("seq") is not None:
+            g["seqs"].append(f["seq"])
 
     open_side = "sell" if ep.get("is_short") else "buy"
     first_date = min((g["trade_date"] for g in grouped.values()), default=None)
@@ -5080,7 +5082,7 @@ def _episode_markers(ep: Dict[str, Any],
             "bar": bar, "price": avg, "qty": g["qty"], "role": role, "is_open": is_open,
             "original_price": g["amount"] / g["qty"] if g["qty"] else 0.0,
             "side_buy": g["side"] == "buy",
-            "date": g["trade_date"], "n": g["n"],
+            "date": g["trade_date"], "n": g["n"], "seqs": g["seqs"],
             "brokers": "/".join(sorted(g["brokers"])), "kinds": "/".join(sorted(g["kinds"])),
         })
     return markers, skipped
@@ -5446,14 +5448,16 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
         else:
             tri = "%.1f,%.1f %.1f,%.1f %.1f,%.1f" % (
                 x, y + size * 1.4, x - size, y - size * 0.3, x + size, y - size * 0.3)
+        # data-seqs は出口の候補を選ぶとき、候補の売りのマーカーを中抜きにするのに使う
+        seqs_attr = ' data-seqs="%s"' % " ".join(str(q) for q in m["seqs"])
         if held:
             # 中抜き = まだ決済していない。売買方向の色は枠に残す
-            parts.append('<polygon class="ep-held-in" data-lots="%s" points="%s" fill="#fff" '
+            parts.append('<polygon class="ep-held-in" data-lots="%s"%s points="%s" fill="#fff" '
                          'stroke="%s" stroke-width="1.6"><title>%s</title></polygon>'
-                         % (" ".join(sorted(set(held))), tri, fill, html.escape(title)))
+                         % (" ".join(sorted(set(held))), seqs_attr, tri, fill, html.escape(title)))
             continue
-        parts.append('<polygon points="%s" fill="%s" stroke="#fff" stroke-width="1.3">'
-                     '<title>%s</title></polygon>' % (tri, fill, html.escape(title)))
+        parts.append('<polygon%s points="%s" fill="%s" stroke="#fff" stroke-width="1.3">'
+                     '<title>%s</title></polygon>' % (seqs_attr, tri, fill, html.escape(title)))
     parts.append("</svg>")
 
     if skipped:

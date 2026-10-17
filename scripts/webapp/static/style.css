@@ -796,6 +796,8 @@ tr:hover > td > .lot-strategy > .lot-strategy-edit { visibility: visible; }
 .ep-lot-link.is-hot { stroke: #e67e22; stroke-width: 2.5; stroke-dasharray: none; }
 /* 保有中の行にカーソルが乗ったとき、中抜きにした建てのマーカーを同じ色で塗る */
 .ep-held-in.is-hot { fill: #e67e22; stroke: #e67e22; }
+/* 出口の候補を選んでいる間、選べる売りのマーカーを中抜きにする */
+.ep-chart polygon.is-candidate { fill: #fff; stroke: #c25b5b; stroke-width: 1.6; }
 /* チャートの線の表示切り替え。買→売の線は隠していても、乗せた行の1本 (is-hot) は出す */
 body.ep-hide-lots .ep-lot-link:not(.is-hot) { display: none; }
 body.ep-hide-kessan .ep-kessan { display: none; }

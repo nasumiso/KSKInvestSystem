@@ -1186,7 +1186,21 @@
       sel.add(opt);
     });
     sel.value = link.dataset.closeSeq;
-    sel.addEventListener('blur', function () { sel.remove(); });
+    // リストを開いている間、選べる売りのマーカーをチャート上で中抜きにする。標準の
+    // select ではどの候補にカーソルがあるか取れないので、候補をまとめて示す
+    var cols = link.closest('.ep-detail-cols');
+    var candSeqs = Array.prototype.filter.call(sel.options, function (o) { return o.value && !o.disabled; })
+                        .map(function (o) { return o.value; });
+    function markCandidates(on) {
+      if (!cols) return;
+      cols.querySelectorAll('.ep-chart polygon[data-seqs]').forEach(function (p) {
+        var hit = p.getAttribute('data-seqs').split(' ').some(function (q) { return candSeqs.indexOf(q) >= 0; });
+        p.classList.toggle('is-candidate', on && hit);
+      });
+    }
+    function closeSelect() { markCandidates(false); sel.remove(); }
+    markCandidates(true);
+    sel.addEventListener('blur', closeSelect);
     sel.addEventListener('change', function () {
       var fd = new FormData();
       fd.append('episode_key', link.dataset.episodeKey);
@@ -1196,12 +1210,12 @@
       fetch(link.dataset.url, { method: 'POST', body: fd })
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (res) {
-          if (!res.ok) { alert(res.j.error || '出口の保存に失敗しました'); sel.remove(); return; }
+          if (!res.ok) { alert(res.j.error || '出口の保存に失敗しました'); closeSelect(); return; }
           var row = link.closest('.th-ep-detail');
           try { sessionStorage.setItem(LOT_MATCH_REOPEN, row ? row.id : ''); } catch (err) {}
           location.reload();
         })
-        .catch(function () { alert('出口の保存に失敗しました'); sel.remove(); });
+        .catch(function () { alert('出口の保存に失敗しました'); closeSelect(); });
     });
     link.insertAdjacentElement('afterend', sel);
     sel.focus();
