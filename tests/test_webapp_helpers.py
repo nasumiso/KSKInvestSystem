@@ -3564,7 +3564,7 @@ class TestGetCurrentResearchData:
         # スコアグループは確実に出る (総合PT が非零)
         assert "スコア" in group_names
 
-    @pytest.mark.parametrize("hour, expected", [(16, "2025/12/31"), (17, "2026/01/01")])
+    @pytest.mark.parametrize("hour, expected", [(16, "25/12/31"), (17, "26/01/01")])
     def test_dates_use_source_datetimes(self, monkeypatch, hour, expected):
         """年・月を省略せず、株価だけ17時の価格日境界を適用する。"""
         import make_stock_db
@@ -3578,7 +3578,7 @@ class TestGetCurrentResearchData:
         groups = dict(helpers.get_current_research_data(
             "9999", stock_data=stock, research_record={}))
         assert groups["データ時点"] == [
-            ("株価基準日", expected), ("業績更新日", "2025/12/30"),
+            ("株価基準日", expected), ("業績更新日", "25/12/30"),
             ("指標更新日", "未取得")]
         assert "誤った省略日付" not in str(groups)
 

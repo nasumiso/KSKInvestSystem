@@ -4652,7 +4652,7 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None,
         if isinstance(dt, datetime):
             if key == "access_date_price":
                 dt = get_price_day(dt)
-            value = dt.strftime("%Y/%m/%d")
+            value = dt.strftime("%y/%m/%d")
         else:
             value = "未取得"
         dates.append((label, value))
