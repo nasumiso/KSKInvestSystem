@@ -4503,6 +4503,21 @@ class TestEpisodeChart:
         assert "高値 1,300 / 安値 800 / 終値 1,000" in svg
         assert ">1,3" in svg  # 縦軸の上端ラベルが高値 (+余白) まで届く
 
+    def test_chart_hollows_held_lot_marker(self, monkeypatch):
+        """保有中の玉の建てマーカーだけ中抜きにし、明細行と同じ data-lot を持たせる。"""
+        closes = {date(2026, 3, 2) + _dt.timedelta(weeks=i): (1000.0, 10000.0, 1300.0, 800.0)
+                  for i in range(8)}
+        monkeypatch.setattr(helpers, "load_weekly_closes", lambda code_s: closes)
+        ep = self._ep(close_date=None, closed=False, fills=[
+            {"trade_date": d, "side": s, "qty": 100, "price": p, "broker": "楽天"}
+            for d, s, p in [("2026-03-04", "buy", 1000), ("2026-03-18", "sell", 1010),
+                            ("2026-04-01", "buy", 1020)]])
+        svg = helpers.build_episode_chart(ep)
+        # 3/4 の玉は 3/18 に決済済みなので線を引き、4/1 の玉は保有中なので中抜き
+        assert svg.count('class="ep-lot-link"') == 1
+        assert svg.count('class="ep-held-in"') == 1
+        assert 'data-lots="2026-04-01|"' in svg and "保有中の玉を含む" in svg
+
     def test_chart_draws_kessan_lines(self, monkeypatch):
         """窓に入る週の決算・修正だけ縦線にする。同じ週は1本にまとめ、方向は開示から付ける。"""
         import disclosure

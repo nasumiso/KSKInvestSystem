@@ -5391,12 +5391,20 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
     from webapp.trade_episodes import build_round_trips  # 循環 import 回避
     marker_at = {(m["date"], m["side_buy"]): m for m in markers}
     open_buy = not ep.get("is_short")
+    # 保有中の往復行は決済のマーカーが無く線を引けない。代わりに建てのマーカーを
+    # 中抜きにし、明細行 (data-lot="建日|") に乗せたときに強調できるよう建日を持たせる
+    held_lots: Dict[Tuple[str, bool], List[str]] = {}
     for r in build_round_trips(ep):
         # 信用ラウンドの現引は買い fill で建玉を閉じる
         close_buy = True if r["genbiki"] else not open_buy
         # 現引した玉の現物側は買った日を信用の建日で見せるが、このエピソードに
         # その日の約定は無い。線の始点は現物になった現引日のマーカーに置く。
-        a = marker_at.get((r.get("genbiki_date") or r["open_date"], open_buy))
+        open_key = (r.get("genbiki_date") or r["open_date"], open_buy)
+        if not r["closed"]:
+            if r["open_date"] and open_key in marker_at:
+                held_lots.setdefault(open_key, []).append(r["open_date"] + "|")
+            continue
+        a = marker_at.get(open_key)
         b = marker_at.get((r["close_date"], close_buy))
         if a is None or b is None:
             continue
@@ -5427,6 +5435,9 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
             title += " (%s)" % m["brokers"]
         if m["n"] > 1:
             title += " ※%d件の約定をまとめて表示" % m["n"]
+        held = held_lots.get((m["date"], buying))
+        if held:
+            title += " ※保有中の玉を含む"
         size = 7.5 if m["role"] in ("in", "out") else 6.0
         fill = "#3d7fb5" if buying else "#c25b5b"
         if buying:
@@ -5435,6 +5446,12 @@ def build_episode_chart(ep: Dict[str, Any], width: int = 440, height: int = 200,
         else:
             tri = "%.1f,%.1f %.1f,%.1f %.1f,%.1f" % (
                 x, y + size * 1.4, x - size, y - size * 0.3, x + size, y - size * 0.3)
+        if held:
+            # 中抜き = まだ決済していない。売買方向の色は枠に残す
+            parts.append('<polygon class="ep-held-in" data-lots="%s" points="%s" fill="#fff" '
+                         'stroke="%s" stroke-width="1.6"><title>%s</title></polygon>'
+                         % (" ".join(sorted(set(held))), tri, fill, html.escape(title)))
+            continue
         parts.append('<polygon points="%s" fill="%s" stroke="#fff" stroke-width="1.3">'
                      '<title>%s</title></polygon>' % (tri, fill, html.escape(title)))
     parts.append("</svg>")
