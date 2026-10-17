@@ -710,7 +710,11 @@ nav .quick-search {
 .lot-match-mark { color: #8a8a5a; font-size: 0.88em; margin-left: 0.4em; }
 .lot-match-select {
   display: inline-block;
-  width: 9.4em !important;
+  /* 候補の文言 (日付・株数・単価) が切れないよう幅は中身に合わせ、表の流れから外して
+     隣の列の上に重ねる (選んでいる間だけ出る欄で、列幅を押し広げてチャートに食い込ませない) */
+  position: absolute;
+  z-index: 5;
+  width: auto !important;
   font-size: 0.95em;
   padding: 0.05em 1.2em 0.05em 0.35em;
   margin: 0 0 0 0.3em;
