@@ -43,6 +43,7 @@ from webapp.trade_episodes import (
     count_orphan_strategies,
     episode_hold_days,
     fill_date_range_by_broker,
+    lot_match_sells,
     summarize_by_strategy,
 )
 
@@ -308,6 +309,9 @@ def trade_history():
         ep["round_trips"] = build_round_trips(ep)
         # 建てロットの戦略 (issue #492 段階2)。エピソードの戦略と違う行に印を付ける
         attach_lot_strategies(ep, fill_strategies)
+        # 現物は往復行の出口を手で選べる。その候補 (売り fill と、向けられている株数)
+        if ep["kind"] == "現物" and not ep.get("split_suspect"):
+            ep["lot_match_sells"] = lot_match_sells(ep)
         # 建て日・決済日が決算の何営業日前後か (issue #512)。近い約定だけ注記が付く
         for r in ep["round_trips"]:
             r["open_kessan"] = kessan_note(ep["code_s"], r.get("open_date"), kessan_cache)
@@ -671,6 +675,45 @@ def save_lot_strategy():
         return jsonify({"ok": False, "error": str(e)}), 400
     actual = trade_idea or ep_idea
     return jsonify({"ok": True, "trade_idea": actual, "differs": actual != ep_idea})
+
+
+@trade_history_bp.route("/trade-history/lot-match", methods=["POST"])
+def save_lot_match():
+    """現物の往復行で、買いロットを決済した売りに手で結びつける。
+
+    フォーム: episode_key / buy_seqs (往復行の open_seqs、カンマ区切り) / sell_seq
+    (空なら指定を消して FIFO に戻す)。売りは同じエピソード・同じ証券会社で、
+    fill の並びで買いより後のもの。ほかのロットで株数が埋まっている売りには向けない
+    (一部だけ空いているときは受け付け、入りきらない分は FIFO に回る)。
+    """
+    episode_key = request.form.get("episode_key", "")
+    sell_raw = (request.form.get("sell_seq") or "").strip()
+    try:
+        buy_seqs = [int(q) for q in (request.form.get("buy_seqs") or "").split(",") if q.strip()]
+        sell_seq = int(sell_raw) if sell_raw else None
+    except ValueError:
+        abort(400)
+    if not episode_key or not buy_seqs:
+        abort(400)
+    ep = build_episode_for_key(episode_key)
+    if ep is None:
+        abort(404)
+    if ep["kind"] != "現物":
+        return jsonify({"ok": False, "error": "現物の往復行だけ結びつけられます"}), 400
+    pos = {f["seq"]: (i, f) for i, f in enumerate(ep["fills"])}
+    if not all(q in pos and pos[q][1]["side"] == "buy" for q in buy_seqs):
+        abort(400)
+    if sell_seq is not None:
+        if sell_seq not in pos or pos[sell_seq][1]["side"] != "sell":
+            abort(400)
+        si, sf = pos[sell_seq]
+        if any(pos[q][0] > si or pos[q][1].get("broker") != sf.get("broker") for q in buy_seqs):
+            return jsonify({"ok": False, "error": "買った後の、同じ証券会社の売りを選んでください"}), 400
+        sell = next(s for s in lot_match_sells(ep) if s["seq"] == sell_seq)
+        if sum(qty for b, qty in sell["claims"].items() if b not in buy_seqs) >= sell["qty"]:
+            return jsonify({"ok": False, "error": "この売りはほかのロットで埋まっています"}), 400
+    ps.set_lot_match(ep["code_s"], buy_seqs, sell_seq)
+    return jsonify({"ok": True})
 
 
 @trade_history_bp.route("/trade-history/chart")

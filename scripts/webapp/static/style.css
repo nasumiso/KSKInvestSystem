@@ -705,6 +705,17 @@ nav .quick-search {
 }
 .lot-strategy-badge[hidden] { display: none; }
 .lot-strategy-badge.is-late { border-style: dashed; background: transparent; }
+/* 現物の往復行で手で結びつけた売り。決済日を押すと出口を選び直せる */
+.lot-match-edit { color: inherit; text-decoration: underline dotted; }
+.lot-match-mark { color: #8a8a5a; font-size: 0.88em; margin-left: 0.4em; }
+.lot-match-select {
+  display: inline-block;
+  width: 9.4em !important;
+  font-size: 0.95em;
+  padding: 0.05em 1.2em 0.05em 0.35em;
+  margin: 0 0 0 0.3em;
+  height: auto;
+}
 .lot-strategy-edit { visibility: hidden; font-size: 0.88em; margin-left: 0.3em; }
 tr:hover > td > .lot-strategy > .lot-strategy-edit { visibility: visible; }
 .lot-strategy-select {

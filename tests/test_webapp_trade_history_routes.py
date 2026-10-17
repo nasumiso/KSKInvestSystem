@@ -375,6 +375,42 @@ class TestTradeHistoryPage:
             assert post(buy, same).get_json()["differs"] is False
             assert ps.list_fill_strategies() == {}
 
+    def test_save_lot_match(self, app, client):
+        """現物の往復行の出口を手で選ぶ。埋まっている売り・買いより前の売り・他エピソードの
+        seq・信用は 400。同じロットの付け直しは受け付け、空で先入先出に戻す。"""
+        from webapp.trade_episodes import build_fill_episodes
+        with app.app_context():
+            for i, (code, d, side, qty, kind) in enumerate([
+                    ("6324", "2026-06-01", "buy", 100, "現物"), ("6324", "2026-06-05", "buy", 100, "現物"),
+                    ("6324", "2026-06-10", "sell", 100, "現物"), ("6324", "2026-06-15", "buy", 100, "現物"),
+                    ("6324", "2026-06-20", "sell", 200, "現物"),
+                    ("3496", "2026-06-01", "buy", 100, "信用新規"), ("3496", "2026-06-10", "sell", 100, "信用返済")]):
+                ps.append_fill(ps.create_fill(code, trade_date=d, side=side, qty=qty, price=1000.0,
+                                              amount=100000, trade_kind=kind, dedup_key=f"lm-{i}",
+                                              tate_date="2026-06-01" if kind == "信用返済" else None,
+                                              tate_price=1000.0 if kind == "信用返済" else None))
+            eps = build_fill_episodes()
+        ep = next(e for e in eps if e["code_s"] == "6324")
+        shinyo = next(e for e in eps if e["code_s"] == "3496")
+        a, b, s1, c, s2 = (f["seq"] for f in ep["fills"])
+
+        def post(buy, sell, key=ep["episode_key"]):
+            return client.post("/trade-history/lot-match", data={
+                "episode_key": key, "buy_seqs": str(buy), "sell_seq": "" if sell is None else str(sell)})
+
+        assert post(b, s1).get_json() == {"ok": True}
+        assert post(b, s1).status_code == 200  # 同じロットの付け直し
+        assert ps.list_lot_matches() == {"6324": {b: s1}}
+        assert "lot-match-mark" in client.get("/trade-history").data.decode()
+        for buy, sell, key in [(a, s1, ep["episode_key"]),       # B で埋まっている
+                               (c, s1, ep["episode_key"]),       # 買いより前の売り
+                               (a, 9999, ep["episode_key"]),     # このエピソードに無い売り
+                               (shinyo["fills"][0]["seq"], shinyo["fills"][1]["seq"],
+                                shinyo["episode_key"])]:         # 信用
+            assert post(buy, sell, key).status_code == 400
+        assert post(b, None).get_json() == {"ok": True}
+        assert ps.list_lot_matches() == {}
+
     def test_save_fill_memo_empty_deletes(self, app, client):
         """空文字を送るとメモが削除される (Phase2)。"""
         with app.app_context():
