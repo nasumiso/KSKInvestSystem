@@ -1031,12 +1031,14 @@ def calc_growth_tags(tbl):
     base = [tbl[y_ind - 4 - k] for k in range(3)]
     if not all(isinstance(r[i], (int, float)) for r in cur + base for i in (1, 2)):
         return ""
-    sales = [calc_growth_rate(b[1], c[1]) for c, b in zip(cur, base)]
-    profit = [calc_growth_rate(b[2], c[2]) for c, b in zip(cur, base)]
+    # 伸び率は丸めずに比べる。calc_growth_rate は整数に丸めるので、10.1→10.4→10.7% の
+    # 加速を取りこぼし、0.2pt 差でも丸めの境目をまたぐと加速に見える。前年同期が0以下なら None
+    sales = [c[1] / b[1] - 1 if b[1] > 0 else None for c, b in zip(cur, base)]
+    profit = [c[2] / b[2] - 1 if b[2] > 0 else None for c, b in zip(cur, base)]
     tags = ""
-    if sales[0] > sales[1] > sales[2] and sales[0] > 0:
+    if None not in sales and sales[0] > sales[1] > sales[2] and sales[0] > 0:
         tags += "収"
-    if all(b[2] > 0 for b in base) and profit[0] > profit[1] > profit[2] and profit[0] > 0:
+    if None not in profit and profit[0] > profit[1] > profit[2] and profit[0] > 0:
         tags += "利"
     if all(c[1] > 0 and b[1] > 0 and c[2] / c[1] > b[2] / b[1] for c, b in zip(cur, base)):
         tags += "率"
