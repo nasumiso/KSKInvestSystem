@@ -1012,15 +1012,47 @@ def calc_annual_quarity_expr(stock):
     return results
 
 
+def calc_growth_tags(tbl):
+    """直近3四半期の成長の型をタグ文字列で返す (issue #121)。
+
+    3つの条件のうち成り立ったものを「収・利・率」の順に並べる。3つそろい (収利率) が
+    Minervini の Code 33 にあたる。いずれも前年同期と比べる (季節性を消すため)。
+      収: 売上 (増収) の前年同期比が3期続けて加速し、直近がプラス
+      利: 営業利益の前年同期比が3期続けて加速し、直近がプラス。前年同期3期がすべて黒字
+          (微益・赤字からの回復は伸び率が数千%に振れ、林式の計算も混ざるため)
+      率: 3期とも営業利益率 (営利/売上) が前年同期より高い
+    原典は EPS だが、日本の四半期純利益は特損益で荒れるので営業利益で代用する。
+    直近3期とその前年同期がそろわない、値が数値でない場合は空文字。
+    """
+    y_ind = get_latest_ind(tbl, 1)
+    if y_ind is None or y_ind - 6 < -len(tbl):
+        return ""
+    cur = [tbl[y_ind - k] for k in range(3)]
+    base = [tbl[y_ind - 4 - k] for k in range(3)]
+    if not all(isinstance(r[i], (int, float)) for r in cur + base for i in (1, 2)):
+        return ""
+    # 伸び率は丸めずに比べる。calc_growth_rate は整数に丸めるので、10.1→10.4→10.7% の
+    # 加速を取りこぼし、0.2pt 差でも丸めの境目をまたぐと加速に見える。前年同期が0以下なら None
+    sales = [c[1] / b[1] - 1 if b[1] > 0 else None for c, b in zip(cur, base)]
+    profit = [c[2] / b[2] - 1 if b[2] > 0 else None for c, b in zip(cur, base)]
+    tags = ""
+    if None not in sales and sales[0] > sales[1] > sales[2] and sales[0] > 0:
+        tags += "収"
+    if None not in profit and profit[0] > profit[1] > profit[2] and profit[0] > 0:
+        tags += "利"
+    if all(c[1] > 0 and b[1] > 0 and c[2] / c[1] > b[2] / b[1] for c, b in zip(cur, base)):
+        tags += "率"
+    return tags
+
+
 def calc_quarter_quaraity_expr(stock):
-    """四半期ごとの増収・増益率を4四半期分(=2年分)返す"""
+    """四半期ごとの増収・増益率を4四半期分(=2年分)返す。2つ目は成長のタグ (calc_growth_tags)"""
     tbl = stock.get("gyoseki_quarter", "")
     if not tbl:
         return (), ""
 
     results = []  # 0:平均 1:分散
     ref_indexes = [1, 2]  # 売上、利益参照インデックス
-    rates = []
     for ref_ind in ref_indexes:
         quarter_rate_list = []
         y_ind = get_latest_ind(tbl, ref_ind)
@@ -1038,20 +1070,7 @@ def calc_quarter_quaraity_expr(stock):
         res[0] = calc_mean(quarter_rate_list)
         res[1] = calc_stddev(quarter_rate_list)
         results.append(res)
-        rates.append(quarter_rate_list)
-    # コード33の判定
-    code33 = ""
-    try:
-        sales_ratios = rates[0]
-        # 営利増加率-売上営利率
-        prof_ratios = [rates[1][q] - rates[0][q] for q in range(len(rates[0]))]
-        if sales_ratios[0] > sales_ratios[1] and sales_ratios[1] > sales_ratios[2]:
-            if prof_ratios[0] > prof_ratios[1] and prof_ratios[0] > prof_ratios[-1]:
-                code33 = "C3"
-    except IndexError:
-        log_warning(" Code33判定できず")
-        pass
-    return results, code33
+    return results, calc_growth_tags(tbl)
 
 
 def get_gyoseki_expr(stock_data):
@@ -1083,7 +1102,7 @@ def get_gyoseki_expr(stock_data):
 def get_gyoseki_quarity_expr(stock):
     """業績クォリティ(過去業績)表現を返す"""
     res_annual = calc_annual_quarity_expr(stock)
-    res_quarter, code33 = calc_quarter_quaraity_expr(stock)
+    res_quarter, growth_tags = calc_quarter_quaraity_expr(stock)
     expr = ""
     if len(res_annual) > 0 and len(res_quarter) > 0:
         # [A]5±8%[Q]-5±12%
@@ -1097,8 +1116,8 @@ def get_gyoseki_quarity_expr(stock):
             res_quarter[1][0],
             res_quarter[1][1],
         )
-        if code33:
-            expr += "<%s>" % code33
+        if growth_tags:
+            expr += "<%s>" % growth_tags
     return expr
 
 
