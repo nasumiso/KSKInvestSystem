@@ -240,8 +240,8 @@ def test_breakout_items(monkeypatch):
 
     assert [(i["text"], i["url"]) for i in items] == [
         ("ブレイク点灯: 保有 銘柄1002 (ブ・週ブ)・銘柄1003 (週ブ)・銘柄1004 (ブ) 他1銘柄",
-         "/portfolio/charts?status=hold"),
-        ("監視のブレイク: 2銘柄 (ブ2・週ブ1)", "/portfolio/charts?status=watch"),
+         "/portfolio/charts?status=hold&codes=1002,1003,1004,1001"),
+        ("監視のブレイク: 2銘柄 (ブ2・週ブ1)", "/portfolio/charts?status=watch&codes=3001,3002"),
     ]
 
 
@@ -270,3 +270,5 @@ def test_stage_item_after_kessan_or_defense(monkeypatch, kessan, updated, first_
     item = aq._stage_item(TODAY)
 
     assert (item["text"] if item else None) == expected
+    if item:  # チャート一覧は該当銘柄だけに絞る
+        assert item["url"] == "/portfolio/charts?status=hold&codes=1001"

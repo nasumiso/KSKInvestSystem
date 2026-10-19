@@ -1257,7 +1257,12 @@ def charts():
 
     # フィルタ抽出は dashboard() と同じ規則 (issue #215): gyoutai_theme 指定時は
     # status 無視で完全一致、未指定かつ status None なら全件、それ以外は status 一致。
-    if active_gyoutai_theme:
+    # codes (カンマ区切り) 指定時は status・テーマより優先してその銘柄だけを、渡された順に出す。
+    # トップの「今日のアクション」から、行に出ている銘柄だけを見に来るため。status は戻るリンク用
+    codes = [c for c in request.args.get("codes", "").split(",") if c]
+    if codes:
+        filtered_records = [r for r in visible_records if r["code_s"] in codes]
+    elif active_gyoutai_theme:
         filtered_records = [
             r for r in visible_records
             if active_gyoutai_theme in ((r.get("memo") or {}).get("gyoutai_themes") or [])
@@ -1267,6 +1272,8 @@ def charts():
     else:
         filtered_records = [r for r in visible_records if r.get("status") == active_status]
     rows = list_portfolio_with_indicators(filtered_records, sort_key="gyoutai")
+    if codes:
+        rows.sort(key=lambda r: codes.index(r["code_s"]))
 
     # iframe 表示に必要な最小キーのみ JSON 化して渡す。
     # stage / 更新日 / 需給チャートはチャートページ上での inline 編集の初期値。

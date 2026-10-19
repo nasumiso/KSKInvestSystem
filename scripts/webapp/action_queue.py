@@ -251,7 +251,7 @@ def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[s
         names = _names([f"{mat.name(c)} ({kinds_label(hits[c]['kinds'])})" for c in order])
         items.append(_item(
             f"ブレイク点灯: {STATUS_VALUE_TO_LABEL[status]} {names}",
-            f"/portfolio/charts?status={STATUS_VALUE_TO_QUERY[status]}", f"チャート一覧で{action}",
+            _charts_url(STATUS_VALUE_TO_QUERY[status], order), f"チャート一覧で{action}",
         ))
     watch = found.get("3監")
     if watch:
@@ -259,10 +259,16 @@ def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[s
             f"{k}{n}" for k in BREAKOUT_KINDS
             if (n := sum(1 for h in watch.values() if k in h["kinds"]))
         )
+        order = sorted(watch, key=lambda c: (-watch[c]["day"].toordinal(), c))
         items.append(_item(
-            f"監視のブレイク: {len(watch)}銘柄 ({counts})", "/portfolio/charts?status=watch", "チャート一覧で見る"
+            f"監視のブレイク: {len(watch)}銘柄 ({counts})", _charts_url("watch", order), "チャート一覧で見る"
         ))
     return items
+
+
+def _charts_url(status_query: str, codes: List[str]) -> str:
+    """行に出ている銘柄だけを、その順でチャート一覧に出すリンク。status はチャート一覧の戻り先"""
+    return f"/portfolio/charts?status={status_query}&codes={','.join(codes)}"
 
 
 def _stage_item(today: date, mat: Optional[_Material] = None) -> Optional[Dict[str, str]]:
@@ -274,6 +280,7 @@ def _stage_item(today: date, mat: Optional[_Material] = None) -> Optional[Dict[s
     """
     mat = mat or _Material()
     counts: Dict[str, Dict[str, int]] = {"防の後": {}, "決算後": {}}
+    hits: Dict[str, date] = {}  # code_s -> 出来事の日 (チャート一覧に新しい順で渡す)
     for r in mat.records:
         status = r.get("status")
         if status not in ("1保", "2準"):
@@ -292,6 +299,7 @@ def _stage_item(today: date, mat: Optional[_Material] = None) -> Optional[Dict[s
         for label, day in events:
             if 0 <= (today - day).days <= STAGE_AFTER_EVENT_DAYS and not (updated and updated >= day):
                 counts[label][status] = counts[label].get(status, 0) + 1
+                hits[code_s] = day
                 break
     parts = [
         f"{label} " + "・".join(f"{STATUS_VALUE_TO_LABEL[st]} {n}" for st, n in sorted(c.items()))
@@ -300,9 +308,10 @@ def _stage_item(today: date, mat: Optional[_Material] = None) -> Optional[Dict[s
     if not parts:
         return None
     has_hold = any("1保" in c for c in counts.values())
+    order = sorted(hits, key=lambda c: (-hits[c].toordinal(), c))
     return _item(
         "ステージ未更新: " + "、".join(parts),
-        f"/portfolio/charts?status={'hold' if has_hold else 'semi'}", "チャート一覧で更新",
+        _charts_url("hold" if has_hold else "semi", order), "チャート一覧で更新",
     )
 
 

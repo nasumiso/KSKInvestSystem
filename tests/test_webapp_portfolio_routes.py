@@ -1392,6 +1392,13 @@ class TestPortfolioCharts:
         assert present in html
         assert absent not in html
 
+    def test_charts_codes_filter_keeps_given_order(self, client):
+        """codes 指定は status より優先し、その銘柄だけを渡された順に出す (今日のアクションから)"""
+        resp = client.get("/portfolio/charts?status=hold&codes=7203,6324")
+        html = resp.data.decode()
+        assert "3496" not in html  # status=hold の銘柄でも codes に無ければ出ない
+        assert html.index('"code_s": "7203"') < html.index('"code_s": "6324"')
+
     def test_charts_empty_shows_message(self, client):
         """該当ゼロ件のフィルタは「対象銘柄なし」を出しグリッドを描かない"""
         resp = client.get("/portfolio/charts?gyoutai_theme=存在しないテーマ")
