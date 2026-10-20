@@ -86,7 +86,7 @@
   {% if action_queue %}
   <ul style="margin:0;padding-left:1.2em;">
     {% for item in action_queue %}
-    <li style="margin:0.2em 0;">{{ item.text }}{% if item.url %} → <a href="{{ item.url }}">{{ item.link_label }}</a>{% endif %}</li>
+    <li style="margin:0.2em 0;">{% if item.popup %}{% set head, label, tail = item.text.partition(item.popup_label) %}{{ head }}<span title="{{ item.popup }}" style="text-decoration:underline dotted;cursor:help;">{{ label }}</span>{{ tail }}{% else %}{{ item.text }}{% endif %}{% if item.url %} → <a href="{{ item.url }}">{{ item.link_label }}</a>{% endif %}</li>
     {% endfor %}
   </ul>
   {% else %}

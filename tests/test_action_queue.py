@@ -145,10 +145,15 @@ def test_kessan_items_drop_stocks_with_outlook(monkeypatch):
         ],
     )
 
-    assert [i["text"] for i in aq._kessan_items(TODAY)] == [
+    items = aq._kessan_items(TODAY)
+    assert [i["text"] for i in items] == [
         "決算が近い: 保有 銘柄1003 (10/15)・銘柄1004 (10/15)・銘柄1005 (10/15) 他1銘柄",
         "決算が近い: 準保有 2銘柄 (10/14〜10/16)",
         "監視の決算: 3日以内に 1銘柄",
+    ]
+    # 「N銘柄」「他N銘柄」にまとめた銘柄は、ポップアップに「コード 銘柄名」で出す
+    assert [(i["popup_label"], i["popup"]) for i in items] == [
+        ("他1銘柄", "1006 銘柄1006"), ("2銘柄", "2001 銘柄2001\n2002 銘柄2002"), ("1銘柄", "3001 銘柄3001"),
     ]
 
 
@@ -242,6 +247,9 @@ def test_breakout_items(monkeypatch):
         ("ブレイク点灯: 保有 銘柄1002 (ブ・週ブ)・銘柄1003 (週ブ)・銘柄1004 (ブ) 他1銘柄",
          "/portfolio/charts?status=hold&codes=1002,1003,1004,1001"),
         ("監視のブレイク: 2銘柄 (ブ2・週ブ1)", "/portfolio/charts?status=watch&codes=3001,3002"),
+    ]
+    assert [(i["popup_label"], i["popup"]) for i in items] == [
+        ("他1銘柄", "1001 銘柄1001"), ("2銘柄", "3001 銘柄3001\n3002 銘柄3002"),
     ]
 
 

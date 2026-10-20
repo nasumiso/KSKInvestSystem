@@ -35,6 +35,8 @@ KESSAN_NEAR_DAYS = 7
 KESSAN_NEAR_DAYS_WATCH = 3
 # 保有の行に銘柄名を並べる上限。超えた分は「他N銘柄」にまとめる。
 KESSAN_NAME_LIMIT = 3
+# 「N銘柄」「他N銘柄」に重ねるポップアップに並べる銘柄の上限。
+POPUP_NAME_LIMIT = 5
 
 # 「防」の初点灯とブレイクの発生を何営業日出すか (発生日を含む。土日だけ除き、祝日は考慮しない)。
 # トップを開かない日があっても見逃さず、点きっぱなしの銘柄で毎日埋まらない長さ。
@@ -119,6 +121,22 @@ def _names(entries: List[str]) -> str:
 
 def _item(text: str, url: str, link_label: str) -> Dict[str, str]:
     return {"text": text, "url": url, "link_label": link_label}
+
+
+def _with_popup(item: Dict[str, str], label: str, entries: List[str]) -> Dict[str, str]:
+    """text 中の label (「N銘柄」「他N銘柄」) に、まとめた銘柄の「コード 銘柄名」をポップアップで重ねる。"""
+    if entries:
+        lines = entries[:POPUP_NAME_LIMIT]
+        if len(entries) > POPUP_NAME_LIMIT:
+            lines.append(f"他{len(entries) - POPUP_NAME_LIMIT}銘柄")
+        item["popup_label"], item["popup"] = label, "\n".join(lines)
+    return item
+
+
+def _hidden_popup(item: Dict[str, str], entries: List[str]) -> Dict[str, str]:
+    """_names で「他N銘柄」にまとめた分をポップアップにする。"""
+    hidden = entries[KESSAN_NAME_LIMIT:]
+    return _with_popup(item, f"他{len(hidden)}銘柄", hidden)
 
 
 def _balance_csv_item(today: date) -> Optional[Dict[str, str]]:
@@ -249,10 +267,10 @@ def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[s
         # 発生日の新しい順 (同日はコード順)
         order = sorted(hits, key=lambda c: (-hits[c]["day"].toordinal(), c))
         names = _names([f"{mat.name(c)} ({kinds_label(hits[c]['kinds'])})" for c in order])
-        items.append(_item(
+        items.append(_hidden_popup(_item(
             f"ブレイク点灯: {STATUS_VALUE_TO_LABEL[status]} {names}",
             _charts_url(STATUS_VALUE_TO_QUERY[status], order), f"チャート一覧で{action}",
-        ))
+        ), [f"{c} {mat.name(c)}" for c in order]))
     watch = found.get("3監")
     if watch:
         counts = "・".join(
@@ -260,9 +278,9 @@ def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[s
             if (n := sum(1 for h in watch.values() if k in h["kinds"]))
         )
         order = sorted(watch, key=lambda c: (-watch[c]["day"].toordinal(), c))
-        items.append(_item(
+        items.append(_with_popup(_item(
             f"監視のブレイク: {len(watch)}銘柄 ({counts})", _charts_url("watch", order), "チャート一覧で見る"
-        ))
+        ), f"{len(watch)}銘柄", [f"{c} {mat.name(c)}" for c in order]))
     return items
 
 
@@ -346,19 +364,22 @@ def _kessan_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str
     hold = pending("1保")
     if hold:
         names = _names([f"{name or code_s} ({_md(day)})" for day, code_s, name in hold])
-        items.append(_item(f"決算が近い: 保有 {names}", "/disclosure", "決算・開示で見通しを書く"))
+        items.append(_hidden_popup(
+            _item(f"決算が近い: 保有 {names}", "/disclosure", "決算・開示で見通しを書く"),
+            [f"{code_s} {name or code_s}" for _, code_s, name in hold],
+        ))
     semi = pending("2準")
     if semi:
         first, last = semi[0][0], semi[-1][0]
         span = _md(first) if first == last else f"{_md(first)}〜{_md(last)}"
-        items.append(_item(
+        items.append(_with_popup(_item(
             f"決算が近い: 準保有 {len(semi)}銘柄 ({span})", "/disclosure", "決算・開示で見通しを書く"
-        ))
-    watch = near.get("3監")
+        ), f"{len(semi)}銘柄", [f"{code_s} {name or code_s}" for _, code_s, name in semi]))
+    watch = sorted(near.get("3監", []))
     if watch:
-        items.append(_item(
+        items.append(_with_popup(_item(
             f"監視の決算: {KESSAN_NEAR_DAYS_WATCH}日以内に {len(watch)}銘柄", "/disclosure", "決算・開示で見る"
-        ))
+        ), f"{len(watch)}銘柄", [f"{code_s} {name or code_s}" for _, code_s, name in watch]))
     return items
 
 
