@@ -13,6 +13,8 @@ HTMLフォーマット変更が疑われる場合にローカルで実行する�
 import time
 import pytest
 
+import ks_util
+
 import price
 import shihyou
 import master
@@ -29,6 +31,17 @@ from ks_util import http_get_html, UPD_CACHE, UPD_FORCE
 TEST_CODE = "7203"  # トヨタ自動車
 
 pytestmark = pytest.mark.live_html
+
+
+@pytest.fixture
+def cache_dir(tmp_path, monkeypatch):
+    """http_get_html のキャッシュを一時フォルダに書かせる。
+
+    キャッシュの置き場所を渡さないと、書き込み時のログ (DATA_DIR からの相対パス) で落ちる。
+    置き場所は DATA_DIR 配下である前提なので、DATA_DIR ごと一時フォルダに差し替える。
+    """
+    monkeypatch.setattr(ks_util, "DATA_DIR", str(tmp_path))
+    return str(tmp_path)
 
 
 def _sleep():
@@ -136,10 +149,10 @@ class TestLiveHtmlMaster:
 class TestLiveHtmlGyoseki:
     """gyoseki.py — kabutan業績HTML取得→パース"""
 
-    def test_業績データの抽出(self):
+    def test_業績データの抽出(self, cache_dir):
         """kabutanから業績HTMLを取得し、業績データがパースできること"""
         url = "https://kabutan.jp/stock/finance?code=%s" % TEST_CODE
-        html = http_get_html(url, use_cache=False)
+        html = http_get_html(url, use_cache=False, cache_dir=cache_dir)
         result = gyoseki.parse_kabutan_account2(html)
         assert isinstance(result, dict)
         # 業績テーブルが含まれること
@@ -150,10 +163,10 @@ class TestLiveHtmlGyoseki:
 class TestLiveHtmlShintakane:
     """shintakane.py — kabutan新高値HTML取得→パース"""
 
-    def test_新高値HTMLのパース(self):
+    def test_新高値HTMLのパース(self, cache_dir):
         """kabutanから新高値HTMLを取得し、パースできること（空でも成功）"""
-        url = "https://kabutan.jp/warning/record/w52_high_price?market=0&capitalization=-1&stc=&stm=0&page=1"
-        html = http_get_html(url, use_cache=False)
+        url = "https://kabutan.jp/warning/record_w52_high_price?market=0&capitalization=-1&stc=&stm=0&page=1"
+        html = http_get_html(url, use_cache=False, cache_dir=cache_dir)
         assert html is not None
         assert len(html) > 0
         # パースがエラーなく完了すること（市場状況により結果は0件の場合もある）
@@ -165,10 +178,10 @@ class TestLiveHtmlShintakane:
 class TestLiveHtmlPts:
     """shintakane.py — kabutan PTSナイトランキングHTML取得→パース"""
 
-    def test_PTSランキングHTMLのパース(self):
+    def test_PTSランキングHTMLのパース(self, cache_dir):
         """kabutanからPTSランキングHTMLを取得し、パースできること"""
         url = "https://kabutan.jp/warning/pts_night_price_increase"
-        html = http_get_html(url, use_cache=False)
+        html = http_get_html(url, use_cache=False, cache_dir=cache_dir)
         assert html is not None
         assert len(html) > 0
         result = shintakane.convert_kabutan_pts_html(html)
@@ -185,10 +198,10 @@ class TestLiveHtmlPts:
 class TestLiveHtmlKessan:
     """shintakane.py — kabutan決算速報HTML取得→パース"""
 
-    def test_決算速報HTMLのパース(self):
+    def test_決算速報HTMLのパース(self, cache_dir):
         """kabutanから決算速報HTMLを取得し、パースできること"""
         url = "https://kabutan.jp/news/?page=1"
-        html = http_get_html(url, use_cache=False)
+        html = http_get_html(url, use_cache=False, cache_dir=cache_dir)
         assert html is not None
         assert len(html) > 0
         # パースがエラーなく完了すること
@@ -201,10 +214,10 @@ class TestLiveHtmlKessan:
 class TestLiveHtmlTheme:
     """make_market_db.py — kabutanテーマランクHTML取得→パース"""
 
-    def test_テーマランクHTMLのパース(self):
+    def test_テーマランクHTMLのパース(self, cache_dir):
         """kabutanからテーマランクHTMLを取得し、パースできること"""
         url = "https://kabutan.jp/info/accessranking/3_2"
-        html = http_get_html(url, use_cache=False)
+        html = http_get_html(url, use_cache=False, cache_dir=cache_dir)
         assert html is not None
         result = make_market_db.parse_theme_html(html)
         assert isinstance(result, list)

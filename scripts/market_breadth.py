@@ -15,14 +15,14 @@ import requests
 
 JST = timezone(timedelta(hours=9))
 
-CREDIT_BALANCE_URL = "https://nikkei225jp.com/_data/_nfsWEB/DAY/dailyweek2.json"
+CREDIT_BALANCE_URL = "https://nikkei225jp.com/_data/_nfsDATA/data_DAY/dailyweek2.json"
 # Referer が無いと 404 を返すサーバー設定 (2026-05 時点で確認)
 CREDIT_BALANCE_REFERER = "https://nikkei225jp.com/data/sinyou.php"
 
-NEW_HIGH_LOW_URL = "https://nikkei225jp.com/_data/_nfsWEB/DAY/daily2year.json"
+NEW_HIGH_LOW_URL = "https://nikkei225jp.com/_data/_nfsDATA/data_DAY/daily2year.json"
 NEW_HIGH_LOW_REFERER = "https://nikkei225jp.com/data/new.php"
 
-NIKKEI_VI_URL = "https://nikkei225jp.com/_data/_nfsWEB/HS_DATA_DAY/SL161_1990.json"
+NIKKEI_VI_URL = "https://nikkei225jp.com/_data/_nfsDATA/json_DAY/SL161_1990.json"
 NIKKEI_VI_REFERER = "https://nikkei225jp.com/data/vix.php"
 
 
