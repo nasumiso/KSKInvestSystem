@@ -214,13 +214,21 @@ def _has_outlook(record: Optional[Dict], day: date) -> bool:
     )
 
 
+def _with_line_price(reason: str, signal: Dict[str, Any]) -> str:
+    """「防」の理由に、割れた線 (損切りラインか移動平均) の価格を添える。記録に値が無ければ理由だけ。"""
+    price = signal.get("stop_loss_line") if reason == "損切りライン割れ" else signal.get("ma_value")
+    return f"{reason} {price:,.0f}円" if isinstance(price, (int, float)) else reason
+
+
 def _exit_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:
     """保有で出口ライン「防」が今の保有サイクルで初めて点いてから3営業日の銘柄を、1銘柄1行で出す。
 
     点きっぱなしの銘柄 (持ち続けると決めたもの) で毎日埋まらないよう、初点灯からの日数で切る。
     今日も「防」のままの銘柄だけを出す (割れから戻った銘柄は急ぎの判断が要らない)。
+    割れた理由ごとに割れた線の価格 (最新の記録時点) を、末尾に戦略を添える。
     """
     mat = mat or _Material()
+    strategies = {r["code_s"]: (r.get("memo") or {}).get("trade_idea") for r in mat.records}
     rows = []
     for code_s, ev in mat.exits.items():
         signal, first = ev["signal"], ev["first_defense"]
@@ -228,12 +236,12 @@ def _exit_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, 
             continue
         first_day = date.fromisoformat(first)
         if 0 <= _busdays_since(first_day, today) < SIGNAL_SHOW_BUSDAYS:
-            rows.append((first_day, code_s, "・".join(signal.get("reasons") or [])))
-    return [
-        _item(f"出口ライン: {code_s} {mat.name(code_s)} {reasons} ({_md(day)}〜)",
-              "/portfolio?status=hold", "保有銘柄で手仕舞いを決める")
-        for day, code_s, reasons in sorted(rows)
-    ]
+            reasons = "・".join(_with_line_price(r, signal) for r in signal.get("reasons") or [])
+            text = f"出口ライン: {code_s} {mat.name(code_s)} {reasons} ({_md(first_day)}〜)"
+            if strategies.get(code_s):
+                text += f" 戦略 {strategies[code_s]}"
+            rows.append((first_day, code_s, text))
+    return [_item(text, "/portfolio?status=hold", "手仕舞い") for _, _, text in sorted(rows)]
 
 
 def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:

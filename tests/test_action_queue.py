@@ -176,15 +176,18 @@ def _stub_material(monkeypatch, records, stocks=None, exits=None):
 ])
 def test_exit_items_show_first_defense_for_three_busdays(monkeypatch, first, level, shown):
     """出口ライン「防」は、今の保有サイクルで初めて点いてから3営業日だけ出る"""
-    _stub_material(monkeypatch, [{"code_s": "1001", "status": "1保"}], exits={
-        "1001": {"signal": {"level": level, "reasons": ["損切りライン割れ"]}, "first_defense": first},
+    _stub_material(monkeypatch, [{"code_s": "1001", "status": "1保", "memo": {"trade_idea": "中期テーマ"}}], exits={
+        "1001": {"signal": {"level": level, "reasons": ["損切りライン割れ", "日足50MA割れ確定"],
+                              "stop_loss_line": 1234.6, "ma_value": 1300.2},
+                 "first_defense": first},
     })
 
     items = aq._exit_items(TODAY)
 
     if shown:
         md = f"{int(first[5:7])}/{int(first[8:])}"
-        assert [i["text"] for i in items] == [f"出口ライン: 1001 銘柄1001 損切りライン割れ ({md}〜)"]
+        assert [i["text"] for i in items] == [
+            f"出口ライン: 1001 銘柄1001 損切りライン割れ 1,235円・日足50MA割れ確定 1,300円 ({md}〜) 戦略 中期テーマ"]
     else:
         assert items == []
 
