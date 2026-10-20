@@ -2574,6 +2574,22 @@ def main():
         create_market_csv()
         return
 
+    # `temperature` サブコマンド: 市場の温度 (信用評価損益率・新高値/新安値・日経VI・日本版F&G) だけを
+    # 日次バッチを待たずに取り直し、market_data.html を作り直す。市場DB本体は更新しない。
+    # 取得元の変更などで止まっていたデータを埋め直すとき用。最新に追いついている指標は取りに行かない。
+    if "temperature" in sys.argv[1:]:
+        import shintakane  # 遅延 import (shintakane が make_market_db を import しているため)
+
+        shintakane.update_credit_balance()
+        shintakane.update_new_high_low()
+        shintakane.update_nikkei_vi()
+        shintakane.update_fear_greed_jp()  # VI 更新後に呼ぶ (nikkei_vi.json を参照するため)
+        create_market_csv()
+        for name in ("credit_balance", "new_high_low", "nikkei_vi", "fear_greed_jp"):
+            path = os.path.join(DATA_DIR, "code_rank_data", f"{name}.json")
+            log_print(f"{name}: 最新日 {shintakane._saved_latest_date(path)}")
+        return
+
     market_db = update_market_db()  # noqa: F841
     create_market_csv()
 

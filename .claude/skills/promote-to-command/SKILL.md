@@ -145,6 +145,14 @@ EOF
 
 ### 棚卸しで決着した項目 (再提案しない)
 
+- **市場の温度 (信用・新高値新安値・日経VI・日本版F&G) の取り直しと最新日の確認** → 2026-10-20 に
+  明示トリガーで `make_market_db.py temperature` として昇格。nikkei225jp のパス変更で 10/5 頃から
+  4つとも止まっていた件の調査で、運用機の JSON の最新日を `python -c` で2回読み、修正後に
+  `shintakane.update_*` を `python -c` で呼んで取り直した。取得元の変更・一時障害のたびに再発する。
+  新しいロジックは足していない — 日次バッチと同じ `update_*` 4つと `create_market_csv` を呼び、
+  `_saved_latest_date` で最新日を出すだけ。各 `update_*` は最新に追いついていれば取りに行かないので、
+  最新日の確認だけにも使える。
+
 - **特定銘柄のエピソードに付いた戦略の確認** → 2026-10-12 の棚卸しで
   `show_fill_episodes.py <code>` の出力に「戦略 (付け方) ⚠ 要再確認」の行として昇格。
   ログは 10-03 (#103・#110)・10-11 (#139)・10-12 (#146) の3セッションにまたがり、
@@ -217,7 +225,7 @@ EOF
   サイズは `make_stock_db.py compact` の実行ログ (#194 / PR #431) に出る。
 
 既にCLI化済みで**やらなくてよい**もの (重複回避):
-make_market_db.py html / make_stock_db.py refresh_stock|refresh_price|refresh_pts|compact /
+make_market_db.py html|temperature / make_stock_db.py refresh_stock|refresh_price|refresh_pts|compact /
 research_shelve.py show|list / portfolio_list.py / defrag_shelve.py /
 show_fill_episodes.py (code指定・--fills・--open・--memo・--check-splits・--check-dups・--check-pl) / 各 migrate_*。
 
