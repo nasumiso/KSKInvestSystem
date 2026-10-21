@@ -87,6 +87,18 @@ def test_safe_haven_direction(last_close, last_yield, expect_high):
     assert (score > 90) is expect_high and (score < 10) is (not expect_high)
 
 
+@pytest.mark.parametrize("last_jgb_date,expect_used", [
+    ("2026-04-01", True),    # 基準日と同じ日まで金利がある
+    ("2026-03-20", False),   # 当月分が更新されず古い → 安全資産は外す
+])
+def test_safe_haven_dropped_when_jgb_is_stale(last_jgb_date, expect_used):
+    breadth = [{"date": "2026-%02d-%02d" % (1 + i // 28, 1 + i % 28), "nikkei_close": 100 + i}
+               for i in range(60)] + [{"date": "2026-04-01", "nikkei_close": 200}]
+    jgb = [{"date": b["date"], "jgb10": 1.0} for b in breadth if b["date"] <= last_jgb_date]
+    result = fg.compute_fear_greed_jp(breadth, [], jgb)
+    assert (result["components"]["safe_haven"] is not None) is expect_used
+
+
 # --- 合成: None 成分は除外して残りで平均 ---------------------------------
 @pytest.mark.parametrize("breadth,vi,expect_components,expect_score", [
     # 全成分そろう (momentum はデータ不足で None になりうるので strength/breadth/vol で検証)

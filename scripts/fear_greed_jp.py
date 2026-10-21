@@ -26,6 +26,8 @@ CNN 原典との差分 (運用上の限界は issue #212 参照):
   - Safe Haven Demand   : 日経225 と 10年国債の20日騰落率の差 (#524。財務省の金利から近似)
 """
 
+from datetime import date
+
 # 直近2年 min-max 正規化に使う履歴本数 (約2年 = 約490営業日)。
 _NORM_WINDOW = 490
 # モメンタムの移動平均日数 (CNN は 125日)。
@@ -43,6 +45,9 @@ _VI_MA_DAYS = 50
 _SAFE_HAVEN_DAYS = 20
 # 10年国債の修正デュレーション (年)。金利1%の上昇で価格が約9%下がる近似。
 _JGB10_DURATION = 9.0
+# 金利の最新日が F&G の基準日より何日 (暦日) 古ければ安全資産を外すか。
+# 金利は翌営業日公表なので通常1日遅れ。連休をまたいでも収まる長さにする。
+_JGB_MAX_LAG_DAYS = 7
 
 
 def normalize_percentile(value, history):
@@ -292,6 +297,11 @@ def compute_fear_greed_jp(breadth_history, vi_history, jgb_history=()):
         if vi_history:
             vi_history = [v for v in vi_history if v.get("date", "") <= as_of] or vi_history
         jgb_history = [j for j in jgb_history if j.get("date", "") <= as_of]
+        # 金利が古ければ安全資産は外す。財務省の当月分が更新されなくても過去分だけで
+        # 計算が通り、古い金利を含んだスコアが当日の値として運用比率に渡るのを防ぐ
+        if jgb_history and (date.fromisoformat(as_of)
+                            - date.fromisoformat(jgb_history[-1]["date"])).days > _JGB_MAX_LAG_DAYS:
+            jgb_history = []
 
     raw_components = {
         "momentum": compute_component_momentum(breadth_history),
