@@ -1553,8 +1553,14 @@ _FGJP_COMPONENTS = [
      "東証プライム 騰落の McClellan Summation Index (累積型、銘柄数ベース)。"
      "1日の急落では大きく動かない。高いほど Greed。",
      _fmt_signed_int, "https://nikkei225jp.com/data/touraku.php"),
-    ("volatility", "日経VI", "日経VI (恐怖指数)。高いほど Fear なので反転してスコア化。",
+    ("volatility", "日経VI",
+     "日経VI (恐怖指数) の値。スコアは VI とその50日移動平均の乖離率から出す"
+     "(ふだんより高いほど Fear なので反転)。",
      _fmt_vi, "https://nikkei225jp.com/data/vix.php"),
+    ("safe_haven", "安全資産",
+     "日経225 と 10年国債の20日騰落率の差 (%pt)。債券は金利の変化から近似。"
+     "株が債券より上がっているほど Greed。金利は翌営業日公表のため前営業日の値。",
+     _fmt_pct, "https://www.mof.go.jp/jgbs/reference/interest_rate/index.htm"),
 ]
 
 
@@ -1590,7 +1596,7 @@ def _fgjp_accordion_html(market_db):
         '<span title="CNN Fear &amp; Greed の構造に準拠した日本市場版 (独自実装)。'
         '%d 成分の等ウェイト平均。クリックで成分内訳を展開。'
         '両端で信頼度が高く中間域はノイズが多い。'
-        '差分: Junk Bond除外・52週→年初来・出来高→銘柄数・正規化は独自(直近2年min-max)。">'
+        '差分: Junk Bond・Put/Call除外・52週→年初来・出来高→銘柄数・債券は金利から近似・正規化は独自(直近2年percentile)。">'
         '日本版Fear &amp; Greed</span>' % n_valid
     )
     parent = _render_indicator_tr(

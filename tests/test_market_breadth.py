@@ -356,9 +356,12 @@ def test_update_fear_greed_jp_persists_component_dates(tmp_path, monkeypatch):
         {"date": "2026-06-04", "nikkei_vi": 21.5},
         {"date": "2026-06-06", "nikkei_vi": 25.0},
     ]
+    # 金利は翌営業日公表なので、最新が前営業日までしかない
+    jgb_history = [{"date": "2026-06-03", "jgb10": 1.5}, {"date": "2026-06-04", "jgb10": 1.52}]
 
     with patch("market_breadth.fetch_market_breadth_daily", return_value=breadth_history), \
             patch("market_breadth.fetch_nikkei_vi", return_value=vi_history), \
+            patch("market_breadth.fetch_jgb10", return_value=jgb_history), \
             patch("fear_greed_jp.compute_fear_greed_jp", return_value={
                 "score": 78.4,
                 "rating": "Extreme Greed",
@@ -367,6 +370,7 @@ def test_update_fear_greed_jp_persists_component_dates(tmp_path, monkeypatch):
                     "strength": {"score": 72.4, "raw": 39},
                     "breadth": {"score": 76.6, "raw": 856},
                     "volatility": {"score": 77.9, "raw": 21.51},
+                    "safe_haven": {"score": 60.0, "raw": 1.2},
                 },
             }):
         shintakane.update_fear_greed_jp()
@@ -378,6 +382,21 @@ def test_update_fear_greed_jp_persists_component_dates(tmp_path, monkeypatch):
     assert components["breadth"]["date"] == "2026-06-05"
     # VI は breadth 最新日以前の最終日を使う
     assert components["volatility"]["date"] == "2026-06-04"
+    assert components["safe_haven"]["date"] == "2026-06-04"
+
+
+@pytest.mark.parametrize("text", [
+    # 日本語版: 1行目タイトル、和暦の日付、欠損は "-"
+    "国債金利情報,,(単位 : %)\n基準日,1年,2年,3年,4年,5年,6年,7年,8年,9年,10年,15年\n"
+    "S49.9.24,10.3,9.3,8.8,8.5,8.3,8.2,8.2,8.1,8.1,-,-\n"
+    "R6.10.1,0.3,0.4,0.4,0.5,0.5,0.6,0.7,0.8,0.8,0.86,1.2\n",
+    # 英語版: 西暦の日付、"10Y"
+    "Interest Rate,,(Unit : %)\nDate,1Y,2Y,3Y,4Y,5Y,6Y,7Y,8Y,9Y,10Y,15Y\n"
+    "1974/9/24,10.3,9.3,8.8,8.5,8.3,8.2,8.2,8.1,8.1,-,-\n"
+    "2024/10/1,0.3,0.4,0.4,0.5,0.5,0.6,0.7,0.8,0.8,0.86,1.2\n",
+])
+def test_parse_jgb_csv_reads_10y_and_skips_missing(text):
+    assert market_breadth.parse_jgb_csv(text) == [{"date": "2024-10-01", "jgb10": 0.86}]
 
 
 def test_fgjp_absent_falls_back_to_vi_and_breadth_rows(tmp_path, monkeypatch):

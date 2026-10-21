@@ -46,15 +46,45 @@ def test_rating_boundaries(score, rating):
     assert fg._rating(score) == rating
 
 
-# --- volatility 方向反転 (VI 高い=Fear=低スコア) + raw 値 ------------------
-def test_volatility_inverted():
-    # VI 最大値(最新)→ 反転で score 0、最小値→ score 100。raw は VI 実値。
-    hist_high = [{"nikkei_vi": v} for v in [10, 20, 40]]   # 最新=最大
-    hist_low = [{"nikkei_vi": v} for v in [40, 20, 10]]    # 最新=最小
-    score_h, raw_h = fg.compute_component_volatility(hist_high)
-    score_l, raw_l = fg.compute_component_volatility(hist_low)
-    assert (score_h, raw_h) == (0.0, 40)
-    assert (score_l, raw_l) == (100.0, 10)
+# --- volatility: 50日平均との乖離 + 方向反転 (issue #524) ----------------
+@pytest.mark.parametrize("latest,expected", [
+    (40.0, 0.0),     # ふだん (50日平均) よりずっと高い → 最も Fear
+    (12.0, 100.0),   # ふだんより低い → 最も Greed
+])
+def test_volatility_vs_ma50_inverted(latest, expected):
+    rng = random.Random(0)
+    hist = [{"nikkei_vi": 20 + rng.uniform(-2, 2)} for _ in range(80)]
+    score, raw = fg.compute_component_volatility(hist + [{"nikkei_vi": latest}])
+    assert (score, raw) == (expected, latest)
+
+
+def test_volatility_level_alone_does_not_mean_fear():
+    # VI が何ヶ月も 30 で高止まりしているだけなら、水準 (旧方式) は Fear 側だが
+    # 50日平均との乖離 (新方式) は中立付近にとどまる
+    rng = random.Random(1)
+    low = [{"nikkei_vi": 15 + rng.uniform(-1, 1)} for _ in range(200)]
+    high = [{"nikkei_vi": 30 + rng.uniform(-1, 1)} for _ in range(100)]
+    hist = low + high
+    assert fg.compute_component_volatility_level(hist)[0] < 40
+    assert 20 < fg.compute_component_volatility(hist)[0] < 80
+
+
+# --- safe haven: 株と債券の20日騰落率の差 (issue #524) --------------------
+@pytest.mark.parametrize("last_close,last_yield,expect_high", [
+    (110.0, 1.0, True),    # 株が上がり金利は横ばい → 安全資産を求めていない = Greed
+    (90.0, 0.7, False),    # 株が下がり金利も下がる (債券高) → Fear
+])
+def test_safe_haven_direction(last_close, last_yield, expect_high):
+    rng = random.Random(2)
+    breadth, jgb = [], []
+    for i in range(60):
+        d = "2026-%02d-%02d" % (1 + i // 28, 1 + i % 28)
+        breadth.append({"date": d, "nikkei_close": 100 + rng.uniform(-1, 1)})
+        jgb.append({"date": d, "jgb10": 1.0 + rng.uniform(-0.01, 0.01)})
+    breadth.append({"date": "2026-04-01", "nikkei_close": last_close})
+    jgb.append({"date": "2026-04-01", "jgb10": last_yield})
+    score, _ = fg.compute_component_safe_haven(breadth, jgb)
+    assert (score > 90) is expect_high and (score < 10) is (not expect_high)
 
 
 # --- 合成: None 成分は除外して残りで平均 ---------------------------------
@@ -64,7 +94,7 @@ def test_volatility_inverted():
         # strength: 新高値-新安値, breadth: 値上がり-値下がり
         [{"nikkei_close": 100, "new_high": 0, "new_low": 10, "advances": 0, "declines": 10},
          {"nikkei_close": 100, "new_high": 10, "new_low": 0, "advances": 10, "declines": 0}],
-        [{"nikkei_vi": 30}, {"nikkei_vi": 10}],  # VI 最新=最小 → vol=100
+        [{"nikkei_vi": 30}] * 60 + [{"nikkei_vi": 10}],  # VI 最新が50日平均より低い → Greed
         # momentum は close 一定で None になりうる。breadth (McClellan 累積) は
         # EMA の立ち上がり分 (_MCO_WARMUP 本) が要るので2行では None
         {"strength", "volatility"},

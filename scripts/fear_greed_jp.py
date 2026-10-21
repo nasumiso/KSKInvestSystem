@@ -4,9 +4,9 @@ CNN Fear & Greed Index の構造 (成分構成・等ウェイト平均・5段階
 各成分の正規化は独自実装 (直近2年の percentile rank) する日本市場版センチメント指数。
 
 CNN 原典との差分 (運用上の限界は issue #212 参照):
-  1. 成分数 6→4 (第1弾)。Junk Bond Demand は日本市場に対応物が無く除外。
-     PCR / Safe Haven(JGB10年) は未実装。データ源の調査結果 (#524) は
-     doc/spec/日本版FearGreed仕様.md。取れない成分は平均から除外する。
+  1. 成分数 7→5。Junk Bond Demand は日本市場に対応物が無く除外。
+     Put/Call 比率は JPX の日次データが当日分しか置かれず、貯める仕組みが要るため見送り
+     (#524)。調査結果は doc/spec/日本版FearGreed仕様.md。取れない成分は平均から除外する。
   2. Stock Price Strength が「52週」ではなく「年初来」基準 (データ源の都合)。
   3. Stock Price Breadth は CNN と同じく McClellan Summation Index (累積型) だが、
      出来高ベースではなく銘柄数ベース (issue #524)。daily2year.json の列 [19]〜[24]
@@ -15,12 +15,15 @@ CNN 原典との差分 (運用上の限界は issue #212 参照):
      東証プライムの銘柄数の増減で水準がずれないようにする。
   4. 正規化は CNN 非公開のため独自。外れ値1点でレンジが圧縮される min-max を避け、
      直近2年の percentile rank を採用 (単一の極値に頑健)。
+  5. Safe Haven Demand の債券側は、価格指数が無料で取れないため、10年金利の変化に
+     デュレーションを掛けた近似 (利息収入は無視)。
 
-第1弾の4成分 (いずれも nikkei225jp.com 由来、新規データ源不要):
+5成分:
   - Market Momentum     : 日経225 vs 125日移動平均の乖離率
   - Stock Price Strength: 東証プライム 新高値数 - 新安値数
   - Stock Price Breadth : 東証プライム 騰落の McClellan Summation Index (#524 で累積型に)
-  - Market Volatility   : 日経VI (高いほど Fear なので方向反転)
+  - Market Volatility   : 日経VI とその50日移動平均の乖離率 (#524。高いほど Fear なので反転)
+  - Safe Haven Demand   : 日経225 と 10年国債の20日騰落率の差 (#524。財務省の金利から近似)
 """
 
 # 直近2年 min-max 正規化に使う履歴本数 (約2年 = 約490営業日)。
@@ -34,6 +37,12 @@ _MCO_SLOW = 39
 # 残る区間を外す。39本だと、daily2year.json が1日進んで起点が動くだけでスコアが
 # 最大5点ほど動いた (合成データで確認)。120本で1点未満になる。
 _MCO_WARMUP = 120
+# 日経VI を比べる移動平均の日数 (CNN は VIX の50日移動平均)。
+_VI_MA_DAYS = 50
+# 安全資産の需要: 株と債券の騰落率を比べる日数 (CNN は20日)。
+_SAFE_HAVEN_DAYS = 20
+# 10年国債の修正デュレーション (年)。金利1%の上昇で価格が約9%下がる近似。
+_JGB10_DURATION = 9.0
 
 
 def normalize_percentile(value, history):
@@ -190,7 +199,52 @@ def compute_component_breadth_daily(breadth_history):
 
 
 def compute_component_volatility(vi_history):
-    """Market Volatility: 日経VI を 0-100 化し方向反転 (VI が高い=Fear)。
+    """Market Volatility: 日経VI の50日移動平均からの乖離率を 0-100 化し方向反転 (issue #524)。
+
+    CNN と同じく、VI の水準ではなく「ふだんの VI より高いか」を見る。VI の水準そのものは
+    相場の局面で何ヶ月も高止まりするため、水準だと Fear が続きやすい。
+    Returns: (score 0-100=反転後, raw=日経VI) または None。raw は画面に VI の値を出すため。
+    """
+    vis = [r["nikkei_vi"] for r in vi_history if r.get("nikkei_vi") is not None]
+    if len(vis) < _VI_MA_DAYS + 1:
+        return None
+    # 正規化に使う直近2年分 (+最新) だけ乖離率を出す (VI の履歴は 1990年からある)
+    vis = vis[-(_NORM_WINDOW + _VI_MA_DAYS):]
+    ratios = [
+        (vis[i] / (sum(vis[i - _VI_MA_DAYS + 1:i + 1]) / _VI_MA_DAYS) - 1.0) * 100.0
+        for i in range(_VI_MA_DAYS - 1, len(vis))
+    ]
+    raw_score = normalize_percentile(ratios[-1], ratios[:-1][-_NORM_WINDOW:])
+    return 100.0 - raw_score, vis[-1]
+
+
+def compute_component_safe_haven(breadth_history, jgb_history):
+    """Safe Haven Demand: 日経225 と 10年国債の20日騰落率の差を 0-100 化 (issue #524)。
+
+    株が債券より上がっている (安全資産が求められていない) ほど Greed。
+    債券の騰落率 ≈ -デュレーション × 金利の変化 (%pt)。利息収入は無視する。
+    株価と金利の両方がある日だけで比べる。金利は翌営業日に公表されるので、
+    日次バッチ時点の最新は前営業日になる。
+    Returns: (score 0-100, raw=株の騰落率 - 債券の騰落率 (%pt)) または None。
+    """
+    yields = {r["date"]: r["jgb10"] for r in jgb_history if r.get("jgb10") is not None}
+    pairs = [
+        (r["nikkei_close"], yields[r["date"]])
+        for r in breadth_history
+        if r.get("nikkei_close") is not None and r.get("date") in yields
+    ]
+    if len(pairs) < _SAFE_HAVEN_DAYS + 2:
+        return None
+    diffs = []
+    for (c0, y0), (c1, y1) in zip(pairs, pairs[_SAFE_HAVEN_DAYS:]):
+        stock = (c1 / c0 - 1.0) * 100.0
+        bond = -_JGB10_DURATION * (y1 - y0)
+        diffs.append(stock - bond)
+    return normalize_percentile(diffs[-1], diffs[:-1][-_NORM_WINDOW:]), diffs[-1]
+
+
+def compute_component_volatility_level(vi_history):
+    """旧方式 (#524 まで): 日経VI の水準を 0-100 化し方向反転。比較用に残置。
 
     vi_history: [{date, nikkei_vi}, ...] 日付昇順。
     Returns: (score 0-100=反転後, raw=日経VI) または None。
@@ -215,8 +269,8 @@ def _rating(score):
     return "Extreme Greed"
 
 
-def compute_fear_greed_jp(breadth_history, vi_history):
-    """4成分から日本市場版 Fear & Greed の合成スコアを計算する。
+def compute_fear_greed_jp(breadth_history, vi_history, jgb_history=()):
+    """5成分から日本市場版 Fear & Greed の合成スコアを計算する。
 
     取得できなかった成分は None として平均から除外する (フォールバック)。
     全成分 None なら None を返す。
@@ -232,16 +286,19 @@ def compute_fear_greed_jp(breadth_history, vi_history):
     # VI履歴を breadth の最新日以前に揃える。
     # 揃えないと過去日の一括再計算時に VI 成分だけ最新 VI で正規化されてしまい、
     # 時系列スコア (history の前日比/5日前比) が不正になる (issue #212 セルフレビュー指摘)。
-    if breadth_history and vi_history:
-        as_of = breadth_history[-1].get("date")
-        if as_of:
+    # 金利も同じ理由で揃える (#524)。
+    as_of = breadth_history[-1].get("date") if breadth_history else None
+    if as_of:
+        if vi_history:
             vi_history = [v for v in vi_history if v.get("date", "") <= as_of] or vi_history
+        jgb_history = [j for j in jgb_history if j.get("date", "") <= as_of]
 
     raw_components = {
         "momentum": compute_component_momentum(breadth_history),
         "strength": compute_component_strength(breadth_history),
         "breadth": compute_component_breadth(breadth_history),
         "volatility": compute_component_volatility(vi_history),
+        "safe_haven": compute_component_safe_haven(breadth_history, jgb_history),
     }
     valid = [c[0] for c in raw_components.values() if c is not None]
     if not valid:
@@ -278,73 +335,88 @@ def _summarize_series(scores):
     }
 
 
-def compare_breadth_methods(breadth_history, vi_history):
-    """騰落成分の新旧 (1日差分 → McClellan 累積) で合成スコアの推移を比べる (issue #524)。
+def compare_methods(breadth_history, vi_history, jgb_history):
+    """#524 の変更前後で、合成スコアと変えた成分の推移を比べる。
 
-    各日について、その日までのデータだけで4成分を計算し直す (日次バッチと同じ条件)。
+    変更前 = 4成分 (騰落は1日差分、VI は水準)。
+    変更後 = 5成分 (騰落は McClellan 累積、VI は50日平均との乖離、安全資産を追加)。
+    各日について、その日までのデータだけで計算し直す (日次バッチと同じ条件)。
     正規化の履歴が _COMPARE_MIN_HISTORY 本に満たない先頭の日は、新旧どちらも比較から外す
     (累積型は立ち上がりの _MCO_WARMUP 本も要るので、比較できるのは約1年分になる)。
-    Returns: {"composite": {"old": 統計, "new": 統計}, "breadth": {...}}
+    Returns: {系列名: 統計} 系列名は composite_old/new, breadth_old/new,
+             volatility_old/new, safe_haven_new。
     """
     import bisect
 
     vi_dates = [v.get("date", "") for v in vi_history]
-    series = {"old": [], "new": [], "breadth_old": [], "breadth_new": []}
+    jgb_dates = [j.get("date", "") for j in jgb_history]
+    series = {}
+
+    def add(name, comp):
+        if comp is not None:
+            series.setdefault(name, []).append(comp[0])
+
     for i in range(_MCO_WARMUP + _COMPARE_MIN_HISTORY, len(breadth_history)):
         b = breadth_history[: i + 1]
-        vi = vi_history[: bisect.bisect_right(vi_dates, b[-1]["date"])]
-        common = [
-            compute_component_momentum(b),
-            compute_component_strength(b),
-            compute_component_volatility(vi),
-        ]
-        old_c = compute_component_breadth_daily(b)
-        new_c = compute_component_breadth(b)
-        if old_c is None or new_c is None:
-            continue
-        for key, comp in (("old", old_c), ("new", new_c)):
-            valid = [c[0] for c in common + [comp] if c is not None]
-            series[key].append(sum(valid) / len(valid))
-        series["breadth_old"].append(old_c[0])
-        series["breadth_new"].append(new_c[0])
-    return {
-        "composite": {k: _summarize_series(series[k]) for k in ("old", "new")},
-        "breadth": {
-            "old": _summarize_series(series["breadth_old"]),
-            "new": _summarize_series(series["breadth_new"]),
-        },
-    }
+        as_of = b[-1]["date"]
+        vi = vi_history[: bisect.bisect_right(vi_dates, as_of)]
+        jgb = jgb_history[: bisect.bisect_right(jgb_dates, as_of)]
+        mom, strength = compute_component_momentum(b), compute_component_strength(b)
+        old = [mom, strength, compute_component_breadth_daily(b),
+               compute_component_volatility_level(vi)]
+        new = [mom, strength, compute_component_breadth(b),
+               compute_component_volatility(vi), compute_component_safe_haven(b, jgb)]
+        for name, comps in (("composite_old", old), ("composite_new", new)):
+            valid = [c[0] for c in comps if c is not None]
+            if valid:
+                series.setdefault(name, []).append(sum(valid) / len(valid))
+        add("breadth_old", old[2])
+        add("breadth_new", new[2])
+        add("volatility_old", old[3])
+        add("volatility_new", new[3])
+        add("safe_haven_new", new[4])
+    return {name: _summarize_series(v) for name, v in series.items()}
 
 
 def main():
-    """`python fear_greed_jp.py compare`: 騰落成分の新旧比較を表で出す (issue #524)。"""
+    """`python fear_greed_jp.py compare`: #524 の変更前後の比較を表で出す。"""
     import sys
 
     import market_breadth
-    from ks_util import log_print
+    from ks_util import log_print, log_warning
 
     if sys.argv[1:] != ["compare"]:
         log_print("usage: python fear_greed_jp.py compare")
         return
     breadth = market_breadth.fetch_market_breadth_daily()
     vi = market_breadth.fetch_nikkei_vi()
+    try:
+        jgb = market_breadth.fetch_jgb10()
+    except Exception as e:
+        log_warning("10年金利の取得に失敗 (安全資産を除いて比べる): %s" % e)
+        jgb = []
     log_print("比較期間: %s 〜 %s (breadth %d 行)" % (
         breadth[_MCO_WARMUP + _COMPARE_MIN_HISTORY]["date"], breadth[-1]["date"], len(breadth)))
-    result = compare_breadth_methods(breadth, vi)
+    result = compare_methods(breadth, vi, jgb)
     labels = [
         ("days", "日数"), ("mean_abs_move", "前日比の平均 (絶対値)"),
         ("max_abs_move", "前日比の最大 (絶対値)"),
         ("extreme_fear_days", "Extreme Fear (<25) の日数"),
-        ("extreme_greed_days", "Extreme Greed (≥75) の日数 = 運用比率の上限を削る日"),
+        ("extreme_greed_days", "Extreme Greed (≥75) の日数"),
         ("rating_changes", "rating が変わった回数"),
     ]
-    for name, title in (("composite", "合成スコア"), ("breadth", "騰落成分のみ")):
+    tables = (("composite", "合成スコア"), ("breadth", "騰落"), ("volatility", "日経VI"),
+              ("safe_haven", "安全資産 (新設)"))
+    for name, title in tables:
+        old, new = result.get(name + "_old"), result.get(name + "_new")
         log_print("| %s | 変更前 | 変更後 |" % title)
         log_print("|---|---|---|")
         for key, jp in labels:
-            old, new = result[name]["old"][key], result[name]["new"][key]
-            fmt = "%.1f" if isinstance(old, float) else "%d"
-            log_print(("| %s | " + fmt + " | " + fmt + " |") % (jp, old, new))
+            cells = []
+            for stats in (old, new):
+                v = stats[key] if stats else None
+                cells.append("—" if v is None else ("%.1f" % v if isinstance(v, float) else "%d" % v))
+            log_print("| %s | %s | %s |" % (jp, cells[0], cells[1]))
 
 
 if __name__ == "__main__":
