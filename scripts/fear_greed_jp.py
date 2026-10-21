@@ -5,17 +5,21 @@ CNN Fear & Greed Index の構造 (成分構成・等ウェイト平均・5段階
 
 CNN 原典との差分 (運用上の限界は issue #212 参照):
   1. 成分数 6→4 (第1弾)。Junk Bond Demand は日本市場に対応物が無く除外。
-     PCR / Safe Haven(JGB10年) はデータ源未確定のため第1弾では除外し、
-     データが揃い次第 components に追加する (取れない成分は平均から除外)。
+     PCR / Safe Haven(JGB10年) は未実装。データ源の調査結果 (#524) は
+     doc/spec/日本版FearGreed仕様.md。取れない成分は平均から除外する。
   2. Stock Price Strength が「52週」ではなく「年初来」基準 (データ源の都合)。
-  3. Stock Price Breadth が出来高ベースではなく銘柄数ベース。
+  3. Stock Price Breadth は CNN と同じく McClellan Summation Index (累積型) だが、
+     出来高ベースではなく銘柄数ベース (issue #524)。daily2year.json の列 [19]〜[24]
+     が値上がり・値下がりの出来高らしいが未確認のため、確認できるまで銘柄数で作る。
+     差は ratio-adjusted ((値上がり-値下がり)/(値上がり+値下がり)×1000) で取り、
+     東証プライムの銘柄数の増減で水準がずれないようにする。
   4. 正規化は CNN 非公開のため独自。外れ値1点でレンジが圧縮される min-max を避け、
      直近2年の percentile rank を採用 (単一の極値に頑健)。
 
 第1弾の4成分 (いずれも nikkei225jp.com 由来、新規データ源不要):
   - Market Momentum     : 日経225 vs 125日移動平均の乖離率
   - Stock Price Strength: 東証プライム 新高値数 - 新安値数
-  - Stock Price Breadth : 東証プライム 値上がり数 - 値下がり数
+  - Stock Price Breadth : 東証プライム 騰落の McClellan Summation Index (#524 で累積型に)
   - Market Volatility   : 日経VI (高いほど Fear なので方向反転)
 """
 
@@ -23,6 +27,13 @@ CNN 原典との差分 (運用上の限界は issue #212 参照):
 _NORM_WINDOW = 490
 # モメンタムの移動平均日数 (CNN は 125日)。
 _MA_DAYS = 125
+# McClellan Oscillator の EMA 日数 (原典の 10% / 5% 平滑 = 19日 / 39日)。
+_MCO_FAST = 19
+_MCO_SLOW = 39
+# Summation Index の先頭で正規化の履歴に使わない本数 (約半年)。EMA の初期値の影響が
+# 残る区間を外す。39本だと、daily2year.json が1日進んで起点が動くだけでスコアが
+# 最大5点ほど動いた (合成データで確認)。120本で1点未満になる。
+_MCO_WARMUP = 120
 
 
 def normalize_percentile(value, history):
@@ -117,8 +128,54 @@ def compute_component_strength(breadth_history):
     return normalize_percentile(diffs[-1], diffs[:-1][-_NORM_WINDOW:]), diffs[-1]
 
 
+def mcclellan_summation(advances, declines):
+    """騰落数の列から McClellan Summation Index の列を返す (issue #524)。
+
+    差 = (値上がり-値下がり)/(値上がり+値下がり)×1000 (ratio-adjusted)。
+    Oscillator = 差の19日EMA - 39日EMA、Summation Index = Oscillator の累積。
+    EMA の初期値は先頭の差。1日の急落は Oscillator 1日分しか累積値を動かさない。
+    daily2year.json は日々先頭が1行ずつ落ちるので累積の起点も動くが、列全体が
+    EMA の初期値の影響が消えたあとは列全体が定数だけずれるだけなので、
+    同じ列の中で取る percentile は変わらない (立ち上がりは compute_component_breadth で外す)。
+    """
+    a_fast = 2.0 / (_MCO_FAST + 1)
+    a_slow = 2.0 / (_MCO_SLOW + 1)
+    fast = slow = None
+    total = 0.0
+    out = []
+    for adv, dec in zip(advances, declines):
+        n = adv + dec
+        x = (adv - dec) / n * 1000.0 if n else 0.0
+        if fast is None:
+            fast = slow = x
+        else:
+            fast += a_fast * (x - fast)
+            slow += a_slow * (x - slow)
+        total += fast - slow
+        out.append(total)
+    return out
+
+
 def compute_component_breadth(breadth_history):
-    """Stock Price Breadth: 値上がり - 値下がり を 0-100 化 (高い=Greed)。
+    """Stock Price Breadth: 騰落の McClellan Summation Index を 0-100 化 (高い=Greed)。
+
+    EMA の初期値の影響が残る先頭 _MCO_WARMUP 本は正規化の履歴に使わない。
+    Returns: (score 0-100, raw=Summation Index) または None。
+    """
+    rows = [
+        r for r in breadth_history
+        if r.get("advances") is not None and r.get("declines") is not None
+    ]
+    if len(rows) < _MCO_WARMUP + 2:
+        return None
+    sums = mcclellan_summation(
+        [r["advances"] for r in rows], [r["declines"] for r in rows]
+    )[_MCO_WARMUP:]
+    return normalize_percentile(sums[-1], sums[:-1][-_NORM_WINDOW:]), sums[-1]
+
+
+def compute_component_breadth_daily(breadth_history):
+    """旧方式 (#524 まで): その日の 値上がり - 値下がり を 0-100 化。比較用に残置。
 
     Returns: (score 0-100, raw=値上がり-値下がり) または None。
     """
@@ -201,3 +258,94 @@ def compute_fear_greed_jp(breadth_history, vi_history):
         "rating": _rating(score),
         "components": components,
     }
+
+
+# 比較で各日のスコアを出すとき、正規化の履歴として最低限ほしい本数 (約半年)。
+_COMPARE_MIN_HISTORY = 120
+
+
+def _summarize_series(scores):
+    """スコア列 (日付昇順) の振れ幅と rating の出現日数をまとめる。"""
+    moves = [abs(b - a) for a, b in zip(scores, scores[1:])]
+    ratings = [_rating(s) for s in scores]
+    return {
+        "days": len(scores),
+        "mean_abs_move": sum(moves) / len(moves) if moves else 0.0,
+        "max_abs_move": max(moves) if moves else 0.0,
+        "extreme_fear_days": ratings.count("Extreme Fear"),
+        "extreme_greed_days": ratings.count("Extreme Greed"),
+        "rating_changes": sum(1 for a, b in zip(ratings, ratings[1:]) if a != b),
+    }
+
+
+def compare_breadth_methods(breadth_history, vi_history):
+    """騰落成分の新旧 (1日差分 → McClellan 累積) で合成スコアの推移を比べる (issue #524)。
+
+    各日について、その日までのデータだけで4成分を計算し直す (日次バッチと同じ条件)。
+    正規化の履歴が _COMPARE_MIN_HISTORY 本に満たない先頭の日は、新旧どちらも比較から外す
+    (累積型は立ち上がりの _MCO_WARMUP 本も要るので、比較できるのは約1年分になる)。
+    Returns: {"composite": {"old": 統計, "new": 統計}, "breadth": {...}}
+    """
+    import bisect
+
+    vi_dates = [v.get("date", "") for v in vi_history]
+    series = {"old": [], "new": [], "breadth_old": [], "breadth_new": []}
+    for i in range(_MCO_WARMUP + _COMPARE_MIN_HISTORY, len(breadth_history)):
+        b = breadth_history[: i + 1]
+        vi = vi_history[: bisect.bisect_right(vi_dates, b[-1]["date"])]
+        common = [
+            compute_component_momentum(b),
+            compute_component_strength(b),
+            compute_component_volatility(vi),
+        ]
+        old_c = compute_component_breadth_daily(b)
+        new_c = compute_component_breadth(b)
+        if old_c is None or new_c is None:
+            continue
+        for key, comp in (("old", old_c), ("new", new_c)):
+            valid = [c[0] for c in common + [comp] if c is not None]
+            series[key].append(sum(valid) / len(valid))
+        series["breadth_old"].append(old_c[0])
+        series["breadth_new"].append(new_c[0])
+    return {
+        "composite": {k: _summarize_series(series[k]) for k in ("old", "new")},
+        "breadth": {
+            "old": _summarize_series(series["breadth_old"]),
+            "new": _summarize_series(series["breadth_new"]),
+        },
+    }
+
+
+def main():
+    """`python fear_greed_jp.py compare`: 騰落成分の新旧比較を表で出す (issue #524)。"""
+    import sys
+
+    import market_breadth
+    from ks_util import log_print
+
+    if sys.argv[1:] != ["compare"]:
+        log_print("usage: python fear_greed_jp.py compare")
+        return
+    breadth = market_breadth.fetch_market_breadth_daily()
+    vi = market_breadth.fetch_nikkei_vi()
+    log_print("比較期間: %s 〜 %s (breadth %d 行)" % (
+        breadth[_MCO_WARMUP + _COMPARE_MIN_HISTORY]["date"], breadth[-1]["date"], len(breadth)))
+    result = compare_breadth_methods(breadth, vi)
+    labels = [
+        ("days", "日数"), ("mean_abs_move", "前日比の平均 (絶対値)"),
+        ("max_abs_move", "前日比の最大 (絶対値)"),
+        ("extreme_fear_days", "Extreme Fear (<25) の日数"),
+        ("extreme_greed_days", "Extreme Greed (≥75) の日数 = 運用比率の上限を削る日"),
+        ("rating_changes", "rating が変わった回数"),
+    ]
+    for name, title in (("composite", "合成スコア"), ("breadth", "騰落成分のみ")):
+        log_print("| %s | 変更前 | 変更後 |" % title)
+        log_print("|---|---|---|")
+        for key, jp in labels:
+            old, new = result[name]["old"][key], result[name]["new"][key]
+            fmt = "%.1f" if isinstance(old, float) else "%d"
+            log_print(("| %s | " + fmt + " | " + fmt + " |") % (jp, old, new))
+
+
+if __name__ == "__main__":
+    main()

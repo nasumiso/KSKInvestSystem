@@ -1,5 +1,7 @@
 """日本市場版 Fear & Greed Index のテスト (issue #212)。"""
 
+import random
+
 import pytest
 
 import fear_greed_jp as fg
@@ -63,7 +65,9 @@ def test_volatility_inverted():
         [{"nikkei_close": 100, "new_high": 0, "new_low": 10, "advances": 0, "declines": 10},
          {"nikkei_close": 100, "new_high": 10, "new_low": 0, "advances": 10, "declines": 0}],
         [{"nikkei_vi": 30}, {"nikkei_vi": 10}],  # VI 最新=最小 → vol=100
-        {"strength", "breadth", "volatility"},   # momentum は close 一定で None になりうる
+        # momentum は close 一定で None になりうる。breadth (McClellan 累積) は
+        # EMA の立ち上がり分 (_MCO_WARMUP 本) が要るので2行では None
+        {"strength", "volatility"},
         None,  # score は計算可能であればよい (個別値は別アサート)
     ),
 ])
@@ -87,3 +91,38 @@ def test_compose_all_none_returns_none():
         [{"nikkei_close": 100, "new_high": 1, "new_low": 1, "advances": 1, "declines": 1}],
         [{"nikkei_vi": 20}],
     ) is None
+
+
+# --- breadth: McClellan 累積型 (issue #524) -------------------------------
+def _flat_rows(n, adv=900, dec=700):
+    return [{"advances": adv, "declines": dec} for _ in range(n)]
+
+
+@pytest.mark.parametrize("n,expect_none", [
+    (fg._MCO_WARMUP + 1, True),    # 立ち上がり分 + 1本では正規化の履歴が無い
+    (fg._MCO_WARMUP + 2, False),
+])
+def test_breadth_needs_warmup(n, expect_none):
+    assert (fg.compute_component_breadth(_flat_rows(n)) is None) is expect_none
+
+
+def test_mcclellan_constant_breadth_stays_flat():
+    # 差が一定なら EMA19 と EMA39 は一致し続け、Oscillator=0 で累積値も 0 のまま
+    assert fg.mcclellan_summation([900] * 50, [700] * 50) == [0.0] * 50
+
+
+def test_breadth_one_day_crash_moves_less_than_daily_diff():
+    # 日々ばらつく300日のあと1日だけ大きく値下がり。旧方式 (1日差分) は最下位近くまで
+    # 落ちるが、累積型は Oscillator 1日分しか動かないので下げ幅が小さい
+    rng = random.Random(0)
+    calm = []
+    for _ in range(300):
+        adv = min(max(int(800 + rng.gauss(0, 250)), 100), 1500)
+        calm.append({"advances": adv, "declines": 1600 - adv})
+    crash = calm + [{"advances": 100, "declines": 1500}]
+
+    def drop(fn):
+        return fn(calm)[0] - fn(crash)[0]
+
+    assert drop(fg.compute_component_breadth_daily) > 50
+    assert drop(fg.compute_component_breadth) < 10

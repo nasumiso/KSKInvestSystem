@@ -1549,7 +1549,9 @@ _FGJP_COMPONENTS = [
      _fmt_pct, "https://nikkei225jp.com/nikkei/"),
     ("strength", "新高値強さ", "東証プライム 新高値数 - 新安値数。高いほど Greed。",
      _fmt_signed_int, "https://nikkei225jp.com/data/new.php"),
-    ("breadth", "騰落ブレッドス", "東証プライム 値上がり - 値下がり銘柄数。高いほど Greed。",
+    ("breadth", "騰落ブレッドス",
+     "東証プライム 騰落の McClellan Summation Index (累積型、銘柄数ベース)。"
+     "1日の急落では大きく動かない。高いほど Greed。",
      _fmt_signed_int, "https://nikkei225jp.com/data/touraku.php"),
     ("volatility", "日経VI", "日経VI (恐怖指数)。高いほど Fear なので反転してスコア化。",
      _fmt_vi, "https://nikkei225jp.com/data/vix.php"),
