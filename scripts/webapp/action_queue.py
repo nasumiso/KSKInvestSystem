@@ -226,22 +226,36 @@ def _exit_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, 
     点きっぱなしの銘柄 (持ち続けると決めたもの) で毎日埋まらないよう、初点灯からの日数で切る。
     今日も「防」のままの銘柄だけを出す (割れから戻った銘柄は急ぎの判断が要らない)。
     割れた理由ごとに割れた線の価格 (最新の記録時点) を、末尾に戦略を添える。
+    4営業日目以降も「防」のまま持っている銘柄は、件数の1行にまとめて出し続ける
+    (損切りしないまま持っていることを毎日目に入れるため。中身はポップアップ)。
     """
     mat = mat or _Material()
     strategies = {r["code_s"]: (r.get("memo") or {}).get("trade_idea") for r in mat.records}
-    rows = []
+    rows, stale = [], []
     for code_s, ev in mat.exits.items():
         signal, first = ev["signal"], ev["first_defense"]
         if not (signal and signal["level"] == "防" and first):
             continue
         first_day = date.fromisoformat(first)
-        if 0 <= _busdays_since(first_day, today) < SIGNAL_SHOW_BUSDAYS:
-            reasons = "・".join(_with_line_price(r, signal) for r in signal.get("reasons") or [])
-            text = f"出口ライン: {code_s} {mat.name(code_s)} {reasons} ({_md(first_day)}〜)"
-            if strategies.get(code_s):
-                text += f" 戦略 {strategies[code_s]}"
-            rows.append((first_day, code_s, text))
-    return [_item(text, "/portfolio?status=hold", "手仕舞い") for _, _, text in sorted(rows)]
+        busdays = _busdays_since(first_day, today)
+        if busdays < 0:
+            continue
+        reasons = "・".join(_with_line_price(r, signal) for r in signal.get("reasons") or [])
+        if busdays >= SIGNAL_SHOW_BUSDAYS:
+            stale.append((first_day, code_s, f"{code_s} {mat.name(code_s)} {reasons} ({_md(first_day)}〜)"))
+            continue
+        text = f"出口ライン: {code_s} {mat.name(code_s)} {reasons} ({_md(first_day)}〜)"
+        if strategies.get(code_s):
+            text += f" 戦略 {strategies[code_s]}"
+        rows.append((first_day, code_s, text))
+    items = [_item(text, "/portfolio?status=hold", "手仕舞い") for _, _, text in sorted(rows)]
+    if stale:
+        stale.sort()  # 初点灯の古い順 (長く持ち続けている銘柄が先)
+        items.append(_with_popup(_item(
+            f"出口ライン ({SIGNAL_SHOW_BUSDAYS + 1}営業日以上): {len(stale)}銘柄",
+            _charts_url("hold", [c for _, c, _ in stale]), "手仕舞い",
+        ), f"{len(stale)}銘柄", [entry for _, _, entry in stale]))
+    return items
 
 
 def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:

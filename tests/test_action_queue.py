@@ -168,14 +168,14 @@ def _stub_material(monkeypatch, records, stocks=None, exits=None):
 
 
 @pytest.mark.parametrize("first, level, shown", [
-    ("2026-10-12", "防", True),    # 初点灯の当日 (TODAY は月曜)
-    ("2026-10-09", "防", True),    # 金曜点灯 → 月曜は1営業日後
-    ("2026-10-08", "防", True),    # 2営業日後まで出す
-    ("2026-10-07", "防", False),   # 3営業日後は出さない (点きっぱなしの銘柄で埋まらないため)
-    ("2026-10-12", "防予", False),  # 予兆は出さない
+    ("2026-10-12", "防", "row"),     # 初点灯の当日 (TODAY は月曜)
+    ("2026-10-09", "防", "row"),     # 金曜点灯 → 月曜は1営業日後
+    ("2026-10-08", "防", "row"),     # 2営業日後まで1銘柄1行で出す
+    ("2026-10-07", "防", "stale"),   # 3営業日後からは件数の1行にまとめて出し続ける
+    ("2026-10-12", "防予", None),    # 予兆は出さない
 ])
 def test_exit_items_show_first_defense_for_three_busdays(monkeypatch, first, level, shown):
-    """出口ライン「防」は、今の保有サイクルで初めて点いてから3営業日だけ出る"""
+    """出口ライン「防」は、初めて点いてから3営業日は1銘柄1行、その後も防のままなら件数の1行に入る"""
     _stub_material(monkeypatch, [{"code_s": "1001", "status": "1保", "memo": {"trade_idea": "中期テーマ"}}], exits={
         "1001": {"signal": {"level": level, "reasons": ["損切りライン割れ", "日足50MA割れ確定"],
                               "stop_loss_line": 1234.6, "ma_value": 1300.2},
@@ -184,10 +184,14 @@ def test_exit_items_show_first_defense_for_three_busdays(monkeypatch, first, lev
 
     items = aq._exit_items(TODAY)
 
-    if shown:
-        md = f"{int(first[5:7])}/{int(first[8:])}"
-        assert [i["text"] for i in items] == [
-            f"出口ライン: 1001 銘柄1001 損切りライン割れ 1,235円・日足50MA割れ確定 1,300円 ({md}〜) 戦略 中期テーマ"]
+    md = f"{int(first[5:7])}/{int(first[8:])}"
+    reasons = f"損切りライン割れ 1,235円・日足50MA割れ確定 1,300円 ({md}〜)"
+    if shown == "row":
+        assert [i["text"] for i in items] == [f"出口ライン: 1001 銘柄1001 {reasons} 戦略 中期テーマ"]
+    elif shown == "stale":
+        assert [(i["text"], i["url"], i["popup"]) for i in items] == [(
+            "出口ライン (4営業日以上): 1銘柄", "/portfolio/charts?status=hold&codes=1001",
+            f"1001 銘柄1001 {reasons}")]
     else:
         assert items == []
 
