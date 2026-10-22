@@ -5,6 +5,7 @@ nikkei225jp.com が公開している JS データを HTTP 取得し、JSON 配�
 - 信用評価損益率・信用倍率 (週次): fetch_credit_balance_weekly (issue #211)
 - 新高値・新安値 銘柄数 (日次): fetch_new_high_low (issue #292)
 - 日経VI 恐怖指数 (日次): fetch_nikkei_vi (issue #292)
+- 10年国債金利 (日次、財務省): fetch_jgb10 (issue #524、日本版 Fear & Greed の安全資産成分)
 """
 
 import json
@@ -24,6 +25,12 @@ NEW_HIGH_LOW_REFERER = "https://nikkei225jp.com/data/new.php"
 
 NIKKEI_VI_URL = "https://nikkei225jp.com/_data/_nfsDATA/json_DAY/SL161_1990.json"
 NIKKEI_VI_REFERER = "https://nikkei225jp.com/data/vix.php"
+
+# 財務省「国債金利情報」。all は 1974年〜前月末、current は当月分 (翌営業日11時頃に更新)
+JGB_ALL_URL = "https://www.mof.go.jp/jgbs/reference/interest_rate/data/jgbcm_all.csv"
+JGB_CURRENT_URL = "https://www.mof.go.jp/jgbs/reference/interest_rate/jgbcm.csv"
+# 和暦の元年の前年 (S1=1926, H1=1989, R1=2019)
+_ERA_BASE = {"S": 1925, "H": 1988, "R": 2018}
 
 
 def fetch_credit_balance_weekly():
@@ -187,3 +194,60 @@ def fetch_nikkei_vi():
         d = datetime.fromtimestamp(r[0] / 1000, tz=JST).date().isoformat()
         out.append({"date": d, "nikkei_vi": float(r[1])})
     return out
+
+
+def _parse_jgb_date(text):
+    """財務省 CSV の日付 ("R6.10.1" の和暦、または "2024/10/1") を ISO 形式にする。"""
+    m = re.fullmatch(r"([SHR])(\d+)\.(\d+)\.(\d+)", text)
+    if m:
+        y, mo, d = _ERA_BASE[m.group(1)] + int(m.group(2)), int(m.group(3)), int(m.group(4))
+    else:
+        m = re.fullmatch(r"(\d{4})/(\d+)/(\d+)", text)
+        if not m:
+            return None
+        y, mo, d = (int(g) for g in m.groups())
+    return "%04d-%02d-%02d" % (y, mo, d)
+
+
+def parse_jgb_csv(text):
+    """財務省「国債金利情報」CSV から 10年金利の時系列を返す (issue #524)。
+
+    1行目はタイトル、2行目がヘッダ (基準日,1年,...,10年,...)。欠損は "-"。
+    ヘッダは日本語版 ("10年") と英語版 ("10Y") のどちらでも読む。
+    Returns: [{date, jgb10}, ...] 日付昇順。10年が欠けている行はスキップ。
+    """
+    lines = [ln.split(",") for ln in text.splitlines() if ln.strip()]
+    header_idx = next(
+        (i for i, cols in enumerate(lines) if "10年" in cols or "10Y" in cols), None)
+    if header_idx is None:
+        raise ValueError("10年金利の列が見つからない")
+    header = lines[header_idx]
+    col = header.index("10年") if "10年" in header else header.index("10Y")
+    out = []
+    for cols in lines[header_idx + 1:]:
+        if len(cols) <= col:
+            continue
+        date = _parse_jgb_date(cols[0].strip())
+        try:
+            value = float(cols[col])
+        except ValueError:
+            continue
+        if date:
+            out.append({"date": date, "jgb10": value})
+    out.sort(key=lambda r: r["date"])
+    return out
+
+
+def fetch_jgb10():
+    """財務省の過去分と当月分の CSV を取り、10年金利の日次時系列を返す (issue #524)。
+
+    同じ日付は当月分を優先する。当月分の取得に失敗した場合は例外にする
+    (過去分だけでは最新日が1ヶ月近く古くなり、成分の日付が大きくずれるため)。
+    """
+    by_date = {}
+    for url in (JGB_ALL_URL, JGB_CURRENT_URL):
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+        res.raise_for_status()
+        for r in parse_jgb_csv(res.content.decode("cp932")):
+            by_date[r["date"]] = r
+    return [by_date[d] for d in sorted(by_date)]

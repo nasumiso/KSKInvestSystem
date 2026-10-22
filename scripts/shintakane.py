@@ -1667,7 +1667,7 @@ def update_fear_greed_jp():
     """日本市場版 Fear & Greed Index を計算して JSON 保存 (issue #212)。
 
     breadth (日経終値・値上がり/値下がり・新高値/安値) は daily2year.json から取得し、
-    日経VI は VI 時系列を直接取得する。
+    日経VI は VI 時系列を直接取得する。10年金利は財務省の CSV から取る (#524)。
     取得できない成分は除外して残り成分で合成する。
     キャッシュ・失敗時の扱いは他の update_* と同じ (デイリー全体は止めない)。
     """
@@ -1702,6 +1702,13 @@ def update_fear_greed_jp():
     except Exception as e:
         log_warning(f"[fear_greed_jp] 日経VI取得失敗 (VI成分を除外): {e}")
 
+    # 10年金利 (安全資産の成分、#524)。取得失敗時はこの成分だけ除外する。
+    jgb_history = []
+    try:
+        jgb_history = market_breadth.fetch_jgb10()
+    except Exception as e:
+        log_warning(f"[fear_greed_jp] 10年金利取得失敗 (安全資産成分を除外): {e}")
+
     latest_date = breadth_history[-1]["date"]
     if saved_latest is not None and saved_latest > latest_date:
         log_print(f"---- 日本版Fear&Greed 保存済みが新しいためスキップ (saved={saved_latest} fetched={latest_date})")
@@ -1712,8 +1719,9 @@ def update_fear_greed_jp():
             v for v in vi_history if v.get("date", "") <= latest_date
         ] or vi_history
 
+    jgb_history = [j for j in jgb_history if j.get("date", "") <= latest_date]
     result = fear_greed_jp.compute_fear_greed_jp(
-        breadth_history, vi_history_for_fgjp
+        breadth_history, vi_history_for_fgjp, jgb_history
     )
     if result is None:
         log_warning("[fear_greed_jp] 全成分が None のためスキップ")
@@ -1725,6 +1733,9 @@ def update_fear_greed_jp():
             components[key]["date"] = latest_date
     if components.get("volatility") is not None and vi_history_for_fgjp:
         components["volatility"]["date"] = vi_history_for_fgjp[-1].get("date")
+    # 金利は翌営業日に公表されるので、安全資産の日付は前営業日になることが多い
+    if components.get("safe_haven") is not None and jgb_history:
+        components["safe_haven"]["date"] = jgb_history[-1].get("date")
 
     # history は date + score + components を 30 営業日分保持 (前日比/5日前比表示用)
     prev_history = []
@@ -1742,7 +1753,7 @@ def update_fear_greed_jp():
 
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "source": "nikkei225jp.com (daily2year.json / vix.php) より独自合成 (CNN構造準拠)",
+        "source": "nikkei225jp.com (daily2year.json / vix.php)・財務省 国債金利情報 より独自合成 (CNN構造準拠)",
         "latest": {"date": latest_date, **result},
         "history": history,
     }
