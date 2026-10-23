@@ -8,7 +8,8 @@
 - 信用は買建のみ。売建がある証券会社は推定しない
 - 信用建玉の評価損だけを保証金に算入する (SBI のヘルプが明記。評価益は算入しない)
 - 現物は代用として掛目 0.8 で値動きを算入する (現物の全株が代用とは限らない近似)
-- 基準日以後の実現損益・入出金・金利・現物の売却代金は追わない (基準値を入れ直すと戻る)
+- 基準日より後の信用返済の決済損益は、約定 (fill) から足す。入出金・金利・現物の売却代金は
+  追わない (基準値を入れ直すと戻る)
 - 銘柄単位の合算スナップショットなので、基準日の前後で同じ銘柄の株が入れ替わっても区別できない
 """
 
@@ -105,27 +106,63 @@ def _margin_loss(qty: float, avg_price: float, close: float) -> float:
     return min(0.0, qty * (close - avg_price))
 
 
-def estimate(baseline: Dict[str, Any], snapshot: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def realized_since(fills: List[Dict[str, Any]], broker: str, base_day: str) -> Dict[str, Optional[float]]:
+    """基準日より後の信用返済 (買建の返済) の決済損益を、銘柄ごとに合計する。
+
+    損益は SBI が settle_pl、楽天が (約定単価 − 建単価) × 株数 (往復行の損益と同じ定義)。
+    どちらも無い返済 (当日の未確定 CSV 由来) が1つでもある銘柄は None にする。
+    基準日の約定は、基準日の残高 CSV と保証金率にすでに入っているので数えない。
+    """
+    result: Dict[str, Optional[float]] = {}
+    for f in fills:
+        if (f.get("broker") != broker or f.get("trade_kind") != "信用返済"
+                or f.get("side") != "sell" or (f.get("trade_date") or "") <= base_day):
+            continue
+        if f.get("settle_pl") is not None:
+            pl = float(f["settle_pl"])
+        elif f.get("tate_price") is not None:
+            pl = (f["price"] - f["tate_price"]) * f["qty"]
+        else:
+            pl = None
+        prev = result.get(f["code_s"], 0.0)
+        result[f["code_s"]] = None if pl is None or prev is None else prev + pl
+    return result
+
+
+def estimate(baseline: Dict[str, Any], snapshot: Dict[str, Any],
+             realized: Optional[Dict[str, Optional[float]]] = None,
+             ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """基準値と今のスナップショットから、受入保証金・維持率・追証までの下落率を推定する。
 
-    Returns: (結果, 理由)。結果 = {"guarantee", "tate_total", "rate_pct", "spot_value", "skipped"}。
+    realized: realized_since の結果。決済損益が分かる銘柄は、基準日の評価損の控除を外して
+      決済損益に置き換える。分からない銘柄は、減った建玉の損を基準日の値で残す。
+    Returns: (結果, 理由)。結果 = {"guarantee", "tate_total", "rate_pct", "spot_value",
+      "skipped", "realized"}。
     """
     closes = snapshot["closes"]
+    realized = realized or {}
     delta = 0.0
-    # 信用建玉の評価損の変化。建玉が減った分の損は、決済しても保証金から消えないので基準日の値で残す
-    for code in set(baseline["margin"]) | set(snapshot["margin"]):
+    realized_total = 0.0
+    for code in set(baseline["margin"]) | set(snapshot["margin"]) | set(realized):
         base = baseline["margin"].get(code)
         now = snapshot["margin"].get(code)
         loss_base = (_margin_loss(base["qty"], base["avg_price"], base["close"])
                      if base and base.get("close") else 0.0)
-        # 基準日の損のうち、今も残っている建玉の分。減った分は決済しても保証金から消えない
+        # 基準日の損のうち、今も残っている建玉の分
         remaining = min(1.0, (now["qty"] if now else 0) / base["qty"]) if base else 1.0
         stays = loss_base * remaining
         if now and closes.get(code):
             loss_now = _margin_loss(now["qty"], now["avg_price"], closes[code])
         else:
             loss_now = stays  # 終値が無ければ変化なしとして扱う
-        delta += loss_now - stays
+        pl = realized.get(code)
+        if pl is not None:
+            # 決済した分は評価損の控除が外れ、決済損益が現金で入る
+            delta += loss_now - loss_base + pl
+            realized_total += pl
+        else:
+            # 決済損益が分からなければ、減った分の損は基準日の値で残す (損益 ≒ 基準日の評価損)
+            delta += loss_now - stays
     # 代用 (現物) の値動き。基準日からある株は基準日の終値から、増えた分は取得単価から測る
     spot_value = 0.0
     for code, now in snapshot["spot"].items():
@@ -151,6 +188,7 @@ def estimate(baseline: Dict[str, Any], snapshot: Dict[str, Any]) -> Tuple[Option
         "rate_pct": guarantee / tate_total * 100.0,
         "spot_value": spot_value,
         "skipped": snapshot["skipped"],
+        "realized": realized_total,
     }, None
 
 

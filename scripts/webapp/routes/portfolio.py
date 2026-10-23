@@ -215,6 +215,7 @@ def _build_margin_summary() -> dict:
     positions, closes, _ = _margin_inputs()
     baselines = ps.list_margin_baselines()
     sources = ps.list_position_sources()
+    fills = ps.list_fills() if baselines else []
     rows, estimates = [], {}
     for broker in me.BROKERS:
         csv_dates = [s["as_of"] for s in sources if s.get("broker") == broker and s.get("as_of")]
@@ -232,11 +233,11 @@ def _build_margin_summary() -> dict:
         elif base is None:
             row["reason"] = "保証金率が未入力です"
         else:
-            est, reason = me.estimate(base, snapshot)
+            est, reason = me.estimate(base, snapshot, me.realized_since(fills, broker, base["date"]))
             if est is None:
                 row["reason"] = reason
             else:
-                row.update(rate_pct=est["rate_pct"], skipped=est["skipped"], falls={
+                row.update(rate_pct=est["rate_pct"], skipped=est["skipped"], realized=est["realized"], falls={
                     t: me.fall_to_threshold(est["guarantee"], est["tate_total"], est["spot_value"], t)
                     for t in me.THRESHOLDS})
                 estimates[broker] = est
@@ -256,6 +257,7 @@ def save_margin_baseline():
     positions, closes, price_dates = _margin_inputs()
     sources = ps.list_position_sources()
     baselines = ps.list_margin_baselines()
+    fills = ps.list_fills() if baselines else []
     saved, entered = [], False
     for broker, field in (("楽天", "rate_rakuten"), ("SBI", "rate_sbi")):
         raw = (request.form.get(field) or "").strip()
@@ -282,7 +284,7 @@ def save_margin_baseline():
         old = baselines.get(broker)
         history = list((old or {}).get("history") or [])
         if old:
-            est, _ = me.estimate(old, snapshot)
+            est, _ = me.estimate(old, snapshot, me.realized_since(fills, broker, old["date"]))
             if est:  # 直前の基準値からの推定と、今回入れた実際の値のずれを残す
                 history.append({"date": today, "estimated_pct": round(est["rate_pct"], 1),
                                 "actual_pct": rate})

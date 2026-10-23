@@ -38,6 +38,31 @@ def test_estimate_scenarios(closes, kw, expected_rate):
     assert result["rate_pct"] == pytest.approx(expected_rate)
 
 
+def _settle(price, tate_price=None, settle_pl=None, day="2026-10-26", broker="楽天", code="1111"):
+    return {"broker": broker, "code_s": code, "trade_kind": "信用返済", "side": "sell", "qty": 100,
+            "price": price, "tate_price": tate_price, "settle_pl": settle_pl, "trade_date": day}
+
+
+@pytest.mark.parametrize("fills, expected_rate", [
+    # 200株 @1000 (基準日の終値 900、評価損 -20,000、保証金 80,000) のうち 100株を 850 で返済 (損益 -15,000)。
+    # 残り 100株の評価損 -15,000 → 保証金 = 80,000 + 20,000 - 15,000 - 15,000 = 70,000 / 建玉 100,000
+    ([_settle(850, tate_price=1000)], 70.0),
+    # 決済損益が分からない (未確定 CSV) → 減った分の損は基準日の値 (-10,000) で残す: 80,000 - 5,000 = 75%
+    ([_settle(850)], 75.0),
+    # 基準日の返済・他社の返済は数えない
+    ([_settle(850, tate_price=1000, day="2026-10-23"), _settle(850, settle_pl=-15000, broker="SBI")], 75.0),
+])
+def test_estimate_with_realized(fills, expected_rate):
+    """基準日より後の信用返済は、基準日の評価損を外して決済損益に置き換える"""
+    base_snap, _ = me.build_snapshot("楽天", _positions(margin_qty=200), {"1111": 900.0})
+    baseline = me.make_baseline("楽天", 40.0, base_snap, "2026-10-23")
+    snap, _ = me.build_snapshot("楽天", _positions(margin_qty=100), {"1111": 850.0})
+    result, _ = me.estimate(baseline, snap, me.realized_since(fills, "楽天", "2026-10-23"))
+    assert result["rate_pct"] == pytest.approx(expected_rate)
+    # SBI は CSV の決済損益をそのまま使う
+    assert me.realized_since([_settle(850, settle_pl=-14000, broker="SBI")], "SBI", "2026-10-23") == {"1111": -14000.0}
+
+
 @pytest.mark.parametrize("positions, closes, reason_part", [
     (_positions() + [{"broker": "楽天", "kind": "信用売建", "code_s": "3333", "qty": 100, "avg_price": 100.0}],
      {"1111": 1000.0}, "信用売建"),
