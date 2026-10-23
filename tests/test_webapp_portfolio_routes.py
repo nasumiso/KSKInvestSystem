@@ -1458,3 +1458,57 @@ class TestStrategyExitRule:
         }
         # UIから除去した互換フィールドは、既存値を変更しない。
         assert ps.get_trade_idea("GARP", db_path=portfolio_db_path)["over_earnings"] is True
+
+
+class TestMarginBaseline:
+    """推定維持率の基準値の保存と、保有銘柄ページの表示 (issue #527)"""
+
+    @pytest.fixture
+    def margin_data(self, portfolio_db_path, stocks_db_path):
+        """楽天の信用買建 100株 @1000 と、今日の残高CSV・今日の終値 1000 円を用意する"""
+        import datetime
+        from ks_util import recent_weekday
+
+        now = datetime.datetime.now(ps.JST)
+        today = now.date().isoformat()
+        price_day = recent_weekday(now)
+
+        def set_close(close):
+            with ShelveDB(stocks_db_path) as db:
+                stock = dict(db["3496"])
+                stock["price_log"] = [(price_day, close)]
+                db["3496"] = stock
+
+        set_close(1000)
+        for kind in ("信用", "現物"):
+            ps.upsert_position_source("楽天", "特定", kind, as_of=today, row_count=1, db_path=portfolio_db_path)
+        ps.upsert_position("楽天", "特定", "信用", "3496", 100, avg_price=1000.0, as_of=today,
+                           db_path=portfolio_db_path)
+        return set_close, today
+
+    def test_save_and_estimate(self, client, portfolio_db_path, margin_data):
+        """保証金率を入れると基準値が保存され、株価が下がると評価損の分だけ推定が下がる。
+        不正な値・古い残高CSVでは保存しない"""
+        set_close, today = margin_data
+
+        client.post("/portfolio/margin-baseline", data={"rate_rakuten": "0"})
+        assert ps.list_margin_baselines(db_path=portfolio_db_path) == {}
+
+        # 残高CSVが昨日のままなら、入力した保証金率の分母が合わないので保存しない
+        ps.upsert_position_source("楽天", "特定", "現物", as_of="2000-01-01", row_count=1,
+                                  db_path=portfolio_db_path)
+        client.post("/portfolio/margin-baseline", data={"rate_rakuten": "40"})
+        assert ps.list_margin_baselines(db_path=portfolio_db_path) == {}
+        ps.upsert_position_source("楽天", "特定", "現物", as_of=today, row_count=1,
+                                  db_path=portfolio_db_path)
+
+        client.post("/portfolio/margin-baseline", data={"rate_rakuten": "40"})
+        base = ps.list_margin_baselines(db_path=portfolio_db_path)["楽天"]
+        assert (base["rate_pct"], base["tate_total"], base["guarantee"]) == (40.0, 100000.0, 40000.0)
+
+        html = client.get("/portfolio?status=hold").data.decode()
+        assert "40%" in html and "追証まで" in html
+
+        set_close(800)  # 評価損 -20,000 円 → 受入保証金 20,000 円 → 20%
+        html = client.get("/portfolio?status=hold").data.decode()
+        assert re.search(r"推定\s*<b[^>]*>20%</b>", html)

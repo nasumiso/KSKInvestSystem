@@ -812,3 +812,11 @@ body.ep-hide-kessan .ep-kessan { display: none; }
 .kessan-note.is-same { color: #777; border-color: #ccc; }
 .ep-chart-toggle { display: inline; margin-left: 0.8em; cursor: pointer; white-space: nowrap; }
 .ep-chart-toggle input[type="checkbox"] { width: 0.95em; height: 0.95em; margin: 0 0.15em 0 0; vertical-align: -0.1em; }
+
+/* 推定維持率の入力フォーム (issue #527)。Pico の input/button の全幅化・余白を打ち消す */
+.margin-form { margin: 0 0 0.6em; padding: 0.5em 0.7em; border: 1px solid #e0e0e0; border-radius: 4px; background: #fff; font-size: 0.8em; min-width: 30em; max-width: 44em; }
+.margin-form-row { margin: 0 0 0.4em; }
+.margin-form label { display: inline; margin: 0; }
+.margin-form input[type="number"] { display: inline-block; width: 5.5em; height: auto; margin: 0 0.2em; padding: 0.2em 0.4em; font-size: 0.95em; }
+.margin-form button { width: auto; margin: 0; padding: 0.2em 0.9em; font-size: 0.9em; }
+.margin-form-note { color: #888; }

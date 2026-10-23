@@ -194,6 +194,10 @@ def test_parse_rakuten_margin_separates_buy_and_sell(db_path):
     # 建玉単位の複数行 (issue #397 §2-0) は統合層で合算する
     agg = ic._aggregate_by_account_kind_code(parsed)
     assert agg[("特定", "信用", "402A")]["qty"] == 900  # 500+400
+    # 建単価は株数の加重平均 (推定維持率が建玉合計に使う、issue #527)。1行でも欠ければ None
+    assert agg[("特定", "信用", "402A")]["avg_price"] == pytest.approx((500 * 580 + 400 * 830) / 900)
+    no_price = [{**parsed[0], "avg_price": None}, parsed[1]]
+    assert ic._aggregate_by_account_kind_code(no_price)[("特定", "信用", "402A")]["avg_price"] is None
 
 
 @pytest.mark.parametrize(
