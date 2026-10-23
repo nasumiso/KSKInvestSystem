@@ -45,7 +45,7 @@
       <tr style="border-bottom:2px solid #d8dee6;text-align:left;">
         <th style="padding:0.35em 0.5em;">コード</th>
         <th style="padding:0.35em 0.5em;">銘柄名</th>
-        <th style="padding:0.35em 0.5em;">取引日</th>
+        <th style="padding:0.35em 0.5em;" title="約定履歴CSVから取り込んだ最終約定日。ポートフォリオCSVには現物の取引日が無い">最終約定取込日</th>
         <th style="padding:0.35em 0.5em;">現ステータス</th>
         <th style="padding:0.35em 0.5em;">DB qty</th>
         <th style="padding:0.35em 0.5em;">CSV合算 qty</th>
@@ -64,9 +64,10 @@
         {% elif is_in %}background:#eaffef;
         {% elif is_unresolved %}background:#f5f5f5;color:#999;
         {% endif %}">
-        <td style="padding:0.35em 0.5em;">{{ d.code_s }}</td>
-        <td style="padding:0.35em 0.5em;">{{ d.stock_name }}</td>
-        <td style="padding:0.35em 0.5em;white-space:nowrap;">{{ d.last_trade_date or '-' }}</td>
+        <td style="padding:0.35em 0.5em;"><a href="https://kabutan.jp/stock/chart?code={{ d.code_s }}" target="_blank" rel="noopener noreferrer">{{ d.code_s }}</a></td>
+        <td style="padding:0.35em 0.5em;"><a href="/stock/{{ d.code_s }}">{{ d.stock_name }}</a></td>
+        <td style="padding:0.35em 0.5em;white-space:nowrap;">{{ d.last_trade_date or '-' }}
+          {%- if d.fill_stale %}<br><small style="color:#c60;">約定未取込?</small>{% endif %}</td>
         <td style="padding:0.35em 0.5em;">{{ d.status }}</td>
         <td style="padding:0.35em 0.5em;">{{ d.db_qty if d.db_qty is not none else '-' }}</td>
         <td style="padding:0.35em 0.5em;">{{ d.merged_qty }}</td>

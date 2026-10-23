@@ -494,6 +494,7 @@ def _render_csv_import_preview(token: str, tmp_dir: str, saved_paths: List[str])
     # 呼ぶと都度 DB を open して全件走査するため、全件を1回だけ走査して集約する。
     # trade_date は YYYY-MM-DD 固定形式なので文字列比較で最大値を取れる。
     latest_trade_date: dict = {}
+    stale_before = (datetime.date.fromisoformat(as_of) - datetime.timedelta(days=5)).isoformat()
     for fill in ps.list_fills():
         code_s, trade_date = fill.get("code_s"), fill.get("trade_date")
         if code_s and trade_date and trade_date > latest_trade_date.get(code_s, ""):
@@ -502,6 +503,8 @@ def _render_csv_import_preview(token: str, tmp_dir: str, saved_paths: List[str])
         d["stock_name"] = resolve_stock_name(d["code_s"])
         # fill 未取込の銘柄は空欄。約定CSVの取込は別フローなので異常ではない
         d["last_trade_date"] = latest_trade_date.get(d["code_s"], "")
+        # 株数変更候補なのに約定が直近5日以内に無い = 約定履歴CSVの取込漏れの可能性
+        d["fill_stale"] = d["is_qty_change"] and d["last_trade_date"] < stale_before
         # 新規IN候補は確認画面で戦略を選び直せるようにするため、現在の戦略を渡す
         # (issue #397 Phase3b)。未設定なら空文字のまま (select の初期値なし)。
         # 未登録扱いの行では初期値を出さない。list_records() は除外済みレコードを
