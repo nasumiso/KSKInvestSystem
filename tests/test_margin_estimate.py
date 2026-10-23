@@ -38,15 +38,17 @@ def test_estimate_scenarios(closes, kw, expected_rate):
     assert result["rate_pct"] == pytest.approx(expected_rate)
 
 
-@pytest.mark.parametrize("positions, reason_part", [
+@pytest.mark.parametrize("positions, closes, reason_part", [
     (_positions() + [{"broker": "楽天", "kind": "信用売建", "code_s": "3333", "qty": 100, "avg_price": 100.0}],
-     "信用売建"),
-    ([{"broker": "楽天", "kind": "現物", "code_s": "2222", "qty": 100, "avg_price": 500.0}], "信用建玉がありません"),
-    (_positions(margin_price=None), "建単価"),
+     {"1111": 1000.0}, "信用売建"),
+    ([{"broker": "楽天", "kind": "現物", "code_s": "2222", "qty": 100, "avg_price": 500.0}],
+     {"2222": 500.0}, "信用建玉がありません"),
+    (_positions(margin_price=None), {"1111": 1000.0}, "建単価"),
+    (_positions(), {}, "終値が取れない"),   # 分母だけ大きく、評価損が出せない状態で低い維持率を出さない
 ])
-def test_not_estimated(positions, reason_part):
-    """売建がある・信用なし・建単価が欠けた証券会社は推定しない (黙って落とすと維持率が高く出る)"""
-    snap, reason = me.build_snapshot("楽天", positions, {"1111": 1000.0, "2222": 500.0})
+def test_not_estimated(positions, closes, reason_part):
+    """売建がある・信用なし・建単価が欠けた・信用建玉の終値が無い証券会社は推定しない"""
+    snap, reason = me.build_snapshot("楽天", positions, closes)
     assert snap is None and reason_part in reason
 
 
@@ -63,7 +65,9 @@ def test_fall_and_combine_and_input_check():
     assert combined["low_brokers"] == ["SBI"]
     # 古い残高CSV・古い株価では基準値を保存させない
     now = datetime(2026, 10, 23, 20, 0)
-    src = [{"broker": "楽天", "kind": "信用", "as_of": "2026-10-23"}]
+    src = [{"broker": "楽天", "kind": k, "as_of": "2026-10-23"} for k in ("現物", "信用")]
     assert me.check_baseline_inputs("楽天", src, ["2026-10-23"], now) is None
-    assert "CSV" in me.check_baseline_inputs("楽天", [{**src[0], "as_of": "2026-10-15"}], ["2026-10-23"], now)
+    assert "信用 CSV が 2026-10-15" in me.check_baseline_inputs(
+        "楽天", [src[0], {**src[1], "as_of": "2026-10-15"}], ["2026-10-23"], now)
+    assert "現物 CSV が取り込まれていません" in me.check_baseline_inputs("楽天", src[1:], ["2026-10-23"], now)
     assert "日次バッチ" in me.check_baseline_inputs("楽天", src, ["2026-10-22"], now)

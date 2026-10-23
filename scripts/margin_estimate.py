@@ -59,6 +59,11 @@ def build_snapshot(
     tate_total = sum(e["cost"] for e in margin.values())
     if tate_total <= 0:
         return None, "信用建玉がありません"
+    for code in margin:
+        close = closes.get(code)
+        if not (isinstance(close, (int, float)) and close > 0):
+            # 建玉合計には入るのに評価損が出せないと、維持率が実際より低く出る
+            return None, f"{code} の信用建玉の終値が取れないため推定しません"
     snapshot = {"margin": {}, "spot": {}, "closes": {}, "tate_total": tate_total, "skipped": 0}
     for kind_name, bucket in (("margin", margin), ("spot", spot)):
         for code, e in bucket.items():
@@ -191,8 +196,9 @@ def check_baseline_inputs(
 
     today = now.date().isoformat()
     mine = [s for s in sources if s.get("broker") == broker]
-    if not mine:
-        return f"{broker} の残高 CSV が取り込まれていません"
+    for kind in ("現物", "信用"):
+        if not any(s.get("kind") == kind for s in mine):
+            return f"{broker} の{kind} CSV が取り込まれていません"
     for s in mine:
         if s.get("as_of") != today:
             return (f"{broker} の{s.get('kind')} CSV が {s.get('as_of')} のままです。"
