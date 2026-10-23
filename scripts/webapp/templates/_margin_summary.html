@@ -27,8 +27,9 @@
                     else '株アプリ: 口座管理 → 余力／評価 → 「余力」タブの「委託保証金率 (A/B)×100」\n(「参考委託保証金率」ではない方。「保証金率」タブなら引け後の「値洗い基準」)' %}
     <label>{{ r.broker }} {{ '保証金率' if r.broker == '楽天' else '委託保証金率 (値洗い基準)' }}
       <span title="{{ where }}" style="cursor:help;color:#1a73e8;">(?)</span>
-      <input type="number" name="{{ field }}" step="0.01" min="0.01" max="1000"> %</label>
-    <span class="margin-form-note">残高CSV {{ r.csv_as_of or '未取込' }}{% if r.base_date %} / 基準 {{ r.base_date }}{% endif %}
+      <input type="number" name="{{ field }}" step="0.01" min="0.01" max="1000"
+             {%- if r.base_rate is not none %} placeholder="{{ r.base_rate }}"{% endif %}> %</label>
+    <span class="margin-form-note">残高CSV {{ r.csv_as_of or '未取込' }}{% if r.base_date %} / 前回 {{ r.base_rate }}% ({{ r.base_date }}){% endif %}
       {%- if r.last_gap %} / 前回の推定のずれ {{ '%+.1f'|format(r.last_gap.estimated_pct - r.last_gap.actual_pct) }}pt{% endif %}</span>
   </div>
   {%- endfor %}

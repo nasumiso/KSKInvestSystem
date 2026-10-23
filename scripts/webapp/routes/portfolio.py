@@ -222,7 +222,8 @@ def _build_margin_summary() -> dict:
         history = (base or {}).get("history") or []
         row = {
             "broker": broker, "csv_as_of": min(csv_dates) if csv_dates else None,
-            "base_date": (base or {}).get("date"), "last_gap": history[-1] if history else None,
+            "base_date": (base or {}).get("date"), "base_rate": (base or {}).get("rate_pct"),
+            "last_gap": history[-1] if history else None,
             "rate_pct": None, "reason": None, "falls": {}, "skipped": 0,
         }
         snapshot, reason = me.build_snapshot(broker, positions, closes)

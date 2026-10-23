@@ -1508,6 +1508,7 @@ class TestMarginBaseline:
 
         html = client.get("/portfolio?status=hold").data.decode()
         assert "40%" in html and "追証まで" in html
+        assert "前回 40.0%" in html and 'placeholder="40.0"' in html  # 入力欄に前回の値を出す
 
         set_close(800)  # 評価損 -20,000 円 → 受入保証金 20,000 円 → 20%
         html = client.get("/portfolio?status=hold").data.decode()
