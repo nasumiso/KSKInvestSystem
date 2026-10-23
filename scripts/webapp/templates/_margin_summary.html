@@ -1,0 +1,34 @@
+{# issue #527: 楽天・SBI の推定維持率。保証金率はユーザーが入れた値を基準に、残高CSVと株価から概算する #}
+{%- set ms = hold_summary.margin %}
+{%- set c = ms.combined %}
+<div style="margin:0.15em 0 0.5em;font-size:0.8em;color:#555;display:flex;align-items:center;gap:0.7em;flex-wrap:wrap;">
+  {%- if c %}
+  <span title="{% for r in ms.rows if r.rate_pct is not none %}{{ r.broker }} {{ '%.0f'|format(r.rate_pct) }}% (追証 20% まで −{{ '%.0f'|format(r.falls[20]) }}%、基準日 {{ r.base_date }}){% if r.skipped %} ※終値が無い{{ r.skipped }}銘柄を除く{% endif %}
+{% endfor %}全保有が一律に下がるとしたとき、保証金率が届く下落率: 30% で −{{ '%.0f'|format(c.falls[30]) }}% / 25% で −{{ '%.0f'|format(c.falls[25]) }}% / 20% (追証) で −{{ '%.0f'|format(c.falls[20]) }}%
+基準日の保証金率に、建玉の評価損と現物 (代用・掛目 0.8) の値動きを足し引きした概算。評価益は保証金に数えず、決済した損益・入出金・金利は追わない。">
+    維持率 推定 <b style="font-size:1.1em;color:{{ '#c62828' if c.rate_pct < 30 else '#333' }};">{{ '%.0f'|format(c.rate_pct) }}%</b>
+    <span style="color:#666;">追証まで −{{ '%.0f'|format(c.falls[20]) }}%</span>
+  </span>
+  {%- if c.low_brokers %}<span style="color:#c62828;" title="追証は証券会社ごとに判定されます">⚠ {{ c.low_brokers|join('・') }} は30%を下回る推定</span>{%- endif %}
+  {%- for r in ms.rows if r.rate_pct is none and r.reason and r.base_date %}
+  <span style="color:#ef6c00;">{{ r.broker }}: {{ r.reason }}</span>
+  {%- endfor %}
+  {%- else %}
+  <span>維持率: 保証金率を入力すると推定できます</span>
+  {%- endif %}
+  <a href="#" style="color:#1a73e8;" onclick="var f=document.getElementById('margin-form');f.hidden=!f.hidden;return false;">保証金率を入れる</a>
+</div>
+<form id="margin-form" class="margin-form" method="post" action="{{ url_for('portfolio.save_margin_baseline') }}" hidden>
+  <input type="hidden" name="return_query" value="{{ return_query }}">
+  {%- for r in ms.rows %}
+  {%- set field = 'rate_rakuten' if r.broker == '楽天' else 'rate_sbi' %}
+  <div class="margin-form-row">
+    <label>{{ r.broker }} {{ '保証金率' if r.broker == '楽天' else '委託保証金率 (値洗い基準)' }}
+      <input type="number" name="{{ field }}" step="0.01" min="0.01" max="1000"> %</label>
+    <span class="margin-form-note">残高CSV {{ r.csv_as_of or '未取込' }}{% if r.base_date %} / 基準 {{ r.base_date }}{% endif %}
+      {%- if r.last_gap %} / 前回の推定のずれ {{ '%+.1f'|format(r.last_gap.estimated_pct - r.last_gap.actual_pct) }}pt{% endif %}</span>
+  </div>
+  {%- endfor %}
+  <div class="margin-form-note">今日の残高CSVを取り込み、日次バッチ (19時) の後に入れてください。</div>
+  <button type="submit">保存</button>
+</form>

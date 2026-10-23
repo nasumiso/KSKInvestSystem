@@ -30,11 +30,13 @@ from urllib.parse import urlencode
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
 import import_portfolio_csv as csv_import
+import margin_estimate as me
 import portfolio_shelve as ps
 import research_shelve
 from ks_util import DATA_DIR
 from webapp.helpers import (
     MONTHLY_TAG_DESCRIPTIONS,
+    _bulk_get_stock_data,
     TAG_DESCRIPTIONS,
     THEME_SUMMARY_SORT_FIELDS,
     build_portfolio_theme_summary,
@@ -193,6 +195,103 @@ _EXPOSURE_MODIFIER_LABELS = {
     "credit_eval_rate": "信用評価損益率が過熱",
     "fng_jp": "日本版F&Gが過熱",
 }
+
+
+def _margin_inputs() -> tuple:
+    """推定維持率に使う残高 CSV の建玉と、銘柄ごとの最新終値・その日付を返す (issue #527)。"""
+    positions = ps.list_positions()
+    codes = sorted({p["code_s"] for p in positions})
+    closes, price_dates = {}, {}
+    for code, stock in _bulk_get_stock_data(codes).items():
+        log = (stock or {}).get("price_log") or []
+        if log:
+            closes[code] = log[0][1]
+            price_dates[code] = str(log[0][0])
+    return positions, closes, price_dates
+
+
+def _build_margin_summary() -> dict:
+    """楽天・SBI の推定維持率と、合算の維持率・追証までの下落率を組み立てる (issue #527)。"""
+    positions, closes, _ = _margin_inputs()
+    baselines = ps.list_margin_baselines()
+    sources = ps.list_position_sources()
+    rows, estimates = [], {}
+    for broker in me.BROKERS:
+        csv_dates = [s["as_of"] for s in sources if s.get("broker") == broker and s.get("as_of")]
+        base = baselines.get(broker)
+        history = (base or {}).get("history") or []
+        row = {
+            "broker": broker, "csv_as_of": min(csv_dates) if csv_dates else None,
+            "base_date": (base or {}).get("date"), "last_gap": history[-1] if history else None,
+            "rate_pct": None, "reason": None, "falls": {}, "skipped": 0,
+        }
+        snapshot, reason = me.build_snapshot(broker, positions, closes)
+        if snapshot is None:
+            row["reason"] = reason
+        elif base is None:
+            row["reason"] = "保証金率が未入力です"
+        else:
+            est, reason = me.estimate(base, snapshot)
+            if est is None:
+                row["reason"] = reason
+            else:
+                row.update(rate_pct=est["rate_pct"], skipped=est["skipped"], falls={
+                    t: me.fall_to_threshold(est["guarantee"], est["tate_total"], est["spot_value"], t)
+                    for t in me.THRESHOLDS})
+                estimates[broker] = est
+        rows.append(row)
+    return {"rows": rows, "combined": me.combine(estimates)}
+
+
+@portfolio_bp.route("/portfolio/margin-baseline", methods=["POST"])
+def save_margin_baseline():
+    """楽天・SBI の保証金率を、推定維持率の基準値として保存する (issue #527)。
+
+    入力した保証金率の分母 (建玉合計) をその日の残高 CSV と終値で作るので、
+    残高 CSV が今日のものでなかったり、株価が最新でなければ保存しない。
+    """
+    now = datetime.datetime.now(ps.JST)
+    today = now.date().isoformat()
+    positions, closes, price_dates = _margin_inputs()
+    sources = ps.list_position_sources()
+    baselines = ps.list_margin_baselines()
+    saved, entered = [], False
+    for broker, field in (("楽天", "rate_rakuten"), ("SBI", "rate_sbi")):
+        raw = (request.form.get(field) or "").strip()
+        if not raw:
+            continue
+        entered = True
+        try:
+            rate = float(raw)
+        except ValueError:
+            rate = 0.0
+        if not 0 < rate <= 1000:
+            flash(f"{broker}: 保証金率は 0 より大きい数値 (%) で入力してください", "error")
+            continue
+        snapshot, reason = me.build_snapshot(broker, positions, closes)
+        if snapshot is None:
+            flash(f"{broker}: {reason}", "error")
+            continue
+        codes = set(snapshot["margin"]) | set(snapshot["spot"])
+        reason = me.check_baseline_inputs(
+            broker, sources, [price_dates.get(c) for c in codes], now)
+        if reason:
+            flash(f"{broker}: {reason}", "error")
+            continue
+        old = baselines.get(broker)
+        history = list((old or {}).get("history") or [])
+        if old:
+            est, _ = me.estimate(old, snapshot)
+            if est:  # 直前の基準値からの推定と、今回入れた実際の値のずれを残す
+                history.append({"date": today, "estimated_pct": round(est["rate_pct"], 1),
+                                "actual_pct": rate})
+        ps.set_margin_baseline(me.make_baseline(broker, rate, snapshot, today, history))
+        saved.append(broker)
+    if saved:
+        flash(f"{'・'.join(saved)} の保証金率を保存しました", "success")
+    elif not entered:
+        flash("保証金率を入力してください", "error")
+    return _redirect_with_return_query(default_status_query="hold")
 
 
 def _build_exposure_summary(total_position_value: float, cat_values: dict) -> tuple:
@@ -1205,6 +1304,8 @@ def dashboard():
             # issue #362: 基準運用額に対する運用比率と市場状態連動の目標レンジ
             "exposure": exposure,
             "exposure_note": exposure_note,
+            # issue #527: 楽天・SBI の推定維持率
+            "margin": _build_margin_summary(),
         }
 
     # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)

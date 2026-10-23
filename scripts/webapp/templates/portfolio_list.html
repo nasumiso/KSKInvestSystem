@@ -408,6 +408,7 @@
     {%- endif %}
     {%- if ex.modifier_labels %}<span style="color:#c62828;" title="{{ ex.modifier_labels|join('・') }}のため目標レンジの上限を引き下げている">⚠</span>{%- endif %}
   </div>
+  {% include "_margin_summary.html" %}
   {# ノーポジ時は内訳が全て0なので空の枠だけが残る。バーごと出さない #}
   {% if hold_summary.total_man > 0 and hold_summary.breakdown %}
   <div style="position:relative;min-width:280px;max-width:500px;height:35px;"
@@ -456,6 +457,7 @@
   {%- if hold_summary.exposure_note %}
   <span style="margin-left:0.7em;color:#ef6c00;">⚠ {{ hold_summary.exposure_note }}</span>
   {%- endif %}
+  {% include "_margin_summary.html" %}
 </div>
 {% endif %}
 

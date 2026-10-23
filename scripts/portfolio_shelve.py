@@ -141,6 +141,9 @@ KEY_QTY_GLOBAL_UPDATED_AT = "_meta:qty_global_updated_at"
 # issue #362: エクスポージャーガイドの設定 (PF 全体で 1 つ)。
 KEY_EXPOSURE_SETTINGS = "_meta:exposure_settings"
 
+# issue #527: 推定維持率の基準値 (ユーザーが入れた保証金率 + そのときの建玉)。証券会社ごとに1件。
+KEY_MARGIN_BASELINE_PREFIX = "margin_baseline:"
+
 # issue #372: 約定CSVの取込を実行した時刻 ({broker: ISO8601})。
 # fill.imported_at は新規 fill にしか付かず、新規0件の取込が跡に残らないため別に持つ。
 KEY_FILL_IMPORT_AT = "_meta:fill_import_at"
@@ -2738,6 +2741,25 @@ def set_exposure_settings(
             db[KEY_EXPOSURE_SETTINGS] = validated
     log_print("portfolio_shelve: エクスポージャー設定更新", validated)
     return validated
+
+
+def set_margin_baseline(baseline: Dict[str, Any], *, db_path: Optional[str] = None) -> None:
+    """推定維持率の基準値を証券会社ごとに上書き保存する (issue #527)。"""
+    broker = baseline.get("broker")
+    if not broker or not isinstance(baseline.get("rate_pct"), (int, float)):
+        raise ValueError("margin baseline needs broker and rate_pct")
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            db[f"{KEY_MARGIN_BASELINE_PREFIX}{broker}"] = baseline
+
+
+def list_margin_baselines(*, db_path: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    """推定維持率の基準値を {broker: baseline} で返す (issue #527)。"""
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        return {v["broker"]: v for _, v in db.items(KEY_MARGIN_BASELINE_PREFIX)
+                if isinstance(v, dict) and v.get("broker")}
 
 
 def get_position_latest_as_of(

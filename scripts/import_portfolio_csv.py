@@ -567,18 +567,27 @@ def _aggregate_by_account_kind_code(rows: List[Dict[str, Any]]) -> Dict[Tuple[st
     """パース結果を (account, kind, code_s) 単位で合算する。
 
     建玉単位の行 (信用) は同一銘柄が複数行に分かれるため必須。現物は基本1行だが
-    同じ関数で扱って問題ない。avg_price は合算せず最後に見つかった値を使う
-    (position レイヤーでは表示に使わない前提なので厳密でなくてよい、issue #397 §7)。
+    同じ関数で扱って問題ない。avg_price は株数の加重平均にする (推定維持率が建玉合計と
+    評価損に使うため、issue #527)。1行でも建単価が欠けた銘柄は None にする
+    (欠けた建玉を落として平均を出すと、建玉合計が実際より小さく出る)。
     """
     agg: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    cost: Dict[Tuple[str, str, str], float] = {}
+    missing = set()
     for r in rows:
         key = (r["account"], r["kind"], r["code_s"])
         if key not in agg:
             agg[key] = {"code_s": r["code_s"], "account": r["account"], "kind": r["kind"],
                        "qty": 0, "avg_price": None}
+            cost[key] = 0.0
         agg[key]["qty"] += r["qty"]
-        if r.get("avg_price") is not None:
-            agg[key]["avg_price"] = r["avg_price"]
+        if r.get("avg_price") is None:
+            missing.add(key)
+        else:
+            cost[key] += r["qty"] * r["avg_price"]
+    for key, entry in agg.items():
+        if key not in missing and entry["qty"] > 0:
+            entry["avg_price"] = cost[key] / entry["qty"]
     return agg
 
 
