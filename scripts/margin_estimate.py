@@ -300,21 +300,21 @@ def target_step(emotion: Optional[int], fng: Optional[float],
     """感情スコア・日本版 F&G・市場ステートから目標の段 (−3〜+3) を決める。
 
     emotion: 有効な感情スコア (期限切れ・未入力は None で、中立 0 として扱う)
-    Returns: (段, 決まり方の説明の list)。例 (−1, ["感情 0", "F&G 恐怖 −1"])
+    Returns: (段, 決まり方の説明の list)。例 (−1, ["感情 0", "F&G Extreme Fear (22) で −1"])
     """
     step = NEUTRAL_STEP if emotion is None else int(emotion)
     parts = ["感情 未入力 (0)" if emotion is None else f"感情 {format_step(step)}"]
     if fng is not None and fng < FNG_EXTREME_FEAR:
         step -= 1
-        parts.append("F&G 恐怖 −1")
+        parts.append(f"F&G Extreme Fear ({fng:.0f}) で −1")
     elif fng is not None and fng >= FNG_EXTREME_GREED:
         step += 1
-        parts.append("F&G 貪欲 +1")
+        parts.append(f"F&G Extreme Greed ({fng:.0f}) で +1")
     else:
         floor = STATE_STEP_FLOORS.get(state, STATE_STEP_FLOORS[None])
         if floor is not None and step < floor:
             step = floor
-            parts.append(f"市場ステートの上限 {format_step(floor)}")
+            parts.append(f"市場ステートの上限で {format_step(floor)}")
     return max(-3, min(3, step)), parts
 
 

@@ -1,16 +1,4 @@
-{# issue #480: 感情スコア (自己申告 7段階)。目標の維持率の段を決める主な入力 #}
-{%- set em = hold_summary.emotion %}
-{%- set names = {} %}{% for s, name, hint in emotion_choices %}{% set _ = names.update({s: name}) %}{% endfor %}
-<div style="margin:0.15em 0 0.3em;font-size:0.8em;color:#555;display:flex;align-items:center;gap:0.7em;flex-wrap:wrap;">
-  {%- if em and not em.expired %}
-  <span title="{{ em.note }}">感情 <b>{{ '%+d'|format(em.score) if em.score else '0' }} {{ names[em.score] }}</b> <span style="color:#888;">({{ em.date }})</span></span>
-  {%- elif em %}
-  <span style="color:#ef6c00;" title="入力から5営業日を過ぎたので、中立 (0) として目標を出しています">感情: 期限切れ ({{ em.date }} に {{ '%+d'|format(em.score) if em.score else '0' }}) → 中立で計算</span>
-  {%- else %}
-  <span style="color:#ef6c00;">感情: 未入力 → 中立で計算</span>
-  {%- endif %}
-  <a href="#" style="color:#1a73e8;" onclick="var f=document.getElementById('emotion-form');f.hidden=!f.hidden;return false;">感情を入れる</a>
-</div>
+{# issue #480: 感情スコア (自己申告 7段階) の入力欄。表示は _summary_inputs.html #}
 <form id="emotion-form" class="margin-form" method="post" action="{{ url_for('portfolio.save_emotion_score') }}" hidden>
   <input type="hidden" name="return_query" value="{{ return_query }}">
   <div class="margin-form-row"><label>一言 (任意) <input type="text" name="note" maxlength="200"></label></div>

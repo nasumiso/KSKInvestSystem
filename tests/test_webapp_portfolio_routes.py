@@ -1512,7 +1512,7 @@ class TestMarginBaseline:
 
         set_close(800)  # 評価損 -20,000 円 → 受入保証金 20,000 円 → 20%
         html = client.get("/portfolio?status=hold").data.decode()
-        assert re.search(r"推定\s*<b[^>]*>20%</b>", html)
+        assert re.search(r"維持率 <b[^>]*>20%</b>", html)
 
     def test_target_area_and_emotion(self, client, portfolio_db_path, margin_data, monkeypatch):
         """感情スコアを入れると目標の維持率と適正エリアが出る。保有がある証券会社が1社でも
@@ -1527,16 +1527,17 @@ class TestMarginBaseline:
         client.post("/portfolio/margin-baseline", data={"rate_rakuten": "40"})
 
         html = client.get("/portfolio?status=hold").data.decode()
-        assert "感情: 未入力 → 中立で計算" in html
-        assert "目標 維持率 <b>80%</b>" in html
+        assert "感情 未入力" in html
+        assert re.search(r"目標 維持率 <b[^>]*>80%</b>", html)
 
         client.post("/portfolio/emotion", data={"score": "9"})  # 範囲外は保存しない
         assert ps.list_emotion_scores(db_path=portfolio_db_path) == []
         client.post("/portfolio/emotion", data={"score": "-2", "note": "怖い"})
         html = client.get("/portfolio?status=hold").data.decode()
         # −2 だが市場ステートの上限で −1 段 → 70%。建玉 10万・保証金 4万 → 建玉 5.7万 → 適正 5〜6万で超過
-        assert "-2 恐怖" in html and "市場ステートの上限 −1" in html
-        assert "目標 維持率 <b>70%</b>" in html and "適正 5〜6万" in html
+        assert "-2 恐怖" in html and "市場ステートの上限で −1" in html
+        assert re.search(r"目標 維持率 <b[^>]*>70%</b>", html)
+        assert re.search(r"適正 <b[^>]*>5〜6</b>万", html)
         assert "指数データが古い (最新 2026-09-17)" in html
 
         # SBI にも保有があるのに保証金率が無い → 片方だけで全体の過不足を出さない

@@ -1,0 +1,34 @@
+{# issue #480: 目標の入力 (感情スコア・F&G・推定維持率) を1行にまとめ、説明はツールチップに置く。✎ で入力欄を開く #}
+{%- set em = hold_summary.emotion %}
+{%- set ms = hold_summary.margin %}
+{%- set c = ms.combined %}
+{%- set ex = hold_summary.exposure %}
+{%- set names = {} %}{% for s, name, hint in emotion_choices %}{% set _ = names.update({s: name}) %}{% endfor %}
+{%- set edit = "color:#1a73e8;text-decoration:none;margin-left:0.15em;" %}
+<div style="margin:0.1em 0 0.4em;font-size:0.75em;color:#666;display:flex;align-items:center;gap:0.45em;flex-wrap:wrap;">
+  {%- if em and not em.expired %}
+  <span title="感情スコア ({{ em.date }} 入力{% if em.note %}: {{ em.note }}{% endif %})。感情と逆向きに目標が動く (恐怖で張り、熱狂で落とす)。5営業日で期限切れ">感情 <b style="color:#333;">{{ '%+d'|format(em.score) if em.score else '0' }} {{ names[em.score] }}</b></span>
+  {%- else %}
+  <span style="color:#ef6c00;" title="{% if em %}{{ em.date }} の入力から5営業日を過ぎた{% else %}感情スコアが未入力{% endif %}ため、中立 (0) で計算しています">感情 {{ '期限切れ' if em else '未入力' }}</span>
+  {%- endif %}
+  <a href="#" style="{{ edit }}" title="感情スコアを入れる" onclick="var f=document.getElementById('emotion-form');f.hidden=!f.hidden;return false;">✎</a>
+  {%- if ex and ex.fng_jp is not none %}
+  <span>·</span>
+  <span title="日本版 Fear &amp; Greed。25 未満 (Extreme Fear) なら目標を恐怖側へ、75 以上 (Extreme Greed) なら過熱側へ 1 段ずらす">F&amp;G <b style="color:#333;">{{ '%.0f'|format(ex.fng_jp) }}</b></span>
+  {%- endif %}
+  <span>·</span>
+  {%- if c %}
+  <span title="{% for r in ms.rows if r.rate_pct is not none %}{{ r.broker }} {{ '%.0f'|format(r.rate_pct) }}% (追証 20% まで −{{ '%.0f'|format(r.falls[20]) }}%、基準日 {{ r.base_date }}{% if r.realized %}、決済損益 {{ '{:+,.0f}'.format(r.realized) }}円を反映{% endif %}){% if r.skipped %} ※終値が無い{{ r.skipped }}銘柄を除く{% endif %}
+{% endfor %}全保有が一律に下がるとしたとき、保証金率が届く下落率: 30% で −{{ '%.0f'|format(c.falls[30]) }}% / 25% で −{{ '%.0f'|format(c.falls[25]) }}% / 20% (追証) で −{{ '%.0f'|format(c.falls[20]) }}%
+基準日の保証金率に、建玉の評価損と現物 (代用・掛目 0.8) の値動きを足し引きした概算。評価益は保証金に数えない。基準日より後の信用返済の決済損益は約定履歴から足し、入出金・金利・現物の売却代金は追わない。">維持率 <b style="color:{{ '#c62828' if c.rate_pct < 30 else '#333' }};">{{ '%.0f'|format(c.rate_pct) }}%</b> (追証まで −{{ '%.0f'|format(c.falls[20]) }}%)</span>
+  {%- if c.low_brokers %}<span style="color:#c62828;" title="{{ c.low_brokers|join('・') }} は30%を下回る推定。追証は証券会社ごとに判定されます">⚠</span>{%- endif %}
+  {%- else %}
+  <span style="color:#ef6c00;" title="楽天・SBI の保証金率を入力すると推定できます">維持率 未入力</span>
+  {%- endif %}
+  {%- for r in ms.rows if r.rate_pct is none and r.reason and r.base_date %}
+  <span style="color:#ef6c00;" title="{{ r.broker }}: {{ r.reason }}">⚠ {{ r.broker }}</span>
+  {%- endfor %}
+  <a href="#" style="{{ edit }}" title="保証金率を入れる" onclick="var f=document.getElementById('margin-form');f.hidden=!f.hidden;return false;">✎</a>
+</div>
+{% include "_emotion_input.html" %}
+{% include "_margin_summary.html" %}
