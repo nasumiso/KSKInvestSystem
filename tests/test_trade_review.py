@@ -101,6 +101,12 @@ def test_サマリーは保有日数帯と局面別の売買額を出す():
     assert s["short_fill_count"] == 1
     assert s["exposure"] == {"ratio_min": 83.0, "ratio_max": 85.0, "logged_days": 2,
                              "correction_days": 1, "correction_days_over": 1}
+    # issue #480 以後の行 (目標の維持率) が当月にあれば、そちらで集計する
+    history.append({"date": "2026-09-04", "state": "market_in_correction", "target_rate": 70,
+                    "step": -1, "margin_rate_pct": 56.7, "position": "over"})
+    assert _build(episodes, exposure_history=history)["summary"]["exposure"] == {
+        "margin_rate_min": 56.7, "margin_rate_max": 56.7, "logged_days": 1,
+        "nonneutral_days": 1, "over_days": 1, "within_days": 0, "under_days": 0}
 
 
 def test_弱点仮説は年初来で損切りの幅と再INを数える():

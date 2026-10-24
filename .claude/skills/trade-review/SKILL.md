@@ -84,7 +84,7 @@ Google Drive の「投資メモ」フォルダにある当年分のドキュメ�
 | 戦略宣言なしの決済 | `undeclared` | 件数と損益。0件なら「0件」の1行 |
 | 保有日数帯別 | `hold_bands` | 0〜3日 / 4〜90日 / 91日以上の件数と損益 |
 | 市場局面別の売買額 | `by_state` | 局面ごとの買い・売りの額と約定数、差。`unknown` は「ログなし」。`short_fill_count` が 0 でなければ「空売りの約定 n件を除く」と添える |
-| 運用比率 | `exposure` | 月間の最小〜最大。調整判定 (`correction_days`) の日数と、うち目安の上限を超えた日数 (`correction_days_over`) |
+| 運用比率 | `exposure` | `margin_rate_min` があれば (#480 以後): 推定維持率の月間の最小〜最大、記録日数 (`logged_days`) のうち適正エリアより多い・内・少ない日数 (`over_days`・`within_days`・`under_days`)、段が 0 以外の日数 (`nonneutral_days`)。無ければ旧方式: 運用比率の最小〜最大、調整判定 (`correction_days`) の日数と、うち目安の上限を超えた日数 (`correction_days_over`) |
 
 局面の表示名: `confirmed_uptrend` = 上昇、`uptrend_under_pressure` = 上昇・圧力あり、`market_in_correction` = 調整。
 
@@ -109,7 +109,7 @@ Google Drive の「投資メモ」フォルダにある当年分のドキュメ�
 - **取引**: 銘柄コードと名前、戦略、保有日数と損益率 (新規建ては建てた日、株数と単価)
 - **時間軸**: `hold_days_consistent` が false なら「短すぎる」「長すぎる」。`time_horizon` が空なら「—」
 - **損切り・利確の幅**: 損失なら `return_pct` をその取引の `stop_loss_pct` (宣言した戦略の損切り幅) と比べる。`stop_loss_pct` が無い取引 (戦略の宣言なし、夢枠・大型高配当、戦略のひもづけが要再確認、ロットに別の戦略が付いている) は「幅なし」と書き、超えたかどうかを判定しない。利益なら `fills` の途中の売りを見て、+15〜20% で一部を利確したかを書く
-- **建てた日の局面**: `open_state` と、`open_position` が `over` なら「運用比率は上限超え」
+- **建てた日の局面**: `open_state` と、`open_position` が `over` なら「運用総額は適正エリア超え」(#480 より前の日は「運用比率は上限超え」)
 - **再INか**: `reentry` があれば、何日前にいくらの損益率で決済したか、前回の最大株数 (`prev_qty_peak`) と今回の株数
 - **売りの分類 / 入口の理由 / 判断 × 結果**: あなたの推定。下の「推定の書き方」に従う
 
@@ -140,7 +140,7 @@ Google Drive の「投資メモ」フォルダにある当年分のドキュメ�
 
 | 項目 | 元の項目 | 目安 |
 |---|---|---|
-| 運用比率 | `exposure` の `ratio_pct`・`state`・`range_lower`〜`range_upper`・`position` | 局面ごとの目標レンジ |
+| 運用総額と目標 | `exposure` の `total_value`・`margin_rate_pct` (推定維持率)・`target_rate` (目標の維持率) と段の決まり方 `step_parts`・`area_lower`〜`area_upper` (適正エリア)・`position`。`target_rate` が無い旧ログなら `ratio_pct`・`state`・`range_lower`〜`range_upper` | 適正エリア (#480) |
 | 銘柄数 | `holding_count` | 実保有10 + 打診5 程度 |
 | 小口 | `small` (建玉合計の3%未満の銘柄数と合計額) | — |
 | 損切り幅を超えた含み損 | `over_stop_loss` を全件、名指しで。各行の `stop_loss_pct` を添える | 戦略ごとの損切り幅 |

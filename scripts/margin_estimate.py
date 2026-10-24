@@ -182,11 +182,15 @@ def estimate(baseline: Dict[str, Any], snapshot: Dict[str, Any],
             delta += SUBSTITUTE_RATIO * q_new * (close - now["avg_price"])
     guarantee = baseline["guarantee"] + delta
     tate_total = snapshot["tate_total"]
+    # 信用建玉の時価。適正エリアで、建玉を減らす量を時価に直すのに使う (#480)
+    margin_value = sum(v["qty"] * (closes.get(c) or v["avg_price"])
+                       for c, v in snapshot["margin"].items())
     return {
         "guarantee": guarantee,
         "tate_total": tate_total,
         "rate_pct": guarantee / tate_total * 100.0,
         "spot_value": spot_value,
+        "margin_value": margin_value,
         "skipped": snapshot["skipped"],
         "realized": realized_total,
     }, None
@@ -213,6 +217,10 @@ def combine(per_broker: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     tate_total = sum(r["tate_total"] for r in per_broker.values())
     spot_value = sum(r["spot_value"] for r in per_broker.values())
     return {
+        "guarantee": guarantee,
+        "tate_total": tate_total,
+        "spot_value": spot_value,
+        "margin_value": sum(r["margin_value"] for r in per_broker.values()),
         "rate_pct": guarantee / tate_total * 100.0,
         "falls": {t: fall_to_threshold(guarantee, tate_total, spot_value, t) for t in THRESHOLDS},
         "low_brokers": [b for b, r in per_broker.items() if r["rate_pct"] < WARN_RATE_PCT],
@@ -245,3 +253,113 @@ def check_baseline_inputs(
     if any(d is None or d < expected for d in price_dates):
         return "株価が最新の営業日になっていません。日次バッチ (19時) の後に入力してください"
     return None
+
+
+# ===========================================
+# 目標の維持率と、運用総額の適正エリア (issue #480)
+# ===========================================
+
+# 感情スコアの段 → 目標の維持率 (%)。投資メモの感情スコアシートの「資産比」(自己資本 ÷ 建玉)
+STEP_TARGET_RATES = {-3: 50, -2: 60, -1: 70, 0: 80, 1: 90, 2: 100, 3: 120}
+NEUTRAL_STEP = 0
+# 感情スコアの選択肢 (段, 状態, 自己申告の目安)。投資メモの感情スコアシートから
+EMOTION_CHOICES = (
+    (-3, "極度の恐怖", "パニック"),
+    (-2, "恐怖", "全体的に弱気・損切りしたくなる・買うのが怖い / 売り焦り: 一時的な悪材料だが需給悪化でとにかく売りたい"),
+    (-1, "不安", "様子見したい・持ちたくない / 安堵: 下がるのを覚悟した後の戻りで売りたくなる"),
+    (0, "中立", "落ち着いて判断できている"),
+    (1, "強気", "少し強気で買いたくなる / 貪欲: 反発を上追いで買いたくなる"),
+    (2, "興奮", "含み益が増えてワクワクしている・買い増ししたい / 好決算S高剥がれを拾いたくなる"),
+    (3, "過信", "自分が相場を読めると錯覚している"),
+)
+# 適正エリアは目標の維持率 ± この幅 (pt)
+AREA_BAND_PT = 5
+# 日本版 F&G の Extreme の境界。この外側では逆張りで 1 段ずらす
+FNG_EXTREME_FEAR = 25
+FNG_EXTREME_GREED = 75
+# F&G が Extreme でないとき、市場ステートで攻める側 (マイナス) にかける上限の段。
+# 上昇確定は上限なし。ステートが取れない日は上昇圧力下と同じにする
+STATE_STEP_FLOORS = {
+    "confirmed_uptrend": None,
+    "uptrend_under_pressure": -1,
+    "market_in_correction": 0,
+    None: -1,
+}
+# 感情に関係なく守る下限: 全保有が一律にこれだけ下がっても追証 (20%) にならない
+FLOOR_FALL_PCT = 20
+MARGIN_CALL_RATE_PCT = 20
+
+
+def format_step(step: int) -> str:
+    """段を表示用の文字列にする (+1 / 0 / −1)。"""
+    return f"{step:+d}".replace("+0", "0").replace("-", "−")
+
+
+def target_step(emotion: Optional[int], fng: Optional[float],
+                state: Optional[str]) -> Tuple[int, List[str]]:
+    """感情スコア・日本版 F&G・市場ステートから目標の段 (−3〜+3) を決める。
+
+    emotion: 有効な感情スコア (期限切れ・未入力は None で、中立 0 として扱う)
+    Returns: (段, 決まり方の説明の list)。例 (−1, ["感情 0", "F&G 恐怖 −1"])
+    """
+    step = NEUTRAL_STEP if emotion is None else int(emotion)
+    parts = ["感情 未入力 (0)" if emotion is None else f"感情 {format_step(step)}"]
+    if fng is not None and fng < FNG_EXTREME_FEAR:
+        step -= 1
+        parts.append("F&G 恐怖 −1")
+    elif fng is not None and fng >= FNG_EXTREME_GREED:
+        step += 1
+        parts.append("F&G 貪欲 +1")
+    else:
+        floor = STATE_STEP_FLOORS.get(state, STATE_STEP_FLOORS[None])
+        if floor is not None and step < floor:
+            step = floor
+            parts.append(f"市場ステートの上限 {format_step(floor)}")
+    return max(-3, min(3, step)), parts
+
+
+def target_area(guarantee: float, tate_total: float, spot_value: float,
+                margin_value: float, step: int) -> Dict[str, Any]:
+    """目標の維持率から、運用総額 (現物時価 + 信用建玉の時価) の適正エリアを出す。
+
+    建玉の増減は信用で行う前提。目標の建玉 B_t = 受入保証金 ÷ 目標維持率 との差を時価に直す:
+    増やすときは時価で建つのでそのまま、減らすときは比例で返済するとみなして (時価 ÷ 建玉) を掛ける。
+    返済時に評価益が実現して保証金が増える分は入れない (減らす量がやや多めに出る)。
+    多め側の端は、全保有が一律に FLOOR_FALL_PCT 下がっても追証にならない建玉で頭打ちにする。
+    """
+    total = spot_value + margin_value
+
+    def value_for_tate(target_tate: float) -> float:
+        diff = target_tate - tate_total
+        if diff < 0 and tate_total > 0:
+            diff *= margin_value / tate_total
+        return max(spot_value, total + diff)  # 信用を全部返済しても現物は残る
+
+    def value_for_rate(rate_pct: float) -> float:
+        return value_for_tate(guarantee / (rate_pct / 100.0))
+
+    rate = STEP_TARGET_RATES[step]
+    lower = value_for_rate(rate + AREA_BAND_PT)
+    upper = value_for_rate(rate - AREA_BAND_PT)
+    target = value_for_rate(rate)
+    # fall_to_threshold と同じ式 (G − T·B) / (B + 0.8·S) ≥ 下落率 f を B について解く:
+    # B ≤ (G − 0.8·f·S) / (T + f)
+    t, f = MARGIN_CALL_RATE_PCT / 100.0, FLOOR_FALL_PCT / 100.0
+    floor_value = value_for_tate((guarantee - f * SUBSTITUTE_RATIO * spot_value) / (t + f))
+    floor_capped = upper > floor_value
+    if floor_capped:
+        upper = floor_value
+        target = min(target, upper)
+        lower = min(lower, upper)
+    if total > upper:
+        position, deviation = "over", total - upper
+    elif total < lower:
+        position, deviation = "under", total - lower
+    else:
+        position, deviation = "within", 0.0
+    return {
+        "step": step, "target_rate": rate, "total_value": total,
+        "area_lower": lower, "area_upper": upper, "target_value": target,
+        "neutral_value": min(value_for_rate(STEP_TARGET_RATES[NEUTRAL_STEP]), floor_value),
+        "floor_capped": floor_capped, "position": position, "deviation": deviation,
+    }

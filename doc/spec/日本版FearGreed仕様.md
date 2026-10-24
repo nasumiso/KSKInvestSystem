@@ -2,7 +2,7 @@
 
 CNN Fear & Greed Index の構造 (成分の等ウェイト平均・5段階の rating) に寄せた、日本市場のセンチメント指数。
 計算は `scripts/fear_greed_jp.py`、取得と保存は `shintakane.update_fear_greed_jp()` (日次バッチ)、出力は `code_rank_data/fear_greed_jp.json`。
-運用比率ガイドでは **75 以上 (Extreme Greed) のときに上限を削る**方向にだけ使う ([コマンド一覧](コマンド一覧.md) の運用比率ガイド)。
+運用比率ガイドでは、25 未満 (Extreme Fear) なら目標の段を恐怖側へ、75 以上 (Extreme Greed) なら過熱側へ 1 段ずらす逆張りに使う ([推定維持率仕様](推定維持率仕様.md) の「目標の維持率と適正エリア」、#480)。
 
 ## 共通
 

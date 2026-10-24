@@ -144,14 +144,16 @@ KEY_EXPOSURE_SETTINGS = "_meta:exposure_settings"
 # issue #527: 推定維持率の基準値 (ユーザーが入れた保証金率 + そのときの建玉)。証券会社ごとに1件。
 KEY_MARGIN_BASELINE_PREFIX = "margin_baseline:"
 
+# issue #480: 感情スコア (−3〜+3) の入力履歴。キーは入力時刻で、追記のみ。
+KEY_EMOTION_PREFIX = "emotion:"
+
 # issue #372: 約定CSVの取込を実行した時刻 ({broker: ISO8601})。
 # fill.imported_at は新規 fill にしか付かず、新規0件の取込が跡に残らないため別に持つ。
 KEY_FILL_IMPORT_AT = "_meta:fill_import_at"
 
-# 基準運用額は「市場中立時の標準運用総額」でユーザーが宣言する値。
-# レンジは基準運用額に対する % で、ユーザーの感情スコア式レバレッジ管理
-# (通常1.2倍を中立とし 0.8〜1.4倍で調整) を客観指標側に写したもの。
-# modifiers は過熱時に上限のみを削る (恐怖側での自動増枠はしない)。
+# issue #480 で使わなくなった (目標は推定維持率ベース。margin_estimate.target_area)。
+# 保存済みの設定を読む get_exposure_settings の後方互換のために残す。
+# 旧: 基準運用額は「市場中立時の標準運用総額」でユーザーが宣言する値。レンジは基準運用額に対する %。
 EXPOSURE_DEFAULTS = {
     "base_amount": 26_500_000,
     "ranges": {
@@ -2760,6 +2762,28 @@ def list_margin_baselines(*, db_path: Optional[str] = None) -> Dict[str, Dict[st
     with ShelveDB(path) as db:
         return {v["broker"]: v for _, v in db.items(KEY_MARGIN_BASELINE_PREFIX)
                 if isinstance(v, dict) and v.get("broker")}
+
+
+def add_emotion_score(score: int, note: str = "", *, db_path: Optional[str] = None) -> Dict[str, Any]:
+    """感情スコアを1件追記する (issue #480)。同じ日に入れ直したら、新しい方が有効になる。"""
+    if not isinstance(score, int) or not -3 <= score <= 3:
+        raise ValueError("emotion score must be an int in -3..3")
+    recorded_at = now_iso()
+    entry = {"date": recorded_at[:10], "score": score, "note": note.strip(),
+             "recorded_at": recorded_at}
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            db[f"{KEY_EMOTION_PREFIX}{recorded_at}"] = entry
+    return entry
+
+
+def list_emotion_scores(*, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """感情スコアの入力履歴を、入力の古い順に返す (issue #480)。"""
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        rows = [v for _, v in db.items(KEY_EMOTION_PREFIX) if isinstance(v, dict)]
+    return sorted(rows, key=lambda r: r.get("recorded_at") or "")
 
 
 def get_position_latest_as_of(

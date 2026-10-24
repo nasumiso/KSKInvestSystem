@@ -820,3 +820,6 @@ body.ep-hide-kessan .ep-kessan { display: none; }
 .margin-form input[type="number"] { display: inline-block; width: 5.5em; height: auto; margin: 0 0.2em; padding: 0.2em 0.4em; font-size: 0.95em; }
 .margin-form button { width: auto; margin: 0; padding: 0.2em 0.9em; font-size: 0.9em; }
 .margin-form-note { color: #888; }
+.margin-form input[type="text"] { display: inline-block; width: 20em; height: auto; margin: 0 0.2em; padding: 0.2em 0.4em; font-size: 0.95em; }
+.emotion-choice { display: flex; align-items: baseline; gap: 0.6em; margin: 0 0 0.3em; }
+.emotion-choice button { min-width: 7.5em; text-align: left; }
