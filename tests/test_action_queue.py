@@ -53,6 +53,19 @@ def test_fill_csv_item_clears_after_import_is_recorded(tmp_path, monkeypatch):
     assert aq._fill_csv_item(date.today()) is None
 
 
+@pytest.mark.parametrize("entries, real_today, expected", [
+    ([], date(2026, 10, 23), "感情スコア: 未入力"),
+    ([{"date": "2026-10-16", "score": -1}], date(2026, 10, 23), None),  # 入力日から5営業日までは有効
+    ([{"date": "2026-10-16", "score": -1}], date(2026, 10, 26), "10/16 の入力から5営業日を過ぎた"),
+])
+def test_emotion_item_after_expiry(monkeypatch, entries, real_today, expected):
+    """感情スコアが未入力か期限切れなら、中立で計算していることを出して入力を促す (issue #480)"""
+    monkeypatch.setattr(ps, "list_emotion_scores", lambda **k: entries)
+    monkeypatch.setattr(aq, "_real_today", lambda: real_today)
+    item = aq._emotion_item(TODAY)
+    assert (item is None) if expected is None else (expected in item["text"])
+
+
 def test_shikiho_item_counts_missing_in_hold_and_semi(monkeypatch):
     """今号が未入力の 1保・2準 を数える。research 未登録は数えず、行き先は優先度の高い側"""
     monkeypatch.setattr(rs, "current_shikiho_period", lambda: "26.9")

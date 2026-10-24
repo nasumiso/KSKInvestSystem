@@ -1513,3 +1513,35 @@ class TestMarginBaseline:
         set_close(800)  # 評価損 -20,000 円 → 受入保証金 20,000 円 → 20%
         html = client.get("/portfolio?status=hold").data.decode()
         assert re.search(r"推定\s*<b[^>]*>20%</b>", html)
+
+    def test_target_area_and_emotion(self, client, portfolio_db_path, margin_data, monkeypatch):
+        """感情スコアを入れると目標の維持率と適正エリアが出る。保有がある証券会社が1社でも
+        推定できなければ適正エリアを出さない (issue #480)"""
+        import exposure_guide
+
+        _, today = margin_data
+        # F&G は普通 (25〜74)、指数は鮮度切れ → 市場ステート不明で上昇圧力下と同じ上限 (−1 段)
+        monkeypatch.setattr(exposure_guide, "read_fng_jp", lambda **k: (50.0, today))
+        monkeypatch.setattr(exposure_guide, "read_index_states",
+                            lambda *a, **k: ({}, {"topix": "2026-09-17"}))
+        client.post("/portfolio/margin-baseline", data={"rate_rakuten": "40"})
+
+        html = client.get("/portfolio?status=hold").data.decode()
+        assert "感情: 未入力 → 中立で計算" in html
+        assert "目標 維持率 <b>80%</b>" in html
+
+        client.post("/portfolio/emotion", data={"score": "9"})  # 範囲外は保存しない
+        assert ps.list_emotion_scores(db_path=portfolio_db_path) == []
+        client.post("/portfolio/emotion", data={"score": "-2", "note": "怖い"})
+        html = client.get("/portfolio?status=hold").data.decode()
+        # −2 だが市場ステートの上限で −1 段 → 70%。建玉 10万・保証金 4万 → 建玉 5.7万 → 適正 5〜6万で超過
+        assert "-2 恐怖" in html and "市場ステートの上限 −1" in html
+        assert "目標 維持率 <b>70%</b>" in html and "適正 5〜6万" in html
+        assert "指数データが古い (最新 2026-09-17)" in html
+
+        # SBI にも保有があるのに保証金率が無い → 片方だけで全体の過不足を出さない
+        ps.upsert_position("SBI", "特定", "信用", "3496", 100, avg_price=1000.0, as_of=today,
+                           db_path=portfolio_db_path)
+        html = client.get("/portfolio?status=hold").data.decode()
+        assert "適正エリア非表示 (SBI: 保証金率が未入力です)" in html
+        assert "目標 維持率" not in html

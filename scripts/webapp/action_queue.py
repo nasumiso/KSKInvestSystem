@@ -200,6 +200,24 @@ def _shikiho_item(today: date) -> Optional[Dict[str, str]]:
     return _item(f"四季報 {period} が未入力: {counts}", url, "入力する")
 
 
+def _emotion_item(today: date) -> Optional[Dict[str, str]]:
+    """感情スコアが未入力か、入力から期限 (5営業日) を過ぎていれば促す (issue #480)。
+
+    期限は実際の今日で判定する (17時前でも入れた当日は有効なので、get_price_day の today は使わない)。
+    """
+    import exposure_guide  # 遅延 import (webapp.helpers との循環回避)
+
+    emotion = exposure_guide.read_emotion(today=_real_today())
+    if emotion and not emotion["expired"]:
+        return None
+    if emotion:
+        day = date.fromisoformat(emotion["date"])
+        text = f"感情スコア: {day.month}/{day.day} の入力から5営業日を過ぎた (中立で計算中)"
+    else:
+        text = "感情スコア: 未入力 (中立で計算中)"
+    return _item(text, "/portfolio?status=hold", "保有銘柄で入れる")
+
+
 def _md(day: date) -> str:
     return f"{day.month}/{day.day}"
 
@@ -415,6 +433,7 @@ _DETECTORS: List = [
     ("残高CSV", _balance_csv_item, False),
     ("約定CSV", _fill_csv_item, False),
     ("四季報", _shikiho_item, False),
+    ("感情スコア", _emotion_item, False),
 ]
 
 

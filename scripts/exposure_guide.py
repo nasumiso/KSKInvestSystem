@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""市場状態連動の運用比率 (エクスポージャー) ガイド (issue #362)。
+"""目標の維持率と、運用総額の適正エリア (issue #362 → #480)。
 
-「基準運用額 (市場中立時の標準運用総額) に対して今どれだけ張っているか」を
-運用比率 (%) で表し、市場ステートから導いた目標レンジとの乖離を可視化する。
+推定維持率 (#527) を物差しにして、感情スコア (自己申告 7段階) と日本版 F&G から
+目標の維持率を決め、運用総額 (現物時価 + 信用建玉の時価) の適正エリアを出す。
+計算は margin_estimate.target_step / target_area (純関数)、ここは入力を集める I/O と日次ログ。
+
+判定の考え方 (doc/spec/推定維持率仕様.md):
+  - 感情スコアの段が主。F&G が Extreme なら逆張りで 1 段ずらす (恐怖で張り、熱狂で落とす)
+  - F&G が Extreme でない日は、保有額で加重した市場ステートで攻める側に上限をかける (順張り)
+  - 感情に関係なく、全保有が一律に 20% 下がっても追証にならない建玉までに頭打ち
 
 構成:
-  1. 純関数群 (weighted_state / apply_modifiers / evaluate_exposure) — I/O を持たない
-  2. I/O ヘルパー (read_*) — 指標 JSON / market_db を読む。鮮度切れは None
+  1. 純関数群 (weighted_state / fallback_state / evaluate_target) — I/O を持たない
+  2. I/O ヘルパー (read_* / build_margin_state / build_evaluation) — 鮮度切れは None
   3. 日次ログ (record_daily_log) と CLI
-
-判定の考え方:
-  - ベースレンジは保有額で加重した市場ステートが決める (順張り)
-  - 過熱指標 (信用評価損益率・日本版F&G) は上限を削る方向にのみ効く (非対称)
-  - 恐怖側での自動増枠はしない (裁量に残す)
 """
 
 import argparse
@@ -20,6 +21,7 @@ import json
 import os
 from datetime import datetime, timedelta
 
+import margin_estimate
 import market_state
 import portfolio_shelve as ps
 from db_shelve import MARKET_SHELVE, ShelveDB
@@ -62,6 +64,12 @@ FRESHNESS_DAYS = {
     "fng_us": 3,
     "index": 3,
 }
+
+# 感情スコアの有効期限 (入力日からの営業日数)。過ぎたら中立 0 として扱う
+EMOTION_VALID_WEEKDAYS = 5
+
+# 保有銘柄 (1保) の数量から出した運用総額と、残高 CSV の運用総額がこれ以上ずれたら注記する
+QTY_MISMATCH_RATIO = 0.01
 
 EXPOSURE_LOG_PATH = os.path.join(DATA_DIR, "code_rank_data", "exposure_log.json")
 
@@ -123,102 +131,54 @@ def fallback_state(index_states):
     return state, score
 
 
-def apply_modifiers(range_pct, credit_eval_rate, fng_jp, modifiers):
-    """過熱指標に応じて目標レンジの上限のみを削る (非対称)。
+def evaluate_target(margin_state, emotion, fng_jp, state, hold_total_value):
+    """目標の維持率と、運用総額の適正エリアを評価して表示・ログ共通の dict を返す (issue #480)。
 
-    恐怖側での増枠はしない。削った結果が下限を下回る場合は下限に丸める。
-    指標値が None (取得失敗・鮮度切れ) の modifier は発動させない。
+    margin_state: build_margin_state() の戻り値
+    emotion: read_emotion() の戻り値 (未入力なら None)
+    state: 保有額で加重した市場ステート (取れなければ None)
+    hold_total_value: 保有銘柄 (1保) の数量 × 終値の合計。残高 CSV とのずれの注記に使う
 
-    返り値: (lower, upper, applied) — applied は発動した modifier 名のリスト
+    適正エリアは、残高 CSV に保有がある証券会社 (楽天・SBI) の推定がすべて成立したときだけ出す。
+    片方だけの数字で全体の過不足を出さないため。出せないときは area_* を None にして理由を返す。
     """
-    lower, upper = range_pct
-    applied = []
-    values = {"credit_eval_rate": credit_eval_rate, "fng_jp": fng_jp}
-    for name, value in values.items():
-        if value is None:
-            continue
-        mod = (modifiers or {}).get(name)
-        if not mod:
-            continue
-        # 信用評価損益率・日本版F&G とも「threshold 以上で過熱」
-        if value >= mod["threshold"]:
-            upper -= mod["penalty"]
-            applied.append(name)
-    if upper < lower:
-        upper = lower  # レンジ反転を防ぐ
-    return lower, upper, applied
-
-
-def evaluate_exposure(
-    total_value,
-    category_values,
-    index_states,
-    credit_eval_rate,
-    fng_jp,
-    settings,
-):
-    """運用比率と目標レンジを評価して表示・ログ共通の dict を返す。
-
-    指標欠損でも例外を投げず、判定不能な項目を None にした dict を必ず返す
-    (デイリー全体を止めない既存方針に合わせる)。
-    """
-    base_amount = settings.get("base_amount") or 0
-    ranges = settings.get("ranges") or {}
-    modifiers = settings.get("modifiers") or {}
-
-    # ノーポジかどうかは保有額の合計で機械的に判定する。weighted_state が None を
-    # 返すのは「ノーポジ」と「保有はあるが該当指数が鮮度切れ」の両方がありうり、
-    # 後者を「(ノーポジ)」と表示すると誤情報になる (PR #423 レビュー指摘)。
-    is_no_position = sum((category_values or {}).values()) <= 0
-
-    state, score = weighted_state(category_values, index_states)
-    state_is_fallback = False
-    if state is None:
-        state, score = fallback_state(index_states)
-        state_is_fallback = True
-
-    ratio_pct = None
-    if base_amount > 0:
-        ratio_pct = total_value / base_amount * 100.0
-
+    score = emotion["score"] if emotion and not emotion.get("expired") else None
+    step, parts = margin_estimate.target_step(score, fng_jp, state)
     result = {
-        "total_value": total_value,
-        "base_amount": base_amount,
-        "ratio_pct": ratio_pct,
+        "emotion_score": score,
+        "emotion_date": (emotion or {}).get("date"),
+        "emotion_expired": bool(emotion and emotion.get("expired")),
+        "fng_jp": fng_jp,
         "state": state,
-        "state_score": score,
-        "state_is_fallback": state_is_fallback if state is not None else False,
-        "is_no_position": is_no_position,
-        "range_lower": None,
-        "range_upper": None,
-        "modifiers_applied": [],
-        "deviation_pct": None,
+        "step": step,
+        "step_parts": parts,
+        "target_rate": margin_estimate.STEP_TARGET_RATES[step],
+        "margin_rate_pct": None,
+        "total_value": None,
+        "hold_total_value": hold_total_value,
+        "qty_mismatch": False,
+        "area_lower": None,
+        "area_upper": None,
+        "target_value": None,
+        "neutral_value": None,
+        "floor_capped": False,
         "position": None,
+        "deviation": None,
+        "missing": margin_state["missing"],
     }
-    if state is None:
-        return result  # 市場ステート不明: ガイドを出さない
-
-    base_range = ranges.get(state)
-    if not base_range:
+    combined = margin_state["combined"]
+    if margin_state["missing"] or not combined:
         return result
-    lower, upper, applied = apply_modifiers(
-        base_range, credit_eval_rate, fng_jp, modifiers
-    )
-    result["range_lower"] = lower
-    result["range_upper"] = upper
-    result["modifiers_applied"] = applied
-
-    if ratio_pct is None:
-        return result  # 基準運用額が未設定: レンジだけ出して乖離は出さない
-    if ratio_pct > upper:
-        result["deviation_pct"] = ratio_pct - upper
-        result["position"] = "over"
-    elif ratio_pct < lower:
-        result["deviation_pct"] = ratio_pct - lower
-        result["position"] = "under"
-    else:
-        result["deviation_pct"] = 0.0
-        result["position"] = "within"
+    area = margin_estimate.target_area(
+        combined["guarantee"], combined["tate_total"], combined["spot_value"],
+        combined["margin_value"], step)
+    result.update({k: area[k] for k in (
+        "total_value", "area_lower", "area_upper", "target_value", "neutral_value",
+        "floor_capped", "position", "deviation")})
+    result["margin_rate_pct"] = combined["rate_pct"]
+    total = area["total_value"]
+    result["qty_mismatch"] = bool(
+        total and abs((hold_total_value or 0) - total) / total >= QTY_MISMATCH_RATIO)
     return result
 
 
@@ -380,70 +340,143 @@ def _save_exposure_log(payload):
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
-def build_daily_entry(*, db_path=None, today=None):
-    """当日分のログ 1 行分の dict を組み立てる。市場ステート不明なら None。"""
+def read_emotion(*, db_path=None, today=None):
+    """最新の感情スコアを返す (issue #480)。未入力なら None。
+
+    入力日から EMOTION_VALID_WEEKDAYS 営業日 (平日) を過ぎたら expired=True にし、
+    評価では中立 0 として扱う (古い感情で目標を出さない)。
+    """
+    rows = ps.list_emotion_scores(db_path=db_path)
+    if not rows:
+        return None
+    latest = rows[-1]
+    day = (today or datetime.now(ps.JST).date()).isoformat()
+    return {**latest,
+            "expired": day > ps._add_weekdays(latest["date"], EMOTION_VALID_WEEKDAYS)}
+
+
+def margin_inputs(*, db_path=None):
+    """推定維持率に使う残高 CSV の建玉と、銘柄ごとの最新終値・その日付を返す (issue #527)。"""
+    from webapp.helpers import _bulk_get_stock_data
+
+    positions = ps.list_positions(db_path=db_path)
+    codes = sorted({p["code_s"] for p in positions})
+    closes, price_dates = {}, {}
+    for code, stock in _bulk_get_stock_data(codes).items():
+        log = (stock or {}).get("price_log") or []
+        if log:
+            closes[code] = log[0][1]
+            price_dates[code] = str(log[0][0])
+    return positions, closes, price_dates
+
+
+def build_margin_state(*, db_path=None):
+    """楽天・SBI の推定維持率と、その合算を組み立てる (issue #527 / #480)。
+
+    Returns: {"rows": 証券会社別の表示行, "combined": 合算 (推定できた証券会社だけ) か None,
+              "missing": 残高 CSV に保有があるのに推定できない証券会社 [{"broker", "reason"}]}
+    """
+    positions, closes, _ = margin_inputs(db_path=db_path)
+    baselines = ps.list_margin_baselines(db_path=db_path)
+    sources = ps.list_position_sources(db_path=db_path)
+    fills = ps.list_fills(db_path=db_path) if baselines else []
+    rows, estimates, missing = [], {}, []
+    for broker in margin_estimate.BROKERS:
+        csv_dates = [s["as_of"] for s in sources if s.get("broker") == broker and s.get("as_of")]
+        base = baselines.get(broker)
+        history = (base or {}).get("history") or []
+        row = {
+            "broker": broker, "csv_as_of": min(csv_dates) if csv_dates else None,
+            "base_date": (base or {}).get("date"), "base_rate": (base or {}).get("rate_pct"),
+            "last_gap": history[-1] if history else None,
+            "rate_pct": None, "reason": None, "falls": {}, "skipped": 0,
+        }
+        snapshot, reason = margin_estimate.build_snapshot(broker, positions, closes)
+        if snapshot is None:
+            row["reason"] = reason
+        elif base is None:
+            row["reason"] = "保証金率が未入力です"
+        else:
+            est, reason = margin_estimate.estimate(
+                base, snapshot, margin_estimate.realized_since(fills, broker, base["date"]))
+            if est is None:
+                row["reason"] = reason
+            else:
+                row.update(rate_pct=est["rate_pct"], skipped=est["skipped"], realized=est["realized"], falls={
+                    t: margin_estimate.fall_to_threshold(
+                        est["guarantee"], est["tate_total"], est["spot_value"], t)
+                    for t in margin_estimate.THRESHOLDS})
+                estimates[broker] = est
+        if row["rate_pct"] is None and any(p.get("broker") == broker for p in positions):
+            missing.append({"broker": broker, "reason": row["reason"]})
+        rows.append(row)
+    return {"rows": rows, "combined": margin_estimate.combine(estimates), "missing": missing}
+
+
+def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None):
+    """今の目標の維持率と適正エリアを、画面と日次ログ共通の dict で返す (issue #480)。
+
+    市場ステートが取れない日も評価を出す (F&G が Extreme の日はステートを使わないため)。
+    """
     from webapp.helpers import summarize_hold_positions
 
     base_day = today or get_price_day(datetime.now())
+    index_states, index_dates = read_index_states(market_db, today=base_day)
+    summary = summarize_hold_positions(db_path=db_path)
+    state, _ = weighted_state(summary["category_values"], index_states)
+    state_is_fallback = False
+    if state is None:
+        state, _ = fallback_state(index_states)
+        state_is_fallback = state is not None
+    fng_jp, fng_jp_date = read_fng_jp(today=base_day)
+    if margin_state is None:
+        margin_state = build_margin_state(db_path=db_path)
+    evaluation = evaluate_target(
+        margin_state, read_emotion(db_path=db_path), fng_jp, state, summary["total_value"])
+    evaluation.update({
+        "state_is_fallback": state_is_fallback,
+        "is_no_position": summary["total_value"] <= 0,
+        "index_states": index_states,
+        "index_dates": index_dates,
+        "category_values": summary["category_values"],
+        "fng_jp_date": fng_jp_date,
+    })
+    return evaluation
+
+
+def build_daily_entry(*, db_path=None, today=None):
+    """当日分のログ 1 行分の dict を組み立てる。"""
+    base_day = today or get_price_day(datetime.now())
     with ShelveDB(MARKET_SHELVE) as db:
         market_db = {k: db.get(k) for k in ("topix", "mothers", "nikkei225", "fear_and_greed")}
-
-    index_states, index_dates = read_index_states(market_db, today=base_day)
-    if not index_states:
-        # ガイドの主軸が無く state=null だけの行には監査価値がないためスキップ
-        log_warning("[exposure] 市場ステートを取得できないため日次ログをスキップ")
-        return None
-
+    evaluation = build_evaluation(market_db, db_path=db_path, today=base_day)
     credit_eval_rate, credit_date = read_credit_eval_rate(today=base_day)
-    fng_jp, fng_jp_date = read_fng_jp(today=base_day)
     fng_us, fng_us_date = read_fng_us(market_db, today=base_day)
-
-    summary = summarize_hold_positions(db_path=db_path)
-    settings = ps.get_exposure_settings(db_path=db_path)
-    evaluation = evaluate_exposure(
-        summary["total_value"],
-        summary["category_values"],
-        index_states,
-        credit_eval_rate,
-        fng_jp,
-        settings,
-    )
 
     entry = {"date": base_day.isoformat()}
     entry.update(evaluation)
-    entry["index_states"] = index_states
-    entry["category_values"] = summary["category_values"]
-    entry["credit_eval_rate"] = credit_eval_rate
-    entry["fng_jp"] = fng_jp
-    entry["fng_us"] = fng_us
     entry["source_dates"] = {
-        "index": index_dates,  # {"topix": "2026-08-28", "mothers": "...", ...}
+        "index": entry.pop("index_dates"),  # {"topix": "2026-08-28", "mothers": "...", ...}
         "credit_balance": credit_date,
-        "fng_jp": fng_jp_date,
+        "fng_jp": entry.pop("fng_jp_date"),
         "fng_us": fng_us_date,
     }
+    # 判定には使わない参考値 (#362 から記録を続けている)
+    entry["credit_eval_rate"] = credit_eval_rate
+    entry["fng_us"] = fng_us
     return entry
 
 
 def record_daily_log(*, db_path=None, today=None):
-    """当日の運用比率を exposure_log.json に記録する。同一日付は上書き。"""
+    """当日の目標の維持率と適正エリアを exposure_log.json に記録する。同一日付は上書き。"""
     entry = build_daily_entry(db_path=db_path, today=today)
-    if entry is None:
-        return None
     payload = _load_exposure_log()
     history = [h for h in payload["history"] if h.get("date") != entry["date"]]
     history.append(entry)
     history.sort(key=lambda h: h.get("date") or "")
     payload["history"] = history
     _save_exposure_log(payload)
-    log_print(
-        "<---- エクスポージャーログ記録 date=%s ratio=%s state=%s"
-        % (
-            entry["date"],
-            "—" if entry["ratio_pct"] is None else "%.1f%%" % entry["ratio_pct"],
-            entry["state"],
-        )
-    )
+    log_print("<---- エクスポージャーログ記録 " + _format_entry(entry))
     return entry
 
 
@@ -451,70 +484,51 @@ def record_daily_log(*, db_path=None, today=None):
 # 4. CLI
 # ==================================================
 
+def _man(value):
+    return "—" if value is None else format(int(round(value / 10000)), ",")
+
+
 def _format_entry(entry):
-    ratio = entry.get("ratio_pct")
-    lower, upper = entry.get("range_lower"), entry.get("range_upper")
-    dev = entry.get("deviation_pct")
-    mods = entry.get("modifiers_applied") or []
-    return "%s  %s万円  比率%s  %s  目標%s  乖離%s%s" % (
-        entry.get("date"),
-        format(int(round((entry.get("total_value") or 0) / 10000)), ","),
-        "—" if ratio is None else "%.1f%%" % ratio,
-        entry.get("state") or "—",
-        "—" if lower is None else "%d〜%d%%" % (lower, upper),
-        "—" if dev is None else "%+.1fpt" % dev,
-        " [%s]" % ",".join(mods) if mods else "",
+    if "target_rate" not in entry:  # issue #480 より前の行 (基準運用額に対する運用比率)
+        ratio = entry.get("ratio_pct")
+        return "%s  %s万円  比率%s  %s (旧方式)" % (
+            entry.get("date"), _man(entry.get("total_value")),
+            "—" if ratio is None else "%.1f%%" % ratio, entry.get("state") or "—")
+    rate = entry.get("margin_rate_pct")
+    return "%s  運用総額%s万円  維持率%s  段%s (%s) 目標%d%%  適正%s〜%s万円  %s%s" % (
+        entry.get("date"), _man(entry.get("total_value")),
+        "—" if rate is None else "%.1f%%" % rate,
+        margin_estimate.format_step(entry["step"]), "、".join(entry.get("step_parts") or []),
+        entry["target_rate"], _man(entry.get("area_lower")), _man(entry.get("area_upper")),
+        entry.get("position") or "—",
+        " [推定できない: %s]" % ",".join(m["broker"] for m in entry["missing"])
+        if entry.get("missing") else "",
     )
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="市場状態連動の運用比率ガイド (issue #362)"
+        description="目標の維持率と運用総額の適正エリア (issue #362 / #480)"
     )
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("log", help="当日の運用比率を記録する (同一日付は上書き)")
+    sub.add_parser("log", help="当日分を記録する (同一日付は上書き)")
 
     show = sub.add_parser("show", help="直近の記録と現在の評価を表示する")
     show.add_argument("-n", "--limit", type=int, default=10, help="表示件数")
 
-    settings_parser = sub.add_parser("settings", help="設定の表示・更新")
-    settings_parser.add_argument(
-        "--set-base-amount", type=float, help="基準運用額 (円) を設定する"
-    )
-
     args = parser.parse_args()
 
     if args.command == "log":
-        entry = record_daily_log()
-        if entry:
-            print(_format_entry(entry))
+        print(_format_entry(record_daily_log()))
         return
 
     if args.command == "show":
         payload = _load_exposure_log()
         for entry in payload["history"][-args.limit:]:
             print(_format_entry(entry))
-        current = build_daily_entry()
-        if current:
-            print("--- 現在 (未記録) ---")
-            print(_format_entry(current))
-        return
-
-    if args.command == "settings":
-        if args.set_base_amount is not None:
-            ps.set_exposure_settings({"base_amount": args.set_base_amount})
-        settings = ps.get_exposure_settings()
-        print("基準運用額: %s円" % format(int(settings["base_amount"]), ","))
-        print("目標レンジ:")
-        for state, rng in settings["ranges"].items():
-            print("  %-24s %d〜%d%%" % (state, rng[0], rng[1]))
-        print("過熱モディファイア (上限を削る):")
-        for name, mod in settings["modifiers"].items():
-            print(
-                "  %-18s threshold>=%s → −%dpt"
-                % (name, mod["threshold"], mod["penalty"])
-            )
+        print("--- 現在 (未記録) ---")
+        print(_format_entry(build_daily_entry()))
         return
 
     parser.print_help()

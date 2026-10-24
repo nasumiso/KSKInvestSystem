@@ -36,7 +36,6 @@ import research_shelve
 from ks_util import DATA_DIR
 from webapp.helpers import (
     MONTHLY_TAG_DESCRIPTIONS,
-    _bulk_get_stock_data,
     TAG_DESCRIPTIONS,
     THEME_SUMMARY_SORT_FIELDS,
     build_portfolio_theme_summary,
@@ -190,61 +189,6 @@ def _sync_txt_safely() -> None:
         flash(f"my_watch_list.txt 同期に失敗: {e}", "error")
 
 
-# issue #362: 目標レンジ上限を削った理由の表示名
-_EXPOSURE_MODIFIER_LABELS = {
-    "credit_eval_rate": "信用評価損益率が過熱",
-    "fng_jp": "日本版F&Gが過熱",
-}
-
-
-def _margin_inputs() -> tuple:
-    """推定維持率に使う残高 CSV の建玉と、銘柄ごとの最新終値・その日付を返す (issue #527)。"""
-    positions = ps.list_positions()
-    codes = sorted({p["code_s"] for p in positions})
-    closes, price_dates = {}, {}
-    for code, stock in _bulk_get_stock_data(codes).items():
-        log = (stock or {}).get("price_log") or []
-        if log:
-            closes[code] = log[0][1]
-            price_dates[code] = str(log[0][0])
-    return positions, closes, price_dates
-
-
-def _build_margin_summary() -> dict:
-    """楽天・SBI の推定維持率と、合算の維持率・追証までの下落率を組み立てる (issue #527)。"""
-    positions, closes, _ = _margin_inputs()
-    baselines = ps.list_margin_baselines()
-    sources = ps.list_position_sources()
-    fills = ps.list_fills() if baselines else []
-    rows, estimates = [], {}
-    for broker in me.BROKERS:
-        csv_dates = [s["as_of"] for s in sources if s.get("broker") == broker and s.get("as_of")]
-        base = baselines.get(broker)
-        history = (base or {}).get("history") or []
-        row = {
-            "broker": broker, "csv_as_of": min(csv_dates) if csv_dates else None,
-            "base_date": (base or {}).get("date"), "base_rate": (base or {}).get("rate_pct"),
-            "last_gap": history[-1] if history else None,
-            "rate_pct": None, "reason": None, "falls": {}, "skipped": 0,
-        }
-        snapshot, reason = me.build_snapshot(broker, positions, closes)
-        if snapshot is None:
-            row["reason"] = reason
-        elif base is None:
-            row["reason"] = "保証金率が未入力です"
-        else:
-            est, reason = me.estimate(base, snapshot, me.realized_since(fills, broker, base["date"]))
-            if est is None:
-                row["reason"] = reason
-            else:
-                row.update(rate_pct=est["rate_pct"], skipped=est["skipped"], realized=est["realized"], falls={
-                    t: me.fall_to_threshold(est["guarantee"], est["tate_total"], est["spot_value"], t)
-                    for t in me.THRESHOLDS})
-                estimates[broker] = est
-        rows.append(row)
-    return {"rows": rows, "combined": me.combine(estimates)}
-
-
 @portfolio_bp.route("/portfolio/margin-baseline", methods=["POST"])
 def save_margin_baseline():
     """楽天・SBI の保証金率を、推定維持率の基準値として保存する (issue #527)。
@@ -254,7 +198,9 @@ def save_margin_baseline():
     """
     now = datetime.datetime.now(ps.JST)
     today = now.date().isoformat()
-    positions, closes, price_dates = _margin_inputs()
+    import exposure_guide
+
+    positions, closes, price_dates = exposure_guide.margin_inputs()
     sources = ps.list_position_sources()
     baselines = ps.list_margin_baselines()
     fills = ps.list_fills() if baselines else []
@@ -297,107 +243,69 @@ def save_margin_baseline():
     return _redirect_with_return_query(default_status_query="hold")
 
 
-def _build_exposure_summary(total_position_value: float, cat_values: dict) -> tuple:
-    """運用比率と市場状態連動の目標レンジを組み立てる (issue #362)。
+@portfolio_bp.route("/portfolio/emotion", methods=["POST"])
+def save_emotion_score():
+    """感情スコア (−3〜+3) と任意の一言を保存する (issue #480)。"""
+    try:
+        score = int(request.form.get("score", ""))
+        ps.add_emotion_score(score, request.form.get("note") or "")
+    except ValueError:
+        flash("感情スコアは −3〜+3 から選んでください", "error")
+    else:
+        flash(f"感情スコア {me.format_step(score)} を記録しました", "success")
+    return _redirect_with_return_query(default_status_query="hold")
 
-    (evaluation, note) を返す。指標が揃わない日はガイドを出さず (evaluation=None)、
-    出せない理由を note に入れる。運用総額の表示は呼び出し側でそのまま続ける。
+
+def _build_exposure_summary(margin_state: dict) -> tuple:
+    """目標の維持率と運用総額の適正エリアを組み立てる (issue #480)。
+
+    (evaluation, note) を返す。適正エリアを出せない日 (推定維持率が出ない証券会社がある等) は
+    evaluation=None にして、出せない理由を note に入れる。運用総額の表示は呼び出し側で続ける。
     取得失敗でページを落とさないよう例外は握る。
     """
-    note = "市場指標が揃わず目標レンジ非表示"
     try:
         import exposure_guide
         import market_state
 
         from make_market_db import get_market_db
 
-        market_db = get_market_db()
-        index_states, index_dates = exposure_guide.read_index_states(market_db)
-        if not index_states:
-            latest = max((d for d in index_dates.values() if d), default=None)
-            if latest:
-                note = f"指数データが古い (最新 {latest})。日次バッチで復旧"
-            return None, note
-        credit_eval_rate, _ = exposure_guide.read_credit_eval_rate()
-        fng_jp, _ = exposure_guide.read_fng_jp()
-        settings = ps.get_exposure_settings()
-        evaluation = exposure_guide.evaluate_exposure(
-            total_position_value,
-            cat_values,
-            index_states,
-            credit_eval_rate,
-            fng_jp,
-            settings,
-        )
+        evaluation = exposure_guide.build_evaluation(get_market_db(), margin_state=margin_state)
     except Exception:  # noqa: BLE001
-        return None, note
+        return None, "目標の計算に失敗したため適正エリア非表示"
+    if evaluation["area_lower"] is None:
+        missing = "、".join(f"{m['broker']}: {m['reason']}" for m in evaluation["missing"])
+        return None, f"適正エリア非表示 ({missing or '推定維持率が出せません'})"
+    evaluation["state_label"] = market_state.STATE_LABEL.get(evaluation["state"], "市場ステート不明")
     if evaluation["state"] is None:
-        return None, note
-    # テンプレートで円換算を出すため、レンジの万円換算を添える
-    base_amount = evaluation["base_amount"]
-    evaluation["range_lower_man"] = (
-        int(round(evaluation["range_lower"] / 100 * base_amount / 10000))
-        if evaluation["range_lower"] is not None else None
-    )
-    evaluation["range_upper_man"] = (
-        int(round(evaluation["range_upper"] / 100 * base_amount / 10000))
-        if evaluation["range_upper"] is not None else None
-    )
-    evaluation["state_label"] = market_state.STATE_LABEL.get(
-        evaluation["state"], evaluation["state"]
-    )
-    evaluation["state_css"] = market_state.STATE_CSS_CLASS.get(evaluation["state"], "")
-    evaluation["modifier_labels"] = [
-        _EXPOSURE_MODIFIER_LABELS.get(name, name)
-        for name in evaluation["modifiers_applied"]
-    ]
-    evaluation.update(_exposure_bar_geometry(evaluation, settings))
+        latest = max((d for d in evaluation["index_dates"].values() if d), default=None)
+        evaluation["state_note"] = (f"指数データが古い (最新 {latest})。日次バッチで復旧"
+                                    if latest else "市場ステートが取れません")
+    evaluation["step_label"] = me.format_step(evaluation["step"])
+    evaluation.update(_exposure_bar_geometry(evaluation))
     return evaluation, None
 
 
-def _exposure_bar_geometry(evaluation: dict, settings: dict) -> dict:
-    """統合バーの描画位置 (0-100 の %) を算出する (issue #425)。
+def _exposure_bar_geometry(evaluation: dict) -> dict:
+    """統合バーの描画位置 (0-100 の %) を算出する (issue #425 / #480)。
 
-    横軸は基準運用額比率で 0% 始まりとし、目標帯と市場別積み上げを同じ
-    スケールに重ねる。描画上限は全ステートのレンジと現在比率を含めるため、
-    レバレッジ時も積み上げが切れない。過熱で削られた枠は別描画する。
+    横軸は運用総額 (円) で 0 始まり。適正エリア・今の運用総額・中立 (段 0) の位置を
+    同じスケールに重ねる。右端は全部が収まるように 1 割の余白を取る。
     """
-    ranges = settings.get("ranges") or {}
-    base_upper = (ranges.get(evaluation["state"]) or [None, None])[1]
-    # 全ステートのレンジ境界を描画範囲に含めることで、目盛りが日々のステート変化で
-    # 動かないようにする。基準運用額の 100% も常に見せる。
-    bounds = [v for rng in ranges.values() for v in rng]
-    bounds += [evaluation["range_lower"], evaluation["range_upper"]]
-    ratio = evaluation.get("ratio_pct")
-    if ratio is not None:
-        bounds.append(ratio)
-    if base_upper is not None:
-        bounds.append(base_upper)
-    bounds.append(100)
-    hi = max(bounds)
+    values = [evaluation["total_value"], evaluation["area_upper"], evaluation["neutral_value"]]
+    hi = max(v for v in values if v) * 1.1
 
     def pos(value):
         """値をバー上の 0-100 位置に変換する。"""
         return round(value / hi * 100, 1)
 
-    left, right = pos(evaluation["range_lower"]), pos(evaluation["range_upper"])
-    geometry = {
+    left, right = pos(evaluation["area_lower"]), pos(evaluation["area_upper"])
+    return {
         "bar_range_left": left,
         "bar_range_width": round(right - left, 1),
-        "bar_marker_left": pos(ratio) if ratio is not None else 0,
-        "bar_position_width": pos(ratio) if ratio is not None else 0,
-        "bar_base_left": pos(100),
-        "bar_scale_upper": hi,
-        # 描画スケールと右端目盛りの精度を揃える。整数なら余計な .0 は付けない。
-        "bar_scale_upper_label": ("%.1f" % hi).rstrip("0").rstrip("."),
-        "bar_penalty_left": 0,
-        "bar_penalty_width": 0,
+        "bar_position_width": pos(evaluation["total_value"]),
+        "bar_base_left": pos(evaluation["neutral_value"]),
+        "bar_scale_upper_label": f"{int(round(hi / 10000)):,}万",
     }
-    if base_upper is not None and base_upper > evaluation["range_upper"]:
-        penalty_right = pos(base_upper)
-        geometry["bar_penalty_left"] = right
-        geometry["bar_penalty_width"] = round(penalty_right - right, 1)
-    return geometry
 
 
 def _flash_stock_info(code_s: str, message_suffix: str) -> None:
@@ -1295,9 +1203,10 @@ def dashboard():
             }
             for cat, val in cat_values.items()
         ]
-        # ノーポジ (全売却) でもガイドは出す。市場ステートに対して「今はゼロ」と
-        # 分かることに意味があるため (fallback_state で TOPIX/グロースの悪い方を使う)
-        exposure, exposure_note = _build_exposure_summary(total_position_value, cat_values)
+        import exposure_guide
+
+        margin_state = exposure_guide.build_margin_state()
+        exposure, exposure_note = _build_exposure_summary(margin_state)
         hold_summary = {
             "total_man": int(round(total_position_value / 10000)),
             # 保有株数の真実源は証券会社CSVなので、手動更新時刻ではなく
@@ -1307,11 +1216,12 @@ def dashboard():
                 default=None,
             ),
             "breakdown": breakdown,
-            # issue #362: 基準運用額に対する運用比率と市場状態連動の目標レンジ
+            # issue #480: 目標の維持率と運用総額の適正エリア
             "exposure": exposure,
             "exposure_note": exposure_note,
             # issue #527: 楽天・SBI の推定維持率
-            "margin": _build_margin_summary(),
+            "margin": margin_state,
+            "emotion": exposure_guide.read_emotion(),
         }
 
     # issue #363: 遷移モーダルの戦略 select に選択肢を出すため、未シード環境ではシード (冪等)
@@ -1331,6 +1241,7 @@ def dashboard():
         rows=rows,
         total=len(rows),
         return_query=return_query,
+        emotion_choices=me.EMOTION_CHOICES,
         delete_mode_allowed=delete_mode_allowed,
         status_label=STATUS_VALUE_TO_LABEL,
         theme_master=theme_master,

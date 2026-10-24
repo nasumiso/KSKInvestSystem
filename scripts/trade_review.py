@@ -198,10 +198,13 @@ def _summary(ym: str, closed: List[Dict[str, Any]], episodes: List[Dict[str, Any
             row[f"{f['side']}_count"] += 1
 
     # 運用比率。土日のログは前営業日の写しなので数えない
-    days = [h for d, h in sorted(log_by_date.items())
-            if d.startswith(ym) and date.fromisoformat(d).weekday() < 5
-            and h.get("ratio_pct") is not None]
+    weekdays = [h for d, h in sorted(log_by_date.items())
+                if d.startswith(ym) and date.fromisoformat(d).weekday() < 5]
+    days = [h for h in weekdays if h.get("ratio_pct") is not None]
     correction = [h for h in days if h.get("state") == "market_in_correction"]
+    # issue #480 以後のログ (目標の維持率と適正エリア) が当月にあれば、そちらで集計する
+    targeted = [h for h in weekdays if h.get("target_rate") is not None]
+    rates = [h["margin_rate_pct"] for h in targeted if h.get("margin_rate_pct") is not None]
     return {
         "closed": {**part(priced),
                    "wins": sum(1 for e in priced if _profit(e) > 0),
@@ -212,6 +215,14 @@ def _summary(ym: str, closed: List[Dict[str, Any]], episodes: List[Dict[str, Any
         "by_state": sorted(by_state.values(), key=lambda r: r["state"]),
         "short_fill_count": short_fill_count,
         "exposure": {
+            "margin_rate_min": min(rates, default=None),
+            "margin_rate_max": max(rates, default=None),
+            "logged_days": len(targeted),
+            # 段が 0 以外の日 (感情スコアか F&G の Extreme で目標が動いた日) と、そのうちの判定
+            "nonneutral_days": sum(1 for h in targeted if h.get("step")),
+            **{f"{p}_days": sum(1 for h in targeted if h.get("position") == p)
+               for p in ("over", "within", "under")},
+        } if targeted else {
             "ratio_min": min((h["ratio_pct"] for h in days), default=None),
             "ratio_max": max((h["ratio_pct"] for h in days), default=None),
             "logged_days": len(days),
@@ -312,7 +323,9 @@ def _portfolio(episodes: List[Dict[str, Any]], exposure_history: List[Dict[str, 
     return {
         "exposure": {k: latest.get(k) for k in (
             "date", "total_value", "base_amount", "ratio_pct", "state",
-            "range_lower", "range_upper", "position")},
+            "range_lower", "range_upper", "position",
+            # issue #480 以後: 目標の維持率と適正エリア (旧ログでは None)
+            "margin_rate_pct", "step", "step_parts", "target_rate", "area_lower", "area_upper")},
         "holding_count": len(holdings),
         "total_value": total,
         "small": {"count": len(small), "value": sum(h["value"] for h in small)},
