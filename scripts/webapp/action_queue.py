@@ -1,6 +1,6 @@
 """トップページの「今日のアクション」(issue #372)。
 
-相場起点の項目 (出口ライン「防」・決算接近・ブレイク) と、データの手入れが要る項目
+相場起点の項目 (出口ライン「防」・防のあとの MA 回復・決算接近・ブレイク) と、データの手入れが要る項目
 (ステージ・残高CSV・約定CSV・四季報) を出す。各項目は1行に集約し、期限が過ぎるか
 手入れを済ませると消える。順位・RS の急落と業態テーマの悪化は、過去の値を残しておらず
 新しく悪化したことを判定できないので扱わない。
@@ -276,6 +276,51 @@ def _exit_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, 
     return items
 
 
+def _recovery_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:
+    """「防」のあと MA の上に戻った保有・準保有を、戻った日から3営業日、ステータスごとに1行で出す (issue #526)。
+
+    判定と記録は日次バッチ (webapp.helpers.record_hold_exit_alerts) が行い、ここでは読むだけ。
+    戻ったあとにまた「防」が記録された銘柄は出さない。戦略を変えた銘柄の古い記録は読まない。
+    """
+    mat = mat or _Material()
+    rules = {i.get("name"): i.get("exit_rule") for i in ps.list_trade_ideas() if i.get("name")}
+    states = ps.list_exit_alert_states()
+    found: Dict[str, List] = {}  # status -> [(戻った日, code_s, 表示)]
+    for r in mat.records:
+        status, code_s = r.get("status"), r["code_s"]
+        strategy = (r.get("memo") or {}).get("trade_idea")
+        rule, state = rules.get(strategy), states.get(code_s)
+        if (status not in ("1保", "2準") or not isinstance(rule, dict) or not isinstance(state, dict)
+                or not str(state.get("cycle_id", "")).endswith(f"|{strategy}|{ps.exit_rule_id(rule)}")):
+            continue
+        recoveries = [x for x in state.get("recoveries") or [] if isinstance(x, dict) and x.get("date")]
+        if not recoveries:
+            continue
+        last = max(recoveries, key=lambda x: str(x["date"]))
+        if any(str(e.get("date") or "") > str(last["date"])
+               for e in state.get("events") or [] if isinstance(e, dict)):
+            continue
+        day = date.fromisoformat(str(last["date"]))
+        if not 0 <= _busdays_since(day, today) < SIGNAL_SHOW_BUSDAYS:
+            continue
+        line = last.get("ma_label") or "MA"
+        if isinstance(last.get("ma_value"), (int, float)):
+            line += f" {last['ma_value']:,.0f}円"
+        found.setdefault(status, []).append((day, code_s, f"{mat.name(code_s)} ({line}・{_md(day)})"))
+    items = []
+    for status, label, action in (("1保", "防のあと回復", "チャート一覧で見る"),
+                                  ("2準", "MA回復", "チャート一覧で入り直しを検討")):
+        hits = sorted(found.get(status, []), key=lambda h: (-h[0].toordinal(), h[1]))
+        if not hits:
+            continue
+        order = [c for _, c, _ in hits]
+        items.append(_hidden_popup(_item(
+            f"{label}: {STATUS_VALUE_TO_LABEL[status]} {_names([text for _, _, text in hits])}",
+            _charts_url(STATUS_VALUE_TO_QUERY[status], order), action,
+        ), [f"{c} {mat.name(c)}" for c in order]))
+    return items
+
+
 def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:
     """ブ・週ブが出てから3営業日の銘柄を、保有・準保有は銘柄名で、監視は件数で各1行にまとめる。"""
     from make_stock_db import extract_signals  # 遅延 import (webapp 起動時に読まない)
@@ -427,6 +472,7 @@ def _kessan_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str
 # 検知関数は1行 (dict) か複数行 (list) か None を返す。
 _DETECTORS: List = [
     ("出口ライン", _exit_items, True),
+    ("MA回復", _recovery_items, True),
     ("決算予定", _kessan_items, True),
     ("ブレイク", _breakout_items, True),
     ("ステージ", _stage_item, True),

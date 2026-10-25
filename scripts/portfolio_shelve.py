@@ -2856,9 +2856,11 @@ def transition_status(
             record["status"] = new_status
             record["updated_at"] = now_iso()
             db[key] = record
-            # 1保 を離れたら防御履歴は破棄する。1保→3監 も許可されているため
-            # 2準 だけ消すと 1保→3監→1保 で旧「防歴」を引き継ぐ (PR #409 レビュー)
-            if old_status == "1保" and new_status != "1保":
+            # 1保 → 2準 (売却) だけ防御履歴を残し、準保有でも MA 回復を判定する (issue #526)。
+            # 1保→3監 も許可されているため、それ以外で残すと 1保→3監→1保 で旧「防歴」を
+            # 引き継ぐ (PR #409 レビュー)。2準→1保 も消す: 約定履歴の無い保有は cycle_id が
+            # manual:{registered_at} のままで、買い直しても cycle_id の不一致で消えない
+            if old_status in ("1保", "2準") and (old_status, new_status) != ("1保", "2準"):
                 alert_key = _exit_alert_key(normalized)
                 if alert_key in db:
                     del db[alert_key]
@@ -3332,6 +3334,31 @@ def record_exit_alert_event(code_s: str, cycle_id: str, event: Dict[str, Any], *
             current["triggered"] = True
             db[key] = current
     return dict(current)
+
+
+def record_exit_recovery(code_s: str, cycle_id: str, recovery: Dict[str, Any], *,
+                         db_path: Optional[str] = None) -> None:
+    """「防」のあと MA の上に戻った日を、日付単位で重複なく記録する (issue #526)。
+
+    events (防の日) とは別の recoveries に持つ。events の先頭・末尾を初点灯・最新の防として
+    読む箇所があるため混ぜない。cycle_id が今の記録と違えば何もしない。
+    """
+    normalized = normalize_code_s(code_s)
+    if not isinstance(recovery, dict) or not recovery.get("date"):
+        raise ValueError("recovery.date is required")
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            key = _exit_alert_key(normalized)
+            current = db.get(key)
+            if not isinstance(current, dict) or current.get("cycle_id") != cycle_id:
+                return
+            recoveries = list(current.get("recoveries") or [])
+            if any(r.get("date") == recovery["date"] for r in recoveries if isinstance(r, dict)):
+                return
+            recoveries.append(dict(recovery))
+            current["recoveries"] = recoveries
+            db[key] = current
 
 
 def reset_exit_alert_state(code_s: str, *, db_path: Optional[str] = None) -> None:

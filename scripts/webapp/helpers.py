@@ -2330,14 +2330,15 @@ def _prepare_hold_exit(records: List[Dict[str, Any]]) -> tuple:
 def _evaluate_hold_exit(rec: Dict[str, Any], stock: Dict[str, Any], ps: Any,
                         exit_positions: Dict[str, Any], exit_rules: Dict[str, Any],
                         states_cache: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """1保の銘柄1つの出口シグナルを判定し、「防」なら日付単位で記録する。
+    """1保・2準の銘柄1つの出口シグナルを判定し、「防」と MA 回復を日付単位で記録する。
 
     戦略に出口ルールが無ければ None。あれば {signal, position, exit_rule, state} を返す
     (state は判定前の出口アラート状態)。保有銘柄タブとトップの今日のアクションが共用する。
     states_cache は出口アラートの状態を最初に必要になったときに一括で読むための入れ物
     (銘柄ごとに読むと銘柄数だけ DB を開き直す)。
+    2準 は保有中の防の記録が残っている銘柄だけを、損切りラインなし (MA だけ) で判定する (issue #526)。
     """
-    from exit_line import evaluate_exit_signal
+    from exit_line import evaluate_exit_signal, exit_line_values
 
     code_s = rec.get("code_s", "")
     position = exit_positions.get(code_s)
@@ -2346,7 +2347,17 @@ def _evaluate_hold_exit(rec: Dict[str, Any], stock: Dict[str, Any], ps: Any,
     if not isinstance(exit_rule, dict):
         return None
     rule_id = ps.exit_rule_id(exit_rule)
-    if position:
+    if "states" not in states_cache:
+        states_cache["states"] = ps.list_exit_alert_states()
+    if rec.get("status") == "2準":
+        # 売却後のサイクルは約定から作れないので、保有中に記録したサイクルをそのまま使う
+        recorded = states_cache["states"].get(code_s)
+        if (not exit_rule.get("ma_kind") or not isinstance(recorded, dict)
+                or not str(recorded.get("cycle_id", "")).endswith(f"|{strategy}|{rule_id}")):
+            return None
+        position = {}
+        cycle_id = recorded["cycle_id"]
+    elif position:
         position = dict(position)
         position["stop_loss_line"] = _weighted_stop_loss_line(exit_rule, position["episodes"])
         cycle_id = f"{position['cycle_id']}|{strategy}|{rule_id}"
@@ -2356,8 +2367,6 @@ def _evaluate_hold_exit(rec: Dict[str, Any], stock: Dict[str, Any], ps: Any,
         # レコードの登録時刻は registered_at (created_at は theme/trade_idea 用)。
         # 削除→再登録を別サイクルとして扱わないと旧「防歴」を引き継ぐ。
         cycle_id = f"manual:{rec.get('registered_at') or code_s}|{strategy}|{rule_id}"
-    if "states" not in states_cache:
-        states_cache["states"] = ps.list_exit_alert_states()
     state = ps.get_exit_alert_state(code_s, cycle_id, preloaded=states_cache["states"])
     signal = evaluate_exit_signal(exit_rule, stock, position, state)
     # 同じ日付のイベントが記録済みなら書かない (表示のたびに書き直さない)
@@ -2365,27 +2374,50 @@ def _evaluate_hold_exit(rec: Dict[str, Any], stock: Dict[str, Any], ps: Any,
             e.get("date") == signal.get("date")
             for e in state.get("events") or [] if isinstance(e, dict)):
         ps.record_exit_alert_event(code_s, cycle_id, signal)
+    if signal and signal["level"] == "防歴":
+        values = exit_line_values(exit_rule, stock, position)
+        if values.get("ma_value") and _has_unrecovered_ma_break(state, values["ma_label"]):
+            ps.record_exit_recovery(code_s, cycle_id, {
+                "date": signal["date"], "close": signal["close"],
+                "ma_label": values["ma_label"], "ma_value": values["ma_value"],
+            })
     return {"signal": signal, "position": position, "exit_rule": exit_rule, "state": state}
 
 
+def _has_unrecovered_ma_break(state: Dict[str, Any], ma_label: str) -> bool:
+    """最後の MA 回復より後に、MA 割れが確定した「防」があるか (issue #526)。
+
+    損切りライン割れだけの防は数えない (MA の上に戻っても「回復」ではないため)。
+    """
+    if not ma_label:
+        return False
+    last = max((str(r.get("date")) for r in state.get("recoveries") or []
+                if isinstance(r, dict) and r.get("date")), default="")
+    return any(
+        str(e.get("date") or "") > last and f"{ma_label}割れ確定" in (e.get("reasons") or [])
+        for e in state.get("events") or [] if isinstance(e, dict)
+    )
+
+
 def record_hold_exit_alerts(stock_map: Dict[str, Dict[str, Any]]) -> int:
-    """1保の全銘柄の出口シグナルを判定し、「防」を記録する。点いた銘柄数を返す。
+    """1保・2準の全銘柄の出口シグナルを判定し、「防」と MA 回復を記録する。「防」の 1保 の数を返す。
 
     日次バッチ (make_stock_db.list_all_db) から呼ぶ。保有銘柄タブを開かなかった日の「防」も
     記録に残し、トップの今日のアクションは判定せずに記録を読むだけにするため (issue #372)。
+    2準 は防で売った銘柄が MA の上に戻った日を知らせるため (issue #526)。
     """
     import portfolio_shelve as ps
 
-    hold = ps.list_records("1保")
-    ps_, exit_positions, exit_rules = _prepare_hold_exit(hold)
+    records = ps.list_records("1保") + ps.list_records("2準")
+    ps_, exit_positions, exit_rules = _prepare_hold_exit(records)
     if ps_ is None:
         return 0
     cache: Dict[str, Any] = {}
     count = 0
-    for rec in hold:
+    for rec in records:
         ev = _evaluate_hold_exit(rec, stock_map.get(rec.get("code_s", "")) or {},
                                  ps_, exit_positions, exit_rules, cache)
-        if ev and ev["signal"] and ev["signal"]["level"] == "防":
+        if rec.get("status") == "1保" and ev and ev["signal"] and ev["signal"]["level"] == "防":
             count += 1
     return count
 

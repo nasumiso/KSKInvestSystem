@@ -209,6 +209,28 @@ def test_exit_items_show_first_defense_for_three_busdays(monkeypatch, first, lev
         assert items == []
 
 
+@pytest.mark.parametrize("status, recovered, later_defense, expected", [
+    ("2準", "2026-10-08", None, "MA回復: 準保有 銘柄1001 (日足50MA 1,300円・10/8)"),
+    ("1保", "2026-10-12", None, "防のあと回復: 保有 銘柄1001 (日足50MA 1,300円・10/12)"),
+    ("2準", "2026-10-07", None, None),          # 戻った日から3営業日を過ぎた
+    ("2準", "2026-10-08", "2026-10-09", None),  # 戻ったあとにまた防
+])
+def test_recovery_items_show_for_three_busdays(monkeypatch, status, recovered, later_defense, expected):
+    """防のあと MA の上に戻った日から3営業日、保有・準保有を別の行で出す (issue #526)"""
+    rule = {"ma_kind": "day", "ma_window": 50, "stop_loss_pct": None, "allow_dca_lower": False}
+    events = [{"level": "防", "date": "2026-10-01"}]
+    if later_defense:
+        events.append({"level": "防", "date": later_defense})
+    _stub_material(monkeypatch, [{"code_s": "1001", "status": status, "memo": {"trade_idea": "中期テーマ"}}])
+    monkeypatch.setattr(ps, "list_trade_ideas", lambda: [{"name": "中期テーマ", "exit_rule": rule}])
+    monkeypatch.setattr(ps, "list_exit_alert_states", lambda: {"1001": {
+        "cycle_id": f"c|中期テーマ|{ps.exit_rule_id(rule)}", "events": events,
+        "recoveries": [{"date": recovered, "ma_label": "日足50MA", "ma_value": 1300.2}],
+    }})
+
+    assert [i["text"] for i in aq._recovery_items(TODAY)] == ([expected] if expected else [])
+
+
 def test_recorded_exits_reads_batch_records(monkeypatch):
     """初点灯日は記録の最も古い日。最後の記録が最新の株価日なら今も「防」、古ければ戻った扱い。
     戦略を変えた銘柄の古い記録は読まない"""
