@@ -1,0 +1,5 @@
+コード,銘柄名,種類,業績スコア,テーマ
+【本日銘柄】
+【本日既出銘柄】
+【過去銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4344"",""4344"")","=HYPERLINK(""https://sourcenext.co.jp/"", ""ソースネクスト"")",P,27,"ソフト・システム開発,セキュリティソフト,翻訳ビジネス"

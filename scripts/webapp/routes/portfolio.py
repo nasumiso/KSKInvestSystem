@@ -433,9 +433,14 @@ def _redirect_with_return_query(
     issue #195: hidden `return_to=detail` かつ呼出側が `code_s` を渡している
     ときは詳細ページ (`/stock/<code_s>`) にリダイレクトする。`code_s` 未指定
     経路では従来のダッシュボード復帰にフォールバック (url_for build error 防御)。
+
+    issue #509: `return_to=market` は /market のテーマ別のブレイクから監視に追加したとき。/market に戻す。
     """
-    if code_s and (request.form.get("return_to") or "").strip() == "detail":
+    return_to = (request.form.get("return_to") or "").strip()
+    if code_s and return_to == "detail":
         return redirect(url_for("detail.stock_detail", code_s=code_s))
+    if return_to == "market":
+        return redirect(url_for("market.market_page"))
 
     raw = (request.form.get("return_query") or "").strip()
     if raw.startswith("?"):
@@ -977,7 +982,8 @@ def add():
     code_s = (request.form.get("code_s") or "").strip()
     # issue #195: 詳細モーダルから理由を受け取れるように引数化。
     # 未送信フォーム (portfolio ダッシュボード追加) では空文字 → 従来の "WebApp 追加" にフォールバック。
-    reason = (request.form.get("reason") or "").strip() or "WebApp 追加"
+    form_reason = (request.form.get("reason") or "").strip()
+    reason = form_reason or "WebApp 追加"
     # issue #220: アクション日付 (YYYY-MM-DD)。未指定なら現在時刻。
     action_date = (request.form.get("action_date") or "").strip() or None
     if not code_s:
@@ -1005,7 +1011,9 @@ def add():
             return _redirect_with_return_query(default_status_query="watch")
 
     try:
-        ps.add_to_watch(normalized, reason=reason, action_date=action_date)
+        # 復活は「復活」と記録する。フォームの理由 (#509 の発掘元など) があればそれも残す
+        ps.add_to_watch(normalized, reason=form_reason if is_revival else reason,
+                        action_date=action_date)
     except ValueError as e:
         flash(str(e), "error")
         return _redirect_with_return_query(default_status_query="watch", code_s=normalized)
