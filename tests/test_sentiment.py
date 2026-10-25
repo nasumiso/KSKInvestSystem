@@ -42,9 +42,12 @@ class TestParseForumPosts:
 
 @pytest.mark.parametrize("code_s,market,suffix", [
     ("418A", "名証", "N"),
+    ("418A", "名証Ｎ", "N"),
     ("3496", "東証", "T"),
     ("2928", "札証", "S"),
+    ("2928", "札証Ａ", "S"),
     ("9942", "福証", "F"),
+    ("9942", "福証Ｑ", "F"),
     ("3496", None, "T"),
 ])
 def test_市場に対応する掲示板から投稿を取得する(tmp_path, monkeypatch, code_s, market, suffix):

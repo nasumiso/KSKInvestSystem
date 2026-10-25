@@ -20,7 +20,6 @@ import re
 from typing import Dict, List, Optional
 
 from db_shelve import ShelveDB, STOCKS_SHELVE
-from make_stock_db import get_market_code
 from ks_util import (
     DATA_DIR,
     http_get_html,
@@ -41,7 +40,12 @@ _RE_TAG = re.compile(r"<[^>]+>")
 
 def get_forum_url(code_s: str, stock: Dict) -> str:
     """銘柄の上場市場に対応する Yahoo 掲示板 URL を返す。"""
-    return URL_FORUM % (code_s, get_market_code(stock))
+    # 株探の市場表記は「名証Ｎ」など市場区分も含む。
+    market = stock.get("market") or ""
+    suffix = next((suffix for name, suffix in
+                   (("名証", "N"), ("札証", "S"), ("福証", "F"))
+                   if market.startswith(name)), "T")
+    return URL_FORUM % (code_s, suffix)
 
 
 def _clean_body(body: str) -> str:
