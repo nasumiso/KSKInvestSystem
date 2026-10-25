@@ -145,6 +145,13 @@ EOF
 
 ### 棚卸しで決着した項目 (再提案しない)
 
+- **保有銘柄の「防」の記録 (初点灯日・損切りライン・戦略) の一覧** → 2026-10-25 の棚卸しで
+  `portfolio_list.py --exits` として昇格。ログは 10-17 (#372)・10-20・10-23 の3セッションにまたがり、
+  毎回 `list_exit_alert_states` と `list_records("1保")` (10-23 は `action_queue._Material().exits`) を
+  `python -c` で突き合わせていた。新しい判定は書いていない — トップの今日のアクションと同じ
+  `action_queue._recorded_exits()` を呼ぶだけ。実装の肝は **`get_exit_alert_state()` を使わないこと**。
+  サイクル不一致の記録をその場で消すので、読むだけのコマンドが DB を書き換えてしまう。
+
 - **市場の温度 (信用・新高値新安値・日経VI・日本版F&G) の取り直しと最新日の確認** → 2026-10-20 に
   明示トリガーで `make_market_db.py temperature` として昇格。nikkei225jp のパス変更で 10/5 頃から
   4つとも止まっていた件の調査で、運用機の JSON の最新日を `python -c` で2回読み、修正後に
@@ -226,7 +233,7 @@ EOF
 
 既にCLI化済みで**やらなくてよい**もの (重複回避):
 make_market_db.py html|temperature / make_stock_db.py refresh_stock|refresh_price|refresh_pts|compact /
-research_shelve.py show|list / portfolio_list.py / defrag_shelve.py /
+research_shelve.py show|list / portfolio_list.py (--status・--exits) / defrag_shelve.py /
 show_fill_episodes.py (code指定・--fills・--open・--memo・--check-splits・--check-dups・--check-pl) / 各 migrate_*。
 
 **棚卸しの教訓**: ログの `how` に「既存CLIでも近いことはできる」と書いた項目は、
