@@ -105,7 +105,7 @@
       <div>
         <a href="https://kabutan.jp/stock/chart?code={{ record.code_s }}&time=w" target="_blank" rel="noopener noreferrer">チャート</a>
         | <a href="https://kabutan.jp/stock/finance?code={{ record.code_s }}" target="_blank" rel="noopener noreferrer">業績</a>
-        | <a href="https://finance.yahoo.co.jp/quote/{{ record.code_s }}.T/forum" target="_blank" rel="noopener noreferrer">掲示板</a>
+        | <a href="{{ forum_url }}" target="_blank" rel="noopener noreferrer">掲示板</a>
         {% if _display_url %}
         | <a href="{{ _display_url }}" target="_blank" rel="noopener noreferrer">会社HP{% if _is_override %}✎{% endif %}</a>
         {% endif %}

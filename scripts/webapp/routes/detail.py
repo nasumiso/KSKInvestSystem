@@ -17,6 +17,7 @@ from flask import Blueprint, render_template, abort, jsonify
 
 import portfolio_shelve as ps
 import run_sentiment
+from sentiment import get_forum_url
 from ks_util import log_print, log_warning
 from webapp.helpers import (
     get_research_detail,
@@ -206,6 +207,7 @@ def stock_detail(code_s: str):
         # issue #501: 掲示板の感情分析 (最新1件)
         sentiment=run_sentiment.load_result(code_s),
         sentiment_running=run_sentiment.is_running(code_s),
+        forum_url=get_forum_url(code_s, stock),
     )
 
 

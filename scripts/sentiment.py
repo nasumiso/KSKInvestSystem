@@ -19,6 +19,8 @@ import os
 import re
 from typing import Dict, List, Optional
 
+from db_shelve import ShelveDB, STOCKS_SHELVE
+from make_stock_db import get_market_code
 from ks_util import (
     DATA_DIR,
     http_get_html,
@@ -27,13 +29,19 @@ from ks_util import (
     setup_logger,
 )
 
-URL_FORUM = "https://finance.yahoo.co.jp/quote/%s.T/forum"
+URL_FORUM = "https://finance.yahoo.co.jp/quote/%s.%s/forum"
 CACHE_DIR_FORUM = os.path.join(DATA_DIR, "stock_data", "yahoo", "forum")
 DEFAULT_LIMIT = 50
+
 
 # Next.js が埋め込む `self.__next_f.push([1,"..."])` の文字列部分
 _RE_NEXT_F = re.compile(r'self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)')
 _RE_TAG = re.compile(r"<[^>]+>")
+
+
+def get_forum_url(code_s: str, stock: Dict) -> str:
+    """銘柄の上場市場に対応する Yahoo 掲示板 URL を返す。"""
+    return URL_FORUM % (code_s, get_market_code(stock))
 
 
 def _clean_body(body: str) -> str:
@@ -82,7 +90,9 @@ def get_forum_posts(code_s: str, limit: Optional[int] = DEFAULT_LIMIT) -> List[D
     取得・パースに失敗したら空リストを返す。
     """
     os.makedirs(CACHE_DIR_FORUM, exist_ok=True)
-    url = URL_FORUM % code_s
+    with ShelveDB(STOCKS_SHELVE, read_only=True) as db:
+        stock = db.get(code_s) or {}
+    url = get_forum_url(code_s, stock)
     html, status = http_get_html(
         url, use_cache=False, cache_dir=CACHE_DIR_FORUM, with_status=True
     )

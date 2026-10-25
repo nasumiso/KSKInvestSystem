@@ -38,3 +38,32 @@ class TestParseForumPosts:
     ])
     def test_形式が違えば空リスト(self, html):
         assert sentiment.parse_forum_posts(html) == []
+
+
+@pytest.mark.parametrize("code_s,market,suffix", [
+    ("418A", "名証", "N"),
+    ("3496", "東証", "T"),
+    ("2928", "札証", "S"),
+    ("9942", "福証", "F"),
+    ("3496", None, "T"),
+])
+def test_市場に対応する掲示板から投稿を取得する(tmp_path, monkeypatch, code_s, market, suffix):
+    from db_shelve import ShelveDB
+
+    db_path = str(tmp_path / "stocks")
+    stock = {"market": market} if market else {}
+    with ShelveDB(db_path) as db:
+        db[code_s] = stock
+    monkeypatch.setattr(sentiment, "STOCKS_SHELVE", db_path)
+    monkeypatch.setattr(sentiment, "CACHE_DIR_FORUM", str(tmp_path / "forum"))
+    expected_url = f"https://finance.yahoo.co.jp/quote/{code_s}.{suffix}/forum"
+    called = []
+
+    def fetch(url, **kwargs):
+        called.append(url)
+        return _forum_html([{"part": 1, "body": "投稿"}]), 200
+
+    monkeypatch.setattr(sentiment, "http_get_html", fetch)
+    assert len(sentiment.get_forum_posts(code_s)) == 1
+    assert called == [expected_url]
+    assert sentiment.get_forum_url(code_s, stock) == expected_url
