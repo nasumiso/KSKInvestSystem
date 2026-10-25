@@ -2386,7 +2386,7 @@ def add_to_watch(
     - 既存レコードなし → 新規追加 (3監)。「初回登録」ログを reason 引数で記録
     - 既存レコードあり & excluded=True → 復活 (excluded=False に戻す)。
       memo / status は既存値を保持。「ユニバース除外」ログを reason="復活" で記録
-      (復活時は reason 引数は無視される)
+      (reason を渡したときは "復活 (<reason>)"。#509 の発掘元を復活でも残すため)
     - 既存レコードあり & excluded=False → ValueError (重複登録防止)
     - action_date (YYYY-MM-DD) を指定すると、action_log の timestamp を
       その日の JST 12:00 に固定する (issue #220)。未指定なら現在時刻
@@ -2419,11 +2419,11 @@ def add_to_watch(
                 revived_record = record
                 revived = False
         if revived:
-            # 復活時は明示的に reason="復活" を記録 (除外ログとの判別用、reason 引数は無視)
+            # 復活時は reason を「復活」で始める (除外ログとの判別用)
             append_action_log(
                 normalized,
                 "ユニバース除外",
-                reason="復活",
+                reason=f"復活 ({reason})" if reason else "復活",
                 timestamp=action_ts,
                 source=source,
                 source_detail=source_detail,

@@ -135,7 +135,7 @@ def _discoveries(action_logs: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, 
     """/market のテーマ別のブレイクから監視に追加したログを、銘柄ごとに日付昇順で集める (issue #509)。"""
     found: Dict[str, List[Dict[str, str]]] = {}
     for log in action_logs:
-        m = _DISCOVERY_RE.match(log.get("reason") or "")
+        m = _DISCOVERY_RE.search(log.get("reason") or "")  # 復活は "復活 (発掘元:…)" になる
         if m:
             found.setdefault(log["code_s"], []).append(
                 {"logged": log["timestamp"][:10], "theme": m.group(1), "date": m.group(2)})

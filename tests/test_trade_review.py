@@ -177,16 +177,19 @@ def test_発掘元は建てた日以前の最後のログを付ける():
     def log(code_s, day, reason):
         return {"code_s": code_s, "timestamp": f"{day}T15:30:00+09:00", "reason": reason}
 
-    episodes = [_ep(c, 1, [("2026-09-10", "buy", 100, 1000)]) for c in ("5001", "5002", "5003")]
+    episodes = [_ep(c, 1, [("2026-09-10", "buy", 100, 1000)])
+                for c in ("5001", "5002", "5003", "5004")]
     logs = [
         log("5001", "2026-09-01", "発掘元:日次レポート テーマ=半導体 日付=2026-08-31"),
         log("5001", "2026-09-08", "発掘元:日次レポート テーマ=サイバーセキュリティ 日付=2026-09-08"),
         log("5002", "2026-09-11", "発掘元:日次レポート テーマ=半導体 日付=2026-09-11"),  # 建てた後
+        log("5004", "2026-09-01", "復活 (発掘元:日次レポート テーマ=半導体 日付=2026-08-31)"),
         log("5003", "2026-09-01", "WebApp 追加"),
     ]
     opened = _build(episodes, action_logs=logs)["trades"]["opened"]
     assert [r["discovery"] for r in opened] == [
-        {"theme": "サイバーセキュリティ", "date": "2026-09-08"}, None, None]
+        {"theme": "サイバーセキュリティ", "date": "2026-09-08"}, None, None,
+        {"theme": "半導体", "date": "2026-08-31"}]  # 除外済みを復活させたとき
 
 
 @pytest.mark.parametrize("is_dev, existing, error", [
