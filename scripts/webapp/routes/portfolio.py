@@ -281,8 +281,29 @@ def _build_exposure_summary(margin_state: dict) -> tuple:
         evaluation["state_note"] = (f"指数データが古い (最新 {latest})。日次バッチで復旧"
                                     if latest else "市場ステートが取れません")
     evaluation["step_label"] = me.format_step(evaluation["step"])
+    evaluation.update(_target_chain(evaluation))
     evaluation.update(_exposure_bar_geometry(evaluation))
     return evaluation, None
+
+
+def _target_chain(evaluation: dict) -> dict:
+    """「感情 ＋ F&G ＝ スコア → 目標」を1行で見せるための値 (margin_estimate.target_step と同じ決まり方)。
+
+    fng_step: F&G で動いた分 (Extreme でなければ 0、F&G が無ければ None)。
+    state_capped: 市場ステートの上限で引き上げられたか。clamped: −3〜+3 の端で頭打ちになったか。
+    """
+    base = evaluation["emotion_score"] or 0
+    fng = evaluation["fng_jp"]
+    fng_step = None
+    if fng is not None:
+        fng_step = -1 if fng < me.FNG_EXTREME_FEAR else 1 if fng >= me.FNG_EXTREME_GREED else 0
+    state_capped = not fng_step and evaluation["step"] > base
+    return {
+        "fng_label": me.fng_label(fng),
+        "fng_step_label": None if fng_step is None else "±0" if fng_step == 0 else me.format_step(fng_step),
+        "state_capped": state_capped,
+        "clamped": not state_capped and evaluation["step"] != base + (fng_step or 0),
+    }
 
 
 def _exposure_bar_geometry(evaluation: dict) -> dict:

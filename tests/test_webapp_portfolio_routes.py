@@ -1537,6 +1537,9 @@ class TestMarginBaseline:
         # −2 だが市場ステートの上限で −1 段 → 70%。建玉 10万・保証金 4万 → 建玉 5.7万 → 適正 5〜6万で超過
         assert "-2 恐怖" in html and "市場ステートの上限で −1" in html
         assert re.search(r"目標 維持率 <b[^>]*>70%</b>", html)
+        # 決まり方を1行に並べる: F&G は区分名、上限で引き上げられたことを添える
+        assert ">Neutral</span> <b" in html and "±0" in html
+        assert re.search(r"<b[^>]*>−1</b> \(市場ステート不明で上限\) → 目標 維持率", html)
         assert re.search(r"適正 <b[^>]*>5〜6</b>万", html)
         assert "指数データが古い (最新 2026-09-17)" in html
 

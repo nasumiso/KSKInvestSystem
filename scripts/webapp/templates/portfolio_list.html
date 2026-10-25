@@ -404,9 +404,6 @@
     {%- elif ex.position == 'under' %}<b style="color:#ef6c00;" title="適正エリアの下端まで、あと {{ '{:,}'.format(lower_man - total_man) }}万建てられる">あと{{ '{:,}'.format(lower_man - total_man) }}万</b>
     {%- else %}<b style="color:#c62828;" title="適正エリアの上端より {{ '{:,}'.format(total_man - upper_man) }}万多い">{{ '{:,}'.format(total_man - upper_man) }}万多い</b>
     {%- endif %}
-    <span title="段 {{ ex.step_label }} ← {{ ex.step_parts|join('、') }}
-段 −3〜+3 → 目標の維持率 50 / 60 / 70 / 80 / 90 / 100 / 120% (投資メモの感情スコアシート)。
-感情スコアが主。日本版 F&G が Extreme (25未満 / 75以上) なら逆張りで 1 段ずらす。それ以外の日は市場ステートで攻める側に上限 (調整局面 0 段 / 上昇圧力下 −1 段)。">目標 維持率 <b style="color:#333;">{{ ex.target_rate }}%</b></span>
     <span style="font-size:0.9em;padding:0 0.4em;border-radius:3px;border:1px solid;{{ state_styles.get(ex.state, 'background:#eceff1;color:#333;border-color:#e0e0e0') }}"
         title="参考: 保有額で加重した市場ステート。F&G が Extreme でない日に、攻める側の上限として使う。{% if ex.state_note %}{{ ex.state_note }} (上昇圧力下と同じ上限で計算){% elif ex.is_no_position %}保有が無いため TOPIX とグロース250 の悪い方で判定。{% elif ex.state_is_fallback %}保有カテゴリに対応する指数が鮮度切れのため TOPIX とグロース250 の悪い方で判定。{% endif %}">
       {{ ex.state_label }}{% if ex.state_note %} ⚠{% endif %}

@@ -100,20 +100,27 @@ def test_fall_and_combine_and_input_check():
     assert "日次バッチ" in me.check_baseline_inputs("楽天", src, ["2026-10-22"], now)
 
 
-@pytest.mark.parametrize("emotion, fng, state, expected", [
-    (None, 50, "confirmed_uptrend", 0),          # 未入力は中立
-    (-2, 15, "market_in_correction", -3),        # Extreme Fear は逆張りで 1 段。市場ステートの上限はかけない
-    (-3, 15, None, -3),                          # ±3 で止める
-    (2, 80, "confirmed_uptrend", 3),             # Extreme Greed は過熱側へ 1 段
-    (-2, 40, "market_in_correction", 0),         # F&G が普通の日は、調整局面で 0 段より攻めない
-    (-2, 40, "uptrend_under_pressure", -1),      # 上昇圧力下は −1 段まで
-    (-2, 40, "confirmed_uptrend", -2),           # 上昇確定は上限なし
-    (-2, None, None, -1),                        # F&G・市場ステートが取れない日は上昇圧力下と同じ上限
+@pytest.mark.parametrize("emotion, fng, state, expected, chain", [
+    # chain: 画面の「感情 ＋ F&G ＝ スコア」の (F&G の区分, F&G で動いた分, 上限で引き上げ, 端で頭打ち)
+    (None, 50, "confirmed_uptrend", 0, ("Neutral", "±0", False, False)),            # 未入力は中立
+    # Extreme Fear は逆張りで 1。市場ステートの上限はかけない
+    (-2, 15, "market_in_correction", -3, ("Extreme Fear", "−1", False, False)),
+    (-3, 15, None, -3, ("Extreme Fear", "−1", False, True)),                        # ±3 で止める
+    (2, 80, "confirmed_uptrend", 3, ("Extreme Greed", "+1", False, False)),         # Extreme Greed は過熱側へ 1
+    (-2, 40, "market_in_correction", 0, ("Fear", "±0", True, False)),               # F&G が普通の日は、調整局面で 0 より攻めない
+    (-2, 40, "uptrend_under_pressure", -1, ("Fear", "±0", True, False)),            # 上昇圧力下は −1 まで
+    (-2, 60, "confirmed_uptrend", -2, ("Greed", "±0", False, False)),               # 上昇確定は上限なし
+    (-2, None, None, -1, (None, None, True, False)),  # F&G・市場ステートが取れない日は上昇圧力下と同じ上限
 ])
-def test_target_step(emotion, fng, state, expected):
-    """感情スコアが主。F&G が Extreme なら逆張りで 1 段、それ以外は市場ステートで攻める側に上限"""
+def test_target_step(emotion, fng, state, expected, chain):
+    """感情スコアが主。F&G が Extreme なら逆張りで 1、それ以外は市場ステートで攻める側に上限。
+    画面の決まり方の表示 (_target_chain) も同じ結果を言う"""
+    from webapp.routes.portfolio import _target_chain
+
     step, parts = me.target_step(emotion, fng, state)
     assert step == expected and parts
+    shown = _target_chain({"emotion_score": emotion, "fng_jp": fng, "step": step})
+    assert (shown["fng_label"], shown["fng_step_label"], shown["state_capped"], shown["clamped"]) == chain
 
 
 @pytest.mark.parametrize("guarantee, step, expected", [

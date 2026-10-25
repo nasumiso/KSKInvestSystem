@@ -290,6 +290,21 @@ FLOOR_FALL_PCT = 20
 MARGIN_CALL_RATE_PCT = 20
 
 
+def fng_label(fng: Optional[float]) -> Optional[str]:
+    """日本版 F&G を CNN と同じ5区分の名前にする。Extreme の境界は判定と同じ (25未満 / 75以上)。"""
+    if fng is None:
+        return None
+    if fng < FNG_EXTREME_FEAR:
+        return "Extreme Fear"
+    if fng < 45:
+        return "Fear"
+    if fng <= 55:
+        return "Neutral"
+    if fng < FNG_EXTREME_GREED:
+        return "Greed"
+    return "Extreme Greed"
+
+
 def format_step(step: int) -> str:
     """段を表示用の文字列にする (+1 / 0 / −1)。"""
     return f"{step:+d}".replace("+0", "0").replace("-", "−")
