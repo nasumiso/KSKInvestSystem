@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% block title %}市場データ - Shintakane Research{% endblock %}
 {% block content %}
+{# issue #509: テーマ別のブレイクから監視に追加した結果を出す #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  {% for category, message in messages %}
+  <div style="padding:0.5em 1em;margin-bottom:1em;border-radius:4px;font-size:0.9em;{% if category == 'error' %}background:#ffeaea;color:#c00;border:1px solid #fcc;{% else %}background:#eaffea;color:#060;border:1px solid #cfc;{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+{% endwith %}
 
 {% if market_parts.available %}
 <style>
@@ -13,6 +21,86 @@
 <div style="padding:12px;margin:12px 0;background:#fef3e6;border:1px solid #f5c37c;border-radius:6px;">
   市場データ (<code>market_data.html</code>) が未生成です。<br>
   <small>scripts/make_market_db.py を実行すると生成されます。</small>
+</div>
+{% endif %}
+
+{# issue #509: テーマ別のブレイク。日次レポートの本日リストを株探テーマで数え、平常より急に増えたテーマだけを出す。
+   管理対象を先に並べ、未フォローは該当テーマ内の初出の新高値だけを上限つきで出す。 #}
+{% if breakout %}
+{% set status_class = {'1保': 'hold', '2準': 'semi', '3監': 'watch'} %}
+{% set status_label = {'1保': '保有', '2準': '準保有', '3監': '監視'} %}
+<style>
+  #theme-breakout-section table { border-collapse: collapse; width: 100%; max-width: 72em; font-size: 0.9em; }
+  #theme-breakout-section th, #theme-breakout-section td { border-bottom: 1px solid #e3e6ea; padding: 0.45em 0.6em; text-align: left; vertical-align: top; }
+  #theme-breakout-section th { color: #555; font-weight: 600; background: #f5f6f8; }
+  #theme-breakout-section .tb-alias { color: #888; font-size: 0.85em; }
+  #theme-breakout-section .tb-sub { color: #777; font-size: 0.85em; }
+  #theme-breakout-section .tb-stock { display: inline-block; margin: 0 0.8em 0.25em 0; white-space: nowrap; }
+  #theme-breakout-section .status-badge { padding: 0 0.4em; }
+  #theme-breakout-section .tb-unfollowed { border-bottom: 1px dotted #999; cursor: help; }
+  #theme-breakout-section form { display: inline; margin: 0; }
+  #theme-breakout-section button {
+    display: inline-block; width: auto; margin: 0 0 0 0.2em; padding: 0 0.4em;
+    font-size: 0.8em; background: #fff; color: #1976d2; border: 1px solid #1976d2; cursor: pointer;
+  }
+  #theme-breakout-section td:nth-child(1) { min-width: 11em; }
+  #theme-breakout-section td:nth-child(2) { white-space: nowrap; }
+</style>
+<div id="theme-breakout-section" style="margin: 1em 0;">
+  <details id="theme-breakout" open>
+    <summary style="cursor:pointer;font-weight:bold;color:#2c3e50;">
+      🔥 テーマ別のブレイク
+      <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.5em;"
+            title="日次レポートの本日リスト (新高値・出来高急増・PTS) を株探テーマ (主要3つ) で数え、5銘柄以上かつ前20営業日の平均の2.5倍以上のテーマを出す">
+        (日次レポート {{ breakout.date }})
+      </span>
+    </summary>
+    {% if breakout.rows %}
+    <table>
+      <tr><th>テーマ</th><th>銘柄数</th><th>管理対象 (掲載日数/20日)</th><th>未フォローの新高値 (初出)</th></tr>
+      {% for row in breakout.rows %}
+      <tr>
+        <td>
+          {{ row.theme }}
+          {% if row.aliases %}<div class="tb-alias">{{ row.aliases | join('・') }}</div>{% endif %}
+        </td>
+        <td title="前20営業日の該当数: {{ row.history | join(', ') }}">
+          {{ row.count }}
+          <div class="tb-sub">高 {{ row.kinds['高'] }} / 出 {{ row.kinds['出'] }} / P {{ row.kinds['P'] }}</div>
+          <div class="tb-sub">平常 {{ '%.1f' | format(row.avg) }}</div>
+        </td>
+        <td>
+          {% for m in row.managed %}
+          <span class="tb-stock">
+            <span class="status-badge status-{{ status_class[m.status] }}">{{ status_label[m.status] }}</span>
+            <a href="{{ url_for('detail.stock_detail', code_s=m.code_s) }}">{{ m.name }}</a>
+            <span class="tb-sub">{{ m.days_listed }}日</span>
+          </span>
+          {% else %}<span class="tb-sub">—</span>{% endfor %}
+        </td>
+        <td>
+          {% for u in row.unfollowed %}
+          <span class="tb-stock">
+            <span class="tb-unfollowed"
+                  title="{{ u.code_s }} 種類: {{ u.kind }} / 前日比 {{ u.change }} / 業績スコア {{ u.score | int }}&#10;{{ u.overview }}{% if u.news %}&#10;{{ u.news }}{% endif %}">{{ u.name }}</span>
+            <form method="POST" action="/portfolio/add">
+              <input type="hidden" name="code_s" value="{{ u.code_s }}">
+              <input type="hidden" name="reason" value="{{ row.discovery_reason }}">
+              <input type="hidden" name="return_to" value="market">
+              <button type="submit" title="監視 (3監) に追加し、発掘元をアクションログに残す">+監視</button>
+            </form>
+          </span>
+          {% endfor %}
+          {% if row.others %}<span class="tb-sub" style="white-space:nowrap;">ほか {{ row.others }} 銘柄</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if breakout.more %}<div class="tb-sub" style="margin-top:0.3em;">ほか {{ breakout.more }} テーマ (上限 8 行)</div>{% endif %}
+    {% else %}
+    <p style="color:#888;padding:0.5em 1em;">該当なし</p>
+    {% endif %}
+  </details>
 </div>
 {% endif %}
 

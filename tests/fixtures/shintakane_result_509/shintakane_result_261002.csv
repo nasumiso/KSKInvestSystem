@@ -1,0 +1,20 @@
+コード,銘柄名,種類,業績スコア,テーマ
+【本日銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4475"",""4475"")","=HYPERLINK(""https://hennge.com/jp/"", ""ＨＥＮＮＧＥ"")",高P,81,"サイバーセキュリティ,ソフト・システム開発,情報セキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4288"",""4288"")","=HYPERLINK(""https://www.asgent.co.jp/"", ""アズジェント"")",出P,29,"サイバーセキュリティ,セキュリティソフト,情報セキュリティ"
+【本日既出銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3967"",""3967"")","=HYPERLINK(""https://eltes.co.jp/"", ""エルテス"")",高P,63,"サイバーセキュリティ,人工知能,ソフト・システム開発"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3042"",""3042"")","=HYPERLINK(""https://www.secuavail.com/"", ""セキュアヴェイル"")",出,34,"サイバーセキュリティ,情報セキュリティ,遠隔監視"
+【過去銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3040"",""3040"")","=HYPERLINK(""https://www.soliton.co.jp/"", ""ソリトンシステムズ"")",高,74,"サイバーセキュリティ,自動運転車,人工知能"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4258"",""4258"")","=HYPERLINK(""https://www.amiya.co.jp/"", ""網屋"")",高,81,"サイバーセキュリティ,人工知能,ソフト・システム開発"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4398"",""4398"")","=HYPERLINK(""https://www.bbsec.co.jp/index.html"", ""ブロードバンドセキュリティ"")",出,85,"サイバーセキュリティ,ソフト・システム開発,情報セキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3132"",""3132"")","=HYPERLINK(""https://holdings.macnica.co.jp/"", ""マクニカホールディングス"")",高,71,"サイバーセキュリティ,半導体,ペロブスカイト太陽電池"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4847"",""4847"")","=HYPERLINK(""https://www.iwi.co.jp/"", ""インテリジェント　ウェイブ"")",高,66,"サイバーセキュリティ,人工知能,親子上場"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4076"",""4076"")","=HYPERLINK(""https://www.cns.co.jp/"", ""シイエヌエス"")",高,53,"サイバーセキュリティ,人工知能,ソフト・システム開発"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=153A"",""153A"")","=HYPERLINK(""https://caulis.jp/"", ""カウリス"")",出,63,"サイバーセキュリティ,銀行,ソフト・システム開発"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=8157"",""8157"")","=HYPERLINK(""https://www.tsuzuki.co.jp/"", ""都築電気"")",高,38,"サイバーセキュリティ,人工知能,システムインテグレーション"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4447"",""4447"")","=HYPERLINK(""https://www.pbsystems.co.jp/"", ""ピー・ビーシステムズ"")",出,56,"サイバーセキュリティ,ソフト・システム開発,情報セキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=8023"",""8023"")","=HYPERLINK(""https://www.daiko-xtech.co.jp/"", ""ＤＡＩＫＯ　ＸＴＥＣＨ"")",出,34,"サイバーセキュリティ,人工知能,宇宙開発関連"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=5133"",""5133"")","=HYPERLINK(""https://www.terilogy-hd.com/"", ""テリロジーホールディングス"")",出,55,"サイバーセキュリティ,情報セキュリティ,通信機器"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4395"",""4395"")","=HYPERLINK(""https://www.accrete-inc.com/"", ""アクリート"")",P,40,"サイバーセキュリティ,人工知能,データセンター"

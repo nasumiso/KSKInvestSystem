@@ -1,7 +1,7 @@
 """
 市場データ ルート。
 
-GET  /market                         : 市場データページ (market_data.html を取り込み + テーマニュース)
+GET  /market                         : 市場データページ (market_data.html を取り込み + テーマ別のブレイク + テーマニュース)
 POST /market/theme_news/run          : theme-news skill を非同期起動 (issue #165)
 GET  /market/theme_news/status       : theme-news 実行状況を JSON で返す (issue #165)
 """
@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 
 from flask import Blueprint, jsonify, render_template, url_for
 
+import theme_breakout
 from ks_util import (
     get_price_day,
     log_print,
@@ -149,6 +150,15 @@ def _load_calendar_payload() -> Dict[str, Any]:
     return {"available": True, "events_json": events_json, "events_count": len(events), "today": today}
 
 
+def _load_breakout() -> Optional[Dict[str, Any]]:
+    """テーマ別のブレイク集計 (issue #509)。読めなければ None で、この欄だけ省く。"""
+    try:
+        return theme_breakout.load_for_display()
+    except Exception as e:  # noqa: BLE001
+        log_warning(f"[market] テーマ別のブレイクを集計できませんでした: {e}")
+        return None
+
+
 @market_bp.route("/market", methods=["GET"])
 def market_page():
     """市場データページ。静的 market_data.html (決算日セクション除く) と theme-news を表示する。"""
@@ -172,6 +182,7 @@ def market_page():
     return render_template(
         "market.html",
         market_parts=market_parts,
+        breakout=_load_breakout(),
         theme_news=theme_news,
         calendar=calendar,
     )

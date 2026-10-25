@@ -1303,6 +1303,34 @@ class TestMarketRouteThemeNews:
         assert s["has_today_history"] is True
 
 
+class TestMarketRouteThemeBreakout:
+    """issue #509: /market のテーマ別のブレイク。CSV が無い・壊れていても 500 にせず、この欄だけ省く。"""
+
+    @pytest.mark.parametrize("scenario,expect_section", [
+        ("valid", True),
+        ("missing", False),
+        ("broken", False),
+    ])
+    def test_render_and_fallback(self, client, tmp_path, monkeypatch, scenario, expect_section):
+        import theme_breakout
+
+        monkeypatch.setattr(theme_breakout, "RESULT_DIR", str(tmp_path))
+        path = tmp_path / "shintakane_result_261023.csv"
+        if scenario == "valid":
+            lines = ["コード,銘柄名,種類,業績スコア,テーマ", "【本日銘柄】"]
+            lines += [f'{1000 + i},銘柄{i},高,{60 + i},半導体' for i in range(5)]
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        elif scenario == "broken":
+            path.write_bytes(b"\xff\xfe\x00broken")
+
+        resp = client.get("/market")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert ('id="theme-breakout-section"' in html) is expect_section
+        if expect_section:
+            assert "発掘元:日次レポート テーマ=半導体 日付=2026-10-23" in html
+
+
 class TestMarketRouteCalendar:
     """issue #165: /market に株カレンダーを表示する。
 

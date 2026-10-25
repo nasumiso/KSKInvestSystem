@@ -1,0 +1,7 @@
+コード,銘柄名,種類,業績スコア,テーマ
+【本日銘柄】
+【本日既出銘柄】
+【過去銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4417"",""4417"")","=HYPERLINK(""https://www.gsx.co.jp/"", ""グローバルセキュリティエキスパート"")",高,81,"ITコンサルティング,サイバーセキュリティ,情報セキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4447"",""4447"")","=HYPERLINK(""https://www.pbsystems.co.jp/"", ""ピー・ビーシステムズ"")",P,56,"ソフト・システム開発,情報セキュリティ,サイバーセキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3076"",""3076"")","=HYPERLINK(""https://www.aiholdings.co.jp/"", ""あい　ホールディングス"")",高,59,"監視カメラ,情報セキュリティ,防犯"

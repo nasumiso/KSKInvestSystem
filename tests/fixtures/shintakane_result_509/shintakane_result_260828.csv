@@ -1,0 +1,19 @@
+コード,銘柄名,種類,業績スコア,テーマ
+【本日銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4417"",""4417"")","=HYPERLINK(""https://www.gsx.co.jp/"", ""グローバルセキュリティエキスパート"")",高,81,"ソフト・システム開発,サイバーセキュリティ,ITコンサルティング"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=2354"",""2354"")","=HYPERLINK(""https://www.ye-digital.com/jp/"", ""ＹＥ　ＤＩＧＩＴＡＬ"")",P,42,"ソフト・システム開発,サイバーセキュリティ,人工知能"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3076"",""3076"")","=HYPERLINK(""https://www.aiholdings.co.jp/"", ""あい　ホールディングス"")",高,59,"監視カメラ,情報セキュリティ,防犯"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3992"",""3992"")","=HYPERLINK(""https://www.needswell.com/"", ""ニーズウェル"")",出,47,"自動運転車,ソフト・システム開発,サイバーセキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4442"",""4442"")","=HYPERLINK(""https://www.valtes-hd.co.jp/"", ""バルテス・ホールディングス"")",出,20,"SaaS,ソフト・システム開発,サイバーセキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=8783"",""8783"")","=HYPERLINK(""https://abc-chain.com/"", ""ａｂｃ"")",P,9,"フィジカルAI,データセンター,サイバーセキュリティ"
+【本日既出銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4847"",""4847"")","=HYPERLINK(""https://www.iwi.co.jp/"", ""インテリジェント　ウェイブ"")",高,66,"ソフト・システム開発,サイバーセキュリティ,人工知能"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3054"",""3054"")","=HYPERLINK(""https://hyperpc.co.jp/"", ""ハイパー"")",出,45,"サイバーセキュリティ,パソコン,事務用品"
+【過去銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3040"",""3040"")","=HYPERLINK(""https://www.soliton.co.jp/"", ""ソリトンシステムズ"")",高,74,"自動運転車,ソフト・システム開発,サイバーセキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4076"",""4076"")","=HYPERLINK(""https://www.cns.co.jp/"", ""シイエヌエス"")",高,53,"ソフト・システム開発,サイバーセキュリティ,人工知能"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=9889"",""9889"")","=HYPERLINK(""https://www.jbcchd.co.jp/"", ""ＪＢＣＣホールディングス"")",高,44,"ソフト・システム開発,データセンター,サイバーセキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=2323"",""2323"")","=HYPERLINK(""https://www.fonfun.co.jp/"", ""ｆｏｎｆｕｎ"")",出,90,"SaaS,ソフト・システム開発,サイバーセキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3997"",""3997"")","=HYPERLINK(""https://www.tworks.co.jp/"", ""トレードワークス"")",P,42,"ソフト・システム開発,サイバーセキュリティ,人工知能"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3692"",""3692"")","=HYPERLINK(""https://www.ffri.jp/"", ""ＦＦＲＩセキュリティ"")",出P,46,"ソフト・システム開発,サイバーセキュリティ,防衛"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4344"",""4344"")","=HYPERLINK(""https://sourcenext.co.jp/"", ""ソースネクスト"")",P,27,"ソフト・システム開発,サイバーセキュリティ,セキュリティソフト"

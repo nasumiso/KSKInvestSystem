@@ -38,11 +38,12 @@ def _ep(code_s, first_seq, fills, *, kind="信用", profit=None, return_pct=None
     return ep
 
 
-def _build(episodes, *, exposure_history=(), records=(), stocks=None, fill_strategies=None):
+def _build(episodes, *, exposure_history=(), records=(), stocks=None, fill_strategies=None,
+           action_logs=None):
     return trade_review.build_review_dataset(
         YM, episodes=episodes, exposure_history=list(exposure_history), records=list(records),
         stocks=stocks or {}, generated_at="2026-10-01T00:00:00",
-        fill_strategies=fill_strategies or {},
+        fill_strategies=fill_strategies or {}, action_logs=action_logs,
         trade_ideas=[
             {"name": "中期モメンタム", "time_horizon": "中期", "exit_rule": {"stop_loss_pct": 10}},
             {"name": "中長期ファンダ", "time_horizon": "中長期", "exit_rule": {"stop_loss_pct": 25}},
@@ -169,6 +170,23 @@ def test_保有PFは1保で数え含み損益率に実現損益を混ぜない()
     assert [(r["code_s"], r["stop_loss_pct"], round(r["unrealized_pct"], 1))
             for r in p["over_stop_loss"]] == [("4001", 10.0, -10.1)]
     assert p["exposure"]["date"] == "2026-10-01" and p["exposure"]["ratio_pct"] == 94.5
+
+
+def test_発掘元は建てた日以前の最後のログを付ける():
+    """issue #509: /market のテーマ別のブレイクから監視に追加した銘柄を、取引ごとに拾う。"""
+    def log(code_s, day, reason):
+        return {"code_s": code_s, "timestamp": f"{day}T15:30:00+09:00", "reason": reason}
+
+    episodes = [_ep(c, 1, [("2026-09-10", "buy", 100, 1000)]) for c in ("5001", "5002", "5003")]
+    logs = [
+        log("5001", "2026-09-01", "発掘元:日次レポート テーマ=半導体 日付=2026-08-31"),
+        log("5001", "2026-09-08", "発掘元:日次レポート テーマ=サイバーセキュリティ 日付=2026-09-08"),
+        log("5002", "2026-09-11", "発掘元:日次レポート テーマ=半導体 日付=2026-09-11"),  # 建てた後
+        log("5003", "2026-09-01", "WebApp 追加"),
+    ]
+    opened = _build(episodes, action_logs=logs)["trades"]["opened"]
+    assert [r["discovery"] for r in opened] == [
+        {"theme": "サイバーセキュリティ", "date": "2026-09-08"}, None, None]
 
 
 @pytest.mark.parametrize("is_dev, existing, error", [

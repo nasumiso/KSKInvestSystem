@@ -48,6 +48,7 @@ HTMLパーサー変更時は追加で `cd scripts && python shintakane.py --forc
 | `import_portfolio_csv.py` | `pytest tests/test_import_portfolio_csv.py -v` |
 | `stock_ratings.py` | `pytest tests/test_stock_ratings.py -v` |
 | `trade_review.py` | `pytest tests/test_trade_review.py -v` |
+| `theme_breakout.py` | `pytest tests/test_theme_breakout.py tests/test_webapp_routes.py -v` |
 | `offsite_backup.py` | `pytest tests/test_offsite_backup.py -v` |
 
 スコアリング・ランキングのロジック変更時は追加で `cd scripts && python make_stock_db.py list_all_db` で統合テスト。

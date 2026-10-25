@@ -433,9 +433,14 @@ def _redirect_with_return_query(
     issue #195: hidden `return_to=detail` かつ呼出側が `code_s` を渡している
     ときは詳細ページ (`/stock/<code_s>`) にリダイレクトする。`code_s` 未指定
     経路では従来のダッシュボード復帰にフォールバック (url_for build error 防御)。
+
+    issue #509: `return_to=market` は /market のテーマ別のブレイクから監視に追加したとき。/market に戻す。
     """
-    if code_s and (request.form.get("return_to") or "").strip() == "detail":
+    return_to = (request.form.get("return_to") or "").strip()
+    if code_s and return_to == "detail":
         return redirect(url_for("detail.stock_detail", code_s=code_s))
+    if return_to == "market":
+        return redirect(url_for("market.market_page"))
 
     raw = (request.form.get("return_query") or "").strip()
     if raw.startswith("?"):

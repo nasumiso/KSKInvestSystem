@@ -1,0 +1,15 @@
+コード,銘柄名,種類,業績スコア,テーマ
+【本日銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4441"",""4441"")","=HYPERLINK(""https://tobila.com/"", ""トビラシステムズ"")",出,79,"サイバーセキュリティ,ソフト・システム開発,情報セキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4258"",""4258"")","=HYPERLINK(""https://www.amiya.co.jp/"", ""網屋"")",高,81,"人工知能,SaaS,サイバーセキュリティ"
+【本日既出銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4174"",""4174"")","=HYPERLINK(""https://appirits.com/"", ""アピリッツ"")",高出,65,"フィジカルAI,サイバーセキュリティ,ソフト・システム開発"
+【過去銘柄】
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4417"",""4417"")","=HYPERLINK(""https://www.gsx.co.jp/"", ""グローバルセキュリティエキスパート"")",高,81,"サイバーセキュリティ,ITコンサルティング,情報セキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4847"",""4847"")","=HYPERLINK(""https://www.iwi.co.jp/"", ""インテリジェント　ウェイブ"")",高,66,"人工知能,量子コンピューター,サイバーセキュリティ"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=2354"",""2354"")","=HYPERLINK(""https://www.ye-digital.com/jp/"", ""ＹＥ　ＤＩＧＩＴＡＬ"")",高,42,"人工知能,サイバーセキュリティ,ソフト・システム開発"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=4076"",""4076"")","=HYPERLINK(""https://www.cns.co.jp/"", ""シイエヌエス"")",高,53,"人工知能,サイバーセキュリティ,ソフト・システム開発"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3762"",""3762"")","=HYPERLINK(""https://www.techmatrix.co.jp/index.html"", ""テクマトリックス"")",高,68,"SaaS,サイバーセキュリティ,ソフト・システム開発"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=2323"",""2323"")","=HYPERLINK(""https://www.fonfun.co.jp/"", ""ｆｏｎｆｕｎ"")",出,90,"SaaS,サイバーセキュリティ,SMS"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3076"",""3076"")","=HYPERLINK(""https://www.aiholdings.co.jp/"", ""あい　ホールディングス"")",高,59,"監視カメラ,情報セキュリティ,防犯"
+"=HYPERLINK(""https://kabutan.jp/stock/chart?code=3054"",""3054"")","=HYPERLINK(""https://hyperpc.co.jp/"", ""ハイパー"")",高,45,"サイバーセキュリティ,パソコン,事務用品"

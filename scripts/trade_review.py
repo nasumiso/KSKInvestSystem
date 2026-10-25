@@ -26,6 +26,7 @@ if _THIS_DIR not in sys.path:
 
 import ks_util  # noqa: E402
 import portfolio_shelve as ps  # noqa: E402
+import theme_breakout  # noqa: E402
 from ks_util import log_print, log_warning  # noqa: E402
 
 # 再IN とみなす、直前の決済からの日数
@@ -126,10 +127,35 @@ def _unrealized_pct(eps: List[Dict[str, Any]]) -> Optional[float]:
     return unrealized / cost * 100.0 if cost else None
 
 
+_DISCOVERY_RE = re.compile(re.escape(theme_breakout.DISCOVERY_PREFIX)
+                           + r" テーマ=(.+?) 日付=(\d{4}-\d{2}-\d{2})")
+
+
+def _discoveries(action_logs: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, str]]]:
+    """/market のテーマ別のブレイクから監視に追加したログを、銘柄ごとに日付昇順で集める (issue #509)。"""
+    found: Dict[str, List[Dict[str, str]]] = {}
+    for log in action_logs:
+        m = _DISCOVERY_RE.match(log.get("reason") or "")
+        if m:
+            found.setdefault(log["code_s"], []).append(
+                {"logged": log["timestamp"][:10], "theme": m.group(1), "date": m.group(2)})
+    for logs in found.values():
+        logs.sort(key=lambda d: d["logged"])
+    return found
+
+
+def _discovery(ep: Dict[str, Any],
+               discoveries: Dict[str, List[Dict[str, str]]]) -> Optional[Dict[str, str]]:
+    """建てた日以前の最後の発掘元。無ければ None。"""
+    before = [d for d in discoveries.get(ep["code_s"], []) if d["logged"] <= ep["open_date"]]
+    return {"theme": before[-1]["theme"], "date": before[-1]["date"]} if before else None
+
+
 def _trade_row(ep: Dict[str, Any], episodes: List[Dict[str, Any]],
                log_by_date: Dict[str, Dict[str, Any]],
                horizons: Dict[str, str],
-               stop_widths: Dict[str, Optional[float]]) -> Dict[str, Any]:
+               stop_widths: Dict[str, Optional[float]],
+               discoveries: Dict[str, List[Dict[str, str]]]) -> Dict[str, Any]:
     pl = ep.get("pl") or {}
     horizon = horizons.get(ep.get("trade_idea") or "", "")
     open_log = log_by_date.get(ep["open_date"]) or {}
@@ -157,6 +183,7 @@ def _trade_row(ep: Dict[str, Any], episodes: List[Dict[str, Any]],
         "reentry": _find_reentry(ep, episodes),
         "review_memo": ep.get("review_memo") or "",
         "action_notes": ep.get("action_notes") or [],
+        "discovery": _discovery(ep, discoveries),
         "fills": [
             {"trade_date": f["trade_date"], "side": f["side"], "trade_kind": f.get("trade_kind"),
              "qty": f["qty"], "price": f["price"],
@@ -340,7 +367,8 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
                          stocks: Dict[str, Dict[str, Any]],
                          trade_ideas: List[Dict[str, Any]],
                          fill_strategies: Dict[Any, Dict[str, Any]],
-                         generated_at: str) -> Dict[str, Any]:
+                         generated_at: str,
+                         action_logs: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """月次の振り返りに渡す数字を作る (DB を読まない)。
 
     Args:
@@ -351,10 +379,12 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
         stocks: 1保 の銘柄の現在値 {code_s: {"price": 終値, "stock_name": 名前}}
         trade_ideas: 戦略マスター (portfolio_shelve.list_trade_ideas())
         fill_strategies: ロットの戦略の上書き (portfolio_shelve.list_fill_strategies())
+        action_logs: アクションログ (portfolio_shelve.list_action_logs())。発掘元を拾うのに使う
     """
     log_by_date = {h["date"]: h for h in exposure_history if h.get("date")}
     horizons = {t.get("name", ""): t.get("time_horizon") or "" for t in trade_ideas}
     stop_widths = _stop_loss_widths(episodes, trade_ideas, fill_strategies)
+    discoveries = _discoveries(action_logs or [])
 
     # 取引ごとの照合の対象: 当月に完全決済したものと、当月に新規に建てたもの。
     # 現引で始まるもの (信用からの振り替え) と当月中に決済したもの (決済側に出る) は
@@ -371,7 +401,7 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
               and _first_fill(e).get("trade_kind") != "現引"]
 
     def rows(eps: List[Dict[str, Any]], key: str) -> List[Dict[str, Any]]:
-        return [_trade_row(e, episodes, log_by_date, horizons, stop_widths)
+        return [_trade_row(e, episodes, log_by_date, horizons, stop_widths, discoveries)
                 for e in sorted(eps, key=lambda e: (e[key], e["code_s"]))]
 
     return {
@@ -400,6 +430,7 @@ def _load_inputs() -> Dict[str, Any]:
                    for c, s in stock_map.items() if isinstance(s, dict)},
         "trade_ideas": ps.list_trade_ideas(),
         "fill_strategies": ps.list_fill_strategies(),
+        "action_logs": ps.list_action_logs(),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }
 
