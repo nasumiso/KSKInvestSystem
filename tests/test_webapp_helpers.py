@@ -371,6 +371,12 @@ def test_ma_recovery_recorded_after_ma_defense(tmp_path, monkeypatch, status, ru
     if expected:
         assert state["recoveries"][-1]["ma_value"] == 1000
 
+    # 準保有で戦略を変えたら記録を捨てる。戻しても旧戦略の防・回復は復活しない (PR #533 レビュー)
+    if status == "2準":
+        other = {**rec, "memo": {"trade_idea": "別戦略"}}
+        helpers._evaluate_hold_exit(other, stock, ps, {}, {"成長": rule, "別戦略": _MA_RULE}, {})
+        assert "4377" not in ps.list_exit_alert_states()
+
 
 def test_weekly_ma_pending_displays_defensive_notice():
     """週足MAの未確定割れは防予として扱う。"""

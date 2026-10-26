@@ -2352,8 +2352,14 @@ def _evaluate_hold_exit(rec: Dict[str, Any], stock: Dict[str, Any], ps: Any,
     if rec.get("status") == "2準":
         # 売却後のサイクルは約定から作れないので、保有中に記録したサイクルをそのまま使う
         recorded = states_cache["states"].get(code_s)
-        if (not exit_rule.get("ma_kind") or not isinstance(recorded, dict)
-                or not str(recorded.get("cycle_id", "")).endswith(f"|{strategy}|{rule_id}")):
+        if not isinstance(recorded, dict):
+            return None
+        if not str(recorded.get("cycle_id", "")).endswith(f"|{strategy}|{rule_id}"):
+            # 1保 の get_exit_alert_state と同じく、戦略・ルールが変わった記録は捨てる。
+            # 残すと戦略を A→B→A と戻したときに旧 A の防・回復が復活する (PR #533 レビュー)
+            ps.reset_exit_alert_state(code_s)
+            return None
+        if not exit_rule.get("ma_kind"):
             return None
         position = {}
         cycle_id = recorded["cycle_id"]
