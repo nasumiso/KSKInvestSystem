@@ -91,7 +91,8 @@
             </form>
           </span>
           {% endfor %}
-          {% if row.others %}<span class="tb-sub" style="white-space:nowrap;">ほか {{ row.others }} 銘柄</span>{% endif %}
+          {% if row.others %}<span class="tb-sub" style="white-space:nowrap;"
+                title="{{ row.others_preview | join('\n') }}{% if row.others > row.others_preview | length %}&#10;…{% endif %}">ほか {{ row.others }} 銘柄</span>{% endif %}
         </td>
       </tr>
       {% endfor %}

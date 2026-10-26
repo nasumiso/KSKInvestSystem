@@ -156,6 +156,9 @@ def build_breakout(days: List[Tuple[str, List[Dict[str, Any]]]],
             key=lambda r: (-r["score"], r["code_s"]))
         unfollowed = candidates[:MAX_UNFOLLOWED_PER_THEME]
         shown_unfollowed |= {r["code_s"] for r in unfollowed}
+        shown = {m["code_s"] for m in managed_rows} | {r["code_s"] for r in unfollowed}
+        others = sorted((r for r in members if r["code_s"] not in shown),
+                        key=lambda r: (-r["score"], r["code_s"]))
         out.append({
             "theme": g["theme"],
             "aliases": g["aliases"],
@@ -165,7 +168,9 @@ def build_breakout(days: List[Tuple[str, List[Dict[str, Any]]]],
             "history": [c.get(g["theme"], 0) for c in prev_counts],
             "managed": managed_rows,
             "unfollowed": unfollowed,
-            "others": len(members) - len(managed_rows) - len(unfollowed),
+            "others": len(others),
+            # 「ほか N 銘柄」の tooltip 用。業績スコア順に最大5銘柄
+            "others_preview": ["%s %s" % (r["code_s"], r["name"]) for r in others[:5]],
             "discovery_reason": "%s テーマ=%s 日付=%s" % (DISCOVERY_PREFIX, g["theme"], date),
         })
     return {"date": date, "rows": out, "more": max(len(groups) - MAX_ROWS, 0)}
