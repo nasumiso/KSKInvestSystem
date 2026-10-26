@@ -1812,10 +1812,13 @@ class TestSplitAdjustment:
 class TestExitAlertLifecycle:
     """出口アラート状態の保持・破棄 (PR #409 レビュー)"""
 
-    @pytest.mark.parametrize("leave_status", ["2準", "3監"])
-    def test_exit_alert_state_cleared_when_leaving_hold(self, db_path, leave_status):
-        # 1保→3監 も許可されているため、2準 だけ消すと 1保→3監→1保 で
-        # 旧「防歴」を引き継いでしまう。1保 を離れる全遷移で破棄する。
+    @pytest.mark.parametrize("path, kept", [
+        (["2準"], True),          # 売却後も準保有で MA 回復を判定する (issue #526)
+        (["3監"], False),         # 残すと 1保→3監→1保 で旧「防歴」を引き継ぐ (PR #409)
+        (["2準", "3監"], False),
+        (["2準", "1保"], False),  # 約定履歴の無い保有は買い直しても cycle_id が変わらない
+    ])
+    def test_exit_alert_state_kept_only_on_sell(self, db_path, path, kept):
         ps.add_to_watch("4377", reason="テスト", db_path=db_path)
         ps.transition_status("4377", "1保", db_path=db_path)
         ps.record_exit_alert_event(
@@ -1823,8 +1826,9 @@ class TestExitAlertLifecycle:
         )
         assert ps.get_exit_alert_state("4377", "cycle-1", db_path=db_path)["triggered"] is True
 
-        ps.transition_status("4377", leave_status, db_path=db_path)
-        assert ps.get_exit_alert_state("4377", "cycle-1", db_path=db_path)["triggered"] is False
+        for status in path:
+            ps.transition_status("4377", status, db_path=db_path)
+        assert ps.get_exit_alert_state("4377", "cycle-1", db_path=db_path)["triggered"] is kept
 
     def test_exit_alert_state_discarded_on_cycle_mismatch(self, db_path):
         # 戦略A(防記録)→戦略B(違反なし)→戦略A で cycle_id が元へ戻ると、

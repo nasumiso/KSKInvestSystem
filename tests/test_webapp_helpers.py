@@ -331,6 +331,53 @@ def test_manual_holding_records_confirmed_ma_alert(monkeypatch):
     assert recorded and recorded[0][1].startswith("manual:2026-06-01T00:00:00|成長|")
 
 
+_MA_RULE = {"ma_kind": "day", "ma_window": 50, "stop_loss_pct": 10, "allow_dca_lower": False}
+_STOP_RULE = {"ma_kind": None, "ma_window": None, "stop_loss_pct": 10, "allow_dca_lower": False}
+
+
+@pytest.mark.parametrize("status, rule, history, expected", [
+    # 防で売った準保有が MA の上に戻った日を1回だけ記録する
+    ("2準", _MA_RULE, [("防", "2026-10-01", "日足50MA割れ確定")], ["2026-10-12"]),
+    # 戻ったあと再び割れて、また戻ったら記録を足す
+    ("2準", _MA_RULE, [("防", "2026-10-01", "日足50MA割れ確定"), ("回復", "2026-10-05", None),
+                       ("防", "2026-10-08", "日足50MA割れ確定")], ["2026-10-05", "2026-10-12"]),
+    ("1保", _MA_RULE, [("防", "2026-10-01", "日足50MA割れ確定")], ["2026-10-12"]),
+    # 損切りライン割れだけの防は MA の上にいても回復ではない
+    ("2準", _MA_RULE, [("防", "2026-10-01", "損切りライン割れ")], []),
+    ("2準", _STOP_RULE, [("防", "2026-10-01", "損切りライン割れ")], []),
+])
+def test_ma_recovery_recorded_after_ma_defense(tmp_path, monkeypatch, status, rule, history, expected):
+    """防 (MA 割れ確定) のあと MA の上に戻った日を recoveries に記録する (issue #526)"""
+    import portfolio_shelve as ps
+
+    db_path = str(tmp_path / "test_portfolio_shelve")
+    monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", db_path)
+    monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", db_path)
+    cycle_id = f"manual:2026-01-01|成長|{ps.exit_rule_id(rule)}"
+    for kind, day, reason in history:
+        if kind == "防":
+            ps.record_exit_alert_event("4377", cycle_id, {"level": "防", "date": day, "reasons": [reason]})
+        else:
+            ps.record_exit_recovery("4377", cycle_id, {"date": day})
+    rec = {"code_s": "4377", "status": status, "registered_at": "2026-01-01", "memo": {"trade_idea": "成長"}}
+    stock = {"price_log": [(date(2026, 10, 12), 1100)],
+             "ma50_violation": {"pending": False, "confirmed": False, "ma_value": 1000}}
+
+    for _ in range(2):  # 同じ日に2回判定しても1件
+        helpers._evaluate_hold_exit(rec, stock, ps, {}, {"成長": rule}, {})
+
+    state = ps.list_exit_alert_states()["4377"]
+    assert [r["date"] for r in state.get("recoveries") or []] == expected
+    if expected:
+        assert state["recoveries"][-1]["ma_value"] == 1000
+
+    # 準保有で戦略を変えたら記録を捨てる。戻しても旧戦略の防・回復は復活しない (PR #533 レビュー)
+    if status == "2準":
+        other = {**rec, "memo": {"trade_idea": "別戦略"}}
+        helpers._evaluate_hold_exit(other, stock, ps, {}, {"成長": rule, "別戦略": _MA_RULE}, {})
+        assert "4377" not in ps.list_exit_alert_states()
+
+
 def test_weekly_ma_pending_displays_defensive_notice():
     """週足MAの未確定割れは防予として扱う。"""
     from exit_line import evaluate_exit_signal
