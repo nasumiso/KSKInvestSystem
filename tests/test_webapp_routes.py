@@ -2118,6 +2118,7 @@ class TestPortfolioThemeSummary:
 
     @pytest.mark.parametrize("url", [
         "/portfolio/themes/summary",
+        "/portfolio/themes/summary?sort=momentum",
         "/portfolio/themes/summary?sort=dev_1d",
         "/portfolio/themes/summary?sort=dev_a",
         "/portfolio/themes/summary?sort=dev_b",

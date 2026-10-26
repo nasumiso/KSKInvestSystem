@@ -1858,3 +1858,14 @@ class TestExitAlertLifecycle:
         else:
             with pytest.raises(ValueError, match="ma_window"):
                 ps._validate_exit_rule(rule)
+
+
+def test_theme_rank_snapshot_overwrite(db_path):
+    """同じ日は上書きし、overwrite=False なら既存の日を残す (issue #531)。"""
+    from datetime import date
+    day = date(2026, 10, 26)
+    assert ps.save_theme_rank_snapshot(day, {"半導体": {"score": 1.0, "rank": 1, "count": 2}}, db_path=db_path)
+    assert ps.save_theme_rank_snapshot(day, {"半導体": {"score": 2.0, "rank": 1, "count": 2}}, db_path=db_path)
+    assert not ps.save_theme_rank_snapshot(day, {"半導体": {"score": 9.0, "rank": 1, "count": 2}},
+                                           overwrite=False, db_path=db_path)
+    assert ps.load_theme_rank_snapshots(db_path=db_path) == {day: {"半導体": {"score": 2.0, "rank": 1, "count": 2}}}

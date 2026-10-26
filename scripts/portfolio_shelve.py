@@ -88,6 +88,8 @@ KEY_THEME_PREFIX = "theme:"
 KEY_TRADE_IDEA_PREFIX = "trade_idea:"
 KEY_TRADE_IDEA_SEED_VERSION = "trade_idea_seed_version"
 KEY_EXIT_ALERT_PREFIX = "exit_alert:"
+# issue #531: 業態テーマ順位の日次スナップショット。キーは theme_rank:YYYY-MM-DD
+KEY_THEME_RANK_PREFIX = "theme_rank:"
 # issue #360 Phase2: 楽天CSV 由来の約定事実 (fill レイヤー、イミュータブル)
 KEY_FILL_PREFIX = "fill:"
 KEY_FILL_SEQ_PREFIX = "_fill_seq:"
@@ -3370,6 +3372,31 @@ def reset_exit_alert_state(code_s: str, *, db_path: Optional[str] = None) -> Non
             key = _exit_alert_key(normalized)
             if key in db:
                 del db[key]
+
+
+def save_theme_rank_snapshot(day: date, ranks: Dict[str, Dict[str, Any]], *,
+                             overwrite: bool = True, db_path: Optional[str] = None) -> bool:
+    """業態テーマ順位 ({テーマ: {score, rank, count}}) を日付ごとに保存する (issue #531)。
+
+    同じ日は上書きする (日次バッチの再実行で冪等)。overwrite=False なら既存の日を残し、
+    書かなかったときは False を返す (過去分の補完が日次の記録を潰さないため)。
+    """
+    key = f"{KEY_THEME_RANK_PREFIX}{day.isoformat()}"
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            if not overwrite and key in db:
+                return False
+            db[key] = {theme: dict(v) for theme, v in ranks.items()}
+    return True
+
+
+def load_theme_rank_snapshots(*, db_path: Optional[str] = None) -> Dict[date, Dict[str, Dict[str, Any]]]:
+    """業態テーマ順位のスナップショットを {日付: {テーマ: {score, rank, count}}} で返す。"""
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        return {date.fromisoformat(key[len(KEY_THEME_RANK_PREFIX):]): value
+                for key, value in db.items(KEY_THEME_RANK_PREFIX)}
 
 
 def validate_strategy_name(name: Any) -> str:

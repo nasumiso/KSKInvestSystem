@@ -4772,6 +4772,7 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None,
 # sort_key (UI/URL) → 並べ替えに使う集計フィールド名。許可キーの真実はここに集約し、
 # ルート側の allowlist もこの keys() を参照する (二重定義を避ける)。
 THEME_SUMMARY_SORT_FIELDS = {
+    "rank": "rank",  # 順位だけ昇順
     "momentum": "momentum_pt_avg",
     "dev_1d": "dev_1d_avg",
     "dev_a": "dev_a_avg",
@@ -4784,31 +4785,13 @@ def _avg_or_none(values: List[float]) -> Optional[float]:
     return sum(values) / len(values) if values else None
 
 
-def build_portfolio_theme_summary(
-    records: Optional[List[Dict[str, Any]]] = None,
-    sort_key: str = "momentum",
-) -> List[Dict[str, Any]]:
-    """portfolio_shelve のユニバースを memo['gyoutai_themes'] でグルーピングし、
-    テーマごとの中長期 (momentum_pt) + 短期 (rs_line スロープ) 集約指標と
-    上位リーダー株を返す (issue #283)。
+# 3週前・6週前の順位を引くとき、その日のスナップショットが無ければ遡ってよい日数 (休日・バッチ失敗)
+_THEME_RANK_LOOKBACK_TOLERANCE_DAYS = 7
 
-    Args:
-        records: portfolio_shelve.list_records(include_excluded=False) の戻り値。
-            None なら関数内で取得する (テスト時に注入できるよう引数化)。
-        sort_key: "momentum" | "dev_1d" | "dev_a" | "dev_b"。並べ替えキー。
 
-    Returns:
-        list[dict]: 各テーマの集約 dict。並び順は sort_key に従う
-            (None は末尾) → member_count 降順 → テーマ名昇順。
-    """
-    if records is None:
-        import portfolio_shelve as ps  # 遅延 import (循環回避)
-        records = ps.list_records(include_excluded=False)
-
-    # テーマ → [code_s, ...] の逆引き (スロット最大2を両方展開、空は無視)
+def _group_codes_by_theme(records: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    """memo['gyoutai_themes'] からテーマ → [code_s, ...] の逆引きを作る (スロット最大2を両方展開、空は無視)。"""
     theme_to_codes: Dict[str, List[str]] = {}
-    # 銘柄が属するテーマ数 (ポジションの按分用。2テーマ銘柄は 50/50 で各テーマに計上)
-    theme_count_by_code: Dict[str, int] = {}
     for rec in records:
         code_s = rec.get("code_s", "")
         if not code_s:
@@ -4821,9 +4804,91 @@ def build_portfolio_theme_summary(
             if not name:
                 continue
             theme_to_codes.setdefault(name, []).append(code_s)
-            theme_count_by_code[code_s] = theme_count_by_code.get(code_s, 0) + 1
+    return theme_to_codes
+
+
+def calc_rs_6m(stock: Dict[str, Any], topix: Dict[str, Any]) -> Optional[float]:
+    """6ヶ月相対 (%) = (銘柄の26週前比 / TOPIX の26週前比 − 1) × 100。どちらかが無ければ None (issue #531)。"""
+    chg, topix_chg = stock.get("chg_26w"), topix.get("chg_26w")
+    if not isinstance(chg, (int, float)) or not isinstance(topix_chg, (int, float)) or topix_chg <= 0:
+        return None
+    return (chg / topix_chg - 1) * 100.0
+
+
+def calc_theme_ranks(records: List[Dict[str, Any]], stock_map: Dict[str, Dict[str, Any]],
+                     topix: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """業態テーマごとに構成銘柄の6ヶ月相対を等加重平均し、順位を付ける (issue #531)。
+
+    Returns:
+        {テーマ: {"score": 平均 (%), "rank": 1始まり, "count": 平均に入れた銘柄数}}。
+        値のある銘柄が無いテーマは含めない。同点はテーマ名昇順。
+    """
+    scores = []
+    for theme, codes in _group_codes_by_theme(records).items():
+        values = [v for v in (calc_rs_6m(stock_map.get(c) or {}, topix) for c in codes) if v is not None]
+        if values:
+            scores.append((theme, sum(values) / len(values), len(values)))
+    scores.sort(key=lambda x: (-x[1], x[0]))
+    return {theme: {"score": round(score, 2), "rank": i + 1, "count": count}
+            for i, (theme, score, count) in enumerate(scores)}
+
+
+def record_theme_rank_snapshot(stock_map: Dict[str, Dict[str, Any]]) -> int:
+    """今日の業態テーマ順位を portfolio_shelve に保存し、テーマ数を返す。日次バッチから呼ぶ (issue #531)。"""
+    import portfolio_shelve as ps
+    from make_market_db import get_market_db  # 遅延 import (循環回避)
+
+    ranks = calc_theme_ranks(ps.list_records(include_excluded=False), stock_map,
+                             get_market_db().get("topix", {}))
+    if ranks:
+        ps.save_theme_rank_snapshot(get_price_day(datetime.today()), ranks)
+    return len(ranks)
+
+
+def _past_theme_ranks(snapshots: Dict[date, Dict[str, Dict[str, Any]]], base_day: date,
+                      days: int) -> Dict[str, Dict[str, Any]]:
+    """base_day の days 日前以前で最新のスナップショットを返す。許容日数より古いものしか無ければ空。"""
+    target = base_day - timedelta(days=days)
+    floor = target - timedelta(days=_THEME_RANK_LOOKBACK_TOLERANCE_DAYS)
+    candidates = [d for d in snapshots if floor <= d <= target]
+    return snapshots[max(candidates)] if candidates else {}
+
+
+def build_portfolio_theme_summary(
+    records: Optional[List[Dict[str, Any]]] = None,
+    sort_key: str = "rank",
+    snapshots: Optional[Dict[date, Dict[str, Dict[str, Any]]]] = None,
+) -> List[Dict[str, Any]]:
+    """portfolio_shelve のユニバースを memo['gyoutai_themes'] でグルーピングし、
+    テーマごとの中長期 (momentum_pt) + 短期 (rs_line スロープ) 集約指標と
+    上位リーダー株を返す (issue #283)。
+
+    Args:
+        records: portfolio_shelve.list_records(include_excluded=False) の戻り値。
+            None なら関数内で取得する (テスト時に注入できるよう引数化)。
+        sort_key: "rank" | "momentum" | "dev_1d" | "dev_a" | "dev_b"。並べ替えキー。
+        snapshots: テーマ順位のスナップショット (3週前・6週前の順位を引く、issue #531)。
+            None なら portfolio_shelve から読む。
+
+    Returns:
+        list[dict]: 各テーマの集約 dict。並び順は sort_key に従う
+            (None は末尾) → member_count 降順 → テーマ名昇順。
+    """
+    if records is None or snapshots is None:
+        import portfolio_shelve as ps  # 遅延 import (循環回避)
+        if records is None:
+            records = ps.list_records(include_excluded=False)
+        if snapshots is None:
+            snapshots = ps.load_theme_rank_snapshots()
+
+    theme_to_codes = _group_codes_by_theme(records)
     if not theme_to_codes:
         return []
+    # 銘柄が属するテーマ数 (ポジションの按分用。2テーマ銘柄は 50/50 で各テーマに計上)
+    theme_count_by_code: Dict[str, int] = {}
+    for codes in theme_to_codes.values():
+        for code_s in codes:
+            theme_count_by_code[code_s] = theme_count_by_code.get(code_s, 0) + 1
 
     # status ラベル参照用に code_s → status を引けるようにする
     status_by_code = {r.get("code_s", ""): r.get("status", "") for r in records}
@@ -4870,6 +4935,12 @@ def build_portfolio_theme_summary(
     # (a, b) = 今日 vs 直近5日/20日移動平均の乖離率 = 勢いオシレーター。
     # d = 前日比 = 当日の瞬間的な強さ。
     dev_by_code: Dict[str, tuple] = {}
+    # 今の順位は日次の記録と同じ関数で計算し、3週前・6週前だけを記録から引く (issue #531)
+    topix = (market_db or {}).get("topix", {})
+    ranks_now = calc_theme_ranks(records, stock_map, topix)
+    base_day = get_price_day(datetime.today())
+    ranks_3w = _past_theme_ranks(snapshots, base_day, 21)
+    ranks_6w = _past_theme_ranks(snapshots, base_day, 42)
     if market_db is not None and topix_map:
         from make_stock_db import compute_rs_line_changes  # 遅延 import
         for code_s in all_codes:
@@ -4903,6 +4974,7 @@ def build_portfolio_theme_summary(
                 "code_s": code_s,
                 "stock_name": name_map.get(code_s, "") or "",
                 "momentum_pt": float(mom) if isinstance(mom, (int, float)) else None,
+                "rs_6m": calc_rs_6m(stock, topix),
                 "status": _PORTFOLIO_STATUS_LABEL.get(
                     status_by_code.get(code_s, ""), status_by_code.get(code_s, "")
                 ),
@@ -4925,9 +4997,19 @@ def build_portfolio_theme_summary(
             position_value_by_code.get(c, 0.0) / (theme_count_by_code.get(c) or 1)
             for c in codes
         )
+        now = ranks_now.get(theme) or {}
+        rank = now.get("rank")
+        rank_3w = (ranks_3w.get(theme) or {}).get("rank")
         result.append({
             "theme": theme,
             "member_count": len(codes),
+            "rank": rank,
+            "rs_6m_avg": now.get("score"),
+            "rs_6m_count": now.get("count", 0),
+            "rank_3w": rank_3w,
+            "rank_6w": (ranks_6w.get(theme) or {}).get("rank"),
+            # 正 = 順位が上がった
+            "rank_change": rank_3w - rank if rank is not None and rank_3w is not None else None,
             "momentum_pt_avg": _avg_or_none(mom_values),
             "momentum_pt_max": max(mom_values) if mom_values else None,
             "dev_1d_avg": _avg_or_none(dev_1d_values),
@@ -4949,11 +5031,12 @@ def build_portfolio_theme_summary(
         for r in result:
             r["position_ratio"] = r["position_value"] / max_theme_position * 100.0
 
-    # ソート: sort_key 降順 (None 末尾) → member_count 降順 → テーマ名昇順
-    primary = THEME_SUMMARY_SORT_FIELDS.get(sort_key, "momentum_pt_avg")
+    # ソート: sort_key 降順 (順位だけ昇順、None 末尾) → member_count 降順 → テーマ名昇順
+    primary = THEME_SUMMARY_SORT_FIELDS.get(sort_key, "rank")
+    sign = 1 if primary == "rank" else -1
     result.sort(key=lambda r: (
         r[primary] is None,
-        -(r[primary] or 0),
+        sign * (r[primary] or 0),
         -r["member_count"],
         r["theme"],
     ))

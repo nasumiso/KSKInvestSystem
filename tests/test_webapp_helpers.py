@@ -3730,6 +3730,46 @@ class TestBuildPortfolioThemeSummary:
         # 半導体 (avg 70) が 防衛 (avg 50) より先 (momentum 降順)
         assert out[0]["theme"] == "半導体"
 
+    def test_calc_theme_ranks(self):
+        """6ヶ月相対の平均で順位を付け、値の無い銘柄は平均にもcountにも入れない (issue #531)。"""
+        records = [
+            self._record("1111", ["半導体", "AI"]),
+            self._record("2222", ["半導体"]),
+            self._record("3333", ["防衛"]),
+            self._record("4444", ["防衛"]),  # chg_26w なし
+            self._record("5555", ["電力"]),  # chg_26w なし → テーマごと除外
+        ]
+        stock_map = {"1111": {"chg_26w": 1.5}, "2222": {"chg_26w": 1.1}, "3333": {"chg_26w": 1.2}}
+        ranks = helpers.calc_theme_ranks(records, stock_map, {"chg_26w": 1.0})
+        assert ranks == {
+            "AI": {"score": 50.0, "rank": 1, "count": 1},
+            "半導体": {"score": 30.0, "rank": 2, "count": 2},
+            "防衛": {"score": 20.0, "rank": 3, "count": 1},
+        }
+
+    def test_past_ranks_from_snapshots(self, monkeypatch):
+        """3週前・6週前は記録から引き、許容日数より古い記録しか無ければ None (issue #531)。"""
+        from datetime import date
+        records = [self._record("1111", ["半導体"]), self._record("2222", ["防衛"])]
+        stock_data = {"1111": {"chg_26w": 1.3}, "2222": {"chg_26w": 1.1}}
+        monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: stock_data)
+        monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {})
+        monkeypatch.setattr(helpers, "get_price_day", lambda dt: date(2026, 10, 26))
+        import make_market_db
+        monkeypatch.setattr(make_market_db, "get_market_db", lambda: {"topix": {"chg_26w": 1.0}})
+        snapshots = {
+            # 21日前 (10/5) の記録が無いので、それ以前で最新の 10/2 を使う
+            date(2026, 10, 2): {"半導体": {"rank": 2}, "防衛": {"rank": 1}},
+            date(2026, 10, 9): {"半導体": {"rank": 9}},  # 21日前より新しいので使わない
+            # 42日前 (9/14) から7日より古い
+            date(2026, 9, 6): {"半導体": {"rank": 5}},
+        }
+        out = helpers.build_portfolio_theme_summary(records=records, snapshots=snapshots)
+        assert [(t["theme"], t["rank"], t["rank_3w"], t["rank_6w"], t["rank_change"]) for t in out] == [
+            ("半導体", 1, 2, None, 1),
+            ("防衛", 2, 1, None, -1),
+        ]
+
     def test_same_code_in_two_themes(self, monkeypatch):
         """同一銘柄が 2 テーマに属する場合、両テーマで集計される。"""
         records = [self._record("1111", ["半導体", "AI"])]

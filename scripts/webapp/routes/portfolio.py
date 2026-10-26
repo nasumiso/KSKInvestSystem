@@ -1450,7 +1450,7 @@ def shikiho_data(code_s):
 
 # 許可 sort_key は helper のマッピング (真実の源) から導出する
 THEME_SUMMARY_SORT_KEYS = set(THEME_SUMMARY_SORT_FIELDS)
-DEFAULT_THEME_SUMMARY_SORT = "momentum"
+DEFAULT_THEME_SUMMARY_SORT = "rank"
 
 
 @portfolio_bp.route("/portfolio/themes/summary", methods=["GET"])
@@ -1461,7 +1461,7 @@ def theme_summary():
     momentum_pt (中長期) と rs_line 移動平均乖離オシレーター (短期の勢い) を集約表示する。
 
     URL クエリ:
-      sort: momentum / dev_1d / dev_a / dev_b (省略時=momentum)
+      sort: rank / momentum / dev_1d / dev_a / dev_b (省略時=rank、issue #531)
     """
     sort_key = (request.args.get("sort") or "").strip()
     if sort_key not in THEME_SUMMARY_SORT_KEYS:

@@ -20,10 +20,16 @@
   .member-list .status-badge { padding: 0 0.4em; }
   .member-list .status-hold  { font-weight: 700; }
   .member-list .member-hold { font-weight: 700; }
+  .member-list .member-row { margin-bottom: 0.2em; }
+  .member-list .member-head { white-space: nowrap; }
+  .member-list .member-nums { color: #888; padding-left: 2.5em; white-space: nowrap; }
   .mom-strong { font-weight: 700; color: #060; }
   .mom-weak { color: #c00; }
   .dev-up { color: #060; }
   .dev-down { color: #c00; }
+  table.theme-summary th.rank-col { width: 3.5em; }
+  table.theme-summary th.rank-now-col { width: 5em; }
+  .rank-change { font-size: 0.85em; margin-left: 0.2em; }
   table.theme-summary th a { color: inherit; }
   table.theme-summary th.sort-active a { color: #2c5282; }
 </style>
@@ -38,6 +44,7 @@
 
 <p style="font-size:0.85em;color:#666;margin:0 0 0.6em 0;">
   銘柄メモで付けた業態テーマを自分の分類軸とした市場ローテーション検知。
+  順位は6ヶ月相対 (構成銘柄の26週前比をTOPIXと比べた値) の平均で付け、毎日の記録から3週前・6週前の順位を並べる。
   RSスコアとRSラインの移動平均乖離を併記する。
 </p>
 
@@ -54,9 +61,11 @@
   <thead>
     <tr>
       <th class="theme-col">テーマ</th>
+      <th class="rank-now-col {% if active_sort == 'rank' %}sort-active{% endif %}" title="構成銘柄の6ヶ月相対の平均で付けた順位。↑↓ は3週前からの上下。クリックで昇順ソート"><a href="{{ sort_urls['rank'] }}">順位</a></th>
+      <th class="rank-col" title="3週前の記録の順位">3週前</th>
+      <th class="rank-col" title="6週前の記録の順位">6週前</th>
       <th class="num-col">構成</th>
-      <th class="num-col {% if active_sort == 'momentum' %}sort-active{% endif %}" title="構成銘柄のRSスコア（0〜100）の平均。クリックで降順ソート"><a href="{{ sort_urls['momentum'] }}">RSスコア平均</a></th>
-      <th class="num-col" title="構成銘柄のRSスコア（0〜100）の最大値">最大</th>
+      <th class="num-col {% if active_sort == 'momentum' %}sort-active{% endif %}" title="構成銘柄のRSスコア（0〜100）の平均。セルに乗せると最大値。クリックで降順ソート"><a href="{{ sort_urls['momentum'] }}">RSスコア平均</a></th>
       <th class="num-col {% if active_sort == 'dev_1d' %}sort-active{% endif %}" title="今日のRSライン（対TOPIX） の前日比 (%) の平均。本日の瞬間的な勢い。クリックで降順ソート"><a href="{{ sort_urls['dev_1d'] }}">1日乖離</a></th>
       <th class="num-col {% if active_sort == 'dev_a' %}sort-active{% endif %}" title="今日のRSライン（対TOPIX） と直近5日移動平均の乖離率の平均。正=直近平均より上振れ(勢い強)。クリックで降順ソート"><a href="{{ sort_urls['dev_a'] }}">5日乖離</a></th>
       <th class="num-col {% if active_sort == 'dev_b' %}sort-active{% endif %}" title="今日のRSライン（対TOPIX） と直近20日移動平均の乖離率の平均。正=直近平均より上振れ(勢い強)。クリックで降順ソート"><a href="{{ sort_urls['dev_b'] }}">20日乖離</a></th>
@@ -71,27 +80,36 @@
           <summary title="クリックで構成銘柄を展開">▶ {{ t.theme }}</summary>
           <div class="member-list">
             {% for m in t.members %}
-            <div>
+            <div class="member-row member-head">
               <a href="{{ url_for('detail.stock_detail', code_s=m.code_s) }}">{{ m.code_s }}</a>
               <span class="{% if m.status_query == 'hold' %}member-hold{% endif %}">{{ m.stock_name }}</span>
               <span class="status-badge status-{{ m.status_query }}">{{ m.status }}</span>
-              {% if m.momentum_pt is not none %}<span style="color:#888;" title="RSスコア（0〜100）">RSスコア {{ m.momentum_pt|round|int }}</span>{% endif %}
+              {% if m.momentum_pt is not none or m.rs_6m is not none %}
+              <div class="member-nums">
+                {% if m.momentum_pt is not none %}<span title="RSスコア（0〜100）">RS {{ m.momentum_pt|round|int }}</span>{% endif %}
+                {% if m.rs_6m is not none %}{% if m.momentum_pt is not none %} · {% endif %}<span title="6ヶ月相対 (26週前比をTOPIXと比べた値)">6ヶ月 {{ fmt_pct(m.rs_6m) }}</span>{% endif %}
+              </div>
+              {% endif %}
             </div>
             {% endfor %}
           </div>
         </details>
       </td>
+      <td class="num"{% if t.rank is not none %} title="6ヶ月相対の平均 {{ fmt_pct(t.rs_6m_avg) }} ({{ t.rs_6m_count }}銘柄)"{% endif %}>{{ t.rank if t.rank is not none else '—' }}
+        {%- if t.rank_change is not none and t.rank_change > 0 %}<span class="rank-change dev-up">↑{{ t.rank_change }}</span>
+        {%- elif t.rank_change is not none and t.rank_change < 0 %}<span class="rank-change dev-down">↓{{ -t.rank_change }}</span>{% endif %}</td>
+      <td class="num">{{ t.rank_3w if t.rank_3w is not none else '—' }}</td>
+      <td class="num">{{ t.rank_6w if t.rank_6w is not none else '—' }}</td>
       {# 保有ポジション (1保 現在株価×株数 の合計) を最大テーマ比で背景塗り (portfolio 状態列と同方式) #}
       <td class="num"
         {%- if t.position_value > 0 %} title="ポジション: ¥{{ '{:,}'.format(t.position_value|int) }} (全保有の {{ '%.1f'|format(t.position_pct) }}%)"{% endif -%}
         {%- if t.position_ratio > 0 %} style="background: linear-gradient(to right, rgba(40,80,40,0.18) 0% {{ '%.1f'|format(t.position_ratio) }}%, transparent {{ '%.1f'|format(t.position_ratio) }}% 100%);"{% endif -%}
       >{{ t.member_count }}</td>
-      <td class="num">
+      <td class="num"{% if t.momentum_pt_max is not none %} title="最大 {{ fmt_int(t.momentum_pt_max) }}"{% endif %}>
         {% if t.momentum_pt_avg is not none and t.momentum_pt_avg >= 70 %}<span class="mom-strong">{{ fmt_int(t.momentum_pt_avg) }}</span>
         {% elif t.momentum_pt_avg is not none and t.momentum_pt_avg <= 30 %}<span class="mom-weak">{{ fmt_int(t.momentum_pt_avg) }}</span>
         {% else %}{{ fmt_int(t.momentum_pt_avg) }}{% endif %}
       </td>
-      <td class="num">{{ fmt_int(t.momentum_pt_max) }}</td>
       <td class="num">
         {% if t.dev_1d_avg is not none %}<span class="{% if t.dev_1d_avg >= 0 %}dev-up{% else %}dev-down{% endif %}">{{ fmt_pct(t.dev_1d_avg) }}</span>{% else %}—{% endif %}
       </td>
