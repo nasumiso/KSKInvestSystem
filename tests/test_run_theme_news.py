@@ -161,3 +161,22 @@ def test_usage_meta_saved_from_claude_json_output(tmp_history):
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     assert meta["estimated_cost_usd"] == 0.1234
     assert meta["usage"]["input_tokens"] == 100
+
+
+@pytest.mark.parametrize("stdout,stderr,expected", [
+    ('{"result":"Failed to authenticate: OAuth session expired and could not be refreshed"}',
+     "", ("OAuth session expired", "/login")),
+    ('{"api_error_status":429,"result":"usage limit reached"}',
+     "", ("レート制限 (429)", "usage limit reached")),
+    ("unknown CLI failure", "connection refused", ("unknown CLI failure", "connection refused")),
+    ('{"result":"API unavailable"}', "upstream error", ("API unavailable", "upstream error")),
+])
+def test_異常終了の原因をログに残す(tmp_history, monkeypatch, stdout, stderr, expected):
+    messages = []
+    monkeypatch.setattr(rtn, "log_warning", messages.append)
+    monkeypatch.setattr(rtn.subprocess, "run", lambda *a, **kw:
+                        subprocess.CompletedProcess(a, returncode=1, stdout=stdout, stderr=stderr))
+    assert rtn._run_claude_skill() == 1
+    logs = "\n".join(messages)
+    assert all(text in logs for text in expected)
+    assert not rtn._today_done_marker_path().exists()

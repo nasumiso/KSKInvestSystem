@@ -127,7 +127,15 @@ def _run_claude_skill() -> int:
             )
         else:
             log_warning(f"[theme-news] claude -p 異常終了: rc={result.returncode}")
-            log_warning(f"stderr: {result.stderr[-500:]}")
+            if isinstance(api_msg, str) and api_msg:
+                log_warning(f"[theme-news] Claude 応答: {api_msg[-_OUTPUT_TAIL_BYTES:]}")
+            else:
+                _log_claude_output_tail(result.stdout, result.stderr)
+            if any(message in (result.stdout or "") for message in
+                   ("Failed to authenticate", "Not logged in")):
+                log_warning("[theme-news] Claude の再認証が必要です。運用機の画面で Claude Code の /login を実行し、再実行してください")
+            if api_msg and result.stderr:
+                log_warning(f"[theme-news] stderr 末尾: {result.stderr[-_OUTPUT_TAIL_BYTES:]!r}")
         return result.returncode
 
     history_file = _today_history_path()
@@ -158,7 +166,7 @@ def _run_claude_skill() -> int:
     return 0
 
 
-# rc=0 だが skill が history を生成しなかった「静かな失敗」時の調査用に、
+# 異常終了や skill が history を生成しなかった「静かな失敗」時の調査用に、
 # claude -p の出力末尾を warning として残す。--output-format json なので
 # 末尾には result/usage JSON が出ているはずで、原因切り分けの手がかりになる。
 _OUTPUT_TAIL_BYTES = 2048
