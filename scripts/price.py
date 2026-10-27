@@ -785,6 +785,24 @@ def _calc_daily_indicators(daily_price_list):
     return dic
 
 
+def _close_weeks_ago(weekly_price_list, base_day, weeks):
+    """base_day の週から weeks 週前の週足バーの終値を返す。無ければ None。
+
+    週は ISO 週 (月〜日) で突き合わせる。株探 (日付=週の最終日) と yfinance (日付=月曜) の
+    どちらの週足でも、同じ週のバーを引く。
+    """
+    target = (base_day - timedelta(weeks=weeks)).isocalendar()[:2]
+    for row in weekly_price_list:
+        dt = parse_date_str(str(row[0]))
+        if dt and dt.isocalendar()[:2] == target:
+            try:
+                close = float(str(row[4]).replace(",", ""))
+            except (ValueError, IndexError):
+                return None
+            return close if close > 0 else None
+    return None
+
+
 def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
     """weekly_price_listから各種週次指標を計算する
     parse_pricew_htmls_kabutanから指標計算部分を分離。
@@ -887,6 +905,13 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
 
     rs_raw, p_cur = calc_rs()
     price_dict["rs_raw"] = rs_raw
+
+    # ---- 26週前の週末終値との比 (業態テーマ順位の6ヶ月相対の元、issue #531)
+    # TOPIX で割るのは集計時 (helpers.calc_rs_6m)。株探週足は先頭が今週、yfinance 週足キャッシュは
+    # 先頭が先週のことがあるので、位置ではなく週で26週前を引く
+    close_26w = _close_weeks_ago(weekly_price_list, get_price_day(datetime.now()), 26)
+    if close_26w and p_cur:
+        price_dict["chg_26w"] = round(float(p_cur) / close_26w, 4)
 
     # ---- TOPIXとの比較でモメンタムポイントを計算 (対数正規分布モデル, issue #104 Phase 2)
     def calc_momentum_pt():

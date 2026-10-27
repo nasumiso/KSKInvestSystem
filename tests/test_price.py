@@ -1026,6 +1026,29 @@ class TestCalcWeeklyIndicators:
         assert dates == sorted(dates, reverse=True)
 
 
+class TestCloseWeeksAgo:
+    """26週前の週末終値を週 (ISO週) で引く (issue #531)"""
+
+    @staticmethod
+    def _weekly(first_day, weeks, fmt):
+        from datetime import timedelta
+        # 週ごとに終値を 1000, 1001, ... (新しい週が先頭)
+        return [(fmt((first_day - timedelta(weeks=i))), "0", "0", "0", "{:,}".format(1000 + i), "0", "0", "0")
+                for i in range(weeks)]
+
+    @pytest.mark.parametrize("first_day, fmt, weeks, expected", [
+        # 株探: 先頭が今週 (日付は週の最終日)。26本目が26週前
+        (date(2026, 10, 26), lambda d: d.strftime("%y/%m/%d"), 60, 1026.0),
+        # yfinance キャッシュ: 先頭が先週の月曜。位置では25本目が26週前
+        (date(2026, 10, 19), lambda d: "%d年%d月%d日" % (d.year, d.month, d.day), 60, 1025.0),
+        # 履歴が26週に届かない (上場6ヶ月未満)
+        (date(2026, 10, 26), lambda d: d.strftime("%y/%m/%d"), 20, None),
+    ])
+    def test_picks_same_week(self, first_day, fmt, weeks, expected):
+        wpl = self._weekly(first_day, weeks, fmt)
+        assert price._close_weeks_ago(wpl, date(2026, 10, 26), 26) == expected
+
+
 # ==================================================
 # yfinance週足キャッシュのラウンドトリップ
 # ==================================================

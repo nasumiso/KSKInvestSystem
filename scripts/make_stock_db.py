@@ -1840,6 +1840,12 @@ def list_all_db(upload_csv=True, update_portforio=True):
         log_print("出口ライン「防」の保有銘柄数", record_hold_exit_alerts(stocks))
     except Exception as e:  # noqa: BLE001
         log_warning(f"出口ライン「防」の記録に失敗: {e}")
+    # 業態テーマの順位を日次で残す。サマリー画面の3週前・6週前はこの記録を読む (issue #531)
+    try:
+        from webapp.helpers import record_theme_rank_snapshot
+        log_print("業態テーマ順位を記録したテーマ数", record_theme_rank_snapshot(stocks))
+    except Exception as e:  # noqa: BLE001
+        log_warning(f"業態テーマ順位の記録に失敗: {e}")
 
     # ---- テーマ別株価騰落率を計算してmarket_dbに保存
     log_print("---- テーマ別株価騰落率を計算")
