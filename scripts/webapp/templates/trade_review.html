@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}月次の売買振り返り - Shintakane Research{% endblock %}
+{% block content %}
+<style>
+  .review-months { display:flex; flex-wrap:wrap; gap:0.5em; margin-bottom:1.5em; }
+  .review-months a { padding:0.35em 0.7em; border:1px solid #ddd; border-radius:4px; text-decoration:none; }
+  .review-months a[aria-current="page"] { background:#eaf2f8; border-color:#0172ad; font-weight:600; }
+  .review-report { max-width:100%; font-size:0.9em; line-height:1.8; }
+  .review-report h2 { margin:1.5em 0 0.6em; font-size:1.25em; }
+  .review-report h3 { margin:1.2em 0 0.5em; font-size:1.1em; }
+  .review-body { overflow-x:auto; }
+  .review-body table { min-width:48em; font-size:0.9em; }
+  .review-body th, .review-body td { min-width:7em; max-width:26em; padding:0.5em 0.7em; vertical-align:top; overflow-wrap:anywhere; }
+  .review-body pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+  .review-back { font-size:0.9em; }
+</style>
+
+<p class="review-back"><a href="{{ url_for('trade_history.trade_history') }}">← 売買履歴</a></p>
+<h2>月次の売買振り返り</h2>
+
+{% if months %}
+<div class="review-months" role="navigation" aria-label="保存済みの月次レポート">
+  {% for month in months %}
+  <a href="{{ url_for('trade_history.review_reports', year_month=month) }}"{% if month == selected_month %} aria-current="page"{% endif %}>{{ month[:4] }}年{{ month[5:]|int }}月</a>
+  {% endfor %}
+</div>
+<article class="review-report">
+  <header>{{ selected_month[:4] }}年{{ selected_month[5:]|int }}月</header>
+  <div class="review-body">{{ report | theme_news_md_to_html | safe }}</div>
+</article>
+{% else %}
+<p>保存済みの月次レポートはありません。</p>
+{% endif %}
+{% endblock %}

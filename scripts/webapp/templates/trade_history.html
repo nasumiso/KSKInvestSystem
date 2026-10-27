@@ -18,7 +18,10 @@
   .trade-csv-import-menu input[type=file] { font-size:1em; color:#777; flex:1 1 14em; min-width:0; }
 </style>
 
-<h2>売買履歴</h2>
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:1em;flex-wrap:wrap;">
+  <h2>売買履歴</h2>
+  <a href="{{ url_for('trade_history.review_reports') }}" style="font-size:0.9em;">月次レポート →</a>
+</div>
 
 {# CSV取込の結果メッセージ (issue #387 4a) #}
 {% with messages = get_flashed_messages(with_categories=true) %}

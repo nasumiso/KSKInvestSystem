@@ -698,3 +698,78 @@ class TestImportTradeCsv:
         html = app.test_client().get("/trade-history").data.decode()
         assert 'action="/trade-history/import/quick"' in html
         assert "ダウンロードフォルダから未取込のCSVを自動で探します" in html
+
+
+@pytest.fixture
+def review_dir(tmp_path, monkeypatch):
+    """実レポートに触れず、月次レポートだけ一時ディレクトリに置く。"""
+    path = tmp_path / "trade_review"
+    path.mkdir()
+    monkeypatch.setattr("trade_review.REVIEW_DIR", str(path))
+    return path
+
+
+def test_月次レポートは保存月の新しい順で最新月を表示(client, review_dir):
+    for month in ("2025-12", "2026-08", "2026-09"):
+        (review_dir / f"{month}.md").write_text(f"## {month}の振り返り", encoding="utf-8")
+    for name in ("2026-13.md", "2026-9.md", "notes.md", "2026-10.json"):
+        (review_dir / name).write_text("対象外", encoding="utf-8")
+    (review_dir / "2026-11.md").mkdir()
+    html = client.get("/trade-history/reviews").get_data(as_text=True)
+    assert html.index("2026年9月") < html.index("2026年8月") < html.index("2025年12月")
+    assert '<h2>2026-09の振り返り</h2>' in html
+    assert '<h2>2026-08の振り返り</h2>' not in html
+    assert "対象外" not in html and "2026年10月" not in html and "2026年11月" not in html
+
+
+def test_月を選んで表を読めるがレポートは変更しない(client, review_dir):
+    from bs4 import BeautifulSoup
+
+    (review_dir / "2026-09.md").write_text("## 最新月", encoding="utf-8")
+    report = """# 月次レポート
+
+## 振り返り
+
+| 銘柄 | 学び |
+| --- | --- |
+| テスト銘柄 | **待つ** |
+
+<script>alert('test')</script>
+
+[リンク](javascript:alert(1))
+"""
+    (review_dir / "2026-08.md").write_text(report, encoding="utf-8")
+    (review_dir / "2026-08.json").write_text('{"原本": true}', encoding="utf-8")
+    before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in review_dir.iterdir()}
+    response = client.get("/trade-history/reviews/2026-08")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+    assert soup.select_one('[aria-current="page"]').get_text() == "2026年8月"
+    body = soup.select_one(".review-body")
+    assert body.select_one("table td").get_text() == "テスト銘柄"
+    assert body.select_one("strong").get_text() == "待つ"
+    assert not body.select("script, a[href^='javascript:']")
+    assert "最新月" not in body.get_text()
+    assert before == {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in review_dir.iterdir()}
+    assert client.post("/trade-history/reviews/2026-08").status_code == 405
+
+
+@pytest.mark.parametrize("missing_dir", [False, True])
+def test_月次レポートがなければ空状態を表示(client, review_dir, missing_dir):
+    if missing_dir:
+        review_dir.rmdir()
+    response = client.get("/trade-history/reviews")
+    assert response.status_code == 200
+    assert "保存済みの月次レポートはありません" in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("month", ["2026-07", "2026-13", "2026-9", "2026-09.json", "..%2Fsecret", "%2e%2e"])
+def test_未保存月や不正なパスのレポートは表示しない(client, review_dir, month):
+    (review_dir / "2026-09.md").write_text("## 本文", encoding="utf-8")
+    assert client.get(f"/trade-history/reviews/{month}").status_code == 404
+
+
+def test_売買履歴から月次レポートへ移動できる(client, review_dir):
+    html = client.get("/trade-history").get_data(as_text=True)
+    assert 'href="/trade-history/reviews"' in html
+    assert "月次レポート →" in html

@@ -1,6 +1,7 @@
 """売買履歴ページルート (issue #351, #357, #387)。
 
 GET  /trade-history                          : 売買履歴/アクションログの2タブ表示
+GET  /trade-history/reviews[/<year_month>]    : 保存済み月次レポートの閲覧
 POST /trade-history/import                    : 楽天/SBI CSV をアップロード取込 (issue #387 4a)
 POST /trade-history/import/quick              : ダウンロードフォルダ (MBA または ~/Downloads) の未取込CSVを自動取込
 POST /trade-history/<code_s>/<int:seq>/review-memo : 振り返りメモを保存
@@ -11,6 +12,7 @@ import datetime
 import glob
 import hashlib
 import os
+import re
 import shutil
 import tempfile
 import uuid
@@ -31,6 +33,7 @@ import import_portfolio_csv as csv_import
 import import_rakuten_fills as rakuten
 import import_sbi_fills as sbi
 import portfolio_shelve as ps
+import trade_review
 from ks_util import DATA_DIR
 from webapp.helpers import _bulk_resolve_stock_names, build_episode_chart, kessan_note
 from webapp.trade_episodes import (
@@ -52,6 +55,24 @@ trade_history_bp = Blueprint("trade_history", __name__)
 # 取込成功CSVの保存先 (取引履歴の原本置き場)。issue #387 4a
 TRADE_HISTORY_DIR = os.path.join(DATA_DIR, "trade_history")
 TRADE_HISTORY_DOWNLOADS_DIR = os.path.expanduser("~/Downloads")
+
+
+@trade_history_bp.route("/trade-history/reviews", defaults={"year_month": None})
+@trade_history_bp.route("/trade-history/reviews/<year_month>")
+def review_reports(year_month):
+    """保存済みの Markdown レポートだけを読む。月未指定時は最新月を表示する。"""
+    from pathlib import Path
+
+    review_dir = Path(trade_review.REVIEW_DIR)
+    months = sorted((p.stem for p in review_dir.glob("*.md")
+                     if re.fullmatch(r"[0-9]{4}-(0[1-9]|1[0-2])", p.stem) and p.is_file()),
+                    reverse=True)
+    if year_month is not None and year_month not in months:
+        abort(404)
+    selected_month = year_month or (months[0] if months else None)
+    report = (review_dir / f"{selected_month}.md").read_text(encoding="utf-8") if selected_month else ""
+    return render_template("trade_review.html", months=months,
+                           selected_month=selected_month, report=report)
 
 
 def _build_rows(ep: dict) -> list:
