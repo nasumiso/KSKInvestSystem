@@ -2012,7 +2012,9 @@ def _html_market(market_db):
                 rally_start = state_meta.get("rally_attempt_start_date")
                 daily_history = db.get("daily_history", []) or []
                 day_n = market_state.calc_rally_day(rally_start, daily_history)
-                ftd_rally_display = "ラリー Day %d" % day_n if day_n else "—"
+                # 開始日が daily_history (直近 21 日) より古いと Day を数えられないので開始日を出す
+                ftd_rally_display = ("ラリー Day %d" % day_n if day_n
+                                     else "ラリー %s〜" % rally_start[3:] if rally_start else "—")
             else:
                 last_ftd = state_meta.get("last_ftd_date")
                 ftd_rally_display = last_ftd[3:] if last_ftd else "—"

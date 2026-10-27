@@ -126,6 +126,17 @@ class TestCheckFollowThroughDay:
         prev = {"close": 1000, "volume": 1000}
         assert ms.check_follow_through_day(today, prev, rally_meta, history) is True
 
+    def test_ftd_succeeds_when_rally_start_is_older_than_history(self):
+        """Day 1 が daily_history の窓より古くても、安値を割っていなければ FTD 成立"""
+        history = self._history(21)
+        rally_meta = {
+            "rally_attempt_start_date": "26/03/12",  # 窓 (26/04/10〜) より前
+            "rally_attempt_start_low": 990,
+        }
+        today = {"date": history[0], "close": 1015, "low": 1000, "volume": 1500}
+        prev = {"close": 1000, "volume": 1000}
+        assert ms.check_follow_through_day(today, prev, rally_meta, history) is True
+
     def test_ftd_fails_too_early(self):
         """Day 3 (まだ Day 4 に達していない) では成立しない"""
         history = self._history(30)

@@ -161,11 +161,16 @@ def check_follow_through_day(today, prev, rally_meta, daily_history):
 
     # Day 4 以降か
     history_index = {date: i for i, date in enumerate(daily_history)}
-    if today["date"] not in history_index or start_date not in history_index:
+    if today["date"] not in history_index:
         return False
-    days_since_start = history_index[start_date] - history_index[today["date"]]
-    if days_since_start < FTD_MIN_DAYS_FROM_RALLY_START:
+    if start_date in history_index:
+        days_since_start = history_index[start_date] - history_index[today["date"]]
+        if days_since_start < FTD_MIN_DAYS_FROM_RALLY_START:
+            return False
+    elif start_date > daily_history[-1]:
         return False
+    # start_date が daily_history (直近 21 日) より古いときは Day 4 を過ぎている。
+    # ここで落とすと、安値を割らずに長引いたラリーが FTD にならず調整に張り付く
 
     # 上昇率チェック
     if prev["close"] <= 0:
