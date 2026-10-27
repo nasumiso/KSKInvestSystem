@@ -408,6 +408,9 @@
         title="参考: 保有額で加重した市場ステート。F&G が Extreme でない日に、攻める側の上限として使う。{% if ex.state_note %}{{ ex.state_note }} (上昇圧力下と同じ上限で計算){% elif ex.is_no_position %}保有が無いため TOPIX とグロース250 の悪い方で判定。{% elif ex.state_is_fallback %}保有カテゴリに対応する指数が鮮度切れのため TOPIX とグロース250 の悪い方で判定。{% endif %}">
       {{ ex.state_label }}{% if ex.state_note %} ⚠{% endif %}
     </span>
+    {%- for p in ex.index_progress %}
+    <span style="font-size:0.9em;color:#666;" title="{{ p.name }}: {{ p.detail }}">{{ p.name }} {{ p.text }}</span>
+    {%- endfor %}
     {%- if ex.qty_mismatch %}<span style="color:#ef6c00;" title="運用総額 (保有銘柄の数量 × 終値) と、残高CSVの運用総額 {{ '{:,}'.format(total_man) }}万が 1% 以上ずれています。判定は残高CSVで行っています">⚠ 数量ずれ</span>{%- endif %}
   </div>
   {% include "_summary_inputs.html" %}

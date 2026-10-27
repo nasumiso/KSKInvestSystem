@@ -269,9 +269,11 @@ def _build_exposure_summary(margin_state: dict) -> tuple:
 
         from make_market_db import get_market_db
 
-        evaluation = exposure_guide.build_evaluation(get_market_db(), margin_state=margin_state)
+        market_db = get_market_db()
+        evaluation = exposure_guide.build_evaluation(market_db, margin_state=margin_state)
     except Exception:  # noqa: BLE001
         return None, "目標の計算に失敗したため適正エリア非表示"
+    evaluation["index_progress"] = _index_progress(market_db, evaluation)
     if evaluation["area_lower"] is None:
         missing = "、".join(f"{m['broker']}: {m['reason']}" for m in evaluation["missing"])
         return None, f"適正エリア非表示 ({missing or '推定維持率が出せません'})"
@@ -284,6 +286,60 @@ def _build_exposure_summary(margin_state: dict) -> tuple:
     evaluation.update(_target_chain(evaluation))
     evaluation.update(_exposure_bar_geometry(evaluation))
     return evaluation, None
+
+
+_INDEX_NAMES = {"topix": "TOPIX", "mothers": "グロース250", "nikkei225": "日経225"}
+# FTD 後の経過日数を出す期間 (取引日)。DD の失効と同じ 25 日
+_FTD_SHOW_DAYS = 25
+
+
+def _index_progress(market_db: dict, evaluation: dict) -> list:
+    """市場ステートの判定の途中経過 (有効DD数・ラリー Day・FTD後の日数) を指数ごとに返す。
+
+    対象は保有額の加重に使った指数 (保有額の多い順)。ノーポジや対応する指数が無い日は
+    TOPIX とグロース250。表示だけで、目標の計算には使わない。
+    """
+    import exposure_guide
+    import market_state as mst
+
+    weights: dict = {}
+    for category, value in (evaluation.get("category_values") or {}).items():
+        index_name = exposure_guide.CATEGORY_TO_INDEX.get(category)
+        if value and value > 0 and index_name in evaluation["index_states"]:
+            weights[index_name] = weights.get(index_name, 0) + value
+    names = sorted(weights, key=lambda n: -weights[n]) or [
+        n for n in exposure_guide.FALLBACK_INDEXES if n in evaluation["index_states"]]
+
+    rows = []
+    for name in names:
+        entry = market_db.get(name) or {}
+        state = entry.get("market_state")
+        meta = entry.get("state_meta") or {}
+        history = entry.get("daily_history") or []
+        dd = len(meta.get("distribution_days_with_close") or [])
+        if state == mst.MARKET_IN_CORRECTION:
+            start = meta.get("rally_attempt_start_date")
+            day = mst.calc_rally_day(start, history)
+            # 開始日が daily_history (直近 21 日) より古いと Day を数えられないので開始日を出す
+            text = f"ラリー Day {day}" if day else f"ラリー {start}〜" if start else "ラリー待ち"
+            detail = ("調整中。前日より高く引けた日を Day 1 とし、Day 4 以降に +1.0% 以上・出来高増で FTD (上昇確定へ)。"
+                      f"Day 1 ({start}) の安値 {meta.get('rally_attempt_start_low')} を割ると取り消し" if start
+                      else "調整中。前日より高く引けた日からラリー Day 1 を数え始める")
+        else:
+            text = f"DD {dd}"
+            if state == mst.UPTREND_UNDER_PRESSURE:
+                detail = (f"有効DD {dd}。{mst.DD_THRESHOLD_TO_CONFIRMED_FROM_PRESSURE} 未満かつ"
+                          "週足10MA の上で上昇確定に戻る。"
+                          f"{mst.DD_THRESHOLD_TO_CORRECTION} で調整")
+            else:
+                detail = (f"有効DD {dd}。{mst.DD_THRESHOLD_TO_PRESSURE} で圧力下、"
+                          f"{mst.DD_THRESHOLD_TO_CORRECTION} で調整 (週足10MA 明確割れでも早まる)")
+            ftd_day = mst.calc_rally_day(meta.get("last_ftd_date"), history)
+            if state == mst.CONFIRMED_UPTREND and ftd_day and ftd_day <= _FTD_SHOW_DAYS:
+                text += f" · FTD後 {ftd_day}日"
+                detail += f"。FTD ({meta['last_ftd_date']}) を 1 日目として {ftd_day} 日目"
+        rows.append({"name": _INDEX_NAMES.get(name, name), "text": text, "detail": detail})
+    return rows
 
 
 def _target_chain(evaluation: dict) -> dict:
