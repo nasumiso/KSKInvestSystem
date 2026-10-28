@@ -1316,22 +1316,25 @@ def _format_short_date(value):
         return ""
 
 
-# 信用評価損益率の天井圏/底値圏バッジ閾値。一般目安 (天井 -3% 以上 / 底 -15% 以下)。
-_CREDIT_CEILING_THRESHOLD = -3.0
-_CREDIT_BOTTOM_THRESHOLD = -15.0
+# 信用評価損益率の5段階 → F&G と同じ fng-rating の配色 (閾値は margin_estimate と共有、#535)
+_CREDIT_RATING_CLASS = {
+    "天井圏": "fng-rating-extreme-greed",
+    "強気": "fng-rating-greed",
+    "中立": "fng-rating-neutral",
+    "弱気": "fng-rating-fear",
+    "底値圏": "fng-rating-extreme-fear",
+}
 
 
-def _credit_rating_html(eval_rate):
-    """信用評価損益率の天井圏/底値圏バッジ HTML を返す。中間水準は空文字。
+def _credit_rating_html(eval_rate, prev_rate=None):
+    """信用評価損益率の5段階バッジ HTML を返す。弱気・底値圏で前週より改善していれば「↗改善」を添える。"""
+    import margin_estimate
 
-    天井圏 (買われすぎ) は greed 系、底値圏 (売られすぎ) は fear 系の
-    fng-rating 配色を流用する。
-    """
-    if eval_rate >= _CREDIT_CEILING_THRESHOLD:
-        return '<span class="fng-rating fng-rating-greed">天井圏</span>'
-    if eval_rate <= _CREDIT_BOTTOM_THRESHOLD:
-        return '<span class="fng-rating fng-rating-fear">底値圏</span>'
-    return ''
+    label = margin_estimate.credit_label(eval_rate)
+    badge = '<span class="fng-rating %s">%s</span>' % (_CREDIT_RATING_CLASS[label], label)
+    if label in ("弱気", "底値圏") and margin_estimate.credit_improving(eval_rate, prev_rate):
+        badge += ' <span title="前週より改善">↗改善</span>'
+    return badge
 
 
 # 日経VI の評価バッジ閾値。一般目安 (平常時 20 前後、30 超で恐怖、40 超でパニック)。
@@ -1686,7 +1689,9 @@ def _credit_rows(market_db):
     信用倍率は独立行をやめ、信用評価損益率行の tooltip に統合する (issue #292)。
     market_db は使わず、$KS_DATA_DIR/code_rank_data/credit_balance.json を読む (issue #211)。
     """
-    path = os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json")
+    import margin_estimate
+
+    path =os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json")
     if not os.path.exists(path):
         return []
     try:
@@ -1727,7 +1732,7 @@ def _credit_rows(market_db):
     return [(
         eval_label,
         '%.2f%%' % eval_rate,
-        _credit_rating_html(eval_rate),
+        _credit_rating_html(eval_rate, margin_estimate.credit_prev_rate(history)),
         '<span class="%s">%s</span>pt' % (
             html_mod.escape(e1_cls), html_mod.escape(e1)),
         '<span class="%s">%s</span>pt' % (
