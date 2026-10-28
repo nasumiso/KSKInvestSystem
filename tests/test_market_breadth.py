@@ -90,31 +90,30 @@ def test_market_indicators_renders_eval_and_bairitsu(tmp_path, monkeypatch):
     assert "信用倍率 6.85" in html
     # 倍率の 1週比: 6.85 - 5.74 = +1.11 も tooltip 内
     assert "+1.11" in html
-    # -4.82% は中間水準なのでバッジは出ない
-    assert "天井圏" not in html
-    assert "底値圏" not in html
+    # -4.82% は強気 (−3〜−6%)
+    assert "強気" in html
     # 更新日は独立列 (mi-date) に 26/5/1 形式 (ゼロ埋めなし) で出る
     assert 'class="mi-date"' in html
     assert "26/5/1" in html
 
 
-@pytest.mark.parametrize("eval_rate, expected_badge, absent_badge", [
-    (-2.5, "天井圏", "底値圏"),   # >= -3.0 で天井圏
-    (-16.0, "底値圏", "天井圏"),  # <= -15.0 で底値圏
-    (-8.0, None, None),          # 中間: バッジなし
+@pytest.mark.parametrize("prev, eval_rate, expected_badge, improved", [
+    (None, -3.0, "天井圏", False),                   # >= -3.0 で天井圏
+    (None, -8.0, "中立", False),
+    (("2026-04-24", -13.0), -12.0, "弱気", True),     # 弱気で前週より改善
+    (("2026-04-24", -14.0), -15.0, "底値圏", False),  # <= -15.0 で底値圏。悪化中は印なし
+    (("2026-04-10", -17.0), -16.0, "底値圏", False),  # 前週値が 10 日を超えて離れていたら改善を判定しない
 ])
-def test_market_indicators_credit_badge(tmp_path, monkeypatch, eval_rate, expected_badge, absent_badge):
-    """信用評価損益率の天井圏/底値圏バッジが閾値で出し分けされる (issue #292)。"""
-    _write_credit_json(tmp_path, [
+def test_market_indicators_credit_badge(tmp_path, monkeypatch, prev, eval_rate, expected_badge, improved):
+    """信用評価損益率の5段階バッジと、弱気・底値圏で前週より改善した印 (issue #292、#535)。"""
+    history = [{"date": d, "credit_eval_rate": r, "credit_bairitsu": 6.0} for d, r in ([prev] if prev else [])]
+    _write_credit_json(tmp_path, history + [
         {"date": "2026-05-01", "credit_eval_rate": eval_rate, "credit_bairitsu": 6.0},
     ])
     monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
     html = make_market_db._html_market_indicators({})
-    if expected_badge is None:
-        assert "天井圏" not in html and "底値圏" not in html
-    else:
-        assert expected_badge in html
-        assert absent_badge not in html
+    assert expected_badge in html
+    assert ("↗改善" in html) == improved
 
 
 def test_market_indicators_returns_empty_when_no_data(tmp_path, monkeypatch):

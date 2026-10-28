@@ -7,7 +7,8 @@
 
 判定の考え方 (doc/spec/推定維持率仕様.md):
   - 感情スコアの段が主。F&G が Extreme なら逆張りで 1 段ずらす (恐怖で張り、熱狂で落とす)
-  - F&G が Extreme でない日は、保有額で加重した市場ステートで攻める側に上限をかける (順張り)
+  - 信用評価損益率も同じ向きの逆張り (天井圏で +1、底値圏かつ前週より改善で −1)。F&G とは重ねない (#535)
+  - 逆張りが効かない日は、保有額で加重した市場ステートで攻める側に上限をかける (順張り)
   - 感情に関係なく、全保有が一律に 20% 下がっても追証にならない建玉までに頭打ち
 
 構成:
@@ -131,24 +132,28 @@ def fallback_state(index_states):
     return state, score
 
 
-def evaluate_target(margin_state, emotion, fng_jp, state, hold_total_value):
+def evaluate_target(margin_state, emotion, fng_jp, state, hold_total_value,
+                    credit=None, credit_prev=None):
     """目標の維持率と、運用総額の適正エリアを評価して表示・ログ共通の dict を返す (issue #480)。
 
     margin_state: build_margin_state() の戻り値
     emotion: read_emotion() の戻り値 (未入力なら None)
     state: 保有額で加重した市場ステート (取れなければ None)
+    credit / credit_prev: 信用評価損益率の最新値と前週値 (#535。取れなければ None)
     hold_total_value: 保有銘柄 (1保) の数量 × 終値の合計。残高 CSV とのずれの注記に使う
 
     適正エリアは、残高 CSV に保有がある証券会社 (楽天・SBI) の推定がすべて成立したときだけ出す。
     片方だけの数字で全体の過不足を出さないため。出せないときは area_* を None にして理由を返す。
     """
     score = emotion["score"] if emotion and not emotion.get("expired") else None
-    step, parts = margin_estimate.target_step(score, fng_jp, state)
+    step, parts = margin_estimate.target_step(score, fng_jp, state, credit, credit_prev)
     result = {
         "emotion_score": score,
         "emotion_date": (emotion or {}).get("date"),
         "emotion_expired": bool(emotion and emotion.get("expired")),
         "fng_jp": fng_jp,
+        "credit_eval_rate": credit,
+        "credit_prev_rate": credit_prev,
         "state": state,
         "step": step,
         "step_parts": parts,
@@ -198,36 +203,42 @@ def _is_fresh(date_str, kind, *, today=None):
     return (base - d).days <= FRESHNESS_DAYS[kind]
 
 
-def _read_json_history_tail(path):
-    """JSON の history 末尾要素を返す。読めなければ None。"""
+def _read_json_history(path):
+    """JSON の history を返す。読めなければ []。"""
     if not os.path.exists(path):
-        return None
+        return []
     try:
         with open(path, "r", encoding="utf-8") as f:
             payload = json.load(f)
     except (OSError, ValueError):
-        return None
-    history = payload.get("history") or []
+        return []
+    return payload.get("history") or []
+
+
+def _read_json_history_tail(path):
+    """JSON の history 末尾要素を返す。読めなければ None。"""
+    history = _read_json_history(path)
     return history[-1] if history else None
 
 
 def read_credit_eval_rate(*, today=None):
-    """信用評価損益率と元データ日付を返す (value, date)。鮮度切れは value=None。"""
-    latest = _read_json_history_tail(
+    """信用評価損益率と元データ日付、前週値を返す (value, date, prev)。鮮度切れは value=None。"""
+    history = _read_json_history(
         os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json")
     )
-    if not latest:
-        return None, None
+    if not history:
+        return None, None, None
+    latest = history[-1]
     date_str = latest.get("date")
     value = latest.get("credit_eval_rate")
     if value is None:
-        return None, date_str
+        return None, date_str, None
     if not _is_fresh(date_str, "credit_balance", today=today):
         log_warning(
             "[exposure] 信用評価損益率が鮮度切れのため判定から除外 (date=%s)" % date_str
         )
-        return None, date_str
-    return value, date_str
+        return None, date_str, None
+    return value, date_str, margin_estimate.credit_prev_rate(history)
 
 
 def read_fng_jp(*, today=None):
@@ -429,10 +440,12 @@ def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None):
         state, _ = fallback_state(index_states)
         state_is_fallback = state is not None
     fng_jp, fng_jp_date = read_fng_jp(today=base_day)
+    credit, credit_date, credit_prev = read_credit_eval_rate(today=base_day)
     if margin_state is None:
         margin_state = build_margin_state(db_path=db_path)
     evaluation = evaluate_target(
-        margin_state, read_emotion(db_path=db_path), fng_jp, state, summary["total_value"])
+        margin_state, read_emotion(db_path=db_path), fng_jp, state, summary["total_value"],
+        credit, credit_prev)
     evaluation.update({
         "state_is_fallback": state_is_fallback,
         "is_no_position": summary["total_value"] <= 0,
@@ -440,6 +453,7 @@ def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None):
         "index_dates": index_dates,
         "category_values": summary["category_values"],
         "fng_jp_date": fng_jp_date,
+        "credit_date": credit_date,
     })
     return evaluation
 
@@ -450,19 +464,17 @@ def build_daily_entry(*, db_path=None, today=None):
     with ShelveDB(MARKET_SHELVE) as db:
         market_db = {k: db.get(k) for k in ("topix", "mothers", "nikkei225", "fear_and_greed")}
     evaluation = build_evaluation(market_db, db_path=db_path, today=base_day)
-    credit_eval_rate, credit_date = read_credit_eval_rate(today=base_day)
     fng_us, fng_us_date = read_fng_us(market_db, today=base_day)
 
     entry = {"date": base_day.isoformat()}
     entry.update(evaluation)
     entry["source_dates"] = {
         "index": entry.pop("index_dates"),  # {"topix": "2026-08-28", "mothers": "...", ...}
-        "credit_balance": credit_date,
+        "credit_balance": entry.pop("credit_date"),
         "fng_jp": entry.pop("fng_jp_date"),
         "fng_us": fng_us_date,
     }
     # 判定には使わない参考値 (#362 から記録を続けている)
-    entry["credit_eval_rate"] = credit_eval_rate
     entry["fng_us"] = fng_us
     return entry
 

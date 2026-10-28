@@ -277,6 +277,14 @@ AREA_BAND_PT = 5
 # 日本版 F&G の Extreme の境界。この外側では逆張りで 1 段ずらす
 FNG_EXTREME_FEAR = 25
 FNG_EXTREME_GREED = 75
+# 信用評価損益率 (%) の5段階の境界 (#535)。一般的な目安で、自前データでは校正していない。
+# 天井圏 (−3 以上) は守る側へ 1、底値圏 (−15 以下) は前週より改善した週だけ攻める側へ 1
+CREDIT_CEILING = -3.0
+CREDIT_BULL = -6.0
+CREDIT_NEUTRAL = -10.0
+CREDIT_BOTTOM = -15.0
+# 前週値として使う、最新との日付の離れの上限 (日)。週次の公表が抜けた週は改善を判定しない
+CREDIT_PREV_MAX_GAP_DAYS = 10
 # F&G が Extreme でないとき、市場ステートで攻める側 (マイナス) にかける上限の段。
 # 上昇確定は上限なし。ステートが取れない日は上昇圧力下と同じにする
 STATE_STEP_FLOORS = {
@@ -305,27 +313,86 @@ def fng_label(fng: Optional[float]) -> Optional[str]:
     return "Extreme Greed"
 
 
+def credit_label(rate: Optional[float]) -> Optional[str]:
+    """信用評価損益率を5段階の名前にする (天井圏 / 強気 / 中立 / 弱気 / 底値圏)。"""
+    if rate is None:
+        return None
+    if rate >= CREDIT_CEILING:
+        return "天井圏"
+    if rate > CREDIT_BULL:
+        return "強気"
+    if rate > CREDIT_NEUTRAL:
+        return "中立"
+    if rate > CREDIT_BOTTOM:
+        return "弱気"
+    return "底値圏"
+
+
+def credit_prev_rate(history: List[Dict[str, Any]]) -> Optional[float]:
+    """credit_balance.json の history から前週値を返す。最新と離れすぎていれば None。"""
+    if len(history) < 2:
+        return None
+    latest, prev = history[-1], history[-2]
+    try:
+        gap = (datetime.strptime(latest["date"], "%Y-%m-%d")
+               - datetime.strptime(prev["date"], "%Y-%m-%d")).days
+    except (KeyError, TypeError, ValueError):
+        return None
+    return prev.get("credit_eval_rate") if gap <= CREDIT_PREV_MAX_GAP_DAYS else None
+
+
+def credit_improving(rate: Optional[float], prev: Optional[float]) -> bool:
+    """前週より改善した (損益率が上がった) か。"""
+    return rate is not None and prev is not None and rate > prev
+
+
+def contrarian_direction(fng: Optional[float], credit: Optional[float],
+                         credit_prev: Optional[float]) -> Tuple[int, int, int]:
+    """F&G と信用評価損益率の逆張りの向き (fng_dir, credit_dir, direction) を返す (−1 / 0 / +1)。
+
+    重ねない: 同じ向きなら 1 段だけ、逆向きなら打ち消して 0。
+    """
+    fng_dir = 0
+    if fng is not None:
+        fng_dir = -1 if fng < FNG_EXTREME_FEAR else 1 if fng >= FNG_EXTREME_GREED else 0
+    credit_dir = 0
+    if credit is not None and credit >= CREDIT_CEILING:
+        credit_dir = 1
+    elif credit is not None and credit <= CREDIT_BOTTOM and credit_improving(credit, credit_prev):
+        credit_dir = -1
+    direction = 0 if fng_dir and credit_dir and fng_dir != credit_dir else fng_dir or credit_dir
+    return fng_dir, credit_dir, direction
+
+
 def format_step(step: int) -> str:
     """段を表示用の文字列にする (+1 / 0 / −1)。"""
     return f"{step:+d}".replace("+0", "0").replace("-", "−")
 
 
-def target_step(emotion: Optional[int], fng: Optional[float],
-                state: Optional[str]) -> Tuple[int, List[str]]:
-    """感情スコア・日本版 F&G・市場ステートから目標の段 (−3〜+3) を決める。
+def target_step(emotion: Optional[int], fng: Optional[float], state: Optional[str],
+                credit: Optional[float] = None,
+                credit_prev: Optional[float] = None) -> Tuple[int, List[str]]:
+    """感情スコア・日本版 F&G・信用評価損益率・市場ステートから目標の段 (−3〜+3) を決める。
 
     emotion: 有効な感情スコア (期限切れ・未入力は None で、中立 0 として扱う)
+    credit / credit_prev: 信用評価損益率の最新値と前週値 (取れなければ None)
     Returns: (段, 決まり方の説明の list)。例 (−1, ["感情 0", "F&G Extreme Fear (22) で −1"])
     """
     step = NEUTRAL_STEP if emotion is None else int(emotion)
     parts = ["感情 未入力 (0)" if emotion is None else f"感情 {format_step(step)}"]
-    if fng is not None and fng < FNG_EXTREME_FEAR:
-        step -= 1
-        parts.append(f"F&G Extreme Fear ({fng:.0f}) で −1")
-    elif fng is not None and fng >= FNG_EXTREME_GREED:
-        step += 1
-        parts.append(f"F&G Extreme Greed ({fng:.0f}) で +1")
+    fng_dir, credit_dir, direction = contrarian_direction(fng, credit, credit_prev)
+    reasons = []
+    if fng_dir:
+        reasons.append(f"F&G {fng_label(fng)} ({fng:.0f})")
+    if credit_dir:
+        reasons.append(f"信用 {credit_label(credit)}{'で改善' if credit_dir < 0 else ''} ({credit:.1f}%)")
+    if direction:
+        step += direction
+        parts.append(f"{'と'.join(reasons)} で {format_step(direction)}"
+                     + (" (重ねない)" if len(reasons) == 2 else ""))
     else:
+        if reasons:
+            parts.append(f"{'と'.join(reasons)} が逆向きで打ち消し")
         floor = STATE_STEP_FLOORS.get(state, STATE_STEP_FLOORS[None])
         if floor is not None and step < floor:
             step = floor

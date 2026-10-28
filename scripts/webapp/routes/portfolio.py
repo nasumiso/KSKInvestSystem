@@ -342,23 +342,41 @@ def _index_progress(market_db: dict, evaluation: dict) -> list:
     return rows
 
 
-def _target_chain(evaluation: dict) -> dict:
-    """「感情 ＋ F&G ＝ スコア → 目標」を1行で見せるための値 (margin_estimate.target_step と同じ決まり方)。
+# 信用評価損益率の5段階 → F&G と同じ配色の区分 (_summary_inputs.html の mood_styles)
+_CREDIT_MOODS = {"天井圏": "Extreme Greed", "強気": "Greed", "中立": "Neutral",
+                 "弱気": "Fear", "底値圏": "Extreme Fear"}
 
-    fng_step: F&G で動いた分 (Extreme でなければ 0、F&G が無ければ None)。
+
+def _target_chain(evaluation: dict) -> dict:
+    """「感情 ＋ F&G ＋ 信用 ＝ スコア → 目標」を1行で見せるための値 (margin_estimate.target_step と同じ決まり方)。
+
+    F&G と信用で動いた分は、足すとスコアになるように出す。重ねない・打ち消しは信用の側に注記する。
     state_capped: 市場ステートの上限で引き上げられたか。clamped: −3〜+3 の端で頭打ちになったか。
     """
     base = evaluation["emotion_score"] or 0
     fng = evaluation["fng_jp"]
-    fng_step = None
-    if fng is not None:
-        fng_step = -1 if fng < me.FNG_EXTREME_FEAR else 1 if fng >= me.FNG_EXTREME_GREED else 0
-    state_capped = not fng_step and evaluation["step"] > base
+    credit = evaluation.get("credit_eval_rate")
+    credit_prev = evaluation.get("credit_prev_rate")
+    fng_dir, credit_dir, direction = me.contrarian_direction(fng, credit, credit_prev)
+    credit_note = ""
+    if fng_dir and credit_dir:
+        credit_note = " (重ねない)" if direction else " (打ち消し)"
+        fng_dir, credit_dir = direction, 0
+
+    def step_label(value, d):
+        return None if value is None else "±0" if d == 0 else me.format_step(d)
+
+    credit_label = me.credit_label(credit)
+    state_capped = not direction and evaluation["step"] > base
     return {
         "fng_label": me.fng_label(fng),
-        "fng_step_label": None if fng_step is None else "±0" if fng_step == 0 else me.format_step(fng_step),
+        "fng_step_label": step_label(fng, fng_dir),
+        "credit_label": credit_label,
+        "credit_mood": _CREDIT_MOODS.get(credit_label),
+        "credit_improving": me.credit_improving(credit, credit_prev),
+        "credit_step_label": None if credit is None else step_label(credit, credit_dir) + credit_note,
         "state_capped": state_capped,
-        "clamped": not state_capped and evaluation["step"] != base + (fng_step or 0),
+        "clamped": not state_capped and evaluation["step"] != base + direction,
     }
 
 
