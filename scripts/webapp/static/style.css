@@ -823,3 +823,14 @@ body.ep-hide-kessan .ep-kessan { display: none; }
 .margin-form input[type="text"] { display: inline-block; width: 20em; height: auto; margin: 0 0.2em; padding: 0.2em 0.4em; font-size: 0.95em; }
 .emotion-choice { display: flex; align-items: baseline; gap: 0.6em; margin: 0 0 0.3em; }
 .emotion-choice button { min-width: 7.5em; text-align: left; }
+
+/* 銘柄詳細: 長い履歴を通り過ぎずに各欄へ移動する。 */
+.detail-toc {
+  display: flex;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.5em 1.2em;
+  margin-bottom: 1em;
+  padding: 0.5em 0;
+  border-bottom: 1px solid #ddd;
+}
