@@ -88,7 +88,20 @@ esac
 # pull に失敗しても続行する: 前回のコードで実行する方が、日次データ更新を
 # 丸ごと落とすより損失が小さい。
 if [ "${SHINTAKANE_AUTO_PULL:-0}" = "1" ]; then
+  before_pull=$(git rev-parse HEAD)
   if git pull --ff-only; then
+    if [ -n "$before_pull" ]; then
+      if changed_scripts=$(git diff --name-only "$before_pull" HEAD -- scripts/); then
+        if [ -n "$changed_scripts" ]; then
+          launchctl kickstart -k "gui/$(id -u)/com.k_sohara.shintakane-tunnel" \
+            || echo "❌ MCP tunnel の再起動に失敗しました。手動で再起動してください"
+        fi
+      else
+        echo "❌ MCP のコード差分を確認できませんでした。tunnel を手動で再起動してください"
+      fi
+    else
+      echo "❌ pull 前の HEAD が不明です。MCP tunnel を手動で再起動してください"
+    fi
     # 常駐 WebApp は古いコードのまま動き続けるため再起動する
     # (LaunchAgent 未登録の環境ではエラーを無視する)
     launchctl kickstart -k "gui/$(id -u)/com.k_sohara.shintakane.webapp" 2>/dev/null \

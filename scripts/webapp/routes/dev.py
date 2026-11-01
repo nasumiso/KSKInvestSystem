@@ -4,7 +4,7 @@
 GET  /dev              : 日次バッチの実行ボタン・状態・ログ末尾・PR/issue リンク
 POST /dev/cron/run     : shintakane_cron.sh を非同期起動
 GET  /dev/cron/status  : 実行状態 (logs/cron_status.json) とログ末尾を JSON で返す
-POST /dev/deploy       : 運用機で git pull --ff-only し、動作中のコードと HEAD が違えば WebApp を再起動する
+POST /dev/deploy       : 運用機で pull し WebApp、scripts 変更時は MCP 接続も再起動する
 
 排他・状態マーカー・ログは shintakane_cron.sh 自身が持つ。launchd の定刻実行も
 同じマーカー/ログに載り、19時の kickstart で WebApp が再起動しても状態を失わない。
@@ -34,6 +34,7 @@ _LOCK_FILE = _PROJECT_ROOT / "logs" / "cron.lock"
 _CRON_LOG = _PROJECT_ROOT / "logs" / "cron.log"
 _LOG_TAIL_LINES = 200
 _WEBAPP_LABEL = "com.k_sohara.shintakane.webapp"
+_TUNNEL_LABEL = "com.k_sohara.shintakane-tunnel"
 _GIT_TIMEOUT_SEC = 60
 
 # GitHub の PR / issue 一覧へのリンク (トップページから移設)
@@ -142,10 +143,10 @@ def _inject_cron_alert():
     return {"cron_alert": marker is not None and _current_state(marker) in ("failed", "interrupted")}
 
 
-def _git(*args: str) -> subprocess.CompletedProcess:
+def _git(*args: str, check: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", *args], cwd=str(_PROJECT_ROOT), capture_output=True, text=True,
-        timeout=_GIT_TIMEOUT_SEC,
+        timeout=_GIT_TIMEOUT_SEC, check=check,
     )
 
 
@@ -161,7 +162,7 @@ _STARTUP_VERSION = {
 
 @dev_bp.route("/dev/deploy", methods=["POST"])
 def deploy():
-    """main の最新コードを取り込み、動作中のコードより新しければ WebApp を再起動する。
+    """main を取り込み、WebApp と、scripts に変更があれば MCP 接続を再起動する。
 
     日次バッチ冒頭の自動 pull (shintakane_cron.sh) を待たずに反映するためのもの。
     開発機の作業ブランチを pull しないよう、運用機 (run_webapp.sh が production を設定) でだけ動かす。
@@ -174,22 +175,45 @@ def deploy():
         return jsonify({"status": "cron_running"}), 409
 
     try:
-        pull = _git("pull", "--ff-only")
+        before = _git("rev-parse", "HEAD", check=True).stdout.strip()
+        pull = _git("pull", "--ff-only", check=True)
+        output = (pull.stdout + pull.stderr).strip()
+        after = _git("rev-parse", "HEAD", check=True).stdout.strip()
+        # MCP は WebApp と起動時刻が違うため、起動時 HEAD ではなく今回の pull を比べる。
+        # 関数内 import や間接依存も対象にするため scripts/ 全体を見る。
+        tunnel_restarting = before != after and bool(_git(
+            "diff", "--name-only", before, after, "--", "scripts/", check=True,
+        ).stdout.strip())
     except subprocess.TimeoutExpired:
-        return jsonify({"status": "failed", "output": "git pull がタイムアウトしました"}), 500
-    output = (pull.stdout + pull.stderr).strip()
-    if pull.returncode != 0:
-        log_warning(f"[dev] git pull --ff-only 失敗: {output}")
+        return jsonify({"status": "failed", "output": "コード反映の git 処理がタイムアウトしました"}), 500
+    except subprocess.CalledProcessError as e:
+        output = ((e.stdout or "") + (e.stderr or "")).strip()
+        log_warning(f"[dev] コード反映の git 処理失敗: {e.cmd}: {output}")
         return jsonify({"status": "failed", "output": output}), 500
+    except OSError as e:
+        log_warning(f"[dev] コード反映の git 起動失敗: {e}")
+        return jsonify({"status": "failed", "output": str(e)}), 500
 
-    after = _git("rev-parse", "HEAD").stdout.strip()
-    if after == _STARTUP_HEAD:
-        return jsonify({"status": "up_to_date", "output": output, "restarting": False})
+    restarting = after != _STARTUP_HEAD
+    if not restarting and not tunnel_restarting:
+        return jsonify({
+            "status": "up_to_date", "output": output,
+            "restarting": False, "tunnel_restarting": False,
+        })
 
-    # kickstart -k は自プロセスを落とすので、応答を返し終えてから別セッションで実行する
-    subprocess.Popen(
-        ["bash", "-c", f'sleep 1; launchctl kickstart -k "gui/$(id -u)/{_WEBAPP_LABEL}"'],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
-    )
-    log_print(f"[dev] 動作中 {_STARTUP_HEAD[:7]} -> HEAD {after[:7]}、WebApp を再起動します")
-    return jsonify({"status": "updated", "output": output, "restarting": True})
+    # 自プロセスを落とすので、応答の後に別セッションで必要なジョブを再起動する。
+    labels = ([_TUNNEL_LABEL] if tunnel_restarting else []) + ([_WEBAPP_LABEL] if restarting else [])
+    commands = [f'launchctl kickstart -k "gui/$(id -u)/{label}"' for label in labels]
+    try:
+        subprocess.Popen(
+            ["bash", "-c", "sleep 1; " + "; ".join(commands)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+    except OSError as e:
+        log_warning(f"[dev] 再起動の予約失敗: {e}")
+        return jsonify({"status": "failed", "output": f"コードは取り込み済みですが再起動を予約できませんでした: {e}"}), 500
+    log_print(f"[dev] コード反映 {before[:7]} -> {after[:7]}、再起動予約: {', '.join(labels)}")
+    return jsonify({
+        "status": "updated", "output": output,
+        "restarting": restarting, "tunnel_restarting": tunnel_restarting,
+    })

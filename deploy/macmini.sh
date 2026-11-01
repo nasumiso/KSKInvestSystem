@@ -40,6 +40,16 @@ for label in com.k_sohara.shintakane.cron com.k_sohara.shintakane.webapp com.k_s
   printf '  %-34s %-12s runs: %-3s last exit: %s\n' "$label" "$state" "${runs:--}" "${code:--}"
 done
 
+echo "== MCP サーバー (PID / 起動日時) =="
+mcp_pids=$(pgrep -u "$uid" -f '[s]hikiho_server.py' || true)
+if [ -n "$mcp_pids" ]; then
+  for pid in $mcp_pids; do
+    ps -p "$pid" -o pid= -o lstart= | sed 's/^/  /'
+  done
+else
+  echo "  停止中 (shikiho_server.py が見つかりません)"
+fi
+
 echo "== WebApp =="
 printf '  localhost:5001 -> HTTP %s\n' "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:5001/)"
 ts=/Applications/Tailscale.app/Contents/MacOS/tailscale

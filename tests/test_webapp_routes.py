@@ -2495,34 +2495,41 @@ class TestDevRoute:
         html = client.get("/").get_data(as_text=True)
         assert ('class="nav-alert"' in html) is expected
 
-    # heads = (WebApp 起動時の HEAD, pull 後の HEAD)
-    @pytest.mark.parametrize("env, running, heads, pull_rc, expected_code, expect_restart", [
-        # 開発機では作業ブランチを pull しない
-        (None, False, None, 0, 403, False),
-        ("production", True, None, 0, 409, False),
-        # pull が空振りでも、別経路の pull で起動時からコードが変わっていれば再起動する
-        ("production", False, ("a", "b"), 0, 200, True),
-        ("production", False, ("a", "a"), 0, 200, False),
-        ("production", False, ("a", "a"), 1, 500, False),
+    # heads = (WebApp 起動時の HEAD, pull 前の HEAD, pull 後の HEAD)
+    @pytest.mark.parametrize("env, running, heads, changed, pull_rc, expected_code, web, tunnel", [
+        (None, False, ("a", "a", "b"), "scripts/stock_ratings.py", 0, 403, False, False),
+        ("production", True, ("a", "a", "b"), "scripts/stock_ratings.py", 0, 409, False, False),
+        ("production", False, ("a", "a", "b"), "scripts/stock_ratings.py", 0, 200, True, True),
+        ("production", False, ("a", "a", "b"), "", 0, 200, True, False),
+        # SSH 等で pull 済み: WebApp だけが古くても tunnel の版は推測しない
+        ("production", False, ("a", "b", "b"), "", 0, 200, True, False),
+        ("production", False, ("a", "a", "a"), "", 0, 200, False, False),
+        ("production", False, ("a", "a", "b"), "scripts/mcp/shikiho_server.py", 1, 500, False, False),
+        ("production", False, ("b", "a", "b"), "scripts/ir_docs.py", 0, 200, False, True),
     ])
-    def test_deploy(self, client, dev, monkeypatch, env, running, heads, pull_rc,
-                    expected_code, expect_restart):
+    def test_deploy(self, client, dev, monkeypatch, env, running, heads, changed, pull_rc,
+                    expected_code, web, tunnel):
         if env:
             monkeypatch.setenv("SHINTAKANE_ENV", env)
         else:
             monkeypatch.delenv("SHINTAKANE_ENV", raising=False)
         if running:
             dev._LOCK_FILE.write_text(f"{os.getpid()}\n")
-        startup, *rest = heads or (None,)
+        startup, before, after = heads
         monkeypatch.setattr(dev, "_STARTUP_HEAD", startup)
-        rev = iter(rest)
+        rev = iter([before, after])
         git_calls = []
 
         def fake_run(args, **kwargs):
             git_calls.append(args)
             if args[1] == "rev-parse":
                 return subprocess.CompletedProcess(args, 0, stdout=next(rev) + "\n", stderr="")
-            return subprocess.CompletedProcess(args, pull_rc, stdout="pulled", stderr="")
+            if args[1] == "diff":
+                assert args[2:] == ["--name-only", before, after, "--", "scripts/"]
+                return subprocess.CompletedProcess(args, 0, stdout=changed, stderr="")
+            if pull_rc:
+                raise subprocess.CalledProcessError(pull_rc, args, output="", stderr="pull失敗")
+            return subprocess.CompletedProcess(args, 0, stdout="pulled", stderr="")
 
         popen_calls = []
         monkeypatch.setattr(dev.subprocess, "run", fake_run)
@@ -2530,7 +2537,48 @@ class TestDevRoute:
         resp = client.post("/dev/deploy")
         assert resp.status_code == expected_code
         assert bool(git_calls) == (expected_code not in (403, 409))
-        assert len(popen_calls) == int(expect_restart)
-        if expect_restart:
+        assert len(popen_calls) == int(web or tunnel)
+        if expected_code == 200:
+            assert resp.get_json()["restarting"] is web
+            assert resp.get_json()["tunnel_restarting"] is tunnel
+        if popen_calls:
             args, kwargs = popen_calls[0]
-            assert "kickstart -k" in args[-1] and kwargs["start_new_session"] is True
+            assert kwargs["start_new_session"] is True
+            assert (dev._WEBAPP_LABEL in args[-1]) is web
+            assert (dev._TUNNEL_LABEL in args[-1]) is tunnel
+            assert args[-1].startswith("sleep 1;")
+
+    @pytest.mark.parametrize("failure", ["before", "after", "diff", "timeout", "spawn"])
+    def test_deploy_reports_failures(self, client, dev, monkeypatch, failure):
+        monkeypatch.setenv("SHINTAKANE_ENV", "production")
+        monkeypatch.setattr(dev, "_STARTUP_HEAD", "a")
+        rev_count = 0
+
+        def fake_git(*args, **kwargs):
+            nonlocal rev_count
+            if args[0] == "rev-parse":
+                rev_count += 1
+                if failure == ("before" if rev_count == 1 else "after"):
+                    raise subprocess.CalledProcessError(1, ["git", *args], stderr="HEAD取得失敗")
+                output = "a" if rev_count == 1 else "b"
+            elif args[0] == "diff":
+                if failure == "diff":
+                    raise subprocess.CalledProcessError(1, ["git", *args], stderr="差分取得失敗")
+                output = "scripts/stock_ratings.py"
+            else:
+                if failure == "timeout":
+                    raise subprocess.TimeoutExpired(["git", *args], 60)
+                output = "pulled"
+            return subprocess.CompletedProcess(args, 0, stdout=output, stderr="")
+
+        def fake_popen(*args, **kwargs):
+            if failure == "spawn":
+                raise OSError("再起動予約失敗")
+            pytest.fail("git 処理失敗時に再起動を予約してはいけない")
+
+        monkeypatch.setattr(dev, "_git", fake_git)
+        monkeypatch.setattr(dev.subprocess, "Popen", fake_popen)
+        response = client.post("/dev/deploy")
+        assert response.status_code == 500
+        assert response.get_json()["status"] == "failed"
+        assert response.get_json()["output"]
