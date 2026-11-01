@@ -94,6 +94,12 @@ def test_write_refused_on_dev_data_dir(monkeypatch, call):
 class TestUploadCsvViaSheets:
     """upload_csv_via_sheets の Sheets API 呼び出しフローテスト（モック）"""
 
+    @pytest.fixture(autouse=True)
+    def _not_dev_data_dir(self, monkeypatch):
+        """開発機 (KS_DATA_DIR が _dev) で実行しても、開発用コピーのガード (#453) で止まらないようにする"""
+        import ks_util
+        monkeypatch.setattr(ks_util, "DATA_DIR", "/Users/x/shintakane_data")
+
     def _make_csv_content(self, rows):
         """テスト用CSV文字列を生成"""
         buf = io.StringIO()
