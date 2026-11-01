@@ -89,8 +89,8 @@ ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 / モメ
 
 | ツール | 内容 |
 |---|---|
-| `list_stock_ratings` | 総合点順の一覧 (長文なし)。`status` で絞り込み |
-| `get_stock_rating` | 1銘柄の全項目と直近の変更履歴 |
+| `list_stock_ratings` | 総合点順の一覧 (長文なし)。`status` で絞り込み。既定では Archive を含まない。システムのモメンタムの合計 (`system_momentum`、参考値) を添える |
+| `get_stock_rating` | 1銘柄の全項目と直近の変更履歴。システムのモメンタムの内訳 (`system_momentum`、総合点には入らない参考値) を添える |
 | `update_stock_rating` | 渡した項目だけを部分更新 (未登録なら新規作成)。`reason` 必須。検証エラーは `ok: false` と `errors` で返し、何も書かない |
 
 ## 利用上の制約

@@ -4,7 +4,8 @@
 書き込みはこのモジュール経由のみ (flock で排他し、一時ファイル → os.replace で置き換える)。
 
 ChatGPT が Drive コネクタから読めるよう、KS_DATA_DIR/stock_ratings_drive (運用機にだけ置く
-Drive フォルダへの symlink) があれば、書き込みのたびにそこへ上書きコピーする。
+Drive フォルダへの symlink) があれば、書き込みのたびと日次バッチでそこへ上書きコピーする。
+Drive に出す JSON にだけ、システムが算出したモメンタム (system_momentum、#543) を埋め込む。
 Drive 上で os.replace するとファイル ID が変わり ChatGPT の参照が切れるため、symlink で正本を
 Drive に置かず、既存ファイルへの上書き (shutil.copyfile) で ID を保つ。
 
@@ -265,17 +266,19 @@ def update_rating(code_s, fields, reason, source, ratings_dir=None):
         now = _now()
         after["updated_at"] = now.strftime("%Y-%m-%d")
         data["stocks"][code_s] = after
-        # 履歴を先に書く (JSON の置き換え前に落ちても変更が履歴から漏れない)
+        system = compute_system_momentum(list(data["stocks"]))
+        # 履歴を先に書く (JSON の置き換え前に落ちても変更が履歴から漏れない)。
+        # 採点したときのシステムのモメンタムも残す。AI が変えた値ではないので changes には入れない
         _append_history(history_path, [{
             "at": now.isoformat(timespec="seconds"),
             "code_s": code_s,
             "source": source,
             "reason": reason,
             "changes": changes,
+            "system_momentum": system.get(code_s),
         }])
         _write_json(json_path, data)
-        _export_html_safely(root, data)
-        _mirror_to_drive(root)
+        _write_outputs(root, data, system)
     return changes
 
 
@@ -370,9 +373,77 @@ def migrate_from_csv(csv_path, ratings_dir=None):
             "rubric_version": RUBRIC_VERSION,
             "stocks": stocks,
         })
-        _export_html_safely(root, _load(json_path))
-        _mirror_to_drive(root)
+        _write_outputs(root, _load(json_path))
     return len(stocks), warnings
+
+
+# ===========================================
+# システムのモメンタム (#543)
+# ===========================================
+
+# 欠けた要素を埋める点 (各要素 0〜10 の中央)
+MOMENTUM_FILL = 5
+
+
+def _load_momentum_inputs(codes):
+    """銘柄の momentum_pt、ポートフォリオの業態テーマ、最新の業態テーマ順位を読む。
+
+    テーマ順位は日次バッチが portfolio_shelve に記録したもの (WebApp の calc_theme_ranks は
+    呼ばない。MCP サーバーに webapp を import させないため)。
+    """
+    import db_shelve
+    import portfolio_shelve as ps
+
+    with db_shelve.ShelveDB(db_shelve.STOCKS_SHELVE, read_only=True) as db:
+        pts = {code_s: (db.get(code_s) or {}).get("momentum_pt") for code_s in codes}
+    themes = {r["code_s"]: (r.get("memo") or {}).get("gyoutai_themes") or [] for r in ps.list_records()}
+    snapshots = ps.load_theme_rank_snapshots()
+    day = max(snapshots) if snapshots else None
+    return pts, themes, (snapshots[day] if day else {}), day
+
+
+def _momentum_of(pt, themes, ranks):
+    """1銘柄のモメンタム。RS = momentum_pt / 10、テーマ = 順位を1位10点・最下位0点に線形で割り当てた平均。"""
+    ranked = {t: v["rank"] for t, v in ranks.items() if v.get("rank") is not None}
+    n = len(ranked)
+    found = [(t, ranked[t]) for t in themes if t in ranked] if n >= 2 else []  # 2未満は比べられない
+    rs = round(pt / 10) if pt and pt > 0 else None
+    theme = round(sum(10 * (n - r) / (n - 1) for _, r in found) / len(found)) if found else None
+    missing = [name for name, v in (("rs", rs), ("theme", theme)) if v is None]
+    rs = MOMENTUM_FILL if rs is None else rs
+    theme = MOMENTUM_FILL if theme is None else theme
+    return {"total": rs + theme, "rs": rs, "theme": theme, "missing": missing,
+            "momentum_pt": pt, "themes": [{"name": t, "rank": r} for t, r in found], "theme_count": n}
+
+
+def compute_system_momentum(codes):
+    """台帳の銘柄のモメンタム (0〜20) を {code_s: {...}} で返す。総合点にはまだ入れない (#544 で切り替える)。
+
+    読み出しに失敗したら {} を返し、台帳の読み書きは止めない。
+    1銘柄の計算に失敗しても、その銘柄を両要素とも欠けた扱いにして他の銘柄は出す。
+    """
+    try:
+        pts, themes, ranks, day = _load_momentum_inputs(codes)
+    except Exception as exc:  # 参考値なので、失敗で台帳の更新を止めない
+        log_warning(f"stock_ratings: システムのモメンタムを読めなかった: {exc}")
+        return {}
+    result = {}
+    for code_s in codes:
+        try:
+            m = _momentum_of(pts.get(code_s), themes.get(code_s, []), ranks)
+        except Exception as exc:
+            log_warning(f"stock_ratings: {code_s} のモメンタムを算出できなかった: {exc}")
+            m = _momentum_of(None, [], {})
+        result[code_s] = dict(m, as_of=day.isoformat() if day else None)
+    return result
+
+
+def refresh_outputs(ratings_dir=None):
+    """表示用 HTML と Drive の写しを、今のシステムのモメンタムで作り直す (日次バッチから呼ぶ)。"""
+    root, json_path, _ = _paths(ratings_dir)
+    with _flock(root):
+        if json_path.exists():
+            _write_outputs(root, _load(json_path))
 
 
 # ===========================================
@@ -415,8 +486,27 @@ _SECTION_LABELS = (
 )
 
 
-def render_html(data, generated_at):
-    """台帳 JSON から表示用 HTML を組み立てる。Status ごとに総合点順で並べる。"""
+def _momentum_cell(m):
+    if not m:
+        return "—"
+    return f'{m["total"]}{"欠" if m["missing"] else ""}'
+
+
+def _momentum_detail(m):
+    themes = "、".join(f'{t["name"]} {t["rank"]}位' for t in m["themes"]) or "なし"
+    text = (f'{m["total"]} = RS {m["rs"]} (RSスコア {m["momentum_pt"] or "なし"}) + '
+            f'テーマ {m["theme"]} ({themes} / {m["theme_count"]}テーマ、{m["as_of"]} 時点)')
+    if m["missing"]:
+        text += f' — 欠けた要素 ({"・".join(m["missing"])}) は {MOMENTUM_FILL}点で埋めた'
+    return text
+
+
+def render_html(data, generated_at, system=None):
+    """台帳 JSON から表示用 HTML を組み立てる。Status ごとに総合点順で並べる。
+
+    system はシステムのモメンタム (compute_system_momentum)。総合点には入れず、並べて表示する。
+    """
+    system = system or {}
     esc = html.escape
     rows = sorted(
         (_with_total(code_s, record) for code_s, record in data["stocks"].items()),
@@ -446,7 +536,8 @@ def render_html(data, generated_at):
         parts.append(
             '<div class="table-wrap"><table><tr><th class="num">順位</th><th>コード</th>'
             '<th>銘柄</th><th class="num">ファンダ</th><th class="num">未織込</th>'
-            '<th class="num">モメンタム</th><th class="num">Val</th><th class="num">総合</th>'
+            '<th class="num">モメンタム</th><th class="num" title="システムが算出したモメンタム (参考、総合点には入らない)">モメ(シ)</th>'
+            '<th class="num">Val</th><th class="num">総合</th>'
             "<th>C</th><th>更新日</th><th>役割</th></tr>"
         )
         for r in group:
@@ -455,7 +546,8 @@ def render_html(data, generated_at):
                 f'<tr><td class="num">{rank.get(r["code_s"], "—")}</td><td>{esc(r["code_s"])}</td>'
                 f'<td><a href="#s{esc(r["code_s"])}">{esc(r["name"])}</a></td>'
                 f'<td class="num">{s["fund"]}</td><td class="num">{s["mispricing"]}</td>'
-                f'<td class="num">{s["momentum"]}</td><td class="num">{s["valuation"]}</td>'
+                f'<td class="num">{s["momentum"]}</td><td class="num">{_momentum_cell(system.get(r["code_s"]))}</td>'
+                f'<td class="num">{s["valuation"]}</td>'
                 f'<td class="num total">{r["total"]}</td><td>{esc(r["confidence"])}</td>'
                 f'<td>{esc(r.get("updated_at", ""))}</td><td class="role">{esc(r.get("role", ""))}</td></tr>'
             )
@@ -470,6 +562,8 @@ def render_html(data, generated_at):
             for key, label in _SECTION_LABELS:
                 if r.get(key):
                     parts.append(f"<dt>{label}</dt><dd>{esc(r[key])}</dd>")
+            if system.get(r["code_s"]):
+                parts.append(f"<dt>システムのモメンタム (参考)</dt><dd>{esc(_momentum_detail(system[r['code_s']]))}</dd>")
             parts.append("</dl></details>")
         if archive:
             parts.append("</details>")
@@ -477,30 +571,47 @@ def render_html(data, generated_at):
     return "\n".join(parts)
 
 
-def _export_html_safely(root, data):
+def _write_outputs(root, data, system=None):
+    """表示用 HTML と Drive の写しを書く。system を渡さなければここで算出する。"""
+    if system is None:
+        system = compute_system_momentum(list(data["stocks"]))
+    _export_html_safely(root, data, system)
+    _mirror_to_drive(root, data, system)
+
+
+def _export_html_safely(root, data, system=None):
     """表示用 HTML を書き出す。失敗しても JSON の更新は成功扱いにする (警告だけ出す)。"""
     try:
         html_path = root / HTML_FILENAME
         tmp_path = html_path.with_suffix(html_path.suffix + ".tmp")
         tmp_path.write_text(
-            render_html(data, _now().strftime("%Y-%m-%d %H:%M")), encoding="utf-8"
+            render_html(data, _now().strftime("%Y-%m-%d %H:%M"), system), encoding="utf-8"
         )
         os.replace(tmp_path, html_path)
     except Exception as exc:  # 表示用なので、失敗で正本の更新を巻き戻さない
         log_warning(f"stock_ratings: HTML の書き出しに失敗した: {exc}")
 
 
-def _mirror_to_drive(root):
+def _mirror_to_drive(root, data=None, system=None):
     """正本を Drive へ上書きコピーする。ミラーが無い・開発用データ・テストなら何もしない。
 
+    JSON だけは、各銘柄に system_momentum を埋め込んだ写しを出す (正本の JSON には入れない)。
     失敗しても正本の更新は成功扱いにする (警告だけ出す)。
     """
     if root != RATINGS_DIR or is_dev_data_dir() or not DRIVE_MIRROR_DIR.is_dir():
         return
     try:
-        for name in (RATINGS_FILENAME, HISTORY_FILENAME, HTML_FILENAME):
-            if (root / name).exists():
-                shutil.copyfile(root / name, DRIVE_MIRROR_DIR / name)
+        sources = {name: root / name for name in (RATINGS_FILENAME, HISTORY_FILENAME, HTML_FILENAME)}
+        if data is not None and system:
+            enriched = dict(data, stocks={
+                code_s: dict(record, system_momentum=system.get(code_s))
+                for code_s, record in data["stocks"].items()
+            })
+            sources[RATINGS_FILENAME] = root / f".drive_{RATINGS_FILENAME}"  # Drive に出す写し (正本ではない)
+            _write_json(sources[RATINGS_FILENAME], enriched)
+        for name, src in sources.items():
+            if src.exists():
+                shutil.copyfile(src, DRIVE_MIRROR_DIR / name)
     except Exception as exc:
         log_warning(f"stock_ratings: Drive へのコピーに失敗した: {exc}")
 
@@ -509,8 +620,7 @@ def export_html(ratings_dir=None):
     """現在の JSON から表示用 HTML を作り直す。"""
     root, json_path, _ = _paths(ratings_dir)
     with _flock(root):
-        _export_html_safely(root, _load(json_path))
-        _mirror_to_drive(root)
+        _write_outputs(root, _load(json_path))
     return root / HTML_FILENAME
 
 
@@ -523,6 +633,7 @@ def _cmd_show(code_s):
     if record is None:
         log_print(f"stock_ratings: {code_s} は未登録")
         return 1
+    record["system_momentum"] = compute_system_momentum([code_s]).get(code_s)
     # 出力本体は標準出力へ直接書く (CLI表示の主目的)
     print(json.dumps(record, ensure_ascii=False, indent=2))
     return 0
