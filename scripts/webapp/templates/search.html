@@ -55,13 +55,13 @@
   <tbody>
     {% for rec in records %}
     <tr>
-      <td><a href="/stock/{{ rec.code_s }}">{{ rec.code_s }}</a></td>
+      <td><a href="{{ stock_detail_url(rec.code_s) }}">{{ rec.code_s }}</a></td>
       <td>
         {% if rec.overall_rating %}
         <span class="rating-badge rating-{{ rec.overall_rating }}">{{ rec.overall_rating }}</span>
         {% else %}-{% endif %}
       </td>
-      <td><a href="/stock/{{ rec.code_s }}">{% if rec.stock_name %}{{ macros.stock_name_with_prev(rec) }}{% else %}-{% endif %}</a></td>
+      <td><a href="{{ stock_detail_url(rec.code_s) }}">{% if rec.stock_name %}{{ macros.stock_name_with_prev(rec) }}{% else %}-{% endif %}</a></td>
       <td>{{ (rec.snapshots or [])|length }}</td>
       <td>{% if rec._snippet is defined %}{{ rec._snippet | safe }}{% else %}{{ (rec.overview or '')[:40] }}{% if (rec.overview or '')|length > 40 %}...{% endif %}{% endif %}</td>
     </tr>
@@ -73,6 +73,7 @@
 <p>該当する銘柄がありません。</p>
 {% if can_add %}
 <form method="post" action="/stock/add" style="margin-top:1em;">
+  <input type="hidden" name="return_to" value="{{ listing_return_url() }}">
   <input type="hidden" name="add_code_s" value="{{ q_normalized }}">
   <button type="submit">この銘柄 ({{ q_normalized }}) を ResearchDB に追加</button>
 </form>

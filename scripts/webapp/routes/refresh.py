@@ -4,7 +4,10 @@
 POST /stock/<code_s>/refresh : make_stock_db.refresh_stock([code_s]) を同期実行
 """
 
-from flask import Blueprint, flash, redirect, url_for
+
+from flask import Blueprint, flash
+
+from webapp.navigation import redirect_stock_detail
 
 refresh_bp = Blueprint("refresh", __name__)
 
@@ -25,4 +28,4 @@ def post_refresh(code_s: str):
             flash(f"再取得しました ({code_s})。保有銘柄一覧に無いため、スナップショットは更新していません", "info")
     except Exception as e:
         flash(f"再取得に失敗しました ({code_s}): {e}", "error")
-    return redirect(url_for("detail.stock_detail", code_s=code_s))
+    return redirect_stock_detail(code_s)

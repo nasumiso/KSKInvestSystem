@@ -3,6 +3,7 @@
 {% block title %}[{{ record.code_s }}] {{ macros.stock_name_with_prev(record) }} - 銘柄詳細 | Shintakane Research{% endblock %}
 
 {% block content %}
+{% include "_detail_return_link.html" %}
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
   {% for category, message in messages %}
@@ -94,6 +95,7 @@
       </span>
       {% endif %}
       <form method="POST" action="/stock/{{ record.code_s }}/refresh" style="display:inline;margin-left:0.5em;">
+      {% include "_detail_return_field.html" %}
         <button type="submit" title="業績・指標・株価などの最新データを再取得します"
                 style="display:inline-block;width:auto !important;padding:0.05em 0.5em;font-size:0.8em;margin:0;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">再取得</button>
       </form>
@@ -110,6 +112,7 @@
         | <a href="{{ _display_url }}" target="_blank" rel="noopener noreferrer">会社HP{% if _is_override %}✎{% endif %}</a>
         {% endif %}
         <form method="POST" action="/stock/{{ record.code_s }}/corporate_url" id="corp-url-form-{{ record.code_s }}" style="display:inline;">
+      {% include "_detail_return_field.html" %}
           <input type="hidden" name="url" id="corp-url-input-{{ record.code_s }}">
           <button type="button" title="会社HPリンクの上書きを編集 (空欄でデフォルトに戻す)"
                   data-code="{{ record.code_s }}" data-current="{{ _override }}"
@@ -453,6 +456,7 @@
 <details open>
   <summary><strong>業績スナップショット時系列</strong> ({{ snapshots|length }}件)</summary>
   <form id="ir-comment-form" action="/stock/{{ record.code_s }}/ir_comment" method="post">
+      {% include "_detail_return_field.html" %}
   <div style="overflow-x:auto;">
     <table class="snapshot-table ir-snapshot-table">
       <thead>
@@ -546,6 +550,7 @@
 <div class="memo-section" id="memo-section">
   <h3>手動メモ</h3>
   <form id="memo-form" action="/stock/{{ record.code_s }}/memo" method="post">
+      {% include "_detail_return_field.html" %}
 
     <div class="memo-field">
       <label>手動評価</label>
@@ -723,6 +728,7 @@
 <div class="memo-section" id="shikiho-section">
   <h3>四季報</h3>
   <form id="shikiho-form" action="/stock/{{ record.code_s }}/shikiho" method="post">
+      {% include "_detail_return_field.html" %}
 
     <div class="memo-field">
       <label>企業概要</label>
@@ -874,6 +880,7 @@
 
   {# 編集フォーム。追加・更新で共用し、更新時のみ #ir-qa-entry-id に id が入る #}
   <form id="ir-qa-form" class="ir-qa-form" onsubmit="return false;">
+      {% include "_detail_return_field.html" %}
     <input type="hidden" id="ir-qa-entry-id" value="">
     <div class="ir-qa-form-row">
       <label for="ir-qa-answered-at">回答日</label>
@@ -1157,6 +1164,7 @@
         <span style="font-size:0.8em;color:#888;">最終収集 {{ ir_docs.last_collected_at[5:16]|replace('T', ' ') if ir_docs.last_collected_at else '未収集' }}</span>
         <form method="POST" action="{{ url_for('ir_docs.post_ir_docs_tdnet', code_s=record.code_s) }}" style="display:inline;"
               onsubmit="var b = this.querySelector('button'); b.disabled = true; b.textContent = '取得中… (初回は数分)';">
+      {% include "_detail_return_field.html" %}
           <button type="submit" title="株探 (適時開示) から直近1年の決算短信・決算説明資料・成長可能性資料を収集します。取得済みはスキップします"
                   style="display:inline-block;width:auto !important;padding:0.1em 0.6em;font-size:0.8em;margin:0 0 0 0.3em;">株探から更新</button>
         </form>
@@ -1207,6 +1215,7 @@
       <span id="ir-cand-msg" style="font-size:0.85em;color:#888;margin-left:0.3em;"></span>
       <form method="POST" action="/stock/{{ record.code_s }}/ir_page_docs" id="ir-page-form"
             style="display:{{ 'block' if ir_setsumei_hp_only is not none else 'none' }};font-size:0.95em;margin:0.3em 0;padding:0.4em;border:1px solid #ddd;border-radius:4px;">
+      {% include "_detail_return_field.html" %}
         <div id="ir-page-list"></div>
         <div style="margin-top:0.3em;">
           PDF URL を直接指定:
@@ -1265,6 +1274,7 @@ if (location.hash === '#ir-docs') openIrDocsModal();
     {# issue #269 同様: qty の step=100 と手入力 (任意整数) を両立させるため novalidate。 #}
     <form method="POST" action="{{ url_for('portfolio.transition', code_s=record.code_s) }}"
           class="portfolio-modal-body" novalidate>
+      {% include "_detail_return_field.html" %}
       <input type="hidden" name="return_to" value="detail">
       <p style="margin:0 0 0.6em 0;">現在: <strong>{{ portfolio_status_label }}</strong></p>
       {% if portfolio_transitions %}
@@ -1336,6 +1346,7 @@ if (location.hash === '#ir-docs') openIrDocsModal();
     {% else %}
     {# 未登録: 監視追加フォーム #}
     <form method="POST" action="{{ url_for('portfolio.add') }}" class="portfolio-modal-body">
+      {% include "_detail_return_field.html" %}
       <input type="hidden" name="code_s" value="{{ record.code_s }}">
       <input type="hidden" name="return_to" value="detail">
       <p style="margin:0 0 0.6em 0;">この銘柄は未登録です。監視に追加します。</p>

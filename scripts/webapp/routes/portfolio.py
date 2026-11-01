@@ -29,6 +29,8 @@ from urllib.parse import urlencode
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
+from webapp.navigation import redirect_stock_detail
+
 import import_portfolio_csv as csv_import
 import margin_estimate as me
 import portfolio_shelve as ps
@@ -533,7 +535,7 @@ def _redirect_with_return_query(
     """
     return_to = (request.form.get("return_to") or "").strip()
     if code_s and return_to == "detail":
-        return redirect(url_for("detail.stock_detail", code_s=code_s))
+        return redirect_stock_detail(code_s)
     if return_to == "market":
         return redirect(url_for("market.market_page"))
 

@@ -229,7 +229,7 @@
         var code = encodeURIComponent(s.code_s);
         iframe.src = 'https://kabutan.jp/stock/chart?code=' + code + '&ashi=' + ASHI[timeframe];
         nameLink.textContent = s.code_s + ' ' + s.stock_name;
-        nameLink.href = '/stock/' + code;
+        nameLink.href = '/stock/' + code + '?return_to=' + encodeURIComponent({{ listing_return_url()|tojson }});
         kabuLink.href = 'https://kabutan.jp/stock/chart?code=' + code;
         var stageStruct = s.stage_struct || {};
         stageBox.dataset.rescue = stageStruct.rescue ? '1' : '0';

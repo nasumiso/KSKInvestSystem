@@ -93,7 +93,7 @@
           <div class="member-list">
             {% for m in t.members %}
             <div class="member-row member-head">
-              <a href="{{ url_for('detail.stock_detail', code_s=m.code_s) }}">{{ m.code_s }}</a>
+              <a href="{{ stock_detail_url(m.code_s) }}">{{ m.code_s }}</a>
               <span class="{% if m.status_query == 'hold' %}member-hold{% endif %}">{{ m.stock_name }}</span>
               <span class="status-badge status-{{ m.status_query }}">{{ m.status }}</span>
               {% if m.momentum_pt is not none or m.rs_6m is not none %}
@@ -132,7 +132,7 @@
         {% if t.dev_b_avg is not none %}<span class="{% if t.dev_b_avg >= 0 %}dev-up{% else %}dev-down{% endif %}">{{ fmt_pct(t.dev_b_avg) }}</span>{% else %}—{% endif %}
       </td>
       <td class="leaders-cell">
-        {% for l in t.leaders %}{% set nm = l.stock_name or l.code_s %}<a href="{{ url_for('detail.stock_detail', code_s=l.code_s) }}" title="{{ nm }}">{{ nm|truncate(8, true, '..', 0) }}</a>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
+        {% for l in t.leaders %}{% set nm = l.stock_name or l.code_s %}<a href="{{ stock_detail_url(l.code_s) }}" title="{{ nm }}">{{ nm|truncate(8, true, '..', 0) }}</a>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
       </td>
     </tr>
     {% endfor %}

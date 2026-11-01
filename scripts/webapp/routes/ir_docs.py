@@ -11,7 +11,9 @@ POST /stock/<code_s>/ir_docs/tdnet    : 株探 (TDnet) から直近1年の短信
 import re
 
 import requests
-from flask import Blueprint, abort, flash, jsonify, redirect, request, send_file, url_for
+from flask import Blueprint, abort, flash, jsonify, request, send_file
+
+from webapp.navigation import redirect_stock_detail
 
 ir_docs_bp = Blueprint("ir_docs", __name__)
 
@@ -69,7 +71,7 @@ def post_ir_page_docs(code_s: str):
         ))
     if not targets:
         flash(f"取得するIR資料が選択されていません ({code_s})", "error")
-        return redirect(url_for("detail.stock_detail", code_s=code_s, _anchor="ir-docs"))
+        return redirect_stock_detail(code_s, _anchor="ir-docs")
 
     # 複数件を続けて取得しても1秒1リクエストを守るため、セッションと待機を共有する
     session = requests.Session()
@@ -86,7 +88,7 @@ def post_ir_page_docs(code_s: str):
                 flash(f"同じIR資料が保存済みです ({code_s}): {document['heading']}", "info")
         except Exception as e:  # noqa: BLE001
             flash(f"IR資料の取得に失敗しました ({code_s}): {url} {e}", "error")
-    return redirect(url_for("detail.stock_detail", code_s=code_s, _anchor="ir-docs"))
+    return redirect_stock_detail(code_s, _anchor="ir-docs")
 
 
 @ir_docs_bp.route("/ir_docs/<code_s>/<doc_id>")
@@ -129,4 +131,4 @@ def post_ir_docs_tdnet(code_s: str):
             flash(f"株探からIR資料を収集しました ({code_s}): {added}件追加", "info")
     except Exception as e:  # noqa: BLE001
         flash(f"株探からのIR資料収集に失敗しました ({code_s}): {e}", "error")
-    return redirect(url_for("detail.stock_detail", code_s=code_s, _anchor="ir-docs"))
+    return redirect_stock_detail(code_s, _anchor="ir-docs")
