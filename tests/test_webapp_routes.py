@@ -304,6 +304,36 @@ class TestDetailRoute:
         assert "3496" in html
         assert "テストメモ" in html
 
+    @pytest.mark.parametrize("with_history", [True, False])
+    def test_detail_navigation_and_memo_form(self, client, db_path, with_history):
+        """メモを履歴より先に読み、存在する履歴だけへ移動できる。"""
+        from bs4 import BeautifulSoup
+
+        record = rs.get_research_record("3496", db_path=db_path)
+        record["snapshots"] = ([rs.create_snapshot(
+            "26.4", ir_comment="分析コメント", quality_indicators="指標あり",
+        )] if with_history else [])
+        rs.upsert_research_record(record, db_path=db_path)
+        html = client.get("/stock/3496").get_data(as_text=True)
+        soup = BeautifulSoup(html, "html.parser")
+        nav = soup.select_one(".detail-toc")
+        for link in nav.select("a"):
+            assert soup.select_one(link["href"]) is not None
+        for section in ("performance-history-section", "indicator-history-section"):
+            target = soup.find(id=section)
+            assert bool(target) is with_history
+            assert bool(nav.select_one(f'a[href="#{section}"]')) is with_history
+            if target:
+                assert not target.has_attr("open")
+                assert html.index('id="memo-section"') < html.index(f'id="{section}"')
+        memo = soup.find(id="memo-form")
+        assert memo.select_one('textarea[name="memo"]')["data-form"] == "memo"
+        assert soup.find(id="rating-badge-select")["form"] == "memo-form"
+        if with_history:
+            ir = soup.select_one('textarea[name="ir_comment_26.4"]')
+            assert ir.find_parent("form")["id"] == "ir-comment-form"
+            assert ir["data-form"] == "ir"
+
     def test_detail_shows_shikiho_gyoseki_editor(self, client):
         html = client.get("/stock/3496").data.decode()
         assert 'id="gyoseki-raw"' in html

@@ -283,132 +283,14 @@
   {% endif %}
 </div>{# /.stock-header #}
 
-{# ===== 適時開示 ===== #}
-{% if disclosures %}
-<details{% if disclosures_has_recent %} open{% endif %}>
-  <summary><strong>適時開示</strong> ({{ disclosures|length }}件)</summary>
-  <div style="overflow-x:auto;">
-    <table class="snapshot-table">
-      <thead>
-        <tr>
-          <th>日付</th>
-          <th>種類</th>
-          <th>内容</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for date, type, heading, url in disclosures[:5] %}
-        <tr>
-          <td>{{ date }}</td>
-          <td>{{ type }}</td>
-          <td><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ heading }}</a></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if disclosures|length > 5 %}
-    <details class="more" style="margin-top:0.3em;">
-      <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ disclosures|length - 5 }} 件を表示</summary>
-      <table class="snapshot-table">
-        <tbody>
-          {% for date, type, heading, url in disclosures[5:] %}
-          <tr>
-            <td>{{ date }}</td>
-            <td>{{ type }}</td>
-            <td><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ heading }}</a></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </details>
-    {% endif %}
-  </div>
-</details>
-{% endif %}
-
-{# ===== 掲示板の感情分析 (issue #501)。最新1件だけを保存して表示する ===== #}
-<style>
-.sentiment-body { padding: 0.8em 1.2em; background: #f8f9fa; border-radius: 4px; margin-top: 0.5em; max-width: 60em; line-height: 1.75; font-size: 0.95em; }
-.sentiment-body h2 { font-size: 1em; margin: 0 0 0.4em 0; }
-.sentiment-body h3 { font-size: 0.95em; margin: 1em 0 0.3em 0; color: #555; }
-.sentiment-body ul { margin: 0.3em 0 0.8em 0; padding-left: 1.4em; }
-.sentiment-body li { margin-bottom: 0.5em; }
-/* 分布などは Markdown の改行で行を分けているので、段落内の改行をそのまま見せる */
-.sentiment-body p { white-space: pre-line; margin: 0.3em 0; }
-.sentiment-meta { color: #666; font-size: 0.9em; margin-left: 0.6em; }
-</style>
-<details id="sentiment-section">
-  <summary>
-    <strong>掲示板の感情</strong>
-    {% if sentiment %}
-    {% if sentiment.temperature %}<span style="margin-left:0.6em;">{{ sentiment.temperature }}</span>{% endif %}
-    <span class="sentiment-meta">{{ sentiment.executed_at[5:7]|int }}/{{ sentiment.executed_at[8:10]|int }} {{ sentiment.executed_at[11:16] }} 実行{% if sentiment.post_count %}・投稿{{ sentiment.post_count }}件{% endif %}</span>
-    {% else %}
-    <span class="sentiment-meta">(未実行)</span>
-    {% endif %}
-    <button type="button" id="sentiment-run-btn" style="margin-left:0.8em;font-size:0.85em;"
-            data-executed-at="{{ sentiment.executed_at if sentiment else '' }}"
-            {% if sentiment_running %}disabled{% endif %}>{% if sentiment %}再分析{% else %}分析する{% endif %}</button>
-    <span id="sentiment-status-msg" class="sentiment-meta">{% if sentiment_running %}実行中... (約1分){% endif %}</span>
-  </summary>
-  {% if sentiment %}
-  <div class="sentiment-body">{{ sentiment.markdown | theme_news_md_to_html | safe }}</div>
-  {% else %}
-  <p class="sentiment-meta">Yahoo 掲示板の直近50件を読み、感情の分布と材料をまとめます。売買の根拠にはせず、定性的な材料として読んでください。</p>
-  {% endif %}
-</details>
-<script>
-(function() {
-  const btn = document.getElementById('sentiment-run-btn');
-  const msg = document.getElementById('sentiment-status-msg');
-  const base = '/stock/{{ record.code_s }}/sentiment/';
-  const before = btn.dataset.executedAt || null;
-  let timer = null;
-
-  async function checkStatus() {
-    try {
-      const r = await fetch(base + 'status');
-      if (!r.ok) return;
-      const s = await r.json();
-      if (s.running) return;
-      clearInterval(timer); timer = null;
-      if (s.executed_at && s.executed_at !== before) {
-        msg.textContent = '完了。再読み込みします...';
-        location.reload();
-      } else {
-        btn.disabled = false;
-        msg.textContent = '失敗しました (logs/sentiment.log を確認)';
-      }
-    } catch (e) {
-      // ネットワークの一時エラーは無視して次回まで待つ
-    }
-  }
-  function startPolling() {
-    if (timer === null) timer = setInterval(checkStatus, 5000);
-  }
-
-  btn.addEventListener('click', async (ev) => {
-    ev.preventDefault();  // summary 内のボタンなので、折りたたみの開閉を起こさない
-    btn.disabled = true;
-    msg.textContent = '起動中...';
-    try {
-      const r = await fetch(base + 'run', { method: 'POST' });
-      if (r.status === 202 || r.status === 409) {
-        msg.textContent = '実行中... (約1分)';
-        startPolling();
-      } else {
-        msg.textContent = '起動に失敗しました (' + r.status + ')';
-        btn.disabled = false;
-      }
-    } catch (e) {
-      msg.textContent = 'リクエスト失敗: ' + e.message;
-      btn.disabled = false;
-    }
-  });
-
-  {% if sentiment_running %}startPolling();{% endif %}
-})();
-</script>
+{% set snapshots = record.snapshots or [] %}
+<nav class="detail-toc" aria-label="銘柄詳細のページ内目次">
+  {% if current_research %}<a href="#current-research-section">調査材料</a>{% endif %}
+  <a href="#memo-section">手動メモ</a>
+  {% if snapshots %}<a href="#performance-history-section">業績履歴</a>{% endif %}
+  {% if indicator_snaps %}<a href="#indicator-history-section">指標履歴</a>{% endif %}
+  <a href="#shikiho-section">四季報</a>
+</nav>
 
 {# ===== 1.5. 現在の調査材料 (issue #219) ===== #}
 {% if current_research %}
@@ -420,7 +302,7 @@
 .cr-label { color: #888; font-size: 0.85em; margin-right: 0.2em; }
 .cr-value { color: #222; }
 </style>
-<details open class="current-research">
+<details open class="current-research" id="current-research-section">
   <summary><strong>現在の調査材料</strong></summary>
   <div class="current-research-body">
     {% set label_tips = {
@@ -443,101 +325,6 @@
       {% endfor %}
     </div>
     {% endfor %}
-  </div>
-</details>
-{% endif %}
-
-{# ===== 2. 業績スナップショット時系列 ===== #}
-{% set snapshots = record.snapshots or [] %}
-{% if snapshots %}
-<details open>
-  <summary><strong>業績スナップショット時系列</strong> ({{ snapshots|length }}件)</summary>
-  <form id="ir-comment-form" action="/stock/{{ record.code_s }}/ir_comment" method="post">
-  <div style="overflow-x:auto;">
-    <table class="snapshot-table ir-snapshot-table">
-      <thead>
-        <tr>
-          <th>日付</th>
-          <th>IR分析定量</th>
-          <th>IR分析コメント</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for snap in snapshots[:5] %}
-        <tr>
-          <td><strong>{{ snap.date_yy_m }}</strong></td>
-          <td class="ir-quant-cell">{{ snap.ir_quant or '' }}</td>
-          <td class="ir-comment-cell">
-            <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
-            <textarea class="editable-field rich-edit" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir" style="display:none;">{{ snap.ir_comment or '' }}</textarea>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if snapshots|length > 5 %}
-    <details class="more" style="margin-top:0.3em;">
-      <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ snapshots|length - 5 }} 件を表示</summary>
-      <table class="snapshot-table ir-snapshot-table">
-        <tbody>
-          {% for snap in snapshots[5:] %}
-          <tr>
-            <td><strong>{{ snap.date_yy_m }}</strong></td>
-            <td class="ir-quant-cell">{{ snap.ir_quant or '' }}</td>
-            <td class="ir-comment-cell">
-              <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
-              <textarea class="editable-field rich-edit" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir" style="display:none;">{{ snap.ir_comment or '' }}</textarea>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </details>
-    {% endif %}
-  </div>
-  </form>
-</details>
-{% endif %}
-
-{# ===== 3. 指標スナップショット時系列 ===== #}
-{% if indicator_snaps %}
-<details open>
-  <summary><strong>指標スナップショット時系列</strong> ({{ indicator_snaps|length }}件)</summary>
-  <div style="overflow-x:auto;">
-    <table class="snapshot-table">
-      <thead>
-        <tr>
-          <th>取得日</th>
-          <th>クォリティ指標</th>
-          <th>理論株価乖離</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for snap in indicator_snaps[:5] %}
-        <tr>
-          <td>{{ snap.acquired_date or snap.date_yy_m }}</td>
-          <td>{{ snap.quality_indicators|replace('\n', ' ') if snap.quality_indicators else '' }}</td>
-          <td>{{ snap.rironkabuka_kairi if snap.rironkabuka_kairi else '' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if indicator_snaps|length > 5 %}
-    <details class="more" style="margin-top:0.3em;">
-      <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ indicator_snaps|length - 5 }} 件を表示</summary>
-      <table class="snapshot-table">
-        <tbody>
-          {% for snap in indicator_snaps[5:] %}
-          <tr>
-            <td>{{ snap.acquired_date or snap.date_yy_m }}</td>
-            <td>{{ snap.quality_indicators|replace('\n', ' ') if snap.quality_indicators else '' }}</td>
-            <td>{{ snap.rironkabuka_kairi if snap.rironkabuka_kairi else '' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </details>
-    {% endif %}
   </div>
 </details>
 {% endif %}
@@ -718,6 +505,227 @@
 
   renderChatLinks(CHAT_LINKS);
 </script>
+
+{# ===== 適時開示 ===== #}
+{% if disclosures %}
+<details{% if disclosures_has_recent %} open{% endif %}>
+  <summary><strong>適時開示</strong> ({{ disclosures|length }}件)</summary>
+  <div style="overflow-x:auto;">
+    <table class="snapshot-table">
+      <thead>
+        <tr>
+          <th>日付</th>
+          <th>種類</th>
+          <th>内容</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for date, type, heading, url in disclosures[:5] %}
+        <tr>
+          <td>{{ date }}</td>
+          <td>{{ type }}</td>
+          <td><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ heading }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if disclosures|length > 5 %}
+    <details class="more" style="margin-top:0.3em;">
+      <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ disclosures|length - 5 }} 件を表示</summary>
+      <table class="snapshot-table">
+        <tbody>
+          {% for date, type, heading, url in disclosures[5:] %}
+          <tr>
+            <td>{{ date }}</td>
+            <td>{{ type }}</td>
+            <td><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ heading }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </div>
+</details>
+{% endif %}
+
+{# ===== 掲示板の感情分析 (issue #501)。最新1件だけを保存して表示する ===== #}
+<style>
+.sentiment-body { padding: 0.8em 1.2em; background: #f8f9fa; border-radius: 4px; margin-top: 0.5em; max-width: 60em; line-height: 1.75; font-size: 0.95em; }
+.sentiment-body h2 { font-size: 1em; margin: 0 0 0.4em 0; }
+.sentiment-body h3 { font-size: 0.95em; margin: 1em 0 0.3em 0; color: #555; }
+.sentiment-body ul { margin: 0.3em 0 0.8em 0; padding-left: 1.4em; }
+.sentiment-body li { margin-bottom: 0.5em; }
+/* 分布などは Markdown の改行で行を分けているので、段落内の改行をそのまま見せる */
+.sentiment-body p { white-space: pre-line; margin: 0.3em 0; }
+.sentiment-meta { color: #666; font-size: 0.9em; margin-left: 0.6em; }
+</style>
+<details id="sentiment-section">
+  <summary>
+    <strong>掲示板の感情</strong>
+    {% if sentiment %}
+    {% if sentiment.temperature %}<span style="margin-left:0.6em;">{{ sentiment.temperature }}</span>{% endif %}
+    <span class="sentiment-meta">{{ sentiment.executed_at[5:7]|int }}/{{ sentiment.executed_at[8:10]|int }} {{ sentiment.executed_at[11:16] }} 実行{% if sentiment.post_count %}・投稿{{ sentiment.post_count }}件{% endif %}</span>
+    {% else %}
+    <span class="sentiment-meta">(未実行)</span>
+    {% endif %}
+    <button type="button" id="sentiment-run-btn" style="margin-left:0.8em;font-size:0.85em;"
+            data-executed-at="{{ sentiment.executed_at if sentiment else '' }}"
+            {% if sentiment_running %}disabled{% endif %}>{% if sentiment %}再分析{% else %}分析する{% endif %}</button>
+    <span id="sentiment-status-msg" class="sentiment-meta">{% if sentiment_running %}実行中... (約1分){% endif %}</span>
+  </summary>
+  {% if sentiment %}
+  <div class="sentiment-body">{{ sentiment.markdown | theme_news_md_to_html | safe }}</div>
+  {% else %}
+  <p class="sentiment-meta">Yahoo 掲示板の直近50件を読み、感情の分布と材料をまとめます。売買の根拠にはせず、定性的な材料として読んでください。</p>
+  {% endif %}
+</details>
+<script>
+(function() {
+  const btn = document.getElementById('sentiment-run-btn');
+  const msg = document.getElementById('sentiment-status-msg');
+  const base = '/stock/{{ record.code_s }}/sentiment/';
+  const before = btn.dataset.executedAt || null;
+  let timer = null;
+
+  async function checkStatus() {
+    try {
+      const r = await fetch(base + 'status');
+      if (!r.ok) return;
+      const s = await r.json();
+      if (s.running) return;
+      clearInterval(timer); timer = null;
+      if (s.executed_at && s.executed_at !== before) {
+        msg.textContent = '完了。再読み込みします...';
+        location.reload();
+      } else {
+        btn.disabled = false;
+        msg.textContent = '失敗しました (logs/sentiment.log を確認)';
+      }
+    } catch (e) {
+      // ネットワークの一時エラーは無視して次回まで待つ
+    }
+  }
+  function startPolling() {
+    if (timer === null) timer = setInterval(checkStatus, 5000);
+  }
+
+  btn.addEventListener('click', async (ev) => {
+    ev.preventDefault();  // summary 内のボタンなので、折りたたみの開閉を起こさない
+    btn.disabled = true;
+    msg.textContent = '起動中...';
+    try {
+      const r = await fetch(base + 'run', { method: 'POST' });
+      if (r.status === 202 || r.status === 409) {
+        msg.textContent = '実行中... (約1分)';
+        startPolling();
+      } else {
+        msg.textContent = '起動に失敗しました (' + r.status + ')';
+        btn.disabled = false;
+      }
+    } catch (e) {
+      msg.textContent = 'リクエスト失敗: ' + e.message;
+      btn.disabled = false;
+    }
+  });
+
+  {% if sentiment_running %}startPolling();{% endif %}
+})();
+</script>
+
+{# ===== 2. 業績スナップショット時系列 ===== #}
+{% if snapshots %}
+<details id="performance-history-section">
+  <summary><strong>業績スナップショット時系列</strong> ({{ snapshots|length }}件)</summary>
+  <form id="ir-comment-form" action="/stock/{{ record.code_s }}/ir_comment" method="post">
+  <div style="overflow-x:auto;">
+    <table class="snapshot-table ir-snapshot-table">
+      <thead>
+        <tr>
+          <th>日付</th>
+          <th>IR分析定量</th>
+          <th>IR分析コメント</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for snap in snapshots[:5] %}
+        <tr>
+          <td><strong>{{ snap.date_yy_m }}</strong></td>
+          <td class="ir-quant-cell">{{ snap.ir_quant or '' }}</td>
+          <td class="ir-comment-cell">
+            <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
+            <textarea class="editable-field rich-edit" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir" style="display:none;">{{ snap.ir_comment or '' }}</textarea>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if snapshots|length > 5 %}
+    <details class="more" style="margin-top:0.3em;">
+      <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ snapshots|length - 5 }} 件を表示</summary>
+      <table class="snapshot-table ir-snapshot-table">
+        <tbody>
+          {% for snap in snapshots[5:] %}
+          <tr>
+            <td><strong>{{ snap.date_yy_m }}</strong></td>
+            <td class="ir-quant-cell">{{ snap.ir_quant or '' }}</td>
+            <td class="ir-comment-cell">
+              <div class="rich-display" onclick="switchToEdit(this)">{{ (snap.ir_comment or '')|safe }}</div>
+              <textarea class="editable-field rich-edit" name="ir_comment_{{ snap.date_yy_m }}" rows="2" data-form="ir" style="display:none;">{{ snap.ir_comment or '' }}</textarea>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </div>
+  </form>
+</details>
+{% endif %}
+
+{# ===== 3. 指標スナップショット時系列 ===== #}
+{% if indicator_snaps %}
+<details id="indicator-history-section">
+  <summary><strong>指標スナップショット時系列</strong> ({{ indicator_snaps|length }}件)</summary>
+  <div style="overflow-x:auto;">
+    <table class="snapshot-table">
+      <thead>
+        <tr>
+          <th>取得日</th>
+          <th>クォリティ指標</th>
+          <th>理論株価乖離</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for snap in indicator_snaps[:5] %}
+        <tr>
+          <td>{{ snap.acquired_date or snap.date_yy_m }}</td>
+          <td>{{ snap.quality_indicators|replace('\n', ' ') if snap.quality_indicators else '' }}</td>
+          <td>{{ snap.rironkabuka_kairi if snap.rironkabuka_kairi else '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if indicator_snaps|length > 5 %}
+    <details class="more" style="margin-top:0.3em;">
+      <summary style="cursor:pointer;color:#666;font-size:0.9em;">残り {{ indicator_snaps|length - 5 }} 件を表示</summary>
+      <table class="snapshot-table">
+        <tbody>
+          {% for snap in indicator_snaps[5:] %}
+          <tr>
+            <td>{{ snap.acquired_date or snap.date_yy_m }}</td>
+            <td>{{ snap.quality_indicators|replace('\n', ' ') if snap.quality_indicators else '' }}</td>
+            <td>{{ snap.rironkabuka_kairi if snap.rironkabuka_kairi else '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </div>
+</details>
+{% endif %}
 
 {# ===== 6. 四季報（click-to-edit） ===== #}
 <div class="memo-section" id="shikiho-section">
