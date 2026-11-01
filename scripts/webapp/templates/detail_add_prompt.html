@@ -2,6 +2,7 @@
 {% block title %}[{{ code_s }}] {{ stock_name or '' }} - ResearchDB 未登録 | Shintakane Research{% endblock %}
 
 {% block content %}
+{% include "_detail_return_link.html" %}
 <div style="max-width:640px;margin:2em auto;padding:1.5em;border:1px solid #ddd;border-radius:6px;background:#fafafa;">
   <h2 style="margin-top:0;">この銘柄は ResearchDB に未登録です</h2>
 
@@ -20,6 +21,7 @@
   </p>
 
   <form action="/stock/add" method="POST" style="margin-top:1.5em;">
+    {% if return_link %}<input type="hidden" name="return_to" value="{{ return_link[0] }}">{% endif %}
     <input type="hidden" name="add_code_s" value="{{ code_s }}">
     <button type="submit" style="padding:0.5em 1.4em;margin-right:0.6em;">
       ResearchDB に追加する

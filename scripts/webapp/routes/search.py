@@ -15,6 +15,7 @@ from ks_util import DATA_DIR
 from research_shelve import CODE_S_PATTERN, normalize_for_search
 from webapp.action_queue import build_action_queue
 from webapp.helpers import search_records, add_stock
+from webapp.navigation import get_return_link, stock_detail_url
 
 # snippet 生成: ヒットフィールド名ラベルと前後30文字
 _SNIPPET_CONTEXT = 30
@@ -184,9 +185,9 @@ def index():
         for r in records:
             r["_snippet"] = _make_snippet(r, kw_for_snippet)
 
-    # コード/銘柄名検索で1件のみヒットした場合は詳細ページへ直接ジャンプ
-    if (q or code_s) and len(records) == 1:
-        return redirect(url_for("detail.stock_detail", code_s=records[0]["code_s"]))
+    # 通常検索の1件ヒットは詳細へ直行。詳細から戻った場合は結果を表示する。
+    if (q or code_s) and len(records) == 1 and request.args.get("show_results") != "1":
+        return redirect(stock_detail_url(records[0]["code_s"]))
 
     # issue #216: q がコード形式 (4桁数字 or 3桁数字+大文字) で 0 件ヒット時のみ
     # 「この銘柄を追加」フォームを出す。銘柄名検索や不正フォーマットでは出さない。
@@ -234,7 +235,9 @@ def add_stock_route():
     code_s = request.form.get("add_code_s", "").strip()
     try:
         code_s = add_stock(code_s)
-        return redirect(url_for("detail.stock_detail", code_s=code_s))
+        return_link = get_return_link(request.form.get("return_to"))
+        params = {"return_to": return_link[0]} if return_link else {}
+        return redirect(url_for("detail.stock_detail", code_s=code_s, **params))
     except (ValueError, TypeError) as e:
         flash(str(e), "error")
         return redirect(url_for("search.index"))

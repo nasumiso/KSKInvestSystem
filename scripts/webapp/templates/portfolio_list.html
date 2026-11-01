@@ -551,7 +551,7 @@
       <td><a href="https://kabutan.jp/stock/chart?code={{ row.code_s }}" target="_blank" rel="noopener noreferrer">{{ row.code_s }}</a></td>
       <td title="{{ row.stock_name }}"
           style="max-width:10em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-        <a href="/stock/{{ row.code_s }}">{{ macros.stock_name_with_prev(row) }}</a>
+        <a href="{{ stock_detail_url(row.code_s) }}">{{ macros.stock_name_with_prev(row) }}</a>
       </td>
       {# issue #269: 1保 銘柄はポジション量 (現在株価 × 保有株数) の 1保群内 最大比 で
          td の背景を左から塗りつぶす。塗り幅 0% (qty=0 / price 未取得) は style 空文字。

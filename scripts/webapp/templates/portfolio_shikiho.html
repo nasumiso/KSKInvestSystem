@@ -211,7 +211,6 @@
       var enc = encodeURIComponent(code);
       codeEl.textContent = code;
       nameLink.textContent = s ? s.stock_name : '';
-      nameLink.href = '/stock/' + enc;
       kabuLink.href = 'https://kabutan.jp/stock/chart?code=' + enc;
       form.action = '/stock/' + enc + '/shikiho';
       navCountEl.textContent = (pos + 1) + ' / ' + navIds.length;
@@ -219,6 +218,7 @@
       var url = new URL(window.location.href);
       url.searchParams.set('code', code);
       history.replaceState(null, '', url.toString());
+      nameLink.href = '/stock/' + enc + '?return_to=' + encodeURIComponent(url.pathname + url.search);
 
       return fetch('/portfolio/shikiho/' + enc + '/data')
         .then(function (resp) { return resp.json(); })

@@ -56,6 +56,11 @@ def create_app() -> Flask:
     app.register_blueprint(ir_docs_bp)
     app.register_blueprint(dev_bp)
 
+    from webapp.navigation import listing_return_url, stock_detail_url
+    app.jinja_env.globals.update(
+        listing_return_url=listing_return_url, stock_detail_url=stock_detail_url,
+    )
+
     # issue #165: /market テンプレートで theme-news markdown を HTML 化するフィルタ
     from webapp.helpers import theme_news_md_to_html
     app.jinja_env.filters["theme_news_md_to_html"] = theme_news_md_to_html

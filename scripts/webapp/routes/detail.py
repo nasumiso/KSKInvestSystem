@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from datetime import date, datetime
 from pathlib import Path
 
-from flask import Blueprint, render_template, abort, jsonify
+from flask import Blueprint, render_template, abort, jsonify, request
 
 import portfolio_shelve as ps
 import run_sentiment
@@ -32,6 +32,8 @@ from webapp.routes.portfolio import (
     _allowed_transitions_from,
 )
 from research_shelve import VALID_RATINGS, IR_QA_MAX, validate_code_s
+
+from webapp.navigation import get_return_link
 
 detail_bp = Blueprint("detail", __name__)
 
@@ -73,12 +75,14 @@ def stock_detail(code_s: str):
     ResearchDB に未登録だが stocks_shelve に存在する銘柄は、
     追加プロンプトを表示してワンクリックで追加できるようにする。
     """
+    return_link = get_return_link(request.args.get("return_to"))
     record = get_research_detail(code_s)
     stock = get_stock_data(code_s)
     if record is None:
         if stock:
             return render_template(
                 "detail_add_prompt.html",
+                return_link=return_link,
                 code_s=code_s,
                 stock_name=stock.get("stock_name", ""),
                 overview=stock.get("overview", ""),
@@ -176,6 +180,7 @@ def stock_detail(code_s: str):
 
     return render_template(
         "detail.html",
+        return_link=return_link,
         ir_setsumei_hp_only=ir_setsumei_hp_only,
         ir_docs=ir_docs,
         record=record,
