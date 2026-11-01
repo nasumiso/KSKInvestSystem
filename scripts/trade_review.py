@@ -256,7 +256,34 @@ def _summary(ym: str, closed: List[Dict[str, Any]], episodes: List[Dict[str, Any
             "correction_days": len(correction),
             "correction_days_over": sum(1 for h in correction if h.get("position") == "over"),
         },
+        "trend": _trend(ym, log_by_date),
     }
+
+
+def _trend(ym: str, log_by_date: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """運用総額と含み損益の月初 → 月末。月初は前月の最後のログ、無ければ当月の最初のログ。"""
+    weekdays = [h for d, h in sorted(log_by_date.items()) if date.fromisoformat(d).weekday() < 5]
+
+    def point(h: Dict[str, Any], key: str) -> Dict[str, Any]:
+        row = {"date": h["date"], "value": h[key]}
+        if key == "unrealized_total":
+            row["as_of"] = h.get("unrealized_as_of")
+        return row
+
+    def ends(key: str) -> Optional[Dict[str, Any]]:
+        logged = [h for h in weekdays if h.get(key) is not None]
+        month = [h for h in logged if h["date"].startswith(ym)]
+        if not month:
+            return None
+        before = [h for h in logged if h["date"] < ym]
+        row = {"start": point(before[-1] if before else month[0], key),
+               "end": point(month[-1], key)}
+        if key == "total_value":
+            row["min"] = point(min(month, key=lambda h: h[key]), key)
+            row["max"] = point(max(month, key=lambda h: h[key]), key)
+        return row
+
+    return {"total_value": ends("total_value"), "unrealized": ends("unrealized_total")}
 
 
 def _hypotheses(ym: str, episodes: List[Dict[str, Any]],

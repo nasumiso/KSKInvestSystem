@@ -381,6 +381,30 @@ def margin_inputs(*, db_path=None):
     return positions, closes, price_dates
 
 
+def unrealized_summary(positions, closes):
+    """残高 CSV の建玉の含み損益の合計を返す (月次の振り返りの推移用)。
+
+    証券会社の画面の評価損益合計と同じく、取得単価・建単価 (avg_price) を基準にする。
+    信用売建は除く。avg_price か終値が無い建玉は数えず、件数を skipped に返す。
+    as_of は証券会社ごとの残高 CSV の日付 (同じ証券会社の複数ソースは古いほう)。
+
+    Returns: {"total": float, "skipped": int, "as_of": {broker: "YYYY-MM-DD"}}
+    """
+    total, skipped, as_of = 0.0, 0, {}
+    for p in positions:
+        if p.get("kind") == "信用売建" or not p.get("qty"):
+            continue
+        broker = p.get("broker")
+        if p.get("as_of") and (broker not in as_of or p["as_of"] < as_of[broker]):
+            as_of[broker] = p["as_of"]
+        close = closes.get(p["code_s"])
+        if p.get("avg_price") is None or not isinstance(close, (int, float)) or close <= 0:
+            skipped += 1
+            continue
+        total += p["qty"] * (close - p["avg_price"])
+    return {"total": total, "skipped": skipped, "as_of": as_of}
+
+
 def build_margin_state(*, db_path=None):
     """楽天・SBI の推定維持率と、その合算を組み立てる (issue #527 / #480)。
 
@@ -476,6 +500,12 @@ def build_daily_entry(*, db_path=None, today=None):
     }
     # 判定には使わない参考値 (#362 から記録を続けている)
     entry["fng_us"] = fng_us
+    # 月次の振り返りで含み損益の推移を出すための参考値
+    positions, closes, _ = margin_inputs(db_path=db_path)
+    unrealized = unrealized_summary(positions, closes)
+    entry["unrealized_total"] = unrealized["total"]
+    entry["unrealized_skipped"] = unrealized["skipped"]
+    entry["unrealized_as_of"] = unrealized["as_of"]
     return entry
 
 

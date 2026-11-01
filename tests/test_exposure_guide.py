@@ -227,6 +227,24 @@ def test_read_index_states_dates_are_per_index():
     assert dates == {"topix": "2026-08-28", "mothers": "2026-08-27"}
 
 
+def test_unrealized_summary_skips_short_and_missing():
+    def pos(code_s, broker, kind, qty, avg_price, as_of):
+        return {"code_s": code_s, "broker": broker, "kind": kind, "qty": qty,
+                "avg_price": avg_price, "as_of": as_of}
+
+    positions = [
+        pos("1001", "SBI", "信用", 100, 1000.0, "2026-10-23"),
+        pos("1002", "SBI", "現物", 200, 500.0, "2026-10-20"),     # SBI の日付は古いほう
+        pos("1003", "楽天", "現物", 100, None, "2026-10-29"),      # 取得単価なし
+        pos("1004", "楽天", "信用", 100, 800.0, "2026-10-29"),     # 終値なし
+        pos("1005", "楽天", "信用売建", 100, 900.0, "2026-10-29"),  # 空売りは除く
+    ]
+    closes = {"1001": 900.0, "1002": 600.0, "1003": 700.0, "1005": 1000.0}
+    assert exposure_guide.unrealized_summary(positions, closes) == {
+        "total": 100 * (900 - 1000) + 200 * (600 - 500), "skipped": 2,
+        "as_of": {"SBI": "2026-10-20", "楽天": "2026-10-29"}}
+
+
 def _stub_entry(entry):
     """build_daily_entry の差し替え用スタブを返す。"""
     def _build(**kwargs):

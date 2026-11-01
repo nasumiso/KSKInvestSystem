@@ -76,7 +76,7 @@ Google Drive の「投資メモ」フォルダにある当年分のドキュメ�
 
 ### §1 数字サマリー
 
-`summary` から、次の5つをこの順に書く。
+`summary` から、次の6つをこの順に書く。
 
 | ブロック | 元の項目 | 書き方 |
 |---|---|---|
@@ -85,6 +85,7 @@ Google Drive の「投資メモ」フォルダにある当年分のドキュメ�
 | 保有日数帯別 | `hold_bands` | 0〜3日 / 4〜90日 / 91日以上の件数と損益 |
 | 市場局面別の売買額 | `by_state` | 局面ごとの買い・売りの額と約定数、差。`unknown` は「ログなし」。`short_fill_count` が 0 でなければ「空売りの約定 n件を除く」と添える |
 | 運用比率 | `exposure` | `margin_rate_min` があれば (#480 以後): 推定維持率の月間の最小〜最大、記録日数 (`logged_days`) のうち適正エリアより多い・内・少ない日数 (`over_days`・`within_days`・`under_days`)、段が 0 以外の日数 (`nonneutral_days`)。無ければ旧方式: 運用比率の最小〜最大、調整判定 (`correction_days`) の日数と、うち目安の上限を超えた日数 (`correction_days_over`) |
+| 運用総額と含み損益 | `trend` | 運用総額の `start` → `end` (日付つき) と、月内の最小〜最大 (`min`・`max`)。建玉の額なので売買でも動く、と添える。含み損益の `start` → `end` (日付つき)。`as_of` (証券会社ごとの残高 CSV の日付) がその日付より古ければ「残高 CSV は SBI M/D・楽天 M/D 時点」と添える。`total_value`・`unrealized` が null なら「記録なし」 |
 
 局面の表示名: `confirmed_uptrend` = 上昇、`uptrend_under_pressure` = 上昇・圧力あり、`market_in_correction` = 調整。
 

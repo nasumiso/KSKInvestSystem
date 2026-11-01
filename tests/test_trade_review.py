@@ -110,6 +110,31 @@ def test_サマリーは保有日数帯と局面別の売買額を出す():
         "nonneutral_days": 1, "over_days": 1, "within_days": 0, "under_days": 0}
 
 
+def test_推移は前月末から当月末までで土日を除く():
+    history = [
+        {"date": "2026-08-31", "total_value": 100.0},                       # 前月末 (含み損益の記録前)
+        {"date": "2026-09-01", "total_value": 120.0, "unrealized_total": -5.0,
+         "unrealized_as_of": {"SBI": "2026-09-01"}},
+        {"date": "2026-09-02", "total_value": 90.0},
+        {"date": "2026-09-03", "total_value": 110.0, "unrealized_total": -8.0,
+         "unrealized_as_of": {"SBI": "2026-09-01"}},
+        {"date": "2026-09-05", "total_value": 50.0, "unrealized_total": -1.0},  # 土曜は写し
+        {"date": "2026-10-01", "total_value": 70.0},                        # 翌月
+    ]
+    trend = _build([], exposure_history=history)["summary"]["trend"]
+    assert trend["total_value"] == {
+        "start": {"date": "2026-08-31", "value": 100.0},
+        "end": {"date": "2026-09-03", "value": 110.0},
+        "min": {"date": "2026-09-02", "value": 90.0},
+        "max": {"date": "2026-09-01", "value": 120.0}}
+    # 前月末に含み損益の記録が無ければ、当月の最初の記録から
+    assert trend["unrealized"] == {
+        "start": {"date": "2026-09-01", "value": -5.0, "as_of": {"SBI": "2026-09-01"}},
+        "end": {"date": "2026-09-03", "value": -8.0, "as_of": {"SBI": "2026-09-01"}}}
+    assert _build([], exposure_history=history[:1])["summary"]["trend"] == {
+        "total_value": None, "unrealized": None}
+
+
 def test_弱点仮説は年初来で損切りの幅と再INを数える():
     def closed(code_s, seq, open_date, close_date, profit, return_pct, **kw):
         return _ep(code_s, seq, [(open_date, "buy", 100, 1000), (close_date, "sell", 100, 1000)],
