@@ -1107,6 +1107,36 @@ class TestDisclosureRouteKessanCard:
         base.update(overrides)
         return base
 
+    @pytest.mark.parametrize("changes, expected", [
+        ({"pts": "+2", "1d": "-3", "5d": "+5", "20d": "+10"},
+         ["PTS +2%", "翌日 -3%", "5日後 +5%", "20日後 +10%"]),
+        ({"pts": "", "1d": "", "5d": "0", "20d": "+10"},
+         ["5日後 0%", "20日後 +10%"]),
+        ({"pts": "", "1d": "", "5d": "", "20d": ""}, []),
+    ])
+    def test_reaction_labels_with_missing_periods(self, client, monkeypatch, changes, expected):
+        """欠損した期間を詰めても各数値のラベルはずれず、編集表示とも一致する。"""
+        from datetime import date
+        from bs4 import BeautifulSoup
+        from webapp.routes import disclosure
+
+        day = "2026/10/30"
+        monkeypatch.setattr(disclosure, "get_market_kessan_data", lambda: {
+            "base_day": date(2026, 11, 1),
+            "future_entries": [], "past_entries": [], "today_entries": [],
+            "older_past_entries": [],
+            "recent_past_entries": [(day, [self._make_stub_entry(
+                "6501", day, post_price_changes=changes,
+            )])],
+        })
+        soup = BeautifulSoup(client.get("/disclosure").get_data(as_text=True), "html.parser")
+        assert [e.get_text(" ", strip=True) for e in soup.select(
+            ".kessan-price-change .kessan-reaction"
+        )] == expected
+        assert [e.get_text(" ", strip=True) for e in soup.select(
+            ".kessan-post-price-change .kessan-reaction"
+        )] == [text for text in expected if not text.startswith("PTS")]
+
     def test_today_card_has_no_done_label(self, client, monkeypatch):
         """当日決算カード (today_entries) は "(済)" ラベルなし、past クラスなしで描画される"""
         from datetime import datetime as _dt
