@@ -23,7 +23,8 @@
 {% endif %}
 
 {# 動的決算セクション (市場ページから移設) #}
-<h2 id="kessan-section" title="株価変動率の表記: 翌営業日 | 5営業日後 20営業日後 / 例: +16.2% | +51% +30%">決算日 <span style="font-size:0.55em; color:#888; cursor:help;">[?]</span></h2>
+<h2 id="kessan-section">決算日</h2>
+<p class="kessan-reaction-note">騰落率の「翌日・5日後・20日後」は営業日数です。</p>
 <div>
   {% macro render_kessan_editor(s, is_past) -%}
     <div class="kessan-editor" style="display:none;" data-loaded="0">
@@ -43,15 +44,12 @@
       <div class="kessan-editor-row">
         <label>株価変動率:</label>
         <span class="kessan-field-display kessan-post-price-change">
-          {% set pc1 = s.post_price_changes['1d'] %}
-          {% set pc5 = s.post_price_changes['5d'] %}
-          {% set pc20 = s.post_price_changes['20d'] %}
-          {# 値があるものだけ表示。1d と 5d/20d の境目に | を入れる (どちらか欠ければ | も出さない) #}
-          {% if pc1 %}<span class="kessan-pc-1d">{{ pc1 }}%</span>{% endif %}
-          {% if pc1 and (pc5 or pc20) %}<span class="kessan-pc-sep">|</span>{% endif %}
-          {% if pc5 %}<span class="kessan-pc-5d">{{ pc5 }}%</span>{% endif %}
-          {% if pc20 %}<span class="kessan-pc-20d">{{ pc20 }}%</span>{% endif %}
-          {% if not (pc1 or pc5 or pc20) %}-{% endif %}
+          {% for key, label in [('1d', '翌日'), ('5d', '5日後'), ('20d', '20日後')] %}
+            {% if s.post_price_changes[key] %}
+            <span class="kessan-reaction"><span class="kessan-period-label">{{ label }}</span> <span class="kessan-pc-{{ key }}">{{ s.post_price_changes[key] }}%</span></span>
+            {% endif %}
+          {% endfor %}
+          {% if not (s.post_price_changes['1d'] or s.post_price_changes['5d'] or s.post_price_changes['20d']) %}-{% endif %}
         </span>
       </div>
       <div class="kessan-editor-row">
@@ -97,19 +95,13 @@
         </span>
       {% endif %}
       {% if is_past and (s.post_price_changes['pts'] or s.post_price_changes['1d'] or s.post_price_changes['5d'] or s.post_price_changes['20d']) %}
-        {% set pcp = s.post_price_changes['pts'] %}
-        {% set pc1 = s.post_price_changes['1d'] %}
-        {% set pc5 = s.post_price_changes['5d'] %}
-        {% set pc20 = s.post_price_changes['20d'] %}
         <span class="kessan-price-change">
-          {% if pcp %}<span class="kessan-pts-label">PTS</span><span class="{% if pcp.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pcp }}%</span>{% endif %}
-          {% if pc1 or pc5 or pc20 %}
-            {# 値があるものだけ表示。1d と 5d/20d の境目に | を入れる (どちらか欠ければ | も出さない) #}
-            {% if pc1 %}<span class="{% if pc1.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc1 }}%</span>{% endif %}
-            {% if pc1 and (pc5 or pc20) %}<span class="kessan-pc-sep">|</span>{% endif %}
-            {% if pc5 %}<span class="{% if pc5.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc5 }}%</span>{% endif %}
-            {% if pc20 %}<span class="{% if pc20.startswith('-') %}rate-neg{% else %}rate-pos{% endif %}">{{ pc20 }}%</span>{% endif %}
-          {% endif %}
+          {% for key, label in [('pts', 'PTS'), ('1d', '翌日'), ('5d', '5日後'), ('20d', '20日後')] %}
+            {% set value = s.post_price_changes.get(key) %}
+            {% if value %}
+            <span class="kessan-reaction"><span class="kessan-period-label">{{ label }}</span> <span class="{{ 'rate-neg' if value.startswith('-') else 'rate-pos' }}">{{ value }}%</span></span>
+            {% endif %}
+          {% endfor %}
         </span>
       {% endif %}
       {% if s.pre_outlook or s.post_comment %}
@@ -124,6 +116,7 @@
 
   {# 直近1週間の過去決算: 常時表示 #}
   {% if kessan_data.recent_past_entries %}
+  <h3 class="kessan-period-heading">直近の結果</h3>
   <div class="kessan-grid">
     {% for kessanbi, stocks in kessan_data.recent_past_entries %}
     <div class="kessan-card past">
@@ -141,6 +134,7 @@
      決算またぎを当日中に編集可能。見た目は通常 (past クラスなし、"(済)" ラベルなし)。
      未来カードは future クラスで事前見通しのみ編集可。 #}
   {% if kessan_data.today_entries or kessan_data.future_entries %}
+  <h3 class="kessan-period-heading">本日・今後の予定</h3>
   <div class="kessan-grid">
     {% for kessanbi, stocks in kessan_data.today_entries %}
     <div class="kessan-card">

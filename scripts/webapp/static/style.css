@@ -823,3 +823,9 @@ body.ep-hide-kessan .ep-kessan { display: none; }
 .margin-form input[type="text"] { display: inline-block; width: 20em; height: auto; margin: 0 0.2em; padding: 0.2em 0.4em; font-size: 0.95em; }
 .emotion-choice { display: flex; align-items: baseline; gap: 0.6em; margin: 0 0 0.3em; }
 .emotion-choice button { min-width: 7.5em; text-align: left; }
+
+/* 決算・開示: 欠損期間があっても値と期間を取り違えない。 */
+.kessan-reaction { display: inline-block; white-space: nowrap; margin-right: 0.5em; }
+.kessan-period-label { font-weight: normal; color: #555; font-size: 0.9em; }
+.kessan-reaction-note { color: #666; font-size: 0.85em; margin-bottom: 0.7em; }
+.kessan-period-heading { font-size: 1em; margin: 1em 0 0.5em; }
