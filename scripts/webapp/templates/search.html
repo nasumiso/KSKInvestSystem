@@ -1,18 +1,17 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
-{% block title %}検索 | Shintakane Research{% endblock %}
+{% block title %}{{ "検索" if has_query else "ホーム" }} | Shintakane Research{% endblock %}
 
 {% block content %}
-<h2>銘柄調査DB検索</h2>
-
+{% macro stock_search() %}
 <form method="get" action="/" style="margin-bottom:1.5em;">
   <div style="display:flex;gap:0.8em;flex-wrap:wrap;align-items:end;">
     {# 検索欄は1つ。コードの一部でも、銘柄名・メモ等の語でも引ける。
        以前はナビの検索語が hidden で残り、画面の欄が効かなかった (issue #439 U1) #}
-    <div>
+    <div style="max-width:100%;">
       <label for="filter-q" style="font-size:0.85em;">コード・銘柄名・メモ</label>
       <input id="filter-q" type="text" name="q" value="{{ filter_q }}"
-             placeholder="例: 3496 / 半導体 装置" style="width:18em;padding:0.4em;margin:0;"
+             placeholder="例: 3496 / 半導体 装置" style="width:18em;max-width:100%;padding:0.4em;margin:0;"
              title="コードの一部、または次に含まれる語: 銘柄名 / 手動メモ / IR分析コメント / 四季報コメント / 概要 / OpenWork / Cramer / 機関投資家コメント。空白で区切ると、すべての語を満たす銘柄に絞ります">
     </div>
     <div>
@@ -23,6 +22,9 @@
     {% endif %}
   </div>
 </form>
+{% endmacro %}
+<h2>{{ "銘柄調査DB検索" if has_query else "ホーム" }}</h2>
+{% if has_query %}{{ stock_search() }}{% endif %}
 
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
@@ -80,6 +82,21 @@
 {% endif %}
 
 {% else %}
+<section class="home-entry" aria-label="日次作業の入口">
+  <a class="home-entry-card home-entry-primary" href="{{ url_for('portfolio.dashboard', status='hold') }}">
+    <strong>保有銘柄をチェック</strong>
+    <span>保有中の銘柄の指標・メモ・保有状況を確認</span>
+  </a>
+  <a class="home-entry-card" href="{{ url_for('market.market_page') }}">
+    <strong>市場を確認</strong>
+    <span>指数・市場状態・ニュースを確認</span>
+  </a>
+  <a class="home-entry-card" href="{{ url_for('portfolio.theme_summary') }}">
+    <strong>テーマから候補を見る</strong>
+    <span>業態テーマ別に保有・準保有・監視を横断</span>
+  </a>
+</section>
+
 {# issue #372: 相場起点の項目とデータの手入れが要る項目。各項目1行、期限が過ぎるか済ませると消える #}
 <section id="action-queue" style="margin-top:1.5em;padding:0.8em 1em;border:1px solid #e1e5ea;border-radius:6px;">
   <h3 style="margin:0 0 0.4em 0;font-size:1em;">今日のアクション</h3>
@@ -94,15 +111,29 @@
   {% endif %}
 </section>
 
+<section class="home-search" aria-labelledby="home-search-title">
+  <h3 id="home-search-title">銘柄を調べる</h3>
+  {{ stock_search() }}
+</section>
+
 {# issue #98: クエリなしトップアクセスは Google Spreadsheets / 開発ページへのリンクをひとまとまりで表示 #}
 <section id="portal-spreadsheets" style="margin-top:1.5em;padding:0.8em 1em;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;">
-  <div style="display:flex;flex-wrap:wrap;gap:0.4em 1.2em;">
+  <h3 style="margin:0 0 0.6em;font-size:1em;">関連資料</h3>
+  {% set descriptions = {
+    'Shintakane Result': '新高値の候補',
+    'Code Rank': '全銘柄ランキング',
+    '投資メモ': '投資方針・調査のメモ',
+    '銘柄評価台帳': '現在価格からの投資魅力度の評価',
+    'PTS': '夜間取引の値上がり銘柄',
+  } %}
+  <div style="display:flex;flex-wrap:wrap;gap:0.8em 1.5em;">
     {% for sp in portal_spreadsheets %}
     <div style="margin:0;">
       <h3 style="margin:0;font-size:1em;line-height:1.3;">
-        <a href="{{ sp.url }}" target="_blank" rel="noopener">{{ sp.title }}</a>
+        <a href="{{ sp.url }}" target="_blank" rel="noopener">{{ sp.title }}{% if sp.url.startswith("https://") %} <span aria-label="外部サイト">↗</span>{% endif %}</a>
       </h3>
-      {% if sp.updated_at != "—" %}<p style="margin:0.15em 0 0 0;font-size:0.72em;color:#888;line-height:1.2;">最終更新: {{ sp.updated_at }}</p>{% endif %}
+      {% if descriptions.get(sp.title) %}<p style="margin:0.2em 0 0;font-size:0.8em;color:#555;">{{ descriptions[sp.title] }}</p>{% endif %}
+      {% if sp.updated_at != "—" %}<p style="margin:0.15em 0 0 0;font-size:0.72em;color:#888;line-height:1.2;">最終更新（ローカル生成）: {{ sp.updated_at }}</p>{% endif %}
     </div>
     {% endfor %}
   </div>

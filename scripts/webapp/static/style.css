@@ -823,3 +823,29 @@ body.ep-hide-kessan .ep-kessan { display: none; }
 .margin-form input[type="text"] { display: inline-block; width: 20em; height: auto; margin: 0 0.2em; padding: 0.2em 0.4em; font-size: 0.95em; }
 .emotion-choice { display: flex; align-items: baseline; gap: 0.6em; margin: 0 0 0.3em; }
 .emotion-choice button { min-width: 7.5em; text-align: left; }
+
+/* ホーム: 保有チェックを先頭にした既存画面への入口。 */
+.home-entry {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1em;
+}
+.home-entry-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  padding: 1em;
+  border: 1px solid #d5dce4;
+  border-radius: 6px;
+  color: #23415e;
+  text-decoration: none;
+}
+.home-entry-card span { font-size: 0.85em; color: #555; }
+.home-entry-primary { background: #edf5fc; border-color: #6394bd; }
+.home-entry-card:hover { background: #f1f6fa; }
+.home-entry-card:focus-visible { outline: 2px solid #28679c; outline-offset: 3px; }
+.home-search { margin-top: 1.5em; }
+.home-search h3 { font-size: 1.1em; margin-bottom: 0.6em; }
+@media (max-width: 700px) {
+  .home-entry { grid-template-columns: 1fr; }
+}
