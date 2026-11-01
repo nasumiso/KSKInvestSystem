@@ -85,7 +85,7 @@ WebApp の IR 資料モーダルと同じ `ir_docs.py` の収集処理を呼び�
 ### 銘柄評価台帳 (`list_stock_ratings` / `get_stock_rating` / `update_stock_rating`)
 
 ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 / モメンタム20 / Valuation20、Confidence、Status) を参照・更新します。
-正本は `stock_ratings.json` で、旧スプレッドシート「投資PJ_銘柄評価台帳」は 2026-09-23 に凍結しました。
+各軸が測るものは [銘柄評価仕様.md](銘柄評価仕様.md)。正本は `stock_ratings.json` で、旧スプレッドシート「投資PJ_銘柄評価台帳」は 2026-09-23 に凍結しました。
 
 | ツール | 内容 |
 |---|---|
