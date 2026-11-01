@@ -118,11 +118,12 @@
       const s = await r.json().catch(() => ({}));
       if (s.output) { deployOut.textContent = s.output; deployOut.style.display = ''; }
       if (s.status === 'updated') {
-        deployMsg.textContent = '✅ 更新しました。WebApp を再起動しています…';
-        reloadWhenBack(15);
-        return;
+        deployMsg.textContent = s.tunnel_restarting
+          ? '✅ 更新しました。MCP 接続の再起動を予約しました。' + (s.restarting ? ' WebApp を再起動しています…' : '')
+          : '✅ 更新しました。WebApp を再起動しています…';
+        if (s.restarting) { reloadWhenBack(15); return; }
       }
-      deployMsg.textContent = s.status === 'up_to_date' ? '既に最新です。'
+      if (s.status !== 'updated') deployMsg.textContent = s.status === 'up_to_date' ? '既に最新です。'
         : (DEPLOY_ERRORS[s.status] || '❌ 失敗しました (' + r.status + ')');
     } catch (e) {
       deployMsg.textContent = 'リクエスト失敗: ' + e.message;

@@ -168,8 +168,15 @@ launchctl bootstrap "gui/$(id -u)" \
 
 ## 更新後の再起動
 
-`shikiho_server.py`、MCP依存関係、トンネルプロファイル・接続設定を更新してマージした後は、
-常駐プロセスが旧コードを読み込んだままなので再起動する。
+運用機の「最新コードを反映」/ `deploy/macmini.sh deploy`、日次バッチの自動 pull では、
+pull 前後の `scripts/` に変更があると tunnel を再起動する。MCP の関数内 import や間接依存も
+読み直すため、判定対象は `scripts/mcp/` だけでなく `scripts/` 全体。
+WebApp の応答の `tunnel_restarting` は再起動の予約で、完了を示すものではない。
+`deploy/macmini.sh status` で MCP サーバーの PID と起動日時を確認できる。
+
+すでに別経路で pull 済みの場合や、この仕組みを初めて反映するとき、MCP依存パッケージ・
+トンネルプロファイル・接続設定を更新した場合は、以下で手動再起動する。
+起動日時からコードの版を自動推測しないため、pull 前後に差分がない場合は再起動しない。
 
 ```bash
 launchctl kickstart -k "gui/$(id -u)/com.k_sohara.shintakane-tunnel"
