@@ -1,7 +1,7 @@
 """トップページの「今日のアクション」(issue #372)。
 
 相場起点の項目 (出口ライン「防」・防のあとの MA 回復・決算接近・ブレイク) と、データの手入れが要る項目
-(ステージ・残高CSV・約定CSV・四季報・感情スコア・月次の振り返り) を出す。各項目は1行に集約し、期限が過ぎるか
+(ステージ・残高CSV・約定CSV・四季報・感情スコア・評価台帳・月次の振り返り) を出す。各項目は1行に集約し、期限が過ぎるか
 手入れを済ませると消える。順位・RS の急落と業態テーマの悪化は、過去の値を残しておらず
 新しく悪化したことを判定できないので扱わない。
 """
@@ -47,6 +47,16 @@ BREAKOUT_KINDS = ("ブ", "週ブ")
 # 決算・「防」のあと、何日までステージの更新を促すか (暦日)。
 # 過ぎたら出さない (更新しないまま古くなった銘柄で点きっぱなしにしないため)。
 STAGE_AFTER_EVENT_DAYS = 14
+
+# 評価台帳の制約 (#542、doc/spec/銘柄評価仕様.md の「Status」)。
+# 1保なら台帳で Active が原則だが、ファンダの仮説で持たない戦略は除く。
+# 戦略マスターで改名されたら例外が効かなくなり、行に出るので気づける
+RATING_EXEMPT_STRATEGIES = ("大型高配当", "短期イベント", "短期底値リバ")
+RATING_LIMITS = {"Active": 20, "Watch": 15}
+# 決算発表日から何日過ぎても台帳が更新されていなければ、Active の更新待ちとして出す (暦日)
+RATING_STALE_DAYS = 14
+# Watch のまま何回決算をまたいだら出すか (売りの4分類の「時間切れ」)
+RATING_WATCH_KESSAN = 2
 
 
 class _Material:
@@ -217,6 +227,61 @@ def _emotion_item(today: date) -> Optional[Dict[str, str]]:
     else:
         text = "感情スコア: 未入力 (中立で計算中)"
     return _item(text, "/portfolio?status=hold", "保有銘柄で入れる")
+
+
+def _rating_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:
+    """評価台帳と保有ステータスのずれ・上限超過と、更新待ちを各1行にまとめる (#542)。
+
+    Status はここでは変えない。変えるのは判断なので、人が台帳を更新する。
+    """
+    import gyoseki  # 遅延 import (起動時に読むと重い)
+    import stock_ratings
+
+    mat = mat or _Material()
+    ratings = {r["code_s"]: r for status in (None, "Archive") for r in stock_ratings.list_ratings(status)}
+    records = {r["code_s"]: r for r in mat.records}
+    items = []
+
+    gaps = []  # 「コード 銘柄名 (理由)」
+    for code_s, r in records.items():
+        status = (ratings.get(code_s) or {}).get("status", "未登録")
+        idea = (r.get("memo") or {}).get("trade_idea")
+        if r.get("status") == "1保" and status != "Active" and idea not in RATING_EXEMPT_STRATEGIES:
+            name = (ratings.get(code_s) or {}).get("name") or (mat.stocks.get(code_s) or {}).get("stock_name", "")
+            gaps.append(f"{code_s} {name} (1保なのに台帳は{status})")
+    for code_s, rt in sorted(ratings.items()):
+        held = (records.get(code_s) or {}).get("status")
+        if rt["status"] == "Active" and held not in ("1保", "2準"):
+            gaps.append(f"{code_s} {rt['name']} (Active なのに{held or 'ポートフォリオに無い'})")
+        elif rt["status"] == "Watch" and held is None:
+            gaps.append(f"{code_s} {rt['name']} (Watch なのにポートフォリオに無い)")
+    counts = {s: sum(1 for rt in ratings.values() if rt["status"] == s) for s in RATING_LIMITS}
+    over = [f"{s} {counts[s]}/{n}" for s, n in RATING_LIMITS.items() if counts[s] > n]
+    if gaps or over:
+        parts = []
+        if gaps:
+            parts.append(f"{len(gaps)}銘柄")
+        if over:
+            parts.append("上限超過 " + "・".join(over))
+        item = _item("台帳と保有のずれ: " + "、".join(parts), "/stock-ratings", "台帳を見る")
+        items.append(_with_popup(item, f"{len(gaps)}銘柄", gaps) if gaps else item)
+
+    stale = []
+    for code_s, rt in sorted(ratings.items()):
+        if rt["status"] not in RATING_LIMITS:
+            continue
+        updated = rt.get("updated_at", "")
+        past = [d for d in gyoseki.load_kessan_dates(code_s)["kessan"] if d <= today.isoformat()]
+        if rt["status"] == "Active" and past:
+            last = date.fromisoformat(past[-1])
+            if (today - last).days > RATING_STALE_DAYS and updated < past[-1]:
+                stale.append(f"{code_s} {rt['name']} (Active、{_md(last)} の決算が未反映)")
+        elif rt["status"] == "Watch" and sum(1 for d in past if d > updated) >= RATING_WATCH_KESSAN:
+            stale.append(f"{code_s} {rt['name']} (Watch のまま決算を{RATING_WATCH_KESSAN}回またいだ)")
+    if stale:
+        item = _item(f"台帳の更新待ち: {len(stale)}銘柄", "/stock-ratings", "台帳を見る")
+        items.append(_with_popup(item, f"{len(stale)}銘柄", stale))
+    return items
 
 
 def _trade_review_item(today: date) -> Optional[Dict[str, str]]:
@@ -497,6 +562,7 @@ _DETECTORS: List = [
     ("約定CSV", _fill_csv_item, False),
     ("四季報", _shikiho_item, False),
     ("感情スコア", _emotion_item, False),
+    ("評価台帳", _rating_items, True),
     ("月次の振り返り", _trade_review_item, False),
 ]
 
