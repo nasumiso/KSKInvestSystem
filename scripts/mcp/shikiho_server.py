@@ -775,7 +775,7 @@ errors を見て値を直し、再度呼んでください。
 項目:
 - fund (ファンダ 0〜40)、mispricing (未織込 0〜20)、momentum (モメンタム 0〜20)、valuation (0〜20): 整数
 - confidence: A / B / C
-- status: Active / Watch / Archive
+- status: Active / Watch / Archive (定義は下の「Status」)
 - role (役割)、thesis (投資仮説)、mispricing_note (未織込と見ている点)、
   risks (主要リスク・反証条件)、checkpoints (次の格上げ/確認条件)、note (更新メモ)
 
@@ -797,6 +797,12 @@ errors を見て値を直し、再度呼んでください。
 - 原則2: 新規INのスコアと保有継続の判断を分離する (低スコア化だけで強い保有株を機械的に売らない)
 - 原則3: 保有状況やユーザーの仮説を総合点へ直接加点しない (確証バイアス対策)
 - 総合点は企業価値ランキングではなく、現在価格からの中期投資魅力度
+
+Status (台帳に載せるのは、一次資料で調べた深掘り候補と保有銘柄だけ):
+- Active: 仮説が生きていて、持っている / 入る準備ができている (ファンダの買い条件を満たし、残るのはモメンタムとタイミングの判断だけ)
+- Watch: 仮説はあるが確認待ち。何を待っているか (次の決算の数字・受注・中計など) を checkpoints に書く
+- Archive: 仮説崩れ・時間切れ・見送り。Archive にする更新では、外す理由を同じ呼び出しで note に書く
+- Active / Watch では thesis・risks・checkpoints を、Archive では note を空にできない (新規作成でも同じ)
 """
 
 
@@ -900,6 +906,7 @@ def list_stock_ratings(status: Optional[str] = None) -> Dict[str, Any]:
     銘柄評価台帳は、個別銘柄分析の結論として付けた現在の投資判断のスナップショットです
     (ファンダ40 / 未織込20 / モメンタム20 / Valuation20 = 総合100、Confidence、Status)。
     status (Active / Watch / Archive) を指定するとその Status だけを返します。
+    status を指定しないときは Archive を含みません (Archive は比較の対象外)。
     仮説・リスクなどの長文は含みません。全項目は get_stock_rating で取得します。
     """
     return list_stock_ratings_data(status)

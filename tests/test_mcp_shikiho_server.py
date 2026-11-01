@@ -546,6 +546,7 @@ def ratings_dir(tmp_path, monkeypatch):
     server.update_stock_rating_data("3697", "初期登録", {
         "name": "SHIFT", "fund": 35, "mispricing": 16, "momentum": 16, "valuation": 15,
         "confidence": "A", "status": "Active", "thesis": "QA需要拡大",
+        "risks": "採用鈍化", "checkpoints": "2Q受注",
     })
     return tmp_path / "stock_ratings"
 

@@ -50,6 +50,13 @@ TEXT_FIELDS = (
 )
 # 新規作成時に必須の項目 (scores は4軸すべて必須)
 REQUIRED_FIELDS = ("name", "confidence", "status")
+# Status ごとに空にできない項目 (#542)。台帳には一次資料で調べた銘柄だけを載せ、
+# Watch は何を待っているか、Archive は外した理由 (見送りの記録) を残す
+STATUS_REQUIRED_TEXT = {
+    "Active": ("thesis", "risks", "checkpoints"),
+    "Watch": ("thesis", "risks", "checkpoints"),
+    "Archive": ("note",),
+}
 
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 JST = timezone(timedelta(hours=9))
@@ -186,13 +193,17 @@ def get_rating(code_s, ratings_dir=None):
 
 
 def list_ratings(status=None, ratings_dir=None):
-    """評価の一覧を総合点の高い順に返す。status を指定するとその Status だけ。"""
+    """評価の一覧を総合点の高い順に返す。status を指定するとその Status だけ。
+
+    status 未指定では Archive を含めない (Archive は比較の対象から外す、#542)。
+    Archive は status="Archive" を指定したときだけ返す。
+    """
     _, json_path, _ = _paths(ratings_dir)
     stocks = _load(json_path)["stocks"]
     rows = [
         _with_total(code_s, record)
         for code_s, record in stocks.items()
-        if status is None or record["status"] == status
+        if record["status"] == status or (status is None and record["status"] != "Archive")
     ]
     return sorted(rows, key=lambda r: (-r["total"], r["code_s"]))
 
@@ -239,6 +250,12 @@ def update_rating(code_s, fields, reason, source, ratings_dir=None):
         errors = validate_record(code_s, after)
         if "updated_at" in fields:
             errors.append("updated_at: 書き込み時に自動で入るので指定できない")
+        # Status ごとの必須項目は書き込みの経路だけで見る (済んだ移行の検証には掛けない)
+        for key in STATUS_REQUIRED_TEXT.get(after.get("status"), ()):
+            if not str(after.get(key) or "").strip():
+                errors.append(f"{key}: {after['status']} では空にできない")
+        if after.get("status") == "Archive" and before.get("status") != "Archive" and "note" not in fields:
+            errors.append("note: Archive にするときは、外す理由を同じ更新で note に書く")
         if errors:
             raise RatingValidationError(errors)
 
@@ -382,6 +399,7 @@ td.total { font-weight: 700; }
 td.role { white-space: normal; min-width: 12em; color: var(--muted); }
 a { color: var(--accent); text-decoration: none; }
 details { border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; padding: 6px 10px; }
+details.archive { margin-top: 28px; }
 summary { cursor: pointer; font-weight: 600; }
 dl { margin: 8px 0 0; }
 dt { color: var(--muted); font-size: 12px; margin-top: 8px; }
@@ -404,7 +422,9 @@ def render_html(data, generated_at):
         (_with_total(code_s, record) for code_s, record in data["stocks"].items()),
         key=lambda r: (-r["total"], r["code_s"]),
     )
-    rank = {r["code_s"]: i for i, r in enumerate(rows, start=1)}
+    # 順位は Active と Watch だけで付ける。Archive は比較の対象から外し、末尾に畳む (#542)
+    ranked = [r for r in rows if r["status"] != "Archive"]
+    rank = {r["code_s"]: i for i, r in enumerate(ranked, start=1)}
 
     parts = [
         '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">',
@@ -418,7 +438,11 @@ def render_html(data, generated_at):
         group = [r for r in rows if r["status"] == status]
         if not group:
             continue
-        parts.append(f"<h2>{status} ({len(group)})</h2>")
+        archive = status == "Archive"
+        if archive:
+            parts.append(f'<details class="archive"><summary>{status} ({len(group)}) — 比較の対象外</summary>')
+        else:
+            parts.append(f"<h2>{status} ({len(group)})</h2>")
         parts.append(
             '<div class="table-wrap"><table><tr><th class="num">順位</th><th>コード</th>'
             '<th>銘柄</th><th class="num">ファンダ</th><th class="num">未織込</th>'
@@ -428,7 +452,7 @@ def render_html(data, generated_at):
         for r in group:
             s = r["scores"]
             parts.append(
-                f'<tr><td class="num">{rank[r["code_s"]]}</td><td>{esc(r["code_s"])}</td>'
+                f'<tr><td class="num">{rank.get(r["code_s"], "—")}</td><td>{esc(r["code_s"])}</td>'
                 f'<td><a href="#s{esc(r["code_s"])}">{esc(r["name"])}</a></td>'
                 f'<td class="num">{s["fund"]}</td><td class="num">{s["mispricing"]}</td>'
                 f'<td class="num">{s["momentum"]}</td><td class="num">{s["valuation"]}</td>'
@@ -447,6 +471,8 @@ def render_html(data, generated_at):
                 if r.get(key):
                     parts.append(f"<dt>{label}</dt><dd>{esc(r[key])}</dd>")
             parts.append("</dl></details>")
+        if archive:
+            parts.append("</details>")
     parts.append("</body></html>\n")
     return "\n".join(parts)
 

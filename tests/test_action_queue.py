@@ -83,6 +83,50 @@ def test_trade_review_item_until_previous_month_is_done(tmp_path, monkeypatch, f
     assert (item is None) if expected is None else (expected in item["text"])
 
 
+def _rating(status, updated="2026-09-01"):
+    return {"name": "X", "status": status, "updated_at": updated}
+
+
+@pytest.mark.parametrize("held, rating, idea, kessan, expected", [
+    ("1保", _rating("Watch"), "中期テーマ", [], "1保なのに台帳はWatch"),
+    ("1保", _rating("Archive"), "中期テーマ", [], "1保なのに台帳はArchive"),
+    ("1保", None, "中期テーマ", [], "1保なのに台帳は未登録"),
+    ("1保", None, "大型高配当", [], None),                       # ファンダの仮説で持たない戦略は除く
+    ("3監", _rating("Active"), None, [], "Active なのに3監"),
+    (None, _rating("Watch"), None, [], "Watch なのにポートフォリオに無い"),
+    ("1保", _rating("Active"), None, ["2026-09-25"], "9/25 の決算が未反映"),  # 決算から17日
+    ("1保", _rating("Active"), None, ["2026-09-30"], None),                   # 決算から12日はまだ
+    ("2準", _rating("Watch", "2026-03-01"), None, ["2026-05-10", "2026-08-10"], "決算を2回またいだ"),
+    ("2準", _rating("Watch", "2026-06-01"), None, ["2026-05-10", "2026-08-10"], None),
+])
+def test_rating_items(monkeypatch, held, rating, idea, kessan, expected):
+    """台帳と保有のずれと、決算を反映していない評価を出す。Status は変えない (#542)"""
+    import gyoseki
+    import stock_ratings
+    records = [{"code_s": "1111", "status": held, "memo": {"trade_idea": idea}}] if held else []
+    ratings = {"1111": rating} if rating else {}
+    monkeypatch.setattr(stock_ratings, "list_ratings", lambda status=None: [
+        dict(r, code_s=c) for c, r in ratings.items()
+        if r["status"] == status or (status is None and r["status"] != "Archive")])
+    monkeypatch.setattr(gyoseki, "load_kessan_dates", lambda code_s: {"kessan": kessan, "shusei": []})
+    mat = aq._Material()
+    mat.__dict__.update(records=records, stocks={})
+    texts = [i.get("popup", "") for i in aq._rating_items(TODAY, mat)]
+    assert (texts == []) if expected is None else any(expected in t for t in texts)
+
+
+def test_rating_items_over_limit(monkeypatch):
+    """Active / Watch が上限を超えたら件数を出す"""
+    import gyoseki
+    import stock_ratings
+    rows = [dict(_rating("Watch"), code_s=f"{1000 + i}") for i in range(16)]
+    monkeypatch.setattr(stock_ratings, "list_ratings", lambda status=None: [] if status else rows)
+    monkeypatch.setattr(gyoseki, "load_kessan_dates", lambda code_s: {"kessan": [], "shusei": []})
+    mat = aq._Material()
+    mat.__dict__.update(records=[{"code_s": r["code_s"], "status": "2準"} for r in rows], stocks={})
+    assert [i["text"] for i in aq._rating_items(TODAY, mat)] == ["台帳と保有のずれ: 上限超過 Watch 16/15"]
+
+
 def test_shikiho_item_counts_missing_in_hold_and_semi(monkeypatch):
     """今号が未入力の 1保・2準 を数える。research 未登録は数えず、行き先は優先度の高い側"""
     monkeypatch.setattr(rs, "current_shikiho_period", lambda: "26.9")

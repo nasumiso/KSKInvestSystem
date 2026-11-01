@@ -10,6 +10,7 @@ import stock_ratings as sr
 BASE_FIELDS = {
     "name": "SHIFT", "fund": 35, "mispricing": 16, "momentum": 16, "valuation": 15,
     "confidence": "A", "status": "Active", "thesis": "QA需要拡大", "risks": "採用鈍化",
+    "checkpoints": "2Q受注", "mispricing_note": "受注残",
 }
 
 
@@ -36,7 +37,7 @@ def _history(ratings_dir):
 @pytest.mark.parametrize("fields, expected_changes", [
     ({"fund": 36}, {"scores.fund": [35, 36]}),
     ({"thesis": "AI駆動開発"}, {"thesis": ["QA需要拡大", "AI駆動開発"]}),
-    ({"risks": ""}, {"risks": ["採用鈍化", ""]}),
+    ({"mispricing_note": ""}, {"mispricing_note": ["受注残", ""]}),
 ])
 def test_partial_update_keeps_other_fields(ratings_dir, fields, expected_changes):
     """指定しなかった項目・他の銘柄は変わらず、変わった項目だけが履歴に残る"""
@@ -76,6 +77,38 @@ def test_validation_error_writes_nothing(ratings_dir, code_s, fields):
     with pytest.raises(sr.RatingValidationError):
         sr.update_rating(code_s, fields, "誤入力", "cli", ratings_dir=ratings_dir)
     assert _snapshot(ratings_dir) == before
+
+
+@pytest.mark.parametrize("fields, error", [
+    ({"risks": " "}, "risks: Active では空にできない"),
+    ({"status": "Watch", "checkpoints": ""}, "checkpoints: Watch では空にできない"),
+    ({"status": "Archive"}, "note: Archive にするときは"),  # 外す理由を同じ更新で書く
+    ({"status": "Archive", "note": "受注鈍化で仮説崩れ"}, None),
+])
+def test_status_required_fields(ratings_dir, fields, error):
+    """Status ごとに空にできない項目があり、Archive にするときは同じ更新で理由を書く (#542)"""
+    before = _snapshot(ratings_dir)
+    if error is None:
+        sr.update_rating("3697", fields, "見送り", "cli", ratings_dir=ratings_dir)
+        assert sr.get_rating("3697", ratings_dir=ratings_dir)["status"] == "Archive"
+        return
+    with pytest.raises(sr.RatingValidationError) as exc_info:
+        sr.update_rating("3697", fields, "誤入力", "cli", ratings_dir=ratings_dir)
+    assert any(e.startswith(error) for e in exc_info.value.errors)
+    assert _snapshot(ratings_dir) == before
+
+
+def test_archive_is_excluded_from_list_and_ranking(ratings_dir):
+    """Archive は既定の一覧と HTML の順位から外れ、明示すれば一覧で取れる (#542)"""
+    sr.update_rating("6134", {"fund": 40, "status": "Archive", "note": "見送り"}, "外す", "cli",
+                     ratings_dir=ratings_dir)
+
+    assert [r["code_s"] for r in sr.list_ratings(ratings_dir=ratings_dir)] == ["3697"]
+    assert [r["code_s"] for r in sr.list_ratings("Archive", ratings_dir=ratings_dir)] == ["6134"]
+    page = (ratings_dir / sr.HTML_FILENAME).read_text(encoding="utf-8")
+    assert '<td class="num">1</td><td>3697</td>' in page
+    assert '<td class="num">—</td><td>6134</td>' in page
+    assert page.index('<details class="archive">') < page.index('href="#s6134"')
 
 
 def test_same_value_update_writes_nothing(ratings_dir):
