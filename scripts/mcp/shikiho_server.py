@@ -616,16 +616,28 @@ RATING_SUMMARY_KEYS = (
 def list_stock_ratings_data(status: Optional[str] = None) -> Dict[str, Any]:
     """銘柄評価台帳の一覧を総合点の高い順に返す。"""
     ratings = stock_ratings.list_ratings(status)
+    system = stock_ratings.compute_system_momentum([r["code_s"] for r in ratings])
     return {
         "count": len(ratings),
-        "stocks": [{key: r.get(key) for key in RATING_SUMMARY_KEYS} for r in ratings],
+        "stocks": [
+            dict({key: r.get(key) for key in RATING_SUMMARY_KEYS},
+                 system_momentum=_momentum_summary(system.get(r["code_s"])))
+            for r in ratings
+        ],
     }
+
+
+def _momentum_summary(m: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """一覧では合計と欠けた要素だけを返す (内訳は get_stock_rating)。"""
+    return {"total": m["total"], "missing": m["missing"]} if m else None
 
 
 def get_stock_rating_data(code_s: str, history: int = 3) -> Dict[str, Any]:
     """1銘柄の評価の全項目と直近の変更履歴を返す。"""
     code_s = code_s.strip().upper()
     rating = stock_ratings.get_rating(code_s)
+    if rating:
+        rating["system_momentum"] = stock_ratings.compute_system_momentum([code_s]).get(code_s)
     return {
         "code_s": code_s,
         "found": rating is not None,
@@ -908,6 +920,7 @@ def list_stock_ratings(status: Optional[str] = None) -> Dict[str, Any]:
     status (Active / Watch / Archive) を指定するとその Status だけを返します。
     status を指定しないときは Archive を含みません (Archive は比較の対象外)。
     仮説・リスクなどの長文は含みません。全項目は get_stock_rating で取得します。
+    system_momentum はシステムが算出したモメンタム (0〜20) の参考値で、total には入っていません。
     """
     return list_stock_ratings_data(status)
 
@@ -919,6 +932,11 @@ def get_stock_rating(code_s: str, history: int = 3) -> Dict[str, Any]:
     history は返す変更履歴の件数です (新しい順)。各履歴の changes は
     {項目: [前の値, 新しい値]} で、前回から評価がどう変わったかが分かります。
     評価を更新する前に呼び、現在の値と前回の変更理由を確認してください。
+
+    rating.system_momentum は、システムが株価と業態テーマの順位から算出したモメンタム
+    (0〜20 = RS 0〜10 + 業態テーマ 0〜10) の参考値です。total には入っていません
+    (採点ルールの momentum は引き続き付けてください)。missing にある要素はデータが無く、
+    5点で埋めています。各履歴の system_momentum は、その更新をした時点の値です。
     """
     return get_stock_rating_data(code_s, history)
 

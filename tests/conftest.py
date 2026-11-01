@@ -68,3 +68,6 @@ def _isolate_shelve_and_portfolio_output(tmp_path, monkeypatch):
     monkeypatch.setattr(db_shelve, "PORTFOLIO_SHELVE", portfolio_shelve_path)
     monkeypatch.setattr(portfolio_shelve, "PORTFOLIO_SHELVE", portfolio_shelve_path)
     monkeypatch.setattr(portfolio_shelve, "DATA_DIR", data_dir)
+    import stock_ratings
+    monkeypatch.setattr(stock_ratings, "RATINGS_DIR", tmp_path / "stock_ratings")
+    monkeypatch.setattr(stock_ratings, "DRIVE_MIRROR_DIR", tmp_path / "stock_ratings_drive")

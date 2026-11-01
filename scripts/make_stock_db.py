@@ -1846,6 +1846,12 @@ def list_all_db(upload_csv=True, update_portforio=True):
         log_print("業態テーマ順位を記録したテーマ数", record_theme_rank_snapshot(stocks))
     except Exception as e:  # noqa: BLE001
         log_warning(f"業態テーマ順位の記録に失敗: {e}")
+    # 評価台帳の HTML と Drive の写しを、記録したテーマ順位と今日の RS で作り直す (issue #543)
+    try:
+        import stock_ratings
+        stock_ratings.refresh_outputs()
+    except Exception as e:  # noqa: BLE001
+        log_warning(f"評価台帳の出力の作り直しに失敗: {e}")
 
     # ---- テーマ別株価騰落率を計算してmarket_dbに保存
     log_print("---- テーマ別株価騰落率を計算")

@@ -206,10 +206,46 @@ def test_mirror_to_drive(tmp_path, monkeypatch, has_mirror, dev, expect_copy):
     sr.update_rating("3697", BASE_FIELDS, "初期登録", "test")
 
     if expect_copy:
-        for name in (sr.RATINGS_FILENAME, sr.HISTORY_FILENAME, sr.HTML_FILENAME):
+        for name in (sr.HISTORY_FILENAME, sr.HTML_FILENAME):
             assert (mirror / name).read_bytes() == (root / name).read_bytes()
+        # JSON は Drive の写しにだけ system_momentum を埋め込む (#543)
+        drive = json.loads((mirror / sr.RATINGS_FILENAME).read_text(encoding="utf-8"))
+        local = json.loads((root / sr.RATINGS_FILENAME).read_text(encoding="utf-8"))
+        assert drive["stocks"]["3697"].pop("system_momentum")["missing"] == ["rs", "theme"]
+        assert drive == local and "system_momentum" not in local["stocks"]["3697"]
         assert (mirror / sr.RATINGS_FILENAME).stat().st_ino == inode
     elif has_mirror:
         assert (mirror / sr.RATINGS_FILENAME).read_text(encoding="utf-8") == "{}"
     else:
         assert not mirror.exists()
+
+
+RANKS = {"半導体": {"rank": 1}, "AI": {"rank": 2}, "電線": {"rank": 3}, "未集計": {"rank": None}}
+
+
+@pytest.mark.parametrize("pt, themes, ranks, expected", [
+    (83, ["半導体"], RANKS, {"total": 18, "rs": 8, "theme": 10, "missing": []}),
+    (83, ["半導体", "AI"], RANKS, {"total": 16, "rs": 8, "theme": 8, "missing": []}),  # 10 と 5 の平均
+    (83, ["電線"], RANKS, {"total": 8, "rs": 8, "theme": 0, "missing": []}),          # 最下位
+    (None, ["AI"], RANKS, {"total": 10, "rs": 5, "theme": 5, "missing": ["rs"]}),     # 価格データ無し
+    (83, [], RANKS, {"total": 13, "rs": 8, "theme": 5, "missing": ["theme"]}),        # ポートフォリオ未登録
+    (83, ["半導体"], {"半導体": {"rank": 1}}, {"total": 13, "rs": 8, "theme": 5, "missing": ["theme"]}),  # 比べるテーマが1つ
+])
+def test_system_momentum(monkeypatch, pt, themes, ranks, expected):
+    """RS = momentum_pt / 10、テーマ = 順位を1位10点・最下位0点で割り当てた平均。欠けた要素は5点 (#543)"""
+    from datetime import date
+    monkeypatch.setattr(sr, "_load_momentum_inputs", lambda codes: (
+        {"3697": pt}, {"3697": themes}, ranks, date(2026, 10, 30)))
+    m = sr.compute_system_momentum(["3697"])["3697"]
+    assert {k: m[k] for k in expected} == expected
+    assert m["as_of"] == "2026-10-30"
+
+
+def test_history_keeps_system_momentum_at_update(ratings_dir, monkeypatch):
+    """更新した時点のシステムのモメンタムが履歴に残り、changes には入らない (#543)"""
+    monkeypatch.setattr(sr, "compute_system_momentum", lambda codes: {c: {"total": 12} for c in codes})
+    sr.update_rating("3697", {"fund": 36}, "反映", "cli", ratings_dir=ratings_dir)
+    last = _history(ratings_dir)[-1]
+    assert last["system_momentum"] == {"total": 12}
+    assert last["changes"] == {"scores.fund": [35, 36]}
+    assert "system_momentum" not in sr.get_rating("3697", ratings_dir=ratings_dir)
