@@ -66,6 +66,23 @@ def test_emotion_item_after_expiry(monkeypatch, entries, real_today, expected):
     assert (item is None) if expected is None else (expected in item["text"])
 
 
+@pytest.mark.parametrize("files, real_today, expected", [
+    ([], date(2026, 11, 1), "10月分がまだ"),
+    (["2026-10.md"], date(2026, 11, 1), None),
+    (["2026-10.json"], date(2026, 11, 30), "10月分がまだ"),  # md ができるまで出し続ける
+    (["2026-11.md"], date(2027, 1, 5), "12月分がまだ"),      # 年をまたぐ
+])
+def test_trade_review_item_until_previous_month_is_done(tmp_path, monkeypatch, files, real_today, expected):
+    """前月分の月次振り返りのレポートが無ければ出す (issue #540)"""
+    import trade_review
+    for f in files:
+        (tmp_path / f).write_text("")
+    monkeypatch.setattr(trade_review, "REVIEW_DIR", str(tmp_path))
+    monkeypatch.setattr(aq, "_real_today", lambda: real_today)
+    item = aq._trade_review_item(TODAY)
+    assert (item is None) if expected is None else (expected in item["text"])
+
+
 def test_shikiho_item_counts_missing_in_hold_and_semi(monkeypatch):
     """今号が未入力の 1保・2準 を数える。research 未登録は数えず、行き先は優先度の高い側"""
     monkeypatch.setattr(rs, "current_shikiho_period", lambda: "26.9")

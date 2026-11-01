@@ -1,11 +1,12 @@
 """トップページの「今日のアクション」(issue #372)。
 
 相場起点の項目 (出口ライン「防」・防のあとの MA 回復・決算接近・ブレイク) と、データの手入れが要る項目
-(ステージ・残高CSV・約定CSV・四季報) を出す。各項目は1行に集約し、期限が過ぎるか
+(ステージ・残高CSV・約定CSV・四季報・感情スコア・月次の振り返り) を出す。各項目は1行に集約し、期限が過ぎるか
 手入れを済ませると消える。順位・RS の急落と業態テーマの悪化は、過去の値を残しておらず
 新しく悪化したことを判定できないので扱わない。
 """
 
+import os
 from datetime import date, datetime
 from functools import cached_property
 from typing import Any, Dict, List, Optional
@@ -216,6 +217,22 @@ def _emotion_item(today: date) -> Optional[Dict[str, str]]:
     else:
         text = "感情スコア: 未入力 (中立で計算中)"
     return _item(text, "/portfolio?status=hold", "保有銘柄で入れる")
+
+
+def _trade_review_item(today: date) -> Optional[Dict[str, str]]:
+    """前月分の月次振り返り (trade_review/YYYY-MM.md) が無ければ促す (issue #540)。
+
+    開発方針で、前月分の振り返りが済むまでその月の新機能に着手しないと決めているため。
+    月の切り替わりは実際の今日で判定する (17時前の get_price_day だと月初めが前月扱いになる)。
+    """
+    import trade_review  # 遅延 import (webapp.helpers との循環回避)
+
+    first = _real_today().replace(day=1)
+    prev = date.fromordinal(first.toordinal() - 1)
+    if os.path.exists(os.path.join(trade_review.REVIEW_DIR, f"{prev:%Y-%m}.md")):
+        return None
+    return _item(f"月次の振り返り: {prev.month}月分がまだ (済むまで新機能に着手しない)",
+                 "/trade-history/reviews", "振り返りを見る")
 
 
 def _md(day: date) -> str:
@@ -480,6 +497,7 @@ _DETECTORS: List = [
     ("約定CSV", _fill_csv_item, False),
     ("四季報", _shikiho_item, False),
     ("感情スコア", _emotion_item, False),
+    ("月次の振り返り", _trade_review_item, False),
 ]
 
 
