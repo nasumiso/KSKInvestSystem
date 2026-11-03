@@ -46,6 +46,42 @@ def test_margin_only_holding_can_calculate_defensive_line():
 
 
 @pytest.mark.parametrize(
+    "status, trade_idea, price_log, expected_held",
+    [
+        ("1保", "中期", [("2026-11-02", 2345)], 900.0),   # 保有中は約定から損切りラインを出す
+        ("3監", "中期", [("2026-11-02", 2345)], None),    # 監視は保有中の線を出さない
+        ("1保", "夢枠", [("2026-11-02", 2345)], None),    # 損切り率なしの戦略は出さない
+        ("1保", "中期", [], "no_dialog"),                  # 終値が無ければダイアログ自体を出さない
+    ],
+)
+def test_build_stop_dialog_data(monkeypatch, status, trade_idea, price_log, expected_held):
+    """逆指値ダイアログの値: 保有中の損切りラインは 1保 かつ損切り率ありの戦略だけ (issue #560)。"""
+    episode = {
+        "code_s": "4377", "kind": "現物", "episode_key": "4377|現物|2026-01-01|",
+        "closed": False, "is_short": False, "split_suspect": False,
+        "open_pl": {"held_qty": 100, "avg_cost": 1000.0},
+        "fills": [{"trade_date": "2026-01-01", "seq": 1, "side": "buy", "qty": 100,
+                   "price": 1000, "trade_kind": "現物"}],
+    }
+    monkeypatch.setattr(trade_episodes, "build_exit_episodes", lambda codes: [episode])
+    trade_ideas = [
+        {"name": "中期", "exit_rule": {"ma_kind": "day", "ma_window": 50, "stop_loss_pct": 10}},
+        {"name": "夢枠", "exit_rule": {"ma_kind": None, "ma_window": None, "stop_loss_pct": None}},
+    ]
+    stock = {"price_log": price_log, "ma50_violation": {"ma_value": 2280.4}}
+    record = {"code_s": "4377", "status": status, "memo": {"trade_idea": trade_idea}}
+
+    data = helpers.build_stop_dialog_data(stock, record, trade_ideas)
+
+    if expected_held == "no_dialog":
+        assert data is None
+        return
+    assert data["held_stop_loss_line"] == expected_held
+    assert data["current_strategy"] == trade_idea
+    assert data["ma_values"]["day50"] == 2280.4
+
+
+@pytest.mark.parametrize(
     "episodes, expected",
     [
         # 現物のみ
