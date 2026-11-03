@@ -2308,11 +2308,10 @@ def _prepare_hold_exit(records: List[Dict[str, Any]]) -> tuple:
 
     出口ルールを読めないときは ps=None を返し、呼び出し側は出口判定をしない。
     """
-    from webapp.trade_episodes import build_fill_episodes  # 循環 import 回避
+    from webapp.trade_episodes import build_exit_episodes  # 循環 import 回避
 
-    exit_positions = _build_exit_position_map(build_fill_episodes()) if any(
-        r.get("status") == "1保" for r in records
-    ) else {}
+    hold_codes = [r["code_s"] for r in records if r.get("status") == "1保"]
+    exit_positions = _build_exit_position_map(build_exit_episodes(hold_codes)) if hold_codes else {}
     try:
         import portfolio_shelve as ps
         ps.seed_trade_ideas()

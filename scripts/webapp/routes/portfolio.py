@@ -258,7 +258,7 @@ def save_emotion_score():
     return _redirect_with_return_query(default_status_query="hold")
 
 
-def _build_exposure_summary(margin_state: dict) -> tuple:
+def _build_exposure_summary(margin_state: dict, *, hold_summary=None) -> tuple:
     """目標の維持率と運用総額の適正エリアを組み立てる (issue #480)。
 
     (evaluation, note) を返す。適正エリアを出せない日 (推定維持率が出ない証券会社がある等) は
@@ -272,7 +272,8 @@ def _build_exposure_summary(margin_state: dict) -> tuple:
         from make_market_db import get_market_db
 
         market_db = get_market_db()
-        evaluation = exposure_guide.build_evaluation(market_db, margin_state=margin_state)
+        evaluation = exposure_guide.build_evaluation(
+            market_db, margin_state=margin_state, hold_summary=hold_summary)
     except Exception:  # noqa: BLE001
         return None, "目標の計算に失敗したため適正エリア非表示"
     evaluation["index_progress"] = _index_progress(market_db, evaluation)
@@ -1311,7 +1312,7 @@ def dashboard():
         import exposure_guide
 
         margin_state = exposure_guide.build_margin_state()
-        exposure, exposure_note = _build_exposure_summary(margin_state)
+        exposure, exposure_note = _build_exposure_summary(margin_state, hold_summary=hold_totals)
         hold_summary = {
             "total_man": int(round(total_position_value / 10000)),
             # 保有株数の真実源は証券会社CSVなので、手動更新時刻ではなく

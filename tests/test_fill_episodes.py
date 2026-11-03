@@ -20,6 +20,43 @@ def db_path(tmp_path):
     return str(tmp_path / "portfolio")
 
 
+@pytest.mark.parametrize("split", [None, "adjusted", "pending"])
+def test_exit_episodes_match_history_positions(db_path, monkeypatch, split):
+    """表示用DBを読まず、決済済み・現引・分割を含む出口判定の材料が一致する。"""
+    _add(db_path, "4377", "2025-01-06", "buy", 100, 1000)
+    _add(db_path, "4377", "2025-02-06", "sell", 100, 1100)
+    _add(db_path, "4377", "2026-01-06", "buy", 200, 1000)
+    _add(db_path, "4377", "2026-01-07", "buy", 100, 1100, trade_kind="信用新規")
+    _add(db_path, "4377", "2026-01-08", "buy", 100, 1100, trade_kind="現引")
+    _add(db_path, "4377", "2026-01-09", "sell", 100, 1200)
+    _add(db_path, "9999", "2026-01-06", "buy", 100, 1000)
+    if split == "adjusted":
+        ps.add_split_adjustment("4377", "2026-02-01", 2.0, db_path=db_path)
+    elif split == "pending":
+        ps.mark_split_pending_review(
+            "4377", reason="テスト", ex_date="2026-02-01", db_path=db_path)
+    full = helpers._build_exit_position_map(trade_episodes.build_fill_episodes(db_path=db_path))
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("出口判定が表示用の情報を読み込んだ")
+
+    for name in ("list_fill_memos", "list_lot_matches", "list_action_logs",
+                 "list_episode_strategies", "list_records"):
+        monkeypatch.setattr(ps, name, unexpected)
+    monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", unexpected)
+    monkeypatch.setattr(helpers, "_bulk_price_logs", unexpected)
+    actual = helpers._build_exit_position_map(
+        trade_episodes.build_exit_episodes(["4377"], db_path=db_path))
+    assert set(actual) == ({"4377"} if "4377" in full else set())
+    if actual:
+        assert actual["4377"]["cycle_id"] == "2026-01-06"
+        for key in ("held_qty", "avg_cost", "cycle_id"):
+            assert actual["4377"][key] == full["4377"][key]
+        rule = {"stop_loss_pct": 8}
+        assert helpers._weighted_stop_loss_line(rule, actual["4377"]["episodes"]) == (
+            helpers._weighted_stop_loss_line(rule, full["4377"]["episodes"]))
+
+
 @pytest.fixture(autouse=True)
 def _stub_stock_names(monkeypatch):
     # 銘柄名解決は stocks DB を開かずにコード=名前で返す (N+1 テストの分離)
