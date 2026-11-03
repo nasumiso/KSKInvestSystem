@@ -45,6 +45,7 @@ from webapp.helpers import (
     get_stock_data,
     list_portfolio_with_indicators,
     resolve_stock_name,
+    stop_dialog_strategies,
     summarize_hold_positions,
 )
 
@@ -1354,6 +1355,7 @@ def dashboard():
         gyoutai_themes_max_slots=ps.GYOUTAI_THEMES_MAX_SLOTS,
         trade_idea_options=[t["name"] for t in trade_idea_master],
         trade_idea_descriptions={t["name"]: t["description"] for t in trade_idea_master},
+        stop_dialog_strategies=stop_dialog_strategies(trade_idea_master),  # issue #560
         stage_options=ps.STAGE_OPTIONS,
         stage_t_options=ps.STAGE_T_OPTIONS,
         chart_style_options=ps.CHART_STYLE_OPTIONS,

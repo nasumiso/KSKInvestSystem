@@ -71,7 +71,7 @@ def test_build_stop_dialog_data(monkeypatch, status, trade_idea, price_log, expe
     stock = {"price_log": price_log, "ma50_violation": {"ma_value": 2280.4}}
     record = {"code_s": "4377", "status": status, "memo": {"trade_idea": trade_idea}}
 
-    data = helpers.build_stop_dialog_data(stock, record, trade_ideas)
+    data = helpers.build_stop_dialog_data("4377", "テスト", stock, record, trade_ideas)
 
     if expected_held == "no_dialog":
         assert data is None

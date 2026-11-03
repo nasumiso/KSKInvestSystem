@@ -1,0 +1,190 @@
+{# ===== 逆指値の価格ダイアログ (issue #560) =====
+   銘柄詳細のボタンと保有銘柄タブのゲージから openStopDialog(銘柄ごとの値) で開く。
+   戦略の出口ルール (stop_dialog_strategies) はページに1回だけ埋め込む。 #}
+<div id="stop-dialog" class="portfolio-modal-overlay" style="display:none;" onclick="if (event.target === this) closeStopDialog()">
+  <div class="portfolio-modal-content" role="dialog" aria-labelledby="stop-dialog-title" style="width:min(560px, 94vw);">
+    <div class="portfolio-modal-header">
+      <strong id="stop-dialog-title"></strong>
+      <button type="button" class="portfolio-modal-close" onclick="closeStopDialog()" aria-label="閉じる">×</button>
+    </div>
+    <p id="stop-dialog-close" style="margin:0 0 0.4em 0;"></p>
+    <label style="display:block;margin-bottom:0.8em;">
+      基準価格:
+      <input type="number" id="stop-dialog-base" min="0" step="any"
+             oninput="renderStopDialog()" style="width:7em;text-align:right;margin-left:0.3em;">
+      <span style="color:#888;font-size:0.85em;">場中は買う値段に打ち直す</span>
+    </label>
+    <div id="stop-dialog-body"></div>
+  </div>
+</div>
+<script id="stop-dialog-strategies" type="application/json">{{ stop_dialog_strategies | tojson }}</script>
+<style>
+.stop-dialog-button {
+  display: inline-block;
+  width: auto !important;
+  font-size: 0.45em;
+  padding: 0.15em 0.5em;
+  margin: 0 0 0 0.4em;
+  border: 1px solid #ccc;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+.stop-dialog-button:hover { color: #4285f4; border-color: #4285f4; }
+.stop-dialog-table { width: 100%; border-collapse: collapse; font-size: 0.9em; margin-bottom: 0.8em; }
+.stop-dialog-table td { padding: 0.2em 0.3em; border-bottom: 1px solid #f0f0f0; }
+.stop-dialog-table td:first-child { white-space: nowrap; }
+.stop-dialog-table td.num { text-align: right; white-space: nowrap; }
+.stop-dialog-table .note { color: #888; font-size: 0.85em; }
+.stop-dialog-copy { font-size: 0.8em; padding: 0.05em 0.4em; margin: 0; width: auto; }
+</style>
+<script>
+// 標準の呼値 (TOPIX500 以外の表)。TOPIX500 銘柄にもこの粗い刻みを使う (倍数なので有効)。
+// 2027-03 の呼値変更 (流動性基準へ移行予定) で見直す。
+var STOP_TICKS = [[3000, 1], [5000, 5], [30000, 10], [50000, 50], [300000, 100], [500000, 500],
+                  [3000000, 1000], [5000000, 5000], [30000000, 10000], [50000000, 50000], [Infinity, 100000]];
+// 呼値に切り上げる (損切りが戦略の幅より深くならない側)。帯の上限は呼値の倍数なので帯をまたがない。
+function ceilToTick(price) {
+  var tick = STOP_TICKS.find(function(t) { return price <= t[0]; })[1];
+  return Math.ceil(Math.round(price / tick * 1e6) / 1e6) * tick;
+}
+var STOP_MA = {day50: '日足50MA', week30: '週足30MA', week40: '週足40MA'};
+var stopDialogData = null;
+function stopMaKey(rule) {
+  return rule.ma_kind && rule.ma_window ? rule.ma_kind + rule.ma_window : null;
+}
+function stopCopyText(text) {
+  // 運用機へは http で開くので navigator.clipboard が無いことがある (portfolio_shikiho.html と同じ)
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  var ok = document.execCommand('copy');
+  ta.remove();
+  return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+}
+function renderStopDialog() {
+  var data = stopDialogData;
+  var strategies = JSON.parse(document.getElementById('stop-dialog-strategies').textContent);
+  var base = parseFloat(document.getElementById('stop-dialog-base').value);
+  var body = document.getElementById('stop-dialog-body');
+  body.textContent = '';
+  function fmt(v) { return v.toLocaleString('ja-JP'); }
+  function stopLine(rule) {
+    return rule.stop_loss_pct && base > 0 ? ceilToTick(base * (1 - rule.stop_loss_pct / 100)) : null;
+  }
+  function maLine(rule) {
+    var v = data.ma_values[stopMaKey(rule)];
+    return v ? ceilToTick(v) : null;
+  }
+  function cell(tr, text, cls) {
+    var td = document.createElement('td');
+    if (cls) td.className = cls;
+    td.textContent = text;
+    tr.appendChild(td);
+    return td;
+  }
+  function copyButton(td, value) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'stop-dialog-copy';
+    b.textContent = 'コピー';
+    b.onclick = function() {
+      stopCopyText(String(value)).then(function() {
+        b.textContent = '✓';
+        setTimeout(function() { b.textContent = 'コピー'; }, 1200);
+      });
+    };
+    td.appendChild(document.createTextNode(' '));
+    td.appendChild(b);
+  }
+  function addRow(table, label, value, note) {
+    var tr = document.createElement('tr');
+    cell(tr, label);
+    var td = cell(tr, value ? fmt(value) : '—', 'num');
+    if (value) copyButton(td, value);
+    cell(tr, note || '', 'note');
+    table.appendChild(tr);
+  }
+  function heading(text) {
+    var h = document.createElement('div');
+    h.style.cssText = 'font-weight:bold;margin:0.2em 0 0.3em 0;';
+    h.textContent = text;
+    body.appendChild(h);
+  }
+  function newTable() {
+    var t = document.createElement('table');
+    t.className = 'stop-dialog-table';
+    body.appendChild(t);
+    return t;
+  }
+
+  var current = strategies.find(function(s) { return s.name === data.current_strategy; });
+  if (current) {
+    heading('▶ ' + current.name + ' (この銘柄の戦略)');
+    var rule = current.exit_rule;
+    var t = newTable();
+    if (!rule.stop_loss_pct && !stopMaKey(rule)) {
+      addRow(t, '損切り・防衛ラインなし', null);
+    }
+    if (rule.stop_loss_pct) addRow(t, '損切りライン -' + rule.stop_loss_pct + '%', stopLine(rule), '基準価格から');
+    var ma = maLine(rule);
+    if (stopMaKey(rule)) {
+      addRow(t, '防衛ライン ' + STOP_MA[stopMaKey(rule)], ma,
+             ma ? '終値比 ' + ((ma / data.close - 1) * 100).toFixed(1) + '%' : '');
+    }
+    if (data.held_stop_loss_line) {
+      addRow(t, '保有中の損切りライン', ceilToTick(data.held_stop_loss_line), '平均取得単価から。「防」の判定の線 (逆指値の入れ直し用)');
+    }
+  }
+
+  // 出口ルールが同じ戦略を1行にまとめる。損切りも MA も無い戦略は出さない
+  var groups = [];
+  strategies.forEach(function(s) {
+    if (current && s.name === current.name) return;
+    var r = s.exit_rule;
+    if (!r.stop_loss_pct && !stopMaKey(r)) return;
+    var key = [r.stop_loss_pct, stopMaKey(r)].join('|');
+    var g = groups.find(function(x) { return x.key === key; });
+    if (g) g.names.push(s.name); else groups.push({key: key, rule: r, names: [s.name]});
+  });
+  groups.sort(function(a, b) { return (a.rule.stop_loss_pct || 999) - (b.rule.stop_loss_pct || 999); });
+  if (groups.length) {
+    heading(current ? '他の戦略' : '戦略ごとの価格');
+    var ot = newTable();
+    groups.forEach(function(g) {
+      var tr = document.createElement('tr');
+      cell(tr, g.rule.stop_loss_pct ? '-' + g.rule.stop_loss_pct + '%' : '—');
+      cell(tr, g.names.join(' / '));
+      var key = stopMaKey(g.rule);
+      var ma = maLine(g.rule);
+      cell(tr, key ? STOP_MA[key] + ' ' + (ma ? fmt(ma) : '—') : '', 'num');
+      var sl = stopLine(g.rule);
+      var td = cell(tr, sl ? fmt(sl) : '—', 'num');
+      if (sl) copyButton(td, sl);
+      ot.appendChild(tr);
+    });
+  }
+}
+function openStopDialog(data) {
+  stopDialogData = data;
+  document.getElementById('stop-dialog-title').textContent = '逆指値の価格 ' + data.code_s + ' ' + data.stock_name;
+  document.getElementById('stop-dialog-close').textContent =
+    '終値 ' + Math.round(data.close).toLocaleString('ja-JP') + ' (' + data.close_date + ')';
+  document.getElementById('stop-dialog-base').value = data.close;
+  document.getElementById('stop-dialog').style.display = 'flex';
+  renderStopDialog();
+}
+function closeStopDialog() {
+  document.getElementById('stop-dialog').style.display = 'none';
+}
+document.addEventListener('keydown', function(e) {
+  var m = document.getElementById('stop-dialog');
+  if (e.key === 'Escape' && m && m.style.display !== 'none') closeStopDialog();
+});
+</script>
