@@ -803,6 +803,33 @@ def attach_action_notes(episodes: List[Dict[str, Any]],
         ep["action_notes"].sort(key=lambda n: n["date"])
 
 
+def build_exit_episodes(code_list: List[str], *, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """出口判定に必要な銘柄だけ再構成する。振り返り用の表示情報は読まない。
+
+    保有サイクルの開始日は決済済みラウンドにも依存するので、対象銘柄の過去の
+    fill は残す。分割の扱いと取得単価は売買履歴と同じ計算を使う。
+    """
+    import portfolio_shelve as ps
+
+    codes = set(code_list)
+    if not codes:
+        return []
+    by_code = {}
+    for fill in ps.list_fills(db_path=db_path):
+        if fill["code_s"] in codes:
+            by_code.setdefault(fill["code_s"], []).append(fill)
+    adjustments = ps.list_all_split_adjustments(db_path=db_path)
+    pending = ps.list_pending_review_events(db_path=db_path)
+    episodes = []
+    for code_s, fills in by_code.items():
+        for ep in _episodes_for_code(code_s, "", fills, adjustments, pending):
+            if not ep["closed"]:
+                # 出口判定は含み損益を使わず、残数量と取得単価だけを使う。
+                ep["open_pl"] = _episode_open_pl(ep, None)
+            episodes.append(ep)
+    return episodes
+
+
 def build_fill_episodes(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """全 fill を建玉ラウンド単位のエピソードに再構成する (issue #387 Phase4b)。
 

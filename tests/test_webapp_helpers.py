@@ -238,7 +238,7 @@ def test_summarize_hold_positions_matches_row_aggregation(monkeypatch, tmp_path)
 
     summary = helpers.summarize_hold_positions(db_path=str(tmp_path / "dummy"))
 
-    monkeypatch.setattr(trade_episodes, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(trade_episodes, "build_exit_episodes", lambda codes: [])
     monkeypatch.setattr(helpers, "_bulk_resolve_stock_names", lambda codes: {})
     monkeypatch.setattr(helpers, "_bulk_resolve_stock_name_prevs", lambda codes: {})
     monkeypatch.setattr(helpers, "_bulk_resolve_overall_ratings", lambda codes: {})
@@ -263,7 +263,7 @@ def test_manual_holding_without_fills_still_displays_ma_signal(monkeypatch):
     """約定履歴のない手入力保有でもMA違反を防御シグナルとして表示する。"""
     import portfolio_shelve as ps
 
-    monkeypatch.setattr(trade_episodes, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(trade_episodes, "build_exit_episodes", lambda codes: [])
     monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {
         "4377": {"price": 900, "price_log": [(date(2026, 2, 9), 900)],
                  "ma50_violation": {"pending": True, "confirmed": False, "ma_value": 1000}}
@@ -292,7 +292,7 @@ def test_manual_holding_records_confirmed_ma_alert(monkeypatch):
     import portfolio_shelve as ps
 
     recorded = []
-    monkeypatch.setattr(trade_episodes, "build_fill_episodes", lambda: [])
+    monkeypatch.setattr(trade_episodes, "build_exit_episodes", lambda codes: [])
     monkeypatch.setattr(helpers, "_bulk_get_stock_data", lambda codes: {
         "4377": {"price": 900, "price_log": [(date(2026, 2, 9), 900)],
                  "ma50_violation": {"pending": False, "confirmed": True, "ma_value": 1000}}

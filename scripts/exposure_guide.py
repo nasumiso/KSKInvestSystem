@@ -448,7 +448,7 @@ def build_margin_state(*, db_path=None):
     return {"rows": rows, "combined": margin_estimate.combine(estimates), "missing": missing}
 
 
-def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None):
+def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None, hold_summary=None):
     """今の目標の維持率と適正エリアを、画面と日次ログ共通の dict で返す (issue #480)。
 
     市場ステートが取れない日も評価を出す (F&G が Extreme の日はステートを使わないため)。
@@ -457,7 +457,7 @@ def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None):
 
     base_day = today or get_price_day(datetime.now())
     index_states, index_dates = read_index_states(market_db, today=base_day)
-    summary = summarize_hold_positions(db_path=db_path)
+    summary = hold_summary if hold_summary is not None else summarize_hold_positions(db_path=db_path)
     state, _ = weighted_state(summary["category_values"], index_states)
     state_is_fallback = False
     if state is None:
