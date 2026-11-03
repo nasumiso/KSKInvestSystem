@@ -621,8 +621,10 @@
       <td data-page="1" title="{{ row.tags_tooltip or '' }}"
           style="max-width:4em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
       {# シグナルは「ポ/ブ/週ブ」まで出るため見切れない幅を確保 #}
-      <td data-page="1" class="exit-signal-cell" title="{{ row.signal_full or '' }}"
-          style="{{ row.styles.signal or '' }}">{% if row.signal_mark != "—" %}<span class="exit-signal-text">{{ row.signal_mark }}</span>{% endif %}
+      {# issue #560: ゲージのセルをクリックすると逆指値の価格ダイアログを開く #}
+      <td data-page="1" class="exit-signal-cell" title="{{ row.signal_full or '' }}{% if row.stop_dialog %}&#10;クリックで逆指値の価格{% endif %}"
+          {% if row.stop_dialog %}data-stop='{{ row.stop_dialog|tojson }}' onclick="openStopDialog(JSON.parse(this.dataset.stop))"{% endif %}
+          style="{% if row.stop_dialog %}cursor:pointer;{% endif %}{{ row.styles.signal or '' }}">{% if row.signal_mark != "—" %}<span class="exit-signal-text">{{ row.signal_mark }}</span>{% endif %}
         {% if row.exit_gauge.svg %}<span class="exit-gauge-slot">{{ row.exit_gauge.svg|safe }}</span>{% endif %}
       </td>
       <td data-page="1" class="spr-gauge-cell" title="{{ row.spr_gauge.tooltip }}">{{ row.spr_gauge.svg|safe }}</td>
@@ -1714,6 +1716,7 @@ function excludeFromUniverse(codeS) {
   });
 })();
 </script>
+{% include "_stop_dialog.html" %}
 
 {% else %}
 <p style="color:#888;">該当銘柄なし</p>

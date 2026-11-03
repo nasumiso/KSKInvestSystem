@@ -2211,6 +2211,10 @@ def list_portfolio_with_indicators(
                     row.get("signal_full") or "",
                 )
                 row["signal_full"] = row["exit_gauge"]["tooltip"]
+                # issue #560: ゲージのセルから逆指値の価格ダイアログを開く
+                row["stop_dialog"] = stop_dialog_payload(
+                    code_s, row["stock_name"], stock, (rec.get("memo") or {}).get("trade_idea"),
+                    ev["position"].get("stop_loss_line"))
         # 運用総額の市場別内訳用カテゴリ (日経225/TOPIX/グロース/その他)
         row["market_category"] = _classify_market_category(
             stock.get("market"), stock.get("is_nikkei225"), code_s=code_s
@@ -2546,6 +2550,62 @@ def _weighted_stop_loss_line(exit_rule: Dict[str, Any],
         weighted += line * held_qty
         total_qty += held_qty
     return round(weighted / total_qty, 4) if total_qty else None
+
+
+def stop_dialog_strategies(trade_ideas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """逆指値ダイアログに埋め込む戦略と出口ルールの一覧 (issue #560)。ページに1回だけ渡す。"""
+    return [{"name": t["name"], "exit_rule": t["exit_rule"]}
+            for t in trade_ideas if t.get("name") and isinstance(t.get("exit_rule"), dict)]
+
+
+def stop_dialog_payload(code_s: str, stock_name: str, stock: Optional[Dict[str, Any]],
+                        current_strategy: Optional[str],
+                        held_stop_loss_line: Optional[float]) -> Optional[Dict[str, Any]]:
+    """逆指値ダイアログを1銘柄分開くための値 (issue #560)。終値が無ければ None。
+
+    損切りラインの計算と呼値の丸めは基準価格の入力で変わるので JS 側で行う。
+    ここでは終値と MA の今の値、銘柄の戦略、保有中の損切りラインだけを渡す。
+    """
+    latest = ((stock or {}).get("price_log") or [None])[0]
+    if not isinstance(latest, (tuple, list)) or len(latest) < 2 or not isinstance(latest[1], (int, float)):
+        return None
+
+    def ma_value(key):
+        violation = stock.get(key)
+        return violation.get("ma_value") if isinstance(violation, dict) else None
+
+    return {
+        "code_s": code_s,
+        "stock_name": stock_name,
+        "close": latest[1],
+        "close_date": str(latest[0]),
+        "ma_values": {"day50": ma_value("ma50_violation"), "week30": ma_value("wma30_violation"),
+                      "week40": ma_value("wma40_violation")},
+        "current_strategy": current_strategy or None,
+        "held_stop_loss_line": held_stop_loss_line,
+    }
+
+
+def build_stop_dialog_data(code_s: str, stock_name: str, stock: Optional[Dict[str, Any]],
+                           portfolio_record: Optional[Dict[str, Any]],
+                           trade_ideas: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """銘柄詳細の逆指値ダイアログの値。1保なら保有銘柄タブと同じ保有中の損切りラインを求める。"""
+    memo = (portfolio_record or {}).get("memo")
+    current = memo.get("trade_idea") if isinstance(memo, dict) else None
+    rules = {t.get("name"): t.get("exit_rule") for t in trade_ideas if t.get("name")}
+    held_line = None
+    rule = rules.get(current)
+    if ((portfolio_record or {}).get("status") == "1保" and isinstance(rule, dict)
+            and rule.get("stop_loss_pct")):
+        try:
+            from webapp.trade_episodes import build_exit_episodes  # 循環 import 回避
+            position = _build_exit_position_map(build_exit_episodes([code_s])).get(code_s)
+            if position:
+                held_line = _weighted_stop_loss_line(rule, position["episodes"])
+        except Exception as e:  # noqa: BLE001
+            log_warning(f"[detail] 保有中の損切りラインを計算できませんでした: {e!r}")
+    return stop_dialog_payload(code_s, stock_name, stock, current if current in rules else None,
+                               held_line)
 
 
 # 出口ゲージの目盛り。防衛ライン割れ(マイナス乖離)はレアなので左側を狭く取り、

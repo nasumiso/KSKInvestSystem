@@ -57,6 +57,11 @@
         <button type="button" class="portfolio-badge portfolio-badge-add portfolio-badge-button"
                 onclick="openPortfolioModal()" title="監視に追加" aria-label="監視に追加">+</button>
       {% endif %}
+      {% if stop_dialog %}
+      <button type="button" class="stop-dialog-button" data-stop='{{ stop_dialog|tojson }}'
+              onclick="openStopDialog(JSON.parse(this.dataset.stop))"
+              title="逆指値の価格 (損切りライン・防衛ライン)">🛡 逆指値</button>
+      {% endif %}
     </h1>
     {% if stock.overview %}<div style="color:#555;font-size:0.85em;margin-bottom:0.2em;">{{ stock.overview }}</div>{% endif %}
     <div class="meta">
@@ -1367,6 +1372,8 @@ if (location.hash === '#ir-docs') openIrDocsModal();
     {% endif %}
   </div>
 </div>
+
+{% include "_stop_dialog.html" %}
 
 <style>
 /* issue #236: 旧名/エイリアス inline 編集 */

@@ -25,6 +25,8 @@ from webapp.helpers import (
     get_disclosures,
     has_recent_disclosure,
     get_current_research_data,
+    build_stop_dialog_data,
+    stop_dialog_strategies,
 )
 from webapp.routes.portfolio import (
     STATUS_VALUE_TO_LABEL,
@@ -213,6 +215,10 @@ def stock_detail(code_s: str):
         sentiment=run_sentiment.load_result(code_s),
         sentiment_running=run_sentiment.is_running(code_s),
         forum_url=get_forum_url(code_s, stock),
+        # issue #560: 逆指値の価格ダイアログ
+        stop_dialog=build_stop_dialog_data(code_s, record.get("stock_name") or "", stock,
+                                           portfolio_record, trade_idea_master),
+        stop_dialog_strategies=stop_dialog_strategies(trade_idea_master),
     )
 
 
