@@ -38,7 +38,9 @@
 .stop-dialog-table td:first-child { white-space: nowrap; }
 .stop-dialog-table td.num { text-align: right; white-space: nowrap; }
 .stop-dialog-table .note { color: #888; font-size: 0.85em; }
-.stop-dialog-copy { font-size: 0.8em; padding: 0.05em 0.4em; margin: 0; width: auto; }
+.stop-dialog-table td.copyable { cursor: pointer; color: #174ea6; }
+.stop-dialog-table td.copyable:hover { text-decoration: underline; }
+.stop-dialog-table td.copied { background: #e6f4ea; }
 </style>
 <script>
 // 標準の呼値 (TOPIX500 以外の表)。TOPIX500 銘柄にもこの粗い刻みを使う (倍数なので有効)。
@@ -89,25 +91,22 @@ function renderStopDialog() {
     tr.appendChild(td);
     return td;
   }
-  function copyButton(td, value) {
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'stop-dialog-copy';
-    b.textContent = 'コピー';
-    b.onclick = function() {
+  // 価格のセルを押すとカンマなしの数値をコピーし、セルを一瞬緑にする
+  function makeCopyable(td, value) {
+    td.classList.add('copyable');
+    td.title = 'クリックでコピー';
+    td.onclick = function() {
       stopCopyText(String(value)).then(function() {
-        b.textContent = '✓';
-        setTimeout(function() { b.textContent = 'コピー'; }, 1200);
+        td.classList.add('copied');
+        setTimeout(function() { td.classList.remove('copied'); }, 800);
       });
     };
-    td.appendChild(document.createTextNode(' '));
-    td.appendChild(b);
   }
   function addRow(table, label, value, note) {
     var tr = document.createElement('tr');
     cell(tr, label);
     var td = cell(tr, value ? fmt(value) : '—', 'num');
-    if (value) copyButton(td, value);
+    if (value) makeCopyable(td, value);
     cell(tr, note || '', 'note');
     table.appendChild(tr);
   }
@@ -166,7 +165,7 @@ function renderStopDialog() {
       cell(tr, key ? STOP_MA[key] + ' ' + (ma ? fmt(ma) : '—') : '', 'num');
       var sl = stopLine(g.rule);
       var td = cell(tr, sl ? fmt(sl) : '—', 'num');
-      if (sl) copyButton(td, sl);
+      if (sl) makeCopyable(td, sl);
       ot.appendChild(tr);
     });
   }
