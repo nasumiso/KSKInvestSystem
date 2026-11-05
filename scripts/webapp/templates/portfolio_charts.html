@@ -35,9 +35,10 @@
     padding: 0.25em 0.5em; font-size: 0.85em;
     background: #eef1f5; border-bottom: 1px solid #d8dee6;
   }
-  .chart-cell-header .name { font-weight: 600; color: #222; text-decoration: none; }
-  .chart-cell-header .name:hover { text-decoration: underline; }
-  .chart-cell-header .kabu { color: #555; font-size: 0.85em; text-decoration: none; }
+  .chart-cell-header .name,
+  .chart-cell-header .kabu { font-weight: 600; color: #222; text-decoration: none; }
+  .chart-cell-header .name:hover,
+  .chart-cell-header .kabu:hover { text-decoration: underline; }
   .chart-cell-header .edit-sep { color: #ccc; }
   .chart-cell-header .edit-label { color: #888; font-size: 0.85em; }
   .chart-cell-header .editable {
@@ -126,8 +127,9 @@
   {% for i in range(2) %}
   <div class="chart-cell placeholder" data-cell="{{ i }}">
     <div class="chart-cell-header">
-      <a class="name" target="_blank" rel="noopener"></a>
-      <a class="kabu" target="_blank" rel="noopener">株探</a>
+      {# コードは株探チャート、銘柄名は銘柄詳細へ #}
+      <a class="kabu" target="_blank" rel="noopener" title="株探チャート"></a>
+      <a class="name" target="_blank" rel="noopener" title="銘柄詳細"></a>
       <span class="edit-sep">|</span>
       <span class="edit-label">ステージ</span>
       <span class="stage-struct" data-rescue="0">
@@ -221,6 +223,7 @@
           iframe.src = 'about:blank';
           nameLink.textContent = '';
           nameLink.removeAttribute('href');
+          kabuLink.textContent = '';
           kabuLink.removeAttribute('href');
           continue;
         }
@@ -228,7 +231,8 @@
         cell.dataset.code = s.code_s;  // 編集 AJAX の対象銘柄
         var code = encodeURIComponent(s.code_s);
         iframe.src = 'https://kabutan.jp/stock/chart?code=' + code + '&ashi=' + ASHI[timeframe];
-        nameLink.textContent = s.code_s + ' ' + s.stock_name;
+        kabuLink.textContent = s.code_s;
+        nameLink.textContent = s.stock_name;
         nameLink.href = '/stock/' + code + '?return_to=' + encodeURIComponent({{ listing_return_url()|tojson }});
         kabuLink.href = 'https://kabutan.jp/stock/chart?code=' + code;
         var stageStruct = s.stage_struct || {};
