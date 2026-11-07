@@ -667,8 +667,24 @@ def _cmd_show(code_s):
     return 0
 
 
+# 欠けた値の名前 → list の先頭行での呼び方
+_MISSING_LABELS = {
+    "price_stale": "終値が基準日のものでない", "rs_stale": "RS が基準日のものでない",
+    "fair_price": "適正株価なし", "rs": "RS なし", "theme": "業態テーマなし",
+}
+
+
 def _cmd_list(status):
-    for r in list_ratings(status):
+    rows = list_ratings(status)
+    # 基準日と欠けた値の件数を先頭に出す。日付がそろっているか・付け直しの進み具合をここで見る
+    as_of = next((r["system"]["as_of"] for r in rows if r["system"]["as_of"]), None)
+    counts = {}
+    for r in rows:
+        for key in r["system"]["valuation"]["missing"] + r["system"]["momentum"]["missing"]:
+            counts[key] = counts.get(key, 0) + 1
+    missing = "・".join(f"{_MISSING_LABELS.get(k, k)} {n}" for k, n in counts.items()) or "なし"
+    print(f"基準日 {as_of or 'なし'} / {len(rows)} 銘柄 / 欠: {missing}")
+    for r in rows:
         s, v, m = r["scores"], r["system"]["valuation"], r["system"]["momentum"]
         print(
             f"{r['code_s']:<5} {r['total']:>3} "
