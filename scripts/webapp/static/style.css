@@ -829,3 +829,36 @@ body.ep-hide-kessan .ep-kessan { display: none; }
 .kessan-period-label { font-weight: normal; color: #555; font-size: 0.9em; }
 .kessan-reaction-note { color: #666; font-size: 0.85em; margin-bottom: 0.7em; }
 .kessan-period-heading { font-size: 1em; margin: 1em 0 0.5em; }
+
+
+/* U10: 評価バッジの見た目を保ったまま button にする。 */
+button.rating-badge-edit { width: auto; margin: 0; border: 0; line-height: inherit; }
+button.stock-name-prev-edit { width: auto; margin: 0 0 0 0.3em; padding: 0; border: 0; background: none; color: #888; line-height: inherit; }
+.rating-badge-edit:focus-visible, .stock-name-prev-edit:focus-visible,
+.portfolio-list td[tabindex]:focus-visible, .tap-explanation:focus-visible {
+  outline: 2px solid #1565c0;
+  outline-offset: 2px;
+}
+.tap-explanation { text-decoration: underline dotted; text-underline-offset: 3px; }
+#metric-explanation {
+  position: fixed;
+  inset: auto 1rem 1rem auto;
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: 60vh;
+  overflow: auto;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid #90a4ae;
+  border-radius: 6px;
+  background: #fff;
+  color: #263238;
+  box-shadow: 0 3px 16px #0003;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+#metric-explanation button {
+  width: auto;
+  margin: 0.5rem 0 0;
+  padding: 0.2rem 0.6rem;
+}

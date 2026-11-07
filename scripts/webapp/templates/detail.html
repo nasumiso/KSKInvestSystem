@@ -17,10 +17,10 @@
     <h1>
       {# issue: 左上バッジから総合評価を変更可能に。クリックで select 表示、
          手動メモの「総合評価」と双方向連動 (memo-form で同じ overall_rating を送信)。 #}
-      <span class="rating-badge-edit rating-badge rating-{{ record.overall_rating or 'none' }}"
+      <button type="button" aria-label="手動評価を変更" class="rating-badge-edit rating-badge rating-{{ record.overall_rating or 'none' }}"
             id="rating-badge-wrap"
             onclick="editRatingBadge(event)"
-            title="クリックで手動評価を変更">{{ record.overall_rating or '—' }}</span>
+            title="クリックで手動評価を変更">{{ record.overall_rating or '—' }}</button>
       <select class="editable-select rating-badge-select hidden" id="rating-badge-select"
               name="overall_rating" data-form="memo" form="memo-form"
               onblur="hideRatingBadge()">
@@ -33,13 +33,13 @@
       {{ record.stock_name or '' }}
       {# issue #236: stock_name_prev を inline 編集化。エイリアス (旧名・俗称・別表記) #}
       {% if record.stock_name_prev %}
-      <span class="stock-name-prev-edit"
+      <button type="button" class="stock-name-prev-edit"
             title="クリックで編集 (空欄で削除)"
             data-code="{{ record.code_s }}"
             data-current="{{ record.stock_name_prev }}"
             onclick="editStockNamePrev(this)">
         ({{ record.stock_name_prev }})
-      </span>
+      </button>
       {% else %}
       <button type="button" class="stock-name-prev-add"
               title="エイリアス (旧名・俗称・別表記) を追加 (検索でヒットするようになります)"

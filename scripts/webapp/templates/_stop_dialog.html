@@ -170,7 +170,9 @@ function renderStopDialog() {
     });
   }
 }
+var stopDialogOpener = null;
 function openStopDialog(data) {
+  stopDialogOpener = document.activeElement;
   stopDialogData = data;
   document.getElementById('stop-dialog-title').textContent = '逆指値の価格 ' + data.code_s + ' ' + data.stock_name;
   document.getElementById('stop-dialog-close').textContent =
@@ -178,9 +180,11 @@ function openStopDialog(data) {
   document.getElementById('stop-dialog-base').value = data.close;
   document.getElementById('stop-dialog').style.display = 'flex';
   renderStopDialog();
+  document.getElementById('stop-dialog-base').focus();
 }
 function closeStopDialog() {
   document.getElementById('stop-dialog').style.display = 'none';
+  if (stopDialogOpener) stopDialogOpener.focus();
 }
 document.addEventListener('keydown', function(e) {
   var m = document.getElementById('stop-dialog');
