@@ -544,7 +544,7 @@ def ratings_dir(tmp_path, monkeypatch):
 
     monkeypatch.setattr(stock_ratings, "RATINGS_DIR", tmp_path / "stock_ratings")
     server.update_stock_rating_data("3697", "初期登録", {
-        "name": "SHIFT", "fund": 35, "mispricing": 16, "momentum": 16, "valuation": 15,
+        "name": "SHIFT", "fund": 35, "mispricing": 16, "fair_price": 1800,
         "confidence": "A", "status": "Active", "thesis": "QA需要拡大",
         "risks": "採用鈍化", "checkpoints": "2Q受注",
     })
@@ -561,19 +561,22 @@ def test_update_stock_rating_changes_only_given_fields(ratings_dir):
         "mispricing_note": [None, "FY27下限"], "scores.fund": [35, 36],
     }
     assert result["rating"]["thesis"] == "QA需要拡大"
-    assert result["rating"]["total"] == 83
+    # 一時台帳ではシステムの2軸が読めないので、どちらも欠けた扱いの10点 (#544)
+    assert result["rating"]["total"] == 36 + 16 + 10 + 10
 
     detail = server.get_stock_rating_data("3697", history=1)
     assert detail["history"][0]["reason"] == "2Q決算反映"
     assert detail["history"][0]["source"] == "mcp"
     listed = server.list_stock_ratings_data()["stocks"][0]
-    assert "thesis" not in listed and listed["total"] == 83
+    assert "thesis" not in listed and listed["total"] == 72
+    assert listed["system"] == {"valuation": 10, "momentum": 10, "missing": ["price_stale", "rs", "theme"]}
 
 
 @pytest.mark.parametrize("code_s, reason, fields, error_key", [
     ("3697", "誤入力", {"fund": 41}, "scores.fund"),
     ("3697", "", {"fund": 36}, "reason"),
     ("7203", "新規", {"name": "トヨタ", "fund": 30}, "confidence"),
+    ("3697", "誤入力", {"momentum": 16}, "momentum: Ver3 ではシステムが算出する"),
 ])
 def test_update_stock_rating_returns_errors_without_writing(
     ratings_dir, code_s, reason, fields, error_key,
