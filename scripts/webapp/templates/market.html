@@ -29,6 +29,13 @@
 {% if breakout %}
 {% set status_class = {'1保': 'hold', '2準': 'semi', '3監': 'watch'} %}
 {% set status_label = {'1保': '保有', '2準': '準保有', '3監': '監視'} %}
+{% macro other_stock(o) %}
+<span class="tb-stock tb-sub">
+  <a href="{{ url_for('detail.stock_detail', code_s=o.code_s) }}" class="tb-unfollowed"
+     title="{{ o.code_s }} 種類: {{ o.kind }}{% if not o.first %} (既出){% endif %} / 前日比 {{ o.change }} / 業績スコア {{ o.score | int }}&#10;{{ o.overview }}{% if o.news %}&#10;{{ o.news }}{% endif %}">{{ o.name }}</a>
+  {{ o.kind }}
+</span>
+{% endmacro %}
 <style>
   #theme-breakout-section table { border-collapse: collapse; width: 100%; max-width: 72em; font-size: 0.9em; }
   #theme-breakout-section th, #theme-breakout-section td { border-bottom: 1px solid #e3e6ea; padding: 0.45em 0.6em; text-align: left; vertical-align: top; }
@@ -37,7 +44,14 @@
   #theme-breakout-section .tb-sub { color: #777; font-size: 0.85em; }
   #theme-breakout-section .tb-stock { display: inline-block; margin: 0 0.8em 0.25em 0; white-space: nowrap; }
   #theme-breakout-section .status-badge { padding: 0 0.4em; }
-  #theme-breakout-section .tb-unfollowed { border-bottom: 1px dotted #999; cursor: help; }
+  #theme-breakout-section .tb-unfollowed { border-bottom: 1px dotted #999; }
+  #theme-breakout-section .tb-sub a { color: inherit; }
+  #theme-breakout-section .tb-more { display: inline; }
+  #theme-breakout-section .tb-more summary {
+    display: inline; cursor: pointer; margin: 0; padding: 0; background: none; border: none;
+    color: #1976d2; font-weight: normal; text-decoration: underline dotted;
+  }
+  #theme-breakout-section .tb-more summary::after { display: none; }  /* Pico の右端の矢印を消す */
   #theme-breakout-section form { display: inline; margin: 0; }
   #theme-breakout-section button {
     display: inline-block; width: auto; margin: 0 0 0 0.2em; padding: 0 0.4em;
@@ -50,7 +64,7 @@
   <details id="theme-breakout" open>
     <summary style="cursor:pointer;font-weight:bold;color:#2c3e50;">
       🔥 テーマ別のブレイク
-      <span title="日次レポートの本日リスト (新高値・出来高急増・PTS) を株探テーマ (主要3つ) で数え、平常より急に増えたテーマを出す。&#10;・該当: 5銘柄以上 かつ 前20営業日の平均の2.5倍以上&#10;・構成銘柄が6割以上重なるテーマは1行にまとめる (下に別名を表示)&#10;・最大8行。管理対象は 保有→準保有→監視 の順&#10;・未フォローは初出の新高値を業績スコア順に1テーマ2銘柄まで +監視 付きで先に出し、残りは灰色で並べる"
+      <span title="日次レポートの本日リスト (新高値・出来高急増・PTS) を株探テーマ (主要3つ) で数え、平常より急に増えたテーマを出す。&#10;・該当: 5銘柄以上 かつ 前20営業日の平均の2.5倍以上&#10;・構成銘柄が6割以上重なるテーマは1行にまとめる (下に別名を表示)&#10;・最大8行。管理対象は 保有→準保有→監視 の順&#10;・未フォローは初出の新高値を業績スコア順に1テーマ2銘柄まで +監視 付きで先に出し、残りは灰色で3銘柄まで並べ、それ以上は「他 X 銘柄」で開く&#10;・銘柄名から銘柄ページへ移れる"
             style="cursor:help;color:#1a73e8;font-weight:normal;font-size:0.85em;">(?)</span>
       <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.5em;">
         (日次レポート {{ breakout.date }})
@@ -82,8 +96,8 @@
         <td>
           {% for u in row.unfollowed %}
           <span class="tb-stock">
-            <span class="tb-unfollowed"
-                  title="{{ u.code_s }} 種類: {{ u.kind }} / 前日比 {{ u.change }} / 業績スコア {{ u.score | int }}&#10;{{ u.overview }}{% if u.news %}&#10;{{ u.news }}{% endif %}">{{ u.name }}</span>
+            <a href="{{ url_for('detail.stock_detail', code_s=u.code_s) }}" class="tb-unfollowed"
+               title="{{ u.code_s }} 種類: {{ u.kind }} / 前日比 {{ u.change }} / 業績スコア {{ u.score | int }}&#10;{{ u.overview }}{% if u.news %}&#10;{{ u.news }}{% endif %}">{{ u.name }}</a>
             <span class="tb-sub">{{ u.kind }}</span>
             <form method="POST" action="/portfolio/add">
               <input type="hidden" name="code_s" value="{{ u.code_s }}">
@@ -93,13 +107,14 @@
             </form>
           </span>
           {% endfor %}
-          {% for o in row.others %}
-          <span class="tb-stock tb-sub">
-            <span class="tb-unfollowed"
-                  title="{{ o.code_s }} 種類: {{ o.kind }}{% if not o.first %} (既出){% endif %} / 前日比 {{ o.change }} / 業績スコア {{ o.score | int }}&#10;{{ o.overview }}{% if o.news %}&#10;{{ o.news }}{% endif %}">{{ o.name }}</span>
-            {{ o.kind }}
-          </span>
-          {% endfor %}
+          {# 残りの銘柄は先頭 3 件だけ出し、それ以降は「他 X 銘柄」で開く #}
+          {% for o in row.others[:3] %}{{ other_stock(o) }}{% endfor %}
+          {% if row.others | length > 3 %}
+          <details class="tb-more">
+            <summary class="tb-sub" title="{% for o in row.others[3:] %}{{ o.code_s }} {{ o.name }}{% if not loop.last %}&#10;{% endif %}{% endfor %}">他 {{ row.others | length - 3 }} 銘柄</summary>
+            {% for o in row.others[3:] %}{{ other_stock(o) }}{% endfor %}
+          </details>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

@@ -1615,7 +1615,7 @@ def _adjust_momentum_scale(scale_raw):
 def compute_total_pt(gyoseki_pt, shihyo_pt, mom_pt, funda_pt):
     """総合PT を計算する。list_all_db のランキングと webapp 詳細ページの両方から使う。
 
-    重み: 業績 40, 指標 20, モメンタム 25, ファンダ 15。
+    重み: 業績 40, 指標 20, モメンタム 25, テーマ人気 (funda_pt) 15。
     """
     return int((40 * gyoseki_pt + 20 * shihyo_pt + 25 * mom_pt + 15 * funda_pt) / 100)
 
@@ -1634,7 +1634,7 @@ CODE_RANK_HEADERS = [
     "プロフィット/クォリティ",
     "バリュー/サイズ",
     "モメンタム(現在.20日比/5日比)",
-    "ファンダメンタル",
+    "テーマ人気",  # 株探テーマの人気順位点 (funda_pt)。旧「ファンダメンタル」(#546)
     "更新日(業績|指標|価格)",
     "シグナル",
     "トレンドテンプレート",
@@ -1719,7 +1719,7 @@ def build_code_rank_row(
         "プロフィット/クォリティ": gyoseki_pt,
         "バリュー/サイズ": shihyo_pt,
         "モメンタム(現在.20日比/5日比)": momentum,
-        "ファンダメンタル": funda_pt,
+        "テーマ人気": funda_pt,
         "更新日(業績|指標|価格)": date_exp,
         "シグナル": signal,
         "トレンドテンプレート": trend,

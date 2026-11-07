@@ -59,6 +59,7 @@ document.addEventListener('keydown', function(e) {
     if (isEsc) {
       e.preventDefault();
       cancelFieldEdit(el);
+      if (el.id === 'rating-badge-select') document.getElementById('rating-badge-wrap').focus();
     } else if (commitKey || (isEnter && el.tagName === 'INPUT')) {
       e.preventDefault();
       el.blur();
@@ -688,6 +689,80 @@ document.addEventListener('DOMContentLoaded', function() {
     if (localStorage.getItem(key) === '1') d.open = true;
     d.addEventListener('toggle', function() {
       localStorage.setItem(key, d.open ? '1' : '0');
+    });
+  });
+});
+
+
+/* U10: 見た目を増やさず、既存のクリック編集をキーボードでも開く。 */
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.portfolio-list td.editable, .portfolio-list td[data-stop]').forEach(function(cell) {
+    cell.tabIndex = 0;
+    cell.setAttribute('aria-label', cell.title || '編集');
+    cell.addEventListener('keydown', function(e) {
+      if (e.target !== cell || e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        cell.click();
+      }
+    });
+  });
+
+  /* PC は従来のホバー説明を維持。タッチ主体の端末だけ表示自体を説明の入口にする。
+     リンク・編集・逆指値がある箇所には割り当てない。 */
+  if (!window.matchMedia('(hover: none) and (pointer: coarse)').matches) return;
+  var sources = Array.from(document.querySelectorAll(
+    '[data-tap-explain][title], .cr-label[title], .cr-value[title]'
+  )).filter(function(el) { return el.title.trim() && !el.querySelector('a, button, input, select, textarea'); });
+  if (!sources.length) return;
+  var panel = document.createElement('div');
+  panel.id = 'metric-explanation';
+  panel.setAttribute('popover', 'auto');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', '指標の説明');
+  panel.setAttribute('aria-describedby', 'metric-explanation-text');
+  var text = document.createElement('div');
+  text.id = 'metric-explanation-text';
+  panel.appendChild(text);
+  var opener;
+  var close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = '閉じる';
+  close.addEventListener('click', function() { panel.hidePopover(); opener.focus(); });
+  panel.appendChild(close);
+  document.body.appendChild(panel);
+  panel.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      panel.hidePopover();
+      opener.focus();
+    }
+  });
+  panel.addEventListener('toggle', function(e) {
+    if (e.newState === 'closed' && opener) opener.setAttribute('aria-expanded', 'false');
+  });
+  sources.forEach(function(source) {
+    source.tabIndex = 0;
+    source.setAttribute('aria-label', (source.textContent.trim() || '指標') + 'の説明');
+    source.setAttribute('aria-haspopup', 'dialog');
+    source.setAttribute('aria-controls', panel.id);
+    source.setAttribute('aria-expanded', 'false');
+    source.classList.add('tap-explanation');
+    source.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (panel.matches(':popover-open')) panel.hidePopover();
+      if (opener) opener.setAttribute('aria-expanded', 'false');
+      opener = source;
+      text.textContent = source.title;
+      panel.showPopover();
+      source.setAttribute('aria-expanded', 'true');
+      close.focus();
+    });
+    source.addEventListener('keydown', function(e) {
+      if (e.target === source && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        source.click();
+      }
     });
   });
 });

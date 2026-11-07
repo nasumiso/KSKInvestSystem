@@ -133,6 +133,27 @@ def test_推移は前月末から当月末までで土日を除く():
         "end": {"date": "2026-09-03", "value": -8.0, "as_of": {"SBI": "2026-09-01"}}}
     assert _build([], exposure_history=history[:1])["summary"]["trend"] == {
         "total_value": None, "unrealized": None}
+    assert _build([], exposure_history=history[:1])["summary"]["month_pl"] is None
+
+
+def test_月の損益は当月の売りの実現損益と含み損益の増減を足す():
+    def ep(code_s, fills, **kw):
+        e = _ep(code_s, 1, fills, **kw)
+        for f in e["fills"][1:]:  # 返済に建玉 (先頭の新規) と約定ごとの損益を付ける
+            f["tate_date"], f["tate_price"] = fills[0][0], fills[0][3]
+            f["fill_pl"] = (f["price"] - fills[0][3]) * f["qty"]
+        return e
+
+    # 5001 は8月に一部返済 (+10,000、前月なので数えない)、9月に残りを返済 (+20,000) して
+    # 完全決済。5002 は9月に一部返済 (+5,000) して保有中
+    ep1 = ep("5001", [("2026-07-01", "buy", 200, 1000), ("2026-08-10", "sell", 100, 1100),
+                      ("2026-09-10", "sell", 100, 1200)], profit=30000)
+    ep2 = ep("5002", [("2026-08-01", "buy", 200, 1000), ("2026-09-10", "sell", 100, 1050)],
+             closed=False, close_date=None, pl=None)
+    history = [{"date": "2026-08-31", "unrealized_total": 40000.0},
+               {"date": "2026-09-30", "unrealized_total": 10000.0}]
+    assert _build([ep1, ep2], exposure_history=history)["summary"]["month_pl"] == {
+        "realized": 25000, "unrealized_change": -30000.0, "total": -5000.0}
 
 
 def test_弱点仮説は年初来で損切りの幅と再INを数える():

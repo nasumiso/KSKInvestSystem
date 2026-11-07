@@ -513,25 +513,25 @@
       <th data-page="1">理論株価乖離(%)</th>
       <th data-page="1">配当(%)</th>
       <th data-page="1" title="決算Q (進行中の四半期)">決算Q</th>
-      <th data-page="1" title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
+      <th data-tap-explain data-page="1" title="進捗率乖離: (売上進捗-前年同期) / (利益進捗-前年同期)">進捗率乖離</th>
       <th data-page="1">決算日</th>
       <th data-page="1" class="rs-metric {% if active_sort == 'rs' %}sort-active{% endif %}" title="RSスコア（0〜100、株価基準日の時点の値）で降順ソート"><a href="{{ sort_urls.rs }}">RSスコア</a></th>
       {# RS列クリックで RSライン騰落率ソートを 1日→5日→20日 の順に切替。 #}
       {% set rs_sort_labels = {'rs_change_1d': '▼1日比', 'rs_change_5d': '▼5日比', 'rs_change_20d': '▼20日比'} %}
       <th data-page="1" class="rs-metric {% if active_sort in rs_sort_labels %}sort-active{% endif %}"
           title="RSライン（対TOPIX、青=上昇/オレンジ=下降） の 3点ミニチャート (t-20, t-5, t-0)。RSライン新高値で青丸。クリックでRSライン騰落率ソートを 1日→5日→20日 で切替"><a href="{{ rs_change_sort_url }}">{% if active_sort in rs_sort_labels %}{{ rs_sort_labels[active_sort] }}{% else %}RSライン{% endif %}</a></th>
-      <th data-page="1" title="表記: ◎全通過 / ◯1-2件未達 / ▲3-4件未達 / △5-6件未達 / 空白7件未達&#10;薄青: Stage2コア一部未達 / 青: Stage2コア全未達&#10;Stage2コア: 株価30/40WMA上、30WMA&gt;40WMA、40WMA上向き&#10;点線: 赤太=10ma 30日維持中 / 黒太=30日維持実績あり / 黒細=なし">トレンド</th>
+      <th data-tap-explain data-page="1" title="表記: ◎全通過 / ◯1-2件未達 / ▲3-4件未達 / △5-6件未達 / 空白7件未達&#10;薄青: Stage2コア一部未達 / 青: Stage2コア全未達&#10;Stage2コア: 株価30/40WMA上、30WMA&gt;40WMA、40WMA上向き&#10;点線: 赤太=10ma 30日維持中 / 黒太=30日維持実績あり / 黒細=なし">トレンド</th>
       {# tooltip 文言は helpers.TAG_DESCRIPTIONS を単一の出典にする。
          セル側 tooltip はタグが出ている理由 (実際の値) を出すため凡例はここに集約 #}
-      <th data-page="1" title="自動判定タグ。&#10;{{ tag_descriptions.values()|join('\n') }}">タグ</th>
-      <th data-page="1" title="ポ/ブ記号。ホバーで signal 全文 (発生日付含む)">シグナル</th>
+      <th data-tap-explain data-page="1" title="自動判定タグ。&#10;{{ tag_descriptions.values()|join('\n') }}">タグ</th>
+      <th data-tap-explain data-page="1" title="ポ/ブ記号。各銘柄の説明に発生日付を含む signal 全文">シグナル</th>
       <th data-page="1" title="バー背景の濃淡で買い集め評価 (A=濃 / E=薄、左=緑 / 右=赤)">需給バランス</th>
       <th data-page="1">時価総額</th>
       <th data-page="2">更新日</th>
       <th data-page="2">ステージ</th>
       <th data-page="2">チャートパターン</th>
       {# tooltip 文言は helpers.MONTHLY_TAG_DESCRIPTIONS を単一の出典にする (セル側と共通) #}
-      <th data-page="2" title="月足位置の自動判定。&#10;{{ monthly_tag_descriptions.values()|join('\n') }}">月足</th>
+      <th data-tap-explain data-page="2" title="月足位置の自動判定。&#10;{{ monthly_tag_descriptions.values()|join('\n') }}">月足</th>
       <th data-page="2" title="定型リストから単一選択。未分類は警告色">売買戦略</th>
       <th data-page="2">IN理由</th>
       <th data-page="2" title="旧: 高市感応度">売買メモ</th>
@@ -615,14 +615,14 @@
       <td data-page="1" title="{{ row.price_rs_chart.tooltip }}" style="padding:0 2px;line-height:0;">
         {% if row.price_rs_chart.svg %}{{ row.price_rs_chart.svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
       </td>
-      <td data-page="1" class="kairi-gauge-cell" title="{{ row.trend_template_tooltip }}" style="width:56px;padding:0;line-height:0;text-align:center;{{ row.styles.trend_template or '' }}">
+      <td data-tap-explain data-page="1" class="kairi-gauge-cell" title="{{ row.trend_template_tooltip }}" style="width:56px;padding:0;line-height:0;text-align:center;{{ row.styles.trend_template or '' }}">
         {% if row.kairi_gauge_svg %}{{ row.kairi_gauge_svg|safe }}{% else %}<span style="color:#bbb;line-height:1.2;">—</span>{% endif %}
       </td>
-      <td data-page="1" title="{{ row.tags_tooltip or '' }}"
+      <td data-tap-explain data-page="1" title="{{ row.tags_tooltip or '' }}"
           style="max-width:4em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{{ row.styles.tags or '' }}">{{ row.tags }}</td>
       {# シグナルは「ポ/ブ/週ブ」まで出るため見切れない幅を確保 #}
       {# issue #560: ゲージのセルをクリックすると逆指値の価格ダイアログを開く #}
-      <td data-page="1" class="exit-signal-cell" title="{{ row.signal_full or '' }}{% if row.stop_dialog %}&#10;クリックで逆指値の価格{% endif %}"
+      <td {% if not row.stop_dialog %}data-tap-explain{% endif %} data-page="1" class="exit-signal-cell" title="{{ row.signal_full or '' }}{% if row.stop_dialog %}&#10;クリックで逆指値の価格{% endif %}"
           {% if row.stop_dialog %}data-stop='{{ row.stop_dialog|tojson }}' onclick="openStopDialog(JSON.parse(this.dataset.stop))"{% endif %}
           style="{% if row.stop_dialog %}cursor:pointer;{% endif %}{{ row.styles.signal or '' }}">{% if row.signal_mark != "—" %}<span class="exit-signal-text">{{ row.signal_mark }}</span>{% endif %}
         {% if row.exit_gauge.svg %}<span class="exit-gauge-slot">{{ row.exit_gauge.svg|safe }}</span>{% endif %}
@@ -685,7 +685,7 @@
         </div>
       </td>
       {# 月足位置タグ (issue #53)。自動判定のためチャートパターンと違い編集不可 #}
-      <td data-page="2" title="{{ row.monthly_tag_tooltip or '' }}"
+      <td data-tap-explain data-page="2" title="{{ row.monthly_tag_tooltip or '' }}"
           style="white-space:nowrap;text-align:center;{{ row.styles.monthly_tag or '' }}">{{ row.monthly_tag }}</td>
       {# issue #327: 売買戦略 (定型リスト単一選択 + 色分けバッジ)。
          リスト外の旧自由記述値は ⚠️ 付き option を差し込んで保持し、再分類を促す #}
