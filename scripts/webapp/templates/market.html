@@ -145,13 +145,28 @@
   .theme-news-body a.thn-footnote:hover { text-decoration: underline; }
   /* ジャンプ先 <li> をハイライト */
   .theme-news-body details.sources li:target { background: #fff7c2; transition: background 0.5s; }
+  .thn-nav {
+    display: inline-block; min-width: 3.5em; padding: 0 0.5em; margin: 0 0.2em; text-align: center;
+    font-weight: normal; font-size: 0.85em; border: 1px solid #ccc; border-radius: 4px;
+    background: #fff; color: #1976d2; text-decoration: none;
+  }
+  .thn-nav-off { color: #ccc; }
 </style>
 <div id="theme-news-section" style="margin: 1em 0 1em 0;">
   <details open>
     <summary style="cursor:pointer;font-weight:bold;color:#2c3e50;">
       📰 テーマニュース調査
       {%- if theme_news.current %}
-      ({{ theme_news.current.date }}{% if not theme_news.is_today %} <span style="color:#b27500;">— 前回分</span>{% endif %})
+      {%- macro thn_nav(target, label) -%}
+        {%- if target -%}
+        <a href="{{ url_for('market.market_page', theme_news_date=target) }}#theme-news-section" class="thn-nav">{{ label }}</a>
+        {%- else -%}
+        <span class="thn-nav thn-nav-off">{{ label }}</span>
+        {%- endif -%}
+      {%- endmacro %}
+      {{ thn_nav(theme_news.prev, '← ' ~ (theme_news.prev[5:].replace('-', '/') if theme_news.prev else '')) }}
+      ({{ theme_news.current.date }}{% if not theme_news.is_today %} <span style="color:#b27500;">— {{ '過去分' if theme_news.is_selected else '前回分' }}</span>{% endif %})
+      {{ thn_nav(theme_news.next, (theme_news.next[5:].replace('-', '/') if theme_news.next else '') ~ ' →') }}
       {%- else %}
       (未実施)
       {%- endif %}
