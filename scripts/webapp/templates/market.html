@@ -233,10 +233,15 @@
       if (!r.ok) return;
       const s = await r.json();
       if (s.done) {
-        // 完了 → reload で当日分を表示
+        // 完了 → 当日分を表示。過去日を指定していたら theme_news_date を外して開き直す
         msg.textContent = '完了。ページをリロードします...';
         stopPolling();
-        setTimeout(() => location.reload(), 500);
+        const url = new URL(location.href);
+        url.searchParams.delete('theme_news_date');
+        setTimeout(() => {
+          if (url.href === location.href) location.reload();
+          else location.href = url.href;
+        }, 500);
       } else if (!s.running) {
         // 何らかの理由で running が消えたが done も無い → 失敗扱い、ボタン再有効化
         stopPolling();
