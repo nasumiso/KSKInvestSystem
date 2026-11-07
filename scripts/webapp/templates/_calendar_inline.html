@@ -64,10 +64,6 @@
   .theme-news-calendar .ev.range-mid   { border-radius: 0; border-left: none; padding-left: 5px; }
   .theme-news-calendar .ev.range-end   { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
   .theme-news-calendar .ev:hover { filter: brightness(0.95); }
-  .theme-news-calendar .ev-long-line { display: block; height: 3px; margin: 3px 0; border-radius: 1px; }
-  .theme-news-calendar .ev-long-line.imp-high { background: var(--imp-high-fg); }
-  .theme-news-calendar .ev-long-line.imp-mid  { background: var(--imp-mid-fg); }
-  .theme-news-calendar .ev-long-line.imp-low  { background: var(--imp-low-fg); opacity: 0.5; }
   .theme-news-calendar .ev-long-end { display: block; margin: 2px 0; padding: 0 5px; font-size: 0.9em; line-height: 1.3; }
   .theme-news-calendar .ev-long-end.imp-high { color: var(--imp-high-fg); }
   .theme-news-calendar .ev-long-end.imp-mid  { color: var(--imp-mid-fg); }
@@ -227,7 +223,8 @@
       const monthStart = `${year}-${String(month).padStart(2,'0')}-01`;
       for (const ev of [...evs.filter(e => !isLong(e)), ...evs.filter(isLong)]) {
         if (isLong(ev)) {
-          td.appendChild(renderLongCell(ev, dateStr, monthStart));
+          const el = renderLongCell(ev, dateStr, monthStart);
+          if (el) td.appendChild(el);
           continue;
         }
         const span = document.createElement('span');
@@ -267,14 +264,15 @@
   }
 
   // 4日以上の期間イベントは、ラベル日 (開始日。前月以前に始まったら表示月の1日) だけタイトル付きでクリック可能にし、
-  // 終了日は「〆 M/D」、途中の日は細い線にする
+  // 終了日は「〆 M/D」だけ出す。途中の日は何も出さない (null を返す)
   const LONG_MIN_DAYS = 4;
   function isLong(ev) {
     return !ev.tentative && (parseDate(ev.end) - parseDate(ev.start)) / 86400000 + 1 >= LONG_MIN_DAYS;
   }
   function renderLongCell(ev, dateStr, monthStart) {
-    const span = document.createElement('span');
     const labelDate = ev.start > monthStart ? ev.start : monthStart;
+    if (dateStr !== labelDate && dateStr !== ev.end) return null;
+    const span = document.createElement('span');
     span.title = `${ev.title} (${fmtMD(ev.start)}〜${fmtMD(ev.end)}): ${ev.body}`;
     if (dateStr === labelDate) {
       const carried = ev.start < monthStart;
@@ -282,11 +280,9 @@
       span.textContent = carried ? `◀ ${ev.title} (${fmtMD(ev.start)}〜)` : `▶ ${ev.title}`;
       span.dataset.id = ev.id;
       span.addEventListener('click', () => selectEvent(ev.id));
-    } else if (dateStr === ev.end) {
+    } else {
       span.className = `ev-long-end imp-${ev.importance}`;
       span.textContent = `〆 ${fmtMD(ev.end)}`;
-    } else {
-      span.className = `ev-long-line imp-${ev.importance}`;
     }
     return span;
   }
