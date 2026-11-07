@@ -9,11 +9,11 @@ GET  /market/theme_news/status       : theme-news 実行状況を JSON で返す
 import json
 import subprocess
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from flask import Blueprint, jsonify, render_template, url_for
+from flask import Blueprint, jsonify, render_template, request, url_for
 
 import theme_breakout
 from ks_util import (
@@ -104,22 +104,48 @@ def _find_recent_done_history(today, max_lookback_days: int = 30) -> Optional[Di
     return None
 
 
-def _load_theme_news_for_display() -> Dict[str, Any]:
+def _done_dates() -> List[str]:
+    """.md と .md.done が揃った日付 (YYYY-MM-DD) を昇順で返す。前後移動のボタン用。"""
+    if not _THEME_NEWS_HISTORY_DIR.exists():
+        return []
+    return sorted(
+        done.name[:-len(".md.done")]
+        for done in _THEME_NEWS_HISTORY_DIR.glob("*.md.done")
+        if done.with_name(done.name[:-len(".done")]).exists()
+    )
+
+
+def _load_theme_news_for_display(selected: Optional[date] = None) -> Dict[str, Any]:
     """/market 表示用 theme-news payload。
 
-    返り値: {"current": dict|None, "is_today": bool, "running": bool}
-      - current: 当日 (done 有) があれば当日、無ければ最新の前日 done。両方無ければ None
+    返り値: {"current": dict|None, "is_today": bool, "is_selected": bool, "running": bool,
+             "prev": str|None, "next": str|None}
+      - current: selected が done 済みならその日。無ければ当日 (done 有)、無ければ最新の前日 done。
+        どれも無ければ None
       - is_today: current が当日かどうか (UI で「(前日)」表記分岐に使う)
+      - is_selected: current がクエリで指定された日かどうか (「過去分」表記に使う)
       - running: 当日分が実行中マーカーを持っているかどうか
+      - prev / next: current の前後で done 済みの日付。無ければ None
     """
     today = get_price_day(datetime.today())
-    today_paths = _history_paths_for(today)
-    running = today_paths["running"].exists()
-    today_payload = _read_history_payload(today)
-    if today_payload is not None:
-        return {"current": today_payload, "is_today": True, "running": running}
-    fallback = _find_recent_done_history(today)
-    return {"current": fallback, "is_today": False, "running": running}
+    running = _history_paths_for(today)["running"].exists()
+    current = _read_history_payload(selected) if selected else None
+    is_selected = current is not None
+    if current is None:
+        current = _read_history_payload(today) or _find_recent_done_history(today)
+    prev_date = next_date = None
+    if current is not None:
+        dates = _done_dates()
+        prev_date = next((d for d in reversed(dates) if d < current["date"]), None)
+        next_date = next((d for d in dates if d > current["date"]), None)
+    return {
+        "current": current,
+        "is_today": current is not None and current["date"] == today.isoformat(),
+        "is_selected": is_selected,
+        "running": running,
+        "prev": prev_date,
+        "next": next_date,
+    }
 
 
 def _load_calendar_payload() -> Dict[str, Any]:
@@ -176,7 +202,11 @@ def market_page():
         market_parts["body"] = market_parts.get("body", "").replace(
             "<h2>テーマランク</h2>", theme_summary_link_html, 1
         )
-    theme_news = _load_theme_news_for_display()
+    try:
+        selected = date.fromisoformat(request.args.get("theme_news_date", ""))
+    except ValueError:
+        selected = None
+    theme_news = _load_theme_news_for_display(selected)
     calendar = _load_calendar_payload()
 
     return render_template(

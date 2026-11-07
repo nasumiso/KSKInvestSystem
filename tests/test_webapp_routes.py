@@ -1280,6 +1280,35 @@ class TestMarketRouteThemeNews:
         # 実行ボタンは常に存在
         assert 'id="theme-news-run-btn"' in html
 
+    @pytest.mark.parametrize("query,expect_date,expect_prev,expect_next,expect_label", [
+        # クエリ無し → 当日。前は 05-19 (05-20 は done 無しで飛ばす)、次は無し
+        ("", "2026-05-21", "2026-05-19", None, None),
+        # 過去日を指定 → その日を「過去分」で出す
+        ("?theme_news_date=2026-05-19", "2026-05-19", "2026-05-18", "2026-05-21", "過去分"),
+        # 不正値・done 無しの日 → クエリ無しと同じ
+        ("?theme_news_date=abc", "2026-05-21", "2026-05-19", None, None),
+        ("?theme_news_date=2026-05-20", "2026-05-21", "2026-05-19", None, None),
+    ])
+    def test_date_navigation(self, client, tmp_path, monkeypatch,
+                             query, expect_date, expect_prev, expect_next, expect_label):
+        from datetime import date as _date
+        self._setup_history_dir(tmp_path, monkeypatch, _date(2026, 5, 21))
+        for d in ("2026-05-18", "2026-05-19", "2026-05-21"):
+            (tmp_path / f"{d}.md").write_text(f"## {d} 見出し\n", encoding="utf-8")
+            (tmp_path / f"{d}.md.done").touch()
+        (tmp_path / "2026-05-20.md").write_text("## 途中\n", encoding="utf-8")
+
+        html = client.get("/market" + query).data.decode()
+        assert f"{expect_date} 見出し" in html
+        for target in (expect_prev, expect_next):
+            if target:
+                assert f"theme_news_date={target}#theme-news-section" in html
+        assert html.count("theme_news_date=") == len([t for t in (expect_prev, expect_next) if t])
+        if expect_label:
+            assert expect_label in html
+        else:
+            assert "過去分" not in html
+
     def test_running_state_disables_button_and_shows_message(self, client, tmp_path, monkeypatch):
         from datetime import date as _date
         fixed_today = _date(2026, 5, 21)
