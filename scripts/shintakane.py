@@ -572,7 +572,7 @@ def todays_shintakane(upd=UPD_INTERVAL):
         "業績スコア",
         "指標",
         "RS",
-        "ファンダ",
+        "テーマ人気",
         "テーマ",
         "概要",
         "ニュース1",

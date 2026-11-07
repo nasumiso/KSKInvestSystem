@@ -59,12 +59,12 @@ def test_ranking_csv_and_earnings_complete(stock_environment):
     make_stock_db.list_all_db(upload_csv=False, update_portforio=False)
     with (stock_environment / "code_rank_data/code_rank.csv").open(encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        assert {"コード", "銘柄名", "順位", "総合PT", "決算日", "プロフィット/クォリティ", "バリュー/サイズ", "ファンダメンタル"} <= set(reader.fieldnames)
+        assert {"コード", "銘柄名", "順位", "総合PT", "決算日", "プロフィット/クォリティ", "バリュー/サイズ", "テーマ人気"} <= set(reader.fieldnames)
         rows = list(reader)
     assert len(rows) == len(CODES)
     assert {re.search(r'"([0-9]{3}[0-9A-Z])"\)$', row["コード"])[1] for row in rows} == CODES
     for row in rows:
-        for column in ("総合PT", "プロフィット/クォリティ", "バリュー/サイズ", "ファンダメンタル"):
+        for column in ("総合PT", "プロフィット/クォリティ", "バリュー/サイズ", "テーマ人気"):
             assert math.isfinite(float(row[column]))
         assert math.isfinite(float(row["モメンタム(現在.20日比/5日比)"].split(".")[0]))
     persisted = make_stock_db.load_stock_db()
