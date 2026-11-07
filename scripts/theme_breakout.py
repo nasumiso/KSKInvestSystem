@@ -145,7 +145,7 @@ def build_breakout(days: List[Tuple[str, List[Dict[str, Any]]]],
     for g in groups[:MAX_ROWS]:
         members = g["members"]
         managed_rows = sorted(
-            ({"code_s": r["code_s"], "name": r["name"], "status": managed[r["code_s"]],
+            ({"code_s": r["code_s"], "name": r["name"], "kind": r["kind"], "status": managed[r["code_s"]],
               "days_listed": sum(r["code_s"] in s for s in listed)}
              for r in members if r["code_s"] in managed),
             key=lambda m: (_STATUS_ORDER.get(m["status"], 9), -m["days_listed"], m["code_s"]))
@@ -168,9 +168,7 @@ def build_breakout(days: List[Tuple[str, List[Dict[str, Any]]]],
             "history": [c.get(g["theme"], 0) for c in prev_counts],
             "managed": managed_rows,
             "unfollowed": unfollowed,
-            "others": len(others),
-            # 「ほか N 銘柄」の tooltip 用。業績スコア順に最大5銘柄
-            "others_preview": ["%s %s" % (r["code_s"], r["name"]) for r in others[:5]],
+            "others": others,
             "discovery_reason": "%s テーマ=%s 日付=%s" % (DISCOVERY_PREFIX, g["theme"], date),
         })
     return {"date": date, "rows": out, "more": max(len(groups) - MAX_ROWS, 0)}

@@ -68,5 +68,5 @@ def test_重複テーマを畳み_管理対象を先に_未フォローは初出
     assert [m["code_s"] for m in a["managed"]] == ["1002", "1001", "1007"]
     # 初出かつ「高」を業績スコア順に2つまで。出来高急増だけの 1006 は出さない
     assert [u["code_s"] for u in a["unfollowed"]] == ["1003", "1004"]
-    assert a["others"] == 8 - 3 - 2
+    assert len(a["others"]) == 8 - 3 - 2
     assert a["discovery_reason"] == "発掘元:日次レポート テーマ=A 日付=2026-10-21"

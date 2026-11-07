@@ -50,14 +50,15 @@
   <details id="theme-breakout" open>
     <summary style="cursor:pointer;font-weight:bold;color:#2c3e50;">
       🔥 テーマ別のブレイク
-      <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.5em;"
-            title="日次レポートの本日リスト (新高値・出来高急増・PTS) を株探テーマ (主要3つ) で数え、5銘柄以上かつ前20営業日の平均の2.5倍以上のテーマを出す">
+      <span title="日次レポートの本日リスト (新高値・出来高急増・PTS) を株探テーマ (主要3つ) で数え、平常より急に増えたテーマを出す。&#10;・該当: 5銘柄以上 かつ 前20営業日の平均の2.5倍以上&#10;・構成銘柄が6割以上重なるテーマは1行にまとめる (下に別名を表示)&#10;・最大8行。管理対象は 保有→準保有→監視 の順&#10;・未フォローは初出の新高値を業績スコア順に1テーマ2銘柄まで +監視 付きで先に出し、残りは灰色で並べる"
+            style="cursor:help;color:#1a73e8;font-weight:normal;font-size:0.85em;">(?)</span>
+      <span style="font-weight:normal;font-size:0.85em;color:#666;margin-left:0.5em;">
         (日次レポート {{ breakout.date }})
       </span>
     </summary>
     {% if breakout.rows %}
     <table>
-      <tr><th>テーマ</th><th>銘柄数</th><th>管理対象 (掲載日数/20日)</th><th>未フォローの新高値 (初出)</th></tr>
+      <tr><th>テーマ</th><th>銘柄数</th><th>管理対象 (掲載日数/20日)</th><th>未フォロー (+監視は初出の新高値)</th></tr>
       {% for row in breakout.rows %}
       <tr>
         <td>
@@ -74,7 +75,7 @@
           <span class="tb-stock">
             <span class="status-badge status-{{ status_class[m.status] }}">{{ status_label[m.status] }}</span>
             <a href="{{ url_for('detail.stock_detail', code_s=m.code_s) }}">{{ m.name }}</a>
-            <span class="tb-sub">{{ m.days_listed }}日</span>
+            <span class="tb-sub">{{ m.kind }} {{ m.days_listed }}日</span>
           </span>
           {% else %}<span class="tb-sub">—</span>{% endfor %}
         </td>
@@ -83,6 +84,7 @@
           <span class="tb-stock">
             <span class="tb-unfollowed"
                   title="{{ u.code_s }} 種類: {{ u.kind }} / 前日比 {{ u.change }} / 業績スコア {{ u.score | int }}&#10;{{ u.overview }}{% if u.news %}&#10;{{ u.news }}{% endif %}">{{ u.name }}</span>
+            <span class="tb-sub">{{ u.kind }}</span>
             <form method="POST" action="/portfolio/add">
               <input type="hidden" name="code_s" value="{{ u.code_s }}">
               <input type="hidden" name="reason" value="{{ row.discovery_reason }}">
@@ -91,8 +93,13 @@
             </form>
           </span>
           {% endfor %}
-          {% if row.others %}<span class="tb-sub" style="white-space:nowrap;"
-                title="{{ row.others_preview | join('\n') }}{% if row.others > row.others_preview | length %}&#10;…{% endif %}">ほか {{ row.others }} 銘柄</span>{% endif %}
+          {% for o in row.others %}
+          <span class="tb-stock tb-sub">
+            <span class="tb-unfollowed"
+                  title="{{ o.code_s }} 種類: {{ o.kind }}{% if not o.first %} (既出){% endif %} / 前日比 {{ o.change }} / 業績スコア {{ o.score | int }}&#10;{{ o.overview }}{% if o.news %}&#10;{{ o.news }}{% endif %}">{{ o.name }}</span>
+            {{ o.kind }}
+          </span>
+          {% endfor %}
         </td>
       </tr>
       {% endfor %}
