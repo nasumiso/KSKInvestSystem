@@ -232,6 +232,7 @@ def _summary(ym: str, closed: List[Dict[str, Any]], episodes: List[Dict[str, Any
     # issue #480 以後のログ (目標の維持率と適正エリア) が当月にあれば、そちらで集計する
     targeted = [h for h in weekdays if h.get("target_rate") is not None]
     rates = [h["margin_rate_pct"] for h in targeted if h.get("margin_rate_pct") is not None]
+    trend = _trend(ym, log_by_date)
     return {
         "closed": {**part(priced),
                    "wins": sum(1 for e in priced if _profit(e) > 0),
@@ -256,7 +257,8 @@ def _summary(ym: str, closed: List[Dict[str, Any]], episodes: List[Dict[str, Any
             "correction_days": len(correction),
             "correction_days_over": sum(1 for h in correction if h.get("position") == "over"),
         },
-        "trend": _trend(ym, log_by_date),
+        "trend": trend,
+        "month_pl": _month_pl(ym, episodes, trend["unrealized"]),
     }
 
 
@@ -284,6 +286,26 @@ def _trend(ym: str, log_by_date: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         return row
 
     return {"total_value": ends("total_value"), "unrealized": ends("unrealized_total")}
+
+
+def _month_pl(ym: str, episodes: List[Dict[str, Any]],
+              unrealized: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """月の損益 = 当月の売りで確定した実現損益 + 含み損益の増減 (trend の start → end)。
+
+    実現損益は往復行のうち決済日が当月の行で数える。エピソードの実現損益 (closed.pl) は
+    完全決済した月に前月までの部分売りもまとめて計上し、当月の部分売りは数えないため、
+    含み損益の増減と足すとずれる。含み損益の記録が無い月は None。
+    """
+    if unrealized is None:
+        return None
+    from webapp import trade_episodes  # 遅延 import (_unrealized_pct と同じ理由)
+
+    realized = sum(r["pl"] for ep in episodes if not ep.get("split_suspect")
+                   for r in trade_episodes.build_round_trips(ep)
+                   if r["closed"] and (r.get("close_date") or "").startswith(ym)
+                   and r["pl"] is not None)
+    change = unrealized["end"]["value"] - unrealized["start"]["value"]
+    return {"realized": realized, "unrealized_change": change, "total": realized + change}
 
 
 def _hypotheses(ym: str, episodes: List[Dict[str, Any]],

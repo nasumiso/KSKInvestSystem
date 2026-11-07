@@ -195,10 +195,9 @@ def _summarize_fill_episodes(episodes):
     """
     valid = [ep for ep in episodes if not ep.get("split_suspect")]
     pls = [ep["pl"] for ep in valid if ep["closed"] and ep["pl"]]
-    total_pl = sum(p["profit_amount"] for p in pls if p["profit_amount"] is not None)
+    # 実現損益 (total_pl) は年の売りで数えるので呼び出し側で付ける
     episode_part = {
         "summary": calc_trade_summary(pls),
-        "total_pl": total_pl,
         "priced_count": len(pls),
         "closed_count": sum(1 for ep in valid if ep["closed"]),
     }
@@ -210,7 +209,6 @@ def _summarize_fill_episodes(episodes):
     # 混在銘柄は has_open=True だが、クローズ済みエピソードを持つのでここに含める。
     stock_part = {
         "summary": calc_trade_summary(stock_pls),
-        "total_pl": total_pl,  # 実現損益はエピソード単位と一致する
         "priced_count": len(stock_pls),
         "closed_count": sum(
             1 for r in rollups if any(ep["closed"] for ep in r["episodes"])
@@ -355,8 +353,30 @@ def trade_history():
     # 粒度ごとに [(年, サマリー), ...] 年降順。テンプレート側でどちらを描くか
     # 分岐させず、そのまま同じマクロに渡せる形にしておく。
     episode_summary_years, stock_summary_years = [], []
+    # 今年の欄には、いま保有している分すべての含み損益を添える (保有中の行の含み損益の合計)。
+    # 過去の年は年末時点の含み損益の記録が無いので出さない。
+    open_pls = [ep["open_pl"] for ep in fill_episodes
+                if not ep["closed"] and not ep.get("split_suspect") and ep.get("open_pl")]
+    unrealized = {
+        "total": sum(op["unrealized"] for op in open_pls if op["unrealized"] is not None),
+        "missing": sum(1 for op in open_pls if op["unrealized"] is None),
+    }
+    # 実現損益はその年の売りで確定した分 (往復行の決済日の年、部分売りを含む)。
+    # エピソードの損益で数えると、前年の部分売りが決済年に入り、保有中の部分売りが
+    # どの年にも入らない。勝率・期待値は従来どおりクローズ済みエピソードで数える。
+    realized_by_year: dict[str, float] = {}
+    for ep in fill_episodes:
+        if ep.get("split_suspect"):
+            continue
+        for r in ep["round_trips"]:
+            if r["closed"] and r["pl"] is not None and r["close_date"]:
+                year = r["close_date"][:4]
+                realized_by_year[year] = realized_by_year.get(year, 0) + r["pl"]
     for year in sorted(eps_by_year, reverse=True):
         ep_part, stock_part = _summarize_fill_episodes(eps_by_year[year])
+        ep_part["total_pl"] = stock_part["total_pl"] = realized_by_year.get(year, 0)
+        if year == current_year:
+            ep_part["unrealized"] = stock_part["unrealized"] = unrealized
         episode_summary_years.append((year, ep_part))
         stock_summary_years.append((year, stock_part))
 
