@@ -84,14 +84,14 @@ WebApp の IR 資料モーダルと同じ `ir_docs.py` の収集処理を呼び�
 
 ### 銘柄評価台帳 (`list_stock_ratings` / `get_stock_rating` / `update_stock_rating`)
 
-ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 / モメンタム20 / Valuation20、Confidence、Status) を参照・更新します。
+ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 と適正株価は AI、Valuation20 / モメンタム20 はシステムが基準日の終値から算出。Confidence、Status) を参照・更新します。
 各軸が測るものは [銘柄評価仕様.md](銘柄評価仕様.md)。正本は `stock_ratings.json` で、旧スプレッドシート「投資PJ_銘柄評価台帳」は 2026-09-23 に凍結しました。
 
 | ツール | 内容 |
 |---|---|
-| `list_stock_ratings` | 総合点順の一覧 (長文なし)。`status` で絞り込み。既定では Archive を含まない。システムのモメンタムの合計 (`system_momentum`、参考値) を添える |
-| `get_stock_rating` | 1銘柄の全項目と直近の変更履歴。システムのモメンタムの内訳 (`system_momentum`、総合点には入らない参考値) を添える |
-| `update_stock_rating` | 渡した項目だけを部分更新 (未登録なら新規作成)。`reason` 必須。検証エラーは `ok: false` と `errors` で返し、何も書かない |
+| `list_stock_ratings` | 総合点順の一覧 (長文なし)。`status` で絞り込み。既定では Archive を含まない。基準日 (`as_of`) と、システムの2軸の点・欠けた値 (`system`) を添える |
+| `get_stock_rating` | 1銘柄の全項目と直近の変更履歴。システムの2軸の内訳と参考値 (理論株価・PER) を `system` で添える (総合点に入る) |
+| `update_stock_rating` | 渡した項目だけを部分更新 (未登録なら新規作成)。`reason` 必須。AI が渡すのは fund・mispricing・fair_price ほか。momentum・valuation を渡すとエラー。検証エラーは `ok: false` と `errors` で返し、何も書かない |
 
 ## 利用上の制約
 

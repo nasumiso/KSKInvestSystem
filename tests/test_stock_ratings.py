@@ -1,14 +1,14 @@
 """stock_ratings.py のテスト (tmp_path 上に JSON を作る。本番の KS_DATA_DIR には触れない)"""
 
-import csv
 import json
+from datetime import date
 
 import pytest
 
 import stock_ratings as sr
 
 BASE_FIELDS = {
-    "name": "SHIFT", "fund": 35, "mispricing": 16, "momentum": 16, "valuation": 15,
+    "name": "SHIFT", "fund": 35, "mispricing": 16, "fair_price": 1800,
     "confidence": "A", "status": "Active", "thesis": "QA需要拡大", "risks": "採用鈍化",
     "checkpoints": "2Q受注", "mispricing_note": "受注残",
 }
@@ -70,6 +70,9 @@ def test_partial_update_keeps_other_fields(ratings_dir, fields, expected_changes
     ("3697", {"updated_at": "2026-01-01"}),
     ("369", {"fund": 36}),
     ("7203", {"name": "トヨタ", "fund": 30}),  # 新規作成で必須項目が足りない
+    ("3697", {"momentum": 16}),  # Ver3 ではシステムが出す軸 (#544)
+    ("3697", {"valuation": 15}),
+    ("3697", {"fair_price": 0}),
 ])
 def test_validation_error_writes_nothing(ratings_dir, code_s, fields):
     """検証エラーのとき JSON も履歴もバイト単位で変わらない"""
@@ -82,6 +85,7 @@ def test_validation_error_writes_nothing(ratings_dir, code_s, fields):
 @pytest.mark.parametrize("fields, error", [
     ({"risks": " "}, "risks: Active では空にできない"),
     ({"status": "Watch", "checkpoints": ""}, "checkpoints: Watch では空にできない"),
+    ({"fair_price": None}, "fair_price: Active では空にできない"),  # Valuation を出せなくなる (#544)
     ({"status": "Archive"}, "note: Archive にするときは"),  # 外す理由を同じ更新で書く
     ({"status": "Archive", "note": "受注鈍化で仮説崩れ"}, None),
 ])
@@ -119,47 +123,25 @@ def test_same_value_update_writes_nothing(ratings_dir):
     assert _snapshot(ratings_dir) == before
 
 
-HEADER = ["順位", "コード", "銘柄", "ファンダ /40", "未織込 /20", "モメンタム /20",
-          "Valuation /20", "総合 /100", "Confidence", "保有", "役割", "投資仮説", "主要リスク",
-          "次の格上げ/確認条件", "最終レビュー", "更新メモ", "Status", ""]
-ROW_OK = ["1", "6134", "FUJI", "39", "16", "18", "18", "91", "A", "保有", "本命", "仮説",
-          "リスク", "条件", "2026-09-23", "四季報反映", "Active", ""]
-ROW_WARN = ["2", "6479", "ミネベアミツミ", "36", "16", "7", "17", "70", "A", "B", "", "",
-            "", "", "2026-08-20", "2026-08-20", "Watch", "Active"]
-ROW_BAD = ["3", "4970", "東洋合成工業", "41", "15", "7", "16", "79", "B", "B", "", "",
-           "", "", "2026-09-22", "メモ", "Active", ""]
+def test_migrate_v3(tmp_path):
+    """Ver2 のモメンタムと Valuation の点数を外して履歴に残し、版を 3.0 にする。再実行は中断する (#544)"""
+    v2 = dict(BASE_FIELDS)
+    v2.pop("fair_price")
+    record = {k: v for k, v in v2.items() if k not in ("fund", "mispricing")}
+    record["scores"] = {"fund": 35, "mispricing": 16, "momentum": 16, "valuation": 15}
+    (tmp_path / sr.RATINGS_FILENAME).write_text(json.dumps(
+        {"schema_version": 1, "rubric_version": "2.0", "stocks": {"3697": record}}), encoding="utf-8")
 
+    assert sr.migrate_v3(ratings_dir=tmp_path) == 1
 
-@pytest.mark.parametrize("rows, expect_error", [
-    ([ROW_OK, ROW_WARN], False),
-    ([ROW_OK, ROW_WARN, ROW_BAD], True),
-])
-def test_migrate(tmp_path, rows, expect_error):
-    """1行でも検証エラーがあれば何も書かない。怪しい値は警告を出して移行する。再実行は中断する"""
-    csv_path = tmp_path / "ledger.csv"
-    with open(csv_path, "w", encoding="utf-8", newline="") as f:
-        csv.writer(f).writerows([HEADER, *rows])
-    out_dir = tmp_path / "out"
-
-    if expect_error:
-        with pytest.raises(sr.RatingValidationError) as exc_info:
-            sr.migrate_from_csv(csv_path, ratings_dir=out_dir)
-        assert any("4970" in e and "scores.fund" in e for e in exc_info.value.errors)
-        assert not (out_dir / sr.RATINGS_FILENAME).exists()
-        assert not (out_dir / sr.HISTORY_FILENAME).exists()
-        return
-
-    count, warnings = sr.migrate_from_csv(csv_path, ratings_dir=out_dir)
-    assert count == 2
-    assert any("6479" in w and "総合" in w for w in warnings)
-    assert any("6479" in w and "日付だけ" in w for w in warnings)
-    assert any("6479" in w and "右の列" in w for w in warnings)
-    fuji = sr.get_rating("6134", ratings_dir=out_dir)
-    assert (fuji["total"], fuji["updated_at"], fuji["mispricing_note"], fuji["checkpoints"]) == (
-        91, "2026-09-23", "", "条件")
-    assert [h["source"] for h in _history(out_dir)] == ["migration", "migration"]
+    data = json.loads((tmp_path / sr.RATINGS_FILENAME).read_text(encoding="utf-8"))
+    assert data["rubric_version"] == "3.0"
+    assert data["stocks"]["3697"]["scores"] == {"fund": 35, "mispricing": 16}
+    last = _history(tmp_path)[-1]
+    assert (last["source"], last["rubric_version"], last["changes"]) == (
+        "migration", "3.0", {"scores.momentum": [16, None], "scores.valuation": [15, None]})
     with pytest.raises(FileExistsError):
-        sr.migrate_from_csv(csv_path, ratings_dir=out_dir)
+        sr.migrate_v3(ratings_dir=tmp_path)
 
 
 def test_update_regenerates_html(ratings_dir):
@@ -208,11 +190,11 @@ def test_mirror_to_drive(tmp_path, monkeypatch, has_mirror, dev, expect_copy):
     if expect_copy:
         for name in (sr.HISTORY_FILENAME, sr.HTML_FILENAME):
             assert (mirror / name).read_bytes() == (root / name).read_bytes()
-        # JSON は Drive の写しにだけ system_momentum を埋め込む (#543)
+        # JSON は Drive の写しにだけシステムの2軸を埋め込む (#543 / #544)
         drive = json.loads((mirror / sr.RATINGS_FILENAME).read_text(encoding="utf-8"))
         local = json.loads((root / sr.RATINGS_FILENAME).read_text(encoding="utf-8"))
-        assert drive["stocks"]["3697"].pop("system_momentum")["missing"] == ["rs", "theme"]
-        assert drive == local and "system_momentum" not in local["stocks"]["3697"]
+        assert drive["stocks"]["3697"].pop("system")["momentum"]["missing"] == ["rs", "theme"]
+        assert drive == local and "system" not in local["stocks"]["3697"]
         assert (mirror / sr.RATINGS_FILENAME).stat().st_ino == inode
     elif has_mirror:
         assert (mirror / sr.RATINGS_FILENAME).read_text(encoding="utf-8") == "{}"
@@ -221,31 +203,57 @@ def test_mirror_to_drive(tmp_path, monkeypatch, has_mirror, dev, expect_copy):
 
 
 RANKS = {"半導体": {"rank": 1}, "AI": {"rank": 2}, "電線": {"rank": 3}, "未集計": {"rank": None}}
+DAY = date(2026, 11, 6)
 
 
-@pytest.mark.parametrize("pt, themes, ranks, expected", [
-    (83, ["半導体"], RANKS, {"total": 18, "rs": 8, "theme": 10, "missing": []}),
-    (83, ["半導体", "AI"], RANKS, {"total": 16, "rs": 8, "theme": 8, "missing": []}),  # 10 と 5 の平均
-    (83, ["電線"], RANKS, {"total": 8, "rs": 8, "theme": 0, "missing": []}),          # 最下位
-    (None, ["AI"], RANKS, {"total": 10, "rs": 5, "theme": 5, "missing": ["rs"]}),     # 価格データ無し
-    (83, [], RANKS, {"total": 13, "rs": 8, "theme": 5, "missing": ["theme"]}),        # ポートフォリオ未登録
-    (83, ["半導体"], {"半導体": {"rank": 1}}, {"total": 13, "rs": 8, "theme": 5, "missing": ["theme"]}),  # 比べるテーマが1つ
+@pytest.mark.parametrize("pt, price, themes, ranks, fair, expected", [
+    # モメンタム = RS (momentum_pt / 10) + テーマ (1位10点・最下位0点、2つなら平均) (#543)
+    (83, (DAY, 1000), ["半導体"], RANKS, 1200, (10, [], 18, [])),
+    (83, (DAY, 1000), ["半導体", "AI"], RANKS, 1200, (10, [], 16, [])),
+    (83, (DAY, 1000), [], RANKS, 1200, (10, [], 13, ["theme"])),                    # 業態テーマ無し
+    (83, (DAY, 1000), ["半導体"], {"半導体": {"rank": 1}}, 1200, (10, [], 13, ["theme"])),  # 比べるテーマが1つ
+    (None, (DAY, 1000), ["AI"], RANKS, 1200, (10, [], 10, ["rs"])),                 # RS 無し
+    # Valuation = 上昇余地を −20%→0 / +20%→10 / +60%→20 で換算 (#544)
+    (83, (DAY, 1000), ["電線"], RANKS, 800, (0, [], 8, [])),
+    (83, (DAY, 1000), ["電線"], RANKS, 1600, (20, [], 8, [])),
+    (83, (DAY, 1000), ["電線"], RANKS, 3000, (20, [], 8, [])),                      # 上限で切り詰め
+    (83, (DAY, 1000), ["電線"], RANKS, None, (10, ["fair_price"], 8, [])),
+    # 終値が基準日のものでなければ、RS も終値も使わない
+    (83, (date(2026, 11, 5), 1000), ["電線"], RANKS, 1200, (10, ["price_stale"], 5, ["rs_stale"])),
 ])
-def test_system_momentum(monkeypatch, pt, themes, ranks, expected):
-    """RS = momentum_pt / 10、テーマ = 順位を1位10点・最下位0点で割り当てた平均。欠けた要素は5点 (#543)"""
-    from datetime import date
-    monkeypatch.setattr(sr, "_load_momentum_inputs", lambda codes: (
-        {"3697": pt}, {"3697": themes}, ranks, date(2026, 10, 30)))
-    m = sr.compute_system_momentum(["3697"])["3697"]
-    assert {k: m[k] for k in expected} == expected
-    assert m["as_of"] == "2026-10-30"
+def test_system_scores(monkeypatch, pt, price, themes, ranks, fair, expected):
+    """システムが出す2軸は、基準日 (テーマ順位の記録日) の RS と終値だけを使う"""
+    monkeypatch.setattr(sr, "_load_system_inputs", lambda codes: (
+        {"3697": {"momentum_pt": pt, "price": price}}, {"3697": themes}, ranks, DAY))
+    s = sr.compute_system_scores({"3697": {"fair_price": fair}})["3697"]
+    v, m = s["valuation"], s["momentum"]
+    assert (v["score"], v["missing"], m["total"], m["missing"]) == expected
+    assert s["as_of"] == "2026-11-06"
 
 
-def test_history_keeps_system_momentum_at_update(ratings_dir, monkeypatch):
-    """更新した時点のシステムのモメンタムが履歴に残り、changes には入らない (#543)"""
-    monkeypatch.setattr(sr, "compute_system_momentum", lambda codes: {c: {"total": 12} for c in codes})
+def test_total_includes_system_scores(ratings_dir, monkeypatch):
+    """総合点 = AI の2軸 + Valuation + モメンタムで、一覧はその順に並ぶ。読めなくても総合点は出る"""
+    monkeypatch.setattr(sr, "_load_system_inputs", lambda codes: (
+        {"3697": {"momentum_pt": 83, "price": (DAY, 1000)}, "6134": {"momentum_pt": 20, "price": (DAY, 1000)}},
+        {"3697": ["半導体"], "6134": ["電線"]}, RANKS, DAY))
+    # 3697: 35 + 16 + Val 20 (1800円 / 1000円) + モメ 18 = 89、6134: 35 + 16 + 20 + (2 + 0) = 73
+    assert [(r["code_s"], r["total"]) for r in sr.list_ratings(ratings_dir=ratings_dir)] == [
+        ("3697", 89), ("6134", 73)]
+
+    def broken(codes):
+        raise OSError("shelve を開けない")
+    monkeypatch.setattr(sr, "_load_system_inputs", broken)
+    assert sr.get_rating("3697", ratings_dir=ratings_dir)["total"] == 35 + 16 + 10 + 10
+
+
+def test_history_keeps_system_scores_at_update(ratings_dir, monkeypatch):
+    """更新した時点のシステムの2軸と採点ルールの版が履歴に残り、正本には入らない"""
+    snapshot = {"as_of": "2026-11-06", "valuation": {"score": 14}, "momentum": {"total": 12}}
+    monkeypatch.setattr(sr, "compute_system_scores", lambda records: {c: snapshot for c in records})
+    monkeypatch.setattr(sr, "_with_system", lambda code_s, record, system: dict(record, code_s=code_s))
     sr.update_rating("3697", {"fund": 36}, "反映", "cli", ratings_dir=ratings_dir)
     last = _history(ratings_dir)[-1]
-    assert last["system_momentum"] == {"total": 12}
-    assert last["changes"] == {"scores.fund": [35, 36]}
-    assert "system_momentum" not in sr.get_rating("3697", ratings_dir=ratings_dir)
+    assert (last["system"], last["rubric_version"], last["changes"]) == (
+        snapshot, "3.0", {"scores.fund": [35, 36]})
+    stored = json.loads((ratings_dir / sr.RATINGS_FILENAME).read_text(encoding="utf-8"))
+    assert "system" not in stored["stocks"]["3697"]

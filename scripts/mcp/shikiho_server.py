@@ -609,35 +609,33 @@ def get_earnings_document_data(
 
 # 一覧では長文を返さない (50銘柄分の仮説・リスクを毎回流すとトークンを食う)
 RATING_SUMMARY_KEYS = (
-    "code_s", "name", "status", "scores", "total", "confidence", "role", "updated_at",
+    "code_s", "name", "status", "scores", "fair_price", "total", "confidence", "role", "updated_at",
 )
 
 
 def list_stock_ratings_data(status: Optional[str] = None) -> Dict[str, Any]:
     """銘柄評価台帳の一覧を総合点の高い順に返す。"""
     ratings = stock_ratings.list_ratings(status)
-    system = stock_ratings.compute_system_momentum([r["code_s"] for r in ratings])
     return {
         "count": len(ratings),
+        "as_of": next((r["system"]["as_of"] for r in ratings if r["system"]["as_of"]), None),
         "stocks": [
-            dict({key: r.get(key) for key in RATING_SUMMARY_KEYS},
-                 system_momentum=_momentum_summary(system.get(r["code_s"])))
+            dict({key: r.get(key) for key in RATING_SUMMARY_KEYS}, system=_system_summary(r["system"]))
             for r in ratings
         ],
     }
 
 
-def _momentum_summary(m: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """一覧では合計と欠けた要素だけを返す (内訳は get_stock_rating)。"""
-    return {"total": m["total"], "missing": m["missing"]} if m else None
+def _system_summary(system: Dict[str, Any]) -> Dict[str, Any]:
+    """一覧ではシステムの2軸の点と欠けた値だけを返す (内訳は get_stock_rating)。"""
+    v, m = system["valuation"], system["momentum"]
+    return {"valuation": v["score"], "momentum": m["total"], "missing": v["missing"] + m["missing"]}
 
 
 def get_stock_rating_data(code_s: str, history: int = 3) -> Dict[str, Any]:
     """1銘柄の評価の全項目と直近の変更履歴を返す。"""
     code_s = code_s.strip().upper()
     rating = stock_ratings.get_rating(code_s)
-    if rating:
-        rating["system_momentum"] = stock_ratings.compute_system_momentum([code_s]).get(code_s)
     return {
         "code_s": code_s,
         "found": rating is not None,
@@ -772,40 +770,53 @@ def fetch_ir_page_document_data(
     return _run_ir_collection(action)
 
 
-# シート2枚目「採点ルール Ver2.0」を移したもの。採点ルールを変えたら
-# stock_ratings.RUBRIC_VERSION と合わせて更新する。
+# 採点ルールの正本。シート2枚目「採点ルール Ver2.0」を移し、#544 で Ver3.0 にした。
+# 採点ルールを変えたら stock_ratings.RUBRIC_VERSION と合わせて更新する。
 UPDATE_STOCK_RATING_DESCRIPTION = """銘柄評価台帳の1銘柄を部分更新する。未登録の銘柄なら新規作成する。
 
 個別銘柄の分析を終えたら、変わった項目だけを渡して差分更新してください。
 渡さなかった項目は変更されません。文字列の項目を空にしたいときは "" を渡します。
 reason (更新理由、例「2Q決算反映」) は必須で、変更前後の値と一緒に履歴に残ります。
-updated_at は自動で入り、総合点 (total) は4軸の合計として自動で計算されます。
-新規作成時は name・4軸すべて・confidence・status が必須です。
+updated_at は自動で入ります。総合点 (total) はシステムが計算します。
+新規作成時は name・fund・mispricing・confidence・status が必須です (Active / Watch は fair_price も)。
 検証に失敗すると ok: false と errors (どの項目がなぜ不正か) を返し、何も書きません。
 errors を見て値を直し、再度呼んでください。
 
 項目:
-- fund (ファンダ 0〜40)、mispricing (未織込 0〜20)、momentum (モメンタム 0〜20)、valuation (0〜20): 整数
+- fund (ファンダ 0〜40)、mispricing (未織込 0〜20): 整数
+- fair_price (適正株価): 円の正の整数。Valuation の点はシステムがこれと基準日の終値から出す
+- momentum・valuation は渡さない (Ver3 ではシステムが出す。渡すとエラー)
 - confidence: A / B / C
 - status: Active / Watch / Archive (定義は下の「Status」)
 - role (役割)、thesis (投資仮説)、mispricing_note (未織込と見ている点)、
   risks (主要リスク・反証条件)、checkpoints (次の格上げ/確認条件)、note (更新メモ)
 
-採点ルール Ver2.0:
+採点ルール Ver3.0:
+- 総合点 100 = ファンダ 40 + 未織込 20 (あなたが付ける) + Valuation 20 + モメンタム 20 (システムが毎日出す)。
+  あなたは株価で変わらないものを判断し、株価で変わるものはシステムが出す
 - ファンダ 40 = 業績加速15 / 将来利益可視性10 / 構造成長10 / 質・リスク5。
-  現在業績だけでなく受注残・中計・構造変化を含む。
-  レンジ: 38-40 最上位 / 34-37 強い / 30-33 良好 / 25-29 不確実性高 /
-  20-24 テーマ・回復依存 / 15-19 オプション中心 / 15未満 原則Archive級
-- 未織込 20 = 市場認識ギャップ10 / 次の数字5 / 再評価軸5。
-  良い会社かではなく、その良さを市場がまだ十分評価していないか。良い材料の有無ではなく市場認識との差だけを評価する。
-  レンジ: 18-20 ほぼ未認知 / 15-17 かなり未反映 / 12-14 一部認識 /
-  9-11 主ストーリー認知済 / 6-8 大部分織込 / 0-5 期待先行
-- モメンタム 20 = 決算後反応8 / 相対強度7 / 出来高・値持ち5。急騰自体は減点しない
-- Valuation 20 = 成長率対比10 / 同業・自社レンジ5 / 安全域5。成長率・事業特性に対して現在価格に余白があるか
+  現在業績だけでなく受注残・中計・構造変化を含む。株価や市場の見方は見ない。
+  レンジ: 36-40 最上位 (台帳の中で数銘柄) / 31-35 強い / 26-30 良好 (台帳の中央は28前後) /
+  21-25 不確実性高 / 16-20 テーマ・回復依存 / 15未満 オプション中心
+- 未織込 20 = 上振れ余地10 / 次の数字5 / 再評価のきっかけ5。
+  今わかっている数字 (会社予想・四季報予想) と、これから出る数字の差を評価する。
+  株価の水準・PER・騰落・決算後の株価反応は見ない (株価は Valuation とモメンタムの領分)。
+  レンジ: 18-20 予想を大きく上回る数字が次の1〜2回の決算で出る見込みが高い /
+  15-17 上振れ余地は大きいが時期が不確か / 12-14 一部に上振れ余地 /
+  9-11 会社予想・四季報予想並み / 6-8 下振れ余地がある / 0-5 予想が過大
+- 適正株価 (fair_price): 中期 (3か月〜1年) で妥当と考える株価。手法は問わない
+  (来期 EPS × 妥当 PER、PSR、EV/EBITDA など。成長率・同業や自社の過去レンジを考える)。
+  今の株価から逆算せず、自分の手法で出す。
+  note に「手法・使った成長率・その出どころ」を必ず書く。
+  出したあとで get_stock_rating の理論株価 (reference) と比べ、適正株価が理論株価の1.5倍を超えるなら、
+  その差 (成長へのプレミアム) の根拠も note に書く
+- Valuation 20 (システム): 上昇余地 = 適正株価 ÷ 基準日の終値 − 1 を −20%→0 / +20%→10 / +60%→20 で換算
+- モメンタム 20 (システム): RS 10 + 業態テーマ順位 10。急騰自体は減点しない
 - Confidence A: 一次資料十分・ドライバー明確・将来数字を比較的推定可能 /
   B: 大筋は明確だが利益率・市況・新事業など重要変数が大きい /
   C: オプション価値中心・将来売上利益レンジが広い (ポジションサイズ注意)
-- 原則1: 強い上昇はモメンタムで加点し、織り込み進展は未織込/Valuationで反映する (急騰を二重に減点しない)
+- 原則1: 強い上昇はモメンタムに、割高になった分は Valuation に、どちらもシステムが出す。
+  あなたは株価を見ずに判断する (急騰を二重に減点しない)
 - 原則2: 新規INのスコアと保有継続の判断を分離する (低スコア化だけで強い保有株を機械的に売らない)
 - 原則3: 保有状況やユーザーの仮説を総合点へ直接加点しない (確証バイアス対策)
 - 総合点は企業価値ランキングではなく、現在価格からの中期投資魅力度
@@ -814,7 +825,7 @@ Status (台帳に載せるのは、一次資料で調べた深掘り候補と保
 - Active: 仮説が生きていて、持っている / 入る準備ができている (ファンダの買い条件を満たし、残るのはモメンタムとタイミングの判断だけ)
 - Watch: 仮説はあるが確認待ち。何を待っているか (次の決算の数字・受注・中計など) を checkpoints に書く
 - Archive: 仮説崩れ・時間切れ・見送り。Archive にする更新では、外す理由を同じ呼び出しで note に書く
-- Active / Watch では thesis・risks・checkpoints を、Archive では note を空にできない (新規作成でも同じ)
+- Active / Watch では thesis・risks・checkpoints・fair_price を、Archive では note を空にできない (新規作成でも同じ)
 """
 
 
@@ -916,11 +927,12 @@ def list_stock_ratings(status: Optional[str] = None) -> Dict[str, Any]:
     """銘柄評価台帳の一覧を総合点の高い順に返す。
 
     銘柄評価台帳は、個別銘柄分析の結論として付けた現在の投資判断のスナップショットです
-    (ファンダ40 / 未織込20 / モメンタム20 / Valuation20 = 総合100、Confidence、Status)。
+    (ファンダ40 / 未織込20 は AI が付け、Valuation20 / モメンタム20 はシステムが基準日 as_of の
+    終値から毎日出す。総合100、Confidence、Status)。
     status (Active / Watch / Archive) を指定するとその Status だけを返します。
     status を指定しないときは Archive を含みません (Archive は比較の対象外)。
     仮説・リスクなどの長文は含みません。全項目は get_stock_rating で取得します。
-    system_momentum はシステムが算出したモメンタム (0〜20) の参考値で、total には入っていません。
+    system はシステムが出した Valuation とモメンタムの点と、欠けた値 (missing) です。total に入っています。
     """
     return list_stock_ratings_data(status)
 
@@ -933,10 +945,13 @@ def get_stock_rating(code_s: str, history: int = 3) -> Dict[str, Any]:
     {項目: [前の値, 新しい値]} で、前回から評価がどう変わったかが分かります。
     評価を更新する前に呼び、現在の値と前回の変更理由を確認してください。
 
-    rating.system_momentum は、システムが株価と業態テーマの順位から算出したモメンタム
-    (0〜20 = RS 0〜10 + 業態テーマ 0〜10) の参考値です。total には入っていません
-    (採点ルールの momentum は引き続き付けてください)。missing にある要素はデータが無く、
-    5点で埋めています。各履歴の system_momentum は、その更新をした時点の値です。
+    rating.system はシステムが出す2軸で、total に入っています (as_of が基準日)。
+    - momentum (0〜20) = RS 0〜10 + 業態テーマ順位 0〜10。missing の要素は5点で埋めています
+      (rs_stale は株価が基準日のものでない)
+    - valuation (0〜20) = 適正株価 fair_price と基準日の終値から換算 (上昇余地 −20%→0 / +20%→10 /
+      +60%→20)。fair_price か基準日の終値が無ければ10点 (missing)
+    - reference = 理論株価・先行理論株価・株探の PER (比較用の参考値。点数には使わない)
+    各履歴の system は、その更新をした時点の値です (採点時の基準日と終値が分かります)。
     """
     return get_stock_rating_data(code_s, history)
 
@@ -947,6 +962,7 @@ def update_stock_rating(
     reason: str,
     fund: Optional[int] = None,
     mispricing: Optional[int] = None,
+    fair_price: Optional[int] = None,
     momentum: Optional[int] = None,
     valuation: Optional[int] = None,
     confidence: Optional[str] = None,
@@ -960,8 +976,10 @@ def update_stock_rating(
     note: Optional[str] = None,
 ) -> Dict[str, Any]:
     return update_stock_rating_data(code_s, reason, {
-        "fund": fund, "mispricing": mispricing, "momentum": momentum,
-        "valuation": valuation, "confidence": confidence, "status": status,
+        "fund": fund, "mispricing": mispricing, "fair_price": fair_price,
+        # momentum / valuation は Ver3 ではシステムが出す。渡されたら理由つきのエラーを返すために残す
+        "momentum": momentum, "valuation": valuation,
+        "confidence": confidence, "status": status,
         "name": name, "role": role, "thesis": thesis,
         "mispricing_note": mispricing_note, "risks": risks,
         "checkpoints": checkpoints, "note": note,
