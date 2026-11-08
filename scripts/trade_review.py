@@ -337,9 +337,12 @@ def _holdings_unrealized(dates: Dict[str, str], episodes: List[Dict[str, Any]],
     def lots(ep: Dict[str, Any], day: str) -> Dict[str, Any]:
         code_s = ep["code_s"]
         # yfinance の過去の終値は後の分割で遡って調整される。約定の単価が分割前のままだと合わない。
-        # 登録済みの分割は現物の約定を換算済みなので合う (信用は換算しない、_apply_split_adjustments)
+        # 登録済みの分割は現物の約定を換算済みなので合う。ただし信用と、分割より前の現引は
+        # 換算しない (_apply_split_adjustments)
         later = [s["date"] for s in splits.get(code_s, []) if s["date"] > day
-                 and not (s["adjusted"] and ep["kind"] == "現物")]
+                 and not (s["adjusted"] and ep["kind"] == "現物"
+                          and not any(f.get("trade_kind") == "現引" and f["trade_date"] < s["date"]
+                                      for f in ep["fills"]))]
         lot = trade_episodes.open_lots_at(ep, day, _close_at(closes.get(code_s) or {}, day))
         if later and lot.get("qty", 1):
             return {"reason": f"後の分割 ({later[0]})"}
@@ -392,13 +395,14 @@ def _month_pl(ym: str, episodes: List[Dict[str, Any]],
     含み損益の増減と足すとずれる。
     含み損益から外した取引 (excluded) の実現損益も、確定しているので数える。ただし月初に
     持っていた取引の分は前月以前の値動きを含むので、excluded_realized に別に出す。
+    当月の途中で作ったときは、含み損益の月末側 (end_date) より後の決済を数えない (同じ値動きを二重に数えないため)。
     """
     from webapp import trade_episodes  # 遅延 import (_unrealized_pct と同じ理由)
 
     def realized(ep: Dict[str, Any]) -> float:
         return sum(r["pl"] for r in trade_episodes.build_round_trips(ep)
                    if r["closed"] and (r.get("close_date") or "").startswith(ym)
-                   and r["pl"] is not None)
+                   and r["close_date"] <= holdings["end_date"] and r["pl"] is not None)
 
     by_key = {e["episode_key"]: e for e in episodes}
     total = sum(realized(ep) for ep in episodes if not ep.get("split_suspect"))

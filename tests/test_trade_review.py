@@ -194,6 +194,8 @@ def test_月の損益は当月の売りの実現損益と復元した含み損�
         buy("6004", [("2026-07-01", "buy", 200, 1000), ("2026-09-10", "sell", 100, 900)]),
         buy("6005", [("2026-07-01", "buy", 100, 1000)]),                            # 後の分割
         buy("6007", [("2026-07-01", "buy", 100, 1000)]),     # 後の分割だが登録済みで約定を換算済み
+        # 登録済みの分割でも、分割より前の現引は換算されないので計算しない
+        buy("6008", [("2026-07-01", "buy", 100, 1000, "現引")]),
         buy("6006", [("2026-07-01", "buy", 100, 1000), ("2026-08-10", "sell", 100, 1000)]),
     ]
     closes = {"6001": {"2026-08-31": 1100.0, "2026-09-30": 800.0},
@@ -201,12 +203,14 @@ def test_月の損益は当月の売りの実現損益と復元した含み損�
               "6003": {"2026-09-30": 1050.0},
               "6004": {"2026-08-31": 1000.0},
               "6005": {"2026-08-31": 1000.0, "2026-09-30": 1000.0},
-              "6007": {"2026-08-31": 1000.0, "2026-09-30": 1000.0}}
+              "6007": {"2026-08-31": 1000.0, "2026-09-30": 1000.0},
+              "6008": {"2026-08-31": 1000.0, "2026-09-30": 1000.0}}
     s = trade_review.build_review_dataset(
         YM, episodes=episodes, exposure_history=[], records=[], stocks={},
         generated_at="2026-10-01T00:00:00", fill_strategies={}, closes=closes,
         splits={"6005": [{"date": "2026-10-15", "adjusted": False}],
-                "6007": [{"date": "2026-10-15", "adjusted": True}]},
+                "6007": [{"date": "2026-10-15", "adjusted": True}],
+                "6008": [{"date": "2026-10-15", "adjusted": True}]},
         trade_ideas=[{"name": "中期モメンタム", "exit_rule": {"stop_loss_pct": 10}}])["summary"]
     h = s["holdings_unrealized"]
     assert (h["start_date"], h["end_date"]) == ("2026-08-31", "2026-09-30")
@@ -215,16 +219,20 @@ def test_月の損益は当月の売りの実現損益と復元した含み損�
         ("6007", "carried", 0.0, 0.0), ("6003", "opened", 0.0, 5000.0)]
     assert (h["start_total"], h["end_total"], h["change"]) == (20000.0, -15000.0, -35000.0)
     assert [(x["code_s"], x["reason"]) for x in h["excluded"]] == [
-        ("6004", "終値なし"), ("6005", "後の分割 (2026-10-15)")]
+        ("6004", "終値なし"), ("6005", "後の分割 (2026-10-15)"), ("6008", "後の分割 (2026-10-15)")]
     assert h["month_end_over_stop_loss"] == ["6001|現物|1"]   # -20% は幅 10% を超える
     assert s["month_pl"] == {
         "realized": 10000, "unrealized_change": -35000.0, "total": -25000.0,
         "excluded_realized": {"total": -10000, "episodes": [
             {"episode_key": "6004|現物|1", "code_s": "6004", "stock_name": "銘柄6004",
              "realized": -10000}]}}
-    # 月の途中で作ったら、月末の代わりに前の平日で比べる
+    # 月の途中で作ったら、月末の代わりに前の平日で比べる。それより後の決済 (9/10) は数えない
     assert trade_review.base_dates(YM, "2026-09-14T09:00:00") == {
         "start": "2026-08-31", "end": "2026-09-11"}
+    mid = trade_review.build_review_dataset(
+        YM, episodes=episodes, exposure_history=[], records=[], stocks={},
+        generated_at="2026-09-10T09:00:00", fill_strategies={}, closes=closes, trade_ideas=[])
+    assert mid["summary"]["month_pl"]["realized"] == 0
 
 
 def test_弱点仮説は年初来で損切りの幅と再INを数える():
