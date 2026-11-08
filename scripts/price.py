@@ -2078,7 +2078,7 @@ def parse_price_text_from_list(price_current, price_list):
     # 日足は period="2mo" (~40営業日) で MA50 には不足するため、現状データで
     # 計算可能な MA25 を併用し、ベース形成期の中期押し目も拾う (issue #110)。
     pockets = []
-    for ind in range(10):
+    for ind in range(min(10, len(price_list) - 1)):
         # 過去10日間の出来高
         volumes = []
         prices = []
@@ -2130,7 +2130,7 @@ def parse_price_text_from_list(price_current, price_list):
     # ---- ブレイクアウト
     breaks = []
     breaks_ext = []  # 高値追い圏の extended 候補 (詳細チャートのみ)
-    for ind in range(10):
+    for ind in range(min(10, len(price_list) - 1)):
         # 過去 BREAKOUT_AVG_VOLUME_DAYS 日平均出来高 (issue #111)
         avg_vol = 0
         avg_count = 0

@@ -1,6 +1,6 @@
 """price.py の計算関数テスト"""
 
-from datetime import date
+from datetime import date, timedelta
 import json
 import os
 import tempfile
@@ -67,6 +67,22 @@ def test_kabutan_daily_zero_change_and_no_trade():
     result = price.parse_price_d_html_kabutan(''.join(rows))
     assert result["price_log"] == [(date(2026, 11, 6), 1622), (date(2026, 11, 5), 1738)]
     assert len(result["_daily_price_list_raw"]) == 2
+
+
+@pytest.mark.parametrize("count", range(2, 11))
+def test_local_daily_price_short_history(monkeypatch, count):
+    """約定のある日が少なくても実際の指標計算で終値と履歴を返す。"""
+    raw = [((date(2026, 11, 6) - timedelta(days=i)).strftime("%y/%m/%d"),
+            "1,600", "1,650", "1,550", "1,622", "0", "0.00", "1,000")
+           for i in range(count)]
+    monkeypatch.setattr(price, "get_price_data_yahoo", lambda *a: ({}, []))
+    monkeypatch.setattr(price, "get_daily_price_kabutan", lambda *a: {"_daily_price_list_raw": raw})
+    monkeypatch.setattr(price, "get_weekly_price_data", lambda *a, **kw: {})
+    monkeypatch.setattr(price, "get_monthly_price_data", lambda *a, **kw: {})
+    result = price.get_price_data("418A", {"market": "名証Ｎ"})
+    assert result["price"] == 1622
+    assert result["price_log"][0] == (date(2026, 11, 6), 1622)
+    assert len(result["price_log"]) == count
 
 
 # ==================================================
