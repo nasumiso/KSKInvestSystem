@@ -366,12 +366,19 @@ def parse_price_d_html_kabutan(html):
     """日次の株探価格htmlデータを解析する"""
     # ---- 日次データの作成
     daily_price_list = []
-    for m in re.finditer(
-        r'<th scope="row"><time datetime=".*?">(.*?)</time></th>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td>(.*?)</td>[\r\n]+<td><span class=".*?">(.*?)</span></td>[\r\n]+<td><span class=".*?">(.*?)</span></td>[\r\n]+<td>(.*?)</td>',
-        html,
-        re.DOTALL,
-    ):
-        daily_price_list.append(m.groups())
+    for row in re.findall(r"<tr\b[^>]*>(.*?)</tr>", html, re.DOTALL):
+        day = re.search(r'<time datetime="[^"]*">([^<]*)</time>', row)
+        cells = [re.sub(r"<[^>]*>", "", cell).strip()
+                 for cell in re.findall(r"<td\b[^>]*>(.*?)</td>", row, re.DOTALL)]
+        if not day or len(cells) != 7:
+            continue
+        # 前日比0は span がなく、約定のない日は OHLC が「－」になる。
+        try:
+            for i in (0, 1, 2, 3, 6):
+                float(cells[i].replace(",", ""))
+        except ValueError:
+            continue
+        daily_price_list.append((day[1], *cells))
 
     dic = _calc_daily_indicators(daily_price_list)
     # Stalling Day を後付け検出するため raw データを内部的に保持
@@ -2071,7 +2078,7 @@ def parse_price_text_from_list(price_current, price_list):
     # 日足は period="2mo" (~40営業日) で MA50 には不足するため、現状データで
     # 計算可能な MA25 を併用し、ベース形成期の中期押し目も拾う (issue #110)。
     pockets = []
-    for ind in range(10):
+    for ind in range(min(10, len(price_list) - 1)):
         # 過去10日間の出来高
         volumes = []
         prices = []
@@ -2123,7 +2130,7 @@ def parse_price_text_from_list(price_current, price_list):
     # ---- ブレイクアウト
     breaks = []
     breaks_ext = []  # 高値追い圏の extended 候補 (詳細チャートのみ)
-    for ind in range(10):
+    for ind in range(min(10, len(price_list) - 1)):
         # 過去 BREAKOUT_AVG_VOLUME_DAYS 日平均出来高 (issue #111)
         avg_vol = 0
         avg_count = 0
@@ -2427,6 +2434,22 @@ def get_price_data(code_s, stock={}, upd=UPD_INTERVAL):
     """
     # 日次データ
     parsed_data, cur_prices = get_price_data_yahoo(code_s, stock, upd)
+    if not parsed_data and make_stock_db.get_market_code(stock) != "T":
+        # 地方市場は Yahoo の日本向け画面にあっても API では取得できないことがある。
+        log_print("yfinance日足取得失敗、Kabutanフォールバック: %s" % code_s)
+        daily = get_daily_price_kabutan(code_s, upd)
+        raw = daily.get("_daily_price_list_raw") or []
+        if raw:
+            # 株探の8列を共通の日足指標計算用7列 (終値を調整後終値として使用) に揃える。
+            price_list = [
+                [row[0], *[int(float(row[i].replace(",", ""))) for i in (1, 2, 3, 4, 7, 4)]]
+                for row in raw
+            ]
+            parsed_data, cur_prices = parse_price_text_from_list(price_list[0][6], price_list)
+            parsed_data["ma50_violation"] = calc_daily_ma_violation(price_list, 50)
+            parsed_data["_daily_price_list_raw"] = price_list
+            parsed_data["access_date_price"] = datetime.now()
+            set_db_code(parsed_data, code_s)
     # 週次データを取得してRSを求める
     parsed_data_w = get_weekly_price_data(code_s, stock=stock, upd=upd, prices=cur_prices)
     daily_price_list = parsed_data.pop("_daily_price_list_raw", None)

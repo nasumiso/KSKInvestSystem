@@ -1927,12 +1927,12 @@ def get_market_code(stock_data):
         return "T"  # デフォルトは東証
 
     market_code = "T"
-    market_name = stock_data.get("market", "T")  # デフォルトはT(東証)
-    if market_name == "札証":
+    market_name = stock_data.get("market") or "T"  # デフォルトはT(東証)
+    if market_name.startswith("札証"):
         market_code = "S"
-    elif market_name == "名証":
+    elif market_name.startswith("名証"):
         market_code = "N"
-    elif market_name == "福証":
+    elif market_name.startswith("福証"):
         market_code = "F"
     return market_code
 
@@ -2418,7 +2418,8 @@ def refresh_price(code_list):
 
     yfinance キャッシュ (.json) と stocks_shelve の price_log を更新する。
     master/shihyo/gyoseki/rironkabuka は再取得しないため Kabutan スクレイピング
-    負荷が無く、price_log の取得期間設定 (period) 変更後の反映確認などに使う。
+    負荷は通常無い (地方市場の日足と週足の取得失敗時は株探へ切り替える)。
+    price_log の取得期間設定 (period) 変更後の反映確認などに使う。
     """
     if not code_list:
         log_warning("[refresh_price] 銘柄コードが指定されていません")
