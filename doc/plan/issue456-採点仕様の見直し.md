@@ -68,19 +68,19 @@
 ```
 銘柄評価台帳を採点ルール Ver3 に移行します。update_stock_rating の説明にある Ver3 の採点ルールに従ってください。
 
+始める前に、update_stock_rating に fair_price の引数があり、説明の採点ルールが Ver3.0 であることを確かめてください。無ければ古いツールの定義を見ているので、何も更新せずにそう伝えてください。
+
 対象: list_stock_ratings で返る銘柄 (Archive を除く) のうち、fair_price (適正株価) がまだ無いもの。今回は次の10銘柄: <コードを並べる>
 (履歴にある「Ver3 移行: モメンタムと Valuation をシステム算出に切り替え」はシステム側の移行の記録で、付け直しが済んだ印ではありません)
 
 各銘柄について:
 1. get_stock_rating で現在の記述 (thesis・mispricing_note・risks・checkpoints・note) と変更履歴を読む。必要なら get_shikiho と list_earnings_documents で数字を確かめる (資料の読み直しまではしない)
 2. ファンダ (fund) と未織込 (mispricing) を Ver3 のレンジ表で付け直す。未織込では株価・PER・騰落を見ない
-3. 適正株価 (fair_price、円) を自分の手法で出す。出してから、get_stock_rating の理論株価と比べる
+3. 適正株価 (fair_price、円) を自分の手法で出す。今の株価から逆算しない。出してから、get_stock_rating の理論株価 (reference) と比べる
 4. note に「適正株価の手法 (例: 来期 EPS × 妥当 PER)・使った成長率と出どころ」を書く。適正株価が理論株価の 1.5 倍を超えるなら、その根拠も書く
 5. update_stock_rating で fund・mispricing・fair_price・note を更新する。reason は「Ver3 付け直し」。momentum と valuation は渡さない (システムが算出する)
 
-始める前に、update_stock_rating に fair_price の引数があり、説明の採点ルールが Ver3.0 であることを確かめてください。無ければ古いツールの定義を見ているので、何も更新せずにそう伝えてください。
-
-最後に、10銘柄の 旧 fund→新 fund、旧 mispricing→新 mispricing、fair_price、システムが出した Valuation とモメンタム、総合点 を表にしてください。
+最後に、10銘柄の 旧 fund→新 fund、旧 mispricing→新 mispricing、fair_price、理論株価との比、システムが出した Valuation とモメンタム、総合点 を表にしてください。
 ```
 
 #### 一括付け直しの順番 (2026-11-08)
@@ -98,6 +98,8 @@
 ```
 銘柄評価台帳の決算後の更新を、採点ルール Ver3 で行います。update_stock_rating の説明にある Ver3 の採点ルールに従ってください。
 
+始める前に、update_stock_rating に fair_price の引数があり、説明の採点ルールが Ver3.0 であることを確かめてください。無ければ古いツールの定義を見ているので、何も更新せずにそう伝えてください。
+
 対象は次の銘柄です (コードと銘柄名、決算日): <並べる>
 
 各銘柄について、1銘柄ずつ順に:
@@ -111,8 +113,6 @@
 7. note に、今回の決算の要点と「適正株価の手法・使った成長率とその出どころ」を書く。適正株価が理論株価の1.5倍を超えるなら、その根拠も書く
 8. thesis・mispricing_note・risks・checkpoints を、今回の決算を踏まえて直す。checkpoints には、次の決算で確かめることを書く
 9. update_stock_rating で更新する。reason は「2Q決算反映」のように決算期を入れる (Ver3 で初めて付ける銘柄は「2Q決算反映・Ver3 付け直し」)。momentum と valuation は渡さない (システムが出す)。Status を変えるときは、変える理由を同じ更新で note に書く (Archive にするときは必須)
-
-始める前に、update_stock_rating に fair_price の引数があり、説明の採点ルールが Ver3.0 であることを確かめてください。無ければ古いツールの定義を見ているので、何も更新せずにそう伝えてください。
 
 最後に、対象の銘柄について次の表を作ってください:
 コード / 銘柄 / 決算の一言要約 / 仮説 (補強・反証・未確認のどれが主か) / 旧 fund→新 fund / 旧 mispricing→新 mispricing / fair_price / 理論株価との比 / システムが出した Valuation とモメンタム / 総合点 / Status の変更 (あれば)
