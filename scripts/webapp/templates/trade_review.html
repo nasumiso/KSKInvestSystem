@@ -28,6 +28,12 @@
   <header>{{ selected_month[:4] }}年{{ selected_month[5:]|int }}月</header>
   <div class="review-body">{{ report | theme_news_md_to_html | safe }}</div>
 </article>
+{% if addendum %}
+<article class="review-report" id="review-addendum">
+  <header>追補 (含み損益の増減)</header>
+  <div class="review-body">{{ addendum | theme_news_md_to_html | safe }}</div>
+</article>
+{% endif %}
 {% else %}
 <p>保存済みの月次レポートはありません。</p>
 {% endif %}

@@ -133,27 +133,106 @@ def test_推移は前月末から当月末までで土日を除く():
         "end": {"date": "2026-09-03", "value": -8.0, "as_of": {"SBI": "2026-09-01"}}}
     assert _build([], exposure_history=history[:1])["summary"]["trend"] == {
         "total_value": None, "unrealized": None}
-    assert _build([], exposure_history=history[:1])["summary"]["month_pl"] is None
 
 
-def test_月の損益は当月の売りの実現損益と含み損益の増減を足す():
-    def ep(code_s, fills, **kw):
-        e = _ep(code_s, 1, fills, **kw)
-        for f in e["fills"][1:]:  # 返済に建玉 (先頭の新規) と約定ごとの損益を付ける
-            f["tate_date"], f["tate_price"] = fills[0][0], fills[0][3]
-            f["fill_pl"] = (f["price"] - fills[0][3]) * f["qty"]
-        return e
+def _shinyo(code_s, fills, **kw):
+    """信用のエピソード。返済に建玉 (先頭の新規) と約定ごとの損益を付ける。"""
+    e = _ep(code_s, 1, fills, **kw)
+    for f in e["fills"][1:]:
+        f["tate_date"], f["tate_price"] = fills[0][0], fills[0][3]
+        f["fill_pl"] = (f["price"] - fills[0][3]) * f["qty"]
+    return e
 
-    # 5001 は8月に一部返済 (+10,000、前月なので数えない)、9月に残りを返済 (+20,000) して
-    # 完全決済。5002 は9月に一部返済 (+5,000) して保有中
-    ep1 = ep("5001", [("2026-07-01", "buy", 200, 1000), ("2026-08-10", "sell", 100, 1100),
-                      ("2026-09-10", "sell", 100, 1200)], profit=30000)
-    ep2 = ep("5002", [("2026-08-01", "buy", 200, 1000), ("2026-09-10", "sell", 100, 1050)],
-             closed=False, close_date=None, pl=None)
-    history = [{"date": "2026-08-31", "unrealized_total": 40000.0},
-               {"date": "2026-09-30", "unrealized_total": 10000.0}]
-    assert _build([ep1, ep2], exposure_history=history)["summary"]["month_pl"] == {
-        "realized": 25000, "unrealized_change": -30000.0, "total": -5000.0}
+
+def _genbiki():
+    """8/3 に信用で建てて 9/10 に現引した玉の、現物側のエピソード。"""
+    ep = _ep("7001", 3, [("2026-09-10", "buy", 100, 1005, "現引")], kind="現物")
+    ep["fills"][0]["tate_date"] = "2026-08-03"
+    return ep
+
+
+@pytest.mark.parametrize("episodes, day, close, expected", [
+    # 現引した玉は、現引の前は信用側、当日以降は現物側だけに数える (二重計上しない)
+    ([_shinyo("7001", [("2026-08-03", "buy", 100, 1000), ("2026-09-10", "buy", 100, 1000, "現引")]),
+      _genbiki()],
+     "2026-09-09", 1100.0, [(100, 10000.0), (0, 0.0)]),
+    ([_shinyo("7001", [("2026-08-03", "buy", 100, 1000), ("2026-09-10", "buy", 100, 1000, "現引")]),
+      _genbiki()],
+     "2026-09-10", 1100.0, [(0, 0.0), (100, 9500.0)]),
+    # 売建は符号が逆
+    ([_ep("7002", 1, [("2026-08-03", "sell", 100, 1000, "信用新規")], is_short=True,
+          closed=False, close_date=None, pl=None)], "2026-09-10", 900.0, [(100, 10000.0)]),
+    # 建玉不明の売り (期首持越し) は、売る前の日は計算できない。売った後は建っていない
+    ([_ep("7003", 1, [("2026-09-10", "sell", 100, 1000, "売却")], kind="現物")],
+     "2026-09-09", 900.0, ["建値不明"]),
+    ([_ep("7003", 1, [("2026-09-10", "sell", 100, 1000, "売却")], kind="現物")],
+     "2026-09-10", None, [(0, 0.0)]),
+    # 建っているのに終値が無ければ計算できない
+    ([_ep("7004", 1, [("2026-08-03", "buy", 100, 1000, "現物買")], kind="現物")],
+     "2026-09-10", None, ["終値なし"]),
+])
+def test_ある日の保有と含み損益を往復行から復元する(episodes, day, close, expected):
+    """issue #566: 月初・月末の含み損益を、約定 (往復行) と終値から復元する。"""
+    from webapp import trade_episodes
+
+    lots = [trade_episodes.open_lots_at(ep, day, close) for ep in episodes]
+    assert [lot["reason"] if "reason" in lot else (lot["qty"], lot["unrealized"])
+            for lot in lots] == expected
+
+
+def test_月の損益は当月の売りの実現損益と復元した含み損益の増減を足す():
+    """issue #566: 月初 (前月の最終平日) → 月末の含み損益を終値から復元し、取引ごとに出す。"""
+    def buy(code_s, fills, **kw):
+        return _ep(code_s, 1, fills, kind="現物", **kw)
+
+    episodes = [
+        buy("6001", [("2026-07-01", "buy", 100, 1000)]),                            # 持ち越し
+        _shinyo("6002", [("2026-07-01", "buy", 100, 1000), ("2026-09-10", "sell", 100, 1200)],
+                profit=20000),                                                       # 月中に決済
+        buy("6003", [("2026-09-04", "buy", 100, 1000)]),                            # 月中に建てた
+        # 月中に一部売り (-10,000)、月末の終値が無いので含み損益から外すが、実現損益は数える
+        buy("6004", [("2026-07-01", "buy", 200, 1000), ("2026-09-10", "sell", 100, 900)]),
+        buy("6005", [("2026-07-01", "buy", 100, 1000)]),                            # 後の分割
+        buy("6007", [("2026-07-01", "buy", 100, 1000)]),     # 後の分割だが登録済みで約定を換算済み
+        # 登録済みの分割でも、分割より前の現引は換算されないので計算しない
+        buy("6008", [("2026-07-01", "buy", 100, 1000, "現引")]),
+        buy("6006", [("2026-07-01", "buy", 100, 1000), ("2026-08-10", "sell", 100, 1000)]),
+    ]
+    closes = {"6001": {"2026-08-31": 1100.0, "2026-09-30": 800.0},
+              "6002": {"2026-08-31": 1100.0, "2026-09-30": 1300.0},
+              "6003": {"2026-09-30": 1050.0},
+              "6004": {"2026-08-31": 1000.0},
+              "6005": {"2026-08-31": 1000.0, "2026-09-30": 1000.0},
+              "6007": {"2026-08-31": 1000.0, "2026-09-30": 1000.0},
+              "6008": {"2026-08-31": 1000.0, "2026-09-30": 1000.0}}
+    s = trade_review.build_review_dataset(
+        YM, episodes=episodes, exposure_history=[], records=[], stocks={},
+        generated_at="2026-10-01T00:00:00", fill_strategies={}, closes=closes,
+        splits={"6005": [{"date": "2026-10-15", "adjusted": False}],
+                "6007": [{"date": "2026-10-15", "adjusted": True}],
+                "6008": [{"date": "2026-10-15", "adjusted": True}]},
+        trade_ideas=[{"name": "中期モメンタム", "exit_rule": {"stop_loss_pct": 10}}])["summary"]
+    h = s["holdings_unrealized"]
+    assert (h["start_date"], h["end_date"]) == ("2026-08-31", "2026-09-30")
+    assert [(r["code_s"], r["status"], r["start"], r["end"]) for r in h["episodes"]] == [
+        ("6001", "carried", 10000.0, -20000.0), ("6002", "closed", 10000.0, 0.0),
+        ("6007", "carried", 0.0, 0.0), ("6003", "opened", 0.0, 5000.0)]
+    assert (h["start_total"], h["end_total"], h["change"]) == (20000.0, -15000.0, -35000.0)
+    assert [(x["code_s"], x["reason"]) for x in h["excluded"]] == [
+        ("6004", "終値なし"), ("6005", "後の分割 (2026-10-15)"), ("6008", "後の分割 (2026-10-15)")]
+    assert h["month_end_over_stop_loss"] == ["6001|現物|1"]   # -20% は幅 10% を超える
+    assert s["month_pl"] == {
+        "realized": 10000, "unrealized_change": -35000.0, "total": -25000.0,
+        "excluded_realized": {"total": -10000, "episodes": [
+            {"episode_key": "6004|現物|1", "code_s": "6004", "stock_name": "銘柄6004",
+             "realized": -10000}]}}
+    # 月の途中で作ったら、月末の代わりに前の平日で比べる。それより後の決済 (9/10) は数えない
+    assert trade_review.base_dates(YM, "2026-09-14T09:00:00") == {
+        "start": "2026-08-31", "end": "2026-09-11"}
+    mid = trade_review.build_review_dataset(
+        YM, episodes=episodes, exposure_history=[], records=[], stocks={},
+        generated_at="2026-09-10T09:00:00", fill_strategies={}, closes=closes, trade_ideas=[])
+    assert mid["summary"]["month_pl"]["realized"] == 0
 
 
 def test_弱点仮説は年初来で損切りの幅と再INを数える():
@@ -238,20 +317,26 @@ def test_発掘元は建てた日以前の最後のログを付ける():
         {"theme": "半導体", "date": "2026-08-31"}]  # 除外済みを復活させたとき
 
 
-@pytest.mark.parametrize("is_dev, existing, error", [
-    (False, None, None),
-    (False, "2026-09.md", FileExistsError),   # どちらかが既にあれば何も書かない
-    (True, None, RuntimeError),               # 開発機は正本データに書かない
+@pytest.mark.parametrize("is_dev, suffix, existing, error", [
+    (False, "", None, None),
+    (False, "", "2026-09.md", FileExistsError),   # どちらかが既にあれば何も書かない
+    (True, "", None, RuntimeError),               # 開発機は正本データに書かない
+    # 追補 (issue #566) は本レポートがあっても書けるが、追補自体は上書きしない
+    (False, ".addendum", "2026-09.md", None),
+    (False, ".addendum", "2026-09.addendum.json", FileExistsError),
+    (True, ".addendum", None, RuntimeError),
 ])
-def test_保存は上書きせず開発機では書かない(tmp_path, monkeypatch, is_dev, existing, error):
+def test_保存は上書きせず開発機では書かない(tmp_path, monkeypatch, is_dev, suffix, existing, error):
     monkeypatch.setattr(trade_review.ks_util, "is_dev_data_dir", lambda: is_dev)
     if existing:
         (tmp_path / existing).write_text("旧", encoding="utf-8")
     if error:
         with pytest.raises(error):
-            trade_review.save_review(YM, {"a": 1}, "# レポート", review_dir=str(tmp_path))
+            trade_review.save_review(YM, {"a": 1}, "# レポート", review_dir=str(tmp_path), suffix=suffix)
         assert sorted(p.name for p in tmp_path.iterdir()) == ([existing] if existing else [])
         return
-    trade_review.save_review(YM, {"a": 1}, "# レポート", review_dir=str(tmp_path))
-    assert (tmp_path / "2026-09.md").read_text(encoding="utf-8") == "# レポート"
-    assert (tmp_path / "2026-09.json").read_text(encoding="utf-8").strip().startswith("{")
+    trade_review.save_review(YM, {"a": 1}, "# レポート", review_dir=str(tmp_path), suffix=suffix)
+    assert (tmp_path / f"2026-09{suffix}.md").read_text(encoding="utf-8") == "# レポート"
+    assert (tmp_path / f"2026-09{suffix}.json").read_text(encoding="utf-8").strip().startswith("{")
+    if existing:
+        assert (tmp_path / existing).read_text(encoding="utf-8") == "旧"

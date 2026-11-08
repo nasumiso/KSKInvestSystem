@@ -1639,6 +1639,41 @@ def build_round_trips(ep: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
+def open_lots_at(ep: Dict[str, Any], day: str, close: Optional[float]) -> Dict[str, Any]:
+    """day の時点で建っている往復行の株数・取得額・含み損益を返す (issue #566)。
+
+    建っている = 建てた日 ≤ day かつ (決済日が無い または 決済日 > day)。
+    現物側の現引した玉は、現引日から数える (open_date は信用の建日なので、そのままだと
+    現引までの間、信用側の行と二重に数える)。含み損益は _set_unrealized と同じ定義
+    ((終値 − 建値) × 株数、売建は符号が逆)。
+
+    戻り値は {"qty", "cost", "unrealized"}。建っている行に建値が無いか、終値 close が
+    無ければ {"reason": ...} を返す (建っていなければ close は要らない)。
+    """
+    held = []
+    for r in build_round_trips(ep):
+        start = r.get("genbiki_date") or r["open_date"]
+        if r["close_date"] is not None and r["close_date"] <= day:
+            continue
+        if start is None:
+            # 建玉不明の売り (期首持越し)。決済日より前は建値の分からない玉を持っていた
+            return {"reason": "建値不明"}
+        if start <= day:
+            held.append(r)
+    if not held:
+        return {"qty": 0, "cost": 0.0, "unrealized": 0.0}
+    if any(not r["open_price"] for r in held):
+        return {"reason": "建値不明"}
+    if close is None:
+        return {"reason": "終値なし"}
+    sign = -1 if ep.get("is_short") else 1
+    return {
+        "qty": sum(r["qty"] for r in held),
+        "cost": sum(r["open_price"] * r["qty"] for r in held),
+        "unrealized": sum(sign * (close - r["open_price"]) * r["qty"] for r in held),
+    }
+
+
 # 手で付けたロットの戦略を「後付け」とみなす、建てた日からの平日数 (issue #492 5)
 LATE_LABEL_WEEKDAYS = 5
 

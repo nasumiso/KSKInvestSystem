@@ -7,8 +7,9 @@
 使い方 (scripts/ から):
     python trade_review.py json 2026-09               # 標準出力へ。保存しない
     python trade_review.py save 2026-09 < report.md   # JSON を作り直し、md と一緒に保存
+    python trade_review.py save-addendum 2026-09 < addendum.md  # 保存済みの月に追補を保存 (#566)
 
-保存先は $KS_DATA_DIR/trade_review/YYYY-MM.{json,md}。不可逆データとして扱い、
+保存先は $KS_DATA_DIR/trade_review/YYYY-MM.{json,md} (追補は YYYY-MM.addendum.{json,md})。不可逆データとして扱い、
 既にあれば書かない (やり直すときは人がファイルを消す)。
 """
 
@@ -194,7 +195,7 @@ def _trade_row(ep: Dict[str, Any], episodes: List[Dict[str, Any]],
 
 
 def _summary(ym: str, closed: List[Dict[str, Any]], episodes: List[Dict[str, Any]],
-             log_by_date: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+             log_by_date: Dict[str, Dict[str, Any]], holdings: Dict[str, Any]) -> Dict[str, Any]:
     priced = [e for e in closed if _profit(e) is not None]
 
     def part(eps: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -257,8 +258,10 @@ def _summary(ym: str, closed: List[Dict[str, Any]], episodes: List[Dict[str, Any
             "correction_days": len(correction),
             "correction_days_over": sum(1 for h in correction if h.get("position") == "over"),
         },
+        # 日次ログの含み損益 (trend.unrealized) は参考。月の損益は終値からの復元値で数える (issue #566)
         "trend": trend,
-        "month_pl": _month_pl(ym, episodes, trend["unrealized"]),
+        "holdings_unrealized": holdings,
+        "month_pl": _month_pl(ym, episodes, holdings),
     }
 
 
@@ -288,24 +291,129 @@ def _trend(ym: str, log_by_date: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     return {"total_value": ends("total_value"), "unrealized": ends("unrealized_total")}
 
 
+def _last_weekday(day: date) -> date:
+    while day.weekday() >= 5:
+        day = date.fromordinal(day.toordinal() - 1)
+    return day
+
+
+def base_dates(ym: str, generated_at: str) -> Dict[str, str]:
+    """含み損益を比べる月初・月末の基準日 (issue #566)。
+
+    月初 = 前月の最終平日、月末 = 当月の最終平日。当月が終わっていなければ、
+    JSON を作った日の前の平日にする (当日の終値はまだ無いことがある)。
+    """
+    first = date.fromisoformat(f"{ym}-01")
+    next_first = date(first.year + first.month // 12, first.month % 12 + 1, 1)
+    made = date.fromisoformat(generated_at[:10])
+    end = min(_last_weekday(date.fromordinal(next_first.toordinal() - 1)),
+              _last_weekday(date.fromordinal(made.toordinal() - 1)))
+    return {"start": _last_weekday(date.fromordinal(first.toordinal() - 1)).isoformat(),
+            "end": end.isoformat()}
+
+
+# 基準日に足が無い (休場日) とき、さかのぼって使う終値の日数 (年末年始の休場を含む長さ)
+CLOSE_LOOKBACK_DAYS = 7
+
+
+def _close_at(closes: Dict[str, float], day: str) -> Optional[float]:
+    """day 以前の最後の終値。CLOSE_LOOKBACK_DAYS より前の値しか無ければ None。"""
+    floor = date.fromordinal(date.fromisoformat(day).toordinal() - CLOSE_LOOKBACK_DAYS).isoformat()
+    days = [d for d in closes if floor <= d <= day]
+    return closes[max(days)] if days else None
+
+
+def _holdings_unrealized(dates: Dict[str, str], episodes: List[Dict[str, Any]],
+                         closes: Dict[str, Dict[str, float]], splits: Dict[str, List[Dict[str, Any]]],
+                         stop_widths: Dict[str, Optional[float]]) -> Dict[str, Any]:
+    """月初・月末に建っていた取引の含み損益を、往復行と終値から復元する (issue #566)。
+
+    保有していない側は 0 円 (月中に決済 = 月末 0、月中に建てた = 月初 0)。
+    保有している側のどちらかで計算できない取引は、片側だけ数えて値動きが黙って 0 円に
+    ならないよう、月初・月末の両方から外して excluded に理由つきで載せる。
+    """
+    from webapp import trade_episodes  # 遅延 import (_unrealized_pct と同じ理由)
+
+    def lots(ep: Dict[str, Any], day: str) -> Dict[str, Any]:
+        code_s = ep["code_s"]
+        # yfinance の過去の終値は後の分割で遡って調整される。約定の単価が分割前のままだと合わない。
+        # 登録済みの分割は現物の約定を換算済みなので合う。ただし信用と、分割より前の現引は
+        # 換算しない (_apply_split_adjustments)
+        later = [s["date"] for s in splits.get(code_s, []) if s["date"] > day
+                 and not (s["adjusted"] and ep["kind"] == "現物"
+                          and not any(f.get("trade_kind") == "現引" and f["trade_date"] < s["date"]
+                                      for f in ep["fills"]))]
+        lot = trade_episodes.open_lots_at(ep, day, _close_at(closes.get(code_s) or {}, day))
+        if later and lot.get("qty", 1):
+            return {"reason": f"後の分割 ({later[0]})"}
+        return lot
+
+    rows, excluded = [], []
+    for ep in episodes:
+        if ep["closed"] and (ep.get("close_date") or "") <= dates["start"]:
+            continue
+        start, end = lots(ep, dates["start"]), lots(ep, dates["end"])
+        if not (start.get("qty", 1) or end.get("qty", 1)):
+            continue
+        base = {"episode_key": ep["episode_key"], "code_s": ep["code_s"],
+                "stock_name": ep.get("stock_name", "")}
+        reason = ("分割・併合の疑い" if ep.get("split_suspect")
+                  else start.get("reason") or end.get("reason"))
+        if reason:
+            excluded.append({**base, "reason": reason, "held_at_start": start.get("qty", 1) > 0})
+            continue
+        width = stop_widths[ep["episode_key"]]
+        end_pct = end["unrealized"] / end["cost"] * 100.0 if end["cost"] else None
+        rows.append({
+            **base, "kind": ep["kind"], "trade_idea": ep.get("trade_idea") or "",
+            "stop_loss_pct": width, "open_date": ep["open_date"],
+            "start": start["unrealized"], "end": end["unrealized"],
+            "change": end["unrealized"] - start["unrealized"], "end_pct": end_pct,
+            "status": ("carried" if start["qty"] and end["qty"]
+                       else "opened" if end["qty"] else "closed"),
+        })
+    rows.sort(key=lambda r: (r["change"], r["episode_key"]))
+    start_total, end_total = sum(r["start"] for r in rows), sum(r["end"] for r in rows)
+    return {
+        "start_date": dates["start"], "end_date": dates["end"],
+        "start_total": start_total, "end_total": end_total, "change": end_total - start_total,
+        "excluded": excluded,
+        "episodes": rows,
+        "month_end_over_stop_loss": [
+            r["episode_key"] for r in rows
+            if r["stop_loss_pct"] is not None and r["end_pct"] is not None
+            and r["end_pct"] < -r["stop_loss_pct"]],
+    }
+
+
 def _month_pl(ym: str, episodes: List[Dict[str, Any]],
-              unrealized: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """月の損益 = 当月の売りで確定した実現損益 + 含み損益の増減 (trend の start → end)。
+              holdings: Dict[str, Any]) -> Dict[str, Any]:
+    """月の損益 = 当月の売りで確定した実現損益 + 含み損益の増減 (月初 → 月末の復元値)。
 
     実現損益は往復行のうち決済日が当月の行で数える。エピソードの実現損益 (closed.pl) は
     完全決済した月に前月までの部分売りもまとめて計上し、当月の部分売りは数えないため、
-    含み損益の増減と足すとずれる。含み損益の記録が無い月は None。
+    含み損益の増減と足すとずれる。
+    含み損益から外した取引 (excluded) の実現損益も、確定しているので数える。ただし月初に
+    持っていた取引の分は前月以前の値動きを含むので、excluded_realized に別に出す。
+    当月の途中で作ったときは、含み損益の月末側 (end_date) より後の決済を数えない (同じ値動きを二重に数えないため)。
     """
-    if unrealized is None:
-        return None
     from webapp import trade_episodes  # 遅延 import (_unrealized_pct と同じ理由)
 
-    realized = sum(r["pl"] for ep in episodes if not ep.get("split_suspect")
-                   for r in trade_episodes.build_round_trips(ep)
+    def realized(ep: Dict[str, Any]) -> float:
+        return sum(r["pl"] for r in trade_episodes.build_round_trips(ep)
                    if r["closed"] and (r.get("close_date") or "").startswith(ym)
-                   and r["pl"] is not None)
-    change = unrealized["end"]["value"] - unrealized["start"]["value"]
-    return {"realized": realized, "unrealized_change": change, "total": realized + change}
+                   and r["close_date"] <= holdings["end_date"] and r["pl"] is not None)
+
+    by_key = {e["episode_key"]: e for e in episodes}
+    total = sum(realized(ep) for ep in episodes if not ep.get("split_suspect"))
+    loose = [{"episode_key": x["episode_key"], "code_s": x["code_s"],
+              "stock_name": x["stock_name"], "realized": realized(by_key[x["episode_key"]])}
+             for x in holdings["excluded"]
+             if x["held_at_start"] and not by_key[x["episode_key"]].get("split_suspect")]
+    loose = [x for x in loose if x["realized"]]
+    return {"realized": total, "unrealized_change": holdings["change"],
+            "total": total + holdings["change"],
+            "excluded_realized": {"total": sum(x["realized"] for x in loose), "episodes": loose}}
 
 
 def _hypotheses(ym: str, episodes: List[Dict[str, Any]],
@@ -417,7 +525,9 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
                          trade_ideas: List[Dict[str, Any]],
                          fill_strategies: Dict[Any, Dict[str, Any]],
                          generated_at: str,
-                         action_logs: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                         action_logs: Optional[List[Dict[str, Any]]] = None,
+                         closes: Optional[Dict[str, Dict[str, float]]] = None,
+                         splits: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
     """月次の振り返りに渡す数字を作る (DB を読まない)。
 
     Args:
@@ -429,6 +539,9 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
         trade_ideas: 戦略マスター (portfolio_shelve.list_trade_ideas())
         fill_strategies: ロットの戦略の上書き (portfolio_shelve.list_fill_strategies())
         action_logs: アクションログ (portfolio_shelve.list_action_logs())。発掘元を拾うのに使う
+        closes: 配当調整なしの日足終値 {code_s: {"YYYY-MM-DD": 終値}} (月初・月末の含み損益の復元用)
+        splits: 分割 {code_s: [{"date": "YYYY-MM-DD", "adjusted": 登録済みで現物の約定を換算済みか}]}。
+            その日より後に、約定を換算していない分割があると終値が合わない
     """
     log_by_date = {h["date"]: h for h in exposure_history if h.get("date")}
     horizons = {t.get("name", ""): t.get("time_horizon") or "" for t in trade_ideas}
@@ -456,7 +569,8 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
     return {
         "year_month": year_month,
         "generated_at": generated_at,
-        "summary": _summary(year_month, closed, episodes, log_by_date),
+        "summary": _summary(year_month, closed, episodes, log_by_date, _holdings_unrealized(
+            base_dates(year_month, generated_at), episodes, closes or {}, splits or {}, stop_widths)),
         "trades": {"closed": rows(closed, "close_date"), "opened": rows(opened, "open_date"),
                    "split_suspect_count": len(in_month) - len(targets)},
         "hypotheses": _hypotheses(year_month, episodes, stop_widths),
@@ -464,15 +578,55 @@ def build_review_dataset(year_month: str, *, episodes: List[Dict[str, Any]],
     }
 
 
-def _load_inputs() -> Dict[str, Any]:
-    """build_review_dataset の入力を DB から読む (読み取りのみ)。"""
+def _fetch_closes(codes: List[str], dates: Dict[str, str]) -> Dict[str, Any]:
+    """月初・月末の評価に使う日足終値と分割日を yfinance から取る (issue #566)。
+
+    配当調整なしの終値 (auto_adjust=False の Close) を使う。約定単価は配当で調整されないため、
+    調整済みの値 (price.py の auto_adjust=True) だと権利落ちをまたぐ月の含み損益がずれる。
+    """
+    from datetime import timedelta
+
+    import yfinance as yf
+
+    import price
+    from webapp import helpers
+
+    stock_map = helpers._bulk_get_stock_data(codes)
+    registered = {c: {e["ex_date"] for e in events} for c, events in ps.list_all_split_adjustments().items()}
+    start = date.fromisoformat(dates["start"]) - timedelta(days=CLOSE_LOOKBACK_DAYS)
+    end = date.fromisoformat(dates["end"]) + timedelta(days=1)  # history の end は当日を含まない
+    closes: Dict[str, Dict[str, float]] = {}
+    splits: Dict[str, List[Dict[str, Any]]] = {}
+    log_print(f"月初・月末の終値を yfinance から取得します: {len(codes)}銘柄")
+    for code_s in codes:
+        try:
+            ticker = yf.Ticker(price._get_ticker_symbol(code_s, stock_map.get(code_s) or {}))
+            df = ticker.history(start=start.isoformat(), end=end.isoformat(), auto_adjust=False)
+            closes[code_s] = {idx.date().isoformat(): float(v) for idx, v in df["Close"].items()}
+            splits[code_s] = [{"date": d, "adjusted": d in registered.get(code_s, set())}
+                              for d in sorted(idx.date().isoformat() for idx in ticker.splits.index)
+                              if d > dates["start"]]
+        except Exception as e:  # noqa: BLE001 - 取れない銘柄は「終値なし」で計算不能に回す
+            log_warning(f"終値の取得に失敗: {code_s} {e!r}")
+    return {"closes": closes, "splits": splits}
+
+
+def _load_inputs(year_month: str) -> Dict[str, Any]:
+    """build_review_dataset の入力を DB から読む (読み取りのみ)。終値は yfinance から取る。"""
     import exposure_guide
     from webapp import helpers, trade_episodes
 
     records = ps.list_records(status="1保")
     stock_map = helpers._bulk_get_stock_data([r["code_s"] for r in records])
+    episodes = trade_episodes.build_fill_episodes()
+    generated_at = datetime.now().isoformat(timespec="seconds")
+    dates = base_dates(year_month, generated_at)
+    # 月初より前に決済を終えた取引は、月初・月末のどちらにも建っていない
+    codes = sorted({ep["code_s"] for ep in episodes
+                    if not (ep["closed"] and (ep.get("close_date") or "") <= dates["start"])})
     return {
-        "episodes": trade_episodes.build_fill_episodes(),
+        **_fetch_closes(codes, dates),
+        "episodes": episodes,
         "exposure_history": exposure_guide._load_exposure_log()["history"],
         "records": records,
         "stocks": {c: {"price": s.get("price"), "stock_name": s.get("stock_name", "")}
@@ -480,20 +634,23 @@ def _load_inputs() -> Dict[str, Any]:
         "trade_ideas": ps.list_trade_ideas(),
         "fill_strategies": ps.list_fill_strategies(),
         "action_logs": ps.list_action_logs(),
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "generated_at": generated_at,
     }
 
 
 def save_review(year_month: str, dataset: Dict[str, Any], report_md: str,
-                review_dir: Optional[str] = None) -> List[str]:
-    """JSON とレポートを保存する。どちらかが既にあれば何も書かずに例外を出す。"""
+                review_dir: Optional[str] = None, suffix: str = "") -> List[str]:
+    """JSON とレポートを保存する。どちらかが既にあれば何も書かずに例外を出す。
+
+    suffix=".addendum" で、保存済みの月に付ける追補 (YYYY-MM.addendum.{json,md}) を保存する (issue #566)。
+    """
     if ks_util.is_dev_data_dir():
         raise RuntimeError("開発機の開発用コピーには保存しません。"
                            "deploy/macmini.sh run 経由で運用機に保存してください")
     if not report_md.strip():
         raise ValueError("レポート (標準入力) が空です")
     review_dir = review_dir or REVIEW_DIR
-    paths = [os.path.join(review_dir, f"{year_month}.{ext}") for ext in ("json", "md")]
+    paths = [os.path.join(review_dir, f"{year_month}{suffix}.{ext}") for ext in ("json", "md")]
     existing = [p for p in paths if os.path.exists(p)]
     if existing:
         raise FileExistsError(f"既に保存済みです (上書きしません): {', '.join(existing)}")
@@ -507,20 +664,22 @@ def save_review(year_month: str, dataset: Dict[str, Any], report_md: str,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="月次の売買振り返りの数字を作る (issue #448)")
-    parser.add_argument("command", choices=["json", "save"],
-                        help="json: 標準出力へ (保存しない) / save: 標準入力のレポートと一緒に保存")
+    parser.add_argument("command", choices=["json", "save", "save-addendum"],
+                        help="json: 標準出力へ (保存しない) / save: 標準入力のレポートと一緒に保存"
+                             " / save-addendum: 保存済みの月に追補を保存")
     parser.add_argument("year_month", help="対象月 (例: 2026-09)")
     args = parser.parse_args()
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", args.year_month):
         log_warning(f"対象月は YYYY-MM で指定してください: {args.year_month}")
         return 2
 
-    dataset = build_review_dataset(args.year_month, **_load_inputs())
+    dataset = build_review_dataset(args.year_month, **_load_inputs(args.year_month))
     if args.command == "json":
         sys.stdout.write(json.dumps(dataset, ensure_ascii=False, indent=2) + "\n")
         return 0
     try:
-        paths = save_review(args.year_month, dataset, sys.stdin.read())
+        paths = save_review(args.year_month, dataset, sys.stdin.read(),
+                            suffix=".addendum" if args.command == "save-addendum" else "")
     except (RuntimeError, ValueError, FileExistsError) as e:
         log_warning(str(e))
         return 1
