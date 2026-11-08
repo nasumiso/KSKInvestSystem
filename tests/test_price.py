@@ -10,6 +10,65 @@ import pytest
 import price
 
 
+@pytest.mark.parametrize("market,suffix", [
+    ("名証Ｎ", ".N"), ("名証Ｍ", ".N"), ("名証", ".N"),
+    ("札証ア", ".S"), ("福証Ｑ", ".F"), ("東証Ｇ", ".T"), (None, ".T"),
+])
+def test_ticker_market_segment(market, suffix):
+    """市場区分つきの市場名でも東証へ誤送信しない。"""
+    assert price._get_ticker_symbol("418A", {"market": market}) == "418A" + suffix
+
+
+@pytest.mark.parametrize("market,yahoo_ok,expected_calls", [
+    ("名証Ｎ", False, 1), ("名証Ｎ", True, 0), ("東証Ｇ", False, 0),
+])
+def test_local_daily_price_fallback(monkeypatch, market, yahoo_ok, expected_calls):
+    """地方市場の日足API失敗時に株探の終値・日付を共通経路へ渡す。"""
+    calls = []
+    raw = [("26/11/06", "1,566", "1,638", "1,566", "1,622", "-116", "-6.7", "12,200")]
+    monkeypatch.setattr(price, "get_price_data_yahoo", lambda *a: ({"price": 1700}, []) if yahoo_ok else ({}, []))
+    def kabutan(code_s, upd):
+        calls.append((code_s, upd))
+        return {"_daily_price_list_raw": raw}
+    monkeypatch.setattr(price, "get_daily_price_kabutan", kabutan)
+    def parse(current, rows):
+        assert current == 1622
+        assert rows == [["26/11/06", 1566, 1638, 1566, 1622, 12200, 1622]]
+        return {"price": current, "price_log": [(date(2026, 11, 6), current)]}, [1622, 1638, 1566]
+    monkeypatch.setattr(price, "parse_price_text_from_list", parse)
+    monkeypatch.setattr(price, "get_weekly_price_data", lambda *a, **kw: {})
+    monkeypatch.setattr(price, "get_monthly_price_data", lambda *a, **kw: {})
+    result = price.get_price_data("418A", {"market": market}, price.UPD_FORCE)
+    assert len(calls) == expected_calls
+    if expected_calls:
+        assert result["price_log"] == [(date(2026, 11, 6), 1622)]
+        assert "access_date_price" in result
+
+
+def test_local_daily_price_unavailable(monkeypatch):
+    """両取得先が空でも架空の価格を保存しない。"""
+    monkeypatch.setattr(price, "get_price_data_yahoo", lambda *a: ({}, []))
+    monkeypatch.setattr(price, "get_daily_price_kabutan", lambda *a: {})
+    monkeypatch.setattr(price, "get_weekly_price_data", lambda *a, **kw: {})
+    monkeypatch.setattr(price, "get_monthly_price_data", lambda *a, **kw: {})
+    assert price.get_price_data("418A", {"market": "名証Ｎ"}) == {}
+
+
+def test_kabutan_daily_zero_change_and_no_trade():
+    """前日比0の行をまたいで別の日のセルを取り込まない。"""
+    rows = []
+    for day, values in [
+        ("26/11/06", ["1,566", "1,638", "1,566", "1,622", '<span class="down">-116</span>', "-6.7", "12,200"]),
+        ("26/11/05", ["1,738", "1,738", "1,738", "1,738", "0", "0.00", "1,000"]),
+        ("26/11/04", ["－", "－", "－", "－", "0", "0.00", "0"]),
+    ]:
+        rows.append('<tr><th><time datetime="2026-11-06">' + day + '</time></th>'
+                    + ''.join('<td>' + v + '</td>' for v in values) + '</tr>')
+    result = price.parse_price_d_html_kabutan(''.join(rows))
+    assert result["price_log"] == [(date(2026, 11, 6), 1622), (date(2026, 11, 5), 1738)]
+    assert len(result["_daily_price_list_raw"]) == 2
+
+
 # ==================================================
 # calc_sell_pressure_ratio
 # ==================================================
