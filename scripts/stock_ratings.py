@@ -65,6 +65,11 @@ STATUS_REQUIRED = {
     "Archive": ("note",),
 }
 
+# Status ごとの上限 (doc/spec/銘柄評価仕様.md の「Status」)。超過は決算シーズン明けにまとめて整理する
+STATUS_LIMITS = {"Active": 20, "Watch": 30}
+# 外す候補とみなす、最後の更新からの日数 (暦日)
+CANDIDATE_STALE_DAYS = 90
+
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 JST = timezone(timedelta(hours=9))
 
@@ -247,6 +252,47 @@ def get_history(code_s, limit=3, ratings_dir=None):
             if entry.get("code_s") == code_s:
                 entries.append(entry)
     return entries[::-1][:limit]
+
+
+def archive_candidates(ratings, held, kessan_dates, today):
+    """上限を超えたときの整理で外す候補を、理由つきで返す。Status は変えない (決めるのは人)。
+
+    ratings: Active・Watch の行 (list_ratings の戻り値)
+    held: {code_s: 保有ステータス}。ポートフォリオに無い銘柄は含まない
+    kessan_dates: {code_s: [決算発表日 (YYYY-MM-DD、昇順)]}
+    戻り値: [{code_s, name, status, updated_at, reasons}]。理由の多い順、同じなら更新の古い順
+    """
+    candidates = []
+    for r in ratings:
+        status, updated = r["status"], r.get("updated_at", "")
+        reasons = []
+        if status == "Watch" and r["code_s"] not in held:
+            reasons.append("Watch なのにポートフォリオに無い")
+        elif status == "Active" and held.get(r["code_s"]) not in ("1保", "2準"):
+            reasons.append(f"Active なのに{held.get(r['code_s']) or 'ポートフォリオに無い'}")
+        if status == "Watch":
+            after = [d for d in kessan_dates.get(r["code_s"], []) if updated < d <= today.isoformat()]
+            if after:
+                reasons.append(f"{int(after[0][5:7])}/{int(after[0][8:])} の決算の後に未更新")
+        if updated and (today - datetime.strptime(updated, "%Y-%m-%d").date()).days >= CANDIDATE_STALE_DAYS:
+            reasons.append(f"最後の更新が {updated}")
+        if reasons:
+            candidates.append({"code_s": r["code_s"], "name": r.get("name", ""), "status": status,
+                               "updated_at": updated, "reasons": reasons})
+    return sorted(candidates, key=lambda c: (-len(c["reasons"]), c["updated_at"], c["code_s"]))
+
+
+def load_archive_candidates(today, ratings):
+    """archive_candidates の入力を DB から読む (読み取りのみ。MCP から呼ぶので webapp は import しない)。
+
+    ratings は Active・Watch の行 (呼び出し側で読んだ list_ratings() を渡す)。
+    """
+    import gyoseki
+    import portfolio_shelve as ps
+
+    held = {r["code_s"]: r.get("status") for r in ps.list_records()}
+    dates = {r["code_s"]: gyoseki.load_kessan_dates(r["code_s"])["kessan"] for r in ratings}
+    return archive_candidates(ratings, held, dates, today)
 
 
 def update_rating(code_s, fields, reason, source, ratings_dir=None):

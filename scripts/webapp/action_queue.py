@@ -52,7 +52,8 @@ STAGE_AFTER_EVENT_DAYS = 14
 # 1保なら台帳で Active が原則だが、ファンダの仮説で持たない戦略は除く。
 # 戦略マスターで改名されたら例外が効かなくなり、行に出るので気づける
 RATING_EXEMPT_STRATEGIES = ("大型高配当", "短期イベント", "短期底値リバ")
-RATING_LIMITS = {"Active": 20, "Watch": 15}
+# 上限 (Active / Watch) は stock_ratings.STATUS_LIMITS。上限超過を知らせる月 (決算シーズン明け。5・8・11・2月の決算が出そろった翌月)
+RATING_REVIEW_MONTHS = (3, 6, 9, 12)
 # 決算発表日から何日過ぎても台帳が更新されていなければ、Active の更新待ちとして出す (暦日)。
 # それまでの間 (決算の翌日から) は「決算後の台帳更新」として銘柄名を出す
 RATING_STALE_DAYS = 14
@@ -256,22 +257,32 @@ def _rating_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str
             gaps.append(f"{code_s} {rt['name']} (Active なのに{held or 'ポートフォリオに無い'})")
         elif rt["status"] == "Watch" and held is None:
             gaps.append(f"{code_s} {rt['name']} (Watch なのにポートフォリオに無い)")
-    counts = {s: sum(1 for rt in ratings.values() if rt["status"] == s) for s in RATING_LIMITS}
-    over = [f"{s} {counts[s]}/{n}" for s, n in RATING_LIMITS.items() if counts[s] > n]
-    if gaps or over:
-        parts = []
-        if gaps:
-            parts.append(f"{len(gaps)}銘柄")
+    if gaps:
+        item = _item(f"台帳と保有のずれ: {len(gaps)}銘柄", "/stock-ratings", "台帳を見る")
+        items.append(_with_popup(item, f"{len(gaps)}銘柄", gaps))
+    # 銘柄数の整理は都度ではなく、決算シーズン明けの月にまとめて行う。上限内に収めれば消える
+    limits = stock_ratings.STATUS_LIMITS
+    if _real_today().month in RATING_REVIEW_MONTHS:
+        counts = {s: sum(1 for rt in ratings.values() if rt["status"] == s) for s in limits}
+        over = [f"{s} {counts[s]}/{n}" for s, n in limits.items() if counts[s] > n]
         if over:
-            parts.append("上限超過 " + "・".join(over))
-        item = _item("台帳と保有のずれ: " + "、".join(parts), "/stock-ratings", "台帳を見る")
-        items.append(_with_popup(item, f"{len(gaps)}銘柄", gaps) if gaps else item)
+            # 外す候補は整理の材料。ChatGPT の list_stock_ratings にも同じものが出る
+            active = [rt for rt in ratings.values() if rt["status"] in limits]
+            candidates = stock_ratings.archive_candidates(
+                active, {c: r.get("status") for c, r in records.items()},
+                {rt["code_s"]: gyoseki.load_kessan_dates(rt["code_s"])["kessan"] for rt in active},
+                _real_today())
+            label = f"外す候補 {len(candidates)}銘柄"
+            item = _item("台帳の整理 (決算シーズン明け): 上限超過 " + "・".join(over)
+                         + (f"、{label}" if candidates else ""), "/stock-ratings", "台帳を見る")
+            items.append(_with_popup(item, label, [
+                f"{c['code_s']} {c['name']} ({'、'.join(c['reasons'])})" for c in candidates]))
 
     recent = []  # 決算の翌日〜RATING_STALE_DAYS 日の Active: (決算日, code_s, 銘柄名)
     recent_watch = []  # 同じ期間の Watch: 「コード 銘柄名 (決算日)」。過ぎても更新待ちには移さない
     stale = []
     for code_s, rt in sorted(ratings.items()):
-        if rt["status"] not in RATING_LIMITS:
+        if rt["status"] not in limits:
             continue
         updated = rt.get("updated_at", "")
         past = [d for d in gyoseki.load_kessan_dates(code_s)["kessan"] if d <= today.isoformat()]

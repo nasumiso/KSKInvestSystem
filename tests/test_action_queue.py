@@ -134,16 +134,25 @@ def test_rating_items_after_kessan_before_17(monkeypatch):
     assert [i["text"] for i in aq._rating_items(price_day, mat)] == ["決算後の台帳更新: X (10/11)"]
 
 
-def test_rating_items_over_limit(monkeypatch):
-    """Active / Watch が上限を超えたら件数を出す"""
+@pytest.mark.parametrize("real_today, expected", [
+    (date(2026, 12, 1), ["台帳の整理 (決算シーズン明け): 上限超過 Watch 31/30、外す候補 1銘柄"]),
+    (date(2026, 11, 30), []),  # 整理の月でなければ出さない
+])
+def test_rating_items_over_limit(monkeypatch, real_today, expected):
+    """Active / Watch の上限超過は、決算シーズン明けの月にだけ件数を出す"""
     import gyoseki
     import stock_ratings
-    rows = [dict(_rating("Watch"), code_s=f"{1000 + i}") for i in range(16)]
+    rows = [dict(_rating("Watch", "2026-11-01"), code_s=f"{1000 + i}") for i in range(31)]
     monkeypatch.setattr(stock_ratings, "list_ratings", lambda status=None: [] if status else rows)
     monkeypatch.setattr(gyoseki, "load_kessan_dates", lambda code_s: {"kessan": [], "shusei": []})
+    monkeypatch.setattr(aq, "_real_today", lambda: real_today)
     mat = aq._Material()
-    mat.__dict__.update(records=[{"code_s": r["code_s"], "status": "2準"} for r in rows], stocks={})
-    assert [i["text"] for i in aq._rating_items(TODAY, mat)] == ["台帳と保有のずれ: 上限超過 Watch 16/15"]
+    # 1銘柄だけポートフォリオから外れている (外す候補)
+    mat.__dict__.update(records=[{"code_s": r["code_s"], "status": "2準"} for r in rows[1:]], stocks={})
+    items = [i for i in aq._rating_items(TODAY, mat) if not i["text"].startswith("台帳と保有のずれ")]
+    assert [i["text"] for i in items] == expected
+    if expected:
+        assert items[0]["popup"] == "1000 X (Watch なのにポートフォリオに無い)"
 
 
 def test_shikiho_item_counts_missing_in_hold_and_semi(monkeypatch):

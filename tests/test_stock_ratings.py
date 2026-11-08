@@ -257,3 +257,28 @@ def test_history_keeps_system_scores_at_update(ratings_dir, monkeypatch):
         snapshot, "3.0", {"scores.fund": [35, 36]})
     stored = json.loads((ratings_dir / sr.RATINGS_FILENAME).read_text(encoding="utf-8"))
     assert "system" not in stored["stocks"]["3697"]
+
+
+@pytest.mark.parametrize("status, updated, held, kessan, reasons", [
+    ("Watch", "2026-10-01", {}, [], ["Watch なのにポートフォリオに無い"]),
+    ("Active", "2026-10-01", {"1111": "3監"}, [], ["Active なのに3監"]),
+    ("Active", "2026-10-01", {"1111": "1保"}, ["2026-10-20"], []),       # Active は決算の後でも候補にしない
+    ("Watch", "2026-10-01", {"1111": "2準"}, ["2026-09-20", "2026-10-20", "2026-12-01"],
+     ["10/20 の決算の後に未更新"]),                                       # 今日より後の決算は数えない
+    ("Watch", "2026-07-01", {"1111": "2準"}, [], ["最後の更新が 2026-07-01"]),  # 90日以上前
+    ("Watch", "2026-08-15", {"1111": "2準"}, [], []),                    # 88日前はまだ
+])
+def test_archive_candidates(status, updated, held, kessan, reasons):
+    """外す候補は理由つきで返し、どれにも当たらなければ返さない"""
+    rows = [{"code_s": "1111", "name": "X", "status": status, "updated_at": updated}]
+    got = sr.archive_candidates(rows, held, {"1111": kessan}, date(2026, 11, 11))
+    assert [c["reasons"] for c in got] == ([reasons] if reasons else [])
+
+
+def test_archive_candidates_order():
+    """理由の多い順、同じなら更新の古い順"""
+    # 3333 はポートフォリオに無く更新も古い (2つ)。2222・4444 はポートフォリオに無いだけ (1つ)
+    rows = [{"code_s": c, "name": c, "status": "Watch", "updated_at": u}
+            for c, u in (("4444", "2026-10-01"), ("2222", "2026-09-01"), ("3333", "2026-06-01"))]
+    got = sr.archive_candidates(rows, {}, {}, date(2026, 11, 11))
+    assert [c["code_s"] for c in got] == ["3333", "2222", "4444"]

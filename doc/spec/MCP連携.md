@@ -89,7 +89,7 @@ ChatGPT で付けた現在の投資判断 (ファンダ40 / 未織込20 と適�
 
 | ツール | 内容 |
 |---|---|
-| `list_stock_ratings` | 総合点順の一覧 (長文なし)。`status` で絞り込み。既定では Archive を含まない。基準日 (`as_of`) と、システムの2軸の点・欠けた値 (`system`) を添える |
+| `list_stock_ratings` | 総合点順の一覧 (長文なし)。`status` で絞り込み。既定では Archive を含まない。基準日 (`as_of`) と、システムの2軸の点・欠けた値 (`system`) を添える。`status` を指定しないときは、Status ごとの件数と上限 (`limits`) と、外す候補 (`archive_candidates`、理由つき) も返す。銘柄数の整理の材料 ([銘柄評価仕様.md](銘柄評価仕様.md) の「運用」) |
 | `get_stock_rating` | 1銘柄の全項目と直近の変更履歴。システムの2軸の内訳と参考値 (理論株価・PER) を `system` で添える (総合点に入る) |
 | `update_stock_rating` | 渡した項目だけを部分更新 (未登録なら新規作成)。`reason` 必須。AI が渡すのは fund・mispricing・fair_price ほか。momentum・valuation を渡すとエラー。検証エラーは `ok: false` と `errors` で返し、何も書かない |
 

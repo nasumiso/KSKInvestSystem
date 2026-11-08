@@ -616,7 +616,7 @@ RATING_SUMMARY_KEYS = (
 def list_stock_ratings_data(status: Optional[str] = None) -> Dict[str, Any]:
     """銘柄評価台帳の一覧を総合点の高い順に返す。"""
     ratings = stock_ratings.list_ratings(status)
-    return {
+    data = {
         "count": len(ratings),
         "as_of": next((r["system"]["as_of"] for r in ratings if r["system"]["as_of"]), None),
         "stocks": [
@@ -624,6 +624,12 @@ def list_stock_ratings_data(status: Optional[str] = None) -> Dict[str, Any]:
             for r in ratings
         ],
     }
+    if status is None:
+        # 銘柄数の整理 (決算シーズン明け) の材料。外すかどうかは利用者が決める
+        data["limits"] = {s: {"count": sum(1 for r in ratings if r["status"] == s), "limit": n}
+                          for s, n in stock_ratings.STATUS_LIMITS.items()}
+        data["archive_candidates"] = stock_ratings.load_archive_candidates(date.today(), ratings)
+    return data
 
 
 def _system_summary(system: Dict[str, Any]) -> Dict[str, Any]:
@@ -933,6 +939,11 @@ def list_stock_ratings(status: Optional[str] = None) -> Dict[str, Any]:
     status を指定しないときは Archive を含みません (Archive は比較の対象外)。
     仮説・リスクなどの長文は含みません。全項目は get_stock_rating で取得します。
     system はシステムが出した Valuation とモメンタムの点と、欠けた値 (missing) です。total に入っています。
+    status を指定しないときは、Status ごとの件数と上限 (limits) と、外す候補 (archive_candidates:
+    ポートフォリオとの食い違い・決算の後に未更新の Watch・最後の更新が古い、の理由つき) も返します。
+    銘柄数の整理は決算シーズン明け (3・6・9・12月) にまとめて行います。上限を超えているときは
+    archive_candidates を出発点に、外す銘柄を利用者と決めてください。Archive にするかは利用者が決め、
+    決まったら note に外す理由を書いて update_stock_rating で status を Archive にします。
     """
     return list_stock_ratings_data(status)
 

@@ -567,7 +567,10 @@ def test_update_stock_rating_changes_only_given_fields(ratings_dir):
     detail = server.get_stock_rating_data("3697", history=1)
     assert detail["history"][0]["reason"] == "2Q決算反映"
     assert detail["history"][0]["source"] == "mcp"
-    listed = server.list_stock_ratings_data()["stocks"][0]
+    data = server.list_stock_ratings_data()
+    assert data["limits"]["Active"] == {"count": 1, "limit": 20}
+    assert "archive_candidates" in data
+    listed = data["stocks"][0]
     assert "thesis" not in listed and listed["total"] == 72
     assert listed["system"] == {"valuation": 10, "momentum": 10, "missing": ["price_stale", "rs", "theme"]}
 
