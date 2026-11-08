@@ -53,7 +53,8 @@ STAGE_AFTER_EVENT_DAYS = 14
 # 戦略マスターで改名されたら例外が効かなくなり、行に出るので気づける
 RATING_EXEMPT_STRATEGIES = ("大型高配当", "短期イベント", "短期底値リバ")
 RATING_LIMITS = {"Active": 20, "Watch": 15}
-# 決算発表日から何日過ぎても台帳が更新されていなければ、Active の更新待ちとして出す (暦日)
+# 決算発表日から何日過ぎても台帳が更新されていなければ、Active の更新待ちとして出す (暦日)。
+# それまでの間 (決算の翌日から) は「決算後の台帳更新」として銘柄名を出す
 RATING_STALE_DAYS = 14
 # Watch のまま何回決算をまたいだら出すか (売りの4分類の「時間切れ」)
 RATING_WATCH_KESSAN = 2
@@ -266,6 +267,8 @@ def _rating_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str
         item = _item("台帳と保有のずれ: " + "、".join(parts), "/stock-ratings", "台帳を見る")
         items.append(_with_popup(item, f"{len(gaps)}銘柄", gaps) if gaps else item)
 
+    recent = []  # 決算の翌日〜RATING_STALE_DAYS 日の Active: (決算日, code_s, 銘柄名)
+    recent_watch = []  # 同じ期間の Watch: 「コード 銘柄名 (決算日)」。過ぎても更新待ちには移さない
     stale = []
     for code_s, rt in sorted(ratings.items()):
         if rt["status"] not in RATING_LIMITS:
@@ -274,10 +277,32 @@ def _rating_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str
         past = [d for d in gyoseki.load_kessan_dates(code_s)["kessan"] if d <= today.isoformat()]
         if rt["status"] == "Active" and past:
             last = date.fromisoformat(past[-1])
-            if (today - last).days > RATING_STALE_DAYS and updated < past[-1]:
+            if updated >= past[-1]:
+                continue
+            if (today - last).days > RATING_STALE_DAYS:
                 stale.append(f"{code_s} {rt['name']} (Active、{_md(last)} の決算が未反映)")
+            # 翌日の朝から出すため実際の今日で判定する (17時前の get_price_day だと夕方まで出ない)
+            elif (_real_today() - last).days >= 1:
+                recent.append((last, code_s, rt["name"]))
         elif rt["status"] == "Watch" and sum(1 for d in past if d > updated) >= RATING_WATCH_KESSAN:
             stale.append(f"{code_s} {rt['name']} (Watch のまま決算を{RATING_WATCH_KESSAN}回またいだ)")
+        elif rt["status"] == "Watch" and past and updated < past[-1]:
+            last = date.fromisoformat(past[-1])
+            if 1 <= (_real_today() - last).days <= RATING_STALE_DAYS:
+                recent_watch.append(f"{code_s} {rt['name']} ({_md(last)})")
+    if recent:
+        # 決算直後は分析し忘れに気づけるよう銘柄名を本文に出す。過ぎたら下の「更新待ち」に移る
+        recent.sort()
+        items.append(_hidden_popup(
+            _item("決算後の台帳更新: " + _names([f"{name} ({_md(day)})" for day, _, name in recent]),
+                  "/stock-ratings", "台帳を見る"),
+            [f"{code_s} {name}" for _, code_s, name in recent],
+        ))
+    if recent_watch:
+        # Watch は件数が多くなりうるので件数だけ出し、銘柄はポップアップにする
+        label = f"Watch {len(recent_watch)}銘柄"
+        items.append(_with_popup(_item(f"決算後の台帳更新: {label}", "/stock-ratings", "台帳を見る"),
+                                 label, recent_watch))
     if stale:
         item = _item(f"台帳の更新待ち: {len(stale)}銘柄", "/stock-ratings", "台帳を見る")
         items.append(_with_popup(item, f"{len(stale)}銘柄", stale))

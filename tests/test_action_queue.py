@@ -95,11 +95,15 @@ def _rating(status, updated="2026-09-01"):
     ("3監", _rating("Active"), None, [], "Active なのに3監"),
     (None, _rating("Watch"), None, [], "Watch なのにポートフォリオに無い"),
     ("1保", _rating("Active"), None, ["2026-09-25"], "9/25 の決算が未反映"),  # 決算から17日
-    ("1保", _rating("Active"), None, ["2026-09-30"], None),                   # 決算から12日はまだ
+    ("1保", _rating("Active"), None, ["2026-09-30"], "決算後の台帳更新: X (9/30)"),  # 決算から12日は銘柄名で
+    ("1保", _rating("Active"), None, ["2026-10-12"], None),                   # 決算の当日はまだ
+    ("1保", _rating("Active", "2026-09-30"), None, ["2026-09-30"], None),     # 決算日以降に更新済み
     ("2準", _rating("Watch", "2026-03-01"), None, ["2026-05-10", "2026-08-10"], "決算を2回またいだ"),
     ("2準", _rating("Watch", "2026-06-01"), None, ["2026-05-10", "2026-08-10"], None),
+    ("2準", _rating("Watch"), None, ["2026-09-30"], "決算後の台帳更新: Watch 1銘柄1111 X (9/30)"),
+    ("2準", _rating("Watch"), None, ["2026-09-25"], None),   # 14日を過ぎた Watch は更新待ちに移さない
 ])
-def test_rating_items(monkeypatch, held, rating, idea, kessan, expected):
+def test_rating_items(monkeypatch, held, rating, idea, kessan, expected, real_today=TODAY):
     """台帳と保有のずれと、決算を反映していない評価を出す。Status は変えない (#542)"""
     import gyoseki
     import stock_ratings
@@ -109,10 +113,25 @@ def test_rating_items(monkeypatch, held, rating, idea, kessan, expected):
         dict(r, code_s=c) for c, r in ratings.items()
         if r["status"] == status or (status is None and r["status"] != "Archive")])
     monkeypatch.setattr(gyoseki, "load_kessan_dates", lambda code_s: {"kessan": kessan, "shusei": []})
+    monkeypatch.setattr(aq, "_real_today", lambda: real_today)
     mat = aq._Material()
     mat.__dict__.update(records=records, stocks={})
-    texts = [i.get("popup", "") for i in aq._rating_items(TODAY, mat)]
+    texts = [i["text"] + i.get("popup", "") for i in aq._rating_items(TODAY, mat)]
     assert (texts == []) if expected is None else any(expected in t for t in texts)
+
+
+def test_rating_items_after_kessan_before_17(monkeypatch):
+    """決算の翌日は、17時前 (基準日はまだ決算日) でも「決算後の台帳更新」を出す"""
+    import gyoseki
+    import stock_ratings
+    monkeypatch.setattr(stock_ratings, "list_ratings", lambda status=None: [] if status else [
+        dict(_rating("Active"), code_s="1111")])
+    monkeypatch.setattr(gyoseki, "load_kessan_dates", lambda code_s: {"kessan": ["2026-10-11"], "shusei": []})
+    monkeypatch.setattr(aq, "_real_today", lambda: TODAY)
+    mat = aq._Material()
+    mat.__dict__.update(records=[{"code_s": "1111", "status": "1保"}], stocks={})
+    price_day = date(2026, 10, 11)  # 10/12 の17時前
+    assert [i["text"] for i in aq._rating_items(price_day, mat)] == ["決算後の台帳更新: X (10/11)"]
 
 
 def test_rating_items_over_limit(monkeypatch):
