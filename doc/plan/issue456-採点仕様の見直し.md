@@ -61,21 +61,24 @@
 - 変更履歴の各エントリに採点ルールの版を残し、適正株価を更新したときは基準日とその日の終値も残す (後で、採点時からの値動きと、AI が当時の株価にどれだけ引っ張られたかを見られる)
 - 参考として並べる: 理論株価・先行理論株価、株探の PER (取得日つき。終値 ÷ 予想 EPS を自前で計算するほどの価値はない)
 - 移行: `migrate_v3` で全銘柄の Ver2 のモメンタムと Valuation の点数を外し (値は履歴に残す)、版を 3.0 にする。運用機では 反映 → migrate_v3 → tunnel 再起動 の順。付け直すまでの Valuation は「欠」の10点
-- 一括付け直し: 非 Archive の銘柄を ChatGPT で付け直す (下のプロンプト)。台帳の既存の記述と MCP のデータを元にした移行採点で、資料の読み直しはしない。採点者を ChatGPT のままにするのは、採点者の違いが点数に混ざると前向き検証で切り分けられないため
+- 一括付け直し: 非 Archive の銘柄を ChatGPT で付け直す (下のプロンプト、reason は「Ver3 付け直し」)。対象は fair_price が無い銘柄で、残りは `stock_ratings.py list` の先頭行の「適正株価なし」で数える (「Ver3 移行」は migrate_v3 が全銘柄に書く移行の記録なので、付け直しの印には使わない。2026-11-08 に取り違えた)。台帳の既存の記述と MCP のデータを元にした移行採点で、資料の読み直しはしない。採点者を ChatGPT のままにするのは、採点者の違いが点数に混ざると前向き検証で切り分けられないため
 
 #### 一括付け直しのプロンプト (ChatGPT に渡す)
 
 ```
 銘柄評価台帳を採点ルール Ver3 に移行します。update_stock_rating の説明にある Ver3 の採点ルールに従ってください。
 
-対象: list_stock_ratings で返る銘柄 (Archive を除く) のうち、まだ「Ver3 移行」の更新をしていないもの。今回は次の10銘柄: <コードを並べる>
+対象: list_stock_ratings で返る銘柄 (Archive を除く) のうち、fair_price (適正株価) がまだ無いもの。今回は次の10銘柄: <コードを並べる>
+(履歴にある「Ver3 移行: モメンタムと Valuation をシステム算出に切り替え」はシステム側の移行の記録で、付け直しが済んだ印ではありません)
 
 各銘柄について:
 1. get_stock_rating で現在の記述 (thesis・mispricing_note・risks・checkpoints・note) と変更履歴を読む。必要なら get_shikiho と list_earnings_documents で数字を確かめる (資料の読み直しまではしない)
 2. ファンダ (fund) と未織込 (mispricing) を Ver3 のレンジ表で付け直す。未織込では株価・PER・騰落を見ない
 3. 適正株価 (fair_price、円) を自分の手法で出す。出してから、get_stock_rating の理論株価と比べる
 4. note に「適正株価の手法 (例: 来期 EPS × 妥当 PER)・使った成長率と出どころ」を書く。適正株価が理論株価の 1.5 倍を超えるなら、その根拠も書く
-5. update_stock_rating で fund・mispricing・fair_price・note を更新する。reason は「Ver3 移行」。momentum と valuation は渡さない (システムが算出する)
+5. update_stock_rating で fund・mispricing・fair_price・note を更新する。reason は「Ver3 付け直し」。momentum と valuation は渡さない (システムが算出する)
+
+始める前に、update_stock_rating に fair_price の引数があり、説明の採点ルールが Ver3.0 であることを確かめてください。無ければ古いツールの定義を見ているので、何も更新せずにそう伝えてください。
 
 最後に、10銘柄の 旧 fund→新 fund、旧 mispricing→新 mispricing、fair_price、システムが出した Valuation とモメンタム、総合点 を表にしてください。
 ```
@@ -107,7 +110,9 @@
 6. 適正株価 (fair_price、円) を自分の手法で出す。今の株価から逆算しない。出した後で、get_stock_rating の理論株価 (reference) と比べる
 7. note に、今回の決算の要点と「適正株価の手法・使った成長率とその出どころ」を書く。適正株価が理論株価の1.5倍を超えるなら、その根拠も書く
 8. thesis・mispricing_note・risks・checkpoints を、今回の決算を踏まえて直す。checkpoints には、次の決算で確かめることを書く
-9. update_stock_rating で更新する。reason は「2Q決算反映」のように決算期を入れる (Ver3 で初めて付ける銘柄は「2Q決算反映・Ver3 移行」)。momentum と valuation は渡さない (システムが出す)。Status を変えるときは、変える理由を同じ更新で note に書く (Archive にするときは必須)
+9. update_stock_rating で更新する。reason は「2Q決算反映」のように決算期を入れる (Ver3 で初めて付ける銘柄は「2Q決算反映・Ver3 付け直し」)。momentum と valuation は渡さない (システムが出す)。Status を変えるときは、変える理由を同じ更新で note に書く (Archive にするときは必須)
+
+始める前に、update_stock_rating に fair_price の引数があり、説明の採点ルールが Ver3.0 であることを確かめてください。無ければ古いツールの定義を見ているので、何も更新せずにそう伝えてください。
 
 最後に、対象の銘柄について次の表を作ってください:
 コード / 銘柄 / 決算の一言要約 / 仮説 (補強・反証・未確認のどれが主か) / 旧 fund→新 fund / 旧 mispricing→新 mispricing / fair_price / 理論株価との比 / システムが出した Valuation とモメンタム / 総合点 / Status の変更 (あれば)
