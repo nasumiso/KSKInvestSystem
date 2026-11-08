@@ -715,10 +715,13 @@ def test_月次レポートは保存月の新しい順で最新月を表示(clie
     for name in ("2026-13.md", "2026-9.md", "notes.md", "2026-10.json"):
         (review_dir / name).write_text("対象外", encoding="utf-8")
     (review_dir / "2026-11.md").mkdir()
+    # 追補 (issue #566) は月の一覧に出さず、その月の本レポートの下に出す
+    for month in ("2026-08", "2026-09"):
+        (review_dir / f"{month}.addendum.md").write_text(f"## {month}の追補", encoding="utf-8")
     html = client.get("/trade-history/reviews").get_data(as_text=True)
     assert html.index("2026年9月") < html.index("2026年8月") < html.index("2025年12月")
-    assert '<h2>2026-09の振り返り</h2>' in html
-    assert '<h2>2026-08の振り返り</h2>' not in html
+    assert html.index('<h2>2026-09の振り返り</h2>') < html.index('<h2>2026-09の追補</h2>')
+    assert '<h2>2026-08の振り返り</h2>' not in html and "2026-08の追補" not in html
     assert "対象外" not in html and "2026年10月" not in html and "2026年11月" not in html
 
 

@@ -71,8 +71,11 @@ def review_reports(year_month):
         abort(404)
     selected_month = year_month or (months[0] if months else None)
     report = (review_dir / f"{selected_month}.md").read_text(encoding="utf-8") if selected_month else ""
+    # 保存済みの月にあとから付けた追補 (issue #566)。本レポートは書き換えず、下に並べる
+    addendum_path = review_dir / f"{selected_month}.addendum.md"
+    addendum = addendum_path.read_text(encoding="utf-8") if selected_month and addendum_path.is_file() else ""
     return render_template("trade_review.html", months=months,
-                           selected_month=selected_month, report=report)
+                           selected_month=selected_month, report=report, addendum=addendum)
 
 
 def _build_rows(ep: dict) -> list:
