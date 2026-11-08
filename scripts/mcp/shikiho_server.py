@@ -4,6 +4,7 @@
 import json
 import logging
 import os
+import subprocess
 import sys
 import threading
 from datetime import date, datetime, timedelta
@@ -31,6 +32,25 @@ import stock_ratings
 
 logger = logging.getLogger(__name__)
 
+
+def _server_version() -> str:
+    """起動時のコードの版 (採点ルールの版 + コミット)。例: 3.0+a4c9b10
+
+    ChatGPT のコネクタはツールの定義を接続時に読んで持ち続けるので、説明文に入れた版と、
+    ツールが返す版 (今動いているサーバーの版) を比べれば、定義が古いかどうかが分かる。
+    """
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=REPOSITORY_ROOT,
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        commit = "unknown"
+    return f"{stock_ratings.RUBRIC_VERSION}+{commit}"
+
+
+SERVER_VERSION = _server_version()
+
 # ir_docs.py は収集用に requests / pypdf を読み込むため、読み取りツールは import せず
 # 保存先だけを同じ規則で組み立てる。収集ツール (sync_earnings_documents など) だけが
 # 呼び出し時に遅延 import する。
@@ -48,6 +68,7 @@ LOCAL_PATH_NOTE = (
 
 mcp = MCPServer(
     "shintakane-shikiho",
+    version=SERVER_VERSION,
     instructions=(
         "Shintakane の四季報コメントと業績予想を読み取り専用で返します。"
         "書き込むのは銘柄評価台帳 (update_stock_rating) の更新と、IR 資料の収集"
@@ -617,6 +638,7 @@ def list_stock_ratings_data(status: Optional[str] = None) -> Dict[str, Any]:
     """銘柄評価台帳の一覧を総合点の高い順に返す。"""
     ratings = stock_ratings.list_ratings(status)
     data = {
+        "server_version": SERVER_VERSION,
         "count": len(ratings),
         "as_of": next((r["system"]["as_of"] for r in ratings if r["system"]["as_of"]), None),
         "stocks": [
@@ -643,6 +665,7 @@ def get_stock_rating_data(code_s: str, history: int = 3) -> Dict[str, Any]:
     code_s = code_s.strip().upper()
     rating = stock_ratings.get_rating(code_s)
     return {
+        "server_version": SERVER_VERSION,
         "code_s": code_s,
         "found": rating is not None,
         "rating": rating,
@@ -836,6 +859,8 @@ Status (台帳に載せるのは、一次資料で調べた深掘り候補と保
 - Archive: 仮説崩れ・時間切れ・見送り。Archive にする更新では、外す理由を同じ呼び出しで note に書く
 - Active / Watch では thesis・risks・checkpoints・fair_price を、Archive では note を空にできない (新規作成でも同じ)
 """
+# 定義の版。get_stock_rating / list_stock_ratings が返す server_version と違えば、この定義は古い
+UPDATE_STOCK_RATING_DESCRIPTION += f"\n定義の版: {SERVER_VERSION}\n"
 
 
 @mcp.tool()
@@ -941,6 +966,8 @@ def list_stock_ratings(status: Optional[str] = None) -> Dict[str, Any]:
     status (Active / Watch / Archive) を指定するとその Status だけを返します。
     status を指定しないときは Archive を含みません (Archive は比較の対象外)。
     仮説・リスクなどの長文は含みません。全項目は get_stock_rating で取得します。
+    server_version は今動いているサーバーの版です。update_stock_rating の説明の末尾にある
+    「定義の版」と違えば、手元のツール定義が古いので、コネクタを更新してもらってください。
     system はシステムが出した Valuation とモメンタムの点と、欠けた値 (missing) です。total に入っています。
     status を指定しないときは、Status ごとの件数と上限 (limits) と、外す候補 (archive_candidates:
     ポートフォリオとの食い違い・決算の後に未更新の Watch・最後の更新が古い、の理由つき) も返します。
@@ -958,6 +985,8 @@ def get_stock_rating(code_s: str, history: int = 3) -> Dict[str, Any]:
     history は返す変更履歴の件数です (新しい順)。各履歴の changes は
     {項目: [前の値, 新しい値]} で、前回から評価がどう変わったかが分かります。
     評価を更新する前に呼び、現在の値と前回の変更理由を確認してください。
+    server_version は今動いているサーバーの版です。update_stock_rating の説明の末尾にある
+    「定義の版」と違えば、手元のツール定義が古いので、コネクタを更新してもらってください。
 
     rating.system はシステムが出す2軸で、total に入っています (as_of が基準日)。
     - momentum (0〜20) = RS 0〜10 + 業態テーマ順位 0〜10。missing の要素は5点で埋めています

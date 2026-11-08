@@ -712,3 +712,17 @@ def test_fetch_ir_page_document_guards(ir_collect, monkeypatch):
     with server._IR_WRITE_LOCK:
         busy = server.sync_earnings_documents_data("3040")
     assert busy["ok"] is False and "実行中" in busy["error"]
+
+
+def test_server_version_matches_description(ratings_dir):
+    """ツールが返す版と説明文の「定義の版」が同じ起動時の版で、コネクタの定義が古いかを比べられる"""
+    version = server.SERVER_VERSION
+    assert version.startswith(stock_ratings_rubric() + "+")
+    assert f"定義の版: {version}" in server.UPDATE_STOCK_RATING_DESCRIPTION
+    assert server.get_stock_rating_data("3697")["server_version"] == version
+    assert server.list_stock_ratings_data()["server_version"] == version
+
+
+def stock_ratings_rubric():
+    import stock_ratings
+    return stock_ratings.RUBRIC_VERSION
