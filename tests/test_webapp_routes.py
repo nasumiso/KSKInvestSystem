@@ -304,6 +304,56 @@ class TestDetailRoute:
         assert "3496" in html
         assert "テストメモ" in html
 
+    @pytest.mark.parametrize("case", ["registered", "unregistered", "unreadable"])
+    def test_detail_rating_section(self, client, monkeypatch, case):
+        """台帳の節: 登録済みは点数・適正株価・欠・履歴の前→後・決算後の未更新、未登録は1行、読めなくても 200 (#572)。"""
+        import gyoseki
+        import stock_ratings
+
+        if case != "unregistered":
+            fields = {
+                "name": "アズーム", "fund": 35, "mispricing": 11, "fair_price": 6450,
+                "confidence": "A", "status": "Active", "thesis": "駐車場の転貸が伸びる",
+                "risks": "採用", "checkpoints": "4Q 受注",
+            }
+            stock_ratings.update_rating("3496", fields, "初期登録", "test")
+            stock_ratings.update_rating("3496", {"fund": 33, "fair_price": 6000}, "決算反映", "chatgpt")
+        if case == "unreadable":
+            monkeypatch.setattr(stock_ratings, "get_rating", lambda code_s: 1 / 0)
+        # 最新の決算発表日が台帳の更新日 (今日) より前なので「未更新」は出ない。未来の日は数えない
+        monkeypatch.setattr(gyoseki, "load_kessan_dates",
+                            lambda code_s: {"kessan": ["2000-01-01", "2999-01-01"], "shusei": []})
+
+        resp = client.get("/stock/3496")
+        html = resp.get_data(as_text=True)
+        assert resp.status_code == 200
+        assert 'id="rating-section"' in html
+        if case == "registered":
+            assert "評価台帳 (AI の評価)" in html
+            assert "駐車場の転貸が伸びる" in html
+            assert "6,000円" in html
+            assert "ファンダ 35→33 / 適正株価 6,450円→6,000円" in html
+            assert "欠" in html  # テスト用 DB には基準日のテーマ順位が無いので、システムの2軸が欠ける
+            assert "の後は未更新" not in html
+        else:
+            assert {"unregistered": "未登録", "unreadable": "読めませんでした"}[case] in html
+
+    def test_detail_reading_order(self, client):
+        """読む順: 台帳 → 調査材料 → 手動メモ → 業績の履歴。履歴は初回は閉 (#572 / U7)。"""
+        from bs4 import BeautifulSoup
+
+        html = client.get("/stock/3496").get_data(as_text=True)
+        soup = BeautifulSoup(html, "html.parser")
+        for link in soup.select_one(".detail-toc").select("a"):
+            assert soup.select_one(link["href"]) is not None
+        order = [html.index(f'id="{s}"') for s in (
+            "rating-section", "memo-section", "performance-history-section", "shikiho-section")]
+        assert order == sorted(order)
+        assert not soup.find(id="performance-history-section").has_attr("open")
+        # 移動しても保存フォームの所属は変わらない
+        assert soup.find(id="rating-badge-select")["form"] == "memo-form"
+        assert soup.select_one('textarea[name="memo"]').find_parent("form")["id"] == "memo-form"
+
     def test_detail_shows_shikiho_gyoseki_editor(self, client):
         html = client.get("/stock/3496").data.decode()
         assert 'id="gyoseki-raw"' in html

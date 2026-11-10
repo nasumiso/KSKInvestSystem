@@ -862,3 +862,15 @@ button.stock-name-prev-edit { width: auto; margin: 0 0 0 0.3em; padding: 0; bord
   margin: 0.5rem 0 0;
   padding: 0.2rem 0.6rem;
 }
+
+/* 銘柄詳細: 長い履歴を通り過ぎずに各欄へ移動する (issue #572 / U7)。 */
+.detail-toc {
+  display: flex;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.5em 1.2em;
+  margin-bottom: 0.6em;
+  padding: 0.5em 0;
+  border-bottom: 1px solid #ddd;
+  font-size: 0.9em;
+}
