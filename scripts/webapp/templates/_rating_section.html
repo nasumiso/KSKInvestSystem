@@ -1,0 +1,104 @@
+{# 評価台帳の節 (issue #572)。AI (ChatGPT) の評価を読むだけで出す。正本は stock_ratings.json で、
+   更新は MCP の update_stock_rating だけ。左上の手動評価バッジ (人の評価) と取り違えないよう、
+   見出しに「AI の評価」と書き、点数はバッジにしない。 #}
+<style>
+.rating-section { margin: 0.6em 0 1em; }
+.rating-meta { color: #555; font-size: 0.9em; margin-left: 0.6em; }
+.rating-stale { color: #b45309; font-weight: bold; margin-left: 0.6em; }
+.rating-list-link { float: right; font-size: 0.85em; }
+.rating-scores { display: flex; flex-wrap: wrap; gap: 0; margin: 0.6em 0; border: 1px solid #ddd; border-radius: 4px; max-width: 46em; }
+.rating-scores > div { padding: 0.5em 1em; }
+.rating-total { text-align: center; border-right: 1px solid #ddd; min-width: 6em; }
+.rating-total .num { font-size: 1.8em; font-weight: bold; line-height: 1.1; }
+.rating-total .max { color: #888; font-size: 0.85em; }
+.rating-axes { flex: 1 1 14em; }
+.rating-axes.ai { background: #f5f8ff; border-right: 1px solid #ddd; }
+.rating-axes.system { background: #f6f6f6; }
+.rating-axes .axes-label { color: #666; font-size: 0.8em; font-weight: bold; }
+.rating-axes .axis { display: flex; justify-content: space-between; max-width: 13em; }
+.rating-axes .axis .val { font-weight: bold; }
+.rating-missing { color: #b45309; cursor: help; }
+.rating-detail { font-size: 0.9em; color: #333; margin: 0.2em 0; }
+.rating-texts { display: grid; grid-template-columns: 8em 1fr; gap: 0.3em 1em; margin: 0.8em 0; max-width: 60em; font-size: 0.92em; }
+.rating-texts dt { color: #666; font-weight: bold; }
+.rating-texts dd { margin: 0; white-space: pre-wrap; line-height: 1.6; }
+.rating-next-kessan { color: #555; font-size: 0.9em; margin-left: 0.8em; white-space: nowrap; }
+.rating-note > summary { cursor: pointer; line-height: 1.6; list-style: none; }
+.rating-note > summary::-webkit-details-marker { display: none; }
+.rating-note[open] > summary .preview { display: none; }
+.rating-note:not([open]) > summary .close { display: none; }
+.rating-note .more { color: #2563eb; font-size: 0.9em; margin-left: 0.3em; }
+.rating-history { font-size: 0.88em; }
+.rating-history table td { vertical-align: top; padding: 0.15em 0.8em 0.15em 0; }
+.rating-history .src { color: #888; }
+</style>
+{% set v = rating_view %}
+{% if v.error %}
+<div class="rating-section" id="rating-section"><strong>評価台帳</strong>: 読めませんでした (ログを確認)</div>
+{% elif not v.rating %}
+<div class="rating-section" id="rating-section"><strong>評価台帳</strong>: 未登録</div>
+{% else %}
+{% set r = v.rating %}
+{% set sys = r.system %}
+{# 開閉は記憶しない (id を details に付けると、一度閉じたあとも既定の「開」に戻らなくなるため外側に付ける) #}
+<div class="rating-section" id="rating-section">
+<details open>
+  <summary>
+    <strong>評価台帳 (AI の評価)</strong>
+    <span class="rating-meta">{{ r.status }} ・ Confidence {{ r.confidence }} ・ 更新 {{ r.updated_at[5:]|replace('-', '/') }} ・ 採点ルール Ver{{ v.rubric_version }}</span>
+    {% if v.kessan_after_update %}<span class="rating-stale">⚠ 決算 {{ v.kessan_after_update[5:]|replace('-', '/') }} の後は未更新</span>{% endif %}
+    <a class="rating-list-link" href="/stock-ratings">台帳の一覧 →</a>
+  </summary>
+
+  <div class="rating-scores">
+    <div class="rating-total"><div class="num">{{ r.total }}</div><div class="max">/100</div></div>
+    <div class="rating-axes ai">
+      <div class="axes-label">AI</div>
+      <div class="axis"><span>ファンダ</span><span><span class="val">{{ r.scores.fund }}</span>/{{ v.score_max.fund }}</span></div>
+      <div class="axis"><span>未織込</span><span><span class="val">{{ r.scores.mispricing }}</span>/{{ v.score_max.mispricing }}</span></div>
+    </div>
+    <div class="rating-axes system">
+      <div class="axes-label">システム (基準日 {{ sys.as_of[5:]|replace('-', '/') if sys.as_of else 'なし' }})</div>
+      {% for axis, label, value in (('valuation', 'Valuation', sys.valuation.score), ('momentum', 'モメンタム', sys.momentum.total)) %}
+      <div class="axis"><span>{{ label }}</span><span><span class="val">{{ value }}</span>/20{% if v.missing[axis] %}<span class="rating-missing" data-tap-explain title="欠けた値: {{ v.missing[axis] }}">欠</span>{% endif %}</span></div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="rating-detail">Valuation {{ v.valuation_text }}</div>
+  <div class="rating-detail">モメンタム {{ v.momentum_text }}</div>
+
+  <dl class="rating-texts">
+    {% for key, label in v.sections %}
+    {% set text = r[key] or '' %}
+    <dt>{{ label }}</dt>
+    <dd>
+      {%- if key == 'note' and text|length > 200 -%}
+      <details class="rating-note"><summary><span class="preview">{{ text[:200] }}…<span class="more">続き</span></span><span class="close more">閉じる</span></summary>{{ text }}</details>
+      {%- else -%}
+      {{ text or '—' }}
+      {%- endif -%}
+      {%- if key == 'checkpoints' and v.next_kessan %}<span class="rating-next-kessan">次の決算予定: {{ v.next_kessan[5:] }}</span>{% endif -%}
+    </dd>
+    {% endfor %}
+  </dl>
+
+  {% if v.history %}
+  <details class="rating-history">
+    <summary>変更履歴 (直近{{ v.history|length }}件)</summary>
+    <table>
+      {% for h in v.history %}
+      <tr>
+        <td>{{ h.date[5:]|replace('-', '/') }}</td>
+        <td>{{ h.reason }} <span class="src">({{ h.source }})</span></td>
+        <td>
+          {{ h.numbers|join(' / ') }}
+          {% if h.texts %}{% if h.numbers %}<br>{% endif %}{{ h.texts|join('・') }}を更新{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </details>
+  {% endif %}
+</details>
+</div>
+{% endif %}

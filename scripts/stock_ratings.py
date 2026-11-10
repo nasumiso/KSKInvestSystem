@@ -538,7 +538,7 @@ dt { color: var(--muted); font-size: 12px; margin-top: 8px; }
 dd { margin: 0; white-space: pre-wrap; }
 """
 
-_SECTION_LABELS = (
+SECTION_LABELS = (
     ("thesis", "投資仮説"),
     ("mispricing_note", "未織込"),
     ("risks", "主要リスク"),
@@ -555,7 +555,7 @@ def _yen(value):
     return f"{value:,}円" if value else "なし"
 
 
-def _momentum_detail(m):
+def momentum_detail(m):
     themes = "、".join(f'{t["name"]} {t["rank"]}位' for t in m["themes"]) or "なし"
     text = (f'{m["total"]} = RS {m["rs"]} (RSスコア {m["momentum_pt"] or "なし"}) + '
             f'テーマ {m["theme"]} ({themes} / {m["theme_count"]}テーマ)')
@@ -564,7 +564,7 @@ def _momentum_detail(m):
     return text
 
 
-def _valuation_detail(v, ref):
+def valuation_detail(v, ref):
     upside = f'{v["upside"]:+.0%}' if v["upside"] is not None else "—"
     text = f'{v["score"]} = 適正株価 {_yen(v["fair_price"])} / 基準日の終値 {_yen(v["close"])} (上昇余地 {upside})'
     if v["missing"]:
@@ -634,11 +634,11 @@ def render_html(data, generated_at, system=None):
                 f' — {r["total"]} ({s.get("fund", "—")}/{s.get("mispricing", "—")}/{v["score"]}/{m["total"]})'
                 f' {esc(r["confidence"])}</summary><dl>'
             )
-            for key, label in _SECTION_LABELS:
+            for key, label in SECTION_LABELS:
                 if r.get(key):
                     parts.append(f"<dt>{label}</dt><dd>{esc(r[key])}</dd>")
-            parts.append(f"<dt>Valuation (システム)</dt><dd>{esc(_valuation_detail(v, r['system']['reference']))}</dd>")
-            parts.append(f"<dt>モメンタム (システム)</dt><dd>{esc(_momentum_detail(m))}</dd>")
+            parts.append(f"<dt>Valuation (システム)</dt><dd>{esc(valuation_detail(v, r['system']['reference']))}</dd>")
+            parts.append(f"<dt>モメンタム (システム)</dt><dd>{esc(momentum_detail(m))}</dd>")
             parts.append("</dl></details>")
         if archive:
             parts.append("</details>")
@@ -714,7 +714,7 @@ def _cmd_show(code_s):
 
 
 # 欠けた値の名前 → list の先頭行での呼び方
-_MISSING_LABELS = {
+MISSING_LABELS = {
     "price_stale": "終値が基準日のものでない", "rs_stale": "RS が基準日のものでない",
     "fair_price": "適正株価なし", "rs": "RS なし", "theme": "業態テーマなし",
 }
@@ -728,7 +728,7 @@ def _cmd_list(status):
     for r in rows:
         for key in r["system"]["valuation"]["missing"] + r["system"]["momentum"]["missing"]:
             counts[key] = counts.get(key, 0) + 1
-    missing = "・".join(f"{_MISSING_LABELS.get(k, k)} {n}" for k, n in counts.items()) or "なし"
+    missing = "・".join(f"{MISSING_LABELS.get(k, k)} {n}" for k, n in counts.items()) or "なし"
     print(f"基準日 {as_of or 'なし'} / {len(rows)} 銘柄 / 欠: {missing}")
     for r in rows:
         s, v, m = r["scores"], r["system"]["valuation"], r["system"]["momentum"]

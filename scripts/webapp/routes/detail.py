@@ -17,6 +17,7 @@ from flask import Blueprint, render_template, abort, jsonify, request
 
 import portfolio_shelve as ps
 import run_sentiment
+import stock_ratings
 from sentiment import get_forum_url
 from ks_util import log_print, log_warning
 from webapp.helpers import (
@@ -68,6 +69,81 @@ def _load_ir_docs(code_s):
     except (FutureTimeoutError, OSError) as e:
         log_warning(f"[detail] {code_s} の IR資料 index を読めませんでした: {e!r}")
         return None, _IR_DOCS_UNAVAILABLE
+
+
+# 台帳の変更履歴で「前→後」を出す項目 (それ以外のテキスト項目は「〜を更新」と名前だけ出す)
+_RATING_CHANGE_LABELS = {
+    "scores.fund": "ファンダ", "scores.mispricing": "未織込",
+    "scores.momentum": "モメンタム", "scores.valuation": "Valuation",
+    "fair_price": "適正株価", "status": "Status", "confidence": "Confidence",
+}
+_RATING_TEXT_LABELS = {**dict(stock_ratings.SECTION_LABELS), "name": "銘柄名", "role": "役割"}
+_RATING_HISTORY_LIMIT = 5
+
+
+def _rating_change_value(key, value):
+    if value is None:
+        return "なし"
+    return f"{value:,}円" if key == "fair_price" else str(value)
+
+
+def _rating_history_rows(entries):
+    """台帳の変更履歴を表示用に整える。数値は「前→後」、テキスト項目は名前だけ。"""
+    rows = []
+    for entry in entries:
+        changes = entry.get("changes") or {}
+        numbers = [
+            f"{label} {_rating_change_value(key, changes[key][0])}→{_rating_change_value(key, changes[key][1])}"
+            for key, label in _RATING_CHANGE_LABELS.items() if key in changes
+        ]
+        texts = [label for key, label in _RATING_TEXT_LABELS.items() if key in changes]
+        rows.append({
+            "date": (entry.get("at") or "")[:10],
+            "reason": entry.get("reason") or "",
+            "source": entry.get("source") or "",
+            "numbers": numbers,
+            "texts": texts,
+        })
+    return rows
+
+
+def _rating_view(code_s, stock):
+    """個別銘柄ページの台帳の節に渡す値。未登録は {"rating": None}、読めなければ {"error": True}。
+
+    台帳 (stock_ratings) を読むだけで書かない。読めなくてもページ全体は出す。
+    """
+    from gyoseki import load_kessan_dates  # 遅延 import (今日のアクションと同じ扱い)
+    try:
+        rating = stock_ratings.get_rating(code_s)
+        if rating is None:
+            return {"rating": None}
+        today = date.today()
+        # 最新の決算発表日が台帳の更新日より後なら「決算後は未更新」(今日のアクションの判定と同じ材料)
+        past = [d for d in load_kessan_dates(code_s)["kessan"] if d <= today.isoformat()]
+        kessan_after_update = past[-1] if past and past[-1] > rating["updated_at"] else None
+        # 次の決算予定日 (stocks_shelve の kessanbi は YYYY/MM/DD)。今日以降のときだけ出す
+        kessanbi = (stock or {}).get("kessanbi") or ""
+        next_kessan = kessanbi if kessanbi >= today.strftime("%Y/%m/%d") else None
+        system = rating["system"]
+        missing = {
+            axis: "・".join(stock_ratings.MISSING_LABELS.get(k, k) for k in system[axis]["missing"])
+            for axis in ("valuation", "momentum")
+        }
+        return {
+            "rating": rating,
+            "history": _rating_history_rows(stock_ratings.get_history(code_s, limit=_RATING_HISTORY_LIMIT)),
+            "kessan_after_update": kessan_after_update,
+            "next_kessan": next_kessan,
+            "missing": missing,
+            "valuation_text": stock_ratings.valuation_detail(system["valuation"], system["reference"]),
+            "momentum_text": stock_ratings.momentum_detail(system["momentum"]),
+            "sections": stock_ratings.SECTION_LABELS,
+            "score_max": stock_ratings.SCORE_MAX,
+            "rubric_version": stock_ratings.RUBRIC_VERSION,
+        }
+    except Exception as e:  # noqa: BLE001
+        log_warning(f"[detail] {code_s} の評価台帳を読めませんでした: {e!r}")
+        return {"error": True}
 
 
 @detail_bp.route("/stock/<code_s>")
@@ -219,6 +295,8 @@ def stock_detail(code_s: str):
         stop_dialog=build_stop_dialog_data(code_s, record.get("stock_name") or "", stock,
                                            portfolio_record, trade_idea_master),
         stop_dialog_strategies=stop_dialog_strategies(trade_idea_master),
+        # issue #572: 評価台帳の節 (AI の評価、読むだけ)
+        rating_view=_rating_view(code_s, stock),
     )
 
 
