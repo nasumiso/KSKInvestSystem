@@ -361,7 +361,8 @@ def _target_chain(evaluation: dict) -> dict:
     fng = evaluation["fng_jp"]
     credit = evaluation.get("credit_eval_rate")
     credit_prev = evaluation.get("credit_prev_rate")
-    fng_dir, credit_dir, direction = me.contrarian_direction(fng, credit, credit_prev)
+    credit_now = evaluation.get("credit_now_rate")
+    fng_dir, credit_dir, direction = me.contrarian_direction(fng, credit, credit_prev, credit_now)
     credit_note = ""
     if fng_dir and credit_dir:
         credit_note = " (重ねない)" if direction else " (打ち消し)"
@@ -377,7 +378,8 @@ def _target_chain(evaluation: dict) -> dict:
         "fng_step_label": step_label(fng, fng_dir),
         "credit_label": credit_label,
         "credit_mood": _CREDIT_MOODS.get(credit_label),
-        "credit_improving": me.credit_improving(credit, credit_prev),
+        "credit_improving": me.credit_improving(credit, credit_prev, credit_now),
+        "credit_beta": me.CREDIT_NIKKEI_BETA,
         "credit_step_label": None if credit is None else step_label(credit, credit_dir) + credit_note,
         "state_capped": state_capped,
         "clamped": not state_capped and evaluation["step"] != base + direction,

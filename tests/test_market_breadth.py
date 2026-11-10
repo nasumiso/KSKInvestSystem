@@ -116,6 +116,20 @@ def test_market_indicators_credit_badge(tmp_path, monkeypatch, prev, eval_rate, 
     assert ("↗改善" in html) == improved
 
 
+def test_market_indicators_credit_nowcast(tmp_path, monkeypatch):
+    """改善は日経平均から推した今日の値で見る。公表値が前週より悪化していても、推定値が上なら ↗改善"""
+    import exposure_guide
+    _write_credit_json(tmp_path, [
+        {"date": "2026-04-24", "credit_eval_rate": -14.0, "credit_bairitsu": 6.0},
+        {"date": "2026-05-01", "credit_eval_rate": -16.0, "credit_bairitsu": 6.0},
+    ])
+    monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(exposure_guide, "get_price_day", lambda _: date(2026, 5, 7))
+    nikkei = {"price_log": [(date(2026, 5, 7), 51000), (date(2026, 5, 1), 50000)]}
+    html = make_market_db._html_market_indicators({"nikkei225": nikkei})
+    assert "↗改善" in html and "推定 -14.6%" in html
+
+
 def test_market_indicators_returns_empty_when_no_data(tmp_path, monkeypatch):
     """credit_balance.json も Fear & Greed も無ければ空文字 (HTML を壊さない)。"""
     monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))

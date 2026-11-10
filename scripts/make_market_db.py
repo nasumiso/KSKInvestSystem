@@ -1326,14 +1326,18 @@ _CREDIT_RATING_CLASS = {
 }
 
 
-def _credit_rating_html(eval_rate, prev_rate=None):
-    """信用評価損益率の5段階バッジ HTML を返す。弱気・底値圏で前週より改善していれば「↗改善」を添える。"""
+def _credit_rating_html(eval_rate, prev_rate=None, now_rate=None):
+    """信用評価損益率の5段階バッジ HTML を返す。弱気・底値圏で改善していれば「↗改善」を添える。
+
+    改善は日経平均から推した今日の値 now_rate と公表値で比べ、推せなければ前週値と比べる。
+    """
     import margin_estimate
 
     label = margin_estimate.credit_label(eval_rate)
     badge = '<span class="fng-rating %s">%s</span>' % (_CREDIT_RATING_CLASS[label], label)
-    if label in ("弱気", "底値圏") and margin_estimate.credit_improving(eval_rate, prev_rate):
-        badge += ' <span title="前週より改善">↗改善</span>'
+    if label in ("弱気", "底値圏") and margin_estimate.credit_improving(eval_rate, prev_rate, now_rate):
+        tip = "推定値が公表値より上" if now_rate is not None else "前週より改善"
+        badge += ' <span title="%s">↗改善</span>' % tip
     return badge
 
 
@@ -1687,8 +1691,10 @@ def _credit_rows(market_db):
     取得失敗時は []。
 
     信用倍率は独立行をやめ、信用評価損益率行の tooltip に統合する (issue #292)。
-    market_db は使わず、$KS_DATA_DIR/code_rank_data/credit_balance.json を読む (issue #211)。
+    値は $KS_DATA_DIR/code_rank_data/credit_balance.json を読む (issue #211)。market_db は
+    日経平均から今日の値を推すのに使う。
     """
+    import exposure_guide
     import margin_estimate
 
     path =os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json")
@@ -1728,11 +1734,16 @@ def _credit_rows(market_db):
         b4, b4_cls = _format_credit_delta(bairitsu, _prev("credit_bairitsu", 4))
         title_parts.append(
             "信用倍率 %.2f (1週 %s / 4週 %s)" % (bairitsu, b1, b4))
+    now = exposure_guide.read_credit_nowcast(market_db, eval_rate, date_str)
+    if now:
+        title_parts.append(
+            "推定 %.1f%% (日経 %+.1f%% × %s、%s 時点)。公表は週次で約1週遅れるので、改善はこの推定値と公表値で見る"
+            % (now[0], now[2], margin_estimate.CREDIT_NIKKEI_BETA, now[1][5:].replace("-", "/")))
     title = " / ".join(title_parts)
     return [(
         eval_label,
         '%.2f%%' % eval_rate,
-        _credit_rating_html(eval_rate, margin_estimate.credit_prev_rate(history)),
+        _credit_rating_html(eval_rate, margin_estimate.credit_prev_rate(history), now[0] if now else None),
         '<span class="%s">%s</span>pt' % (
             html_mod.escape(e1_cls), html_mod.escape(e1)),
         '<span class="%s">%s</span>pt' % (

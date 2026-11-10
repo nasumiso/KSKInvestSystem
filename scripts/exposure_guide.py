@@ -133,20 +133,22 @@ def fallback_state(index_states):
 
 
 def evaluate_target(margin_state, emotion, fng_jp, state, hold_total_value,
-                    credit=None, credit_prev=None):
+                    credit=None, credit_prev=None, credit_now=None):
     """目標の維持率と、運用総額の適正エリアを評価して表示・ログ共通の dict を返す (issue #480)。
 
     margin_state: build_margin_state() の戻り値
     emotion: read_emotion() の戻り値 (未入力なら None)
     state: 保有額で加重した市場ステート (取れなければ None)
     credit / credit_prev: 信用評価損益率の最新値と前週値 (#535。取れなければ None)
+    credit_now: read_credit_nowcast() の戻り値 (推定値, 指数の日付, 騰落率%)。推せなければ None
     hold_total_value: 保有銘柄 (1保) の数量 × 終値の合計。残高 CSV とのずれの注記に使う
 
     適正エリアは、残高 CSV に保有がある証券会社 (楽天・SBI) の推定がすべて成立したときだけ出す。
     片方だけの数字で全体の過不足を出さないため。出せないときは area_* を None にして理由を返す。
     """
     score = emotion["score"] if emotion and not emotion.get("expired") else None
-    step, parts = margin_estimate.target_step(score, fng_jp, state, credit, credit_prev)
+    now_rate, now_date, now_move = credit_now or (None, None, None)
+    step, parts = margin_estimate.target_step(score, fng_jp, state, credit, credit_prev, now_rate)
     result = {
         "emotion_score": score,
         "emotion_date": (emotion or {}).get("date"),
@@ -154,6 +156,9 @@ def evaluate_target(margin_state, emotion, fng_jp, state, hold_total_value,
         "fng_jp": fng_jp,
         "credit_eval_rate": credit,
         "credit_prev_rate": credit_prev,
+        "credit_now_rate": now_rate,
+        "credit_now_date": now_date,
+        "credit_now_move": now_move,
         "state": state,
         "step": step,
         "step_parts": parts,
@@ -239,6 +244,17 @@ def read_credit_eval_rate(*, today=None):
         )
         return None, date_str, None
     return value, date_str, margin_estimate.credit_prev_rate(history)
+
+
+def read_credit_nowcast(market_db, rate, data_date, *, today=None):
+    """日経平均から今日の信用評価損益率を推す (margin_estimate.credit_nowcast)。
+
+    保有銘柄タブと /market の両方がここを通す。日経が鮮度切れなら None (前週比で判定する)。
+    """
+    entry = (market_db or {}).get("nikkei225") or {}
+    if not _is_fresh(_index_latest_date(entry), "index", today=today):
+        return None
+    return margin_estimate.credit_nowcast(rate, data_date, entry.get("price_log") or [])
 
 
 def read_fng_jp(*, today=None):
@@ -469,7 +485,7 @@ def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None, 
         margin_state = build_margin_state(db_path=db_path)
     evaluation = evaluate_target(
         margin_state, read_emotion(db_path=db_path), fng_jp, state, summary["total_value"],
-        credit, credit_prev)
+        credit, credit_prev, read_credit_nowcast(market_db, credit, credit_date, today=base_day))
     evaluation.update({
         "state_is_fallback": state_is_fallback,
         "is_no_position": summary["total_value"] <= 0,

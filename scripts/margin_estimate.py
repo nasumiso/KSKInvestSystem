@@ -285,6 +285,9 @@ CREDIT_NEUTRAL = -10.0
 CREDIT_BOTTOM = -15.0
 # 前週値として使う、最新との日付の離れの上限 (日)。週次の公表が抜けた週は改善を判定しない
 CREDIT_PREV_MAX_GAP_DAYS = 10
+# 日経平均の騰落 1% あたりの信用評価損益率の変化 (pt)。2026-04〜11 の30週の週次で傾き 0.71・相関 0.90。
+# 公表値は週次で約1週遅れるので、改善はこれで推した今日の値で見る。急落局面での当てはまりは未検証
+CREDIT_NIKKEI_BETA = 0.71
 # F&G が Extreme でないとき、市場ステートで攻める側 (マイナス) にかける上限の段。
 # 上昇確定は上限なし。ステートが取れない日は上昇圧力下と同じにする
 STATE_STEP_FLOORS = {
@@ -341,13 +344,35 @@ def credit_prev_rate(history: List[Dict[str, Any]]) -> Optional[float]:
     return prev.get("credit_eval_rate") if gap <= CREDIT_PREV_MAX_GAP_DAYS else None
 
 
-def credit_improving(rate: Optional[float], prev: Optional[float]) -> bool:
-    """前週より改善した (損益率が上がった) か。"""
+def credit_nowcast(rate: Optional[float], data_date: Optional[str],
+                   price_log: List[Any]) -> Optional[Tuple[float, str, float]]:
+    """公表値と日経平均の騰落から、今日の信用評価損益率を推す (推定値, 指数の日付, 騰落率%)。
+
+    price_log: 日経平均の日足 (日付降順の (date, 終値))。公表日以前の終値が無い、または
+    最新の日足が公表日より後でないときは None (呼び出し側は前週比で判定する)。
+    """
+    if rate is None or not data_date or not price_log:
+        return None
+    rows = [(d if isinstance(d, str) else d.isoformat())[:10] for d, _ in price_log]
+    base = next((c for d, (_, c) in zip(rows, price_log) if d <= data_date), None)
+    latest_date, latest = rows[0], price_log[0][1]
+    if not base or latest_date <= data_date:
+        return None
+    move = (latest / base - 1) * 100
+    return rate + CREDIT_NIKKEI_BETA * move, latest_date, move
+
+
+def credit_improving(rate: Optional[float], prev: Optional[float],
+                     now: Optional[float] = None) -> bool:
+    """改善した (損益率が上がった) か。推定値 now があれば公表値と、無ければ前週値と比べる。"""
+    if rate is not None and now is not None:
+        return now > rate
     return rate is not None and prev is not None and rate > prev
 
 
 def contrarian_direction(fng: Optional[float], credit: Optional[float],
-                         credit_prev: Optional[float]) -> Tuple[int, int, int]:
+                         credit_prev: Optional[float],
+                         credit_now: Optional[float] = None) -> Tuple[int, int, int]:
     """F&G と信用評価損益率の逆張りの向き (fng_dir, credit_dir, direction) を返す (−1 / 0 / +1)。
 
     重ねない: 同じ向きなら 1 段だけ、逆向きなら打ち消して 0。
@@ -358,7 +383,7 @@ def contrarian_direction(fng: Optional[float], credit: Optional[float],
     credit_dir = 0
     if credit is not None and credit >= CREDIT_CEILING:
         credit_dir = 1
-    elif credit is not None and credit <= CREDIT_BOTTOM and credit_improving(credit, credit_prev):
+    elif credit is not None and credit <= CREDIT_BOTTOM and credit_improving(credit, credit_prev, credit_now):
         credit_dir = -1
     direction = 0 if fng_dir and credit_dir and fng_dir != credit_dir else fng_dir or credit_dir
     return fng_dir, credit_dir, direction
@@ -371,16 +396,18 @@ def format_step(step: int) -> str:
 
 def target_step(emotion: Optional[int], fng: Optional[float], state: Optional[str],
                 credit: Optional[float] = None,
-                credit_prev: Optional[float] = None) -> Tuple[int, List[str]]:
+                credit_prev: Optional[float] = None,
+                credit_now: Optional[float] = None) -> Tuple[int, List[str]]:
     """感情スコア・日本版 F&G・信用評価損益率・市場ステートから目標の段 (−3〜+3) を決める。
 
     emotion: 有効な感情スコア (期限切れ・未入力は None で、中立 0 として扱う)
     credit / credit_prev: 信用評価損益率の最新値と前週値 (取れなければ None)
+    credit_now: 日経平均から推した今日の値 (credit_nowcast。推せなければ None で前週比を使う)
     Returns: (段, 決まり方の説明の list)。例 (−1, ["感情 0", "F&G Extreme Fear (22) で −1"])
     """
     step = NEUTRAL_STEP if emotion is None else int(emotion)
     parts = ["感情 未入力 (0)" if emotion is None else f"感情 {format_step(step)}"]
-    fng_dir, credit_dir, direction = contrarian_direction(fng, credit, credit_prev)
+    fng_dir, credit_dir, direction = contrarian_direction(fng, credit, credit_prev, credit_now)
     reasons = []
     if fng_dir:
         reasons.append(f"F&G {fng_label(fng)} ({fng:.0f})")

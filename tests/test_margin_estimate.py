@@ -1,6 +1,6 @@
 """推定維持率の概算ロジックのテスト (issue #527)。"""
 
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -118,17 +118,20 @@ def test_fall_and_combine_and_input_check():
     (-1, 50, (-16, -14), "market_in_correction", 0, ("Neutral", "±0", "底値圏", "±0", True, False)),  # 悪化中は上限
     (-1, 15, (-16, -18), "market_in_correction", -2, ("Extreme Fear", "−1", "底値圏", "±0 (重ねない)", False, False)),
     (-1, 15, (-2, -3), "market_in_correction", 0, ("Extreme Fear", "±0", "天井圏", "±0 (打ち消し)", True, False)),
+    # 日経平均から推した今日の値があれば、改善はそれと公表値で比べる (公表値は約1週遅れ)
+    (-1, 50, (-16, -14, -15), "market_in_correction", -2, ("Neutral", "±0", "底値圏", "−1", False, False)),
+    (-1, 50, (-16, -18, -17), "market_in_correction", 0, ("Neutral", "±0", "底値圏", "±0", True, False)),
 ])
 def test_target_step(emotion, fng, credit, state, expected, chain):
     """感情スコアが主。F&G・信用が Extreme なら逆張りで 1 (重ねない)、それ以外は市場ステートで攻める側に上限。
     画面の決まり方の表示 (_target_chain) も同じ結果を言う"""
     from webapp.routes.portfolio import _target_chain
 
-    rate, prev = credit or (None, None)
-    step, parts = me.target_step(emotion, fng, state, rate, prev)
+    rate, prev, now = (tuple(credit) + (None,))[:3] if credit else (None, None, None)
+    step, parts = me.target_step(emotion, fng, state, rate, prev, now)
     assert step == expected and parts
     shown = _target_chain({"emotion_score": emotion, "fng_jp": fng, "step": step,
-                           "credit_eval_rate": rate, "credit_prev_rate": prev})
+                           "credit_eval_rate": rate, "credit_prev_rate": prev, "credit_now_rate": now})
     assert (shown["fng_label"], shown["fng_step_label"], shown["credit_label"],
             shown["credit_step_label"], shown["state_capped"], shown["clamped"]) == chain
 
@@ -151,3 +154,18 @@ def test_target_area(guarantee, step, expected):
     assert area["area_lower"] <= area["target_value"] <= area["area_upper"]
     if area["floor_capped"]:  # 頭打ちの端は、一律 20% 下落で維持率がちょうど 20% になる量
         assert area["area_upper"] == pytest.approx(14_000_000 + 5_500_000)
+
+
+@pytest.mark.parametrize("price_log, expected", [
+    # 日経の日足 (日付降順)。公表日 (金曜) の終値からの騰落 × CREDIT_NIKKEI_BETA を公表値に足す
+    ([(date(2026, 11, 10), 60459), (date(2026, 11, 9), 58775), (date(2026, 11, 6), 57435)],
+     (-21.08 + me.CREDIT_NIKKEI_BETA * (60459 / 57435 - 1) * 100, "2026-11-10")),
+    ([(date(2026, 11, 10), 60459), (date(2026, 11, 4), 62189)],
+     (-21.08 + me.CREDIT_NIKKEI_BETA * (60459 / 62189 - 1) * 100, "2026-11-10")),  # 公表日が休場なら手前の終値
+    ([(date(2026, 11, 10), 60459)], None),                  # 公表日以前の終値が無い
+    ([(date(2026, 11, 6), 57435), (date(2026, 11, 5), 61078)], None),  # 最新の日足が公表日のまま
+])
+def test_credit_nowcast(price_log, expected):
+    """公表値は週次で約1週遅れるので、日経平均の騰落から今日の値を推す。推せなければ None"""
+    got = me.credit_nowcast(-21.08, "2026-11-06", price_log)
+    assert (got is None) if expected is None else (got[0] == pytest.approx(expected[0]) and got[1] == expected[1])

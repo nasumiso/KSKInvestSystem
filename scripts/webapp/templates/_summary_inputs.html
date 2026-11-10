@@ -33,14 +33,14 @@
   {%- endif %}
   <span>＋</span>
   {%- if ex.credit_label %}
-  <span title="信用評価損益率 {{ '%.2f'|format(ex.credit_eval_rate) }}% ({{ ex.credit_date }}){% if ex.credit_prev_rate is not none %}、前週 {{ '%.2f'|format(ex.credit_prev_rate) }}%{% endif %}。−3% 以上 (天井圏) ならスコアを +1 (熱狂で落とす)、−15% 以下 (底値圏) で前週より改善した週は −1 (投げが一巡したら張る)。F&amp;G と同じ向きなら重ねず、逆向きなら打ち消す">信用 <span style="{{ badge }}{{ mood_styles[ex.credit_mood] }}">{{ ex.credit_label }}{% if ex.credit_improving and ex.credit_label in ('弱気', '底値圏') %} ↗{% endif %}</span> <b style="color:#333;">{{ ex.credit_step_label }}</b></span>
+  <span title="信用評価損益率 {{ '%.2f'|format(ex.credit_eval_rate) }}% ({{ ex.credit_date }}){% if ex.credit_prev_rate is not none %}、前週 {{ '%.2f'|format(ex.credit_prev_rate) }}%{% endif %}{% if ex.credit_now_rate is not none %}。推定 {{ '%.1f'|format(ex.credit_now_rate) }}% (日経 {{ '%+.1f'|format(ex.credit_now_move) }}% × {{ ex.credit_beta }}、{{ ex.credit_now_date[5:].replace('-', '/') }} 時点){% endif %}。−3% 以上 (天井圏) ならスコアを +1 (熱狂で落とす)、−15% 以下 (底値圏) で改善したら −1 (投げが一巡したら張る)。公表は週次で約1週遅れるので、改善は日経平均から推した今日の値で見る (推せない日は前週比)。F&amp;G と同じ向きなら重ねず、逆向きなら打ち消す">信用 <span style="{{ badge }}{{ mood_styles[ex.credit_mood] }}">{{ ex.credit_label }}{% if ex.credit_improving and ex.credit_label in ('弱気', '底値圏') %} ↗{% endif %}</span> <b style="color:#333;">{{ ex.credit_step_label }}</b></span>
   {%- else %}
   <span style="color:#ef6c00;" title="信用評価損益率が{% if ex.credit_date %} {{ ex.credit_date }} のまま古い{% else %}取れていない{% endif %}ため、信用では動かしていません">信用 取得なし</span>
   {%- endif %}
   <span>＝</span>
   <span title="スコア {{ ex.step_label }} ← {{ ex.step_parts|join('、') }}
 スコア −3〜+3 → 目標の維持率 50 / 60 / 70 / 80 / 90 / 100 / 120% (投資メモの感情スコアシート)。
-感情スコアが主。日本版 F&amp;G が Extreme (25未満 / 75以上)、または信用評価損益率が天井圏・底値圏 (前週より改善) なら逆張りで 1 ずらす (重ねない)。それ以外の日は市場ステートで攻める側に上限 (調整局面 0 / 上昇圧力下 −1)。"><b style="color:#333;">{{ ex.step_label }}</b>{% if ex.state_capped %} ({% if ex.state %}{{ ex.state_label }}の上限{% else %}市場ステート不明で上限{% endif %}){% elif ex.clamped %} (−3〜+3 で頭打ち){% endif %} → 目標 維持率 <b style="color:#333;">{{ ex.target_rate }}%</b></span>
+感情スコアが主。日本版 F&amp;G が Extreme (25未満 / 75以上)、または信用評価損益率が天井圏・底値圏 (改善) なら逆張りで 1 ずらす (重ねない)。それ以外の日は市場ステートで攻める側に上限 (調整局面 0 / 上昇圧力下 −1)。"><b style="color:#333;">{{ ex.step_label }}</b>{% if ex.state_capped %} ({% if ex.state %}{{ ex.state_label }}の上限{% else %}市場ステート不明で上限{% endif %}){% elif ex.clamped %} (−3〜+3 で頭打ち){% endif %} → 目標 維持率 <b style="color:#333;">{{ ex.target_rate }}%</b></span>
   {%- endif %}
   <span>·</span>
   {%- if c %}
