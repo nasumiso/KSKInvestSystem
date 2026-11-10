@@ -55,7 +55,7 @@ RATING_EXEMPT_STRATEGIES = ("大型高配当", "短期イベント", "短期底�
 # 上限 (Active / Watch) は stock_ratings.STATUS_LIMITS。上限超過を知らせる月 (決算シーズン明け。5・8・11・2月の決算が出そろった翌月)
 RATING_REVIEW_MONTHS = (3, 6, 9, 12)
 # 決算発表日から何日過ぎても台帳が更新されていなければ、Active の更新待ちとして出す (暦日)。
-# それまでの間 (決算の翌日から) は「決算後の台帳更新」として銘柄名を出す
+# それまでの間 (決算の当日から) は「決算後の台帳更新」として銘柄名を出す
 RATING_STALE_DAYS = 14
 # Watch のまま何回決算をまたいだら出すか (売りの4分類の「時間切れ」)
 RATING_WATCH_KESSAN = 2
@@ -278,28 +278,29 @@ def _rating_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str
             items.append(_with_popup(item, label, [
                 f"{c['code_s']} {c['name']} ({'、'.join(c['reasons'])})" for c in candidates]))
 
-    recent = []  # 決算の翌日〜RATING_STALE_DAYS 日の Active: (決算日, code_s, 銘柄名)
+    recent = []  # 決算の当日〜RATING_STALE_DAYS 日の Active: (決算日, code_s, 銘柄名)
     recent_watch = []  # 同じ期間の Watch: 「コード 銘柄名 (決算日)」。過ぎても更新待ちには移さない
     stale = []
+    # 決算の当日の朝から出すため実際の今日で判定する (17時前の get_price_day だと当日の決算が入らない)
+    real_today = _real_today()
     for code_s, rt in sorted(ratings.items()):
         if rt["status"] not in limits:
             continue
         updated = rt.get("updated_at", "")
-        past = [d for d in gyoseki.load_kessan_dates(code_s)["kessan"] if d <= today.isoformat()]
+        past = [d for d in gyoseki.load_kessan_dates(code_s)["kessan"] if d <= real_today.isoformat()]
         if rt["status"] == "Active" and past:
             last = date.fromisoformat(past[-1])
             if updated >= past[-1]:
                 continue
             if (today - last).days > RATING_STALE_DAYS:
                 stale.append(f"{code_s} {rt['name']} (Active、{_md(last)} の決算が未反映)")
-            # 翌日の朝から出すため実際の今日で判定する (17時前の get_price_day だと夕方まで出ない)
-            elif (_real_today() - last).days >= 1:
+            else:
                 recent.append((last, code_s, rt["name"]))
         elif rt["status"] == "Watch" and sum(1 for d in past if d > updated) >= RATING_WATCH_KESSAN:
             stale.append(f"{code_s} {rt['name']} (Watch のまま決算を{RATING_WATCH_KESSAN}回またいだ)")
         elif rt["status"] == "Watch" and past and updated < past[-1]:
             last = date.fromisoformat(past[-1])
-            if 1 <= (_real_today() - last).days <= RATING_STALE_DAYS:
+            if (real_today - last).days <= RATING_STALE_DAYS:
                 recent_watch.append(f"{code_s} {rt['name']} ({_md(last)})")
     if recent:
         # 決算直後は分析し忘れに気づけるよう銘柄名を本文に出す。過ぎたら下の「更新待ち」に移る
