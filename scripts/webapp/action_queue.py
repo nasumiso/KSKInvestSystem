@@ -422,7 +422,8 @@ def _recovery_items(today: date, mat: Optional[_Material] = None) -> List[Dict[s
         day = date.fromisoformat(str(last["date"]))
         if not 0 <= _busdays_since(day, today) < SIGNAL_SHOW_BUSDAYS:
             continue
-        line = last.get("ma_label") or "MA"
+        # どの戦略の MA かが分かるよう戦略名を前に付ける (例: GARP日足50MA)
+        line = strategy + (last.get("ma_label") or "MA")
         if isinstance(last.get("ma_value"), (int, float)):
             line += f" {last['ma_value']:,.0f}円"
         found.setdefault(status, []).append((day, code_s, f"{mat.name(code_s)} ({line}・{_md(day)})"))
@@ -463,28 +464,31 @@ def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[s
     def kinds_label(kinds: set) -> str:
         return "・".join(k for k in BREAKOUT_KINDS if k in kinds)
 
+    def ordered(hits: Dict[str, Dict[str, Any]]) -> List[str]:
+        # 週ブを含む銘柄を先に (本文の銘柄名・ポップアップとも)、その中で発生日の新しい順 (同日はコード順)
+        return sorted(hits, key=lambda c: ("週ブ" not in hits[c]["kinds"], -hits[c]["day"].toordinal(), c))
+
     items = []
     for status, action in (("1保", "増し玉を検討"), ("2準", "入り直しを検討")):
         hits = found.get(status)
         if not hits:
             continue
-        # 発生日の新しい順 (同日はコード順)
-        order = sorted(hits, key=lambda c: (-hits[c]["day"].toordinal(), c))
+        order = ordered(hits)
         names = _names([f"{mat.name(c)} ({kinds_label(hits[c]['kinds'])})" for c in order])
         items.append(_hidden_popup(_item(
             f"ブレイク点灯: {STATUS_VALUE_TO_LABEL[status]} {names}",
             _charts_url(STATUS_VALUE_TO_QUERY[status], order), f"チャート一覧で{action}",
-        ), [f"{c} {mat.name(c)}" for c in order]))
+        ), [f"{c} {mat.name(c)} ({kinds_label(hits[c]['kinds'])})" for c in order]))
     watch = found.get("3監")
     if watch:
         counts = "・".join(
             f"{k}{n}" for k in BREAKOUT_KINDS
             if (n := sum(1 for h in watch.values() if k in h["kinds"]))
         )
-        order = sorted(watch, key=lambda c: (-watch[c]["day"].toordinal(), c))
+        order = ordered(watch)
         items.append(_with_popup(_item(
             f"監視のブレイク: {len(watch)}銘柄 ({counts})", _charts_url("watch", order), "チャート一覧で見る"
-        ), f"{len(watch)}銘柄", [f"{c} {mat.name(c)}" for c in order]))
+        ), f"{len(watch)}銘柄", [f"{c} {mat.name(c)} ({kinds_label(watch[c]['kinds'])})" for c in order]))
     return items
 
 
