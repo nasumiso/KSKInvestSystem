@@ -353,7 +353,7 @@ def test_recorded_exits_reads_batch_records(monkeypatch):
 
 
 def test_breakout_items(monkeypatch):
-    """ブ・週ブは発生から3営業日。保有・準保有は銘柄名 (週ブを先に新しい順、4銘柄目から「他N銘柄」)、監視は件数と内訳"""
+    """ブ (中以上)・週ブは発生から3営業日。保有・準保有は銘柄名 (週ブを先に新しい順、4銘柄目から「他N銘柄」)、監視は件数と内訳"""
     import make_stock_db
 
     sigs = {
@@ -363,6 +363,7 @@ def test_breakout_items(monkeypatch):
         "1004": [("ブ", date(2026, 10, 12))],                           # 1003 より新しいが週ブの後
         "1005": [("ブ", date(2026, 10, 7))],                            # 3営業日後: 出ない
         "1006": [("ポ", date(2026, 10, 12))],                           # ポは出さない
+        "1007": [("ブ", date(2026, 10, 12), 99)],                       # ブ(弱) は出さない (週ブは弱でも出す)
         "3001": [("ブ", date(2026, 10, 12))],
         "3002": [("ブ", date(2026, 10, 9)), ("週ブ", date(2026, 10, 9))],
     }
@@ -370,7 +371,7 @@ def test_breakout_items(monkeypatch):
         {"code_s": c, "status": "3監" if c.startswith("3") else "1保"} for c in sigs
     ])
     monkeypatch.setattr(make_stock_db, "extract_signals", lambda stock: [
-        {"kind": k, "sig_date": d} for k, d in sigs[stock["stock_name"][2:]]
+        {"kind": s[0], "sig_date": s[1], "num": s[2] if len(s) > 2 else 150} for s in sigs[stock["stock_name"][2:]]
     ])
 
     items = aq._breakout_items(TODAY)

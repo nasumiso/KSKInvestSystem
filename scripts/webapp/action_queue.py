@@ -20,6 +20,7 @@ from webapp.helpers import (
     _bulk_get_stock_data,
     _parse_kessanbi,
     _parse_research_update_md,
+    _signal_strength_bucket,
 )
 from webapp.routes.portfolio import STATUS_VALUE_TO_LABEL, STATUS_VALUE_TO_QUERY
 
@@ -44,6 +45,9 @@ POPUP_NAME_LIMIT = 5
 SIGNAL_SHOW_BUSDAYS = 3
 # 出すブレイクのシグナル種別 (make_stock_db.extract_signals の kind)。
 BREAKOUT_KINDS = ("ブ", "週ブ")
+# ブは数が多く埋もれるので、出来高が平均の2倍未満 (強さ「弱」) は出さない。週ブは強さを問わない。
+# ストップ高で出来高が細った日のブも「弱」になるので出ない
+BREAKOUT_HIDDEN_STRENGTHS = {"ブ": ("弱",)}
 # 決算・「防」のあと、何日までステージの更新を促すか (暦日)。
 # 過ぎたら出さない (更新しないまま古くなった銘柄で点きっぱなしにしないため)。
 STAGE_AFTER_EVENT_DAYS = 14
@@ -442,7 +446,7 @@ def _recovery_items(today: date, mat: Optional[_Material] = None) -> List[Dict[s
 
 
 def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:
-    """ブ・週ブが出てから3営業日の銘柄を、保有・準保有は銘柄名で、監視は件数で各1行にまとめる。"""
+    """ブ (中以上)・週ブが出てから3営業日の銘柄を、保有・準保有は銘柄名で、監視は件数で各1行にまとめる。"""
     from make_stock_db import extract_signals  # 遅延 import (webapp 起動時に読まない)
 
     mat = mat or _Material()
@@ -456,6 +460,8 @@ def _breakout_items(today: date, mat: Optional[_Material] = None) -> List[Dict[s
             if sig["kind"] not in BREAKOUT_KINDS or not isinstance(day, date):
                 continue
             if not 0 <= _busdays_since(day, today) < SIGNAL_SHOW_BUSDAYS:
+                continue
+            if _signal_strength_bucket(sig["kind"], sig["num"]) in BREAKOUT_HIDDEN_STRENGTHS.get(sig["kind"], ()):
                 continue
             hit = found.setdefault(status, {}).setdefault(r["code_s"], {"kinds": set(), "day": day})
             hit["kinds"].add(sig["kind"])
