@@ -2764,6 +2764,8 @@ def _format_signal(stock: Dict[str, Any]) -> Tuple[str, str]:
     marks = []
     for sig in signals:
         kind = sig.get("kind")
+        if kind == "ブ" and sig.get("strong"):
+            kind = "ブ+"  # 直前が締まっていて出来高が平均の2倍以上のブ (issue #578)
         if kind and kind not in marks:
             marks.append(kind)
     return ("/".join(marks) if marks else "—", signal_full or "")
@@ -2832,7 +2834,7 @@ def _build_signal_display(stock: Dict[str, Any]) -> Dict[str, str]:
     strength_alpha = {"特強": 1.0, "強": 0.85, "中": 0.55, "弱": 0.30}
     tmpls = {
         "ポ": "[ポ] %s %s 押し目買い圧(MA10乖離 %d) / %d日前",
-        "ブ": "[ブ] %s %s 出来高ブレイク(出来高+%d%%) / %d日前",
+        "ブ": "[ブ] %s %s 20日高値ブレイク(出来高+%d%%) / %d日前",
     }
 
     lines = []
@@ -2848,7 +2850,12 @@ def _build_signal_display(stock: Dict[str, Any]) -> Dict[str, str]:
                 % (s["mmdd"], bucket, dryup_str, s["num"], s["delta"])
             )
         else:
-            lines.append(tmpls[s["kind"]] % (s["mmdd"], bucket, s["num"], s["delta"]))
+            line = tmpls[s["kind"]] % (s["mmdd"], bucket, s["num"], s["delta"])
+            if s["kind"] == "ブ" and s.get("range") is not None:
+                # ブ+ = 直前10日の値幅が締まっていて出来高が平均の2倍以上 (issue #578)
+                line = line.replace("[ブ]", "[ブ+]" if s.get("strong") else "[ブ]", 1)
+                line += " 直前10日の値幅 %.1f%%" % s["range"]
+            lines.append(line)
         max_alpha = max(max_alpha,
                         strength_alpha[bucket] * _signal_freshness_alpha(s["delta"]))
 
@@ -3506,6 +3513,9 @@ def _resolve_signal_markers(stock, window_dates, xs):
             "num": s["num"], "delta": s["delta"],
             "sig_date": s["sig_date"],
         }
+        for key in ("reject", "strong", "range"):
+            if s.get(key) is not None:
+                m[key] = s[key]
         if s.get("extended"):
             m["extended"] = True
             # extended_per (出来高超過率) があれば通常ブレイクと同じ強度バケットで
@@ -3983,13 +3993,19 @@ def build_price_rs_chart_full(
             if m.get("extended"):
                 ext_size = size_map[m["strength"]] if m.get("strength") else EXT_SIZE
                 ext_label = "ex/%s" % m["strength"] if m.get("strength") else "ex"
-                title = "ブ(%s) %s 乖離+%d%% 高値追い圏・対象外" % (ext_label, sig_md, m["num"])
+                if m.get("reject"):
+                    # 出来高は急増したが、本来のブレイクアウトの条件から外れた (issue #578)
+                    title = "ブ(%s) %s 出来高+%d%% %s・対象外" % (ext_label, sig_md, m["num"], m["reject"])
+                else:
+                    title = "ブ(%s) %s 乖離+%d%% 高値追い圏・対象外" % (ext_label, sig_md, m["num"])
                 parts.append(_svg_hover_rect(m["x"], y_bu, 8.0, 8.0, title))
                 parts.append(_svg_diamond(
                     m["x"], y_bu, ext_size * BU_SIZE_SCALE, "#f57c00", 0.5, title, filled=False))
                 continue
             size = size_map[m["strength"]]
-            title = "%s %s (%s)" % (m["kind"], sig_md, m["strength"])
+            title = "%s %s (%s)" % ("ブ+" if m.get("strong") else m["kind"], sig_md, m["strength"])
+            if m.get("range") is not None:
+                title += " 直前10日の値幅 %.1f%%" % m["range"]
             if m["kind"] == "ポ":
                 parts.append(_svg_hover_rect(m["x"], y_po, 8.0, 8.0, title))
                 parts.append(_svg_triangle(m["x"], y_po, size * PO_SIZE_SCALE, "#2e7d32", 1.0, title))

@@ -486,6 +486,41 @@ class TestExtractSignals:
         assert signals[0]["num"] == 168  # 5日平均出来高の中央値比%
         assert signals[0]["dryup"] == 42  # dry up 比率%
 
+    @pytest.mark.parametrize("sig, misses, expect, reject", [
+        (",150,1,6.5", [], {"strong": True, "range": 6.5}, None),        # 3条件 + 締まり + 出来高2倍 → ブ+
+        (",150,1,12.0", ["RS"], {"range": 12.0}, None),                  # 値幅が広ければ普通のブ
+        (",80,1,6.5", [], {"range": 6.5}, None),                         # 出来高が2倍未満も普通のブ
+        (",150", [], {}, None),                                          # 旧2要素は高値を問わず出す (ブ+ にはしない)
+        (",150,0,6.5", [], None, "高値未更新"),
+        (",150,1,6.5", ["ma40Up"], None, "ステージ2でない"),
+        (",150,0,6.5", ["pr>ma30,40", "high(low)52"], None, "高値未更新・ステージ2でない・52週の範囲外"),
+    ])
+    def test_breakout_gate(self, sig, misses, expect, reject):
+        """issue #578: ブは高値の上抜け・ステージ2・52週の範囲を満たすものだけ出す。
+        外れたものは include_extended のときだけ、理由つきの中抜き候補として返す"""
+        d = (datetime.today() - timedelta(days=3)).strftime("%m/%d")
+        stock, _ = self._stock(breakout=[d + sig], trend_template=misses)
+        shown = make_stock_db.extract_signals(stock)
+        hollow = [s for s in make_stock_db.extract_signals(stock, max_delta_days=None, include_extended=True)
+                  if s.get("extended")]
+        signal, _tags = make_stock_db.make_signal(stock)
+        if reject:
+            assert shown == [] and "[ブ" not in signal
+            assert [(s["reject"], s["num"], s["extended_per"]) for s in hollow] == [(reject, 150, 150)]
+        else:
+            assert [{k: s[k] for k in ("strong", "range") if k in s} for s in shown] == [expect]
+            assert hollow == [] and ("[ブ+]" if expect.get("strong") else "[ブ]") in signal
+
+    def test_hollow_candidates_merged_newest_three(self):
+        """中抜きの候補は、高値追い圏と条件外をまとめて新しい順に3件まで (issue #578)"""
+        today = datetime.today()
+        d = lambda n: (today - timedelta(days=n)).strftime("%m/%d")  # noqa: E731
+        stock, _ = self._stock(
+            breakout=["%s,150,0" % d(2), "%s,150,0" % d(5)],
+            breakout_extended=["%s,13,256" % d(3), "%s,13,256" % d(4)])
+        hollow = make_stock_db.extract_signals(stock, max_delta_days=None, include_extended=True)
+        assert [(s["mmdd"], "reject" in s) for s in hollow] == [(d(2), True), (d(3), False), (d(4), False)]
+
     @pytest.mark.parametrize("suffix, expect_per", [
         (",13,256", 256),  # 3要素: per あり (マーカー強度バケット用)
         (",13", None),     # 旧2要素: per 欠落 → 描画側で固定サイズにフォールバック

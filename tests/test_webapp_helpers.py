@@ -4101,6 +4101,23 @@ class TestSignalDisplay:
         svg2, _ = helpers.build_price_rs_chart_full(price_log, [], False)
         assert "#f57c00" not in svg2
 
+    @pytest.mark.parametrize("sig, misses, mark, title", [
+        (",150,1,6.5", [], "ブ+", "<title>ブ+ %s (中) 直前10日の値幅 6.5%%"),
+        (",150,1,12.0", [], "ブ", "<title>ブ %s (中) 直前10日の値幅 12.0%%"),
+        (",150,0,6.5", ["ma40Up"], "—", "<title>ブ(ex/中) %s 出来高+150%% 高値未更新・ステージ2でない・対象外"),
+    ])
+    def test_breakout_grade_and_reject_display(self, sig, misses, mark, title):
+        """issue #578: 一覧の記号はブ+ / ブ。条件から外れたブは一覧に出さず、チャートに理由つきの中抜きで出す"""
+        from datetime import timedelta
+        anchor_now, anchor_day = self._anchor()
+        stock = {"breakout": [anchor_day.strftime("%m/%d") + sig], "trend_template": misses,
+                 "access_date_price": anchor_now}
+        assert helpers._format_signal(stock)[0] == mark
+        price_log = [(anchor_day - timedelta(weeks=i), 1000 + i) for i in range(20)]
+        rs_line = [(anchor_day - timedelta(weeks=i), 1.0 + i * 0.01) for i in range(20)]
+        svg, _ = helpers.build_price_rs_chart_full(price_log, rs_line, False, stock=stock)
+        assert title % ("%d/%d" % (anchor_day.month, anchor_day.day)) in svg
+
     def test_chart_marker_band_uses_signal_tooltip_only(self):
         """詳細チャートはRS hover面とシグナルマーカー帯を分離する。"""
         from datetime import timedelta

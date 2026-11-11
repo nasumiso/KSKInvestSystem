@@ -1341,6 +1341,27 @@ class TestParsePriceTextFromList:
         else:
             assert len(breaks) == 0
 
+    @pytest.mark.parametrize("rows, old_high, expected", [
+        (35, None, "1,1.5"),   # 直前20日の終値の高値 (1000) を上抜け。直前10日の値幅 (1010−995)/1000
+        (35, 1020, "0,3.5"),   # 5日前の終値 1020 を抜けていない。その日の高値 1030 で値幅も広がる
+        (15, None, "0,1.5"),   # 直前が20日に満たなければ上抜けとみなさない
+        (8, None, "0"),        # 直前が10日に満たなければ値幅は付けない
+    ])
+    def test_breakout_pivot_and_range(self, rows, old_high, expected):
+        """issue #578: ブに「20日高値の上抜け (H)」と「直前10日の値幅 % (R)」を保存する"""
+        from datetime import date as _date, timedelta
+        d0 = _date(2025, 12, 31)
+        price_list = []
+        for i in range(rows):
+            dt = d0 - timedelta(days=i)
+            close, low, vol = (1010, 1000, 300000) if i == 0 else (1000, 995, 100000)
+            if i == 5 and old_high:
+                close = old_high
+            price_list.append(["%d年%d月%d日" % (dt.year, dt.month, dt.day),
+                               close, close + 10, low, close, vol, close])
+        result_dict, _ = price.parse_price_text_from_list(1010, price_list)
+        assert result_dict["breakout"][0].split(",", 2)[2] == expected
+
     @pytest.mark.parametrize(
         "today_close, today_low, prev_close, expect_regular, expect_ext",
         [
