@@ -1316,6 +1316,21 @@ def _format_short_date(value):
         return ""
 
 
+def _format_daily_date(value, now=None):
+    """日次指標が基準日から平日2日以上遅れていたら更新日に注意を添える。"""
+    text = _format_short_date(value)
+    try:
+        day = datetime.fromisoformat(str(value)).date()
+    except (ValueError, TypeError):
+        return text
+    expected = recent_weekday(now or datetime.now())
+    lag = sum((day + timedelta(days=n)).weekday() < 5
+              for n in range(1, (expected - day).days + 1))
+    if lag >= 2:
+        text += " ⚠ 更新遅延 (平日%d日)" % lag
+    return text
+
+
 # 信用評価損益率の5段階 → F&G と同じ fng-rating の配色 (閾値は margin_estimate と共有、#535)
 _CREDIT_RATING_CLASS = {
     "天井圏": "fng-rating-extreme-greed",
@@ -1427,7 +1442,7 @@ def _vi_row(market_db):
         _vi_rating_html(vi),
         '<span class="%s">%s</span>' % (html_mod.escape(d5_cls), html_mod.escape(d5)),
         '<span class="%s">%s</span>' % (html_mod.escape(d20_cls), html_mod.escape(d20)),
-        _format_short_date(latest.get("date", "")),
+        _format_daily_date(latest.get("date", "")),
         "直近=5日前比 / 中期=20日前比",
     )
 
@@ -1481,7 +1496,7 @@ def _breadth_row(market_db):
         _breadth_rating_html(diff),
         '<span class="%s">%s</span>' % (html_mod.escape(d5_cls), html_mod.escape(d5)),
         '<span class="%s">%s</span>' % (html_mod.escape(d20_cls), html_mod.escape(d20)),
-        _format_short_date(latest.get("date", "")),
+        _format_daily_date(latest.get("date", "")),
         title,
     )
 
@@ -1501,7 +1516,7 @@ def _fng_row(market_db):
     rating_class = "fng-rating-" + rating.replace(" ", "-") if rating else "fng-rating-neutral"
     d5_text, d5_cls = _format_fng_delta(score, fng_db.get("score_5d_ago"))
     d20_text, d20_cls = _format_fng_delta(score, fng_db.get("score_20d_ago"))
-    date_text = _format_short_date(fng_db.get("access_date"))
+    date_text = _format_daily_date(fng_db.get("access_date"))
     title = "直近=5日前比 / 中期=20日前比"
     label_html = (
         '<a href="https://edition.cnn.com/markets/fear-and-greed"'
@@ -1616,7 +1631,7 @@ def _fgjp_accordion_html(market_db):
                 html_mod.escape(d5_cls), html_mod.escape(d5)),
             '<span class="%s">%s</span>' % (
                 html_mod.escape(d20_cls), html_mod.escape(d20)),
-            _format_short_date(latest.get("date", "")),
+            _format_daily_date(latest.get("date", "")),
             "直近=5日前比 / 中期=20日前比 ｜ クリックで成分内訳",
         ),
         extra_class="mi-fgjp-parent",
@@ -1630,7 +1645,7 @@ def _fgjp_accordion_html(market_db):
         else:
             cscore = comp.get("score")
             craw = comp.get("raw")
-            date_text = _format_short_date(comp.get("date", ""))
+            date_text = _format_daily_date(comp.get("date", ""))
             value_html = ("%.0f" % cscore) if cscore is not None else "—"
             raw_html = fmt(craw) if craw is not None else ""
             # バッジは 0-100 スコアを F&G 本体と同じ 5 段階 rating で統一表示

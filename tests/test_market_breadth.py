@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +13,33 @@ import shintakane
 
 
 # --- market_breadth.parse_credit_balance ----------------------------------
+
+@pytest.mark.parametrize("saved,now,delayed", [
+    ("2026-11-06", datetime(2026, 11, 9, 18), False),
+    ("2026-11-06", datetime(2026, 11, 10, 16), False),
+    ("2026-11-06", datetime(2026, 11, 10, 18), True),
+    ("2026-11-11", datetime(2026, 11, 12, 18), False),
+    ("2026-11-13", datetime(2026, 11, 15, 18), False),
+    ("2026-11-16", datetime(2026, 11, 12, 18), False),
+    ("", datetime(2026, 11, 12, 18), False),
+])
+def test_daily_indicator_date_warns_after_two_weekdays(saved, now, delayed):
+    text = make_market_db._format_daily_date(saved, now)
+    assert ("⚠ 更新遅延" in text) == delayed
+    if delayed:
+        assert "平日2日" in text
+
+
+@pytest.mark.parametrize("force,expected_calls", [(False, 0), (True, 1)])
+def test_fgjp_force_refreshes_current_cache(tmp_path, monkeypatch, force, expected_calls):
+    root = tmp_path / "code_rank_data"
+    root.mkdir()
+    (root / "fear_greed_jp.json").write_text(json.dumps({"latest": {"date": "2026-11-11"}}))
+    monkeypatch.setattr(shintakane, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(shintakane, "_recent_weekday", lambda now: "2026-11-11")
+    with patch("market_breadth.fetch_market_breadth_daily", return_value=[]) as fetch:
+        shintakane.update_fear_greed_jp(force=force)
+    assert fetch.call_count == expected_calls
 
 # 2026-04-24 12:00 JST と 2026-05-01 12:00 JST に相当する unix ms
 TS_0424 = 1776999600000
@@ -262,8 +289,12 @@ def test_fetch_nikkei_vi_reads_s161_series():
         "[%d,15.40]\n"
         "];" % (TS_0424, TS_0501, TS_0424, TS_0501)
     )
-    with patch("market_breadth._fetch_nikkei_json", return_value=text):
+    with patch("market_breadth._fetch_nikkei_json", return_value=text) as fetch:
         out = market_breadth.fetch_nikkei_vi()
+    fetch.assert_called_once_with(
+        "https://nikkei225jp.com/_data/_nfsDATA/json_DAY/SL161_ALL.json",
+        market_breadth.NIKKEI_VI_REFERER,
+    )
     assert out == [
         {"date": "2026-04-24", "nikkei_vi": 28.37},
         {"date": "2026-05-01", "nikkei_vi": 27.28},
@@ -331,7 +362,10 @@ def test_fgjp_accordion_components_in_indicators(tmp_path, monkeypatch):
         json.dumps(fgjp), encoding="utf-8")
     monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
 
+    monkeypatch.setattr(make_market_db, "recent_weekday", lambda now: date(2026, 6, 8))
     html = make_market_db._html_market_indicators({})
+    assert "26/6/4 ⚠ 更新遅延 (平日2日)" in html
+    assert "26/6/5 ⚠" not in html
     # 親行: 日本版F&G + 合成スコア + アコーディオン toggle
     assert "日本版Fear" in html
     assert "78.4" in html
