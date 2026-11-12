@@ -23,7 +23,7 @@ CREDIT_BALANCE_REFERER = "https://nikkei225jp.com/data/sinyou.php"
 NEW_HIGH_LOW_URL = "https://nikkei225jp.com/_data/_nfsDATA/data_DAY/daily2year.json"
 NEW_HIGH_LOW_REFERER = "https://nikkei225jp.com/data/new.php"
 
-NIKKEI_VI_URL = "https://nikkei225jp.com/_data/_nfsDATA/json_DAY/SL161_1990.json"
+NIKKEI_VI_URL = "https://nikkei225jp.com/_data/_nfsDATA/json_DAY/SL161_ALL.json"
 NIKKEI_VI_REFERER = "https://nikkei225jp.com/data/vix.php"
 
 # 財務省「国債金利情報」。all は 1974年〜前月末、current は当月分 (翌営業日11時頃に更新)
@@ -176,7 +176,7 @@ def fetch_market_breadth_daily():
 
 
 def fetch_nikkei_vi():
-    """SL161_1990.json から 日経VI (恐怖指数) の時系列を返す。
+    """SL161_ALL.json から 日経VI (恐怖指数) の時系列を返す。
 
     出典: nikkei225jp.com 経由 (vix.php の var S161)。
           [0]=unix timestamp(ms), [1]=日経VI (2026-05 時点で確認)。

@@ -1663,13 +1663,14 @@ def update_nikkei_vi():
     )
 
 
-def update_fear_greed_jp():
+def update_fear_greed_jp(force=False):
     """日本市場版 Fear & Greed Index を計算して JSON 保存 (issue #212)。
 
     breadth (日経終値・値上がり/値下がり・新高値/安値) は daily2year.json から取得し、
     日経VI は VI 時系列を直接取得する。10年金利は財務省の CSV から取る (#524)。
     取得できない成分は除外して残り成分で合成する。
     キャッシュ・失敗時の扱いは他の update_* と同じ (デイリー全体は止めない)。
+    force=True は取得先変更後など、同じ基準日の成分も取り直すときに使う。
     """
     import market_breadth
     import fear_greed_jp
@@ -1677,7 +1678,7 @@ def update_fear_greed_jp():
     out_path = os.path.join(DATA_DIR, "code_rank_data", "fear_greed_jp.json")
 
     saved_latest = _saved_latest_date(out_path)
-    if saved_latest is not None and saved_latest >= _recent_weekday(datetime.now()):
+    if not force and saved_latest is not None and saved_latest >= _recent_weekday(datetime.now()):
         if not _fgjp_has_missing_component(out_path):
             log_print(f"---- 日本版Fear&Greed 最新営業日を保持済みのためスキップ (saved={saved_latest})")
             return
