@@ -220,11 +220,13 @@ fi
 # --- ステージの LLM 読み取り (issue #580) ---
 # 保有の週足を LLM に読ませる。新しい週足が確定した銘柄だけ読むので、実際に読むのは週1回。
 # 失敗しても後段 (Drive への複製) は止めない。週足キャッシュを使うので make_stock_db.py の成功が前提
+RET_STAGE_LLM=0
 if [ "$RET2" -eq 0 ]; then
   rotate_log ../logs/stage_llm.log
   echo "===== $(date '+%Y-%m-%d %H:%M:%S') stage_llm.py 開始 =====" >> ../logs/stage_llm.log
   python stage_llm.py run >> ../logs/stage_llm.log 2>&1
-  report "stage_llm.py" $? ../logs/stage_llm.log
+  RET_STAGE_LLM=$?
+  report "stage_llm.py" $RET_STAGE_LLM ../logs/stage_llm.log
 fi
 
 # --- 不可逆データを Drive へ複製 (issue #482) ---
@@ -258,7 +260,7 @@ fi
 
 # 子スクリプトの失敗をシェルの終了コードに反映する (/dev の成否表示・launchd の last exit code 用)。
 # git pull の失敗は前回のコードで続行する設計なので含めない。
-for ret in $RET1 $RET2 $RET_EXPOSURE $RET3 $RET_OFFSITE $RET_COMPACT; do
+for ret in $RET1 $RET2 $RET_EXPOSURE $RET3 $RET_STAGE_LLM $RET_OFFSITE $RET_COMPACT; do
   [ "$ret" -ne 0 ] && exit 1
 done
 exit 0

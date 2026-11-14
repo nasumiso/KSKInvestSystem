@@ -22,9 +22,9 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-from ks_util import log_debug, log_print, log_warning
+from ks_util import log_debug, log_error, log_print, log_warning
 
 import portfolio_shelve as ps
 
@@ -223,8 +223,8 @@ def select_targets(records: List[Dict[str, Any]], latest: Dict[str, Dict[str, An
     return targets
 
 
-def run(codes: Optional[List[str]] = None) -> int:
-    """対象を読み、結果を追記する。読めた件数を返す。"""
+def run(codes: Optional[List[str]] = None) -> Tuple[int, int]:
+    """対象を読み、結果を追記する。(読めた件数, 対象件数) を返す。"""
     latest = ps.latest_stage_llm_map()
     if codes:
         records = [rec for c in codes if (rec := ps.get_record(c)) is not None]
@@ -233,7 +233,7 @@ def run(codes: Optional[List[str]] = None) -> int:
     targets = select_targets(records, latest, force=bool(codes))
     log_print(f"[stage-llm] 対象 {len(targets)} 件 (候補 {len(records)} 件)")
     if not targets:
-        return 0
+        return 0, 0
 
     def work(t):
         return t, read_stage(t["record"]["code_s"], t["rows"])
@@ -256,7 +256,7 @@ def run(codes: Optional[List[str]] = None) -> int:
             ok += 1
             log_debug(f"[stage-llm] {code_s}: {parsed['stage']}")
     log_print(f"[stage-llm] 完了: 読めた {ok} 件 / 失敗 {len(targets) - ok} 件")
-    return ok
+    return ok, len(targets)
 
 
 def main() -> int:
@@ -266,7 +266,11 @@ def main() -> int:
     p_run.add_argument("codes", nargs="*", help="銘柄コード (省略時は保有のうち未読の週)")
     args = parser.parse_args()
     if args.cmd == "run":
-        run(args.codes or None)
+        ok, total = run(args.codes or None)
+        # 1銘柄の失敗は止めないが、全件失敗 (claude CLI が無い・ログイン切れなど) はバッチの失敗として出す
+        if total and ok == 0:
+            log_error(f"[stage-llm] 全 {total} 件が失敗した")
+            return 1
     return 0
 
 
