@@ -260,10 +260,12 @@ def test_kessan_items_drop_stocks_with_outlook(monkeypatch):
     ]
 
 
-def _stub_material(monkeypatch, records, stocks=None, exits=None):
-    """records: [{code_s, status, memo?}]、stocks: {code_s: stock}、exits: {code_s: {signal, first_defense}}"""
+def _stub_material(monkeypatch, records, stocks=None, exits=None, stage_llm=None):
+    """records: [{code_s, status, memo?}]、stocks: {code_s: stock}、exits: {code_s: {signal, first_defense}}、
+    stage_llm: {code_s: LLM の最新の読み取り}"""
     stocks = stocks or {}
     monkeypatch.setattr(ps, "list_records", lambda: records)
+    monkeypatch.setattr(ps, "latest_stage_llm_map", lambda: stage_llm or {})
     monkeypatch.setattr(aq, "_bulk_get_stock_data",
                         lambda codes: {c: {"stock_name": f"銘柄{c}", **stocks.get(c, {})} for c in codes})
     monkeypatch.setattr(aq, "_recorded_exits", lambda recs, stock_map: exits or {})
@@ -413,3 +415,22 @@ def test_stage_item_after_kessan_or_defense(monkeypatch, kessan, updated, first_
     assert (item["text"] if item else None) == expected
     if item:  # チャート一覧は該当銘柄だけに絞る
         assert item["url"] == "/portfolio/charts?status=hold&codes=1001"
+
+
+@pytest.mark.parametrize("status, stage, updated, llm_stage, expected", [
+    ("1保", "2S(3B)", "10/5", "3S~4S", "ステージ未更新: LLM と不一致 保有 1"),
+    ("1保", "2S(3B)", "10/5", "2S~3S", None),   # 重なれば出さない
+    ("1保", "2S", "10/10", "4S", None),         # LLM が読んだ後に人が見直した (据え置き)
+    ("2準", "2S", "10/5", "4S", None),          # 準保有は Phase 1 では知らせない
+])
+def test_stage_item_llm_mismatch(monkeypatch, status, stage, updated, llm_stage, expected):
+    """LLM の読み取りと重ならず、その後に見直していない保有を数える (issue #580)"""
+    _stub_material(
+        monkeypatch,
+        [{"code_s": "1001", "status": status, "memo": {"stage": stage, "last_research_update": updated}}],
+        stage_llm={"1001": {"stage": llm_stage, "run_date": "2026-10-09", "week": "2026-10-05"}},
+    )
+
+    item = aq._stage_item(TODAY)
+
+    assert (item["text"] if item else None) == expected

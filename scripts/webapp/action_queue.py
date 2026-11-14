@@ -15,6 +15,7 @@ import numpy as np
 
 import portfolio_shelve as ps
 import research_shelve
+import stage_llm
 from ks_util import get_price_day, log_warning
 from webapp.helpers import (
     _bulk_get_stock_data,
@@ -76,6 +77,10 @@ class _Material:
     @cached_property
     def exits(self) -> Dict[str, Dict[str, Any]]:
         return _recorded_exits(self.records, self.stocks)
+
+    @cached_property
+    def stage_llm(self) -> Dict[str, Dict[str, Any]]:
+        return ps.latest_stage_llm_map()
 
     def name(self, code_s: str) -> str:
         return (self.stocks.get(code_s) or {}).get("stock_name") or code_s
@@ -505,9 +510,11 @@ def _stage_item(today: date, mat: Optional[_Material] = None) -> Optional[Dict[s
     チャートが変わりやすい出来事の後だけ促す (更新日の古さだけで数えると、ほぼ全銘柄が常に該当する)。
     チャート一覧でステージを保存すると更新日が今日になり、消える。
     両方に当たる銘柄は「防の後」として1回だけ数える。
+    出来事に当たらない保有でも、LLM の読み取りと重ならず、その後に見直していなければ
+    「LLM と不一致」として数える (issue #580)。「据え置き」を押すと更新日が今日になり、消える。
     """
     mat = mat or _Material()
-    counts: Dict[str, Dict[str, int]] = {"防の後": {}, "決算後": {}}
+    counts: Dict[str, Dict[str, int]] = {"防の後": {}, "決算後": {}, "LLM と不一致": {}}
     hits: Dict[str, date] = {}  # code_s -> 出来事の日 (チャート一覧に新しい順で渡す)
     for r in mat.records:
         status = r.get("status")
@@ -529,9 +536,14 @@ def _stage_item(today: date, mat: Optional[_Material] = None) -> Optional[Dict[s
                 counts[label][status] = counts[label].get(status, 0) + 1
                 hits[code_s] = day
                 break
+        llm = mat.stage_llm.get(code_s)
+        if (code_s not in hits and status == "1保"
+                and stage_llm.is_mismatch((r.get("memo") or {}).get("stage") or "", llm, updated)):
+            counts["LLM と不一致"][status] = counts["LLM と不一致"].get(status, 0) + 1
+            hits[code_s] = date.fromisoformat(llm["run_date"])
     parts = [
         f"{label} " + "・".join(f"{STATUS_VALUE_TO_LABEL[st]} {n}" for st, n in sorted(c.items()))
-        for label, c in (("決算後", counts["決算後"]), ("防の後", counts["防の後"])) if c
+        for label in ("決算後", "防の後", "LLM と不一致") if (c := counts[label])
     ]
     if not parts:
         return None
