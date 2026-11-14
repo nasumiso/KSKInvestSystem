@@ -71,12 +71,18 @@
   .chart-cell-header .chart-state-select { max-width: 5.8em; }
   /* 自動判定タグ (参考表示、issue #53)。手入力の需給評価と見分けるため控えめな色 */
   .chart-cell-header .cell-tags { color: #666; font-size: 0.85em; white-space: nowrap; }
+  /* issue #580: LLM が週足から読んだステージ (第二意見)。人のラベルと重ならないときだけ色を付ける */
+  .chart-cell-header .stage-llm { color: #666; font-size: 0.85em; white-space: nowrap; cursor: help; }
+  .chart-cell-header .stage-llm.mismatch { background: #fde2e2; color: #a00; padding: 0 4px; border-radius: 3px; }
+  .chart-cell-header .stage-keep { font-size: 0.8em; padding: 0 6px; white-space: nowrap; }
   /* プレースホルダー (空セル) では編集 UI も隠す */
   .chart-cell.placeholder .chart-cell-header .edit-sep,
   .chart-cell.placeholder .chart-cell-header .edit-label,
   .chart-cell.placeholder .chart-cell-header .editable,
   .chart-cell.placeholder .chart-cell-header .stage-struct,
   .chart-cell.placeholder .chart-cell-header .cell-tags,
+  .chart-cell.placeholder .chart-cell-header .stage-llm,
+  .chart-cell.placeholder .chart-cell-header .stage-keep,
   .chart-cell.placeholder .chart-cell-header .chart-struct { display: none; }
   /* 株探チャートページは上部にヘッダ・広告・銘柄サマリー、下部に注釈・広告バナーが
      乗るフルページ。iframe を窓 (.chart-viewport) でクリップし、--chart-offset 分だけ
@@ -146,6 +152,9 @@
           {% endfor %}
         </select>
       </span>
+      <span class="stage-llm"></span>
+      <button type="button" class="stage-keep" hidden
+              title="LLM の読みを見たうえでラベルを変えない (更新日を今日にする)">据え置き</button>
       <span class="edit-label">更新日</span>
       <span class="editable edit-update" title="クリックで編集 (M/D)">—</span>
       <span class="edit-label">需給</span>
@@ -265,10 +274,32 @@
         chartState.dataset.prev = chartState.value || '';
         chartState.disabled = chartBox.dataset.rescue === '1';
         tagsEl.textContent = (s.tags && s.tags !== '—') ? s.tags : '';
+        applyStageLlm(cell, s);
       }
       var dispStart = total === 0 ? 0 : start + 1;
       var dispEnd = Math.min(start + PER_PAGE, total);
       countEl.textContent = dispStart + '-' + dispEnd + ' / ' + total + ' 銘柄';
+    }
+
+    // LLM の読み取り (issue #580)。不一致のときだけ色と「据え置き」を出す
+    function applyStageLlm(cell, s) {
+      var el = cell.querySelector('.stage-llm');
+      var keep = cell.querySelector('.stage-keep');
+      var llm = s && s.stage_llm;
+      // 見出しの幅が足りないので、読んだ週は根拠と一緒にマウスを載せたときに出す
+      el.textContent = llm ? ('LLM ' + llm.stage) : '';
+      el.title = llm ? ((llm.week_md ? llm.week_md + '週の週足から\n' : '') + (llm.rationale || '')) : '';
+      el.classList.toggle('mismatch', !!(llm && llm.mismatch));
+      keep.hidden = !(llm && llm.mismatch);
+    }
+
+    // 人の更新日が LLM の実行日以降になったら、不一致を解く (サーバの is_mismatch と同じ条件)
+    function settleStageLlm(code, updMD) {
+      var s = findStock(code);
+      if (!s || !s.stage_llm || !s.stage_llm.mismatch) return;
+      var ymd = mdToYMD(updMD);
+      if (ymd && ymd >= s.stage_llm.run_date) s.stage_llm.mismatch = false;
+      cells.forEach(function (c) { if (c.dataset.code === code) applyStageLlm(c, s); });
     }
 
     function goPrev() { if (page > 0) { page--; render(); focusChartShortcuts(); } }
@@ -428,6 +459,7 @@
             ? disp.last_research_update : fields.last_research_update;
           if (s) s.last_research_update = updVal || '';
           if (s) s.last_research_update_style = (res.body.styles && res.body.styles.last_research_update) || '';
+          settleStageLlm(code, updVal);
           if (!isSameCell()) return;
           span.textContent = (updVal || '') || '—';
           applyUpdateStyle(span, (res.body.styles && res.body.styles.last_research_update) || '');
@@ -522,6 +554,7 @@
             upd.textContent = (res.body.display && res.body.display.last_research_update) || payload.last_research_update || '—';
             applyUpdateStyle(upd, (res.body.styles && res.body.styles.last_research_update) || '');
           }
+          settleStageLlm(code, payload.last_research_update);
           syncStageDisabled();
         }).catch(function(err) {
           stageBox.dataset.rescue = prev.rescue;
@@ -534,6 +567,32 @@
           alert('保存失敗: ' + err);
         });
       }
+
+      // 据え置き: ラベルはそのままで更新日だけ今日にする (履歴に confirm が残る、issue #580)
+      cell.querySelector('.stage-keep').addEventListener('click', function() {
+        var code = cell.dataset.code;
+        if (!code) return;
+        var md = todayMD();
+        postMemo(code, { last_research_update: md }).then(function(res) {
+          if (!res.ok || !res.body || res.body.ok !== true) {
+            alert((res.body && res.body.error) || '据え置きの保存に失敗しました');
+            return;
+          }
+          var stock = findStock(code);
+          var disp = res.body.display || {};
+          var updVal = (disp.last_research_update && disp.last_research_update !== '—') ? disp.last_research_update : md;
+          if (stock) {
+            stock.last_research_update = updVal;
+            stock.last_research_update_style = (res.body.styles && res.body.styles.last_research_update) || '';
+          }
+          var upd = cell.querySelector('.edit-update');
+          if (upd && upd.dataset.editing !== '1' && cell.dataset.code === code) {
+            upd.textContent = updVal;
+            applyUpdateStyle(upd, (res.body.styles && res.body.styles.last_research_update) || '');
+          }
+          settleStageLlm(code, updVal);
+        }).catch(function(err) { alert('保存失敗: ' + err); });
+      });
 
       function saveChart(prev) {
         var code = cell.dataset.code;

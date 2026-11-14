@@ -217,6 +217,16 @@ else
   report "theme-news" $RET3 ../logs/theme_news.log
 fi
 
+# --- ステージの LLM 読み取り (issue #580) ---
+# 保有の週足を LLM に読ませる。新しい週足が確定した銘柄だけ読むので、実際に読むのは週1回。
+# 失敗しても後段 (Drive への複製) は止めない。週足キャッシュを使うので make_stock_db.py の成功が前提
+if [ "$RET2" -eq 0 ]; then
+  rotate_log ../logs/stage_llm.log
+  echo "===== $(date '+%Y-%m-%d %H:%M:%S') stage_llm.py 開始 =====" >> ../logs/stage_llm.log
+  python stage_llm.py run >> ../logs/stage_llm.log 2>&1
+  report "stage_llm.py" $? ../logs/stage_llm.log
+fi
+
 # --- 不可逆データを Drive へ複製 (issue #482) ---
 # その日の theme_news/history も含めるため theme-news の後に置く。前段の成否にかかわらず実行する。
 # make_stock_db.py 内のバックアップ (失敗しても継続) には混ぜない: 複製が止まったら

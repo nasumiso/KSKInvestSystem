@@ -15,3 +15,5 @@ beautifulsoup4>=4.12
 markdown>=3.4
 mcp==2.1.1
 pypdf==6.16.2
+# ステージの LLM 読み取り (stage_llm.py) が週足チャートを描く
+matplotlib>=3.8

@@ -35,11 +35,13 @@ import import_portfolio_csv as csv_import
 import margin_estimate as me
 import portfolio_shelve as ps
 import research_shelve
+import stage_llm
 from ks_util import DATA_DIR
 from webapp.helpers import (
     MONTHLY_TAG_DESCRIPTIONS,
     TAG_DESCRIPTIONS,
     THEME_SUMMARY_SORT_FIELDS,
+    _parse_research_update_md,
     build_portfolio_theme_summary,
     compute_cell_styles,
     get_stock_data,
@@ -505,6 +507,21 @@ def _parse_chart_value(raw: str) -> dict:
 def _compose_chart_value(style: str, state: str) -> str:
     """structured UI の 2 軸から保存用 jukyu_chart を組み立てる。"""
     return "".join(((style or "").strip(), (state or "").strip()))
+
+
+def _stage_llm_view(memo: dict, llm: Optional[dict]) -> Optional[dict]:
+    """チャート一覧に出す LLM の読み取り (issue #580)。読み取りが無ければ None。"""
+    if not llm:
+        return None
+    updated = _parse_research_update_md(memo.get("last_research_update"), datetime.date.today())
+    week = llm.get("week") or ""
+    return {
+        "stage": llm.get("stage") or "",
+        "week_md": f"{int(week[5:7])}/{int(week[8:10])}" if len(week) == 10 else "",
+        "rationale": llm.get("rationale") or "",
+        "run_date": llm.get("run_date") or "",
+        "mismatch": stage_llm.is_mismatch(memo.get("stage") or "", llm, updated),
+    }
 
 
 def _augment_stage_chart_meta(memo: dict) -> dict:
@@ -1403,6 +1420,8 @@ def charts():
     if codes:
         rows.sort(key=lambda r: codes.index(r["code_s"]))
 
+    llm_map = ps.latest_stage_llm_map()
+
     # iframe 表示に必要な最小キーのみ JSON 化して渡す。
     # stage / 更新日 / 需給チャートはチャートページ上での inline 編集の初期値。
     stocks = [
@@ -1416,6 +1435,7 @@ def charts():
             "stage_struct": _parse_stage_value((r.get("memo") or {}).get("stage") or ""),
             "jukyu_chart_struct": _parse_chart_value((r.get("memo") or {}).get("jukyu_chart") or ""),
             "tags": r.get("tags") or "",
+            "stage_llm": _stage_llm_view(r.get("memo") or {}, llm_map.get(r["code_s"])),
         }
         for r in rows
     ]
