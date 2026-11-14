@@ -1869,3 +1869,19 @@ def test_theme_rank_snapshot_overwrite(db_path):
     assert not ps.save_theme_rank_snapshot(day, {"半導体": {"score": 9.0, "rank": 1, "count": 2}},
                                            overwrite=False, db_path=db_path)
     assert ps.load_theme_rank_snapshots(db_path=db_path) == {day: {"半導体": {"score": 2.0, "rank": 1, "count": 2}}}
+
+
+@pytest.mark.parametrize("fields, expected", [
+    ({"stage": "3S", "last_research_update": "11/12"}, [("change", "2S(3B)", "3S")]),
+    ({"last_research_update": "11/12"}, [("confirm", "2S(3B)", "2S(3B)")]),   # 据え置き
+    ({"stage": "2S(3B)", "last_research_update": "11/1"}, []),                 # 何も変わらない
+    ({"jukyu_chart": "週足VCP"}, []),                                          # ステージに関係ない
+    ({"jukyu_chart": "週足VCP", "last_research_update": "11/12"}, []),         # 他のメモと一緒の更新日は据え置きではない
+])
+def test_update_memo_records_stage_history(db_path, fields, expected):
+    """ステージの変更と据え置きを履歴に残す (issue #580)"""
+    ps.add_to_watch("3496", memo={"stage": "2S(3B)", "last_research_update": "11/1"}, db_path=db_path)
+
+    ps.update_memo("3496", fields, db_path=db_path)
+
+    assert [(h["kind"], h["old"], h["new"]) for h in ps.list_stage_history("3496", db_path=db_path)] == expected

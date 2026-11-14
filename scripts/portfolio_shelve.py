@@ -112,6 +112,12 @@ KEY_LOT_MATCH_PREFIX = "lot_match:"
 KEY_STRATEGY_HISTORY_PREFIX = "strategy_history:"
 # 履歴の記録開始日 ({"started": "YYYY-MM-DD"})。entry を付ける対象の境界。
 KEY_STRATEGY_HISTORY_META = "strategy_history_meta"
+# issue #580: ステージの変更履歴 (追記のみ)。銘柄ごとのリスト。
+# kind=change は値を変えた、kind=confirm は値はそのままで更新日だけ進めた (見直して据え置いた)。
+KEY_STAGE_HISTORY_PREFIX = "stage_history:"
+# issue #580: LLM が週足チャートから読んだステージ (追記のみ)。銘柄ごとのリスト。
+# 出力は再現できないので揮発 DB ではなくここに置く。人のラベルは書き換えない。
+KEY_STAGE_LLM_PREFIX = "stage_llm:"
 # issue #397: 証券会社ポートフォリオCSV 由来の保有残高スナップショット。
 # (broker, account, kind, code_s) 単位で最新のみ保持 (上書き、fill と違い履歴を持たない)。
 KEY_POSITION_PREFIX = "position:"
@@ -1474,6 +1480,59 @@ def list_strategy_history(code_s: str, *, db_path: Optional[str] = None) -> List
     path = _resolve_db_path(db_path)
     with ShelveDB(path) as db:
         return [dict(h) for h in db.get(f"{KEY_STRATEGY_HISTORY_PREFIX}{normalize_code_s(code_s)}") or []]
+
+
+def _append_list(db: ShelveDB, key: str, entry: Dict[str, Any]) -> None:
+    """追記のみのリストに1件足す (呼び出し側で _flock + ShelveDB を保持)。"""
+    db[key] = list(db.get(key) or []) + [entry]
+
+
+def _stage_history_entry(current_memo: Dict[str, Any],
+                         fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """メモ更新がステージの変更・据え置きに当たれば、履歴の1件を返す (issue #580)。
+
+    ステージの値が変われば change。値は同じで更新日 (last_research_update) だけ
+    変われば confirm (チャート一覧の「据え置き」や更新日の手入力)。他のメモと一緒に
+    更新日が変わったときは、ステージを見直したとは限らないので confirm にしない。
+    """
+    old = current_memo.get("stage", "") or ""
+    new = fields.get("stage", old)
+    if new != old:
+        kind = "change"
+    elif (old and not set(fields) - {"stage", "last_research_update"}
+          and fields.get("last_research_update", "") != (current_memo.get("last_research_update") or "")):
+        kind = "confirm"
+    else:
+        return None
+    return {"date": datetime.now(JST).date().isoformat(), "recorded_at": now_iso(),
+            "kind": kind, "old": old, "new": new}
+
+
+def list_stage_history(code_s: str, *, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """銘柄のステージの変更履歴 (追記順、issue #580)。"""
+    path = _resolve_db_path(db_path)
+    with ShelveDB(path) as db:
+        return [dict(h) for h in db.get(f"{KEY_STAGE_HISTORY_PREFIX}{normalize_code_s(code_s)}") or []]
+
+
+def append_stage_llm(code_s: str, entry: Dict[str, Any], *, db_path: Optional[str] = None) -> None:
+    """LLM が読んだステージを1件追記する (issue #580)。人のラベル (memo.stage) には触れない。"""
+    normalized = normalize_code_s(code_s)
+    path = _resolve_db_path(db_path)
+    with _flock(db_path):
+        with ShelveDB(path) as db:
+            _append_list(db, f"{KEY_STAGE_LLM_PREFIX}{normalized}", dict(entry))
+
+
+def latest_stage_llm_map(*, db_path: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    """銘柄ごとの、LLM の最新の読み取り (issue #580)。読み取りの無い銘柄は含まない。"""
+    path = _resolve_db_path(db_path)
+    out: Dict[str, Dict[str, Any]] = {}
+    with ShelveDB(path) as db:
+        for key, value in db.items(KEY_STAGE_LLM_PREFIX):
+            if isinstance(value, list) and value:
+                out[key[len(KEY_STAGE_LLM_PREFIX):]] = dict(value[-1])
+    return out
 
 
 def _add_weekdays(day: str, n: int) -> str:
@@ -3925,6 +3984,9 @@ def update_memo(
                     entry["context"] = _strategy_change_context(
                         db, normalized, record, old_idea, new_idea)
                 _append_strategy_history(db, normalized, entry)
+            stage_entry = _stage_history_entry(current_memo, normalized_fields)
+            if stage_entry:
+                _append_list(db, f"{KEY_STAGE_HISTORY_PREFIX}{normalized}", stage_entry)
             record["memo"] = {**current_memo, **normalized_fields}
             record["updated_at"] = now_iso()
             db[key] = record
