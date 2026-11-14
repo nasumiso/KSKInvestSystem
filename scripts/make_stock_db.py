@@ -1008,6 +1008,51 @@ def _is_displayable_pocket_pivot(stock, sig):
     return math.isfinite(kairi) and kairi >= _POCKET_PIVOT_KAIRI_FLOOR
 
 
+# ブの表示条件 (issue #578)。検知 (price.py) は「出来高を伴って上げた日」を全部残し、
+# 本来のブレイクアウト (高値の上抜け・ステージ2・52週の範囲) かどうかはここで決める。
+# ブ+ = ブのうち、直前10日の値幅がこの % 未満で、出来高超過率がこの % 以上 (平均の2倍) のもの。
+BREAKOUT_TIGHT_RANGE_PCT = 10.0
+BREAKOUT_STRONG_VOLUME_PER = 100
+
+
+def _breakout_reject_reasons(stock, sig):
+    """ブ1件 ("MM/DD,per,H,R") が表示条件から外れる理由を返す。空なら「ブ」として出してよい。
+
+    H の無い旧データは高値の条件を問わない (次の価格更新で入れ替わる)。ステージ2と
+    52週の範囲は、ポと同じく今のトレンドテンプレートで見る。
+    """
+    reasons = []
+    spl = str(sig).split(",")
+    if len(spl) >= 3 and spl[2] == "0":
+        reasons.append("高値未更新")
+    trend_template = stock.get("trend_template", [])
+    misses = set(trend_template) if isinstance(trend_template, (list, tuple, set)) else set()
+    if _POCKET_PIVOT_TREND_CORE & misses:
+        reasons.append("ステージ2でない")
+    if "high(low)52" in misses:
+        reasons.append("52週の範囲外")
+    return reasons
+
+
+def _breakout_range(sig):
+    """ブ1件の直前10日の値幅 % を返す。保存されていなければ None。"""
+    spl = str(sig).split(",")
+    try:
+        return float(spl[3]) if len(spl) >= 4 else None
+    except ValueError:
+        return None
+
+
+def _is_strong_breakout(sig):
+    """ブ+ (直前が締まっていて出来高が平均の2倍以上) か。"""
+    width = _breakout_range(sig)
+    try:
+        per = int(str(sig).split(",")[1])
+    except (IndexError, ValueError):
+        return False
+    return width is not None and width < BREAKOUT_TIGHT_RANGE_PCT and per >= BREAKOUT_STRONG_VOLUME_PER
+
+
 # シグナル表示で銘柄データ自体を stale とみなす上限 (access_date_price が今日からこの
 # 日数を超えて古い銘柄はシグナルを出さない)。他タグ (新高値/押し) の 30 日と揃える。
 _SIGNAL_STALE_DAYS = 30
@@ -1058,18 +1103,19 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
 
     フィルタ:
       - ポ: Stage 2 コア条件・MA10乖離下限を通過したものを先頭から最大3件走査。
-      - ブ: 先頭1件のみ走査。
+      - ブ: 表示条件 (_breakout_reject_reasons) を満たす最新の1件。ブ+ なら "strong": True。
       - 各シグナル: access_date_price 基準で delta を計算し、
         max_delta_days が整数なら 0〜max_delta_days のものだけ採用。
 
-    include_extended=True のときのみ breakout_extended (高値追い圏で正規ブレイクから
-    弾かれた候補) を kind="ブ"・extended=True 付きで含める。詳細チャートマーカー専用で、
+    include_extended=True のときのみ、breakout_extended (高値追い圏で正規ブレイクから
+    弾かれた候補) と、表示条件から外れたブ ("reject" に理由) を kind="ブ"・extended=True
+    付きで含める (まとめて新しい順に3件まで)。詳細チャートマーカー専用で、
     シグナル列・一覧 tooltip 経路 (デフォルト False) には出さない。
 
     Returns:
         list[dict]: [{"kind","mmdd","num","sig_date","delta"}] (表示順)。
-            extended 候補のみ "extended": True を持ち、num は MA10乖離% (正規ブレイクの
-            num=出来高超過% とは意味が異なる)。
+            extended 候補のみ "extended": True を持つ。高値追い圏の num は MA10乖離%、
+            "reject" 付き (表示条件から外れたブ) の num は出来高超過%。
             sig_date は access_date_price 基準で年補完した発生日 (date)。
     """
     out = []
@@ -1083,23 +1129,26 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
     # Stage 4 崩壊 (7条件全 miss) ではポ/ブともに無効化 (issue #110/#111)。
     stage4 = _is_stage4(misses)
 
-    # (kind, sigs, extended) の3要素。extended は描画側で半透明中抜き表示する目印。
+    # (kind, sigs, mode) の3要素。mode は None (通常) / "extended" (高値追い圏) /
+    # "reject" (表示条件から外れたブ)。後ろ2つは描画側で半透明中抜き表示する。
     sources = []
     if pocket_pivot and not stage4:
         pockets = [sig for sig in pocket_pivot if _is_displayable_pocket_pivot(stock, sig)]
-        sources.append(("ポ", pockets[:3], False))  # 通過した連続ポは最大3件
-    breakout = stock.get("breakout", [])
+        sources.append(("ポ", pockets[:3], None))  # 通過した連続ポは最大3件
+    breakout = stock.get("breakout") or []
+    rejected = [sig for sig in breakout if _breakout_reject_reasons(stock, sig)]
     if breakout and not stage4:
-        sources.append(("ブ", list(breakout)[:1], False))  # ブは最新1件のみ
+        passed = [sig for sig in breakout if sig not in rejected]
+        sources.append(("ブ", passed[:1], None))  # ブは条件を満たす最新1件のみ
     vol_dryup_bo = stock.get("volume_dryup_breakout", [])
     if vol_dryup_bo and not stage4:
-        sources.append(("週ブ", list(vol_dryup_bo)[:1], False))  # 週ブも最新1件のみ (issue #384)
+        sources.append(("週ブ", list(vol_dryup_bo)[:1], None))  # 週ブも最新1件のみ (issue #384)
     if include_extended and not stage4:
-        breakout_ext = stock.get("breakout_extended", [])
-        if breakout_ext:
-            sources.append(("ブ", list(breakout_ext)[:3], True))  # extended は直近3件まで
+        sources.append(("ブ", list(stock.get("breakout_extended", [])), "extended"))
+        sources.append(("ブ", rejected, "reject"))
 
-    for kind, sigs, extended in sources:
+    hollow = []  # 中抜きで出す候補 (高値追い圏 + 表示条件から外れたブ)
+    for kind, sigs, mode in sources:
         for sig in sigs:
             spl = str(sig).split(",")
             if len(spl) < 2:
@@ -1127,7 +1176,7 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
                     entry["dryup"] = int(spl[2])
                 except ValueError:
                     pass
-            if extended:
+            if mode == "extended":
                 entry["extended"] = True
                 # 3要素目があれば出来高超過率 (描画側のマーカー強度バケット用)。
                 # 旧2要素データは per なし → 描画側で従来の固定サイズにフォールバック。
@@ -1136,7 +1185,18 @@ def extract_signals(stock, max_delta_days=10, include_extended=False):
                         entry["extended_per"] = int(spl[2])
                     except ValueError:
                         pass
-            out.append(entry)
+            elif mode == "reject":
+                entry["extended"] = True
+                entry["extended_per"] = num
+                entry["reject"] = "・".join(_breakout_reject_reasons(stock, sig))
+            elif kind == "ブ":
+                if _is_strong_breakout(sig):
+                    entry["strong"] = True
+                if _breakout_range(sig) is not None:
+                    entry["range"] = _breakout_range(sig)
+            (hollow if mode else out).append(entry)
+    # 中抜きは高値追い圏と条件外をまとめて、新しい順に3件まで
+    out.extend(sorted(hollow, key=lambda e: e["sig_date"], reverse=True)[:3])
     return out
 
 
@@ -1295,13 +1355,15 @@ def make_signal(stock, reasons=None):
     breakout = stock.get("breakout", [])
     if not stage4:
         for brk in breakout:
+            if _breakout_reject_reasons(stock, brk):
+                continue  # 本来のブレイクアウトの条件を満たすものだけ出す (issue #578)
             brkspl = brk.split(",")
             try:
                 delta_day = get_recent_signal_delta(brkspl[0])
                 # mark = "★"  if delta_day < 3 else ""
             except ValueError:
                 log_warning("ブレイクアウト日付エラー", brkspl[0])
-            signal += "[ブ]"
+            signal += "[ブ+]" if _is_strong_breakout(brk) else "[ブ]"
             signal += "%s(%s)," % (brkspl[0], brkspl[1])
             break  # 一つにしておく(最新日)
     # 週ブ (出来高dry up後の5日間出来高拡大ブレイクアウト, issue #384)

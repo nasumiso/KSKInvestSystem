@@ -48,6 +48,11 @@ BREAKOUT_EXTENDED_KAIRI_MAX = 25
 # 各日で前日から遡って平均を取るため、必要データは 10+30=40日。30日streak判定バッファのため period="3mo"≒60日
 # (~41営業日) で全検知日が完全な30日平均を保てる上限値 (取得範囲は広げない)。
 BREAKOUT_AVG_VOLUME_DAYS = 30
+# ブレイクの「高値の上抜け」を見る日数と、「直前の締まり」を見る日数 (issue #578)。
+# 発生日の終値が直前 BREAKOUT_PIVOT_DAYS 日の終値の高値を上回ったか (H) と、直前
+# BREAKOUT_TIGHT_DAYS 日の値幅 % (R) を検知時に保存し、表示するかどうかは解釈層 (make_stock_db) で決める。
+BREAKOUT_PIVOT_DAYS = 20
+BREAKOUT_TIGHT_DAYS = 10
 
 
 # モメンタムポイント動的キャリブレーション (issue #104) のデフォルト値。
@@ -2185,8 +2190,19 @@ def parse_price_text_from_list(price_current, price_list):
                 # ストップ高張り付き時は出来高が減り per が負になりうるため 0 床。
                 # 保存値は常に非負で強度バケット (issue #253 webapp) が単調に振る舞う。
                 per = max(100 * vol / avg_vol - 100, 0)
-                log_debug("ブレイク:%s,%d" % (day, per))
-                breaks.append("%s,%d" % (day, per))
+                # 形式: "MM/DD,per,H,R"。H = 終値が直前20日の終値の高値を上抜けたか (1/0)、
+                # R = 直前10日の値幅 % (高値の最大 − 安値の最小、前日終値比)。日数が足りなければ
+                # H は 0、R は付けない。読み手は先頭2要素だけでも読める (issue #578)。
+                prior = price_list[ind + 1:ind + 1 + BREAKOUT_PIVOT_DAYS]
+                new_high = (len(prior) == BREAKOUT_PIVOT_DAYS
+                            and price_list[ind][6] > max(row[6] for row in prior))
+                sig = "%s,%d,%d" % (day, per, 1 if new_high else 0)
+                tight = price_list[ind + 1:ind + 1 + BREAKOUT_TIGHT_DAYS]
+                if len(tight) == BREAKOUT_TIGHT_DAYS and prev_close:
+                    width = max(row[2] for row in tight) - min(row[3] for row in tight)
+                    sig += ",%.1f" % (100 * width / prev_close)
+                log_debug("ブレイク:%s" % sig)
+                breaks.append(sig)
             elif kairi <= BREAKOUT_EXTENDED_KAIRI_MAX:
                 # 高値追い圏 (規律上は買わない) の extended 候補。kairi (乖離) に加え
                 # 出来高超過率 per も保存し、詳細チャートで乖離 tooltip を出しつつ

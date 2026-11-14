@@ -355,36 +355,36 @@ def test_recorded_exits_reads_batch_records(monkeypatch):
 
 
 def test_breakout_items(monkeypatch):
-    """ブ (中以上)・週ブは発生から3営業日。保有・準保有は銘柄名 (週ブを先に新しい順、4銘柄目から「他N銘柄」)、監視は件数と内訳"""
+    """ブ・週ブは発生から3営業日。保有・準保有は銘柄名 (ブ+ を先に新しい順、4銘柄目から「他N銘柄」)、監視は件数と内訳"""
     import make_stock_db
 
     sigs = {
         "1001": [("ブ", date(2026, 10, 8))],                            # 2営業日後: 出る
         "1002": [("ブ", date(2026, 10, 12)), ("週ブ", date(2026, 10, 9))],  # 両方: 新しい方の日付で並ぶ
         "1003": [("週ブ", date(2026, 10, 9))],
-        "1004": [("ブ", date(2026, 10, 12))],                           # 1003 より新しいが週ブの後
+        "1004": [("ブ", date(2026, 10, 9), True)],                      # ブ+ は古くても先 (issue #578)
         "1005": [("ブ", date(2026, 10, 7))],                            # 3営業日後: 出ない
         "1006": [("ポ", date(2026, 10, 12))],                           # ポは出さない
-        "1007": [("ブ", date(2026, 10, 12), 99)],                       # ブ(弱) は出さない (週ブは弱でも出す)
         "3001": [("ブ", date(2026, 10, 12))],
-        "3002": [("ブ", date(2026, 10, 9)), ("週ブ", date(2026, 10, 9))],
+        "3002": [("ブ", date(2026, 10, 9), True), ("週ブ", date(2026, 10, 9))],
     }
     _stub_material(monkeypatch, [
         {"code_s": c, "status": "3監" if c.startswith("3") else "1保"} for c in sigs
     ])
     monkeypatch.setattr(make_stock_db, "extract_signals", lambda stock: [
-        {"kind": s[0], "sig_date": s[1], "num": s[2] if len(s) > 2 else 150} for s in sigs[stock["stock_name"][2:]]
+        {"kind": s[0], "sig_date": s[1], "num": 150, **({"strong": True} if len(s) > 2 else {})}
+        for s in sigs[stock["stock_name"][2:]]
     ])
 
     items = aq._breakout_items(TODAY)
 
     assert [(i["text"], i["url"]) for i in items] == [
-        ("ブレイク点灯: 保有 銘柄1002 (ブ・週ブ)・銘柄1003 (週ブ)・銘柄1004 (ブ) 他1銘柄",
-         "/portfolio/charts?status=hold&codes=1002,1003,1004,1001"),
-        ("監視のブレイク: 2銘柄 (ブ2・週ブ1)", "/portfolio/charts?status=watch&codes=3002,3001"),
+        ("ブレイク点灯: 保有 銘柄1004 (ブ+)・銘柄1002 (ブ・週ブ)・銘柄1003 (週ブ) 他1銘柄",
+         "/portfolio/charts?status=hold&codes=1004,1002,1003,1001"),
+        ("監視のブレイク: 2銘柄 (ブ+1・ブ1・週ブ1)", "/portfolio/charts?status=watch&codes=3002,3001"),
     ]
     assert [(i["popup_label"], i["popup"]) for i in items] == [
-        ("他1銘柄", "1001 銘柄1001 (ブ)"), ("2銘柄", "3002 銘柄3002 (ブ・週ブ)\n3001 銘柄3001 (ブ)"),
+        ("他1銘柄", "1001 銘柄1001 (ブ)"), ("2銘柄", "3002 銘柄3002 (ブ+・週ブ)\n3001 銘柄3001 (ブ)"),
     ]
 
 
