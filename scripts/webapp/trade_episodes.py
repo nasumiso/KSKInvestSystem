@@ -724,7 +724,9 @@ _ACTION_NOTE_MAX_LAG_DAYS = 14
 def _human_reason(reason: str) -> str:
     """アクションログの reason から機械の文言を除き、人が書いた文だけを返す。"""
     text = (reason or "").strip()
-    if text.startswith("txt 取り込み"):  # 2026-05 の移行時のログ
+    if text.startswith(("txt 取り込み", "my_watch_list.txt 同期")):  # 2026-05 の移行時のログ
+        return ""
+    if text == "WebApp 追加":  # 登録フォームの理由が空のときの既定文言
         return ""
     for prefix in _MACHINE_REASON_PREFIXES:
         if text.startswith(prefix):
@@ -756,6 +758,8 @@ def attach_action_notes(episodes: List[Dict[str, Any]],
       OUT (1保からの変更): ログ日以前に閉じた最後のエピソード。売った日に入り直した
         とき新しい側へ付けないため。無ければログ日を含むエピソード
       株数 (株数変更): ログ日を含むエピソード
+      登録 (初回登録): ログ日以降に建てた最初のエピソード。ウォッチに入れた理由を
+        入口の材料にする。登録から買いまで数か月空くので日数の上限は設けない
     どこにも付かないログは捨てる。各エピソードに action_notes
     ([{label, date, text}], 日付昇順) を付ける。
     """
@@ -793,6 +797,11 @@ def attach_action_notes(episodes: List[Dict[str, Any]],
             targets = [e for e in cands if e["close_date"] == last and within_lag(last, day)]
             if not targets:  # 売る前に先にステータスを変えた
                 targets = [e for e in eps if covers(e, day)]
+        elif log.get("action_type") == "初回登録":
+            label, text = "登録", _human_reason(log.get("reason", ""))
+            cands = [e for e in eps if not e.get("carry_over") and e["open_date"] >= day]
+            first = min((e["open_date"] for e in cands), default="")
+            targets = [e for e in cands if e["open_date"] == first]
         else:
             continue
         if not text:

@@ -1735,6 +1735,16 @@ _OUT = dict(action_type="売却", status_from="1保", status_to="2準")
         [[], []],
         id="15日以上離れたログと期首持越しへのINは付けない",
     ),
+    pytest.param(
+        [_note_ep("信用", "2026-05-01", carry_over=True),
+         _note_ep("現物", "2026-08-01", "2026-08-05"), _note_ep("現物", "2026-09-01")],
+        [_note_log("2026-04-20", "ゆーさくさん買い", action_type="初回登録", status_to="3監"),
+         _note_log("2026-04-21", "WebApp 追加", action_type="初回登録", status_to="3監"),
+         _note_log("2026-04-22", "my_watch_list.txt 同期 (X社)", action_type="初回登録",
+                   status_to="3監")],
+        [[], [("登録", "2026-04-20", "ゆーさくさん買い")], []],
+        id="登録の理由は登録後に建てた最初のエピソードだけに付き、持越しと既定文言は付かない",
+    ),
 ])
 def test_attach_action_notes(episodes, logs, expected):
     trade_episodes.attach_action_notes(episodes, logs)
