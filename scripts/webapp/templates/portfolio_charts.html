@@ -127,6 +127,7 @@
     <button type="button" class="nav-btn" id="prev-btn">← 前</button>
     <button type="button" class="nav-btn" id="next-btn">次 →</button>
   </span>
+  <span class="charts-count">ステージ: 選択で保存 / Enterで次 / Escでページ操作</span>
 </div>
 
 <div class="charts-grid" tabindex="-1">
@@ -189,6 +190,8 @@
     var totalPages = Math.ceil(total / PER_PAGE);
     var page = 0;        // 0 始まり
     var timeframe = 'w'; // 日足 d / 週足 w / 月足 m
+    var renderVersion = 0;
+    var focusRequest = 0;
     // 株探チャートの足切替は ashi= パラメータ (1=日足 / 2=週足 / 3=月足)。
     var ASHI = { d: 1, w: 2, m: 3 };
 
@@ -210,9 +213,12 @@
     }
 
     function render() {
+      renderVersion++;
+      focusRequest++;
       var start = page * PER_PAGE;
       for (var i = 0; i < PER_PAGE; i++) {
         var cell = cells[i];
+        cell.stageSave = null;
         var iframe = cell.querySelector('iframe');
         var nameLink = cell.querySelector('.name');
         var kabuLink = cell.querySelector('.kabu');
@@ -279,6 +285,8 @@
       var dispStart = total === 0 ? 0 : start + 1;
       var dispEnd = Math.min(start + PER_PAGE, total);
       countEl.textContent = dispStart + '-' + dispEnd + ' / ' + total + ' 銘柄';
+      var firstStage = gridEl.querySelector('.chart-cell:not(.placeholder) .stage-main-select');
+      if (firstStage) firstStage.focus({ preventScroll: true });
     }
 
     // LLM の読み取り (issue #580)。不一致のときだけ色と「据え置き」を出す
@@ -517,81 +525,114 @@
         chartState.disabled = disabled;
       }
 
-      function saveStage(prev) {
-        var code = cell.dataset.code;
-        if (!code) return;
-        var payload = {
-          stage_s: stageMain.value || '',
-          stage_t: stageT.disabled ? '' : (stageT.value || ''),
-          last_research_update: todayMD(),
-        };
-        postMemo(code, payload).then(function(res) {
-          if (!res.ok || !res.body || res.body.ok !== true) {
-            stageBox.dataset.rescue = prev.rescue;
-            stageMain.value = prev.s;
-            stageT.value = prev.t;
-            stageMain.dataset.prev = prev.s;
-            stageT.dataset.prev = prev.t;
-            relabelStageTSelect(stageT, prev.s || '');
-            syncStageDisabled();
-            alert((res.body && res.body.error) || 'ステージの保存に失敗しました');
-            return;
-          }
-          stageBox.dataset.rescue = '0';
-          stageMain.dataset.prev = payload.stage_s;
-          stageT.dataset.prev = payload.stage_t;
-          relabelStageTSelect(stageT, payload.stage_s || '');
-          var stock = findStock(code);
-          if (stock) {
-            stock.stage = (res.body.display && res.body.display.stage !== '—') ? (res.body.display.stage || '') : '';
-            stock.last_research_update = (res.body.display && res.body.display.last_research_update !== '—')
-              ? (res.body.display.last_research_update || '') : payload.last_research_update;
-            stock.last_research_update_style = (res.body.styles && res.body.styles.last_research_update) || '';
-            stock.stage_struct = { raw: stock.stage, s: payload.stage_s, t: payload.stage_t, structured: true, rescue: '' };
-          }
-          var upd = cell.querySelector('.edit-update');
-          if (upd && upd.dataset.editing !== '1') {
-            upd.textContent = (res.body.display && res.body.display.last_research_update) || payload.last_research_update || '—';
-            applyUpdateStyle(upd, (res.body.styles && res.body.styles.last_research_update) || '');
-          }
-          settleStageLlm(code, payload.last_research_update);
-          syncStageDisabled();
-        }).catch(function(err) {
-          stageBox.dataset.rescue = prev.rescue;
-          stageMain.value = prev.s;
-          stageT.value = prev.t;
-          stageMain.dataset.prev = prev.s;
-          stageT.dataset.prev = prev.t;
-          relabelStageTSelect(stageT, prev.s || '');
-          syncStageDisabled();
-          alert('保存失敗: ' + err);
-        });
-      }
+      // 選択変更とEnterの据え置き確認を同じ順序で保存する。
+      var stageSaveChain = Promise.resolve(true);
+      var advancePending = false;
 
-      // 据え置き: ラベルはそのままで更新日だけ今日にする (履歴に confirm が残る、issue #580)
-      cell.querySelector('.stage-keep').addEventListener('click', function() {
+      function saveStageMemo(payload, changeStage) {
         var code = cell.dataset.code;
-        if (!code) return;
-        var md = todayMD();
-        postMemo(code, { last_research_update: md }).then(function(res) {
+        if (!code) return Promise.resolve(false);
+        var version = renderVersion;
+        var operation = { code: code };
+        operation.promise = stageSaveChain.then(function() {
+          return postMemo(code, payload);
+        }).then(function(res) {
           if (!res.ok || !res.body || res.body.ok !== true) {
-            alert((res.body && res.body.error) || '据え置きの保存に失敗しました');
-            return;
+            throw new Error((res.body && res.body.error) || 'ステージの保存に失敗しました');
           }
           var stock = findStock(code);
           var disp = res.body.display || {};
-          var updVal = (disp.last_research_update && disp.last_research_update !== '—') ? disp.last_research_update : md;
+          var updVal = (disp.last_research_update && disp.last_research_update !== '—')
+            ? disp.last_research_update : payload.last_research_update;
           if (stock) {
+            if (changeStage) {
+              stock.stage = disp.stage && disp.stage !== '—' ? disp.stage : '';
+              stock.stage_struct = { raw: stock.stage, s: payload.stage_s, t: payload.stage_t,
+                                     structured: true, rescue: '' };
+            }
             stock.last_research_update = updVal;
             stock.last_research_update_style = (res.body.styles && res.body.styles.last_research_update) || '';
           }
-          var upd = cell.querySelector('.edit-update');
-          if (upd && upd.dataset.editing !== '1' && cell.dataset.code === code) {
-            upd.textContent = updVal;
-            applyUpdateStyle(upd, (res.body.styles && res.body.styles.last_research_update) || '');
-          }
           settleStageLlm(code, updVal);
-        }).catch(function(err) { alert('保存失敗: ' + err); });
+          if (cell.dataset.code === code && renderVersion === version && cell.stageSave === operation) {
+            syncSavedStage();
+          }
+          return true;
+        }).catch(function(err) {
+          if (cell.dataset.code === code && renderVersion === version && cell.stageSave === operation) {
+            syncSavedStage();
+            cell.stageSave = null;  // Enterでも再試行できるようにする
+          }
+          alert('保存失敗: ' + err.message);
+          return false;
+        });
+        cell.stageSave = operation;
+        stageSaveChain = operation.promise;
+        return operation.promise;
+      }
+
+      function syncSavedStage() {
+        var stock = findStock(cell.dataset.code);
+        if (!stock) return;
+        var saved = stock.stage_struct || {};
+        stageBox.dataset.rescue = saved.rescue ? '1' : '0';
+        stageMain.value = saved.rescue || saved.s || '';
+        stageT.value = saved.t || '';
+        stageMain.dataset.prev = stageMain.value;
+        stageT.dataset.prev = stageT.value;
+        relabelStageTSelect(stageT, saved.s || '');
+        syncStageDisabled();
+        var upd = cell.querySelector('.edit-update');
+        if (upd && upd.dataset.editing !== '1') {
+          upd.textContent = stock.last_research_update || '—';
+          applyUpdateStyle(upd, stock.last_research_update_style);
+        }
+      }
+
+      function saveStage() {
+        return saveStageMemo({
+          stage_s: stageMain.value || '',
+          stage_t: stageT.disabled ? '' : (stageT.value || ''),
+          last_research_update: todayMD(),
+        }, true);
+      }
+
+      function confirmStage() {
+        return saveStageMemo({ last_research_update: todayMD() }, false);
+      }
+
+      // 据え置き: ラベルはそのままで更新日だけ今日にする (issue #580)
+      cell.querySelector('.stage-keep').addEventListener('click', confirmStage);
+
+      stageBox.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          focusRequest++;
+          gridEl.focus({ preventScroll: true });
+        }
+      });
+      // select本来のEnter確定とchangeイベントが終わってから保存・移動する。
+      stageBox.addEventListener('keyup', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (e.repeat || advancePending) return;
+        advancePending = true;
+        var request = ++focusRequest;
+        var version = renderVersion;
+        var code = cell.dataset.code;
+        var pending = cell.stageSave;
+        var saved = pending && pending.code === code ? pending.promise : confirmStage();
+        saved.then(function(ok) {
+          if (!ok || request !== focusRequest || version !== renderVersion ||
+              cell.dataset.code !== code || !cell.stageSave || cell.stageSave.promise !== saved ||
+              !stageBox.contains(document.activeElement)) return;
+          var next = cells[cells.indexOf(cell) + 1];
+          if (next && !next.classList.contains('placeholder')) {
+            next.querySelector('.stage-main-select').focus({ preventScroll: true });
+          } else {
+            goNext();
+          }
+        }).finally(function() { advancePending = false; });
       });
 
       function saveChart(prev) {
@@ -639,16 +680,14 @@
       }
 
       stageMain.addEventListener('change', function() {
-        var prev = { s: stageMain.dataset.prev || '', t: stageT.dataset.prev || '', rescue: stageBox.dataset.rescue || '0' };
         if (stageBox.dataset.rescue === '1') stageBox.dataset.rescue = '0';
         stageT.value = '';
         relabelStageTSelect(stageT, stageMain.value || '');
         syncStageDisabled();
-        saveStage(prev);
+        saveStage();
       });
       stageT.addEventListener('change', function() {
-        var prev = { s: stageMain.dataset.prev || '', t: stageT.dataset.prev || '', rescue: stageBox.dataset.rescue || '0' };
-        saveStage(prev);
+        saveStage();
       });
       chartStyle.addEventListener('change', function() {
         var prev = {
