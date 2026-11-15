@@ -87,6 +87,21 @@ def expire_distribution_days(dd_list, today_close, daily_history):
     return valid
 
 
+def drop_dd_before_ftd(dd_list, last_ftd_date):
+    """直近の FTD 以前の DD を除く (純関数)。
+
+    原典では、FTD で上昇確定に戻ったら DD は0から数え直す。
+    毎日、直近20日の価格データから DD 候補を作り直すので、リストを空にするのではなく日付で除く。
+
+    Args:
+        dd_list: [(date_str, close_float), ...]
+        last_ftd_date: 直近の FTD 成立日 ("YY/MM/DD")。None なら除かない
+    """
+    if not last_ftd_date:
+        return list(dd_list)
+    return [(d, c) for d, c in dd_list if d > last_ftd_date]
+
+
 # ==================================================
 # ラリーアテンプト追跡
 # ==================================================

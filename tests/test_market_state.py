@@ -67,6 +67,16 @@ class TestExpireDistributionDays:
 # ==================================================
 # update_rally_attempt
 # ==================================================
+@pytest.mark.parametrize("last_ftd, expected", [
+    (None, ["26/05/01", "26/05/11", "26/05/12"]),          # FTD なし: 除かない
+    ("26/05/11", ["26/05/12"]),                            # FTD 当日以前を除く
+    ("26/04/20", ["26/05/01", "26/05/11", "26/05/12"]),    # FTD より後だけ: 全部残る
+])
+def test_drop_dd_before_ftd(last_ftd, expected):
+    dd = [("26/05/01", 100.0), ("26/05/11", 101.0), ("26/05/12", 99.0)]
+    assert [d for d, _ in ms.drop_dd_before_ftd(dd, last_ftd)] == expected
+
+
 class TestUpdateRallyAttempt:
     """ラリーアテンプト追跡"""
 

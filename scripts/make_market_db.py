@@ -603,6 +603,8 @@ def _update_index_market_state(prev_index_db, new_index_db):
     valid_dd = market_state.expire_distribution_days(
         today_dd_with_close, today_close=today_close, daily_history=daily_history,
     )
+    # FTD で上昇確定に戻ったら DD は数え直す (FTD 以前の DD は数えない)
+    valid_dd = market_state.drop_dd_before_ftd(valid_dd, prev_meta.get("last_ftd_date"))
 
     # 4. ラリーアテンプト追跡 (Correction 状態のときのみ)
     rally_meta = {
@@ -654,6 +656,9 @@ def _update_index_market_state(prev_index_db, new_index_db):
             ftd_today = market_state.check_follow_through_day(
                 today_dict, prev_dict, rally_meta, daily_history,
             )
+
+    if ftd_today:
+        valid_dd = market_state.drop_dd_before_ftd(valid_dd, today_date)
 
     # 6. 状態遷移 (DD/FTD + 週足10MA明確割れ補助ルール)
     below_10ma = market_state.is_below_10ma_clearly(

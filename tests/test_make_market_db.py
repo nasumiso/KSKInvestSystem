@@ -1082,6 +1082,38 @@ class TestUpdateIndexMarketStateFTD:
         sm = new_index_db["state_meta"]
         assert sm["rally_attempt_start_date"] is None
 
+    def test_dd_before_ftd_do_not_come_back(self):
+        """FTD で上昇確定に戻った翌日、価格データから作り直した FTD 以前の DD を数えない。
+
+        数えると「DD 4以上かつ10MA割れ」で、FTD の直後に調整へ戻る。
+        """
+        import market_state
+        meta = self._build_meta(market_state.CONFIRMED_UPTREND, prev_volume=1000)
+        meta["last_ftd_date"] = "26/05/21"
+        prev_index_db = {
+            "market_state": market_state.CONFIRMED_UPTREND,
+            "state_meta": meta,
+            "state_history": [("26/05/21", market_state.CONFIRMED_UPTREND, "ftd")],
+        }
+        old_dd = [("26/05/14", 60000.0), ("26/05/15", 59900.0),
+                  ("26/05/18", 59800.0), ("26/05/19", 59700.0)]
+        new_index_db = {
+            "price": 61000, "low": 60800, "high": 61500, "volume": 2000000,
+            "daily_history": ["26/05/22", "26/05/21", "26/05/20", "26/05/19",
+                              "26/05/18", "26/05/15", "26/05/14"],
+            "distribution_days_with_close": old_dd + [("26/05/22", 61000.0)],
+            "price_log": [
+                (datetime(2026, 5, 22).date(), 61000),
+                (datetime(2026, 5, 21).date(), 61684),
+            ],
+            "price_kairi_wma10": -2.0,
+        }
+        make_market_db._update_index_market_state(prev_index_db, new_index_db)
+        sm = new_index_db["state_meta"]
+        assert sm["distribution_days_with_close"] == [("26/05/22", 61000.0)]
+        # 10MA 割れだけなので圧力下まで (調整には戻らない)
+        assert new_index_db["market_state"] == market_state.UPTREND_UNDER_PRESSURE
+
 
 class TestCreateMarketHtml:
     """create_market_html() 統合テスト"""
