@@ -7,12 +7,13 @@ import pytest
 import margin_estimate as me
 
 
-def _positions(margin_qty=100, margin_price=1000.0, spot_qty=0, spot_price=500.0, broker="楽天"):
+def _positions(margin_qty=100, margin_price=1000.0, spot_qty=0, spot_price=500.0, broker="楽天",
+               spot_account="特定"):
     rows = [{"broker": broker, "kind": "信用", "code_s": "1111", "qty": margin_qty,
              "avg_price": margin_price}]
     if spot_qty:
-        rows.append({"broker": broker, "kind": "現物", "code_s": "2222", "qty": spot_qty,
-                     "avg_price": spot_price})
+        rows.append({"broker": broker, "account": spot_account, "kind": "現物", "code_s": "2222",
+                     "qty": spot_qty, "avg_price": spot_price})
     return rows
 
 
@@ -27,6 +28,7 @@ def _baseline(rate=40.0, **kw):
     ({"1111": 1200.0, "2222": 500.0}, {}, 40.0),                        # 評価益は保証金に数えない
     ({"1111": 1000.0, "2222": 450.0}, {"spot_qty": 100}, 36.0),         # 代用 0.8 × 100 × -50 = -4,000 → 36,000 / 100,000
     ({"1111": 1000.0, "2222": 500.0}, {"margin_qty": 200}, 20.0),       # 建玉が倍 → 建玉合計 200,000 (保証金は同じ)
+    ({"1111": 1000.0, "2222": 450.0}, {"spot_qty": 100, "spot_account": "NISA成長投資枠"}, 40.0),  # NISA の現物は代用に数えない
 ])
 def test_estimate_scenarios(closes, kw, expected_rate):
     """基準日からの差分で推定する。評価損と代用の値動きだけが保証金を動かす"""

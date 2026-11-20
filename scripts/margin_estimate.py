@@ -7,7 +7,8 @@
 前提 (spec に同じ内容を書く):
 - 信用は買建のみ。売建がある証券会社は推定しない
 - 信用建玉の評価損だけを保証金に算入する (SBI のヘルプが明記。評価益は算入しない)
-- 現物は代用として掛目 0.8 で値動きを算入する (現物の全株が代用とは限らない近似)
+- 現物は代用として掛目 0.8 で値動きを算入する (現物の全株が代用とは限らない近似)。
+  NISA 口座の現物は代用にならないので数えない
 - 基準日より後の信用返済の決済損益は、約定 (fill) から足す。入出金・金利・現物の売却代金は
   追わない (基準値を入れ直すと戻る)
 - 銘柄単位の合算スナップショットなので、基準日の前後で同じ銘柄の株が入れ替わっても区別できない
@@ -47,6 +48,8 @@ def build_snapshot(
             return None, "信用売建があるため推定しません"
         if kind not in ("信用", "現物"):
             continue
+        if kind == "現物" and "NISA" in (p.get("account") or ""):
+            continue  # NISA 口座の株は代用有価証券にならない
         bucket = margin if kind == "信用" else spot
         entry = bucket.setdefault(p["code_s"], {"qty": 0, "cost": 0.0, "missing": False})
         entry["qty"] += p["qty"]
