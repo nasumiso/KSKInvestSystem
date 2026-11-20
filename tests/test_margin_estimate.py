@@ -82,10 +82,15 @@ def test_not_estimated(positions, closes, reason_part):
 
 
 def test_fall_and_combine_and_input_check():
-    """追証までの下落率は (保証金 - T×建玉) ÷ (建玉 + 0.8×現物)。総合は合算で出し、証券会社別の警戒を注記する"""
-    # 保証金 400 万・建玉 1000 万・現物 500 万: 20% まで (400-200) / (1000+400) = 14.3%
-    assert me.fall_to_threshold(4_000_000, 10_000_000, 5_000_000, 20) == pytest.approx(14.2857, abs=1e-3)
-    assert me.fall_to_threshold(1_000_000, 10_000_000, 0, 20) == 0.0  # すでに 20% 未満
+    """追証までの下落率は建玉ごとに時価で出す。総合は合算で出し、証券会社別の警戒を注記する"""
+    def est(guarantee, close, spot=0):
+        return {"guarantee": guarantee, "tate_total": 10_000_000, "spot_value": spot,
+                "margin_rows": [(10_000, 1000.0, close)]}
+    # 含み損の建玉 (時価 900 万) と現物 500 万: 400 万 − (900 万 + 400 万)·x = 200 万 → 15.4%
+    assert me.fall_to_threshold([est(4_000_000, 900.0, 5_000_000)], 20) == pytest.approx(15.385, abs=1e-2)
+    # 含み益 25% の建玉は 20% 下げるまで保証金を減らさない: 1250 万·x − 250 万 = 200 万 → 36%
+    assert me.fall_to_threshold([est(4_000_000, 1250.0)], 20) == pytest.approx(36.0, abs=1e-2)
+    assert me.fall_to_threshold([est(1_000_000, 900.0)], 20) == 0.0  # すでに 20% 未満
     combined = me.combine({
         "楽天": {"guarantee": 4_000_000, "tate_total": 10_000_000, "spot_value": 5_000_000,
                  "margin_value": 9_000_000, "rate_pct": 40.0},

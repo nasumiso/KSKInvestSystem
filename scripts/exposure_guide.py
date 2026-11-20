@@ -454,8 +454,7 @@ def build_margin_state(*, db_path=None):
                 row["reason"] = reason
             else:
                 row.update(rate_pct=est["rate_pct"], skipped=est["skipped"], realized=est["realized"], falls={
-                    t: margin_estimate.fall_to_threshold(
-                        est["guarantee"], est["tate_total"], est["spot_value"], t)
+                    t: margin_estimate.fall_to_threshold([est], t)
                     for t in margin_estimate.THRESHOLDS})
                 estimates[broker] = est
         if row["rate_pct"] is None and any(p.get("broker") == broker for p in positions):

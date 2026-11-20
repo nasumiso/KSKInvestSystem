@@ -199,22 +199,41 @@ def estimate(baseline: Dict[str, Any], snapshot: Dict[str, Any],
         "spot_value": spot_value,
         "nisa_value": snapshot.get("nisa_value", 0.0),
         "margin_value": margin_value,
+        # 下落率を銘柄ごとに出すための建玉 (株数, 建単価, 終値)
+        "margin_rows": [(v["qty"], v["avg_price"], closes[c])
+                        for c, v in snapshot["margin"].items() if closes.get(c)],
         "skipped": snapshot["skipped"],
         "realized": realized_total,
     }, None
 
 
-def fall_to_threshold(guarantee: float, tate_total: float, spot_value: float,
-                      threshold_pct: float) -> float:
-    """全保有が一律に下がるとして、保証金率が threshold_pct に届く下落率 (%)。0 以上。
+def fall_to_threshold(estimates: List[Dict[str, Any]], threshold_pct: float) -> float:
+    """全保有が一律に下がるとして、保証金率が threshold_pct に届く下落率 (%)。0〜100。
 
-    評価益のある建玉は下落でまず益が減るだけで保証金は減らないが、その分は無視する
-    (早めに届く側に倒れる)。
+    estimate() の結果 (1社分、または合算する複数社分) を受け取り、建玉ごとに時価で
+    評価損を出し直して二分法で探す。評価益のある建玉は、益が消えるまで保証金を減らさない。
     """
-    denominator = tate_total + SUBSTITUTE_RATIO * spot_value
-    if denominator <= 0:
+    tate_total = sum(e["tate_total"] for e in estimates)
+    if tate_total <= 0:
         return 0.0
-    return max(0.0, (guarantee - threshold_pct / 100.0 * tate_total) / denominator * 100.0)
+    base = sum(e["guarantee"] for e in estimates)
+    spot = sum(e["spot_value"] for e in estimates)
+    rows = [r for e in estimates for r in e.get("margin_rows", [])]
+    target = threshold_pct / 100.0 * tate_total
+
+    def guarantee_at(x: float) -> float:
+        loss = sum(_margin_loss(q, a, c * (1 - x)) - _margin_loss(q, a, c) for q, a, c in rows)
+        return base + loss - SUBSTITUTE_RATIO * spot * x
+
+    if guarantee_at(0.0) <= target:
+        return 0.0
+    if guarantee_at(1.0) > target:
+        return 100.0
+    lo, hi = 0.0, 1.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if guarantee_at(mid) > target else (lo, mid)
+    return hi * 100.0
 
 
 def combine(per_broker: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -231,7 +250,7 @@ def combine(per_broker: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         "nisa_value": sum(r.get("nisa_value", 0.0) for r in per_broker.values()),
         "margin_value": sum(r["margin_value"] for r in per_broker.values()),
         "rate_pct": guarantee / tate_total * 100.0,
-        "falls": {t: fall_to_threshold(guarantee, tate_total, spot_value, t) for t in THRESHOLDS},
+        "falls": {t: fall_to_threshold(list(per_broker.values()), t) for t in THRESHOLDS},
         "low_brokers": [b for b, r in per_broker.items() if r["rate_pct"] < WARN_RATE_PCT],
     }
 
@@ -461,7 +480,8 @@ def target_area(guarantee: float, tate_total: float, spot_value: float,
     lower = value_for_rate(rate + AREA_BAND_PT)
     upper = value_for_rate(rate - AREA_BAND_PT)
     target = value_for_rate(rate)
-    # fall_to_threshold と同じ式 (G − T·B) / (B + 0.8·S) ≥ 下落率 f を B について解く:
+    # 頭打ちは表示の下落率 (fall_to_threshold) より厳しめの線形式で決める。建玉が建単価で
+    # 下がり、評価益も減ると見る (G − T·B) / (B + 0.8·S) ≥ 下落率 f を B について解く:
     # B ≤ (G − 0.8·f·S) / (T + f)
     t, f = MARGIN_CALL_RATE_PCT / 100.0, FLOOR_FALL_PCT / 100.0
     floor_value = value_for_tate((guarantee - f * SUBSTITUTE_RATIO * spot_value) / (t + f))
