@@ -8,7 +8,7 @@
 - 信用は買建のみ。売建がある証券会社は推定しない
 - 信用建玉の評価損だけを保証金に算入する (SBI のヘルプが明記。評価益は算入しない)
 - 現物は代用として掛目 0.8 で値動きを算入する (現物の全株が代用とは限らない近似)。
-  NISA 口座の現物は代用にならないので数えない
+  NISA 口座の現物は代用にならないので数えない (運用総額には数える)
 - 基準日より後の信用返済の決済損益は、約定 (fill) から足す。入出金・金利・現物の売却代金は
   追わない (基準値を入れ直すと戻る)
 - 銘柄単位の合算スナップショットなので、基準日の前後で同じ銘柄の株が入れ替わっても区別できない
@@ -40,6 +40,7 @@ def build_snapshot(
     """
     margin: Dict[str, Dict[str, Any]] = {}
     spot: Dict[str, Dict[str, Any]] = {}
+    nisa_value = 0.0
     for p in positions:
         if p.get("broker") != broker or not p.get("qty") or p["qty"] <= 0:
             continue
@@ -49,7 +50,9 @@ def build_snapshot(
         if kind not in ("信用", "現物"):
             continue
         if kind == "現物" and "NISA" in (p.get("account") or ""):
-            continue  # NISA 口座の株は代用有価証券にならない
+            # NISA 口座の株は代用有価証券にならない。運用総額にだけ数える
+            nisa_value += p["qty"] * (closes.get(p["code_s"]) or p.get("avg_price") or 0)
+            continue
         bucket = margin if kind == "信用" else spot
         entry = bucket.setdefault(p["code_s"], {"qty": 0, "cost": 0.0, "missing": False})
         entry["qty"] += p["qty"]
@@ -68,7 +71,8 @@ def build_snapshot(
         if not (isinstance(close, (int, float)) and close > 0):
             # 建玉合計には入るのに評価損が出せないと、維持率が実際より低く出る
             return None, f"{code} の信用建玉の終値が取れないため推定しません"
-    snapshot = {"margin": {}, "spot": {}, "closes": {}, "tate_total": tate_total, "skipped": 0}
+    snapshot = {"margin": {}, "spot": {}, "closes": {}, "tate_total": tate_total, "skipped": 0,
+                "nisa_value": nisa_value}
     for kind_name, bucket in (("margin", margin), ("spot", spot)):
         for code, e in bucket.items():
             snapshot[kind_name][code] = {
@@ -193,6 +197,7 @@ def estimate(baseline: Dict[str, Any], snapshot: Dict[str, Any],
         "tate_total": tate_total,
         "rate_pct": guarantee / tate_total * 100.0,
         "spot_value": spot_value,
+        "nisa_value": snapshot.get("nisa_value", 0.0),
         "margin_value": margin_value,
         "skipped": snapshot["skipped"],
         "realized": realized_total,
@@ -223,6 +228,7 @@ def combine(per_broker: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         "guarantee": guarantee,
         "tate_total": tate_total,
         "spot_value": spot_value,
+        "nisa_value": sum(r.get("nisa_value", 0.0) for r in per_broker.values()),
         "margin_value": sum(r["margin_value"] for r in per_broker.values()),
         "rate_pct": guarantee / tate_total * 100.0,
         "falls": {t: fall_to_threshold(guarantee, tate_total, spot_value, t) for t in THRESHOLDS},
@@ -431,7 +437,7 @@ def target_step(emotion: Optional[int], fng: Optional[float], state: Optional[st
 
 
 def target_area(guarantee: float, tate_total: float, spot_value: float,
-                margin_value: float, step: int) -> Dict[str, Any]:
+                margin_value: float, step: int, nisa_value: float = 0.0) -> Dict[str, Any]:
     """目標の維持率から、運用総額 (現物時価 + 信用建玉の時価) の適正エリアを出す。
 
     建玉の増減は信用で行う前提。目標の建玉 B_t = 受入保証金 ÷ 目標維持率 との差を時価に直す:
@@ -439,13 +445,14 @@ def target_area(guarantee: float, tate_total: float, spot_value: float,
     返済時に評価益が実現して保証金が増える分は入れない (減らす量がやや多めに出る)。
     多め側の端は、全保有が一律に FLOOR_FALL_PCT 下がっても追証にならない建玉で頭打ちにする。
     """
-    total = spot_value + margin_value
+    # NISA の現物は代用にならないが、運用総額 (値動きを受ける額) には入る
+    total = spot_value + nisa_value + margin_value
 
     def value_for_tate(target_tate: float) -> float:
         diff = target_tate - tate_total
         if diff < 0 and tate_total > 0:
             diff *= margin_value / tate_total
-        return max(spot_value, total + diff)  # 信用を全部返済しても現物は残る
+        return max(spot_value + nisa_value, total + diff)  # 信用を全部返済しても現物は残る
 
     def value_for_rate(rate_pct: float) -> float:
         return value_for_tate(guarantee / (rate_pct / 100.0))

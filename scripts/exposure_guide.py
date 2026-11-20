@@ -181,7 +181,7 @@ def evaluate_target(margin_state, emotion, fng_jp, state, hold_total_value,
         return result
     area = margin_estimate.target_area(
         combined["guarantee"], combined["tate_total"], combined["spot_value"],
-        combined["margin_value"], step)
+        combined["margin_value"], step, combined.get("nisa_value", 0.0))
     result.update({k: area[k] for k in (
         "total_value", "area_lower", "area_upper", "target_value", "neutral_value",
         "floor_capped", "position", "deviation")})

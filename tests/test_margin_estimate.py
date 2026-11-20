@@ -38,6 +38,8 @@ def test_estimate_scenarios(closes, kw, expected_rate):
     result, reason = me.estimate(baseline, snap)
     assert reason is None
     assert result["rate_pct"] == pytest.approx(expected_rate)
+    if kw.get("spot_account") == "NISA成長投資枠":  # 代用には数えないが、運用総額には入る
+        assert result["spot_value"] == 0 and result["nisa_value"] == pytest.approx(45_000)
 
 
 def _settle(price, tate_price=None, settle_pl=None, day="2026-10-26", broker="楽天", code="1111"):
