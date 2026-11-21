@@ -28,6 +28,15 @@ MCP ホストは通常のシェル環境を引き継がないため、`KS_DATA_D
 
 この内容を Claude Code の `.mcp.json` に登録するのは手順 4 で行います。`/<REPOSITORY_ROOT>` は main をチェックアウトしたリポジトリ直下の絶対パスへ置き換えます。
 
+上の設定は開発用コピーを読み書きします。開発機の Claude Code で投資の相談に使うときは、運用機のサーバーを ssh 越しに起動して正本を読み書きします (2026-11-21〜、登録は local スコープ)。
+
+```bash
+claude mcp add shintakane-shikiho -s local -- ssh -T -o BatchMode=yes -o ServerAliveInterval=30 macmini \
+  env KS_DATA_DIR=/Users/k_sohara/shintakane_data /Users/k_sohara/dev/shintakane/.venv/bin/python /Users/k_sohara/dev/shintakane/scripts/mcp/shikiho_server.py
+```
+
+このとき動くのは運用機の checkout のコードなので、MCP の変更は運用機へ反映するまで効きません。`local_path` は運用機のパスで開発機からは開けないため、PDF は `~/Ext/GoogleDrive/shintakane_data/ir_docs` の同名ファイルを読みます。
+
 ## 提供ツール
 
 - `search_stocks(query, limit=10)`: 社名の一部またはコードで検索します。コード完全一致を優先します。
