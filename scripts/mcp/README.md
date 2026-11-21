@@ -35,6 +35,8 @@ claude mcp add shintakane-shikiho -s local -- ssh -T -o BatchMode=yes -o ServerA
   env KS_DATA_DIR=/Users/k_sohara/shintakane_data /Users/k_sohara/dev/shintakane/.venv/bin/python /Users/k_sohara/dev/shintakane/scripts/mcp/shikiho_server.py
 ```
 
+Claude デスクトップアプリ (MBA) も同じコマンドを `~/Library/Application Support/Claude/claude_desktop_config.json` の `mcpServers` に `"command": "/usr/bin/ssh"` で登録して使う (2026-11-21〜)。
+
 このとき動くのは運用機の checkout のコードなので、MCP の変更は運用機へ反映するまで効きません。`local_path` は運用機のパスで開発機からは開けないため、PDF は `~/Ext/GoogleDrive/shintakane_data/ir_docs` の同名ファイルを読みます。
 
 ## 提供ツール
