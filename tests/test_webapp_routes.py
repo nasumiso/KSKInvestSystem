@@ -146,6 +146,25 @@ class TestSearchRoute:
         for text in not_expected:
             assert text not in html
 
+    @pytest.mark.parametrize("md, url, expected, not_expected", [
+        ("## 1. 損切りセット\n本文\n## 7. 弱いものから切れ *(2026-10 新設)*\n",
+         "/", ['id="lessons-top10"', "損切りセット", '<li value="7"', "弱いものから切れ</li>"],
+         ["本文", "新設"]),
+        (None, "/", [], ['id="lessons-top10"']),
+        ("## 1. 損切りセット\n", "/?q=3496x", [], ['id="lessons-top10"']),
+    ])
+    def test_index_lessons_top10(self, client, monkeypatch, tmp_path, md, url, expected, not_expected):
+        """issue #590: クエリなしトップに教訓Top10 の見出しだけを出す。md が無ければ節ごと出さない"""
+        path = tmp_path / "教訓Top10.md"
+        if md is not None:
+            path.write_text(md, encoding="utf-8")
+        monkeypatch.setattr("webapp.routes.search._LESSONS_MD", path)
+        html = client.get(url).data.decode()
+        for text in expected:
+            assert text in html
+        for text in not_expected:
+            assert text not in html
+
     def test_index_with_keyword_shows_records(self, client):
         """issue #244: 検索クエリ付き (keyword) では従来通り一覧を表示"""
         resp = client.get("/?keyword=アズーム")

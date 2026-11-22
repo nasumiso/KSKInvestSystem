@@ -5,8 +5,10 @@ GET / : 銘柄コード/名前/評価でフィルタし一覧表示
 """
 
 import os
+import re
 import unicodedata
 from datetime import datetime
+from pathlib import Path
 
 from flask import Blueprint, abort, render_template, request, redirect, send_file, url_for, flash
 
@@ -16,6 +18,20 @@ from research_shelve import CODE_S_PATTERN, normalize_for_search
 from webapp.action_queue import build_action_queue
 from webapp.helpers import search_records, add_stock
 from webapp.navigation import get_return_link, stock_detail_url
+
+# issue #590: 教訓Top10 の正本。表示のたびに読み、見出しだけを出す (書き写さない)
+_LESSONS_MD = Path(__file__).resolve().parents[3] / "doc" / "投資メモ分析" / "教訓Top10.md"
+LESSONS_URL = "https://github.com/nasumiso/KSKInvestSystem/blob/main/doc/投資メモ分析/教訓Top10.md"
+# 「## 1. 見出し *(2026-10 新設)*」の番号と見出し。末尾の注記は落とす
+_LESSON_HEADING = re.compile(r"^## (\d+)\. (.+?)(?:\s*\*\(.*\)\*)?$", re.MULTILINE)
+
+
+def _lessons_top10():
+    """教訓Top10.md の見出しを [(番号, 見出し)] で返す。ファイルが無ければ空。"""
+    if not _LESSONS_MD.is_file():
+        return []
+    return _LESSON_HEADING.findall(_LESSONS_MD.read_text(encoding="utf-8"))
+
 
 # snippet 生成: ヒットフィールド名ラベルと前後30文字
 _SNIPPET_CONTEXT = 30
@@ -217,6 +233,8 @@ def index():
         has_query=has_query,
         portal_spreadsheets=_portal_spreadsheets() if not has_query else None,
         action_queue=build_action_queue() if not has_query else None,
+        lessons=_lessons_top10() if not has_query else None,
+        lessons_url=LESSONS_URL,
     )
 
 

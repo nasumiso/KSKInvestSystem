@@ -95,6 +95,18 @@
   {% endif %}
 </section>
 
+{# issue #590: 教訓Top10 の見出し。正本は doc/投資メモ分析/教訓Top10.md #}
+{% if lessons %}
+<section id="lessons-top10" style="margin-top:1.5em;padding:0.8em 1em;border:1px solid #e1e5ea;border-radius:6px;">
+  <h3 style="margin:0 0 0.4em 0;font-size:1em;">教訓Top10 <a href="{{ lessons_url }}" target="_blank" rel="noopener" style="font-size:0.8em;font-weight:normal;">全文</a></h3>
+  <ol style="margin:0;padding-left:1.6em;font-size:0.9em;">
+    {% for num, title in lessons %}
+    <li value="{{ num }}" style="margin:0.15em 0;">{{ title }}</li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
+
 {# issue #98: クエリなしトップアクセスは Google Spreadsheets / 開発ページへのリンクをひとまとまりで表示 #}
 <section id="portal-spreadsheets" style="margin-top:1.5em;padding:0.8em 1em;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;">
   <div style="display:flex;flex-wrap:wrap;gap:0.4em 1.2em;">
