@@ -502,7 +502,8 @@ def build_daily_entry(*, db_path=None, today=None):
     base_day = today or get_price_day(datetime.now())
     with ShelveDB(MARKET_SHELVE) as db:
         market_db = {k: db.get(k) for k in ("topix", "mothers", "nikkei225", "fear_and_greed")}
-    evaluation = build_evaluation(market_db, db_path=db_path, today=base_day)
+    margin_state = build_margin_state(db_path=db_path)
+    evaluation = build_evaluation(market_db, db_path=db_path, today=base_day, margin_state=margin_state)
     fng_us, fng_us_date = read_fng_us(market_db, today=base_day)
 
     entry = {"date": base_day.isoformat()}
@@ -521,7 +522,26 @@ def build_daily_entry(*, db_path=None, today=None):
     entry["unrealized_total"] = unrealized["total"]
     entry["unrealized_skipped"] = unrealized["skipped"]
     entry["unrealized_as_of"] = unrealized["as_of"]
+    entry["margin_by_broker"] = margin_by_broker(margin_state)
     return entry
+
+
+def margin_by_broker(margin_state):
+    """証券会社ごとの推定維持率・追証までの下落率・残高CSVの日付 (issue #530)。
+
+    追証の判定は証券会社ごとなので、合算 (margin_rate_pct) だけでは振り返れない。
+    保有銘柄タブと同じ値をそのまま残す。推定できない証券会社は rate_pct が None で理由を残す。
+    falls は {保証金率: 下落率} (JSON のキーは文字列になる)。
+    """
+    return {
+        row["broker"]: {
+            "rate_pct": row["rate_pct"],
+            "falls": {str(t): v for t, v in (row.get("falls") or {}).items()},
+            "csv_as_of": row["csv_as_of"],
+            "reason": row["reason"],
+        }
+        for row in margin_state["rows"]
+    }
 
 
 def record_daily_log(*, db_path=None, today=None):

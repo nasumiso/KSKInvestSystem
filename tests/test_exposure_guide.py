@@ -272,3 +272,18 @@ def test_daily_log_overwrites_same_date(tmp_path, monkeypatch):
         history = json.load(f)["history"]
     assert [h["date"] for h in history] == ["2026-08-28", "2026-08-29"]
     assert history[-1]["ratio_pct"] == 90.0  # 後勝ち
+
+
+def test_margin_by_broker_keeps_rows_as_shown():
+    """issue #530: 証券会社ごとの維持率・追証までの下落率を、画面の行のまま残す。推定できない社は理由を残す"""
+    state = {"rows": [
+        {"broker": "楽天", "rate_pct": 46.6, "falls": {30: 12.1, 25: 17.4, 20: 22.7},
+         "csv_as_of": "2026-11-15", "reason": None},
+        {"broker": "SBI", "rate_pct": None, "falls": {}, "csv_as_of": None, "reason": "保証金率が未入力です"},
+    ]}
+    logged = json.loads(json.dumps(exposure_guide.margin_by_broker(state), ensure_ascii=False))
+    assert logged == {
+        "楽天": {"rate_pct": 46.6, "falls": {"30": 12.1, "25": 17.4, "20": 22.7},
+                 "csv_as_of": "2026-11-15", "reason": None},
+        "SBI": {"rate_pct": None, "falls": {}, "csv_as_of": None, "reason": "保証金率が未入力です"},
+    }
