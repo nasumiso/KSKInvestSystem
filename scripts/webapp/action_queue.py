@@ -343,6 +343,29 @@ def _trade_review_item(today: date) -> Optional[Dict[str, str]]:
                  "/trade-history/reviews", "振り返りを見る")
 
 
+def _portfolio_review_item(today: date, mat: _Material) -> Optional[Dict[str, str]]:
+    """前回の保有の点検より後に、点検のきっかけが起きていれば促す (issue #589)。
+
+    平時は出さない (日を決めずに、防・幅超え・市場ステート・維持率の変化で点検する)。
+    ロット単位の幅超えは「防」 (銘柄の戦略の線) では拾えないので、エピソードを組んで見る。
+    """
+    import exposure_guide  # 遅延 import (トップで使うときだけ読む)
+    import portfolio_review
+    from webapp import trade_episodes
+
+    hold = {r["code_s"] for r in mat.records if r.get("status") == "1保"}
+    lots = portfolio_review.open_lots(trade_episodes.build_fill_episodes(), ps.list_trade_ideas(),
+                                      ps.list_fill_strategies(), _real_today().isoformat())
+    over = [x["lot_key"] for x in lots if x["over_width"] and x["code_s"] in hold]
+    lit = [c for c, e in mat.exits.items() if e.get("signal") and c in hold]
+    trig = portfolio_review.triggers_since(portfolio_review.latest_review(), lit, over,
+                                           exposure_guide._load_exposure_log()["history"])
+    if not portfolio_review.has_trigger(trig):
+        return None
+    return _item(f"保有の点検: {portfolio_review.trigger_text(trig)} (/portfolio-review)",
+                 "/portfolio?status=hold", "保有銘柄を見る")
+
+
 def _md(day: date) -> str:
     return f"{day.month}/{day.day}"
 
@@ -618,6 +641,7 @@ _DETECTORS: List = [
     ("四季報", _shikiho_item, False),
     ("感情スコア", _emotion_item, False),
     ("評価台帳", _rating_items, True),
+    ("保有の点検", _portfolio_review_item, True),
     ("月次の振り返り", _trade_review_item, False),
 ]
 

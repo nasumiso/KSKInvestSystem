@@ -23,6 +23,8 @@ def data_dir(tmp_path, monkeypatch):
     (tmp_path / "trade_review").mkdir()
     (tmp_path / "trade_review" / "2026-09.md").write_text("review")
     (tmp_path / "trade_review" / ".trade_review.lock").write_text("")
+    (tmp_path / "portfolio_review").mkdir()
+    (tmp_path / "portfolio_review" / "2026-11-22.md").write_text("pf")
     (tmp_path / "theme_news" / "history").mkdir(parents=True)
     (tmp_path / "theme_news" / "history" / "2026-10-09.md").write_text("news")
     return tmp_path
@@ -46,6 +48,7 @@ def test_run_puts_latest_generation_and_dirs_into_drive_zip(data_dir):
         },
         "trade_history/fills.csv": "fills",
         "trade_review/2026-09.md": "review",
+        "portfolio_review/2026-11-22.md": "pf",
         "theme_news/history/2026-10-09.md": "news",
     }
     # 一時ファイルを残さない
