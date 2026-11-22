@@ -5,8 +5,10 @@ GET / : 銘柄コード/名前/評価でフィルタし一覧表示
 """
 
 import os
+import re
 import unicodedata
 from datetime import datetime
+from pathlib import Path
 
 from flask import Blueprint, abort, render_template, request, redirect, send_file, url_for, flash
 
@@ -131,6 +133,22 @@ def _portal_spreadsheets():
     return cards
 
 
+# issue #590: 教訓Top10 の正本は md のまま。表示のたびに見出しだけを読む
+LESSONS_PATH = Path(__file__).resolve().parents[3] / "doc" / "投資メモ分析" / "教訓Top10.md"
+LESSONS_URL = "https://github.com/nasumiso/KSKInvestSystem/blob/main/doc/投資メモ分析/教訓Top10.md"
+# "## 1. 見出し *(2026-10 新設)*" → 番号と見出し (末尾の注記は外す)
+_LESSON_HEADING_RE = re.compile(r"^## (\d+)\. (.+?)(?:\s*\*\(.*\)\*)?\s*$")
+
+
+def _lesson_headings():
+    """教訓Top10.md の「## N. 〜」見出しを (番号, 見出し) で返す。md が無ければ空。"""
+    try:
+        text = LESSONS_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return [m.groups() for m in map(_LESSON_HEADING_RE.match, text.splitlines()) if m]
+
+
 def _match_term(term: str, rating) -> dict:
     """検索語1つに当たるレコードを {code_s: record} で返す。
 
@@ -217,6 +235,8 @@ def index():
         has_query=has_query,
         portal_spreadsheets=_portal_spreadsheets() if not has_query else None,
         action_queue=build_action_queue() if not has_query else None,
+        lessons=_lesson_headings() if not has_query else None,
+        lessons_url=LESSONS_URL,
     )
 
 
