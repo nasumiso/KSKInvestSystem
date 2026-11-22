@@ -398,6 +398,8 @@ def _exit_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, 
             f"出口ライン ({SIGNAL_SHOW_BUSDAYS + 1}営業日以上): {len(stale)}銘柄",
             _charts_url("hold", [c for _, c, _ in stale]), "手仕舞い",
         ), f"{len(stale)}銘柄", [entry for _, _, entry in stale]))
+    for item in items:
+        item["scene"] = "防"  # issue #591: トップでこの場面の教訓を添える目印
     return items
 
 

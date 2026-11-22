@@ -1,0 +1,18 @@
+{# issue #591: 教訓Top10 のうち、場面 (買い・売り) に関係する見出しをダイアログに出す。
+   対応は doc/投資メモ分析/教訓Top10.md の「出す場面」が正本。lesson_scenes = {場面: [(番号, 見出し)]} #}
+<script id="lesson-scenes" type="application/json">{{ (lesson_scenes or {}) | tojson }}</script>
+<script>
+// el の中身を scene の教訓の行で置き換える。scene が空・該当なしなら空にする。
+function renderLessonScene(el, scene) {
+  if (!el) return;
+  var scenes = {};
+  try { scenes = JSON.parse(document.getElementById('lesson-scenes').textContent) || {}; } catch (e) { scenes = {}; }
+  el.textContent = '';
+  (scene && scenes[scene] || []).forEach(function(pair) {
+    var p = document.createElement('p');
+    p.style.margin = '0.1em 0';
+    p.textContent = '教訓 #' + pair[0] + ' ' + pair[1];
+    el.appendChild(p);
+  });
+}
+</script>
