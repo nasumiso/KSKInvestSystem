@@ -158,12 +158,27 @@ class TestSearchRoute:
         path = tmp_path / "教訓Top10.md"
         if md is not None:
             path.write_text(md, encoding="utf-8")
-        monkeypatch.setattr("webapp.routes.search.LESSONS_PATH", path)
+        monkeypatch.setattr("webapp.lessons.LESSONS_PATH", path)
         html = client.get(url).data.decode()
         for text in expected:
             assert text in html
         for text in not_expected:
             assert text not in html
+
+    @pytest.mark.parametrize("items, expected_shown", [
+        ([{"text": "出口ライン: 1234 テスト", "url": "/portfolio", "link_label": "手仕舞い", "scene": "防"}], True),
+        ([{"text": "残高CSVが古い", "url": "/portfolio", "link_label": "取り込む"}], False),
+    ])
+    def test_index_exit_lessons(self, client, tmp_path, monkeypatch, items, expected_shown):
+        """issue #591: 「防」の行があるときだけ、出す場面=防 の教訓を今日のアクションに添える"""
+        path = tmp_path / "教訓Top10.md"
+        path.write_text("## 1. 損切りはセット\n- **出す場面**: 買い\n## 6. 前提が変わったら即撤退\n- **出す場面**: 売り・防\n",
+                        encoding="utf-8")
+        monkeypatch.setattr("webapp.lessons.LESSONS_PATH", path)
+        monkeypatch.setattr("webapp.routes.search.build_action_queue", lambda: items)
+        html = client.get("/").data.decode()
+        assert ('教訓 #6 前提が変わったら即撤退</p>' in html) is expected_shown
+        assert "教訓 #1" not in html
 
     def test_index_with_keyword_shows_records(self, client):
         """issue #244: 検索クエリ付き (keyword) では従来通り一覧を表示"""
@@ -356,6 +371,18 @@ class TestDetailRoute:
             assert "の後は未更新" not in html
         else:
             assert {"unregistered": "未登録", "unreadable": "読めませんでした"}[case] in html
+
+    def test_detail_embeds_lesson_scenes(self, client, tmp_path, monkeypatch):
+        """issue #591: 保有ステータスのダイアログ用に、場面ごとの教訓を JSON で埋め込む"""
+        path = tmp_path / "教訓Top10.md"
+        path.write_text("## 3. 自分で調べろ *(2026-10 新設)*\n- **状態**: 意志頼み\n- **出す場面**: 買い・売り\n",
+                        encoding="utf-8")
+        monkeypatch.setattr("webapp.lessons.LESSONS_PATH", path)
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(client.get("/stock/3496").get_data(as_text=True), "html.parser")
+        assert json.loads(soup.select_one("#lesson-scenes").string) == {
+            "買い": [["3", "自分で調べろ"]], "売り": [["3", "自分で調べろ"]]}
 
     def test_detail_reading_order(self, client):
         """読む順: 台帳 → 調査材料 → 手動メモ → 業績の履歴。履歴は初回は閉 (#572 / U7)。"""

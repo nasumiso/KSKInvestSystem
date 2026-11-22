@@ -93,6 +93,10 @@
   {% else %}
   <p style="margin:0;color:#666;">今日の検討事項はありません</p>
   {% endif %}
+  {# issue #591: 「防」の行があるときだけ、その場面の教訓を添える #}
+  {% for num, title in exit_lessons %}
+  <p class="lesson-hint" style="margin:0.4em 0 0 0;color:#666;font-size:0.85em;">教訓 #{{ num }} {{ title }}</p>
+  {% endfor %}
 </section>
 
 {# issue #590: 教訓Top10 の見出し。正本は doc/投資メモ分析/教訓Top10.md、md が無い環境では出さない #}

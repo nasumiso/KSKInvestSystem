@@ -50,6 +50,7 @@ from webapp.helpers import (
     stop_dialog_strategies,
     summarize_hold_positions,
 )
+from webapp.lessons import lessons_by_scene, load_lessons
 
 portfolio_bp = Blueprint("portfolio", __name__)
 
@@ -1375,6 +1376,7 @@ def dashboard():
         trade_idea_options=[t["name"] for t in trade_idea_master],
         trade_idea_descriptions={t["name"]: t["description"] for t in trade_idea_master},
         stop_dialog_strategies=stop_dialog_strategies(trade_idea_master),  # issue #560
+        lesson_scenes=lessons_by_scene(load_lessons()),  # issue #591
         stage_options=ps.STAGE_OPTIONS,
         stage_t_options=ps.STAGE_T_OPTIONS,
         chart_style_options=ps.CHART_STYLE_OPTIONS,

@@ -1284,6 +1284,7 @@ if (location.hash === '#ir-docs') openIrDocsModal();
 </script>
 
 {# ===== 保有ステータス変更モーダル (issue #195) ===== #}
+{% include "_lesson_scenes.html" %}
 
 <div id="portfolio-modal" class="portfolio-modal-overlay" style="display:none;" onclick="closePortfolioModalOnOverlay(event)">
   <div class="portfolio-modal-content" role="dialog" aria-labelledby="portfolio-modal-title">
@@ -1343,6 +1344,8 @@ if (location.hash === '#ir-docs') openIrDocsModal();
         <input type="date" name="action_date" value="{{ today_jst }}" max="{{ today_jst }}" required
                class="portfolio-action-date" style="margin-left:0.4em;">
       </label>
+      {# issue #591: 新規1保なら買い、1保から下げるなら売りの教訓 (JS で切替) #}
+      <div id="detail-portfolio-lessons" class="lesson-hint" style="margin-bottom:0.6em;color:#666;font-size:0.85em;"></div>
       <label style="display:block;margin-bottom:0.6em;">
         <span id="detail-portfolio-reason-label">理由 (任意):</span>
         <textarea name="reason" rows="2" style="width:100%;margin-top:0.2em;" placeholder="例: 業績下振れ"></textarea>
@@ -1563,6 +1566,10 @@ function syncDetailPortfolioQtyVisibility() {
   var toHold = (sel.value === '1保');
   row.style.display = toHold ? '' : 'none';
   if (label) label.textContent = isQtyOnly ? '変更メモ (任意):' : '理由 (任意):';
+  // issue #591: 現在=非1保→1保 は買い、現在=1保→それ以外は売り。株数のみ変更は出さない
+  var current = '{{ portfolio_status_query or '' }}';
+  var scene = (toHold && current !== 'hold') ? '買い' : (!toHold && current === 'hold') ? '売り' : '';
+  renderLessonScene(document.getElementById('detail-portfolio-lessons'), scene);
 
   // issue #363: 戦略行は「変更先=1保」のときのみ表示・必須化 (現在=非1保 はテンプレ条件で担保済み)
   var strategyRow = document.getElementById('detail-portfolio-strategy-row');

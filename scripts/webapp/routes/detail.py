@@ -37,6 +37,7 @@ from webapp.routes.portfolio import (
 from research_shelve import VALID_RATINGS, IR_QA_MAX, validate_code_s
 
 from webapp.navigation import get_return_link
+from webapp.lessons import lessons_by_scene, load_lessons
 
 detail_bp = Blueprint("detail", __name__)
 
@@ -274,6 +275,7 @@ def stock_detail(code_s: str):
         # issue #363: 遷移モーダルの売買戦略 select 用
         trade_idea_options=trade_idea_options,
         trade_idea_descriptions=trade_idea_descriptions,
+        lesson_scenes=lessons_by_scene(load_lessons()),  # issue #591
         # モーダルの株数欄初期値 (保有中のみ意味を持つ。未登録/フォールバックは 0)
         portfolio_qty=(portfolio_record or {}).get("qty") or 0,
         gyoutai_themes=gyoutai_themes,

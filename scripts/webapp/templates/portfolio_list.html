@@ -753,6 +753,8 @@
           {% endfor %}
         </select>
       </label>
+      {# issue #591: 新規1保なので常に買いの教訓 #}
+      <div class="lesson-hint" style="margin-bottom:0.6em;color:#666;font-size:0.85em;">{% for num, title in (lesson_scenes or {}).get("買い", []) %}<p style="margin:0.1em 0;">教訓 #{{ num }} {{ title }}</p>{% endfor %}</div>
       <div class="portfolio-modal-actions">
         <button type="button" class="secondary" onclick="closePortfolioAddHoldModal()">キャンセル</button>
         <button type="submit">保有に追加</button>
@@ -806,6 +808,8 @@
           <input type="date" name="action_date" value="{{ today_jst }}" max="{{ today_jst }}" required
                  class="portfolio-action-date" style="margin-left:0.4em;">
         </label>
+        {# issue #591: 新規1保なら買い、1保から下げるなら売りの教訓 (JS で切替) #}
+        <div id="portfolio-modal-lessons" class="lesson-hint" style="margin-bottom:0.6em;color:#666;font-size:0.85em;"></div>
         <label style="display:block;margin-bottom:0.6em;">
           理由 (任意):
           <textarea name="reason" rows="2" style="width:100%;margin-top:0.2em;" placeholder="例: 業績下振れ"></textarea>
@@ -822,6 +826,7 @@
 </div>
 {# issue #363: 戦略の出口基準 (description) を JS の hint 表示に渡す #}
 <script id="trade-idea-descriptions" type="application/json">{{ trade_idea_descriptions | tojson }}</script>
+{% include "_lesson_scenes.html" %}
 
 
 <style>
@@ -922,6 +927,8 @@ function syncPortfolioQtyVisibility() {
   if (!strategyRow || !strategySelect) return;
   // 現在が非1保 (statusQuery が 'hold' 以外) かつ 変更先=1保 のとき = 新規エントリー
   var isNewHold = toHold && (form && form.dataset.statusQuery !== 'hold');
+  var isSell = !toHold && (form && form.dataset.statusQuery === 'hold');
+  renderLessonScene(document.getElementById('portfolio-modal-lessons'), isNewHold ? '買い' : (isSell ? '売り' : ''));
   strategyRow.style.display = isNewHold ? '' : 'none';
   strategySelect.required = isNewHold;
   if (!isNewHold) syncPortfolioStrategyHint();  // 非表示時は hint もクリア
