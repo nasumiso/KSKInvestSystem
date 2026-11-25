@@ -207,8 +207,10 @@ def _broker_of(path: str) -> Optional[str]:
 def load_etf_fills(trade_history_dir: str = TRADE_HISTORY_DIR) -> List[Dict[str, Any]]:
     """保存済みの約定 CSV から ETF の約定だけを読む (取込では飛ばしているため)。
 
-    CSV は期間が重なるので、同じ行はファイルをまたいで1回だけ数える
-    (1つのファイルの中で同じ行が複数あれば、別々の約定として数える)。
+    CSV は期間が重なるので、同じ約定はファイルをまたいで1回だけ数える
+    (1つのファイルの中で同じ約定が複数あれば、別々の約定として数える)。
+    同じ約定かは約定の中身 (約定日・銘柄・売買・区分・株数・単価) で見る。楽天の CSV は同じ約定でも
+    後日の出力で受渡金額が変わることがあり、行全体で見ると二重に数えるため (取込の dedup_key と同じ考え方)。
     """
     import import_monex_fills
     import import_rakuten_fills
@@ -216,8 +218,8 @@ def load_etf_fills(trade_history_dir: str = TRADE_HISTORY_DIR) -> List[Dict[str,
     import portfolio_shelve as ps
 
     mods = {"楽天": import_rakuten_fills, "SBI": import_sbi_fills, "マネックス": import_monex_fills}
-    best: Dict[Tuple[str, Tuple[str, ...]], int] = {}
-    parsed: Dict[Tuple[str, Tuple[str, ...]], Dict[str, Any]] = {}
+    best: Dict[Tuple[Any, ...], int] = {}
+    parsed: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
     for path in sorted(glob.glob(os.path.join(trade_history_dir, "*.csv"))):
         broker = _broker_of(path)
         if broker is None:
@@ -231,7 +233,7 @@ def load_etf_fills(trade_history_dir: str = TRADE_HISTORY_DIR) -> List[Dict[str,
                 continue
             if not ps.is_etf_code(f["code_s"]):
                 continue
-            key = (broker, tuple(row))
+            key = (broker, f["trade_date"], f["code_s"], f["side"], f["trade_kind"], f["qty"], f["price"])
             counts[key] += 1
             parsed[key] = {**f, "broker": broker}
         for key, n in counts.items():
