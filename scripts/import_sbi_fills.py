@@ -120,10 +120,11 @@ def read_csv_rows(csv_path: str) -> List[List[str]]:
 # 2. 行パース層
 # ===========================================
 
-def parse_fill_row(row: List[str]) -> Dict[str, Any]:
+def parse_fill_row(row: List[str], *, allow_etf: bool = False) -> Dict[str, Any]:
     """SBI CSV 1 行を fill 構築用の中間 dict に変換する。
 
     ETF/投信 (銘柄名が解決できない = ウォッチリスト外) は RowSkip。空行・列数不足も RowSkip。
+    allow_etf=True のときは ETF の行も返す (#594 の資産の復元で、ETF の値動きを数えるため。取込では使わない)。
     """
     if not any(c.strip() for c in row):
         raise RowSkip("空行")
@@ -138,11 +139,12 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
     code_s = ps.normalize_code_s(code_raw)
 
     # ETF は株式分析の対象外なので取込まない (issue #387)
-    if ps.is_etf_code(code_s):
+    is_etf = ps.is_etf_code(code_s)
+    if is_etf and not allow_etf:
         raise RowSkip(f"ETF のため対象外: {code_s}")
 
     # 投信等の除外: 成長株ウォッチリスト (stocks_shelve) に無い銘柄はスキップ (issue #387)
-    if not resolve_stock_name(code_s):
+    if not is_etf and not resolve_stock_name(code_s):
         raise RowSkip(f"ウォッチリスト外 (ETF/投信の可能性): {code_s}")
 
     trade_date = _normalize_trade_date(row[COL_TRADE_DATE])

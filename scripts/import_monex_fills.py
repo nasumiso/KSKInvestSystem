@@ -138,10 +138,11 @@ def _normalize_monex_code(raw: str) -> str:
     return s[:-1] if len(s) == 5 and s.endswith("0") else s
 
 
-def parse_fill_row(row: List[str]) -> Dict[str, Any]:
+def parse_fill_row(row: List[str], *, allow_etf: bool = False) -> Dict[str, Any]:
     """マネックス CSV 1 行を fill 構築用の中間 dict に変換する。
 
     約定でない行 (税金・入出金・入出庫・配当金) と ETF は RowSkip。空行・列数不足も RowSkip。
+    allow_etf=True のときは ETF の行も返す (#594 の資産の復元で、ETF の値動きを数えるため。取込では使わない)。
     """
     if not any(c.strip() for c in row):
         raise RowSkip("空行")
@@ -165,7 +166,8 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
     # ETF は株式分析の対象外なので取込まない (issue #387)。
     # なお SBI 版の resolve_stock_name によるウォッチリスト外除外は、過去バックフィルで
     # 当時売買した銘柄を落としてしまうため本スクリプトでは採用しない (issue #390)。
-    if ps.is_etf_code(code_s):
+    is_etf = ps.is_etf_code(code_s)
+    if is_etf and not allow_etf:
         raise RowSkip(f"ETF のため対象外: {code_s}")
 
     trade_date = _normalize_trade_date(row[COL_TRADE_DATE])

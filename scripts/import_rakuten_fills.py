@@ -135,11 +135,12 @@ class RowSkip(Exception):
         self.reason = reason
 
 
-def parse_fill_row(row: List[str]) -> Dict[str, Any]:
+def parse_fill_row(row: List[str], *, allow_etf: bool = False) -> Dict[str, Any]:
     """CSV 1 行を fill 構築用の中間 dict に変換する。
 
     現物・信用の両方に対応。対象外行は RowSkip を投げる (呼び出し側でカウント)。
     dedup_key の occurrence は統合層で付与するため、ここでは素材のみ返す。
+    allow_etf=True のときは ETF の行も返す (#594 の資産の復元で、ETF の値動きを数えるため。取込では使わない)。
     """
     if len(row) < EXPECTED_COL_COUNT:
         raise RowSkip(f"列数不足 ({len(row)})")
@@ -152,7 +153,8 @@ def parse_fill_row(row: List[str]) -> Dict[str, Any]:
     code_s = ps.normalize_code_s(code_raw)
 
     # ETF は株式分析の対象外なので取込まない (issue #387)
-    if ps.is_etf_code(code_s):
+    is_etf = ps.is_etf_code(code_s)
+    if is_etf and not allow_etf:
         raise RowSkip(f"ETF のため対象外: {code_s}")
 
     trade_date = _normalize_trade_date(row[COL_TRADE_DATE])
