@@ -401,6 +401,7 @@ def _target_labels(evaluation: dict) -> dict:
     return {
         "week_label": "来週の目標" if datetime.datetime.now().weekday() >= 5 else "今週の目標",
         "boost_until_md": _md(evaluation.get("boost_until")),
+        "boost_from_md": _md(evaluation.get("boost_from")),
         "fng_label": me.fng_label(evaluation["fng_jp"]),
         "credit_label": label,
         "credit_mood": _CREDIT_MOODS.get(label),

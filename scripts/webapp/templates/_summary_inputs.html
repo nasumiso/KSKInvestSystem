@@ -22,7 +22,7 @@
   <span title="張れる量 = 2.0 × (1 − 口座の高値からの下落率 ÷ 20%)、下限 0.8倍。
 自己資本 {{ '{:,}'.format((ex.equity / 10000)|round|int) }}万 / 高値 {{ '{:,}'.format((ex.peak_equity / 10000)|round|int) }}万 (高値は更新したときだけ上げ、四半期末にその時点の資産へ置き換える。保証金率の入れ直しで入った入出金などの差は除く)">張れる量 <b style="color:#333;">{{ '%.1f'|format(ex.cap) }}倍</b> (口座の高値から −{{ '%.1f'|format(ex.drawdown_pct) }}%)</span>
   <span>·</span>
-  <span title="張りたい量: ふだん 1.2倍。信用評価損益率 (週次の公表値) が −15% 以下で前週より改善したら、その日から3か月は 1.6倍 (合図が続けば延びる。公表は約1週遅れ)">張りたい量 <b style="color:#333;">{{ '%.1f'|format(ex.want) }}倍</b>{% if ex.boost_until %} <span style="color:#c62828;">(買い向かい 〜{{ ex.boost_until_md }})</span>{% endif %}</span>
+  <span title="張りたい量: ふだん 1.2倍。信用評価損益率 (週次の公表値) が −15% 以下で前週より改善したら、その日から3か月は 1.6倍 (合図が続けば延びる。公表は約1週遅れ)">張りたい量 <b style="color:#333;">{{ '%.1f'|format(ex.want) }}倍</b>{% if ex.boost_until %} <span style="color:#c62828;">(買い向かい {{ ex.boost_from_md }}〜{{ ex.boost_until_md }})</span>{% endif %}</span>
   <span>→</span>
   <span title="張りたい量と張れる量の小さい方へ、先週の目標から週1段ずつ近づく (段 0.8 / 1.0 / 1.1 / 1.2 / 1.4 / 1.6 / 2.0)。{{ ex.week_target_from }} の値で決めた。見直しは日曜">{{ ex.week_label }} <b style="color:#333;">{{ '%.1f'|format(ex.week_target) }}倍</b></span>
   <span>·</span>

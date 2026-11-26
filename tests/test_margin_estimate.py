@@ -130,6 +130,8 @@ CREDIT = [  # 2026-11 の実例: 11/13 の値が底値圏で前週より改善 �
 def test_boost_until(credit, day, expected):
     """張りたい量: 信用評価損益率 (公表値) が −15% 以下で前週より改善したら、最後の合図から3か月 1.6倍"""
     assert me.boost_until(credit, day) == expected
+    if expected:  # 始まりは期間の最初の合図 (延びても動かない)
+        assert me.boost_period(credit, day)[0] == "2026-11-20"
     assert me.want_multiple(credit, day) == (1.6 if expected else 1.2)
 
 

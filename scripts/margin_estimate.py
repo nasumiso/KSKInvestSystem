@@ -475,17 +475,25 @@ def boost_signals(credit_history: List[Dict[str, Any]]) -> List[str]:
     return out
 
 
-def boost_until(credit_history: List[Dict[str, Any]], day: str) -> Optional[str]:
-    """day 以前の最後の合図から BOOST_MONTHS か月後の日。day がその日以前なら買い向かいの期間。
-
-    合図が続けば延びる。合図のあとに悪化しても取り消さない (#594 の検証と同じ)。
+def boost_period(credit_history: List[Dict[str, Any]], day: str) -> Optional[Tuple[str, str]]:
+    """day を含む買い向かいの期間 (始まり, 終わり)。始まりは期間の最初の合図、終わりは最後の合図から
+    BOOST_MONTHS か月後。合図が続けば延びる。合図のあとに悪化しても取り消さない (#594 の検証と同じ)。
     期間が終わっている・合図が無いなら None。
     """
-    known = [s for s in boost_signals(credit_history) if s <= day]
-    if not known:
-        return None
-    until = _add_months(date.fromisoformat(known[-1]), BOOST_MONTHS).isoformat()
-    return until if day <= until else None
+    start = until = None
+    for s in boost_signals(credit_history):
+        if s > day:
+            break
+        if until is None or s > until:
+            start = s  # 前の期間が終わってから出た合図は、新しい期間の始まり
+        until = _add_months(date.fromisoformat(s), BOOST_MONTHS).isoformat()
+    return (start, until) if until and day <= until else None
+
+
+def boost_until(credit_history: List[Dict[str, Any]], day: str) -> Optional[str]:
+    """買い向かいの期間の終わりの日 (boost_period)。期間の外なら None。"""
+    period = boost_period(credit_history, day)
+    return period[1] if period else None
 
 
 def want_multiple(credit_history: List[Dict[str, Any]], day: str) -> float:

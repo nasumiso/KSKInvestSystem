@@ -174,11 +174,13 @@ def evaluate_target(margin_state, history, credit_history, day, *, hold_total_va
     自己資本と適正エリアは、残高 CSV に保有がある証券会社 (楽天・SBI) の推定がすべて成立したときだけ出す。
     片方だけの数字で全体の過不足を出さないため。出せないときは equity・area_* を None にする。
     """
-    until = margin_estimate.boost_until(credit_history, day)
+    period = margin_estimate.boost_period(credit_history, day)
+    until = period[1] if period else None
     result = {
         "equity": None, "equity_gap": 0.0, "multiple": None,
         "peak_equity": None, "drawdown_pct": None, "cap": None,
         "want": margin_estimate.want_multiple(credit_history, day), "boost_until": until,
+        "boost_from": period[0] if period else None,
         "week_target": None, "week_target_from": None,
         "margin_rate_pct": None, "total_value": None, "hold_total_value": hold_total_value,
         "qty_mismatch": False, "area_lower": None, "area_upper": None, "target_value": None,
