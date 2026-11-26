@@ -445,12 +445,7 @@ def nikkei_study() -> None:
     # 最終案と一定倍率 (信用のデータがある 2009-06 以降)
     sim_days = [{"date": days[i], "r": px[i] / px[i - 1] - 1} for i in range(1, len(px)) if days[i] >= "2009-06-12"]
     dates = [d["date"] for d in sim_days]
-    weekly, last = {}, -10 ** 9
-    for d in _weekly_dates(dates):
-        i = dates.index(d)
-        if _credit_confirms(d, credit)[0]:
-            last = i
-        weekly[d] = {"temp": 1 if i - last <= BOOST_DAYS else 0, "vol_high": False, "vi_cap": math.inf}
+    weekly, _ = _boost_weekly(dates, credit)
     flat = {d: {**x, "temp": 0} for d, x in weekly.items()}
     log_print("## 日経平均 2009-06〜 で最終案を当てる (週1回見直し)")
     log_print("| 運用 | 年率 | 最大DD | 平均倍率 | 上限に当たった週 | 1.6倍の週 |")
@@ -466,6 +461,54 @@ def nikkei_study() -> None:
         log_print(f"| {name}{' (運用不能)' if res['halted'] else ''} | {_pct(mt['cagr'])} | {mt['max_dd'] * 100:.1f}% | "
                   f"{mt['avg_level']:.2f} | {mt['cap_weeks']}/{len(res['weeks'])} | "
                   f"{sum(1 for x in res['weeks'] if x['level'] >= 1.6)} |")
+
+    # 合図のあとに悪化したら取り消す版 (#609)
+    log_print("## 合図のあとに信用評価損益率が悪化したら取り消す版 (#609)")
+    log_print("| 版 | 口座の上限 | 年率 | 最大DD | 1.6倍の週 | 取り消し |")
+    log_print("|---|---|---|---|---|---|")
+    for name, x in (("取り消さない (最終案)", None), ("合図の週より少しでも悪化", 0.0), ("合図の週から 3pt 悪化", 3.0),
+                    ("合図の週から 5pt 悪化", 5.0), ("合図の週から 8pt 悪化", 8.0)):
+        w, cancels = _boost_weekly(dates, credit, x)
+        for cap in (True, False):
+            res = simulate(sim_days, w, {**_DEFAULTS, "table": "FINAL", "cap": cap})
+            mt = metrics(res, None, None)
+            log_print(f"| {name} | {'あり' if cap else 'なし'} | {_pct(mt['cagr'])} | {mt['max_dd'] * 100:.1f}% | "
+                      f"{sum(1 for q in res['weeks'] if q['level'] >= 1.6)} | {cancels} |")
+    log_print("## 合図ごとの、その後3か月の信用評価損益率の最悪と日経平均")
+    log_print("| 合図の日 | 合図の値 | 3か月の最悪 (公表済み) | 3か月後 | 3か月の間のさらなる下落 |")
+    log_print("|---|---|---|---|---|")
+    for i in _episodes(bottom):
+        if days[i] < "2009-06-12":
+            continue
+        _, rate, _ = _credit_confirms(days[i], credit)
+        end = days[min(i + 63, len(days) - 1)]
+        start_limit = (date.fromisoformat(days[i]) - timedelta(days=CREDIT_LAG_DAYS)).isoformat()
+        end_limit = (date.fromisoformat(end) - timedelta(days=CREDIT_LAG_DAYS)).isoformat()
+        worst = min(c["credit_eval_rate"] for c in credit if start_limit <= c["date"] <= end_limit)
+        r3 = f"{(px[i + 63] / px[i] - 1) * 100:+.1f}%" if i + 63 < len(px) else "—"
+        log_print(f"| {days[i]} | {rate:.1f}% | {worst:.1f}% | {r3} | {(min(px[i:i + 64]) / px[i] - 1) * 100:.1f}% |")
+
+
+def _boost_weekly(dates: List[str], credit: List[Dict[str, Any]],
+                  cancel_pt: Optional[float] = None) -> Tuple[Dict[str, Dict[str, Any]], int]:
+    """週ごとの買い向かい (temp=1) の判定。合図から BOOST_DAYS 営業日のあいだ 1 にする。
+
+    cancel_pt: None なら取り消さない (最終案)。数値なら、公表値が合図の週の値より cancel_pt pt 以上
+      悪化した週に取り消す (0 は合図の週より少しでも悪化)。次の合図でやり直す (#609)。
+    Returns: (weekly, 取り消した回数)
+    """
+    weekly, last, signal_rate, active, cancels = {}, -10 ** 9, None, False, 0
+    for d in _weekly_dates(dates):
+        i = dates.index(d)
+        confirms, now, _ = _credit_confirms(d, credit)
+        if confirms:
+            last, signal_rate, active = i, now, True
+        elif active and cancel_pt is not None and now is not None and (
+                now < signal_rate if cancel_pt == 0 else now <= signal_rate - cancel_pt):
+            active, cancels = False, cancels + 1
+        active = active and i - last <= BOOST_DAYS
+        weekly[d] = {"temp": 1 if active else 0, "vol_high": False, "vi_cap": math.inf}
+    return weekly, cancels
 
 
 def main() -> int:
