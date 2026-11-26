@@ -473,3 +473,79 @@ def test_fgjp_absent_falls_back_to_vi_and_breadth_rows(tmp_path, monkeypatch):
     # 日経VI・新高値新安値が独立行でフォールバック表示される
     assert "日経VI" in html and "16.77" in html
     assert "新高値-新安値" in html
+
+
+# --- issue #600: 信用評価損益率の日次推計 ------------------------------------
+
+def _margin_row(code, kind, market, buy):
+    """pdfplumber の表の1行 (20列)。[1] 市場 / [3] コード / [5] 株数・金額 / [9] 買残高。"""
+    r = [None] * 20
+    r[1], r[3], r[5], r[9] = market, code, kind, buy
+    return r
+
+
+def test_parse_margin_by_issue_pairs_rows_and_drops_funds_and_totals():
+    rows = [
+        # 株数と金額の行がページをまたいでも1銘柄にまとめる (金額の行が先に来ることもある)
+        _margin_row("13760", "金額 Val.", "Standard", "52,804,500"),
+        _margin_row("13770", "株数 Shs.", "プライム", "38,400"),
+        _margin_row("13770", "金額 Val.", "Prime", "165,881,500"),
+        _margin_row("13760", "株数 Shs.", "式スタンダード", "4,200"),
+        # ETF・REIT は英語側の市場の列で外す
+        _margin_row("13050", "株数 Shs.", "投信等", "58,610"),
+        _margin_row("13050", "金額 Val.", "Investment trusts", "260,000,000"),
+        # 買残ゼロ・コードの無い合計行は外す
+        _margin_row("137A0", "株数 Shs.", "グロース", "0"),
+        _margin_row("137A0", "金額 Val.", "Growth", "0"),
+        _margin_row(None, "株数 Shs.", None, "2,408,836,876"),
+    ]
+    assert market_breadth.parse_margin_by_issue(rows) == {
+        "13760": (4200.0, 52804500.0),
+        "13770": (38400.0, 165881500.0),
+    }
+
+
+def test_split_after_base_day_is_excluded_from_estimate(monkeypatch):
+    """基準日以後 (当日を含む) に分割がある銘柄は、終値を返さず、推計の分子・分母から外れる。"""
+    import pandas as pd
+    import yfinance as yf
+
+    idx = pd.to_datetime(["2026-11-20", "2026-11-24"])
+    cols = pd.MultiIndex.from_product([["Close", "Stock Splits"], ["1111.T", "2222.T"]])
+    df = pd.DataFrame([[110.0, 50.0, 0.0, 0.0], [111.0, 26.0, 0.0, 2.0]], index=idx, columns=cols)
+    monkeypatch.setattr(yf, "download", lambda *a, **k: df)
+
+    closes, split = market_breadth.fetch_closes_for_margin(["11110", "22220"], "2026-11-20")
+    assert closes == {"11110": 110.0}
+    assert split == ["22220"]
+
+    holdings = {"11110": (100.0, 10000.0), "22220": (100.0, 10000.0)}
+    rate, coverage = market_breadth.estimate_credit_eval_rate(holdings, closes)
+    assert rate == pytest.approx(10.0)
+    assert coverage == pytest.approx(0.5)
+
+
+def test_update_credit_daily_estimate_appends_only_new_days(tmp_path, monkeypatch):
+    """記録済みの基準日は取り直さず、置かれている未記録の日だけ追記する。"""
+    path = tmp_path / "code_rank_data" / shintakane.CREDIT_DAILY_EST_FILE
+    path.parent.mkdir()
+    old = {"date": "2026-11-20", "est_rate": -22.7, "coverage": 0.95, "n_codes": 500}
+    path.write_text(json.dumps({"latest": old, "history": [old]}), encoding="utf-8")
+    monkeypatch.setattr(shintakane, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(market_breadth, "list_margin_daily_pdf_urls", lambda: [
+        ("2026-11-20", "u20"), ("2026-11-24", "u24")])
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        return "2026-11-24", {"11110": (100.0, 10000.0)}
+
+    monkeypatch.setattr(market_breadth, "fetch_margin_by_issue", fake_fetch)
+    monkeypatch.setattr(market_breadth, "fetch_closes_for_margin", lambda codes, day: ({"11110": 80.0}, []))
+
+    shintakane.update_credit_daily_estimate()
+
+    assert fetched == ["u24"]
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert [h["date"] for h in payload["history"]] == ["2026-11-20", "2026-11-24"]
+    assert payload["latest"] == {"date": "2026-11-24", "est_rate": -20.0, "coverage": 1.0, "n_codes": 1}

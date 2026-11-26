@@ -1577,6 +1577,80 @@ def update_credit_balance():
     )
 
 
+CREDIT_DAILY_EST_FILE = "credit_daily_est.json"
+
+
+def update_credit_daily_estimate():
+    """JPX の銘柄別信用取引残高 (日次) から信用評価損益率を推計して追記する (issue #600)。
+
+    JPX には直近5営業日分しか置かれず遡れないため、history は切らずに貯める。
+    記録済みの基準日は取り直さない (分割の扱いなどで、後から値が変わらないように)。
+    初回や、バッチが数日止まった後は、置かれている未記録の日をまとめて埋める (1日約2分)。
+    取得失敗時は log_warning で残してスキップし、デイリー全体は止めない。
+    """
+    import market_breadth
+
+    out_path = os.path.join(DATA_DIR, "code_rank_data", CREDIT_DAILY_EST_FILE)
+    history = []
+    if os.path.exists(out_path):
+        try:
+            with open(out_path, "r", encoding="utf-8") as f:
+                history = json.load(f).get("history") or []
+        except (OSError, ValueError, AttributeError) as e:
+            # 壊れたファイルを上書きすると貯めた記録を失うので、取りに行かずに止める
+            log_warning(f"[credit_daily_est] 読み込み失敗のためスキップ: {e}")
+            return
+    recorded = {h["date"] for h in history}
+    try:
+        listed = market_breadth.list_margin_daily_pdf_urls()
+    except Exception as e:
+        log_warning(f"[credit_daily_est] 一覧の取得失敗のためスキップ: {e}")
+        return
+    todo = [(d, url) for d, url in listed if d not in recorded]
+    if not todo:
+        log_print(f"---- 信用評価損益率 (日次推計) 記録済みのためスキップ (latest={max(recorded, default=None)})")
+        return
+
+    log_print(f"----> 信用評価損益率 (日次推計) 更新: {', '.join(d for d, _ in todo)}")
+    for listed_day, url in todo:
+        try:
+            base_day, holdings = market_breadth.fetch_margin_by_issue(url)
+            codes = market_breadth.top_codes_by_amount(holdings)
+            closes, split = market_breadth.fetch_closes_for_margin(codes, base_day)
+        except Exception as e:
+            log_warning(f"[credit_daily_est] {listed_day} の取得失敗のためスキップ: {e}")
+            continue
+        if base_day != listed_day:
+            log_warning(f"[credit_daily_est] ファイル名 {listed_day} と基準日 {base_day} が違う")
+        if split:
+            log_warning(f"[credit_daily_est] {base_day} 基準日後に分割があり外した: {', '.join(split)}")
+        rate, coverage = market_breadth.estimate_credit_eval_rate(holdings, closes)
+        if rate is None or base_day in recorded:
+            log_warning(f"[credit_daily_est] {base_day} は推計できない、または記録済み")
+            continue
+        history.append({
+            "date": base_day,
+            "est_rate": round(rate, 2),
+            "coverage": round(coverage, 3),
+            "n_codes": len(closes),
+        })
+        recorded.add(base_day)
+        history.sort(key=lambda h: h["date"])
+        payload = {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "source": "JPX 銘柄別信用取引残高 (東証) と yfinance の終値から推計",
+            "latest": history[-1],
+            "history": history,
+        }
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        # 遡って取り直せない記録なので、書き込み途中で止まっても壊れないようアトミックに差し替える
+        file_write(out_path, json.dumps(payload, ensure_ascii=False, indent=2))
+        log_print(
+            f"<---- 信用評価損益率 (日次推計) {base_day} est={rate:.2f}% "
+            f"coverage={coverage:.1%} n={len(closes)}"
+        )
+
+
 def update_new_high_low():
     """年初来 新高値/新安値 銘柄数を nikkei225jp.com から取得して JSON 保存 (issue #292)。
 
@@ -1783,6 +1857,7 @@ def main(force=False):
         get_todays_pts(force=force)
         update_todays_news()
         update_credit_balance()
+        update_credit_daily_estimate()
         update_new_high_low()
         update_nikkei_vi()
         update_fear_greed_jp()  # VI 更新後に呼ぶ (nikkei_vi.json を参照するため)

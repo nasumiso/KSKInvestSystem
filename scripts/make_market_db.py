@@ -2608,6 +2608,33 @@ def create_disclosure_html(disc_csv):
     return html_path
 
 
+def credit_daily_comparison():
+    """日次推計 (credit_daily_est.json) と公表値 (credit_balance.json) を日付でつないで返す (#600)。
+
+    推計の日と公表の日の和集合を日付順に返す。片方しか無い日は、もう片方と差を None にする。
+    """
+    def _history(name):
+        path = os.path.join(DATA_DIR, "code_rank_data", f"{name}.json")
+        if not os.path.exists(path):
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f).get("history") or []
+
+    est = {h["date"]: h for h in _history("credit_daily_est")}
+    pub = {h["date"]: h.get("credit_eval_rate") for h in _history("credit_balance")}
+    start = min(est, default=None)
+    rows = []
+    for day in sorted(set(est) | {d for d in pub if start and d >= start}):
+        e = est.get(day, {}).get("est_rate")
+        p = pub.get(day)
+        rows.append({
+            "date": day, "est": e, "published": p,
+            "diff": None if e is None or p is None else round(e - p, 2),
+            "coverage": est.get(day, {}).get("coverage", 0.0),
+        })
+    return rows
+
+
 def main():
     # ロガーの初期化
     logger = setup_logger("make_stock_db")
@@ -2627,13 +2654,24 @@ def main():
         import shintakane  # 遅延 import (shintakane が make_market_db を import しているため)
 
         shintakane.update_credit_balance()
+        shintakane.update_credit_daily_estimate()
         shintakane.update_new_high_low()
         shintakane.update_nikkei_vi()
         shintakane.update_fear_greed_jp()  # VI 更新後に呼ぶ (nikkei_vi.json を参照するため)
         create_market_csv()
-        for name in ("credit_balance", "new_high_low", "nikkei_vi", "fear_greed_jp"):
+        for name in ("credit_balance", "credit_daily_est", "new_high_low", "nikkei_vi", "fear_greed_jp"):
             path = os.path.join(DATA_DIR, "code_rank_data", f"{name}.json")
             log_print(f"{name}: 最新日 {shintakane._saved_latest_date(path)}")
+        return
+
+    # `credit_daily` サブコマンド: 信用評価損益率の日次推計 (#600) と公表値 (週次) を並べて差を出す。
+    # 書き込みはしない。公表値が金曜以外にも出てきたら、nikkei225jp が日次に移ったということ。
+    if "credit_daily" in sys.argv[1:]:
+        for r in credit_daily_comparison():
+            pub = "—" if r["published"] is None else "%.2f" % r["published"]
+            diff = "" if r["diff"] is None else "  差 %+.2f" % r["diff"]
+            log_print("%s  推計 %s  公表 %s%s  (カバー率 %.1f%%)" % (
+                r["date"], "—" if r["est"] is None else "%.2f" % r["est"], pub, diff, r["coverage"] * 100))
         return
 
     market_db = update_market_db()  # noqa: F841
