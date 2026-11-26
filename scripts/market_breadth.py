@@ -6,8 +6,11 @@ nikkei225jp.com が公開している JS データを HTTP 取得し、JSON 配�
 - 新高値・新安値 銘柄数 (日次): fetch_new_high_low (issue #292)
 - 日経VI 恐怖指数 (日次): fetch_nikkei_vi (issue #292)
 - 10年国債金利 (日次、財務省): fetch_jgb10 (issue #524、日本版 Fear & Greed の安全資産成分)
+- 信用評価損益率の日次推計 (JPX 銘柄別信用取引残高): list_margin_daily_pdf_urls /
+  fetch_margin_by_issue / estimate_credit_eval_rate (issue #600)
 """
 
+import io
 import json
 import re
 from datetime import datetime, timezone, timedelta
@@ -31,6 +34,13 @@ JGB_ALL_URL = "https://www.mof.go.jp/jgbs/reference/interest_rate/data/jgbcm_all
 JGB_CURRENT_URL = "https://www.mof.go.jp/jgbs/reference/interest_rate/jgbcm.csv"
 # 和暦の元年の前年 (S1=1926, H1=1989, R1=2019)
 _ERA_BASE = {"S": 1925, "H": 1988, "R": 2018}
+
+# JPX「銘柄別信用取引残高」(東証のみ)。直近5営業日分の PDF (YYYYMMDD_mtall.pdf) だけが置かれ、
+# それより前は 404 になる (2026-11 時点)。日々16:00 を目安に前営業日分が載る
+MARGIN_BY_ISSUE_PAGE = "https://www.jpx.co.jp/markets/statistics-equities/margin/01.html"
+_JPX_BASE = "https://www.jpx.co.jp"
+# 推計に使う銘柄: 買残金額の大きい順に、累計でこの割合までの銘柄 (残りは小型で効きが小さい)
+CREDIT_EST_AMOUNT_SHARE = 0.95
 
 
 def fetch_credit_balance_weekly():
@@ -251,3 +261,155 @@ def fetch_jgb10():
         for r in parse_jgb_csv(res.content.decode("cp932")):
             by_date[r["date"]] = r
     return [by_date[d] for d in sorted(by_date)]
+
+
+# --- 信用評価損益率の日次推計 (issue #600) ---------------------------------
+#
+# 評価損益率 = Σ(買残株数 × 終値) ÷ Σ買残金額 − 1。JPX の銘柄別 PDF の「金額」は建てた値段の
+# 合計 (建値) で時価ではない (アドバンテストの買残 31,421円/株 に対し終値 27,275円 で確認)。
+# 公表値 (nikkei225jp、2市場) とは名証の分と、使う銘柄の範囲だけ違う。
+
+def list_margin_daily_pdf_urls():
+    """銘柄別信用取引残高のページから、置かれている PDF を [(YYYY-MM-DD, url)] で返す (日付昇順)。
+
+    ファイル名の日付は「申込み現在」の基準日。添付ファイルのディレクトリは決め打ちしない。
+    """
+    res = requests.get(MARGIN_BY_ISSUE_PAGE, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+    res.raise_for_status()
+    found = {}
+    for href, ymd in re.findall(r'href="([^"]*?(\d{8})_mtall\.pdf)"', res.text):
+        day = "%s-%s-%s" % (ymd[:4], ymd[4:6], ymd[6:])
+        found[day] = href if href.startswith("http") else _JPX_BASE + href
+    return sorted(found.items())
+
+
+def _margin_num(cell):
+    """PDF のセル ("1,234" / "▲ 1,234" / "-" / "*") を数値にする。数値でなければ None。"""
+    if cell is None:
+        return None
+    s = cell.replace(",", "").replace("▲", "-").replace(" ", "").strip()
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def parse_margin_by_issue(rows):
+    """pdfplumber の表の行から {code5: (買残株数, 買残金額)} を作る。
+
+    1銘柄は「株数」の行と「金額」の行の2行で、ページをまたぐことがある。
+    列: [1] 市場 / [3] コード (5桁) / [5] 株数・金額の別 / [9] 買残高。
+    市場の列は日本語側 (株数の行) が銘柄名のはみ出しで崩れるため、英語側 (金額の行) で判定し、
+    "Investment trusts" (ETF・REIT 等) を外す。合計行 (コードが無い) も外す。
+    """
+    shares, amounts, funds = {}, {}, set()
+    for r in rows:
+        if len(r) < 10 or not r[3] or not r[5]:
+            continue
+        code = r[3].strip()
+        if not re.fullmatch(r"\d[0-9A-Z]{3}0", code):
+            continue
+        value = _margin_num(r[9])
+        if r[5].startswith("株数"):
+            shares[code] = value
+        elif r[5].startswith("金額"):
+            amounts[code] = value
+            if "Investment trusts" in (r[1] or ""):
+                funds.add(code)
+    out = {}
+    for code, sh in shares.items():
+        amt = amounts.get(code)
+        if code in funds or not sh or not amt:
+            continue
+        out[code] = (sh, amt)
+    return out
+
+
+def fetch_margin_by_issue(url):
+    """PDF を取得して (基準日 YYYY-MM-DD, {code5: (買残株数, 買残金額)}) を返す。
+
+    基準日は表題の「YYYY/MM/DD申込み現在」から取る。全109ページ前後の表の読み取りに約50秒かかる。
+    """
+    import pdfplumber  # 日次バッチの他の処理に読み込み時間を払わせないよう遅延 import
+
+    res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=60)
+    res.raise_for_status()
+    rows, base_day = [], None
+    with pdfplumber.open(io.BytesIO(res.content)) as pdf:
+        for page in pdf.pages:
+            if base_day is None:
+                m = re.search(r"(\d{4})/(\d{2})/(\d{2})\s*申込み現在", page.extract_text() or "")
+                if m:
+                    base_day = "-".join(m.groups())
+            for table in page.extract_tables():
+                rows.extend(table)
+    if base_day is None:
+        raise ValueError("基準日 (申込み現在) が見つからない: %s" % url)
+    return base_day, parse_margin_by_issue(rows)
+
+
+def top_codes_by_amount(holdings, share=CREDIT_EST_AMOUNT_SHARE):
+    """買残金額の大きい順に、累計で share に達するまでの銘柄コードを返す。"""
+    total = sum(amt for _, amt in holdings.values())
+    codes, acc = [], 0.0
+    for code, (_, amt) in sorted(holdings.items(), key=lambda kv: -kv[1][1]):
+        if acc >= total * share:
+            break
+        codes.append(code)
+        acc += amt
+    return codes
+
+
+def fetch_closes_for_margin(codes, base_day):
+    """基準日の終値を yfinance の一括取得で返す: ({code5: close}, [分割で外した code5])。
+
+    auto_adjust=False で配当による調整を避ける。ただし yfinance の終値は後から起きた分割に
+    合わせて直されるため、基準日以後に分割がある銘柄は PDF の株数・建値と合わず、外す。
+    分割の当日 (yfinance の分割日) も外す。その日の JPX の株数が分割の前か後か確かめていないため
+    (キーエンス 2026-11-19 の1:5。翌営業日の 11/20 分は分割後の株数で載っていた)。
+    """
+    import pandas as pd
+    import yfinance as yf
+
+    tickers = {c: c[:4] + ".T" for c in codes}
+    end = (datetime.now(JST).date() + timedelta(days=1)).isoformat()
+    df = yf.download(
+        list(tickers.values()), start=base_day, end=end,
+        auto_adjust=False, actions=True, threads=True, progress=False,
+    )
+    if df is None or df.empty:
+        return {}, []
+    day = pd.Timestamp(base_day)
+    if day not in df.index:
+        return {}, []
+    closes, split = {}, []
+    for code, t in tickers.items():
+        try:
+            later_splits = df["Stock Splits"][t].loc[df.index >= day].fillna(0)
+            close = df["Close"][t].loc[day]
+        except KeyError:
+            continue
+        if (later_splits > 0).any():
+            split.append(code)
+            continue
+        if pd.notna(close):
+            closes[code] = float(close)
+    return closes, split
+
+
+def estimate_credit_eval_rate(holdings, closes):
+    """評価損益率の推計 (%) とカバー率を返す: (rate|None, coverage)。
+
+    終値の無い銘柄は分子からも分母からも外す。カバー率 = 使った買残金額 ÷ 全銘柄の買残金額。
+    """
+    total = sum(amt for _, amt in holdings.values())
+    cost = value = 0.0
+    for code, close in closes.items():
+        if code not in holdings:
+            continue
+        sh, amt = holdings[code]
+        cost += amt
+        value += sh * close
+    if not cost or not total:
+        return None, 0.0
+    return (value / cost - 1) * 100, cost / total
