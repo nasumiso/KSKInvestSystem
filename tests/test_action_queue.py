@@ -53,17 +53,24 @@ def test_fill_csv_item_clears_after_import_is_recorded(tmp_path, monkeypatch):
     assert aq._fill_csv_item(date.today()) is None
 
 
-@pytest.mark.parametrize("entries, real_today, expected", [
-    ([], date(2026, 10, 23), "感情スコア: 未入力"),
-    ([{"date": "2026-10-16", "score": -1}], date(2026, 10, 23), None),  # 入力日から5営業日までは有効
-    ([{"date": "2026-10-16", "score": -1}], date(2026, 10, 26), "10/16 の入力から5営業日を過ぎた"),
+@pytest.mark.parametrize("entries, real_today, fng, expected", [
+    # 感情: 日曜に、その週 (月〜日) の記録が無ければ促す。平日は出さない
+    ([], date(2026, 11, 29), 50, "今週の感情を記録"),
+    ([{"date": "2026-11-23", "score": -1}], date(2026, 11, 29), 50, None),   # 月曜に記録済み
+    ([{"date": "2026-11-22", "score": -1}], date(2026, 11, 29), 50, "今週の感情を記録"),  # 先週の日曜
+    ([], date(2026, 11, 27), 50, None),
+    # F&G が Extreme Fear (25未満) の日は準備を促す
+    ([], date(2026, 11, 27), 20, "準備: 日本版 F&G が Extreme Fear (20)"),
 ])
-def test_emotion_item_after_expiry(monkeypatch, entries, real_today, expected):
-    """感情スコアが未入力か期限切れなら、中立で計算していることを出して入力を促す (issue #480)"""
+def test_emotion_and_fng_items(monkeypatch, entries, real_today, fng, expected):
+    """issue #593: 感情は日曜の見直しで記録するだけ。F&G は量に使わず、Extreme Fear は準備の合図"""
+    import exposure_guide
+
     monkeypatch.setattr(ps, "list_emotion_scores", lambda **k: entries)
     monkeypatch.setattr(aq, "_real_today", lambda: real_today)
-    item = aq._emotion_item(TODAY)
-    assert (item is None) if expected is None else (expected in item["text"])
+    monkeypatch.setattr(exposure_guide, "read_fng_jp", lambda **k: (fng, "2026-11-27"))
+    items = [i for i in (aq._emotion_item(TODAY), aq._fng_fear_item(TODAY)) if i]
+    assert (not items) if expected is None else any(expected in i["text"] for i in items)
 
 
 @pytest.mark.parametrize("files, real_today, expected", [

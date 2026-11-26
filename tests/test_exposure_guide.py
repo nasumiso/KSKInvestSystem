@@ -278,14 +278,16 @@ def test_margin_by_broker_keeps_rows_as_shown():
     """issue #530: 証券会社ごとの維持率・追証までの下落率を、画面の行のまま残す。推定できない社は理由を残す"""
     state = {"rows": [
         {"broker": "楽天", "rate_pct": 46.6, "falls": {30: 12.1, 25: 17.4, 20: 22.7},
-         "csv_as_of": "2026-11-15", "reason": None},
-        {"broker": "SBI", "rate_pct": None, "falls": {}, "csv_as_of": None, "reason": "保証金率が未入力です"},
+         "csv_as_of": "2026-11-15", "base_date": "2026-11-10", "reason": None},
+        {"broker": "SBI", "rate_pct": None, "falls": {}, "csv_as_of": None, "base_date": None,
+         "reason": "保証金率が未入力です"},
     ]}
     logged = json.loads(json.dumps(exposure_guide.margin_by_broker(state), ensure_ascii=False))
     assert logged == {
         "楽天": {"rate_pct": 46.6, "falls": {"30": 12.1, "25": 17.4, "20": 22.7},
-                 "csv_as_of": "2026-11-15", "reason": None},
-        "SBI": {"rate_pct": None, "falls": {}, "csv_as_of": None, "reason": "保証金率が未入力です"},
+                 "csv_as_of": "2026-11-15", "base_date": "2026-11-10", "reason": None},
+        "SBI": {"rate_pct": None, "falls": {}, "csv_as_of": None, "base_date": None,
+                "reason": "保証金率が未入力です"},
     }
 
 
@@ -300,3 +302,22 @@ def test_field_coverage_counts_from_first_non_null():
         "total_value": (3, "2026-10-23", "2026-10-27"),
         "emotion_score": (2, "2026-10-26", "2026-10-27"),
     }
+
+
+@pytest.mark.parametrize("prev_by, expected", [
+    # 楽天だけ入れ直した (同じ日に2回: +30 と −5) → 合計 25 を、入れ直した後の最初の行に載せる
+    ({"楽天": {"base_date": "2026-11-10"}, "SBI": {"base_date": "2026-11-10"}}, 25.0),
+    ({"楽天": {"base_date": "2026-12-01"}, "SBI": {"base_date": "2026-11-10"}}, 0.0),  # もう載せた
+    ({"楽天": {}, "SBI": {}}, 0.0),  # #593 より前の行 (基準日の記録が無い)
+])
+def test_equity_gap_for_rebaselined_broker(prev_by, expected):
+    """issue #593: 保証金率の入れ直しで入った自己資本の差 (入出金など) を、下落率から外すためにログ行へ移す"""
+    state = {"rows": [
+        {"broker": "楽天", "base_date": "2026-12-01",
+         "base_history": [{"date": "2026-11-10", "equity_gap": 99.0},
+                          {"date": "2026-12-01", "equity_gap": 30.0},
+                          {"date": "2026-12-01", "equity_gap": -5.0}]},
+        {"broker": "SBI", "base_date": "2026-11-10", "base_history": []},
+    ]}
+    history = [{"date": "2026-11-30", "margin_by_broker": prev_by}]
+    assert exposure_guide.equity_gap_for(state, history, "2026-12-01") == expected

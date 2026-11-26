@@ -27,11 +27,12 @@ if _THIS_DIR not in sys.path:
 
 import ks_util  # noqa: E402
 from ks_util import log_print  # noqa: E402
+# 段・張れる量は推定維持率 (#593) と同じ定義を使う
+from margin_estimate import LADDER, ladder_floor, room_cap, step_toward  # noqa: E402,F401
 
 EQUITY_PATH = os.path.join(ks_util.DATA_DIR, "analysis", "equity_history.json")
 OUTPUT_PATH = os.path.join(ks_util.DATA_DIR, "analysis", "money_rule_sim.json")
 
-LADDER = [0.8, 1.0, 1.1, 1.2, 1.4, 1.6, 2.0]  # 倍率の段 (倍率の順)
 START_MULTIPLE = 1.2                          # 初日は相場温度 0 の段
 MARGIN_CALL_RATE = 0.2                        # 追証の線 (保証金率 20%)
 FULL_FNG_FROM = "2025-10-28"                  # F&G の5成分がそろう日。それより前は3成分
@@ -69,23 +70,6 @@ PERIODS = [
     ("5成分の期間", FULL_FNG_FROM, None),
     ("2026-10〜11 半導体の暴落", "2026-09-30", None),
 ]
-
-
-def ladder_floor(x: float) -> float:
-    """x 以下で一番高い段。x が一番下の段より小さければ一番下の段。"""
-    below = [v for v in LADDER if v <= x + 1e-9]
-    return below[-1] if below else LADDER[0]
-
-
-def step_toward(current: float, target: float) -> float:
-    """いまの段から目標の段へ、隣の段を1つだけ動く。"""
-    i, j = LADDER.index(current), LADDER.index(ladder_floor(target))
-    return LADDER[i + (j > i) - (j < i)]
-
-
-def room_cap(drawdown: float, width: float) -> float:
-    """張れる量: 2.0 × (1 − 口座の高値からの下落率 ÷ 幅)、下限 0.8倍。"""
-    return max(0.8, 2.0 * (1 - drawdown / width))
 
 
 def temperature(rating: Optional[str], credit_confirms: bool) -> int:

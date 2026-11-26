@@ -1514,38 +1514,46 @@ class TestMarginBaseline:
         html = client.get("/portfolio?status=hold").data.decode()
         assert re.search(r"維持率 <b[^>]*>20%</b>", html)
 
-    def test_target_area_and_emotion(self, client, portfolio_db_path, margin_data, monkeypatch):
-        """感情スコアを入れると目標の維持率と適正エリアが出る。保有がある証券会社が1社でも
-        推定できなければ適正エリアを出さない (issue #480)"""
+    def test_target_area_and_emotion(self, client, portfolio_db_path, margin_data, monkeypatch, tmp_path):
+        """今週の目標の倍率と適正エリアを1行で出す。感情スコアは記録として出すだけで量に使わない。
+        保有がある証券会社が1社でも推定できなければ適正エリアを出さない (issue #480 → #593)"""
         import exposure_guide
 
         _, today = margin_data
-        # F&G は普通 (25〜74)、指数は鮮度切れ → 市場ステート不明で上昇圧力下と同じ上限 (−1 段)
+        monkeypatch.setattr(exposure_guide, "EXPOSURE_LOG_PATH", str(tmp_path / "exposure_log.json"))
+        monkeypatch.setattr(exposure_guide, "read_credit_history", lambda: [])
         monkeypatch.setattr(exposure_guide, "read_fng_jp", lambda **k: (50.0, today))
         monkeypatch.setattr(exposure_guide, "read_index_states",
                             lambda *a, **k: ({}, {"topix": "2026-09-17"}))
         client.post("/portfolio/margin-baseline", data={"rate_rakuten": "40"})
 
         html = client.get("/portfolio?status=hold").data.decode()
-        assert "感情 未入力" in html
-        assert re.search(r"目標 維持率 <b[^>]*>80%</b>", html)
+        # 建玉 10万・保証金 4万 → 自己資本 4万、いま 2.5倍。反映初日は下落率 0 で張れる量 2.0倍、
+        # 初回の目標は いまの倍率以下の段 (2.0) を張れる量で頭打ち → 8万 ±5% で超過
+        assert re.search(r"張れる量 <b[^>]*>2.0倍</b> \(口座の高値から −0.0%\)", html)
+        assert re.search(r"張りたい量 <b[^>]*>1.2倍</b>", html)
+        assert re.search(r"の目標 <b[^>]*>2.0倍</b>", html)
+        assert re.search(r"いま <b[^>]*>2.50倍</b>", html)
+        assert re.search(r"適正 <b[^>]*>8〜8</b>万", html)
+        assert "記録 感情 未入力" in html and ">Neutral</span>" in html
+        assert "指数データが古い (最新 2026-09-17)" in html
 
         client.post("/portfolio/emotion", data={"score": "9"})  # 範囲外は保存しない
         assert ps.list_emotion_scores(db_path=portfolio_db_path) == []
         client.post("/portfolio/emotion", data={"score": "-2", "note": "怖い"})
         html = client.get("/portfolio?status=hold").data.decode()
-        # −2 だが市場ステートの上限で −1 段 → 70%。建玉 10万・保証金 4万 → 建玉 5.7万 → 適正 5〜6万で超過
-        assert "-2 恐怖" in html and "市場ステートの上限で −1" in html
-        assert re.search(r"目標 維持率 <b[^>]*>70%</b>", html)
-        # 決まり方を1行に並べる: F&G は区分名、上限で引き上げられたことを添える
-        assert ">Neutral</span> <b" in html and "±0" in html
-        assert re.search(r"<b[^>]*>−1</b> \(市場ステート不明で上限\) → 目標 維持率", html)
-        assert re.search(r"適正 <b[^>]*>5〜6</b>万", html)
-        assert "指数データが古い (最新 2026-09-17)" in html
+        assert "記録 感情 -2 恐怖" in html
+        assert re.search(r"の目標 <b[^>]*>2.0倍</b>", html)  # 感情では目標が動かない
+
+        # 保証金の外の現金 (#593) は自己資本にだけ足す: 10万 ÷ (4万 + 2万) = 1.67倍。空欄なら前回の値のまま
+        client.post("/portfolio/margin-baseline", data={"rate_rakuten": "40", "cash_rakuten": "20000"})
+        client.post("/portfolio/margin-baseline", data={"rate_rakuten": "40"})
+        html = client.get("/portfolio?status=hold").data.decode()
+        assert re.search(r"いま <b[^>]*>1.67倍</b>", html) and re.search(r"維持率 <b[^>]*>40%</b>", html)
 
         # SBI にも保有があるのに保証金率が無い → 片方だけで全体の過不足を出さない
         ps.upsert_position("SBI", "特定", "信用", "3496", 100, avg_price=1000.0, as_of=today,
                            db_path=portfolio_db_path)
         html = client.get("/portfolio?status=hold").data.decode()
         assert "適正エリア非表示 (SBI: 保証金率が未入力です)" in html
-        assert "目標 維持率" not in html
+        assert "張れる量" not in html

@@ -230,8 +230,10 @@ def _summary(ym: str, closed: List[Dict[str, Any]], episodes: List[Dict[str, Any
                 if d.startswith(ym) and date.fromisoformat(d).weekday() < 5]
     days = [h for h in weekdays if h.get("ratio_pct") is not None]
     correction = [h for h in days if h.get("state") == "market_in_correction"]
-    # issue #480 以後のログ (目標の維持率と適正エリア) が当月にあれば、そちらで集計する
-    targeted = [h for h in weekdays if h.get("target_rate") is not None]
+    # issue #480 以後のログ (目標の維持率、#593 から目標の倍率と適正エリア) が当月にあれば、そちらで集計する
+    targeted = [h for h in weekdays
+                if h.get("target_rate") is not None or h.get("week_target") is not None]
+    multiples = [h["multiple"] for h in targeted if h.get("multiple") is not None]
     rates = [h["margin_rate_pct"] for h in targeted if h.get("margin_rate_pct") is not None]
     trend = _trend(ym, log_by_date)
     return {
@@ -247,6 +249,9 @@ def _summary(ym: str, closed: List[Dict[str, Any]], episodes: List[Dict[str, Any
             "margin_rate_min": min(rates, default=None),
             "margin_rate_max": max(rates, default=None),
             "logged_days": len(targeted),
+            # issue #593 以後: いまの倍率の幅 (旧ログでは None)
+            "multiple_min": min(multiples, default=None),
+            "multiple_max": max(multiples, default=None),
             # 段が 0 以外の日 (感情スコアか F&G の Extreme で目標が動いた日) と、そのうちの判定
             "nonneutral_days": sum(1 for h in targeted if h.get("step")),
             **{f"{p}_days": sum(1 for h in targeted if h.get("position") == p)
@@ -509,7 +514,9 @@ def _portfolio(episodes: List[Dict[str, Any]], exposure_history: List[Dict[str, 
             "date", "total_value", "base_amount", "ratio_pct", "state",
             "range_lower", "range_upper", "position",
             # issue #480 以後: 目標の維持率と適正エリア (旧ログでは None)
-            "margin_rate_pct", "step", "step_parts", "target_rate", "area_lower", "area_upper")},
+            "margin_rate_pct", "step", "step_parts", "target_rate", "area_lower", "area_upper",
+            # issue #593 以後: 目標の倍率 (旧ログでは None)
+            "equity", "multiple", "drawdown_pct", "cap", "want", "boost_until", "week_target")},
         "holding_count": len(holdings),
         "total_value": total,
         "small": {"count": len(small), "value": sum(h["value"] for h in small)},

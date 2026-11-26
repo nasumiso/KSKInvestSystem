@@ -211,7 +211,8 @@ def save_margin_baseline():
     baselines = ps.list_margin_baselines()
     fills = ps.list_fills() if baselines else []
     saved, entered = [], False
-    for broker, field in (("楽天", "rate_rakuten"), ("SBI", "rate_sbi")):
+    for broker, field, cash_field in (("楽天", "rate_rakuten", "cash_rakuten"),
+                                      ("SBI", "rate_sbi", "cash_sbi")):
         raw = (request.form.get(field) or "").strip()
         if not raw:
             continue
@@ -234,13 +235,27 @@ def save_margin_baseline():
             flash(f"{broker}: {reason}", "error")
             continue
         old = baselines.get(broker)
+        # 保証金の外の現金 (#593): 空欄なら前回の値を引き継ぐ
+        raw_cash = (request.form.get(cash_field) or "").replace(",", "").strip()
+        try:
+            outside_cash = float(raw_cash) if raw_cash else (old or {}).get("outside_cash", 0.0)
+        except ValueError:
+            outside_cash = -1.0
+        if outside_cash < 0:
+            flash(f"{broker}: 保証金の外の現金は 0 以上の数値 (円) で入力してください", "error")
+            continue
         history = list((old or {}).get("history") or [])
+        new_base = me.make_baseline(broker, rate, snapshot, today, history, outside_cash)
         if old:
             est, _ = me.estimate(old, snapshot, me.realized_since(fills, broker, old["date"]))
             if est:  # 直前の基準値からの推定と、今回入れた実際の値のずれを残す
+                # equity_gap: 同じ建玉・終値での自己資本の差 (入出金・手数料・金利)。下落率から外す (#593)
+                new_est, _ = me.estimate(new_base, snapshot)
                 history.append({"date": today, "estimated_pct": round(est["rate_pct"], 1),
-                                "actual_pct": rate})
-        ps.set_margin_baseline(me.make_baseline(broker, rate, snapshot, today, history))
+                                "actual_pct": rate,
+                                "equity_gap": round(me.equity(new_est) - me.equity(est))})
+                new_base["history"] = history[-me.HISTORY_LIMIT:]
+        ps.set_margin_baseline(new_base)
         saved.append(broker)
     if saved:
         flash(f"{'・'.join(saved)} の保証金率を保存しました", "success")
@@ -263,7 +278,7 @@ def save_emotion_score():
 
 
 def _build_exposure_summary(margin_state: dict, *, hold_summary=None) -> tuple:
-    """目標の維持率と運用総額の適正エリアを組み立てる (issue #480)。
+    """今週の目標の倍率と運用総額の適正エリアを組み立てる (issue #480 → #593)。
 
     (evaluation, note) を返す。適正エリアを出せない日 (推定維持率が出ない証券会社がある等) は
     evaluation=None にして、出せない理由を note に入れる。運用総額の表示は呼び出し側で続ける。
@@ -289,9 +304,10 @@ def _build_exposure_summary(margin_state: dict, *, hold_summary=None) -> tuple:
         latest = max((d for d in evaluation["index_dates"].values() if d), default=None)
         evaluation["state_note"] = (f"指数データが古い (最新 {latest})。日次バッチで復旧"
                                     if latest else "市場ステートが取れません")
-    evaluation["step_label"] = me.format_step(evaluation["step"])
-    evaluation.update(_target_chain(evaluation))
+    evaluation.update(_target_labels(evaluation))
     evaluation.update(_exposure_bar_geometry(evaluation))
+    if evaluation["position"] == "over":
+        evaluation["reduce_candidates"] = _reduce_candidates()
     return evaluation, None
 
 
@@ -354,39 +370,57 @@ _CREDIT_MOODS = {"天井圏": "Extreme Greed", "強気": "Greed", "中立": "Neu
                  "弱気": "Fear", "底値圏": "Extreme Fear"}
 
 
-def _target_chain(evaluation: dict) -> dict:
-    """「感情 ＋ F&G ＋ 信用 ＝ スコア → 目標」を1行で見せるための値 (margin_estimate.target_step と同じ決まり方)。
+def _md(day) -> str:
+    return f"{int(day[5:7])}/{int(day[8:10])}" if day else ""
 
-    F&G と信用で動いた分は、足すとスコアになるように出す。重ねない・打ち消しは信用の側に注記する。
-    state_capped: 市場ステートの上限で引き上げられたか。clamped: −3〜+3 の端で頭打ちになったか。
+
+def _target_labels(evaluation: dict) -> dict:
+    """「張れる量 · 張りたい量 → 今週の目標 · いま」の1行と、参考の F&G・信用のバッジに使う値 (#593)。
+
+    土日は日曜の見直しの日なので「来週の目標」と出す (週は土曜始まり。margin_estimate.week_targets)。
     """
-    base = evaluation["emotion_score"] or 0
-    fng = evaluation["fng_jp"]
     credit = evaluation.get("credit_eval_rate")
-    credit_prev = evaluation.get("credit_prev_rate")
-    credit_now = evaluation.get("credit_now_rate")
-    fng_dir, credit_dir, direction = me.contrarian_direction(fng, credit, credit_prev, credit_now)
-    credit_note = ""
-    if fng_dir and credit_dir:
-        credit_note = " (重ねない)" if direction else " (打ち消し)"
-        fng_dir, credit_dir = direction, 0
-
-    def step_label(value, d):
-        return None if value is None else "±0" if d == 0 else me.format_step(d)
-
-    credit_label = me.credit_label(credit)
-    state_capped = not direction and evaluation["step"] > base
+    label = me.credit_label(credit)
     return {
-        "fng_label": me.fng_label(fng),
-        "fng_step_label": step_label(fng, fng_dir),
-        "credit_label": credit_label,
-        "credit_mood": _CREDIT_MOODS.get(credit_label),
-        "credit_improving": me.credit_improving(credit, credit_prev, credit_now),
+        "week_label": "来週の目標" if datetime.datetime.now().weekday() >= 5 else "今週の目標",
+        "boost_until_md": _md(evaluation.get("boost_until")),
+        "fng_label": me.fng_label(evaluation["fng_jp"]),
+        "credit_label": label,
+        "credit_mood": _CREDIT_MOODS.get(label),
+        "credit_improving": me.credit_improving(
+            credit, evaluation.get("credit_prev_rate"), evaluation.get("credit_now_rate")),
         "credit_beta": me.CREDIT_NIKKEI_BETA,
-        "credit_step_label": None if credit is None else step_label(credit, credit_dir) + credit_note,
-        "state_capped": state_capped,
-        "clamped": not state_capped and evaluation["step"] != base + direction,
     }
+
+
+def _reduce_candidates() -> list:
+    """今週の目標より多いときに減らす候補: 防が点いた銘柄・幅超えの玉 → RS の弱い順 (#593)。
+
+    防と幅超えは今日のアクションの「保有の点検」と同じ材料。RS は保有銘柄の表と同じ momentum_pt。
+    取れなければ空 (表示を落とさない)。
+    """
+    try:
+        import portfolio_review
+        from webapp import action_queue, trade_episodes
+
+        mat = action_queue._Material()
+        hold = [r["code_s"] for r in mat.records if r.get("status") == "1保"]
+        lots = portfolio_review.open_lots(
+            trade_episodes.build_fill_episodes(), ps.list_trade_ideas(), ps.list_fill_strategies(),
+            datetime.date.today().isoformat())
+    except Exception:  # noqa: BLE001
+        return []
+    over = {x["code_s"] for x in lots if x["over_width"]}
+    lit = {c for c, e in mat.exits.items() if e.get("signal")}
+    rows = []
+    for code in hold:
+        rs = (mat.stocks.get(code) or {}).get("momentum_pt")
+        reasons = [t for t, hit in (("防", code in lit), ("幅超え", code in over)) if hit]
+        rows.append({"code_s": code, "name": mat.name(code), "reasons": reasons,
+                     "rs": int(rs) if isinstance(rs, (int, float)) and rs > 0 else None})
+    # 防・幅超えが先、その中と残りは RS の弱い順 (RS が無い銘柄は最後)
+    rows.sort(key=lambda r: (not r["reasons"], r["rs"] is None, r["rs"] or 0))
+    return rows
 
 
 def _exposure_bar_geometry(evaluation: dict) -> dict:
@@ -1343,7 +1377,7 @@ def dashboard():
                 default=None,
             ),
             "breakdown": breakdown,
-            # issue #480: 目標の維持率と運用総額の適正エリア
+            # issue #593: 今週の目標の倍率と運用総額の適正エリア
             "exposure": exposure,
             "exposure_note": exposure_note,
             # issue #527: 楽天・SBI の推定維持率

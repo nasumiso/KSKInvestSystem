@@ -1,4 +1,5 @@
-{# issue #480: 目標の入力 (感情スコア・F&G) と決まった目標、今の推定維持率を1行にまとめ、説明はツールチップに置く。✎ で入力欄を開く #}
+{# issue #593: 張れる量・張りたい量・今週の目標・いまの倍率と推定維持率を1行にまとめ、説明はツールチップに置く。
+   F&G と信用はバッジだけ (量の計算には信用の週次の公表値しか使わない)。感情スコアは記録として小さく出す。✎ で入力欄を開く #}
 {%- set em = hold_summary.emotion %}
 {%- set ms = hold_summary.margin %}
 {%- set c = ms.combined %}
@@ -16,37 +17,22 @@
 {%- set emotion_mood = {-3: "Extreme Fear", -2: "Fear", -1: "Fear", 0: "Neutral", 1: "Greed", 2: "Greed", 3: "Extreme Greed"} %}
 {%- set badge = "padding:0 0.35em;border-radius:3px;border:1px solid;font-weight:bold;" %}
 <div style="margin:0.1em 0 0.4em;font-size:0.75em;color:#666;display:flex;align-items:center;gap:0.45em;flex-wrap:wrap;">
-  {%- if em and not em.expired %}
-  <span title="感情スコア ({{ em.date }} 入力{% if em.note %}: {{ em.note }}{% endif %})。感情と逆向きに目標が動く (恐怖で張り、熱狂で落とす)。5営業日で期限切れ">感情 <span style="{{ badge }}{{ mood_styles[emotion_mood[em.score]] }}">{{ '%+d'|format(em.score) if em.score else '0' }} {{ names[em.score] }}</span> <span style="color:#888;">({{ em_md }})</span></span>
-  {%- else %}
-  <span style="color:#ef6c00;" title="{% if em %}{{ em.date }} の入力から5営業日を過ぎた{% else %}感情スコアが未入力{% endif %}ため、中立 (0) で計算しています">感情 {{ '期限切れ (%s)'|format(em_md) if em else '未入力' }}</span>
-  {%- endif %}
-  <a href="#" style="{{ edit }}" title="感情スコアを入れる" onclick="var f=document.getElementById('emotion-form');f.hidden=!f.hidden;return false;">✎</a>
-  {%- if ex %}
-  {#- 目標の決まり方 (感情 ＋ F&G ＋ 信用 ＝ スコア → 目標) を左から右に並べ、今の維持率を隣に置く #}
-  {%- if ex.fng_label %}
-  <span>＋</span>
-  <span title="日本版 Fear &amp; Greed {{ '%.0f'|format(ex.fng_jp) }} ({{ ex.fng_jp_date }})。25 未満 (Extreme Fear) ならスコアを −1 (恐怖で張る)、75 以上 (Extreme Greed) なら +1 (熱狂で落とす)。それ以外の日は動かさない">F&amp;G <span style="{{ badge }}{{ mood_styles[ex.fng_label] }}">{{ ex.fng_label }}</span> <b style="color:#333;">{{ ex.fng_step_label }}</b></span>
-  {%- else %}
-  <span>＋</span>
-  <span style="color:#ef6c00;" title="日本版 F&amp;G が{% if ex.fng_jp_date %} {{ ex.fng_jp_date }} のまま古い{% else %}取れていない{% endif %}ため、F&amp;G では動かさず市場ステートの上限で計算しています">F&amp;G 取得なし</span>
-  {%- endif %}
-  <span>＋</span>
-  {%- if ex.credit_label %}
-  <span title="信用評価損益率 {{ '%.2f'|format(ex.credit_eval_rate) }}% ({{ ex.credit_date }}){% if ex.credit_prev_rate is not none %}、前週 {{ '%.2f'|format(ex.credit_prev_rate) }}%{% endif %}{% if ex.credit_now_rate is not none %}。推定 {{ '%.1f'|format(ex.credit_now_rate) }}% (日経 {{ '%+.1f'|format(ex.credit_now_move) }}% × {{ ex.credit_beta }}、{{ ex.credit_now_date[5:].replace('-', '/') }} 時点){% endif %}。−3% 以上 (天井圏) ならスコアを +1 (熱狂で落とす)、−15% 以下 (底値圏) で改善したら −1 (投げが一巡したら張る)。公表は週次で約1週遅れるので、改善は日経平均から推した今日の値で見る (推せない日は前週比)。F&amp;G と同じ向きなら重ねず、逆向きなら打ち消す">信用 <span style="{{ badge }}{{ mood_styles[ex.credit_mood] }}">{{ ex.credit_label }}{% if ex.credit_improving and ex.credit_label in ('弱気', '底値圏') %} ↗{% endif %}</span> <b style="color:#333;">{{ ex.credit_step_label }}</b></span>
-  {%- else %}
-  <span style="color:#ef6c00;" title="信用評価損益率が{% if ex.credit_date %} {{ ex.credit_date }} のまま古い{% else %}取れていない{% endif %}ため、信用では動かしていません">信用 取得なし</span>
-  {%- endif %}
-  <span>＝</span>
-  <span title="スコア {{ ex.step_label }} ← {{ ex.step_parts|join('、') }}
-スコア −3〜+3 → 目標の維持率 50 / 60 / 70 / 80 / 90 / 100 / 120% (投資メモの感情スコアシート)。
-感情スコアが主。日本版 F&amp;G が Extreme (25未満 / 75以上)、または信用評価損益率が天井圏・底値圏 (改善) なら逆張りで 1 ずらす (重ねない)。それ以外の日は市場ステートで攻める側に上限 (調整局面 0 / 上昇圧力下 −1)。"><b style="color:#333;">{{ ex.step_label }}</b>{% if ex.state_capped %} ({% if ex.state %}{{ ex.state_label }}の上限{% else %}市場ステート不明で上限{% endif %}){% elif ex.clamped %} (−3〜+3 で頭打ち){% endif %} → 目標 維持率 <b style="color:#333;">{{ ex.target_rate }}%</b></span>
-  {%- endif %}
+  {%- if ex and ex.week_target is not none %}
+  {#- 張れる量 (口座の上限) · 張りたい量 → 今週の目標 · いまの倍率 #}
+  <span title="張れる量 = 2.0 × (1 − 口座の高値からの下落率 ÷ 20%)、下限 0.8倍。
+自己資本 {{ '{:,}'.format((ex.equity / 10000)|round|int) }}万 / 高値 {{ '{:,}'.format((ex.peak_equity / 10000)|round|int) }}万 (高値は更新したときだけ上げ、四半期末にその時点の資産へ置き換える。保証金率の入れ直しで入った入出金などの差は除く)">張れる量 <b style="color:#333;">{{ '%.1f'|format(ex.cap) }}倍</b> (口座の高値から −{{ '%.1f'|format(ex.drawdown_pct) }}%)</span>
   <span>·</span>
+  <span title="張りたい量: ふだん 1.2倍。信用評価損益率 (週次の公表値) が −15% 以下で前週より改善したら、その日から3か月は 1.6倍 (合図が続けば延びる。公表は約1週遅れ)">張りたい量 <b style="color:#333;">{{ '%.1f'|format(ex.want) }}倍</b>{% if ex.boost_until %} <span style="color:#c62828;">(買い向かい 〜{{ ex.boost_until_md }})</span>{% endif %}</span>
+  <span>→</span>
+  <span title="張りたい量と張れる量の小さい方へ、先週の目標から週1段ずつ近づく (段 0.8 / 1.0 / 1.1 / 1.2 / 1.4 / 1.6 / 2.0)。{{ ex.week_target_from }} の値で決めた。見直しは日曜">{{ ex.week_label }} <b style="color:#333;">{{ '%.1f'|format(ex.week_target) }}倍</b></span>
+  <span>·</span>
+  <span title="倍率 = 運用総額 (現物 + NISA + 信用建玉の時価) ÷ 自己資本">いま <b style="color:#333;">{{ '%.2f'|format(ex.multiple) }}倍</b></span>
+  <span>·</span>
+  {%- endif %}
   {%- if c %}
   <span title="{% for r in ms.rows if r.rate_pct is not none %}{{ r.broker }} {{ '%.0f'|format(r.rate_pct) }}% (追証 20% まで −{{ '%.0f'|format(r.falls[20]) }}%、基準日 {{ r.base_date }}{% if r.realized %}、決済損益 {{ '{:+,.0f}'.format(r.realized) }}円を反映{% endif %}){% if r.skipped %} ※終値が無い{{ r.skipped }}銘柄を除く{% endif %}
 {% endfor %}全保有が一律に下がるとしたとき、保証金率が届く下落率: 30% で −{{ '%.0f'|format(c.falls[30]) }}% / 25% で −{{ '%.0f'|format(c.falls[25]) }}% / 20% (追証) で −{{ '%.0f'|format(c.falls[20]) }}%
-基準日の保証金率に、建玉の評価損と現物 (代用・掛目 0.8) の値動きを足し引きした概算。評価益は保証金に数えない。基準日より後の信用返済の決済損益は約定履歴から足し、入出金・金利・現物の売却代金は追わない。">{{ 'いまの' if ex }}維持率 <b style="color:{{ '#c62828' if c.rate_pct < 30 else '#333' }};">{{ '%.0f'|format(c.rate_pct) }}%</b> (追証まで −{{ '%.0f'|format(c.falls[20]) }}%)</span>
+基準日の保証金率に、建玉の評価損と現物 (代用・掛目 0.8) の値動きを足し引きした概算。評価益は保証金に数えない。基準日より後の信用返済の決済損益は約定履歴から足し、入出金・金利・現物の売却代金は追わない。">維持率 <b style="color:{{ '#c62828' if c.rate_pct < 30 else '#333' }};">{{ '%.0f'|format(c.rate_pct) }}%</b> (追証まで −{{ '%.0f'|format(c.falls[20]) }}%)</span>
   {%- if c.low_brokers %}<span style="color:#c62828;" title="{{ c.low_brokers|join('・') }} は30%を下回る推定。追証は証券会社ごとに判定されます">⚠</span>{%- endif %}
   {%- else %}
   <span style="color:#ef6c00;" title="楽天・SBI の保証金率を入力すると推定できます">維持率 未入力</span>
@@ -55,6 +41,22 @@
   <span style="color:#ef6c00;" title="{{ r.broker }}: {{ r.reason }}">⚠ {{ r.broker }}</span>
   {%- endfor %}
   <a href="#" style="{{ edit }}" title="保証金率を入れる" onclick="var f=document.getElementById('margin-form');f.hidden=!f.hidden;return false;">✎</a>
+  {%- if ex %}
+  {#- 参考: 量の計算には使わない (F&G は準備・点検の合図、信用は買い向かいの合図を週次の公表値で見る) #}
+  <span style="color:#bbb;">|</span>
+  {%- if ex.fng_label %}
+  <span title="参考: 日本版 Fear &amp; Greed {{ '%.0f'|format(ex.fng_jp) }} ({{ ex.fng_jp_date }})。量の計算には使わない。Extreme Fear は準備 (拾う候補と余力を確かめる)、Extreme Greed は保有の点検の合図">F&amp;G <span style="{{ badge }}{{ mood_styles[ex.fng_label] }}">{{ ex.fng_label }}</span></span>
+  {%- endif %}
+  {%- if ex.credit_label %}
+  <span title="信用評価損益率 {{ '%.2f'|format(ex.credit_eval_rate) }}% ({{ ex.credit_date }}){% if ex.credit_prev_rate is not none %}、前週 {{ '%.2f'|format(ex.credit_prev_rate) }}%{% endif %}{% if ex.credit_now_rate is not none %}。推定 {{ '%.1f'|format(ex.credit_now_rate) }}% (日経 {{ '%+.1f'|format(ex.credit_now_move) }}% × {{ ex.credit_beta }}、{{ ex.credit_now_date[5:].replace('-', '/') }} 時点){% endif %}。−15% 以下で前週より改善したら買い向かいの合図 (公表値で判定。推定値は参考)">信用 <span style="{{ badge }}{{ mood_styles[ex.credit_mood] }}">{{ ex.credit_label }}{% if ex.credit_improving and ex.credit_label in ('弱気', '底値圏') %} ↗{% endif %}</span></span>
+  {%- endif %}
+  {%- endif %}
+  {%- if em %}
+  <span style="color:#888;" title="感情スコアの記録 ({{ em.date }}{% if em.note %}: {{ em.note }}{% endif %})。量の計算には使わない。日曜の見直しで今週の感情を記録する">記録 感情 {{ '%+d'|format(em.score) if em.score else '0' }} {{ names[em.score] }} ({{ em_md }})</span>
+  {%- else %}
+  <span style="color:#888;">記録 感情 未入力</span>
+  {%- endif %}
+  <a href="#" style="{{ edit }}" title="今週の感情を記録する" onclick="var f=document.getElementById('emotion-form');f.hidden=!f.hidden;return false;">✎</a>
 </div>
 {% include "_emotion_input.html" %}
 {% include "_margin_summary.html" %}

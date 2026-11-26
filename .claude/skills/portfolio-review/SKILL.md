@@ -65,7 +65,7 @@ cd scripts && ../.venv/bin/python -c "import ks_util; print(ks_util.is_dev_data_
 | | `defense.no_width` / `defense.widened` | 幅の当たっていない建玉、前回以降の戦略の変更で幅が広がった件 |
 | 買い増し | `additions.lots` | `additions.since` 以降の新規建て・買い増し。`is_addition` (買い増し)、`below_earlier` (前のロットより安い = 下落中の買い増し)、そのロットの幅と線 (`line_price`) |
 | ② 銘柄数 | `count` | 保有数と目安 `target` の差、小口、台帳に無い・Active でない保有 |
-| ③ エクスポージャー | `exposure` | 推定維持率 `margin_rate_pct` と目標 `target_rate`・判定 `position`、追証までの下落率 `falls`、1銘柄の上限 `weight_cap_pct` を超えた銘柄 (`weights` の `equity_weight_pct`。受入保証金で割った値で、自己資本の代わりと添える)、テーマの偏り `themes` (上位3つ)、幅なしの戦略を信用で持つ建玉 `margin_no_width`。`contrarian_with_over` が true なら「段が恐怖側 (レバを上げる側) なのに幅超えがある」と書く |
+| ③ エクスポージャー | `exposure` | 推定維持率 `margin_rate_pct` と目標 (#593 以後は今週の目標の倍率 `week_target`・いまの倍率 `multiple`・張れる量 `cap`・買い向かいの期間 `boost_until`。旧ログは `target_rate`)・判定 `position`、追証までの下落率 `falls`、1銘柄の上限 `weight_cap_pct` を超えた銘柄 (`weights` の `equity_weight_pct`。自己資本 `equity` で割った値。旧ログでは受入保証金で代える。#593 以後は上限が None で出ない)、テーマの偏り `themes` (上位3つ)、幅なしの戦略を信用で持つ建玉 `margin_no_width`。`contrarian_with_over` が true なら「買い向かいの期間 (旧ログは段が恐怖側) なのに幅超えがある」と書く |
 | ④ 仮説 | `hypothesis.stale_ratings` | 台帳の更新日が直近の決算より古い保有 |
 | ⑦ 決算 | `upcoming` | 14日以内の決算、ウェイト、信用の株数、事前見通しが未記入 (`has_outlook` false) |
 
@@ -105,7 +105,7 @@ cd scripts && ../.venv/bin/python -c "import ks_util; print(ks_util.is_dev_data_
 
 #### §4 維持率で売る順番
 
-推定維持率 `margin_rate_pct`、目標 `target_rate`、追証までの下落率 `falls` を見せ、「推定維持率が何%を割ったら、どの銘柄を何株、どの順で売るか」を決めてもらう。落ち着いている今のうちに決めておくのが目的。下がり切ってから売る銘柄を選ぶと、底で投げることになる。
+推定維持率 `margin_rate_pct`、目標 (`week_target`。旧ログは `target_rate`)、追証までの下落率 `falls` を見せ、「推定維持率が何%を割ったら、どの銘柄を何株、どの順で売るか」を決めてもらう。落ち着いている今のうちに決めておくのが目的。下がり切ってから売る銘柄を選ぶと、底で投げることになる。
 
 ### 5. 保存する
 

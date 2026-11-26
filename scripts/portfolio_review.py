@@ -26,6 +26,7 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 import ks_util  # noqa: E402
+import margin_estimate  # noqa: E402
 import portfolio_shelve as ps  # noqa: E402
 import trade_review  # noqa: E402
 from ks_util import log_print, log_warning  # noqa: E402
@@ -135,7 +136,8 @@ def triggers_since(last: Optional[Dict[str, Any]], lit_now: List[str], lot_over_
     """
     if last is None:
         return {"first": True, "last_date": None, "new_lit": sorted(lit_now),
-                "new_lot_over": sorted(lot_over_now), "state_worse": None, "margin_down": None}
+                "new_lot_over": sorted(lot_over_now), "state_worse": None, "margin_down": None,
+                "greed": None}
     defense = (last.get("dataset") or {}).get("defense") or {}
     prev_lit = {x["code_s"] for x in defense.get("lit") or []}
     prev_over = set(defense.get("lot_over_keys") or [])
@@ -156,16 +158,20 @@ def triggers_since(last: Optional[Dict[str, Any]], lit_now: List[str], lot_over_
         if turned_over or dropped:
             margin_down = {"from": b, "to": n, "date": latest["date"],
                            "position": latest.get("position"), "turned_over": turned_over}
+    # 日本版 F&G の Extreme Greed は、量を減らさずに保有を点検する合図 (#593)
+    hot = [h for h in after if (h.get("fng_jp") or 0) >= margin_estimate.FNG_EXTREME_GREED]
+    greed = {"date": hot[0]["date"], "fng": hot[0]["fng_jp"]} if hot else None
     return {
         "first": False, "last_date": last["date"],
         "new_lit": sorted(set(lit_now) - prev_lit),
         "new_lot_over": sorted(set(lot_over_now) - prev_over),
-        "state_worse": state_worse, "margin_down": margin_down,
+        "state_worse": state_worse, "margin_down": margin_down, "greed": greed,
     }
 
 
 def has_trigger(t: Dict[str, Any]) -> bool:
-    return bool(t["first"] or t["new_lit"] or t["new_lot_over"] or t["state_worse"] or t["margin_down"])
+    return bool(t["first"] or t["new_lit"] or t["new_lot_over"] or t["state_worse"] or t["margin_down"]
+                or t.get("greed"))
 
 
 _STATE_LABEL = {"confirmed_uptrend": "上昇", "uptrend_under_pressure": "上昇・圧力あり",
@@ -185,7 +191,10 @@ def trigger_text(t: Dict[str, Any]) -> str:
     if t["margin_down"]:
         m = t["margin_down"]
         rate = (f" {m['from']:.0f}%→{m['to']:.0f}%" if m["from"] is not None and m["to"] is not None else "")
-        parts.append("維持率が下がった" + rate + (" (適正エリアより多い)" if m["turned_over"] else ""))
+        parts.append("維持率が下がった" + rate + (" (目標より多い)" if m["turned_over"] else ""))
+    if t.get("greed"):
+        d = date.fromisoformat(t["greed"]["date"])
+        parts.append(f"F&G が Extreme Greed ({d.month}/{d.day})")
     if t["first"]:
         return "初回の点検がまだ" + (f" ({'・'.join(parts)})" if parts else "")
     d = date.fromisoformat(t["last_date"])
@@ -340,7 +349,8 @@ def build_review_dataset(*, today: str, generated_at: str,
     latest = max(exposure_history, key=lambda h: h.get("date") or "", default={})
     step = latest.get("step")
     cap = WEIGHT_CAP_BY_STEP.get(step) if step is not None else None
-    equity = (margin or {}).get("guarantee")
+    # #593 以後のログは自己資本 (equity) を持つ。旧ログでは受入保証金で代える
+    equity = latest.get("equity") or (margin or {}).get("guarantee")
     weights = []
     for h in pf["holdings"]:
         eq_w = h["value"] / equity * 100.0 if equity else None
@@ -426,8 +436,10 @@ def build_review_dataset(*, today: str, generated_at: str,
             "themes": sorted(({"theme": t, "weight_pct": w} for t, w in themes.items()),
                              key=lambda r: -r["weight_pct"]),
             "margin_no_width": [x for x in lots if x["kind"] == "信用" and x["trade_idea"] in no_width_names],
-            # 投資戦略.md: 逆張りでレバを上げてよいのは、幅超えが0件のときだけ
-            "contrarian_with_over": bool(step is not None and step < 0 and lot_over),
+            # 投資戦略.md: 逆張りでレバを上げてよいのは、幅超えが0件のときだけ。
+            # #593 以後は買い向かいの期間 (boost_until)、旧ログは段が恐怖側
+            "contrarian_with_over": bool(((step is not None and step < 0) or latest.get("boost_until"))
+                                         and lot_over),
         },
         "hypothesis": {"stale_ratings": stale, "materials": materials},
         "upcoming": upcoming,

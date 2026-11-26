@@ -109,58 +109,82 @@ def test_fall_and_combine_and_input_check():
     assert "日次バッチ" in me.check_baseline_inputs("楽天", src, ["2026-10-22"], now)
 
 
-@pytest.mark.parametrize("emotion, fng, credit, state, expected, chain", [
-    # credit: 信用評価損益率 (最新, 前週)。chain: 画面の「感情 ＋ F&G ＋ 信用 ＝ スコア」の
-    # (F&G の区分, F&G で動いた分, 信用の区分, 信用で動いた分, 上限で引き上げ, 端で頭打ち)
-    (None, 50, None, "confirmed_uptrend", 0, ("Neutral", "±0", None, None, False, False)),  # 未入力は中立
-    # Extreme Fear は逆張りで 1。市場ステートの上限はかけない
-    (-2, 15, (-8, -7), "market_in_correction", -3, ("Extreme Fear", "−1", "中立", "±0", False, False)),
-    (-3, 15, None, None, -3, ("Extreme Fear", "−1", None, None, False, True)),                # ±3 で止める
-    (2, 80, None, "confirmed_uptrend", 3, ("Extreme Greed", "+1", None, None, False, False)),  # Extreme Greed は過熱側へ 1
-    (-2, 40, None, "market_in_correction", 0, ("Fear", "±0", None, None, True, False)),  # F&G が普通の日は、調整局面で 0 より攻めない
-    (-2, 40, None, "uptrend_under_pressure", -1, ("Fear", "±0", None, None, True, False)),  # 上昇圧力下は −1 まで
-    (-2, 60, None, "confirmed_uptrend", -2, ("Greed", "±0", None, None, False, False)),     # 上昇確定は上限なし
-    (-2, None, None, None, -1, (None, None, None, None, True, False)),  # F&G・市場ステートが取れない日は上昇圧力下と同じ上限
-    # 信用 (#535): 天井圏は +1、底値圏は前週より改善した週だけ −1。F&G とは重ねない
-    (0, 50, (-2.5, -4), "confirmed_uptrend", 1, ("Neutral", "±0", "天井圏", "+1", False, False)),
-    (-1, 50, (-16, -18), "market_in_correction", -2, ("Neutral", "±0", "底値圏", "−1", False, False)),
-    (-1, 50, (-16, -14), "market_in_correction", 0, ("Neutral", "±0", "底値圏", "±0", True, False)),  # 悪化中は上限
-    (-1, 15, (-16, -18), "market_in_correction", -2, ("Extreme Fear", "−1", "底値圏", "±0 (重ねない)", False, False)),
-    (-1, 15, (-2, -3), "market_in_correction", 0, ("Extreme Fear", "±0", "天井圏", "±0 (打ち消し)", True, False)),
-    # 日経平均から推した今日の値があれば、改善はそれと公表値で比べる (公表値は約1週遅れ)
-    (-1, 50, (-16, -14, -15), "market_in_correction", -2, ("Neutral", "±0", "底値圏", "−1", False, False)),
-    (-1, 50, (-16, -18, -17), "market_in_correction", 0, ("Neutral", "±0", "底値圏", "±0", True, False)),
+CREDIT = [  # 2026-11 の実例: 11/13 の値が底値圏で前週より改善 → 11/20 から買い向かい。11/20 は再び悪化
+    {"date": "2026-11-06", "credit_eval_rate": -21.08},
+    {"date": "2026-11-13", "credit_eval_rate": -15.49},
+    {"date": "2026-11-20", "credit_eval_rate": -22.88},
+]
+
+
+@pytest.mark.parametrize("credit, day, expected", [
+    (CREDIT, "2026-11-19", None),          # 公表は約1週遅れ: データ日 + 7日から使う
+    (CREDIT, "2026-11-20", "2027-02-20"),  # 合図から3か月
+    (CREDIT, "2027-01-10", "2027-02-20"),  # 合図のあとに悪化しても取り消さない
+    (CREDIT, "2027-02-21", None),          # 3か月で終わる
+    (CREDIT + [{"date": "2026-12-04", "credit_eval_rate": -18.0}], "2027-03-01", "2027-03-11"),  # 合図が続けば延びる
+    ([{"date": "2026-11-06", "credit_eval_rate": -14.0},
+      {"date": "2026-11-13", "credit_eval_rate": -16.0}], "2026-12-01", None),  # 底値圏でも悪化なら合図でない
+    ([{"date": "2026-11-06", "credit_eval_rate": -20.0},
+      {"date": "2026-11-13", "credit_eval_rate": -14.0}], "2026-12-01", None),  # 改善でも底値圏の外
 ])
-def test_target_step(emotion, fng, credit, state, expected, chain):
-    """感情スコアが主。F&G・信用が Extreme なら逆張りで 1 (重ねない)、それ以外は市場ステートで攻める側に上限。
-    画面の決まり方の表示 (_target_chain) も同じ結果を言う"""
-    from webapp.routes.portfolio import _target_chain
-
-    rate, prev, now = (tuple(credit) + (None,))[:3] if credit else (None, None, None)
-    step, parts = me.target_step(emotion, fng, state, rate, prev, now)
-    assert step == expected and parts
-    shown = _target_chain({"emotion_score": emotion, "fng_jp": fng, "step": step,
-                           "credit_eval_rate": rate, "credit_prev_rate": prev, "credit_now_rate": now})
-    assert (shown["fng_label"], shown["fng_step_label"], shown["credit_label"],
-            shown["credit_step_label"], shown["state_capped"], shown["clamped"]) == chain
+def test_boost_until(credit, day, expected):
+    """張りたい量: 信用評価損益率 (公表値) が −15% 以下で前週より改善したら、最後の合図から3か月 1.6倍"""
+    assert me.boost_until(credit, day) == expected
+    assert me.want_multiple(credit, day) == (1.6 if expected else 1.2)
 
 
-@pytest.mark.parametrize("guarantee, step, expected", [
-    # 保証金 700万・建玉 1000万 (時価 900万)・現物 500万 → 運用総額 1400万、維持率 70%
-    # 段 0 (80%): 建玉 875万 → 125万減らす。時価に直して 125 × 0.9 = 112.5万 → 1287.5万。±5pt で 1235〜1347
-    (7_000_000, 0, {"target_value": 12_875_000, "position": "over", "floor_capped": False}),
-    # 段 −1 (70%): 今の建玉のまま → エリア内
-    (7_000_000, -1, {"target_value": 14_000_000, "position": "within", "floor_capped": False}),
-    # 段 −3 (50%): 建玉 1400万 (+400万) → 1800万。多め側の端 45% は建玉 1555.6万だが、
-    # 追証の下限 (700 − 0.8×0.2×500) / 0.4 = 建玉 1550万 で頭打ち → 1950万
-    (7_000_000, -3, {"target_value": 18_000_000, "position": "under", "floor_capped": True}),
+@pytest.mark.parametrize("rows, expected_dd", [
+    ([{"date": "2026-11-27", "equity": 100.0}], [0.0]),  # 反映初日 (暫定行だけ) は下落率 0
+    ([{"date": "2026-11-27", "equity": 100.0},
+      {"date": "2026-11-30", "equity": 90.0},
+      # 保証金率の入れ直しで 30 入った (入金など) → 高値も 30 ずらし、跳ねない
+      {"date": "2026-12-01", "equity": 120.0, "equity_gap": 30.0},
+      # 四半期が変わったら、高値を直前の行 (120) に置き換える
+      {"date": "2027-01-04", "equity": 110.0}],
+     [0.0, 0.1, 1 - 120 / 130, 1 - 110 / 120]),
 ])
-def test_target_area(guarantee, step, expected):
-    """目標の建玉 = 保証金 ÷ 目標維持率。増やす側はそのまま、減らす側は時価に直し、追証の下限で頭打ち"""
-    area = me.target_area(guarantee, 10_000_000, 5_000_000, 9_000_000, step)
+def test_drawdown_series(rows, expected_dd):
+    """張れる量の物差し: 口座の高値からの下落率。入出金と四半期末の置き換えを入れる"""
+    assert [r["drawdown"] for r in me.drawdown_series(rows)] == pytest.approx(expected_dd)
+
+
+def test_week_targets_step_one_per_week():
+    """今週の目標は、前の週の最後の行で min(張りたい量, 張れる量) へ先週の目標から1段。週は土曜始まり"""
+    rows = [
+        {"date": "2026-11-27", "equity": 100.0, "multiple": 1.35},  # 金曜。初回は 1.35 以下の段 = 1.2
+        {"date": "2026-11-28", "equity": 100.0, "multiple": 1.35},  # 土曜は来週の分
+        {"date": "2026-12-04", "equity": 85.0, "multiple": 1.3},    # −15% で張れる量は下限 0.8
+    ]
+    weeks = me.week_targets(rows, CREDIT)
+    assert [(w["week"], w["target"]) for w in weeks] == [
+        ("2026-11-21", 1.2), ("2026-11-28", 1.4), ("2026-12-05", 1.2)]
+    assert me.target_for(weeks, "2026-11-27")["target"] == 1.2
+    assert me.target_for(weeks, "2026-11-28")["target"] == 1.4  # 土日に来週の目標が出る
+    assert me.room_cap(0.15) == 0.8 and me.room_cap(0.05) == pytest.approx(1.5)
+
+
+@pytest.mark.parametrize("target_total, expected", [
+    # 保証金 700万・建玉 1000万 (時価 900万)・現物 500万 → 運用総額 1400万。エリアは目標 ±5%
+    (12_000_000, {"target_value": 12_000_000, "position": "over", "floor_capped": False}),
+    (14_000_000, {"target_value": 14_000_000, "position": "within", "floor_capped": False}),
+    # 多め側の端 1995万は、追証の下限 (700 − 0.8×0.2×500) / 0.4 = 建玉 1550万 → 1950万で頭打ち
+    (19_000_000, {"target_value": 19_000_000, "position": "under", "floor_capped": True}),
+])
+def test_equity_and_target_area(target_total, expected):
+    """自己資本 = 保証金 + 0.2×代用の現物 + NISA + 信用の評価益 + 保証金の外の現金。
+    適正エリアは目標の倍率 × 自己資本 ±5%"""
+    est = {"guarantee": 7_000_000, "spot_value": 5_000_000, "nisa_value": 1_000_000,
+           "margin_rows": [(100, 1000.0, 1200.0), (100, 1000.0, 900.0)],  # 評価益 2万だけ足す
+           "outside_cash": 500_000}
+    assert me.equity(est) == pytest.approx(9_520_000)
+    # 基準値に入れた保証金の外の現金は、推定と合算を通って自己資本に届く
+    base = me.make_baseline("楽天", 40.0, me.build_snapshot("楽天", _positions(), {"1111": 1000.0})[0],
+                            "2026-11-26", outside_cash=300_000)
+    est1, _ = me.estimate(base, me.build_snapshot("楽天", _positions(), {"1111": 1000.0})[0])
+    assert me.equity(me.combine({"楽天": est1})) == pytest.approx(40_000 + 300_000)
+    area = me.target_area(7_000_000, 10_000_000, 5_000_000, 9_000_000, target_total)
     assert area["target_value"] == pytest.approx(expected["target_value"])
     assert (area["position"], area["floor_capped"]) == (expected["position"], expected["floor_capped"])
-    assert area["area_lower"] <= area["target_value"] <= area["area_upper"]
     if area["floor_capped"]:  # 頭打ちの端は、一律 20% 下落で維持率がちょうど 20% になる量
         assert area["area_upper"] == pytest.approx(14_000_000 + 5_500_000)
 

@@ -115,6 +115,9 @@ _LOG = [
       "margin": True}),
     # 基準のログが無ければ、ステートと維持率は判定しない
     ({"date": "2026-11-15", "dataset": {"defense": {}}}, [], [], _LOG[1:], {}),
+    # 前回より後に F&G が Extreme Greed (75以上) の日があれば点検を促す (#593)
+    ({"date": "2026-11-12", "dataset": {"defense": {}}}, [], [],
+     [{"date": "2026-11-12", "fng_jp": 60}, {"date": "2026-11-13", "fng_jp": 78}], {"greed": "2026-11-13"}),
 ])
 def test_点検のきっかけは前回より後に起きたものだけ(last, lit, over, log, expected):
     t = portfolio_review.triggers_since(last, lit, over, log)
@@ -122,4 +125,5 @@ def test_点検のきっかけは前回より後に起きたものだけ(last, l
     assert t["new_lot_over"] == expected.get("new_lot_over", [])
     assert (t["state_worse"] and (t["state_worse"]["from"], t["state_worse"]["to"])) == expected.get("state", None)
     assert bool(t["margin_down"]) == expected.get("margin", False)
+    assert (t["greed"] or {}).get("date") == expected.get("greed")
     assert portfolio_review.has_trigger(t) == bool(expected)

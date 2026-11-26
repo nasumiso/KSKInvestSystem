@@ -1,4 +1,4 @@
-{# issue #480: 感情スコア (自己申告 7段階) の入力欄。表示は _summary_inputs.html #}
+{# issue #480 → #593: 感情スコア (自己申告 7段階) の記録欄。表示は _summary_inputs.html #}
 <form id="emotion-form" class="margin-form" method="post" action="{{ url_for('portfolio.save_emotion_score') }}" hidden>
   <input type="hidden" name="return_query" value="{{ return_query }}">
   <div class="margin-form-row"><label>一言 (任意) <input type="text" name="note" maxlength="200"></label></div>
@@ -8,5 +8,5 @@
     <span class="margin-form-note">{{ hint }}</span>
   </div>
   {%- endfor %}
-  <div class="margin-form-note">感情と逆向きに目標が動きます (恐怖で張り、熱狂で落とす)。入力から5営業日で期限切れになり、中立として扱います。</div>
+  <div class="margin-form-note">日曜の見直しで今週の感情を記録します。量の計算には使いません (行動との突き合わせに使う)。</div>
 </form>
