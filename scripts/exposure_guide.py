@@ -583,6 +583,22 @@ def _format_entry(entry):
     )
 
 
+def field_coverage(history):
+    """日次ログの項目ごとに (件数, 初日, 最終日) を返す。値が None の行は数えない。
+
+    項目は途中から足されていく (total_value は 8/29〜、margin_by_broker は 11 月下旬〜) ので、
+    振り返りで「その項目がいつから使えるか」を確かめるのに使う。
+    """
+    cov = {}
+    for h in history:
+        for key, value in h.items():
+            if key == "date" or value is None:
+                continue
+            n, first, _ = cov.get(key, (0, h.get("date"), None))
+            cov[key] = (n + 1, first, h.get("date"))
+    return cov
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="目標の維持率と運用総額の適正エリア (issue #362 / #480)"
@@ -593,6 +609,8 @@ def main():
 
     show = sub.add_parser("show", help="直近の記録と現在の評価を表示する")
     show.add_argument("-n", "--limit", type=int, default=10, help="表示件数")
+    show.add_argument("--fields", action="store_true",
+                      help="項目ごとの記録件数・初日・最終日だけを表示する")
 
     args = parser.parse_args()
 
@@ -602,6 +620,13 @@ def main():
 
     if args.command == "show":
         payload = _load_exposure_log()
+        if args.fields:
+            history = payload["history"]
+            print("記録 %d 行 (%s〜%s)" % (len(history), history[0].get("date") if history else "—",
+                                         history[-1].get("date") if history else "—"))
+            for key, (n, first, last) in sorted(field_coverage(history).items(), key=lambda kv: kv[1][1] or ""):
+                print("  %-22s %4d 行  %s〜%s" % (key, n, first, last))
+            return
         for entry in payload["history"][-args.limit:]:
             print(_format_entry(entry))
         print("--- 現在 (未記録) ---")

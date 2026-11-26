@@ -287,3 +287,16 @@ def test_margin_by_broker_keeps_rows_as_shown():
                  "csv_as_of": "2026-11-15", "reason": None},
         "SBI": {"rate_pct": None, "falls": {}, "csv_as_of": None, "reason": "保証金率が未入力です"},
     }
+
+
+def test_field_coverage_counts_from_first_non_null():
+    """項目ごとの件数・初日・最終日。途中から足された項目と None の行を数えない"""
+    history = [
+        {"date": "2026-10-23", "total_value": 1, "emotion_score": None},
+        {"date": "2026-10-26", "total_value": 2, "emotion_score": -1},
+        {"date": "2026-10-27", "total_value": 3, "emotion_score": 0},
+    ]
+    assert exposure_guide.field_coverage(history) == {
+        "total_value": (3, "2026-10-23", "2026-10-27"),
+        "emotion_score": (2, "2026-10-26", "2026-10-27"),
+    }
