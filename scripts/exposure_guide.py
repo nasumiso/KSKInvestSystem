@@ -457,6 +457,7 @@ def build_margin_state(*, db_path=None):
         row = {
             "broker": broker, "csv_as_of": min(csv_dates) if csv_dates else None,
             "base_date": (base or {}).get("date"), "base_rate": (base or {}).get("rate_pct"),
+            "base_outside_cash": (base or {}).get("outside_cash"),
             "last_gap": history[-1] if history else None, "base_history": history,
             "rate_pct": None, "reason": None, "falls": {}, "skipped": 0,
         }

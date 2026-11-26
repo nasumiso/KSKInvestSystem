@@ -211,7 +211,8 @@ def save_margin_baseline():
     baselines = ps.list_margin_baselines()
     fills = ps.list_fills() if baselines else []
     saved, entered = [], False
-    for broker, field in (("楽天", "rate_rakuten"), ("SBI", "rate_sbi")):
+    for broker, field, cash_field in (("楽天", "rate_rakuten", "cash_rakuten"),
+                                      ("SBI", "rate_sbi", "cash_sbi")):
         raw = (request.form.get(field) or "").strip()
         if not raw:
             continue
@@ -234,8 +235,17 @@ def save_margin_baseline():
             flash(f"{broker}: {reason}", "error")
             continue
         old = baselines.get(broker)
+        # 保証金の外の現金 (#593): 空欄なら前回の値を引き継ぐ
+        raw_cash = (request.form.get(cash_field) or "").replace(",", "").strip()
+        try:
+            outside_cash = float(raw_cash) if raw_cash else (old or {}).get("outside_cash", 0.0)
+        except ValueError:
+            outside_cash = -1.0
+        if outside_cash < 0:
+            flash(f"{broker}: 保証金の外の現金は 0 以上の数値 (円) で入力してください", "error")
+            continue
         history = list((old or {}).get("history") or [])
-        new_base = me.make_baseline(broker, rate, snapshot, today, history)
+        new_base = me.make_baseline(broker, rate, snapshot, today, history, outside_cash)
         if old:
             est, _ = me.estimate(old, snapshot, me.realized_since(fills, broker, old["date"]))
             if est:  # 直前の基準値からの推定と、今回入れた実際の値のずれを残す

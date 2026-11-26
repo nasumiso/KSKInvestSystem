@@ -93,8 +93,13 @@ def make_baseline(
     snapshot: Dict[str, Any],
     base_day: str,
     history: Optional[List[Dict[str, Any]]] = None,
+    outside_cash: float = 0.0,
 ) -> Dict[str, Any]:
-    """入力した保証金率とスナップショットから、基準値のレコードを作る。"""
+    """入力した保証金率とスナップショットから、基準値のレコードを作る。
+
+    outside_cash: 保証金に入っていない現金 (SBI の預り金・スィープ口座、楽天の預り金など)。
+      保証金率には効かず、自己資本 (equity) にだけ足す。次に入れ直すまで一定とみなす (#593)
+    """
     closes = snapshot["closes"]
     return {
         "broker": broker,
@@ -104,6 +109,7 @@ def make_baseline(
         "guarantee": rate_pct / 100.0 * snapshot["tate_total"],
         "margin": {c: {**v, "close": closes.get(c)} for c, v in snapshot["margin"].items()},
         "spot": {c: {"qty": v["qty"], "close": closes.get(c)} for c, v in snapshot["spot"].items()},
+        "outside_cash": float(outside_cash),
         "history": list(history or [])[-HISTORY_LIMIT:],
     }
 
@@ -204,6 +210,7 @@ def estimate(baseline: Dict[str, Any], snapshot: Dict[str, Any],
                         for c, v in snapshot["margin"].items() if closes.get(c)],
         "skipped": snapshot["skipped"],
         "realized": realized_total,
+        "outside_cash": baseline.get("outside_cash", 0.0),
     }, None
 
 
@@ -248,6 +255,7 @@ def combine(per_broker: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         "tate_total": tate_total,
         "spot_value": spot_value,
         "nisa_value": sum(r.get("nisa_value", 0.0) for r in per_broker.values()),
+        "outside_cash": sum(r.get("outside_cash", 0.0) for r in per_broker.values()),
         "margin_value": sum(r["margin_value"] for r in per_broker.values()),
         # 自己資本 (equity) で信用の評価益を足すのに使う (#593)
         "margin_rows": [row for r in per_broker.values() for row in r.get("margin_rows", [])],
@@ -430,12 +438,13 @@ def room_cap(drawdown: float, width: float = CAP_WIDTH) -> float:
 def equity(est: Dict[str, Any]) -> float:
     """推定 (estimate() の結果か、その合算) から自己資本を出す。
 
-    受入保証金 G = 現金 + 0.8·代用の現物 − 信用の評価損 で、評価益を含まない。
-    自己資本 = 現金 + 現物 + NISA + 信用の評価損益 = G + 0.2·現物 + NISA + 信用の評価益。
+    受入保証金 G = 保証金の現金 + 0.8·代用の現物 − 信用の評価損 で、評価益を含まない。
+    自己資本 = 現金 + 現物 + NISA + 信用の評価損益
+             = G + 0.2·現物 + NISA + 信用の評価益 + 保証金の外の現金 (入れ直しのときに入力)。
     """
     gains = sum(max(0.0, q * (c - a)) for q, a, c in est.get("margin_rows") or [])
     return (est["guarantee"] + (1 - SUBSTITUTE_RATIO) * est["spot_value"]
-            + est.get("nisa_value", 0.0) + gains)
+            + est.get("nisa_value", 0.0) + gains + est.get("outside_cash", 0.0))
 
 
 def _add_months(day: date, months: int) -> date:

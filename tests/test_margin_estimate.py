@@ -171,10 +171,17 @@ def test_week_targets_step_one_per_week():
     (19_000_000, {"target_value": 19_000_000, "position": "under", "floor_capped": True}),
 ])
 def test_equity_and_target_area(target_total, expected):
-    """自己資本 = 保証金 + 0.2×代用の現物 + NISA + 信用の評価益。適正エリアは目標の倍率 × 自己資本 ±5%"""
+    """自己資本 = 保証金 + 0.2×代用の現物 + NISA + 信用の評価益 + 保証金の外の現金。
+    適正エリアは目標の倍率 × 自己資本 ±5%"""
     est = {"guarantee": 7_000_000, "spot_value": 5_000_000, "nisa_value": 1_000_000,
-           "margin_rows": [(100, 1000.0, 1200.0), (100, 1000.0, 900.0)]}  # 評価益 2万だけ足す
-    assert me.equity(est) == pytest.approx(9_020_000)
+           "margin_rows": [(100, 1000.0, 1200.0), (100, 1000.0, 900.0)],  # 評価益 2万だけ足す
+           "outside_cash": 500_000}
+    assert me.equity(est) == pytest.approx(9_520_000)
+    # 基準値に入れた保証金の外の現金は、推定と合算を通って自己資本に届く
+    base = me.make_baseline("楽天", 40.0, me.build_snapshot("楽天", _positions(), {"1111": 1000.0})[0],
+                            "2026-11-26", outside_cash=300_000)
+    est1, _ = me.estimate(base, me.build_snapshot("楽天", _positions(), {"1111": 1000.0})[0])
+    assert me.equity(me.combine({"楽天": est1})) == pytest.approx(40_000 + 300_000)
     area = me.target_area(7_000_000, 10_000_000, 5_000_000, 9_000_000, target_total)
     assert area["target_value"] == pytest.approx(expected["target_value"])
     assert (area["position"], area["floor_capped"]) == (expected["position"], expected["floor_capped"])
