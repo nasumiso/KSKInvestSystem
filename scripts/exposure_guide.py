@@ -277,6 +277,12 @@ def read_credit_history():
     return _read_json_history(os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json"))
 
 
+def read_credit_daily_estimate():
+    """信用評価損益率の日次推計 (#600) の最新 {date, est_rate, ...}。無ければ None。表示の参考値で、判定には使わない。"""
+    history = _read_json_history(os.path.join(DATA_DIR, "code_rank_data", "credit_daily_est.json"))
+    return history[-1] if history else None
+
+
 def read_credit_nowcast(market_db, rate, data_date, *, today=None):
     """日経平均から今日の信用評価損益率を推す (margin_estimate.credit_nowcast)。
 

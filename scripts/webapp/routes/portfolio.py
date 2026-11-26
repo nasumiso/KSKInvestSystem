@@ -311,6 +311,10 @@ def _build_exposure_summary(margin_state: dict, *, hold_summary=None) -> tuple:
         evaluation["state_note"] = (f"指数データが古い (最新 {latest})。日次バッチで復旧"
                                     if latest else "市場ステートが取れません")
     evaluation.update(_target_labels(evaluation))
+    # 信用評価損益率の日次推計 (#600)。参考に数字だけ出し、判定には使わない
+    daily = exposure_guide.read_credit_daily_estimate()
+    evaluation["credit_daily_rate"] = daily.get("est_rate") if daily else None
+    evaluation["credit_daily_md"] = _md(daily.get("date")) if daily else ""
     evaluation.update(_exposure_bar_geometry(evaluation))
     if evaluation["position"] == "over":
         evaluation["reduce_candidates"] = _reduce_candidates()
@@ -397,6 +401,7 @@ def _target_labels(evaluation: dict) -> dict:
         "credit_improving": me.credit_improving(
             credit, evaluation.get("credit_prev_rate"), evaluation.get("credit_now_rate")),
         "credit_beta": me.CREDIT_NIKKEI_BETA,
+        "credit_md": _md(evaluation.get("credit_date")),
     }
 
 
