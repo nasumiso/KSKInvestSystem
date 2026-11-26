@@ -562,3 +562,25 @@ def test_update_credit_daily_estimate_skips_low_coverage(tmp_path, monkeypatch):
     shintakane.update_credit_daily_estimate()
 
     assert not (tmp_path / "code_rank_data" / shintakane.CREDIT_DAILY_EST_FILE).exists()
+
+
+def test_market_indicators_credit_daily_est_row(tmp_path, monkeypatch):
+    """日次推計 (#600) は公表値の行の下に参考の1行で出す。判定のバッジは付けず、tooltip に公表値との差。"""
+    _write_credit_json(tmp_path, [{"date": "2026-11-20", "credit_eval_rate": -22.88, "credit_bairitsu": 8.75}])
+    est = [
+        {"date": "2026-11-20", "est_rate": -22.05, "coverage": 0.95, "n_codes": 1538},
+        {"date": "2026-11-25", "est_rate": -21.78, "coverage": 0.95, "n_codes": 1553},
+    ]
+    (tmp_path / "code_rank_data" / "credit_daily_est.json").write_text(
+        json.dumps({"history": est}), encoding="utf-8")
+    monkeypatch.setattr(make_market_db, "DATA_DIR", str(tmp_path))
+
+    html = make_market_db._html_market_indicators({})
+
+    assert html.index("信用評価損益率") < html.index("日次推計 (参考)")
+    row = html[html.index("日次推計 (参考)") - 400:]
+    row = row[row.index("<tr"):]
+    row = row[:row.index("</tr>")]
+    assert "-21.78%" in row and "+0.27" in row  # 前営業日比 -21.78 - (-22.05)
+    assert "公表値との差 11/20 +0.83pt" in row
+    assert "底値圏" not in row and "fng-rating" not in row

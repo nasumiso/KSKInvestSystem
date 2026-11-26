@@ -1773,6 +1773,48 @@ def _credit_rows(market_db):
     )]
 
 
+def _credit_daily_est_row():
+    """信用評価損益率の日次推計 (#600) を、公表値の行の下に出す参考の1行を返す。無ければ None。
+
+    公表値との誤差を確かめる段階なので、判定のバッジは付けない (運用比率・合図にも使わない)。
+    「直近」の列は前営業日比 (公表値の行は1週前比)。tooltip に、公表値と重なる直近の日の差を出す。
+    """
+    path = os.path.join(DATA_DIR, "code_rank_data", "credit_daily_est.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            history = json.load(f).get("history") or []
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not history:
+        return None
+    latest = history[-1]
+    prev = history[-2]["est_rate"] if len(history) >= 2 else None
+    d1, d1_cls = _format_credit_delta(latest["est_rate"], prev)
+    title_parts = [
+        "JPX の銘柄別信用取引残高 (東証) と終値から自前で推計した参考値。判定・運用比率には使わない",
+        "直近=前営業日比",
+        "カバー率 %.1f%%" % (latest.get("coverage", 0) * 100),
+    ]
+    try:
+        matched = [r for r in credit_daily_comparison() if r["diff"] is not None]
+    except (OSError, ValueError, AttributeError):
+        matched = []  # 公表値のファイルが壊れていても、市場の温度の表は出す
+    if matched:
+        m = matched[-1]
+        title_parts.append("公表値との差 %s %+.2fpt" % (m["date"][5:].replace("-", "/"), m["diff"]))
+    return (
+        "└ 日次推計 (参考)",
+        "%.2f%%" % latest["est_rate"],
+        "",
+        '<span class="%s">%s</span>pt' % (html_mod.escape(d1_cls), html_mod.escape(d1)),
+        "",
+        _format_short_date(latest["date"]),
+        " / ".join(title_parts),
+    )
+
+
 def _html_market_indicators(market_db):
     """Fear & Greed (米CNN/日本版) / 信用評価損益率 / 日経VI / 新高値-新安値 を 1 つの表に統合した HTML を返す。
 
@@ -1794,6 +1836,9 @@ def _html_market_indicators(market_db):
         body.append(fgjp_html)
     for credit in _credit_rows(market_db):
         body.append(_render_indicator_tr(credit))
+    credit_est = _credit_daily_est_row()
+    if credit_est is not None:
+        body.append(_render_indicator_tr(credit_est))
     if not fgjp_html:
         # F&G が出せない日のみ: 日経VI・新高値新安値を独立行で表示 (退行防止)
         vi = _vi_row(market_db)
