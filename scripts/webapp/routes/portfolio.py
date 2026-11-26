@@ -261,18 +261,7 @@ def save_margin_baseline():
         # 預り金 (保証金とは別): 空欄なら前回の値を引き継ぐ。楽天は常に 0
         outside_cash = 0.0 if cash_field is None else (
             cash if cash is not None else (old or {}).get("outside_cash", 0.0))
-        history = list((old or {}).get("history") or [])
-        new_base = me.make_baseline(broker, rate, snapshot, today, history, outside_cash)
-        if old:
-            est, _ = me.estimate(old, snapshot, me.realized_since(fills, broker, old["date"]))
-            if est:  # 直前の基準値からの推定と、今回入れた実際の値のずれを残す
-                # equity_gap: 同じ建玉・終値での自己資本の差 (入出金・手数料・金利)。下落率から外す (#593)
-                new_est, _ = me.estimate(new_base, snapshot)
-                history.append({"date": today, "estimated_pct": round(est["rate_pct"], 1),
-                                "actual_pct": rate,
-                                "equity_gap": round(me.equity(new_est) - me.equity(est))})
-                new_base["history"] = history[-me.HISTORY_LIMIT:]
-        ps.set_margin_baseline(new_base)
+        ps.set_margin_baseline(me.rebaseline(broker, old, rate, snapshot, today, fills, outside_cash))
         saved.append(broker)
     if saved:
         flash(f"{'・'.join(saved)} を保存しました", "success")
@@ -806,6 +795,12 @@ def csv_import_apply():
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     _sync_txt_safely()
+    rakuten = result.get("margin_baseline", {}).get("楽天")
+    if rakuten:  # (all) 版から楽天の保証金率を出した結果 (issue #605)
+        if "rate_pct" in rakuten:
+            flash(f"楽天の保証金率 {rakuten['rate_pct']:.1f}% を CSV から保存しました", "success")
+        else:
+            flash(f"楽天の保証金率は CSV から保存しませんでした: {rakuten['reason']}", "info")
     applied = result["applied"]
     if applied:
         summary = " / ".join(f"{a['code_s']} {a['action']} ({a['detail']})" for a in applied)

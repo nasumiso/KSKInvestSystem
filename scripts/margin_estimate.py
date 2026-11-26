@@ -114,6 +114,40 @@ def make_baseline(
     }
 
 
+def rate_from_cash(cash: float, snapshot: Dict[str, Any], loss: float) -> float:
+    """保証金の現金から保証金率 (%) を出す (楽天の assetbalance(all) 版、issue #605)。
+
+    (保証金の現金 + 0.8·代用の現物 + loss) ÷ 建玉合計。loss は信用の評価損 (0 以下)。
+    楽天の cash は「国内株式信用保証金 + 預り金」(預り金も保証金に入る)、loss は建玉ごとの
+    評価損益額 (諸経費を引いた値) の負の分。2026-11-26 の CSV で 58.06% (画面 58.13%)。
+    終値で出した評価損だと諸経費の分 (約3万) だけ高く 58.51% になる。
+    現物の値は snapshot の closes (CSV の現在値) を使う。
+    """
+    closes = snapshot["closes"]
+    spot = sum(v["qty"] * closes[c] for c, v in snapshot["spot"].items() if closes.get(c))
+    return (cash + SUBSTITUTE_RATIO * spot + loss) / snapshot["tate_total"] * 100
+
+
+def rebaseline(broker: str, old: Optional[Dict[str, Any]], rate_pct: float,
+               snapshot: Dict[str, Any], day: str, fills: List[Dict[str, Any]],
+               outside_cash: float = 0.0) -> Dict[str, Any]:
+    """保証金率を入れ直した基準値を作る (手入力と楽天の CSV の両方から使う)。
+
+    直前の基準値があれば、その推定と今回の値のずれ、同じ建玉・終値での自己資本の差
+    (equity_gap: 入出金・手数料・金利。下落率から外す、#593) を history に残す。
+    """
+    history = list((old or {}).get("history") or [])
+    new_base = make_baseline(broker, rate_pct, snapshot, day, history, outside_cash)
+    if old:
+        est, _ = estimate(old, snapshot, realized_since(fills, broker, old["date"]))
+        if est:
+            new_est, _ = estimate(new_base, snapshot)
+            history.append({"date": day, "estimated_pct": round(est["rate_pct"], 1),
+                            "actual_pct": round(rate_pct, 2),
+                            "equity_gap": round(equity(new_est) - equity(est))})
+            new_base["history"] = history[-HISTORY_LIMIT:]
+    return new_base
+
 def _margin_loss(qty: float, avg_price: float, close: float) -> float:
     """建玉の評価損 (0 以下)。評価益は 0 として算入しない。"""
     return min(0.0, qty * (close - avg_price))

@@ -69,6 +69,7 @@ RAKUTEN_MARGIN_HEADER_MARKER = "建玉数量［株］"
 RAKUTEN_JP_FIRST_ROW_MARKER = "■現在の評価額合計"
 RAKUTEN_JP_HEADER_FIRST_COL = "銘柄コード"
 RAKUTEN_JP_HEADER_MARKER = "保有数量［株］"
+RAKUTEN_JP_PRICE_COL = "現在値［円］"
 RAKUTEN_JP_SECTION_SUFFIX = "口座"
 # 口座区分の見出しではない ■ 行 (冒頭のサマリー)。これ以外の ■ 行は
 # 末尾が "口座" でなくても口座見出しとして扱う (未知表記の黙殺を防ぐ)。
@@ -278,6 +279,18 @@ def _parse_qty(qty_raw: str, source_name: str, code_s: str, column_name: str) ->
     return int(qty_float)
 
 
+def _parse_price(row: List[str], idx: Optional[int]) -> Optional[float]:
+    """CSV の現在値。列が無い・数値でなければ None。
+
+    銘柄 DB に終値が無い ETF の終値の代わりと、楽天の保証金率の計算に使う (issue #605)。
+    """
+    raw = (row[idx] or "").strip().replace(",", "") if idx is not None and len(row) > idx else ""
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
 def parse_rakuten_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
     """楽天現物CSV (assetbalance(all)_*.csv) をパースする。
 
@@ -301,8 +314,6 @@ def parse_rakuten_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
                 f"楽天現物CSV: 国内株式行の銘柄コードが不正です: {code_raw!r}"
             ) from e
         code_s = ps.normalize_code_s(code_raw)
-        if ps.is_etf_code(code_s):
-            continue
         account = (row[3] or "").strip() or "特定"
         qty_raw = (row[4] or "").strip().replace(",", "")
         qty = _parse_qty(qty_raw, "楽天現物", code_s, "保有数量")
@@ -313,10 +324,29 @@ def parse_rakuten_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
             avg_price = None
         parsed.append({
             "code_s": code_s, "account": account, "kind": "現物",
-            "qty": qty, "avg_price": avg_price,
+            "qty": qty, "avg_price": avg_price, "price": _parse_price(row, 8),
         })
     return parsed
 
+
+RAKUTEN_CASH_ROWS = {"国内株式信用保証金": "margin_cash", "預り金": "deposit"}
+
+
+def parse_rakuten_cash(rows: List[List[str]]) -> Optional[Dict[str, float]]:
+    """楽天現物CSV (all) の資産合計欄から、保証金の現金と預り金を読む (issue #605)。
+
+    楽天は預り金も受入保証金に入る (2026-11-26 に画面と突き合わせ)。どちらかの行が無ければ None。
+    """
+    found: Dict[str, float] = {}
+    for row in rows:
+        label = (row[0] or "").strip() if row else ""
+        if label.startswith("■ 保有商品詳細"):
+            break
+        if label in RAKUTEN_CASH_ROWS and len(row) > 1:
+            value = _parse_price(row, 1)
+            if value is not None:
+                found[RAKUTEN_CASH_ROWS[label]] = value
+    return found if len(found) == len(RAKUTEN_CASH_ROWS) else None
 
 def parse_rakuten_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
     """楽天信用建玉CSV (marginbalance(JP)_*.csv) をパースする。
@@ -340,8 +370,6 @@ def parse_rakuten_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
                 f"楽天信用CSV: 建玉行の銘柄コードが不正です: {code_raw!r}"
             ) from e
         code_s = ps.normalize_code_s(code_raw)
-        if ps.is_etf_code(code_s):
-            continue
         account = (row[0] or "").strip() or "特定"
         side = (row[4] or "").strip()  # 買建 / 売建
         qty_raw = (row[7] or "").strip().replace(",", "")
@@ -354,7 +382,9 @@ def parse_rakuten_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
         kind = "信用" if side == "買建" else "信用売建"
         parsed.append({
             "code_s": code_s, "account": account, "kind": kind,
-            "qty": qty, "avg_price": tate_price,
+            "qty": qty, "avg_price": tate_price, "price": _parse_price(row, 10),
+            # 評価損益額は諸経費 (手数料・金利) を引いた値。楽天の保証金率はこれで出る (issue #605)
+            "pl": _parse_price(row, 17),
         })
     return parsed
 
@@ -406,6 +436,9 @@ def parse_rakuten_jp_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
     for idx, (hi, account) in enumerate(headers):
         # このセクションのデータ行は、次のヘッダ行 (次セクション) の手前まで
         section_end = headers[idx + 1][0] if idx + 1 < len(headers) else len(rows)
+        # 現在値の列はセクションで位置が違う (特定とNISAで列の構成が違う)。古い形には無い
+        header = [c.strip() for c in rows[hi]]
+        price_idx = header.index(RAKUTEN_JP_PRICE_COL) if RAKUTEN_JP_PRICE_COL in header else None
         for row in rows[hi + 1:section_end]:
             if len(row) < 3 or not (row[0] or "").strip():
                 continue
@@ -417,8 +450,6 @@ def parse_rakuten_jp_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
                     f"楽天現物CSV(JP): 保有行の銘柄コードが不正です: {code_raw!r}"
                 ) from e
             code_s = ps.normalize_code_s(code_raw)
-            if ps.is_etf_code(code_s):
-                continue
             qty_raw = (row[2] or "").strip().replace(",", "")
             qty = _parse_qty(qty_raw, "楽天現物(JP)", code_s, "保有数量")
             avg_price_raw = (row[6] or "").strip().replace(",", "") if len(row) > 6 else ""
@@ -428,7 +459,7 @@ def parse_rakuten_jp_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
                 avg_price = None
             parsed.append({
                 "code_s": code_s, "account": account, "kind": "現物",
-                "qty": qty, "avg_price": avg_price,
+                "qty": qty, "avg_price": avg_price, "price": _parse_price(row, price_idx),
             })
     return parsed
 
@@ -458,7 +489,7 @@ def _iter_sbi_spot_section_headers(rows: List[List[str]]) -> List[Tuple[int, str
 
 
 def parse_sbi_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
-    """SBI保有証券CSV をパースする。ETF が混在するため除外必須 (issue #397 §2-1b)。
+    """SBI保有証券CSV をパースする。ETF も読む (record・銘柄分析からは import_csvs で外す、issue #605)。
 
     口座区分の列が無く、セクション見出し (例: "株式（特定預り）") で表現される。
     特定/NISA/一般など**複数のセクションが存在し得る**ため、全セクションを
@@ -491,8 +522,6 @@ def parse_sbi_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
                     f"SBI現物CSV: 保有行の銘柄コードが不正です: {code_raw!r}"
                 ) from e
             code_s = ps.normalize_code_s(code_raw)
-            if ps.is_etf_code(code_s):
-                continue
             qty_raw = (row[2] or "").strip().replace(",", "")
             qty = _parse_qty(qty_raw, "SBI現物", code_s, "保有株数")
             avg_price_raw = (row[4] or "").strip().replace(",", "") if len(row) > 4 else ""
@@ -502,7 +531,7 @@ def parse_sbi_spot(rows: List[List[str]]) -> List[Dict[str, Any]]:
                 avg_price = None
             parsed.append({
                 "code_s": code_s, "account": account, "kind": "現物",
-                "qty": qty, "avg_price": avg_price,
+                "qty": qty, "avg_price": avg_price, "price": _parse_price(row, 5),
             })
     return parsed
 
@@ -525,8 +554,6 @@ def parse_sbi_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
                 f"SBI信用CSV: 建玉行の銘柄コードが不正です: {code_raw!r}"
             ) from e
         code_s = ps.normalize_code_s(code_raw)
-        if ps.is_etf_code(code_s):
-            continue
         side = (row[2] or "").strip()  # 買建 / 売建
         account = (row[7] or "").strip() or "特定"
         qty_raw = (row[8] or "").strip().replace(",", "")
@@ -539,7 +566,7 @@ def parse_sbi_margin(rows: List[List[str]]) -> List[Dict[str, Any]]:
         kind = "信用" if side == "買建" else "信用売建"
         parsed.append({
             "code_s": code_s, "account": account, "kind": kind,
-            "qty": qty, "avg_price": tate_price,
+            "qty": qty, "avg_price": tate_price, "price": _parse_price(row, 11),
         })
     return parsed
 
@@ -578,7 +605,7 @@ def _aggregate_by_account_kind_code(rows: List[Dict[str, Any]]) -> Dict[Tuple[st
         key = (r["account"], r["kind"], r["code_s"])
         if key not in agg:
             agg[key] = {"code_s": r["code_s"], "account": r["account"], "kind": r["kind"],
-                       "qty": 0, "avg_price": None}
+                       "qty": 0, "avg_price": None, "price": r.get("price")}
             cost[key] = 0.0
         agg[key]["qty"] += r["qty"]
         if r.get("avg_price") is None:
@@ -633,7 +660,8 @@ def import_csvs(
     DB にも既存データが無いソースのみ missing_sources として報告する。
 
     Returns: {"sources": {...}, "carried_over_sources": {...}, "missing_sources": [...],
-              "diffs": [...], "applied": [...]}
+              "diffs": [...], "applied": [...],
+              "margin_baseline": {"楽天": {"rate_pct"} か {"reason"}} (楽天の (all) 版を反映したとき)}
     """
     ps.validate_as_of(as_of)
     _validate_overrides(overrides, db_path=db_path)
@@ -651,6 +679,8 @@ def import_csvs(
         parser = select_parser(source, rows)
         parsed_rows = parser(rows)
         detected[source] = {"path": path, "rows": parsed_rows}
+        if parser is parse_rakuten_spot:
+            detected[source]["cash"] = parse_rakuten_cash(rows)
         log_print(
             "import_portfolio_csv: ソース判別",
             f"{source[0]}/{source[1]}", os.path.basename(path),
@@ -695,7 +725,10 @@ def import_csvs(
     # 部分更新 (issue #397 Phase3b): 引き継ぎソース由来で record が未登録の銘柄
     # (例: SBI現物のみに存在し楽天CSVには登場しない銘柄) も対象に含める
     all_codes |= {p["code_s"] for p in all_positions}
+    # ETF は position には入れる (運用総額・推定維持率) が、record・銘柄分析には入れない (issue #605)
+    all_codes = {c for c in all_codes if not ps.is_etf_code(c)}
 
+    margin_baseline: Dict[str, Dict[str, Any]] = {}
     if not dry_run:
         for source, agg in aggregated.items():
             broker, kind = source
@@ -704,7 +737,8 @@ def import_csvs(
             for (account, k, code_s), entry in agg.items():
                 ps.upsert_position(
                     broker, account, k, code_s, entry["qty"],
-                    avg_price=entry["avg_price"], as_of=as_of, db_path=db_path,
+                    avg_price=entry["avg_price"], price=entry.get("price"), as_of=as_of,
+                    db_path=db_path,
                 )
             accounts = {account for (account, _, _) in agg} or {"特定"}
             for account in accounts:
@@ -713,6 +747,12 @@ def import_csvs(
                     broker, account, kind, as_of=as_of, row_count=row_count, db_path=db_path,
                 )
         log_print("import_portfolio_csv: position 保存完了", f"銘柄数={len(all_codes)}")
+        rakuten_cash = detected.get(("楽天", "現物"), {}).get("cash")
+        if rakuten_cash is not None:
+            margin_rows = detected.get(("楽天", "信用"), {}).get("rows")
+            margin_baseline["楽天"] = _save_rakuten_baseline(
+                rakuten_cash, margin_rows, as_of, db_path=db_path)
+            log_print("import_portfolio_csv: 楽天の保証金率", margin_baseline["楽天"])
         # 書き込み後の状態を1回だけ再取得する (compute_merged_qty/is_covered を
         # 銘柄ごとに呼ぶと DB を都度 open して全件走査するため、実データ規模
         # (数百銘柄) では致命的に遅い。issue #397 Phase3b で実測・修正済み)
@@ -744,8 +784,42 @@ def import_csvs(
         "missing_sources": missing_sources,
         "diffs": diffs,
         "applied": applied,
+        "margin_baseline": margin_baseline,
     }
 
+
+def _save_rakuten_baseline(cash: Dict[str, float], margin_rows: Optional[List[Dict[str, Any]]],
+                           as_of: str, *, db_path: Optional[str]) -> Dict[str, Any]:
+    """楽天の保証金率を (all) 版の現金と CSV の現在値から出し、推定維持率の基準値にする (issue #605)。
+
+    現金と同じ時点にそろえるため、終値の代わりに CSV の現在値を使う (19時の後を待たない)。
+    評価損は信用建玉 CSV の建玉ごとの評価損益額 (諸経費を引いた値) の負の分。
+    楽天の信用建玉 CSV を一緒に取り込んだときだけ保存する。Returns: {"rate_pct"} か {"reason"}。
+    """
+    import margin_estimate as me  # 遅延 import (取込だけ使う CLI で読まないため)
+
+    if margin_rows is None:
+        return {"reason": "楽天の信用建玉 CSV を一緒に取り込んでいません"}
+    lots = [r for r in margin_rows if r["kind"] == "信用"]
+    if any(r.get("pl") is None for r in lots):
+        return {"reason": "信用建玉 CSV に評価損益額の無い建玉があります"}
+    positions = [p for p in ps.list_positions(db_path=db_path) if p.get("broker") == "楽天"]
+    closes = {p["code_s"]: p["price"] for p in positions if p.get("price")}
+    snapshot, reason = me.build_snapshot("楽天", positions, closes)
+    if snapshot is None:
+        return {"reason": reason}
+    missing = sorted(c for c in snapshot["spot"] if not closes.get(c))
+    if missing:
+        return {"reason": f"{'・'.join(missing)} の現在値が CSV にありません"}
+    old = ps.list_margin_baselines(db_path=db_path).get("楽天")
+    if old and old["date"] > as_of:
+        return {"reason": f"保証金率の基準値 ({old['date']}) のほうが新しい日付です"}
+    loss = sum(min(0.0, r["pl"]) for r in lots)
+    rate = round(me.rate_from_cash(cash["margin_cash"] + cash["deposit"], snapshot, loss), 2)
+    fills = ps.list_fills(db_path=db_path) if old else []
+    new_base = me.rebaseline("楽天", old, rate, snapshot, as_of, fills)
+    ps.set_margin_baseline({**new_base, "source": "csv"}, db_path=db_path)
+    return {"rate_pct": rate}
 
 def _build_diff_preview(
     all_codes: set,

@@ -103,6 +103,28 @@ SBI_MARGIN_ROWS = [
 ]
 
 
+# 楽天現物の (all) 版で、資産合計欄の現金と各行の現在値まであるもの (issue #605)
+RAKUTEN_ALL_ROWS = [
+    ["■資産合計欄"],
+    ["", "時価評価額[円]"],
+    ["国内株式", "690,000"],
+    ["預り金", "100,000"],
+    ["国内株式信用保証金", "200,000"],
+    [],
+    ["■ 保有商品詳細 (すべて）"],
+    ["種別", "銘柄コード・ティッカー", "銘柄", "口座", "保有数量", "［単位］",
+     "平均取得価額", "［単位］", "現在値", "［単位］"],
+    ["国内株式", "402A", "アクセルスペース", "特定", "600", "株", "765.21", "円", "800.0", "円"],
+    ["国内株式", "1681", "上場ＭＳエマ", "特定", "100", "株", "2,000.00", "円", "2,100.0", "円"],
+]
+
+RAKUTEN_MARGIN_PRICED_ROWS = RAKUTEN_MARGIN_ROWS[:5] + [
+    RAKUTEN_MARGIN_ROWS[5] + ["現在値［円］"] + [""] * 6 + ["評価損益額［円］"],
+    # 評価損益額は諸経費を引いた値 (500 × (800 − 900) − 2,000)
+    ["特定", "402A", "アクセルスペース", "東証", "買建", "制度", "6ヶ月", "500", "0", "900", "800"]
+    + [""] * 6 + ["-52,000"],
+]
+
 @pytest.fixture
 def db_path(tmp_path, monkeypatch):
     """ウォッチリスト (stocks_shelve) に個別株を登録し、ETF は登録しない。"""
@@ -141,17 +163,19 @@ def test_parse_rakuten_spot_skips_summary_row_and_foreign_stock(db_path):
     parsed = ic.parse_rakuten_spot(RAKUTEN_SPOT_ROWS)
     assert len(parsed) == 1
     assert parsed[0] == {"code_s": "402A", "account": "特定", "kind": "現物",
-                         "qty": 600, "avg_price": 765.21}
+                         "qty": 600, "avg_price": 765.21, "price": None}
 
 
 def test_parse_rakuten_jp_spot_sections_and_summary_row(db_path):
-    """JP版は口座区分をセクション見出しから取り、合計行とETFを除外する。"""
+    """JP版は口座区分をセクション見出しから取り、合計行を除外する。現在値の列が無い古い形は price=None。"""
     parsed = ic.parse_rakuten_jp_spot(RAKUTEN_JP_SPOT_ROWS)
     assert parsed == [
         {"code_s": "402A", "account": "特定", "kind": "現物",
-         "qty": 600, "avg_price": 765.21},
+         "qty": 600, "avg_price": 765.21, "price": None},
+        {"code_s": "1681", "account": "特定", "kind": "現物",
+         "qty": 550, "avg_price": 2326.0, "price": None},
         {"code_s": "6501", "account": "NISA", "kind": "現物",
-         "qty": 100, "avg_price": 4750.0},
+         "qty": 100, "avg_price": 4750.0, "price": None},
     ]
 
 
@@ -165,7 +189,7 @@ def test_parse_rakuten_jp_spot_recognizes_section_without_kouza_suffix(db_path):
     rows[9] = ["■NISA成長投資枠"]
     parsed = ic.parse_rakuten_jp_spot(rows)
     assert [(p["code_s"], p["account"]) for p in parsed] == [
-        ("402A", "特定"), ("6501", "NISA成長投資枠"),
+        ("402A", "特定"), ("1681", "特定"), ("6501", "NISA成長投資枠"),
     ]
 
 
@@ -233,22 +257,22 @@ def test_other_parsers_reject_invalid_qty(db_path, parser, rows, row_index, qty_
         parser(invalid_rows)
 
 
-def test_margin_parsers_exclude_etf(db_path):
-    """信用建玉に混在するETFも株式分析の取込対象から除外する。"""
+def test_margin_parsers_keep_etf(db_path):
+    """信用建玉の ETF も読む (record・銘柄分析からは import_csvs で外す、issue #605)。"""
     rakuten_rows = [row.copy() for row in RAKUTEN_MARGIN_ROWS]
     rakuten_rows.append(["特定", "1681", "ETF", "東証", "買建", "制度", "6ヶ月", "100", "0", "1000"])
     sbi_rows = [row.copy() for row in SBI_MARGIN_ROWS]
     sbi_rows.append(["1681", "ETF", "買建", "東証", "6ヶ月", "", "", "特定", "100", "", "1000"])
 
-    assert "1681" not in {p["code_s"] for p in ic.parse_rakuten_margin(rakuten_rows)}
-    assert "1681" not in {p["code_s"] for p in ic.parse_sbi_margin(sbi_rows)}
+    assert "1681" in {p["code_s"] for p in ic.parse_rakuten_margin(rakuten_rows)}
+    assert "1681" in {p["code_s"] for p in ic.parse_sbi_margin(sbi_rows)}
 
 
-def test_parse_sbi_spot_excludes_etf(db_path):
-    """SBI現物CSVに混在するETFを除外する (issue #397 §2-1b)。"""
-    parsed = ic.parse_sbi_spot(SBI_SPOT_ROWS)
-    codes = {p["code_s"] for p in parsed}
-    assert codes == {"6501"}  # 1681 (ETF) は除外
+def test_parse_sbi_spot_keeps_etf_with_price(db_path):
+    """SBI現物CSVの ETF も現在値つきで読む (issue #605。旧 #397 §2-1b では除外していた)。"""
+    parsed = {p["code_s"]: p for p in ic.parse_sbi_spot(SBI_SPOT_ROWS)}
+    assert set(parsed) == {"6501", "1681"}
+    assert parsed["1681"]["price"] == 3284.0
 
 
 @pytest.mark.parametrize("invalid_qty", ["--", "1.5"])
@@ -257,7 +281,7 @@ def test_parse_sbi_spot_keeps_unknown_code_and_rejects_invalid_qty(db_path, inva
     unknown_rows = SBI_SPOT_ROWS + [
         ["9999", "新規上場", "50", "", "1000", "1100", "50000", "55000", "+5000"],
     ]
-    assert {p["code_s"] for p in ic.parse_sbi_spot(unknown_rows)} == {"6501", "9999"}
+    assert {p["code_s"] for p in ic.parse_sbi_spot(unknown_rows)} == {"6501", "1681", "9999"}
 
     invalid_rows = SBI_SPOT_ROWS + [
         ["9999", "新規上場", invalid_qty, "", "1000", "1100", "", "", ""],
@@ -806,3 +830,38 @@ class TestQuickImportSource:
         monkeypatch.setattr(subprocess, "run", fail)
         with pytest.raises(ic.QuickImportSourceError):
             ic.quick_import_source()
+
+
+@pytest.mark.parametrize("rows, cash", [
+    (RAKUTEN_ALL_ROWS, {"margin_cash": 200000.0, "deposit": 100000.0}),
+    (RAKUTEN_SPOT_ROWS, None),  # 現金の行が無い (all) 版
+])
+def test_parse_rakuten_cash(db_path, rows, cash):
+    """issue #605: (all) 版の資産合計欄から保証金の現金と預り金を読み、各行の現在値も読む"""
+    assert ic.parse_rakuten_cash(rows) == cash
+    if cash:
+        assert {p["code_s"]: p["price"] for p in ic.parse_rakuten_spot(rows)} == {
+            "402A": 800.0, "1681": 2100.0}
+
+
+def test_import_rakuten_all_saves_etf_and_baseline(tmp_path, db_path):
+    """issue #605: ETF は position に入るが record・差分には出ない。楽天の保証金率を CSV から保存する"""
+    paths = [_write_csv(tmp_path / "r_all.csv", RAKUTEN_ALL_ROWS),
+             _write_csv(tmp_path / "r_margin.csv", RAKUTEN_MARGIN_PRICED_ROWS)]
+    result = ic.import_csvs(paths, "2026-08-10", dry_run=False, allow_partial=True,
+                            apply_records=True, db_path=db_path)
+
+    etf = [p for p in ps.list_positions(db_path=db_path) if p["code_s"] == "1681"]
+    assert [(p["qty"], p["price"]) for p in etf] == [(100, 2100.0)]
+    assert "1681" not in {d["code_s"] for d in result["diffs"]}
+    assert ps.get_record("1681", db_path=db_path) is None
+    # (200,000 + 100,000 + 0.8 × (600×800 + 100×2,100) − 52,000) ÷ (500×900)
+    expected = round((300000 + 0.8 * 690000 - 52000) / 450000 * 100, 2)
+    assert result["margin_baseline"] == {"楽天": {"rate_pct": expected}}
+    base = ps.list_margin_baselines(db_path=db_path)["楽天"]
+    assert (base["rate_pct"], base["date"], base["source"]) == (expected, "2026-08-10", "csv")
+
+    # 信用建玉 CSV を一緒に取り込まなければ保存しない
+    result = ic.import_csvs(paths[:1], "2026-08-11", dry_run=False, allow_partial=True, db_path=db_path)
+    assert "一緒に" in result["margin_baseline"]["楽天"]["reason"]
+    assert ps.list_margin_baselines(db_path=db_path)["楽天"]["date"] == "2026-08-10"

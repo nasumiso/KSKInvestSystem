@@ -26,11 +26,12 @@
   <span>→</span>
   <span title="張りたい量と張れる量の小さい方へ、先週の目標から週1段ずつ近づく (段 0.8 / 1.0 / 1.1 / 1.2 / 1.4 / 1.6 / 2.0)。{{ ex.week_target_from }} の値で決めた。見直しは日曜">{{ ex.week_label }} <b style="color:#333;">{{ '%.1f'|format(ex.week_target) }}倍</b></span>
   <span>·</span>
-  <span title="倍率 = 運用総額 (現物 + NISA + 信用建玉の時価) ÷ 自己資本">いま <b style="color:#333;">{{ '%.2f'|format(ex.multiple) }}倍</b></span>
+  <span title="倍率 = 運用総額 (現物 + NISA + 信用建玉の時価) ÷ 自己資本{% for r in ms.rows %}{% for code, v in r.etf %}
+うち ETF {{ code }} {{ '%.1f'|format(v / 10000) }}万 ({{ r.broker }}、残高CSVの現在値。保有銘柄の表には出ない){% endfor %}{% endfor %}">いま <b style="color:#333;">{{ '%.2f'|format(ex.multiple) }}倍</b></span>
   <span>·</span>
   {%- endif %}
   {%- if c %}
-  <span title="{% for r in ms.rows if r.rate_pct is not none %}{{ r.broker }} {{ '%.0f'|format(r.rate_pct) }}% (追証 20% まで −{{ '%.0f'|format(r.falls[20]) }}%、基準日 {{ r.base_date }}{% if r.realized %}、決済損益 {{ '{:+,.0f}'.format(r.realized) }}円を反映{% endif %}){% if r.skipped %} ※終値が無い{{ r.skipped }}銘柄を除く{% endif %}
+  <span title="{% for r in ms.rows if r.rate_pct is not none %}{{ r.broker }} {{ '%.0f'|format(r.rate_pct) }}% (追証 20% まで −{{ '%.0f'|format(r.falls[20]) }}%、基準日 {{ r.base_date }}{% if r.base_source == 'csv' %} CSV から{% endif %}{% if r.realized %}、決済損益 {{ '{:+,.0f}'.format(r.realized) }}円を反映{% endif %}){% if r.skipped %} ※終値が無い{{ r.skipped }}銘柄を除く{% endif %}
 {% endfor %}全保有が一律に下がるとしたとき、保証金率が届く下落率: 30% で −{{ '%.0f'|format(c.falls[30]) }}% / 25% で −{{ '%.0f'|format(c.falls[25]) }}% / 20% (追証) で −{{ '%.0f'|format(c.falls[20]) }}%
 基準日の保証金率に、建玉の評価損と現物 (代用・掛目 0.8) の値動きを足し引きした概算。評価益は保証金に数えない。基準日より後の信用返済の決済損益は約定履歴から足し、入出金・金利・現物の売却代金は追わない。">維持率 <b style="color:{{ '#c62828' if c.rate_pct < 30 else '#333' }};">{{ '%.0f'|format(c.rate_pct) }}%</b> (追証まで −{{ '%.0f'|format(c.falls[20]) }}%)</span>
   {%- if c.low_brokers %}<span style="color:#c62828;" title="{{ c.low_brokers|join('・') }} は30%を下回る推定。追証は証券会社ごとに判定されます">⚠</span>{%- endif %}

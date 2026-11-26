@@ -324,3 +324,16 @@ def test_equity_gap_for_rebaselined_broker(prev_by, expected):
     ]}
     history = [{"date": "2026-11-30", "margin_by_broker": prev_by}]
     assert exposure_guide.equity_gap_for(state, history, "2026-12-01") == expected
+
+
+def test_margin_inputs_uses_csv_price_for_etf(monkeypatch):
+    """issue #605: 銘柄 DB に終値が無い ETF は、残高 CSV の現在値と取込日を使う"""
+    monkeypatch.setattr(ps, "list_positions", lambda db_path=None: [
+        {"code_s": "6501", "price": 5000.0, "as_of": "2026-11-20"},
+        {"code_s": "1678", "price": 343.6, "as_of": "2026-11-26"},
+    ])
+    monkeypatch.setattr("webapp.helpers._bulk_get_stock_data", lambda codes: {
+        "6501": {"price_log": [["2026-11-26", 5100.0]]}, "1678": {}})
+    _, closes, dates = exposure_guide.margin_inputs()
+    assert closes == {"6501": 5100.0, "1678": 343.6}
+    assert dates == {"6501": "2026-11-26", "1678": "2026-11-26"}
