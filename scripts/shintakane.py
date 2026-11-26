@@ -1628,6 +1628,13 @@ def update_credit_daily_estimate():
         if rate is None or base_day in recorded:
             log_warning(f"[credit_daily_est] {base_day} は推計できない、または記録済み")
             continue
+        if coverage < market_breadth.CREDIT_EST_MIN_COVERAGE:
+            # 記録すると取り直さないので、欠けた値を残さず次の実行に回す
+            log_warning(
+                f"[credit_daily_est] {base_day} はカバー率 {coverage:.1%} で低すぎるため記録しない "
+                f"(est={rate:.2f}% n={len(closes)})"
+            )
+            continue
         history.append({
             "date": base_day,
             "est_rate": round(rate, 2),

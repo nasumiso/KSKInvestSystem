@@ -549,3 +549,16 @@ def test_update_credit_daily_estimate_appends_only_new_days(tmp_path, monkeypatc
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert [h["date"] for h in payload["history"]] == ["2026-11-20", "2026-11-24"]
     assert payload["latest"] == {"date": "2026-11-24", "est_rate": -20.0, "coverage": 1.0, "n_codes": 1}
+
+
+def test_update_credit_daily_estimate_skips_low_coverage(tmp_path, monkeypatch):
+    """終値が大きく欠けた日 (カバー率が下限未満) は記録せず、次の実行で取り直せるようにする。"""
+    monkeypatch.setattr(shintakane, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(market_breadth, "list_margin_daily_pdf_urls", lambda: [("2026-11-24", "u24")])
+    monkeypatch.setattr(market_breadth, "fetch_margin_by_issue", lambda url: (
+        "2026-11-24", {"11110": (100.0, 10000.0), "22220": (100.0, 90000.0)}))
+    monkeypatch.setattr(market_breadth, "fetch_closes_for_margin", lambda codes, day: ({"11110": 80.0}, []))
+
+    shintakane.update_credit_daily_estimate()
+
+    assert not (tmp_path / "code_rank_data" / shintakane.CREDIT_DAILY_EST_FILE).exists()

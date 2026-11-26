@@ -41,6 +41,10 @@ MARGIN_BY_ISSUE_PAGE = "https://www.jpx.co.jp/markets/statistics-equities/margin
 _JPX_BASE = "https://www.jpx.co.jp"
 # 推計に使う銘柄: 買残金額の大きい順に、累計でこの割合までの銘柄 (残りは小型で効きが小さい)
 CREDIT_EST_AMOUNT_SHARE = 0.95
+# これより低いカバー率の日は記録しない (終値の取得が大きく欠けた日。次の実行で取り直す)
+CREDIT_EST_MIN_COVERAGE = 0.9
+# yfinance の一括取得1回あたりの銘柄数
+MARGIN_CLOSE_BATCH = 100
 
 
 def fetch_credit_balance_weekly():
@@ -360,6 +364,21 @@ def top_codes_by_amount(holdings, share=CREDIT_EST_AMOUNT_SHARE):
     return codes
 
 
+def _raise_open_file_limit(target=4096):
+    """このプロセスで同時に開けるファイル数の上限 (soft) を target まで上げる。
+
+    運用機 (ssh・launchd とも) は soft が 256 で、yfinance で1,500銘柄を取るとファイルが開けなくなる
+    (キャッシュの sqlite・証明書・DNS が失敗し、ほとんどの銘柄が欠ける)。2026-11-26 に運用機で
+    256 のままだと 1,553 銘柄中 288〜500、4096 にすると全銘柄が取れた。hard を超えては上げない。
+    """
+    import resource
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    want = target if hard == resource.RLIM_INFINITY else min(target, hard)
+    if soft < want:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+
+
 def fetch_closes_for_margin(codes, base_day):
     """基準日の終値を yfinance の一括取得で返す: ({code5: close}, [分割で外した code5])。
 
@@ -371,29 +390,32 @@ def fetch_closes_for_margin(codes, base_day):
     import pandas as pd
     import yfinance as yf
 
+    _raise_open_file_limit()
     tickers = {c: c[:4] + ".T" for c in codes}
     end = (datetime.now(JST).date() + timedelta(days=1)).isoformat()
-    df = yf.download(
-        list(tickers.values()), start=base_day, end=end,
-        auto_adjust=False, actions=True, threads=True, progress=False,
-    )
-    if df is None or df.empty:
-        return {}, []
     day = pd.Timestamp(base_day)
-    if day not in df.index:
-        return {}, []
     closes, split = {}, []
-    for code, t in tickers.items():
-        try:
-            later_splits = df["Stock Splits"][t].loc[df.index >= day].fillna(0)
-            close = df["Close"][t].loc[day]
-        except KeyError:
+    items = list(tickers.items())
+    # 100銘柄ずつ取る (price.py の一括取得と同じ)
+    for i in range(0, len(items), MARGIN_CLOSE_BATCH):
+        batch = dict(items[i:i + MARGIN_CLOSE_BATCH])
+        df = yf.download(
+            list(batch.values()), start=base_day, end=end,
+            auto_adjust=False, actions=True, threads=True, progress=False,
+        )
+        if df is None or df.empty or day not in df.index:
             continue
-        if (later_splits > 0).any():
-            split.append(code)
-            continue
-        if pd.notna(close):
-            closes[code] = float(close)
+        for code, t in batch.items():
+            try:
+                later_splits = df["Stock Splits"][t].loc[df.index >= day].fillna(0)
+                close = df["Close"][t].loc[day]
+            except KeyError:
+                continue
+            if (later_splits > 0).any():
+                split.append(code)
+                continue
+            if pd.notna(close):
+                closes[code] = float(close)
     return closes, split
 
 
