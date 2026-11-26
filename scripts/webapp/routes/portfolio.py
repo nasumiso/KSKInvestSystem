@@ -384,6 +384,32 @@ def _md(day) -> str:
     return f"{int(day[5:7])}/{int(day[8:10])}" if day else ""
 
 
+def _target_reason(evaluation: dict) -> str:
+    """今週の目標がなぜその倍率かを、そのときの理由だけで短く書く (保有銘柄タブの1行目)。
+
+    目標は「相場で決まる倍率 (want)」と「口座の高値からの下落で決まる上限 (cap)」の小さい方の段へ、
+    週1段ずつ近づく (margin_estimate.week_targets)。上限が効いていない日は上限のことを書かない。
+    """
+    target, want, cap = evaluation.get("week_target"), evaluation.get("want"), evaluation.get("cap")
+    if target is None or want is None or cap is None:
+        return ""
+    goal = me.ladder_floor(min(want, cap))
+    if cap < want:
+        why = "高値から −%.0f%% なので %.1f倍まで" % (evaluation.get("drawdown_pct") or 0, goal)
+    elif evaluation.get("boost_until"):
+        why = "信用評価損益率の底で買い向かい 〜%s" % _md(evaluation["boost_until"])
+    else:
+        why = "ふだんの倍率"
+    if abs(target - goal) < 1e-9:
+        return why
+    move = "上げる" if target < goal else "下げる"
+    if cap < want:
+        return "%s週1段で%s途中" % (why, move)
+    if evaluation.get("boost_until"):
+        return "%s。%.1f倍へ週1段で%s途中" % (why, goal, move)
+    return "ふだんの %.1f倍へ週1段で%s途中" % (goal, move)
+
+
 def _target_labels(evaluation: dict) -> dict:
     """「張れる量 · 張りたい量 → 今週の目標 · いま」の1行と、参考の F&G・信用のバッジに使う値 (#593)。
 
@@ -402,6 +428,7 @@ def _target_labels(evaluation: dict) -> dict:
             credit, evaluation.get("credit_prev_rate"), evaluation.get("credit_now_rate")),
         "credit_beta": me.CREDIT_NIKKEI_BETA,
         "credit_md": _md(evaluation.get("credit_date")),
+        "target_reason": _target_reason(evaluation),
     }
 
 

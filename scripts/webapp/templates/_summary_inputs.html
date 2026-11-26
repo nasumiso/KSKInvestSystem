@@ -1,4 +1,4 @@
-{# issue #593: 1行目は量 (今週の目標がどう決まったか · いまの倍率と推定維持率)、2行目は信用評価損益率
+{# issue #593: 1行目は量 (今週の目標とその理由 · いまの倍率と推定維持率)、2行目は信用評価損益率
    (買い向かいの合図。判定は週次の公表値、日次推計 #600 は参考)、3行目は参考 (F&G・感情の記録。量の計算には使わない)。
    説明はツールチップに置き、画面は短くする。✎ で入力欄を開く #}
 {%- set em = hold_summary.emotion %}
@@ -21,13 +21,8 @@
 {#- 1行目: 量 (今週の目標がどう決まったか · いまの倍率と維持率) #}
 <div style="{{ row }}">
   {%- if ex and ex.week_target is not none %}
-  <span title="張りたい量と張れる量の小さい方へ、先週の目標から週1段ずつ近づく (段 0.8 / 1.0 / 1.1 / 1.2 / 1.4 / 1.6 / 2.0)。{{ ex.week_target_from }} の値で決めた。見直しは日曜">{{ ex.week_label }} <b style="color:#333;font-size:1.1em;">{{ '%.1f'|format(ex.week_target) }}倍</b></span>
-  <span style="color:#888;">(<span title="張りたい量: ふだん 1.2倍。信用評価損益率 (週次の公表値) が −15% 以下で前週より改善したら、その日から3か月は 1.6倍 (合図が続けば延びる)">張りたい <b style="color:#333;">{{ '%.1f'|format(ex.want) }}</b></span>
-  ·
-  <span title="張れる量 (口座の上限): 口座の高値からの下落が深いほど減る。2.0 × (1 − 下落率 ÷ 20%)、下限 0.8倍。いまは高値から −{{ '%.1f'|format(ex.drawdown_pct) }}%{% if ex.drawdown_pct < 0.05 %} なので上限いっぱい{% endif %}。
-自己資本 {{ '{:,}'.format((ex.equity / 10000)|round|int) }}万 / 高値 {{ '{:,}'.format((ex.peak_equity / 10000)|round|int) }}万 (高値は更新したときだけ上げ、四半期末にその時点の資産へ置き換える。保証金率の入れ直しで入った入出金などの差は除く)">張れる <b style="color:#333;">{{ '%.1f'|format(ex.cap) }}</b>{% if ex.drawdown_pct >= 0.05 %} (高値−{{ '%.0f'|format(ex.drawdown_pct) }}%){% endif %}</span>
-  {%- if (ex.week_target - [ex.want, ex.cap]|min)|abs > 0.01 %} の小さい方へ週1段{% endif -%}
-  )</span>
+  <span title="相場で決まる倍率 {{ '%.1f'|format(ex.want) }}倍 (ふだん 1.2倍。信用評価損益率 (週次の公表値) が −15% 以下で前週より改善したら、その日から3か月は 1.6倍。合図が続けば延びる) と、口座の高値からの下落で決まる上限 {{ '%.2f'|format(ex.cap) }}倍 (2.0 × (1 − 下落率 ÷ 20%)、下限 0.8倍。いまは高値から −{{ '%.1f'|format(ex.drawdown_pct) }}%) の小さい方の段へ、先週の目標から週1段ずつ近づく (段 0.8 / 1.0 / 1.1 / 1.2 / 1.4 / 1.6 / 2.0)。{{ ex.week_target_from }} の値で決めた。見直しは日曜。
+自己資本 {{ '{:,}'.format((ex.equity / 10000)|round|int) }}万 / 高値 {{ '{:,}'.format((ex.peak_equity / 10000)|round|int) }}万 (高値は更新したときだけ上げ、四半期末にその時点の資産へ置き換える。保証金率の入れ直しで入った入出金などの差は除く)">{{ ex.week_label }} <b style="color:#333;font-size:1.1em;">{{ '%.1f'|format(ex.week_target) }}倍</b>{% if ex.target_reason %} <span style="color:#888;">({{ ex.target_reason }})</span>{% endif %}</span>
   <span>·</span>
   <span title="倍率 = 運用総額 (現物 + NISA + 信用建玉の時価) ÷ 自己資本{% for r in ms.rows %}{% for code, v in r.etf %}
 うち ETF {{ code }} {{ '%.1f'|format(v / 10000) }}万 ({{ r.broker }}、残高CSVの現在値。保有銘柄の表には出ない){% endfor %}{% endfor %}">いま <b style="color:#333;">{{ '%.2f'|format(ex.multiple) }}倍</b></span>

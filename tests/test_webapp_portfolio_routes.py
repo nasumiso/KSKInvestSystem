@@ -1535,10 +1535,9 @@ class TestMarginBaseline:
         html = client.get("/portfolio?status=hold").data.decode()
         # 建玉 10万・保証金 4万 → 自己資本 4万、いま 2.5倍。反映初日は下落率 0 で張れる量 2.0倍、
         # 初回の目標は いまの倍率以下の段 (2.0) を張れる量で頭打ち → 8万 ±5% で超過
-        # 内訳は短く出し、式はツールチップに置く。目標 2.0 は小さい方 (1.2) へ週1段ずつ近づく途中
-        assert re.search(r"張れる <b[^>]*>2.0</b>", html) and "上限いっぱい" in html
-        assert re.search(r"張りたい <b[^>]*>1.2</b>", html)
-        assert re.search(r"の目標 <b[^>]*>2.0倍</b>", html) and "の小さい方へ週1段" in html
+        # 目標の理由だけを短く出し、2つの倍率と式はツールチップに置く。目標 2.0 はふだんの 1.2 へ下げる途中
+        assert re.search(r"の目標 <b[^>]*>2.0倍</b>", html)
+        assert "(ふだんの 1.2倍へ週1段で下げる途中)" in html
         assert "日次推計 -21.78% (11/25)" in html
         # 減らす順は3銘柄だけ出し、残りは折りたたむ
         assert "銘柄1003" in html and ">他2件</summary>" in html
@@ -1559,7 +1558,7 @@ class TestMarginBaseline:
                            db_path=portfolio_db_path)
         html = client.get("/portfolio?status=hold").data.decode()
         assert "適正エリア非表示 (SBI: 保証金率が未入力です)" in html
-        assert "張れる <b" not in html
+        assert "の目標 <b" not in html
 
         # 預り金 (保証金とは別、SBI だけ #593) は自己資本にだけ足す。預り金だけの更新もできる
         for kind in ("信用", "現物"):
@@ -1571,3 +1570,22 @@ class TestMarginBaseline:
         assert re.search(r"いま <b[^>]*>1.43倍</b>", html) and re.search(r"維持率 <b[^>]*>40%</b>", html)
         sbi = ps.list_margin_baselines(db_path=portfolio_db_path)["SBI"]
         assert sbi["history"][-1] == {"date": today, "equity_gap": 40000, "cash_only": True}
+
+
+@pytest.mark.parametrize("target, want, cap, dd, boost, expected", [
+    (1.2, 1.2, 2.0, 0.0, None, "ふだんの倍率"),
+    (1.6, 1.6, 2.0, 0.0, "2027-02-20", "信用評価損益率の底で買い向かい 〜2/20"),
+    (1.4, 1.6, 2.0, 0.0, "2027-02-20", "信用評価損益率の底で買い向かい 〜2/20。1.6倍へ週1段で上げる途中"),
+    (1.4, 1.2, 2.0, 0.0, None, "ふだんの 1.2倍へ週1段で下げる途中"),
+    # 口座が高値から −10% → 上限 1.0倍。上限が効く日だけ上限のことを書く
+    (1.2, 1.2, 1.0, 10.0, None, "高値から −10% なので 1.0倍まで週1段で下げる途中"),
+    (1.0, 1.2, 1.0, 10.0, None, "高値から −10% なので 1.0倍まで"),
+    # 上限 1.17 は段に直すと 1.1
+    (1.2, 1.2, 1.17, 8.3, None, "高値から −8% なので 1.1倍まで週1段で下げる途中"),
+])
+def test_target_reason(target, want, cap, dd, boost, expected):
+    """今週の目標の理由は、そのとき効いているものだけを短く書く"""
+    from webapp.routes import portfolio as portfolio_routes
+
+    ev = {"week_target": target, "want": want, "cap": cap, "drawdown_pct": dd, "boost_until": boost}
+    assert portfolio_routes._target_reason(ev) == expected
