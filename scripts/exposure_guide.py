@@ -211,8 +211,10 @@ def evaluate_target(margin_state, history, credit_history, day, *, hold_total_va
         combined["margin_value"], week["target"] * eq, combined.get("nisa_value", 0.0))
     result.update(area)
     result["neutral_value"] = margin_estimate.BASE_MULTIPLE * eq  # バーの「ふだん」の印
+    # ETF は 1保の記録に入らないので、運用総額から除いて比べる (issue #605)
+    stock_total = total - margin_state.get("etf_value", 0.0)
     result["qty_mismatch"] = bool(
-        total and abs((hold_total_value or 0) - total) / total >= QTY_MISMATCH_RATIO)
+        stock_total and abs((hold_total_value or 0) - stock_total) / stock_total >= QTY_MISMATCH_RATIO)
     return result
 
 
@@ -417,6 +419,10 @@ def margin_inputs(*, db_path=None):
         if log:
             closes[code] = log[0][1]
             price_dates[code] = str(log[0][0])
+    # 銘柄 DB に終値が無い銘柄 (ETF) は、残高 CSV の現在値を使う。次の取り込みまで値は動かない (issue #605)
+    for p in positions:
+        if p["code_s"] not in closes and p.get("price"):
+            closes[p["code_s"]], price_dates[p["code_s"]] = p["price"], p.get("as_of")
     return positions, closes, price_dates
 
 
@@ -448,7 +454,8 @@ def build_margin_state(*, db_path=None):
     """楽天・SBI の推定維持率と、その合算を組み立てる (issue #527 / #480)。
 
     Returns: {"rows": 証券会社別の表示行, "combined": 合算 (推定できた証券会社だけ) か None,
-              "missing": 残高 CSV に保有があるのに推定できない証券会社 [{"broker", "reason"}]}
+              "missing": 残高 CSV に保有があるのに推定できない証券会社 [{"broker", "reason"}],
+              "etf_value": 推定できた証券会社の ETF の評価額の合計}
     """
     positions, closes, _ = margin_inputs(db_path=db_path)
     baselines = ps.list_margin_baselines(db_path=db_path)
@@ -462,12 +469,17 @@ def build_margin_state(*, db_path=None):
         row = {
             "broker": broker, "csv_as_of": min(csv_dates) if csv_dates else None,
             "base_date": (base or {}).get("date"), "base_rate": (base or {}).get("rate_pct"),
+            "base_source": (base or {}).get("source"),
             "base_outside_cash": (base or {}).get("outside_cash"),
             "cash_date": (base or {}).get("cash_date"),
             # 預り金だけの更新 (cash_only) の行は推定のずれを持たないので飛ばす
             "last_gap": next((h for h in reversed(history) if "estimated_pct" in h), None),
             "base_history": history,
             "rate_pct": None, "reason": None, "falls": {}, "skipped": 0,
+            # 運用総額に入る ETF (保有銘柄の表には出ないので、行に添える。issue #605)
+            "etf": [(p["code_s"], p["qty"] * closes[p["code_s"]]) for p in positions
+                    if p.get("broker") == broker and p.get("kind") in ("現物", "信用")
+                    and ps.is_etf_code(p["code_s"]) and closes.get(p["code_s"])],
         }
         snapshot, reason = margin_estimate.build_snapshot(broker, positions, closes)
         if snapshot is None:
@@ -487,7 +499,8 @@ def build_margin_state(*, db_path=None):
         if row["rate_pct"] is None and any(p.get("broker") == broker for p in positions):
             missing.append({"broker": broker, "reason": row["reason"]})
         rows.append(row)
-    return {"rows": rows, "combined": margin_estimate.combine(estimates), "missing": missing}
+    return {"rows": rows, "combined": margin_estimate.combine(estimates), "missing": missing,
+            "etf_value": sum(v for r in rows if r["broker"] in estimates for _, v in r["etf"])}
 
 
 def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None, hold_summary=None):

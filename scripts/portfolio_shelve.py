@@ -1883,10 +1883,13 @@ def upsert_position(
     qty: int,
     *,
     avg_price: Optional[float] = None,
+    price: Optional[float] = None,
     as_of: str,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """CSV由来の保有残高スナップショットを (broker, account, kind, code_s) 単位で上書き保存する。
+
+    price は CSV の現在値 (issue #605)。銘柄 DB に終値が無い ETF の終値の代わりに使う。
 
     fill と異なり履歴を持たない (最新のみ)。kind="信用売建" は merged_qty の
     集計対象から除外される (issue #397 §2-0: 空売りは検出のみ)。
@@ -1905,6 +1908,7 @@ def upsert_position(
         "kind": kind,
         "qty": qty,
         "avg_price": float(avg_price) if avg_price is not None else None,
+        "price": float(price) if price is not None else None,
         "as_of": as_of,
         "imported_at": now_iso(),
     }

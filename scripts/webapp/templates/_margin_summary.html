@@ -5,7 +5,7 @@
   {%- for r in ms.rows %}
   {%- set rakuten = r.broker == '楽天' %}
   {%- set where = ('保証金率: iSPEED 資産・照会 → 余力・保証金率 → 国内株式 →「保証金率」(本日の追証判定用・新規建ではない方)\n'
-                   '楽天は預り金も保証金に入るので、預り金の欄は無い') if rakuten
+                   '楽天は預り金も保証金に入るので、預り金の欄は無い。assetbalance(all) 版と信用建玉 CSV を同じ日に取り込むと自動で入る') if rakuten
                   else ('委託保証金率: 株アプリ 口座管理 → 余力／評価 →「委託保証金率 (A/B)×100」(参考委託保証金率ではない方)\n'
                         '預り金 (保証金とは別): 「現金残高等（合計）」−「委託保証金現金」(スィープ口座を含む)。預り金だけの更新もできる') %}
   <div class="margin-form-row">
@@ -13,6 +13,9 @@
     <label>{{ '保証金率' if rakuten else '委託保証金率' }}
       <input type="number" name="{{ 'rate_rakuten' if rakuten else 'rate_sbi' }}" step="0.01" min="0.01" max="1000" style="width:5.5em;"
              {%- if r.base_rate is not none %} placeholder="{{ r.base_rate }}"{% endif %}> %</label>
+    {%- if r.base_source == 'csv' %}
+    <span class="margin-form-note" title="assetbalance(all) 版と信用建玉 CSV を同じ日に取り込むと、(国内株式信用保証金 + 預り金 + 0.8 × 代用の現物 − 評価損) ÷ 建玉 で出す。手で入れると上書きする">CSV から {{ '%.1f'|format(r.base_rate) }}% ({{ r.base_date[5:]|replace('-', '/') }})</span>
+    {%- endif %}
     {%- if not rakuten %}
     <label>預り金 (保証金とは別)
       <input type="number" name="cash_sbi" step="1" min="0" style="width:7em;"
