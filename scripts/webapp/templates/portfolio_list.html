@@ -387,7 +387,7 @@
 </div>
 
 {% if hold_summary and hold_summary.exposure %}
-{# issue #425: 運用総額・目標・配分を一つのサマリーにまとめる。issue #480: 目標は推定維持率ベース #}
+{# issue #425: 運用総額・目標・配分を一つのサマリーにまとめる。issue #593: 目標は倍率 (運用総額 ÷ 自己資本) #}
 {%- set ex = hold_summary.exposure %}
 {%- set pos_colors = {"within": "#2e7d32", "over": "#c62828", "under": "#ef6c00"} %}
 {%- set state_styles = {
@@ -398,14 +398,14 @@
   {%- set lower_man = (ex.area_lower / 10000)|round|int %}{% set upper_man = (ex.area_upper / 10000)|round|int %}{% set total_man = (ex.total_value / 10000)|round|int %}
   <div style="display:flex;align-items:baseline;gap:0.8em;flex-wrap:wrap;margin:0 0 0.15em;font-size:0.8em;color:#555;">
     <span>運用総額 <b style="font-size:1.15em;color:#333;">{{ '{:,}'.format(hold_summary.total_man) }}</b>万{% if active_gyoutai_theme %}<span style="font-size:0.9em;color:#888;margin-left:0.4em;">(保有全体)</span>{% endif %}</span>
-    <span title="適正エリア: 目標の維持率 ±5pt になる運用総額 (増減は信用建玉で行う前提)。残高CSVの運用総額 {{ '{:,}'.format(total_man) }}万で判定{% if ex.floor_capped %}
+    <span title="適正エリア: {{ ex.week_label }} {{ '%.1f'|format(ex.week_target) }}倍 × 自己資本 の ±5% (増減は信用建玉で行う前提)。残高CSVの運用総額 {{ '{:,}'.format(total_man) }}万で判定{% if ex.floor_capped %}
 多め側の端は、全保有が一律に 20% 下がっても追証にならない量で頭打ち{% endif %}">適正 <b style="color:#333;">{{ '{:,}'.format(lower_man) }}〜{{ '{:,}'.format(upper_man) }}</b>万{% if ex.floor_capped %}<span style="color:#c62828;">*</span>{% endif %}</span>
     {%- if ex.position == 'within' %}<b style="color:#2e7d32;" title="適正エリア内">✓ 適正</b>
     {%- elif ex.position == 'under' %}<b style="color:#ef6c00;" title="適正エリアの下端まで、あと {{ '{:,}'.format(lower_man - total_man) }}万建てられる">あと{{ '{:,}'.format(lower_man - total_man) }}万</b>
     {%- else %}<b style="color:#c62828;" title="適正エリアの上端より {{ '{:,}'.format(total_man - upper_man) }}万多い">{{ '{:,}'.format(total_man - upper_man) }}万多い</b>
     {%- endif %}
     <span style="font-size:0.9em;padding:0 0.4em;border-radius:3px;border:1px solid;{{ state_styles.get(ex.state, 'background:#eceff1;color:#333;border-color:#e0e0e0') }}"
-        title="参考: 保有額で加重した市場ステート。F&G が Extreme でない日に、攻める側の上限として使う。{% if ex.state_note %}{{ ex.state_note }} (上昇圧力下と同じ上限で計算){% elif ex.is_no_position %}保有が無いため TOPIX とグロース250 の悪い方で判定。{% elif ex.state_is_fallback %}保有カテゴリに対応する指数が鮮度切れのため TOPIX とグロース250 の悪い方で判定。{% endif %}">
+        title="参考: 保有額で加重した市場ステート。量の計算には使わない。{% if ex.state_note %}{{ ex.state_note }}{% elif ex.is_no_position %}保有が無いため TOPIX とグロース250 の悪い方で判定。{% elif ex.state_is_fallback %}保有カテゴリに対応する指数が鮮度切れのため TOPIX とグロース250 の悪い方で判定。{% endif %}">
       {{ ex.state_label }}{% if ex.state_note %} ⚠{% endif %}
     </span>
     {%- for p in ex.index_progress %}
@@ -417,7 +417,7 @@
   {# ノーポジ時は内訳が全て0なので空の枠だけが残る。バーごと出さない #}
   {% if hold_summary.total_man > 0 and hold_summary.breakdown %}
   <div style="position:relative;min-width:280px;max-width:500px;height:26px;"
-       title="バーの長さは運用総額 (色分けは保有内の市場別の構成比)。緑の帯は適正エリア、縦の点線は感情 0 (目標 維持率 80%) のときの適正な運用総額。右端は 0 から全部が収まる長さで、目盛りの意味はありません。">
+       title="バーの長さは運用総額 (色分けは保有内の市場別の構成比)。緑の帯は適正エリア、縦の点線はふだんの 1.2倍 × 自己資本。右端は 0 から全部が収まる長さで、目盛りの意味はありません。">
     <div style="position:absolute;left:{{ ex.bar_range_left }}%;width:{{ ex.bar_range_width }}%;top:0;height:22px;background:#c8e6c9;border-radius:2px;"></div>
     <div style="position:absolute;left:{{ ex.bar_base_left }}%;top:-3px;height:28px;border-left:1px dashed #777;"></div>
     <div style="position:absolute;left:0;top:0;height:22px;display:flex;border-radius:3px;overflow:hidden;border:1px solid #e0e0e0;
@@ -447,6 +447,15 @@
     {%- endfor -%}
   </div>
   {% endif %}
+  {%- if ex.reduce_candidates %}
+  {#- issue #593: 減らす順番は、まず防・幅超えの玉から、その次に RS の弱い順 (投資戦略.md) #}
+  <div style="margin-top:0.3em;font-size:0.75em;color:#555;" title="目標より多いときに減らす順番: まず防が点いた銘柄・損切り幅を超えた玉、その次に RS の弱い順">
+    減らす順:
+    {%- for r in ex.reduce_candidates[:8] %}
+    <a href="{{ url_for('detail.stock_detail', code_s=r.code_s) }}" style="color:{{ '#c62828' if r.reasons else '#555' }};text-decoration:none;margin-left:0.4em;">{{ r.name }}{% if r.reasons %} [{{ r.reasons|join('・') }}]{% endif %} <span style="color:#888;">RS {{ r.rs if r.rs is not none else '—' }}</span></a>
+    {%- endfor %}
+  </div>
+  {%- endif %}
 </div>
 {% elif hold_summary %}
 {# 指標が揃わずガイドを出せない日でも、運用総額だけは表示する #}

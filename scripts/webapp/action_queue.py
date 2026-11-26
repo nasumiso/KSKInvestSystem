@@ -7,7 +7,7 @@
 """
 
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import cached_property
 from typing import Any, Dict, List, Optional
 
@@ -220,21 +220,34 @@ def _shikiho_item(today: date) -> Optional[Dict[str, str]]:
 
 
 def _emotion_item(today: date) -> Optional[Dict[str, str]]:
-    """感情スコアが未入力か、入力から期限 (5営業日) を過ぎていれば促す (issue #480)。
+    """日曜に、その週 (月〜日) の感情スコアの記録が無ければ促す (issue #480 → #593)。
 
-    期限は実際の今日で判定する (17時前でも入れた当日は有効なので、get_price_day の today は使わない)。
+    #593 から感情は量の計算に使わず、日曜の見直しで記録するだけ。曜日は実際の今日で判定する
+    (17時前でも日曜は日曜なので、get_price_day の today は使わない)。
+    """
+    real = _real_today()
+    if real.weekday() != 6:
+        return None
+    rows = ps.list_emotion_scores()
+    monday = (real - timedelta(days=6)).isoformat()
+    if rows and rows[-1]["date"] >= monday:
+        return None
+    return _item("感情スコア: 今週の感情を記録 (日曜の見直し)", "/portfolio?status=hold", "保有銘柄で入れる")
+
+
+def _fng_fear_item(today: date) -> Optional[Dict[str, str]]:
+    """日本版 F&G が Extreme Fear の日に、買い向かいの準備を促す (issue #593)。
+
+    パニックの最中に近い合図なので、量は増やさない。買い向かうのは信用評価損益率の合図が出てから。
     """
     import exposure_guide  # 遅延 import (webapp.helpers との循環回避)
+    import margin_estimate
 
-    emotion = exposure_guide.read_emotion(today=_real_today())
-    if emotion and not emotion["expired"]:
+    fng, _ = exposure_guide.read_fng_jp(today=today)
+    if fng is None or fng >= margin_estimate.FNG_EXTREME_FEAR:
         return None
-    if emotion:
-        day = date.fromisoformat(emotion["date"])
-        text = f"感情スコア: {day.month}/{day.day} の入力から5営業日を過ぎた (中立で計算中)"
-    else:
-        text = "感情スコア: 未入力 (中立で計算中)"
-    return _item(text, "/portfolio?status=hold", "保有銘柄で入れる")
+    return _item(f"準備: 日本版 F&G が Extreme Fear ({fng:.0f})。拾う候補と余力を確かめる"
+                 " (買い向かうのは信用の合図が出てから)", "/portfolio?status=hold", "保有銘柄を見る")
 
 
 def _rating_items(today: date, mat: Optional[_Material] = None) -> List[Dict[str, str]]:
@@ -642,6 +655,7 @@ _DETECTORS: List = [
     ("約定CSV", _fill_csv_item, False),
     ("四季報", _shikiho_item, False),
     ("感情スコア", _emotion_item, False),
+    ("F&G の準備", _fng_fear_item, False),
     ("評価台帳", _rating_items, True),
     ("保有の点検", _portfolio_review_item, True),
     ("月次の振り返り", _trade_review_item, False),

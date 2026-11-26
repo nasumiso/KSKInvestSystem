@@ -107,7 +107,7 @@ def test_サマリーは保有日数帯と局面別の売買額を出す():
                     "step": -1, "margin_rate_pct": 56.7, "position": "over"})
     assert _build(episodes, exposure_history=history)["summary"]["exposure"] == {
         "margin_rate_min": 56.7, "margin_rate_max": 56.7, "logged_days": 1,
-        "nonneutral_days": 1, "over_days": 1, "within_days": 0, "under_days": 0}
+        "multiple_min": None, "multiple_max": None, "nonneutral_days": 1, "over_days": 1, "within_days": 0, "under_days": 0}
 
 
 def test_推移は前月末から当月末までで土日を除く():

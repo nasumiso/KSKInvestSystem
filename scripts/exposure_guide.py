@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""目標の維持率と、運用総額の適正エリア (issue #362 → #480)。
+"""張る量の目安: ふだん 1.2倍と口座の上限、信用の底で買い向かい (issue #362 → #480 → #593)。
 
-推定維持率 (#527) を物差しにして、感情スコア (自己申告 7段階) と日本版 F&G から
-目標の維持率を決め、運用総額 (現物時価 + 信用建玉の時価) の適正エリアを出す。
-計算は margin_estimate.target_step / target_area (純関数)、ここは入力を集める I/O と日次ログ。
+推定維持率 (#527) と同じ推定から自己資本を出し、運用総額 ÷ 自己資本 を倍率とする。
+計算は margin_estimate (純関数)、ここは入力を集める I/O と日次ログ。
 
-判定の考え方 (doc/spec/推定維持率仕様.md):
-  - 感情スコアの段が主。F&G が Extreme なら逆張りで 1 段ずらす (恐怖で張り、熱狂で落とす)
-  - 信用評価損益率も同じ向きの逆張り (天井圏で +1、底値圏かつ前週より改善で −1)。F&G とは重ねない (#535)
-  - 逆張りが効かない日は、保有額で加重した市場ステートで攻める側に上限をかける (順張り)
-  - 感情に関係なく、全保有が一律に 20% 下がっても追証にならない建玉までに頭打ち
+決め方 (doc/spec/推定維持率仕様.md、正本は doc/投資戦略.md):
+  - 張りたい量: ふだん 1.2倍。信用評価損益率 (週次の公表値) が底値圏で改善したら3か月 1.6倍
+  - 張れる量: 2.0 × (1 − 口座の高値からの下落率 ÷ 20%)、下限 0.8倍。高値は四半期末に置き換える
+  - 今週の目標: 小さい方へ、先週の目標から週1段ずつ近づく
+  - 日本版 F&G・感情スコア・市場ステートは量に使わない (表示と日次ログに残す)
+  - 全保有が一律に 20% 下がっても追証にならない建玉で、多め側を頭打ちにする
 
 構成:
-  1. 純関数群 (weighted_state / fallback_state / evaluate_target) — I/O を持たない
+  1. 純関数群 (weighted_state / fallback_state / evaluate_target / equity_gap_for) — I/O を持たない
   2. I/O ヘルパー (read_* / build_margin_state / build_evaluation) — 鮮度切れは None
   3. 日次ログ (record_daily_log) と CLI
 """
@@ -65,9 +65,6 @@ FRESHNESS_DAYS = {
     "fng_us": 3,
     "index": 3,
 }
-
-# 感情スコアの有効期限 (入力日からの営業日数)。過ぎたら中立 0 として扱う
-EMOTION_VALID_WEEKDAYS = 5
 
 # 保有銘柄 (1保) の数量から出した運用総額と、残高 CSV の運用総額がこれ以上ずれたら注記する
 QTY_MISMATCH_RATIO = 0.01
@@ -132,61 +129,83 @@ def fallback_state(index_states):
     return state, score
 
 
-def evaluate_target(margin_state, emotion, fng_jp, state, hold_total_value,
-                    credit=None, credit_prev=None, credit_now=None):
-    """目標の維持率と、運用総額の適正エリアを評価して表示・ログ共通の dict を返す (issue #480)。
+def history_with_today(history, entry):
+    """過去のログ行に当日の暫定行を足した list (同じ日付の行は差し替える。古い順)。
+
+    画面と日次ログの両方がこれを通すので、ログにまだ行が無い反映初日も暫定行が起点になる。
+    """
+    rows = [h for h in history if h.get("date") != entry["date"]] + [entry]
+    return sorted(rows, key=lambda h: h.get("date") or "")
+
+
+def equity_gap_for(margin_state, history, day):
+    """保証金率を入れ直した証券会社の、入れ直しで入った自己資本の差の合計 (入出金・手数料・金利)。
+
+    day より前の最後のログ行と比べて基準日 (base_date) が変わった証券会社について、
+    基準値の history の、新しい基準日の行の equity_gap を全部足す (同じ日に2回入れ直しても合う)。
+    前の行に基準日が無ければ (#593 より前の行・初日) 0。
+    """
+    prev = next((h for h in sorted(history, key=lambda r: r.get("date") or "", reverse=True)
+                 if (h.get("date") or "") < day), None)
+    prev_by = (prev or {}).get("margin_by_broker") or {}
+    gap = 0.0
+    for row in margin_state["rows"]:
+        before = (prev_by.get(row["broker"]) or {}).get("base_date")
+        if before and row.get("base_date") and row["base_date"] != before:
+            gap += sum(g.get("equity_gap") or 0.0 for g in row.get("base_history") or []
+                       if g.get("date") == row["base_date"])
+    return gap
+
+
+def evaluate_target(margin_state, history, credit_history, day, *, hold_total_value, target_day=None):
+    """今週の目標の倍率と、運用総額の適正エリアを評価して表示・ログ共通の dict を返す (issue #593)。
 
     margin_state: build_margin_state() の戻り値
-    emotion: read_emotion() の戻り値 (未入力なら None)
-    state: 保有額で加重した市場ステート (取れなければ None)
-    credit / credit_prev: 信用評価損益率の最新値と前週値 (#535。取れなければ None)
-    credit_now: read_credit_nowcast() の戻り値 (推定値, 指数の日付, 騰落率%)。推せなければ None
+    history: 日次ログの過去の行 (当日の暫定行はここで足す)
+    credit_history: credit_balance.json の週次 history (買い向かいの合図)
+    day: 基準日 ("YYYY-MM-DD")
     hold_total_value: 保有銘柄 (1保) の数量 × 終値の合計。残高 CSV とのずれの注記に使う
+    target_day: 週の目標を引く日 (既定は day)。画面では実際の今日を渡す。day は 17時境界で
+      前日になるため、土曜の日中に金曜の週の目標が出てしまうのを防ぐ
 
-    適正エリアは、残高 CSV に保有がある証券会社 (楽天・SBI) の推定がすべて成立したときだけ出す。
-    片方だけの数字で全体の過不足を出さないため。出せないときは area_* を None にして理由を返す。
+    自己資本と適正エリアは、残高 CSV に保有がある証券会社 (楽天・SBI) の推定がすべて成立したときだけ出す。
+    片方だけの数字で全体の過不足を出さないため。出せないときは equity・area_* を None にする。
     """
-    score = emotion["score"] if emotion and not emotion.get("expired") else None
-    now_rate, now_date, now_move = credit_now or (None, None, None)
-    step, parts = margin_estimate.target_step(score, fng_jp, state, credit, credit_prev, now_rate)
+    until = margin_estimate.boost_until(credit_history, day)
     result = {
-        "emotion_score": score,
-        "emotion_date": (emotion or {}).get("date"),
-        "emotion_expired": bool(emotion and emotion.get("expired")),
-        "fng_jp": fng_jp,
-        "credit_eval_rate": credit,
-        "credit_prev_rate": credit_prev,
-        "credit_now_rate": now_rate,
-        "credit_now_date": now_date,
-        "credit_now_move": now_move,
-        "state": state,
-        "step": step,
-        "step_parts": parts,
-        "target_rate": margin_estimate.STEP_TARGET_RATES[step],
-        "margin_rate_pct": None,
-        "total_value": None,
-        "hold_total_value": hold_total_value,
-        "qty_mismatch": False,
-        "area_lower": None,
-        "area_upper": None,
-        "target_value": None,
-        "neutral_value": None,
-        "floor_capped": False,
-        "position": None,
-        "deviation": None,
+        "equity": None, "equity_gap": 0.0, "multiple": None,
+        "peak_equity": None, "drawdown_pct": None, "cap": None,
+        "want": margin_estimate.want_multiple(credit_history, day), "boost_until": until,
+        "week_target": None, "week_target_from": None,
+        "margin_rate_pct": None, "total_value": None, "hold_total_value": hold_total_value,
+        "qty_mismatch": False, "area_lower": None, "area_upper": None, "target_value": None,
+        "neutral_value": None, "floor_capped": False, "position": None, "deviation": None,
         "missing": margin_state["missing"],
     }
     combined = margin_state["combined"]
     if margin_state["missing"] or not combined:
         return result
+    eq = margin_estimate.equity(combined)
+    total = combined["spot_value"] + combined.get("nisa_value", 0.0) + combined["margin_value"]
+    result.update(equity=eq, multiple=total / eq if eq > 0 else None,
+                  equity_gap=equity_gap_for(margin_state, history, day),
+                  margin_rate_pct=combined["rate_pct"])
+    if result["multiple"] is None:
+        return result
+    today_row = {"date": day, "equity": eq, "multiple": result["multiple"],
+                 "equity_gap": result["equity_gap"]}
+    rows = history_with_today(history, today_row)
+    last = margin_estimate.drawdown_series(rows)[-1]
+    week = margin_estimate.target_for(margin_estimate.week_targets(rows, credit_history),
+                                      max(day, target_day or day))
+    result.update(peak_equity=last["peak"], drawdown_pct=last["drawdown"] * 100,
+                  cap=margin_estimate.room_cap(last["drawdown"]),
+                  week_target=week["target"], week_target_from=week["from"])
     area = margin_estimate.target_area(
         combined["guarantee"], combined["tate_total"], combined["spot_value"],
-        combined["margin_value"], step, combined.get("nisa_value", 0.0))
-    result.update({k: area[k] for k in (
-        "total_value", "area_lower", "area_upper", "target_value", "neutral_value",
-        "floor_capped", "position", "deviation")})
-    result["margin_rate_pct"] = combined["rate_pct"]
-    total = area["total_value"]
+        combined["margin_value"], week["target"] * eq, combined.get("nisa_value", 0.0))
+    result.update(area)
+    result["neutral_value"] = margin_estimate.BASE_MULTIPLE * eq  # バーの「ふだん」の印
     result["qty_mismatch"] = bool(
         total and abs((hold_total_value or 0) - total) / total >= QTY_MISMATCH_RATIO)
     return result
@@ -244,6 +263,11 @@ def read_credit_eval_rate(*, today=None):
         )
         return None, date_str, None
     return value, date_str, margin_estimate.credit_prev_rate(history)
+
+
+def read_credit_history():
+    """credit_balance.json の週次 history 全体 (買い向かいの合図を探すのに使う)。"""
+    return _read_json_history(os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json"))
 
 
 def read_credit_nowcast(market_db, rate, data_date, *, today=None):
@@ -367,19 +391,13 @@ def _save_exposure_log(payload):
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
-def read_emotion(*, db_path=None, today=None):
+def read_emotion(*, db_path=None):
     """最新の感情スコアを返す (issue #480)。未入力なら None。
 
-    入力日から EMOTION_VALID_WEEKDAYS 営業日 (平日) を過ぎたら expired=True にし、
-    評価では中立 0 として扱う (古い感情で目標を出さない)。
+    #593 から量の計算には使わない。日曜の見直しで記録し、保有銘柄タブに「記録」として出す。
     """
     rows = ps.list_emotion_scores(db_path=db_path)
-    if not rows:
-        return None
-    latest = rows[-1]
-    day = (today or datetime.now(ps.JST).date()).isoformat()
-    return {**latest,
-            "expired": day > ps._add_weekdays(latest["date"], EMOTION_VALID_WEEKDAYS)}
+    return rows[-1] if rows else None
 
 
 def margin_inputs(*, db_path=None):
@@ -439,7 +457,7 @@ def build_margin_state(*, db_path=None):
         row = {
             "broker": broker, "csv_as_of": min(csv_dates) if csv_dates else None,
             "base_date": (base or {}).get("date"), "base_rate": (base or {}).get("rate_pct"),
-            "last_gap": history[-1] if history else None,
+            "last_gap": history[-1] if history else None, "base_history": history,
             "rate_pct": None, "reason": None, "falls": {}, "skipped": 0,
         }
         snapshot, reason = margin_estimate.build_snapshot(broker, positions, closes)
@@ -464,9 +482,10 @@ def build_margin_state(*, db_path=None):
 
 
 def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None, hold_summary=None):
-    """今の目標の維持率と適正エリアを、画面と日次ログ共通の dict で返す (issue #480)。
+    """今週の目標の倍率と適正エリアを、画面と日次ログ共通の dict で返す (issue #593)。
 
-    市場ステートが取れない日も評価を出す (F&G が Extreme の日はステートを使わないため)。
+    市場ステート・日本版 F&G・感情スコア・信用評価損益率の最新値は、表示と日次ログのために集める
+    (量の計算に使うのは信用評価損益率の週次 history だけ)。
     """
     from webapp.helpers import summarize_hold_positions
 
@@ -483,9 +502,23 @@ def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None, 
     if margin_state is None:
         margin_state = build_margin_state(db_path=db_path)
     evaluation = evaluate_target(
-        margin_state, read_emotion(db_path=db_path), fng_jp, state, summary["total_value"],
-        credit, credit_prev, read_credit_nowcast(market_db, credit, credit_date, today=base_day))
+        margin_state, _load_exposure_log()["history"], read_credit_history(), base_day.isoformat(),
+        hold_total_value=summary["total_value"],
+        # 画面 (today 指定なし) は、週の目標を実際の今日で引く (土曜の日中も来週の目標を出す)
+        target_day=None if today else datetime.now().date().isoformat())
+    now_rate, now_date, now_move = read_credit_nowcast(
+        market_db, credit, credit_date, today=base_day) or (None, None, None)
+    emotion = read_emotion(db_path=db_path)
     evaluation.update({
+        "fng_jp": fng_jp,
+        "credit_eval_rate": credit,
+        "credit_prev_rate": credit_prev,
+        "credit_now_rate": now_rate,
+        "credit_now_date": now_date,
+        "credit_now_move": now_move,
+        "emotion_score": (emotion or {}).get("score"),
+        "emotion_date": (emotion or {}).get("date"),
+        "state": state,
         "state_is_fallback": state_is_fallback,
         "is_no_position": summary["total_value"] <= 0,
         "index_states": index_states,
@@ -538,6 +571,8 @@ def margin_by_broker(margin_state):
             "rate_pct": row["rate_pct"],
             "falls": {str(t): v for t, v in (row.get("falls") or {}).items()},
             "csv_as_of": row["csv_as_of"],
+            # 保証金率を入れ直した日 (equity_gap を当てる行を決める。#593)
+            "base_date": row["base_date"],
             "reason": row["reason"],
         }
         for row in margin_state["rows"]
@@ -545,7 +580,7 @@ def margin_by_broker(margin_state):
 
 
 def record_daily_log(*, db_path=None, today=None):
-    """当日の目標の維持率と適正エリアを exposure_log.json に記録する。同一日付は上書き。"""
+    """当日の目標の倍率と適正エリアを exposure_log.json に記録する。同一日付は上書き。"""
     entry = build_daily_entry(db_path=db_path, today=today)
     payload = _load_exposure_log()
     history = [h for h in payload["history"] if h.get("date") != entry["date"]]
@@ -566,12 +601,25 @@ def _man(value):
 
 
 def _format_entry(entry):
+    if "week_target" in entry:  # issue #593 以後: 倍率
+        def x(v):
+            return "—" if v is None else "%.2f倍" % v
+        return "%s  運用総額%s万円  自己資本%s万円  いま%s  張れる%s (下落%s) 張りたい%s  目標%s  適正%s〜%s万円  %s%s" % (
+            entry.get("date"), _man(entry.get("total_value")), _man(entry.get("equity")),
+            x(entry.get("multiple")), x(entry.get("cap")),
+            "—" if entry.get("drawdown_pct") is None else "%.1f%%" % entry["drawdown_pct"],
+            x(entry.get("want")), x(entry.get("week_target")),
+            _man(entry.get("area_lower")), _man(entry.get("area_upper")),
+            entry.get("position") or "—",
+            " [推定できない: %s]" % ",".join(m["broker"] for m in entry["missing"])
+            if entry.get("missing") else "",
+        )
     if "target_rate" not in entry:  # issue #480 より前の行 (基準運用額に対する運用比率)
         ratio = entry.get("ratio_pct")
         return "%s  %s万円  比率%s  %s (旧方式)" % (
             entry.get("date"), _man(entry.get("total_value")),
             "—" if ratio is None else "%.1f%%" % ratio, entry.get("state") or "—")
-    rate = entry.get("margin_rate_pct")
+    rate = entry.get("margin_rate_pct")  # issue #480〜#593 の行 (目標の維持率)
     return "%s  運用総額%s万円  維持率%s  段%s (%s) 目標%d%%  適正%s〜%s万円  %s%s" % (
         entry.get("date"), _man(entry.get("total_value")),
         "—" if rate is None else "%.1f%%" % rate,
@@ -601,7 +649,7 @@ def field_coverage(history):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="目標の維持率と運用総額の適正エリア (issue #362 / #480)"
+        description="今週の目標の倍率と運用総額の適正エリア (issue #362 / #480 / #593)"
     )
     sub = parser.add_subparsers(dest="command")
 

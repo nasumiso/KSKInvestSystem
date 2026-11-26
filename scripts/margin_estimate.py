@@ -14,7 +14,7 @@
 - 銘柄単位の合算スナップショットなので、基準日の前後で同じ銘柄の株が入れ替わっても区別できない
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 BROKERS = ("楽天", "SBI")
@@ -249,6 +249,8 @@ def combine(per_broker: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         "spot_value": spot_value,
         "nisa_value": sum(r.get("nisa_value", 0.0) for r in per_broker.values()),
         "margin_value": sum(r["margin_value"] for r in per_broker.values()),
+        # 自己資本 (equity) で信用の評価益を足すのに使う (#593)
+        "margin_rows": [row for r in per_broker.values() for row in r.get("margin_rows", [])],
         "rate_pct": guarantee / tate_total * 100.0,
         "falls": {t: fall_to_threshold(list(per_broker.values()), t) for t in THRESHOLDS},
         "low_brokers": [b for b, r in per_broker.items() if r["rate_pct"] < WARN_RATE_PCT],
@@ -284,13 +286,27 @@ def check_baseline_inputs(
 
 
 # ===========================================
-# 目標の維持率と、運用総額の適正エリア (issue #480)
+# 張る量: ふだん 1.2倍と口座の上限、信用の底で買い向かい (issue #593)
 # ===========================================
+# 正本は doc/投資戦略.md の「張りたい量」「張れる量」、検証は #594 (money_rule_sim.py)。
+# 倍率 = 運用総額 (現物時価 + NISA + 信用建玉の時価) ÷ 自己資本。
 
-# 感情スコアの段 → 目標の維持率 (%)。投資メモの感情スコアシートの「資産比」(自己資本 ÷ 建玉)
-STEP_TARGET_RATES = {-3: 50, -2: 60, -1: 70, 0: 80, 1: 90, 2: 100, 3: 120}
-NEUTRAL_STEP = 0
-# 感情スコアの選択肢 (段, 状態, 自己申告の目安)。投資メモの感情スコアシートから
+# 倍率の段 (小さい順)。今週の目標はこの段を週1段ずつ動く
+LADDER = [0.8, 1.0, 1.1, 1.2, 1.4, 1.6, 2.0]
+# 張りたい量: ふだんの倍率と、信用の底からの買い向かいの倍率・期間 (月)
+BASE_MULTIPLE = 1.2
+BOOST_MULTIPLE = 1.6
+BOOST_MONTHS = 3
+# 張れる量: 2.0 × (1 − 口座の高値からの下落率 ÷ 幅)、下限 0.8倍
+CAP_MAX = 2.0
+CAP_WIDTH = 0.20
+CAP_FLOOR = 0.8
+# 信用評価損益率の公表値は約1週遅れ。データ日 + この日数から使えるとみなす (#594 と同じ)
+CREDIT_LAG_DAYS = 7
+# 適正エリアは目標の運用総額 ± この割合
+AREA_BAND_RATIO = 0.05
+# 感情スコアの選択肢 (段, 状態, 自己申告の目安)。投資メモの感情スコアシートから。
+# #593 から量の計算には使わず、日曜の見直しで記録するだけ
 EMOTION_CHOICES = (
     (-3, "極度の恐怖", "パニック"),
     (-2, "恐怖", "全体的に弱気・損切りしたくなる・買うのが怖い / 売り焦り: 一時的な悪材料だが需給悪化でとにかく売りたい"),
@@ -300,31 +316,21 @@ EMOTION_CHOICES = (
     (2, "興奮", "含み益が増えてワクワクしている・買い増ししたい / 好決算S高剥がれを拾いたくなる"),
     (3, "過信", "自分が相場を読めると錯覚している"),
 )
-# 適正エリアは目標の維持率 ± この幅 (pt)
-AREA_BAND_PT = 5
-# 日本版 F&G の Extreme の境界。この外側では逆張りで 1 段ずらす
+# 日本版 F&G の Extreme の境界。量には使わず、Extreme Fear は準備、Extreme Greed は保有の点検の合図
 FNG_EXTREME_FEAR = 25
 FNG_EXTREME_GREED = 75
-# 信用評価損益率 (%) の5段階の境界 (#535)。一般的な目安で、自前データでは校正していない。
-# 天井圏 (−3 以上) は守る側へ 1、底値圏 (−15 以下) は前週より改善した週だけ攻める側へ 1
+# 信用評価損益率 (%) の5段階の境界 (#535)。一般的な目安。
+# 底値圏 (−15 以下) で前週より改善した週が買い向かいの合図 (#593)
 CREDIT_CEILING = -3.0
 CREDIT_BULL = -6.0
 CREDIT_NEUTRAL = -10.0
 CREDIT_BOTTOM = -15.0
-# 前週値として使う、最新との日付の離れの上限 (日)。週次の公表が抜けた週は改善を判定しない
+# 前週値として使う、最新との日付の離れの上限 (日)。表示の「改善」の判定に使う
 CREDIT_PREV_MAX_GAP_DAYS = 10
 # 日経平均の騰落 1% あたりの信用評価損益率の変化 (pt)。2026-04〜11 の30週の週次で傾き 0.71・相関 0.90。
-# 公表値は週次で約1週遅れるので、改善はこれで推した今日の値で見る。急落局面での当てはまりは未検証
+# 今日の値の推定 (表示だけ。買い向かいの合図は公表値で決める)
 CREDIT_NIKKEI_BETA = 0.71
-# F&G が Extreme でないとき、市場ステートで攻める側 (マイナス) にかける上限の段。
-# 上昇確定は上限なし。ステートが取れない日は上昇圧力下と同じにする
-STATE_STEP_FLOORS = {
-    "confirmed_uptrend": None,
-    "uptrend_under_pressure": -1,
-    "market_in_correction": 0,
-    None: -1,
-}
-# 感情に関係なく守る下限: 全保有が一律にこれだけ下がっても追証 (20%) にならない
+# 張れる量とは別に守る頭打ち: 全保有が一律にこれだけ下がっても追証 (20%) にならない
 FLOOR_FALL_PCT = 20
 MARGIN_CALL_RATE_PCT = 20
 
@@ -398,71 +404,164 @@ def credit_improving(rate: Optional[float], prev: Optional[float],
     return rate is not None and prev is not None and rate > prev
 
 
-def contrarian_direction(fng: Optional[float], credit: Optional[float],
-                         credit_prev: Optional[float],
-                         credit_now: Optional[float] = None) -> Tuple[int, int, int]:
-    """F&G と信用評価損益率の逆張りの向き (fng_dir, credit_dir, direction) を返す (−1 / 0 / +1)。
-
-    重ねない: 同じ向きなら 1 段だけ、逆向きなら打ち消して 0。
-    """
-    fng_dir = 0
-    if fng is not None:
-        fng_dir = -1 if fng < FNG_EXTREME_FEAR else 1 if fng >= FNG_EXTREME_GREED else 0
-    credit_dir = 0
-    if credit is not None and credit >= CREDIT_CEILING:
-        credit_dir = 1
-    elif credit is not None and credit <= CREDIT_BOTTOM and credit_improving(credit, credit_prev, credit_now):
-        credit_dir = -1
-    direction = 0 if fng_dir and credit_dir and fng_dir != credit_dir else fng_dir or credit_dir
-    return fng_dir, credit_dir, direction
-
-
 def format_step(step: int) -> str:
     """段を表示用の文字列にする (+1 / 0 / −1)。"""
     return f"{step:+d}".replace("+0", "0").replace("-", "−")
 
 
-def target_step(emotion: Optional[int], fng: Optional[float], state: Optional[str],
-                credit: Optional[float] = None,
-                credit_prev: Optional[float] = None,
-                credit_now: Optional[float] = None) -> Tuple[int, List[str]]:
-    """感情スコア・日本版 F&G・信用評価損益率・市場ステートから目標の段 (−3〜+3) を決める。
 
-    emotion: 有効な感情スコア (期限切れ・未入力は None で、中立 0 として扱う)
-    credit / credit_prev: 信用評価損益率の最新値と前週値 (取れなければ None)
-    credit_now: 日経平均から推した今日の値 (credit_nowcast。推せなければ None で前週比を使う)
-    Returns: (段, 決まり方の説明の list)。例 (−1, ["感情 0", "F&G Extreme Fear (22) で −1"])
+def ladder_floor(x: float) -> float:
+    """x 以下で一番高い段。x が一番下の段より小さければ一番下の段。"""
+    below = [v for v in LADDER if v <= x + 1e-9]
+    return below[-1] if below else LADDER[0]
+
+
+def step_toward(current: float, target: float) -> float:
+    """いまの段から目標の段へ、隣の段を1つだけ動く。"""
+    i, j = LADDER.index(current), LADDER.index(ladder_floor(target))
+    return LADDER[i + (j > i) - (j < i)]
+
+
+def room_cap(drawdown: float, width: float = CAP_WIDTH) -> float:
+    """張れる量: 2.0 × (1 − 口座の高値からの下落率 ÷ 幅)、下限 0.8倍。drawdown は 0〜1。"""
+    return max(CAP_FLOOR, CAP_MAX * (1 - drawdown / width))
+
+
+def equity(est: Dict[str, Any]) -> float:
+    """推定 (estimate() の結果か、その合算) から自己資本を出す。
+
+    受入保証金 G = 現金 + 0.8·代用の現物 − 信用の評価損 で、評価益を含まない。
+    自己資本 = 現金 + 現物 + NISA + 信用の評価損益 = G + 0.2·現物 + NISA + 信用の評価益。
     """
-    step = NEUTRAL_STEP if emotion is None else int(emotion)
-    parts = ["感情 未入力 (0)" if emotion is None else f"感情 {format_step(step)}"]
-    fng_dir, credit_dir, direction = contrarian_direction(fng, credit, credit_prev, credit_now)
-    reasons = []
-    if fng_dir:
-        reasons.append(f"F&G {fng_label(fng)} ({fng:.0f})")
-    if credit_dir:
-        reasons.append(f"信用 {credit_label(credit)}{'で改善' if credit_dir < 0 else ''} ({credit:.1f}%)")
-    if direction:
-        step += direction
-        parts.append(f"{'と'.join(reasons)} で {format_step(direction)}"
-                     + (" (重ねない)" if len(reasons) == 2 else ""))
-    else:
-        if reasons:
-            parts.append(f"{'と'.join(reasons)} が逆向きで打ち消し")
-        floor = STATE_STEP_FLOORS.get(state, STATE_STEP_FLOORS[None])
-        if floor is not None and step < floor:
-            step = floor
-            parts.append(f"市場ステートの上限で {format_step(floor)}")
-    return max(-3, min(3, step)), parts
+    gains = sum(max(0.0, q * (c - a)) for q, a, c in est.get("margin_rows") or [])
+    return (est["guarantee"] + (1 - SUBSTITUTE_RATIO) * est["spot_value"]
+            + est.get("nisa_value", 0.0) + gains)
+
+
+def _add_months(day: date, months: int) -> date:
+    """暦の月を足す。月末を超える日はその月の末日に寄せる。"""
+    y, m = divmod(day.month - 1 + months, 12)
+    y, m = day.year + y, m + 1
+    for d in range(day.day, 0, -1):
+        try:
+            return date(y, m, d)
+        except ValueError:
+            continue
+    raise ValueError(day)
+
+
+def boost_signals(credit_history: List[Dict[str, Any]]) -> List[str]:
+    """買い向かいの合図が使えるようになった日 (データ日 + CREDIT_LAG_DAYS) の list (古い順)。
+
+    合図は、公表値が底値圏 (−15% 以下) で、1つ前の公表値より改善した週 (#594 の _credit_confirms と同じ)。
+    """
+    rows = sorted((h for h in credit_history or []
+                   if h.get("date") and h.get("credit_eval_rate") is not None),
+                  key=lambda h: h["date"])
+    out = []
+    for prev, now in zip(rows, rows[1:]):
+        rate = now["credit_eval_rate"]
+        if rate <= CREDIT_BOTTOM and rate > prev["credit_eval_rate"]:
+            out.append((date.fromisoformat(now["date"]) + timedelta(days=CREDIT_LAG_DAYS)).isoformat())
+    return out
+
+
+def boost_until(credit_history: List[Dict[str, Any]], day: str) -> Optional[str]:
+    """day 以前の最後の合図から BOOST_MONTHS か月後の日。day がその日以前なら買い向かいの期間。
+
+    合図が続けば延びる。合図のあとに悪化しても取り消さない (#594 の検証と同じ)。
+    期間が終わっている・合図が無いなら None。
+    """
+    known = [s for s in boost_signals(credit_history) if s <= day]
+    if not known:
+        return None
+    until = _add_months(date.fromisoformat(known[-1]), BOOST_MONTHS).isoformat()
+    return until if day <= until else None
+
+
+def want_multiple(credit_history: List[Dict[str, Any]], day: str) -> float:
+    """張りたい量: ふだん 1.2倍、買い向かいの期間は 1.6倍。"""
+    return BOOST_MULTIPLE if boost_until(credit_history, day) else BASE_MULTIPLE
+
+
+def _quarter(day: str) -> Tuple[int, int]:
+    return int(day[:4]), (int(day[5:7]) - 1) // 3
+
+
+def drawdown_series(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """日次ログの equity を古い順にたどり、各行の高値と下落率 (0〜1) を返す。
+
+    高値は更新したときだけ上げる。四半期が変わった最初の行の前で、高値を直前の行の資産に置き換える。
+    equity_gap (保証金率の入れ直しで入った入出金などの差) がある行は、高値を同じ額だけずらす。
+    equity が無い行は飛ばす。Returns: [{"date", "equity", "peak", "drawdown"}]
+    """
+    out: List[Dict[str, Any]] = []
+    peak = None
+    for h in sorted(history, key=lambda r: r.get("date") or ""):
+        e = h.get("equity")
+        if e is None or not h.get("date"):
+            continue
+        if peak is None:
+            peak = e
+        else:
+            if _quarter(h["date"]) != _quarter(out[-1]["date"]):
+                peak = out[-1]["equity"]
+            peak += h.get("equity_gap") or 0.0
+        peak = max(peak, e)
+        out.append({"date": h["date"], "equity": e, "peak": peak,
+                    "drawdown": 1 - e / peak if peak > 0 else 0.0})
+    return out
+
+
+def _week_start(day: str) -> str:
+    """day を含む週の土曜 (週は土曜始まり。土日の見直しで来週の目標を出すため)。"""
+    d = date.fromisoformat(day)
+    return (d - timedelta(days=(d.weekday() - 5) % 7)).isoformat()
+
+
+def week_targets(history: List[Dict[str, Any]], credit_history: List[Dict[str, Any]]
+                 ) -> List[Dict[str, Any]]:
+    """週ごとの目標の倍率を、日次ログから計算し直す (状態は持たない)。
+
+    週は土曜始まり。ある週の目標は、前の週の最後の行で min(張りたい量, 張れる量) へ
+    先週の目標から1段動かす。最初の週は、起点の行の実際の倍率以下で一番高い段を張れる量で頭打ちにする。
+    history は equity と multiple がある行を使う (暫定行を含めてよい)。
+    Returns: [{"week", "target", "want", "cap", "from"}] (from は判定に使った行の日付)
+    """
+    rows = [h for h in sorted(history, key=lambda r: r.get("date") or "")
+            if h.get("equity") is not None and h.get("multiple") is not None]
+    if not rows:
+        return []
+    dd = {r["date"]: r["drawdown"] for r in drawdown_series(rows)}
+    last_of_week: Dict[str, Dict[str, Any]] = {}
+    for h in rows:
+        last_of_week[_week_start(h["date"])] = h
+    weeks = sorted(last_of_week)
+    first = rows[0]
+    target = min(ladder_floor(first["multiple"]), ladder_floor(room_cap(dd[first["date"]])))
+    out = [{"week": weeks[0], "target": target, "want": None, "cap": None, "from": first["date"]}]
+    for prev_week in weeks:
+        basis = last_of_week[prev_week]
+        want = want_multiple(credit_history, basis["date"])
+        cap = room_cap(dd[basis["date"]])
+        target = step_toward(target, min(want, cap))
+        nxt = (date.fromisoformat(prev_week) + timedelta(days=7)).isoformat()
+        out.append({"week": nxt, "target": target, "want": want, "cap": cap, "from": basis["date"]})
+    return out
+
+
+def target_for(weeks: List[Dict[str, Any]], day: str) -> Optional[Dict[str, Any]]:
+    """day を含む週の目標 (week_targets の1行)。無ければ None。"""
+    ws = _week_start(day)
+    return next((w for w in reversed(weeks) if w["week"] <= ws), None)
 
 
 def target_area(guarantee: float, tate_total: float, spot_value: float,
-                margin_value: float, step: int, nisa_value: float = 0.0) -> Dict[str, Any]:
-    """目標の維持率から、運用総額 (現物時価 + 信用建玉の時価) の適正エリアを出す。
+                margin_value: float, target_total: float, nisa_value: float = 0.0) -> Dict[str, Any]:
+    """目標の運用総額 (目標の倍率 × 自己資本) を中心に、運用総額の適正エリアを出す。
 
-    建玉の増減は信用で行う前提。目標の建玉 B_t = 受入保証金 ÷ 目標維持率 との差を時価に直す:
-    増やすときは時価で建つのでそのまま、減らすときは比例で返済するとみなして (時価 ÷ 建玉) を掛ける。
-    返済時に評価益が実現して保証金が増える分は入れない (減らす量がやや多めに出る)。
-    多め側の端は、全保有が一律に FLOOR_FALL_PCT 下がっても追証にならない建玉で頭打ちにする。
+    適正エリアは目標 ± AREA_BAND_RATIO。多め側の端は、全保有が一律に FLOOR_FALL_PCT 下がっても
+    追証にならない建玉で頭打ちにする (建玉の増減は信用で行う前提。減らすときは比例で返済するとみなす)。
     """
     # NISA の現物は代用にならないが、運用総額 (値動きを受ける額) には入る
     total = spot_value + nisa_value + margin_value
@@ -473,13 +572,9 @@ def target_area(guarantee: float, tate_total: float, spot_value: float,
             diff *= margin_value / tate_total
         return max(spot_value + nisa_value, total + diff)  # 信用を全部返済しても現物は残る
 
-    def value_for_rate(rate_pct: float) -> float:
-        return value_for_tate(guarantee / (rate_pct / 100.0))
-
-    rate = STEP_TARGET_RATES[step]
-    lower = value_for_rate(rate + AREA_BAND_PT)
-    upper = value_for_rate(rate - AREA_BAND_PT)
-    target = value_for_rate(rate)
+    lower = target_total * (1 - AREA_BAND_RATIO)
+    upper = target_total * (1 + AREA_BAND_RATIO)
+    target = target_total
     # 頭打ちは表示の下落率 (fall_to_threshold) より厳しめの線形式で決める。建玉が建単価で
     # 下がり、評価益も減ると見る (G − T·B) / (B + 0.8·S) ≥ 下落率 f を B について解く:
     # B ≤ (G − 0.8·f·S) / (T + f)
@@ -497,8 +592,6 @@ def target_area(guarantee: float, tate_total: float, spot_value: float,
     else:
         position, deviation = "within", 0.0
     return {
-        "step": step, "target_rate": rate, "total_value": total,
-        "area_lower": lower, "area_upper": upper, "target_value": target,
-        "neutral_value": min(value_for_rate(STEP_TARGET_RATES[NEUTRAL_STEP]), floor_value),
+        "total_value": total, "area_lower": lower, "area_upper": upper, "target_value": target,
         "floor_capped": floor_capped, "position": position, "deviation": deviation,
     }
