@@ -41,7 +41,7 @@ CREDIT_LAG_DAYS = 7                           # 信用の公表値は約1週遅�
 VOL_WINDOW, VOL_WARMUP, VOL_PCTL = 20, 60, 0.8  # B5: 下方ボラの窓・判定しない初めの日数・閾値
 VI_K, BETA_DEFAULT, BETA_WARMUP = 3.0, 1.5, 60  # B6: k・β の初期値・β を出さない初めの日数
 MA_DAYS = 200                                 # 200日線の版の移動平均の日数
-BOOST_DAYS = 63                               # 最終案: 信用の底から買い向かう期間 (約3か月)
+BOOST_DAYS = 63                               # 最終案: 信用評価損益率の底から買い向かう期間 (約3か月)
 
 # 相場温度 → 張りたい量の倍率 (資金管理の検証_2026-11.md の版ごとの表)。−3・+3 を入れない版は −2・+2 として扱う
 _TREND_DOWN = {-2: 1.0, -1: 1.1, 0: 1.2, 1: 1.2, 2: 1.2}
@@ -58,7 +58,7 @@ TABLES = {
     # 旧方式 (推定維持率仕様の #480・#535): 全域の逆張り。目標維持率 50〜120% に当たる倍率
     # 文献の時系列モメンタムに近い遅い物差し: 日経平均が200日線の上なら 1.4倍、下なら 1.0倍 (試す前に決め打ち)
     "MA200": {1: 1.4, -1: 1.0},
-    # 最終案 (2026-11-26 決定): ふだん 1.2倍、信用の底 (−15% 以下で改善) から3か月は 1.6倍
+    # 最終案 (2026-11-26 決定): ふだん 1.2倍、信用評価損益率の底 (−15% 以下で改善) から3か月は 1.6倍
     "FINAL": {0: 1.2, 1: 1.6},
     "OLD": {-3: 2.0, -2: 1.6, -1: 1.4, 0: 1.2, 1: 1.1, 2: 1.0, 3: 0.8},
 }
@@ -193,7 +193,7 @@ VERSIONS: List[Tuple[str, Dict[str, Any]]] = [
     ("旧方式 (感情 0)", {"table": "OLD", "cap": False, "direct": True, "temp": "temp_old0"}),
     ("旧方式 (感情 = 市場に沿う)", {"table": "OLD", "cap": False, "direct": True, "temp": "temp_old_fng"}),
     ("上限 + 200日線 (上1.4・下1.0)", {"table": "MA200", "temp": "temp_ma200"}),
-    ("最終案 (1.2倍・上限・信用の底で1.6倍)", {"table": "FINAL", "temp": "temp_final"}),
+    ("最終案 (1.2倍・上限・信用評価損益率の底で1.6倍)", {"table": "FINAL", "temp": "temp_final"}),
     ("上限 + 一定1.4倍", {"table": "flat14"}),
     ("上限 + 一定1.6倍", {"table": "flat16"}),
 ]
@@ -252,7 +252,7 @@ def build_weekly(days: List[Dict[str, Any]], breadth, vi, jgb, credit,
     r_by = {d["date"]: d["r"] for d in days}
     out: Dict[str, Dict[str, Any]] = {}
     downs: List[float] = []  # B5: 過去の 20日下方ボラ (保有の r、倍率をかける前)
-    last_bottom = -10 ** 9   # 最終案: 信用の底の合図が出た営業日の位置
+    last_bottom = -10 ** 9   # 最終案: 信用評価損益率の底の合図が出た営業日の位置
     for d in _weekly_dates(dates):
         idx = dates.index(d)
         fng = _fng_on(d, breadth, vi, jgb, full=d >= FULL_FNG_FROM)
@@ -409,7 +409,7 @@ def _episodes(flags: List[bool], gap: int = 60) -> List[int]:
 def nikkei_study() -> None:
     """日経平均の長期で、(1) 暴落の合図のあとの値動き (2) 最終案と一定倍率を比べる。
 
-    保有の日次リターンは約2年しか無く、信用の底の合図がほとんど出ないため、市場全体で確かめる。
+    保有の日次リターンは約2年しか無く、信用評価損益率の底の合図がほとんど出ないため、市場全体で確かめる。
     保有 (成長株中心) とは値動きが違うので、市場全体の傾向として読む。
     """
     import yfinance as yf
@@ -460,7 +460,7 @@ def nikkei_study() -> None:
                        ("口座の上限だけ (置き換えなし)", flat, {"table": "flat", "reset": False}),
                        ("最終案", weekly, {"table": "FINAL"}),
                        ("最終案 (置き換えなし)", weekly, {"table": "FINAL", "reset": False}),
-                       ("信用の底で1.6倍 (上限なし)", weekly, {"table": "FINAL", "cap": False})):
+                       ("信用評価損益率の底で1.6倍 (上限なし)", weekly, {"table": "FINAL", "cap": False})):
         res = simulate(sim_days, w, {**_DEFAULTS, **v})
         mt = metrics(res, None, None)
         log_print(f"| {name}{' (運用不能)' if res['halted'] else ''} | {_pct(mt['cagr'])} | {mt['max_dd'] * 100:.1f}% | "
