@@ -211,9 +211,33 @@ def save_margin_baseline():
     baselines = ps.list_margin_baselines()
     fills = ps.list_fills() if baselines else []
     saved, entered = [], False
-    for broker, field, cash_field in (("楽天", "rate_rakuten", "cash_rakuten"),
+    # 預り金 (保証金とは別) は SBI だけ。楽天は預り金も保証金に入るので常に 0 (#593)
+    for broker, field, cash_field in (("楽天", "rate_rakuten", None),
                                       ("SBI", "rate_sbi", "cash_sbi")):
         raw = (request.form.get(field) or "").strip()
+        raw_cash = (request.form.get(cash_field) or "").replace(",", "").strip() if cash_field else ""
+        try:
+            cash = float(raw_cash) if raw_cash else None
+        except ValueError:
+            cash = -1.0
+        if cash is not None and cash < 0:
+            entered = True
+            flash(f"{broker}: 預り金は 0 以上の数値 (円) で入力してください", "error")
+            continue
+        old = baselines.get(broker)
+        if not raw and cash is not None:
+            # 預り金だけの更新。保証金率の基準値はそのままで、差を入出金などとして下落率から外す
+            entered = True
+            if old is None:
+                flash(f"{broker}: 先に保証金率を入れてください", "error")
+                continue
+            prev_cash = old.get("outside_cash", 0.0)
+            history = list(old.get("history") or [])
+            history.append({"date": today, "equity_gap": round(cash - prev_cash), "cash_only": True})
+            ps.set_margin_baseline({**old, "outside_cash": cash, "cash_date": today,
+                                    "history": history[-me.HISTORY_LIMIT:]})
+            saved.append(f"{broker} の預り金")
+            continue
         if not raw:
             continue
         entered = True
@@ -234,16 +258,9 @@ def save_margin_baseline():
         if reason:
             flash(f"{broker}: {reason}", "error")
             continue
-        old = baselines.get(broker)
-        # 保証金の外の現金 (#593): 空欄なら前回の値を引き継ぐ
-        raw_cash = (request.form.get(cash_field) or "").replace(",", "").strip()
-        try:
-            outside_cash = float(raw_cash) if raw_cash else (old or {}).get("outside_cash", 0.0)
-        except ValueError:
-            outside_cash = -1.0
-        if outside_cash < 0:
-            flash(f"{broker}: 保証金の外の現金は 0 以上の数値 (円) で入力してください", "error")
-            continue
+        # 預り金 (保証金とは別): 空欄なら前回の値を引き継ぐ。楽天は常に 0
+        outside_cash = 0.0 if cash_field is None else (
+            cash if cash is not None else (old or {}).get("outside_cash", 0.0))
         history = list((old or {}).get("history") or [])
         new_base = me.make_baseline(broker, rate, snapshot, today, history, outside_cash)
         if old:
@@ -258,7 +275,7 @@ def save_margin_baseline():
         ps.set_margin_baseline(new_base)
         saved.append(broker)
     if saved:
-        flash(f"{'・'.join(saved)} の保証金率を保存しました", "success")
+        flash(f"{'・'.join(saved)} を保存しました", "success")
     elif not entered:
         flash("保証金率を入力してください", "error")
     return _redirect_with_return_query(default_status_query="hold")

@@ -1545,15 +1545,20 @@ class TestMarginBaseline:
         assert "記録 感情 -2 恐怖" in html
         assert re.search(r"の目標 <b[^>]*>2.0倍</b>", html)  # 感情では目標が動かない
 
-        # 保証金の外の現金 (#593) は自己資本にだけ足す: 10万 ÷ (4万 + 2万) = 1.67倍。空欄なら前回の値のまま
-        client.post("/portfolio/margin-baseline", data={"rate_rakuten": "40", "cash_rakuten": "20000"})
-        client.post("/portfolio/margin-baseline", data={"rate_rakuten": "40"})
-        html = client.get("/portfolio?status=hold").data.decode()
-        assert re.search(r"いま <b[^>]*>1.67倍</b>", html) and re.search(r"維持率 <b[^>]*>40%</b>", html)
-
         # SBI にも保有があるのに保証金率が無い → 片方だけで全体の過不足を出さない
         ps.upsert_position("SBI", "特定", "信用", "3496", 100, avg_price=1000.0, as_of=today,
                            db_path=portfolio_db_path)
         html = client.get("/portfolio?status=hold").data.decode()
         assert "適正エリア非表示 (SBI: 保証金率が未入力です)" in html
         assert "張れる量" not in html
+
+        # 預り金 (保証金とは別、SBI だけ #593) は自己資本にだけ足す。預り金だけの更新もできる
+        for kind in ("信用", "現物"):
+            ps.upsert_position_source("SBI", "特定", kind, as_of=today, row_count=1, db_path=portfolio_db_path)
+        client.post("/portfolio/margin-baseline", data={"rate_sbi": "40", "cash_sbi": "20000"})
+        client.post("/portfolio/margin-baseline", data={"cash_sbi": "60000"})  # 保証金率は空欄
+        html = client.get("/portfolio?status=hold").data.decode()
+        # 建玉 20万 ÷ (楽天 4万 + SBI 4万 + 預り金 6万) = 1.43倍。維持率は預り金を入れず 40%
+        assert re.search(r"いま <b[^>]*>1.43倍</b>", html) and re.search(r"維持率 <b[^>]*>40%</b>", html)
+        sbi = ps.list_margin_baselines(db_path=portfolio_db_path)["SBI"]
+        assert sbi["history"][-1] == {"date": today, "equity_gap": 40000, "cash_only": True}

@@ -440,7 +440,7 @@ def equity(est: Dict[str, Any]) -> float:
 
     受入保証金 G = 保証金の現金 + 0.8·代用の現物 − 信用の評価損 で、評価益を含まない。
     自己資本 = 現金 + 現物 + NISA + 信用の評価損益
-             = G + 0.2·現物 + NISA + 信用の評価益 + 保証金の外の現金 (入れ直しのときに入力)。
+             = G + 0.2·現物 + NISA + 信用の評価益 + 預り金 (保証金とは別。SBI だけ入力)。
     """
     gains = sum(max(0.0, q * (c - a)) for q, a, c in est.get("margin_rows") or [])
     return (est["guarantee"] + (1 - SUBSTITUTE_RATIO) * est["spot_value"]

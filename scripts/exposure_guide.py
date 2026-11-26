@@ -139,21 +139,24 @@ def history_with_today(history, entry):
 
 
 def equity_gap_for(margin_state, history, day):
-    """保証金率を入れ直した証券会社の、入れ直しで入った自己資本の差の合計 (入出金・手数料・金利)。
+    """保証金率・預り金を入れ直した証券会社の、入れ直しで入った自己資本の差の合計 (入出金・手数料・金利)。
 
-    day より前の最後のログ行と比べて基準日 (base_date) が変わった証券会社について、
-    基準値の history の、新しい基準日の行の equity_gap を全部足す (同じ日に2回入れ直しても合う)。
-    前の行に基準日が無ければ (#593 より前の行・初日) 0。
+    day より前の最後のログ行と比べて、基準日 (base_date) か預り金だけを更新した日 (cash_date) が
+    変わった証券会社について、基準値の history のその日付の行の equity_gap を全部足す
+    (同じ日に2回入れ直しても合う)。前の行に基準日が無ければ (#593 より前の行・初日) 0。
     """
     prev = next((h for h in sorted(history, key=lambda r: r.get("date") or "", reverse=True)
                  if (h.get("date") or "") < day), None)
     prev_by = (prev or {}).get("margin_by_broker") or {}
     gap = 0.0
     for row in margin_state["rows"]:
-        before = (prev_by.get(row["broker"]) or {}).get("base_date")
-        if before and row.get("base_date") and row["base_date"] != before:
-            gap += sum(g.get("equity_gap") or 0.0 for g in row.get("base_history") or []
-                       if g.get("date") == row["base_date"])
+        before = prev_by.get(row["broker"]) or {}
+        if not before.get("base_date") or not row.get("base_date"):
+            continue
+        dates = {d for key in ("base_date", "cash_date")
+                 if (d := row.get(key)) and d != before.get(key)}
+        gap += sum(g.get("equity_gap") or 0.0 for g in row.get("base_history") or []
+                   if g.get("date") in dates)
     return gap
 
 
@@ -458,7 +461,10 @@ def build_margin_state(*, db_path=None):
             "broker": broker, "csv_as_of": min(csv_dates) if csv_dates else None,
             "base_date": (base or {}).get("date"), "base_rate": (base or {}).get("rate_pct"),
             "base_outside_cash": (base or {}).get("outside_cash"),
-            "last_gap": history[-1] if history else None, "base_history": history,
+            "cash_date": (base or {}).get("cash_date"),
+            # 預り金だけの更新 (cash_only) の行は推定のずれを持たないので飛ばす
+            "last_gap": next((h for h in reversed(history) if "estimated_pct" in h), None),
+            "base_history": history,
             "rate_pct": None, "reason": None, "falls": {}, "skipped": 0,
         }
         snapshot, reason = margin_estimate.build_snapshot(broker, positions, closes)
@@ -574,6 +580,7 @@ def margin_by_broker(margin_state):
             "csv_as_of": row["csv_as_of"],
             # 保証金率を入れ直した日 (equity_gap を当てる行を決める。#593)
             "base_date": row["base_date"],
+            "cash_date": row.get("cash_date"),
             "reason": row["reason"],
         }
         for row in margin_state["rows"]

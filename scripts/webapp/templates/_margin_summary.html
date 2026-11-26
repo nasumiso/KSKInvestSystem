@@ -5,21 +5,23 @@
   {%- for r in ms.rows %}
   {%- set rakuten = r.broker == '楽天' %}
   {%- set where = ('保証金率: iSPEED 資産・照会 → 余力・保証金率 → 国内株式 →「保証金率」(本日の追証判定用・新規建ではない方)\n'
-                   '外の現金: 資産合計欄の「預り金」(信用保証金・外貨は入れない)') if rakuten
+                   '楽天は預り金も保証金に入るので、預り金の欄は無い') if rakuten
                   else ('委託保証金率: 株アプリ 口座管理 → 余力／評価 →「委託保証金率 (A/B)×100」(参考委託保証金率ではない方)\n'
-                        '外の現金: 「現金残高等（合計）」−「委託保証金現金」') %}
+                        '預り金 (保証金とは別): 「現金残高等（合計）」−「委託保証金現金」(スィープ口座を含む)。預り金だけの更新もできる') %}
   <div class="margin-form-row">
     <span style="display:inline-block;width:2.5em;">{{ r.broker }}</span>
     <label>{{ '保証金率' if rakuten else '委託保証金率' }}
       <input type="number" name="{{ 'rate_rakuten' if rakuten else 'rate_sbi' }}" step="0.01" min="0.01" max="1000" style="width:5.5em;"
              {%- if r.base_rate is not none %} placeholder="{{ r.base_rate }}"{% endif %}> %</label>
-    <label>外の現金
-      <input type="number" name="{{ 'cash_rakuten' if rakuten else 'cash_sbi' }}" step="1" min="0" style="width:7em;"
+    {%- if not rakuten %}
+    <label>預り金 (保証金とは別)
+      <input type="number" name="cash_sbi" step="1" min="0" style="width:7em;"
              {%- if r.base_outside_cash is not none %} placeholder="{{ '%.0f'|format(r.base_outside_cash) }}"{% endif %}> 円</label>
+    {%- endif %}
     <span title="{{ where }}
 残高CSV {{ r.csv_as_of or '未取込' }}{% if r.base_date %} / 前回 {{ r.base_rate }}% ({{ r.base_date }}){% endif %}{% if r.last_gap %} / 前回の推定のずれ {{ '%+.1f'|format(r.last_gap.estimated_pct - r.last_gap.actual_pct) }}pt{% endif %}" style="cursor:help;color:#1a73e8;">(?)</span>
   </div>
   {%- endfor %}
-  <div class="margin-form-note" title="外の現金 = 信用の保証金に入っていない現金 (預り金など)。自己資本にだけ足し、保証金率には効かない">今日の残高CSVの取り込みと19時の日次バッチの後に入れる。外の現金は空欄なら前回のまま</div>
+  <div class="margin-form-note" title="預り金 (保証金とは別) = 信用の保証金に入っていない現金。自己資本にだけ足し、保証金率には効かない">保証金率は今日の残高CSVの取り込みと19時の日次バッチの後に入れる。預り金は空欄なら前回のまま</div>
   <button type="submit">保存</button>
 </form>
