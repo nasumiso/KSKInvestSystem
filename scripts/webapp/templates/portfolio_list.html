@@ -442,7 +442,7 @@
     <span style="display:inline-flex;align-items:center;gap:0.3em;"
           title="{{ b.category }} {{ '{:,}'.format(b.man) }}万円 ({{ b.ratio }}%)">
       <span style="width:10px;height:10px;border-radius:2px;background:{{ market_cat_colors.get(b.category, '#bdbdbd') }};display:inline-block;"></span>
-      {{ b.category }} {{ b.ratio }}%
+      {{ b.category }}
     </span>
     {%- endfor -%}
   </div>
