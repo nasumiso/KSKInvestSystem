@@ -18,7 +18,7 @@ import json
 import math
 import os
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1154,9 +1154,263 @@ def state_sizing_study() -> None:
             for b, (a, c, m, w) in zip((1.0, 1.1, 1.2, 1.4), consts[True])))
 
 
+# ==================================================
+# 日本版 F&G で抑える・買い向かう版を、日経VI の #610 と比べる (2026-11-27)
+# ==================================================
+
+FNG_ROWS = 700  # F&G 1回の計算に渡す営業日数。正規化の 490本 + 125日平均が足りる (全履歴と同じ値になる)
+
+
+def _fng_weekly(weeks: List[str], breadth: List[Dict[str, Any]], vi: List[Dict[str, Any]],
+                jgb: List[Dict[str, Any]]) -> Dict[str, Optional[float]]:
+    """判定日ごとの F&G。FULL_FNG_FROM より前は3成分 (モメンタム・VI の50日乖離・安全資産)、以後は5成分。"""
+    import bisect
+
+    import fear_greed_jp as fg
+
+    bd, vd, jd = [r["date"] for r in breadth], [v["date"] for v in vi], [j["date"] for j in jgb]
+    out = {}
+    for d in weeks:
+        i, k, m = bisect.bisect_right(bd, d), bisect.bisect_right(vd, d), bisect.bisect_right(jd, d)
+        rows = breadth[max(0, i - FNG_ROWS):i]
+        if d < FULL_FNG_FROM:
+            rows = [{"date": r["date"], "nikkei_close": r["nikkei_close"]} for r in rows]
+        f = fg.compute_fear_greed_jp(rows, vi[max(0, k - FNG_ROWS):k], jgb[max(0, m - FNG_ROWS - 100):m])
+        out[d] = f["score"] if f else None
+    return out
+
+
+def _rating_edges_from_cnn(dates: List[str], breadth, vi, jgb) -> None:
+    """日本版 F&G の5区分の境目を、CNN と同じ頻度で各区分が出る値として出す (2026-11-27 決定の出し直し用)。
+
+    CNN の日次の点数で、CNN の境目 (25/45/55/75) の下に入る日の累積割合を出し、日本版の日次の点数の同じ分位点を
+    境目にする。日本版は本番と同じ5成分の期間 (FULL_FNG_FROM〜) を使い、3成分の長期 (2005〜) は参考。
+    CNN の履歴は先頭に 50.0 の埋め草が続くので、最後の 50.0 の日までを落とす。
+    """
+    import requests
+
+    import fear_greed_jp as fg
+    import fng as cnn
+
+    resp = requests.get(cnn.FNG_URL + "/2020-09-01", headers=cnn.FNG_HEADERS, timeout=20)
+    resp.raise_for_status()
+    pts = [(datetime.fromtimestamp(p["x"] / 1000, timezone.utc).date().isoformat(), float(p["y"]))
+           for p in resp.json()["fear_and_greed_historical"]["data"]]
+    last_fill = max((i for i, (_, y) in enumerate(pts) if y == 50.0), default=-1)
+    us = [y for _, y in pts[last_fill + 1:]]
+    cum = [sum(y < e for y in us) / len(us) for e in (25, 45, 55, 75)]
+    days = [d for d in dates if d >= "2004-12-01"]
+    jp = _fng_weekly(days, breadth, vi, jgb)  # 判定日ではなく全営業日を渡す
+
+    def edges(sc: List[float]) -> str:
+        sc = sorted(sc)
+        return " / ".join(f"{sc[min(len(sc) - 1, int(len(sc) * q))]:.1f}" for q in cum)
+
+    five = [jp[d] for d in days if d >= FULL_FNG_FROM and jp[d] is not None]
+    three = [jp[d] for d in days if "2005-01-01" <= d < FULL_FNG_FROM and jp[d] is not None]
+    log_print(f"### 5区分の境目 (CNN と同じ頻度、日次)。今の境目 {' / '.join(map(str, fg.RATING_EDGES))}")
+    log_print(f"CNN {pts[last_fill + 1][0]}〜{pts[-1][0]} {len(us)}日 (埋め草 {last_fill + 1}日を除く)。"
+              f"区分の累積割合 {' / '.join(f'{c * 100:.1f}%' for c in cum)}")
+    log_print(f"日本版 5成分 {FULL_FNG_FROM}〜 {len(five)}日: {edges(five)}")
+    log_print(f"日本版 3成分 2005〜{FULL_FNG_FROM} {len(three)}日 (参考): {edges(three)}")
+
+
+def _band(weeks: List[str], val: Dict[str, Optional[float]], enter, leave) -> Dict[str, bool]:
+    """週ごとのかけ外し。enter(v) で入り、leave(v) で外れる。値が無い週は前の状態のまま。"""
+    out, on = {}, False
+    for d in weeks:
+        v = val.get(d)
+        if v is not None:
+            on = enter(v) or (on and not leave(v))
+        out[d] = on
+    return out
+
+
+def fng_study() -> None:
+    """日本版 F&G を、日経VI の #610 (30超で 0.8倍) と同じ枠で確かめる。条件は結果を見る前に決めた。
+
+    F&G は、2025-10-28 より前は3成分 (モメンタム・VI の50日乖離・安全資産) で作り直す。騰落と新高値は
+    約2年分しか取れないため。どの版も、今のルール (口座の上限・信用評価損益率の底で 1.6倍・週1段) に重ね、
+    下げるときはその週に下げ、買い向かいの間は抑えない。
+    - F1 F&G 25未満 (Extreme Fear) で 0.8倍まで、45以上で外す (VI の代わり)
+    - F2 F&G 45未満 (Fear 以下) で 0.8倍まで、55以上で外す (VI の代わり)
+    - F3 VI 30超 か F1 で 0.8倍まで
+    - H1 VI 30超で 0.8倍 + F&G 75以上 (Extreme Greed) で 1.0倍まで、55未満で外す
+    - X1 買い向かいの合図を、信用評価損益率の底から F&G 25未満の週に置き換える (3か月 1.6倍)。VI 30超で 0.8倍はそのまま
+    「VI の代わりになる」とは、2005〜 と 2009〜 の両方で、同じ平均倍率の一定倍率の補間より年率が高く、最大DD・
+    最悪の1か月が補間より悪くなく、かつ #610 より補間との差が良いこと。F3・H1 は #610 より良ければ足す候補。
+    あわせて、合図に入った週からの日経平均の値動き (1か月・3か月・3か月内の最安) を見る。
+    """
+    import yfinance as yf
+
+    import market_breadth as mb
+
+    df = yf.Ticker("^N225").history(start="1999-01-01", auto_adjust=False)["Close"]
+    px = {i.date().isoformat(): float(v) for i, v in df.items() if v == v}
+    live = mb.fetch_market_breadth_daily()
+    breadth = [{"date": d, "nikkei_close": c} for d, c in sorted(px.items()) if d < live[0]["date"]] + live
+    for r in live:
+        px[r["date"]] = r["nikkei_close"]
+    vi, jgb, credit_all = mb.fetch_nikkei_vi(), mb.fetch_jgb10(), mb.fetch_credit_balance_weekly()
+    vi_by = {v["date"]: v["nikkei_vi"] for v in vi}
+    dates = sorted(px)
+    all_weeks = [d for d in _weekly_dates(dates) if d >= "2004-12-01"]
+    fng = _fng_weekly(all_weeks, breadth, vi, jgb)
+    vi_w, last = {}, None
+    for d in dates:
+        last = vi_by.get(d, last)
+        vi_w[d] = last
+
+    # 作り直しの確かめ: 運用機に残る直近30日の本番値と、5成分の作り直しを比べる
+    prod_path = os.path.join(ks_util.DATA_DIR, "code_rank_data", "fear_greed_jp.json")
+    if os.path.exists(prod_path):
+        with open(prod_path, encoding="utf-8") as f:
+            prod = json.load(f).get("history", [])
+        re_ = _fng_weekly([h["date"] for h in prod], breadth, vi, jgb)
+        pairs = [(h["score"], re_[h["date"]]) for h in prod if re_.get(h["date"]) is not None]
+        if pairs:
+            import fear_greed_jp as fg
+            same = sum(fg._rating(a) == fg._rating(b) for a, b in pairs)
+            log_print(f"本番との突き合わせ: {len(pairs)}日、5区分の一致 {same}/{len(pairs)}、"
+                      f"差の絶対値の平均 {sum(abs(a - b) for a, b in pairs) / len(pairs):.1f}、"
+                      f"最大 {max(abs(a - b) for a, b in pairs):.1f}")
+    _rating_edges_from_cnn(dates, breadth, vi, jgb)
+    ok = [d for d in all_weeks if fng[d] is not None]
+    log_print(f"F&G の判定日: {ok[0]}〜{ok[-1]} ({len(ok)}週)。25未満 {sum(fng[d] < 25 for d in ok)}週、"
+              f"75以上 {sum(fng[d] >= 75 for d in ok)}週")
+
+    # 合図に入った週からの日経平均の値動き (2005〜)
+    log_print("### 合図に入った週からの日経平均 (2005〜、入った週の金曜の引けから)")
+    log_print("| 合図 | 回数 | 1か月後 平均 | 3か月後 平均 | 3か月後に下 | 3か月内の最安 中央値 | 3か月内の最安 最悪 |")
+    log_print("|---|---|---|---|---|---|---|")
+    ws = [d for d in all_weeks if d >= "2005-01-01"]
+    vi_on = _band(ws, {d: vi_w[d] for d in ws}, lambda v: v > 30, lambda v: v < 25)
+    f1 = _band(ws, fng, lambda v: v < 25, lambda v: v >= 45)
+    hot = _band(ws, fng, lambda v: v >= 75, lambda v: v < 55)
+    f_only = {d: f1[d] and not vi_on[d] for d in ws}
+    f_vi = {d: f1[d] and vi_on[d] for d in ws}
+    sigs = [("全ての週", {d: True for d in ws}, False), ("VI 30超に入った", vi_on, True),
+            ("F&G 25未満に入った", f1, True), ("F&G 25未満で VI 30以下", f_only, True), ("F&G 25未満で VI 30超", f_vi, True),
+            ("F&G 75以上に入った", hot, True)]
+    for name, flag, entry in sigs:
+        fw1, fw3, low = [], [], []
+        for j, d in enumerate(ws):
+            if not flag[d] or (entry and j and flag[ws[j - 1]]):
+                continue
+            i = dates.index(d)
+            if i + 63 >= len(dates):
+                continue
+            fw1.append(px[dates[i + 21]] / px[d] - 1)
+            fw3.append(px[dates[i + 63]] / px[d] - 1)
+            low.append(min(px[x] for x in dates[i + 1:i + 64]) / px[d] - 1)
+        if fw3:
+            log_print(f"| {name} | {len(fw3)} | {_pct(sum(fw1) / len(fw1))} | {_pct(sum(fw3) / len(fw3))} | "
+                      f"{sum(x < 0 for x in fw3)}/{len(fw3)} | {_pct(sorted(low)[len(low) // 2])} | {_pct(min(low))} |")
+
+    for start, credit in (("2005-01-01", []), ("2009-06-12", credit_all)):
+        i0 = dates.index(next(d for d in dates if d >= start))
+        days = [{"date": dates[i], "r": px[dates[i]] / px[dates[i - 1]] - 1} for i in range(max(1, i0), len(dates))]
+        _fng_compare(f"日経平均 {start[:7]}〜", days, credit, fng, vi_w)
+    if os.path.exists(EQUITY_PATH):
+        with open(EQUITY_PATH, encoding="utf-8") as f:
+            eq = json.load(f)["days"]
+        _fng_compare("保有 2025-01〜", [{"date": d["date"], "r": d["r"]} for d in eq[1:]], credit_all, fng, vi_w)
+    # 結果を見たあとに足した頑健性の確かめ (F2・X1 が基準を通ったため)。一番良い値を選ぶためではない
+    for start, end, credit in (("2005-01-01", "2015-12-31", []), ("2016-01-01", None, []),
+                               ("2009-06-12", "2017-12-31", credit_all), ("2018-01-01", None, credit_all)):
+        i0 = dates.index(next(d for d in dates if d >= start))
+        days = [{"date": dates[i], "r": px[dates[i]] / px[dates[i - 1]] - 1} for i in range(max(1, i0), len(dates))
+                if end is None or dates[i] <= end]
+        _fng_compare(f"頑健性 日経平均 {start[:7]}〜{(end or '')[:7]}", days, credit, fng, vi_w, robust=True)
+
+
+def _fng_compare(title: str, days: List[Dict[str, Any]], credit: List[Dict[str, Any]],
+                 fng: Dict[str, Optional[float]], vi_w: Dict[str, Optional[float]], robust: bool = False) -> None:
+    """fng_study の版を1つの期間で動かし、同じ平均倍率の一定倍率の補間と比べる。
+
+    robust=True なら、F2・X1 の閾値・期間を振った版と、信用の底との併用を並べる (結果を見たあとに足した)。
+    """
+    ds = [d["date"] for d in days]
+    boost, _ = _boost_weekly(ds, credit)
+    weeks = list(boost)
+    fw = {d: fng.get(d) for d in weeks}
+    vi_on = _band(weeks, {d: vi_w.get(d) for d in weeks}, lambda v: v > 30, lambda v: v < 25)
+    f1 = _band(weeks, fw, lambda v: v < 25, lambda v: v >= 45)
+    f2 = _band(weeks, fw, lambda v: v < 45, lambda v: v >= 55)
+    hot = _band(weeks, fw, lambda v: v >= 75, lambda v: v < 55)
+    def fng_boost(th: float = 25, n: int = BOOST_DAYS, with_credit: bool = False) -> Dict[str, bool]:
+        """F&G が th 未満の週を合図に n 営業日 1.6倍。with_credit なら信用の底の合図でも。"""
+        out, lastx = {}, -10 ** 9
+        for d in weeks:
+            i = ds.index(d)
+            if fw[d] is not None and fw[d] < th:
+                lastx = i
+            out[d] = i - lastx <= n or (with_credit and boost[d]["temp"] == 1)
+        return out
+
+    x1 = fng_boost()  # X1: F&G 25未満の週を合図に BOOST_DAYS 営業日 1.6倍
+    crashes = [(c, s, e) for c, s, e in VI_CRASHES if ds[0] <= s <= ds[-1]]
+
+    def run(base: float, low_on: Optional[Dict[str, bool]] = None, mid_on: Optional[Dict[str, bool]] = None,
+            boost_on: Optional[Dict[str, bool]] = None):
+        name = f"_f{base}"
+        TABLES[name] = {0: base, 1: BOOST_MULTIPLE_SIM}
+        b = boost_on or {d: boost[d]["temp"] == 1 for d in weeks}
+        w = {}
+        for d in weeks:
+            c = math.inf
+            if not b[d]:
+                if low_on and low_on[d]:
+                    c = VI_LOW
+                elif mid_on and mid_on[d]:
+                    c = 1.0
+            w[d] = {**boost[d], "temp": 1 if b[d] else 0, "vi_cap": c}
+        res = simulate(days, w, {**_DEFAULTS, "table": name, "b6": True, "vi_jump": True})
+        mt = metrics(res, None, None)
+        a = [x["A"] for x in res["rows"]]
+        held = sum(1 for x in res["weeks"] if w[x["date"]]["vi_cap"] < x["desire"])
+        cells = [metrics(res, s, e) for _, s, e in crashes]
+        return (mt["avg_level"], mt["cagr"], mt["max_dd"], min(a[i] / a[i - 21] - 1 for i in range(21, len(a))),
+                held, cells)
+
+    consts = [run(x)[:4] for x in (1.0, 1.1, 1.2, 1.4)]
+    either = {d: vi_on[d] or f1[d] for d in weeks}
+    rows = [("抑えない (口座の上限" + (" + 信用の底で 1.6倍)" if credit else "だけ)"), run(1.2)),
+            ("#610 VI 30超で 0.8倍 (今のルール)", run(1.2, vi_on)),
+            ("F1 F&G 25未満で 0.8倍 (45以上で外す)", run(1.2, f1)),
+            ("F2 F&G 45未満で 0.8倍 (55以上で外す)", run(1.2, f2)),
+            ("F3 VI 30超 か F&G 25未満で 0.8倍", run(1.2, either)),
+            ("H1 #610 + F&G 75以上で 1.0倍 (55未満で外す)", run(1.2, vi_on, hot)),
+            ("X1 #610 + 買い向かいの合図を F&G 25未満に", run(1.2, vi_on, boost_on=x1))]
+    if robust:
+        rows = [rows[0], rows[1], rows[3]]  # 抑えない・#610・F2
+        for lo, hi in ((40, 50), (50, 60), (45, 45)):
+            rows.append((f"F2 変形: {lo}未満で 0.8倍 ({hi}以上で外す)",
+                         run(1.2, _band(weeks, fw, lambda v, t=lo: v < t, lambda v, t=hi: v >= t))))
+        f2 = _band(weeks, fw, lambda v: v < 45, lambda v: v >= 55)
+        rows.append(("F2 + VI 30超 (どちらかで 0.8倍)", run(1.2, {d: f2[d] or vi_on[d] for d in weeks})))
+        rows.append(("X1 #610 + 買い向かいの合図を F&G 25未満に", run(1.2, vi_on, boost_on=x1)))
+        rows.append(("X1 変形: F&G 20未満", run(1.2, vi_on, boost_on=fng_boost(20))))
+        rows.append(("X1 変形: 2か月", run(1.2, vi_on, boost_on=fng_boost(n=42))))
+        if credit:
+            rows.append(("X1 変形: 信用の底 か F&G 25未満", run(1.2, vi_on, boost_on=fng_boost(with_credit=True))))
+            rows.append(("F2 + X1 (信用の底 か F&G 25未満で買い向かう)", run(1.2, f2, boost_on=fng_boost(with_credit=True))))
+        else:
+            rows.append(("F2 + X1", run(1.2, f2, boost_on=x1)))
+    log_print(f"### {title} ({ds[0]}〜、{'最終案' if credit else '口座の上限'}に重ねる)")
+    log_print("| 運用 | 年率 | 最大DD | 最悪の1か月 | 平均倍率 | 抑えた週 | 補間との差: 年率 / 最大DD / 最悪の1か月 | "
+              + " | ".join(c for c, _, _ in crashes) + " |")
+    log_print("|---|---|---|---|---|---|---|" + "---|" * len(crashes))
+    for label, (avg, cagr, mdd, w21, held, cells) in rows:
+        ic, im, iw = _interp(consts, avg)
+        log_print(f"| {label} | {_pct(cagr)} | {mdd * 100:.1f}% | {_pct(w21)} | {avg:.2f} | {held} | "
+                  f"{(cagr - ic) * 100:+.2f}pt / {(mdd - im) * 100:+.1f}pt / {(w21 - iw) * 100:+.1f}pt | "
+                  + " | ".join(f"{_pct(m['return'])} / {m['max_dd'] * 100:.1f}%" for m in cells) + " |")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="資金管理のルールを復元した日次リターンで比べる (issue #594)")
-    parser.add_argument("command", choices=["run", "nikkei", "vi", "overlay", "state"],
+    parser.add_argument("command", choices=["run", "nikkei", "vi", "overlay", "state", "fng"],
                         help="run: 保有で全版を計算して保存 / nikkei: 日経平均の長期で確かめる / "
                              "vi: 日経VI で減らすとテールを小さくできるか (nikkei・vi は保存しない)")
     args = parser.parse_args()
@@ -1171,6 +1425,9 @@ def main() -> int:
         return 0
     if args.command == "state":
         state_sizing_study()
+        return 0
+    if args.command == "fng":
+        fng_study()
         return 0
     out = run()
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)

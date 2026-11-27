@@ -1522,7 +1522,7 @@ class TestMarginBaseline:
         _, today = margin_data
         monkeypatch.setattr(exposure_guide, "EXPOSURE_LOG_PATH", str(tmp_path / "exposure_log.json"))
         monkeypatch.setattr(exposure_guide, "read_credit_history", lambda: [])
-        monkeypatch.setattr(exposure_guide, "read_fng_jp", lambda **k: (50.0, today))
+        monkeypatch.setattr(exposure_guide, "read_fng_jp", lambda **k: (54.0, today))
         monkeypatch.setattr(exposure_guide, "read_index_states",
                             lambda *a, **k: ({}, {"topix": "2026-09-17"}))
         monkeypatch.setattr(exposure_guide, "read_credit_daily_estimate",

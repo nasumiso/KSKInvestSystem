@@ -17,6 +17,8 @@
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+import fear_greed_jp
+
 BROKERS = ("楽天", "SBI")
 # 代用有価証券の掛目 (一般的な値。銘柄ごとの掛目は追わない)
 SUBSTITUTE_RATIO = 0.8
@@ -365,9 +367,10 @@ EMOTION_CHOICES = (
     (2, "興奮", "含み益が増えてワクワクしている・買い増ししたい / 好決算S高剥がれを拾いたくなる"),
     (3, "過信", "自分が相場を読めると錯覚している"),
 )
-# 日本版 F&G の Extreme の境界。量には使わず、Extreme Fear は準備、Extreme Greed は保有の点検の合図
-FNG_EXTREME_FEAR = 25
-FNG_EXTREME_GREED = 75
+# 日本版 F&G の Extreme の境界 (区分の判定は fear_greed_jp と共通)。量には使わず、Extreme Fear は準備、
+# Extreme Greed は保有の点検の合図
+FNG_EXTREME_FEAR = fear_greed_jp.RATING_EDGES[0]
+FNG_EXTREME_GREED = fear_greed_jp.RATING_EDGES[3]
 # 信用評価損益率 (%) の5段階の境界 (#535)。一般的な目安。
 # 底値圏 (−15 以下) で前週より改善した週が買い向かいの合図 (#593)
 CREDIT_CEILING = -3.0
@@ -385,18 +388,10 @@ MARGIN_CALL_RATE_PCT = 20
 
 
 def fng_label(fng: Optional[float]) -> Optional[str]:
-    """日本版 F&G を CNN と同じ5区分の名前にする。Extreme の境界は判定と同じ (25未満 / 75以上)。"""
+    """日本版 F&G を5区分の名前にする (fear_greed_jp と同じ判定)。"""
     if fng is None:
         return None
-    if fng < FNG_EXTREME_FEAR:
-        return "Extreme Fear"
-    if fng < 45:
-        return "Fear"
-    if fng <= 55:
-        return "Neutral"
-    if fng < FNG_EXTREME_GREED:
-        return "Greed"
-    return "Extreme Greed"
+    return fear_greed_jp._rating(fng)
 
 
 def credit_label(rate: Optional[float]) -> Optional[str]:

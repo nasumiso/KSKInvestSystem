@@ -1681,29 +1681,10 @@ def _fgjp_accordion_html(market_db):
 
 
 def _fgjp_rating(score):
-    """日本版 Fear & Greed の 0-100 スコアを 5 段階 rating に変換 (CNN準拠)。"""
-    if score < 25:
-        return "Extreme Fear"
-    if score < 45:
-        return "Fear"
-    if score < 55:
-        return "Neutral"
-    if score < 75:
-        return "Greed"
-    return "Extreme Greed"
+    """日本版 Fear & Greed の 0-100 スコアを5区分の名前にする (判定は fear_greed_jp と共通)。"""
+    import fear_greed_jp
 
-
-def _fgjp_rating(score):
-    """日本版 Fear & Greed の 0-100 スコアを 5 段階 rating に変換 (CNN準拠)。"""
-    if score < 25:
-        return "Extreme Fear"
-    if score < 45:
-        return "Fear"
-    if score < 55:
-        return "Neutral"
-    if score < 75:
-        return "Greed"
-    return "Extreme Greed"
+    return fear_greed_jp._rating(score)
 
 
 def _credit_rows(market_db):

@@ -38,12 +38,16 @@ def test_normalize_min_max(value, history, expected):
 
 # --- rating 境界 ----------------------------------------------------------
 @pytest.mark.parametrize("score,rating", [
-    (24, "Extreme Fear"), (25, "Fear"), (44, "Fear"), (45, "Neutral"),
-    (54, "Neutral"), (55, "Greed"), (74, "Greed"), (75, "Extreme Greed"),
+    (24.9, "Extreme Fear"), (25, "Fear"), (50.9, "Fear"), (51, "Neutral"),
+    (56.9, "Neutral"), (57, "Greed"), (76.9, "Greed"), (77, "Extreme Greed"),
     (100, "Extreme Greed"),
 ])
 def test_rating_boundaries(score, rating):
+    """境目は CNN と同じ頻度になる値 (25 / 51 / 57 / 77)。保有タブの表示も同じ判定を使う。"""
+    import margin_estimate
+
     assert fg._rating(score) == rating
+    assert margin_estimate.fng_label(score) == rating
 
 
 # --- volatility: 50日平均との乖離 + 方向反転 (issue #524) ----------------

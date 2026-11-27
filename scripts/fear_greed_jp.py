@@ -48,6 +48,9 @@ _JGB10_DURATION = 9.0
 # 金利の最新日が F&G の基準日より何日 (暦日) 古ければ安全資産を外すか。
 # 金利は翌営業日公表なので通常1日遅れ。連休をまたいでも収まる長さにする。
 _JGB_MAX_LAG_DAYS = 7
+# 5区分の境目 (Extreme Fear / Fear / Neutral / Greed / Extreme Greed)。CNN の 2021〜 の日次で各区分が出る
+# 割合 (累積 13.9 / 47.2 / 63.2 / 94.6%) と同じになる、5成分の日本版の分位点 (2026-11-27、263日で暫定)
+RATING_EDGES = (25, 51, 57, 77)
 
 
 def normalize_percentile(value, history):
@@ -261,17 +264,15 @@ def compute_component_volatility_level(vi_history):
     return 100.0 - raw_score, vis[-1]  # VI は高いほど Fear なので反転、raw=VI実値
 
 
+_RATING_NAMES = ("Extreme Fear", "Fear", "Neutral", "Greed", "Extreme Greed")
+
+
 def _rating(score):
-    """0-100 スコアを CNN 準拠の 5 段階 rating に変換する。"""
-    if score < 25:
-        return "Extreme Fear"
-    if score < 45:
-        return "Fear"
-    if score < 55:
-        return "Neutral"
-    if score < 75:
-        return "Greed"
-    return "Extreme Greed"
+    """0-100 スコアを5区分の名前にする。境目は RATING_EDGES (CNN と同じ頻度になる値)。"""
+    for edge, name in zip(RATING_EDGES, _RATING_NAMES):
+        if score < edge:
+            return name
+    return _RATING_NAMES[-1]
 
 
 def compute_fear_greed_jp(breadth_history, vi_history, jgb_history=()):
@@ -411,8 +412,8 @@ def main():
     labels = [
         ("days", "日数"), ("mean_abs_move", "前日比の平均 (絶対値)"),
         ("max_abs_move", "前日比の最大 (絶対値)"),
-        ("extreme_fear_days", "Extreme Fear (<25) の日数"),
-        ("extreme_greed_days", "Extreme Greed (≥75) の日数"),
+        ("extreme_fear_days", f"Extreme Fear (<{RATING_EDGES[0]}) の日数"),
+        ("extreme_greed_days", f"Extreme Greed (≥{RATING_EDGES[3]}) の日数"),
         ("rating_changes", "rating が変わった回数"),
     ]
     tables = (("composite", "合成スコア"), ("breadth", "騰落"), ("volatility", "日経VI"),
