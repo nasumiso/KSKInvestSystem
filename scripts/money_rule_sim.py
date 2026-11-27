@@ -62,7 +62,7 @@ TABLES = {
     "FINAL": {0: 1.2, 1: 1.6},
     "FINAL11": {0: 1.1, 1: 1.6},  # VI の検証で、平均倍率を近づけて比べる相手
     "FINAL10": {0: 1.0, 1: 1.6},
-    "flat10": {t: 1.0 for t in range(-3, 4)},
+    "flat10": {t: 1.0 for t in range(-3, 4)},  # VI の段階型・過熱・市場ステートの検証で比べる相手
     "OLD": {-3: 2.0, -2: 1.6, -1: 1.4, 0: 1.2, 1: 1.1, 2: 1.0, 3: 0.8},
 }
 CREDIT_TOP = -3.0  # 旧方式: 信用評価損益率の天井圏
@@ -858,9 +858,197 @@ def _vi_with_final(title: str, dates: List[str], r: List[float], vi_by: Dict[str
                   f"{sum(1 for x in res['weeks'] if x['level'] >= 1.6)} | " + " | ".join(cells) + " |")
 
 
+# ==================================================
+# 過熱・市場ステートで抑える版 (#594 の洗い直し、2026-11-27)
+# ==================================================
+
+def replay_market_state(rows: List[Dict[str, Any]]) -> Dict[str, str]:
+    """日足 [{date, close, high, low, volume}] (古い順) から、市場ステートを日ごとに作り直す。
+
+    本番 (make_market_db._update_index_market_state) と同じ market_state の純関数を、同じ順で呼ぶ。
+    DD は前日比 −0.2% 以下かつ出来高増、またはストーリングデイ。窓は直近21営業日。
+    週足10MA 乖離は、今週 (途中) を含む直近10週の週の最後の終値の平均との乖離 (price.py と同じ)。
+    本番の直近30日との一致は確かめていない (市場ステート仕様の 2026-11-15 の再生と同じく近似)。
+    """
+    import market_state as ms
+
+    out, state, dd, last_ftd = {}, None, [], None
+    rally = {"rally_attempt_start_date": None, "rally_attempt_start_low": None}
+    dates = [r["date"] for r in rows]
+    week_close: Dict[Tuple[int, int], float] = {}
+    for i, t in enumerate(rows):
+        week_close[date.fromisoformat(t["date"]).isocalendar()[:2]] = t["close"]
+        if i == 0:
+            continue
+        p = rows[i - 1]
+        hist = dates[max(0, i - 20):i + 1][::-1]
+        chg = t["close"] / p["close"] - 1
+        hi52 = max(r["close"] for r in rows[max(0, i - 250):i + 1])
+        stalling = (t["close"] >= hi52 * 0.97 and 0 <= chg <= 0.004 and t["volume"] > p["volume"]
+                    and t["close"] < (t["high"] + t["low"]) / 2)
+        if (chg <= -0.002 and t["volume"] > p["volume"]) or stalling:
+            dd.append((t["date"], t["close"]))
+        dd = ms.drop_dd_before_ftd(ms.expire_distribution_days(dd, t["close"], hist), last_ftd)
+        today = {"date": t["date"], "close": t["close"], "low": t["low"], "high": t["high"], "volume": t["volume"]}
+        prev = {"close": p["close"], "volume": p["volume"], "low": p["low"]}
+        ftd = False
+        if state == ms.MARKET_IN_CORRECTION:
+            rally = ms.update_rally_attempt(rally, today, prev)
+            if prev["volume"] > 0 and today["volume"] > 0:
+                ftd = ms.check_follow_through_day(today, prev, rally, hist)
+        else:
+            rally = {"rally_attempt_start_date": None, "rally_attempt_start_low": None}
+        if ftd:
+            last_ftd = t["date"]
+            dd = ms.drop_dd_before_ftd(dd, last_ftd)
+        closes = [week_close[k] for k in sorted(week_close)][-10:]
+        kairi = (t["close"] / (sum(closes) / len(closes)) - 1) * 100 if len(closes) == 10 else None
+        state, _ = ms.derive_state(state, len(dd), ftd, ms.is_below_10ma_clearly(kairi))
+        out[t["date"]] = state
+    return out
+
+
+def _overlay_run(title: str, days: List[Dict[str, Any]], credit: List[Dict[str, Any]],
+                 caps: List[Tuple[str, Dict[str, float]]], bases: List[Tuple[str, str]]) -> None:
+    """口座の上限 (credit があれば最終案) に、週ごとの上限 caps [(名前, {判定日: 上限})] を重ねて比べる。
+
+    上限を超えたらその週に下げ、外れたら週1段で戻す (#610 と同じ形)。bases は比べる相手 [(名前, table)]。
+    """
+    ds = [d["date"] for d in days]
+    boost, _ = _boost_weekly(ds, credit)
+    table = "FINAL" if credit else "flat"
+    rows = [(name, {d: {**x, "vi_cap": math.inf} for d, x in boost.items()}, {"table": t}) for name, t in bases]
+    for name, cap in caps:
+        w = {d: {**x, "vi_cap": math.inf if credit and x["temp"] == 1 else cap.get(d, math.inf)}
+             for d, x in boost.items()}
+        rows.append((name, w, {"table": table, "b6": True, "vi_jump": True}))
+    crashes = [(c, s, e) for c, s, e in VI_CRASHES if ds[0] <= s <= ds[-1]]
+    log_print(f"### {title} ({ds[0]}〜、週1回見直し)")
+    log_print("| 運用 | 年率 | 最大DD | 最悪の1か月 | 平均倍率 | 抑えた週 | " + " | ".join(c for c, _, _ in crashes) + " |")
+    log_print("|---|---|---|---|---|---|" + "---|" * len(crashes))
+    for name, w, v in rows:
+        res = simulate(days, w, {**_DEFAULTS, **v})
+        mt = metrics(res, None, None)
+        a = [x["A"] for x in res["rows"]]
+        w21 = min(a[i] / a[i - 21] - 1 for i in range(21, len(a)))
+        held = sum(1 for x in res["weeks"] if x["cap"] < x["desire"] and w[x["date"]]["vi_cap"] < math.inf)
+        cells = []
+        for c, s, e in crashes:
+            m = metrics(res, s, e)
+            cells.append(f"{_pct(m['return'])} / {m['max_dd'] * 100:.1f}%")
+        log_print(f"| {name} | {_pct(mt['cagr'])} | {mt['max_dd'] * 100:.1f}% | {_pct(w21)} | {mt['avg_level']:.2f} | "
+                  f"{held} | " + " | ".join(cells) + " |")
+
+
+def overlay_study() -> None:
+    """過熱 (+3) で減らす案と、市場ステートどおりに減らす案を、#610 と同じ形 (その週に下げる) で測り直す。
+
+    #594 では、過熱は週1段のため 0.8倍にほぼ届かず、市場ステートは極端な1案 (100/50/0%) だけを
+    平均倍率の違う版と比べていた。条件は結果を見る前に決めた (資金管理の検証_2026-11.md の 6)。
+    """
+    import yfinance as yf
+
+    import market_breadth as mb
+
+    df = yf.Ticker("^N225").history(start="1999-01-01", auto_adjust=False)
+    ohlcv = [{"date": i.date().isoformat(), "close": float(r["Close"]), "high": float(r["High"]),
+              "low": float(r["Low"]), "volume": float(r["Volume"])} for i, r in df.iterrows() if r["Close"] == r["Close"]]
+    vi_by = {v["date"]: v["nikkei_vi"] for v in mb.fetch_nikkei_vi()}
+    credit = mb.fetch_credit_balance_weekly()
+    px = {r["date"]: r["close"] for r in ohlcv}
+    dates = [r["date"] for r in ohlcv]
+
+    def weekly_flags(start: str, fn) -> Dict[str, bool]:
+        ds = [d for d in dates if d >= start]
+        return {d: fn(d) for d in _weekly_dates(ds)}
+
+    def vi_now(d: str) -> Optional[float]:
+        return next((vi_by[x] for x in reversed(dates[:dates.index(d) + 1][-5:]) if x in vi_by), None)
+
+    def vi30(start: str) -> Dict[str, bool]:
+        on, out = False, {}
+        for d in _weekly_dates([x for x in dates if x >= start]):
+            v = vi_now(d)
+            if v is not None:
+                on = v > 30 or (on and v >= 25)
+            out[d] = on
+        return out
+
+    def days_from(start: str) -> List[Dict[str, Any]]:
+        i0 = dates.index(next(d for d in dates if d >= start))
+        return [{"date": dates[i], "r": px[dates[i]] / px[dates[i - 1]] - 1} for i in range(max(1, i0), len(dates))]
+
+    def cap(flags: Dict[str, bool], level: float = VI_LOW) -> Dict[str, float]:
+        return {d: level for d, f in flags.items() if f}
+
+    bases = [("口座の上限だけ", "flat"), ("口座の上限 (ふだん 1.1倍)", "FINAL11"), ("口座の上限 (ふだん 1.0倍)", "flat10")]
+
+    # --- 市場ステート (出来高のある 2004 から再生し、2005 から当てる) ---
+    first_vol = next(r["date"] for r in ohlcv if r["volume"] > 0)
+    state = replay_market_state([r for r in ohlcv if r["date"] >= first_vol])
+    sd = [d for d in state if d >= "2005-01-01"]
+    share = {s: sum(1 for d in sd if state[d] == s) / len(sd) for s in set(state[d] for d in sd)}
+    log_print(f"市場ステートの再生: {first_vol}〜、2005〜 の日数の割合 " + ", ".join(f"{k} {v * 100:.0f}%" for k, v in share.items()))
+    corr = weekly_flags("2005-01-01", lambda d: state.get(d) == "market_in_correction")
+    pres = weekly_flags("2005-01-01", lambda d: state.get(d) == "uptrend_under_pressure")
+    vi = vi30("2005-01-01")
+    m3 = {d: (0.8 if corr[d] else 1.0 if pres[d] else math.inf) for d in corr}
+    _overlay_run("市場ステートで抑える (日経平均、口座の上限)", days_from("2005-01-01"), [], [
+        ("M1 調整なら 0.8倍まで", cap(corr)),
+        ("M2 調整なら 1.0倍まで", cap(corr, 1.0)),
+        ("M3 調整 0.8倍・圧力下 1.0倍まで", {d: v for d, v in m3.items() if v < math.inf}),
+        ("VI 30超で 0.8倍まで (#610)", cap(vi)),
+        ("M4 VI 30超か調整なら 0.8倍まで", cap({d: vi[d] or corr[d] for d in vi})),
+    ], bases)
+    corr9 = {d: f for d, f in corr.items() if d >= "2009-06-12"}
+    vi9 = {d: f for d, f in vi.items() if d >= "2009-06-12"}
+    _overlay_run("市場ステートで抑える (日経平均、最終案)", days_from("2009-06-12"), credit, [
+        ("VI 30超で 0.8倍まで (#610)", cap(vi9)),
+        ("M4 VI 30超か調整なら 0.8倍まで", cap({d: vi9[d] or corr9[d] for d in vi9})),
+        ("M1 調整なら 0.8倍まで", cap(corr9)),
+    ], [("最終案", "FINAL"), ("最終案 (ふだん 1.1倍)", "FINAL11")])
+
+    # --- 過熱 ---
+    ma125 = {}
+    for i, d in enumerate(dates):
+        if i >= 124:
+            ma125[d] = sum(px[x] for x in dates[i - 124:i + 1]) / 125
+    h1 = weekly_flags("2001-01-04", lambda d: d in ma125 and px[d] / ma125[d] - 1 > 0.15)
+    h2 = weekly_flags("2001-01-04", lambda d: (vi_now(d) or 99) < 15)
+    h3 = weekly_flags("2009-06-12", lambda d: (_credit_confirms(d, credit)[1] or -99) >= -3.0)
+    _overlay_run("過熱で抑える (日経平均、口座の上限)", days_from("2001-01-04"), [], [
+        ("H1 125日線から +15% 超で 0.8倍まで", cap(h1)),
+        ("H2 VI 15 未満で 0.8倍まで", cap(h2)),
+    ], bases)
+    _overlay_run("過熱で抑える (日経平均 2009〜、口座の上限)", days_from("2009-06-12"), [], [
+        ("H1 125日線から +15% 超で 0.8倍まで", cap({d: f for d, f in h1.items() if d >= "2009-06-12"})),
+        ("H2 VI 15 未満で 0.8倍まで", cap({d: f for d, f in h2.items() if d >= "2009-06-12"})),
+        ("H3 信用評価損益率 −3% 以上で 0.8倍まで", cap(h3)),
+    ], bases)
+    # 合図のあと3か月のさらなる下落 (同じ局面を重ねない初日)。ふだんは全日
+    log_print("### 過熱の合図のあと3か月 (日経平均)")
+    log_print("| 合図 | 回数 | 3か月後 平均 | 3か月の間の最大下落 平均 / 最悪 | 合図が出ていた週の割合 |")
+    log_print("|---|---|---|---|---|")
+    idx = {d: i for i, d in enumerate(dates)}
+    for name, flags in (("ふだん (2001〜 の全日)", None), ("H1 125日線 +15% 超", h1), ("H2 VI 15 未満", h2),
+                        ("H3 信用 −3% 以上 (2009〜)", h3)):
+        if flags is None:
+            ep = [i for i, d in enumerate(dates) if d >= "2001-01-04"]
+            share_w = "—"
+        else:
+            on = [d for d, f in flags.items() if f]
+            ep = [idx[dates[i]] for i in _episodes([flags.get(d, False) for d in dates])]
+            share_w = f"{len(on) / len(flags) * 100:.0f}%"
+        ep = [i for i in ep if i + 63 < len(dates)]
+        r3 = [px[dates[i + 63]] / px[dates[i]] - 1 for i in ep]
+        dd3 = [min(px[dates[j]] for j in range(i, i + 64)) / px[dates[i]] - 1 for i in ep]
+        log_print(f"| {name} | {'—' if flags is None else len(ep)} | {_pct(sum(r3) / len(r3))} | "
+                  f"{sum(dd3) / len(dd3) * 100:.1f}% / {min(dd3) * 100:.1f}% | {share_w} |")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="資金管理のルールを復元した日次リターンで比べる (issue #594)")
-    parser.add_argument("command", choices=["run", "nikkei", "vi"],
+    parser.add_argument("command", choices=["run", "nikkei", "vi", "overlay"],
                         help="run: 保有で全版を計算して保存 / nikkei: 日経平均の長期で確かめる / "
                              "vi: 日経VI で減らすとテールを小さくできるか (nikkei・vi は保存しない)")
     args = parser.parse_args()
@@ -869,6 +1057,9 @@ def main() -> int:
         return 0
     if args.command == "vi":
         vi_study()
+        return 0
+    if args.command == "overlay":
+        overlay_study()
         return 0
     out = run()
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
