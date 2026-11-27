@@ -60,6 +60,10 @@ def test_volatility_vs_ma50_inverted(latest, expected):
     hist = [{"nikkei_vi": 20 + rng.uniform(-2, 2)} for _ in range(80)]
     score, raw = fg.compute_component_volatility(hist + [{"nikkei_vi": latest}])
     assert (score, raw) == (expected, latest)
+    # 合成の成分にも、点の元になった50日平均との乖離を残す (画面に出す)
+    vis = [h["nikkei_vi"] for h in hist[-49:]] + [latest]
+    vol = fg.compute_fear_greed_jp([], hist + [{"nikkei_vi": latest}])["components"]["volatility"]
+    assert vol["vs_ma_pct"] == round((latest / (sum(vis) / 50) - 1) * 100, 1)
 
 
 def test_volatility_level_alone_does_not_mean_fear():

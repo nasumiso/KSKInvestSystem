@@ -354,7 +354,7 @@ def test_fgjp_accordion_components_in_indicators(tmp_path, monkeypatch):
                 "momentum": {"score": 87.0, "raw": 19.24, "date": "2026-06-05"},
                 "strength": {"score": 72.4, "raw": 39, "date": "2026-06-05"},
                 "breadth": {"score": 76.6, "raw": 856, "date": "2026-06-05"},
-                "volatility": {"score": 77.9, "raw": 21.51, "date": "2026-06-04"},
+                "volatility": {"score": 77.9, "raw": 21.51, "vs_ma_pct": -7.0, "date": "2026-06-04"},
             },
         }],
     }
@@ -373,7 +373,7 @@ def test_fgjp_accordion_components_in_indicators(tmp_path, monkeypatch):
     # 成分の展開行: 各成分名 + 0-100スコア + 元データ実値
     assert "モメンタム" in html and "新高値強さ" in html
     assert "騰落ブレッドス" in html and "日経VI" in html
-    assert "21.51" in html          # 日経VI 実値
+    assert "50日平均比 -7.0% (VI 21.51)" in html  # 日経VI は点の元の乖離と実値
     assert "+39" in html            # 新高値-新安値 実値
     assert "+19.2%" in html         # モメンタム乖離率
     # 成分ごとの更新日を保持・表示する

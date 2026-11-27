@@ -206,6 +206,14 @@ def compute_component_breadth_daily(breadth_history):
     return normalize_percentile(diffs[-1], diffs[:-1][-_NORM_WINDOW:]), diffs[-1]
 
 
+def _vi_vs_ma(vis):
+    """VI の各日の、直近 _VI_MA_DAYS 日平均からの乖離率 (%) の列 (平均が取れる日から)。"""
+    return [
+        (vis[i] / (sum(vis[i - _VI_MA_DAYS + 1:i + 1]) / _VI_MA_DAYS) - 1.0) * 100.0
+        for i in range(_VI_MA_DAYS - 1, len(vis))
+    ]
+
+
 def compute_component_volatility(vi_history):
     """Market Volatility: 日経VI の50日移動平均からの乖離率を 0-100 化し方向反転 (issue #524)。
 
@@ -218,10 +226,7 @@ def compute_component_volatility(vi_history):
         return None
     # 正規化に使う直近2年分 (+最新) だけ乖離率を出す (VI の履歴は 1990年からある)
     vis = vis[-(_NORM_WINDOW + _VI_MA_DAYS):]
-    ratios = [
-        (vis[i] / (sum(vis[i - _VI_MA_DAYS + 1:i + 1]) / _VI_MA_DAYS) - 1.0) * 100.0
-        for i in range(_VI_MA_DAYS - 1, len(vis))
-    ]
+    ratios = _vi_vs_ma(vis)
     raw_score = normalize_percentile(ratios[-1], ratios[:-1][-_NORM_WINDOW:])
     return 100.0 - raw_score, vis[-1]
 
@@ -321,6 +326,10 @@ def compute_fear_greed_jp(breadth_history, vi_history, jgb_history=()):
             components[k] = None
         else:
             components[k] = {"score": round(c[0], 1), "raw": round(c[1], 2)}
+    # ボラティリティの点は VI の水準ではなく50日平均との乖離から出すので、画面に出せるよう乖離も残す
+    if components["volatility"] is not None:
+        vis = [r["nikkei_vi"] for r in vi_history if r.get("nikkei_vi") is not None]
+        components["volatility"]["vs_ma_pct"] = round(_vi_vs_ma(vis[-_VI_MA_DAYS:])[-1], 1)
     return {
         "score": round(score, 1),
         "rating": _rating(score),

@@ -1581,8 +1581,8 @@ _FGJP_COMPONENTS = [
      "1日の急落では大きく動かない。高いほど Greed。",
      _fmt_signed_int, "https://nikkei225jp.com/data/touraku.php"),
     ("volatility", "日経VI",
-     "日経VI (恐怖指数) の値。スコアは VI とその50日移動平均の乖離率から出す"
-     "(ふだんより高いほど Fear なので反転)。",
+     "日経VI (恐怖指数) の、直近50日移動平均からの乖離率。スコアは VI の水準ではなくこの乖離率から出す"
+     "(50日平均より高いほど Fear、低い (恐怖が引いてきた) ほど Greed)。括弧内は VI の値。",
      _fmt_vi, "https://nikkei225jp.com/data/vix.php"),
     ("safe_haven", "安全資産",
      "日経225 と 10年国債の20日騰落率の差 (%pt)。債券は金利の変化から近似。"
@@ -1653,6 +1653,8 @@ def _fgjp_accordion_html(market_db):
             date_text = _format_daily_date(comp.get("date", ""))
             value_html = ("%.0f" % cscore) if cscore is not None else "—"
             raw_html = fmt(craw) if craw is not None else ""
+            if key == "volatility" and comp.get("vs_ma_pct") is not None:
+                raw_html = "50日平均比 %+.1f%% (VI %s)" % (comp["vs_ma_pct"], raw_html)
             # バッジは 0-100 スコアを F&G 本体と同じ 5 段階 rating で統一表示
             if cscore is not None:
                 crate = _fgjp_rating(cscore)
