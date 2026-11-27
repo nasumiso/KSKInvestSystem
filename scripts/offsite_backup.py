@@ -1,6 +1,7 @@
 """不可逆データを運用機の外 (Google Drive) へ複製する (issue #482)。
 
-research / portfolio の最新バックアップ世代と trade_history/ ・ trade_review/ ・ portfolio_review/ ・ theme_news/ を
+research / portfolio の最新バックアップ世代と trade_history/ ・ trade_review/ ・ portfolio_review/ ・ theme_news/ ・
+code_rank_data/credit_by_issue/ を
 zip 1ファイルにまとめ、KS_DATA_DIR/offsite_backup_drive (運用機にだけ置く Drive フォルダへの
 symlink) へ置く。日次バッチ (shintakane_cron.sh) の末尾で呼び、失敗は終了コードで知らせる。
 
@@ -23,7 +24,9 @@ DRIVE_DIRNAME = "offsite_backup_drive"
 ZIP_FILENAME = "shintakane_irreplaceable.zip"
 SHELVE_NAMES = ("research_shelve", "portfolio_shelve")
 SHELVE_EXTENSIONS = (".dat", ".dir", ".bak")
-COPY_DIRS = ("trade_history", "trade_review", "portfolio_review", "theme_news")
+# code_rank_data/credit_by_issue は JPX が5営業日で消す銘柄ごとの信用残で、取り直せない (#612)
+COPY_DIRS = ("trade_history", "trade_review", "portfolio_review", "theme_news",
+             os.path.join("code_rank_data", "credit_by_issue"))
 
 
 def _latest_generation(data_dir, name):
