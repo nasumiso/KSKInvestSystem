@@ -1578,6 +1578,29 @@ def update_credit_balance():
 
 
 CREDIT_DAILY_EST_FILE = "credit_daily_est.json"
+# 銘柄ごとの信用残 (日ごとに1ファイル、期限なし)。JPX は5営業日より前を消すので取り直せない (issue #612)
+CREDIT_BY_ISSUE_DIR = "credit_by_issue"
+
+
+def _save_credit_by_issue(day, url, balances):
+    """銘柄ごとの信用残を code_rank_data/credit_by_issue/YYYY-MM-DD.json.gz に保存する (issue #612)。
+
+    同じ日のファイルがあれば書かない (後から値が変わらないように)。一時ファイルから差し替える。
+    """
+    import gzip
+
+    path = os.path.join(DATA_DIR, "code_rank_data", CREDIT_BY_ISSUE_DIR, f"{day}.json.gz")
+    if os.path.exists(path):
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = {"date": day, "source": url,
+               "columns": ["buy_shares", "buy_amount", "sell_shares", "sell_amount"],
+               "issues": balances}
+    tmp = path + ".tmp"
+    with gzip.open(tmp, "wt", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, path)
+    log_print(f"<---- 銘柄ごとの信用残 {day} {len(balances)}銘柄を保存")
 
 
 def update_credit_daily_estimate():
@@ -1587,6 +1610,7 @@ def update_credit_daily_estimate():
     記録済みの基準日は取り直さない (分割の扱いなどで、後から値が変わらないように)。
     初回や、バッチが数日止まった後は、置かれている未記録の日をまとめて埋める (1日約2分)。
     取得失敗時は log_warning で残してスキップし、デイリー全体は止めない。
+    同じ PDF から銘柄ごとの信用残も保存する (issue #612)。推計が記録済みでも、そのファイルが無い日は読み直す。
     """
     import market_breadth
 
@@ -1606,7 +1630,10 @@ def update_credit_daily_estimate():
     except Exception as e:
         log_warning(f"[credit_daily_est] 一覧の取得失敗のためスキップ: {e}")
         return
-    todo = [(d, url) for d, url in listed if d not in recorded]
+    by_issue_dir = os.path.join(DATA_DIR, "code_rank_data", CREDIT_BY_ISSUE_DIR)
+    # 推計が記録済みでも、銘柄ごとの信用残 (#612) が無い日は PDF を読み直す
+    todo = [(d, url) for d, url in listed
+            if d not in recorded or not os.path.exists(os.path.join(by_issue_dir, f"{d}.json.gz"))]
     if not todo:
         log_print(f"---- 信用評価損益率 (日次推計) 記録済みのためスキップ (latest={max(recorded, default=None)})")
         return
@@ -1614,7 +1641,17 @@ def update_credit_daily_estimate():
     log_print(f"----> 信用評価損益率 (日次推計) 更新: {', '.join(d for d, _ in todo)}")
     for listed_day, url in todo:
         try:
-            base_day, holdings = market_breadth.fetch_margin_by_issue(url)
+            base_day, holdings, balances = market_breadth.fetch_margin_by_issue(url)
+        except Exception as e:
+            log_warning(f"[credit_daily_est] {listed_day} の取得失敗のためスキップ: {e}")
+            continue
+        try:
+            _save_credit_by_issue(base_day, url, balances)
+        except OSError as e:
+            log_warning(f"[credit_by_issue] {base_day} の保存失敗: {e}")
+        if base_day in recorded:
+            continue  # 推計は記録済み (銘柄ごとの信用残だけ取り直した日)
+        try:
             codes = market_breadth.top_codes_by_amount(holdings)
             closes, split = market_breadth.fetch_closes_for_margin(codes, base_day)
         except Exception as e:

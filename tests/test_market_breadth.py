@@ -505,6 +505,30 @@ def test_parse_margin_by_issue_pairs_rows_and_drops_funds_and_totals():
     }
 
 
+def test_parse_margin_balances_keeps_all_issues():
+    """issue #612: 銘柄ごとに買残・売残の株数と金額を残す。ETF・買残ゼロも残し、合計行は外す"""
+    def row(code, kind, buy, sell):
+        r = _margin_row(code, kind, None, buy)
+        r[6] = sell
+        return r
+    rows = [
+        row("13770", "株数 Shs.", "31,000", "181,000"),
+        row("13050", "株数 Shs.", "58,610", "-"),
+        row("13770", "金額 Val.", "133,921,000", "764,773,230"),
+        row("137A0", "株数 Shs.", "0", "0"),
+        row(None, "株数 Shs.", "2,408,836,876", "1"),
+        # 名前がはみ出してコードの列が崩れた株数の行は、直後の金額の行のコードを使う
+        row("動型1上67場80投", "株数 Shs.", "2,372,780", "84,880"),
+        row("16780", "金額 Val.", "809,264,200", "28,017,971"),
+    ]
+    assert market_breadth.parse_margin_balances(rows) == {
+        "1377": [31000, 133921000, 181000, 764773230],
+        "1305": [58610, None, None, None],
+        "137A": [0, None, 0, None],
+        "1678": [2372780, 809264200, 84880, 28017971],
+    }
+
+
 def test_split_after_base_day_is_excluded_from_estimate(monkeypatch):
     """基準日以後 (当日を含む) に分割がある銘柄は、終値を返さず、推計の分子・分母から外れる。"""
     import pandas as pd
@@ -529,6 +553,9 @@ def test_update_credit_daily_estimate_appends_only_new_days(tmp_path, monkeypatc
     """記録済みの基準日は取り直さず、置かれている未記録の日だけ追記する。"""
     path = tmp_path / "code_rank_data" / shintakane.CREDIT_DAILY_EST_FILE
     path.parent.mkdir()
+    by_issue = path.parent / shintakane.CREDIT_BY_ISSUE_DIR
+    by_issue.mkdir()
+    (by_issue / "2026-11-20.json.gz").write_bytes(b"")  # 銘柄ごとの信用残も保存済み (#612)
     old = {"date": "2026-11-20", "est_rate": -22.7, "coverage": 0.95, "n_codes": 500}
     path.write_text(json.dumps({"latest": old, "history": [old]}), encoding="utf-8")
     monkeypatch.setattr(shintakane, "DATA_DIR", str(tmp_path))
@@ -538,7 +565,7 @@ def test_update_credit_daily_estimate_appends_only_new_days(tmp_path, monkeypatc
 
     def fake_fetch(url):
         fetched.append(url)
-        return "2026-11-24", {"11110": (100.0, 10000.0)}
+        return "2026-11-24", {"11110": (100.0, 10000.0)}, {}
 
     monkeypatch.setattr(market_breadth, "fetch_margin_by_issue", fake_fetch)
     monkeypatch.setattr(market_breadth, "fetch_closes_for_margin", lambda codes, day: ({"11110": 80.0}, []))
@@ -556,7 +583,7 @@ def test_update_credit_daily_estimate_skips_low_coverage(tmp_path, monkeypatch):
     monkeypatch.setattr(shintakane, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(market_breadth, "list_margin_daily_pdf_urls", lambda: [("2026-11-24", "u24")])
     monkeypatch.setattr(market_breadth, "fetch_margin_by_issue", lambda url: (
-        "2026-11-24", {"11110": (100.0, 10000.0), "22220": (100.0, 90000.0)}))
+        "2026-11-24", {"11110": (100.0, 10000.0), "22220": (100.0, 90000.0)}, {}))
     monkeypatch.setattr(market_breadth, "fetch_closes_for_margin", lambda codes, day: ({"11110": 80.0}, []))
 
     shintakane.update_credit_daily_estimate()
@@ -584,3 +611,33 @@ def test_market_indicators_credit_daily_est_row(tmp_path, monkeypatch):
     assert "-21.78%" in row and "+0.27" in row  # 前営業日比 -21.78 - (-22.05)
     assert "公表値との差 11/20 +0.83pt" in row
     assert "底値圏" not in row and "fng-rating" not in row
+
+
+def test_update_credit_daily_estimate_saves_balances_for_recorded_day(tmp_path, monkeypatch):
+    """issue #612: 推計が記録済みでも銘柄ごとの信用残のファイルが無い日は PDF を読んで保存し、終値は取らない"""
+    import gzip
+
+    path = tmp_path / "code_rank_data" / shintakane.CREDIT_DAILY_EST_FILE
+    path.parent.mkdir()
+    old = {"date": "2026-11-20", "est_rate": -22.7, "coverage": 0.95, "n_codes": 500}
+    path.write_text(json.dumps({"latest": old, "history": [old]}), encoding="utf-8")
+    monkeypatch.setattr(shintakane, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(market_breadth, "list_margin_daily_pdf_urls", lambda: [("2026-11-20", "u20")])
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        return "2026-11-20", {"11110": (100.0, 10000.0)}, {"1111": [100, 10000, 5, 600]}
+
+    monkeypatch.setattr(market_breadth, "fetch_margin_by_issue", fake_fetch)
+    monkeypatch.setattr(market_breadth, "fetch_closes_for_margin",
+                        lambda codes, day: pytest.fail("推計済みの日に終値を取りに行った"))
+
+    shintakane.update_credit_daily_estimate()
+    shintakane.update_credit_daily_estimate()  # 2回目はファイルがあるので読まない
+
+    assert fetched == ["u20"]
+    saved = tmp_path / "code_rank_data" / shintakane.CREDIT_BY_ISSUE_DIR / "2026-11-20.json.gz"
+    with gzip.open(saved, "rt", encoding="utf-8") as f:
+        assert json.load(f)["issues"] == {"1111": [100, 10000, 5, 600]}
+    assert json.loads(path.read_text(encoding="utf-8"))["history"] == [old]

@@ -329,8 +329,52 @@ def parse_margin_by_issue(rows):
     return out
 
 
+def parse_margin_balances(rows):
+    """pdfplumber の表の行から、全銘柄の {code_s: [買残株数, 買残金額, 売残株数, 売残金額]} を作る (issue #612)。
+
+    銘柄ごとの値を残すためのもので、推計用の parse_margin_by_issue と違い、ETF・REIT・買残ゼロも残す。
+    列: [3] コード (5桁、先頭4文字が code_s) / [5] 株数・金額の別 / [6] 売残高 / [9] 買残高。
+    金額は建てた値段の合計 (時価ではない)。数値でないセルは None。合計行 (コードが無い) は外す。
+    銘柄名が長いと、株数の行 (日本語側) の名前がはみ出してコードの列が崩れる
+    (2026-11-26 は 1678 など約200銘柄)。そのときは隣の金額の行 (英語側、崩れない) のコードを使う。
+    株数・金額の別の列や値の列まで崩れた行 (同じ日に17銘柄、ほとんど ETF) は補わず、その値は None のまま。
+    """
+    def code_of(r):
+        code = (r[3] or "").strip() if len(r) >= 10 else ""
+        return code if re.fullmatch(r"\d[0-9A-Z]{3}0", code) else None
+
+    def is_amount(r):
+        return len(r) >= 10 and (r[5] or "").startswith("金額")
+
+    out = {}
+    for i, r in enumerate(rows):
+        if len(r) < 10 or not r[5]:
+            continue
+        offset = 0 if r[5].startswith("株数") else 1 if r[5].startswith("金額") else None
+        if offset is None:
+            continue
+        code = code_of(r)
+        if code is None and offset == 0:
+            # 株数の行の直後 (ページをまたぐと直前) の金額の行が同じ銘柄。株数がもう入っている銘柄には
+            # 結びつけない (合計行のようにコードの無い行が、直前の銘柄の値を上書きしないように)
+            for j in (i + 1, i - 1):
+                cand = code_of(rows[j]) if 0 <= j < len(rows) and is_amount(rows[j]) else None
+                if cand and (out.get(cand[:4]) or [None])[0] is None:
+                    code = cand
+                    break
+        if code is None:
+            continue
+        entry = out.setdefault(code[:4], [None, None, None, None])
+        for i, cell in ((offset, r[9]), (2 + offset, r[6])):
+            value = _margin_num(cell)
+            entry[i] = None if value is None else int(value)
+    return out
+
+
 def fetch_margin_by_issue(url):
-    """PDF を取得して (基準日 YYYY-MM-DD, {code5: (買残株数, 買残金額)}) を返す。
+    """PDF を取得して (基準日 YYYY-MM-DD, {code5: (買残株数, 買残金額)}, 全銘柄の残高) を返す。
+
+    3つ目は parse_margin_balances の結果 (銘柄ごとに残す用、issue #612)。
 
     基準日は表題の「YYYY/MM/DD申込み現在」から取る。全109ページ前後の表の読み取りに約50秒かかる。
     """
@@ -349,7 +393,7 @@ def fetch_margin_by_issue(url):
                 rows.extend(table)
     if base_day is None:
         raise ValueError("基準日 (申込み現在) が見つからない: %s" % url)
-    return base_day, parse_margin_by_issue(rows)
+    return base_day, parse_margin_by_issue(rows), parse_margin_balances(rows)
 
 
 def top_codes_by_amount(holdings, share=CREDIT_EST_AMOUNT_SHARE):
