@@ -993,19 +993,27 @@ def overlay_study() -> None:
     pres = weekly_flags("2005-01-01", lambda d: state.get(d) == "uptrend_under_pressure")
     vi = vi30("2005-01-01")
     m3 = {d: (0.8 if corr[d] else 1.0 if pres[d] else math.inf) for d in corr}
+    # 作り直しは本番より切り替わりが数日ずれる (2026-10 は3営業日早かった) ので、1週遅らせた版も並べる
+    wk = list(corr)
+    corr_lag = {d: (corr[wk[k - 1]] if k else False) for k, d in enumerate(wk)}
     _overlay_run("市場ステートで抑える (日経平均、口座の上限)", days_from("2005-01-01"), [], [
         ("M1 調整なら 0.8倍まで", cap(corr)),
+        ("M1 を1週遅らせる", cap(corr_lag)),
         ("M2 調整なら 1.0倍まで", cap(corr, 1.0)),
         ("M3 調整 0.8倍・圧力下 1.0倍まで", {d: v for d, v in m3.items() if v < math.inf}),
         ("VI 30超で 0.8倍まで (#610)", cap(vi)),
         ("M4 VI 30超か調整なら 0.8倍まで", cap({d: vi[d] or corr[d] for d in vi})),
+        ("M4 の調整を1週遅らせる", cap({d: vi[d] or corr_lag[d] for d in vi})),
     ], bases)
     corr9 = {d: f for d, f in corr.items() if d >= "2009-06-12"}
+    lag9 = {d: f for d, f in corr_lag.items() if d >= "2009-06-12"}
     vi9 = {d: f for d, f in vi.items() if d >= "2009-06-12"}
     _overlay_run("市場ステートで抑える (日経平均、最終案)", days_from("2009-06-12"), credit, [
         ("VI 30超で 0.8倍まで (#610)", cap(vi9)),
         ("M4 VI 30超か調整なら 0.8倍まで", cap({d: vi9[d] or corr9[d] for d in vi9})),
+        ("M4 の調整を1週遅らせる", cap({d: vi9[d] or lag9[d] for d in vi9})),
         ("M1 調整なら 0.8倍まで", cap(corr9)),
+        ("M1 を1週遅らせる", cap(lag9)),
     ], [("最終案", "FINAL"), ("最終案 (ふだん 1.1倍)", "FINAL11")])
 
     # --- 過熱 ---
