@@ -45,6 +45,7 @@ HTMLパーサー変更時は追加で `cd scripts && python shintakane.py --forc
 | `disclosure.py` | `pytest tests/test_disclosure.py -v` |
 | `portfolio_shelve.py` | `pytest tests/test_portfolio_shelve.py -v` |
 | `exposure_guide.py` | `pytest tests/test_exposure_guide.py -v` |
+| `loss_harvest.py` | `pytest tests/test_loss_harvest.py -v` |
 | `import_portfolio_csv.py` | `pytest tests/test_import_portfolio_csv.py -v` |
 | `stock_ratings.py` | `pytest tests/test_stock_ratings.py -v` |
 | `trade_review.py` | `pytest tests/test_trade_review.py -v` |
