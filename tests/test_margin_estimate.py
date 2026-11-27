@@ -165,6 +165,35 @@ def test_week_targets_step_one_per_week():
     assert me.room_cap(0.15) == 0.8 and me.room_cap(0.05) == pytest.approx(1.5)
 
 
+def _fridays(n, start="2026-11-27"):
+    d = me.date.fromisoformat(start)
+    return [(d + me.timedelta(days=7 * i)).isoformat() for i in range(n)]
+
+
+@pytest.mark.parametrize("vis, credit, expected", [
+    # 1.2倍で VI 32 → その週に 0.8倍。27 のあいだは抑えたまま、24 で外れて週1段で戻す
+    ([32, 27, 24, 24, 24], [], [1.2, 0.8, 0.8, 1.0, 1.1, 1.2]),
+    # 買い向かいの期間 (11/20 の合図から3か月) は VI 32 でも抑えない
+    ([32, 32], CREDIT, [1.2, 1.4, 1.6]),
+    # 取得が止まって判定日より5日以上古い VI しか無い週は抑えない (None は値なし)
+    ([32, None, None], [], [1.2, 0.8, 1.0, 1.1]),
+    # vi_history なしは今までと同じ
+    (None, [], [1.2, 1.2, 1.2]),
+])
+def test_week_targets_vi_hold(vis, credit, expected):
+    """日経VI が 30 を超えたら 25 を下回るまで、運用総額を 0.8倍までに抑える (#610)"""
+    days = _fridays(len(vis) if vis else 2)
+    rows = [{"date": d, "equity": 100.0, "multiple": 1.25} for d in days]
+    vi_history = None if vis is None else [
+        {"date": d, "nikkei_vi": v} for d, v in zip(days, vis) if v is not None]
+    weeks = me.week_targets(rows, credit, vi_history)
+    assert [w["target"] for w in weeks] == expected
+    # 採用日より前の判定日には当てない (過去に出した目標を変えない)
+    early = [{"date": "2026-11-20", "equity": 100.0, "multiple": 1.25}]
+    assert [w["target"] for w in me.week_targets(early, [], [{"date": "2026-11-20", "nikkei_vi": 40}])] \
+        == [1.2, 1.2]
+
+
 @pytest.mark.parametrize("target_total, expected", [
     # 保証金 700万・建玉 1000万 (時価 900万)・現物 500万 → 運用総額 1400万。エリアは目標 ±5%
     (12_000_000, {"target_value": 12_000_000, "position": "over", "floor_capped": False}),

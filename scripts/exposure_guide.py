@@ -160,12 +160,14 @@ def equity_gap_for(margin_state, history, day):
     return gap
 
 
-def evaluate_target(margin_state, history, credit_history, day, *, hold_total_value, target_day=None):
+def evaluate_target(margin_state, history, credit_history, day, *, hold_total_value, target_day=None,
+                    vi_history=None):
     """今週の目標の倍率と、運用総額の適正エリアを評価して表示・ログ共通の dict を返す (issue #593)。
 
     margin_state: build_margin_state() の戻り値
     history: 日次ログの過去の行 (当日の暫定行はここで足す)
     credit_history: credit_balance.json の週次 history (買い向かいの合図)
+    vi_history: nikkei_vi.json の日次 history (日経VI で抑える週の判定。#610)
     day: 基準日 ("YYYY-MM-DD")
     hold_total_value: 保有銘柄 (1保) の数量 × 終値の合計。残高 CSV とのずれの注記に使う
     target_day: 週の目標を引く日 (既定は day)。画面では実際の今日を渡す。day は 17時境界で
@@ -182,6 +184,9 @@ def evaluate_target(margin_state, history, credit_history, day, *, hold_total_va
         "want": margin_estimate.want_multiple(credit_history, day), "boost_until": until,
         "boost_from": period[0] if period else None,
         "week_target": None, "week_target_from": None,
+        # 今週の目標を決めた判定行の値 (理由の表示はこちらで出す。今日の want・cap は今の状態)
+        "week_want": None, "week_cap": None, "week_drawdown_pct": None, "week_boost": None,
+        "week_vi": None, "week_vi_hold": False,
         "margin_rate_pct": None, "total_value": None, "hold_total_value": hold_total_value,
         "qty_mismatch": False, "area_lower": None, "area_upper": None, "target_value": None,
         "neutral_value": None, "floor_capped": False, "position": None, "deviation": None,
@@ -201,11 +206,17 @@ def evaluate_target(margin_state, history, credit_history, day, *, hold_total_va
                  "equity_gap": result["equity_gap"]}
     rows = history_with_today(history, today_row)
     last = margin_estimate.drawdown_series(rows)[-1]
-    week = margin_estimate.target_for(margin_estimate.week_targets(rows, credit_history),
+    week = margin_estimate.target_for(margin_estimate.week_targets(rows, credit_history, vi_history),
                                       max(day, target_day or day))
     result.update(peak_equity=last["peak"], drawdown_pct=last["drawdown"] * 100,
                   cap=margin_estimate.room_cap(last["drawdown"]),
-                  week_target=week["target"], week_target_from=week["from"])
+                  week_target=week["target"], week_target_from=week["from"],
+                  week_want=week["want"], week_cap=week["cap"], week_boost=week["boost"],
+                  week_drawdown_pct=None if week["drawdown"] is None else week["drawdown"] * 100,
+                  week_vi=week["vi"], week_vi_hold=week["vi_hold"])
+    if week["want"] is None:  # 最初の週は判定行が無く、起点の日の値で決まっている
+        result.update(week_want=result["want"], week_cap=result["cap"],
+                      week_drawdown_pct=result["drawdown_pct"], week_boost=bool(until))
     area = margin_estimate.target_area(
         combined["guarantee"], combined["tate_total"], combined["spot_value"],
         combined["margin_value"], week["target"] * eq, combined.get("nisa_value", 0.0))
@@ -275,6 +286,11 @@ def read_credit_eval_rate(*, today=None):
 def read_credit_history():
     """credit_balance.json の週次 history 全体 (買い向かいの合図を探すのに使う)。"""
     return _read_json_history(os.path.join(DATA_DIR, "code_rank_data", "credit_balance.json"))
+
+
+def read_vi_history():
+    """nikkei_vi.json の日次 history (日経VI で抑える週の判定。#610)。"""
+    return _read_json_history(os.path.join(DATA_DIR, "code_rank_data", "nikkei_vi.json"))
 
 
 def read_credit_daily_estimate():
@@ -513,7 +529,7 @@ def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None, 
     """今週の目標の倍率と適正エリアを、画面と日次ログ共通の dict で返す (issue #593)。
 
     市場ステート・日本版 F&G・感情スコア・信用評価損益率の最新値は、表示と日次ログのために集める
-    (量の計算に使うのは信用評価損益率の週次 history だけ)。
+    (量の計算に使うのは信用評価損益率の週次 history と日経VI の日次 history だけ)。
     """
     from webapp.helpers import summarize_hold_positions
 
@@ -533,7 +549,8 @@ def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None, 
         margin_state, _load_exposure_log()["history"], read_credit_history(), base_day.isoformat(),
         hold_total_value=summary["total_value"],
         # 画面 (today 指定なし) は、週の目標を実際の今日で引く (土曜の日中も来週の目標を出す)
-        target_day=None if today else datetime.now().date().isoformat())
+        target_day=None if today else datetime.now().date().isoformat(),
+        vi_history=read_vi_history())
     now_rate, now_date, now_move = read_credit_nowcast(
         market_db, credit, credit_date, today=base_day) or (None, None, None)
     emotion = read_emotion(db_path=db_path)

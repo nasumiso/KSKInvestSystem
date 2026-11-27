@@ -384,28 +384,49 @@ def _md(day) -> str:
     return f"{int(day[5:7])}/{int(day[8:10])}" if day else ""
 
 
+def _active_rule(evaluation: dict) -> str | None:
+    """今週の目標を決めたルール (保有銘柄タブの理由と、ポジション管理ルールの強調行。#610)。
+
+    目標を決めた判定行の値 (week_*) で、実際の決定順に最初に当てはまるものを返す:
+    "vi" (日経VI で抑える) → "cap" (口座の上限) → "boost" (買い向かい) → "base" (ふだん)。
+    VI で抑えるのは買い向かいの期間の外だけなので、"vi" と "boost" は同時に立たない。判定行が無ければ None。
+    """
+    want, cap = evaluation.get("week_want"), evaluation.get("week_cap")
+    if evaluation.get("week_target") is None or want is None or cap is None:
+        return None
+    if evaluation.get("week_vi_hold"):
+        return "vi"
+    if cap < want:
+        return "cap"
+    return "boost" if evaluation.get("week_boost") else "base"
+
+
 def _target_reason(evaluation: dict) -> str:
     """今週の目標がなぜその倍率かを、そのときの理由だけで短く書く (保有銘柄タブの1行目)。
 
     目標は「相場で決まる倍率 (want)」と「口座の高値からの下落で決まる上限 (cap)」の小さい方の段へ、
-    週1段ずつ近づく (margin_estimate.week_targets)。上限が効いていない日は上限のことを書かない。
+    週1段ずつ近づく (margin_estimate.week_targets)。日経VI で抑える週は、その週に 0.8倍まで下げる (#610)。
+    上限が効いていない日は上限のことを書かない。値は目標を決めた判定行のもの (week_*) を使う。
     """
-    target, want, cap = evaluation.get("week_target"), evaluation.get("want"), evaluation.get("cap")
-    if target is None or want is None or cap is None:
+    rule = _active_rule(evaluation)
+    if rule is None:
         return ""
+    target, want, cap = evaluation["week_target"], evaluation["week_want"], evaluation["week_cap"]
+    if rule == "vi":
+        return "日経VI %.0f なので %.1f倍まで" % (evaluation.get("week_vi") or 0, me.VI_HOLD_MULTIPLE)
     goal = me.ladder_floor(min(want, cap))
-    if cap < want:
-        why = "高値から −%.0f%% なので %.1f倍まで" % (evaluation.get("drawdown_pct") or 0, goal)
-    elif evaluation.get("boost_until"):
-        why = "信用評価損益率の底で買い向かい 〜%s" % _md(evaluation["boost_until"])
+    if rule == "cap":
+        why = "高値から −%.0f%% なので %.1f倍まで" % (evaluation.get("week_drawdown_pct") or 0, goal)
+    elif rule == "boost":
+        why = "信用評価損益率の底で買い向かい 〜%s" % _md(evaluation.get("boost_until"))
     else:
         why = "ふだんの倍率"
     if abs(target - goal) < 1e-9:
         return why
     move = "上げる" if target < goal else "下げる"
-    if cap < want:
+    if rule == "cap":
         return "%s週1段で%s途中" % (why, move)
-    if evaluation.get("boost_until"):
+    if rule == "boost":
         return "%s。%.1f倍へ週1段で%s途中" % (why, goal, move)
     return "ふだんの %.1f倍へ週1段で%s途中" % (goal, move)
 
@@ -429,6 +450,11 @@ def _target_labels(evaluation: dict) -> dict:
         "credit_beta": me.CREDIT_NIKKEI_BETA,
         "credit_md": _md(evaluation.get("credit_date")),
         "target_reason": _target_reason(evaluation),
+        "active_rule": _active_rule(evaluation),
+        "rules": {"base": me.BASE_MULTIPLE, "cap_max": me.CAP_MAX, "cap_width_pct": me.CAP_WIDTH * 100,
+                  "cap_floor": me.CAP_FLOOR, "vi_on": me.VI_HOLD_ON, "vi_off": me.VI_HOLD_OFF,
+                  "vi_multiple": me.VI_HOLD_MULTIPLE, "credit_bottom": me.CREDIT_BOTTOM,
+                  "boost_months": me.BOOST_MONTHS, "boost": me.BOOST_MULTIPLE},
     }
 
 

@@ -1582,10 +1582,18 @@ class TestMarginBaseline:
     (1.0, 1.2, 1.0, 10.0, None, "高値から −10% なので 1.0倍まで"),
     # 上限 1.17 は段に直すと 1.1
     (1.2, 1.2, 1.17, 8.3, None, "高値から −8% なので 1.1倍まで週1段で下げる途中"),
+    # 日経VI で抑える週は、口座の上限も効いていても VI を書く (#610)
+    (0.8, 1.2, 1.0, 10.0, "vi", "日経VI 33 なので 0.8倍まで"),
 ])
 def test_target_reason(target, want, cap, dd, boost, expected):
-    """今週の目標の理由は、そのとき効いているものだけを短く書く"""
+    """今週の目標の理由は、目標を決めた判定行で効いていたものだけを短く書く"""
     from webapp.routes import portfolio as portfolio_routes
 
-    ev = {"week_target": target, "want": want, "cap": cap, "drawdown_pct": dd, "boost_until": boost}
+    ev = {"week_target": target, "week_want": want, "week_cap": cap, "week_drawdown_pct": dd,
+          "week_boost": boost not in (None, "vi"), "boost_until": boost if boost != "vi" else None,
+          "week_vi_hold": boost == "vi", "week_vi": 33.07,
+          # 今日の値は理由に使わない (金曜のあとに下がって上限が効き始めても、確定した目標の理由は変えない)
+          "want": 1.2, "cap": 0.8, "drawdown_pct": 30.0}
     assert portfolio_routes._target_reason(ev) == expected
+    assert portfolio_routes._active_rule(ev) == (
+        "vi" if boost == "vi" else "cap" if cap < want else "boost" if boost else "base")
