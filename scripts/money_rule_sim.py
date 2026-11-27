@@ -650,6 +650,7 @@ def _vi_graded(title: str, dates: List[str], r: List[float], vi_by: Dict[str, fl
     - G2 比例: 上限 = 1.2 × 20 ÷ VI (下限 0.8倍)。段に直すときは下の段 (ladder_floor)
     - G3 上昇局面だけ: G1 と同じ段を、VI が4週前の判定日より高いときだけ
     G4・G5 は結果を見たあとに足した参考 (日経VI は中央値が約23 で、20〜25 がふだんの水準だったため 25 から)。
+    C1〜C4 は、日経VI の水準に置き直した段 (VIX の 20・25・30 と同じ分位)。置き直し方は結果を見る前に決めた。
     """
     keep = [i for i in range(1, len(dates)) if dates[i] >= start]
     days = [{"date": dates[i], "r": r[i]} for i in keep]
@@ -674,6 +675,31 @@ def _vi_graded(title: str, dates: List[str], r: List[float], vi_by: Dict[str, fl
     g2c = {d: (max(VI_LOW, 1.2 * 20 / vi_w[d]) if vi_w[d] and vi_w[d] > 20 else math.inf) for d in weeks}
     g3c = {d: (g1c[d] if k >= 4 and vi_w[d] is not None and vi_w[weeks[k - 4]] is not None
                and vi_w[d] > vi_w[weeks[k - 4]] else math.inf) for k, d in enumerate(weeks)}
+    # 日経VI に合わせた段 (2026-11-27、結果を見る前に決めた): VIX の 20・25・30 は VIX の分布 (1990〜) の
+    # 63%・83%・92% 点。日経VI (2001〜) で同じ位置の値は 25.4・30.0・35.5 なので、25・30・35 を使う
+    def c1(v: Optional[float], t=(25.0, 30.0, 35.0)) -> float:
+        if v is None or v <= t[0]:
+            return math.inf
+        return 1.1 if v <= t[1] else 1.0 if v <= t[2] else VI_LOW
+
+    c1c = {d: c1(vi_w[d]) for d in weeks}
+    # C2 先読みなし: その時点までの日経VI の 63%・83%・92% 点 (過去が500営業日たまるまでは抑えない)
+    import bisect
+    hist: List[float] = []
+    c2c, vi_items = {}, sorted(vi_by.items())
+    k = 0
+    for d in weeks:
+        while k < len(vi_items) and vi_items[k][0] <= d:
+            bisect.insort(hist, vi_items[k][1])
+            k += 1
+        if len(hist) < 500:
+            c2c[d] = math.inf
+            continue
+        t = tuple(hist[int(len(hist) * q)] for q in (0.63, 0.83, 0.92))
+        c2c[d] = c1(vi_w[d], t)
+    c3c = {d: (c1c[d] if j >= 4 and vi_w[d] is not None and vi_w[weeks[j - 4]] is not None
+               and vi_w[d] > vi_w[weeks[j - 4]] else math.inf) for j, d in enumerate(weeks)}
+    c4c = {d: (max(VI_LOW, 1.2 * 25.4 / vi_w[d]) if vi_w[d] and vi_w[d] > 25.4 else math.inf) for d in weeks}
     table = "FINAL" if credit else "flat"
     base = boost if credit else {d: {**x, "temp": 0} for d, x in boost.items()}
 
@@ -690,6 +716,10 @@ def _vi_graded(title: str, dates: List[str], r: List[float], vi_by: Dict[str, fl
         # 結果を見たあとに足した参考 (日経VI の中央値は約23 で、20〜25 はふだんの水準だったため)
         ("参考 G4: 25〜30 1.1 / 30超 0.8", w_of({d: {1.1: math.inf, 1.0: 1.1}.get(c, c) for d, c in g1c.items()}), jump),
         ("参考 G5: 25〜30 1.0 / 30超 0.8", w_of({d: {1.1: math.inf}.get(c, c) for d, c in g1c.items()}), jump),
+        ("C1 日経VI の段: 25〜30 1.1 / 30〜35 1.0 / 35超 0.8", w_of(c1c), jump),
+        ("C2 先読みなし: その時点の 63・83・92% 点", w_of(c2c), jump),
+        ("C3 上昇局面だけ C1", w_of(c3c), jump),
+        ("C4 比例: 1.2 × 25.4 ÷ VI (下限 0.8)", w_of(c4c), jump),
         ("ふだん 1.1倍", w_of({d: math.inf for d in weeks}), {"table": "FINAL11"}),
         ("ふだん 1.0倍", w_of({d: math.inf for d in weeks}), {"table": "flat10" if not credit else "FINAL10"}),
     ]
