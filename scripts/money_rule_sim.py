@@ -635,9 +635,50 @@ def vi_study() -> None:
         credit = mb.fetch_credit_balance_weekly()
         _vi_with_final(title, dates, r, vi_by, credit, "2009-06-12")
         _vi_graded(title, dates, r, vi_by, credit, "2009-06-12")
+        _vi_sweep(title, dates, r, vi_by, credit, "2009-06-12")
         if title.startswith("日経"):  # 信用を使わない版だけ、リーマンを含む 2001 から
             _vi_with_final(title, dates, r, vi_by, [], dates[1])
             _vi_graded(title, dates, r, vi_by, [], dates[1])
+            _vi_sweep(title, dates, r, vi_by, [], dates[1])
+
+
+def _vi_sweep(title: str, dates: List[str], r: List[float], vi_by: Dict[str, float],
+              credit: List[Dict[str, Any]], start: str) -> None:
+    """#610 の閾値 30 の前後で結果が崩れないかを見る (2026-11-27)。一番良い値を選ぶためではない。
+
+    入る閾値を 25〜35 で振り、戻すのは閾値 −5。形は #610 と同じ (金曜の判定、その週に 0.8倍まで下げる、
+    外れたら週1段で戻す、買い向かいの間は抑えない)。
+    """
+    keep = [i for i in range(1, len(dates)) if dates[i] >= start]
+    days = [{"date": dates[i], "r": r[i]} for i in keep]
+    ds = [d["date"] for d in days]
+    boost, _ = _boost_weekly(ds, credit)
+    table = "FINAL" if credit else "flat"
+    base = boost if credit else {d: {**x, "temp": 0} for d, x in boost.items()}
+    crashes = [(c, s_, e) for c, s_, e in VI_CRASHES if ds[0] <= s_ <= ds[-1]]
+    log_print(f"### {title}: VI の閾値を振る ({ds[0]}〜、{'最終案' if credit else '口座の上限'}に重ねる)")
+    log_print("| 入る / 戻す | 年率 | 最大DD | 最悪の1か月 | 平均倍率 | 抑えた週 | " + " | ".join(c for c, _, _ in crashes) + " |")
+    log_print("|---|---|---|---|---|---|" + "---|" * len(crashes))
+    for on_th in (None, 25.0, 27.5, 30.0, 32.5, 35.0):
+        last, on, w = None, False, {}
+        for d in ds:
+            last = vi_by.get(d, last)
+            if d in base:
+                if on_th is not None and last is not None:
+                    on = last > on_th or (on and last >= on_th - 5)
+                w[d] = {**base[d], "vi_cap": VI_LOW if on and base[d]["temp"] != 1 else math.inf}
+        res = simulate(days, w, {**_DEFAULTS, "table": table, "b6": True, "vi_jump": True})
+        mt = metrics(res, None, None)
+        a = [x["A"] for x in res["rows"]]
+        w21 = min(a[i] / a[i - 21] - 1 for i in range(21, len(a)))
+        held = sum(1 for x in res["weeks"] if w[x["date"]]["vi_cap"] < x["desire"])
+        cells = []
+        for c, s_, e in crashes:
+            m = metrics(res, s_, e)
+            cells.append(f"{_pct(m['return'])} / {m['max_dd'] * 100:.1f}%")
+        name = "抑えない" if on_th is None else f"{on_th:g} / {on_th - 5:g}"
+        log_print(f"| {name} | {_pct(mt['cagr'])} | {mt['max_dd'] * 100:.1f}% | {_pct(w21)} | {mt['avg_level']:.2f} | "
+                  f"{held} | " + " | ".join(cells) + " |")
 
 
 def _vi_graded(title: str, dates: List[str], r: List[float], vi_by: Dict[str, float],
