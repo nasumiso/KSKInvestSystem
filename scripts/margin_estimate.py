@@ -593,8 +593,9 @@ def week_targets(history: List[Dict[str, Any]], credit_history: List[Dict[str, A
     日経VI で抑える週 (#610) は、目標が VI_HOLD_MULTIPLE より上ならその週に VI_HOLD_MULTIPLE にする。
     抑える状態は判定日の VI を古い順にたどって決め (ON 超で入り、OFF 未満で出る)、VI が取れない週は飛ばす。
     history は equity と multiple がある行を使う (暫定行を含めてよい)。
-    Returns: [{"week", "target", "want", "cap", "drawdown", "boost", "vi", "vi_hold", "from"}]
-      (from は判定に使った行の日付。boost は判定日に買い向かいの期間か)
+    Returns: [{"week", "target", "want", "cap", "drawdown", "boost", "vi", "vi_on", "vi_hold", "from"}]
+      (from は判定に使った行の日付。boost は判定日に買い向かいの期間か。vi_on は抑える条件に入っているか
+      (買い向かいの期間でも入る)、vi_hold は実際に抑えるか)
     """
     rows = [h for h in sorted(history, key=lambda r: r.get("date") or "")
             if h.get("equity") is not None and h.get("multiple") is not None]
@@ -608,8 +609,15 @@ def week_targets(history: List[Dict[str, Any]], credit_history: List[Dict[str, A
     first = rows[0]
     target = min(ladder_floor(first["multiple"]), ladder_floor(room_cap(dd[first["date"]])))
     out = [{"week": weeks[0], "target": target, "want": None, "cap": None, "drawdown": None, "boost": None,
-            "vi": None, "vi_hold": False, "from": first["date"]}]
+            "vi": None, "vi_on": False, "vi_hold": False, "from": first["date"]}]
     vi_on = False
+    # 日次ログより前の週も、週の最後の VI で抑える条件の状態をたどる (ログの始まりで 30超の後を忘れないように)
+    before: Dict[str, float] = {}
+    for r in sorted(vi_history or [], key=lambda r: r.get("date") or ""):
+        if r.get("date") and r.get("nikkei_vi") is not None and _week_start(r["date"]) < weeks[0]:
+            before[_week_start(r["date"])] = r["nikkei_vi"]
+    for w in sorted(before):
+        vi_on = before[w] > VI_HOLD_ON or (vi_on and before[w] >= VI_HOLD_OFF)
     for prev_week in weeks:
         basis = last_of_week[prev_week]
         boost = boost_until(credit_history, basis["date"]) is not None
@@ -626,7 +634,7 @@ def week_targets(history: List[Dict[str, Any]], credit_history: List[Dict[str, A
         nxt = (date.fromisoformat(prev_week) + timedelta(days=7)).isoformat()
         out.append({"week": nxt, "target": target, "want": want, "cap": cap,
                     "drawdown": dd[basis["date"]], "boost": boost,
-                    "vi": vi, "vi_hold": hold, "from": basis["date"]})
+                    "vi": vi, "vi_on": vi_on, "vi_hold": hold, "from": basis["date"]})
     return out
 
 

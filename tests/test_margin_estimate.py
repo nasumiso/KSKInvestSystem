@@ -170,17 +170,17 @@ def _fridays(n, start="2026-11-27"):
     return [(d + me.timedelta(days=7 * i)).isoformat() for i in range(n)]
 
 
-@pytest.mark.parametrize("vis, credit, expected", [
+@pytest.mark.parametrize("vis, credit, expected, on", [
     # 1.2倍で VI 32 → その週に 0.8倍。27 のあいだは抑えたまま、24 で外れて週1段で戻す
-    ([32, 27, 24, 24, 24], [], [1.2, 0.8, 0.8, 1.0, 1.1, 1.2]),
-    # 買い向かいの期間 (11/20 の合図から3か月) は VI 32 でも抑えない
-    ([32, 32], CREDIT, [1.2, 1.4, 1.6]),
+    ([32, 27, 24, 24, 24], [], [1.2, 0.8, 0.8, 1.0, 1.1, 1.2], [0, 1, 1, 0, 0, 0]),
+    # 買い向かいの期間 (11/20 の合図から3か月) は VI 32 でも抑えない (抑える条件には入っている)
+    ([32, 32], CREDIT, [1.2, 1.4, 1.6], [0, 1, 1]),
     # 取得が止まって判定日より5日以上古い VI しか無い週は抑えない (None は値なし)
-    ([32, None, None], [], [1.2, 0.8, 1.0, 1.1]),
+    ([32, None, None], [], [1.2, 0.8, 1.0, 1.1], [0, 1, 1, 1]),
     # vi_history なしは今までと同じ
-    (None, [], [1.2, 1.2, 1.2]),
+    (None, [], [1.2, 1.2, 1.2], [0, 0, 0]),
 ])
-def test_week_targets_vi_hold(vis, credit, expected):
+def test_week_targets_vi_hold(vis, credit, expected, on):
     """日経VI が 30 を超えたら 25 を下回るまで、運用総額を 0.8倍までに抑える (#610)"""
     days = _fridays(len(vis) if vis else 2)
     rows = [{"date": d, "equity": 100.0, "multiple": 1.25} for d in days]
@@ -188,6 +188,11 @@ def test_week_targets_vi_hold(vis, credit, expected):
         {"date": d, "nikkei_vi": v} for d, v in zip(days, vis) if v is not None]
     weeks = me.week_targets(rows, credit, vi_history)
     assert [w["target"] for w in weeks] == expected
+    assert [w["vi_on"] for w in weeks] == [bool(x) for x in on]
+    # 日次ログより前の週に 30 を超えていたら、ログの始まりから抑える条件に入っている (25 以上なら抜けない)
+    late = [{"date": "2026-12-04", "equity": 100.0, "multiple": 1.25}]
+    ws = me.week_targets(late, [], [{"date": "2026-11-27", "nikkei_vi": 32}, {"date": "2026-12-04", "nikkei_vi": 27}])
+    assert [(w["vi_on"], w["target"]) for w in ws] == [(False, 1.2), (True, 0.8)]
     # 採用日より前の判定日には当てない (過去に出した目標を変えない)
     early = [{"date": "2026-11-20", "equity": 100.0, "multiple": 1.25}]
     assert [w["target"] for w in me.week_targets(early, [], [{"date": "2026-11-20", "nikkei_vi": 40}])] \

@@ -1522,6 +1522,7 @@ class TestMarginBaseline:
         _, today = margin_data
         monkeypatch.setattr(exposure_guide, "EXPOSURE_LOG_PATH", str(tmp_path / "exposure_log.json"))
         monkeypatch.setattr(exposure_guide, "read_credit_history", lambda: [])
+        monkeypatch.setattr(exposure_guide, "read_vi_history", lambda: [])  # 開発用コピーの実データを読まない
         monkeypatch.setattr(exposure_guide, "read_fng_jp", lambda **k: (54.0, today))
         monkeypatch.setattr(exposure_guide, "read_index_states",
                             lambda *a, **k: ({}, {"topix": "2026-09-17"}))
@@ -1597,3 +1598,22 @@ def test_target_reason(target, want, cap, dd, boost, expected):
     assert portfolio_routes._target_reason(ev) == expected
     assert portfolio_routes._active_rule(ev) == (
         "vi" if boost == "vi" else "cap" if cap < want else "boost" if boost else "base")
+
+
+@pytest.mark.parametrize("ev, expected", [
+    ({"week_vi_hold": True, "week_vi_on": True, "week_boost": False, "nikkei_vi": 27.0},
+     ("0.8倍に抑え中", "Extreme Fear")),
+    # 抑える条件に入っていても、信用評価損益率の底の買い向かいの間は抑えない
+    ({"week_vi_hold": False, "week_vi_on": True, "week_boost": True, "nikkei_vi": 28.9},
+     ("抑える条件 · 買い向かいを優先", "Fear")),
+    # 平日に 30 を超えても、判定は金曜の引け
+    ({"week_vi_hold": False, "week_vi_on": False, "week_boost": False, "nikkei_vi": 31.0},
+     ("30超 (金曜の引けで判定)", "Fear")),
+    ({"week_vi_hold": False, "week_vi_on": False, "week_boost": False, "nikkei_vi": 22.0}, ("30以下", "Neutral")),
+    ({"week_vi_hold": False, "week_vi_on": False, "week_boost": False, "nikkei_vi": None, "week_vi": None}, None),
+])
+def test_vi_badge(ev, expected):
+    """日経VI のバッジは、今週の目標を決めた判定行の状態で出す (#610)"""
+    from webapp.routes import portfolio as portfolio_routes
+
+    assert portfolio_routes._vi_badge(ev) == expected

@@ -186,7 +186,7 @@ def evaluate_target(margin_state, history, credit_history, day, *, hold_total_va
         "week_target": None, "week_target_from": None,
         # 今週の目標を決めた判定行の値 (理由の表示はこちらで出す。今日の want・cap は今の状態)
         "week_want": None, "week_cap": None, "week_drawdown_pct": None, "week_boost": None,
-        "week_vi": None, "week_vi_hold": False,
+        "week_vi": None, "week_vi_on": False, "week_vi_hold": False,
         "margin_rate_pct": None, "total_value": None, "hold_total_value": hold_total_value,
         "qty_mismatch": False, "area_lower": None, "area_upper": None, "target_value": None,
         "neutral_value": None, "floor_capped": False, "position": None, "deviation": None,
@@ -213,7 +213,7 @@ def evaluate_target(margin_state, history, credit_history, day, *, hold_total_va
                   week_target=week["target"], week_target_from=week["from"],
                   week_want=week["want"], week_cap=week["cap"], week_boost=week["boost"],
                   week_drawdown_pct=None if week["drawdown"] is None else week["drawdown"] * 100,
-                  week_vi=week["vi"], week_vi_hold=week["vi_hold"])
+                  week_vi=week["vi"], week_vi_on=week["vi_on"], week_vi_hold=week["vi_hold"])
     if week["want"] is None:  # 最初の週は判定行が無く、起点の日の値で決まっている
         result.update(week_want=result["want"], week_cap=result["cap"],
                       week_drawdown_pct=result["drawdown_pct"], week_boost=bool(until))
@@ -545,16 +545,24 @@ def build_evaluation(market_db, *, db_path=None, today=None, margin_state=None, 
     credit, credit_date, credit_prev = read_credit_eval_rate(today=base_day)
     if margin_state is None:
         margin_state = build_margin_state(db_path=db_path)
+    vi_history = read_vi_history()
     evaluation = evaluate_target(
         margin_state, _load_exposure_log()["history"], read_credit_history(), base_day.isoformat(),
         hold_total_value=summary["total_value"],
         # 画面 (today 指定なし) は、週の目標を実際の今日で引く (土曜の日中も来週の目標を出す)
         target_day=None if today else datetime.now().date().isoformat(),
-        vi_history=read_vi_history())
+        vi_history=vi_history)
     now_rate, now_date, now_move = read_credit_nowcast(
         market_db, credit, credit_date, today=base_day) or (None, None, None)
     emotion = read_emotion(db_path=db_path)
+    vi_latest = vi_history[-1] if vi_history else {}
+    # 日本版 F&G のボラティリティ成分の点の元 (VI の50日平均比)。水準ではなく変化を見る参考値
+    fng_latest = _read_json_history_tail(os.path.join(DATA_DIR, "code_rank_data", "fear_greed_jp.json")) or {}
+    vol = (fng_latest.get("components") or {}).get("volatility") or {}
     evaluation.update({
+        "nikkei_vi": vi_latest.get("nikkei_vi"),
+        "nikkei_vi_date": vi_latest.get("date"),
+        "vi_vs_ma_pct": vol.get("vs_ma_pct"),
         "fng_jp": fng_jp,
         "credit_eval_rate": credit,
         "credit_prev_rate": credit_prev,
@@ -590,6 +598,7 @@ def build_daily_entry(*, db_path=None, today=None):
         "index": entry.pop("index_dates"),  # {"topix": "2026-08-28", "mothers": "...", ...}
         "credit_balance": entry.pop("credit_date"),
         "fng_jp": entry.pop("fng_jp_date"),
+        "nikkei_vi": entry.pop("nikkei_vi_date"),
         "fng_us": fng_us_date,
     }
     # 判定には使わない参考値 (#362 から記録を続けている)

@@ -59,6 +59,14 @@
   <span>·</span>
   <span style="color:#c62828;" title="−15% 以下で前週より改善した日から3か月、張りたい量を 1.6倍にする (合図が続けば延びる)">買い向かい {{ ex.boost_from_md }}〜{{ ex.boost_until_md }}</span>
   {%- endif %}
+  {%- if ex.vi_badge %}
+  <span>·</span>
+  <span title="日経VI の最新の終値 ({{ ex.nikkei_vi_date }})。金曜の引けで {{ '%.0f'|format(ex.rules.vi_on) }} を超えたら、{{ '%.0f'|format(ex.rules.vi_off) }} を下回るまで運用総額を {{ '%.1f'|format(ex.rules.vi_multiple) }}倍までに抑え、その週に下げる (信用評価損益率の底の買い向かいの間は抑えない)。平日の値は参考で、判定は金曜の引け{% if ex.week_vi is not none %}。{{ ex.week_label }}は {{ ex.week_target_from }} の VI {{ '%.1f'|format(ex.week_vi) }} で判定{% endif %}">日経VI {% if ex.nikkei_vi is not none %}<b style="color:#333;font-size:1.1em;">{{ '%.2f'|format(ex.nikkei_vi) }}</b> ({{ ex.vi_md }}) {% endif %}<span style="{{ badge }}{{ mood_styles[ex.vi_badge[1]] }}">{{ ex.vi_badge[0] }}</span></span>
+  {%- if ex.vi_vs_ma_pct is not none %}
+  <span>·</span>
+  <span title="参考: 日本版 F&amp;G のボラティリティ成分の点の元。VI の水準ではなく、直近50日平均からの変化を見る (平均より低いほど恐怖が引いてきた)。量には使わない">50日平均比 {{ '%+.1f'|format(ex.vi_vs_ma_pct) }}%</span>
+  {%- endif %}
+  {%- endif %}
 </div>
 {%- endif %}
 {#- 3行目: 参考 (量の計算には使わない) #}
