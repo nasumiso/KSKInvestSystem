@@ -41,6 +41,7 @@ CREDIT_LAG_DAYS = 7                           # 信用の公表値は約1週遅�
 VOL_WINDOW, VOL_WARMUP, VOL_PCTL = 20, 60, 0.8  # B5: 下方ボラの窓・判定しない初めの日数・閾値
 VI_K, BETA_DEFAULT, BETA_WARMUP = 3.0, 1.5, 60  # B6: k・β の初期値・β を出さない初めの日数
 MA_DAYS = 200                                 # 200日線の版の移動平均の日数
+BOOST_MULTIPLE_SIM = 1.6                      # 最終案の買い向かいの倍率
 BOOST_DAYS = 63                               # 最終案: 信用評価損益率の底から買い向かう期間 (約3か月)
 
 # 相場温度 → 張りたい量の倍率 (資金管理の検証_2026-11.md の版ごとの表)。−3・+3 を入れない版は −2・+2 として扱う
@@ -1054,9 +1055,108 @@ def overlay_study() -> None:
                   f"{sum(dd3) / len(dd3) * 100:.1f}% / {min(dd3) * 100:.1f}% | {share_w} |")
 
 
+# ==================================================
+# 市場ステートで増やす・圧力下で減らす・1.6倍の買い向かいを、補間と比べる (2026-11-27)
+# ==================================================
+
+def _interp(points: List[Tuple[float, float, float, float]], avg: float) -> Tuple[float, float, float]:
+    """一定倍率の結果 [(平均倍率, 年率, 最大DD, 最悪の1か月)] を平均倍率で直線補間する (範囲外は端の2点で延ばす)。"""
+    pts = sorted(points)
+    lo = max([p for p in pts if p[0] <= avg] or [pts[0]])
+    hi = min([p for p in pts if p[0] > avg] or [pts[-1]])
+    if lo is hi or hi[0] == lo[0]:
+        lo, hi = (pts[0], pts[1]) if avg < pts[0][0] else (pts[-2], pts[-1])
+    t = (avg - lo[0]) / (hi[0] - lo[0])
+    return tuple(lo[k] + t * (hi[k] - lo[k]) for k in (1, 2, 3))
+
+
+def state_sizing_study() -> None:
+    """今のルール (口座の上限・VI 30超で 0.8倍・信用評価損益率の底で 1.6倍) に、市場ステートで増やす・
+    圧力下で減らす案を重ね、1.6倍の買い向かいそのものも、同じ平均倍率の一定倍率の補間と比べる。
+
+    条件は結果を見る前に決めた。下げるときはその週に下げ、上げるときは週1段。買い向かいの間は市場ステートでも
+    VI でも抑えない。市場ステートは作り直し (replay_market_state) で、本番は遅れ気味なので1週遅らせた版で判定する。
+    「効く」とは、2005〜 と 2009〜 の両方で、補間より年率が高く、最大DD・最悪の1か月が補間より悪くないこと。
+    """
+    import yfinance as yf
+
+    import market_breadth as mb
+
+    df = yf.Ticker("^N225").history(start="1999-01-01", auto_adjust=False)
+    ohlcv = [{"date": i.date().isoformat(), "close": float(r["Close"]), "high": float(r["High"]),
+              "low": float(r["Low"]), "volume": float(r["Volume"])} for i, r in df.iterrows() if r["Close"] == r["Close"]]
+    vi_by = {v["date"]: v["nikkei_vi"] for v in mb.fetch_nikkei_vi()}
+    credit_all = mb.fetch_credit_balance_weekly()
+    px = {r["date"]: r["close"] for r in ohlcv}
+    dates = [r["date"] for r in ohlcv]
+    first_vol = next(r["date"] for r in ohlcv if r["volume"] > 0)
+    state = replay_market_state([r for r in ohlcv if r["date"] >= first_vol])
+
+    for start, credit in (("2005-01-01", []), ("2009-06-12", credit_all)):
+        i0 = dates.index(next(d for d in dates if d >= start))
+        days = [{"date": dates[i], "r": px[dates[i]] / px[dates[i - 1]] - 1} for i in range(max(1, i0), len(dates))]
+        ds = [d["date"] for d in days]
+        boost, _ = _boost_weekly(ds, credit)
+        weeks = list(boost)
+        vi_on, on, last = {}, False, None
+        k = 0
+        for d in ds:
+            last = vi_by.get(d, last)
+            if d in boost:
+                if last is not None:
+                    on = last > 30 or (on and last >= 25)
+                vi_on[d] = on
+        st_now = {d: state.get(d) for d in weeks}
+        st_lag = {d: (st_now[weeks[j - 1]] if j else None) for j, d in enumerate(weeks)}
+
+        def run(base: float, up: bool = False, pres: Optional[float] = None, corr: Optional[float] = None,
+                use_boost: bool = True, st: Optional[Dict[str, Optional[str]]] = None) -> Tuple[float, float, float, float]:
+            name = f"_s{base}_{use_boost}"
+            TABLES[name] = {0: base, 1: BOOST_MULTIPLE_SIM, 2: 1.4}
+            w = {}
+            for d in weeks:
+                s_ = (st or {}).get(d)
+                temp = 1 if use_boost and boost[d]["temp"] == 1 else (2 if up and s_ == "confirmed_uptrend" else 0)
+                c = math.inf
+                if temp != 1:
+                    if vi_on[d]:
+                        c = min(c, VI_LOW)
+                    if pres and s_ == "uptrend_under_pressure":
+                        c = min(c, pres)
+                    if corr and s_ == "market_in_correction":
+                        c = min(c, corr)
+                w[d] = {**boost[d], "temp": temp, "vi_cap": c}
+            res = simulate(days, w, {**_DEFAULTS, "table": name, "b6": True, "vi_jump": True})
+            mt = metrics(res, None, None)
+            a = [x["A"] for x in res["rows"]]
+            return mt["avg_level"], mt["cagr"], mt["max_dd"], min(a[i] / a[i - 21] - 1 for i in range(21, len(a)))
+
+        consts = {ub: [run(b, use_boost=ub) for b in (1.0, 1.1, 1.2, 1.4)] for ub in (True, False)}
+        log_print(f"### {start}〜 ({'最終案' if credit else '口座の上限'} + VI 30超で 0.8倍に重ねる)")
+        log_print("| 運用 | 年率 | 最大DD | 最悪の1か月 | 平均倍率 | 補間との差: 年率 / 最大DD / 最悪の1か月 |")
+        log_print("|---|---|---|---|---|---|")
+        rows = [("今のルール (ふだん 1.2倍)", run(1.2), True)]
+        for label, kw in (("P1 圧力下なら 1.0倍まで", {"pres": 1.0}),
+                          ("P2 圧力下・調整なら 1.0倍まで", {"pres": 1.0, "corr": 1.0}),
+                          ("U1 上昇確定なら 1.4倍", {"up": True}),
+                          ("U2 上昇確定 1.4倍・圧力下と調整 1.0倍まで", {"up": True, "pres": 1.0, "corr": 1.0})):
+            rows.append((label + " (1週遅らせる)", run(1.2, st=st_lag, **kw), True))
+            rows.append((label + " (遅らせない、参考)", run(1.2, st=st_now, **kw), True))
+        if credit:
+            rows.append(("買い向かいなし (ふだん 1.2倍)", run(1.2, use_boost=False), False))
+            rows.append(("買い向かいあり = 今のルール、買い向かいなしの一定倍率と比べる", run(1.2), False))
+        for label, (avg, cagr, mdd, w21), ub in rows:
+            ic, im, iw = _interp(consts[ub], avg)
+            log_print(f"| {label} | {_pct(cagr)} | {mdd * 100:.1f}% | {_pct(w21)} | {avg:.2f} | "
+                      f"{(cagr - ic) * 100:+.2f}pt / {(mdd - im) * 100:+.1f}pt / {(w21 - iw) * 100:+.1f}pt |")
+        log_print("一定倍率 (補間の点、買い向かいあり): " + ", ".join(
+            f"{b}倍 {_pct(c)} / {m * 100:.1f}% / {_pct(w)} (平均 {a:.2f})"
+            for b, (a, c, m, w) in zip((1.0, 1.1, 1.2, 1.4), consts[True])))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="資金管理のルールを復元した日次リターンで比べる (issue #594)")
-    parser.add_argument("command", choices=["run", "nikkei", "vi", "overlay"],
+    parser.add_argument("command", choices=["run", "nikkei", "vi", "overlay", "state"],
                         help="run: 保有で全版を計算して保存 / nikkei: 日経平均の長期で確かめる / "
                              "vi: 日経VI で減らすとテールを小さくできるか (nikkei・vi は保存しない)")
     args = parser.parse_args()
@@ -1068,6 +1168,9 @@ def main() -> int:
         return 0
     if args.command == "overlay":
         overlay_study()
+        return 0
+    if args.command == "state":
+        state_sizing_study()
         return 0
     out = run()
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
