@@ -21,7 +21,7 @@
 {#- 1行目: 量 (今週の目標がどう決まったか · いまの倍率と維持率) #}
 <div style="{{ row }}">
   {%- if ex and ex.week_target is not none %}
-  <span title="相場で決まる倍率 {{ '%.1f'|format(ex.want) }}倍 (ふだん 1.2倍。信用評価損益率 (週次の公表値) が −15% 以下で前週より改善したら、その日から3か月は 1.6倍。合図が続けば延びる) と、口座の高値からの下落で決まる上限 {{ '%.2f'|format(ex.cap) }}倍 (2.0 × (1 − 下落率 ÷ 20%)、下限 0.8倍。いまは高値から −{{ '%.1f'|format(ex.drawdown_pct) }}%) の小さい方の段へ、先週の目標から週1段ずつ近づく (段 0.8 / 1.0 / 1.1 / 1.2 / 1.4 / 1.6 / 2.0)。{{ ex.week_target_from }} の値で決めた。見直しは日曜。
+  <span title="相場で決まる倍率 {{ '%.1f'|format(ex.want) }}倍 (ふだん 1.2倍。信用評価損益率 (週次の公表値) が −15% 以下で前週より改善したら、その日から3か月は 1.6倍。合図が続けば延びる) と、口座の高値からの下落で決まる上限 {{ '%.2f'|format(ex.cap) }}倍 (2.0 × (1 − 下落率 ÷ 20%)、下限 0.8倍。いまは高値から −{{ '%.1f'|format(ex.drawdown_pct) }}%) の小さい方の段へ、先週の目標から週1段ずつ近づく (段 0.8 / 1.0 / 1.1 / 1.2 / 1.4 / 1.6 / 2.0)。日経VI が 30を超えたら 25を下回るまで 0.8倍までに抑え、その週に下げる (買い向かいの間は抑えない)。{{ ex.week_target_from }} の値で決めた{% if ex.week_vi is not none %} (日経VI {{ '%.1f'|format(ex.week_vi) }}){% endif %}。見直しは日曜。
 自己資本 {{ '{:,}'.format((ex.equity / 10000)|round|int) }}万 / 高値 {{ '{:,}'.format((ex.peak_equity / 10000)|round|int) }}万 (高値は更新したときだけ上げ、四半期末にその時点の資産へ置き換える。保証金率の入れ直しで入った入出金などの差は除く)">{{ ex.week_label }} <b style="color:#333;font-size:1.1em;">{{ '%.1f'|format(ex.week_target) }}倍</b>{% if ex.target_reason %} <span style="color:#888;">({{ ex.target_reason }})</span>{% endif %}</span>
   <span>·</span>
   <span title="倍率 = 運用総額 (現物 + NISA + 信用建玉の時価) ÷ 自己資本{% for r in ms.rows %}{% for code, v in r.etf %}
@@ -75,5 +75,6 @@
   {%- endif %}
   <a href="#" style="{{ edit }}" title="今週の感情を記録する" onclick="var f=document.getElementById('emotion-form');f.hidden=!f.hidden;return false;">✎</a>
 </div>
+{%- if ex and ex.rules %}{% include "_position_rules.html" %}{% endif %}
 {% include "_emotion_input.html" %}
 {% include "_margin_summary.html" %}

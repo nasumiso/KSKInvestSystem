@@ -60,6 +60,9 @@ TABLES = {
     "MA200": {1: 1.4, -1: 1.0},
     # 最終案 (2026-11-26 決定): ふだん 1.2倍、信用評価損益率の底 (−15% 以下で改善) から3か月は 1.6倍
     "FINAL": {0: 1.2, 1: 1.6},
+    "FINAL11": {0: 1.1, 1: 1.6},  # VI の検証で、平均倍率を近づけて比べる相手
+    "FINAL10": {0: 1.0, 1: 1.6},
+    "flat10": {t: 1.0 for t in range(-3, 4)},
     "OLD": {-3: 2.0, -2: 1.6, -1: 1.4, 0: 1.2, 1: 1.1, 2: 1.0, 3: 0.8},
 }
 CREDIT_TOP = -3.0  # 旧方式: 信用評価損益率の天井圏
@@ -136,6 +139,8 @@ def simulate(days: List[Dict[str, Any]], weekly: Dict[str, Dict[str, Any]],
         before = level
         if version.get("direct"):
             level = ladder_floor(min(desire, cap))  # 旧方式: 毎週その目標へ直接合わせる
+        elif version.get("vi_jump") and level > w["vi_cap"]:
+            level = ladder_floor(min(desire, cap))  # VI 30超で抑えるときだけは、その週に 0.8倍まで下げる
         elif version.get("b3") and level > cap:
             level = ladder_floor(cap)  # 上限を超えた分は一気に戻す
         elif version.get("b4") and w["temp"] == 3 and desire < level:
@@ -511,13 +516,318 @@ def _boost_weekly(dates: List[str], credit: List[Dict[str, Any]],
     return weekly, cancels
 
 
+# ==================================================
+# 日経VI で減らすと暴落の傷を小さくできるか (テールの検証)
+# ==================================================
+
+VI_BASE, VI_LOW = 1.2, 0.8  # ふだんの倍率と、合図が出ている間の倍率
+VI_CRASHES = [  # 暴落の局面 (結果を見る前に決めた)
+    ("リーマン 2008-09〜2009-03", "2008-09-01", "2009-03-31"),
+    ("震災 2011-03", "2011-03-01", "2011-04-30"),
+    ("コロナ 2020-02〜04", "2020-02-17", "2020-04-30"),
+    ("令和のブラックマンデー 2024-07〜08", "2024-07-11", "2024-08-31"),
+    ("関税ショック 2025-04", "2025-03-27", "2025-05-16"),
+    ("半導体の暴落 2026-10〜11", "2026-09-30", "2026-12-31"),
+]
+
+
+def _vi_rules(dates: List[str], vi_by: Dict[str, float]) -> Dict[str, List[float]]:
+    """日ごとの倍率 (その日の引けで決め、翌営業日のリターンに当てる)。VI が無い日は前の値を使う。"""
+    vis, last = [], None
+    for d in dates:
+        last = vi_by.get(d, last)
+        vis.append(last)
+
+    def band(hi: float, lo: float, weekly: bool = False) -> List[float]:
+        out, on = [], False
+        week_end = set(_weekly_dates(dates)) if weekly else None
+        for d, v in zip(dates, vis):
+            if v is not None and (week_end is None or d in week_end):
+                on = v > hi or (on and v >= lo)
+            out.append(VI_LOW if on else VI_BASE)
+        return out
+
+    spike, on = [], False
+    for i, v in enumerate(vis):
+        past = [x for x in vis[max(0, i - 20):i] if x is not None]
+        if v is not None and len(past) >= 10:
+            avg = sum(past) / len(past)
+            on = v > avg * 1.5 or (on and v >= avg)
+        spike.append(VI_LOW if on else VI_BASE)
+    return {
+        "VI 30超で減らす (25未満で戻す)": band(30, 25),
+        "VI 40超で減らす (30未満で戻す)": band(40, 30),
+        "VI 急騰 (20日平均の1.5倍超、平均を下回ったら戻す)": spike,
+        "VI 30超で減らす (週1回の判断)": band(30, 25, weekly=True),
+    }
+
+
+def _vi_metrics(dates: List[str], r: List[float], lev: List[float]) -> Dict[str, Any]:
+    """r[i] は dates[i] の日次リターン。lev[i-1] を r[i] に当てる (日々その倍率に合わせる)。"""
+    a = [1.0]
+    for i in range(1, len(r)):
+        a.append(a[-1] * (1 + lev[i - 1] * r[i]))
+    hi, mdd = a[0], 0.0
+    for x in a:
+        hi = max(hi, x)
+        mdd = max(mdd, 1 - x / hi)
+    m21 = sorted(a[i] / a[i - 21] - 1 for i in range(21, len(a)))
+    years = (date.fromisoformat(dates[-1]) - date.fromisoformat(dates[0])).days / 365.25
+    crashes = {}
+    for name, s, e in VI_CRASHES:
+        idx = [i for i, d in enumerate(dates) if s <= d <= e]
+        if idx and idx[0] > 0:
+            seg = a[idx[0] - 1:idx[-1] + 1]
+            peak, dd = seg[0], 0.0
+            for x in seg:
+                peak = max(peak, x)
+                dd = max(dd, 1 - x / peak)
+            crashes[name] = (seg[-1] / seg[0] - 1, dd)
+    tail = m21[:max(1, len(m21) // 20)]
+    return {
+        "cagr": a[-1] ** (1 / years) - 1, "mdd": mdd,
+        "w5": min(a[i] / a[i - 5] - 1 for i in range(5, len(a))), "w21": m21[0],
+        "cvar21": sum(tail) / len(tail), "avg": sum(lev) / len(lev),
+        "switch": sum(1 for x, y in zip(lev, lev[1:]) if x != y), "crashes": crashes,
+    }
+
+
+def vi_study() -> None:
+    """日経VI の合図で 1.2倍 → 0.8倍に減らすと、暴落の傷 (テール) を小さくできるかを確かめる。
+
+    比べる相手は一定 1.2倍と、そのルールと同じ平均倍率で一定に張った版。平均倍率が下がるだけで
+    下落は小さくなるので、後者を超えて初めて「タイミングが効いた」と言える。日経平均 2001〜 と、
+    保有の日次リターン (equity_history.json があれば) の両方に当てる。
+    """
+    import yfinance as yf
+
+    import market_breadth as mb
+
+    vi_by = {v["date"]: v["nikkei_vi"] for v in mb.fetch_nikkei_vi()}
+    df = yf.Ticker("^N225").history(start="2000-12-01", auto_adjust=False)["Close"]
+    nk = [(i.date().isoformat(), float(v)) for i, v in df.items() if v == v and i.date().isoformat() >= "2001-01-04"]
+    series = [("日経平均 2001〜", [d for d, _ in nk],
+               [0.0] + [nk[i][1] / nk[i - 1][1] - 1 for i in range(1, len(nk))])]
+    if os.path.exists(EQUITY_PATH):
+        with open(EQUITY_PATH, encoding="utf-8") as f:
+            eq = json.load(f)["days"]
+        series.append(("保有 2025-01〜", [d["date"] for d in eq], [0.0] + [d["r"] for d in eq[1:]]))
+    log_print(f"日経VI のデータ: {min(vi_by)}〜{max(vi_by)}")
+    for title, dates, r in series:
+        log_print(f"## {title}")
+        log_print("| 運用 | 年率 | 最大DD | 最悪の1週 | 最悪の1か月 | 1か月の下位5%平均 | 平均倍率 | 切替 |")
+        log_print("|---|---|---|---|---|---|---|---|")
+        rows = [("一定 1.2倍", [VI_BASE] * len(dates))]
+        for name, lev in _vi_rules(dates, vi_by).items():
+            avg = sum(lev) / len(lev)
+            rows += [(name, lev), (f"　同じ平均の一定 {avg:.2f}倍", [avg] * len(dates))]
+        ms = [(name, _vi_metrics(dates, r, lev)) for name, lev in rows]
+        for name, m in ms:
+            log_print(f"| {name} | {_pct(m['cagr'])} | {m['mdd'] * 100:.1f}% | {_pct(m['w5'])} | {_pct(m['w21'])} | "
+                      f"{_pct(m['cvar21'])} | {m['avg']:.2f} | {m['switch']} |")
+        names = [c for c, _, _ in VI_CRASHES if c in ms[0][1]["crashes"]]
+        log_print(f"### {title}: 暴落の局面 (期間のリターン / 期間内の最大DD)")
+        log_print("| 運用 | " + " | ".join(names) + " |")
+        log_print("|---|" + "---|" * len(names))
+        for name, m in ms:
+            log_print(f"| {name} | " + " | ".join(
+                f"{_pct(m['crashes'][c][0])} / {m['crashes'][c][1] * 100:.1f}%" for c in names) + " |")
+        credit = mb.fetch_credit_balance_weekly()
+        _vi_with_final(title, dates, r, vi_by, credit, "2009-06-12")
+        _vi_graded(title, dates, r, vi_by, credit, "2009-06-12")
+        if title.startswith("日経"):  # 信用を使わない版だけ、リーマンを含む 2001 から
+            _vi_with_final(title, dates, r, vi_by, [], dates[1])
+            _vi_graded(title, dates, r, vi_by, [], dates[1])
+
+
+def _vi_graded(title: str, dates: List[str], r: List[float], vi_by: Dict[str, float],
+               credit: List[Dict[str, Any]], start: str) -> None:
+    """VI が上がるにつれて段階的に抑える版を、#610 の二択 (30超で 0.8倍) と比べる (2026-11-27)。
+
+    条件は結果を見る前に決めた。金曜の判定で、上限を超えたらその週に下げ、外れたら週1段で戻す。
+    最終案では信用評価損益率の底の買い向かいの間は抑えない。
+    - G1 段階: VI 20以下は抑えない、20〜25 は 1.1倍、25〜30 は 1.0倍、30超は 0.8倍まで
+    - G2 比例: 上限 = 1.2 × 20 ÷ VI (下限 0.8倍)。段に直すときは下の段 (ladder_floor)
+    - G3 上昇局面だけ: G1 と同じ段を、VI が4週前の判定日より高いときだけ
+    G4・G5 は結果を見たあとに足した参考 (日経VI は中央値が約23 で、20〜25 がふだんの水準だったため 25 から)。
+    C1〜C4 は、日経VI の水準に置き直した段 (VIX の 20・25・30 と同じ分位)。置き直し方は結果を見る前に決めた。
+    """
+    keep = [i for i in range(1, len(dates)) if dates[i] >= start]
+    days = [{"date": dates[i], "r": r[i]} for i in keep]
+    ds = [d["date"] for d in days]
+    boost, _ = _boost_weekly(ds, credit)
+    last, vi_w, on = None, {}, False
+    binary = {}
+    for d in ds:
+        last = vi_by.get(d, last)
+        if d in boost:
+            vi_w[d] = last
+            on = last is not None and (last > 30 or (on and last >= 25))
+            binary[d] = VI_LOW if on else math.inf
+
+    def g1(v: Optional[float]) -> float:
+        if v is None or v <= 20:
+            return math.inf
+        return 1.1 if v <= 25 else 1.0 if v <= 30 else VI_LOW
+
+    weeks = list(boost)
+    g1c = {d: g1(vi_w[d]) for d in weeks}
+    g2c = {d: (max(VI_LOW, 1.2 * 20 / vi_w[d]) if vi_w[d] and vi_w[d] > 20 else math.inf) for d in weeks}
+    g3c = {d: (g1c[d] if k >= 4 and vi_w[d] is not None and vi_w[weeks[k - 4]] is not None
+               and vi_w[d] > vi_w[weeks[k - 4]] else math.inf) for k, d in enumerate(weeks)}
+    # 日経VI に合わせた段 (2026-11-27、結果を見る前に決めた): VIX の 20・25・30 は VIX の分布 (1990〜) の
+    # 63%・83%・92% 点。日経VI (2001〜) で同じ位置の値は 25.4・30.0・35.5 なので、25・30・35 を使う
+    def c1(v: Optional[float], t=(25.0, 30.0, 35.0)) -> float:
+        if v is None or v <= t[0]:
+            return math.inf
+        return 1.1 if v <= t[1] else 1.0 if v <= t[2] else VI_LOW
+
+    c1c = {d: c1(vi_w[d]) for d in weeks}
+    # C2 先読みなし: その時点までの日経VI の 63%・83%・92% 点 (過去が500営業日たまるまでは抑えない)
+    import bisect
+    hist: List[float] = []
+    c2c, vi_items = {}, sorted(vi_by.items())
+    k = 0
+    for d in weeks:
+        while k < len(vi_items) and vi_items[k][0] <= d:
+            bisect.insort(hist, vi_items[k][1])
+            k += 1
+        if len(hist) < 500:
+            c2c[d] = math.inf
+            continue
+        t = tuple(hist[int(len(hist) * q)] for q in (0.63, 0.83, 0.92))
+        c2c[d] = c1(vi_w[d], t)
+    c3c = {d: (c1c[d] if j >= 4 and vi_w[d] is not None and vi_w[weeks[j - 4]] is not None
+               and vi_w[d] > vi_w[weeks[j - 4]] else math.inf) for j, d in enumerate(weeks)}
+    c4c = {d: (max(VI_LOW, 1.2 * 25.4 / vi_w[d]) if vi_w[d] and vi_w[d] > 25.4 else math.inf) for d in weeks}
+    table = "FINAL" if credit else "flat"
+    base = boost if credit else {d: {**x, "temp": 0} for d, x in boost.items()}
+
+    def w_of(caps: Dict[str, float]) -> Dict[str, Dict[str, Any]]:
+        return {d: {**x, "vi_cap": math.inf if x["temp"] == 1 else caps[d]} for d, x in base.items()}
+
+    jump = {"table": table, "b6": True, "vi_jump": True}
+    rows = [
+        ("抑えない" + (" (最終案)" if credit else " (口座の上限だけ)"), w_of({d: math.inf for d in weeks}), {"table": table}),
+        ("#610 二択: VI 30超で 0.8倍", w_of(binary), jump),
+        ("G1 段階: 20〜25 1.1 / 25〜30 1.0 / 30超 0.8", w_of(g1c), jump),
+        ("G2 比例: 1.2 × 20 ÷ VI (下限 0.8)", w_of(g2c), jump),
+        ("G3 上昇局面だけ G1", w_of(g3c), jump),
+        # 結果を見たあとに足した参考 (日経VI の中央値は約23 で、20〜25 はふだんの水準だったため)
+        ("参考 G4: 25〜30 1.1 / 30超 0.8", w_of({d: {1.1: math.inf, 1.0: 1.1}.get(c, c) for d, c in g1c.items()}), jump),
+        ("参考 G5: 25〜30 1.0 / 30超 0.8", w_of({d: {1.1: math.inf}.get(c, c) for d, c in g1c.items()}), jump),
+        ("C1 日経VI の段: 25〜30 1.1 / 30〜35 1.0 / 35超 0.8", w_of(c1c), jump),
+        ("C2 先読みなし: その時点の 63・83・92% 点", w_of(c2c), jump),
+        ("C3 上昇局面だけ C1", w_of(c3c), jump),
+        ("C4 比例: 1.2 × 25.4 ÷ VI (下限 0.8)", w_of(c4c), jump),
+        ("ふだん 1.1倍", w_of({d: math.inf for d in weeks}), {"table": "FINAL11"}),
+        ("ふだん 1.0倍", w_of({d: math.inf for d in weeks}), {"table": "flat10" if not credit else "FINAL10"}),
+    ]
+    crashes = [(c, s, e) for c, s, e in VI_CRASHES if ds[0] <= s <= ds[-1]]
+    log_print(f"### {title}: VI で段階的に抑える ({ds[0]}〜、{'最終案' if credit else '口座の上限'}に重ねる)")
+    log_print("| 運用 | 年率 | 最大DD | 最悪の1か月 | 平均倍率 | 抑えた週 | " + " | ".join(c for c, _, _ in crashes) + " |")
+    log_print("|---|---|---|---|---|---|" + "---|" * len(crashes))
+    for name, w, v in rows:
+        res = simulate(days, w, {**_DEFAULTS, **v})
+        mt = metrics(res, None, None)
+        a = [x["A"] for x in res["rows"]]
+        w21 = min(a[i] / a[i - 21] - 1 for i in range(21, len(a)))
+        held = sum(1 for x in res["weeks"] if w[x["date"]]["vi_cap"] < x["desire"])
+        cells = []
+        for c, s_, e in crashes:
+            m = metrics(res, s_, e)
+            cells.append(f"{_pct(m['return'])} / {m['max_dd'] * 100:.1f}%")
+        log_print(f"| {name} | {_pct(mt['cagr'])} | {mt['max_dd'] * 100:.1f}% | {_pct(w21)} | {mt['avg_level']:.2f} | "
+                  f"{held} | " + " | ".join(cells) + " |")
+
+
+def _vi_with_final(title: str, dates: List[str], r: List[float], vi_by: Dict[str, float],
+                   credit: List[Dict[str, Any]], start: str) -> None:
+    """最終案 (口座の上限・信用評価損益率の底で 1.6倍・週1段) に、VI 30超で 0.8倍の上限を重ねる。
+
+    VI の判断は週の最終営業日の引け (30超でかけ、25未満で外す)。credit が空なら信用の底は出ない
+    (最終案の行は口座の上限だけと同じになる)。
+    """
+    keep = [i for i in range(1, len(dates)) if dates[i] >= start]
+    days = [{"date": dates[i], "r": r[i]} for i in keep]
+    ds = [d["date"] for d in days]
+    boost, _ = _boost_weekly(ds, credit)
+    on, last, vi_on = False, None, {}
+    for d in ds:
+        last = vi_by.get(d, last)
+        if d in boost:
+            on = last is not None and (last > 30 or (on and last >= 25))
+            vi_on[d] = on
+    # B5 を 0.8倍で測り直す: 20日の下方ボラ (倍率をかける前の r) が、それまでの週の値の 80パーセンタイルを超えた週
+    vol_on, downs, r_by = {}, [], {d["date"]: d["r"] for d in days}
+    for d in boost:
+        idx = ds.index(d)
+        window = [r_by[x] for x in ds[max(0, idx - VOL_WINDOW + 1):idx + 1]]
+        down = math.sqrt(sum(min(x, 0) ** 2 for x in window) / len(window) * 250)
+        vol_on[d] = bool(downs) and idx >= VOL_WARMUP and down > sorted(downs)[int(len(downs) * VOL_PCTL)]
+        downs.append(down)
+    flat = {d: {**x, "temp": 0} for d, x in boost.items()}
+
+    def with_vi(w: Dict[str, Dict[str, Any]], yield_to_boost: bool = False,
+                flags: Optional[Dict[str, bool]] = None) -> Dict[str, Dict[str, Any]]:
+        flags = vi_on if flags is None else flags
+        return {d: {**x, "vi_cap": VI_LOW if flags[d] and not (yield_to_boost and x["temp"] == 1) else math.inf}
+                for d, x in w.items()}
+
+    either = {d: vi_on[d] or vol_on[d] for d in boost}
+    jump = {"b6": True, "vi_jump": True}
+
+    versions = [
+        ("一定 1.2倍", flat, {"table": "flat", "cap": False}),
+        ("口座の上限だけ", flat, {"table": "flat"}),
+        ("最終案", boost, {"table": "FINAL"}),
+        ("最終案 + VI 30超で 0.8倍に抑える (週1段で下げる)", with_vi(boost), {"table": "FINAL", "b6": True}),
+        ("最終案 + VI 30超で 0.8倍に抑える (その週に下げる)", with_vi(boost), {"table": "FINAL", "b6": True, "vi_jump": True}),
+        ("最終案 + VI 30超で 0.8倍に抑える (その週に下げる、底の買い向かいを優先)", with_vi(boost, True),
+         {"table": "FINAL", "b6": True, "vi_jump": True}),
+        ("最終案 + 下方ボラで 0.8倍に抑える (その週に下げる、底の買い向かいを優先)",
+         with_vi(boost, True, vol_on), {"table": "FINAL", **jump}),
+        ("最終案 + VI か下方ボラで 0.8倍に抑える (その週に下げる、底の買い向かいを優先)",
+         with_vi(boost, True, either), {"table": "FINAL", **jump}),
+        ("最終案 (ふだん 1.1倍)", boost, {"table": "FINAL11"}),
+    ]
+    if not credit:
+        versions = [v for v in versions if v[0] in ("一定 1.2倍", "口座の上限だけ")] + [
+            ("口座の上限 + VI 30超で 0.8倍に抑える (その週に下げる)", with_vi(flat), {"table": "flat", **jump}),
+            ("口座の上限 + 下方ボラで 0.8倍に抑える (その週に下げる)", with_vi(flat, flags=vol_on), {"table": "flat", **jump}),
+            ("口座の上限 + VI か下方ボラで 0.8倍に抑える (その週に下げる)", with_vi(flat, flags=either), {"table": "flat", **jump}),
+            ("口座の上限 (ふだん 1.1倍)", flat, {"table": "FINAL11"}),
+        ]
+    crashes = [(c, s, e) for c, s, e in VI_CRASHES if ds[0] <= s and s <= ds[-1]]
+    log_print(f"### {title}: 最終案と重ねる ({ds[0]}〜、週1回見直し)")
+    log_print("| 運用 | 年率 | 最大DD | 最悪の1か月 | 平均倍率 | 0.8倍の週 | 1.6倍の週 | "
+              + " | ".join(c for c, _, _ in crashes) + " |")
+    log_print("|---|---|---|---|---|---|---|" + "---|" * len(crashes))
+    for name, w, v in versions:
+        res = simulate(days, w, {**_DEFAULTS, **v})
+        mt = metrics(res, None, None)
+        a = [x["A"] for x in res["rows"]]
+        w21 = min(a[i] / a[i - 21] - 1 for i in range(21, len(a)))
+        cells = []
+        for c, s, e in crashes:
+            m = metrics(res, s, e)
+            cells.append(f"{_pct(m['return'])} / {m['max_dd'] * 100:.1f}%")
+        log_print(f"| {name}{' (運用不能)' if res['halted'] else ''} | {_pct(mt['cagr'])} | {mt['max_dd'] * 100:.1f}% | "
+                  f"{_pct(w21)} | {mt['avg_level']:.2f} | {sum(1 for x in res['weeks'] if x['level'] <= 0.8)} | "
+                  f"{sum(1 for x in res['weeks'] if x['level'] >= 1.6)} | " + " | ".join(cells) + " |")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="資金管理のルールを復元した日次リターンで比べる (issue #594)")
-    parser.add_argument("command", choices=["run", "nikkei"],
-                        help="run: 保有で全版を計算して保存 / nikkei: 日経平均の長期で確かめる (保存しない)")
+    parser.add_argument("command", choices=["run", "nikkei", "vi"],
+                        help="run: 保有で全版を計算して保存 / nikkei: 日経平均の長期で確かめる / "
+                             "vi: 日経VI で減らすとテールを小さくできるか (nikkei・vi は保存しない)")
     args = parser.parse_args()
     if args.command == "nikkei":
         nikkei_study()
+        return 0
+    if args.command == "vi":
+        vi_study()
         return 0
     out = run()
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)

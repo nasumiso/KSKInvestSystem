@@ -343,6 +343,13 @@ BOOST_MONTHS = 3
 CAP_MAX = 2.0
 CAP_WIDTH = 0.20
 CAP_FLOOR = 0.8
+# 日経VI で抑える (#610): 判定日の VI が ON を超えたら OFF を下回るまで、運用総額を MULTIPLE 倍までに抑える。
+# 買い向かいの期間は抑えない。判定日が FROM より前の週には当てない (過去に出した目標を変えないため)
+VI_HOLD_ON = 30.0
+VI_HOLD_OFF = 25.0
+VI_HOLD_MULTIPLE = 0.8
+VI_HOLD_FROM = "2026-11-27"
+VI_FRESH_DAYS = 4  # 判定日からこの日数より古い VI は、取得が止まっているとみなして使わない
 # 信用評価損益率の公表値は約1週遅れ。データ日 + この日数から使えるとみなす (#594 と同じ)
 CREDIT_LAG_DAYS = 7
 # 適正エリアは目標の運用総額 ± この割合
@@ -570,14 +577,29 @@ def _week_start(day: str) -> str:
     return (d - timedelta(days=(d.weekday() - 5) % 7)).isoformat()
 
 
-def week_targets(history: List[Dict[str, Any]], credit_history: List[Dict[str, Any]]
-                 ) -> List[Dict[str, Any]]:
+def vi_at(vi_history: Optional[List[Dict[str, Any]]], day: str) -> Optional[float]:
+    """day 以前で最新の日経VI。VI_FRESH_DAYS より古い・無いなら None (取得が止まった値で抑え続けない)。"""
+    last = None
+    for r in vi_history or []:
+        if r.get("date") and r["date"] <= day and r.get("nikkei_vi") is not None:
+            if last is None or r["date"] > last["date"]:
+                last = r
+    if last is None or (date.fromisoformat(day) - date.fromisoformat(last["date"])).days > VI_FRESH_DAYS:
+        return None
+    return last["nikkei_vi"]
+
+
+def week_targets(history: List[Dict[str, Any]], credit_history: List[Dict[str, Any]],
+                 vi_history: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """週ごとの目標の倍率を、日次ログから計算し直す (状態は持たない)。
 
     週は土曜始まり。ある週の目標は、前の週の最後の行で min(張りたい量, 張れる量) へ
     先週の目標から1段動かす。最初の週は、起点の行の実際の倍率以下で一番高い段を張れる量で頭打ちにする。
+    日経VI で抑える週 (#610) は、目標が VI_HOLD_MULTIPLE より上ならその週に VI_HOLD_MULTIPLE にする。
+    抑える状態は判定日の VI を古い順にたどって決め (ON 超で入り、OFF 未満で出る)、VI が取れない週は飛ばす。
     history は equity と multiple がある行を使う (暫定行を含めてよい)。
-    Returns: [{"week", "target", "want", "cap", "from"}] (from は判定に使った行の日付)
+    Returns: [{"week", "target", "want", "cap", "drawdown", "boost", "vi", "vi_hold", "from"}]
+      (from は判定に使った行の日付。boost は判定日に買い向かいの期間か)
     """
     rows = [h for h in sorted(history, key=lambda r: r.get("date") or "")
             if h.get("equity") is not None and h.get("multiple") is not None]
@@ -590,14 +612,26 @@ def week_targets(history: List[Dict[str, Any]], credit_history: List[Dict[str, A
     weeks = sorted(last_of_week)
     first = rows[0]
     target = min(ladder_floor(first["multiple"]), ladder_floor(room_cap(dd[first["date"]])))
-    out = [{"week": weeks[0], "target": target, "want": None, "cap": None, "from": first["date"]}]
+    out = [{"week": weeks[0], "target": target, "want": None, "cap": None, "drawdown": None, "boost": None,
+            "vi": None, "vi_hold": False, "from": first["date"]}]
+    vi_on = False
     for prev_week in weeks:
         basis = last_of_week[prev_week]
-        want = want_multiple(credit_history, basis["date"])
+        boost = boost_until(credit_history, basis["date"]) is not None
+        want = BOOST_MULTIPLE if boost else BASE_MULTIPLE
         cap = room_cap(dd[basis["date"]])
-        target = step_toward(target, min(want, cap))
+        vi = vi_at(vi_history, basis["date"])
+        if vi is not None:
+            vi_on = vi > VI_HOLD_ON or (vi_on and vi >= VI_HOLD_OFF)
+        hold = vi is not None and vi_on and not boost and basis["date"] >= VI_HOLD_FROM
+        if hold and target > VI_HOLD_MULTIPLE:
+            target = ladder_floor(min(want, cap, VI_HOLD_MULTIPLE))  # 抑えるときはその週に下げる
+        else:
+            target = step_toward(target, min(want, cap, VI_HOLD_MULTIPLE if hold else want))
         nxt = (date.fromisoformat(prev_week) + timedelta(days=7)).isoformat()
-        out.append({"week": nxt, "target": target, "want": want, "cap": cap, "from": basis["date"]})
+        out.append({"week": nxt, "target": target, "want": want, "cap": cap,
+                    "drawdown": dd[basis["date"]], "boost": boost,
+                    "vi": vi, "vi_hold": hold, "from": basis["date"]})
     return out
 
 
