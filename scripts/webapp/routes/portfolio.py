@@ -15,8 +15,8 @@ portfolio_shelve のレコードに stocks_shelve から指標を補完して表
 書き込み API は txt 関連の状態を変えるもの (add/transition/bulk-exclude/bulk-transition) のみ
 末尾で sync_to_my_watch_list_txt() を呼ぶ。memo 更新は txt 内容に影響しないため同期不要。
 
-issue #215: ページング/ソートを廃止し、status は単一選択化、業態テーマ select を追加。
-業態テーマ指定時は status 無視で全銘柄から該当する業態/テーマだけを抽出する。
+issue #215: ページング/ソートを廃止し、status は単一選択化、セクター select を追加。
+セクター指定時は status 無視で全銘柄から該当するセクターだけを抽出する。
 """
 
 import datetime
@@ -116,7 +116,7 @@ def _parse_status_filter(args) -> Optional[str]:
 
 
 def _parse_gyoutai_theme(args) -> Optional[str]:
-    """request.args から業態/テーマフィルタを取り出す (issue #215)。
+    """request.args からセクターフィルタを取り出す (issue #215)。
 
     空文字・未指定は None を返す。値は前後空白除去のみで、後段で
     `gyoutai_themes` リストとの完全一致判定に使う。
@@ -1364,8 +1364,8 @@ def dashboard():
 
     URL クエリ:
       status:        hold / semi / watch のいずれか単一 (省略時=hold、空文字=全ステータス)
-      gyoutai_theme: 業態/テーマ名の完全一致 (省略時=全業態テーマ)
-                     指定時は status を無視して全銘柄から該当業態/テーマを抽出。
+      gyoutai_theme: セクター名の完全一致 (省略時=全セクター)
+                     指定時は status を無視して全銘柄から該当セクターを抽出。
       sort:          position / rank / gyoutai / rating
                      (省略時=hold/all は position、semi/watch は rank)
     `page` パラメータは silent に無視 (旧 URL 互換)。
@@ -1385,7 +1385,7 @@ def dashboard():
         if st in STATUS_VALUE_TO_QUERY:
             counts[STATUS_VALUE_TO_QUERY[st]] += 1
 
-    # issue #215: gyoutai_theme 指定時は status 無視で業態/テーマ完全一致のレコードのみ。
+    # issue #215: gyoutai_theme 指定時は status 無視でセクター完全一致のレコードのみ。
     # 未指定時は status フィルタ (None なら全件)。
     if active_gyoutai_theme:
         filtered_records = [
@@ -1685,7 +1685,7 @@ def shikiho_data(code_s):
 
 
 # ===========================================
-# 業態テーマ別 RS サマリー (issue #283)
+# セクター別 RS サマリー (issue #283)
 # ===========================================
 
 # 許可 sort_key は helper のマッピング (真実の源) から導出する
@@ -1695,9 +1695,9 @@ DEFAULT_THEME_SUMMARY_SORT = "rank"
 
 @portfolio_bp.route("/portfolio/themes/summary", methods=["GET"])
 def theme_summary():
-    """業態テーマ別 RS サマリー (閲覧専用、issue #283)。
+    """セクター別 RS サマリー (閲覧専用、issue #283)。
 
-    手動付けした業態テーマ (memo.gyoutai_themes) でユニバースをグルーピングし、
+    手動付けしたセクター (memo.gyoutai_themes) でユニバースをグルーピングし、
     momentum_pt (中長期) と rs_line 移動平均乖離オシレーター (短期の勢い) を集約表示する。
 
     URL クエリ:
@@ -1750,7 +1750,7 @@ def themes_create():
     except (ValueError, TypeError) as e:
         flash(str(e), "error")
         return redirect(url_for("portfolio.themes_index"))
-    flash(f"テーマ「{name}」を作成しました", "info")
+    flash(f"セクター「{name}」を作成しました", "info")
     return redirect(url_for("portfolio.themes_index"))
 
 
@@ -1771,15 +1771,15 @@ def themes_update(name: str):
             description=description if description is not None else None,
         )
     except KeyError:
-        flash(f"テーマ「{name}」が見つかりません", "error")
+        flash(f"セクター「{name}」が見つかりません", "error")
         return redirect(url_for("portfolio.themes_index"))
     except (ValueError, TypeError) as e:
         flash(str(e), "error")
         return redirect(url_for("portfolio.themes_index"))
     if new_name and new_name != name:
-        flash(f"テーマを「{name}」→「{new_name}」にリネームしました", "info")
+        flash(f"セクターを「{name}」→「{new_name}」にリネームしました", "info")
     else:
-        flash(f"テーマ「{name}」を更新しました", "info")
+        flash(f"セクター「{name}」を更新しました", "info")
     return redirect(url_for("portfolio.themes_index"))
 
 
@@ -1789,13 +1789,13 @@ def themes_delete(name: str):
     try:
         affected = ps.delete_theme(name)
     except KeyError:
-        flash(f"テーマ「{name}」が見つかりません", "error")
+        flash(f"セクター「{name}」が見つかりません", "error")
         return redirect(url_for("portfolio.themes_index"))
     except (ValueError, TypeError) as e:
         flash(str(e), "error")
         return redirect(url_for("portfolio.themes_index"))
     flash(
-        f"テーマ「{name}」を削除しました (影響: {affected} 銘柄)",
+        f"セクター「{name}」を削除しました (影響: {affected} 銘柄)",
         "info",
     )
     return redirect(url_for("portfolio.themes_index"))

@@ -398,7 +398,7 @@ VALUATION_FILL = 10
 
 
 def _load_system_inputs(codes):
-    """銘柄ごとの RS・最新の終値・参考値、ポートフォリオの業態テーマ、最新の業態テーマ順位と基準日を読む。
+    """銘柄ごとの RS・最新の終値・参考値、ポートフォリオのセクター、最新のセクター順位と基準日を読む。
 
     テーマ順位は日次バッチが portfolio_shelve に記録したもの (WebApp の calc_theme_ranks は
     呼ばない。MCP サーバーに webapp を import させないため)。基準日はその記録日。
@@ -479,7 +479,7 @@ def _system_of(stock, fair_price, themes, ranks, day):
 def compute_system_scores(records):
     """台帳の銘柄 ({code_s: record}) について、システムが出す2軸を {code_s: {...}} で返す。
 
-    基準日 (as_of) は業態テーマ順位の最新記録日で、RS と終値はその日のものだけを使う (#544)。
+    基準日 (as_of) はセクター順位の最新記録日で、RS と終値はその日のものだけを使う (#544)。
     渡した全銘柄について必ず値を返す。読み出しに失敗したら全銘柄を、1銘柄の計算に失敗したら
     その銘柄を、欠けた扱い (モメンタム 10・Valuation 10) にする。台帳の読み書きは止めない。
     """
@@ -612,7 +612,7 @@ def render_html(data, generated_at, system=None):
             '<div class="table-wrap"><table><tr><th class="num">順位</th><th>コード</th>'
             '<th>銘柄</th><th class="num">ファンダ</th><th class="num">未織込</th>'
             '<th class="num" title="適正株価と基準日の終値からシステムが出す">Val</th>'
-            '<th class="num" title="RS と業態テーマ順位からシステムが出す">モメンタム</th><th class="num">総合</th>'
+            '<th class="num" title="RS とセクター順位からシステムが出す">モメンタム</th><th class="num">総合</th>'
             "<th>C</th><th>更新日</th><th>役割</th></tr>"
         )
         for r in group:
@@ -716,7 +716,7 @@ def _cmd_show(code_s):
 # 欠けた値の名前 → list の先頭行での呼び方
 MISSING_LABELS = {
     "price_stale": "終値が基準日のものでない", "rs_stale": "RS が基準日のものでない",
-    "fair_price": "適正株価なし", "rs": "RS なし", "theme": "業態テーマなし",
+    "fair_price": "適正株価なし", "rs": "RS なし", "theme": "セクターなし",
 }
 
 

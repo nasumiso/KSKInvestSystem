@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}テーマ管理 | Shintakane Research{% endblock %}
+{% block title %}セクター管理 | Shintakane Research{% endblock %}
 
 {% block content %}
 <style>
@@ -17,7 +17,7 @@
 </style>
 
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6em;">
-  <h2 style="margin:0;">テーマ管理</h2>
+  <h2 style="margin:0;">セクター管理</h2>
   <div style="display:flex;gap:1em;align-items:center;font-size:0.9em;">
     <a href="{{ url_for('portfolio.strategies_index') }}">戦略マスター管理</a>
     <a href="{{ url_for('portfolio.dashboard') }}">← ポートフォリオに戻る</a>
@@ -47,7 +47,7 @@
   </div>
 </form>
 
-<p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">テーマ {{ themes|length }} 件</p>
+<p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">セクター {{ themes|length }} 件</p>
 
 {# 各行の編集 / 削除フォームは HTML5 の form="id" 属性でセル横断的に関連付け、
    td の入れ子構造を壊さない。 #}
@@ -98,7 +98,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="4" style="text-align:center;color:#999;padding:1em;">登録済みテーマがありません。上のフォームから追加してください。</td></tr>
+    <tr><td colspan="4" style="text-align:center;color:#999;padding:1em;">登録済みセクターがありません。上のフォームから追加してください。</td></tr>
     {% endfor %}
   </tbody>
 </table>
@@ -117,8 +117,8 @@ function toggleEdit(btn, openEdit) {
 
 function confirmDeleteTheme(name, uses) {
   var msg = uses > 0
-    ? 'テーマ「' + name + '」を削除しますか?\n' + uses + ' 銘柄から除去されます。'
-    : 'テーマ「' + name + '」を削除しますか?';
+    ? 'セクター「' + name + '」を削除しますか?\n' + uses + ' 銘柄から除去されます。'
+    : 'セクター「' + name + '」を削除しますか?';
   if (!confirm(msg)) return;
   var tr = document.querySelector('tr[data-name="' + CSS.escape(name) + '"]');
   if (!tr) return;

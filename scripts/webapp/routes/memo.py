@@ -44,7 +44,7 @@ from webapp.helpers import (
 
 memo_bp = Blueprint("memo", __name__)
 
-# 業態テーマ提案 (issue #297) の同時実行ガード。
+# セクター提案 (issue #297) の同時実行ガード。
 # 単一プロセス運用 (app.run) 前提のプロセス内ロック。多重押下・並行リクエストで
 # claude -p が同時に複数走りワーカースレッドが枯渇するのを防ぐ。
 # リクエストはロックが空くまでタイムアウト付きで待機し、順番に直列実行する。
@@ -248,7 +248,7 @@ def post_ir_qa_delete(code_s: str, entry_id: str):
 
 @memo_bp.route("/stock/<code_s>/suggest_themes", methods=["POST"])
 def post_suggest_themes(code_s: str):
-    """業態テーマを事業内容から LLM 提案する (issue #297, AJAX/JSON)。
+    """セクターを事業内容から LLM 提案する (issue #297, AJAX/JSON)。
 
     事業テキスト (四季報特色・四季報コメント・株探概要) をマスター登録テーマと
     ともに claude -p (Haiku) に渡し、最も合うテーマを最大2件返す。
@@ -270,14 +270,14 @@ def post_suggest_themes(code_s: str):
         if record is None and not stock:
             return jsonify({"ok": False, "error": "銘柄が見つかりません"}), 404
 
-        # サーバー側ガード: 業態テーマが既に設定済みなら起動しない。
+        # サーバー側ガード: セクターが既に設定済みなら起動しない。
         portfolio_record = ps.get_record(code_s)
         memo = (portfolio_record or {}).get("memo")
         if not isinstance(memo, dict):
             memo = {}
         existing_themes = memo.get("gyoutai_themes") or []
         if any((t or "").strip() for t in existing_themes):
-            return jsonify({"ok": False, "error": "業態テーマが既に設定済みです"}), 409
+            return jsonify({"ok": False, "error": "セクターが既に設定済みです"}), 409
 
         business_text = theme_suggest.build_business_text(
             (record or {}).get("overview"),

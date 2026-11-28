@@ -67,16 +67,16 @@
     <div class="meta">
       手動分析日: <input class="editable-field inline-date" type="text" name="analysis_date_raw" value="{{ record.analysis_date_raw or '' }}" data-form="memo" form="memo-form" placeholder="MM/DD" style="width:5em;display:inline;padding:0.1em 0.3em;font-size:0.9em;">
       {% if stock.kessanbi %} | 決算日: {{ stock.kessanbi[2:] }}{% endif %}
-      {# issue #205: 業態・テーマを同じ行に配置。change/blur で AJAX 即時保存 (portfolio_list と同方式) #}
+      {# issue #205: セクターを同じ行に配置。change/blur で AJAX 即時保存 (portfolio_list と同方式) #}
       {% if portfolio_status_query %}
       {% set master_names = theme_master | map(attribute='name') | list %}
       | <span class="gyoutai-themes-inline" data-code="{{ record.code_s }}">
-        業態・テーマ:
+        セクター:
         {% for i in range(gyoutai_themes_max_slots) %}
         {% set current = gyoutai_themes[i] if i < (gyoutai_themes|length) else '' %}
         <select class="gyoutai-input-detail"
                 name="gyoutai_themes_{{ i }}"
-                title="Ctrl/Cmd+クリックでこのテーマで portfolio 絞り込み (新タブ)"
+                title="Ctrl/Cmd+クリックでこのセクターで portfolio 絞り込み (新タブ)"
                 style="font-size:0.9em;padding:0.1em 0.3em;width:auto;min-width:8em;margin:0 0.1em;border:1px solid #ddd;">
           <option value="">—</option>
           {% if current and current not in master_names %}
@@ -89,11 +89,11 @@
         {% endfor %}
         <a href="{{ url_for('portfolio.themes_index') }}"
            style="font-size:0.85em;color:#555;text-decoration:none;padding:0 0.3em;"
-           title="テーママスターを編集">✏️</a>
-        {# issue #297: 業態テーマ未設定 & 事業テキストありの銘柄に LLM 提案ボタン #}
+           title="セクターマスターを編集">✏️</a>
+        {# issue #297: セクター未設定 & 事業テキストありの銘柄に LLM 提案ボタン #}
         {% if gyoutai_themes_unset and has_business_text %}
         <button type="button" class="gyoutai-suggest-btn" data-code="{{ record.code_s }}"
-                title="事業内容 (四季報・概要) から業態テーマを LLM 提案"
+                title="事業内容 (四季報・概要) からセクターを LLM 提案"
                 style="font-size:0.85em;padding:0.1em 0.5em;margin-left:0.2em;background:transparent;border:1px solid #ccc;color:#666;border-radius:3px;cursor:pointer;">🤖 提案</button>
         <span class="gyoutai-suggest-msg" style="font-size:0.8em;color:#888;margin-left:0.3em;"></span>
         {% endif %}
@@ -1473,7 +1473,7 @@ if (location.hash === '#ir-docs') openIrDocsModal();
   margin: 0;
   padding: 0.4em 1em;
 }
-/* issue #205: 業態・テーマ inline edit (AJAX 即時保存) の状態表示 */
+/* issue #205: セクター inline edit (AJAX 即時保存) の状態表示 */
 .gyoutai-input-detail.saving { background: #fff8c4; }
 .gyoutai-input-detail.error { background: #fce4e4; border-color: #d33; }
 .gyoutai-input-detail:focus { outline: 1px solid #4285f4; }
@@ -1657,7 +1657,7 @@ function excludeFromUniverse(codeS) {
   });
 })();
 
-// issue #205: 業態・テーマの change/blur で AJAX 即時保存 (portfolio_list.html と同方式)
+// issue #205: セクターの change/blur で AJAX 即時保存 (portfolio_list.html と同方式)
 (function() {
   var wrap = document.querySelector('.gyoutai-themes-inline');
   if (!wrap) return;
@@ -1679,7 +1679,7 @@ function excludeFromUniverse(codeS) {
       inputs.forEach(function(inp) { inp.classList.remove('saving'); });
       if (!res.ok || !res.json || res.json.ok !== true) {
         inputs.forEach(function(inp) { inp.classList.add('error'); });
-        alert((res.json && res.json.error) || '業態・テーマの保存に失敗しました');
+        alert((res.json && res.json.error) || 'セクターの保存に失敗しました');
         return false;
       }
       var themes = (res.json.display && res.json.display.gyoutai_themes) || [];
@@ -1705,7 +1705,7 @@ function excludeFromUniverse(codeS) {
     });
   });
 
-  // issue #297: 業態テーマ LLM 提案ボタン。
+  // issue #297: セクター LLM 提案ボタン。
   // 提案を select にプリセットするだけ (保存はユーザーが change で確定)。
   var suggestBtn = wrap.querySelector('.gyoutai-suggest-btn');
   var suggestMsg = wrap.querySelector('.gyoutai-suggest-msg');
@@ -1748,7 +1748,7 @@ function excludeFromUniverse(codeS) {
         var lines = [];
         if (preset.length) lines.push('✓ ' + fmt(preset));
         if (low.length) lines.push('参考(低確信): ' + fmt(low));
-        if (newThemes.length) lines.push('新テーマ候補: ' + fmt(newThemes) + ' (採用は ✏️ でマスター追加)');
+        if (newThemes.length) lines.push('新セクター候補: ' + fmt(newThemes) + ' (採用は ✏️ でマスター追加)');
         if (applied > 0) {
           if (suggestMsg) suggestMsg.textContent = lines.join(' ｜ ') + ' ｜ 保存中...';
           save().then(function(ok) {

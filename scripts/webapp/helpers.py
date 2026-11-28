@@ -4841,7 +4841,7 @@ def get_current_research_data(code_s, stock_data=None, portfolio_status=None,
 
 
 # ===========================================
-# 業態テーマ別 RS サマリー (issue #283)
+# セクター別 RS サマリー (issue #283)
 # ===========================================
 
 # sort_key (UI/URL) → 並べ替えに使う集計フィールド名。許可キーの真実はここに集約し、
@@ -4892,7 +4892,7 @@ def calc_rs_6m(stock: Dict[str, Any], topix: Dict[str, Any]) -> Optional[float]:
 
 def calc_theme_ranks(records: List[Dict[str, Any]], stock_map: Dict[str, Dict[str, Any]],
                      topix: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """業態テーマごとに構成銘柄の6ヶ月相対を等加重平均し、順位を付ける (issue #531)。
+    """セクターごとに構成銘柄の6ヶ月相対を等加重平均し、順位を付ける (issue #531)。
 
     Returns:
         {テーマ: {"score": 平均 (%), "rank": 1始まり, "count": 平均に入れた銘柄数}}。
@@ -4909,7 +4909,7 @@ def calc_theme_ranks(records: List[Dict[str, Any]], stock_map: Dict[str, Dict[st
 
 
 def record_theme_rank_snapshot(stock_map: Dict[str, Dict[str, Any]]) -> int:
-    """今日の業態テーマ順位を portfolio_shelve に保存し、テーマ数を返す。日次バッチから呼ぶ (issue #531)。"""
+    """今日のセクター順位を portfolio_shelve に保存し、テーマ数を返す。日次バッチから呼ぶ (issue #531)。"""
     import portfolio_shelve as ps
     from make_market_db import get_market_db  # 遅延 import (循環回避)
 

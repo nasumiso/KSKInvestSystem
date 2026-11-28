@@ -196,7 +196,7 @@ def market_page():
             f'<a href="{url_for("portfolio.theme_summary")}" '
             'style="display:inline-block;font-size:0.9em;color:#555;text-decoration:none;'
             'padding:0.35em 0.7em;border:1px solid #ccc;border-radius:4px;background:#fff;" '
-            'title="業態テーマ別 RS サマリーを別ページで開く">📊 テーマサマリーを見る</a>'
+            'title="セクター別 RS サマリーを別ページで開く">📊 セクターサマリーを見る</a>'
             "</div>"
         )
         market_parts["body"] = market_parts.get("body", "").replace(

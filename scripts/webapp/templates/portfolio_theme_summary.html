@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}業態テーマ別 RSスコア サマリー | Shintakane Research{% endblock %}
+{% block title %}セクター別 RSスコア サマリー | Shintakane Research{% endblock %}
 
 {% block content %}
 <style>
@@ -45,32 +45,32 @@
 {% macro fmt_int(v) %}{% if v is none %}—{% else %}{{ v|round|int }}{% endif %}{% endmacro %}
 
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6em;flex-wrap:wrap;gap:0.5em;">
-  <h2 style="margin:0;">業態テーマ別 RSスコア サマリー</h2>
+  <h2 style="margin:0;">セクター別 RSスコア サマリー</h2>
   <a href="{{ url_for('portfolio.dashboard') }}" style="font-size:0.9em;">← ポートフォリオに戻る</a>
 </div>
 
 <p style="font-size:0.85em;color:#666;margin:0 0 0.6em 0;">
-  銘柄メモで付けた業態テーマを自分の分類軸とした市場ローテーション検知。
+  銘柄メモで付けたセクター (Shintakaneセクター) を自分の分類軸とした市場ローテーション検知。
   順位は6ヶ月相対 (構成銘柄の26週前比をTOPIXと比べた値) の平均で付け、毎日の記録から3週前・6週前の順位を並べる。
   RSスコアとRSラインの移動平均乖離を併記する。
 </p>
 
 {% if not themes %}
 <p style="padding:0.8em 1em;background:#f5f7fa;border:1px solid #d8dee6;border-radius:4px;color:#666;">
-  業態テーマを付けた銘柄がありません。
+  セクターを付けた銘柄がありません。
 </p>
 {% else %}
 <p style="font-size:0.85em;color:#666;margin:0 0 0.4em 0;">
-  {{ themes|length }} テーマ / {{ total_members }} 銘柄
+  {{ themes|length }} セクター / {{ total_members }} 銘柄
 </p>
 
 <table class="theme-summary{% if active_sort in ('dev_a', 'dev_b') %} show-dev-more{% endif %}">
   <thead>
     {# 2段の見出し。上の段のまとまり (6ヶ月相対の順位 / RSライン乖離) は、畳むと1列分、開くと3列分にまたがる #}
     <tr>
-      <th class="theme-col" rowspan="2">テーマ</th>
+      <th class="theme-col" rowspan="2">セクター</th>
       <th class="num-col" rowspan="2">構成</th>
-      <th class="col-group" data-col-group-head="rank-hist" colspan="1" title="構成銘柄の6ヶ月相対 (RSラインの26週変化率) の平均で付けたテーマの順位">6ヶ月相対の順位</th>
+      <th class="col-group" data-col-group-head="rank-hist" colspan="1" title="構成銘柄の6ヶ月相対 (RSラインの26週変化率) の平均で付けたセクターの順位">6ヶ月相対の順位</th>
       <th class="num-col {% if active_sort == 'momentum' %}sort-active{% endif %}" rowspan="2" title="構成銘柄のRSスコア（0〜100）の平均。セルに乗せると最大値。クリックで降順ソート"><a href="{{ sort_urls['momentum'] }}">RSスコア平均</a></th>
       <th class="col-group" data-col-group-head="dev-more" colspan="{{ 3 if active_sort in ('dev_a', 'dev_b') else 1 }}" title="RSライン（対TOPIX）の勢い。構成銘柄の平均">RSライン乖離</th>
       <th class="leaders-col" rowspan="2" title="RSスコア（0〜100）降順 上位3銘柄">リーダー株 (top3)</th>
@@ -107,7 +107,7 @@
           </div>
         </details>
       </td>
-      {# 保有ポジション (1保 現在株価×株数 の合計) を最大テーマ比で背景塗り (portfolio 状態列と同方式) #}
+      {# 保有ポジション (1保 現在株価×株数 の合計) を最大セクター比で背景塗り (portfolio 状態列と同方式) #}
       <td class="num"
         {%- if t.position_value > 0 %} title="ポジション: ¥{{ '{:,}'.format(t.position_value|int) }} (全保有の {{ '%.1f'|format(t.position_pct) }}%)"{% endif -%}
         {%- if t.position_ratio > 0 %} style="background: linear-gradient(to right, rgba(40,80,40,0.18) 0% {{ '%.1f'|format(t.position_ratio) }}%, transparent {{ '%.1f'|format(t.position_ratio) }}% 100%);"{% endif -%}

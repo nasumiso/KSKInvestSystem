@@ -1533,7 +1533,7 @@ class TestMarketRouteCalendar:
 
 
 class TestDetailGyoutaiThemes:
-    """issue #205: 銘柄詳細ページの業態・テーマ inline 編集 (AJAX 即時保存)。
+    """issue #205: 銘柄詳細ページのセクター inline 編集 (AJAX 即時保存)。
 
     既存 portfolio.update_memo (POST /portfolio/<code_s>/memo) を AJAX で再利用。
     保存ボタンは無く、change/blur で即送信する portfolio_list.html と同方式。
@@ -1570,7 +1570,7 @@ class TestDetailGyoutaiThemes:
         return app.test_client()
 
     def test_registered_stock_renders_inline_inputs(self, portfolio_client):
-        """登録済銘柄: 業態・テーマ inline edit (data-code 付き wrapper + 2 select) が出る"""
+        """登録済銘柄: セクター inline edit (data-code 付き wrapper + 2 select) が出る"""
         html = portfolio_client.get("/stock/3496").data.decode()
         assert 'class="gyoutai-themes-inline" data-code="3496"' in html
         assert 'name="gyoutai_themes_0"' in html
@@ -1680,7 +1680,7 @@ class TestDetailGyoutaiThemes:
         # GET /stock/3496 で 500 にならないこと
         resp = app.test_client().get("/stock/3496")
         assert resp.status_code == 200
-        # 業態・テーマ inline edit (input) は出る (空値で)
+        # セクター inline edit (input) は出る (空値で)
         html = resp.data.decode()
         assert 'name="gyoutai_themes_0"' in html
 
@@ -2253,7 +2253,7 @@ class TestPortfolioThemes:
 
 
 class TestPortfolioThemeSummary:
-    """業態テーマ別 RSスコア サマリー画面の smoke テスト (issue #283)"""
+    """セクター別 RSスコア サマリー画面の smoke テスト (issue #283)"""
 
     @pytest.fixture
     def summary_app(self, db_path, tmp_path, monkeypatch):
@@ -2263,7 +2263,7 @@ class TestPortfolioThemeSummary:
         monkeypatch.setattr("research_shelve.RESEARCH_SHELVE", db_path)
         monkeypatch.setattr("db_shelve.PORTFOLIO_SHELVE", portfolio_db)
         monkeypatch.setattr("portfolio_shelve.PORTFOLIO_SHELVE", portfolio_db)
-        # 業態テーマ付きで 1 件登録 (集計対象になる)
+        # セクター付きで 1 件登録 (集計対象になる)
         memo = ps.create_memo(gyoutai_themes=["半導体"])
         ps.add_to_watch("3496", memo=memo, db_path=portfolio_db)
 
@@ -2283,7 +2283,7 @@ class TestPortfolioThemeSummary:
         resp = client.get(url)
         assert resp.status_code == 200
         html = resp.data.decode()
-        assert "業態テーマ別 RSスコア サマリー" in html
+        assert "セクター別 RSスコア サマリー" in html
         assert "半導体" in html
 
 
@@ -2400,7 +2400,7 @@ class TestIrQaRoutes:
 
 
 class TestSuggestThemes:
-    """issue #297: POST /stock/<code_s>/suggest_themes (LLM 業態テーマ提案)。
+    """issue #297: POST /stock/<code_s>/suggest_themes (LLM セクター提案)。
 
     claude -p は呼ばず theme_suggest.suggest_gyoutai_themes をモックして、
     エンドポイントのガード分岐 (設定済み409・事業テキスト空・正常提案) を検証する。
@@ -2463,7 +2463,7 @@ class TestSuggestThemes:
         }
 
     def test_suggest_rejects_already_set(self, suggest_app):
-        """業態テーマ設定済み銘柄は 409 で拒否 (サーバー側ガード)"""
+        """セクター設定済み銘柄は 409 で拒否 (サーバー側ガード)"""
         import portfolio_shelve as ps
         ps.update_memo("3496", {"gyoutai_themes": ["不動産"]})
         resp = suggest_app.test_client().post("/stock/3496/suggest_themes")

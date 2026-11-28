@@ -9,7 +9,7 @@ _RETURN_LABELS = {
     "/portfolio": "銘柄一覧へ戻る",
     "/portfolio/charts": "チャート一覧へ戻る",
     "/portfolio/shikiho": "四季報一覧へ戻る",
-    "/portfolio/themes/summary": "テーマサマリーへ戻る",
+    "/portfolio/themes/summary": "セクターサマリーへ戻る",
 }
 
 

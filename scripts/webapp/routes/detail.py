@@ -196,7 +196,7 @@ def stock_detail(code_s: str):
     trade_idea_options = [t["name"] for t in trade_idea_master]
     trade_idea_descriptions = {t["name"]: t["description"] for t in trade_idea_master}
 
-    # issue #205: 業態・テーマ inline 編集用の context
+    # issue #205: セクター inline 編集用の context
     # memo は None や非 dict (旧データ等) を許容する仕様 (_normalize_loaded_memo)
     # なので、dict 以外は空 dict として扱う
     _memo = (portfolio_record or {}).get("memo")
@@ -206,7 +206,7 @@ def stock_detail(code_s: str):
     # issue #282: テーママスターから候補を取得
     theme_master = ps.list_themes()
 
-    # issue #297: 業態テーマ自動提案ボタンの表示条件。
+    # issue #297: セクター自動提案ボタンの表示条件。
     # 未設定 (全スロット空) かつ事業テキスト (四季報特色・コメント・株探概要) が
     # 1 つでもある銘柄にのみ「🤖 提案」ボタンを出す。
     from theme_suggest import build_business_text  # 遅延 import

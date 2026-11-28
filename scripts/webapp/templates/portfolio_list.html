@@ -279,7 +279,7 @@
   <div class="dashboard-header-actions">
     <a href="{{ url_for('portfolio.theme_summary') }}"
        class="dashboard-header-link"
-       title="業態テーマ別 RSスコア サマリー">📊 テーマサマリー</a>
+       title="セクター別 RSスコア サマリー">📊 セクターサマリー</a>
 
     {# issue #397: CSV取込の主導線。クイック取り込み (Downloads 自動発見) とファイル選択の2択 #}
     <details class="csv-import-menu">
@@ -329,7 +329,7 @@
       </select>
     </label>
     <label style="display:inline-flex;align-items:center;gap:0.4em;margin:0;">
-      <span style="color:#666;">業態・テーマ</span>
+      <span style="color:#666;">セクター</span>
       <select name="gyoutai_theme" onchange="this.form.submit()" style="padding:0.2em 0.3em;font-size:0.9em;margin:0;max-width:18em;">
         <option value="">すべて</option>
         {% for theme in theme_master %}
@@ -372,7 +372,7 @@
 <div style="display:flex;align-items:center;justify-content:space-between;gap:1em;flex-wrap:wrap;margin:0 0 0.4em 0;">
   <p style="font-size:0.85em;color:#666;margin:0;">
     {% if total > 0 %}{{ total }} 件表示{% else %}0 件{% endif %}
-    {% if active_gyoutai_theme %}<span title="業態・テーマを指定すると、ステータスの選択に関係なく全ステータスから抽出します">(対象: 保有・準保有・監視)</span>{% endif %}
+    {% if active_gyoutai_theme %}<span title="セクターを指定すると、ステータスの選択に関係なく全ステータスから抽出します">(対象: 保有・準保有・監視)</span>{% endif %}
     {% if hold_summary %}
     <span style="color:#ccc;margin:0 0.5em;">|</span>
     <span title="保有株数の真実源である証券会社CSVの残高基準日 (最新ソース)">株数基準日
@@ -469,7 +469,7 @@
 {% elif hold_summary %}
 {# 指標が揃わずガイドを出せない日でも、運用総額だけは表示する #}
 <div style="margin:0 0 0.6em;padding:0.55em 0.7em;border:1px solid #e0e0e0;border-radius:5px;background:#fafafa;font-size:0.8em;color:#555;">
-  運用総額 <b style="font-size:1.15em;color:#333;">{{ '{:,}'.format(hold_summary.total_man) }}</b> 万円{% if active_gyoutai_theme %}<span style="font-size:0.9em;color:#888;margin-left:0.4em;">(保有全体。テーマ絞り込みの対象外)</span>{% endif %}
+  運用総額 <b style="font-size:1.15em;color:#333;">{{ '{:,}'.format(hold_summary.total_man) }}</b> 万円{% if active_gyoutai_theme %}<span style="font-size:0.9em;color:#888;margin-left:0.4em;">(保有全体。セクター絞り込みの対象外)</span>{% endif %}
   {%- if hold_summary.exposure_note %}
   <span style="margin-left:0.7em;color:#ef6c00;">⚠ {{ hold_summary.exposure_note }}</span>
   {%- endif %}
@@ -482,7 +482,7 @@
   <div>
     <a href="{{ url_for('portfolio.themes_index') }}"
        style="font-size:0.85em;color:#555;text-decoration:none;padding:0.2em 0.5em;border:1px solid #ccc;border-radius:3px;background:#fff;"
-       title="テーママスターを編集">テーマ管理</a>
+       title="セクターマスターを編集">セクター管理</a>
   </div>
   <div>
     <a href="{{ url_for('portfolio.strategies_index') }}"
@@ -522,7 +522,7 @@
       <th>コード</th>
       <th>銘柄名</th>
       <th><a href="{{ sort_urls.position }}">状態</a></th>
-      <th><a href="{{ sort_urls.gyoutai }}">業態・テーマ</a></th>
+      <th><a href="{{ sort_urls.gyoutai }}">セクター</a></th>
       <th data-page="1"><a href="{{ sort_urls.rating }}">評価</a></th>
       <th data-page="1" title="全銘柄を総合スコアで並べた順位（1が最上位）"><a href="{{ sort_urls.rank }}">順位</a></th>
       <th data-page="1">売上成長(%)</th>
@@ -602,7 +602,7 @@
         <select name="gyoutai_themes_{{ i }}"
                 data-slot="{{ i }}"
                 class="gyoutai-input"
-                title="Ctrl/Cmd+クリックでこのテーマで絞り込み (新タブ)"
+                title="Ctrl/Cmd+クリックでこのセクターで絞り込み (新タブ)"
                 >
           <option value="">—</option>
           {% if current and current not in master_names %}
@@ -1513,7 +1513,7 @@ function excludeFromUniverse(codeS) {
   document.querySelectorAll('.chart-struct').forEach(bindChartStruct);
 })();
 
-// ========== 業態・テーマ inline 編集 (issue #187) ==========
+// ========== セクター inline 編集 (issue #187) ==========
 // 既存 .editable とは別系統。input + datalist で常時編集可能、change/blur で POST。
 (function() {
   function saveCell(td) {

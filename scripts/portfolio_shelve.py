@@ -88,7 +88,7 @@ KEY_THEME_PREFIX = "theme:"
 KEY_TRADE_IDEA_PREFIX = "trade_idea:"
 KEY_TRADE_IDEA_SEED_VERSION = "trade_idea_seed_version"
 KEY_EXIT_ALERT_PREFIX = "exit_alert:"
-# issue #531: 業態テーマ順位の日次スナップショット。キーは theme_rank:YYYY-MM-DD
+# issue #531: セクター順位の日次スナップショット。キーは theme_rank:YYYY-MM-DD
 KEY_THEME_RANK_PREFIX = "theme_rank:"
 # issue #360 Phase2: 楽天CSV 由来の約定事実 (fill レイヤー、イミュータブル)
 KEY_FILL_PREFIX = "fill:"
@@ -198,8 +198,8 @@ LEGACY_RECORD_FIELDS = frozenset({"stock_name"})
 
 MEMO_FIELDS = frozenset(
     {
-        "gyoutai_theme",          # 旧: 業態・テーマ (str/改行区切り、移行期間中のみ残す。issue #187)
-        "gyoutai_themes",         # 新: 業態・テーマ (list[str]、UI では最大2件)
+        "gyoutai_theme",          # 旧: セクター (str/改行区切り、移行期間中のみ残す。issue #187)
+        "gyoutai_themes",         # 新: セクター (list[str]、UI では最大2件)
         "watch_in_reason",        # ウォッチ・IN理由
         "trade_idea",             # 売買戦略 (旧: 投資売買アイデア)
         "takaichi_sensitivity",   # 売買メモ (旧: 高市感応度)
@@ -3439,7 +3439,7 @@ def reset_exit_alert_state(code_s: str, *, db_path: Optional[str] = None) -> Non
 
 def save_theme_rank_snapshot(day: date, ranks: Dict[str, Dict[str, Any]], *,
                              overwrite: bool = True, db_path: Optional[str] = None) -> bool:
-    """業態テーマ順位 ({テーマ: {score, rank, count}}) を日付ごとに保存する (issue #531)。
+    """セクター順位 ({テーマ: {score, rank, count}}) を日付ごとに保存する (issue #531)。
 
     同じ日は上書きする (日次バッチの再実行で冪等)。overwrite=False なら既存の日を残し、
     書かなかったときは False を返す (過去分の補完が日次の記録を潰さないため)。
@@ -3455,7 +3455,7 @@ def save_theme_rank_snapshot(day: date, ranks: Dict[str, Dict[str, Any]], *,
 
 
 def load_theme_rank_snapshots(*, db_path: Optional[str] = None) -> Dict[date, Dict[str, Dict[str, Any]]]:
-    """業態テーマ順位のスナップショットを {日付: {テーマ: {score, rank, count}}} で返す。"""
+    """セクター順位のスナップショットを {日付: {テーマ: {score, rank, count}}} で返す。"""
     path = _resolve_db_path(db_path)
     with ShelveDB(path) as db:
         return {date.fromisoformat(key[len(KEY_THEME_RANK_PREFIX):]): value

@@ -918,7 +918,7 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
     rs_raw, p_cur = calc_rs()
     price_dict["rs_raw"] = rs_raw
 
-    # ---- 26週前の週末終値との比 (業態テーマ順位の6ヶ月相対の元、issue #531)
+    # ---- 26週前の週末終値との比 (セクター順位の6ヶ月相対の元、issue #531)
     # TOPIX で割るのは集計時 (helpers.calc_rs_6m)。株探週足は先頭が今週、yfinance 週足キャッシュは
     # 先頭が先週のことがあるので、位置ではなく週で26週前を引く
     close_26w = _close_weeks_ago(weekly_price_list, get_price_day(datetime.now()), 26)
