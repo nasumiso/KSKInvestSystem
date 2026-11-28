@@ -405,6 +405,10 @@ def test_update_fear_greed_jp_persists_component_dates(tmp_path, monkeypatch):
     ]
     # 金利は翌営業日公表なので、最新が前営業日までしかない
     jgb_history = [{"date": "2026-06-03", "jgb10": 1.5}, {"date": "2026-06-04", "jgb10": 1.52}]
+    # 履歴は30日で切らずに全部残す (#615)
+    old = [{"date": "2026-04-%02d" % d, "score": 50.0, "components": {}} for d in range(1, 31)] + \
+        [{"date": "2026-05-%02d" % d, "score": 50.0, "components": {}} for d in range(1, 6)]
+    (code_rank / "fear_greed_jp.json").write_text(json.dumps({"history": old}), encoding="utf-8")
 
     with patch("market_breadth.fetch_market_breadth_daily", return_value=breadth_history), \
             patch("market_breadth.fetch_nikkei_vi", return_value=vi_history), \
@@ -430,6 +434,7 @@ def test_update_fear_greed_jp_persists_component_dates(tmp_path, monkeypatch):
     # VI は breadth 最新日以前の最終日を使う
     assert components["volatility"]["date"] == "2026-06-04"
     assert components["safe_haven"]["date"] == "2026-06-04"
+    assert len(payload["history"]) == 36 and payload["history"][0]["date"] == "2026-04-01"
 
 
 @pytest.mark.parametrize("text", [

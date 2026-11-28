@@ -1,6 +1,7 @@
 """日本市場版 Fear & Greed Index のテスト (issue #212)。"""
 
 import random
+from datetime import date, timedelta
 
 import pytest
 
@@ -176,3 +177,28 @@ def test_breadth_one_day_crash_moves_less_than_daily_diff():
 
     assert drop(fg.compute_component_breadth_daily) > 50
     assert drop(fg.compute_component_breadth) < 10
+
+
+# --- 過去分の作り直しと結合 (#615) ------------------------------------------
+def test_rebuild_entries_and_merge_history():
+    """作り直しはその日までのデータで計算し、金利は対象日より前で切る。結合は本番の行を残し、無い日だけ足す"""
+    rng = random.Random(2)
+    days = [(date(2026, 1, 1) + timedelta(days=i)).isoformat() for i in range(300)]
+    breadth = [{"date": d, "nikkei_close": 30000 + rng.uniform(-500, 500), "advances": rng.randint(500, 1200),
+                "declines": rng.randint(500, 1200), "new_high": rng.randint(0, 100), "new_low": rng.randint(0, 100)}
+               for d in days]
+    vi = [{"date": d, "nikkei_vi": 20 + rng.uniform(-3, 3)} for d in days]
+    jgb = [{"date": d, "jgb10": 1.5 + rng.uniform(-0.05, 0.05)} for d in days]
+
+    rebuilt = fg.rebuild_entries(days[-3:], breadth, vi, jgb)
+    assert [r["date"] for r in rebuilt] == days[-3:] and all(r["backfilled"] for r in rebuilt)
+    last = rebuilt[-1]["components"]
+    assert last["momentum"]["date"] == last["volatility"]["date"] == days[-1]
+    assert last["safe_haven"]["date"] == days[-2]  # 当日の金利は使わない
+    # その日より後のデータを足しても値は変わらない (先読みしない)
+    assert fg.rebuild_entries([days[-3]], breadth[:-2], vi[:-2], jgb[:-2])[0]["score"] == rebuilt[0]["score"]
+
+    kept = {"date": days[-2], "score": 50.0, "components": {}}
+    merged = fg.merge_history([kept], rebuilt)
+    assert [h["date"] for h in merged] == days[-3:]
+    assert merged[1] is kept

@@ -1856,7 +1856,7 @@ def update_fear_greed_jp(force=False):
     if components.get("safe_haven") is not None and jgb_history:
         components["safe_haven"]["date"] = jgb_history[-1].get("date")
 
-    # history は date + score + components を 30 営業日分保持 (前日比/5日前比表示用)
+    # history は date + score + components を全部残す (前日比・5日前比の表示と、推移のグラフ用。#615)
     prev_history = []
     if os.path.exists(out_path):
         try:
@@ -1868,7 +1868,6 @@ def update_fear_greed_jp(force=False):
              "components": result["components"]}
     history = [h for h in prev_history if h.get("date") != latest_date]
     history.append(entry)
-    history = history[-30:]
 
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),

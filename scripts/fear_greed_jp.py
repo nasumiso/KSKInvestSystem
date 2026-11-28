@@ -398,15 +398,109 @@ def compare_methods(breadth_history, vi_history, jgb_history):
     return {name: _summarize_series(v) for name, v in series.items()}
 
 
+# 過去分の作り直し (#615)。5成分がそろう日から。1回の計算に渡す営業日数は、正規化の 490本 + 125日平均が足りる長さ
+BACKFILL_FROM = "2025-10-28"
+_BACKFILL_ROWS = 700
+
+
+def rebuild_entries(dates, breadth_history, vi_history, jgb_history):
+    """dates の各日の history 行を、日次バッチと同じくその日までのデータだけで作り直す (#615)。
+
+    10年金利は対象日より前で切る (19時のバッチでは当日の金利が未公表なので、本番は前営業日まで)。
+    成分の date は日次バッチと同じく、モメンタム・新高値・騰落は対象日、ボラティリティは使った VI の最終日、
+    安全資産は使った金利の最終日。Returns: [{date, score, components, backfilled: True}] (計算できない日は飛ばす)
+    """
+    import bisect
+
+    bd = [r["date"] for r in breadth_history]
+    vd = [v["date"] for v in vi_history]
+    jd = [j["date"] for j in jgb_history]
+    out = []
+    for d in dates:
+        i, k, m = bisect.bisect_right(bd, d), bisect.bisect_right(vd, d), bisect.bisect_left(jd, d)
+        if not i or bd[i - 1] != d:
+            continue
+        vi = vi_history[max(0, k - _BACKFILL_ROWS):k]
+        jgb = jgb_history[max(0, m - _BACKFILL_ROWS - 100):m]
+        result = compute_fear_greed_jp(breadth_history[max(0, i - _BACKFILL_ROWS):i], vi, jgb)
+        if result is None:
+            continue
+        comps = result["components"]
+        for key in ("momentum", "strength", "breadth"):
+            if comps.get(key) is not None:
+                comps[key]["date"] = d
+        if comps.get("volatility") is not None and vi:
+            comps["volatility"]["date"] = vi[-1]["date"]
+        if comps.get("safe_haven") is not None and jgb:
+            comps["safe_haven"]["date"] = jgb[-1]["date"]
+        out.append({"date": d, "score": result["score"], "components": comps, "backfilled": True})
+    return out
+
+
+def merge_history(history, rebuilt):
+    """本番で記録済みの日は残し、無い日だけ作り直した行を足して日付順に並べる (#615)。"""
+    by_date = {h["date"]: h for h in rebuilt}
+    by_date.update({h["date"]: h for h in history})
+    return [by_date[d] for d in sorted(by_date)]
+
+
+def _backfill(write):
+    """`python fear_greed_jp.py backfill [--write]`: BACKFILL_FROM 〜 の history を作り直して埋める (#615)。
+
+    既定は書かずに、足す日数と、本番で記録済みの日との差 (5区分の一致・点の差) を出す。
+    日経平均は daily2year.json より前を yfinance で補う (モメンタムの正規化に約2年要る)。
+    """
+    import json
+    import os
+
+    import yfinance as yf
+
+    import market_breadth
+    from ks_util import DATA_DIR, log_print
+
+    path = os.path.join(DATA_DIR, "code_rank_data", "fear_greed_jp.json")
+    with open(path, encoding="utf-8") as f:
+        payload = json.load(f)
+    history = payload.get("history") or []
+    live = market_breadth.fetch_market_breadth_daily()
+    df = yf.Ticker("^N225").history(start="2022-06-01", auto_adjust=False)["Close"]
+    early = [{"date": i.date().isoformat(), "nikkei_close": float(v)} for i, v in df.items()
+             if v == v and i.date().isoformat() < live[0]["date"]]
+    breadth = early + live
+    dates = [r["date"] for r in live if r["date"] >= BACKFILL_FROM]
+    rebuilt = rebuild_entries(dates, breadth, market_breadth.fetch_nikkei_vi(), market_breadth.fetch_jgb10())
+    by_date = {r["date"]: r for r in rebuilt}
+    pairs = [(h["score"], by_date[h["date"]]["score"]) for h in history if h["date"] in by_date]
+    if pairs:
+        same = sum(_rating(a) == _rating(b) for a, b in pairs)
+        diffs = [abs(a - b) for a, b in pairs]
+        log_print("本番で記録済みの %d日との突き合わせ: 5区分の一致 %d/%d、点の差 平均 %.1f・最大 %.1f" % (
+            len(pairs), same, len(pairs), sum(diffs) / len(diffs), max(diffs)))
+    merged = merge_history(history, rebuilt)
+    log_print("history: %d行 → %d行 (%s 〜 %s、足す %d行)" % (
+        len(history), len(merged), merged[0]["date"], merged[-1]["date"], len(merged) - len(history)))
+    if not write:
+        log_print("書いていません (--write で書く)")
+        return
+    payload["history"] = merged
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    log_print("書きました: %s" % path)
+
+
 def main():
-    """`python fear_greed_jp.py compare`: #524 の変更前後の比較を表で出す。"""
+    """`python fear_greed_jp.py compare`: #524 の変更前後の比較を表で出す。
+    `python fear_greed_jp.py backfill [--write]`: 過去分の history を作り直して埋める (#615)。"""
     import sys
 
     import market_breadth
     from ks_util import log_print, log_warning
 
+    if sys.argv[1:2] == ["backfill"]:
+        _backfill("--write" in sys.argv[2:])
+        return
     if sys.argv[1:] != ["compare"]:
-        log_print("usage: python fear_greed_jp.py compare")
+        log_print("usage: python fear_greed_jp.py compare | backfill [--write]")
         return
     breadth = market_breadth.fetch_market_breadth_daily()
     vi = market_breadth.fetch_nikkei_vi()
