@@ -198,6 +198,9 @@ def test_rebuild_entries_and_merge_history():
     # その日より後のデータを足しても値は変わらない (先読みしない)
     assert fg.rebuild_entries([days[-3]], breadth[:-2], vi[:-2], jgb[:-2])[0]["score"] == rebuilt[0]["score"]
 
+    # 5成分がそろわない日は作らない (金利が無いと安全資産が欠ける)
+    assert fg.rebuild_entries(days[-3:], breadth, vi, []) == []
+
     kept = {"date": days[-2], "score": 50.0, "components": {}}
     merged = fg.merge_history([kept], rebuilt)
     assert [h["date"] for h in merged] == days[-3:]

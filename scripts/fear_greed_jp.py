@@ -408,7 +408,8 @@ def rebuild_entries(dates, breadth_history, vi_history, jgb_history):
 
     10年金利は対象日より前で切る (19時のバッチでは当日の金利が未公表なので、本番は前営業日まで)。
     成分の date は日次バッチと同じく、モメンタム・新高値・騰落は対象日、ボラティリティは使った VI の最終日、
-    安全資産は使った金利の最終日。Returns: [{date, score, components, backfilled: True}] (計算できない日は飛ばす)
+    安全資産は使った金利の最終日。Returns: [{date, score, components, backfilled: True}]
+    (計算できない日と、5成分がそろわない日は飛ばす。欠けた行を書くと記録済み扱いになって直せなくなるため)
     """
     import bisect
 
@@ -423,7 +424,7 @@ def rebuild_entries(dates, breadth_history, vi_history, jgb_history):
         vi = vi_history[max(0, k - _BACKFILL_ROWS):k]
         jgb = jgb_history[max(0, m - _BACKFILL_ROWS - 100):m]
         result = compute_fear_greed_jp(breadth_history[max(0, i - _BACKFILL_ROWS):i], vi, jgb)
-        if result is None:
+        if result is None or any(c is None for c in result["components"].values()):
             continue
         comps = result["components"]
         for key in ("momentum", "strength", "breadth"):
@@ -448,6 +449,8 @@ def _backfill(write):
     """`python fear_greed_jp.py backfill [--write]`: BACKFILL_FROM 〜 の history を作り直して埋める (#615)。
 
     既定は書かずに、足す日数と、本番で記録済みの日との差 (5区分の一致・点の差) を出す。
+    埋めるのは保存済みの最新日まで (最新日は日次バッチの持ち分。latest と history の末尾をずらさない)。
+    突き合わせは本番の行だけ (作り直した行を混ぜると一致が見かけ上良くなる)。
     日経平均は daily2year.json より前を yfinance で補う (モメンタムの正規化に約2年要る)。
     """
     import json
@@ -467,10 +470,12 @@ def _backfill(write):
     early = [{"date": i.date().isoformat(), "nikkei_close": float(v)} for i, v in df.items()
              if v == v and i.date().isoformat() < live[0]["date"]]
     breadth = early + live
-    dates = [r["date"] for r in live if r["date"] >= BACKFILL_FROM]
+    last = history[-1]["date"] if history else live[-1]["date"]
+    dates = [r["date"] for r in live if BACKFILL_FROM <= r["date"] <= last]
     rebuilt = rebuild_entries(dates, breadth, market_breadth.fetch_nikkei_vi(), market_breadth.fetch_jgb10())
     by_date = {r["date"]: r for r in rebuilt}
-    pairs = [(h["score"], by_date[h["date"]]["score"]) for h in history if h["date"] in by_date]
+    pairs = [(h["score"], by_date[h["date"]]["score"]) for h in history
+             if h["date"] in by_date and not h.get("backfilled")]
     if pairs:
         same = sum(_rating(a) == _rating(b) for a, b in pairs)
         diffs = [abs(a - b) for a, b in pairs]
