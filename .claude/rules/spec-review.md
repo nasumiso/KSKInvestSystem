@@ -77,6 +77,7 @@ codex exec -m gpt-6.1-sol -c model_reasoning_effort="high" -s read-only - < "$PR
 ```
 
 - agy の `-p` はプロンプトの直前に置く (前に置くと `--mode` がプロンプトに取られる)。effort はモデル名の末尾で決まり、`--effort` を重ねるとエラー
+- Codex はリポジトリのルートから実行する (scratchpad で起動すると trusted directory エラーで止まる。プロンプトのファイルは scratchpad に置いたままでよい)
 - Codex は `-` で stdin からプロンプトを読む。止まったときの扱いは [codex-plan-review.md](codex-plan-review.md) の「止まったとき」
 - agy は途中経過を出さない。進んでいるかは `~/.gemini/antigravity-cli/cli.log` の `streamGenerateContent` の時刻で見る
 
