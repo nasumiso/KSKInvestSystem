@@ -431,21 +431,32 @@ def _target_reason(evaluation: dict) -> str:
     return "ふだんの %.1f倍へ週1段で%s途中" % (goal, move)
 
 
-def _vi_badge(evaluation: dict) -> tuple[str, str] | None:
-    """日経VI のバッジ (文言, 色の区分)。今週 (週末は来週) の目標を決めた判定行の状態で出す (#610)。
+def _vi_badge(evaluation: dict) -> tuple[str, str, str] | None:
+    """日経VI の (状態, 量への効き方, 色の区分)。今週 (週末は来週) の目標を決めた判定行の状態で出す (#610)。
 
-    判定は金曜の引けなので、平日に最新の VI が 30 を超えても、その週の目標は変わらない。
+    警戒中 = 金曜の引けで 30 を超えてから、25 を下回るまで。判定は金曜の引けなので、平日に最新の VI が
+    30 を超えても、その週の目標は変わらない。
     """
     vi = evaluation.get("nikkei_vi")
     if vi is None and evaluation.get("week_vi") is None:
         return None
     if evaluation.get("week_vi_hold"):
-        return "%.1f倍に抑え中" % me.VI_HOLD_MULTIPLE, "Extreme Fear"
+        return "警戒中", "%.1f倍まで" % me.VI_HOLD_MULTIPLE, "Extreme Fear"
     if evaluation.get("week_vi_on") and evaluation.get("week_boost"):
-        return "抑える条件 · 買い向かいを優先", "Fear"
+        return "警戒中", "買い向かい中は抑えない", "Fear"
     if vi is not None and vi > me.VI_HOLD_ON:
-        return "%.0f超 (金曜の引けで判定)" % me.VI_HOLD_ON, "Fear"
-    return "%.0f以下" % me.VI_HOLD_ON, "Neutral"
+        return "%.0f超" % me.VI_HOLD_ON, "金曜の引けで判定", "Fear"
+    return "平常", "", "Neutral"
+
+
+def _week_goal(evaluation: dict) -> float | None:
+    """今週の目標が週1段で向かっている先の段 (張りたい量・口座の上限・VI の上限の小さい方)。"""
+    want, cap = evaluation.get("week_want"), evaluation.get("week_cap")
+    if want is None or cap is None:
+        return None
+    if evaluation.get("week_vi_hold"):
+        return me.ladder_floor(min(want, cap, me.VI_HOLD_MULTIPLE))
+    return me.ladder_floor(min(want, cap))
 
 
 def _target_labels(evaluation: dict) -> dict:
@@ -467,6 +478,8 @@ def _target_labels(evaluation: dict) -> dict:
         "credit_beta": me.CREDIT_NIKKEI_BETA,
         "credit_md": _md(evaluation.get("credit_date")),
         "vi_badge": _vi_badge(evaluation),
+        "week_goal": _week_goal(evaluation),
+        "peak_md": _md(evaluation.get("peak_date")),
         "vi_md": _md(evaluation.get("nikkei_vi_date")),
         "target_reason": _target_reason(evaluation),
         "active_rule": _active_rule(evaluation),

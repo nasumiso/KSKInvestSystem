@@ -10,8 +10,8 @@
     <div><b>運用総額</b> (倍率 = 運用総額 ÷ 自己資本)</div>
     <ol style="margin:0.1em 0 0.3em;padding-left:1.6em;">
       {% call li("base") %}ふだんは <b>{{ r.base }}倍</b>{% endcall %}
-      {% call li("cap") %}<b>口座の上限</b>: {{ r.cap_max }} × (1 − 口座の高値からの下落率 ÷ {{ '%.0f'|format(r.cap_width_pct) }}%)、下限 {{ r.cap_floor }}倍。四半期末に高値をその時点の資産に置き換える{% endcall %}
-      {% call li("vi") %}<b>日経VI が {{ '%.0f'|format(r.vi_on) }}を超えたら</b> (金曜の引け)、{{ '%.0f'|format(r.vi_off) }}を下回るまで <b>{{ r.vi_multiple }}倍まで</b>。その週に下げる{% endcall %}
+      {% call li("cap") %}<b>口座の上限</b>: {{ r.cap_max }} × (1 − 口座の高値からの下落率 ÷ {{ '%.0f'|format(r.cap_width_pct) }}%)、下限 {{ r.cap_floor }}倍。四半期末に高値をその時点の資産に置き換える{% if ex.peak_equity is not none and ex.cap is not none %}<br><span style="color:#888;">いま: 高値 {{ '{:,}'.format((ex.peak_equity / 10000)|round|int) }}万 ({{ ex.peak_md }}) から −{{ '%.1f'|format(ex.drawdown_pct) }}% → 上限 {{ '%.2f'|format(ex.cap) }}倍</span>{% endif %}{% endcall %}
+      {% call li("vi") %}<b>日経VI が {{ '%.0f'|format(r.vi_on) }}を超えたら警戒中</b> (金曜の引け)。{{ '%.0f'|format(r.vi_off) }}を下回るまで <b>{{ r.vi_multiple }}倍まで</b>、その週に下げる{% endcall %}
       {% call li("boost") %}<b>信用評価損益率が −{{ '%.0f'|format(-r.credit_bottom) }}% 以下で前週より改善したら</b>、{{ r.boost_months }}か月は <b>{{ r.boost }}倍</b>。この間は VI では抑えない (口座の上限は効く){% endcall %}
       <li style="padding:0 0.3em;">目標へは日曜に<b>週1段</b>ずつ近づく (3 で下げるときだけ一気に)</li>
     </ol>

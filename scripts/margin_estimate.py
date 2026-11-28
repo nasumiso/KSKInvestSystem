@@ -546,22 +546,24 @@ def drawdown_series(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     高値は更新したときだけ上げる。四半期が変わった最初の行の前で、高値を直前の行の資産に置き換える。
     equity_gap (保証金率の入れ直しで入った入出金などの差) がある行は、高値を同じ額だけずらす。
-    equity が無い行は飛ばす。Returns: [{"date", "equity", "peak", "drawdown"}]
+    equity が無い行は飛ばす。Returns: [{"date", "equity", "peak", "peak_date", "drawdown"}]
+    (peak_date は高値をつけた日。四半期で置き換えたときは置き換えに使った行の日)
     """
     out: List[Dict[str, Any]] = []
-    peak = None
+    peak, peak_date = None, None
     for h in sorted(history, key=lambda r: r.get("date") or ""):
         e = h.get("equity")
         if e is None or not h.get("date"):
             continue
         if peak is None:
-            peak = e
+            peak, peak_date = e, h["date"]
         else:
             if _quarter(h["date"]) != _quarter(out[-1]["date"]):
-                peak = out[-1]["equity"]
+                peak, peak_date = out[-1]["equity"], out[-1]["date"]
             peak += h.get("equity_gap") or 0.0
-        peak = max(peak, e)
-        out.append({"date": h["date"], "equity": e, "peak": peak,
+        if e >= peak:
+            peak, peak_date = e, h["date"]
+        out.append({"date": h["date"], "equity": e, "peak": peak, "peak_date": peak_date,
                     "drawdown": 1 - e / peak if peak > 0 else 0.0})
     return out
 

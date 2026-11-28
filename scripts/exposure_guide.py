@@ -180,7 +180,7 @@ def evaluate_target(margin_state, history, credit_history, day, *, hold_total_va
     until = period[1] if period else None
     result = {
         "equity": None, "equity_gap": 0.0, "multiple": None,
-        "peak_equity": None, "drawdown_pct": None, "cap": None,
+        "peak_equity": None, "peak_date": None, "drawdown_pct": None, "cap": None,
         "want": margin_estimate.want_multiple(credit_history, day), "boost_until": until,
         "boost_from": period[0] if period else None,
         "week_target": None, "week_target_from": None,
@@ -208,7 +208,7 @@ def evaluate_target(margin_state, history, credit_history, day, *, hold_total_va
     last = margin_estimate.drawdown_series(rows)[-1]
     week = margin_estimate.target_for(margin_estimate.week_targets(rows, credit_history, vi_history),
                                       max(day, target_day or day))
-    result.update(peak_equity=last["peak"], drawdown_pct=last["drawdown"] * 100,
+    result.update(peak_equity=last["peak"], peak_date=last["peak_date"], drawdown_pct=last["drawdown"] * 100,
                   cap=margin_estimate.room_cap(last["drawdown"]),
                   week_target=week["target"], week_target_from=week["from"],
                   week_want=week["want"], week_cap=week["cap"], week_boost=week["boost"],

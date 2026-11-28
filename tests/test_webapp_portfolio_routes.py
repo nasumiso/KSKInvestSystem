@@ -4,6 +4,7 @@ portfolio_shelve / stocks_shelve / my_watch_list.txt を tmp_path に差し替�
 Flask テストクライアントで各エンドポイントを叩く。
 """
 
+import datetime
 import os
 import re
 
@@ -1536,14 +1537,18 @@ class TestMarginBaseline:
         html = client.get("/portfolio?status=hold").data.decode()
         # 建玉 10万・保証金 4万 → 自己資本 4万、いま 2.5倍。反映初日は下落率 0 で張れる量 2.0倍、
         # 初回の目標は いまの倍率以下の段 (2.0) を張れる量で頭打ち → 8万 ±5% で超過
-        # 目標の理由だけを短く出し、2つの倍率と式はツールチップに置く。目標 2.0 はふだんの 1.2 へ下げる途中
-        assert re.search(r"の目標 <b[^>]*>2.0倍</b>", html)
-        assert "(ふだんの 1.2倍へ週1段で下げる途中)" in html
-        assert "日次推計 -21.78% (11/25)" in html
+        # 目標と向かう先の段だけを出し、理由と式はツールチップに置く。目標 2.0 はふだんの 1.2 へ下げる途中
+        # 土日は来週の目標 (2.0 から1段下げた 1.6) を出す
+        week = "1.6" if datetime.date.today().weekday() >= 5 else "2.0"
+        assert re.search(r"の目標 <b[^>]*>%s倍</b> <span[^>]*>\(1.2倍へ週1段\)</span>" % week, html)
+        assert 'title="ふだんの 1.2倍へ週1段で下げる途中。' in html
+        assert "信用 日次推計 -21.78% (11/25)" in html
+        # 口座の上限は高値・日付・下落率・上限を出す (反映初日は高値 = いまの自己資本 4万)
+        assert re.search(r"口座 高値 <b[^>]*>4万</b> \(\d+/\d+\) から −0.0% <span[^>]*>→</span> 上限 2.00倍", html)
         # 減らす順は3銘柄だけ出し、残りは折りたたむ
         assert "銘柄1003" in html and ">他2件</summary>" in html
         assert re.search(r"いま <b[^>]*>2.50倍</b>", html)
-        assert re.search(r"適正 <b[^>]*>8〜8</b>万", html)
+        assert re.search(r"適正 <b[^>]*>%s</b>万" % ("6〜7" if week == "1.6" else "8〜8"), html)  # 目標 × 4万 ±5%
         assert "感情 未入力" in html and ">Neutral</span>" in html
         assert "指数データが古い (最新 2026-09-17)" in html
 
@@ -1552,7 +1557,7 @@ class TestMarginBaseline:
         client.post("/portfolio/emotion", data={"score": "-2", "note": "怖い"})
         html = client.get("/portfolio?status=hold").data.decode()
         assert "感情 -2 恐怖" in html
-        assert re.search(r"の目標 <b[^>]*>2.0倍</b>", html)  # 感情では目標が動かない
+        assert re.search(r"の目標 <b[^>]*>%s倍</b>" % week, html)  # 感情では目標が動かない
 
         # SBI にも保有があるのに保証金率が無い → 片方だけで全体の過不足を出さない
         ps.upsert_position("SBI", "特定", "信用", "3496", 100, avg_price=1000.0, as_of=today,
@@ -1602,14 +1607,14 @@ def test_target_reason(target, want, cap, dd, boost, expected):
 
 @pytest.mark.parametrize("ev, expected", [
     ({"week_vi_hold": True, "week_vi_on": True, "week_boost": False, "nikkei_vi": 27.0},
-     ("0.8倍に抑え中", "Extreme Fear")),
-    # 抑える条件に入っていても、信用評価損益率の底の買い向かいの間は抑えない
+     ("警戒中", "0.8倍まで", "Extreme Fear")),
+    # 警戒中でも、信用評価損益率の底の買い向かいの間は抑えない
     ({"week_vi_hold": False, "week_vi_on": True, "week_boost": True, "nikkei_vi": 28.9},
-     ("抑える条件 · 買い向かいを優先", "Fear")),
+     ("警戒中", "買い向かい中は抑えない", "Fear")),
     # 平日に 30 を超えても、判定は金曜の引け
     ({"week_vi_hold": False, "week_vi_on": False, "week_boost": False, "nikkei_vi": 31.0},
-     ("30超 (金曜の引けで判定)", "Fear")),
-    ({"week_vi_hold": False, "week_vi_on": False, "week_boost": False, "nikkei_vi": 22.0}, ("30以下", "Neutral")),
+     ("30超", "金曜の引けで判定", "Fear")),
+    ({"week_vi_hold": False, "week_vi_on": False, "week_boost": False, "nikkei_vi": 22.0}, ("平常", "", "Neutral")),
     ({"week_vi_hold": False, "week_vi_on": False, "week_boost": False, "nikkei_vi": None, "week_vi": None}, None),
 ])
 def test_vi_badge(ev, expected):

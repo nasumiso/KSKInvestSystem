@@ -173,7 +173,7 @@ def _fridays(n, start="2026-11-27"):
 @pytest.mark.parametrize("vis, credit, expected, on", [
     # 1.2倍で VI 32 → その週に 0.8倍。27 のあいだは抑えたまま、24 で外れて週1段で戻す
     ([32, 27, 24, 24, 24], [], [1.2, 0.8, 0.8, 1.0, 1.1, 1.2], [0, 1, 1, 0, 0, 0]),
-    # 買い向かいの期間 (11/20 の合図から3か月) は VI 32 でも抑えない (抑える条件には入っている)
+    # 買い向かいの期間 (11/20 の合図から3か月) は VI 32 でも抑えない (警戒中には入っている)
     ([32, 32], CREDIT, [1.2, 1.4, 1.6], [0, 1, 1]),
     # 取得が止まって判定日より5日以上古い VI しか無い週は抑えない (None は値なし)
     ([32, None, None], [], [1.2, 0.8, 1.0, 1.1], [0, 1, 1, 1]),
@@ -189,7 +189,7 @@ def test_week_targets_vi_hold(vis, credit, expected, on):
     weeks = me.week_targets(rows, credit, vi_history)
     assert [w["target"] for w in weeks] == expected
     assert [w["vi_on"] for w in weeks] == [bool(x) for x in on]
-    # 日次ログより前の週に 30 を超えていたら、ログの始まりから抑える条件に入っている (25 以上なら抜けない)
+    # 日次ログより前の週に 30 を超えていたら、ログの始まりから警戒中 (25 以上なら抜けない)
     late = [{"date": "2026-12-04", "equity": 100.0, "multiple": 1.25}]
     ws = me.week_targets(late, [], [{"date": "2026-11-27", "nikkei_vi": 32}, {"date": "2026-12-04", "nikkei_vi": 27}])
     assert [(w["vi_on"], w["target"]) for w in ws] == [(False, 1.2), (True, 0.8)]
