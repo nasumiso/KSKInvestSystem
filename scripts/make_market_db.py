@@ -1905,7 +1905,7 @@ def _format_spr_rv_text(spr_f, rv_f, period_label=None):
     spr_f / rv_f は _to_finite_number 通過後の float | None を渡す。
     period_label を渡すと末尾に " (20日)" のような期間表記が付く。
     """
-    base = "SPR %d" % int(round(spr_f))
+    base = "買い圧 %d" % int(round(spr_f))
     if rv_f is not None:
         base += " ±%.1f" % rv_f
     if period_label:
@@ -1919,7 +1919,7 @@ def _build_spr_gauge_bar_svg(spr, rv, y, period_label, bg_label=None):
     spr が欠損ならバー全体をスキップ ("" を返す)。rv 欠損ならヒゲ無しで描画。
     spr は 0〜100 にクリップ、ヒゲ端も 0〜100 にクリップする。
     period_label は "20日" / "5日" などの期間表示で、SVG <title> に埋め込み
-    バー単体のホバーで「SPR ±rv (20日) 買い集めX」が出るようにする。
+    バー単体のホバーで「買い圧 ±rv (20日) 買い集めX」が出るようにする。
     bg_label は買い集め評価 (A〜E)。指定があれば緑バーの濃淡を 5 段階で変える
     (A=濃 / C=現状 / E=薄)。赤バーは固定色。None や未知ラベルは C 相当にフォールバック。
     """
@@ -1993,7 +1993,7 @@ def build_spr_gauge_svg(spr_20, rv_20, spr_5, rv_5, sprw_label=None, sprbg_label
 def build_spr_gauge_tooltip(spr_20, rv_20, spr_5, rv_5, sprw_label=None, sprbg_label=None):
     """需給バランスセルの title 属性文字列を組み立てる。
 
-    1 行目: SPR ± rv (5日/20日) — 片側欠損なら欠損側を省略
+    1 行目: 買い圧 ± rv (5日/20日) — 片側欠損なら欠損側を省略
     2 行目: 買い集め 週X 日Y — sprw_label / sprbg_label が None なら該当を省略、両方 None なら 2 行目自体を省略
     sprw_label / sprbg_label は呼び出し側で評価有無を決められる任意フィールド
     (個別銘柄の portfolio 一覧では「買い集め」列が別途あるため省略する)。
@@ -2113,7 +2113,7 @@ def _html_market(market_db):
             rs_raw = db.get("rs_raw", "")
             rs_style = _rs_style(rs_raw)
 
-            # 売り圧力レシオ + 買い集め評価 (週,日) → 需給バランスセル (issue #247)
+            # 買い圧力レシオ + 買い集め評価 (週,日) → 需給バランスセル (issue #247)
             # 個別銘柄は price.get_spr_expr で評価しているが、指数は sell_pressure_ratio が空のため
             # spr_20 / spr_buygagher (日次) と sell_pressure_ratio_w (週次) から直接計算する。
             from price import step_func

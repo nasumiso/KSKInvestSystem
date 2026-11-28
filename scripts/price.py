@@ -296,7 +296,8 @@ def get_ratio_list(price_list):
 
 
 def calc_ratio(ratio_list, day_count):
-    """売り圧力レシオの計算
+    """買い圧力レシオの計算
+    値は買いの割合 (0〜100、50 が中立、高いほど買い優勢)。
     Params:
         List< [買い総数、売り総数] >
         int
@@ -320,17 +321,17 @@ def calc_ratio(ratio_list, day_count):
 
 
 def calc_sell_pressure_ratio(price_list):
-    """売り圧力レシオの計算
+    """買い圧力レシオの計算
     Params:
         price_list(list< list<int(5)> >): (日付、始値、高値、安値、終値、出来高)のリスト 日付若い順
           20日分必要
     Returns:
         list< int(4) >: 20sp_ratio, 5sp_ratio, 20buygather, 20r_vol, 5r_vol(ローソク足ボラティリティ)
     """
-    # ---- 売り圧力レシオの計算
+    # ---- 買い圧力レシオの計算
     ratio_list, buygather_list = get_ratio_list(price_list)
     # print "ratio_list:", ratio_list
-    # メモ：売り圧力レシオが116で売り
+    # メモ：旧式 (売り÷買い×100) では116で売り
     DAY_L = 19
     DAY_S = 5
     ratios = [calc_ratio(ratio_list, DAY_L), calc_ratio(ratio_list, DAY_S)]
@@ -753,7 +754,7 @@ def _calc_daily_indicators(daily_price_list):
     # 計算前のデフォルト値として空文字を入れておく (後方互換のためフィールド自体は維持)。
     dic["direction_signal"] = ""
 
-    # ---- 売り圧力レシオ
+    # ---- 買い圧力レシオ
     def to_numeric(str):
         if str == "－":
             return 0
@@ -847,7 +848,7 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
         price_dict["price_kairi_wma10"] = 0
     log_debug("10WMA乖離率:", price_dict["price_kairi_wma10"])
 
-    # ---- 売り圧力レシオ(買い集め指数)
+    # ---- 買い圧力レシオ(買い集め指数)
     try:
         price_list_w = [
             [
@@ -865,9 +866,9 @@ def _calc_weekly_indicators(weekly_price_list, cur_prices=[]):
         # sell5 = calc_ratio(ratio_list, 5)
         buy_gather = calc_ratio(buygather_list, len(buygather_list))
         price_dict["sell_pressure_ratio_w"] = [sell20, 0, buy_gather]
-        log_debug("週次売り圧力レシオ:", price_dict["sell_pressure_ratio_w"])
+        log_debug("週次買い圧力レシオ:", price_dict["sell_pressure_ratio_w"])
     except ValueError:
-        log_warning(" 週次売り圧力レシオ計算できず")
+        log_warning(" 週次買い圧力レシオ計算できず")
         price_dict["sell_pressure_ratio_w"] = [0, 0, 0]
 
     # ---- RSを求める
@@ -2065,8 +2066,8 @@ def parse_price_text_from_list(price_current, price_list):
     # 現在価格を更新
     price["price"] = price_current
     # ---- ここからprice_listを使って各種価格に伴う指標の計算
-    # ---- 売り圧力レシオとローソク足ボラティリティ
-    # 売り圧力レシオの計算
+    # ---- 買い圧力レシオとローソク足ボラティリティ
+    # 買い圧力レシオの計算
     sell_pressure_ratio = calc_sell_pressure_ratio(price_list)
 
     # "20日,5日(,買い集め)"のフォーマット
@@ -2480,13 +2481,13 @@ def get_price_data(code_s, stock={}, upd=UPD_INTERVAL):
 
 
 def get_spr_expr(sprs, sprs_w):
-    """売り圧力レシオと買い集めの文字列表現を返す
+    """買い圧力レシオと買い集めの文字列表現を返す
     Params: list 0:20日SPR 1:5日SPR 2:買い集めSPR
     Returns: str 文字列表現
     """
     if not sprs:
         return ""
-    # 売り圧力レシオ
+    # 買い圧力レシオ
     exprs = [str(v) for v in sprs[:2]]
     # 買い集め
     # 週次

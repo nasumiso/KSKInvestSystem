@@ -1378,7 +1378,7 @@ def make_signal(stock, reasons=None):
             signal += "[週ブ]"
             signal += "%s(%s)," % (vdbspl[0], vdbspl[1])
             break  # 一つにしておく(最新日)
-    # 売り圧力レシオ(5日)による買われ過ぎ売われすぎ
+    # 買い圧力レシオ(5日)による買われ過ぎ売われすぎ
     sell_ratio = stock.get("sell_pressure_ratio", [])
     if sell_ratio:
         sell_ratio_5 = sell_ratio[1]
@@ -1389,7 +1389,7 @@ def make_signal(stock, reasons=None):
     signal = signal.strip()
 
     # 売りシグナル
-    # 50DMAを下回っていて、売り圧力レシオが45以下で、RSが70以上
+    # 50DMAを下回っていて、買い圧力レシオが45以下で、RSが70以上
     # つまり今まで上がっていたものが弱くなっている
     # rs_rank = stock.get("momentum_pt", 0)
     rs_raw = stock.get("rs_raw", 0)
@@ -1401,7 +1401,7 @@ def make_signal(stock, reasons=None):
             warn_parts = []  # tooltip 用: 成立した条件を実際の値で残す
             if sell_ratio_20 < 45:
                 warn += 1
-                warn_parts.append("売り圧力比率(20日) %.0f < 45" % sell_ratio_20)
+                warn_parts.append("買い圧力レシオ(20日) %.0f < 45" % sell_ratio_20)
             kairi_wma10 = stock.get("price_kairi_wma10", 0)
             if kairi_wma10 < 0:
                 warn += 1
@@ -1508,7 +1508,7 @@ def get_vola_and_sell_press_expr(stock_data):
     try:
         # ボラティリティ
         vola = ",".join([str(int(v)) for v in stock_data.get("stddev_volatility", [])])
-        # 売り圧力レシオと買い集め指数
+        # 買い圧力レシオと買い集め指数
         sprs = stock_data.get("sell_pressure_ratio", [])
         sprs_w = stock_data.get("sell_pressure_ratio_w", [])
         sell_press = price.get_spr_expr(sprs, sprs_w)

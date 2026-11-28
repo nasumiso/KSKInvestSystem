@@ -484,7 +484,7 @@ class TestHtmlMarket:
         assert '(03/13〜)' in result
 
     def test_buygagher_eval_removed(self):
-        """売り圧力レシオ列から A-E 評価が削除されている"""
+        """買い圧力レシオ列から A-E 評価が削除されている"""
         result = make_market_db._html_market(self._make_market_db())
         # 旧形式: <td>%d, %d, <strong>A</strong></td>
         for grade in ['<strong>A</strong>', '<strong>B</strong>', '<strong>C</strong>',
@@ -773,8 +773,8 @@ class TestSprGaugeSvg:
     def test_bar_title_includes_buy_collection_label(self):
         """バー単体 <title> に '買い集めX' が併記される (ホバー時に SVG <title> が勝つため)"""
         svg = make_market_db.build_spr_gauge_svg(50, 2.0, 60, 3.0, "B", "A")
-        assert "SPR 50 ±2.0 (20日) 買い集めB" in svg
-        assert "SPR 60 ±3.0 (5日) 買い集めA" in svg
+        assert "買い圧 50 ±2.0 (20日) 買い集めB" in svg
+        assert "買い圧 60 ±3.0 (5日) 買い集めA" in svg
 
     def test_bar_title_omits_buy_collection_when_label_missing(self):
         """ラベル None のバーは <title> に買い集めを出さない"""
@@ -787,8 +787,8 @@ class TestSprGaugeTooltip:
 
     def test_full_tooltip(self):
         text = make_market_db.build_spr_gauge_tooltip(49, 2.3, 46, 2.5, "D", "C")
-        assert "SPR 49 ±2.3 (20日)" in text
-        assert "SPR 46 ±2.5 (5日)" in text
+        assert "買い圧 49 ±2.3 (20日)" in text
+        assert "買い圧 46 ±2.5 (5日)" in text
         assert text.index("(5日)") < text.index("(20日)")
         assert "買い集め 週D 日C" in text
 

@@ -2288,13 +2288,13 @@ class TestFormatTagsTooltip:
             (
                 {"rs_raw": 1.35, "sell_pressure_ratio": [38, 50], "price_kairi_wma10": 2.5},
                 ["警"],
-                "警: 売り圧力比率(20日) 38 < 45　※RS 1.35 の強い銘柄が1条件のみ悪化",
+                "警: 買い圧力レシオ(20日) 38 < 45　※RS 1.35 の強い銘柄が1条件のみ悪化",
             ),
             # 売: 2条件とも成立しているので両方並ぶ
             (
                 {"rs_raw": 1.5, "sell_pressure_ratio": [30, 50], "price_kairi_wma10": -4.2},
                 ["売"],
-                "売: 売り圧力比率(20日) 30 < 45 / wma10割れ (乖離 -4.2%)"
+                "売: 買い圧力レシオ(20日) 30 < 45 / wma10割れ (乖離 -4.2%)"
                 "　※RS 1.50 の強い銘柄が2条件とも悪化",
             ),
             # 理由を持たないタグ (押) は tooltip に行が出ない
@@ -3454,12 +3454,12 @@ class TestBuildSprGaugeForStock:
         }
         gauge = helpers._build_spr_gauge_for_stock(stock)
         assert gauge["svg"].startswith("<svg")
-        # バー単体 <title> に SPR + 買い集め評価が併記される
-        assert "SPR 48 ±2.4 (20日) 買い集めB" in gauge["svg"]
-        assert "SPR 45 ±2.6 (5日) 買い集めA" in gauge["svg"]
+        # バー単体 <title> に 買い圧 + 買い集め評価が併記される
+        assert "買い圧 48 ±2.4 (20日) 買い集めB" in gauge["svg"]
+        assert "買い圧 45 ±2.6 (5日) 買い集めA" in gauge["svg"]
         assert gauge["svg"].index("(5日)") < gauge["svg"].index("(20日)")
         # セル全体 tooltip にも (フォールバック用) 同等情報
-        assert "SPR 48 ±2.4 (20日)" in gauge["tooltip"]
+        assert "買い圧 48 ±2.4 (20日)" in gauge["tooltip"]
         assert "買い集め 週B 日A" in gauge["tooltip"]
         # 緑バーは週B 相当の中濃緑 (#9be29b)、赤バーは薄赤 (#f4c7c3) で統一
         assert "#9be29b" in gauge["svg"]

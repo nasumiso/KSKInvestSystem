@@ -89,7 +89,7 @@ def test_local_daily_price_short_history(monkeypatch, count):
 # calc_sell_pressure_ratio
 # ==================================================
 class TestCalcSellPressureRatio:
-    """売り圧力レシオの計算テスト"""
+    """買い圧力レシオの計算テスト"""
 
     def _make_price_list(self, count=25):
         """テスト用の価格データを生成する
