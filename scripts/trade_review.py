@@ -34,7 +34,7 @@ from ks_util import log_print, log_warning  # noqa: E402
 REENTRY_DAYS = 30
 # 小口とみなす、建玉合計に対する比率 (%)
 SMALL_POSITION_PCT = 3.0
-# 保有日数帯の境界 (仕様レビュー_0927 で損益が分かれた 0〜3日 / 91日以上)
+# 保有日数帯の境界 (成果レビュー_0927 で損益が分かれた 0〜3日 / 91日以上)
 HOLD_BANDS = (("0-3", 0, 3), ("4-90", 4, 90), ("91+", 91, None))
 
 REVIEW_DIR = os.path.join(ks_util.DATA_DIR, "trade_review")

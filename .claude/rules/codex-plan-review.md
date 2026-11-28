@@ -1,6 +1,8 @@
 # 実装プラン作成ルール
 
-新機能追加や既存機能の挙動変更を伴うプランをユーザーに提示する前に、`codex` でレビューし、**指摘がなくなるまで修正→レビューのサイクルを繰り返すこと。**
+新機能追加や既存機能の挙動変更を伴うプランをユーザーに提示する前に、`codex` でレビューし、指摘を直して再レビューする。**回すのは2巡まで** (初回 + 再レビュー1回)。2巡目でも重大な指摘が残ったら、3巡目に入らずユーザーに相談する。
+
+見るのはどう作るか (コード・データの定義・不変条件)。作るべきか・目的に合うかは、起票の前の仕様レビュー ([spec-review.md](spec-review.md)) が見る。
 
 プロンプトには必ず次の指示を含める: *「些細な指摘は不要。重大な問題のみ指摘してください。」*
 
@@ -22,10 +24,10 @@
 
 ### 初回レビュー
 
-※ モデルは `-m` で必ず指定（gpt-5.6-terra 推奨。gpt-5.4 / gpt-5.5-terra は ChatGPT アカウント認証では 400 エラーになり使えない）
+※ モデルは `-m` で必ず指定（gpt-6.1-sol を使う。2026-11-28 に gpt-5.6-terra から変更。gpt-5.4 / gpt-5.5-terra は ChatGPT アカウント認証では 400 エラーになり使えない。考える深さは `-c model_reasoning_effort="high"` で指定する。`~/.codex/config.toml` の既定は low）
 
 ```bash
-codex exec -m gpt-5.6-terra "Review this plan. Don't nitpick trivial things. Only point out critical issues: {plan_full_path} (ref: {CLAUDE.md full_path})"
+codex exec -m gpt-6.1-sol -c model_reasoning_effort="high" -s read-only "Review this plan. Don't nitpick trivial things. Only point out critical issues: {plan_full_path} (ref: {CLAUDE.md full_path})"
 ```
 
 ### 修正後の再レビュー
@@ -33,8 +35,16 @@ codex exec -m gpt-5.6-terra "Review this plan. Don't nitpick trivial things. Onl
 ※ 初回レビューのコンテキストを保持するため `resume --last` が必須
 
 ```bash
-codex exec resume --last -m gpt-5.6-terra "I've updated the plan, please review again. Don't nitpick trivial things. Only point out critical issues: {plan_full_path} (ref: {CLAUDE.md full_path})"
+codex exec resume --last -m gpt-6.1-sol -c model_reasoning_effort="high" -s read-only "I've updated the plan, please review again. Don't nitpick trivial things. Only point out critical issues: {plan_full_path} (ref: {CLAUDE.md full_path})"
 ```
+
+`-s read-only` は常に付ける (レビューにファイルの書き換えは要らない。プランモード中でもそのまま流せる)。
+
+### 止まったとき
+
+- 数分たっても返らなければハングを疑い、待ち続けずに止めてユーザーに報告する。zsh に `timeout` コマンドは無いので、Bash ツールの `timeout` で抑える
+- 出力をファイルに向けるときは `< /dev/null` を付ける。付けないと「Reading additional input from stdin...」の1行で止まる
+- 400 エラーはまずモデル名を疑う
 
 ## 指摘への対応可否の判断基準
 
@@ -50,7 +60,8 @@ codex exec resume --last -m gpt-5.6-terra "I've updated the plan, please review 
 
 ### 打ち切りの目安
 
-- **同じ論点で3巡以上**やり取りしている
+2巡の上限より前でも、次に当たれば打ち切ってよい。
+
 - 指摘が「将来 X が追加されたら」「2つ同時に実行したら」など、**現存しない前提**に依存している
 - 対策コストが、防ぐ事象の期待被害 (発生確率 × 損害) を明らかに上回る
 

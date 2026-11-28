@@ -46,6 +46,7 @@ AI はコードから構造を復元できる。構造を書き写した文書�
 | 場面 | 使うもの | ルール |
 |---|---|---|
 | 実装・調査 | Claude Code | [CLAUDE.md](../CLAUDE.md) の行動原則 |
+| 起票前の仕様レビュー (目的・使い勝手) | agy と `codex exec` (2026-12 末まで比べる) | [.claude/rules/spec-review.md](../.claude/rules/spec-review.md) |
 | 実装プランのレビュー | `codex exec` | [.claude/rules/codex-plan-review.md](../.claude/rules/codex-plan-review.md) |
 | PR レビュー | Codex (GitHub Actions が自動で付ける) | 指摘対応は [.claude/skills/github-review-fix](../.claude/skills/github-review-fix/SKILL.md) |
 | テスト | pytest | [.claude/rules/testing.md](../.claude/rules/testing.md)、[テスト方針.md](テスト方針.md) |

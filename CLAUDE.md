@@ -57,9 +57,10 @@ cd scripts && python -m webapp.app                  # 調査WebApp (http://local
 
 全コマンド一覧 (update/list/reflesh/backup/calibrate_momentum, 移行スクリプト, cron運用詳細など) は [doc/spec/コマンド一覧.md](doc/spec/コマンド一覧.md) を参照。テストは [doc/テスト方針.md](doc/テスト方針.md) を参照。
 
-## 実装プラン作成ルール
+## 起票と実装プランのレビュー
 
-プラン作成・レビューのルールは [.claude/rules/codex-plan-review.md](.claude/rules/codex-plan-review.md) を参照。
+- 新機能や今の動きを変える issue は、起票の前に仕様レビュー (目的・投資家像・アーキテクチャ・使い勝手を見る) を通す: [.claude/rules/spec-review.md](.claude/rules/spec-review.md)
+- 実装プランの作成とレビュー (Codex): [.claude/rules/codex-plan-review.md](.claude/rules/codex-plan-review.md)
 
 ## 重要な注意事項
 
@@ -111,7 +112,7 @@ WebApp画面の見え方・挙動、またはユーザーが直接触るデー�
 - [doc/テスト方針.md](doc/テスト方針.md) — テスト方針（ユニットテスト、統合テスト、HTMLパース変更時の検証）
 - [doc/システム概要.md](doc/システム概要.md) — 投資家視点のできること・毎日の自動処理・スコアの考え方・色の凡例
 - [doc/introduction/機能紹介.md](doc/introduction/機能紹介.md) — WebApp 4画面のスクリーンショット付き機能紹介（対外説明用。画像と配布用 PDF も同じフォルダ）
-- [doc/review/仕様レビュー_0927.md](doc/review/仕様レビュー_0927.md) — 投資システム評価レビュー（成績評価。Q4 中間: [仕様レビュー_1115_中間.md](doc/review/仕様レビュー_1115_中間.md)。旧版: [仕様レビュー_0704.md](doc/review/仕様レビュー_0704.md), [仕様レビュー_0314.md](doc/review/仕様レビュー_0314.md)）
+- [doc/review/成果レビュー_0927.md](doc/review/成果レビュー_0927.md) — 四半期末の成果レビュー（作ったものと成績の評価。Q4 中間: [成果レビュー_1115_中間.md](doc/review/成果レビュー_1115_中間.md)。旧版: [成果レビュー_0704.md](doc/review/成果レビュー_0704.md), [成果レビュー_0314.md](doc/review/成果レビュー_0314.md)）
 - [doc/投資戦略.md](doc/投資戦略.md) — 個人メモ: 投資スタイル分析と売買ルール
 - [doc/方向性メモ.md](doc/方向性メモ.md) — システムの目的と方向性の正本
 - [doc/開発方針.md](doc/開発方針.md) — いまのフェーズで何を作り何を後回しにするか、優先度の付け方、節目
